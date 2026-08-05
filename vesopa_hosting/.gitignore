@@ -7,3 +7,10 @@ public/uploads/*
 !public/uploads/.gitkeep
 .DS_Store
 logs/
+
+# The production TEMPLATE ships; it has no values in it, only the shape and the
+# notes. `.env.*` above blocks every real env file, and a nested .gitignore
+# wins over the repository root one for paths beneath it — so the exception has
+# to be stated here rather than at the root.
+!.env.production.example
+!.env.*.example
