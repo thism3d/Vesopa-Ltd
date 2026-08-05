@@ -1,0 +1,73 @@
+<%# Per-currency prices for one catalogue row.
+
+    Its own <form>, deliberately separate from the one above it. The form above
+    edits the base prices; this one edits what happens to them afterwards. Mixed
+    into a single submit, saving a typo in the sterling column would silently
+    re-stamp every override alongside it, and there would be no way to change
+    one without touching the other.
+
+    `entity` is 'plan' or 'email_plan'; `matrix` comes from
+    pricing.currencyMatrix() and already carries the converted figure and any
+    override for every field in every currency. %>
+<div class="p-card mt-3">
+  <h2 class="h3 mb-1">Prices in other currencies</h2>
+  <p class="small muted mb-3">
+    Blank means <b>converted</b> — the sterling price above, run through that
+    currency's rate and rounding, and moving automatically whenever the rate
+    changes. Type a figure to fix it there instead, for a price that has to hit
+    a particular number regardless of the exchange rate. Clearing the box hands
+    it back to the converter.
+  </p>
+
+  <% if (!matrix.length) { %>
+    <p class="small muted mb-0">
+      Only the base currency is set up. Add one under
+      <a href="/admin/currencies">Currencies</a>.
+    </p>
+  <% } else { %>
+    <form method="post" action="/admin/prices/<%= entity %>/<%= plan.id %>" data-guard>
+      <input type="hidden" name="_csrf" value="<%= csrf %>">
+
+      <div class="table-wrap"><table class="table mini">
+        <thead>
+          <tr>
+            <th>Currency</th>
+            <% matrix[0].fields.forEach(function (f) { %>
+              <th class="num"><%= f.field.charAt(0).toUpperCase() + f.field.slice(1) %></th>
+            <% }); %>
+          </tr>
+        </thead>
+        <tbody>
+          <% matrix.forEach(function (row) { %>
+            <tr>
+              <td>
+                <span class="strong mono"><%= row.cur.code %></span>
+                <br><span class="tiny muted"><%= row.cur.symbol %> · <%= Number(row.cur.rate).toFixed(4) %></span>
+              </td>
+              <% row.fields.forEach(function (f) { %>
+                <td class="num">
+                  <input class="input input-sm num"
+                         name="o_<%= row.cur.code %>_<%= f.field %>"
+                         value="<%= f.override_minor === null ? '' : (f.override_minor / 100).toFixed(2) %>"
+                         placeholder="<%= (f.converted_minor / 100).toFixed(2) %>"
+                         style="width:96px"
+                         aria-label="<%= row.cur.code %> <%= f.field %>">
+                  <p class="hint mb-0">
+                    <% if (f.override_minor === null) { %>
+                      <%= row.cur.symbol %><%= (f.converted_minor / 100).toFixed(2) %> converted
+                    <% } else { %>
+                      <span class="strong">fixed</span>, was
+                      <%= row.cur.symbol %><%= (f.converted_minor / 100).toFixed(2) %>
+                    <% } %>
+                  </p>
+                </td>
+              <% }); %>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table></div>
+
+      <button class="btn btn-ghost mt-2" type="submit" data-busy="Saving…">Save currency prices</button>
+    </form>
+  <% } %>
+</div>

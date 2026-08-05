@@ -1,0 +1,92 @@
+<%- include('../partials/head') %>
+<%- include('../partials/header') %>
+
+<main id="main">
+<%- include('../partials/page-hero', {
+  kicker: 'About',
+  heading: 'A hosting company<br><span class="hl">run by people who use it</span>',
+  sub: 'Vesopa Hosting is part of Vesopa EPOS Ltd — a Welsh software company that has run its own servers since 2018, because we needed hosting we could trust for our own customers first.',
+}) %>
+
+<section class="section">
+  <div class="wrap wrap-narrow">
+    <div data-reveal="0">
+      <p class="lede">
+        We build and run Vesopa EPOS: till software used in restaurants, cafés and
+        takeaways across the UK. That business depends on servers being up at
+        seven on a Friday evening, so we learned to run infrastructure properly
+        long before we sold any of it.
+      </p>
+      <p>
+        Hosting came out of a repeated conversation. A venue would ask who does
+        their website, and the answer was some reseller charging forty pounds a
+        year for an SSL certificate that is free, on a control panel designed in
+        2003, with support that closes at five. We could do better than that with
+        the servers we already had.
+      </p>
+      <p>
+        So the product is deliberately narrow. Shared hosting, domains and email,
+        done well, on a panel we wrote ourselves. No VPS range, no reseller tier,
+        no upsell funnel. If you need something we do not do, we will say so and
+        point you at someone who does.
+      </p>
+    </div>
+
+    <hr class="divider">
+
+    <div class="grid grid-2" data-reveal="60">
+      <div class="card">
+        <div class="f-icon"><%- icon('server', 22) %></div>
+        <h2 class="h3 mb-2">Where your site actually lives</h2>
+        <p class="small muted mb-0">
+          Ubuntu 24.04 LTS on Microsoft Azure, in a UK region. Every account is an
+          isolated system user with its own quota. We run the same stack for our
+          own production systems, which is the only endorsement that means much.
+        </p>
+      </div>
+      <div class="card">
+        <div class="f-icon"><%- icon('headset', 22) %></div>
+        <h2 class="h3 mb-2">Who answers your ticket</h2>
+        <p class="small muted mb-0">
+          Someone in the UK who can read a server log and change a config. We are
+          a small team, so you will get the same few names — which also means we
+          remember your site the second time you write.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section section-tint">
+  <div class="wrap wrap-narrow">
+    <h2 class="h1 center mb-4" data-reveal="0">What we will not do</h2>
+    <div class="grid" style="gap:14px" data-reveal="40">
+      <% [
+        ['Sell you something free', 'SSL is included. So is WHOIS privacy where the registry allows it. If we ever charge for one of those, something has gone wrong here.'],
+        ['Hide the renewal price', 'It is printed on the plan before you buy and it does not move. The industry standard of a cheap first year and a doubled second is a trick, not a business model.'],
+        ['Make leaving difficult', 'Unlock the domain, get the code, go. No fee, no retention call, no seven-day wait we invented.'],
+        ['Oversell the hardware', 'There is a real limit to how many accounts go on a node and we hold to it. "Unlimited" everything on a shared server means everyone is slow at the same time.'],
+      ].forEach(function (s) { %>
+        <div class="card">
+          <div class="row" style="gap:12px;align-items:flex-start">
+            <span style="color:var(--lime-ink);flex:none;margin-top:2px"><%- icon('check-circle', 20) %></span>
+            <div><div class="strong"><%= s[0] %></div><div class="small muted"><%= s[1] %></div></div>
+          </div>
+        </div>
+      <% }); %>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap center">
+    <h2 class="h2 mb-2" data-reveal="0">Company details</h2>
+    <p class="muted mb-3" data-reveal="40">
+      <%= contact.company %> · <%= contact.address_line1 %>, <%= contact.address_line2 %><br>
+      <a href="mailto:<%= contact.email %>"><%= contact.email %></a> · <%= contact.phone %>
+    </p>
+    <a class="btn" href="/contact" data-reveal="80">Get in touch</a>
+  </div>
+</section>
+</main>
+<%- include('../partials/footer') %>

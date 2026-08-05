@@ -1,0 +1,169 @@
+<%- include('partials/shell-top') %>
+
+<div class="ap-grid cols-2">
+
+  <div>
+    <div class="ap-card">
+      <div class="ap-card-head"><h3>Your profile</h3></div>
+
+      <form method="post" action="/admin/settings/profile">
+        <div class="ap-field">
+          <label>Full name</label>
+          <input class="ap-input" name="admin_user_fullname" value="<%= admin.fullname %>"
+                 required minlength="5" maxlength="255">
+        </div>
+        <div class="ap-field">
+          <label>Username</label>
+          <input class="ap-input" name="admin_user_username" value="<%= admin.username %>"
+                 required minlength="8" maxlength="20">
+          <p class="hint">8–20 characters. This is what you sign in with.</p>
+        </div>
+        <div class="ap-field">
+          <label>Role</label>
+          <p><span class="ap-badge <%= admin.status === 'Admin' ? 'lime' : 'muted' %>"><%= admin.status %></span></p>
+          <p class="hint">Only a full Admin can change roles, and never their own.</p>
+        </div>
+        <button class="ap-btn primary" type="submit"><span class="material-icons">save</span> Save profile</button>
+      </form>
+    </div>
+
+    <div class="ap-card">
+      <div class="ap-card-head"><h3>Change your password</h3></div>
+      <div id="apPasswordResult"></div>
+
+      <form id="apPasswordForm" method="post" action="/admin/settings/password">
+        <div class="ap-field">
+          <label>Current password</label>
+          <input class="ap-input" type="password" name="currentpassword" required minlength="8"
+                 autocomplete="current-password">
+        </div>
+        <div class="ap-field">
+          <label>New password</label>
+          <input class="ap-input" type="password" name="newpassword" required minlength="8"
+                 autocomplete="new-password">
+          <p class="hint">You will be signed out and will need to sign in again.</p>
+        </div>
+        <button class="ap-btn primary" type="submit"><span class="material-icons">key</span> Change password</button>
+      </form>
+    </div>
+  </div>
+
+  <div>
+<% if (admin.status === 'Admin') { %>
+    <div class="ap-card">
+      <div class="ap-card-head">
+        <h3>Panel admins</h3>
+        <div class="ap-spacer"></div>
+        <button class="ap-btn primary sm" type="button" data-modal-template="tplNewAdmin">
+          <span class="material-icons">person_add</span> Add
+        </button>
+      </div>
+      <p class="ap-card-sub">
+        Logins for this panel — not for the back office, which lives on
+        <a href="/admin/users">Back Office Users</a>.
+      </p>
+
+<% if (!others.length) { %>
+      <p class="ap-empty">You are the only admin.</p>
+<% } else { %>
+      <div class="ap-table-wrap">
+        <table class="ap-table" style="min-width:0">
+          <thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Added</th><th class="actions"></th></tr></thead>
+          <tbody>
+<% others.forEach(function (a) { %>
+            <tr>
+              <td><strong><%= a.fullname %></strong></td>
+              <td class="ap-mono"><%= a.username %></td>
+              <td>
+                <%# Posts JSON and reloads, which is what the endpoint answers with. %>
+                <select class="ap-select js-role" data-id="<%= a.id %>"
+                        style="padding:4px 26px 4px 8px; font-size:12.5px">
+                  <option value="Subadmin" <%= a.status === 'Subadmin' ? 'selected' : '' %>>Subadmin</option>
+                  <option value="Admin"    <%= a.status === 'Admin'    ? 'selected' : '' %>>Admin</option>
+                </select>
+              </td>
+              <td class="ap-nowrap ap-small ap-muted"><%= formatDate(a.dateadded) %></td>
+              <td class="actions">
+                <form method="post" action="/admin/settings/admins/delete">
+                  <input type="hidden" name="admin_user_id" value="<%= a.id %>">
+                  <button class="ap-icon-btn danger" type="submit" title="Remove"
+                          data-confirm="Remove <%= a.fullname %>'s access to this panel?">
+                    <span class="material-icons">delete_outline</span>
+                  </button>
+                </form>
+              </td>
+            </tr>
+<% }); %>
+          </tbody>
+        </table>
+      </div>
+<% } %>
+    </div>
+<% } else { %>
+    <div class="ap-card">
+      <div class="ap-card-head"><h3>Panel admins</h3></div>
+      <p class="ap-muted">
+        Only a full Admin can add or remove panel logins. Ask one of them if you
+        need access changed.
+      </p>
+    </div>
+<% } %>
+
+    <div class="ap-card">
+      <div class="ap-card-head"><h3>System</h3></div>
+      <dl class="ap-dl">
+        <dt>Site</dt><dd><a href="<%= SITE_URL %>" target="_blank" rel="noopener"><%= SITE_URL %></a></dd>
+        <dt>Back office</dt><dd><a href="<%= BACKOFFICE_URL %>" target="_blank" rel="noopener"><%= BACKOFFICE_URL %></a></dd>
+        <dt>Version</dt><dd><%= APP_VERSION %></dd>
+        <dt>Support inbox</dt><dd><%= CONTACT.email %></dd>
+      </dl>
+    </div>
+  </div>
+</div>
+
+<template id="tplNewAdmin">
+  <h3>Add a panel admin</h3>
+  <p class="ap-card-sub">New logins start as Subadmin. Promote them from the list afterwards.</p>
+
+  <form method="post" action="/admin/settings/admins/new">
+    <div class="ap-field">
+      <label>Full name</label>
+      <input class="ap-input" name="admin_fullname" required minlength="5" maxlength="255">
+    </div>
+    <div class="ap-field">
+      <label>Username</label>
+      <input class="ap-input" name="admin_username" required minlength="8" maxlength="20">
+    </div>
+    <div class="ap-field">
+      <label>Password</label>
+      <input class="ap-input" name="admin_password" required minlength="8" maxlength="72">
+    </div>
+    <div class="ap-btn-row" style="justify-content:flex-end">
+      <button class="ap-btn ghost" type="button" data-modal-close>Cancel</button>
+      <button class="ap-btn primary" type="submit">Add admin</button>
+    </div>
+  </form>
+</template>
+
+<script>
+  document.querySelectorAll('.js-role').forEach(function (select) {
+    var previous = select.value;
+    select.addEventListener('change', function () {
+      fetch('/admin/settings/admins/status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ my_id: select.dataset.id, new_status: select.value }),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data.status === 'SUCCESS') { previous = select.value; return; }
+          // Snapping back is the only honest thing to show: the server said no.
+          select.value = previous;
+          window.alert('That change was refused.');
+        })
+        .catch(function () { select.value = previous; });
+    });
+  });
+</script>
+
+<%- include('partials/shell-bottom') %>

@@ -1,0 +1,33 @@
+<div class="banner-5">
+	<div class="container">
+		<div class="row">
+			<div class="col-12">
+				<h2 class="text-light">{{breadcrumb}}</h2>
+				<ol class="breadcrumb breadcrumb-modifier">
+					<li class="breadcrumb-item">
+						<a
+							href="#"
+							class="link fs-14 {% if breadcrumbLink %} {{breadcrumbLink}} {% endif %}"
+						>
+							Home
+						</a>
+					</li>
+					<li
+						class="breadcrumb-item {% if breadcrumbIcon %} {{breadcrumbIcon}} {% endif %}"
+					>
+						<iconify-icon
+							icon="bi:chevron-right"
+							class="align-middle fs-14"
+						></iconify-icon>
+					</li>
+					<li
+						class="breadcrumb-item active fs-14 {% if breadcrumbActive %} {{breadcrumbActive}} {% endif %}"
+						aria-current="page"
+					>
+						{{breadcrumb}}
+					</li>
+				</ol>
+			</div>
+		</div>
+	</div>
+</div>

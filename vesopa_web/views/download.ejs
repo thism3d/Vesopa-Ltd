@@ -1,0 +1,111 @@
+<%- include('partials/header') %>
+
+<div class="device_download_section">
+    <div class="device_download_main_body">
+        <div class="device_download_left">
+            <%# Was "…for Windows". The page now also offers the Android build,
+                so the heading can no longer name one platform. %>
+            <h1 class="downlaod_heading">Download Vesopa EPOS</h1>
+            <p class="download_brief">Optimize your business with an advanced EPOS system for seamless transactions. Available for Windows and Android.</p>
+
+            <div class="downlaod_brief_description">
+                <p class="donwload_brief_desc_item"><i class="fa fa-check"></i> Efficient sales and inventory management</p>
+                <p class="donwload_brief_desc_item"><i class="fa fa-check"></i> Secure payment processing with multi-method support</p>
+                <p class="donwload_brief_desc_item"><i class="fa fa-check"></i> Real-time reporting and analytics for better decision-making</p>
+                <p class="donwload_brief_desc_item"><i class="fa fa-check"></i> Multi-user access with role-based permissions</p>
+                <p class="donwload_brief_desc_item"><i class="fa fa-check"></i> Dedicated customer support for uninterrupted operations</p>
+            </div>
+
+            <%#
+              Both direct downloads are served from public/app/ — see the note in
+              deploy.sh about why that directory is excluded from rsync.
+
+              The store badge previously had no href at all, and Download Now
+              pointed at /downloads/VesopaEPOS.msi, which does not exist.
+            %>
+            <div class="dl-platforms">
+                <%#
+                  The Store badge is first and labelled "recommended" on
+                  purpose. The direct installer is not code-signed, so Chrome
+                  warns that it "may be dangerous" and SmartScreen shows
+                  "Windows protected your PC" — which reads to a customer as
+                  the site being malicious. The Store build is signed by
+                  Microsoft and shows neither.
+
+                  This is signposting, not a fix. The fix is an Authenticode
+                  certificate on the installer; until there is one, saying
+                  plainly what the prompt is beats a customer meeting it with
+                  no warning and closing the tab.
+                %>
+                <div class="dl-platform">
+                    <p class="dl-platform-label">Windows</p>
+                    <div class="downlaod_brief_buttons_keeper">
+                        <a class="download_brief_store"
+                           href="https://apps.microsoft.com/store/detail/9PDMNJXNFZCW?cid=DevShareMCLPCS"
+                           target="_blank" rel="noopener">
+                            <img class="download_brief_image_windows"
+                                 src="/assets/icons/microsoft_store.png"
+                                 alt="Get Vesopa EPOS from the Microsoft Store">
+                        </a>
+                        <p class="dl-apk-note dl-note-good"><i class="fa fa-shield"></i> Recommended &middot; installs and updates automatically</p>
+
+                        <a href="/app/VesopaEPOS%20Installer.exe" download class="download_brief_button">
+                            <p class="download_brief_button_text">Download Now<span>v<%= APP_VERSION %></span></p>
+                        </a>
+                        <p class="dl-apk-note">Direct installer &middot; Windows may ask you to confirm before it runs</p>
+                    </div>
+                </div>
+
+                <div class="dl-platform">
+                    <p class="dl-platform-label">Android</p>
+                    <div class="downlaod_brief_buttons_keeper">
+                        <a class="download_brief_store" href="/app/Vesopa%20EPOS.apk" download>
+                            <img class="download_brief_image_windows"
+                                 src="/assets/icons/download_google_play.svg"
+                                 alt="Download Vesopa EPOS for Android">
+                        </a>
+                        <p class="dl-apk-note">Direct APK &middot; allow installs from this source when prompted</p>
+                    </div>
+                </div>
+
+<%#
+  Anything else the admin has attached to this page in /admin/files — a macOS
+  build, a beta, a setup guide PDF, a store listing. The two platforms above
+  stay hardcoded because they are the ones the page is built around and must
+  never silently vanish if a row is deleted; this block is the extension point.
+%>
+<% if (extraFiles && extraFiles.length) { %>
+                <div class="dl-platform dl-platform-extra">
+                    <p class="dl-platform-label">More downloads</p>
+                    <div class="dl-extra-list">
+<% extraFiles.forEach(function (f) { %>
+                        <a class="dl-extra"
+                           href="<%= f.url %>"
+                           <%= f.kind === 'file' ? 'download' : 'target="_blank" rel="noopener"' %>>
+                            <span class="dl-extra-name"><%= f.label || f.title %></span>
+                            <span class="dl-extra-meta">
+                                <% if (f.version) { %>v<%= f.version %><% } %>
+                                <% if (f.size_bytes) { %> &middot; <%= bytes(f.size_bytes) %><% } %>
+                            </span>
+                        </a>
+<% }); %>
+                    </div>
+                </div>
+<% } %>
+            </div>
+
+            <div class="download_brief_final">
+                <p class="download_free_text">Try <span>30 days</span> free!</p>
+            </div>
+        </div>
+
+        <%# demo1 is the dark-theme capture. demo2 (the light one) was a white
+            slab dropped onto a black page. %>
+        <div class="device_download_right">
+            <img class="device_platform_specific_image mac_app_screenshot"
+                 src="/assets/demo_screenshots/demo1.jpg"
+                 alt="The Vesopa EPOS till running on Windows">
+        </div>
+    </div>
+</div>
+<%- include('partials/footer') %>

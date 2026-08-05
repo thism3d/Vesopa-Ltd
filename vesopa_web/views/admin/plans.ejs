@@ -1,0 +1,155 @@
+<%- include('partials/shell-top') %>
+
+<%
+  // One partial rendered twice — once per plan card, once for the "new"
+  // dialog — so a field added here appears in both without being written out
+  // in two places and drifting.
+  const live = rows.filter(p => !p.is_archived);
+  const archived = rows.filter(p => p.is_archived);
+%>
+
+<div class="ap-card">
+  <div class="ap-card-head">
+    <h2>Packages</h2>
+    <div class="ap-spacer"></div>
+    <button class="ap-btn primary" type="button" data-modal-template="tplNewPlan">
+      <span class="material-icons">add</span> New package
+    </button>
+  </div>
+  <p class="ap-card-sub" style="margin-bottom:0">
+    These are what the pricing page, the home page and the checkout quote.
+    Editing a price changes what <strong>new</strong> customers are offered —
+    an office already on the plan keeps the fee stored on its own record, and a
+    live PayPal subscription keeps billing against the plan PayPal created at
+    the time. To re-price an existing customer, change it on their office.
+  </p>
+</div>
+
+<%# ---- Live packages ------------------------------------------------------ %>
+
+<div class="ap-grid cols-2">
+<% live.forEach(function (p) { %>
+  <div class="ap-card">
+    <div class="ap-card-head">
+      <h3><%= p.name %></h3>
+      <% if (p.is_popular) { %><span class="ap-badge lime">most popular</span><% } %>
+      <% if (p.is_default) { %><span class="ap-badge info">default</span><% } %>
+      <% if (!p.is_active) { %><span class="ap-badge muted">hidden</span><% } %>
+      <div class="ap-spacer"></div>
+      <span class="ap-mono ap-muted"><%= p.slug %></span>
+    </div>
+
+    <div class="ap-grid cols-3" style="gap:10px; margin-bottom:16px">
+      <div><p class="ap-stat-label">Per month</p><p class="ap-primary"><%= money(p.price_per_month_minor, p.currency) %></p></div>
+      <div><p class="ap-stat-label">Term price</p><p class="ap-primary"><%= money(p.discounted_minor, p.currency) %></p></div>
+      <div><p class="ap-stat-label">Inc. VAT</p><p class="ap-primary"><%= money(p.total_with_vat_minor, p.currency) %></p></div>
+    </div>
+
+    <p class="ap-small ap-muted">
+      <%= p.offices %> office<%= Number(p.offices) === 1 ? '' : 's' %> on this package ·
+      <%= money(p.collected_minor) %> collected against it ·
+      updated <%= formatDateTime(p.updated_at) %>
+    </p>
+
+    <hr class="ap-hr">
+
+    <form method="post" action="/admin/plans/<%= p.id %>">
+      <%- include('partials/plan-fields', { p, money, fromMinor, idPrefix: 'p' + p.id }) %>
+
+      <div class="ap-btn-row">
+        <button class="ap-btn primary" type="submit"><span class="material-icons">save</span> Save</button>
+        <div style="flex:1"></div>
+        <button class="ap-btn danger" type="submit" formaction="/admin/plans/<%= p.id %>/delete"
+                data-confirm="Delete the &quot;<%= p.name %>&quot; package? If any office or payment references it, it will be archived instead.">
+          <span class="material-icons">delete_outline</span> Delete
+        </button>
+      </div>
+    </form>
+  </div>
+<% }); %>
+</div>
+
+<% if (!live.length) { %>
+<div class="ap-card"><p class="ap-empty">
+  No live packages. Nothing will render on the pricing page until you add one.
+</p></div>
+<% } %>
+
+<%# ---- Archived ----------------------------------------------------------- %>
+
+<% if (archived.length) { %>
+<div class="ap-card">
+  <div class="ap-card-head"><h3>Archived</h3></div>
+  <p class="ap-card-sub">Not for sale. Kept so the offices and payments that reference them still resolve.</p>
+
+  <div class="ap-table-wrap">
+    <table class="ap-table">
+      <thead><tr><th>Package</th><th>Id</th><th>Term</th><th class="num">Per month</th>
+                 <th class="num">Offices</th><th class="num">Collected</th><th class="actions"></th></tr></thead>
+      <tbody>
+<% archived.forEach(function (p) { %>
+        <tr>
+          <td><strong><%= p.name %></strong></td>
+          <td class="ap-mono"><%= p.slug %></td>
+          <td><%= p.period_months %>m</td>
+          <td class="num"><%= money(p.price_per_month_minor, p.currency) %></td>
+          <td class="num"><%= p.offices %></td>
+          <td class="num"><%= money(p.collected_minor) %></td>
+          <td class="actions">
+            <form method="post" action="/admin/plans/<%= p.id %>" style="display:inline">
+              <%# Re-posting the whole row is what the update handler expects;
+                  hidden fields carry the values that are not being changed. %>
+              <input type="hidden" name="name" value="<%= p.name %>">
+              <input type="hidden" name="slug" value="<%= p.slug %>">
+              <input type="hidden" name="period_months" value="<%= p.period_months %>">
+              <input type="hidden" name="interval_label" value="<%= p.interval_label %>">
+              <input type="hidden" name="interval_count" value="<%= p.interval_count %>">
+              <input type="hidden" name="price_per_month" value="<%= fromMinor(p.price_per_month_minor) %>">
+              <input type="hidden" name="total" value="<%= fromMinor(p.total_minor) %>">
+              <input type="hidden" name="discounted" value="<%= fromMinor(p.discounted_minor) %>">
+              <input type="hidden" name="vat" value="<%= fromMinor(p.vat_minor) %>">
+              <input type="hidden" name="total_with_vat" value="<%= fromMinor(p.total_with_vat_minor) %>">
+              <input type="hidden" name="currency" value="<%= p.currency %>">
+              <input type="hidden" name="blurb" value="<%= p.blurb || '' %>">
+              <input type="hidden" name="features" value="<%= p.features || '' %>">
+              <input type="hidden" name="sort_order" value="<%= p.sort_order %>">
+              <input type="hidden" name="is_active" value="1">
+              <button class="ap-btn sm" type="submit">
+                <span class="material-icons">unarchive</span> Restore
+              </button>
+            </form>
+          </td>
+        </tr>
+<% }); %>
+      </tbody>
+    </table>
+  </div>
+</div>
+<% } %>
+
+<%# ---- New package --------------------------------------------------------- %>
+
+<template id="tplNewPlan">
+  <h3>New package</h3>
+  <p class="ap-card-sub">Leave a total blank and it is worked out from the per-month price.</p>
+
+  <form method="post" action="/admin/plans/new">
+    <%- include('partials/plan-fields', {
+          p: {
+            slug: '', name: '', period_months: 3, interval_label: 'Month', interval_count: 3,
+            price_per_month_minor: 0, total_minor: 0, discounted_minor: 0, vat_minor: 0,
+            total_with_vat_minor: 0, currency: 'GBP', blurb: '', features: '',
+            is_popular: 0, is_active: 1, is_default: 0, is_archived: 0, sort_order: 50,
+            paypal_image: '',
+          },
+          money, fromMinor, idPrefix: 'new',
+        }) %>
+
+    <div class="ap-btn-row" style="justify-content:flex-end">
+      <button class="ap-btn ghost" type="button" data-modal-close>Cancel</button>
+      <button class="ap-btn primary" type="submit">Create package</button>
+    </div>
+  </form>
+</template>
+
+<%- include('partials/shell-bottom') %>

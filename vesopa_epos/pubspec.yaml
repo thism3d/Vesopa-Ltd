@@ -1,0 +1,216 @@
+name: vesopa_epos
+description: "A UK provider of electronic point of sale systems."
+# The following line prevents the package from being accidentally published to
+# pub.dev using `flutter pub publish`. This is preferred for private packages.
+publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+
+# The following defines the version and build number for your application.
+# A version number is three numbers separated by dots, like 1.2.43
+# followed by an optional build number separated by a +.
+# Both the version and the builder number may be overridden in flutter
+# build by specifying --build-name and --build-number, respectively.
+# In Android, build-name is used as versionName while build-number used as versionCode.
+# Read more about Android versioning at https://developer.android.com/studio/publish/versioning
+# In iOS, build-name is used as CFBundleShortVersionString while build-number is used as CFBundleVersion.
+# Read more about iOS versioning at
+# https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
+# In Windows, build-name is used as the major, minor, and patch parts
+# of the product and file versions while build-number is used as the build suffix.
+version: 1.3.1+4
+
+environment:
+  sdk: ^3.11.3
+
+# Dependencies specify other packages that your package needs in order to work.
+# To automatically upgrade your package dependencies to the latest versions
+# consider running `flutter pub upgrade --major-versions`. Alternatively,
+# dependencies can be manually updated by changing the version numbers below to
+# the latest version available on pub.dev. To see which dependencies have newer
+# versions available, run `flutter pub outdated`.
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # The following adds the Cupertino Icons font to your application.
+  # Use with the CupertinoIcons class for iOS style icons.
+  cupertino_icons: ^1.0.8
+  drift: ^2.34.2
+  sqlite3_flutter_libs: ^0.6.0+eol
+  path_provider: ^2.1.6
+  path: ^1.9.1
+  riverpod: ^3.3.2
+  flutter_riverpod: ^3.3.2
+  uuid: ^4.5.3
+  intl: ^0.20.3
+  http: ^1.6.0
+  web_socket_channel: ^3.0.3
+  connectivity_plus: ^7.2.0
+  esc_pos_utils_plus: ^2.0.4
+  flutter_libserialport: ^0.6.0
+  image: ^4.8.0
+  shared_preferences: ^2.5.5
+  pdf: ^3.12.0
+  printing: ^5.14.3
+  url_launcher: ^6.3.0
+  # Choosing an idle-screen background from this terminal's own disk. Desktop
+  # and Android only in practice, which is every platform a till runs on.
+  file_selector: ^1.0.3
+  window_manager: ^0.5.2
+  # In-app card entry (TEMPORARILY DISABLED — see lib/ui/card_checkout_page.dart).
+  # The hosted checkout is meant to render inside the till rather than being
+  # handed to the system browser: a clerk who has to alt-tab to another window
+  # mid-service loses the sale on screen, and on a kiosked Windows till there
+  # may be no browser to hand it to at all.
+  #
+  # Two packages because there is no one webview: `webview_flutter` is the
+  # first-party Android/iOS one, `webview_windows` wraps WebView2 on the desktop
+  # till. webview_windows 0.4.0's CMake step (NuGet fetch + WebView2 SDK) is
+  # currently blocking Windows builds, so both are commented out together —
+  # not removed — until that is sorted. The till falls back to the system
+  # browser for card checkout in the meantime; nothing else depends on these.
+  # webview_flutter: ^4.13.0
+  # webview_windows: ^0.4.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  # The "flutter_lints" package below contains a set of recommended lints to
+  # encourage good coding practices. The lint set provided by the package is
+  # activated in the `analysis_options.yaml` file located at the root of your
+  # package. See that file for information about deactivating specific lint
+  # rules and activating additional ones.
+  flutter_lints: ^6.0.0
+  drift_dev: ^2.34.0
+  build_runner: ^2.15.1
+  flutter_launcher_icons: ^0.14.4
+  msix: ^3.18.0
+
+# Microsoft Store packaging. Build with `dart run msix:create --store`.
+#
+# The three identity values below are assigned by the Store (Partner Center ->
+# Product -> Product identity) and must match it character for character, or
+# the upload is rejected. They are not ours to choose:
+#
+#   Package/Identity/Name                  -> identity_name
+#   Package/Identity/Publisher             -> publisher
+#   Package/Properties/PublisherDisplayName-> publisher_display_name
+#
+# Note publisher is a GUID, *not* the company name — that is what the Store
+# issues. And the display name is "Ltd", not "Limited"; it reads like a typo
+# but Partner Center is authoritative and a mismatch fails the upload.
+#
+# No certificate appears here on purpose: Microsoft signs Store packages
+# themselves, so `--store` produces an unsigned package and any certificate_path
+# / certificate_password would be both unused and a secret in source control.
+# Signing is only needed for sideloading, which this config no longer does.
+msix_config:
+  display_name: VESOPA
+  publisher_display_name: Vesopa EPOS Ltd
+  identity_name: MeirionDavies.Vesopa
+  publisher: CN=3AD172E6-2CBA-4B09-AD50-B52C88D57FB3
+  # Four parts, and the Store requires the last to be 0. A version can never be
+  # reused, so bump this for every submission — including a resubmission after
+  # a failed certification.
+  msix_version: 1.3.1.0
+  # The full-resolution master, not the .ico. msix scales this one file up to
+  # the Store's Wide310x150Logo and to Square150x150Logo at scale-400 (600px),
+  # so feeding it the icon meant generating 600px tiles from a 48px frame.
+  logo_path: assets\brand\512x512.png
+  capabilities: internetClient, privateNetworkClientServer
+  languages: en-us
+  # Lets the till be launched as `vesopa` from a command line or shortcut, and
+  # deep-linked as vesopa:// (used for returning from the Dojo checkout window).
+  execution_alias: vesopa
+  protocol_activation: vesopa
+  # Both irrelevant to a Store package: Microsoft handles trust, and a till that
+  # launches itself on boot invites certification questions we do not need on a
+  # first submission. Revisit enable_at_startup once the app is through review.
+  install_certificate: false
+  enable_at_startup: false
+
+# For information on the generic Dart part of this file, see the
+# following page: https://dart.dev/tools/pub/pubspec
+
+# The following section is specific to Flutter packages.
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/brand/
+    # Receipt fonts. Listed file-by-file rather than as a directory so a stray
+    # TTF dropped in later cannot quietly grow the bundle. These are read with
+    # rootBundle.load() by ReceiptFonts, so they are assets, not a `fonts:`
+    # family — the PDF package parses the TTF itself and never asks Flutter's
+    # font system for them.
+    #
+    # Without these the built-in Helvetica silently drops "£" and every
+    # non-Latin-1 character. Do not remove them to save space.
+    - assets/fonts/OpenSans-Regular.ttf
+    - assets/fonts/OpenSans-Bold.ttf
+    - assets/fonts/OpenSans-Italic.ttf
+    - assets/fonts/OFL.txt
+
+# App icon for every platform, generated from the Vesopa mark.
+flutter_launcher_icons:
+  image_path: "assets/brand/512x512.png"
+  android: true
+  ios: true
+  # The App Store rejects icons with an alpha channel; flatten it onto the
+  # brand lime rather than have the submission bounce.
+  remove_alpha_ios: true
+  background_color_ios: "#a5c715"
+  macos:
+    generate: true
+    image_path: "assets/brand/512x512.png"
+  # NOTE: do not rely on this for the Windows icon. flutter_launcher_icons
+  # writes app_icon.ico with a *single* frame — `encodeIco()` on one resized
+  # image — and its default icon_size is 48. That single 48px frame was what
+  # shipped, so Windows upscaled it ~5x for the desktop and Alt-Tab icon and
+  # downscaled it for the taskbar: the artwork was right, every rendered size
+  # was soft.
+  #
+  # icon_size below only raises the floor if this generator is ever run on its
+  # own. The real icon is built by `dart run tool/make_windows_icon.dart`, which
+  # produces a proper 10-frame .ico. Run it after any run of this generator,
+  # because this one will overwrite it.
+  windows:
+    generate: true
+    image_path: "assets/brand/512x512.png"
+    icon_size: 256
+  # Android masks up to a third off every edge of an adaptive icon, so the
+  # foreground is the bare V on transparency (inset for the crop) over the brand
+  # lime — feeding it the full square icon would crop into the mark.
+  adaptive_icon_background: "#a5c715"
+  adaptive_icon_foreground: "assets/brand/icon_foreground.png"
+
+  # To add assets to your application, add an assets section, like this:
+  # assets:
+  #   - images/a_dot_burr.jpeg
+  #   - images/a_dot_ham.jpeg
+
+  # An image asset can refer to one or more resolution-specific "variants", see
+  # https://flutter.dev/to/resolution-aware-images
+
+  # For details regarding adding assets from package dependencies, see
+  # https://flutter.dev/to/asset-from-package
+
+  # To add custom fonts to your application, add a fonts section here,
+  # in this "flutter" section. Each entry in this list should have a
+  # "family" key with the font family name, and a "fonts" key with a
+  # list giving the asset and other descriptors for the font. For
+  # example:
+  # fonts:
+  #   - family: Schyler
+  #     fonts:
+  #       - asset: fonts/Schyler-Regular.ttf
+  #       - asset: fonts/Schyler-Italic.ttf
+  #         style: italic
+  #   - family: Trajan Pro
+  #     fonts:
+  #       - asset: fonts/TrajanPro.ttf
+  #       - asset: fonts/TrajanPro_Bold.ttf
+  #         weight: 700
+  #
+  # For details regarding fonts from package dependencies,
+  # see https://flutter.dev/to/font-from-package

@@ -1,0 +1,1138 @@
+/*
+ * Vesopa admin panel.
+ *
+ * Self-contained: none of main0.0.1.css / main_admin.css / main0.1.3.css is
+ * loaded on these screens. Those three were the PHP panel's stylesheets, they
+ * fight each other over the same selectors, and between them they define
+ * `#main_container` four times. Building on top would have meant every new rule
+ * carrying an !important.
+ *
+ * Brand palette from the 2025 brand book:
+ *   Leafy Canopy #A5C715   Inkblot #354248   Black #000   White #FFF
+ */
+
+:root {
+  --lime: #a5c715;
+  --lime-dim: #8aa711;
+  --lime-glow: rgba(165, 199, 21, 0.16);
+
+  --bg: #0d1014;
+  --panel: #141a1f;
+  --panel-2: #1a2229;
+  --raised: #202a32;
+  --line: #2a353e;
+  --line-soft: #212b33;
+
+  --ink: #eef2f4;
+  --ink-2: #b3c0c9;
+  --ink-3: #7d8b95;
+
+  --danger: #ff4d6a;
+  --danger-dim: rgba(255, 77, 106, 0.14);
+  --warn: #ffb020;
+  --warn-dim: rgba(255, 176, 32, 0.14);
+  --ok: #3ddc84;
+  --ok-dim: rgba(61, 220, 132, 0.14);
+  --info: #4aa8ff;
+  --info-dim: rgba(74, 168, 255, 0.14);
+
+  --radius: 12px;
+  --radius-sm: 8px;
+  --sidebar-w: 244px;
+
+  --font: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  --font-display: 'Orbitron', var(--font);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--lime); text-decoration: none; }
+a:hover { color: #c2e33a; }
+
+h1, h2, h3, h4 { margin: 0 0 .4em; line-height: 1.25; font-weight: 700; }
+h1 { font-size: 26px; }
+h2 { font-size: 20px; }
+h3 { font-size: 17px; }
+p { margin: 0 0 1em; }
+p:last-child { margin-bottom: 0; }
+
+/* ---- Layout -------------------------------------------------------------- */
+
+.ap {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) 1fr;
+  min-height: 100vh;
+}
+
+.ap-side {
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+
+.ap-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 18px 16px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.ap-brand img { width: 30px; height: 30px; }
+.ap-brand-name {
+  font-family: var(--font-display);
+  font-size: 14px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.ap-brand-sub { display: block; font-size: 10px; color: var(--ink-3); letter-spacing: .14em; }
+
+.ap-nav { padding: 12px 10px; flex: 1; }
+.ap-nav-group {
+  font-size: 10px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  padding: 14px 10px 6px;
+}
+.ap-nav a {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 9px 11px;
+  border-radius: var(--radius-sm);
+  color: var(--ink-2);
+  font-size: 14px;
+  transition: background .15s, color .15s;
+}
+.ap-nav a:hover { background: var(--panel-2); color: var(--ink); }
+.ap-nav a.is-active {
+  background: var(--lime-glow);
+  color: var(--lime);
+  font-weight: 500;
+  box-shadow: inset 2px 0 0 var(--lime);
+}
+.ap-nav .material-icons { font-size: 19px; }
+
+/* A count that only appears when there is something to count. */
+.ap-pill {
+  margin-left: auto;
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+  line-height: 18px;
+}
+.ap-pill.is-warn { background: var(--warn); color: #1a1400; }
+
+.ap-side-foot {
+  padding: 14px 16px;
+  border-top: 1px solid var(--line-soft);
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.ap-side-foot a { color: var(--ink-2); }
+
+.ap-main { min-width: 0; display: flex; flex-direction: column; }
+
+.ap-top {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 26px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(13, 16, 20, .86);
+  backdrop-filter: blur(10px);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+.ap-top h1 { font-size: 19px; margin: 0; }
+.ap-top-spacer { flex: 1; }
+.ap-who { font-size: 13px; color: var(--ink-3); }
+.ap-who strong { color: var(--ink-2); font-weight: 500; }
+
+.ap-burger {
+  display: none;
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  padding: 5px 8px;
+  cursor: pointer;
+}
+
+.ap-body { padding: 24px 26px 60px; max-width: 1440px; width: 100%; }
+
+/* ---- Flash messages ------------------------------------------------------ */
+
+.ap-flash {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 15px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 18px;
+  font-size: 14px;
+}
+.ap-flash.ok   { background: var(--ok-dim);     color: var(--ok);     border: 1px solid rgba(61,220,132,.3); }
+.ap-flash.err  { background: var(--danger-dim); color: var(--danger); border: 1px solid rgba(255,77,106,.3); }
+.ap-flash.warn { background: var(--warn-dim);   color: var(--warn);   border: 1px solid rgba(255,176,32,.3); }
+.ap-flash .material-icons { font-size: 19px; }
+
+/* ---- Cards --------------------------------------------------------------- */
+
+.ap-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-bottom: 20px;
+}
+.ap-card-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: -4px 0 16px;
+}
+.ap-card-head h2, .ap-card-head h3 { margin: 0; }
+.ap-card-head .ap-spacer { flex: 1; }
+.ap-card-sub { color: var(--ink-3); font-size: 13px; margin: -10px 0 16px; }
+
+.ap-grid { display: grid; gap: 18px; }
+.ap-grid.cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ap-grid.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.ap-grid.cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+/* ---- Stat tiles ---------------------------------------------------------- */
+
+.ap-stat {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  position: relative;
+  overflow: hidden;
+}
+.ap-stat::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--lime);
+  opacity: .8;
+}
+.ap-stat.is-warn::after   { background: var(--warn); }
+.ap-stat.is-danger::after { background: var(--danger); }
+.ap-stat.is-info::after   { background: var(--info); }
+
+.ap-stat-label {
+  font-size: 11px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin: 0 0 6px;
+}
+.ap-stat-value {
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0;
+  line-height: 1.1;
+  word-break: break-word;
+}
+.ap-stat-note { font-size: 12px; color: var(--ink-3); margin: 6px 0 0; }
+.ap-stat-note.up   { color: var(--ok); }
+.ap-stat-note.down { color: var(--danger); }
+
+/* ---- Tables -------------------------------------------------------------- */
+
+.ap-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+.ap-table { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 620px; }
+.ap-table th {
+  text-align: left;
+  padding: 11px 14px;
+  font-size: 11px;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  font-weight: 600;
+  background: var(--panel-2);
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+.ap-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--ink-2);
+  vertical-align: middle;
+}
+.ap-table tbody tr:last-child td { border-bottom: none; }
+.ap-table tbody tr:hover td { background: var(--panel-2); }
+.ap-table td strong, .ap-table td .ap-primary { color: var(--ink); font-weight: 500; }
+.ap-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ap-table .actions { text-align: right; white-space: nowrap; }
+.ap-empty { padding: 34px 20px; text-align: center; color: var(--ink-3); }
+
+/* ---- Badges -------------------------------------------------------------- */
+
+.ap-badge {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.ap-badge.ok      { background: var(--ok-dim);     color: var(--ok); }
+.ap-badge.warn    { background: var(--warn-dim);   color: var(--warn); }
+.ap-badge.danger  { background: var(--danger-dim); color: var(--danger); }
+.ap-badge.info    { background: var(--info-dim);   color: var(--info); }
+.ap-badge.muted   { background: var(--raised);     color: var(--ink-3); }
+.ap-badge.lime    { background: var(--lime-glow);  color: var(--lime); }
+
+/* ---- Buttons ------------------------------------------------------------- */
+
+.ap-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 8px 15px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--raised);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background .15s, border-color .15s, color .15s;
+  white-space: nowrap;
+}
+.ap-btn:hover { background: #26333d; color: var(--ink); }
+.ap-btn .material-icons { font-size: 17px; }
+
+.ap-btn.primary {
+  background: var(--lime);
+  border-color: var(--lime);
+  color: #101401;
+  font-weight: 700;
+}
+.ap-btn.primary:hover { background: #b6da1c; border-color: #b6da1c; color: #101401; }
+
+.ap-btn.danger { color: var(--danger); border-color: rgba(255,77,106,.35); background: var(--danger-dim); }
+.ap-btn.danger:hover { background: rgba(255,77,106,.22); }
+
+.ap-btn.ghost { background: transparent; }
+.ap-btn.sm { padding: 5px 10px; font-size: 12.5px; }
+.ap-btn[disabled] { opacity: .45; cursor: not-allowed; }
+
+.ap-btn-row { display: flex; flex-wrap: wrap; gap: 9px; }
+
+/* Icon-only action in a table row. */
+.ap-icon-btn {
+  background: none;
+  border: none;
+  color: var(--ink-3);
+  cursor: pointer;
+  padding: 5px;
+  border-radius: 6px;
+  line-height: 0;
+}
+.ap-icon-btn:hover { background: var(--raised); color: var(--ink); }
+.ap-icon-btn.danger:hover { background: var(--danger-dim); color: var(--danger); }
+.ap-icon-btn .material-icons { font-size: 19px; }
+
+/* ---- Forms --------------------------------------------------------------- */
+
+.ap-field { margin-bottom: 15px; }
+.ap-field label,
+.ap-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin-bottom: 6px;
+}
+.ap-field .hint { font-size: 12px; color: var(--ink-3); margin: 5px 0 0; text-transform: none; letter-spacing: 0; }
+
+.ap-input, .ap-select, .ap-textarea {
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 14px;
+  transition: border-color .15s, box-shadow .15s;
+}
+.ap-input:focus, .ap-select:focus, .ap-textarea:focus {
+  outline: none;
+  border-color: var(--lime);
+  box-shadow: 0 0 0 3px var(--lime-glow);
+}
+.ap-textarea { min-height: 110px; resize: vertical; line-height: 1.6; }
+.ap-textarea.tall { min-height: 340px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+.ap-select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%237d8b95' d='M1 1l5 5 5-5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 32px;
+}
+.ap-input::placeholder, .ap-textarea::placeholder { color: #5c6a74; }
+
+.ap-check { display: flex; align-items: center; gap: 9px; margin-bottom: 11px; }
+.ap-check input { width: 16px; height: 16px; accent-color: var(--lime); }
+.ap-check label { margin: 0; text-transform: none; letter-spacing: 0; font-size: 14px; font-weight: 400; color: var(--ink-2); }
+
+.ap-form-grid { display: grid; gap: 0 16px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ap-form-grid.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.ap-form-grid .span-2 { grid-column: 1 / -1; }
+
+.ap-prefix { position: relative; }
+.ap-prefix span {
+  position: absolute;
+  left: 12px; top: 50%;
+  transform: translateY(-50%);
+  color: var(--ink-3);
+  font-size: 14px;
+  pointer-events: none;
+}
+.ap-prefix .ap-input { padding-left: 26px; }
+
+/* ---- Tabs / filters ------------------------------------------------------ */
+
+.ap-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 10px;
+}
+.ap-tabs a {
+  padding: 6px 13px;
+  border-radius: 999px;
+  font-size: 13px;
+  color: var(--ink-2);
+  background: var(--panel-2);
+  border: 1px solid transparent;
+}
+.ap-tabs a:hover { background: var(--raised); color: var(--ink); }
+.ap-tabs a.is-active { background: var(--lime-glow); color: var(--lime); border-color: rgba(165,199,21,.32); }
+
+.ap-search { display: flex; gap: 9px; flex-wrap: wrap; margin-bottom: 18px; }
+.ap-search .ap-input { max-width: 320px; }
+.ap-search .ap-select { max-width: 200px; }
+
+/* ---- Chart (inline SVG, no library) -------------------------------------- */
+
+.ap-chart { width: 100%; height: 220px; display: block; }
+.ap-chart-legend { display: flex; gap: 18px; flex-wrap: wrap; font-size: 12px; color: var(--ink-3); margin-top: 10px; }
+.ap-chart-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; }
+
+.ap-bars { display: flex; flex-direction: column; gap: 11px; }
+.ap-bar-row { display: grid; grid-template-columns: minmax(90px, 26%) 1fr auto; gap: 12px; align-items: center; font-size: 13px; }
+.ap-bar-track { height: 8px; background: var(--panel-2); border-radius: 999px; overflow: hidden; }
+.ap-bar-fill { height: 100%; background: var(--lime); border-radius: 999px; }
+.ap-bar-row .num { color: var(--ink); font-variant-numeric: tabular-nums; }
+
+/* ---- Detail lists -------------------------------------------------------- */
+
+.ap-dl { display: grid; grid-template-columns: max-content 1fr; gap: 9px 18px; font-size: 14px; }
+.ap-dl dt { color: var(--ink-3); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; padding-top: 2px; }
+.ap-dl dd { margin: 0; color: var(--ink); word-break: break-word; }
+
+.ap-timeline { list-style: none; margin: 0; padding: 0; }
+.ap-timeline li {
+  position: relative;
+  padding: 0 0 16px 22px;
+  border-left: 1px solid var(--line);
+  margin-left: 5px;
+}
+.ap-timeline li:last-child { border-left-color: transparent; padding-bottom: 0; }
+.ap-timeline li::before {
+  content: '';
+  position: absolute;
+  left: -5px; top: 5px;
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  background: var(--lime);
+}
+.ap-timeline .when { font-size: 12px; color: var(--ink-3); }
+.ap-timeline .what { color: var(--ink); font-size: 14px; }
+.ap-timeline .body { color: var(--ink-2); font-size: 13.5px; white-space: pre-wrap; }
+
+/* ---- Modal --------------------------------------------------------------- */
+
+.ap-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .72);
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+.ap-modal[hidden] { display: none; }
+.ap-modal-box {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  width: min(560px, 100%);
+  max-height: 88vh;
+  overflow-y: auto;
+  padding: 22px;
+}
+.ap-modal-box h3 { margin-bottom: 4px; }
+.ap-modal-box .ap-card-sub { margin-top: 0; }
+
+/* ---- File manager grid --------------------------------------------------- */
+
+.ap-files { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }
+.ap-file {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.ap-file-thumb {
+  height: 118px;
+  background: var(--panel-2);
+  display: grid;
+  place-items: center;
+  border-bottom: 1px solid var(--line-soft);
+  overflow: hidden;
+}
+.ap-file-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.ap-file-thumb .material-icons { font-size: 40px; color: var(--ink-3); }
+.ap-file-meta { padding: 12px 13px; flex: 1; }
+.ap-file-title { font-size: 14px; color: var(--ink); font-weight: 500; margin: 0 0 3px; word-break: break-word; }
+.ap-file-sub { font-size: 12px; color: var(--ink-3); margin: 0; }
+.ap-file-foot { display: flex; gap: 4px; padding: 8px 9px; border-top: 1px solid var(--line-soft); }
+.ap-file-foot .ap-spacer { flex: 1; }
+
+.ap-drop {
+  border: 2px dashed var(--line);
+  border-radius: var(--radius);
+  padding: 26px;
+  text-align: center;
+  color: var(--ink-3);
+  transition: border-color .15s, background .15s;
+}
+.ap-drop.is-over { border-color: var(--lime); background: var(--lime-glow); color: var(--lime); }
+
+/* ---- Login --------------------------------------------------------------- */
+
+.ap-login {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(900px 500px at 50% -10%, rgba(165,199,21,.10), transparent 70%),
+    var(--bg);
+}
+.ap-login-box {
+  width: min(400px, 100%);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 32px 28px;
+}
+.ap-login-box img { width: 46px; display: block; margin: 0 auto 16px; }
+.ap-login-box h1 { text-align: center; font-size: 20px; margin-bottom: 4px; }
+.ap-login-box .sub { text-align: center; color: var(--ink-3); font-size: 13px; margin-bottom: 22px; }
+.ap-login-box .ap-btn { width: 100%; margin-top: 6px; }
+
+/* ---- Utility ------------------------------------------------------------- */
+
+.ap-muted { color: var(--ink-3); }
+.ap-small { font-size: 12.5px; }
+.ap-right { text-align: right; }
+.ap-nowrap { white-space: nowrap; }
+.ap-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+.ap-mt { margin-top: 18px; }
+.ap-mb0 { margin-bottom: 0; }
+.ap-inline { display: inline; }
+.ap-hr { border: none; border-top: 1px solid var(--line); margin: 20px 0; }
+.ap-clip { display: flex; gap: 6px; align-items: center; }
+.ap-clip input {
+  flex: 1;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  padding: 6px 9px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--ink-2);
+}
+
+/* ---- Responsive ---------------------------------------------------------- */
+
+@media (max-width: 1100px) {
+  .ap-grid.cols-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ap-grid.cols-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 860px) {
+  .ap { grid-template-columns: 1fr; }
+
+  /* Off-canvas, not display:none — the drawer has to be able to slide back. */
+  .ap-side {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: var(--sidebar-w);
+    z-index: 60;
+    transform: translateX(-100%);
+    transition: transform .22s ease;
+  }
+  .ap-side.is-open { transform: none; box-shadow: 0 0 40px rgba(0,0,0,.6); }
+
+  .ap-scrim {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.6);
+    z-index: 50;
+  }
+  .ap-scrim[hidden] { display: none; }
+
+  .ap-burger { display: inline-flex; }
+  .ap-top { padding: 12px 16px; }
+  .ap-body { padding: 18px 16px 50px; }
+  .ap-grid.cols-2, .ap-grid.cols-3, .ap-grid.cols-4 { grid-template-columns: 1fr; }
+  .ap-form-grid, .ap-form-grid.cols-3 { grid-template-columns: 1fr; }
+  .ap-dl { grid-template-columns: 1fr; gap: 2px 0; }
+  .ap-dl dd { margin-bottom: 10px; }
+}
+
+@media (max-width: 520px) {
+  .ap-top h1 { font-size: 16px; }
+  .ap-who { display: none; }
+  .ap-stat-value { font-size: 22px; }
+}
+
+/* Everything here is chrome; if someone prints a screen they want the data. */
+@media print {
+  .ap-side, .ap-top, .ap-btn, .ap-icon-btn { display: none !important; }
+  .ap { grid-template-columns: 1fr; }
+  html, body { background: #fff; color: #000; }
+  .ap-card, .ap-table-wrap { border-color: #ccc; background: #fff; }
+  .ap-table td, .ap-table th { color: #000; }
+}
+
+/* ---------------------------------------------------------------------------
+   Blog editor (public/admin-library/editor.js)
+
+   Laid out like a mail composer: a grouped toolbar over a white document
+   surface. The sheet is white on purpose, and it is a reversal of what this
+   file said before.
+
+   The old note argued a white sheet inside a dark admin is "glare, not
+   fidelity". That is true of a *form field*, and false of a composer. The
+   published article is dark, but the thing being edited is a document, and
+   every editor an author has used — Roundcube, Word, Docs, Outlook — shows a
+   page. Editing dark-on-dark also made the colour picker useless: half the
+   swatches vanished against the background, so the author could not see what
+   they were choosing until the post was live.
+
+   The type scale still matches the published article, so heading sizes and
+   spacing are honest about the result.
+--------------------------------------------------------------------------- */
+
+.we {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  overflow: visible;
+  position: relative;
+}
+
+/* ---- toolbar ---- */
+
+.we-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1px;
+  padding: 5px 6px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  position: sticky;
+  top: 0;
+  z-index: 4;
+}
+
+.we-group { display: flex; align-items: center; gap: 1px; }
+/* Pushes the source toggle to the far end, where every composer puts it. */
+.we-group-end { margin-left: auto; }
+
+.we-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 4px 5px;
+  background: var(--line);
+}
+
+.we-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 29px;
+  height: 28px;
+  padding: 0 5px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: none;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.we-btn:hover:not(:disabled) { background: var(--raised); color: var(--ink); }
+.we-btn:active:not(:disabled) { background: var(--line); }
+.we-btn:disabled { opacity: .3; cursor: default; }
+.we-btn .material-icons { font-size: 18px; }
+
+/* The pressed look for bold/italic/align while the caret sits inside one. */
+.we-btn.is-on {
+  background: var(--lime-glow);
+  border-color: rgba(165, 199, 21, .45);
+  color: var(--lime);
+}
+
+.we-select {
+  height: 28px;
+  max-width: 132px;
+  padding: 0 4px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--panel-2);
+  color: var(--ink-2);
+  font-size: 12px;
+  cursor: pointer;
+}
+.we-select:hover:not(:disabled) { border-color: var(--ink-3); color: var(--ink); }
+.we-select:disabled { opacity: .3; cursor: default; }
+
+/* ---- popups (colour palette, table size) ---- */
+
+.we-pop {
+  position: absolute;
+  z-index: 20;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .5);
+}
+
+.we-pal {
+  display: grid;
+  grid-template-columns: repeat(7, 22px);
+  gap: 4px;
+}
+.we-sw {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, .18);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.we-sw:hover { transform: scale(1.14); border-color: #fff; }
+
+.we-pop-clear {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--ink-2);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.we-pop-clear:hover { border-color: var(--lime); color: var(--ink); }
+
+.we-tablegrid {
+  display: grid;
+  grid-template-columns: repeat(8, 17px);
+  gap: 2px;
+}
+.we-tablegrid i {
+  width: 17px;
+  height: 17px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--panel);
+  cursor: pointer;
+}
+.we-tablegrid i.is-on { background: var(--lime); border-color: var(--lime); }
+.we-pop-label {
+  margin-top: 7px;
+  color: var(--ink-3);
+  font-size: 11px;
+  text-align: center;
+}
+
+/* ---- the document surface ---- */
+
+.we-sheet {
+  max-height: 68vh;
+  overflow-y: auto;
+  padding: 18px;
+  background: var(--bg);
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+}
+
+.we-area {
+  min-height: 420px;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 40px 46px;
+  background: #fff;
+  color: #14181a;
+  border-radius: 3px;
+  box-shadow: 0 2px 14px rgba(0, 0, 0, .45);
+  font-size: 15.5px;
+  line-height: 1.72;
+  outline: none;
+}
+.we-area:focus { box-shadow: 0 2px 14px rgba(0, 0, 0, .45), 0 0 0 2px var(--lime); }
+
+/* Article typography, not panel typography. */
+.we-area > :first-child { margin-top: 0; }
+.we-area p { margin: 0 0 1.05em; }
+.we-area h2 { font-size: 25px; line-height: 1.25; margin: 1.5em 0 .5em; font-weight: 700; }
+.we-area h3 { font-size: 20px; line-height: 1.3; margin: 1.4em 0 .45em; font-weight: 700; }
+.we-area h4 { font-size: 16.5px; margin: 1.3em 0 .4em; font-weight: 700; }
+.we-area ul, .we-area ol { margin: 0 0 1.05em; padding-left: 1.4em; }
+.we-area li { margin-bottom: .35em; }
+.we-area a { color: #4d7c0f; text-decoration: underline; }
+
+.we-area blockquote {
+  margin: 1.3em 0;
+  padding: 4px 0 4px 18px;
+  border-left: 3px solid #a5c715;
+  color: #4a5250;
+  font-style: italic;
+}
+
+.we-area pre {
+  margin: 1.3em 0;
+  padding: 14px 16px;
+  border-radius: var(--radius-sm);
+  background: #f4f6f0;
+  border: 1px solid #e0e4d8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+.we-area code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .92em; }
+
+.we-area hr { border: 0; border-top: 1px solid #d8dcd2; margin: 1.8em 0; }
+
+.we-area figure { margin: 1.5em 0; }
+.we-area img { max-width: 100%; height: auto; border-radius: var(--radius-sm); display: block; }
+.we-area figcaption {
+  margin-top: 8px;
+  font-size: 12.5px;
+  color: #6b7280;
+  text-align: center;
+}
+
+.we-area table { width: 100%; margin: 1.4em 0; border-collapse: collapse; font-size: 14px; }
+.we-area th, .we-area td { border: 1px solid #d8dcd2; padding: 8px 10px; text-align: left; }
+.we-area th { background: #f4f6f0; font-weight: 700; }
+
+.we-status {
+  padding: 6px 12px;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
+
+/* The textarea is the form field and the source view at once: hidden in
+   WYSIWYG mode, shown in the sheet's place when the HTML button is pressed —
+   so there is exactly one place the body lives and no chance of the two
+   disagreeing at submit time. */
+.we-source { display: none; }
+.we.is-source .we-sheet { display: none; }
+.we.is-source .we-source {
+  display: block;
+  width: 100%;
+  min-height: 460px;
+  max-height: 68vh;
+  padding: 18px 20px;
+  border: 0;
+  border-radius: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.65;
+  resize: vertical;
+  outline: none;
+}
+
+@media (max-width: 900px) {
+  .we-area { padding: 26px 22px; }
+  .we-sheet { padding: 10px; }
+  .we-select { max-width: 104px; }
+}
+
+/* Pick-an-image strip, revealed by the editor's image button and by the cover
+   picker.
+
+   Tiles are a fixed size, not `1fr`. `1fr` was the bug: with only a handful of
+   images uploaded — the normal state early on — a `minmax(96px, 1fr)` column
+   stretches to fill whatever row space is left over, so two or three pictures
+   in a wide picker (the body-image one lives in the ~2-column-wide side of the
+   editor) rendered as a couple of huge tiles instead of a tidy grid of
+   thumbnails. Fixed-size tiles can't stretch: the picker always looks like a
+   grid of thumbnails, whether there are 3 images or 300, and `auto-fill` still
+   recomputes how many fit per row as the window resizes, so nothing is lost on
+   a narrow screen — the row just wraps sooner. */
+.we-picker {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+}
+.we-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 84px);
+  justify-content: start;
+  gap: 8px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+.we-picker-grid button {
+  position: relative;
+  width: 84px;
+  /* aspect-ratio, not a fixed pixel height: the tile scales with its own
+     width (fixed here, but this is the same rule the cover picker and the
+     body picker share) rather than needing a second number kept in sync. */
+  aspect-ratio: 4 / 3;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--bg);
+  cursor: pointer;
+}
+.we-picker-grid button:hover { border-color: var(--lime); }
+.we-picker-grid button:focus-visible { outline: 2px solid var(--lime); outline-offset: 1px; }
+.we-picker-grid img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* The filename, over the bottom of the tile on hover and focus.
+   At 84px a thumbnail of a screenshot is often not identifiable on its own,
+   and a `title` tooltip needs a hover-and-wait. This is the same information
+   without the delay, and it costs no layout height because it overlays. */
+.we-tile-name {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 8px 5px 3px;
+  background: linear-gradient(to top, rgba(0, 0, 0, .92), rgba(0, 0, 0, 0));
+  color: #fff;
+  font-size: 9.5px;
+  line-height: 1.25;
+  text-align: left;
+  /* Two lines then ellipsis, so a long filename cannot cover the picture it
+     is meant to be describing. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity .13s;
+}
+.we-picker-grid button:hover .we-tile-name,
+.we-picker-grid button:focus-visible .we-tile-name { opacity: 1; }
+
+/* The cover currently chosen. Without this the picker gives no feedback that
+   a click registered — the only confirmation was the preview image further
+   down the sidebar, which is off-screen on a short window. */
+.we-picker-grid button.is-on { border-color: var(--lime); box-shadow: 0 0 0 1px var(--lime); }
+.we-picker-grid button.is-on::after {
+  content: 'check';
+  font-family: 'Material Icons';
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: var(--lime);
+  color: #101401;
+  font-size: 13px;
+  line-height: 17px;
+  text-align: center;
+}
+
+/* Layout picker (views/admin/blog-edit.ejs). Each option draws a rough
+   thumbnail of what it produces — four lines of prose describing four layouts
+   all read the same, and the author is choosing something visual. */
+
+.ap-row-between { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+
+.ap-layouts { display: grid; gap: 8px; }
+
+.ap-layout {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  cursor: pointer;
+}
+.ap-layout:hover { border-color: var(--line); background: var(--raised); }
+.ap-layout.is-on { border-color: var(--lime); background: var(--lime-glow); }
+.ap-layout input { position: absolute; opacity: 0; pointer-events: none; }
+
+.ap-layout-text { display: grid; gap: 2px; min-width: 0; }
+.ap-layout-text strong { font-size: 13.5px; }
+.ap-layout-text em { font-style: normal; font-size: 11.5px; color: var(--ink-2); line-height: 1.45; }
+.ap-layout-hint { color: var(--ink-3) !important; }
+
+/* The thumbnails. .a is the image band, .b the headline, .c the body copy. */
+.ap-layout-art {
+  position: relative;
+  display: block;
+  width: 56px;
+  height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg);
+  overflow: hidden;
+}
+.ap-layout-art i { position: absolute; display: block; border-radius: 1px; }
+.ap-layout-art .a { background: var(--lime); opacity: .75; }
+.ap-layout-art .b { background: var(--ink-2); }
+.ap-layout-art .c { background: var(--ink-3); opacity: .5; }
+
+.ap-layout-standard .a { left: 6px; right: 6px; top: 5px; height: 13px; }
+.ap-layout-standard .b { left: 6px; width: 30px; top: 23px; height: 4px; }
+.ap-layout-standard .c { left: 6px; right: 6px; top: 31px; height: 8px; }
+
+.ap-layout-hero .a { left: 0; right: 0; top: 0; height: 24px; }
+.ap-layout-hero .b { left: 6px; width: 28px; top: 13px; height: 4px; background: #fff; }
+.ap-layout-hero .c { left: 6px; right: 6px; top: 30px; height: 8px; }
+
+.ap-layout-side .a { left: 5px; top: 5px; width: 20px; height: 20px; }
+.ap-layout-side .b { left: 29px; right: 5px; top: 7px; height: 4px; }
+.ap-layout-side .c { left: 5px; right: 5px; top: 30px; height: 8px; }
+
+.ap-layout-plain .a { display: none; }
+.ap-layout-plain .b { left: 6px; width: 32px; top: 8px; height: 4px; }
+.ap-layout-plain .c { left: 6px; right: 6px; top: 17px; height: 20px; }
+
+/* ---------------------------------------------------------------------------
+   Preview pane (the "Preview" button in the blog editor)
+
+   Deliberately dark, where the editor sheet above it is white. They are
+   answering two different questions: the sheet is the document you are
+   writing, the preview is the page a reader will land on. Styling the preview
+   like the editor would make it a second copy of the same answer.
+
+   These rules mirror .bl-post-body in public/library/brand.css. The pane had
+   no styles at all before, so a preview of a formatted post rendered as
+   unstyled browser-default HTML — which is exactly when the button is least
+   useful, since heavy formatting is what you would want to check.
+--------------------------------------------------------------------------- */
+
+.bp-body {
+  color: #d6ded9;
+  font-size: 15.5px;
+  line-height: 1.78;
+  background: #0b0d0c;
+}
+.bp-body > :first-child { margin-top: 0; }
+.bp-body p { margin: 0 0 20px; }
+.bp-body h2 { color: #fff; font-size: 24px; line-height: 1.25; margin: 32px 0 12px; }
+.bp-body h3 { color: #fff; font-size: 19px; margin: 28px 0 10px; }
+.bp-body h4 { color: #fff; font-size: 16.5px; margin: 24px 0 9px; }
+.bp-body strong { color: #fff; }
+.bp-body a { color: var(--lime); text-decoration: underline; text-underline-offset: 3px; }
+.bp-body ul, .bp-body ol { margin: 0 0 20px; padding-left: 23px; }
+.bp-body li { margin-bottom: 8px; }
+.bp-body img { max-width: 100%; height: auto; border-radius: 10px; display: block; margin: 22px 0; }
+.bp-body figure { margin: 22px 0; }
+.bp-body figcaption { color: #9aa6a0; font-size: 13px; text-align: center; margin-top: 8px; }
+.bp-body hr { border: 0; border-top: 1px solid rgba(255, 255, 255, .1); margin: 32px 0; }
+.bp-body blockquote {
+  margin: 24px 0;
+  padding: 4px 0 4px 18px;
+  border-left: 3px solid var(--lime);
+  color: #b9c4bd;
+  font-style: italic;
+}
+.bp-body pre {
+  margin: 24px 0;
+  padding: 14px 16px;
+  border-radius: 8px;
+  background: #050706;
+  border: 1px solid rgba(255, 255, 255, .1);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+.bp-body code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .92em; }
+/* Wide tables scroll inside their own box; the pane never scrolls sideways. */
+.bp-body table {
+  width: 100%;
+  margin: 0 0 22px;
+  border-collapse: collapse;
+  display: block;
+  overflow-x: auto;
+  font-size: 14px;
+}
+.bp-body th, .bp-body td { border: 1px solid rgba(255, 255, 255, .11); padding: 9px 12px; text-align: left; }
+.bp-body th { background: rgba(255, 255, 255, .05); color: #fff; font-weight: 600; }

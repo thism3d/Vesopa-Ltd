@@ -1,0 +1,107 @@
+<%- include('../partials/head') %>
+<%- include('../partials/header') %>
+
+<main id="main">
+<%- include('../partials/page-hero', {
+  kicker: 'Free website migration',
+  heading: 'We will move it,<br><span class="hl">you just check it</span>',
+  sub: 'Send us your current hosting login. We copy everything, you look at it on a preview address, and only then does anything change for your visitors.',
+  heroCta: { href: '/contact?subject=Migration', label: 'Start a migration' },
+}) %>
+
+<section class="section">
+  <div class="wrap wrap-narrow">
+    <div class="steps" data-reveal="0">
+      <div class="step">
+        <div>
+          <h2 class="h3 mb-1">You buy a plan and send us access</h2>
+          <p class="small muted mb-0">
+            cPanel, Plesk, DirectAdmin, a raw SSH login or an FTP account and a
+            database dump — whatever you have. If you are not sure what you have,
+            tell us the host's name and we will tell you what to ask them for.
+          </p>
+        </div>
+      </div>
+      <div class="step">
+        <div>
+          <h2 class="h3 mb-1">We copy the whole account</h2>
+          <p class="small muted mb-0">
+            Files, database, email accounts and their contents, cron jobs and
+            DNS records. Not just the public folder — the parts people forget are
+            the parts that break a week later.
+          </p>
+        </div>
+      </div>
+      <div class="step">
+        <div>
+          <h2 class="h3 mb-1">You check it on a preview URL</h2>
+          <p class="small muted mb-0">
+            Your site runs on our server at a temporary address while your live
+            site is still on the old host. Click around. Log in. Place a test
+            order. Nothing has changed for anybody else yet.
+          </p>
+        </div>
+      </div>
+      <div class="step">
+        <div>
+          <h2 class="h3 mb-1">We switch it when you say</h2>
+          <p class="small muted mb-0">
+            At a time you choose — most people pick an evening. We change the
+            nameservers, issue the SSL certificate and watch it propagate. Your
+            old host stays live throughout, so there is no window where the site
+            is down.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section section-tint">
+  <div class="wrap">
+    <div class="grid grid-2" style="gap:44px;align-items:center">
+      <div data-reveal="0">
+        <p class="kicker">The honest bits</p>
+        <h2 class="h1 mt-2 mb-2">What we cannot promise</h2>
+        <p class="lede">
+          Most migrations are boring and that is how we like them. But a few
+          things are genuinely outside our control, and you should hear them now
+          rather than mid-move.
+        </p>
+      </div>
+      <div class="grid" style="gap:14px" data-reveal="80">
+        <% [
+          ['DNS propagation is not instant', 'We can change the record in a second; some ISPs cache the old one for a few hours. Email is the part people notice — which is why we keep the old mailbox reachable during the switch.'],
+          ['Very old PHP may not run', 'We ship modern PHP. A site written for PHP 5.6 in 2014 may need a small amount of work. We will tell you before you buy, not after.'],
+          ['Custom server software', 'If your current host installed something unusual for you — a compiled extension, a background daemon — shared hosting may not be the right home. We will say so rather than take the money.'],
+        ].forEach(function (s) { %>
+          <div class="card">
+            <div class="row" style="gap:12px;align-items:flex-start">
+              <span style="color:var(--amber);flex:none;margin-top:2px"><%- icon('warning', 19) %></span>
+              <div>
+                <div class="strong"><%= s[0] %></div>
+                <div class="small muted"><%= s[1] %></div>
+              </div>
+            </div>
+          </div>
+        <% }); %>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap center">
+    <h2 class="h1 mb-2" data-reveal="0">Ready to move?</h2>
+    <p class="lede mb-3" data-reveal="40" style="max-width:50ch;margin-inline:auto">
+      Buy the plan that fits, then reply to the welcome email with your current
+      hosting details. Most moves are finished the same working day.
+    </p>
+    <div class="row" style="justify-content:center" data-reveal="80">
+      <a class="btn btn-lg" href="/hosting">Choose a plan</a>
+      <a class="btn btn-ghost btn-lg" href="/contact?subject=Migration">Ask about my site first</a>
+    </div>
+  </div>
+</section>
+</main>
+<%- include('../partials/footer') %>

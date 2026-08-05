@@ -1,0 +1,435 @@
+<%- include('partials/shell-top') %>
+
+<div class="ap-btn-row" style="margin-bottom:16px">
+  <a class="ap-btn ghost sm" href="/admin/offices">
+    <span class="material-icons">arrow_back</span> All offices
+  </a>
+  <span class="ap-badge <%= state.badge %>" style="align-self:center"><%= state.label %></span>
+  <% if (office.is_demo) { %><span class="ap-badge muted" style="align-self:center">demo account</span><% } %>
+  <% if (office.reminded_at) { %>
+  <span class="ap-badge info" style="align-self:center">last chased <%= formatDate(office.reminded_at) %></span>
+  <% } %>
+</div>
+
+<%# ---- At a glance -------------------------------------------------------- %>
+
+<div class="ap-grid cols-4">
+  <div class="ap-stat">
+    <p class="ap-stat-label">Subscription</p>
+    <p class="ap-stat-value"><%= money(office.monthly_fee_minor) %><span class="ap-small ap-muted">/mo</span></p>
+    <p class="ap-stat-note"><%= plan ? plan.name : 'No package' %> · <%= office.term_months %>-month term</p>
+  </div>
+  <div class="ap-stat <%= state.key === 'overdue' ? 'is-danger' : state.key === 'due' ? 'is-warn' : '' %>">
+    <p class="ap-stat-label">Renews</p>
+    <p class="ap-stat-value" style="font-size:20px"><%= formatDate(office.next_due_on) %></p>
+    <p class="ap-stat-note"><%= money(dueMinor) %> for the coming term</p>
+  </div>
+  <div class="ap-stat is-info">
+    <p class="ap-stat-label">Collected</p>
+    <p class="ap-stat-value"><%= moneyShort(collected) %></p>
+    <p class="ap-stat-note"><%= payments.length %> payment<%= payments.length === 1 ? '' : 's' %> on record</p>
+  </div>
+  <div class="ap-stat is-info">
+    <p class="ap-stat-label">Till turnover · 30d</p>
+    <p class="ap-stat-value"><%= moneyShort(tills.gross_30_minor) %></p>
+    <p class="ap-stat-note">
+      <%= Number(tills.orders || 0).toLocaleString('en-GB') %> orders all-time ·
+      last <%= tills.last_order_at ? formatDate(tills.last_order_at) : 'never' %>
+    </p>
+  </div>
+</div>
+
+<%# ---- Chase -------------------------------------------------------------- %>
+
+<div class="ap-card ap-mt" id="chase">
+  <div class="ap-card-head">
+    <h3>Chase this renewal</h3>
+    <div class="ap-spacer"></div>
+    <% if (office.contact_phone) { %>
+    <a class="ap-btn sm" href="tel:<%= office.contact_phone %>">
+      <span class="material-icons">call</span> <%= office.contact_phone %>
+    </a>
+    <% } %>
+  </div>
+  <p class="ap-card-sub">
+    Nothing here switches a till off. Send the email, or ring
+    <% if (office.contact_phone) { %><strong><%= office.contact_phone %></strong><% } else { %>
+    them — <strong class="ap-muted">no number is on file, add one below</strong><% } %>,
+    then log what happened so the next person doesn't repeat it.
+  </p>
+
+  <form method="post" action="/admin/offices/<%= office.id %>/remind">
+    <div class="ap-field">
+      <label>Subject</label>
+      <input class="ap-input" name="subject"
+             value="Your Vesopa EPOS subscription — <%= office.name %>" maxlength="255">
+    </div>
+    <div class="ap-field">
+      <label>Message to <%= office.contact_email %></label>
+      <textarea class="ap-textarea" name="body" rows="10" maxlength="6000"><%= draftBody %></textarea>
+      <p class="hint">
+        Sent on the branded template, with the plan, amount and date filled in
+        underneath, plus the line telling them their tills keep working.
+      </p>
+    </div>
+    <div class="ap-btn-row">
+      <button class="ap-btn primary" type="submit">
+        <span class="material-icons">send</span> Send reminder
+      </button>
+      <button class="ap-btn" type="button" data-modal-template="tplLogCall">
+        <span class="material-icons">phone_in_talk</span> Log a call
+      </button>
+      <button class="ap-btn ghost" type="button" data-modal-template="tplExtend">
+        <span class="material-icons">more_time</span> Extend the term
+      </button>
+    </div>
+  </form>
+</div>
+
+<div class="ap-grid cols-2">
+
+  <%# ---- The record ------------------------------------------------------- %>
+  <div>
+    <div class="ap-card">
+      <div class="ap-card-head"><h3>Account</h3></div>
+
+      <form method="post" action="/admin/offices/<%= office.id %>">
+        <div class="ap-form-grid">
+          <div class="ap-field span-2">
+            <label>Trading name</label>
+            <input class="ap-input" name="name" value="<%= office.name %>" required maxlength="255">
+          </div>
+
+          <div class="ap-field">
+            <label>Registered email</label>
+            <input class="ap-input" type="email" name="contact_email" value="<%= office.contact_email %>" required>
+            <p class="hint">
+              Changing this re-keys the tenant. Till data, clerks and orders are
+              stored against it — only change it if the old address is dead.
+            </p>
+          </div>
+
+          <div class="ap-field">
+            <label>Phone</label>
+            <input class="ap-input" name="contact_phone" value="<%= office.contact_phone || '' %>" maxlength="64">
+          </div>
+
+          <div class="ap-field">
+            <label>Contact name</label>
+            <input class="ap-input" name="contact_name" value="<%= office.contact_name || '' %>" maxlength="255">
+          </div>
+
+          <div class="ap-field">
+            <label>Status</label>
+            <select class="ap-select" name="status">
+<% ['active', 'paused', 'archived'].forEach(function (s) { %>
+              <option value="<%= s %>" <%= office.status === s ? 'selected' : '' %>><%= s %></option>
+<% }); %>
+            </select>
+            <p class="hint">Paused blocks sign-in. Never set automatically by an expiry.</p>
+          </div>
+
+          <div class="ap-field span-2">
+            <label>Pause reason (only used while paused)</label>
+            <input class="ap-input" name="pause_reason" value="<%= office.pause_reason || '' %>" maxlength="255">
+          </div>
+
+          <div class="ap-field">
+            <label>Package</label>
+            <select class="ap-select" name="plan">
+              <option value="">No package — fee set by hand</option>
+<% plans.forEach(function (p) { %>
+              <option value="<%= p.slug %>" <%= office.plan === p.slug ? 'selected' : '' %>>
+                <%= p.name %> · <%= p.period_months %>m · <%= money(p.price_per_month_minor) %>/mo
+              </option>
+<% }); %>
+            </select>
+          </div>
+
+          <div class="ap-field">
+            <label>Monthly fee</label>
+            <div class="ap-prefix">
+              <span>£</span>
+              <input class="ap-input" name="monthly_fee" value="<%= fromMinor(office.monthly_fee_minor) %>">
+            </div>
+            <p class="hint">Overrides the package price — for a grandfathered rate.</p>
+          </div>
+
+          <div class="ap-field">
+            <label>Term (months)</label>
+            <input class="ap-input" type="number" name="term_months" min="1" max="36"
+                   value="<%= office.term_months %>">
+          </div>
+
+          <div class="ap-field">
+            <label>Renews on</label>
+            <input class="ap-input" type="date" name="next_due_on" value="<%= isoDate(office.next_due_on) || '' %>">
+          </div>
+
+          <div class="ap-field">
+            <label>Trial ends</label>
+            <input class="ap-input" type="date" name="trial_ends_on" value="<%= isoDate(office.trial_ends_on) || '' %>">
+          </div>
+
+          <div class="ap-check">
+            <input type="checkbox" id="ofDemo" name="is_demo" value="1" <%= office.is_demo ? 'checked' : '' %>>
+            <label for="ofDemo">Demo / internal account</label>
+          </div>
+
+          <div class="ap-field span-2">
+            <label>Notes</label>
+            <textarea class="ap-textarea" name="notes" maxlength="2000"><%= office.notes || '' %></textarea>
+          </div>
+        </div>
+
+        <div class="ap-btn-row">
+          <button class="ap-btn primary" type="submit"><span class="material-icons">save</span> Save</button>
+        </div>
+      </form>
+    </div>
+
+    <%# ---- People ---------------------------------------------------------- %>
+    <div class="ap-card">
+      <div class="ap-card-head">
+        <h3>Back office logins</h3>
+        <div class="ap-spacer"></div>
+        <a class="ap-btn sm ghost" href="/admin/users?q=<%= encodeURIComponent(office.contact_email) %>">Manage</a>
+      </div>
+<% if (!users.length) { %>
+      <p class="ap-empty">No back-office login for this office yet.</p>
+<% } else { %>
+      <div class="ap-table-wrap">
+        <table class="ap-table" style="min-width:0">
+          <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th></tr></thead>
+          <tbody>
+<% users.forEach(function (u) { %>
+            <tr>
+              <td><a class="ap-primary" href="/admin/users?q=<%= encodeURIComponent(u.email) %>"><%= u.name %></a></td>
+              <td><%= u.email %></td>
+              <td><span class="ap-badge <%= u.role === 'admin' ? 'lime' : 'muted' %>"><%= u.role %></span></td>
+              <td><span class="ap-badge <%= u.approved === 'Y' ? 'ok' : 'danger' %>">
+                <%= u.approved === 'Y' ? 'active' : 'disabled' %></span></td>
+            </tr>
+<% }); %>
+          </tbody>
+        </table>
+      </div>
+<% } %>
+
+      <h3 style="margin:20px 0 10px; font-size:15px">Till sub-users</h3>
+<% if (!clerks.length) { %>
+      <p class="ap-muted ap-small">None set up. Clerks are created in the back office or on the
+        <a href="/admin/clerks?q=<%= encodeURIComponent(office.contact_email) %>">sub-users screen</a>.</p>
+<% } else { %>
+      <div class="ap-table-wrap">
+        <table class="ap-table" style="min-width:0">
+          <thead><tr><th>Clerk</th><th class="num">PLU id</th><th>Added</th></tr></thead>
+          <tbody>
+<% clerks.forEach(function (c) { %>
+            <tr><td><%= c.clark_name || '—' %></td><td class="num"><%= c.pluid %></td>
+                <td class="ap-nowrap"><%= formatDate(c.timeadded) %></td></tr>
+<% }); %>
+          </tbody>
+        </table>
+      </div>
+<% } %>
+    </div>
+  </div>
+
+  <%# ---- Money and history ------------------------------------------------- %>
+  <div>
+    <div class="ap-card">
+      <div class="ap-card-head">
+        <h3>Payments</h3>
+        <div class="ap-spacer"></div>
+        <button class="ap-btn primary sm" type="button" data-modal-template="tplPayment">
+          <span class="material-icons">add</span> Record a payment
+        </button>
+      </div>
+
+<% if (!payments.length) { %>
+      <p class="ap-empty">Nothing collected from this office yet.</p>
+<% } else { %>
+      <div class="ap-table-wrap">
+        <table class="ap-table" style="min-width:0">
+          <thead>
+            <tr><th>Paid</th><th>Method</th><th>Covers</th><th class="num">Amount</th><th class="actions"></th></tr>
+          </thead>
+          <tbody>
+<% payments.forEach(function (p) { %>
+            <tr>
+              <td class="ap-nowrap"><%= formatDate(p.paid_on) %></td>
+              <td style="text-transform:capitalize"><%= p.method %>
+                <% if (p.reference) { %><br><span class="ap-mono ap-muted"><%= p.reference %></span><% } %>
+              </td>
+              <td class="ap-small">
+                <% if (p.period_start) { %><%= formatDate(p.period_start) %> → <%= formatDate(p.period_end) %>
+                <% } else { %><span class="ap-muted">—</span><% } %>
+              </td>
+              <td class="num"><strong><%= money(p.amount_minor, p.currency) %></strong></td>
+              <td class="actions">
+                <form method="post" action="/admin/offices/<%= office.id %>/payment/<%= p.id %>/delete">
+                  <button class="ap-icon-btn danger" type="submit"
+                          data-confirm="Remove this <%= money(p.amount_minor, p.currency) %> payment from the ledger? The collection totals will change.">
+                    <span class="material-icons">delete_outline</span>
+                  </button>
+                </form>
+              </td>
+            </tr>
+<% }); %>
+          </tbody>
+        </table>
+      </div>
+<% } %>
+    </div>
+
+    <div class="ap-card">
+      <div class="ap-card-head">
+        <h3>Contact history</h3>
+        <div class="ap-spacer"></div>
+        <button class="ap-btn sm ghost" type="button" data-modal-template="tplLogCall">
+          <span class="material-icons">add_comment</span> Add
+        </button>
+      </div>
+
+<% if (!log.length) { %>
+      <p class="ap-empty">No contact recorded yet.</p>
+<% } else { %>
+      <ul class="ap-timeline">
+<% log.forEach(function (l) { %>
+        <li>
+          <p class="when">
+            <%= formatDateTime(l.created_at) %> · <%= l.admin_name || 'system' %>
+            <span class="ap-badge <%= l.outcome === 'failed' ? 'danger' : l.kind === 'call' ? 'info' : 'muted' %>">
+              <%= l.kind %><%= l.outcome ? ' · ' + l.outcome : '' %>
+            </span>
+          </p>
+          <% if (l.subject) { %><p class="what" style="margin:2px 0"><strong><%= l.subject %></strong></p><% } %>
+          <p class="body"><%= (l.body || '').slice(0, 900) %></p>
+        </li>
+<% }); %>
+      </ul>
+<% } %>
+    </div>
+  </div>
+</div>
+
+<%# ---- Dialogs ------------------------------------------------------------ %>
+
+<template id="tplPayment">
+  <h3>Record a payment</h3>
+  <p class="ap-card-sub">Goes straight into the collection figures.</p>
+
+  <form method="post" action="/admin/offices/<%= office.id %>/payment">
+    <div class="ap-form-grid">
+      <div class="ap-field">
+        <label>Amount</label>
+        <div class="ap-prefix">
+          <span>£</span>
+          <input class="ap-input" name="amount" required value="<%= fromMinor(dueMinor) %>">
+        </div>
+      </div>
+      <div class="ap-field">
+        <label>Paid on</label>
+        <input class="ap-input" type="date" name="paid_on" value="<%= today() %>" required>
+      </div>
+      <div class="ap-field">
+        <label>Method</label>
+        <select class="ap-select" name="method">
+          <option value="bank">Bank transfer</option>
+          <option value="card">Card</option>
+          <option value="paypal">PayPal</option>
+          <option value="cash">Cash</option>
+          <option value="cheque">Cheque</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div class="ap-field">
+        <label>Reference</label>
+        <input class="ap-input" name="reference" maxlength="120" placeholder="Invoice or txn id">
+      </div>
+      <div class="ap-field span-2">
+        <label>Note</label>
+        <input class="ap-input" name="note" maxlength="500">
+      </div>
+    </div>
+
+    <div class="ap-check">
+      <input type="checkbox" id="pmAdvance" name="advance" value="1" checked>
+      <label for="pmAdvance">
+        Move the renewal on <%= office.term_months %> month<%= office.term_months === 1 ? '' : 's' %>
+        (to <%= formatDate(addMonths(isoDate(office.next_due_on) || today(), office.term_months)) %>)
+      </label>
+    </div>
+
+    <div class="ap-btn-row" style="justify-content:flex-end">
+      <button class="ap-btn ghost" type="button" data-modal-close>Cancel</button>
+      <button class="ap-btn primary" type="submit">Record payment</button>
+    </div>
+  </form>
+</template>
+
+<template id="tplLogCall">
+  <h3>Log contact</h3>
+  <p class="ap-card-sub">What you did, so nobody chases them twice.</p>
+
+  <form method="post" action="/admin/offices/<%= office.id %>/log">
+    <div class="ap-form-grid">
+      <div class="ap-field">
+        <label>Kind</label>
+        <select class="ap-select" name="kind">
+          <option value="call">Phone call</option>
+          <option value="email">Email (sent myself)</option>
+          <option value="note">Note</option>
+        </select>
+      </div>
+      <div class="ap-field">
+        <label>Outcome</label>
+        <select class="ap-select" name="outcome">
+          <option value="spoke">Spoke to them</option>
+          <option value="voicemail">Left voicemail</option>
+          <option value="no-answer">No answer</option>
+          <option value="promised">Promised to pay</option>
+          <option value="disputed">Disputed</option>
+        </select>
+      </div>
+      <div class="ap-field span-2">
+        <label>Subject</label>
+        <input class="ap-input" name="subject" maxlength="255">
+      </div>
+      <div class="ap-field span-2">
+        <label>What happened</label>
+        <textarea class="ap-textarea" name="body" required maxlength="4000"></textarea>
+      </div>
+    </div>
+    <div class="ap-btn-row" style="justify-content:flex-end">
+      <button class="ap-btn ghost" type="button" data-modal-close>Cancel</button>
+      <button class="ap-btn primary" type="submit">Save to history</button>
+    </div>
+  </form>
+</template>
+
+<template id="tplExtend">
+  <h3>Extend the term</h3>
+  <p class="ap-card-sub">
+    Moves the renewal date without recording money. For goodwill, a comped
+    account, or fixing a date that was wrong.
+  </p>
+
+  <form method="post" action="/admin/offices/<%= office.id %>/extend">
+    <div class="ap-field">
+      <label>Months</label>
+      <input class="ap-input" type="number" name="months" value="<%= office.term_months %>" min="1" max="36" required>
+      <p class="hint">
+        Counted from <%= (isoDate(office.next_due_on) && isoDate(office.next_due_on) >= today())
+          ? formatDate(office.next_due_on) : 'today, because the term has already lapsed' %>.
+      </p>
+    </div>
+    <div class="ap-btn-row" style="justify-content:flex-end">
+      <button class="ap-btn ghost" type="button" data-modal-close>Cancel</button>
+      <button class="ap-btn primary" type="submit">Extend</button>
+    </div>
+  </form>
+</template>
+
+<%- include('partials/shell-bottom') %>

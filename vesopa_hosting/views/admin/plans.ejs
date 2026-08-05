@@ -1,0 +1,42 @@
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
+<%- include('../partials/admin-shell', { pageTitle: 'Hosting plans', pageSub: 'Edits go live on the site immediately.' }) %>
+
+<div class="p-card p-card-flush">
+  <div class="table-wrap"><table class="table mini">
+    <thead><tr><th>Plan</th><th class="num">Monthly</th><th class="num">1 year</th><th class="num">2 years</th><th class="num">3 years</th><th class="num">Sites</th><th>Free domain</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+      <% plans.forEach(function (p) { %>
+        <tr>
+          <td>
+            <span class="strong"><%= p.name %></span>
+            <% if (p.badge) { %> <span class="badge badge-lime"><%= p.badge %></span><% } %>
+            <br><span class="tiny muted"><%= p.slug %> · hestia: <%= p.hestia_package %> · <%= p.storage_gb %> GB</span>
+          </td>
+          <td class="num"><%= money(p.monthly_pence) %><br><span class="tiny muted">full rate</span></td>
+          <% [12, 24, 36].forEach(function (m) { %>
+            <td class="num">
+              <%= money(p.price[m]) %>
+              <br><span class="tiny muted"><%= money(p.perMonthPence[m]) %>/mo<% if (p.saving[m] > 0) { %> · −<%= p.saving[m] %>%<% } %></span>
+            </td>
+          <% }); %>
+          <td class="num"><%= p.websites %></td>
+          <td>
+            <%# The rule in one glance: the flag only ever applies from 12 months. %>
+            <% if (p.free_domain) { %>
+              <span class="badge badge-green">1yr+</span>
+            <% } else { %>
+              <span class="badge badge-grey">No</span>
+            <% } %>
+          </td>
+          <%# Unescaped output: this value is markup, and escaping it printed
+              the literal span tags into the cell. %>
+          <td><%- p.active ? '<span class="badge badge-green">Live</span>' : '<span class="badge badge-grey">Hidden</span>' %></td>
+          <td class="num"><a class="btn btn-ghost btn-sm" href="/admin/plans/<%= p.id %>">Edit</a></td>
+        </tr>
+      <% }); %>
+    </tbody>
+  </table></div>
+</div>
+
+<%- include('../partials/panel-shell-end') %>
+<%- include('../partials/footer') %>

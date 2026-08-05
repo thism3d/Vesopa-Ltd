@@ -1,0 +1,17 @@
+<%- include('../partials/head') %>
+<div class="auth-page">
+  <div class="auth-card center">
+    <a class="auth-brand" href="/" style="justify-content:center">
+      <img src="/assets/img/brand/vesopa_logo.png" alt="Vesopa" width="150" height="22">
+      <span class="brand-sub">Hosting</span>
+    </a>
+    <div class="f-icon" style="width:56px;height:56px;margin:0 auto 16px;background:#fdf3d6;color:#8a6400">
+      <%- icon('clock', 28) %>
+    </div>
+    <h1><%= heading %></h1>
+    <p class="lede"><%= message %></p>
+    <a class="btn btn-block btn-lg" href="/forgot">Request a new link</a>
+    <p class="auth-alt mb-0"><a href="/login">Back to sign in</a></p>
+  </div>
+</div>
+<%- include('../partials/footer') %>

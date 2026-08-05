@@ -1,0 +1,83 @@
+<%- include('../partials/head') %>
+<%- include('../partials/header') %>
+
+<main id="main">
+<%- include('../partials/page-hero', {
+  kicker: 'Contact',
+  heading: 'Talk to <span class="hl">a person</span>',
+  sub: 'A question about a plan, a migration, or something that is not working. We read every message.',
+}) %>
+
+<section class="section">
+  <div class="wrap">
+    <div class="split-aside">
+      <div data-reveal="0">
+        <% if (Object.keys(errors).length) { %>
+          <div class="alert alert-error">
+            <%- icon('warning', 19) %>
+            <div>Please check the fields below and try again.</div>
+          </div>
+        <% } %>
+
+        <form method="post" action="/contact" data-guard>
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <%# Honeypot: hidden from people, irresistible to bots. %>
+          <div style="position:absolute;left:-9999px" aria-hidden="true">
+            <label>Website<input type="text" name="website" tabindex="-1" autocomplete="off"></label>
+          </div>
+
+          <div class="grid grid-2" style="gap:0 18px">
+            <div class="field <%= errors.name ? 'field-error' : '' %>">
+              <label class="label" for="name">Your name</label>
+              <input class="input" id="name" name="name" value="<%= values.name || '' %>" required>
+              <% if (errors.name) { %><p class="error-text"><%= errors.name %></p><% } %>
+            </div>
+            <div class="field <%= errors.email ? 'field-error' : '' %>">
+              <label class="label" for="email">Email</label>
+              <input class="input" id="email" name="email" type="email" value="<%= values.email || '' %>" required>
+              <% if (errors.email) { %><p class="error-text"><%= errors.email %></p><% } %>
+            </div>
+            <div class="field">
+              <label class="label" for="phone">Phone <span class="muted">(optional)</span></label>
+              <input class="input" id="phone" name="phone" value="<%= values.phone || '' %>">
+            </div>
+            <div class="field">
+              <label class="label" for="subject">Subject</label>
+              <input class="input" id="subject" name="subject" value="<%= values.subject || (typeof query !== 'undefined' && query.subject) || '' %>">
+            </div>
+          </div>
+
+          <div class="field <%= errors.message ? 'field-error' : '' %>">
+            <label class="label" for="message">Message</label>
+            <textarea class="textarea" id="message" name="message" required><%= values.message || '' %></textarea>
+            <% if (errors.message) { %><p class="error-text"><%= errors.message %></p><% } %>
+            <p class="hint">If it is about an existing site, include the domain — it saves a round trip.</p>
+          </div>
+
+          <button class="btn btn-lg" type="submit" data-busy="Sending…">Send message</button>
+        </form>
+      </div>
+
+      <aside data-reveal="80">
+        <div class="card mb-2">
+          <div class="f-icon"><%- icon('mail', 22) %></div>
+          <h2 class="h3 mb-1">Email</h2>
+          <p class="small mb-0"><a href="mailto:<%= contact.email %>"><%= contact.email %></a></p>
+        </div>
+        <div class="card mb-2">
+          <div class="f-icon"><%- icon('headset', 22) %></div>
+          <h2 class="h3 mb-1">Phone</h2>
+          <p class="small mb-0"><%= contact.phone %><br><span class="muted">Mon–Fri, 9am–5pm</span></p>
+        </div>
+        <div class="card">
+          <div class="f-icon"><%- icon('ticket', 22) %></div>
+          <h2 class="h3 mb-1">Already a customer?</h2>
+          <p class="small muted mb-2">A ticket from your panel reaches us with your account attached, which is faster.</p>
+          <a class="btn btn-ghost btn-sm" href="/panel/tickets/new">Open a ticket</a>
+        </div>
+      </aside>
+    </div>
+  </div>
+</section>
+</main>
+<%- include('../partials/footer') %>

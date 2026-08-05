@@ -1,0 +1,11 @@
+<% const pages = Math.ceil(total / perPage); if (pages > 1) { %>
+  <div class="row mt-3" style="gap:8px;justify-content:center">
+    <% if (page > 1) { %>
+      <a class="btn btn-ghost btn-sm" href="<%= base %><%= base.indexOf('?') > -1 ? '&' : '?' %>page=<%= page - 1 %>">← Previous</a>
+    <% } %>
+    <span class="small muted">Page <%= page %> of <%= pages %></span>
+    <% if (page < pages) { %>
+      <a class="btn btn-ghost btn-sm" href="<%= base %><%= base.indexOf('?') > -1 ? '&' : '?' %>page=<%= page + 1 %>">Next →</a>
+    <% } %>
+  </div>
+<% } %>

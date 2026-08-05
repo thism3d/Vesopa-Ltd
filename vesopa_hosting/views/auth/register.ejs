@@ -1,0 +1,70 @@
+<%- include('../partials/head') %>
+<div class="auth-page">
+  <div class="auth-card" style="max-width:520px">
+    <a class="auth-brand" href="/">
+      <img src="/assets/img/brand/vesopa_logo.png" alt="Vesopa" width="150" height="22">
+      <span class="brand-sub">Hosting</span>
+    </a>
+
+    <h1>Create your account</h1>
+    <p class="lede">One account for your hosting, domains and billing.</p>
+
+    <% if (errors.form) { %>
+      <div class="alert alert-error"><%- icon('warning', 19) %><div><%= errors.form %></div></div>
+    <% } %>
+
+    <form method="post" action="/register" data-guard>
+      <input type="hidden" name="_csrf" value="<%= csrf %>">
+      <input type="hidden" name="next" value="<%= next %>">
+
+      <div class="grid grid-2" style="gap:0 16px">
+        <div class="field <%= errors.first_name ? 'field-error' : '' %>">
+          <label class="label" for="first_name">First name</label>
+          <input class="input" id="first_name" name="first_name" value="<%= values.first_name || '' %>" autocomplete="given-name" required autofocus>
+          <% if (errors.first_name) { %><p class="error-text"><%= errors.first_name %></p><% } %>
+        </div>
+        <div class="field <%= errors.last_name ? 'field-error' : '' %>">
+          <label class="label" for="last_name">Last name</label>
+          <input class="input" id="last_name" name="last_name" value="<%= values.last_name || '' %>" autocomplete="family-name" required>
+          <% if (errors.last_name) { %><p class="error-text"><%= errors.last_name %></p><% } %>
+        </div>
+      </div>
+
+      <div class="field <%= errors.email ? 'field-error' : '' %>">
+        <label class="label" for="email">Email address</label>
+        <input class="input" id="email" name="email" type="email" value="<%= values.email || '' %>" autocomplete="username" required>
+        <% if (errors.email) { %><p class="error-text"><%= errors.email %></p><% } %>
+        <p class="hint">This is your account. Everything important is sent here.</p>
+      </div>
+
+      <div class="grid grid-2" style="gap:0 16px">
+        <div class="field">
+          <label class="label" for="company">Company <span class="muted">(optional)</span></label>
+          <input class="input" id="company" name="company" value="<%= values.company || '' %>" autocomplete="organization">
+        </div>
+        <div class="field">
+          <label class="label" for="phone">Phone <span class="muted">(optional)</span></label>
+          <input class="input" id="phone" name="phone" value="<%= values.phone || '' %>" autocomplete="tel">
+        </div>
+      </div>
+
+      <div class="field <%= errors.password ? 'field-error' : '' %>">
+        <label class="label" for="password">Password</label>
+        <input class="input" id="password" name="password" type="password" autocomplete="new-password" required data-pw-meter>
+        <div class="pw-meter"><i></i><i></i><i></i></div>
+        <% if (errors.password) { %><p class="error-text"><%= errors.password %></p>
+        <% } else { %><p class="hint">At least 10 characters, with a number.</p><% } %>
+      </div>
+
+      <button class="btn btn-block btn-lg" type="submit" data-busy="Creating…">Create account</button>
+
+      <p class="tiny muted mt-2 mb-0" style="text-align:center">
+        By creating an account you agree to our <a href="/terms">terms</a> and <a href="/privacy">privacy policy</a>.
+      </p>
+    </form>
+
+    <p class="auth-alt mb-0">Already have an account? <a href="/login">Sign in</a></p>
+  </div>
+  <p class="auth-foot"><a href="/">← Back to the website</a></p>
+</div>
+<%- include('../partials/footer') %>

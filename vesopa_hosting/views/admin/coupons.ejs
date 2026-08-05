@@ -1,0 +1,136 @@
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
+<%- include('../partials/admin-shell', { pageTitle: 'Discount codes', pageSub: 'Applied in the basket and counted at checkout.' }) %>
+
+<div class="p-card p-card-flush mb-3">
+  <div class="table-wrap"><table class="table mini">
+    <thead>
+      <tr><th>Code</th><th>Discount</th><th>Applies to</th><th class="num">Min spend</th>
+          <th class="num">Used</th><th>Expires</th><th>Status</th><th></th></tr>
+    </thead>
+    <tbody>
+      <% if (!coupons.length) { %>
+        <tr><td colspan="8"><span class="muted small">No codes yet. Create one below.</span></td></tr>
+      <% } %>
+      <% coupons.forEach(function (c) { %>
+        <tr>
+          <td>
+            <span class="strong mono"><%= c.code %></span>
+            <% if (c.first_order_only) { %> <span class="badge badge-blue">First order</span><% } %>
+            <% if (c.description) { %><br><span class="tiny muted"><%= c.description %></span><% } %>
+          </td>
+          <td class="strong">
+            <%= c.kind === 'percent' ? c.value + '%' : money(c.value) %> off
+          </td>
+          <td><span class="badge badge-grey"><%= c.applies_to %></span></td>
+          <td class="num"><%= c.min_spend_pence ? money(c.min_spend_pence) : '—' %></td>
+          <td class="num">
+            <%= c.used %><%= c.max_uses ? ' / ' + c.max_uses : '' %>
+            <% if (c.max_uses && c.used >= c.max_uses) { %><br><span class="tiny muted">spent</span><% } %>
+          </td>
+          <td class="tiny muted"><%= c.expires_at ? new Date(c.expires_at).toLocaleDateString('en-GB') : 'Never' %></td>
+          <td><%- c.active ? '<span class="badge badge-green">Live</span>' : '<span class="badge badge-grey">Off</span>' %></td>
+          <td class="num">
+            <form method="post" action="/admin/coupons/<%= c.id %>/toggle">
+              <input type="hidden" name="_csrf" value="<%= csrf %>">
+              <button class="btn btn-ghost btn-sm" type="submit"><%= c.active ? 'Turn off' : 'Turn on' %></button>
+            </form>
+          </td>
+        </tr>
+      <% }); %>
+    </tbody>
+  </table></div>
+</div>
+
+<div class="p-card">
+  <h2 class="h3 mb-1">Create or update a code</h2>
+  <p class="small muted mb-3">
+    Saving an existing code updates it and switches it back on. Codes are
+    matched case-insensitively; customers can type them however they like.
+  </p>
+
+  <form method="post" action="/admin/coupons" data-guard>
+    <input type="hidden" name="_csrf" value="<%= csrf %>">
+
+    <div class="p-grid p-grid-3">
+      <div class="field">
+        <label class="label" for="code">Code</label>
+        <input class="input mono" id="code" name="code" placeholder="LAUNCH20" required
+               style="text-transform:uppercase">
+        <p class="hint">Letters, numbers, dashes.</p>
+      </div>
+      <div class="field">
+        <label class="label" for="kind">Type</label>
+        <select class="select" id="kind" name="kind">
+          <option value="percent">Percentage off</option>
+          <option value="fixed">Fixed amount off</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="label" for="value">Amount</label>
+        <input class="input" id="value" name="value" placeholder="20" required>
+        <p class="hint">A whole number for a percentage, or <%= currency.code %> (<%= currency.symbol %>) for a fixed amount.</p>
+      </div>
+    </div>
+
+    <div class="p-grid p-grid-3">
+      <div class="field">
+        <label class="label" for="applies_to">Applies to</label>
+        <select class="select" id="applies_to" name="applies_to">
+          <option value="all">Everything in the basket</option>
+          <option value="hosting">Hosting only</option>
+          <option value="email">Email only</option>
+          <option value="domain">Domains only</option>
+        </select>
+        <p class="hint">
+          Domains are bought in at close to what we sell them for, so a
+          percentage off "everything" is most of that margin.
+        </p>
+      </div>
+      <div class="field">
+        <label class="label" for="min_spend">Minimum spend</label>
+        <input class="input" id="min_spend" name="min_spend" value="0.00">
+        <p class="hint">In <%= currency.code %>, converted for other currencies. 0 for no minimum.</p>
+      </div>
+      <div class="field">
+        <label class="label" for="max_uses">Maximum uses</label>
+        <input class="input" id="max_uses" name="max_uses" type="number" min="0" value="0">
+        <p class="hint">0 is unlimited. Counted at checkout, so it cannot be over-redeemed.</p>
+      </div>
+    </div>
+
+    <div class="p-grid p-grid-2">
+      <div class="field">
+        <label class="label" for="expires_at">Expires</label>
+        <input class="input" id="expires_at" name="expires_at" type="date">
+        <p class="hint">Blank never expires.</p>
+      </div>
+      <div class="field">
+        <label class="label">&nbsp;</label>
+        <label class="check">
+          <input type="checkbox" name="first_order_only">
+          <span>First order only — refused if the customer has ordered before</span>
+        </label>
+      </div>
+    </div>
+
+    <button class="btn" type="submit" data-busy="Saving…">Save code</button>
+  </form>
+</div>
+
+<div class="alert alert-info mt-3">
+  <div>
+    <p class="mb-0 small">
+      A code is written once, in <%= currency.code %>, and converted like every
+      other price — a percentage is the same offer everywhere, and a fixed
+      amount is converted at the currency's rate, so <%= money(1000) %> off
+      becomes the equivalent rather than a quietly smaller offer abroad.
+      The discount comes off <b>before</b> VAT is worked out, because VAT is
+      included in our prices rather than added: a 20% code on a
+      <%= money(5988) %> order leaves <%= money(4790) %> to pay, of which
+      <%= money(798) %> is VAT.
+    </p>
+  </div>
+</div>
+
+<%- include('../partials/panel-shell-end') %>
+<%- include('../partials/footer') %>

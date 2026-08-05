@@ -1,0 +1,111 @@
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
+<%- include('../partials/admin-shell', { pageTitle: 'Edit ' + plan.name, pageSub: plan.slug }) %>
+
+<form method="post" action="/admin/plans/<%= plan.id %>" data-guard>
+  <input type="hidden" name="_csrf" value="<%= csrf %>">
+
+  <div class="p-grid p-grid-side">
+    <div>
+      <div class="p-card">
+        <h2 class="h3 mb-3">Name and copy</h2>
+        <div class="field">
+          <label class="label" for="name">Name</label>
+          <input class="input" id="name" name="name" value="<%= plan.name %>" required>
+        </div>
+        <div class="field">
+          <label class="label" for="tagline">Tagline</label>
+          <input class="input" id="tagline" name="tagline" value="<%= plan.tagline %>">
+        </div>
+        <div class="field">
+          <label class="label" for="badge">Badge <span class="muted">(blank for none)</span></label>
+          <input class="input" id="badge" name="badge" value="<%= plan.badge %>" placeholder="Most popular">
+          <p class="hint">A badge also styles the plan as the featured one on the pricing table.</p>
+        </div>
+        <div class="field">
+          <label class="label" for="features">Feature bullets</label>
+          <textarea class="textarea" id="features" name="features" style="min-height:180px"><%= plan.features %></textarea>
+          <p class="hint">One per line. These are the ticks under the plan.</p>
+        </div>
+      </div>
+
+      <div class="p-card">
+        <h2 class="h3 mb-1">Prices</h2>
+        <p class="small muted mb-3">
+          In pounds, VAT included — these are the prices a customer pays. Every figure except Monthly is the
+          <b>total for the whole term</b>, not per month — the per-month price
+          shown to a customer is derived from it.
+        </p>
+        <div class="p-grid p-grid-4">
+          <div class="field">
+            <label class="label" for="monthly">Monthly</label>
+            <input class="input" id="monthly" name="monthly" value="<%= (plan.monthly_pence / 100).toFixed(2) %>" required>
+            <p class="hint">The no-commitment rate</p>
+          </div>
+          <div class="field">
+            <label class="label" for="annual">1 year total</label>
+            <input class="input" id="annual" name="annual" value="<%= (plan.annual_pence / 100).toFixed(2) %>" required>
+            <p class="hint"><%= money(plan.perMonthPence[12]) %>/mo · saves <%= plan.saving[12] %>%</p>
+          </div>
+          <div class="field">
+            <label class="label" for="biennial">2 year total</label>
+            <input class="input" id="biennial" name="biennial" value="<%= (plan.biennial_pence / 100).toFixed(2) %>" required>
+            <p class="hint"><%= money(plan.perMonthPence[24]) %>/mo · saves <%= plan.saving[24] %>%</p>
+          </div>
+          <div class="field">
+            <label class="label" for="triennial">3 year total</label>
+            <input class="input" id="triennial" name="triennial" value="<%= (plan.triennial_pence / 100).toFixed(2) %>" required>
+            <p class="hint"><%= money(plan.perMonthPence[36]) %>/mo · saves <%= plan.saving[36] %>%</p>
+          </div>
+        </div>
+        <div class="alert alert-info mt-2">
+          <div>
+            <p class="mb-0 small">
+              The monthly rate is deliberately the dearest — every saving
+              percentage above is calculated against it, so lowering Monthly
+              shrinks the discount shown on all three longer terms.
+              <b>The free domain is granted on 1, 2 and 3 year terms only</b>,
+              never on monthly.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div class="p-card">
+        <h2 class="h3 mb-3">Limits</h2>
+        <div class="p-grid p-grid-3">
+          <div class="field"><label class="label" for="websites">Websites</label><input class="input" id="websites" name="websites" type="number" min="1" value="<%= plan.websites %>"></div>
+          <div class="field"><label class="label" for="storage_gb">Storage (GB)</label><input class="input" id="storage_gb" name="storage_gb" type="number" min="1" value="<%= plan.storage_gb %>"></div>
+          <div class="field"><label class="label" for="bandwidth_gb">Bandwidth (GB)</label><input class="input" id="bandwidth_gb" name="bandwidth_gb" type="number" min="0" value="<%= plan.bandwidth_gb %>"><p class="hint">0 = unmetered</p></div>
+          <div class="field"><label class="label" for="databases">Databases</label><input class="input" id="databases" name="databases" type="number" min="1" value="<%= plan.databases %>"></div>
+          <div class="field"><label class="label" for="mailboxes">Mailboxes</label><input class="input" id="mailboxes" name="mailboxes" type="number" min="1" value="<%= plan.mailboxes %>"></div>
+          <div class="field"><label class="label" for="sort_order">Sort order</label><input class="input" id="sort_order" name="sort_order" type="number" value="<%= plan.sort_order %>"></div>
+        </div>
+      </div>
+    </div>
+
+    <aside>
+      <div class="p-card">
+        <h2 class="h3 mb-3">Switches</h2>
+        <label class="check mb-2"><input type="checkbox" name="active" <%= plan.active ? 'checked' : '' %>><span>Show on the website</span></label>
+        <label class="check mb-2"><input type="checkbox" name="free_domain" <%= plan.free_domain ? 'checked' : '' %>><span>Free domain on 12m+</span></label>
+        <label class="check mb-2"><input type="checkbox" name="free_ssl" <%= plan.free_ssl ? 'checked' : '' %>><span>Free SSL</span></label>
+        <label class="check mb-2"><input type="checkbox" name="daily_backups" <%= plan.daily_backups ? 'checked' : '' %>><span>Daily backups</span></label>
+        <label class="check mb-3"><input type="checkbox" name="priority_support" <%= plan.priority_support ? 'checked' : '' %>><span>Priority support</span></label>
+
+        <div class="field">
+          <label class="label" for="hestia_package">Hestia package</label>
+          <input class="input mono" id="hestia_package" name="hestia_package" value="<%= plan.hestia_package %>">
+          <p class="hint">Must already exist on the node — this is what actually enforces the limits above.</p>
+        </div>
+
+        <button class="btn btn-block" type="submit" data-busy="Saving…">Save plan</button>
+        <a class="btn btn-ghost btn-block btn-sm mt-2" href="/admin/plans">Cancel</a>
+      </div>
+    </aside>
+  </div>
+</form>
+
+<%- include('../partials/price-matrix') %>
+
+<%- include('../partials/panel-shell-end') %>
+<%- include('../partials/footer') %>

@@ -1,0 +1,10 @@
+.price-card-2 {
+	&__text {
+		color: var(--bs-primary-bg-subtle);
+	}
+}
+[data-bs-theme="dark"] {
+	.price-card-2__text {
+		color: var(--bs-primary-text-emphasis);
+	}
+}

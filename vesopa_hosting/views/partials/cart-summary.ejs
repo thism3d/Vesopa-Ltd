@@ -1,0 +1,101 @@
+<%# The order summary. Re-rendered as a fragment alongside cart-main whenever
+    the basket changes — the two always move together, because a line price
+    that updated without its total would be worse than a page reload. %>
+<h2 class="h3 mb-3">Order summary</h2>
+
+<% lines.forEach(function (line) { %>
+  <div class="sum-row">
+    <span><%= line.kind === 'hosting' ? line.plan.name + ' — ' + line.term.label
+           : line.kind === 'email' ? line.emailPlan.name
+           : line.domain %></span>
+    <span class="sum-val">
+      <% if (line.freeWithPlan) { %>
+        <s><%= money(line.unit_pence) %></s> <b class="free"><%= money(0) %></b>
+      <% } else { %>
+        <% if (line.was_pence) { %><s><%= money(line.was_pence) %></s> <% } %>
+        <b><%= money(line.total_pence) %></b>
+      <% } %>
+    </span>
+  </div>
+<% }); %>
+
+<% if (couponDiscount_pence > 0) { %>
+  <div class="sum-row sum-row-off">
+    <span><%- icon('bolt', 14) %> <%= couponCode %></span>
+    <span class="sum-val"><b>−<%= money(couponDiscount_pence) %></b></span>
+  </div>
+<% } %>
+
+<hr class="divider" style="margin:16px 0">
+
+<%# VAT is INSIDE the total, never added to it. This row reports the portion we
+    account for and deliberately does not change the total below it.
+
+    It is drawn only when the currency carries VAT at all. A dollar price has no
+    UK VAT inside it, so there is nothing to report and a "VAT (0%)" line would
+    only raise a question whose answer is better given by its absence. %>
+<% if (showVat) { %>
+  <div class="sum-row sum-row-vat">
+    <span>
+      <%= vatLabel %> (<%= vatPercent %>%)
+      <span class="vat-tag">we pay this</span>
+    </span>
+    <span class="sum-val muted"><%= money(vat_pence) %></span>
+  </div>
+<% } %>
+
+<div class="sum-total">
+  <span>Total</span>
+  <span class="sum-val">
+    <% if (was_total_pence) { %><s><%= money(was_total_pence) %></s><% } %>
+    <b><%= money(total_pence) %></b>
+  </span>
+</div>
+
+<% if (saved_total_pence > 0) { %>
+  <p class="sum-saved"><%- icon('check-circle', 15) %> You are saving <b><%= money(saved_total_pence) %></b></p>
+<% } %>
+
+<p class="tiny muted mt-2 mb-0">
+  <% if (showVat) { %>
+    Nothing is added at checkout. <%= vatLabel %> is included in the
+    price above and accounted for by us.
+  <% } else { %>
+    Nothing is added at checkout. Prices are in <%= currency.code %>
+    (<%= currency.name %>) and are the full amount.
+  <% } %>
+</p>
+
+<%# --- Coupon ---------------------------------------------------------- %>
+<div class="cart-coupon">
+  <% if (couponCode) { %>
+    <form method="post" action="/cart/coupon/remove" class="row-between" style="gap:10px" data-cart-form>
+      <input type="hidden" name="_csrf" value="<%= csrf %>">
+      <span class="chip chip-lime"><%- icon('check', 14) %> <%= couponCode %> applied</span>
+      <button class="btn-link" type="submit">Remove</button>
+    </form>
+  <% } else { %>
+    <details<%= couponError ? ' open' : '' %>>
+      <summary>Have a discount code?</summary>
+      <form method="post" action="/cart/coupon" class="row mt-2" style="gap:8px;flex-wrap:nowrap" data-cart-form>
+        <input type="hidden" name="_csrf" value="<%= csrf %>">
+        <input class="input" name="code" placeholder="Enter code"
+               autocomplete="off" spellcheck="false"
+               style="text-transform:uppercase" aria-label="Discount code">
+        <button class="btn btn-ghost btn-sm" type="submit" style="flex:none">Apply</button>
+      </form>
+      <% if (couponError) { %><p class="error-text mb-0"><%= couponError %></p><% } %>
+    </details>
+  <% } %>
+</div>
+
+<a class="btn btn-lg btn-block mt-3" href="/checkout">
+  Continue to payment <%- icon('arrow', 18) %>
+</a>
+
+<%# --- Reassurance, where the decision is actually made ----------------- %>
+<ul class="cart-trust">
+  <li><%- icon('shield', 15) %><span><%= moneyBackDays %>-day money-back guarantee</span></li>
+  <li><%- icon('lock', 15) %><span>Free SSL, issued automatically</span></li>
+  <li><%- icon('headset', 15) %><span>UK support — a person, not a script</span></li>
+</ul>

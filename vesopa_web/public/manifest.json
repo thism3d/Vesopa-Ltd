@@ -1,0 +1,58 @@
+{
+  "short_name": "Vesopa EPOS",
+  "name": "Vesopa EPOS",
+  "description": "Your trusted EPOS partner in Pontardawe, Wales. Streamline transactions and enhance customer experiences with tailored solutions for Hospitality & Retail.",
+  "id": "com.vesopaepos.app",
+  "version": "3.0.0",
+  "icons": [
+    {
+      "src": "/assets/logo/144x144.png",
+      "sizes": "144x144",
+      "type": "image/png"
+    },
+    {
+      "src": "/assets/logo/192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/assets/logo/256x256.png",
+      "sizes": "256x256",
+      "type": "image/png"
+    },
+    {
+      "src": "/assets/logo/512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/assets/logo/512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/assets/app/preview_new.jpg",
+      "sizes": "1200x630",
+      "type": "image/jpeg",
+      "form_factor": "wide",
+      "label": "Vesopa EPOS Preview"
+    },
+    {
+      "src": "/assets/app/preview_mobile_new.jpg",
+      "sizes": "329x585",
+      "type": "image/jpeg",
+      "form_factor": "narrow",
+      "label": "Vesopa EPOS Preview"
+    }
+  ],
+  "display_override": ["fullscreen", "minimal-ui", "window-controls-overlay", "standalone"],
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#a5c715",
+  "orientation": "portrait"
+}

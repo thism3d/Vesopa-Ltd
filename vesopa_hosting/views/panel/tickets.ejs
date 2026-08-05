@@ -1,0 +1,36 @@
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
+<%- include('../partials/panel-shell', {
+  pageTitle: 'Support',
+  pageSub: 'Your conversations with us.',
+  topAction: { href: '/panel/tickets/new', label: 'Open a ticket', icon: 'plus' },
+}) %>
+
+<div class="p-card p-card-flush">
+  <% if (!tickets.length) { %>
+    <div class="empty">
+      <%- icon('ticket', 46) %>
+      <h3>No tickets</h3>
+      <p>When you need us, open one and a person will read it.</p>
+      <a class="btn mt-2" href="/panel/tickets/new">Open a ticket</a>
+    </div>
+  <% } else { %>
+    <% tickets.forEach(function (t) { %>
+      <a class="item" href="/panel/tickets/<%= t.id %>">
+        <span class="item-icon"><%- icon('ticket', 19) %></span>
+        <span class="item-main">
+          <span class="item-title"><%= t.subject %></span>
+          <span class="item-sub"><%= t.reference %> · <%= t.department %> · updated <%= new Date(t.updated_at).toLocaleDateString('en-GB') %></span>
+        </span>
+        <span class="item-end">
+          <% if (t.status === 'answered') { %><span class="badge badge-green">Replied</span>
+          <% } else if (t.status === 'closed') { %><span class="badge badge-grey">Closed</span>
+          <% } else if (t.status === 'customer_reply') { %><span class="badge badge-blue">Awaiting us</span>
+          <% } else { %><span class="badge badge-amber">Open</span><% } %>
+        </span>
+      </a>
+    <% }); %>
+  <% } %>
+</div>
+
+<%- include('../partials/panel-shell-end') %>
+<%- include('../partials/footer') %>

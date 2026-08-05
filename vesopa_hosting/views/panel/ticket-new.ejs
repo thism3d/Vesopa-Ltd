@@ -1,0 +1,50 @@
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
+<%- include('../partials/panel-shell', { pageTitle: 'Open a ticket', pageSub: 'Tell us what is happening and we will pick it up.' }) %>
+
+<% if (errors.form) { %>
+  <div class="alert alert-error"><%- icon('warning', 19) %><div><%= errors.form %></div></div>
+<% } %>
+
+<div class="p-card" style="max-width:720px">
+  <form method="post" action="/panel/tickets/new" data-guard>
+    <input type="hidden" name="_csrf" value="<%= csrf %>">
+
+    <div class="field <%= errors.subject ? 'field-error' : '' %>">
+      <label class="label" for="subject">Subject</label>
+      <input class="input" id="subject" name="subject" required autofocus
+             value="<%= values.subject || (typeof query !== 'undefined' && query.subject) || '' %>">
+      <% if (errors.subject) { %><p class="error-text"><%= errors.subject %></p><% } %>
+    </div>
+
+    <div class="p-grid p-grid-2">
+      <div class="field">
+        <label class="label" for="department">Department</label>
+        <select class="select" id="department" name="department">
+          <option value="support">Technical support</option>
+          <option value="billing" <%= values.department === 'billing' ? 'selected' : '' %>>Billing</option>
+          <option value="abuse" <%= values.department === 'abuse' ? 'selected' : '' %>>Report abuse</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="label" for="priority">Priority</label>
+        <select class="select" id="priority" name="priority">
+          <option value="low" <%= values.priority === 'low' ? 'selected' : '' %>>Low — a question</option>
+          <option value="normal" selected>Normal — something is wrong</option>
+          <option value="high" <%= values.priority === 'high' ? 'selected' : '' %>>High — my site is down</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="field <%= errors.body ? 'field-error' : '' %>">
+      <label class="label" for="body">What is happening?</label>
+      <textarea class="textarea" id="body" name="body" required style="min-height:180px"><%= values.body || '' %></textarea>
+      <% if (errors.body) { %><p class="error-text"><%= errors.body %></p><% } %>
+      <p class="hint">Include the domain and what you expected to happen — that one sentence saves a whole round trip.</p>
+    </div>
+
+    <button class="btn btn-lg" type="submit" data-busy="Sending…">Open ticket</button>
+  </form>
+</div>
+
+<%- include('../partials/panel-shell-end') %>
+<%- include('../partials/footer') %>

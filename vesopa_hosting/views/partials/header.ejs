@@ -1,0 +1,162 @@
+<%
+/*
+ * ONE list, two renderings.
+ *
+ * The desktop bar shows labels; the mobile sheet shows the same labels with a
+ * line of description and an icon. Defining them twice is how a link gets added
+ * to one and forgotten in the other — which is exactly the sort of thing nobody
+ * notices until a customer says the menu on their phone is missing a page.
+ */
+const navItems = [
+  ['/hosting',  'server', 'Web hosting', 'Fast UK NVMe hosting, SSL included'],
+  ['/domains',  'globe',  'Domains',     'Search, register and transfer names'],
+  ['/email',    'mail',   'Email',       'Mailboxes and campaigns at your domain'],
+  ['/ssl',      'lock',   'SSL',         'Free certificates, renewed automatically'],
+  ['/transfer', 'rocket', 'Transfer',    'Move your site to us, free'],
+  ['/support',  'headset','Support',     'Guides, status and a person to ask'],
+];
+const isOn = (href) => (href === '/domains'
+  ? (currentPath || '').startsWith('/domains')
+  : currentPath === href);
+
+/*
+ * `navOver` lays the header OVER the hero rather than above it, so the page
+ * begins at the top of the screen instead of below a white strip. Only pages
+ * whose first section is a full-bleed dark one may ask for it — anywhere else
+ * it would put white text on a white background.
+ */
+const over = typeof navOver !== 'undefined' && navOver;
+%>
+<header class="nav <%= over ? 'nav-over' : '' %>" data-nav>
+  <div class="wrap nav-inner">
+    <%# The lockup: wordmark, rule, product word, on one line and kept short. %>
+    <a class="brand" href="/" aria-label="Vesopa Hosting home">
+      <img class="brand-mark" src="/assets/img/brand/vesopa_logo.png" alt="Vesopa" width="160" height="23">
+      <%# The dark-background twin. Swapping the source with JavaScript would
+          flash the wrong one on first paint, so both ship and CSS picks. %>
+      <img class="brand-mark brand-mark-light" src="/assets/img/brand/vesopa_logo_on_dark.png" alt="" aria-hidden="true" width="160" height="23">
+      <span class="brand-sub">Hosting</span>
+    </a>
+
+    <nav class="nav-links" aria-label="Main">
+      <% navItems.forEach(function (item) { %>
+        <a class="nav-link <%= isOn(item[0]) ? 'is-active' : '' %>" href="<%= item[0] %>"><%= item[2] %></a>
+      <% }); %>
+    </nav>
+
+    <div class="nav-actions">
+      <%# The currency switcher.
+
+          Plain links inside a <details>, not a <select> with an onchange
+          handler: it works with JavaScript off, it is keyboard-navigable for
+          free, and a GET per currency means a shared or bookmarked link lands
+          people wherever they were. The `to` parameter is what brings them back
+          to this exact page instead of the homepage, and it is validated
+          server-side before it is redirected to. %>
+      <% if (currencies && currencies.length > 1) { %>
+        <details class="cur-pick">
+          <summary aria-label="Change currency">
+            <span class="cur-pick-code"><%= currency.code %></span>
+            <span class="cur-pick-sym"><%= currency.symbol %></span>
+          </summary>
+          <div class="cur-pick-menu">
+            <p class="cur-pick-head">Show prices in</p>
+            <% currencies.forEach(function (c) { %>
+              <a class="cur-pick-item <%= c.code === currency.code ? 'is-active' : '' %>"
+                 href="/currency/<%= c.code %>?to=<%= encodeURIComponent(currentUrl) %>"
+                 rel="nofollow">
+                <span class="cur-pick-sym"><%= c.symbol %></span>
+                <span><b><%= c.code %></b><br><span class="tiny muted"><%= c.name %></span></span>
+                <% if (c.code === currency.code) { %><span class="cur-pick-tick">✓</span><% } %>
+              </a>
+            <% }); %>
+            <p class="cur-pick-foot">
+              <% if (currencySource === 'geo') { %>
+                Picked from where you seem to be. Change it and we will remember.
+              <% } else { %>
+                We remember your choice on this device.
+              <% } %>
+            </p>
+          </div>
+        </details>
+      <% } %>
+
+      <% if (customer) { %>
+        <a class="btn btn-ghost btn-sm" href="/panel">My account</a>
+        <a class="btn btn-sm" href="/panel/services">Dashboard</a>
+      <% } else { %>
+        <a class="btn btn-ghost btn-sm" href="/login">Sign in</a>
+        <a class="btn btn-sm" href="/hosting">Get started</a>
+      <% } %>
+    </div>
+
+    <%# The burger sits last in the source but first to the right in the layout,
+        so tab order reaches the brand and the links before it. %>
+    <button class="nav-toggle" type="button" data-nav-toggle
+            aria-label="Menu" aria-expanded="false" aria-controls="nav-sheet">
+      <span class="nav-toggle-bars" aria-hidden="true"><i></i><i></i><i></i></span>
+    </button>
+  </div>
+</header>
+
+<%# =====================================================================
+    The mobile and tablet menu.
+
+    A FULL-SCREEN SHEET, not a dropdown panel hanging under the bar. The
+    dropdown had to be scrolled inside itself on a short phone, sat on top of
+    the page it was covering only partly, and left the burger floating over
+    content. A sheet that owns the whole screen has room for a description per
+    link and for the account buttons at the bottom where a thumb reaches.
+
+    Outside <header> so it can be a plain fixed overlay without inheriting the
+    bar's height, blur or stacking context.
+    ===================================================================== %>
+<div class="nav-sheet" id="nav-sheet" data-nav-sheet hidden>
+  <div class="nav-sheet-inner">
+    <nav class="nav-sheet-links" aria-label="Main">
+      <% navItems.forEach(function (item, i) { %>
+        <a class="nav-sheet-link <%= isOn(item[0]) ? 'is-active' : '' %>"
+           href="<%= item[0] %>" style="--i:<%= i %>">
+          <span class="nav-sheet-icon"><%- icon(item[1], 20) %></span>
+          <span class="nav-sheet-text">
+            <b><%= item[2] %></b>
+            <span><%= item[3] %></span>
+          </span>
+          <span class="nav-sheet-go" aria-hidden="true"><%- icon('arrow', 17) %></span>
+        </a>
+      <% }); %>
+    </nav>
+
+    <div class="nav-sheet-foot" style="--i:<%= navItems.length %>">
+      <% if (currencies && currencies.length > 1) { %>
+        <div class="nav-sheet-cur">
+          <span class="nav-sheet-cur-label">Prices in</span>
+          <div class="nav-sheet-cur-opts">
+            <% currencies.forEach(function (c) { %>
+              <a class="nav-sheet-cur-opt <%= c.code === currency.code ? 'is-active' : '' %>"
+                 href="/currency/<%= c.code %>?to=<%= encodeURIComponent(currentUrl) %>" rel="nofollow">
+                <%= c.symbol %> <%= c.code %>
+              </a>
+            <% }); %>
+          </div>
+        </div>
+      <% } %>
+
+      <div class="nav-sheet-cta">
+        <% if (customer) { %>
+          <a class="btn btn-ghost btn-lg btn-block" href="/panel">My account</a>
+          <a class="btn btn-lg btn-block" href="/panel/services">Dashboard</a>
+        <% } else { %>
+          <a class="btn btn-ghost btn-lg btn-block" href="/login">Sign in</a>
+          <a class="btn btn-lg btn-block" href="/hosting">Get started</a>
+        <% } %>
+      </div>
+
+      <p class="nav-sheet-note">
+        <%- icon('headset', 15) %>
+        <a href="tel:<%= contact.phone_e164 %>"><%= contact.phone %></a>
+        · UK support, a person not a script
+      </p>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,209 @@
+<%- include('../partials/head', { extraCss: '/assets/css/cart.css' }) %>
+<%- include('../partials/header') %>
+
+<main id="main">
+<section class="section-sm" style="padding-top:44px">
+  <div class="wrap">
+    <p class="kicker mb-2">Step 3 of 3</p>
+    <h1 class="h1 mb-3">Checkout</h1>
+
+    <% if (errors.form) { %>
+      <div class="alert alert-error"><%- icon('warning', 19) %><div><%= errors.form %></div></div>
+    <% } %>
+
+    <div class="split-aside">
+      <form method="post" action="/checkout" data-guard>
+        <input type="hidden" name="_csrf" value="<%= csrf %>">
+
+        <div class="card mb-3">
+          <h2 class="h3 mb-3"><%= customer ? 'Your account' : 'Create your account' %></h2>
+
+          <% if (customer) { %>
+            <div class="chip mb-2"><%- icon('user', 16) %> Signed in as <b><%= customer.email %></b></div>
+          <% } else { %>
+            <div class="field <%= errors.email ? 'field-error' : '' %>">
+              <label class="label" for="email">Email address</label>
+              <input class="input" id="email" name="email" type="email" autocomplete="username"
+                     value="<%= values.email || '' %>" required>
+              <% if (errors.email) { %><p class="error-text"><%= errors.email %></p><% } %>
+              <p class="hint">This becomes your account. Everything important is sent here.</p>
+            </div>
+            <div class="field <%= errors.password ? 'field-error' : '' %>">
+              <label class="label" for="password">Choose a password</label>
+              <input class="input" id="password" name="password" type="password" autocomplete="new-password" required data-pw-meter>
+              <div class="pw-meter"><i></i><i></i><i></i></div>
+              <% if (errors.password) { %><p class="error-text"><%= errors.password %></p>
+              <% } else { %><p class="hint">At least 10 characters, with a number.</p><% } %>
+            </div>
+            <p class="small muted mb-0">
+              Already have an account? <a href="/login?next=/checkout">Sign in first</a>.
+            </p>
+          <% } %>
+        </div>
+
+        <div class="card">
+          <h2 class="h3 mb-1">Billing details</h2>
+          <p class="small muted mb-3">
+            <% if (lines.some(function (l) { return l.kind === 'domain' || l.kind === 'domain_transfer'; })) { %>
+              A domain registration needs a real registrant address — that is a registry
+              rule, not a marketing form. It is not published if WHOIS privacy is on.
+            <% } else { %>
+              Used on your invoices.
+            <% } %>
+          </p>
+
+          <div class="grid grid-2" style="gap:0 16px">
+            <div class="field <%= errors.first_name ? 'field-error' : '' %>">
+              <label class="label" for="first_name">First name</label>
+              <input class="input" id="first_name" name="first_name" autocomplete="given-name" required value="<%= values.first_name || '' %>">
+            </div>
+            <div class="field <%= errors.last_name ? 'field-error' : '' %>">
+              <label class="label" for="last_name">Last name</label>
+              <input class="input" id="last_name" name="last_name" autocomplete="family-name" required value="<%= values.last_name || '' %>">
+            </div>
+          </div>
+
+          <div class="grid grid-2" style="gap:0 16px">
+            <div class="field">
+              <label class="label" for="company">Company <span class="muted">(optional)</span></label>
+              <input class="input" id="company" name="company" autocomplete="organization" value="<%= values.company || '' %>">
+            </div>
+            <div class="field <%= errors.phone ? 'field-error' : '' %>">
+              <label class="label" for="phone">Phone</label>
+              <input class="input" id="phone" name="phone" autocomplete="tel" value="<%= values.phone || '' %>">
+              <% if (errors.phone) { %><p class="error-text"><%= errors.phone %></p><% } %>
+            </div>
+          </div>
+
+          <div class="field <%= errors.address1 ? 'field-error' : '' %>">
+            <label class="label" for="address1">Address</label>
+            <input class="input" id="address1" name="address1" autocomplete="address-line1" value="<%= values.address1 || '' %>">
+            <% if (errors.address1) { %><p class="error-text"><%= errors.address1 %></p><% } %>
+          </div>
+          <div class="field">
+            <input class="input" name="address2" autocomplete="address-line2" placeholder="Address line 2 (optional)" value="<%= values.address2 || '' %>">
+          </div>
+
+          <div class="grid grid-3" style="gap:0 16px">
+            <div class="field <%= errors.city ? 'field-error' : '' %>">
+              <label class="label" for="city">Town or city</label>
+              <input class="input" id="city" name="city" autocomplete="address-level2" value="<%= values.city || '' %>">
+            </div>
+            <div class="field <%= errors.postcode ? 'field-error' : '' %>">
+              <label class="label" for="postcode">Postcode</label>
+              <input class="input" id="postcode" name="postcode" autocomplete="postal-code" value="<%= values.postcode || '' %>">
+            </div>
+            <div class="field">
+              <label class="label" for="country">Country</label>
+              <input class="input" id="country" name="country" maxlength="2" value="<%= values.country || 'GB' %>">
+            </div>
+          </div>
+        </div>
+
+        <div class="card mt-3">
+          <h2 class="h3 mb-2">Payment</h2>
+          <% if (paymentsMode === 'manual') { %>
+            <div class="alert alert-info mb-2">
+              <%- icon('info', 19) %>
+              <div>
+                <b>Card payment is not switched on yet.</b> Place the order and we will
+                email you an invoice with payment details. Your services go live the
+                moment payment clears — usually the same working day.
+              </div>
+            </div>
+          <% } %>
+          <label class="check mb-3">
+            <input type="checkbox" name="agree" required>
+            <span class="small">
+              I agree to the <a href="/terms" target="_blank">terms of service</a>,
+              <a href="/aup" target="_blank">acceptable use policy</a> and
+              <a href="/refunds" target="_blank">refund policy</a>. I understand that
+              domain registration fees cannot be refunded once the registry has taken them.
+            </span>
+          </label>
+          <button class="btn btn-lg btn-block" type="submit" data-busy="Placing your order…">
+            Place order — <%= money(total_pence) %>
+          </button>
+        </div>
+      </form>
+
+      <aside>
+        <%# Same component as the basket, so the numbers a customer just agreed
+            to are laid out identically on the screen where they commit. A
+            summary that reformats between the two invites a second look. %>
+        <div class="cart-summary">
+          <h2 class="h3 mb-3">Order summary</h2>
+
+          <% lines.forEach(function (l) { %>
+            <div class="sum-row">
+              <span><%= l.description %></span>
+              <span class="sum-val">
+                <% if (l.freeWithPlan) { %>
+                  <s><%= money(l.unit_pence) %></s> <b class="free"><%= money(0) %></b>
+                <% } else { %>
+                  <% if (l.was_pence) { %><s><%= money(l.was_pence) %></s> <% } %>
+                  <b><%= money(l.total_pence) %></b>
+                <% } %>
+              </span>
+            </div>
+          <% }); %>
+
+          <% if (couponDiscount_pence > 0) { %>
+            <div class="sum-row sum-row-off">
+              <span><%- icon('bolt', 14) %> <%= couponCode %></span>
+              <span class="sum-val"><b>−<%= money(couponDiscount_pence) %></b></span>
+            </div>
+          <% } %>
+
+          <hr class="divider" style="margin:16px 0">
+
+          <%# VAT is inside the total. Reported, never added — and only where
+              it applies at all. %>
+          <% if (showVat) { %>
+            <div class="sum-row sum-row-vat">
+              <span><%= vatLabel %> (<%= vatPercent %>%) <span class="vat-tag">we pay this</span></span>
+              <span class="sum-val muted"><%= money(vat_pence) %></span>
+            </div>
+          <% } %>
+
+          <div class="sum-total">
+            <span>Total</span>
+            <span class="sum-val">
+              <% if (was_total_pence) { %><s><%= money(was_total_pence) %></s><% } %>
+              <b><%= money(total_pence) %></b>
+              <%# The code, spelled out, on the one screen where money changes
+                  hands. "$71.88" on a British site is genuinely ambiguous
+                  between USD and CAD, and this is the last moment to remove
+                  the doubt. %>
+              <span class="sum-cur"><%= currency.code %></span>
+            </span>
+          </div>
+
+          <% if (saved_total_pence > 0) { %>
+            <p class="sum-saved"><%- icon('check-circle', 15) %> You are saving <b><%= money(saved_total_pence) %></b></p>
+          <% } %>
+
+          <p class="tiny muted mt-2 mb-0">
+            This is the full amount<% if (showVat) { %>. <%= vatLabel %> is
+            included and accounted for by us — nothing further is added<% } else { %>,
+            charged in <%= currency.code %> (<%= currency.name %>).
+            Nothing further is added<% } %>.
+          </p>
+
+          <ul class="cart-trust">
+            <li><%- icon('shield', 15) %><span>30-day money-back guarantee</span></li>
+            <li><%- icon('lock', 15) %><span>Free SSL, renewed automatically</span></li>
+            <li><%- icon('headset', 15) %><span>Free migration from your current host</span></li>
+          </ul>
+
+          <a class="btn btn-ghost btn-sm btn-block mt-3" href="/cart">← Back to basket</a>
+        </div>
+      </aside>
+    </div>
+  </div>
+</section>
+</main>
+
+<style>@media (max-width: 900px) { main .grid[style*="1.5fr"] { grid-template-columns: 1fr !important; } }</style>
+
+<%- include('../partials/footer') %>

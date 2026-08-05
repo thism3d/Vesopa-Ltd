@@ -1,0 +1,9 @@
+# Tests tagged `live` call Dojo's real sandbox over the network, so they are not
+# deterministic and are kept out of CI (see .github/workflows/windows.yml, which
+# runs `flutter test --exclude-tags live`). Run them deliberately with:
+#
+#     flutter test --tags live
+#
+# Declared here so the runner does not warn about an unknown tag.
+tags:
+  live:

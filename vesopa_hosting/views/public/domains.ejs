@@ -1,0 +1,185 @@
+<%- include('../partials/head') %>
+<%- include('../partials/header') %>
+
+<main id="main">
+
+<section class="hero" style="padding:60px 0 70px">
+  <div class="hero-aura hero-aura-1"></div>
+  <div class="hero-grid"></div>
+  <div class="wrap hero-inner">
+    <p class="kicker" data-reveal="0" style="justify-content:center">Domain names</p>
+    <h1 class="display" style="font-size:clamp(2.1rem,5vw,3.4rem)" data-reveal="60">
+      Find the name<br><span class="hl">before someone else does</span>
+    </h1>
+
+    <div data-reveal="120" class="mt-3">
+      <form class="dsearch" data-domain-search action="/domains" method="get">
+        <div class="dsearch-form">
+          <input class="dsearch-input" type="text" name="q" autocomplete="off" spellcheck="false"
+                 value="<%= q %>" placeholder="yourbusiness.co.uk" aria-label="Search for a domain name">
+          <button class="btn btn-lg" type="submit"><%- icon('search', 19) %><span class="hide-sm">Search</span></button>
+        </div>
+      </form>
+      <div class="dsearch-tlds">
+        <% featuredTlds.forEach(function (t) { %>
+          <button type="button" class="dsearch-tld" data-tld-chip="<%= t.tld %>">
+            <b>.<%= t.tld %></b> <%= money(t.register_pence) %>
+          </button>
+        <% }); %>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section-sm">
+  <div class="wrap" style="max-width:780px">
+    <%# Server-rendered results when the page was linked to with ?q=. The client
+        script takes over from here on subsequent searches. %>
+    <div class="dresults" data-domain-results
+         <%= serverResults ? 'data-server-rendered="1"' : 'hidden' %>>
+      <% if (serverResults) { %>
+        <% const exact = serverResults[0]; %>
+        <% if (exact) { %>
+          <p class="kicker mb-2"><%= exact.available ? 'Good news' : 'That one is taken' %></p>
+          <div class="dresult <%= exact.available ? 'dresult-hero' : 'is-taken' %>">
+            <div class="dresult-name"><b><%= exact.sld %></b>.<%= exact.tld %></div>
+            <% if (exact.available && exact.sellable) { %>
+              <div class="dresult-price">
+                <div class="amt"><%= exact.price_display %></div>
+                <div class="per">first year</div>
+              </div>
+              <a class="btn btn-sm" href="/cart/add-domain?domain=<%= encodeURIComponent(exact.domain) %>">Add</a>
+            <% } else { %>
+              <div class="dresult-price"><span class="badge badge-grey">Taken</span></div>
+            <% } %>
+          </div>
+        <% } %>
+
+        <% if (serverResults.length > 1) { %>
+          <p class="kicker mt-3 mb-2">Other extensions</p>
+          <% serverResults.slice(1).forEach(function (r, i) { %>
+            <div class="dresult <%= r.available ? '' : 'is-taken' %>" style="animation-delay:<%= i * 55 %>ms">
+              <div class="dresult-name"><b><%= r.sld %></b>.<%= r.tld %></div>
+              <% if (r.available && r.sellable) { %>
+                <div class="dresult-price">
+                  <div class="amt"><%= r.price_display %></div>
+                  <div class="per">first year</div>
+                </div>
+                <a class="btn btn-sm" href="/cart/add-domain?domain=<%= encodeURIComponent(r.domain) %>">Add</a>
+              <% } else { %>
+                <div class="dresult-price"><span class="badge badge-grey">Taken</span></div>
+              <% } %>
+            </div>
+          <% }); %>
+        <% } %>
+      <% } %>
+    </div>
+
+    <% if (!serverResults) { %>
+      <div class="empty" data-reveal="0">
+        <%- icon('globe', 46) %>
+        <h3>Search for a name above</h3>
+        <p>Type a word or your business name — we will check it across every extension we sell.</p>
+      </div>
+    <% } %>
+  </div>
+</section>
+
+<!-- What's included with every domain -->
+<section class="section section-tint">
+  <div class="wrap">
+    <div class="center mb-4">
+      <p class="kicker" data-reveal="0" style="justify-content:center">Every domain includes</p>
+      <h2 class="h1 mt-2" data-reveal="60">No add-ons at the checkout</h2>
+    </div>
+    <div class="grid grid-4">
+      <%
+      const inc = [
+        ['shield', 'WHOIS privacy',  'Your name and address kept off the public record, at no charge, where the registry allows it.'],
+        ['globe',  'Full DNS control','A, AAAA, CNAME, MX, TXT and SRV records you can edit yourself from the panel.'],
+        ['mail',   'Email forwarding','Point hello@yourdomain at any inbox you already use, without buying a mailbox.'],
+        ['lock',   'Registrar lock',  'On by default, so nobody can start a transfer without your authorisation code.'],
+      ];
+      inc.forEach(function (f, i) { %>
+        <article class="card card-hover" data-reveal="<%= i * 70 %>">
+          <div class="f-icon"><%- icon(f[0], 22) %></div>
+          <h3 class="h3 mb-1"><%= f[1] %></h3>
+          <p class="small muted mb-0"><%= f[2] %></p>
+        </article>
+      <% }); %>
+    </div>
+  </div>
+</section>
+
+<!-- Price table -->
+<section class="section">
+  <div class="wrap">
+    <div class="row-between mb-3">
+      <div>
+        <p class="kicker" data-reveal="0">Pricing</p>
+        <h2 class="h2 mt-2" data-reveal="40">Popular extensions</h2>
+      </div>
+      <a class="btn btn-ghost btn-sm" href="/domains/pricing">See every extension <%- icon('arrow', 16) %></a>
+    </div>
+
+    <div class="card card-flush" data-reveal="80">
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr><th>Extension</th><th class="num">Register</th><th class="num">Renew</th><th class="num">Transfer</th><th></th></tr>
+          </thead>
+          <tbody>
+            <% tlds.filter(function (t) { return t.featured; }).forEach(function (t) { %>
+              <tr>
+                <td class="strong">.<%= t.tld %></td>
+                <td class="num"><%= money(t.register_pence) %></td>
+                <td class="num"><%= money(t.renew_pence) %></td>
+                <td class="num"><%= money(t.transfer_pence) %></td>
+                <td class="num">
+                  <button type="button" class="btn btn-ghost btn-sm dsearch-tld-row" data-tld-chip="<%= t.tld %>">Search</button>
+                </td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <p class="small muted mt-2">
+      Prices are per year and include VAT. Register and transfer prices are for
+      the first year; renewal is what you pay every year after that.
+    </p>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section class="section section-tint" id="faq">
+  <div class="wrap wrap-narrow">
+    <div class="center mb-4">
+      <h2 class="h1" data-reveal="0">Domain questions</h2>
+    </div>
+    <div data-acc-group data-reveal="60">
+      <%
+      const faqs = [
+        ['Do I have to host with you to buy a domain?',
+         'No. You can register a name here and point it anywhere — or park it and decide later. The DNS editor is included either way.'],
+        ['What is WHOIS privacy and do I need it?',
+         'Registries publish the registrant of every domain. Privacy substitutes our details for yours so your home address is not in a public database that spammers scrape. It is included free where the registry permits it — .uk domains have their own opt-out for individuals, which we set for you.'],
+        ['Can I move a domain away later?',
+         'Yes, and we will not make it difficult. Unlock it in the panel, we email the authorisation code, and you are gone. No fee and no retention call. A domain you cannot leave with is not one you own.'],
+        ['Why is the renewal more than the first year?',
+         'On some extensions the registry itself sells a discounted first year to drive adoption — .online and .shop are the obvious ones. We show both numbers side by side before you buy rather than after. On .com, .co.uk and .uk the difference is small and honest.'],
+        ['How quickly does a new domain work?',
+         'The registration itself is usually instant. DNS then propagates, which is typically minutes but can be a few hours depending on your ISP. If you bought hosting at the same time we point it at your site automatically.'],
+      ];
+      faqs.forEach(function (f) { %>
+        <div class="acc">
+          <button class="acc-q" type="button" aria-expanded="false"><span><%= f[0] %></span><%- icon('chevron', 19) %></button>
+          <div class="acc-a"><div class="acc-a-inner"><%= f[1] %></div></div>
+        </div>
+      <% }); %>
+    </div>
+  </div>
+</section>
+
+</main>
+<%- include('../partials/footer', { extraJs: '/assets/js/domain-search.js' }) %>

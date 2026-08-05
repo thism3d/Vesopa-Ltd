@@ -1,0 +1,110 @@
+<%- include('partials/shell-top') %>
+
+<%# One screen for all four enquiry types, driven by SCREENS in src/admin/requests.js. %>
+
+<% if (screen.approvable) { %>
+<div class="ap-tabs">
+  <a href="/admin/requests/<%= screenKey %>" class="<%= !state ? 'is-active' : '' %>">Everything</a>
+  <a href="/admin/requests/<%= screenKey %>?state=pending" class="<%= state === 'pending' ? 'is-active' : '' %>">Waiting on approval</a>
+  <a href="/admin/requests/<%= screenKey %>?state=done" class="<%= state === 'done' ? 'is-active' : '' %>">Approved</a>
+</div>
+<% } %>
+
+<form class="ap-search" method="get" action="/admin/requests/<%= screenKey %>">
+  <% if (state) { %><input type="hidden" name="state" value="<%= state %>"><% } %>
+  <input class="ap-input" type="search" name="q" value="<%= q %>" placeholder="Search…">
+  <button class="ap-btn" type="submit"><span class="material-icons">search</span> Search</button>
+  <div style="flex:1"></div>
+  <span class="ap-muted ap-small" style="align-self:center">
+    <%= rows.length %> record<%= rows.length === 1 ? '' : 's' %><%= rows.length === 500 ? ' (capped)' : '' %>
+  </span>
+</form>
+
+<% if (!rows.length) { %>
+<div class="ap-card"><p class="ap-empty">Nothing here.</p></div>
+<% } %>
+
+<% rows.forEach(function (row) { %>
+<div class="ap-card">
+  <div class="ap-card-head">
+    <h3><%= row.name || '—' %></h3>
+<% if (screen.approvable) { %>
+    <span class="ap-badge <%= row.approved === 'Y' ? 'ok' : 'warn' %>">
+      <%= row.approved === 'Y' ? 'approved' : 'waiting' %>
+    </span>
+<% } %>
+    <div class="ap-spacer"></div>
+
+<% if (screen.approvable && row.approved === 'N') { %>
+    <button class="ap-btn primary sm" type="button"
+            data-modal-template="tplApprove"
+            data-modal-title="Approve <%= row.business_name || row.name %>"
+            data-set-id="<%= row.id %>">
+      <span class="material-icons">verified</span> Approve
+    </button>
+<% } %>
+
+    <a class="ap-btn sm ghost" href="mailto:<%= row.email %>">
+      <span class="material-icons">reply</span> Reply
+    </a>
+
+    <form method="post" action="/admin/requests/<%= screenKey %>/<%= row.id %>/delete">
+      <button class="ap-icon-btn danger" type="submit" title="Delete"
+              data-confirm="Delete the record from <%= row.name %>?">
+        <span class="material-icons">delete_outline</span>
+      </button>
+    </form>
+  </div>
+
+  <dl class="ap-dl" style="margin-bottom:12px">
+<% screen.fields.forEach(function (f) { %>
+    <dt><%= f.label %></dt>
+    <dd>
+<% if (!row[f.key]) { %><span class="ap-muted">—</span>
+<% } else if (f.type === 'email') { %><a href="mailto:<%= row[f.key] %>"><%= row[f.key] %></a>
+<% } else if (f.type === 'tel') { %><a href="tel:<%= row[f.key] %>"><%= row[f.key] %></a>
+<% } else if (f.type === 'datetime') { %><%= formatDateTime(row[f.key]) %>
+<% } else { %><%= row[f.key] %><% } %>
+    </dd>
+<% }); %>
+  </dl>
+
+<% if (row[screen.body]) { %>
+  <div style="background:var(--panel-2); border-radius:8px; padding:14px; white-space:pre-wrap; color:var(--ink-2)"><%= row[screen.body] %></div>
+<% } %>
+
+<% if (row.comment) { %>
+  <p class="ap-small ap-muted ap-mt"><strong>Internal note:</strong> <%= row.comment %></p>
+<% } %>
+</div>
+<% }); %>
+
+<% if (screen.approvable) { %>
+<template id="tplApprove">
+  <h3>Approve</h3>
+  <p class="ap-card-sub">
+    Creates the back-office login and the office billing record, then emails
+    the customer their details. The office starts on the default package.
+  </p>
+
+  <form method="post" action="/admin/requests/demo/0/approve"
+        data-id-action="/admin/requests/demo/" data-id-suffix="/approve">
+    <input type="hidden" name="id">
+    <div class="ap-field">
+      <label>Password for their back office login</label>
+      <input class="ap-input" name="password" required minlength="8" maxlength="72">
+      <p class="hint">Emailed to them, then stored only as a bcrypt hash.</p>
+    </div>
+    <div class="ap-check">
+      <input type="checkbox" id="apTrial" name="trial" value="1">
+      <label for="apTrial">Give them a 14-day trial before the first renewal date</label>
+    </div>
+    <div class="ap-btn-row" style="justify-content:flex-end">
+      <button class="ap-btn ghost" type="button" data-modal-close>Cancel</button>
+      <button class="ap-btn primary" type="submit">Approve &amp; email</button>
+    </div>
+  </form>
+</template>
+<% } %>
+
+<%- include('partials/shell-bottom') %>

@@ -1,0 +1,48 @@
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
+<%- include('../partials/panel-shell', {
+  pageTitle: 'Order ' + order.reference,
+  pageSub: new Date(order.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }),
+}) %>
+
+<% if (order.status === 'pending') { %>
+  <div class="alert alert-warn">
+    <%- icon('clock', 19) %>
+    <div>
+      <b>Awaiting payment.</b> We will be in touch with payment details, and everything
+      on this order goes live the moment it clears.
+    </div>
+  </div>
+<% } %>
+
+<div class="p-card p-card-flush">
+  <div class="p-card-head"><h2>What you ordered</h2></div>
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>Item</th><th class="num">Amount</th></tr></thead>
+      <tbody>
+        <% items.forEach(function (it) { %>
+          <tr>
+            <td><%= it.description %></td>
+            <td class="num"><%= it.total_pence === 0 ? 'Free' : money(it.total_pence, order.currency) %></td>
+          </tr>
+        <% }); %>
+        <%# The order's own currency, not the reader's. Somebody who paid in
+            dollars and later switched the site to sterling must still see the
+            receipt for what they actually paid. %>
+        <tr><td class="muted">Subtotal</td><td class="num"><%= money(order.subtotal_pence, order.currency) %></td></tr>
+        <% if (order.vat_pence > 0) { %>
+          <tr><td class="muted">VAT included</td><td class="num"><%= money(order.vat_pence, order.currency) %></td></tr>
+        <% } %>
+        <tr>
+          <td class="strong">Total</td>
+          <td class="num strong"><%= money(order.total_pence, order.currency) %> <span class="tiny muted"><%= order.currency %></span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<a class="btn btn-ghost btn-sm" href="/panel/billing">← Back to billing</a>
+
+<%- include('../partials/panel-shell-end') %>
+<%- include('../partials/footer') %>

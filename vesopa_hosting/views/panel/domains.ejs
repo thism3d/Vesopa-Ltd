@@ -1,0 +1,42 @@
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
+<%- include('../partials/panel-shell', {
+  pageTitle: 'Your domains',
+  pageSub: 'Registered with us, or pointed here from elsewhere.',
+  topAction: { href: '/domains', label: 'Find a domain', icon: 'search' },
+}) %>
+
+<div class="p-card p-card-flush">
+  <% if (!domains.length) { %>
+    <div class="empty">
+      <%- icon('globe', 46) %>
+      <h3>No domains yet</h3>
+      <p>Register one here and it is pointed at your hosting automatically.</p>
+      <a class="btn mt-2" href="/domains">Search a domain</a>
+    </div>
+  <% } else { %>
+    <% domains.forEach(function (d) {
+         const days = d.expires_at ? Math.round((new Date(d.expires_at) - Date.now()) / 864e5) : null; %>
+      <a class="item" href="/panel/domains/<%= d.id %>">
+        <span class="item-icon"><%- icon('globe', 19) %></span>
+        <span class="item-main">
+          <span class="item-title"><%= d.domain %></span>
+          <span class="item-sub">
+            <% if (d.expires_at) { %>Expires <%= d.expires_at %><% } else { %>Not yet registered<% } %>
+            · <%= d.auto_renew ? 'Auto-renew on' : 'Auto-renew off' %>
+          </span>
+        </span>
+        <span class="item-end">
+          <% if (days !== null && days <= 30 && days > 0) { %>
+            <span class="badge badge-amber"><%= days %> days left</span>
+          <% } else if (d.status === 'active') { %><span class="badge badge-green">Active</span>
+          <% } else if (d.status === 'pending') { %><span class="badge badge-amber">Pending</span>
+          <% } else if (d.status === 'expired') { %><span class="badge badge-red">Expired</span>
+          <% } else { %><span class="badge badge-grey"><%= d.status %></span><% } %>
+        </span>
+      </a>
+    <% }); %>
+  <% } %>
+</div>
+
+<%- include('../partials/panel-shell-end') %>
+<%- include('../partials/footer') %>

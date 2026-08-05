@@ -1,0 +1,39 @@
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
+<%- include('../partials/panel-shell', {
+  pageTitle: 'Your hosting',
+  pageSub: 'Every hosting account on your profile.',
+  topAction: { href: '/hosting', label: 'Add hosting', icon: 'plus' },
+}) %>
+
+<div class="p-card p-card-flush">
+  <% if (!services.length) { %>
+    <div class="empty">
+      <%- icon('server', 46) %>
+      <h3>No hosting accounts yet</h3>
+      <p>Choose a plan and we will have you online in minutes.</p>
+      <a class="btn mt-2" href="/hosting">See plans</a>
+    </div>
+  <% } else { %>
+    <% services.forEach(function (s) { %>
+      <a class="item" href="/panel/services/<%= s.id %>">
+        <span class="item-icon"><%- icon('server', 19) %></span>
+        <span class="item-main">
+          <span class="item-title"><%= s.primary_domain || 'No domain set yet' %></span>
+          <span class="item-sub">
+            <%= s.plan_name %> · <%= s.term_months %> month term
+            <% if (s.next_due_at) { %> · renews <%= s.next_due_at %><% } %>
+          </span>
+        </span>
+        <span class="item-end">
+          <% if (s.status === 'active') { %><span class="badge badge-green"><span class="dot dot-live"></span> Live</span>
+          <% } else if (s.status === 'pending') { %><span class="badge badge-amber">Setting up</span>
+          <% } else if (s.status === 'suspended') { %><span class="badge badge-red">Suspended</span>
+          <% } else { %><span class="badge badge-grey"><%= s.status %></span><% } %>
+        </span>
+      </a>
+    <% }); %>
+  <% } %>
+</div>
+
+<%- include('../partials/panel-shell-end') %>
+<%- include('../partials/footer') %>

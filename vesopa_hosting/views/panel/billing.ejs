@@ -1,0 +1,61 @@
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
+<%- include('../partials/panel-shell', { pageTitle: 'Billing', pageSub: 'Orders, invoices and what renews when.' }) %>
+
+<div class="p-card p-card-flush">
+  <div class="p-card-head"><h2>Upcoming renewals</h2></div>
+  <% if (!services.length) { %>
+    <div class="p-card-body"><p class="muted small mb-0">Nothing renewing — you have no active hosting.</p></div>
+  <% } else { %>
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>Service</th><th>Plan</th><th>Renews</th><th class="num">Price</th></tr></thead>
+        <tbody>
+          <% services.forEach(function (s) { %>
+            <tr>
+              <td class="strong"><a href="/panel/services/<%= s.id %>"><%= s.primary_domain || 'Hosting' %></a></td>
+              <td><%= s.plan_name %></td>
+              <td><%= s.next_due_at || '—' %></td>
+              <td class="num"><%= money(s.price_pence, s.currency) %></td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+  <% } %>
+</div>
+
+<div class="p-card p-card-flush">
+  <div class="p-card-head"><h2>Orders</h2></div>
+  <% if (!orders.length) { %>
+    <div class="empty">
+      <%- icon('card', 46) %>
+      <h3>No orders yet</h3>
+      <p>Your invoices will appear here.</p>
+    </div>
+  <% } else { %>
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>Reference</th><th>Date</th><th>Status</th><th class="num">Total</th><th></th></tr></thead>
+        <tbody>
+          <% orders.forEach(function (o) { %>
+            <tr>
+              <td class="strong mono"><%= o.reference %></td>
+              <td><%= new Date(o.created_at).toLocaleDateString('en-GB') %></td>
+              <td>
+                <% if (o.status === 'active') { %><span class="badge badge-green">Complete</span>
+                <% } else if (o.status === 'pending') { %><span class="badge badge-amber">Awaiting payment</span>
+                <% } else if (o.status === 'paid' || o.status === 'provisioning') { %><span class="badge badge-blue">Setting up</span>
+                <% } else { %><span class="badge badge-grey"><%= o.status %></span><% } %>
+              </td>
+              <td class="num strong"><%= money(o.total_pence, o.currency) %></td>
+              <td class="num"><a class="btn btn-ghost btn-sm" href="/panel/orders/<%= o.id %>">View</a></td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+  <% } %>
+</div>
+
+<%- include('../partials/panel-shell-end') %>
+<%- include('../partials/footer') %>

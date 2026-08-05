@@ -1,0 +1,126 @@
+<%- include('partials/shell-top') %>
+
+<div class="ap-card">
+  <div class="ap-card-head">
+    <h2>Till sub-users</h2>
+    <div class="ap-spacer"></div>
+    <button class="ap-btn primary" type="button" data-modal-template="tplNewClerk">
+      <span class="material-icons">person_add</span> Add a sub-user
+    </button>
+  </div>
+  <p class="ap-card-sub" style="margin-bottom:0">
+    Clerks are who rang a sale, not who can sign in. The PIN is typed on the
+    till, and the till matches sales against it directly — so it is stored as
+    typed rather than hashed, and is never shown back on this screen.
+  </p>
+</div>
+
+<form class="ap-search" method="get" action="/admin/clerks">
+  <input class="ap-input" type="search" name="q" value="<%= q %>" placeholder="Search clerk, office or email…">
+  <button class="ap-btn" type="submit"><span class="material-icons">search</span> Search</button>
+</form>
+
+<div class="ap-table-wrap">
+  <table class="ap-table">
+    <thead>
+      <tr><th>Clerk</th><th>Office</th><th class="num">Till slot</th>
+          <th class="num">Orders · 30d</th><th class="num">Taken · 30d</th>
+          <th>Added</th><th class="actions"></th></tr>
+    </thead>
+    <tbody>
+<% if (!rows.length) { %>
+      <tr><td colspan="7" class="ap-empty">No sub-users yet.</td></tr>
+<% } %>
+<% rows.forEach(function (c) { %>
+      <tr>
+        <td><strong><%= c.clark_name || '—' %></strong></td>
+        <td>
+          <% if (c.office_id) { %><a href="/admin/offices/<%= c.office_id %>"><%= c.office_name %></a>
+          <% } else { %><span class="ap-muted"><%= c.email %></span><% } %>
+        </td>
+        <td class="num"><%= c.pluid %></td>
+        <td class="num"><%= c.orders_30 %></td>
+        <td class="num"><%= money(c.taken_30_minor) %></td>
+        <td class="ap-nowrap ap-small"><%= formatDate(c.timeadded) %></td>
+        <td class="actions">
+          <button class="ap-icon-btn" type="button" title="Edit"
+                  data-modal-template="tplEditClerk"
+                  data-modal-title="Edit <%= c.clark_name || 'sub-user' %>"
+                  data-set-id="<%= c.id %>"
+                  data-set-clark_name="<%= c.clark_name || '' %>"
+                  data-set-pluid="<%= c.pluid %>">
+            <span class="material-icons">edit</span>
+          </button>
+          <form method="post" action="/admin/clerks/<%= c.id %>/delete" style="display:inline">
+            <button class="ap-icon-btn danger" type="submit" title="Remove"
+                    data-confirm="Remove <%= c.clark_name || 'this sub-user' %>? Past sales stay on record but will no longer resolve to a name.">
+              <span class="material-icons">delete_outline</span>
+            </button>
+          </form>
+        </td>
+      </tr>
+<% }); %>
+    </tbody>
+  </table>
+</div>
+
+<template id="tplNewClerk">
+  <h3>Add a till sub-user</h3>
+  <form method="post" action="/admin/clerks/new">
+    <div class="ap-form-grid">
+      <div class="ap-field span-2">
+        <label>Office</label>
+        <select class="ap-select" name="email" required>
+          <option value="">Choose an office…</option>
+<% offices.forEach(function (o) { %>
+          <option value="<%= o.contact_email %>"><%= o.name %> — <%= o.contact_email %></option>
+<% }); %>
+        </select>
+      </div>
+      <div class="ap-field">
+        <label>Clerk name</label>
+        <input class="ap-input" name="clark_name" required maxlength="255">
+      </div>
+      <div class="ap-field">
+        <label>PIN</label>
+        <input class="ap-input" name="pin_code" required maxlength="32">
+        <p class="hint">What they key into the till.</p>
+      </div>
+      <div class="ap-field">
+        <label>Till slot</label>
+        <input class="ap-input" type="number" name="pluid" min="0" placeholder="next free">
+      </div>
+    </div>
+    <div class="ap-btn-row" style="justify-content:flex-end">
+      <button class="ap-btn ghost" type="button" data-modal-close>Cancel</button>
+      <button class="ap-btn primary" type="submit">Add</button>
+    </div>
+  </form>
+</template>
+
+<template id="tplEditClerk">
+  <h3>Edit sub-user</h3>
+  <form method="post" action="/admin/clerks/0" data-id-action="/admin/clerks/">
+    <input type="hidden" name="id">
+    <div class="ap-form-grid">
+      <div class="ap-field">
+        <label>Clerk name</label>
+        <input class="ap-input" name="clark_name" required maxlength="255">
+      </div>
+      <div class="ap-field">
+        <label>Till slot</label>
+        <input class="ap-input" type="number" name="pluid" min="0">
+      </div>
+      <div class="ap-field span-2">
+        <label>New PIN</label>
+        <input class="ap-input" name="pin_code" maxlength="32" placeholder="Leave blank to keep the current one">
+      </div>
+    </div>
+    <div class="ap-btn-row" style="justify-content:flex-end">
+      <button class="ap-btn ghost" type="button" data-modal-close>Cancel</button>
+      <button class="ap-btn primary" type="submit">Save</button>
+    </div>
+  </form>
+</template>
+
+<%- include('partials/shell-bottom') %>

@@ -1,0 +1,16 @@
+<%#
+  The PHP site had no error pages at all — Apache served its unbranded default
+  for a missing page, and a database failure printed the raw MySQL error and the
+  support phone number into the middle of the layout.
+%>
+<%- include('partials/header') %>
+
+<div class="support_section">
+    <div class="support_section_top">
+        <img style="width: 100%; max-width: 300px;" src="/assets/icons/Work-Complete-Task-Illustration.svg" alt="">
+        <h1 class="support_section_heading"><%= heading %></h1>
+        <p class="support_section_brief"><%- brief %></p>
+    </div>
+</div>
+
+<%- include('partials/footer') %>

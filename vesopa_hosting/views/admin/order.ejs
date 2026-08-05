@@ -1,0 +1,139 @@
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
+<%- include('../partials/admin-shell', {
+  pageTitle: 'Order ' + order.reference,
+  pageSub: order.first_name + ' ' + order.last_name + ' · ' + new Date(order.created_at).toLocaleString('en-GB'),
+}) %>
+
+<% if (!hestiaLive || !registrarLive) { %>
+  <div class="mode-banner">
+    <%- icon('warning', 19) %>
+    <div><b>Demonstration mode.</b> Provisioning this order will record the steps but will not create a real account or register a real domain.</div>
+  </div>
+<% } %>
+
+<div class="p-grid p-grid-side">
+  <div>
+    <div class="p-card p-card-flush">
+      <div class="p-card-head"><h2>Lines</h2></div>
+      <div class="table-wrap"><table class="table mini">
+        <thead><tr><th>Item</th><th>Kind</th><th class="num">Amount</th></tr></thead>
+        <tbody>
+          <%# EVERY figure below is rendered in the order's OWN currency, passed
+              as the second argument, never in whatever the reader's session
+              happens to be set to. An invoice that reads differently depending
+              on who opens it is not an invoice. %>
+          <% items.forEach(function (it) { %>
+            <tr>
+              <td><%= it.description %></td>
+              <td><span class="badge badge-grey"><%= it.kind %></span></td>
+              <td class="num"><%= it.total_pence === 0 ? 'Free' : money(it.total_pence, order.currency) %></td>
+            </tr>
+          <% }); %>
+          <tr><td colspan="2" class="muted">Subtotal</td><td class="num"><%= money(order.subtotal_pence, order.currency) %></td></tr>
+          <% if (order.vat_pence > 0) { %>
+            <tr><td colspan="2" class="muted">VAT</td><td class="num"><%= money(order.vat_pence, order.currency) %></td></tr>
+          <% } %>
+          <tr>
+            <td colspan="2" class="strong">Total</td>
+            <td class="num strong"><%= money(order.total_pence, order.currency) %> <span class="tiny muted"><%= order.currency %></span></td>
+          </tr>
+          <% if (order.currency !== currency.code) { %>
+            <tr>
+              <td colspan="2" class="tiny muted">
+                Taken at <%= order.fx_rate %> <%= order.currency %> to the <%= currency.code %>
+              </td>
+              <td class="num tiny muted"><%= money(order.base_total_pence, currency.code) %></td>
+            </tr>
+          <% } %>
+        </tbody>
+      </table></div>
+    </div>
+
+    <div class="p-card p-card-flush">
+      <div class="p-card-head"><h2>What this order created</h2></div>
+      <% if (!services.length && !domains.length) { %>
+        <div class="p-card-body"><p class="muted small mb-0">Nothing yet.</p></div>
+      <% } %>
+      <% services.forEach(function (s) { %>
+        <div class="item">
+          <span class="item-icon"><%- icon('server', 18) %></span>
+          <span class="item-main">
+            <span class="item-title"><%= s.primary_domain || '(no domain)' %></span>
+            <span class="item-sub"><%= s.plan_name %><% if (s.provisioned_at) { %> · provisioned <%= new Date(s.provisioned_at).toLocaleString('en-GB') %><% } %></span>
+          </span>
+          <span class="item-end"><span class="badge <%= s.status === 'active' ? 'badge-green' : 'badge-amber' %>"><%= s.status %></span></span>
+        </div>
+      <% }); %>
+      <% domains.forEach(function (d) { %>
+        <div class="item">
+          <span class="item-icon"><%- icon('globe', 18) %></span>
+          <span class="item-main">
+            <span class="item-title"><%= d.domain %></span>
+            <span class="item-sub"><% if (d.registrar_ref) { %>ref <%= d.registrar_ref %><% } %><% if (d.expires_at) { %> · expires <%= d.expires_at %><% } %></span>
+          </span>
+          <span class="item-end"><span class="badge <%= d.status === 'active' ? 'badge-green' : 'badge-amber' %>"><%= d.status %></span></span>
+        </div>
+      <% }); %>
+    </div>
+  </div>
+
+  <aside>
+    <div class="p-card">
+      <h2 class="h3 mb-2">Status</h2>
+      <p class="mb-3">
+        <% if (order.status === 'pending') { %><span class="badge badge-amber">Awaiting payment</span>
+        <% } else if (order.status === 'active') { %><span class="badge badge-green">Complete</span>
+        <% } else if (order.status === 'provisioning') { %><span class="badge badge-red">Needs attention</span>
+        <% } else { %><span class="badge badge-grey"><%= order.status %></span><% } %>
+      </p>
+
+      <% if (order.status === 'pending') { %>
+        <form method="post" action="/admin/orders/<%= order.id %>/pay" data-guard
+              data-confirm="Mark this order paid and provision everything on it?">
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <div class="field">
+            <label class="label" for="payment_ref">Payment reference</label>
+            <input class="input" id="payment_ref" name="payment_ref" placeholder="Bank ref, or how it was paid">
+          </div>
+          <button class="btn btn-block" type="submit" data-busy="Provisioning…">Mark paid &amp; provision</button>
+        </form>
+        <form method="post" action="/admin/orders/<%= order.id %>/cancel" class="mt-2"
+              data-confirm="Cancel this order? Any pending services and domains on it will be cancelled too.">
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <button class="btn btn-ghost btn-block btn-sm" type="submit">Cancel order</button>
+        </form>
+      <% } else if (order.status === 'provisioning' || order.status === 'paid') { %>
+        <div class="alert alert-warn" style="text-align:left">
+          <%- icon('warning', 19) %>
+          <div>Some steps did not complete. Retrying only re-runs what failed.</div>
+        </div>
+        <form method="post" action="/admin/orders/<%= order.id %>/provision" data-guard>
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <button class="btn btn-block" type="submit" data-busy="Retrying…">Retry provisioning</button>
+        </form>
+      <% } %>
+    </div>
+
+    <div class="p-card">
+      <h2 class="h3 mb-2">Customer</h2>
+      <p class="small mb-2">
+        <a class="strong" href="/admin/customers/<%= order.customer_id %>"><%= order.first_name %> <%= order.last_name %></a><br>
+        <span class="muted"><%= order.email %></span>
+      </p>
+      <div class="table-wrap"><table class="table mini">
+        <tbody>
+          <tr><td class="muted">Phone</td><td><%= order.phone || '—' %></td></tr>
+          <tr><td class="muted">Company</td><td><%= order.company || '—' %></td></tr>
+          <tr><td class="muted">Address</td><td>
+            <%= order.address1 || '—' %><% if (order.city) { %><br><%= order.city %><% } %><% if (order.postcode) { %><br><%= order.postcode %><% } %><br><%= order.country %>
+          </td></tr>
+          <tr><td class="muted">Hestia user</td><td class="mono"><%= order.hestia_user || '—' %></td></tr>
+          <% if (order.payment_ref) { %><tr><td class="muted">Payment ref</td><td class="mono"><%= order.payment_ref %></td></tr><% } %>
+        </tbody>
+      </table></div>
+    </div>
+  </aside>
+</div>
+
+<%- include('../partials/panel-shell-end') %>
+<%- include('../partials/footer') %>

@@ -1,0 +1,3 @@
+# Kept so the directory exists locally. The real binaries live on the
+# server only — see docs/release-binaries.md. deploy.sh excludes public/app
+# from rsync, so nothing here is ever uploaded.

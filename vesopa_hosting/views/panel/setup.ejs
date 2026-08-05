@@ -1,0 +1,202 @@
+<%- include('../partials/head', { sections: false, extraCss: '/assets/css/setup.css' }) %>
+
+<%#
+  Onboarding is deliberately full-bleed: no rail, no nav, no footer links.
+  The customer has one job on this screen and every other door is a way to
+  abandon it half-finished. The only way out is the logo.
+%>
+<main id="main" class="setup">
+  <div class="setup-aura"></div>
+
+  <header class="setup-top">
+    <a class="brand" href="/panel" aria-label="Vesopa Hosting">
+      <img src="/assets/img/brand/vesopa_logo_on_dark.png" alt="Vesopa" width="140" height="20">
+      <span class="brand-sub" style="color:#7d8570;border-color:#2a2e22">Setup</span>
+    </a>
+    <span class="tiny" style="color:#7d8570">Order <b class="mono" style="color:#cfd4c4"><%= order.reference %></b></span>
+  </header>
+
+  <div class="setup-wrap">
+
+    <%# ------------------------------------------------------------------
+        The three-stage rail. Always visible, so the customer can see how
+        much is left rather than guessing.
+        ------------------------------------------------------------------ %>
+    <ol class="setup-rail" aria-label="Setup progress">
+      <%
+      const stages = [
+        ['pay', 'Payment', 'card'],
+        ['domain', 'Your domain', 'globe'],
+        ['provisioning', 'Building', 'rocket'],
+      ];
+      const order_ = ['pay', 'domain', 'provisioning'];
+      const at = order_.indexOf(state);
+      stages.forEach(function (s, i) {
+        const cls = i < at ? 'is-done' : i === at ? 'is-now' : '';
+      %>
+        <li class="setup-rail-item <%= cls %>">
+          <span class="setup-rail-mark"><%- i < at ? icon('check', 15) : icon(s[2], 15) %></span>
+          <span class="setup-rail-label"><%= s[1] %></span>
+        </li>
+      <% }); %>
+    </ol>
+
+    <% if (state === 'pay') { %>
+      <%# ---------------------------------------------------------------
+          Awaiting payment. No gateway is wired yet, so this is honest
+          about what happens next rather than showing a fake card form.
+          --------------------------------------------------------------- %>
+      <section class="setup-card">
+        <div class="setup-icon setup-icon-amber"><%- icon('card', 26) %></div>
+        <h1 class="h1 mb-2">One step left — payment</h1>
+        <p class="lede mb-3">
+          Your order is reserved. Nothing is set up and nothing is registered
+          until it is paid, and the moment it clears this page carries straight
+          on to the rest of your setup.
+        </p>
+
+        <div class="setup-summary">
+          <% items.forEach(function (it) { %>
+            <div class="row-between">
+              <span class="small"><%= it.description %></span>
+              <span class="small strong"><%= it.total_pence === 0 ? 'Free' : money(it.total_pence, order.currency) %></span>
+            </div>
+          <% }); %>
+          <hr class="divider" style="margin:14px 0">
+          <div class="row-between">
+            <span class="strong">Total</span>
+            <span class="strong" style="font-size:1.2rem"><%= money(order.total_pence, order.currency) %></span>
+          </div>
+        </div>
+
+        <% if (paymentsMode === 'manual') { %>
+          <div class="alert alert-warn mt-3" style="text-align:left">
+            <%- icon('clock', 19) %>
+            <div>
+              <p class="mb-0">
+                <b>Card payment is not switched on yet.</b> We have emailed you
+                and will send payment details shortly — usually within the hour
+                during working days. This page will move on by itself once the
+                payment is recorded.
+              </p>
+            </div>
+          </div>
+        <% } %>
+
+        <div class="row mt-3" style="justify-content:center">
+          <a class="btn btn-lg" href="/contact">Arrange payment</a>
+          <a class="btn btn-ghost btn-lg" href="/panel">Go to my account</a>
+        </div>
+      </section>
+
+    <% } else if (state === 'domain') { %>
+      <%# ---------------------------------------------------------------
+          The free domain. Offered only when the entitlement is genuinely
+          unspent — the server decides, this template only renders it.
+          --------------------------------------------------------------- %>
+      <section class="setup-card setup-card-wide" data-setup-domain>
+        <% if (service && service.free_domain_eligible && !service.free_domain_claimed) { %>
+          <div class="setup-icon"><%- icon('star', 26) %></div>
+          <h1 class="h1 mb-2">Your free domain is waiting</h1>
+          <p class="lede mb-3">
+            Your <b><%= service.plan_name %></b> plan includes one domain free
+            for the first year — any extension up to <b><%= freeMax %></b>.
+            Find the one you want and it is registered as part of your setup.
+          </p>
+
+          <form class="dsearch dsearch-light" data-free-search
+                style="max-width:100%;margin-bottom:8px">
+            <div class="dsearch-form">
+              <input class="dsearch-input" type="text" name="q" autocomplete="off"
+                     spellcheck="false" placeholder="Try your business name…"
+                     aria-label="Search for your free domain">
+              <button class="btn" type="submit"><%- icon('search', 18) %><span class="hide-sm">Search</span></button>
+            </div>
+          </form>
+
+          <p class="tiny muted mb-3">
+            Included:
+            <% freeTlds.slice(0, 8).forEach(function (t, i) { %><%= i ? ' · ' : '' %>.<%= t.tld %><% }); %>
+          </p>
+
+          <div data-free-results hidden></div>
+
+          <form method="post" action="/panel/setup/<%= order.id %>/domain" data-guard hidden data-free-claim>
+            <input type="hidden" name="_csrf" value="<%= csrf %>">
+            <input type="hidden" name="choice" value="free">
+            <input type="hidden" name="domain" value="">
+          </form>
+
+          <hr class="divider">
+        <% } else { %>
+          <div class="setup-icon"><%- icon('globe', 26) %></div>
+          <h1 class="h1 mb-2">Which domain is this for?</h1>
+          <p class="lede mb-3">
+            Tell us the address your site will live at. You can change it later,
+            and you can skip this entirely — your account works either way.
+          </p>
+        <% } %>
+
+        <div class="setup-alt">
+          <form method="post" action="/panel/setup/<%= order.id %>/domain" data-guard>
+            <input type="hidden" name="_csrf" value="<%= csrf %>">
+            <input type="hidden" name="choice" value="existing">
+            <label class="label" for="existing_domain">I already own a domain</label>
+            <div class="row" style="gap:8px;flex-wrap:nowrap">
+              <input class="input" id="existing_domain" name="existing_domain"
+                     placeholder="yourbusiness.co.uk" autocomplete="off" spellcheck="false">
+              <button class="btn btn-ghost" type="submit" style="flex:none">Use this</button>
+            </div>
+            <p class="hint">We will show you the two nameservers to paste at your current registrar.</p>
+          </form>
+
+          <form method="post" action="/panel/setup/<%= order.id %>/domain" data-guard style="margin-top:14px">
+            <input type="hidden" name="_csrf" value="<%= csrf %>">
+            <input type="hidden" name="choice" value="later">
+            <button class="btn-link" type="submit">Skip for now — I will decide later</button>
+          </form>
+        </div>
+      </section>
+
+    <% } else { %>
+      <%# ---------------------------------------------------------------
+          Building. The page starts the work, then watches it.
+          --------------------------------------------------------------- %>
+      <section class="setup-card setup-card-wide"
+               data-setup-run
+               data-order="<%= order.id %>"
+               data-csrf="<%= csrf %>"
+               data-started="<%= order.status === 'paid' ? '0' : '1' %>">
+        <div class="setup-icon" data-run-icon><%- icon('rocket', 26) %></div>
+        <h1 class="h1 mb-2" data-run-title>Setting up your hosting</h1>
+        <p class="lede mb-3" data-run-sub>
+          This takes under a minute. You can leave this page — it carries on
+          without you and we will email you when it is done.
+        </p>
+
+        <div class="setup-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" data-run-bar>
+          <i></i>
+        </div>
+        <p class="tiny muted" data-run-percent>Starting…</p>
+
+        <ul class="setup-steps" data-run-steps>
+          <li class="setup-step is-running">
+            <span class="setup-step-mark"><span class="spinner spinner-dark"></span></span>
+            <span class="setup-step-text"><b>Getting started</b></span>
+          </li>
+        </ul>
+
+        <div class="row mt-4" style="justify-content:center" data-run-done hidden>
+          <a class="btn btn-lg" href="/panel">Open my account</a>
+          <a class="btn btn-ghost btn-lg" href="/panel/services">See my hosting</a>
+        </div>
+      </section>
+    <% } %>
+
+    <p class="center tiny mt-4" style="color:#6f7862">
+      Need a hand? <a href="/contact" style="color:var(--lime)">Talk to someone</a> — we answer.
+    </p>
+  </div>
+</main>
+
+<%- include('../partials/footer', { bare: true, extraJs: '/assets/js/setup.js' }) %>

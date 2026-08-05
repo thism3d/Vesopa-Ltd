@@ -1,0 +1,131 @@
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
+<%- include('../partials/panel-shell', {
+  pageTitle: service.primary_domain || service.plan_name,
+  pageSub: service.plan_name + ' plan' + (service.server_hostname ? ' · ' + service.server_hostname : ''),
+}) %>
+
+<%- include('../partials/service-tabs', { tab: 'overview' }) %>
+
+<% if (service.status === 'pending') { %>
+  <div class="alert alert-warn">
+    <%- icon('clock', 19) %>
+    <div><b>This account is still being set up.</b> It goes live as soon as your order is paid — we will email you.</div>
+  </div>
+<% } %>
+<% if (service.status === 'suspended') { %>
+  <div class="alert alert-error">
+    <%- icon('warning', 19) %>
+    <div>
+      <b>This account is suspended.</b>
+      <%= service.suspended_reason || 'Please contact support to restore it.' %>
+      <a href="/panel/tickets/new">Open a ticket</a>
+    </div>
+  </div>
+<% } %>
+<% if (!hestiaLive) { %>
+  <div class="alert alert-info">
+    <%- icon('info', 19) %>
+    <div><b>Demonstration mode.</b> This terminal is not connected to a live hosting node, so the usage figures below are examples.</div>
+  </div>
+<% } %>
+
+<div class="p-grid p-grid-side">
+  <div>
+    <div class="p-card">
+      <div class="row-between mb-3">
+        <h2 class="h3">Usage</h2>
+        <% if (statsError) { %><span class="badge badge-amber">Node unreachable</span><% } %>
+      </div>
+
+      <% if (stats) {
+           const pct = stats.disk_quota_mb ? Math.min(100, Math.round(stats.disk_used_mb / stats.disk_quota_mb * 100)) : 0;
+           const cls = pct >= 90 ? 'is-full' : pct >= 75 ? 'is-high' : ''; %>
+        <div class="mb-3">
+          <div class="row-between">
+            <span class="small strong">Storage</span>
+            <span class="small muted">
+              <%= (stats.disk_used_mb / 1024).toFixed(1) %> GB of
+              <%= stats.disk_quota_mb ? (stats.disk_quota_mb / 1024).toFixed(0) + ' GB' : 'unlimited' %>
+            </span>
+          </div>
+          <div class="meter <%= cls %>"><i style="width:<%= pct %>%"></i></div>
+        </div>
+
+        <div class="p-grid p-grid-3">
+          <div><div class="tile-label">Websites</div><div class="strong"><%= stats.web_domains %> / <%= service.websites %></div></div>
+          <div><div class="tile-label">Databases</div><div class="strong"><%= stats.databases %> / <%= service.plan_databases %></div></div>
+          <div><div class="tile-label">Mailboxes</div><div class="strong"><%= stats.mail_accounts %> / <%= service.plan_mailboxes %></div></div>
+        </div>
+      <% } else { %>
+        <p class="muted small mb-0">
+          <% if (statsError) { %>
+            We could not reach the hosting node just now, so live usage is unavailable.
+            Your site is unaffected — this page is the only thing that cannot see it.
+          <% } else { %>
+            Usage appears here once the account is live.
+          <% } %>
+        </p>
+      <% } %>
+    </div>
+
+    <div class="p-card">
+      <h2 class="h3 mb-2">SSL certificate</h2>
+      <% if (!service.primary_domain) { %>
+        <p class="small muted mb-2">Add a domain to this site before a certificate can be issued.</p>
+      <% } else { %>
+        <p class="small muted mb-2">
+          Certificates are issued automatically once <b><%= service.primary_domain %></b> points at us,
+          and renewed for as long as you host here. If your padlock is missing, it is nearly
+          always because DNS has not propagated yet — press the button and we will try again.
+        </p>
+        <form method="post" action="/panel/services/<%= service.id %>/ssl" data-guard>
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <button class="btn btn-sm" type="submit" data-busy="Requesting…"><%- icon('lock', 16) %> Issue or retry SSL</button>
+        </form>
+      <% } %>
+    </div>
+
+    <% if (addonDomains.length) { %>
+      <div class="p-card p-card-flush">
+        <div class="p-card-head"><h2>Other domains on this site</h2></div>
+        <% addonDomains.forEach(function (d) { %>
+          <a class="item" href="/panel/domains/<%= d.id %>">
+            <span class="item-icon"><%- icon('globe', 19) %></span>
+            <span class="item-main"><span class="item-title"><%= d.domain %></span></span>
+          </a>
+        <% }); %>
+      </div>
+    <% } %>
+  </div>
+
+  <aside>
+    <div class="p-card">
+      <h2 class="h3 mb-2">Point your domain here</h2>
+      <p class="small muted mb-2">Set these two nameservers at whoever your domain is registered with.</p>
+      <% nameservers.forEach(function (ns) { %>
+        <div class="copyable">
+          <span><%= ns %></span>
+          <button type="button" class="btn btn-ghost btn-sm copy-btn" data-copy="<%= ns %>">Copy</button>
+        </div>
+      <% }); %>
+    </div>
+
+    <div class="p-card">
+      <h2 class="h3 mb-2">Plan</h2>
+      <div class="table-wrap"><table class="table" style="font-size:.86rem">
+        <tbody>
+          <tr><td class="muted">Plan</td><td class="strong"><%= service.plan_name %></td></tr>
+          <tr><td class="muted">Term</td><td class="strong"><%= service.term_months %> months</td></tr>
+          <tr><td class="muted">Price</td><td class="strong"><%= money(service.price_pence, service.currency) %> <span class="tiny muted"><%= service.currency %></span></td></tr>
+          <% if (service.next_due_at) { %>
+            <tr><td class="muted">Renews</td><td class="strong"><%= service.next_due_at %></td></tr>
+          <% } %>
+        </tbody>
+      </table></div>
+      <a class="btn btn-ghost btn-sm btn-block mt-2" href="/hosting">Change plan</a>
+    </div>
+  </aside>
+</div>
+
+<%- include('../partials/panel-shell-end') %>
+<%- include('../partials/footer') %>

@@ -1,0 +1,65 @@
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
+<%- include('../partials/admin-shell', { pageTitle: 'Email plans', pageSub: 'Business mailboxes and marketing sending. Edits go live immediately.' }) %>
+
+<div class="alert alert-info mb-3">
+  <div>
+    <p class="mb-0 small">
+      Email is priced <b>per unit, per month</b> — a mailbox for business plans,
+      a block of 1,000 contacts for marketing. The customer chooses how many, so
+      the price below is multiplied by that count at checkout. Business plans
+      provision on the mail server automatically; <b>marketing plans are set up
+      by hand</b> and appear on the order as awaiting manual setup.
+    </p>
+  </div>
+</div>
+
+<% [['Business email', businessEmail], ['Marketing email', marketingEmail]].forEach(function (group) { %>
+  <h2 class="h3 mb-2"><%= group[0] %></h2>
+  <div class="p-card p-card-flush mb-4">
+    <div class="table-wrap"><table class="table mini">
+      <thead>
+        <tr>
+          <th>Plan</th><th>Unit</th>
+          <th class="num">Monthly</th><th class="num">1 year</th>
+          <th class="num">Range</th><th>Status</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <% if (!group[1].length) { %>
+          <tr><td colspan="7"><span class="muted small">Nothing configured.</span></td></tr>
+        <% } %>
+        <% group[1].forEach(function (p) { %>
+          <tr>
+            <td>
+              <span class="strong"><%= p.name %></span>
+              <% if (p.badge) { %> <span class="badge badge-lime"><%= p.badge %></span><% } %>
+              <br><span class="tiny muted">
+                <%= p.slug %>
+                <% if (p.storage_gb) { %> · <%= p.storage_gb %> GB each<% } %>
+                <% if (p.monthly_sends) { %> · <%= p.monthly_sends.toLocaleString('en-GB') %> sends/mo<% } %>
+              </span>
+            </td>
+            <td><span class="tiny muted">per</span> <%= p.unit_label %></td>
+            <td class="num"><%= money(p.monthly_pence) %></td>
+            <td class="num">
+              <%= money(p.annual_pence) %>
+              <br><span class="tiny muted"><%= money(p.perMonthPence[12]) %>/mo<% if (p.saving[12] > 0) { %> · −<%= p.saving[12] %>%<% } %></span>
+            </td>
+            <td class="num"><%= p.min_units %>–<%= p.max_units %></td>
+            <td><%- p.active ? '<span class="badge badge-green">Live</span>' : '<span class="badge badge-grey">Hidden</span>' %></td>
+            <td class="num"><a class="btn btn-ghost btn-sm" href="/admin/plans/email/<%= p.id %>">Edit</a></td>
+          </tr>
+        <% }); %>
+      </tbody>
+    </table></div>
+  </div>
+<% }); %>
+
+<p class="small muted">
+  Hosting plans are managed separately, on <a href="/admin/plans">Plans</a>.
+  Every hosting plan already includes mailboxes at no extra charge; these are
+  sold to customers who want email on its own or need more than their plan gives.
+</p>
+
+<%- include('../partials/panel-shell-end') %>
+<%- include('../partials/footer') %>

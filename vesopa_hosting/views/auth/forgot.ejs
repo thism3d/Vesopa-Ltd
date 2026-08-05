@@ -1,0 +1,43 @@
+<%- include('../partials/head') %>
+<div class="auth-page">
+  <div class="auth-card">
+    <a class="auth-brand" href="/">
+      <img src="/assets/img/brand/vesopa_logo.png" alt="Vesopa" width="150" height="22">
+      <span class="brand-sub">Hosting</span>
+    </a>
+
+    <% if (sent) { %>
+      <div class="f-icon" style="width:52px;height:52px"><%- icon('mail', 26) %></div>
+      <h1>Check your inbox</h1>
+      <p class="lede">
+        If that address has an account with us, a reset link is on its way. It
+        expires in an hour and can only be used once.
+      </p>
+      <div class="alert alert-info">
+        <%- icon('info', 19) %>
+        <div>Nothing arrived? Check your spam folder — and make sure you used the address you signed up with.</div>
+      </div>
+      <a class="btn btn-block" href="/login">Back to sign in</a>
+    <% } else { %>
+      <h1>Reset your password</h1>
+      <p class="lede">Enter your email address and we will send you a link.</p>
+
+      <% if (error) { %>
+        <div class="alert alert-error"><%- icon('warning', 19) %><div><%= error %></div></div>
+      <% } %>
+
+      <form method="post" action="/forgot" data-guard>
+        <input type="hidden" name="_csrf" value="<%= csrf %>">
+        <div class="field">
+          <label class="label" for="email">Email address</label>
+          <input class="input" id="email" name="email" type="email" autocomplete="username" required autofocus>
+        </div>
+        <button class="btn btn-block btn-lg" type="submit" data-busy="Sending…">Send reset link</button>
+      </form>
+
+      <p class="auth-alt mb-0">Remembered it? <a href="/login">Sign in</a></p>
+    <% } %>
+  </div>
+  <p class="auth-foot"><a href="/">← Back to the website</a></p>
+</div>
+<%- include('../partials/footer') %>

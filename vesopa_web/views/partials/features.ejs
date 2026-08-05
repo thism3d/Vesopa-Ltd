@@ -1,0 +1,274 @@
+<%#
+  The full Vesopa EPOS capability list.
+
+  The site previously advertised five generic benefits ("process transactions
+  swiftly", "manage your product catalog") and stopped, so a visitor could not
+  tell that the product does table service, mix & match deals, gift cards,
+  loyalty tiers, a receipt designer or offline trading — all of which ship.
+  Every card below maps to something in the shipped software: the till
+  (vesopa_epos) or the back office (vesopa_server).
+
+  Three tabs rather than one 30-card wall: an operator evaluating the till and a
+  manager evaluating the reporting are looking for different things.
+%>
+<div class="vf" id="features">
+    <div class="vf-inner">
+        <div class="vf-head">
+            <p class="vf-kicker">Everything in the box</p>
+            <h2 class="vf-title">One system for <span>the whole operation</span></h2>
+            <p class="vf-sub">
+                Vesopa EPOS is a till, a floor plan, a stock book, a loyalty scheme and a
+                reporting suite that all read from the same data — so what a clerk rings
+                through at the counter is on the manager's dashboard before the drawer shuts.
+            </p>
+        </div>
+
+        <div class="vf-tabs" role="tablist" aria-label="Vesopa EPOS features">
+            <button class="vf-tab" type="button" role="tab" id="vf-tab-till"
+                    aria-controls="vf-panel-till" aria-selected="true">On the till</button>
+            <button class="vf-tab" type="button" role="tab" id="vf-tab-office"
+                    aria-controls="vf-panel-office" aria-selected="false">In the back office</button>
+            <button class="vf-tab" type="button" role="tab" id="vf-tab-platform"
+                    aria-controls="vf-panel-platform" aria-selected="false">Platform &amp; support</button>
+        </div>
+
+        <!-- ---- Till ---- -->
+        <div class="vf-grid" id="vf-panel-till" role="tabpanel" aria-labelledby="vf-tab-till">
+            <div class="vf-card">
+                <div class="vf-icon" aria-hidden="true"><i class="fa fa-bolt"></i></div>
+                <h3>Fast counter sales</h3>
+                <p>Department and group buttons with images or emoji, laid out the way your
+                   menu actually works. Barcode scanning, price look-ups and quantity keys
+                   on a touchscreen built for speed at a busy bar.</p>
+            </div>
+            <div class="vf-card">
+                <div class="vf-icon" aria-hidden="true"><i class="fa fa-th-large"></i></div>
+                <h3>Table service &amp; floor plan</h3>
+                <p>Draw your rooms once in the Table Designer, then open, hold, move and
+                   merge tabs against real tables. Multiple rooms, seat counts and round or
+                   square tables all carry through to the till.</p>
+            </div>
+            <div class="vf-card">
+                <div class="vf-icon" aria-hidden="true"><i class="fa fa-scissors"></i></div>
+                <h3>Split &amp; part payment</h3>
+                <p>Split a bill by item or by value, take part payment now and the rest
+                   later, and mix tenders on one sale — cash, card, voucher and gift card
+                   against the same tab.</p>
+            </div>
+            <div class="vf-card">
+                <div class="vf-icon" aria-hidden="true"><i class="fa fa-credit-card"></i></div>
+                <h3>Integrated card payments</h3>
+                <p>Dojo card machines are driven directly from the till, so the amount is
+                   pushed to the terminal instead of keyed in twice. Contactless, Apple Pay
+                   and Google Pay included, with a built-in diagnostics screen.</p>
+            </div>
+            <div class="vf-card">
+                <div class="vf-icon" aria-hidden="true"><i class="fa fa-plug"></i></div>
+                <h3>Keeps trading offline</h3>
+                <p>If the line drops, sales keep going into a local outbox on the terminal
+                   and flush to the server the moment it returns. The till shows exactly how
+                   many sales are still queued — nothing is lost, nothing is guessed.</p>
+            </div>
+            <div class="vf-card">
+                <div class="vf-icon" aria-hidden="true"><i class="fa fa-print"></i></div>
+                <h3>Receipts &amp; kitchen tickets</h3>
+                <p>80mm thermal receipts over USB, network or serial, plus routed kitchen and
+                   bar tickets so each section only prints what it makes. Reprint any past
+                   receipt from the terminal.</p>
+            </div>
+            <div class="vf-card">
+                <div class="vf-icon" aria-hidden="true"><i class="fa fa-tags"></i></div>
+                <h3>Deals &amp; discounts</h3>
+                <p>Mix &amp; match offers, meal deals, percentage and value discounts, and
+                   promotions that apply themselves at the point of sale in the order you
+                   set — no mental arithmetic at the counter.</p>
+            </div>
+            <div class="vf-card">
+                <div class="vf-icon" aria-hidden="true"><i class="fa fa-user"></i></div>
+                <h3>Customers &amp; loyalty</h3>
+                <p>Attach a customer to a sale, collect points, apply tier benefits and
+                   redeem rewards at the till. Account customers, deposits and gift cards
+                   are all handled in the same flow.</p>
+            </div>
+            <div class="vf-card">
+                <div class="vf-icon" aria-hidden="true"><i class="fa fa-shield"></i></div>
+                <h3>Clerk control &amp; voids</h3>
+                <p>Every sale is signed by the clerk who took it. Voids and refunds require
+                   a reason from your own list, so the error report tells you what happened
+                   rather than just that something did.</p>
+            </div>
+            <div class="vf-card">
+                <div class="vf-icon" aria-hidden="true"><i class="fa fa-moon-o"></i></div>
+                <h3>Light &amp; dark</h3>
+                <p>A dark till for the evening service and a light one for the day, switched
+                   in a tap. Your own logo and colours carry across both.</p>
+            </div>
+        </div>
+
+        <!-- ---- Back office ---- -->
+        <div class="vf-grid" id="vf-panel-office" role="tabpanel" aria-labelledby="vf-tab-office" hidden>
+            <div class="vf-card">
+                <div class="vf-icon" aria-hidden="true"><i class="fa fa-dashboard"></i></div>
+                <h3>Live dashboard</h3>
+                <p>Takings, covers, average spend and top sellers updating as tills settle —
+                   over a live connection, not a page you have to keep refreshing. Pick 7,
+                   30, 90 days or the year.</p>
+            </div>
+            <div class="vf-card">
+                <div class="vf-icon" aria-hidden="true"><i class="fa fa-line-chart"></i></div>
+                <h3>Sales Explorer</h3>
+                <p>Drill from a day's total down to the individual bill and the items on it.
+                   Filter by clerk, department, table or tender to answer the question you
+                   actually have.</p>
+            </div>
+            <div class="vf-card">
+                <div class="vf-icon" aria-hidden="true"><i class="fa fa-file-text-o"></i></div>
+                <h3>Till &amp; bill reports</h3>
+                <p>End-of-day Z-style till reports and a searchable bill report, both
+                   exportable to PDF for the accountant. Click any bill to view or reprint
+                   its receipt.</p>
+            </div>
+            <div class="vf-card">
+                <div class="vf-icon" aria-hidden="true"><i class="fa fa-cubes"></i></div>
+                <h3>Products &amp; stock</h3>
+                <p>Prices, images, barcodes and stock levels in one place. Change a price
+                   here and every connected terminal has it immediately — no export, no
+                   reload, no closing the till.</p>
+            </div>
+            <div class="vf-card">
+                <div class="vf-icon" aria-hidden="true"><i class="fa fa-sliders"></i></div>
+                <h3>Full till programming</h3>
+                <p>Departments, groups, tax rates, finalise keys, error reasons and mix &amp;
+                   match deals — all drag-ordered so the till buttons appear exactly where
+                   your staff expect them.</p>
+            </div>
+            <div class="vf-card">
+                <div class="vf-icon" aria-hidden="true"><i class="fa fa-object-group"></i></div>
+                <h3>Table designer</h3>
+                <p>Lay out each room by dragging tables onto a grid, set seat counts and
+                   shapes, and push the plan straight to the floor staff's terminals.</p>
+            </div>
+            <div class="vf-card">
+                <div class="vf-icon" aria-hidden="true"><i class="fa fa-star"></i></div>
+                <h3>Loyalty &amp; promotions</h3>
+                <p>Build point-earning rules, loyalty tiers with their own colours and
+                   benefits, and date-bounded promotions. Automation rules trigger the ones
+                   you would otherwise have to remember.</p>
+            </div>
+            <div class="vf-card">
+                <div class="vf-icon" aria-hidden="true"><i class="fa fa-gift"></i></div>
+                <h3>Gift cards, vouchers &amp; deposits</h3>
+                <p>Issue and redeem gift cards, run voucher campaigns, and take deposits
+                   against future bookings — each with its own balance and history.</p>
+            </div>
+            <div class="vf-card">
+                <div class="vf-icon" aria-hidden="true"><i class="fa fa-file-image-o"></i></div>
+                <h3>Receipt designer</h3>
+                <p>Design the customer receipt — logo, header, footer, barcode and QR — with
+                   a live paper preview beside the form, so you see the slip before you
+                   print a single one.</p>
+            </div>
+            <div class="vf-card">
+                <div class="vf-icon" aria-hidden="true"><i class="fa fa-users"></i></div>
+                <h3>Staff &amp; permissions</h3>
+                <p>Manage back-office users and till clerks separately, so a supervisor can
+                   see the figures without being able to reprogram the till.</p>
+            </div>
+            <div class="vf-card">
+                <div class="vf-icon" aria-hidden="true"><i class="fa fa-money"></i></div>
+                <h3>Tender &amp; gratuity</h3>
+                <p>Define the tender keys your business uses, set gratuity handling and
+                   rounding, and preview how the finalise screen will look before it reaches
+                   the floor.</p>
+            </div>
+            <div class="vf-card">
+                <div class="vf-icon" aria-hidden="true"><i class="fa fa-building-o"></i></div>
+                <h3>Multi-site</h3>
+                <p>Run more than one venue from one login, with each office's programming,
+                   staff and reporting kept separate and a group view across all of them.</p>
+            </div>
+        </div>
+
+        <!-- ---- Platform ---- -->
+        <div class="vf-grid" id="vf-panel-platform" role="tabpanel" aria-labelledby="vf-tab-platform" hidden>
+            <div class="vf-card">
+                <div class="vf-icon" aria-hidden="true"><i class="fa fa-desktop"></i></div>
+                <h3>Windows, macOS, iOS &amp; Android</h3>
+                <p>The same till runs on a countertop Windows terminal, a Mac, an iPad or an
+                   Android handheld — so waiting staff can take orders at the table on the
+                   device that suits the room.</p>
+            </div>
+            <div class="vf-card">
+                <div class="vf-icon" aria-hidden="true"><i class="fa fa-lock"></i></div>
+                <h3>Encrypted &amp; backed up</h3>
+                <p>Traffic between terminal and server is encrypted, passwords are stored
+                   hashed, and your data is backed up off-site — so a stolen terminal is a
+                   hardware problem, not a data breach.</p>
+            </div>
+            <div class="vf-card">
+                <div class="vf-icon" aria-hidden="true"><i class="fa fa-plug"></i></div>
+                <h3>Works with your hardware</h3>
+                <p>Touchscreen terminals, thermal and kitchen printers, cash drawers,
+                   barcode scanners and customer displays. Sam4s, Oxhoo and ICRTouch
+                   hardware included.</p>
+            </div>
+            <div class="vf-card">
+                <div class="vf-icon" aria-hidden="true"><i class="fa fa-graduation-cap"></i></div>
+                <h3>Training included</h3>
+                <p>On-site and remote training for your team as part of setup, plus refresher
+                   sessions whenever you take on new staff.</p>
+            </div>
+            <div class="vf-card">
+                <div class="vf-icon" aria-hidden="true"><i class="fa fa-life-ring"></i></div>
+                <h3>UK support, 24/7</h3>
+                <p>Real people in Swansea on the end of a phone, including weekends and
+                   evenings — the hours hospitality actually trades.</p>
+            </div>
+            <div class="vf-card">
+                <div class="vf-icon" aria-hidden="true"><i class="fa fa-refresh"></i></div>
+                <h3>Updates included</h3>
+                <p>New features and fixes arrive as part of your subscription. No upgrade
+                   fee, no version you get stranded on.</p>
+            </div>
+        </div>
+
+        <div class="vf-specs">
+            <div class="vf-spec"><b>Hospitality &amp; retail</b><span>Pubs, bars, restaurants, cafés, takeaways and shops</span></div>
+            <div class="vf-spec"><b>Unlimited terminals</b><span>Add tills and handhelds as you grow</span></div>
+            <div class="vf-spec"><b>Live sync</b><span>Change it once, every terminal has it</span></div>
+            <div class="vf-spec"><b>30-day guarantee</b><span>Money back if it is not right for you</span></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Tab switching. Plain buttons with aria-selected rather than a widget
+    // library: the panels are all in the DOM already, so this is a visibility
+    // toggle and screen readers get the state for free.
+    (function () {
+        const tabs = Array.from(document.querySelectorAll('.vf-tab'));
+
+        function select(tab) {
+            tabs.forEach(function (t) {
+                const on = t === tab;
+                t.setAttribute('aria-selected', String(on));
+                document.getElementById(t.getAttribute('aria-controls')).hidden = !on;
+            });
+        }
+
+        tabs.forEach(function (tab) {
+            tab.addEventListener('click', function () { select(tab); });
+
+            // Left/right arrows move between tabs, which is what a keyboard user
+            // expects from a tablist and what the role promises them.
+            tab.addEventListener('keydown', function (e) {
+                if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+                e.preventDefault();
+                const step = e.key === 'ArrowRight' ? 1 : -1;
+                const next = tabs[(tabs.indexOf(tab) + step + tabs.length) % tabs.length];
+                select(next);
+                next.focus();
+            });
+        });
+    })();
+</script>

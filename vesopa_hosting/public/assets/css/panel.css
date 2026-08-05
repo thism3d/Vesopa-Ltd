@@ -1,0 +1,232 @@
+/* ===========================================================================
+   Vesopa Hosting — control panel
+   ---------------------------------------------------------------------------
+   Loaded on top of app.css, which supplies the tokens, buttons, cards, tables
+   and form controls. Only the signed-in chrome lives here.
+   =========================================================================== */
+
+.shell { display: flex; min-height: 100vh; background: var(--bg-2); }
+
+/* ---- Rail -------------------------------------------------------------- */
+.rail {
+  position: fixed; inset: 0 auto 0 0;
+  width: 232px; flex: none;
+  background: var(--chrome);
+  display: flex; flex-direction: column;
+  padding: 22px 14px 18px;
+  z-index: 40;
+}
+.rail-brand { display: block; padding: 0 10px 26px; }
+.rail-brand:hover { text-decoration: none; }
+.rail-nav { display: flex; flex-direction: column; gap: 2px; }
+.rail-foot { margin-top: auto; padding-top: 14px; border-top: 1px solid #2a2a26; display: flex; flex-direction: column; gap: 2px; }
+
+.rail-link {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px; border-radius: 10px;
+  color: #9ba095; font-size: .93rem; font-weight: 600;
+  text-decoration: none;
+  transition: color .18s var(--ease), background .18s var(--ease);
+}
+.rail-link:hover { color: #fff; background: #1e1e1b; text-decoration: none; }
+.rail-link.is-active { color: var(--on-lime); background: var(--lime); }
+.rail-icon { display: grid; place-items: center; flex: none; }
+
+/* ---- Main column ------------------------------------------------------- */
+.shell-main { flex: 1; min-width: 0; margin-left: 232px; }
+.wrap-panel { max-width: 1100px; margin-inline: auto; padding: 26px 26px 60px; }
+
+.topbar {
+  position: sticky; top: 0; z-index: 30;
+  background: rgba(248, 249, 244, .88);
+  backdrop-filter: saturate(180%) blur(12px);
+  -webkit-backdrop-filter: saturate(180%) blur(12px);
+  border-bottom: 1px solid var(--rule);
+}
+.topbar-inner {
+  max-width: 1100px; margin-inline: auto; padding: 18px 26px;
+  display: flex; align-items: center; justify-content: space-between; gap: 18px; flex-wrap: wrap;
+}
+.topbar-title { font-size: 1.42rem; letter-spacing: -.028em; }
+.topbar-sub { margin: 3px 0 0; font-size: .88rem; color: var(--ink-3); }
+.topbar-user { display: flex; align-items: center; gap: 10px; }
+.topbar-avatar {
+  width: 36px; height: 36px; border-radius: 50%; flex: none;
+  display: grid; place-items: center;
+  background: var(--lime); color: var(--on-lime);
+  font-weight: 900; font-size: .95rem;
+}
+
+/* ---- Panel pieces ------------------------------------------------------ */
+.p-card {
+  background: #fff; border: 1px solid var(--rule); border-radius: var(--radius);
+  padding: 22px; margin-bottom: 18px;
+}
+.p-card-flush { padding: 0; overflow: hidden; }
+.p-card-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
+  padding: 17px 22px; border-bottom: 1px solid var(--rule-soft);
+}
+.p-card-head h2 { font-size: 1.03rem; }
+.p-card-body { padding: 22px; }
+
+.p-grid { display: grid; gap: 18px; }
+/*
+ * Same reason as the `.grid > *` rule in app.css: a grid child defaults to
+ * min-width:auto and will not shrink below its content's minimum width. The
+ * admin dashboard's columns therefore sat at 444px on a 360px phone — a table
+ * inside them refused to narrow — and every panel page scrolled sideways.
+ * The tables scroll inside their own .table-wrap; the column must be allowed
+ * to reach the viewport width first.
+ */
+.p-grid > * { min-width: 0; }
+.p-grid-2 { grid-template-columns: repeat(2, 1fr); }
+.p-grid-3 { grid-template-columns: repeat(3, 1fr); }
+.p-grid-4 { grid-template-columns: repeat(4, 1fr); }
+.p-grid-side { grid-template-columns: 1.7fr 1fr; align-items: start; }
+/* Four price fields go to 2×2 before they go to a single column — a stack of
+   four number inputs loses the "these are one ladder" reading entirely. */
+@media (max-width: 1100px) { .p-grid-4 { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 900px) { .p-grid-2, .p-grid-3, .p-grid-side { grid-template-columns: 1fr; } }
+@media (max-width: 560px) { .p-grid-4 { grid-template-columns: 1fr; } }
+
+/* A tile in the overview grid. */
+.tile {
+  display: block; background: #fff; border: 1px solid var(--rule);
+  border-radius: var(--radius); padding: 20px; text-decoration: none; color: inherit;
+  transition: transform .24s var(--ease), box-shadow .24s var(--ease), border-color .24s var(--ease);
+}
+a.tile:hover { text-decoration: none; transform: translateY(-3px); box-shadow: var(--shadow-2); border-color: #d4d8c8; }
+.tile-label { font-size: .74rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); }
+.tile-value { font-size: 1.95rem; font-weight: 900; letter-spacing: -.04em; line-height: 1.1; margin-top: 5px; }
+.tile-note { font-size: .82rem; color: var(--ink-3); margin-top: 3px; }
+
+/* A service or domain row. */
+.item {
+  display: flex; align-items: center; gap: 15px;
+  padding: 16px 22px; border-bottom: 1px solid var(--rule-soft);
+  text-decoration: none; color: inherit;
+  transition: background .16s var(--ease);
+}
+.item:last-child { border-bottom: 0; }
+a.item:hover { background: var(--bg-2); text-decoration: none; }
+.item-icon {
+  width: 40px; height: 40px; border-radius: 11px; flex: none;
+  display: grid; place-items: center;
+  background: var(--lime-soft); color: var(--lime-deep);
+}
+.item-main { min-width: 0; flex: 1; }
+.item-title { font-weight: 700; font-size: .98rem; word-break: break-all; }
+.item-sub { font-size: .82rem; color: var(--ink-3); }
+.item-end { margin-left: auto; flex: none; text-align: right; }
+
+/* Usage bar. */
+.meter { height: 7px; border-radius: 4px; background: var(--bg-3); overflow: hidden; margin-top: 7px; }
+.meter i {
+  display: block; height: 100%; border-radius: 4px; background: var(--lime);
+  transition: width .7s var(--ease);
+}
+.meter.is-high i { background: var(--amber); }
+.meter.is-full i { background: var(--red); }
+
+/* Tabs across a service page. */
+.tabs { display: flex; gap: 3px; border-bottom: 1px solid var(--rule); margin-bottom: 22px; overflow-x: auto; }
+.tab {
+  padding: 11px 16px; border-bottom: 2.5px solid transparent;
+  font-size: .92rem; font-weight: 700; color: var(--ink-3); text-decoration: none; white-space: nowrap;
+  transition: color .18s var(--ease), border-color .18s var(--ease);
+}
+.tab:hover { color: var(--ink); text-decoration: none; }
+.tab.is-active { color: var(--ink); border-bottom-color: var(--lime); }
+
+/* Copyable value, e.g. a nameserver. */
+.copyable {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 11px 14px; border-radius: var(--radius-sm);
+  background: var(--bg-2); border: 1px solid var(--rule);
+  font-family: var(--mono); font-size: .87rem;
+  margin-bottom: 8px;
+}
+.copyable button { flex: none; }
+
+/* Ticket thread. */
+.msg { display: flex; gap: 14px; padding: 18px 0; border-bottom: 1px solid var(--rule-soft); }
+.msg:last-child { border-bottom: 0; }
+.msg-avatar {
+  width: 38px; height: 38px; border-radius: 50%; flex: none;
+  display: grid; place-items: center; font-weight: 800; font-size: .9rem;
+  background: var(--bg-3); color: var(--ink-2);
+}
+.msg-staff .msg-avatar { background: var(--lime); color: var(--on-lime); }
+.msg-body { min-width: 0; flex: 1; }
+.msg-meta { font-size: .8rem; color: var(--ink-3); margin-bottom: 5px; }
+.msg-text { white-space: pre-wrap; font-size: .94rem; line-height: 1.6; word-wrap: break-word; }
+
+/* ---- Phone ------------------------------------------------------------- */
+@media (max-width: 860px) {
+  .shell { flex-direction: column; }
+  .shell-main { margin-left: 0; }
+  .rail {
+    position: fixed; inset: auto 0 0 0; width: 100%;
+    flex-direction: row; padding: 0;
+    border-top: 1px solid #2a2a26;
+  }
+  .rail-brand, .rail-foot { display: none; }
+  .rail-nav { flex-direction: row; width: 100%; gap: 0; }
+  .rail-link {
+    flex: 1; flex-direction: column; gap: 3px;
+    padding: 9px 4px calc(9px + env(safe-area-inset-bottom));
+    border-radius: 0; font-size: .68rem; font-weight: 700;
+  }
+  .rail-link.is-active { background: transparent; color: var(--lime); }
+  .rail-link:hover { background: transparent; }
+  .wrap-panel { padding: 20px 16px 96px; }
+  .topbar-inner { padding: 15px 16px; }
+}
+
+/* ---- Admin-only ---------------------------------------------------------
+   The admin reuses the panel chrome. Only the differences live here. */
+.is-admin .rail-brand { display: flex; flex-direction: column; gap: 5px; align-items: flex-start; }
+.is-admin .rail-link { padding: 8px 12px; font-size: .89rem; }
+.is-admin .rail-nav { gap: 1px; }
+
+/* A dense list row for admin tables. */
+.mini { font-size: .84rem; }
+.mini td, .mini th { padding: 9px 12px; }
+
+/* Status pill for an integration that is in mock mode — this must be
+   impossible to miss, because "why did no domain get registered" is otherwise
+   an afternoon of confusion. */
+.mode-banner {
+  display: flex; align-items: center; gap: 11px;
+  padding: 12px 16px; border-radius: var(--radius-sm);
+  background: #fdf3d6; border: 1px solid #f0e0b0; color: #7d5c00;
+  font-size: .89rem; margin-bottom: 18px;
+}
+.mode-banner b { color: #5c4400; }
+
+@media (max-width: 860px) {
+  /*
+   * The admin has twelve rail items and they cannot fit across a phone, so the
+   * bar scrolls sideways instead.
+   *
+   * `overflow-x: auto` alone was not enough and the bar still widened the whole
+   * page: .rail is a flex container, .rail-nav is a flex item, and a flex item
+   * defaults to min-width:auto — it refuses to shrink below its content, so the
+   * "scrolling" box was itself 888px wide inside a 360px phone. min-width: 0
+   * lets it shrink to the viewport, and only then does the overflow scroll.
+   */
+  .is-admin .rail-nav { overflow-x: auto; min-width: 0; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .is-admin .rail-nav::-webkit-scrollbar { display: none; }
+  .is-admin .rail-link { min-width: 74px; flex: 0 0 auto; }
+  .is-admin .rail-label { white-space: nowrap; }
+}
+
+/* The "add a TLD" row: extension plus four prices.
+   Was an inline grid-template-columns, which no media query could override —
+   on a laptop at 1280 it was already cramped and on a tablet the price inputs
+   were three characters wide. */
+.p-grid-tld { grid-template-columns: 1.2fr 1fr 1fr 1fr 1fr; gap: 10px; align-items: end; }
+@media (max-width: 1100px) { .p-grid-tld { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 700px)  { .p-grid-tld { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 460px)  { .p-grid-tld { grid-template-columns: 1fr; } }

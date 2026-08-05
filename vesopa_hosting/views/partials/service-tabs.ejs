@@ -1,0 +1,6 @@
+<nav class="tabs">
+  <a class="tab <%= tab === 'overview' ? 'is-active' : '' %>" href="/panel/services/<%= service.id %>">Overview</a>
+  <a class="tab <%= tab === 'databases' ? 'is-active' : '' %>" href="/panel/services/<%= service.id %>/databases">Databases</a>
+  <a class="tab <%= tab === 'email' ? 'is-active' : '' %>" href="/panel/services/<%= service.id %>/email">Email</a>
+  <a class="tab <%= tab === 'backups' ? 'is-active' : '' %>" href="/panel/services/<%= service.id %>/backups">Backups</a>
+</nav>

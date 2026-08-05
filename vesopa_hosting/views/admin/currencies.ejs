@@ -1,0 +1,258 @@
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css', sections: false }) %>
+<%- include('../partials/admin-shell', {
+  pageTitle: 'Currencies',
+  pageSub: 'How a sterling price becomes a dollar one. Saving here moves every price on the site.',
+}) %>
+
+<div class="alert alert-info mb-3">
+  <div>
+    <p class="mb-1 small">
+      <b>The catalogue is priced once, in <%= base.code %>.</b>
+      Every other currency here is that base run through a rate and a rounding
+      rule. Nothing is priced twice by hand, so a price change is one edit and
+      not three.
+    </p>
+    <p class="mb-0 small">
+      These rates are <b>not</b> a live feed, on purpose. A price that moves on
+      its own cannot be quoted in an email, screenshotted, honoured after a
+      support call or reconciled at month end. Set them deliberately — usually a
+      little above the mid-market rate, to cover what the card processor takes
+      on the conversion — and revisit when the pound has moved enough to matter.
+    </p>
+  </div>
+</div>
+
+<%# A rounding rule that has flattened the term ladder. Loud, because it is
+    invisible everywhere else: the sterling prices are correct, the converted
+    ones look like prices, and the only symptom is that a customer commits to a
+    third year for no saving. %>
+<% if (ladderWarnings.length) { %>
+  <div class="alert alert-warn mb-3">
+    <%- icon('warning', 19) %>
+    <div>
+      <p class="mb-1 small">
+        <b>The longer-term discount has collapsed in
+        <%= ladderWarnings.map(function (w) { return w.code; }).join(' and ') %>.</b>
+        The rounding rule is too coarse for these prices, so a longer term costs
+        the same per month as a shorter one — or more.
+      </p>
+      <ul class="small mb-1">
+        <% ladderWarnings.forEach(function (w) { %>
+          <% w.broken.forEach(function (line) { %>
+            <li><span class="mono strong"><%= w.code %></span> — <%= line %></li>
+          <% }); %>
+        <% }); %>
+      </ul>
+      <p class="mb-0 small">
+        Switch that currency to <b>Nearest .x9</b>, or set fixed prices for the
+        affected plans on their own edit pages.
+      </p>
+    </div>
+  </div>
+<% } %>
+
+<form method="post" action="/admin/currencies" data-guard>
+  <input type="hidden" name="_csrf" value="<%= csrf %>">
+
+  <div class="p-card p-card-flush mb-3">
+    <div class="table-wrap"><table class="table mini">
+      <thead>
+        <tr>
+          <th>Currency</th>
+          <th class="num">Rate per 1 <%= base.code %></th>
+          <th>Rounding</th>
+          <th class="num">VAT</th>
+          <th>Countries</th>
+          <th>Preview</th>
+          <th class="num">Live</th>
+          <th class="num">Default</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% currencies.forEach(function (c) { %>
+          <tr>
+            <td>
+              <input type="hidden" name="code" value="<%= c.code %>">
+              <div class="row" style="gap:8px;align-items:center">
+                <input class="input input-sm" name="symbol" value="<%= c.symbol %>"
+                       style="width:64px;text-align:center" aria-label="<%= c.code %> symbol">
+                <div style="min-width:0">
+                  <span class="strong mono"><%= c.code %></span>
+                  <% if (c.is_base) { %> <span class="badge badge-green">Base</span><% } %>
+                  <br><span class="tiny muted"><%= c.name %></span>
+                </div>
+              </div>
+              <input class="input input-sm mt-1" name="locale" value="<%= c.locale %>"
+                     style="width:96px" aria-label="<%= c.code %> number format">
+              <p class="hint mb-0">Number format</p>
+            </td>
+
+            <td class="num">
+              <% if (c.is_base) { %>
+                <input type="hidden" name="rate" value="1">
+                <span class="strong">1.000000</span>
+                <p class="hint mb-0">Pinned</p>
+              <% } else { %>
+                <input class="input input-sm num" name="rate" value="<%= Number(c.rate).toFixed(6) %>"
+                       style="width:110px" aria-label="<%= c.code %> rate">
+              <% } %>
+            </td>
+
+            <td>
+              <% if (c.is_base) { %>
+                <input type="hidden" name="rounding" value="exact">
+                <span class="tiny muted">Exact — the base is never rounded</span>
+              <% } else { %>
+                <select class="select select-sm" name="rounding" aria-label="<%= c.code %> rounding">
+                  <% roundingRules.forEach(function (r) { %>
+                    <option value="<%= r[0] %>" <%= c.rounding === r[0] ? 'selected' : '' %>><%= r[1] %></option>
+                  <% }); %>
+                </select>
+              <% } %>
+            </td>
+
+            <td class="num">
+              <div class="row" style="gap:5px;align-items:center;justify-content:flex-end">
+                <input class="input input-sm num" name="vat_percent" value="<%= Number(c.vat_percent).toFixed(2) %>"
+                       style="width:72px" aria-label="<%= c.code %> VAT percent">
+                <span class="tiny muted">%</span>
+              </div>
+              <input class="input input-sm mt-1" name="vat_label" value="<%= c.vat_label %>"
+                     placeholder="VAT" style="width:96px" aria-label="<%= c.code %> tax label">
+              <p class="hint mb-0">0 hides the row</p>
+            </td>
+
+            <td>
+              <input class="input input-sm mono" name="countries" value="<%= c.countries.join(',') %>"
+                     placeholder="GB,IM,JE" style="min-width:130px" aria-label="<%= c.code %> countries">
+              <p class="hint mb-0">ISO codes, comma separated</p>
+            </td>
+
+            <td>
+              <% if (sample) { %>
+                <%
+                  // A real plan price, run the whole way through: base → rate →
+                  // rounding. Showing the arithmetic is what makes a rounding
+                  // rule a decision rather than a guess.
+                  const raw = Number(sample.annual_pence) * (c.is_base ? 1 : Number(c.rate));
+                  const out = c.is_base ? Number(sample.annual_pence)
+                                        : cur.applyRounding(raw, c.rounding);
+                %>
+                <span class="tiny muted"><%= sample.name %>, 1&nbsp;year</span><br>
+                <span class="strong"><%= c.symbol %><%= (out / 100).toFixed(2) %></span>
+                <% if (!c.is_base) { %>
+                  <br><span class="tiny muted">from <%= (raw / 100).toFixed(2) %></span>
+                <% } %>
+              <% } else { %>
+                <span class="tiny muted">No plans yet</span>
+              <% } %>
+            </td>
+
+            <td class="num">
+              <% if (c.is_base) { %>
+                <span class="badge badge-green">Always</span>
+              <% } else { %>
+                <label class="check"><input type="checkbox" name="active" value="<%= c.code %>"
+                       <%= c.active ? 'checked' : '' %>><span class="sr-only">Live</span></label>
+              <% } %>
+            </td>
+
+            <td class="num">
+              <label class="check"><input type="radio" name="is_default" value="<%= c.code %>"
+                     <%= c.is_default ? 'checked' : '' %>><span class="sr-only">Default</span></label>
+            </td>
+          </tr>
+        <% }); %>
+      </tbody>
+    </table></div>
+  </div>
+
+  <button class="btn" type="submit" data-busy="Saving…">Save currencies</button>
+</form>
+
+<div class="p-grid p-grid-2 mt-3">
+  <div class="p-card">
+    <h2 class="h3 mb-1">What the columns do</h2>
+    <dl class="deflist small">
+      <dt>Rate</dt>
+      <dd>Units of that currency for one <%= base.code %>. Only used for prices
+          that have not been given a fixed figure on the plan itself.</dd>
+      <dt>Rounding</dt>
+      <dd>Turns the arithmetic into a price a person would write.
+          <%= base.symbol %>5.99 at 1.27 is 7.6073, and nobody charges 7.61 —
+          <b>Nearest .99</b> makes it 7.99.</dd>
+      <dt>VAT</dt>
+      <dd>The rate <b>inside</b> the price, never added on top. 20% on
+          <%= base.code %>; zero elsewhere, because UK VAT is not chargeable on
+          these services to a consumer outside the UK. At zero, no VAT line is
+          drawn at all.</dd>
+      <dt>Countries</dt>
+      <dd>Whoever lands from one of these sees this currency first. The row
+          marked <b>Default</b> catches everybody else, and a visitor's own
+          choice always beats both.</dd>
+    </dl>
+  </div>
+
+  <div class="p-card">
+    <h2 class="h3 mb-1">Where visitors are looked up</h2>
+    <p class="small mb-2">
+      <% if (geoStatus.enabled) { %>
+        <span class="badge badge-green">On</span>
+        <code><%= geoStatus.endpoint %></code>, called <b>from this server</b> —
+        never from the visitor's browser.
+      <% } else { %>
+        <span class="badge badge-grey">Off</span>
+        Everyone gets the default currency until <code>GEO_ENABLED</code> is
+        turned back on.
+      <% } %>
+    </p>
+    <p class="small muted mb-2">
+      <%= geoStatus.cached %> address<%= geoStatus.cached === 1 ? '' : 'es' %> cached in
+      memory<% if (geoStatus.paused) { %>,
+      <b class="strong">lookups paused</b> after <%= geoStatus.failures %> failures —
+      the site is serving the default currency and will retry shortly<% } %>.
+    </p>
+    <p class="tiny muted mb-0">
+      A visitor is looked up once, then remembered in a cookie for a year, so
+      the metered free tier is spent on genuinely new arrivals rather than on
+      every page view. Their own choice from the switcher is stored in the same
+      cookie and stops the lookup happening again at all.
+    </p>
+  </div>
+</div>
+
+<div class="p-card mt-3">
+  <h2 class="h3 mb-1">Add a currency</h2>
+  <p class="small muted mb-3">
+    Added switched <b>off</b>, with no countries mapped. Set the rate and the
+    rounding, check the preview above, then turn it on — a currency going live
+    the instant it is created with a placeholder rate is how somebody buys a
+    plan at the wrong price.
+  </p>
+  <form method="post" action="/admin/currencies/new" data-guard>
+    <input type="hidden" name="_csrf" value="<%= csrf %>">
+    <div class="p-grid p-grid-4">
+      <div class="field">
+        <label class="label" for="new_code">Code</label>
+        <input class="input mono" id="new_code" name="code" placeholder="EUR" maxlength="3" required
+               style="text-transform:uppercase">
+      </div>
+      <div class="field">
+        <label class="label" for="new_name">Name</label>
+        <input class="input" id="new_name" name="name" placeholder="Euro">
+      </div>
+      <div class="field">
+        <label class="label" for="new_symbol">Symbol</label>
+        <input class="input" id="new_symbol" name="symbol" placeholder="€">
+      </div>
+      <div class="field">
+        <label class="label" for="new_rate">Rate per 1 <%= base.code %></label>
+        <input class="input num" id="new_rate" name="rate" placeholder="1.17">
+      </div>
+    </div>
+    <button class="btn btn-ghost" type="submit" data-busy="Adding…">Add currency</button>
+  </form>
+</div>
+
+<%- include('../partials/panel-shell-end') %>
+<%- include('../partials/footer') %>

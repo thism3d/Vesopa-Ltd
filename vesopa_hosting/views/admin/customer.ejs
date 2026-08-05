@@ -1,0 +1,116 @@
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
+<%- include('../partials/admin-shell', {
+  pageTitle: (customer.first_name + ' ' + customer.last_name).trim() || customer.email,
+  pageSub: customer.email,
+}) %>
+
+<div class="p-grid p-grid-side">
+  <div>
+    <div class="p-card p-card-flush">
+      <div class="p-card-head"><h2>Hosting</h2></div>
+      <% if (!services.length) { %><div class="p-card-body"><p class="muted small mb-0">None.</p></div><% } %>
+      <% services.forEach(function (s) { %>
+        <div class="item">
+          <span class="item-main">
+            <span class="item-title"><%= s.primary_domain || '(no domain)' %></span>
+            <span class="item-sub"><%= s.plan_name %> · <%= money(s.price_pence, s.currency) %> / <%= s.term_months %>m<% if (s.next_due_at) { %> · due <%= s.next_due_at %><% } %></span>
+          </span>
+          <span class="item-end row" style="gap:8px;justify-content:flex-end">
+            <% if (s.status === 'active') { %><span class="badge badge-green">Live</span>
+            <% } else if (s.status === 'suspended') { %><span class="badge badge-red">Suspended</span>
+            <% } else { %><span class="badge badge-grey"><%= s.status %></span><% } %>
+            <% if (s.status === 'active' || s.status === 'suspended') { %>
+              <form method="post" action="/admin/services/<%= s.id %>/suspend"
+                    data-confirm="<%= s.status === 'active' ? 'Suspend this site? It will stop serving immediately.' : 'Restore this site?' %>">
+                <input type="hidden" name="_csrf" value="<%= csrf %>">
+                <input type="hidden" name="reason" value="Suspended by staff">
+                <button class="btn btn-ghost btn-sm" type="submit"><%= s.status === 'active' ? 'Suspend' : 'Restore' %></button>
+              </form>
+            <% } %>
+          </span>
+        </div>
+      <% }); %>
+    </div>
+
+    <div class="p-card p-card-flush">
+      <div class="p-card-head"><h2>Domains</h2></div>
+      <% if (!domains.length) { %><div class="p-card-body"><p class="muted small mb-0">None.</p></div><% } %>
+      <% domains.forEach(function (d) { %>
+        <div class="item">
+          <span class="item-main">
+            <span class="item-title"><%= d.domain %></span>
+            <span class="item-sub"><%= d.status %><% if (d.expires_at) { %> · expires <%= d.expires_at %><% } %><%= d.auto_renew ? ' · auto-renew' : '' %></span>
+          </span>
+        </div>
+      <% }); %>
+    </div>
+
+    <div class="p-card p-card-flush">
+      <div class="p-card-head"><h2>Orders</h2></div>
+      <% if (!orders.length) { %><div class="p-card-body"><p class="muted small mb-0">None.</p></div><% } %>
+      <div class="table-wrap"><table class="table mini">
+        <tbody>
+          <% orders.forEach(function (o) { %>
+            <tr>
+              <td><a class="mono strong" href="/admin/orders/<%= o.id %>"><%= o.reference %></a></td>
+              <td><%= new Date(o.created_at).toLocaleDateString('en-GB') %></td>
+              <td><span class="badge badge-grey"><%= o.status %></span></td>
+              <td class="num strong"><%= money(o.total_pence, o.currency) %></td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table></div>
+    </div>
+
+    <% if (activity.length) { %>
+      <div class="p-card">
+        <h2 class="h3 mb-2">Their activity</h2>
+        <% activity.forEach(function (a) { %>
+          <div class="mb-1" style="font-size:.83rem">
+            <span class="strong"><%= a.action %></span> <span class="muted"><%= a.target %> · <%= new Date(a.created_at).toLocaleString('en-GB') %></span>
+          </div>
+        <% }); %>
+      </div>
+    <% } %>
+  </div>
+
+  <aside>
+    <div class="p-card">
+      <h2 class="h3 mb-2">Account</h2>
+      <div class="table-wrap"><table class="table mini">
+        <tbody>
+          <tr><td class="muted">Status</td><td class="strong"><%= customer.status %></td></tr>
+          <tr><td class="muted">Email confirmed</td><td class="strong"><%= customer.email_verified ? 'Yes' : 'No' %></td></tr>
+          <tr><td class="muted">Hestia user</td><td class="strong mono"><%= customer.hestia_user || '—' %></td></tr>
+          <tr><td class="muted">Phone</td><td><%= customer.phone || '—' %></td></tr>
+          <tr><td class="muted">Company</td><td><%= customer.company || '—' %></td></tr>
+          <tr><td class="muted">Address</td><td>
+            <%= customer.address1 || '—' %><% if (customer.address2) { %><br><%= customer.address2 %><% } %>
+            <% if (customer.city) { %><br><%= customer.city %><% } %>
+            <% if (customer.postcode) { %><br><%= customer.postcode %><% } %>
+            <br><%= customer.country %>
+          </td></tr>
+          <tr><td class="muted">Last signed in</td><td><%= customer.last_login_at ? new Date(customer.last_login_at).toLocaleString('en-GB') : 'Never' %></td></tr>
+        </tbody>
+      </table></div>
+    </div>
+
+    <div class="p-card">
+      <h2 class="h3 mb-2">Change status</h2>
+      <p class="tiny muted mb-2">Suspending also suspends their sites on the node.</p>
+      <form method="post" action="/admin/customers/<%= customer.id %>/status"
+            data-confirm="Change this customer's status? Suspending stops their websites serving immediately.">
+        <input type="hidden" name="_csrf" value="<%= csrf %>">
+        <select class="select mb-2" name="status">
+          <option value="active" <%= customer.status === 'active' ? 'selected' : '' %>>Active</option>
+          <option value="suspended" <%= customer.status === 'suspended' ? 'selected' : '' %>>Suspended</option>
+          <option value="closed" <%= customer.status === 'closed' ? 'selected' : '' %>>Closed</option>
+        </select>
+        <button class="btn btn-sm btn-block" type="submit">Apply</button>
+      </form>
+    </div>
+  </aside>
+</div>
+
+<%- include('../partials/panel-shell-end') %>
+<%- include('../partials/footer') %>

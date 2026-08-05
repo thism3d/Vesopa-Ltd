@@ -1,0 +1,35 @@
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
+<%- include('../partials/admin-shell', { pageTitle: 'Tickets', pageSub: 'High priority first, then most recently updated.' }) %>
+
+<div class="row mb-3" style="gap:8px">
+  <a class="btn btn-sm <%= !status ? '' : 'btn-ghost' %>" href="/admin/tickets">Open</a>
+  <% ['open','customer_reply','answered','closed'].forEach(function (s) { %>
+    <a class="btn btn-sm <%= status === s ? '' : 'btn-ghost' %>" href="/admin/tickets?status=<%= s %>"><%= s.replace('_',' ') %></a>
+  <% }); %>
+</div>
+
+<div class="p-card p-card-flush">
+  <% if (!tickets.length) { %>
+    <div class="empty"><%- icon('ticket', 46) %><h3>Nothing here</h3><p>No tickets match that filter.</p></div>
+  <% } %>
+  <% tickets.forEach(function (t) { %>
+    <a class="item" href="/admin/tickets/<%= t.id %>">
+      <span class="item-icon"><%- icon('ticket', 18) %></span>
+      <span class="item-main">
+        <span class="item-title"><%= t.subject %></span>
+        <span class="item-sub"><%= t.reference %> · <%= t.first_name %> <%= t.last_name %> &lt;<%= t.email %>&gt; · updated <%= new Date(t.updated_at).toLocaleString('en-GB') %></span>
+      </span>
+      <span class="item-end row" style="gap:6px;justify-content:flex-end">
+        <% if (t.priority === 'high') { %><span class="badge badge-red">High</span><% } %>
+        <span class="badge badge-grey"><%= t.department %></span>
+        <% if (t.status === 'customer_reply') { %><span class="badge badge-blue">Awaiting us</span>
+        <% } else if (t.status === 'answered') { %><span class="badge badge-green">Answered</span>
+        <% } else if (t.status === 'closed') { %><span class="badge badge-grey">Closed</span>
+        <% } else { %><span class="badge badge-amber">Open</span><% } %>
+      </span>
+    </a>
+  <% }); %>
+</div>
+
+<%- include('../partials/panel-shell-end') %>
+<%- include('../partials/footer') %>

@@ -1,0 +1,128 @@
+<%- include('partials/header') %>
+
+<%#
+  One template, four layouts. The differences are all in where the cover image
+  goes and how wide the measure is, so they share everything below the header
+  rather than living in four near-identical files that drift apart.
+
+  `layout` is already resolved by src/blog-layouts.js — an unknown value in the
+  column arrives here as 'standard', so this never has to handle a surprise.
+
+  The header block is what changes:
+    hero     full-bleed band, headline over the image
+    side     image beside the headline on wide screens
+    standard image above the headline, article measure
+    plain    no image at all
+%>
+
+<article class="bl bl-single bp-<%= layout %>">
+
+<% if (layout === 'hero' && post.cover_url) { %>
+  <header class="bp-heroband" style="background-image:url('<%= post.cover_url %>')">
+    <div class="bp-heroband-shade"></div>
+    <div class="bl-inside bl-narrow bp-heroband-inner">
+      <p class="bl-card-meta">
+        <span class="bl-chip <%= post.kind === 'update' ? 'is-update' : '' %>">
+          <%= post.kind === 'update' ? 'Product update' : 'Article' %>
+        </span>
+        <% if (post.version) { %><span class="bl-chip is-version">v<%= post.version %></span><% } %>
+        <time datetime="<%= isoDateTime(post.published_at) %>"><%= formatDate(post.published_at) %></time>
+        <% if (post.author) { %><span>· <%= post.author %></span><% } %>
+        <% if (readingMinutes) { %><span>· <%= readingMinutes %> min read</span><% } %>
+      </p>
+      <h1 class="bl-post-title"><%= post.title %></h1>
+      <% if (post.excerpt) { %><p class="bl-post-lede"><%= post.excerpt %></p><% } %>
+    </div>
+  </header>
+<% } %>
+
+  <div class="bl-inside bl-narrow">
+
+    <p class="bl-crumb"><a href="/blog">← All posts</a></p>
+
+<% if (layout !== 'hero' || !post.cover_url) { %>
+    <div class="bp-head-wrap">
+<% if (layout === 'side' && post.cover_url) { %>
+      <figure class="bp-side-cover">
+        <img src="<%= post.cover_url %>" alt="">
+      </figure>
+<% } %>
+
+      <header class="bl-post-head">
+        <p class="bl-card-meta">
+          <span class="bl-chip <%= post.kind === 'update' ? 'is-update' : '' %>">
+            <%= post.kind === 'update' ? 'Product update' : 'Article' %>
+          </span>
+          <% if (post.version) { %><span class="bl-chip is-version">v<%= post.version %></span><% } %>
+          <time datetime="<%= isoDateTime(post.published_at) %>"><%= formatDate(post.published_at) %></time>
+          <% if (post.author) { %><span>· <%= post.author %></span><% } %>
+          <% if (readingMinutes) { %><span>· <%= readingMinutes %> min read</span><% } %>
+        </p>
+
+        <h1 class="bl-post-title"><%= post.title %></h1>
+
+        <% if (post.excerpt) { %>
+        <p class="bl-post-lede"><%= post.excerpt %></p>
+        <% } %>
+      </header>
+    </div>
+
+<% if (layout === 'standard' && post.cover_url) { %>
+    <figure class="bl-post-cover">
+      <img src="<%= post.cover_url %>" alt="">
+    </figure>
+<% } %>
+<% } %>
+
+    <%#
+      Unescaped on purpose. `bodyHtml` has already been through the allowlist
+      sanitiser in src/admin/sanitise.js — the raw `post.body` column is never
+      printed anywhere.
+    %>
+    <div class="bl-post-body bp-body"><%- bodyHtml %></div>
+
+<% if (post.tags) { %>
+    <p class="bl-tags">
+<% post.tags.split(',').map(t => t.trim()).filter(Boolean).forEach(function (t) { %>
+      <a class="bl-chip" href="/blog?tag=<%= encodeURIComponent(t) %>">#<%= t %></a>
+<% }); %>
+    </p>
+<% } %>
+
+    <aside class="bl-cta">
+      <h3>Run your business on Vesopa EPOS</h3>
+      <p>
+        Tills that keep trading when the internet does not, a back office you
+        can open from anywhere, and support from people who answer the phone.
+      </p>
+      <div class="bl-cta-buttons">
+        <a class="bl-btn" href="/#try-vesopa">Request a demo</a>
+        <a class="bl-btn is-ghost" href="/pricing">See pricing</a>
+      </div>
+    </aside>
+
+<% if (related.length) { %>
+    <section class="bl-related">
+      <h3>More like this</h3>
+      <div class="bl-grid">
+<% related.forEach(function (p) { %>
+        <article class="bl-card">
+          <a class="bl-card-link" href="/blog/<%= p.slug %>">
+<% if (p.cover_url) { %>
+            <div class="bl-card-media"><img src="<%= p.cover_url %>" alt="" loading="lazy"></div>
+<% } %>
+            <div class="bl-card-body">
+              <p class="bl-card-meta"><time datetime="<%= isoDateTime(p.published_at) %>"><%= formatDate(p.published_at) %></time></p>
+              <h2 class="bl-card-title"><%= p.title %></h2>
+            </div>
+          </a>
+        </article>
+<% }); %>
+      </div>
+    </section>
+<% } %>
+
+  </div>
+</article>
+
+<%- include('partials/footer') %>

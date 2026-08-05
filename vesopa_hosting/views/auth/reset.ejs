@@ -1,0 +1,33 @@
+<%- include('../partials/head') %>
+<div class="auth-page">
+  <div class="auth-card">
+    <a class="auth-brand" href="/">
+      <img src="/assets/img/brand/vesopa_logo.png" alt="Vesopa" width="150" height="22">
+      <span class="brand-sub">Hosting</span>
+    </a>
+
+    <h1>Choose a new password</h1>
+    <p class="lede">Setting this will sign you out everywhere else.</p>
+
+    <% if (error) { %>
+      <div class="alert alert-error"><%- icon('warning', 19) %><div><%= error %></div></div>
+    <% } %>
+
+    <form method="post" action="/reset/<%= token %>" data-guard>
+      <input type="hidden" name="_csrf" value="<%= csrf %>">
+      <div class="field">
+        <label class="label" for="password">New password</label>
+        <input class="input" id="password" name="password" type="password" autocomplete="new-password" required autofocus data-pw-meter>
+        <div class="pw-meter"><i></i><i></i><i></i></div>
+        <p class="hint">At least 10 characters, with a number.</p>
+      </div>
+      <div class="field">
+        <label class="label" for="password_confirm">Confirm it</label>
+        <input class="input" id="password_confirm" name="password_confirm" type="password" autocomplete="new-password" required>
+      </div>
+      <button class="btn btn-block btn-lg" type="submit" data-busy="Saving…">Set new password</button>
+    </form>
+  </div>
+  <p class="auth-foot"><a href="/">← Back to the website</a></p>
+</div>
+<%- include('../partials/footer') %>

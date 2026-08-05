@@ -1,0 +1,128 @@
+<%#
+  The admin chrome: sidebar, top bar, flash slot.
+
+  Locals every screen must pass (see src/admin/render.js, which fills the
+  defaults so a route only ever sets `title`, `heading` and `nav`):
+    title    <title> text
+    heading  the h1 in the top bar
+    nav      key of the sidebar item to light up
+    counts   { demos, expiring, drafts }  badge numbers
+    flash    { ok, err, warn } from the query string
+%>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title><%= title %></title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<%# Nothing under /admin should ever be indexed, whatever robots.txt says. %>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+<link rel="stylesheet" href="/admin-library/panel.css?v=<%= APP_VERSION %>">
+</head>
+<body>
+
+<div class="ap">
+
+  <aside class="ap-side" id="apSide">
+    <div class="ap-brand">
+      <img src="/favicon.png" alt="">
+      <span>
+        <span class="ap-brand-name">Vesopa</span>
+        <span class="ap-brand-sub">Admin Console</span>
+      </span>
+    </div>
+
+    <nav class="ap-nav">
+      <a href="/admin/dashboard" class="<%= nav === 'dashboard' ? 'is-active' : '' %>">
+        <span class="material-icons">insights</span> Dashboard
+      </a>
+
+      <p class="ap-nav-group">Customers</p>
+      <a href="/admin/offices" class="<%= nav === 'offices' ? 'is-active' : '' %>">
+        <span class="material-icons">storefront</span> Offices &amp; Billing
+        <% if (counts.expiring) { %><span class="ap-pill is-warn"><%= counts.expiring %></span><% } %>
+      </a>
+      <a href="/admin/users" class="<%= nav === 'users' ? 'is-active' : '' %>">
+        <span class="material-icons">group</span> Back Office Users
+      </a>
+      <a href="/admin/clerks" class="<%= nav === 'clerks' ? 'is-active' : '' %>">
+        <span class="material-icons">badge</span> Till Sub-users
+      </a>
+
+      <p class="ap-nav-group">Revenue</p>
+      <a href="/admin/plans" class="<%= nav === 'plans' ? 'is-active' : '' %>">
+        <span class="material-icons">sell</span> Packages
+      </a>
+      <a href="/admin/collection" class="<%= nav === 'collection' ? 'is-active' : '' %>">
+        <span class="material-icons">payments</span> Collection
+      </a>
+
+      <p class="ap-nav-group">Content</p>
+      <a href="/admin/blog" class="<%= nav === 'blog' ? 'is-active' : '' %>">
+        <span class="material-icons">article</span> Blog &amp; Updates
+        <% if (counts.drafts) { %><span class="ap-pill is-warn"><%= counts.drafts %></span><% } %>
+      </a>
+      <a href="/admin/files" class="<%= nav === 'files' ? 'is-active' : '' %>">
+        <span class="material-icons">folder</span> File Manager
+      </a>
+
+      <p class="ap-nav-group">Enquiries</p>
+      <a href="/admin/requests/demo" class="<%= nav === 'demo' ? 'is-active' : '' %>">
+        <span class="material-icons">how_to_reg</span> Demo Requests
+        <% if (counts.demos) { %><span class="ap-pill"><%= counts.demos %></span><% } %>
+      </a>
+      <a href="/admin/requests/messages" class="<%= nav === 'messages' ? 'is-active' : '' %>">
+        <span class="material-icons">forum</span> Messages
+      </a>
+      <a href="/admin/requests/training" class="<%= nav === 'training' ? 'is-active' : '' %>">
+        <span class="material-icons">school</span> Training
+      </a>
+      <a href="/admin/requests/job" class="<%= nav === 'job' ? 'is-active' : '' %>">
+        <span class="material-icons">work</span> Job Applications
+      </a>
+
+      <p class="ap-nav-group">Account</p>
+      <a href="/admin/settings" class="<%= nav === 'settings' ? 'is-active' : '' %>">
+        <span class="material-icons">admin_panel_settings</span> Admins &amp; Profile
+      </a>
+    </nav>
+
+    <div class="ap-side-foot">
+      <a href="/" target="_blank" rel="noopener">View site ↗</a><br>
+      <a href="<%= BACKOFFICE_URL %>" target="_blank" rel="noopener">Back office ↗</a>
+    </div>
+  </aside>
+
+  <div class="ap-scrim" id="apScrim" hidden></div>
+
+  <div class="ap-main">
+    <header class="ap-top">
+      <button class="ap-burger" id="apBurger" type="button" aria-label="Menu">
+        <span class="material-icons">menu</span>
+      </button>
+      <h1><%= heading %></h1>
+      <div class="ap-top-spacer"></div>
+      <span class="ap-who">Signed in as <strong><%= admin.fullname %></strong> · <%= admin.status %></span>
+      <%# POST, not a link: a GET logout can be fired by any <img> on any site. %>
+      <form method="post" action="/admin/logout">
+        <button class="ap-btn ghost sm" type="submit">
+          <span class="material-icons">logout</span> Log out
+        </button>
+      </form>
+    </header>
+
+    <main class="ap-body">
+<% if (flash.ok) { %>
+      <div class="ap-flash ok"><span class="material-icons">check_circle</span><%= flash.ok %></div>
+<% } %>
+<% if (flash.err) { %>
+      <div class="ap-flash err"><span class="material-icons">error</span><%= flash.err %></div>
+<% } %>
+<% if (flash.warn) { %>
+      <div class="ap-flash warn"><span class="material-icons">warning</span><%= flash.warn %></div>
+<% } %>

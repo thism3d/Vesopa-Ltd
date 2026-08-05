@@ -1,0 +1,70 @@
+<%- include('../partials/head') %>
+<%- include('../partials/header') %>
+
+<main id="main">
+<%- include('../partials/page-hero', {
+  kicker: 'Domain pricing',
+  heading: 'Every price,<br><span class="hl">including the renewal</span>',
+  sub: 'Register, renew and transfer for every extension we sell. Both numbers, side by side, before you buy.',
+}) %>
+
+<section class="section">
+  <div class="wrap">
+    <div class="card card-flush" data-reveal="0">
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Extension</th>
+              <th class="num">Register</th>
+              <th class="num">Renew</th>
+              <th class="num">Transfer</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <% tlds.forEach(function (t) {
+                 const jump = t.renew_pence > t.register_pence * 1.6; %>
+              <tr>
+                <td>
+                  <span class="strong">.<%= t.tld %></span>
+                  <% if (t.featured) { %> <span class="badge badge-soft">Popular</span><% } %>
+                </td>
+                <td class="num"><%= money(t.register_pence) %></td>
+                <td class="num">
+                  <%= money(t.renew_pence) %>
+                  <% if (jump) { %>
+                    <span class="badge badge-amber" title="The registry discounts the first year on this extension">1st yr promo</span>
+                  <% } %>
+                </td>
+                <td class="num"><%= money(t.transfer_pence) %></td>
+                <td class="num"><a class="btn btn-ghost btn-sm" href="/domains?q=yourname.<%= t.tld %>">Check</a></td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="alert alert-info mt-3" data-reveal="40">
+      <%- icon('info', 19) %>
+      <div>
+        <b>About the promotional extensions.</b> On a few names — .online, .shop,
+        .store, .site, .tech — the registry itself sells a heavily discounted
+        first year to drive adoption, then charges the standard rate from year
+        two. That is the registry's pricing, not a markup of ours, and we show
+        you both figures here rather than only at renewal. On .com, .co.uk, .uk
+        and .net the two prices are close and stable.
+      </div>
+    </div>
+
+    <p class="small muted mt-2">
+      All prices are per year and exclude VAT at <%= vatPercent %>%. Prices are
+      reviewed when the registries change theirs; the price you renew at is the
+      one shown in your panel at the time of renewal, and we email before we take
+      it.
+    </p>
+  </div>
+</section>
+</main>
+<%- include('../partials/footer') %>

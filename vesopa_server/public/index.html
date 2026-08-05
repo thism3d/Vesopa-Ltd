@@ -1,0 +1,818 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Vesopa EPOS — Back Office</title>
+    <link rel="icon" href="/assets/favicon.png" />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <!-- Sign in.
+         Two columns: the form on the left, a brand stage on the right. The
+         wordmark appears exactly once (above the form) — the stage carries the
+         cropped product shot, which has no lockup baked into it, so the two
+         never compete. -->
+    <div id="login" class="login-wrap">
+      <div class="login-side">
+        <form id="login-form" class="login-card" novalidate>
+          <img src="/assets/vesopa_logo.png" alt="Vesopa" class="login-logo" />
+
+          <h1>Sign in to Back Office</h1>
+          <p class="login-sub">Manage your tills, catalogue and reporting.</p>
+
+          <div class="field">
+            <label for="email">Email</label>
+            <input type="email" id="email" required autocomplete="username"
+                   autocapitalize="off" spellcheck="false"
+                   placeholder="you@company.com" />
+          </div>
+
+          <div class="field">
+            <label for="password">Password</label>
+            <div class="field-pw">
+              <input type="password" id="password" required minlength="4"
+                     autocomplete="current-password" placeholder="••••••••" />
+              <button type="button" id="pw-toggle" class="pw-toggle"
+                      aria-label="Show password" aria-pressed="false">Show</button>
+            </div>
+          </div>
+
+          <div class="login-row">
+            <label class="check" for="remember">
+              <input type="checkbox" id="remember" checked />
+              Keep me signed in
+            </label>
+            <button type="button" id="forgot" class="link-quiet">
+              Forgot password?
+            </button>
+          </div>
+
+          <p id="login-note" class="login-hint" hidden></p>
+
+          <button class="btn primary block" type="submit">Sign in</button>
+          <p id="login-error" class="error" role="alert" aria-live="polite"></p>
+
+          <p class="login-foot">
+            Don't have an account?
+            <a href="https://vesopaepos.com/#try-vesopa" target="_blank"
+               rel="noopener">Request a demo</a>
+          </p>
+        </form>
+
+        <!-- Step 2: ask for the link. Swapped in place of the sign-in form so
+             the column never changes width or jumps. -->
+        <form id="forgot-form" class="login-card" hidden novalidate>
+          <img src="/assets/vesopa_logo.png" alt="Vesopa" class="login-logo" />
+
+          <h1>Reset your password</h1>
+          <p class="login-sub">
+            Enter the email you sign in with and we'll send you a link.
+          </p>
+
+          <div class="field">
+            <label for="forgot-email">Email</label>
+            <input type="email" id="forgot-email" required autocomplete="username"
+                   autocapitalize="off" spellcheck="false"
+                   placeholder="you@company.com" />
+          </div>
+
+          <button class="btn primary block" type="submit" id="forgot-submit">
+            Send reset link
+          </button>
+          <p id="forgot-note" class="login-hint" hidden></p>
+          <p id="forgot-error" class="error" role="alert" aria-live="polite"></p>
+
+          <p class="login-foot">
+            <button type="button" id="forgot-back" class="link-quiet">
+              Back to sign in
+            </button>
+          </p>
+        </form>
+
+        <!-- Step 3: shown when the page is opened as /reset?token=… -->
+        <form id="reset-form" class="login-card" hidden novalidate>
+          <img src="/assets/vesopa_logo.png" alt="Vesopa" class="login-logo" />
+
+          <h1>Choose a new password</h1>
+          <p class="login-sub" id="reset-sub">
+            Pick something you don't use anywhere else.
+          </p>
+
+          <div class="field">
+            <label for="reset-password">New password</label>
+            <div class="field-pw">
+              <input type="password" id="reset-password" required minlength="8"
+                     autocomplete="new-password" placeholder="At least 8 characters" />
+              <button type="button" id="reset-pw-toggle" class="pw-toggle"
+                      aria-label="Show password" aria-pressed="false">Show</button>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="reset-confirm">Confirm new password</label>
+            <input type="password" id="reset-confirm" required minlength="8"
+                   autocomplete="new-password" placeholder="Type it again" />
+          </div>
+
+          <button class="btn primary block" type="submit" id="reset-submit">
+            Save new password
+          </button>
+          <p id="reset-note" class="login-hint" hidden></p>
+          <p id="reset-error" class="error" role="alert" aria-live="polite"></p>
+
+          <p class="login-foot">
+            <button type="button" id="reset-back" class="link-quiet">
+              Back to sign in
+            </button>
+          </p>
+        </form>
+      </div>
+
+      <!-- Decorative: everything here is duplicated or expanded on the form
+           side, so it is hidden from assistive tech rather than narrated. -->
+      <aside class="login-stage" aria-hidden="true">
+        <div class="stage-inner">
+          <figure class="stage-shot">
+            <img src="/assets/vesopa_login_system.jpg" alt="" />
+          </figure>
+          <h2 class="stage-title">The whole counter,<br />one back office.</h2>
+          <ul class="stage-points">
+            <li>Live takings the moment a till rings them</li>
+            <li>Products, stock and pricing across every site</li>
+            <li>Till, bill and sales reports that reconcile</li>
+          </ul>
+        </div>
+      </aside>
+    </div>
+
+    <!-- App -->
+    <div id="app" hidden>
+      <!-- Phone/tablet chrome. Off-canvas below 960px, so the rail stops eating
+           the width the tables need; inert (display:none) on the desktop. -->
+      <header class="topbar">
+        <button id="rail-toggle" class="rail-toggle" type="button"
+                aria-label="Open menu" aria-expanded="false" aria-controls="rail">
+          <span class="rail-toggle-bars" aria-hidden="true"></span>
+        </button>
+        <!-- Reversed lockup: the top bar is the same near-black as the rail. -->
+        <img src="/assets/vesopa_logo_on_dark.png" alt="Vesopa" class="topbar-logo" />
+        <span id="live-dot-m" class="dot offline" title="Realtime connection"></span>
+      </header>
+      <div id="rail-scrim" class="rail-scrim" hidden></div>
+
+      <aside class="rail" id="rail">
+        <div style="padding:0 22px 20px">
+          <!-- The on-dark lockup, not a filtered copy of the light one:
+               brightness(0) invert(1) flattens the lime tail to white and
+               throws the brand accent away. -->
+          <img src="/assets/vesopa_logo_on_dark.png" alt="Vesopa" class="brand-logo" />
+        </div>
+
+        <nav>
+          <button class="nav active" data-view="dashboard">Dashboard</button>
+
+          <button class="nav-group" data-group="reports">Reports<span class="caret">▼</span></button>
+          <button class="nav" data-view="report">Report</button>
+          <button class="nav" data-view="sales_explorer">Sales Explorer</button>
+          <button class="nav" data-view="till_report">Till Report</button>
+          <button class="nav" data-view="bill_report">Bill Report</button>
+
+          <button class="nav-group" data-group="catalogue">Catalogue<span class="caret">▼</span></button>
+          <button class="nav" data-view="products">Products</button>
+          <button class="nav" data-view="stock">Stock</button>
+
+          <button class="nav-group" data-group="programming">Programming<span class="caret">▼</span></button>
+          <button class="nav" data-view="program_departments">Departments</button>
+          <button class="nav" data-view="program_groups">Groups</button>
+          <button class="nav" data-view="mix_match">Mix &amp; Match</button>
+          <button class="nav" data-view="finalise_keys">Finalise Keys</button>
+          <button class="nav" data-view="error_reasons">Error Reasons</button>
+          <button class="nav" data-view="tax">Tax</button>
+          <button class="nav" data-view="idle">Idle screen</button>
+
+          <button class="nav-group" data-group="floor">Floor<span class="caret">▼</span></button>
+          <button class="nav" data-view="tables">Table Designer</button>
+
+          <button class="nav-group" data-group="people">People<span class="caret">▼</span></button>
+          <button class="nav" data-view="users">Back Office Users</button>
+          <button class="nav" data-view="staff">Staff</button>
+          <button class="nav" data-view="customers">Customers</button>
+          <button class="nav" data-view="vouchers">Vouchers</button>
+          <button class="nav" data-view="receipt_designer">Receipt designer</button>
+
+          <button class="nav-group" data-group="commerce">Commerce<span class="caret">▼</span></button>
+          <button class="nav" data-view="promotions">Promotions</button>
+          <button class="nav" data-view="gift_cards">Gift cards</button>
+          <button class="nav" data-view="deposits">Deposits</button>
+          <button class="nav" data-view="loyalty">Loyalty</button>
+          <button class="nav" data-view="tender">Tender &amp; gratuity</button>
+          <button class="nav" data-view="rules">Automation rules</button>
+
+          <div id="admin-group" hidden>
+            <button class="nav-group" data-group="administration">Administration<span class="caret">▼</span></button>
+            <button class="nav" data-view="offices">Offices</button>
+            <button class="nav" data-view="billing">Billing</button>
+            <button class="nav" data-view="templates">Templates</button>
+            <button class="nav" data-view="subscriptions">Subscriptions</button>
+          </div>
+        </nav>
+
+        <div class="rail-foot">
+          <span id="live-dot" class="dot offline" title="Realtime connection"></span>
+          <span id="live-text" class="small">connecting…</span>
+          <button id="logout" class="link">Sign out</button>
+        </div>
+      </aside>
+
+      <main>
+        <!-- Dashboard -->
+        <section id="view-dashboard" class="view">
+          <div class="page-head">
+            <div><h2>Dashboard</h2><p class="muted small" id="who"></p></div>
+          </div>
+          <div class="dash-toolbar">
+            <div class="seg" id="dash-range">
+              <button class="seg-btn" data-days="7">7 days</button>
+              <button class="seg-btn active" data-days="30">30 days</button>
+              <button class="seg-btn" data-days="90">90 days</button>
+              <button class="seg-btn" data-days="365">Year</button>
+            </div>
+            <span class="muted small" id="dash-window"></span>
+          </div>
+
+          <div class="grid-cards" id="dash-stats"></div>
+
+          <div class="card panel">
+            <div class="panel-head"><h3>Takings</h3><span class="muted small" id="dash-trend"></span></div>
+            <div id="dash-line" class="chart-box"></div>
+          </div>
+
+          <div class="grid-2" style="margin-top:16px">
+            <div class="card panel"><h3>Trade by hour</h3><div id="dash-hourly" class="chart-box"></div></div>
+            <div class="card panel"><h3>Payment breakdown</h3><div id="dash-tenders" class="chart-box"></div></div>
+          </div>
+
+          <div class="grid-2" style="margin-top:16px">
+            <div class="card panel"><h3>Top products</h3><div id="dash-products"></div></div>
+            <div class="card panel"><h3>Departments</h3><div id="dash-departments"></div></div>
+          </div>
+
+          <div class="grid-2" style="margin-top:16px">
+            <div class="card panel"><h3>Takings by weekday</h3><div id="dash-weekday" class="chart-box"></div></div>
+            <div class="card panel"><h3>Held liabilities</h3><div id="dash-liabilities"></div></div>
+          </div>
+
+          <h3 style="margin:28px 0 14px">Live Sales</h3>
+          <div class="card"><table>
+            <thead><tr><th>Time</th><th>Table</th><th>Order</th><th class="right">Total</th></tr></thead>
+            <tbody id="recent"></tbody>
+          </table></div>
+        </section>
+
+        <!-- Report -->
+        <section id="view-report" class="view" hidden>
+          <div class="page-head"><h2>Report</h2></div>
+          <div class="grid-2">
+            <div class="card panel"><h3>Group Sales Total</h3><div class="bars" id="r-groups"></div></div>
+            <div class="card panel"><h3>Department Sales Total</h3><div class="bars" id="r-depts"></div></div>
+            <div class="card panel"><h3>Staff Breakdown</h3><div class="bars" id="r-clerks"></div></div>
+            <div class="card panel"><h3>PLU Sales</h3><div class="bars" id="r-plu"></div></div>
+          </div>
+        </section>
+
+        <!-- Sales Explorer -->
+        <section id="view-sales_explorer" class="view" hidden>
+          <div class="page-head"><h2>Sales Explorer</h2></div>
+          <div class="card panel" style="margin-bottom:18px">
+            <div class="row">
+              <label>From<input type="date" id="ex-from" /></label>
+              <label>To<input type="date" id="ex-to" /></label>
+              <label>Department<input id="ex-dept" placeholder="All" /></label>
+              <label>&nbsp;<button class="btn primary" id="ex-run" style="margin-top:6px">Search</button></label>
+            </div>
+          </div>
+          <div class="card"><table>
+            <thead><tr><th>When</th><th>Item</th><th>Department</th><th class="right">Qty</th><th class="right">Line total</th></tr></thead>
+            <tbody id="explorer"></tbody>
+          </table></div>
+        </section>
+
+        <!-- Till Report -->
+        <section id="view-till_report" class="view" hidden>
+          <div class="page-head"><h2>Till Report</h2><button class="btn ghost" data-print-report>Export PDF</button></div>
+          <div class="card"><table>
+            <thead><tr><th>Day</th><th class="right">Orders</th><th class="right">Discounts</th><th class="right">VAT</th><th class="right">Gross</th></tr></thead>
+            <tbody id="tillreport"></tbody>
+          </table></div>
+        </section>
+
+        <!-- Bill Report -->
+        <section id="view-bill_report" class="view" hidden>
+          <div class="page-head"><div><h2>Bill Report</h2><p class="muted small">Click a bill to view or print its receipt.</p></div><button class="btn ghost" data-print-report>Export PDF</button></div>
+          <div class="card"><table>
+            <thead><tr><th>When</th><th>Bill</th><th>Table</th><th>Covers</th><th>Tender</th><th class="right">Total</th></tr></thead>
+            <tbody id="billreport"></tbody>
+          </table></div>
+        </section>
+
+        <!-- Products -->
+        <section id="view-products" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Products</h2>
+              <p class="muted small">Button order, colour and kitchen routing all push to the tills instantly.</p>
+            </div>
+            <button class="btn primary" id="add-product">Add product</button>
+          </div>
+          <div class="card"><table>
+            <thead><tr>
+              <th>PLU</th><th>Name</th><th>Department</th>
+              <th class="right">Price</th><th class="right">VAT</th>
+              <th class="right">Button</th><th>Colour</th><th>Printer</th><th></th>
+            </tr></thead>
+            <tbody id="products"></tbody>
+          </table></div>
+        </section>
+
+        <!-- Stock -->
+        <section id="view-stock" class="view" hidden>
+          <div class="page-head"><h2>Stock</h2></div>
+          <div class="card"><table>
+            <thead><tr><th>PLU</th><th>Product</th><th>Department</th><th class="right">In stock</th></tr></thead>
+            <tbody id="stock"></tbody>
+          </table></div>
+        </section>
+
+        <!-- Programming: simple CRUD tables. The leading blank <th> is the drag
+             handle column; rows drag to reorder and the order pushes to tills. -->
+        <section id="view-program_departments" class="view" hidden>
+          <div class="page-head"><div><h2>Departments</h2><p class="muted small">Drag rows to set the order they appear on the till. A button image or emoji shows on the till’s category rail.</p></div><button class="btn primary" data-add="departments">Add department</button></div>
+          <div class="card"><table><thead><tr><th class="drag-col"></th><th>Department</th><th>Group</th><th>Accounting code</th><th>Button image</th><th>Emoji</th><th>Colour</th><th></th></tr></thead><tbody id="departments"></tbody></table></div>
+        </section>
+
+        <section id="view-program_groups" class="view" hidden>
+          <div class="page-head"><div><h2>Groups</h2><p class="muted small">Drag rows to set the order.</p></div><button class="btn primary" data-add="groups">Add group</button></div>
+          <div class="card"><table><thead><tr><th class="drag-col"></th><th>Group</th><th>Accounting code</th><th></th></tr></thead><tbody id="groups"></tbody></table></div>
+        </section>
+
+        <section id="view-mix_match" class="view" hidden>
+          <div class="page-head"><div><h2>Mix &amp; Match</h2><p class="muted small">Drag rows to set the order deals are tried on the till.</p></div><button class="btn primary" data-add="mix-match">Add deal</button></div>
+          <div class="card"><table><thead><tr><th class="drag-col"></th><th>Deal</th><th class="right">Qty</th><th class="right">Deal price</th><th>Active</th><th></th></tr></thead><tbody id="mix-match"></tbody></table></div>
+        </section>
+
+        <section id="view-finalise_keys" class="view" hidden>
+          <div class="page-head"><div><h2>Finalise Keys</h2><p class="muted small">Drag rows to set button order on the till.</p></div><button class="btn primary" data-add="finalise-keys">Add key</button></div>
+          <div class="card"><table><thead><tr><th class="drag-col"></th><th>Name</th><th>Kind</th><th>Opens drawer</th><th></th></tr></thead><tbody id="finalise-keys"></tbody></table></div>
+        </section>
+
+        <section id="view-error_reasons" class="view" hidden>
+          <div class="page-head"><div><h2>Error Reasons</h2><p class="muted small">Drag rows to set the order.</p></div><button class="btn primary" data-add="error-reasons">Add reason</button></div>
+          <div class="card"><table><thead><tr><th class="drag-col"></th><th>Reason</th><th>Applies to</th><th></th></tr></thead><tbody id="error-reasons"></tbody></table></div>
+        </section>
+
+        <section id="view-tax" class="view" hidden>
+          <div class="page-head"><div><h2>Tax</h2><p class="muted small">Drag rows to set the order.</p></div><button class="btn primary" data-add="tax">Add rate</button></div>
+          <div class="card"><table><thead><tr><th class="drag-col"></th><th>Name</th><th class="right">Rate</th><th>Default</th><th></th></tr></thead><tbody id="tax"></tbody></table></div>
+        </section>
+
+        <!-- Table designer -->
+        <section id="view-tables" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Table Designer</h2>
+              <p class="muted small">Drag tables to lay out the room. <span id="dirty"></span></p>
+            </div>
+            <div style="display:flex;gap:10px">
+              <button class="btn ghost" id="add-room">New room</button>
+              <button class="btn ghost" id="add-table">Add table</button>
+              <button class="btn primary" id="save-floor">Save layout</button>
+            </div>
+          </div>
+
+          <div class="room-tabs" id="room-tabs"></div>
+
+          <div class="designer">
+            <div id="canvas"></div>
+            <div class="card inspector">
+              <h3>Table</h3>
+              <div id="inspector-body">
+                <p class="muted small">Select a table to edit it.</p>
+              </div>
+              <div class="hint">
+                Changes are pushed to every till the moment you save — no
+                restart needed.
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- People -->
+        <section id="view-users" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Back Office Users</h2>
+              <p class="muted small">Managers and employees who sign into this back office. Clerks who only use the till are managed under Clerks.</p>
+            </div>
+            <button class="btn primary" id="add-user">Add user</button>
+          </div>
+          <div class="card"><table>
+            <thead><tr><th>Name</th><th>Email</th><th>Office</th><th>Role</th><th></th></tr></thead>
+            <tbody id="users"></tbody>
+          </table></div>
+        </section>
+
+        <section id="view-staff" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Staff</h2>
+              <p class="muted small">
+                The people who work the till. They sign on at the terminal with a PIN, not an email —
+                and whoever is signed on is the name that prints as “Served by”.
+                Permissions and rota will be added to this section later.
+              </p>
+            </div>
+            <button class="btn primary" id="add-staff">Add staff</button>
+          </div>
+          <div class="card"><table>
+            <thead><tr><th>Name</th><th>ID</th><th>PIN</th><th>Status</th><th></th></tr></thead>
+            <tbody id="staff"></tbody>
+          </table></div>
+          <p class="muted small" style="margin-top:12px">
+            PINs must be exactly 4 digits and no two people can share one — the till pad signs
+            someone on the moment the fourth digit lands, so a longer PIN could never be used and
+            a shared one would attribute sales to whoever was found first.
+          </p>
+        </section>
+
+        <!-- Idle screen: what the terminal shows between customers, and how
+             long it waits before signing the current staff member off. -->
+        <section id="view-idle" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Idle screen</h2>
+              <p class="muted small">The screen saver the till drops to between customers. Touching it asks for a staff PIN.</p>
+            </div>
+            <button class="btn primary" id="idle-save">Save settings</button>
+          </div>
+          <div class="rd-layout">
+            <div class="rd-editor">
+              <div class="card rd-card">
+                <h3>Background</h3>
+                <p class="muted small" style="margin:0 0 10px">
+                  Leave this empty for the built-in Vesopa screen, which is drawn on the terminal
+                  rather than loaded — so it always renders, even on a till with no network.
+                </p>
+                <div id="idle-preview" class="idle-preview"></div>
+                <div class="denom-actions" style="margin-top:10px">
+                  <label class="btn ghost small" for="idle-image">Choose an image…</label>
+                  <input type="file" id="idle-image" accept="image/*" hidden>
+                  <button type="button" class="btn ghost small" id="idle-image-clear">Use the Vesopa screen</button>
+                </div>
+                <label style="margin-top:12px">Message under the logo
+                  <input data-idle="idle_message" maxlength="160" placeholder="Touch to begin">
+                </label>
+              </div>
+
+              <div class="card rd-card">
+                <h3>When it appears</h3>
+                <label class="check"><input type="checkbox" data-idle="idle_enabled"> Use an idle screen on this venue’s tills</label>
+                <label class="check"><input type="checkbox" data-idle="idle_after_sale"> Show it as soon as a sale is completed</label>
+                <label class="check"><input type="checkbox" data-idle="idle_require_pin"> Ask for a staff PIN to come back in</label>
+                <p class="muted small" style="margin:6px 0 0">
+                  Turn the PIN off for a fast counter where one entry per customer costs more than
+                  the attribution is worth — the idle screen then clears on any touch.
+                </p>
+              </div>
+
+              <div class="card rd-card">
+                <h3>Automatic sign off</h3>
+                <label>Sign the current staff member off after this many seconds of no activity
+                  <input type="number" min="0" max="3600" data-idle="signoff_seconds">
+                </label>
+                <p class="muted small" style="margin:6px 0 0">
+                  0 turns it off. Anything from 20 to 3600 seconds is accepted; 180 (three minutes)
+                  is the default. This never closes the cash session and never clears the bill on
+                  screen — whoever signs back on picks it up exactly where it was left.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="view-customers" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Customers</h2>
+              <p class="muted small">A standing discount here is applied automatically when the customer is attached to a sale on the till.</p>
+            </div>
+            <button class="btn primary" id="add-customer">Add customer</button>
+          </div>
+          <div class="card"><table>
+            <thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Discount</th><th class="right">Points</th><th>Membership</th><th></th></tr></thead>
+            <tbody id="customers"></tbody>
+          </table></div>
+        </section>
+
+        <section id="view-vouchers" class="view" hidden>
+          <div class="page-head"><div><h2>Vouchers</h2><p class="muted small">Drag rows to set the order.</p></div><button class="btn primary" data-add="vouchers">Add voucher</button></div>
+          <div class="card"><table><thead><tr><th class="drag-col"></th><th>Code</th><th>Name</th><th>Type</th><th>Value</th><th>Expires</th><th>Active</th><th></th></tr></thead><tbody id="vouchers"></tbody></table></div>
+        </section>
+
+        <!-- Receipt designer -->
+        <section id="view-receipt_designer" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Receipt designer</h2>
+              <p class="muted small">Changes appear on every till as soon as you save.</p>
+            </div>
+            <div class="rd-head-actions">
+              <button class="btn" id="rd-reset">Revert</button>
+              <button class="btn primary" id="rd-save">Save receipt</button>
+            </div>
+          </div>
+
+          <div class="rd-layout">
+            <!-- Editor -->
+            <div class="rd-editor">
+              <div class="card rd-card">
+                <h3>Logo</h3>
+                <div class="rd-logo-row">
+                  <div class="rd-logo-preview" id="rd-logo-preview">
+                    <span class="muted small">No logo</span>
+                  </div>
+                  <div class="rd-logo-actions">
+                    <input type="file" id="rd-logo-file" accept="image/*" hidden>
+                    <button class="btn" id="rd-logo-pick">Upload logo</button>
+                    <button class="btn danger-ghost" id="rd-logo-clear">Remove</button>
+                    <p class="muted small">PNG or JPG, up to 4&nbsp;MB. Printed in black
+                      and white on thermal paper, so high contrast works best.</p>
+                  </div>
+                </div>
+                <label class="check"><input type="checkbox" data-rd="show_logo"> Print the logo</label>
+              </div>
+
+              <div class="card rd-card">
+                <h3>Venue details</h3>
+                <div class="grid2">
+                  <label>Venue name<input data-rd="venue_name" maxlength="120"></label>
+                  <label>Phone<input data-rd="phone" maxlength="40"></label>
+                  <label>Address line 1<input data-rd="address_line1" maxlength="120"></label>
+                  <label>Address line 2<input data-rd="address_line2" maxlength="120"></label>
+                  <label>Town / city<input data-rd="city" maxlength="80"></label>
+                  <label>Postcode<input data-rd="postcode" maxlength="16"></label>
+                  <label>Website<input data-rd="website" maxlength="120"></label>
+                  <label>VAT number<input data-rd="vat_number" maxlength="40"></label>
+                  <label>Company number<input data-rd="company_number" maxlength="40"></label>
+                </div>
+              </div>
+
+              <div class="card rd-card">
+                <h3>Wording</h3>
+                <label>Header note<input data-rd="header_note" maxlength="255"
+                  placeholder="e.g. Table service until 9pm"></label>
+                <label>Footer message<input data-rd="footer_message" maxlength="255"
+                  placeholder="Thank you for your custom"></label>
+                <label>Footer small print<textarea data-rd="footer_note" rows="2" maxlength="500"
+                  placeholder="e.g. Returns within 14 days with this receipt"></textarea></label>
+                <label>Social line<input data-rd="social_line" maxlength="160"
+                  placeholder="@yourvenue"></label>
+              </div>
+
+              <div class="card rd-card">
+                <h3>Layout</h3>
+                <label>Paper width
+                  <select data-rd="paper_width_mm">
+                    <option value="80">80mm — standard receipt roll</option>
+                    <option value="58">58mm — narrow roll</option>
+                  </select>
+                </label>
+                <label class="check"><input type="checkbox" data-rd="show_vat_breakdown"> VAT analysis by rate</label>
+                <label class="check"><input type="checkbox" data-rd="show_served_by"> "Served by" line</label>
+                <label class="check"><input type="checkbox" data-rd="show_barcode"> Receipt barcode</label>
+                <label class="check"><input type="checkbox" data-rd="show_qr"> QR code</label>
+                <label>QR links to<input data-rd="qr_url" maxlength="255"
+                  placeholder="https://…"></label>
+                <label class="check"><input type="checkbox" data-rd="show_powered_by"> "Powered by Vesopa EPOS"</label>
+              </div>
+            </div>
+
+            <!-- Live preview -->
+            <div class="rd-preview-pane">
+              <div class="rd-preview-head">
+                <span class="small muted">Live preview</span>
+                <button class="btn small" id="rd-print">Print test</button>
+              </div>
+              <div class="rd-paper-wrap">
+                <div class="rd-paper" id="rd-paper"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Promotions -->
+        <section id="view-promotions" class="view" hidden>
+          <div class="page-head">
+            <div><h2>Promotions</h2><p class="muted small">Offers and multi-buy deals. Live offers show on the till buttons.</p></div>
+            <button class="btn primary" id="promo-add">New promotion</button>
+          </div>
+          <div class="grid-cards" id="promo-stats"></div>
+          <div class="card"><table>
+            <thead><tr><th>Name</th><th>Type</th><th>Applies to</th><th>Value</th><th>Runs</th><th>Badge</th><th>Active</th><th></th></tr></thead>
+            <tbody id="promotions"></tbody>
+          </table></div>
+          <div class="card rd-card" style="margin-top:14px">
+            <h3>Performance</h3>
+            <div id="promo-chart" class="chart-box"></div>
+          </div>
+        </section>
+
+        <!-- Gift cards -->
+        <section id="view-gift_cards" class="view" hidden>
+          <div class="page-head">
+            <div><h2>Gift cards</h2><p class="muted small">Smart cards keep a balance and can be topped up. Paper certificates redeem once.</p></div>
+            <button class="btn primary" id="gift-add">Issue card</button>
+          </div>
+          <div class="grid-cards" id="gift-stats"></div>
+          <div class="card"><table>
+            <thead><tr><th>Code</th><th>Type</th><th>Recipient</th><th class="right">Issued</th><th class="right">Balance</th><th>Expires</th><th>Status</th><th></th></tr></thead>
+            <tbody id="gift-cards"></tbody>
+          </table></div>
+        </section>
+
+        <!-- Deposits -->
+        <section id="view-deposits" class="view" hidden>
+          <div class="page-head">
+            <div><h2>Deposits</h2><p class="muted small">Money taken in advance, redeemed against the final bill.</p></div>
+            <button class="btn primary" id="deposit-add">Take deposit</button>
+          </div>
+          <div class="grid-cards" id="deposit-stats"></div>
+          <div class="card"><table>
+            <thead><tr><th>Reference</th><th>Customer</th><th>For</th><th class="right">Amount</th><th class="right">Redeemed</th><th>Due</th><th>Status</th><th></th></tr></thead>
+            <tbody id="deposits"></tbody>
+          </table></div>
+        </section>
+
+        <!-- Loyalty -->
+        <section id="view-loyalty" class="view" hidden>
+          <div class="page-head">
+            <div><h2>Loyalty</h2><p class="muted small">Points are earned when a customer gives their phone number at the till.</p></div>
+            <button class="btn primary" id="loyalty-save">Save loyalty</button>
+          </div>
+          <div class="grid-cards" id="loyalty-stats"></div>
+          <div class="rd-layout">
+            <div class="rd-editor">
+              <div class="card rd-card">
+                <h3>Earning</h3>
+                <label class="check"><input type="checkbox" data-loy="enabled"> Loyalty programme enabled</label>
+                <div class="grid2">
+                  <label>Points per £1 spent<input type="number" min="0" data-loy="points_per_pound"></label>
+                  <label>Value of 1 point (pence)<input type="number" min="0" data-loy="point_value_minor"></label>
+                  <label>Minimum spend to earn (pence)<input type="number" min="0" data-loy="min_spend_minor"></label>
+                  <label>Points expire after (months, 0 = never)<input type="number" min="0" data-loy="points_expire_months"></label>
+                </div>
+                <label class="check"><input type="checkbox" data-loy="earn_on_gratuity"> Earn points on gratuity too</label>
+                <label class="check"><input type="checkbox" data-loy="require_phone"> Require a phone number</label>
+              </div>
+              <div class="card rd-card">
+                <h3>Redeeming</h3>
+                <div class="grid2">
+                  <label>Minimum points to redeem<input type="number" min="0" data-loy="min_redeem_points"></label>
+                  <label>Redeem in steps of<input type="number" min="1" data-loy="redeem_step_points"></label>
+                </div>
+                <p class="muted small" id="loyalty-example"></p>
+              </div>
+              <div class="card rd-card">
+                <h3>Tiers</h3>
+                <p class="muted small">Customers move up automatically as their lifetime spend grows.</p>
+                <div id="loyalty-tiers"></div>
+                <button class="btn" id="tier-add">Add tier</button>
+              </div>
+            </div>
+            <div class="rd-preview-pane">
+              <div class="rd-preview-head"><span class="small muted">Points movement</span></div>
+              <div class="card rd-card"><div id="loyalty-chart" class="chart-box"></div></div>
+              <div class="card rd-card" style="margin-top:12px">
+                <h3>Top customers</h3>
+                <div id="loyalty-top"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Tender & gratuity -->
+        <section id="view-tender" class="view" hidden>
+          <div class="page-head">
+            <div><h2>Tender &amp; gratuity</h2><p class="muted small">How the till takes money: service charge, cash keys, split and partial payments.</p></div>
+            <button class="btn primary" id="tender-save">Save settings</button>
+          </div>
+          <div class="rd-layout">
+            <div class="rd-editor">
+              <div class="card rd-card">
+                <h3>Gratuity / service charge</h3>
+                <label class="check"><input type="checkbox" data-tender="gratuity_enabled"> Offer gratuity</label>
+                <label>How it is applied
+                  <select data-tender="gratuity_mode">
+                    <option value="prompt">Ask the clerk at payment</option>
+                    <option value="auto">Add automatically to every bill</option>
+                    <option value="off">Do not offer</option>
+                  </select>
+                </label>
+                <label>Percentages offered (comma separated)<input data-tender="gratuity_presets" placeholder="5,10,12.5,15,20"></label>
+                <label>Default percentage (tenths, e.g. 125 = 12.5%)<input type="number" min="0" data-tender="gratuity_default_bp"></label>
+                <label>Apply automatically from this many covers (0 = always)<input type="number" min="0" data-tender="gratuity_min_covers"></label>
+                <label class="check"><input type="checkbox" data-tender="gratuity_removable"> Clerk can remove it (discretionary)</label>
+              </div>
+              <div class="card rd-card">
+                <h3>Cash</h3>
+                <label>Quick-cash keys, in pence (comma separated)<input data-tender="cash_presets" placeholder="500,1000,2000,5000"></label>
+                <label class="check"><input type="checkbox" data-tender="cash_quick_round"> Offer a round-up key</label>
+              </div>
+
+              <!-- Note keys. These are the picture buttons the clerk taps as
+                   the customer hands notes over, so the artwork and the value
+                   are edited together. -->
+              <div class="card rd-card">
+                <h3>Note keys</h3>
+                <p class="muted small" style="margin:0 0 10px" id="denom-origin"></p>
+                <div id="denom-rows" class="denom-rows"></div>
+                <div class="denom-actions">
+                  <button type="button" class="btn ghost small" id="denom-add">Add a note</button>
+                  <button type="button" class="btn ghost small" id="denom-reset">Reset to Vesopa defaults</button>
+                  <button type="button" class="btn primary small" id="denom-save">Save note keys</button>
+                </div>
+                <p id="denom-error" class="error"></p>
+              </div>
+              <div class="card rd-card">
+                <h3>Card &amp; splitting</h3>
+                <label class="check"><input type="checkbox" data-tender="allow_partial_card"> Allow partial card payments</label>
+                <label class="check"><input type="checkbox" data-tender="allow_split_bill"> Allow bills to be split</label>
+              </div>
+            </div>
+            <div class="rd-preview-pane">
+              <div class="rd-preview-head"><span class="small muted">How the till will look</span></div>
+              <div class="card rd-card"><div id="tender-preview"></div></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Automation rules -->
+        <section id="view-rules" class="view" hidden>
+          <div class="page-head">
+            <div><h2>Automation rules</h2><p class="muted small">If this happens, then that applies.</p></div>
+            <button class="btn primary" id="rule-add">New rule</button>
+          </div>
+          <div class="card"><table>
+            <thead><tr><th>Name</th><th>When</th><th>Then</th><th>Priority</th><th>Active</th><th></th></tr></thead>
+            <tbody id="rules"></tbody>
+          </table></div>
+        </section>
+
+        <!-- Templates (super admin) -->
+        <section id="view-templates" class="view" hidden>
+          <div class="page-head">
+            <div><h2>Starter templates</h2><p class="muted small">Pre-set catalogues assigned when an office is created.</p></div>
+            <button class="btn primary" id="template-add">New template</button>
+          </div>
+          <div class="card"><table>
+            <thead><tr><th>Name</th><th>Kind</th><th>Contents</th><th>Default</th><th>Active</th><th></th></tr></thead>
+            <tbody id="templates"></tbody>
+          </table></div>
+        </section>
+
+        <!-- Subscriptions (super admin) -->
+        <section id="view-subscriptions" class="view" hidden>
+          <div class="page-head">
+            <div><h2>Subscriptions</h2><p class="muted small">Joined date, monthly fee and next due date for every office.</p></div>
+          </div>
+          <div class="grid-cards" id="subscription-stats"></div>
+          <div class="card"><table>
+            <thead><tr><th>Office</th><th>Contact</th><th>Joined</th><th>Template</th><th class="right">Monthly</th><th>Billing day</th><th>Next due</th><th>Status</th><th></th></tr></thead>
+            <tbody id="subscriptions"></tbody>
+          </table></div>
+        </section>
+
+        <!-- Admin -->
+        <section id="view-offices" class="view" hidden>
+          <div class="page-head"><h2>Offices</h2><button class="btn primary" id="add-office">New office</button></div>
+          <div class="card"><table>
+            <thead><tr><th>Office</th><th>Contact</th><th>Status</th><th>Users</th><th class="right">Charge</th><th>Next due</th><th></th></tr></thead>
+            <tbody id="offices"></tbody>
+          </table></div>
+        </section>
+
+        <section id="view-billing" class="view" hidden>
+          <div class="page-head"><h2>Billing</h2><button class="btn ghost" id="sweep">Flag overdue</button></div>
+          <div class="card"><table>
+            <thead><tr><th>Office</th><th>Due</th><th class="right">Amount</th><th>Status</th><th></th></tr></thead>
+            <tbody id="invoices"></tbody>
+          </table></div>
+        </section>
+      </main>
+    </div>
+
+    <div id="modal-root"></div>
+    <script src="/charts.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>

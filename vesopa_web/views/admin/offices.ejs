@@ -1,0 +1,190 @@
+<%- include('partials/shell-top') %>
+
+<%
+  const FILTERS = [
+    ['all',       'All'],
+    ['attention', 'Needs attention'],
+    ['overdue',   'Overdue'],
+    ['trial',     'On trial'],
+    ['paused',    'Paused'],
+    ['archived',  'Archived'],
+  ];
+  const mrr = rows.reduce((a, o) => a + (o.status === 'active' ? Number(o.monthly_fee_minor) : 0), 0);
+  const collected = rows.reduce((a, o) => a + Number(o.collected_minor || 0), 0);
+%>
+
+<div class="ap-grid cols-4">
+  <div class="ap-stat">
+    <p class="ap-stat-label">Listed</p>
+    <p class="ap-stat-value"><%= rows.length %></p>
+    <p class="ap-stat-note"><%= FILTERS.find(f => f[0] === filter)[1] %></p>
+  </div>
+  <div class="ap-stat">
+    <p class="ap-stat-label">Monthly value</p>
+    <p class="ap-stat-value"><%= moneyShort(mrr) %></p>
+    <p class="ap-stat-note">Active offices in this list</p>
+  </div>
+  <div class="ap-stat is-info">
+    <p class="ap-stat-label">Collected all-time</p>
+    <p class="ap-stat-value"><%= moneyShort(collected) %></p>
+    <p class="ap-stat-note">From the offices shown</p>
+  </div>
+  <div class="ap-stat is-warn">
+    <p class="ap-stat-label">Needing a chase</p>
+    <p class="ap-stat-value"><%= rows.filter(o => ['overdue','due'].includes(o.state.key)).length %></p>
+    <p class="ap-stat-note">Tills unaffected</p>
+  </div>
+</div>
+
+<div class="ap-tabs ap-mt">
+<% FILTERS.forEach(function (f) { %>
+  <a href="/admin/offices?filter=<%= f[0] %><%= q ? '&q=' + encodeURIComponent(q) : '' %>"
+     class="<%= filter === f[0] ? 'is-active' : '' %>"><%= f[1] %></a>
+<% }); %>
+</div>
+
+<form class="ap-search" method="get" action="/admin/offices">
+  <input type="hidden" name="filter" value="<%= filter %>">
+  <input class="ap-input" type="search" name="q" value="<%= q %>" placeholder="Search name, email or phone…">
+  <button class="ap-btn" type="submit"><span class="material-icons">search</span> Search</button>
+  <div style="flex:1"></div>
+  <button class="ap-btn primary" type="button" data-modal-template="tplNewOffice">
+    <span class="material-icons">add_business</span> Register an office
+  </button>
+</form>
+
+<div class="ap-table-wrap">
+  <table class="ap-table">
+    <thead>
+      <tr>
+        <th>Office</th>
+        <th>Registered email</th>
+        <th>Phone</th>
+        <th>Plan</th>
+        <th class="num">Per month</th>
+        <th>Renews</th>
+        <th>Status</th>
+        <th class="num">Users</th>
+        <th class="num">Collected</th>
+        <th class="actions"></th>
+      </tr>
+    </thead>
+    <tbody>
+<% if (!rows.length) { %>
+      <tr><td colspan="10" class="ap-empty">No offices match that.</td></tr>
+<% } %>
+<% rows.forEach(function (o) { %>
+      <tr>
+        <td>
+          <a class="ap-primary" href="/admin/offices/<%= o.id %>"><%= o.name %></a>
+          <% if (o.is_demo) { %> <span class="ap-badge muted">demo</span><% } %>
+        </td>
+        <td><a href="mailto:<%= o.contact_email %>"><%= o.contact_email %></a></td>
+        <td>
+          <% if (o.contact_phone) { %><a href="tel:<%= o.contact_phone %>"><%= o.contact_phone %></a>
+          <% } else { %><span class="ap-muted">—</span><% } %>
+        </td>
+        <td><%= o.plan || '—' %> <span class="ap-muted ap-small"><%= o.term_months %>m</span></td>
+        <td class="num"><%= money(o.monthly_fee_minor) %></td>
+        <td class="ap-nowrap"><%= formatDate(o.next_due_on) %></td>
+        <td><span class="ap-badge <%= o.state.badge %>"><%= o.state.label %></span></td>
+        <td class="num"><%= o.users %> <span class="ap-muted">/ <%= o.clerks %></span></td>
+        <td class="num"><%= money(o.collected_minor) %></td>
+        <td class="actions">
+          <a class="ap-icon-btn" href="/admin/offices/<%= o.id %>" title="Open">
+            <span class="material-icons">chevron_right</span>
+          </a>
+        </td>
+      </tr>
+<% }); %>
+    </tbody>
+  </table>
+</div>
+
+<p class="ap-small ap-muted ap-mt">
+  Users column shows back-office logins / till sub-users.
+  A lapsed renewal never switches a till off — it only moves the office into
+  <a href="/admin/offices?filter=attention">Needs attention</a>.
+</p>
+
+<%# ---- Register an office ------------------------------------------------ %>
+
+<template id="tplNewOffice">
+  <h3>Register an office</h3>
+  <p class="ap-card-sub">Creates the billing record. Back-office logins are added separately, on the office's page.</p>
+
+  <form method="post" action="/admin/offices/new">
+    <div class="ap-form-grid">
+      <div class="ap-field span-2">
+        <label>Trading name</label>
+        <input class="ap-input" name="name" required maxlength="255" placeholder="The Pontardawe Chippy">
+      </div>
+
+      <div class="ap-field">
+        <label>Registered email</label>
+        <input class="ap-input" type="email" name="contact_email" required maxlength="255">
+        <p class="hint">This is the tenant key the tills and back office use.</p>
+      </div>
+
+      <div class="ap-field">
+        <label>Phone</label>
+        <input class="ap-input" name="contact_phone" maxlength="64" placeholder="+44 …">
+        <p class="hint">The number to ring when a renewal lapses.</p>
+      </div>
+
+      <div class="ap-field">
+        <label>Contact name</label>
+        <input class="ap-input" name="contact_name" maxlength="255">
+      </div>
+
+      <div class="ap-field">
+        <label>Package</label>
+        <select class="ap-select" name="plan">
+          <option value="">No package — set a fee by hand</option>
+<% plans.forEach(function (p) { %>
+          <option value="<%= p.slug %>"><%= p.name %> · <%= p.period_months %>m · <%= money(p.price_per_month_minor) %>/mo</option>
+<% }); %>
+        </select>
+        <p class="hint">Sets the fee and term from the package. <a href="/admin/plans">Edit packages</a>.</p>
+      </div>
+
+      <div class="ap-field">
+        <label>Term (months)</label>
+        <input class="ap-input" type="number" name="term_months" value="3" min="1" max="36">
+      </div>
+
+      <div class="ap-field">
+        <label>Monthly fee (if no package)</label>
+        <div class="ap-prefix"><span>£</span><input class="ap-input" name="monthly_fee" placeholder="75.00"></div>
+      </div>
+
+      <div class="ap-field">
+        <label>First renewal date</label>
+        <input class="ap-input" type="date" name="next_due_on">
+        <p class="hint">Left blank: today plus the term.</p>
+      </div>
+
+      <div class="ap-field">
+        <label>Trial ends</label>
+        <input class="ap-input" type="date" name="trial_ends_on">
+      </div>
+
+      <div class="ap-field span-2">
+        <label>Notes</label>
+        <textarea class="ap-textarea" name="notes" maxlength="2000"></textarea>
+      </div>
+
+      <div class="ap-check span-2">
+        <input type="checkbox" id="nofDemo" name="is_demo" value="1">
+        <label for="nofDemo">This is a demo / internal account — keep it out of revenue figures</label>
+      </div>
+    </div>
+
+    <div class="ap-btn-row" style="justify-content:flex-end">
+      <button class="ap-btn ghost" type="button" data-modal-close>Cancel</button>
+      <button class="ap-btn primary" type="submit">Register office</button>
+    </div>
+  </form>
+</template>
+
+<%- include('partials/shell-bottom') %>

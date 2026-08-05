@@ -1,0 +1,56 @@
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
+<%- include('../partials/admin-shell', { pageTitle: 'Servers', pageSub: 'The HestiaCP nodes accounts are allocated to.' }) %>
+
+<div class="p-card">
+  <h2 class="h3 mb-2">Connection</h2>
+  <div class="table-wrap"><table class="table mini">
+    <tbody>
+      <tr><td class="muted">Mode</td><td>
+        <% if (hestiaStatus.live) { %><span class="badge badge-green">Live</span>
+        <% } else { %><span class="badge badge-amber">Mock — nothing is really created</span><% } %>
+      </td></tr>
+      <tr><td class="muted">Host</td><td class="mono"><%= hestiaStatus.host %>:<%= hestiaStatus.port %></td></tr>
+      <tr><td class="muted">Credentials set</td><td><%= hestiaStatus.configured ? 'Yes' : 'No' %></td></tr>
+      <tr><td class="muted">Verify TLS</td><td><%- hestiaStatus.verify_tls ? 'Yes' : '<span class="badge badge-red">No — fix before launch</span>' %></td></tr>
+      <tr><td class="muted">Default package</td><td class="mono"><%= hestiaStatus.default_package %></td></tr>
+    </tbody>
+  </table></div>
+
+  <% if (hestiaStatus.recent_mock_calls && hestiaStatus.recent_mock_calls.length) { %>
+    <h3 class="h3 mt-3 mb-2" style="font-size:1rem">What mock mode would have run</h3>
+    <div style="font-family:var(--mono);font-size:.78rem;color:var(--ink-2);max-height:220px;overflow:auto">
+      <% hestiaStatus.recent_mock_calls.forEach(function (c) { %>
+        <div><%= c.at.slice(11,19) %> &nbsp; <%= c.cmd %> <%= c.args.join(' ') %></div>
+      <% }); %>
+    </div>
+  <% } %>
+</div>
+
+<% servers.forEach(function (s) { %>
+  <div class="p-card">
+    <div class="row-between mb-3">
+      <h2 class="h3"><%= s.name %></h2>
+      <span class="badge <%= s.used >= s.max_accounts ? 'badge-red' : 'badge-soft' %>"><%= s.used %> / <%= s.max_accounts %> accounts</span>
+    </div>
+    <form method="post" action="/admin/servers/<%= s.id %>" data-guard>
+      <input type="hidden" name="_csrf" value="<%= csrf %>">
+      <div class="p-grid p-grid-2">
+        <div class="field"><label class="label" for="name<%= s.id %>">Name</label><input class="input" id="name<%= s.id %>" name="name" value="<%= s.name %>"></div>
+        <div class="field"><label class="label" for="host<%= s.id %>">Hostname</label><input class="input mono" id="host<%= s.id %>" name="hostname" value="<%= s.hostname %>"></div>
+        <div class="field"><label class="label" for="ip<%= s.id %>">IP address</label><input class="input mono" id="ip<%= s.id %>" name="ip" value="<%= s.ip %>" placeholder="Set this once the Azure box has DNS"></div>
+        <div class="field"><label class="label" for="port<%= s.id %>">API port</label><input class="input" id="port<%= s.id %>" name="api_port" type="number" value="<%= s.api_port %>"></div>
+        <div class="field"><label class="label" for="loc<%= s.id %>">Location</label><input class="input" id="loc<%= s.id %>" name="location" value="<%= s.location %>"></div>
+        <div class="field"><label class="label" for="max<%= s.id %>">Max accounts</label><input class="input" id="max<%= s.id %>" name="max_accounts" type="number" value="<%= s.max_accounts %>"></div>
+      </div>
+      <div class="field">
+        <label class="label" for="notes<%= s.id %>">Notes</label>
+        <textarea class="textarea" id="notes<%= s.id %>" name="notes" style="min-height:80px"><%= s.notes || '' %></textarea>
+      </div>
+      <label class="check mb-3"><input type="checkbox" name="active" <%= s.active ? 'checked' : '' %>><span>Accept new accounts on this node</span></label>
+      <button class="btn btn-sm" type="submit" data-busy="Saving…">Save</button>
+    </form>
+  </div>
+<% }); %>
+
+<%- include('../partials/panel-shell-end') %>
+<%- include('../partials/footer') %>

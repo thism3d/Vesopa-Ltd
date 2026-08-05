@@ -1,0 +1,43 @@
+<%- include('../partials/head') %>
+<div class="auth-page">
+  <div class="auth-card">
+    <a class="auth-brand" href="/">
+      <img src="/assets/img/brand/vesopa_logo.png" alt="Vesopa" width="150" height="22">
+      <span class="brand-sub">Hosting</span>
+    </a>
+
+    <h1>Welcome back</h1>
+    <p class="lede">Sign in to manage your sites, domains and billing.</p>
+
+    <% if (error) { %>
+      <div class="alert alert-error"><%- icon('warning', 19) %><div><%= error %></div></div>
+    <% } %>
+
+    <form method="post" action="/login" data-guard>
+      <input type="hidden" name="_csrf" value="<%= csrf %>">
+      <input type="hidden" name="next" value="<%= next %>">
+
+      <div class="field">
+        <label class="label" for="email">Email address</label>
+        <input class="input" id="email" name="email" type="email" autocomplete="username"
+               value="<%= values.email || '' %>" required autofocus>
+      </div>
+
+      <div class="field">
+        <div class="row-between" style="margin-bottom:6px">
+          <label class="label" for="password" style="margin:0">Password</label>
+          <a class="tiny" href="/forgot">Forgotten?</a>
+        </div>
+        <input class="input" id="password" name="password" type="password" autocomplete="current-password" required>
+      </div>
+
+      <button class="btn btn-block btn-lg" type="submit" data-busy="Signing in…">Sign in</button>
+    </form>
+
+    <p class="auth-alt mb-0">
+      New here? <a href="/register">Create an account</a>
+    </p>
+  </div>
+  <p class="auth-foot"><a href="/">← Back to the website</a> &nbsp;·&nbsp; <a href="/support">Need help?</a></p>
+</div>
+<%- include('../partials/footer') %>

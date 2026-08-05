@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light" >
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="some description about the site">
+    <meta name="keywords" content="some, keywords, for, the, site">
+    <meta name="author" content="Asaduzzaman Sarker">
+    <title>Localhost - Web Hosting Template with WHMCS + RTL</title>
+    <link rel="icon" href="assets/img/favicon.png" type="image/png">
+    <link rel="stylesheet" href="assets/css/bootstrap-icons.css">
+    <link rel="stylesheet" href="assets/css/bootstrap.css">
+    <link rel="stylesheet" href="assets/css/swiper-bundle.css">
+    <link rel="stylesheet" href="assets/css/simplebar.css">
+    <link rel="stylesheet" href="assets/css/prism.css">
+    <link rel="stylesheet" href="assets/css/ff-1.css">
+    <link rel="stylesheet" href="assets/css/ff-2.css">
+    <link rel="stylesheet" href="assets/css/ff-3.css">
+    <link rel="stylesheet" href="assets/css/style.css">
+</head>
+
+<body >
+    
+        <header class="navbar navbar-expand-lg primary-header primary-header--light primary-header--sticky top-0">
+	<div class="container align-items-lg-center py-3 ">
+		<a class="logo" href="index.html">
+			<img
+				src="assets/img/logo-dark.png"
+				alt="image"
+				class="logo__img logo__img--light"
+			/>
+			<img
+				src="assets/img/logo-light.png"
+				alt="image"
+				class="logo__img logo__img--dark"
+			/>
+		</a>
+		<button
+			class="navbar-toggler border-0"
+			type="button"
+			data-bs-toggle="collapse"
+			data-bs-target="#navbar0"
+			aria-controls="navbar0"
+			aria-expanded="false"
+			aria-label="Toggle navigation"
+		>
+			<iconify-icon icon="solar:hamburger-menu-line-duotone"></iconify-icon>
+		</button>
+		<nav class="collapse navbar-collapse" id="navbar0">
+			<div class="d-flex align-items-center gap-3 ms-lg-auto">
+				<a
+					href="#"
+					class="btn btn-sm btn-primary order-lg-2 "
+				>
+					Buy Now
+				</a>
+				<div class="dropdown dropdown-modifier dropdown-xsm order-lg-1">
+					<button
+						class="btn dropdown-toggle px-4 px-lg-0 fs-14 border-0 align-items-center gap-1"
+						type="button"
+						data-bs-toggle="dropdown"
+						aria-haspopup="true"
+						aria-expanded="false"
+					>
+						<iconify-icon id="themeDropdownIcon" icon="bi:sun"></iconify-icon>
+					</button>
+					<ul
+						class="dropdown-menu dropdown-menu-end dropdown-menu-light mw-unset"
+					>
+						<li>
+							<button
+								type="button"
+								class="dropdown-item d-flex align-items-center gap-2 fs-14"
+								id="lightTheme"
+							>
+								<span class="d-block flex-shrink-0">
+									<iconify-icon icon="bi:sun"></iconify-icon>
+								</span>
+								<span class="d-block flex-grow-1"> Light </span>
+							</button>
+						</li>
+						<li>
+							<button
+								type="button"
+								class="dropdown-item d-flex align-items-center gap-2 fs-14"
+								id="darkTheme"
+							>
+								<span class="d-block flex-shrink-0">
+									<iconify-icon icon="bi:moon-stars"></iconify-icon>
+								</span>
+								<span class="d-block flex-grow-1"> Dark </span>
+							</button>
+						</li>
+					</ul>
+				</div>
+			</div>
+		</nav>
+	</div>
+</header>
+
+    
+
+    <div class="pt-4 pt-lg-0">
+        <div class="container">
+            <div class="row g-4">
+                <div class="col-lg-3">
+                    <div class="d-flex d-lg-none align-items-center justify-content-center gap-4 px-2 py-2 rounded-1 bg-dark-subtle">
+    <span class="d-block flex-grow-1 fs-14 text-dark-emphasis">
+        Document Sidebar
+    </span>
+    <button class="btn btn-icon btn-dark doc-nav-toggler">
+        <iconify-icon icon="gg:menu-right"></iconify-icon>
+    </button>
+</div>
+                    <div class="doc-sidebar d-flex gap-4 align-items-start p-4">
+	<div class="doc-sidebar__body flex-grow-1">
+		<ul class="list gap-4">
+			<li>
+				<span class="d-flex align-items-center gap-2">
+					<span class="d-grid text-success fs-24">
+						<iconify-icon
+							icon="solar:notebook-bookmark-bold-duotone"
+						></iconify-icon>
+					</span>
+					<span class="d-inline-block text-dark-emphasis fs-14 fw-medium">
+						Getting Started
+					</span>
+				</span>
+				<ul class="list ps-3 gap-1 mt-2">
+					<li>
+						<a
+							href="index.html"
+							class="link d-flex fs-14 text-body hover:text-primary-emphasis hover:bg-primary-subtle py-1 px-4 rounded-1 "
+						>
+							Installation
+						</a>
+					</li>
+					<li>
+						<a
+							href="whmcs-installation.html"
+							class="link d-flex fs-14 text-body hover:text-primary-emphasis hover:bg-primary-subtle py-1 px-4 rounded-1 "
+						>
+							WHMCS Installation
+						</a>
+					</li>
+					<li>
+						<a
+							href="changelog.html"
+							class="link d-flex fs-14 text-body hover:text-primary-emphasis hover:bg-primary-subtle py-1 px-4 rounded-1 "
+						>
+							Changelog
+						</a>
+					</li>
+					<li>
+						<a
+							href="credits.html"
+							class="link d-flex fs-14 text-body hover:text-primary-emphasis hover:bg-primary-subtle py-1 px-4 rounded-1 text-primary-emphasis bg-primary-subtle"
+						>
+							Credits
+						</a>
+					</li>
+				</ul>
+			</li>
+			<li>
+				<span class="d-flex align-items-center gap-2">
+					<span class="d-grid text-info fs-24">
+						<iconify-icon
+							icon="solar:palette-round-bold-duotone"
+						></iconify-icon>
+					</span>
+					<span class="d-inline-block text-dark-emphasis fs-14 fw-medium">
+						Style Guide
+					</span>
+				</span>
+				<ul class="list ps-3 gap-1 mt-2">
+					<li>
+						<a
+							href="colors.html"
+							class="link d-flex fs-14 text-body hover:text-primary-emphasis hover:bg-primary-subtle py-1 px-4 rounded-1 "
+						>
+							Colors
+						</a>
+					</li>
+					<li>
+						<a
+							href="fonts.html"
+							class="link d-flex fs-14 text-body hover:text-primary-emphasis hover:bg-primary-subtle py-1 px-4 rounded-1 "
+						>
+							Fonts
+						</a>
+					</li>
+					<li>
+						<a
+							href="misc.html"
+							class="link d-flex fs-14 text-body hover:text-primary-emphasis hover:bg-primary-subtle py-1 px-4 rounded-1 "
+						>
+							Misc
+						</a>
+					</li>
+				</ul>
+			</li>
+			<li>
+				<span class="d-flex align-items-center gap-2">
+					<span class="d-grid text-primary fs-24">
+						<iconify-icon icon="solar:layers-bold-duotone"></iconify-icon>
+					</span>
+					<span class="d-inline-block text-dark-emphasis fs-14 fw-medium">
+						Customization
+					</span>
+				</span>
+				<ul class="list ps-3 gap-1 mt-2">
+					<li>
+						<a
+							href="file-structure.html"
+							class="link d-flex fs-14 text-body hover:text-primary-emphasis hover:bg-primary-subtle py-1 px-4 rounded-1 "
+						>
+							File Structure
+						</a>
+					</li>
+					<li>
+						<a
+							href="html-editing.html"
+							class="link d-flex fs-14 text-body hover:text-primary-emphasis hover:bg-primary-subtle py-1 px-4 rounded-1 "
+						>
+							HTML Editing
+						</a>
+					</li>
+					<li>
+						<a
+							href="style-editing.html"
+							class="link d-flex fs-14 text-body hover:text-primary-emphasis hover:bg-primary-subtle py-1 px-4 rounded-1 "
+						>
+							Style Editing
+						</a>
+					</li>
+				</ul>
+			</li>
+		</ul>
+	</div>
+	<button class="btn btn-icon btn-dark flex-shrink-0 d-lg-none doc-nav-toggler">
+		<iconify-icon icon="carbon:close-large"></iconify-icon>
+	</button>
+</div>
+
+                </div>
+                <div class="col-lg-9">
+                    <div class="doc-content">
+                        
+<h4>Plugin Name</h4>
+<div
+	class="rounded p-4 bg-body-tertiary bg-opacity-50 border border-secondary border-opacity-30 mb-6"
+>
+	<div class="table-responsive">
+		<table class="table table-bordered table-modifier">
+			<tbody>
+				<tr>
+					<td>
+						<a
+							target="_blank"
+							href="https://getbootstrap.com/"
+							class="badge bg-primary-subtle text-primary-emphasis ff-2"
+						>
+							Bootstrap
+							<iconify-icon icon="hugeicons:copy-link"></iconify-icon>
+						</a>
+					</td>
+					<td>The most popular HTML, CSS, and JS library in the world.</td>
+				</tr>
+				<tr>
+					<td>
+						<a
+							target="_blank"
+							href="https://icons.getbootstrap.com/"
+							class="badge bg-primary-subtle text-primary-emphasis ff-2"
+						>
+							Bootstrap Icons
+							<iconify-icon icon="hugeicons:copy-link"></iconify-icon>
+						</a>
+					</td>
+					<td>Free, high quality, open source icon library</td>
+				</tr>
+				<tr>
+					<td>
+						<a
+							target="_blank"
+							href="https://fonts.google.com/"
+							class="badge bg-primary-subtle text-primary-emphasis ff-2"
+						>
+							Google Fonts
+							<iconify-icon icon="hugeicons:copy-link"></iconify-icon>
+						</a>
+					</td>
+					<td>Google free font for web usage</td>
+				</tr>
+				<tr>
+					<td>
+						<a
+							target="_blank"
+							href="https://github.com/Grsmto/simplebar"
+							class="badge bg-primary-subtle text-primary-emphasis ff-2"
+						>
+							Simplebar
+							<iconify-icon icon="hugeicons:copy-link"></iconify-icon>
+						</a>
+					</td>
+					<td>
+						Replace the browser's default scrollbar with a custom CSS-styled
+						one without losing performances
+					</td>
+				</tr>
+				<tr>
+					<td>
+						<a
+							target="_blank"
+							href="https://prismjs.com/"
+							class="badge bg-primary-subtle text-primary-emphasis ff-2"
+						>
+							prism <iconify-icon icon="hugeicons:copy-link"></iconify-icon>
+						</a>
+					</td>
+					<td>Prism is a lightweight, extensible syntax highlighter</td>
+				</tr>
+				<tr>
+					<td>
+						<a
+							target="_blank"
+							href="https://www.freepik.com/"
+							class="badge bg-primary-subtle text-primary-emphasis ff-2"
+						>
+							freepik
+							<iconify-icon icon="hugeicons:copy-link"></iconify-icon>
+						</a>
+					</td>
+					<td>Largest stock photos</td>
+				</tr>
+				<tr>
+					<td>
+						<a
+							target="_blank"
+							href="https://gsap.com/"
+							class="badge bg-primary-subtle text-primary-emphasis ff-2"
+						>
+							Gsap
+							<iconify-icon icon="hugeicons:copy-link"></iconify-icon>
+						</a>
+					</td>
+					<td>GSAP allows to effortlessly animate anything JS can touch</td>
+				</tr>
+				<tr>
+					<td>
+						<a
+							target="_blank"
+							href="https://iconify.design/"
+							class="badge bg-primary-subtle text-primary-emphasis ff-2"
+						>
+							Iconify
+							<iconify-icon icon="hugeicons:copy-link"></iconify-icon>
+						</a>
+					</td>
+					<td>
+						Iconify is an open source project. Almost all parts of the project
+						use MIT license
+					</td>
+				</tr>
+			</tbody>
+		</table>
+	</div>
+</div>
+
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="assets/js/bootstrap.bundle.js"></script>
+    <script src="assets/js/swiper.js"></script>
+    <script src="assets/js/iconify.js"></script>
+    <script src="assets/js/simplebar.js"></script>
+    <script src="assets/js/prism.js"></script>
+    <script src="assets/js/app.js"></script>
+</body>
+
+</html>

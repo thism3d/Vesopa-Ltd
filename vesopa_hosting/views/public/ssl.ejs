@@ -1,0 +1,95 @@
+<%- include('../partials/head') %>
+<%- include('../partials/header') %>
+
+<main id="main">
+<%- include('../partials/page-hero', {
+  kicker: 'SSL certificates',
+  heading: 'The padlock,<br><span class="hl">included and automatic</span>',
+  sub: 'Every site hosted with us gets a certificate issued the moment your domain points here, renewed for as long as you stay. There is nothing to buy.',
+  heroCta: { href: '/hosting', label: 'See hosting plans', secondary: { href: '/transfer', label: 'Move a site here' } },
+}) %>
+
+<section class="section">
+  <div class="wrap">
+    <div class="grid grid-3">
+      <%
+      const points = [
+        ['lock',  'Issued automatically', 'When your domain resolves to our server, a certificate is requested, installed and turned on. You never generate a signing request or paste a private key.'],
+        ['backup','Renewed for you',      'Certificates last 90 days. Ours renew at 60 with no involvement from you — the single most common cause of a site going "not secure" simply cannot happen here.'],
+        ['shield','Redirects to HTTPS',   'Once the certificate is live we can force every http request to https, so an old link or a bookmark still lands on the secure version.'],
+      ];
+      points.forEach(function (p, i) { %>
+        <article class="card card-hover card-accent" data-reveal="<%= i * 80 %>">
+          <div class="f-icon"><%- icon(p[0], 22) %></div>
+          <h2 class="h3 mb-2"><%= p[1] %></h2>
+          <p class="small muted mb-0"><%= p[2] %></p>
+        </article>
+      <% }); %>
+    </div>
+  </div>
+</section>
+
+<section class="section section-tint">
+  <div class="wrap wrap-narrow">
+    <p class="kicker" data-reveal="0">Being straight with you</p>
+    <h2 class="h1 mt-2 mb-3" data-reveal="40">Why we do not sell SSL certificates</h2>
+
+    <div class="card card-pad-lg" data-reveal="80">
+      <p>
+        Plenty of hosts sell an SSL certificate as a yearly line item. For an
+        ordinary website that is selling something the customer can get free, and
+        we would rather say so than take the money.
+      </p>
+      <p>
+        A domain-validated certificate — the kind that produces the padlock and
+        encrypts the connection — is issued free by Let's Encrypt, and browsers
+        trust it exactly as much as a paid one. The encryption is identical. There
+        is no "stronger" padlock to buy.
+      </p>
+      <p class="mb-0">
+        Paid certificates do still exist for two real cases: <b>organisation and
+        extended validation</b>, where a certificate authority verifies your
+        company's legal identity and that appears in the certificate detail, and
+        <b>wildcard certificates</b> across large numbers of subdomains. Banks and
+        listed companies buy those. If you need one, ask us and we will install it
+        at cost — we will not mark it up.
+      </p>
+    </div>
+
+    <div class="alert alert-info mt-3" data-reveal="120">
+      <%- icon('info', 19) %>
+      <div>
+        <b>If your site is not showing the padlock</b>, it is almost always that
+        the domain is not pointing at us yet. Check the nameservers in your panel,
+        then retry SSL from the site's page — it takes about thirty seconds.
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap wrap-narrow">
+    <h2 class="h2 center mb-4" data-reveal="0">Common questions</h2>
+    <div data-acc-group data-reveal="40">
+      <%
+      const faqs = [
+        ['Does a free certificate look different to a visitor?',
+         'No. A visitor sees the same padlock and the same "connection is secure" panel. The difference only appears if somebody opens the certificate detail and reads the issuer, which essentially nobody does.'],
+        ['What about subdomains?',
+         'Each subdomain you add in the panel gets its own certificate, issued the same way. shop.yourdomain.co.uk and blog.yourdomain.co.uk are both covered without you doing anything.'],
+        ['I already bought a certificate elsewhere. Can I use it?',
+         'Yes. Send us the certificate, the private key and the intermediate bundle and we will install it. Ordinary support, no charge.'],
+        ['Will HTTPS slow my site down?',
+         'No. On HTTP/2 — which we run — an encrypted connection is usually faster than an unencrypted one, because the protocol only negotiates over TLS. The handshake cost is a few milliseconds, once.'],
+      ];
+      faqs.forEach(function (f) { %>
+        <div class="acc">
+          <button class="acc-q" type="button" aria-expanded="false"><span><%= f[0] %></span><%- icon('chevron', 19) %></button>
+          <div class="acc-a"><div class="acc-a-inner"><%= f[1] %></div></div>
+        </div>
+      <% }); %>
+    </div>
+  </div>
+</section>
+</main>
+<%- include('../partials/footer') %>

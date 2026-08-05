@@ -1,0 +1,53 @@
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
+<%- include('../partials/admin-shell', {
+  pageTitle: ticket.subject,
+  pageSub: ticket.reference + ' · ' + ticket.department + ' · ' + ticket.priority + ' priority',
+}) %>
+
+<div class="p-grid p-grid-side">
+  <div>
+    <div class="p-card">
+      <% messages.forEach(function (m) { %>
+        <div class="msg <%= m.author === 'staff' ? 'msg-staff' : '' %>">
+          <span class="msg-avatar"><%= (m.author_name || '?').charAt(0).toUpperCase() %></span>
+          <div class="msg-body">
+            <div class="msg-meta">
+              <b><%= m.author_name || (m.author === 'staff' ? 'Vesopa' : 'Customer') %></b>
+              <span class="badge badge-grey" style="margin-left:6px"><%= m.author %></span>
+              · <%= new Date(m.created_at).toLocaleString('en-GB') %>
+            </div>
+            <div class="msg-text"><%= m.body %></div>
+          </div>
+        </div>
+      <% }); %>
+    </div>
+
+    <div class="p-card">
+      <h2 class="h3 mb-2">Reply</h2>
+      <form method="post" action="/admin/tickets/<%= ticket.id %>/reply" data-guard>
+        <input type="hidden" name="_csrf" value="<%= csrf %>">
+        <div class="field">
+          <textarea class="textarea" name="body" required placeholder="Your reply — this is emailed to the customer." style="min-height:160px"></textarea>
+        </div>
+        <div class="row">
+          <button class="btn" type="submit" data-busy="Sending…">Send reply</button>
+          <label class="check"><input type="checkbox" name="close" value="1"><span class="small">Close the ticket as well</span></label>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <aside>
+    <div class="p-card">
+      <h2 class="h3 mb-2">Customer</h2>
+      <p class="small mb-2">
+        <a class="strong" href="/admin/customers/<%= ticket.customer_id %>"><%= ticket.first_name %> <%= ticket.last_name %></a><br>
+        <span class="muted"><%= ticket.email %></span>
+      </p>
+      <a class="btn btn-ghost btn-sm btn-block" href="/admin/customers/<%= ticket.customer_id %>">Open their account</a>
+    </div>
+  </aside>
+</div>
+
+<%- include('../partials/panel-shell-end') %>
+<%- include('../partials/footer') %>

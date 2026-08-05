@@ -1,0 +1,392 @@
+{% extends "layouts/default-rtl.html" %}
+{% set dataTheme = "domain" %}
+{% set bodyClass = "bg-light dark:bg-dark-subtle" %}
+{% set navbar = true %} 
+{% set navBtnColor = "fw-medium" %}
+{% set primaryHeader = "primary-header--light primary-header--boxed primary-header--fixed top-md-3 primary-header-crossed:top-0" %}
+{% set ltrLink = "faq.html" %}
+{% set breadcrumb = "FAQ" %}
+{% set breadcrumbLink = "text-light hover:text-secondary" %}
+{% set breadcrumbIcon = "text-light" %}
+{% set breadcrumbActive = "text-light" %}
+{% set logoLight = "logo-dark.png" %}
+{% set logoDark = "logo-light.png" %}
+<!-- Content Block -->
+{% block content %}
+
+<!-- Banner  -->
+{% include "partials/banner-11.html" %}
+<!-- Banner End -->
+
+<!-- FAQ -->
+<div class="section-space-md-y">
+	<div class="section-space-md-y">
+		<div class="container">
+			<div class="row g-4 justify-content-between">
+				<div class="col-md-6 col-xl-5">
+					<span
+						class="badge bg-primary-emphasis hover:bg-primary-emphasis text-primary-subtle hover:text-primary-subtle mb-2"
+					>
+						<iconify-icon
+							icon="uim:check-circle"
+							class="align-middle fs-20 flex-shrink-0"
+						></iconify-icon>
+						يدعم
+					</span>
+					<h3>الأسئلة الشائعة العامة</h3>
+					<p class="mb-0">
+						نحن نبني شركة تدرك كيف ومتى وأين يقوم مجدفو القوارب لدينا بأفضل
+						أعمالهم.
+					</p>
+				</div>
+				<div class="col-md-6">
+					<div
+						class="accordion accordion-separate-body"
+						id="accordion-separate-rounded"
+					>
+						<div class="accordion-item">
+							<h2 class="accordion-header">
+								<button
+									class="accordion-button fw-medium"
+									type="button"
+									data-bs-toggle="collapse"
+									data-bs-target="#accordion-s1"
+									aria-expanded="true"
+								>
+									هل تكلفة خادم بيتكوين المدفوعة إضافية؟
+								</button>
+							</h2>
+							<div
+								id="accordion-s1"
+								class="accordion-collapse collapse show"
+								data-bs-parent="#accordion-separate-rounded"
+							>
+								<div class="accordion-body fs-14">
+									نعم. بعد نشر عقدة البرق الخاصة بك، يمكنك النقر على
+									أيقونة خادم بيتكوين Pay في لوحة معلومات العقدة لبدء
+									تشغيل خادم بيتكوينPayServer بسهولة، والذي يتصل بعقدتك
+									تلقائيًا.
+								</div>
+							</div>
+						</div>
+						<div class="accordion-item">
+							<h2 class="accordion-header">
+								<button
+									class="accordion-button collapsed fw-medium"
+									type="button"
+									data-bs-toggle="collapse"
+									data-bs-target="#accordion-s2"
+									aria-expanded="false"
+								>
+									هل تتصل عقدة شحن الجهد الخاصة بي بخادم بيتكوين
+									تلقائيا؟
+								</button>
+							</h2>
+							<div
+								id="accordion-s2"
+								class="accordion-collapse collapse"
+								data-bs-parent="#accordion-separate-rounded"
+							>
+								<div class="accordion-body fs-14">
+									نعم. بعد نشر عقدة البرق الخاصة بك، يمكنك النقر على
+									أيقونة خادم بيتكوين Pay في لوحة معلومات العقدة لبدء
+									تشغيل خادم بيتكوينPayServer بسهولة، والذي يتصل بعقدتك
+									تلقائيًا.
+								</div>
+							</div>
+						</div>
+						<div class="accordion-item">
+							<h2 class="accordion-header">
+								<button
+									class="accordion-button collapsed fw-medium"
+									type="button"
+									data-bs-toggle="collapse"
+									data-bs-target="#accordion-s3"
+									aria-expanded="false"
+								>
+									هل يمكنني قبول المدفوعات على السلسلة؟
+								</button>
+							</h2>
+							<div
+								id="accordion-s3"
+								class="accordion-collapse collapse"
+								data-bs-parent="#accordion-separate-rounded"
+							>
+								<div class="accordion-body fs-14">
+									نعم. بعد نشر عقدة البرق الخاصة بك، يمكنك النقر على
+									أيقونة خادم بيتكوين Pay في لوحة معلومات العقدة لبدء
+									تشغيل خادم بيتكوينPayServer بسهولة، والذي يتصل بعقدتك
+									تلقائيًا.
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+	<div class="section-space-md-y">
+		<div class="container">
+			<div class="row g-4 justify-content-between">
+				<div class="col-md-6 col-xl-5">
+					<span
+						class="badge bg-primary-emphasis hover:bg-primary-emphasis text-primary-subtle hover:text-primary-subtle mb-2"
+					>
+						<iconify-icon
+							icon="uim:check-circle"
+							class="align-middle fs-20 flex-shrink-0"
+						></iconify-icon>
+						التعليمات
+					</span>
+					<h3>الأسئلة الشائعة حول البيلينغ</h3>
+					<p class="mb-0">
+						نحن نبني شركة تدرك كيف ومتى وأين يقوم مجدفو القوارب لدينا بأفضل
+						أعمالهم.
+					</p>
+				</div>
+				<div class="col-md-6">
+					<div
+						class="accordion accordion-separate-body"
+						id="accordion-separate-rounded-2"
+					>
+						<div class="accordion-item">
+							<h2 class="accordion-header">
+								<button
+									class="accordion-button fw-medium"
+									type="button"
+									data-bs-toggle="collapse"
+									data-bs-target="#accordion-t1"
+									aria-expanded="true"
+								>
+									هل يدفع بيتكوين تكلفة الخادم الإضافية؟
+								</button>
+							</h2>
+							<div
+								id="accordion-t1"
+								class="accordion-collapse collapse show"
+								data-bs-parent="#accordion-separate-rounded-2"
+							>
+								<div class="accordion-body fs-14">
+									نعم. بعد نشر عقدة البرق الخاصة بك، يمكنك النقر على
+									أيقونة خادم بيتكوين Pay في لوحة معلومات العقدة لبدء
+									تشغيل خادم بيتكوينPayServer بسهولة، والذي يتصل بعقدتك
+									تلقائيًا.
+								</div>
+							</div>
+						</div>
+						<div class="accordion-item">
+							<h2 class="accordion-header">
+								<button
+									class="accordion-button collapsed fw-medium"
+									type="button"
+									data-bs-toggle="collapse"
+									data-bs-target="#accordion-t2"
+									aria-expanded="false"
+								>
+									هل تتصل عقدة شحن الجهد الخاصة بي بخادم بيتكوين
+									تلقائيا؟
+								</button>
+							</h2>
+							<div
+								id="accordion-t2"
+								class="accordion-collapse collapse"
+								data-bs-parent="#accordion-separate-rounded-2"
+							>
+								<div class="accordion-body fs-14">
+									نعم. بعد نشر عقدة البرق الخاصة بك، يمكنك النقر على
+									أيقونة خادم بيتكوين Pay في لوحة معلومات العقدة لبدء
+									تشغيل خادم بيتكوينPayServer بسهولة، والذي يتصل بعقدتك
+									تلقائيًا.
+								</div>
+							</div>
+						</div>
+						<div class="accordion-item">
+							<h2 class="accordion-header">
+								<button
+									class="accordion-button collapsed fw-medium"
+									type="button"
+									data-bs-toggle="collapse"
+									data-bs-target="#accordion-t3"
+									aria-expanded="false"
+								>
+									هل يمكنني قبول المدفوعات على السلسلة؟
+								</button>
+							</h2>
+							<div
+								id="accordion-t3"
+								class="accordion-collapse collapse"
+								data-bs-parent="#accordion-separate-rounded-2"
+							>
+								<div class="accordion-body fs-14">
+									نعم. بعد نشر عقدة البرق الخاصة بك، يمكنك النقر على
+									أيقونة خادم بيتكوين Pay في لوحة معلومات العقدة لبدء
+									تشغيل خادم بيتكوينPayServer بسهولة، والذي يتصل بعقدتك
+									تلقائيًا.
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+	<div class="section-space-md-y">
+		<div class="container">
+			<div class="row g-4 justify-content-between">
+				<div class="col-md-6 col-xl-5">
+					<span
+						class="badge bg-primary-emphasis hover:bg-primary-emphasis text-primary-subtle hover:text-primary-subtle mb-2"
+					>
+						<iconify-icon
+							icon="uim:check-circle"
+							class="align-middle fs-20 flex-shrink-0"
+						></iconify-icon>
+						استرداد
+					</span>
+					<h3>الأسئلة الشائعة حول استرداد الأموال</h3>
+					<p class="mb-0">
+						نحن نبني شركة تدرك كيف ومتى وأين يقوم مجدفو القوارب لدينا بأفضل
+						أعمالهم.
+					</p>
+				</div>
+				<div class="col-md-6">
+					<div
+						class="accordion accordion-separate-body"
+						id="accordion-separate-rounded-3"
+					>
+						<div class="accordion-item">
+							<h2 class="accordion-header">
+								<button
+									class="accordion-button fw-medium"
+									type="button"
+									data-bs-toggle="collapse"
+									data-bs-target="#accordion-u1"
+									aria-expanded="true"
+								>
+									هل يكلف خادم الدفع بيتكوين تكلفة إضافية؟
+								</button>
+							</h2>
+							<div
+								id="accordion-u1"
+								class="accordion-collapse collapse show"
+								data-bs-parent="#accordion-separate-rounded-3"
+							>
+								<div class="accordion-body fs-14">
+									نعم. بعد نشر عقدة البرق الخاصة بك، يمكنك النقر على
+									أيقونة خادم بيتكوين Pay في لوحة معلومات العقدة لبدء
+									تشغيل خادم بيتكوينPayServer بسهولة، والذي يتصل بعقدتك
+									تلقائيًا.
+								</div>
+							</div>
+						</div>
+						<div class="accordion-item">
+							<h2 class="accordion-header">
+								<button
+									class="accordion-button collapsed fw-medium"
+									type="button"
+									data-bs-toggle="collapse"
+									data-bs-target="#accordion-u2"
+									aria-expanded="false"
+								>
+									هل تتصل عقدة شحن الجهد الخاصة بي بخادم بيتكوين
+									تلقائيا؟
+								</button>
+							</h2>
+							<div
+								id="accordion-u2"
+								class="accordion-collapse collapse"
+								data-bs-parent="#accordion-separate-rounded-3"
+							>
+								<div class="accordion-body fs-14">
+									نعم. بعد نشر عقدة البرق الخاصة بك، يمكنك النقر على
+									أيقونة خادم بيتكوين Pay في لوحة معلومات العقدة لبدء
+									تشغيل خادم بيتكوينPayServer بسهولة، والذي يتصل بعقدتك
+									تلقائيًا.
+								</div>
+							</div>
+						</div>
+						<div class="accordion-item">
+							<h2 class="accordion-header">
+								<button
+									class="accordion-button collapsed fw-medium"
+									type="button"
+									data-bs-toggle="collapse"
+									data-bs-target="#accordion-u3"
+									aria-expanded="false"
+								>
+									هل يمكنني قبول المدفوعات على السلسلة؟
+								</button>
+							</h2>
+							<div
+								id="accordion-u3"
+								class="accordion-collapse collapse"
+								data-bs-parent="#accordion-separate-rounded-3"
+							>
+								<div class="accordion-body fs-14">
+									نعم. بعد نشر عقدة البرق الخاصة بك، يمكنك النقر على
+									أيقونة خادم بيتكوين Pay في لوحة معلومات العقدة لبدء
+									تشغيل خادم بيتكوينPayServer بسهولة، والذي يتصل بعقدتك
+									تلقائيًا.
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+<!-- FAQ End -->
+
+<!-- CTA  -->
+<div class="cta-7">
+	<div class="container">
+		<div class="row">
+			<div class="col-12">
+				<div
+					class="section-space-y px-4 px-sm-6 px-md-12 bg-body rounded-4 text-center position-relative z-1"
+				>
+					<div class="row justify-content-center">
+						<div class="col-md-11">
+							<h3>احصل على نقل استضافة الويب مجانًا</h3>
+							<p class="mb-8 max-text-15 mx-auto">
+								سنتولى عملية نقل موقعك الإلكتروني من شركة استضافة الويب
+								القديمة إلى منصتنا حتى تتمكن من التركيز على ما يهمك
+							</p>
+							<div
+								class="d-flex align-items-center justify-content-center gap-4 flex-wrap"
+							>
+								<a
+									href="{{root}}sign-in-2-rtl.html"
+									class="btn btn-secondary text-light"
+								>
+									ابدأ الآن
+								</a>
+								<a
+									href="{{root}}contact-rtl.html"
+									class="btn btn-dark-emphasis"
+								>
+									اتصل بنا
+								</a>
+							</div>
+						</div>
+					</div>
+					<img
+						src="{{root}}assets/img/cta-img-16.png"
+						alt="image"
+						class="img-fluid d-none d-xl-block position-absolute start-0 top-50 translate-middle-y z-n1 pointer-none"
+					/>
+					<img
+						src="{{root}}assets/img/cta-img-17.png"
+						alt="image"
+						class="img-fluid d-none d-xl-block position-absolute end-0 top-50 translate-middle-y z-n1 pointer-none"
+					/>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+<!-- CTA End -->
+
+{% include "partials/footer-7-rtl.html" %} 
+{% endblock %}

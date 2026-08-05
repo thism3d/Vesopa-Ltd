@@ -1,0 +1,112 @@
+
+        <div class="footer">
+            <div class="footer_top">
+                <div class="footer_top_left">
+                    <p class="get_it_gi_text">Get the VesopaEPOS app for Windows or Mac now.</p>
+                </div>
+
+                <div class="footer_top_right">
+                    <a href="https://apps.microsoft.com/store/detail/9PDMNJXNFZCW?cid=DevShareMCLPCS" class="footer_download_store">
+                        <img class="footer_store_img" style="max-width: 126px;" src="/assets/icons/microsoft_store.png" alt="Microsoft Store">
+                    </a>
+                    <a class="footer_download_store">
+                        <img class="footer_store_img" src="/assets/icons/download_app_store.svg" alt="App Store">
+                    </a>
+                </div>
+            </div>
+
+
+            <div class="footer_middle">
+                <div class="footer_item footer_item1">
+                    <div class="footer_logo_lang_keeper">
+                        <div class="footer_logo_keeper">
+                            <img class="footer_logo" src="/assets/logo/vesopa_logo_on_dark.png" alt="Vesopa EPOS Logo">
+                        </div>
+                        <div class="footer_language_keeper">
+                            <p class="footer_language_p"><i class="fa fa-map"></i> <%= CONTACT.address_line1 %><br><%= CONTACT.address_line2 %></p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="footer_item footer_item2">
+                    <h4 class="footer_item_heading">Request</h4>
+
+                    <div class="footer_item_links">
+                        <a class="footer_link" href="/#try-vesopa">Demo</a>
+                        <a class="footer_link" href="/training">Training</a>
+                        <a class="footer_link" href="/career">Look for Job</a>
+                    </div>
+                </div>
+
+                <div class="footer_item footer_item3">
+                    <h4 class="footer_item_heading">VesopaEPOS</h4>
+
+                    <div class="footer_item_links">
+                        <a class="footer_link" href="<%= BACKOFFICE_URL %>">Back Office</a>
+                        <a class="footer_link" href="/about">About Us</a>
+                        <a class="footer_link" href="/pricing">Pricing</a>
+                        <a class="footer_link" href="/blog">News &amp; Updates</a>
+                        <a class="footer_link" href="/help">Contact Support</a>
+                    </div>
+                </div>
+
+                <div class="footer_item footer_item4">
+                    <h4 class="footer_item_heading">Legal</h4>
+
+                    <div class="footer_item_links">
+                        <a class="footer_link" href="/privacy">Privacy Policy</a>
+                        <a class="footer_link" href="/terms">Terms &amp; Condition</a>
+                        <a class="footer_link" href="/refund">Refund Policy</a>
+                        <a class="footer_link" href="/cookies">Cookie Policy</a>
+                        <%# Consent has to be as easy to withdraw as it was to give,
+                            so the preferences dialog is reachable from every page. %>
+                        <a class="footer_link" href="#" data-cc="open">Cookie Settings</a>
+                    </div>
+                </div>
+
+                <div class="footer_item footer_item5">
+                    <h4 class="footer_item_heading">Contact</h4>
+
+                    <div class="footer_item_links">
+                        <a class="footer_link" href="<%= CONTACT.facebook %>">Facebook</a>
+                        <a class="footer_link" href="<%= CONTACT.whatsapp %>" target="_blank">Whatsapp</a>
+                        <a class="footer_link" href="mailto:<%= CONTACT.email %>">Email</a>
+                        <a class="footer_link" href="tel:<%= CONTACT.emergency_phone_e164 %>">Telephone</a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="footer_bottom">
+                <div class="footer_bottom_left">
+                    <p>&copy; <%= new Date().getFullYear() %> <%= CONTACT.company %> | All rights reserved</p>
+                </div>
+
+                <div class="footer_bottom_right">
+                    <img class="payment_methods_img" src="/assets/icons/payment_methods.png" alt="Payment Methods">
+                </div>
+            </div>
+        </div>
+
+
+
+        <!-- Install PWA Prompt -->
+        <div id="installPrompt">
+            <p>Add this app to your home screen for a better experience!</p>
+            <button id="addToHomeScreen">Add to Home Screen</button>
+            <button id="cancelBtn">Cancel</button>
+        </div>
+
+
+        <%#
+          The Intercom messenger used to load unconditionally right here,
+          dropping its cookies on every visitor before they had been asked
+          anything. It has been removed outright.
+        %>
+        <%# Loaded at the end of the body so every section it tags already
+            exists, and deferred so it never blocks the first paint. %>
+        <script src="/library/reveal.js?v=<%= APP_VERSION %>" defer></script>
+
+        <%- include('cookie-consent') %>
+
+	</body>
+</html>

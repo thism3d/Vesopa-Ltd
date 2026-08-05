@@ -1,0 +1,330 @@
+/* ===========================================================================
+   Vesopa Hosting — basket and checkout
+   ---------------------------------------------------------------------------
+   Two columns on desktop: the things being bought on the left, the total on
+   the right where it stays in view. The right column is the one that has to be
+   readable at a glance, so it is the quieter of the two.
+
+   Every number in here obeys the same rule as the rest of the site: the lime is
+   a fill or a rule, never small text. Struck-through "was" prices are grey, not
+   red — the point is that the customer is paying less, not that something is
+   wrong.
+   =========================================================================== */
+
+.cart-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 26px;
+  align-items: start;
+}
+
+.cart-main { display: grid; gap: 16px; min-width: 0; }
+.cart-side { min-width: 0; }
+
+/* Sticky, but only where there is room below the nav for it to sit. */
+.cart-summary {
+  position: sticky;
+  top: calc(var(--nav-h) + 18px);
+  background: #fff;
+  border: 1.5px solid var(--rule);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  box-shadow: var(--shadow-1);
+}
+
+/* ---- A basket line ------------------------------------------------------ */
+.cart-item {
+  background: #fff;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-lg);
+  padding: 20px 22px;
+  transition: border-color .25s var(--ease), box-shadow .25s var(--ease);
+}
+.cart-item:hover { border-color: #d4d8c8; box-shadow: var(--shadow-1); }
+
+.cart-item-head { display: flex; align-items: flex-start; gap: 14px; }
+
+.cart-item-icon {
+  width: 42px; height: 42px; border-radius: 12px; flex: none;
+  display: grid; place-items: center;
+  background: var(--bg-3); color: var(--ink-2);
+}
+.cart-item-icon-lime { background: var(--lime-soft); color: var(--lime-deep); }
+
+.cart-item-title { min-width: 0; flex: 1; }
+.cart-item-title b { display: block; font-size: 1.05rem; line-height: 1.3; word-break: break-word; }
+.cart-item-title span { display: block; margin-top: 2px; }
+
+.cart-item-price { text-align: right; flex: none; line-height: 1.35; }
+.cart-item-price b { font-size: 1.15rem; font-weight: 800; display: block; }
+.cart-item-price .was {
+  display: block; font-size: .82rem; color: var(--ink-3); text-decoration: line-through;
+}
+.cart-item-price .free { color: var(--lime-ink); }
+.cart-item-price span.tiny { display: block; }
+
+.cart-item-remove { flex: none; }
+.icon-btn {
+  width: 32px; height: 32px; border-radius: 9px;
+  border: 1px solid var(--rule); background: #fff; color: var(--ink-3);
+  display: grid; place-items: center; cursor: pointer;
+  transition: color .18s var(--ease), border-color .18s var(--ease), background .18s var(--ease);
+}
+.icon-btn:hover { color: #a82a19; border-color: #f4cec7; background: #fdf0ee; }
+
+/* ---- Period picker ------------------------------------------------------ */
+.cart-period {
+  margin-top: 16px; padding-top: 16px;
+  border-top: 1px solid var(--rule-soft);
+}
+.cart-period .label { display: block; margin-bottom: 8px; }
+.cart-period .hint { margin-top: 9px; }
+
+/* ---- Segmented term picker ----------------------------------------------
+   Four tabs, not a dropdown. The choice halves the price between its ends, so
+   every option and the saving it carries is on screen at once rather than one
+   at a time behind a click.
+
+   Each tab is a submit button, which is what makes the control work with no
+   JavaScript at all — and also what makes it keyboard-navigable and
+   screen-reader-announced for free, with no roving tabindex to maintain. */
+.seg {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  padding: 5px;
+  background: var(--bg-3);
+  border-radius: 14px;
+}
+.seg-opt {
+  position: relative;
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  min-width: 0;                       /* or a long price widens the whole grid */
+  padding: 11px 6px 9px;
+  border: 1px solid transparent; border-radius: 10px;
+  background: transparent; color: var(--ink-2);
+  font: inherit; line-height: 1.2; cursor: pointer;
+  transition: background .18s var(--ease), color .18s var(--ease),
+              box-shadow .18s var(--ease), border-color .18s var(--ease);
+}
+.seg-opt:hover { background: rgba(255, 255, 255, .65); color: var(--ink); }
+.seg-opt.is-active {
+  background: #fff; color: var(--ink);
+  border-color: var(--rule);
+  box-shadow: var(--shadow-1);
+}
+.seg-label { font-size: .82rem; font-weight: 700; }
+.seg-price { font-size: 1.02rem; font-weight: 800; letter-spacing: -.02em; }
+.seg-per { font-size: .68rem; font-weight: 700; color: var(--ink-3); }
+.seg-opt.is-active .seg-per { color: var(--ink-3); }
+
+/* The saving, pinned to the top edge so it reads as a flag on the tab rather
+   than another line of the price. */
+.seg-off {
+  position: absolute; top: -8px; left: 50%; transform: translateX(-50%);
+  padding: 2px 7px; border-radius: 999px;
+  background: var(--lime); color: var(--on-lime);
+  font-size: .65rem; font-weight: 800; letter-spacing: .01em;
+  white-space: nowrap;
+}
+.seg-opt.is-active .seg-off { box-shadow: 0 0 0 3px #fff; }
+
+/* Room for the badge to sit above the first row without clipping. */
+.cart-period .seg { margin-top: 12px; }
+
+/* ---- Quantity stepper ---------------------------------------------------- */
+.qty { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.qty-btn {
+  width: 38px; height: 38px; flex: none;
+  border: 1px solid var(--rule); border-radius: 10px;
+  background: #fff; color: var(--ink);
+  font-size: 1.1rem; font-weight: 800; line-height: 1;
+  cursor: pointer;
+  transition: border-color .18s var(--ease), background .18s var(--ease);
+}
+.qty-btn:hover:not(:disabled) { border-color: var(--ink-3); background: var(--bg-2); }
+.qty-btn:disabled { opacity: .4; cursor: not-allowed; }
+.qty-input {
+  width: 74px; flex: none; text-align: center;
+  padding: 8px 6px;
+  border: 1px solid var(--rule); border-radius: 10px; background: #fff;
+  font-weight: 700;
+}
+/* The stepper buttons cover the common case, so the explicit Update button is
+   only needed when the number was typed. It stays for keyboard and no-JS use
+   and is deliberately quiet. */
+.qty-go { flex: none; }
+
+/* ---- While an update is in flight ---------------------------------------
+   Dimmed and click-through-proof, not replaced by a spinner. The numbers on
+   screen are still the old ones for another 150ms; making them look pending is
+   honest, and blanking them would be a flash of nothing on a fast connection. */
+[data-cart].is-busy { pointer-events: none; }
+[data-cart].is-busy .cart-item-price,
+[data-cart].is-busy .cart-summary { opacity: .55; transition: opacity .12s var(--ease); }
+
+.save-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  margin-top: 10px;
+  padding: 4px 10px; border-radius: 999px;
+  background: var(--lime-soft); color: var(--lime-deep);
+  font-size: .78rem; font-weight: 800;
+}
+.save-badge svg { width: 13px; height: 13px; }
+
+/* ---- The longer-term nudge ---------------------------------------------- */
+.cart-deal {
+  display: flex; align-items: center; gap: 14px;
+  margin-top: 14px; padding: 14px 16px;
+  border-radius: 13px;
+  background: var(--chrome); color: #d6dcc9;
+  flex-wrap: wrap;
+}
+.cart-deal-mark {
+  width: 34px; height: 34px; border-radius: 10px; flex: none;
+  display: grid; place-items: center;
+  background: var(--lime); color: var(--on-lime);
+}
+.cart-deal div { flex: 1; min-width: 180px; }
+.cart-deal b { display: block; color: #fff; font-size: .95rem; }
+.cart-deal span { font-size: .82rem; color: #9ba095; }
+
+/* ---- Included list ------------------------------------------------------ */
+.cart-included {
+  background: linear-gradient(135deg, var(--lime-soft), #fff 70%);
+  border: 1px solid var(--lime);
+  border-radius: var(--radius-lg);
+  padding: 20px 22px;
+}
+.cart-included ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 9px; }
+.cart-included li { display: flex; gap: 10px; align-items: flex-start; font-size: .9rem; }
+.cart-included svg { width: 17px; height: 17px; flex: none; margin-top: 2px; color: var(--lime-ink); }
+
+/* ---- Generic card in the left column ------------------------------------ */
+.cart-card {
+  background: #fff;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-lg);
+  padding: 20px 22px;
+}
+.cart-cross { display: flex; gap: 14px; align-items: flex-start; }
+
+/* The TLD chips are built for the dark hero; on a white card they need the
+   light treatment or they are grey-on-white at 1.6:1. */
+.dsearch-tld-light {
+  background: var(--bg-2); border-color: var(--rule); color: var(--ink-2);
+}
+.dsearch-tld-light b { color: var(--ink); }
+.dsearch-tld-light:hover { background: var(--lime); border-color: var(--lime); color: var(--on-lime); }
+
+/* ---- Summary rows ------------------------------------------------------- */
+.sum-row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 14px;
+  font-size: .9rem; margin-bottom: 10px;
+}
+.sum-row > span:first-child { color: var(--ink-2); min-width: 0; }
+.sum-val { flex: none; text-align: right; white-space: nowrap; }
+.sum-val s { color: var(--ink-3); font-size: .82rem; margin-right: 5px; }
+.sum-val .free { color: var(--lime-ink); }
+.sum-row-off > span:first-child { color: var(--lime-ink); font-weight: 700; display: inline-flex; align-items: center; gap: 5px; }
+.sum-row-off svg { width: 14px; height: 14px; }
+.sum-row-off .sum-val b { color: var(--lime-ink); }
+
+/*
+ * The VAT row. Muted on purpose: it is information, not a charge, and styling
+ * it like the other lines would suggest it is about to be added to the total.
+ */
+.sum-row-vat > span:first-child { display: inline-flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.vat-tag {
+  font-size: .68rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;
+  padding: 2px 7px; border-radius: 999px;
+  background: var(--bg-3); color: var(--ink-3);
+}
+
+.sum-total {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 14px;
+  padding-top: 14px; border-top: 2px solid var(--rule);
+  font-size: 1.02rem; font-weight: 800;
+}
+.sum-total .sum-val b { font-size: 1.5rem; letter-spacing: -.03em; }
+/* The three-letter code next to the total. Deliberately quiet — it is there to
+   remove an ambiguity, not to compete with the number it qualifies. */
+.sum-total .sum-cur {
+  display: block; margin-top: 1px;
+  font-size: .66rem; font-weight: 800; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--ink-3);
+}
+.sum-total .sum-val s { display: block; font-size: .85rem; font-weight: 600; margin: 0 0 1px; }
+
+.sum-saved {
+  display: flex; align-items: center; gap: 7px;
+  margin: 12px 0 0; padding: 9px 12px; border-radius: 10px;
+  background: var(--lime-soft); color: var(--lime-deep);
+  font-size: .85rem;
+}
+.sum-saved svg { width: 15px; height: 15px; flex: none; }
+
+/* ---- Coupon ------------------------------------------------------------- */
+.cart-coupon { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--rule-soft); }
+.cart-coupon summary {
+  cursor: pointer; font-size: .88rem; font-weight: 700; color: var(--lime-ink);
+  list-style: none;
+}
+.cart-coupon summary::-webkit-details-marker { display: none; }
+.cart-coupon summary::before { content: '+ '; font-weight: 900; }
+.cart-coupon details[open] summary::before { content: '− '; }
+.chip-lime { background: var(--lime-soft); border-color: var(--lime); color: var(--lime-deep); font-weight: 700; }
+
+/* ---- Trust -------------------------------------------------------------- */
+.cart-trust { list-style: none; padding: 0; margin: 18px 0 0; display: grid; gap: 9px; }
+.cart-trust li { display: flex; align-items: center; gap: 9px; font-size: .83rem; color: var(--ink-2); }
+.cart-trust svg { width: 15px; height: 15px; flex: none; color: var(--lime-ink); }
+
+/* ===========================================================================
+   Responsive
+   =========================================================================== */
+@media (max-width: 1024px) {
+  .cart-layout { grid-template-columns: minmax(0, 1fr) 330px; gap: 20px; }
+  .cart-summary { padding: 20px; }
+}
+
+@media (max-width: 900px) {
+  /*
+   * One column, and the summary goes FIRST — on a phone the total is the thing
+   * being checked, and burying it under three product cards means scrolling
+   * past everything to find out what it costs. Sticky is dropped: a sticky box
+   * in a single-column flow just eats the screen.
+   */
+  .cart-layout { grid-template-columns: 1fr; }
+  .cart-side { order: -1; }
+  .cart-summary { position: static; }
+}
+
+@media (max-width: 560px) {
+  .cart-item, .cart-card, .cart-included { padding: 17px 15px; }
+  .cart-summary { padding: 18px 16px; }
+  .cart-item-head { flex-wrap: wrap; }
+  /* The price moves under the title rather than squeezing into a third column. */
+  .cart-item-price { text-align: left; width: 100%; order: 3; margin-top: 4px; padding-left: 56px; }
+  .cart-item-price b { display: inline; }
+  .cart-item-price .was { display: inline; margin-right: 7px; }
+  .cart-item-price span.tiny { display: inline; margin-left: 7px; }
+  .cart-deal { padding: 13px; }
+  .cart-deal div { min-width: 0; flex-basis: 100%; }
+}
+
+@media (max-width: 560px) {
+  /* Four tabs across a phone leaves each about 70px, which is not enough for
+     a price and a label. Two rows of two keeps every option visible — the
+     whole reason this stopped being a dropdown. */
+  .seg { grid-template-columns: repeat(2, 1fr); gap: 5px; }
+  .seg-opt { padding: 10px 6px 8px; }
+  .seg-price { font-size: .95rem; }
+}
+
+@media (max-width: 400px) {
+  .cart-item-icon { width: 36px; height: 36px; border-radius: 10px; }
+  .cart-item-price { padding-left: 50px; }
+  .sum-total .sum-val b { font-size: 1.3rem; }
+  .qty-input { width: 62px; }
+}

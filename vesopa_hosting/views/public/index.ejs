@@ -1,0 +1,788 @@
+<%- include('../partials/head') %>
+<%# navOver lays the bar ON the hero: the page starts at the very top of the
+    screen, and the hero gets the whole viewport it asks for. Only a page whose
+    first section is full-bleed and dark may ask for this. %>
+<%- include('../partials/header', { navOver: true }) %>
+
+<main id="main">
+
+<!-- ======================================================================
+     Hero — the domain search is the hero. Everything a hosting visitor does
+     starts with typing a name, so nothing is placed above it.
+     ====================================================================== -->
+<section class="hero" data-hero>
+  <div class="hero-aura hero-aura-1" data-aura="1"></div>
+  <div class="hero-aura hero-aura-2" data-aura="-1"></div>
+  <div class="hero-grid"></div>
+  <div class="hero-sweep"></div>
+  <%- include('../partials/hero-net') %>
+  <div class="hero-spot" data-hero-spot></div>
+
+  <div class="wrap hero-inner">
+    <p class="kicker" data-reveal="0" style="justify-content:center">Hosting by Vesopa</p>
+
+    <h1 class="display" data-reveal="60">
+      Your website,<br><span class="hl">online in minutes</span>
+    </h1>
+
+    <p class="lede hero-lede" data-reveal="120">
+      Find your domain, pick a plan, and we do the rest — SSL, email and
+      backups included. One clear panel. No cPanel to learn.
+    </p>
+
+    <%# A worked example that types itself, so the box below shows what to put
+        in it rather than describing it. It stops the moment the field is
+        focused — a placeholder that changes while you are reading it is worse
+        than one that says nothing. %>
+    <p class="small mb-3" style="color:#7e8377" data-reveal="150">
+      Try <span class="hero-type" data-type
+                data-words="yourbakery.co.uk,thegoodstudio.com,pontardawe.wales,askmeirion.uk">yourbakery.co.uk</span>
+    </p>
+
+    <div data-reveal="180">
+      <form class="dsearch" data-domain-search action="/domains" method="get">
+        <div class="dsearch-form">
+          <input class="dsearch-input" type="text" name="q" autocomplete="off"
+                 spellcheck="false" placeholder="Find your perfect domain name…"
+                 aria-label="Search for a domain name">
+          <button class="btn btn-lg" type="submit">
+            <%- icon('search', 19) %><span class="hide-sm">Search</span>
+          </button>
+        </div>
+      </form>
+
+      <div class="dsearch-tlds">
+        <% featuredTlds.forEach(function (t) { %>
+          <button type="button" class="dsearch-tld" data-tld-chip="<%= t.tld %>">
+            <b>.<%= t.tld %></b> <%= money(t.register_pence) %>
+          </button>
+        <% }); %>
+      </div>
+    </div>
+
+    <div class="hero-trust" data-reveal="240">
+      <span><%- icon('check-circle', 15) %> Free SSL on every site</span>
+      <span><%- icon('check-circle', 15) %> <%= moneyBackDays %>-day money back</span>
+      <span><%- icon('check-circle', 15) %> UK support, real people</span>
+    </div>
+  </div>
+
+  <a class="hero-cue" href="#pricing" aria-label="See the plans">
+    <span>See plans</span>
+    <i></i>
+  </a>
+</section>
+
+<!-- ======================================================================
+     Trust strip
+     ====================================================================== -->
+<section class="section-sm" style="border-bottom:1px solid var(--rule)">
+  <div class="wrap">
+    <div class="grid grid-4">
+      <div class="stat" data-reveal="0">
+        <b><span data-count="99.9" data-count-decimals="1">99.9</span>%</b>
+        <span>Uptime commitment</span>
+      </div>
+      <div class="stat" data-reveal="60">
+        <b>&lt;<span data-count="200">200</span>ms</b>
+        <span>Average UK response</span>
+      </div>
+      <div class="stat" data-reveal="120">
+        <b><span data-count="30">30</span>-day</b>
+        <span>Money-back guarantee</span>
+      </div>
+      <div class="stat" data-reveal="180">
+        <b><span data-count="24">24</span>/7</b>
+        <span>Monitoring &amp; backups</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================================================================
+     Three. Two. Online.
+
+     Every hosting site claims "online in minutes". This is where the claim
+     stops being a sentence and becomes something the visitor watches: a
+     countdown, the three things that actually happen, the real elapsed time
+     against each, and a browser window that goes from a spinner to a padlock
+     and a live page.
+
+     Steps on the left, the window on the right, so cause and effect are beside
+     each other and the whole argument fits one screen. Stacked it ran to nearly
+     two, and the countdown had scrolled away before the window finished — the
+     two halves never appeared together, which is the one thing it needs.
+
+     It sits BEFORE pricing on purpose. The price means something different to
+     somebody who has just seen how little there is to do.
+     ====================================================================== -->
+<section class="section launch" data-launch>
+  <div class="launch-glow"></div>
+  <div class="wrap">
+
+    <div class="center launch-head">
+      <p class="kicker" data-reveal="0" style="justify-content:center">From nothing to live</p>
+
+      <%# The countdown is decorative — the heading below carries the same words
+          for anyone who cannot see it, so the numerals are hidden from assistive
+          technology rather than read out as "three two online". %>
+      <div class="launch-count" aria-hidden="true">
+        <span class="launch-num" data-beat="0">3</span>
+        <span class="launch-dot" data-beat="0"></span>
+        <span class="launch-num" data-beat="1">2</span>
+        <span class="launch-dot" data-beat="1"></span>
+        <span class="launch-word" data-beat="2">Online</span>
+      </div>
+
+      <h2 class="h1 mt-2" data-reveal="60">Three steps. Two minutes. Online.</h2>
+      <p class="lede mt-2" data-reveal="120">
+        No server to configure, no certificate to install, no control panel to
+        learn first. Pick a name, pick a plan, and the rest happens while you
+        are still reading this.
+      </p>
+    </div>
+
+    <div class="launch-body">
+      <div class="launch-left">
+        <div class="launch-steps">
+          <div class="launch-step" data-step="0">
+            <span class="launch-step-time">0:00</span>
+            <span class="launch-step-mark"><%- icon('search', 22) %></span>
+            <div class="launch-step-text">
+              <h3>Pick your name</h3>
+              <p>
+                Search, and we check it against the registry live. Free for the
+                first year on any plan of a year or more.
+              </p>
+            </div>
+          </div>
+
+          <div class="launch-step" data-step="1">
+            <span class="launch-step-time">0:40</span>
+            <span class="launch-step-mark"><%- icon('card', 22) %></span>
+            <div class="launch-step-text">
+              <h3>Pick your plan</h3>
+              <p>
+                One page, one price, and the same price when it renews. Thirty
+                days to change your mind about all of it.
+              </p>
+            </div>
+          </div>
+
+          <div class="launch-step" data-step="2">
+            <span class="launch-step-time">2:00</span>
+            <span class="launch-step-mark"><%- icon('rocket', 22) %></span>
+            <div class="launch-step-text">
+              <h3>You are online</h3>
+              <p>
+                Account built, DNS pointed, SSL issued and email ready — watched
+                step by step from your dashboard, not guessed at.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div class="launch-rail" aria-hidden="true"><i></i></div>
+      </div>
+
+      <%# The browser window. A wireframe rather than a fake screenshot of a
+          business that does not exist — the padlock is the point, and it appears
+          only when the sequence reaches the step that issues the certificate. %>
+      <div class="launch-browser" aria-hidden="true">
+        <div class="launch-bar">
+          <span class="launch-dots"><i></i><i></i><i></i></span>
+          <span class="launch-url">
+            <span class="launch-lock"><%- icon('lock', 13) %></span>
+            <span>yourbakery.co.uk</span>
+          </span>
+        </div>
+        <div class="launch-screen">
+          <span class="launch-screen-empty">
+            <i></i>
+            <span data-launch-status>Waiting to start…</span>
+          </span>
+          <div class="launch-site">
+            <span class="launch-site-bar w45"></span>
+            <span class="launch-site-bar w70"></span>
+            <div class="launch-site-rows"><i></i><i></i><i></i></div>
+            <div class="launch-site-tiles"><i></i><i></i><i></i></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p class="center small mt-3 mb-0" style="color:#7e8377">
+      Timings are what setup actually takes once payment clears — domain
+      propagation can add a few minutes, and we tell you when it has finished.
+    </p>
+  </div>
+</section>
+
+<!-- ======================================================================
+     Pricing — high on the page on purpose. A hosting visitor is price-first,
+     and hiding it below three screens of features reads as evasive.
+     ====================================================================== -->
+<section class="section" id="pricing">
+  <div class="wrap">
+    <div class="center mb-4">
+      <p class="kicker" data-reveal="0" style="justify-content:center">Shared hosting</p>
+      <h2 class="h1 mt-2" data-reveal="60">Simple plans, honest renewals</h2>
+      <p class="lede mt-2" data-reveal="120" style="max-width:56ch;margin-inline:auto">
+        The price you see is the price you renew at. No first-year trick, no
+        surprise at month thirteen.
+      </p>
+    </div>
+
+    <div class="center" data-reveal="150">
+      <div class="term-toggle" data-term-toggle role="group" aria-label="Billing term">
+        <span class="term-pill" aria-hidden="true"></span>
+        <% terms.forEach(function (t) { %>
+          <button type="button" class="term-btn <%= t.months === 12 ? 'is-active' : '' %>"
+                  data-term="<%= t.months %>" aria-pressed="<%= t.months === 12 %>">
+            <%= t.label %>
+            <% if (t.maxSaving > 0) { %><span class="term-save">−<%= t.maxSaving %>%</span><% } %>
+          </button>
+        <% }); %>
+      </div>
+    </div>
+
+    <div class="plans">
+      <% plans.forEach(function (plan, i) { %>
+        <div class="plan <%= plan.badge ? 'plan-featured' : '' %>" data-reveal="<%= i * 90 %>">
+          <% if (plan.badge) { %><span class="plan-badge"><%= plan.badge %></span><% } %>
+
+          <h3 class="plan-name"><%= plan.name %></h3>
+          <p class="plan-tagline"><%= plan.tagline %></p>
+
+          <% terms.forEach(function (t) { %>
+            <div data-price-for="<%= t.months %>" <%= t.months === 12 ? '' : 'hidden' %>>
+              <div class="plan-was">
+                <% if (plan.saving[t.months] > 0) { %>
+                  <s><%= money(plan.monthly_pence) %></s> save <%= plan.saving[t.months] %>%
+                <% } else { %>&nbsp;<% } %>
+              </div>
+              <div class="plan-price">
+                <span class="cur"><%= plan.perMonthParts[t.months].symbol %></span>
+                <span class="amt"><%= plan.perMonthParts[t.months].whole %></span>
+                <span class="frac">.<%= plan.perMonthParts[t.months].frac %></span>
+                <span class="per">/month</span>
+              </div>
+              <p class="plan-term-note">
+                <% if (t.months === 1) { %>
+                  Billed monthly. Cancel any time.
+                <% } else { %>
+                  <%= money(plan.price[t.months]) %> for <%= t.label.toLowerCase() %>,
+                  then <%= money(plan.price[t.months]) %> on renewal.
+                <% } %>
+              </p>
+            </div>
+          <% }); %>
+
+          <div class="plan-cta">
+            <a class="btn btn-block <%= plan.badge ? '' : 'btn-dark' %>" data-buy-link
+               href="/order/<%= plan.slug %>?term=12">Choose <%= plan.name %></a>
+          </div>
+
+          <div class="plan-spec">
+            <div><b><%= plan.websites === 1 ? '1' : plan.websites %></b><span><%= plan.websites === 1 ? 'Website' : 'Websites' %></span></div>
+            <div><b><%= plan.storage_gb %> GB</b><span>NVMe storage</span></div>
+            <div><b><%= plan.bandwidth_gb === 0 ? 'Unmetered' : plan.bandwidth_gb + ' GB' %></b><span>Bandwidth</span></div>
+            <div><b><%= plan.mailboxes %></b><span>Mailboxes</span></div>
+          </div>
+
+          <ul class="plan-features">
+            <% plan.featureList.forEach(function (f) { %>
+              <li><%- icon('check', 16) %><span><%= f %></span></li>
+            <% }); %>
+          </ul>
+        </div>
+      <% }); %>
+    </div>
+
+    <%# The free-domain rule, stated plainly and with the exclusion visible.
+        Monthly is shown greyed rather than left off the list, because "which
+        terms DON'T include it" is the question a sceptical buyer is actually
+        asking. %>
+    <div class="freedom mt-4" data-reveal="0">
+      <span class="freedom-mark"><%- icon('globe', 22) %></span>
+      <div class="freedom-text">
+        <b>One domain free, on every plan</b>
+        <span>
+          Buy any plan for a year or longer and your .co.uk, .uk or .com is
+          included for the first year — registered the moment your payment
+          clears. Renews at the normal price, which is printed before you buy.
+        </span>
+      </div>
+      <div class="freedom-terms">
+        <span class="freedom-term is-off">Monthly — no</span>
+        <span class="freedom-term">1 year</span>
+        <span class="freedom-term">2 years</span>
+        <span class="freedom-term">3 years</span>
+      </div>
+    </div>
+
+    <p class="center small muted mt-3">
+      All prices include VAT at <%= vatPercent %>% — the price you see is the price you pay, and nothing is added at checkout. The monthly plan is priced
+      without a commitment discount; every longer term brings the rate down and
+      includes the domain.
+    </p>
+  </div>
+</section>
+
+<!-- ======================================================================
+     What's included
+     ====================================================================== -->
+<section class="section section-tint">
+  <div class="wrap">
+    <div class="center mb-4">
+      <p class="kicker" data-reveal="0" style="justify-content:center">Included as standard</p>
+      <h2 class="h1 mt-2" data-reveal="60">The things other hosts charge extra for</h2>
+    </div>
+
+    <div class="grid grid-3">
+      <%
+      const features = [
+        ['lock',      'Free SSL, always on',      'A certificate is issued the moment your domain points at us, and renewed automatically for as long as you host with us. Never an add-on.'],
+        ['bolt',      'NVMe storage',             'Every plan is on NVMe SSDs with a modern PHP stack and server-side caching. Pages start rendering in well under a second.'],
+        ['backup',    'Backups you can restore',  'Daily on Business and Pro, weekly on Starter — and you restore them yourself from the panel without opening a ticket.'],
+        ['mail',      'Email at your own domain', 'Mailboxes at yourname@yourbusiness.co.uk, with webmail, IMAP and spam filtering. No separate email bill.'],
+        ['wordpress', 'WordPress in one click',   'Install, update and stage WordPress from the panel. We keep the core patched so an unattended site does not become a liability.'],
+        ['headset',   'Support that answers',     'A ticket reaches someone in the UK who can read a server log — not a script and not a queue that closes at five.'],
+      ];
+      features.forEach(function (f, i) { %>
+        <article class="card card-hover card-accent" data-reveal="<%= (i % 3) * 80 %>">
+          <div class="f-icon"><%- icon(f[0], 22) %></div>
+          <h3 class="h3 mb-2"><%= f[1] %></h3>
+          <p class="small muted mb-0"><%= f[2] %></p>
+        </article>
+      <% }); %>
+    </div>
+  </div>
+</section>
+
+<!-- ======================================================================
+     The panel — the actual product differentiator
+     ====================================================================== -->
+<section class="section">
+  <div class="wrap">
+    <div class="grid grid-2" style="align-items:center;gap:56px">
+      <div data-reveal="0">
+        <p class="kicker">Your control panel</p>
+        <h2 class="h1 mt-2 mb-2">Built for people who<br>did not ask for cPanel</h2>
+        <p class="lede">
+          Most hosts hand you a twenty-year-old control panel with four hundred
+          icons and wish you luck. We built our own, so the six things you
+          actually do are six things you can find.
+        </p>
+
+        <div class="steps mt-4">
+          <div class="step">
+            <div>
+              <h3 class="h3 mb-1">Point your domain</h3>
+              <p class="small muted mb-0">Bought here, it is already pointed. Bought elsewhere, we show you the two nameservers to paste.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div>
+              <h3 class="h3 mb-1">Install your site</h3>
+              <p class="small muted mb-0">WordPress in one click, or upload your own files. Staging included on Business and above.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div>
+              <h3 class="h3 mb-1">Go live with SSL</h3>
+              <p class="small muted mb-0">The padlock appears on its own. You never see a certificate signing request.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- A static mock of the panel. Deliberately not a screenshot: a real one
+           goes stale the first time the panel is restyled. -->
+      <div data-reveal="120">
+        <div class="card card-pad-lg" style="box-shadow:var(--shadow-3);border:0">
+          <div class="row-between mb-3">
+            <div class="row" style="gap:10px">
+              <span class="f-icon" style="margin:0;width:38px;height:38px;border-radius:11px"><%- icon('globe', 18) %></span>
+              <div>
+                <div class="strong">yourbusiness.co.uk</div>
+                <div class="tiny muted">Business plan · vh1</div>
+              </div>
+            </div>
+            <span class="badge badge-green"><span class="dot dot-live"></span> Live</span>
+          </div>
+
+          <div class="grid grid-2" style="gap:12px">
+            <div class="chip" style="justify-content:space-between"><span>SSL</span><span class="strong" style="color:var(--lime-ink)">Active</span></div>
+            <div class="chip" style="justify-content:space-between"><span>Backups</span><span class="strong">Daily</span></div>
+            <div class="chip" style="justify-content:space-between"><span>Storage</span><span class="strong">4.1 / 100 GB</span></div>
+            <div class="chip" style="justify-content:space-between"><span>Mailboxes</span><span class="strong">3</span></div>
+          </div>
+
+          <hr class="divider">
+          <div class="row" style="gap:8px">
+            <span class="btn btn-sm">Open site</span>
+            <span class="btn btn-ghost btn-sm">Files</span>
+            <span class="btn btn-ghost btn-sm">Email</span>
+            <span class="btn btn-ghost btn-sm">Backups</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================================================================
+     Vibe coding — build it with AI, ship it here.
+
+     Careful framing, on purpose. We do NOT have an AI website builder and this
+     section must never imply one: it says "build with the tool you already
+     use, then deploy here", which is true of the infrastructure and is the
+     genuinely useful thing we offer. Every capability named below is a real
+     runtime on the plan.
+     ====================================================================== -->
+<section class="section section-dark vibe" id="vibe">
+  <div class="wrap">
+    <div class="split split-wide">
+      <div data-reveal="0">
+        <p class="kicker">Build with AI</p>
+        <h2 class="h1 mt-2 mb-2">Vibe code your website<br>or web app today</h2>
+        <p class="lede">
+          Describe what you want to Claude, Cursor, v0 or Lovable, watch it
+          build, then put it online here. No pipeline to configure, no container
+          to learn, no DevOps engineer to hire for a site that took you an
+          afternoon to imagine.
+        </p>
+
+        <div class="stack mt-4" style="gap:14px">
+          <% [
+            ['bolt',   'Push it and it is live',   'Deploy from Git or drop the folder in. We install the dependencies, pick the port and put it behind HTTPS.'],
+            ['shield', 'SSL before you ask',       'The certificate is issued and renewed on its own. Your AI-built app is on https from its first minute.'],
+            ['backup', 'Break it, roll it back',   'Every deploy is snapshotted. Vibe coding means occasionally shipping something odd at midnight; one click puts yesterday back.'],
+          ].forEach(function (s, i) { %>
+            <div class="row" style="gap:13px;align-items:flex-start">
+              <span style="color:var(--lime);flex:none;margin-top:2px"><%- icon(s[0], 20) %></span>
+              <div>
+                <div class="strong" style="color:#fff"><%= s[1] %></div>
+                <div class="small" style="color:#9ba095"><%= s[2] %></div>
+              </div>
+            </div>
+          <% }); %>
+        </div>
+
+        <div class="runtimes">
+          <% ['Static HTML', 'Node.js', 'Python', 'PHP 8.3', 'Next.js', 'Vite', 'SQLite', 'MySQL'].forEach(function (t) { %>
+            <span class="runtime"><b><%= t %></b></span>
+          <% }); %>
+        </div>
+
+        <div class="row mt-4">
+          <a class="btn" href="/hosting">Start building — <%= fromPrice %>/mo</a>
+          <a class="btn btn-ghost" style="border-color:#3a3a35;color:#fff" href="/contact">Ask if yours will run</a>
+        </div>
+      </div>
+
+      <div data-reveal="120">
+        <div class="editor">
+          <div class="editor-bar">
+            <span class="editor-dot"></span><span class="editor-dot"></span><span class="editor-dot"></span>
+            <span class="editor-file">app/page.tsx</span>
+          </div>
+          <div class="editor-body">
+            <div class="editor-prompt">
+              <span class="editor-prompt-mark">AI</span>
+              <p>Build me a booking page for my bakery with opening hours, a gallery and a contact form.</p>
+            </div>
+
+            <%# Scenery. aria-hidden because a screen reader spelling out fake
+                source code is noise, and nothing here is information the page
+                depends on. %>
+            <pre class="editor-code" aria-hidden="true"><% [
+              ['<span class="k">export default</span> <span class="k">function</span> <span class="t">Page</span>() {', 0],
+              ['  <span class="k">return</span> (', 90],
+              ['    &lt;<span class="t">main</span> <span class="s">className</span>=<span class="s">"bakery"</span>&gt;', 180],
+              ['      &lt;<span class="t">Hero</span> <span class="s">title</span>=<span class="s">"Fresh at 7am"</span> /&gt;', 270],
+              ['      &lt;<span class="t">Hours</span> <span class="s">open</span>=<span class="s">"07:00"</span> /&gt;', 360],
+              ['      &lt;<span class="t">Gallery</span> /&gt;', 450],
+              ['      &lt;<span class="t">BookingForm</span> /&gt;', 540],
+              ['    &lt;/<span class="t">main</span>&gt;', 630],
+              ['  );', 720],
+              ['}', 810],
+            ].forEach(function (l) { %><span data-line style="animation-delay:<%= l[1] %>ms"><%- l[0] %></span><% }); %></pre>
+
+            <div class="editor-foot">
+              <span class="editor-status"><%- icon('check-circle', 17) %> Deployed to yourbakery.co.uk</span>
+              <span class="tiny" style="color:#6f7862">SSL active · 1.2s build</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================================================================
+     WordPress
+     ====================================================================== -->
+<section class="section section-tint" id="wordpress">
+  <div class="wrap">
+    <div class="split">
+      <div data-reveal="0">
+        <p class="kicker">WordPress</p>
+        <h2 class="h1 mt-2 mb-2">WordPress without<br>the complexity</h2>
+        <p class="lede">
+          Forty per cent of the web runs on WordPress, and most of the people
+          running it never wanted to become server administrators. You pick a
+          name, we install it, and the parts that usually go wrong are already
+          handled.
+        </p>
+
+        <div class="steps mt-4">
+          <div class="step">
+            <div>
+              <h3 class="h3 mb-1">One click, not one afternoon</h3>
+              <p class="small muted mb-0">Choose your domain, press install. Two minutes later you are looking at your own dashboard — no database to create, no wp-config to edit, no FTP client.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div>
+              <h3 class="h3 mb-1">Updates handled quietly</h3>
+              <p class="small muted mb-0">Core and security patches are applied for you. An out-of-date WordPress is how most small sites get defaced, and leaving that to the owner has never worked.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div>
+              <h3 class="h3 mb-1">Try things without fear</h3>
+              <p class="small muted mb-0">Business and Pro get a staging copy: change the theme, test the plugin, and push it live only when it looks right. Every night is backed up either way.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="row mt-4">
+          <a class="btn" href="/order/business?term=12">Get WordPress hosting</a>
+          <a class="btn btn-ghost" href="/transfer">Move an existing site</a>
+        </div>
+      </div>
+
+      <div data-reveal="120">
+        <div class="wp-panel" data-reveal="180">
+          <div class="row-between mb-3">
+            <div class="row" style="gap:11px">
+              <span class="f-icon" style="margin:0;width:40px;height:40px;border-radius:12px"><%- icon('wordpress', 20) %></span>
+              <div>
+                <div class="strong">yourbakery.co.uk</div>
+                <div class="tiny muted">WordPress 6.9 · PHP 8.3</div>
+              </div>
+            </div>
+            <span class="badge badge-green"><span class="dot dot-live"></span> Healthy</span>
+          </div>
+
+          <div class="wp-row">
+            <span class="wp-row-mark"><%- icon('shield', 19) %></span>
+            <div class="wp-row-text">
+              <b>Core &amp; plugins up to date</b>
+              <span>Checked an hour ago</span>
+            </div>
+            <span class="wp-row-state badge badge-soft">Auto</span>
+          </div>
+
+          <div class="wp-row">
+            <span class="wp-row-mark"><%- icon('backup', 19) %></span>
+            <div class="wp-row-text">
+              <b>Last backup</b>
+              <span>Last night, 03:12 — restore yourself</span>
+            </div>
+            <span class="wp-row-state badge badge-grey">14 kept</span>
+          </div>
+
+          <div class="wp-row">
+            <span class="wp-row-mark"><%- icon('folder', 19) %></span>
+            <div class="wp-row-text">
+              <b>Staging site</b>
+              <span>staging.yourbakery.co.uk</span>
+            </div>
+            <span class="wp-row-state badge badge-soft">Ready</span>
+          </div>
+
+          <div class="wp-row">
+            <span class="wp-row-mark"><%- icon('bolt', 19) %></span>
+            <div class="wp-row-text" style="flex:1">
+              <b>Page speed</b>
+              <span>Cached, 0.4s to first byte</span>
+              <div class="wp-bar"><i style="--w:88%"></i></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================================================================
+     Email — the second product line
+     ====================================================================== -->
+<section class="section" id="email">
+  <div class="wrap">
+    <div class="sec-head sec-head-center mb-4">
+      <p class="kicker" data-reveal="0" style="justify-content:center">Email</p>
+      <h2 class="h1 mt-2" data-reveal="60">Business and marketing email</h2>
+      <p class="lede mt-2" data-reveal="120">
+        Priced separately, because they are different products bought for
+        different reasons. Mailboxes at your own domain, or campaigns that
+        actually reach an inbox.
+      </p>
+    </div>
+
+    <div class="center" data-reveal="150">
+      <div class="efam" data-email-tabs role="group" aria-label="Email type">
+        <button type="button" class="efam-btn" data-efam="business" aria-pressed="true">
+          <%- icon('mail', 17) %> Business email
+        </button>
+        <button type="button" class="efam-btn" data-efam="marketing" aria-pressed="false">
+          <%- icon('chart', 17) %> Marketing email
+        </button>
+      </div>
+    </div>
+
+    <% [['business', businessEmail], ['marketing', marketingEmail]].forEach(function (pair) { %>
+      <div class="eplans" data-efam-panel="<%= pair[0] %>" <%= pair[0] === 'business' ? '' : 'hidden' %>>
+        <% pair[1].forEach(function (p, i) { %>
+          <div class="eplan <%= p.badge ? 'eplan-featured' : '' %>" data-reveal="<%= i * 90 %>">
+            <% if (p.badge) { %><span class="eplan-badge"><%= p.badge %></span><% } %>
+            <h3 class="eplan-name"><%= p.name %></h3>
+            <p class="eplan-tagline"><%= p.tagline %></p>
+
+            <div class="eplan-price">
+              <span class="cur"><%= p.perMonthParts[12].symbol %></span>
+              <span class="amt"><%= p.perMonthParts[12].whole %></span>
+              <span class="frac">.<%= p.perMonthParts[12].frac %></span>
+            </div>
+            <p class="eplan-unit">per <%= p.unit_label %>, per month — billed yearly</p>
+            <p class="eplan-total">
+              <%= money(p.price[12]) %> a year per <%= p.unit_label %>.
+              Monthly is <%= money(p.monthly_pence) %><% if (p.saving[12] > 0) { %>, so yearly saves <%= p.saving[12] %>%<% } %>.
+            </p>
+
+            <a class="btn btn-block <%= p.badge ? '' : 'btn-dark' %>" href="/order/email/<%= p.slug %>?term=12">
+              Choose <%= p.name %>
+            </a>
+
+            <ul class="eplan-features">
+              <% p.featureList.forEach(function (f) { %>
+                <li><%- icon('check', 15) %><span><%= f %></span></li>
+              <% }); %>
+            </ul>
+          </div>
+        <% }); %>
+      </div>
+    <% }); %>
+
+    <p class="center small muted mt-3">
+      All prices include VAT at <%= vatPercent %>%. Every hosting plan already
+      includes mailboxes — these are for email on its own, or for a team that
+      has outgrown what the plan covers. <a href="/email">Full email comparison</a>.
+    </p>
+  </div>
+</section>
+
+<!-- ======================================================================
+     Migration
+     ====================================================================== -->
+<section class="section section-dark">
+  <div class="wrap">
+    <div class="grid grid-2" style="align-items:center;gap:48px">
+      <div data-reveal="0">
+        <p class="kicker">Already hosted somewhere else?</p>
+        <h2 class="h1 mt-2 mb-2">We will move it for you. Free.</h2>
+        <p class="lede">
+          Send us your current login. We copy the site, the database and the
+          mailboxes, test it on a temporary address, and only switch the domain
+          over once you have looked at it and said yes. Most moves are done the
+          same working day, with no downtime you or your customers would notice.
+        </p>
+        <div class="row mt-3">
+          <a class="btn" href="/transfer">Start a free migration</a>
+          <a class="btn btn-ghost" style="border-color:#3a3a35;color:#fff" href="/contact">Ask a question first</a>
+        </div>
+      </div>
+      <div class="grid" style="gap:14px" data-reveal="100">
+        <% [
+          ['We copy everything', 'Files, database, email accounts and cron jobs — not just the public folder.'],
+          ['You check it first', 'On a preview URL, before a single DNS record changes.'],
+          ['Then we switch', 'At a time you choose. Your old host stays live until it has propagated.'],
+        ].forEach(function (s, i) { %>
+          <div class="card" style="background:#1a1a18;border-color:#2a2a26">
+            <div class="row" style="gap:12px;align-items:flex-start">
+              <span style="color:var(--lime);flex:none;margin-top:2px"><%- icon('check-circle', 20) %></span>
+              <div>
+                <div class="strong" style="color:#fff"><%= s[0] %></div>
+                <div class="small" style="color:#9ba095"><%= s[1] %></div>
+              </div>
+            </div>
+          </div>
+        <% }); %>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================================================================
+     FAQ
+     ====================================================================== -->
+<section class="section" id="faq">
+  <div class="wrap wrap-narrow">
+    <div class="center mb-4">
+      <p class="kicker" data-reveal="0" style="justify-content:center">Questions</p>
+      <h2 class="h1 mt-2" data-reveal="60">The ones worth asking</h2>
+    </div>
+
+    <div data-acc-group data-reveal="100">
+      <%
+      const faqs = [
+        ['Will my price go up when I renew?',
+         'No. The renewal price is the same as the price you signed up at, and it is printed on the plan before you buy. We do not run a cheap first year and then double it — that practice is why people distrust hosting companies, and it costs more in churn than it earns.'],
+        ['What happens if I outgrow my plan?',
+         'You move up a plan from the panel and pay only the difference for the rest of your term. Nothing is reinstalled and nothing goes offline; the account limits change in place.'],
+        ['Do I need to know anything technical?',
+         'No. If you can fill in a form you can get a WordPress site online here. If you do want the technical parts — SSH, cron, a staging copy, a second database — they are all there on Business and Pro, just not in your way.'],
+        ['Can I use a domain I already own?',
+         'Yes. Point its nameservers at ours and add it in the panel; we will show you exactly what to paste and where. You can also transfer the domain to us later, or never — hosting here does not require it.'],
+        ['What is your uptime actually like?',
+         'We commit to 99.9%, which allows about 43 minutes a month. The node is monitored every minute and we publish incidents rather than quietly absorbing them. If we miss the commitment in a month, ask and we will credit that month.'],
+        ['How do I get my money back?',
+         'Cancel within 30 days and email us; we refund the hosting in full, no questions and no retention call. Domain registrations are the one exception — once a registry has taken the name, that fee is spent and cannot be returned.'],
+      ];
+      faqs.forEach(function (f) { %>
+        <div class="acc">
+          <button class="acc-q" type="button" aria-expanded="false">
+            <span><%= f[0] %></span><%- icon('chevron', 19) %>
+          </button>
+          <div class="acc-a"><div class="acc-a-inner"><%= f[1] %></div></div>
+        </div>
+      <% }); %>
+    </div>
+  </div>
+</section>
+
+<!-- ======================================================================
+     Closing CTA
+     ====================================================================== -->
+<section class="section-sm" style="padding-bottom:84px">
+  <div class="wrap">
+    <div class="card card-pad-lg center" data-reveal="0"
+         style="background:linear-gradient(135deg,var(--lime-soft),#fff 65%);border-color:var(--lime)">
+      <h2 class="h1 mb-2">Ready when you are</h2>
+      <p class="lede mb-3" style="max-width:48ch;margin-inline:auto">
+        Find your name, pick a plan, and be online this afternoon.
+      </p>
+      <div class="row" style="justify-content:center">
+        <a class="btn btn-lg" href="/domains"><%- icon('search', 18) %> Find a domain</a>
+        <a class="btn btn-ghost btn-lg" href="/hosting">See all plans</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<%- include('../partials/footer', { extraJs: '/assets/js/domain-search.js' }) %>

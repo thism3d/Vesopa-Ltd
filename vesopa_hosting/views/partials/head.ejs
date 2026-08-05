@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <title><%= typeof title !== 'undefined' && title ? title + ' — Vesopa Hosting' : 'Vesopa Hosting — UK domains, hosting and SSL' %></title>
+  <meta name="description" content="<%= typeof description !== 'undefined' && description ? description : 'Fast UK web hosting, domain names and free SSL from Vesopa. One clear control panel, no cPanel to learn, and support from people who answer.' %>">
+
+  <link rel="canonical" href="<%= siteUrl %><%= typeof canonical !== 'undefined' ? canonical : (currentPath || '/') %>">
+  <meta name="theme-color" content="#111111">
+  <meta name="robots" content="<%= typeof robots !== 'undefined' ? robots : 'index, follow' %>">
+
+  <link rel="icon" href="/favicon.png" type="image/png">
+  <link rel="apple-touch-icon" href="/assets/img/brand/512x512.png">
+
+  <%# og:image is an absolute URL against the *public* origin. A relative path,
+      or localhost, is fetched by Facebook and WhatsApp from their own servers,
+      where it resolves to nothing — which is how link previews silently die. %>
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Vesopa Hosting">
+  <meta property="og:title" content="<%= typeof title !== 'undefined' && title ? title : 'Vesopa Hosting' %>">
+  <meta property="og:description" content="<%= typeof description !== 'undefined' && description ? description : 'Fast UK web hosting, domain names and free SSL from Vesopa.' %>">
+  <meta property="og:url" content="<%= siteUrl %><%= currentPath || '/' %>">
+  <meta property="og:image" content="<%= siteUrl %>/assets/img/brand/512x512.png">
+  <meta name="twitter:card" content="summary_large_image">
+
+  <link rel="preload" href="/assets/css/app.css" as="style">
+  <link rel="stylesheet" href="/assets/css/app.css">
+  <%# The marketing sections. Only the public pages use it, so the panel and the
+      admin opt out with `sections: false` rather than pay for it on every screen. %>
+  <% if (typeof sections === 'undefined' || sections) { %><link rel="stylesheet" href="/assets/css/sections.css"><% } %>
+  <% if (typeof extraCss !== 'undefined') { %><link rel="stylesheet" href="<%= extraCss %>"><% } %>
+</head>
+<%# The active currency, for the handful of places a running total is worked
+    out in the browser (the mailbox counter on the email pricing grid).
+
+    Server-rendered onto the body rather than fetched, so the client never has
+    to ask what currency it is in and can never disagree with the price printed
+    next to it. `data-cur-locale` is what keeps the thousands separator right
+    when a 500-mailbox total runs past four figures. %>
+<body data-cur-symbol="<%= currency.symbol %>"
+      data-cur-code="<%= currency.code %>"
+      data-cur-locale="<%= currency.locale %>"<% if (typeof bodyClass !== 'undefined') { %> class="<%= bodyClass %>"<% } %>>
+<a class="skip-link" href="#main">Skip to content</a>

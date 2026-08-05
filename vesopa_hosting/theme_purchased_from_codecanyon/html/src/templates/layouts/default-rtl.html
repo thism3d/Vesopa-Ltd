@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html
+	lang="ar"
+	dir="rtl"
+	data-bs-theme="light"
+	{%
+	if
+	dataTheme
+	%}
+	data-theme="{{ dataTheme }}"
+	{%
+	endif
+	%}
+>
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<meta
+			name="description"
+			content="Elevate your hosting business with our premium, responsive website template. SEO-friendly, customizable, fast, and secure. Launch your professional site today"
+		/>
+		<meta
+			name="keywords"
+			content="web hosting template, hosting company website, responsive hosting design, SEO-friendly hosting, secure web hosting, fast hosting template, customizable hosting site, premium hosting template"
+		/>
+		<meta name="author" content="bplugins" />
+		<title>Localhost - Web Hosting Template with WHMCS + RTL</title>
+		<link rel="icon" href="assets/img/favicon.png" type="image/png" />
+		<link rel="stylesheet" href="assets/css/bootstrap.css" />
+		<link rel="stylesheet" href="assets/css/bootstrap-icons.css" />
+		<link rel="stylesheet" href="assets/css/simplebar.css" />
+		<link rel="stylesheet" href="assets/css/swiper-bundle.css" />
+		<link rel="stylesheet" href="assets/css/prism.css" />
+		<link rel="stylesheet" href="assets/css/ff-1.css" />
+		<link rel="stylesheet" href="assets/css/style.css" />
+	</head>
+
+	<body {% block bodyClass %} class="{{bodyClass}}" {% endblock %}>
+		{% include "partials/preloader.html" %} {% if navbar %} {% include
+		"partials/header-rtl.html" %} {% endif %} {% block content %}{% endblock %}
+
+		<!-- Scripts -->
+		<script src="assets/js/bootstrap.bundle.js"></script>
+		<script src="assets/js/iconify.js"></script>
+		<script src="assets/js/simplebar.js"></script>
+		<script src="assets/js/swiper.js"></script>
+		<script src="assets/js/prism.js"></script>
+		<script src="assets/js/app.js"></script>
+	</body>
+</html>

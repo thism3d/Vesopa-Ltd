@@ -1,0 +1,86 @@
+<%# The signed-in chrome: a dark rail on the left, content on the right.
+    Collapses to a bottom bar on a phone, because a hamburger for six
+    destinations is a tap nobody needs to make. %>
+<div class="shell">
+  <aside class="rail">
+    <a class="rail-brand" href="/">
+      <img src="/assets/img/brand/vesopa_logo_on_dark.png" alt="Vesopa" width="130" height="19">
+    </a>
+
+    <nav class="rail-nav">
+      <%
+      const railItems = [
+        ['/panel',          'chart',    'Overview'],
+        ['/panel/services', 'server',   'Hosting'],
+        ['/panel/domains',  'globe',    'Domains'],
+        ['/panel/billing',  'card',     'Billing'],
+        ['/panel/tickets',  'ticket',   'Support'],
+        ['/panel/settings', 'settings', 'Settings'],
+      ];
+      railItems.forEach(function (item) {
+        // Exact match for the root, prefix match for the rest, so
+        // /panel/services/12 still lights up "Hosting".
+        const active = item[0] === '/panel'
+          ? currentPath === '/panel'
+          : currentPath.indexOf(item[0]) === 0;
+      %>
+        <a class="rail-link <%= active ? 'is-active' : '' %>" href="<%= item[0] %>">
+          <span class="rail-icon"><%- icon(item[1], 19) %></span>
+          <span class="rail-label"><%= item[2] %></span>
+        </a>
+      <% }); %>
+    </nav>
+
+    <div class="rail-foot">
+      <a class="rail-link" href="/support">
+        <span class="rail-icon"><%- icon('info', 19) %></span>
+        <span class="rail-label">Help</span>
+      </a>
+      <form method="post" action="/logout">
+        <input type="hidden" name="_csrf" value="<%= csrf %>">
+        <button class="rail-link" type="submit" style="width:100%;border:0;background:none;cursor:pointer;text-align:left">
+          <span class="rail-icon"><%- icon('logout', 19) %></span>
+          <span class="rail-label">Sign out</span>
+        </button>
+      </form>
+    </div>
+  </aside>
+
+  <div class="shell-main">
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div>
+          <h1 class="topbar-title"><%= typeof pageTitle !== 'undefined' ? pageTitle : title %></h1>
+          <% if (typeof pageSub !== 'undefined' && pageSub) { %>
+            <p class="topbar-sub"><%= pageSub %></p>
+          <% } %>
+        </div>
+        <div class="row" style="gap:10px">
+          <% if (typeof topAction !== 'undefined' && topAction) { %>
+            <a class="btn btn-sm" href="<%= topAction.href %>"><%- icon(topAction.icon || 'plus', 16) %> <%= topAction.label %></a>
+          <% } %>
+          <div class="topbar-user">
+            <span class="topbar-avatar"><%= (customer.first_name || customer.email).charAt(0).toUpperCase() %></span>
+            <span class="hide-sm">
+              <span class="strong small"><%= customer.first_name %> <%= customer.last_name %></span>
+              <span class="tiny muted" style="display:block"><%= customer.email %></span>
+            </span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <% if (!customer.email_verified) { %>
+      <div class="wrap-panel">
+        <div class="alert alert-warn">
+          <%- icon('warning', 19) %>
+          <div>
+            <b>Confirm your email address.</b> Until you do, we cannot send you a
+            password reset if you lose your password.
+            <a href="/register/check-email">Send the link again</a>.
+          </div>
+        </div>
+      </div>
+    <% } %>
+
+    <main id="main" class="wrap-panel">

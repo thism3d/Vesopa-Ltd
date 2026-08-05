@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sign in | Vesopa Admin</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+<link rel="stylesheet" href="/admin-library/panel.css?v=<%= APP_VERSION %>">
+</head>
+<body>
+
+<div class="ap-login">
+  <div class="ap-login-box">
+    <img src="/favicon.png" alt="Vesopa EPOS">
+    <h1>Vesopa Admin</h1>
+    <p class="sub">Staff console for the site and the back office</p>
+
+<% if (error) { %>
+    <%# Deliberately never "no such user" vs "wrong password": either wording
+        turns this form into an account-enumeration oracle. %>
+    <div class="ap-flash err"><span class="material-icons">error</span><%= error %></div>
+<% } %>
+
+    <form method="post" action="/admin" autocomplete="off">
+      <div class="ap-field">
+        <label>Username</label>
+        <input class="ap-input" name="username" required minlength="8" maxlength="20"
+               autocomplete="username" autofocus>
+      </div>
+      <div class="ap-field">
+        <label>Password</label>
+        <%# No maxlength: the old form capped it at 20, which silently truncated
+            anything longer and made a manager's password fail to match. %>
+        <input class="ap-input" type="password" name="password" required minlength="8"
+               autocomplete="current-password">
+      </div>
+      <button class="ap-btn primary" type="submit">
+        <span class="material-icons">login</span> Sign in
+      </button>
+    </form>
+  </div>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,2003 @@
+/* ==========================================================================
+   Vesopa EPOS — 2025 brand theme
+   ==========================================================================
+
+   Loaded AFTER main0.1.0.css, which still owns every layout decision: the
+   grids, the breakpoints, the carousel geometry. This file changes colour and
+   type only.
+
+   It is a separate file rather than an edit to main0.1.0.css because that
+   stylesheet is 3,750 lines of hand-tuned layout built around the previous
+   identity, and rewriting it wholesale to swap a palette would have risked the
+   responsive behaviour of ten pages to fix the colour of one. Keeping the
+   override layer separate also means the exact set of brand decisions is
+   readable in one place.
+
+   Palette and typography are from VESOPA_Brandbook.pdf:
+
+     Black          #000000   page ground
+     Leafy Canopy   #A5C715   the accent in the "V" — the one brand colour
+     White          #FFFFFF
+     Inkblot        #354248   Nordic Noir #00373A   Clementine  #EE7203
+     Nuit Blanche   #164194   Hobgoblin   #00AD91   Platinum    #E3E3E3
+
+   Orbitron carries display type. Body copy is Roboto, not the brand book's
+   Blinker: Blinker is a light, narrow display face whose lowercase falls apart
+   below about 18px, and on a dark ground its thin strokes bloom and go soft.
+   It was legible in the hero and unpleasant everywhere else. Roboto is a
+   neutral text face with a tall x-height, and main0.1.0.css already loads it at
+   every weight — so this reads better AND costs one fewer font request.
+
+   The brand book sets the wordmark on black, so the site is dark: lime on
+   black clears 11:1, where the same lime on white is 1.8:1 and fails outright.
+   Lime is therefore never used as body text on a light ground anywhere below.
+   ========================================================================== */
+
+/* Orbitron only. Roboto and Montserrat already arrive with main0.1.0.css, and
+   Blinker is no longer used. */
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;800;900&display=swap');
+
+:root {
+  /* Brand */
+  --lime: #a5c715;
+  --lime-bright: #bde01d;
+  --lime-deep: #7d9a10;
+  /* Type that sits ON lime. Lime is a light colour; white on it is unreadable. */
+  --on-lime: #0c1004;
+
+  --clementine: #ee7203;
+  --hobgoblin: #00ad91;
+  --nuit: #164194;
+  --noir: #00373a;
+  --inkblot: #354248;
+  --platinum: #e3e3e3;
+
+  /* Dark surfaces, warmed a few degrees toward the lime so the accent reads as
+     part of the surface rather than pasted onto a neutral grey. */
+  --ink: #000000;
+  --surface: #0a0c07;
+  --surface-2: #12150d;
+  --surface-3: #1a1f12;
+  --line: #262c1b;
+  --line-soft: rgba(165, 199, 21, .16);
+
+  --text: #f4f6ef;
+  --text-dim: #b9c0ae;
+  --text-mute: #8b9280;
+
+  /* Two families, one job each. Display is for headlines and figures; body is
+     for everything a person actually reads a sentence of. */
+  --font-display: 'Orbitron', 'Roboto', system-ui, sans-serif;
+  --font-body: 'Roboto', system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  --radius: 14px;
+  --radius-lg: 22px;
+
+  /* Kept because the legacy stylesheet still references them by name; both now
+     resolve to brand lime so any rule not restated below lands on-brand
+     instead of on the retired purple. */
+  --primary_color: #a5c715;
+  --primary_bold: #7d9a10;
+  --white: #ffffff;
+}
+
+/* --------------------------------------------------------------------------
+   Base
+   -------------------------------------------------------------------------- */
+
+html { background: var(--ink); }
+
+/* An explicit `display` beats the `hidden` attribute, so the cookie dialog —
+   `.cc-modal { display: grid }` — sat open over every page on first load, its
+   backdrop dimming the whole site. This puts `hidden` back in charge for
+   anything this stylesheet gives a display value to. */
+[hidden] { display: none !important; }
+
+body {
+  background: var(--ink);
+  color: var(--text);
+  font-family: var(--font-body);
+  /* Light text on a near-black ground renders heavier than the same weight on
+     white; without this, body copy looks a half-weight bolder than it is. */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+p, table, tr, th, td, label, input, select, ul, li, textarea, button, a,
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-body);
+}
+
+/* Roboto's default tracking is set for black-on-white. Opening it a hair keeps
+   paragraphs from closing up against a dark background. */
+p, li, td { letter-spacing: .002em; }
+
+/* Bare list items on the policy and help pages carry no styling of their own,
+   so they inherited the browser's ~1.2 default and wrapped into a solid block.
+   Element-level, so any class rule that wants tighter still wins. */
+li { line-height: 1.7; margin-bottom: 6px; }
+
+/* ---- Display type -----------------------------------------------------------
+
+   Orbitron is opt-in, never a blanket rule on h1–h6.
+
+   It was previously applied to every heading on the site, which put a wide
+   geometric display face on FAQ questions, feature-card titles and fifteen
+   numbered clause headings in the policy pages. At those sizes Orbitron stops
+   being a brand signal and just becomes hard to read — which is the "odd font"
+   problem. It now appears only where a heading is doing display work: the hero,
+   the section titles that introduce a band, and figures meant to be read as
+   numerals.
+   -------------------------------------------------------------------------- */
+
+.front_heading,
+.hour_free_headline,
+.fast_server_headline,
+.protect_data_h2,
+.money_back_h2,
+.short_ft_heading,
+.customer_support_text,
+.user_review_headline,
+.frequently_asked_headline,
+.try_vesopa_heading,
+.plan_header,
+.privacy_policy_heading,
+.terms_heading,
+.refund_policy_heading,
+.downlaod_heading,
+.about_us_text,
+.vf-title,
+.cc-copy h2,
+.cc-modal-card h2,
+.vh-proof b,
+.vf-spec b,
+.pricing_price {
+  font-family: var(--font-display);
+  letter-spacing: -.01em;
+}
+
+/* Sub-headings stay in the text face, just heavier. A card title and the
+   paragraph under it belong to the same voice. */
+.faq_question,
+.vf-card h3,
+.cc-cat h3,
+.about_item_heading,
+.privacy_item_heading,
+.support_section_heading,
+.epos_demo_item_heading,
+.footer_item_heading,
+.pricing_duration {
+  font-family: var(--font-body);
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+::selection { background: var(--lime); color: var(--on-lime); }
+
+/* Every interactive element needs a focus ring that survives a dark ground —
+   the legacy sheet sets `outline: none` globally. */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--lime);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.white_bg { background-color: var(--surface-2); }
+.body_bg { background-color: var(--ink); }
+
+/* --------------------------------------------------------------------------
+   Header
+   -------------------------------------------------------------------------- */
+
+.header {
+  background-color: rgba(0, 0, 0, .82);
+  backdrop-filter: saturate(150%) blur(14px);
+  -webkit-backdrop-filter: saturate(150%) blur(14px);
+  border-bottom: 1px solid var(--line);
+}
+
+.menu_item_desktop { color: var(--text-dim); font-weight: 500; }
+.menu_item_desktop:hover { color: var(--lime); }
+
+.menu_get_button {
+  background-color: var(--lime);
+  color: var(--on-lime);
+  font-weight: 700;
+  letter-spacing: .01em;
+  box-shadow: 0 0 0 0 rgba(165, 199, 21, .5);
+  transition: background-color .25s, box-shadow .25s, transform .15s;
+}
+.menu_get_button:hover {
+  background-color: var(--lime-bright);
+  box-shadow: 0 6px 24px -6px rgba(165, 199, 21, .55);
+  transform: translateY(-1px);
+}
+
+.menu_mobile_button {
+  background-color: var(--surface-3);
+  border: 1px solid var(--line);
+  box-shadow: none;
+  color: var(--text);
+}
+.menu_mobile_button:hover { box-shadow: 0 0 0 3px rgba(165, 199, 21, .18); }
+
+.header_mobile_menu { background-color: var(--surface); }
+.header_mobile_heading { border-bottom: 1px solid var(--line); }
+.header_mobile_menus .menu_item_desktop { border-bottom: 1px solid var(--line); }
+.header_mobile_menu_bottom { border-top: 1px solid var(--line); }
+
+.mobile_login_button {
+  border: 2px solid var(--line-soft);
+  background-color: transparent;
+  color: var(--lime);
+}
+.mobile_login_button:hover { background-color: var(--surface-2); }
+
+/* The header and footer lockups are swapped to the brand book's reversed
+   artwork in the markup (vesopa_logo_on_dark.png), not filtered here: the brand
+   book is explicit that the dark-background version is white type with the lime
+   accent preserved, and invert() on the light lockup flattens that lime tail to
+   a muddy mauve. Using the supplied asset is both correct and cheaper. */
+
+/* --------------------------------------------------------------------------
+   Hero
+   -------------------------------------------------------------------------- */
+
+.container_1 {
+  background-color: var(--ink);
+  color: #fff;
+  /* The heading, sub-heading and CTA are laid out by .vh-* below; the legacy
+     centred flex column still applies and is what keeps them stacked. */
+  padding: 20px 24px;
+  isolation: isolate;
+}
+
+/* The animated brand ground. Two counter-rotating conic sweeps in lime read as
+   the brandbook's flowing chevron motif without needing a video file, and a
+   radial glow anchors the composition the way the cover artwork does. */
+.vh-stage {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  background: var(--ink);
+}
+
+.vh-stage::before,
+.vh-stage::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 148vmax;
+  height: 148vmax;
+  margin: -74vmax 0 0 -74vmax;
+  border-radius: 42%;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    rgba(165, 199, 21, .30) 40deg,
+    transparent 96deg,
+    transparent 180deg,
+    rgba(165, 199, 21, .16) 232deg,
+    transparent 300deg
+  );
+  will-change: transform;
+}
+.vh-stage::before { animation: vh-spin 26s linear infinite; }
+.vh-stage::after {
+  border-radius: 46%;
+  opacity: .55;
+  animation: vh-spin 38s linear infinite reverse;
+}
+
+@keyframes vh-spin { to { transform: rotate(360deg); } }
+
+/* The lime pool under the wordmark, straight off the brandbook cover. */
+.vh-glow {
+  position: absolute;
+  left: 50%;
+  bottom: -34vmin;
+  width: 92vmin;
+  height: 68vmin;
+  transform: translateX(-50%);
+  background: radial-gradient(
+    ellipse at 50% 60%,
+    rgba(189, 224, 29, .55) 0%,
+    rgba(165, 199, 21, .22) 34%,
+    transparent 68%
+  );
+  filter: blur(22px);
+  pointer-events: none;
+}
+
+/* A fine lime grid: the "software" read, and it keeps the large black areas
+   from looking like an unstyled page. */
+.vh-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, rgba(165, 199, 21, .07) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(165, 199, 21, .07) 1px, transparent 1px);
+  background-size: 74px 74px;
+  /* Fades out toward the middle so it never competes with the headline. */
+  -webkit-mask-image: radial-gradient(ellipse at 50% 45%, transparent 18%, #000 78%);
+  mask-image: radial-gradient(ellipse at 50% 45%, transparent 18%, #000 78%);
+}
+
+/* Keeps the type legible over the brightest part of the sweep. */
+.vh-veil {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, .72) 0%, rgba(0, 0, 0, .28) 45%, rgba(0, 0, 0, .86) 100%);
+}
+
+.vh-inner { position: relative; z-index: 2; max-width: 1000px; }
+
+.vh-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 16px 7px 12px;
+  margin-bottom: 26px;
+  border: 1px solid var(--line-soft);
+  border-radius: 100px;
+  background: rgba(165, 199, 21, .07);
+  color: var(--lime);
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+}
+.vh-eyebrow::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--lime);
+  box-shadow: 0 0 0 0 rgba(165, 199, 21, .7);
+  animation: vh-pulse 2.4s ease-out infinite;
+}
+@keyframes vh-pulse {
+  70% { box-shadow: 0 0 0 9px rgba(165, 199, 21, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(165, 199, 21, 0); }
+}
+
+.front_heading {
+  font-family: var(--font-display);
+  font-size: clamp(34px, 7vw, 76px);
+  font-weight: 800;
+  line-height: 1.02;
+  letter-spacing: -.02em;
+  text-transform: uppercase;
+}
+.front_heading span {
+  color: var(--lime);
+  /* The one place the lime is allowed to glow — it is over pure black. */
+  text-shadow: 0 0 38px rgba(165, 199, 21, .45);
+}
+
+.front_heading_2 {
+  font-family: var(--font-body);
+  font-size: clamp(15px, 2.1vw, 21px);
+  /* 400, not 300: Roboto Light on black loses its thin strokes at this size. */
+  font-weight: 400;
+  line-height: 1.6;
+  color: var(--text-dim);
+  max-width: 660px;
+  margin: 0 auto;
+  padding: 22px 0 4px;
+}
+.front_heading_2 b { color: #fff; font-weight: 600; }
+.front_heading_2 span { color: var(--lime); }
+
+.menu_get_button_middle {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+  box-shadow: 0 10px 40px -12px rgba(165, 199, 21, .7);
+}
+
+.vh-actions {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  justify-content: center;
+  margin-top: 38px;
+}
+.vh-actions .menu_get_button_middle { margin-top: 0; }
+
+.vh-ghost {
+  display: inline-block;
+  padding: 15px 40px;
+  border: 1px solid var(--line-soft);
+  border-radius: 30px;
+  background: rgba(255, 255, 255, .03);
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+  transition: border-color .25s, background-color .25s, color .25s;
+}
+.vh-ghost:hover {
+  border-color: var(--lime);
+  background: rgba(165, 199, 21, .09);
+  color: var(--lime);
+}
+
+.money_back_text { color: var(--text-mute); letter-spacing: .14em; }
+
+/* Proof strip under the CTA — the numbers a hospitality operator scans for. */
+.vh-proof {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 14px 40px;
+  margin-top: 30px;
+  padding-top: 26px;
+  border-top: 1px solid var(--line-soft);
+  width: min(720px, 100%);
+}
+.vh-proof div { text-align: center; }
+.vh-proof b {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--lime);
+}
+.vh-proof span {
+  font-size: 12px;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+}
+
+/* A hero that spins forever is a hero somebody has to look away from. */
+@media (prefers-reduced-motion: reduce) {
+  .vh-stage::before,
+  .vh-stage::after,
+  .vh-eyebrow::before { animation: none; }
+}
+
+@media (max-width: 700px) {
+  .container_1 { height: auto; min-height: 88vh; padding: 90px 18px 70px; }
+  .vh-proof { gap: 14px 22px; }
+  .vh-proof b { font-size: 18px; }
+  .vh-ghost, .menu_get_button_middle { padding: 13px 26px; font-size: 15px; }
+
+  /* main0.1.0.css sets `text-transform: capitalize` on the highlighted half of
+     the heading below 700px — written for the old "EPOS Store" wording. Left
+     alone it renders the same sentence in two different cases on a phone.
+     `display: block` is kept: the two halves do want their own lines here. */
+  .front_heading span { text-transform: uppercase; }
+
+  /* And it promotes <b> to a block, which broke the new sub-heading into three
+     stacked fragments mid-sentence. */
+  .front_heading_2 b { display: inline; }
+}
+
+/* --------------------------------------------------------------------------
+   Screenshot carousel
+   -------------------------------------------------------------------------- */
+
+.epos_demo_container { background-color: var(--surface); }
+.epos_demo_item_img { border: 1px solid var(--line); border-radius: 10px; }
+.epos_demo_item_txt_keeper {
+  background-color: rgba(10, 12, 7, .88);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border: 1px solid var(--line-soft);
+  border-left: none;
+  border-right: none;
+}
+.epos_demo_item_brief {
+  background-color: transparent;
+  border: 1px solid var(--lime);
+  color: var(--lime);
+}
+.epos_demo_item_heading { color: var(--text); }
+.epos_demo_item_txt { background-color: rgba(10, 12, 7, .7); border: none; }
+
+.owl-prev, .owl-next { background-color: rgba(165, 199, 21, .18) !important; color: #fff !important; }
+.owl-prev:hover, .owl-next:hover { background-color: var(--lime) !important; color: var(--on-lime) !important; }
+.owl-dot { background: var(--line) !important; }
+.owl-dot.active { background: var(--lime) !important; }
+.owl-carousel .owl-nav button.owl-next,
+.owl-carousel .owl-nav button.owl-prev { background: rgba(165, 199, 21, .18) !important; }
+.owl-carousel button.owl-dot { background: var(--line) !important; }
+.owl-carousel button.owl-dot.active { background: var(--lime) !important; }
+
+/* --------------------------------------------------------------------------
+   Content bands
+   -------------------------------------------------------------------------- */
+
+.free_offer_container { background-color: var(--surface-2); color: var(--text); }
+.free_no_card { color: var(--clementine); font-weight: 700; }
+
+.container_2 { background-color: var(--ink); }
+.continaer_2_left { color: var(--text); }
+.protect_data_p { color: var(--text-dim); }
+.protect_data_p span { color: var(--lime); font-weight: 600; }
+
+.money_back_guarantee { background-color: var(--surface); color: var(--text); }
+.money_back_h2 { color: var(--text); }
+.money_back_description { color: var(--text-dim); }
+
+.short_fetures_top { background-color: var(--surface-2); color: var(--text); }
+.short_ft_description { color: var(--text-dim); }
+.vesopa_epos_features_text { background-color: var(--lime); color: var(--on-lime); font-weight: 700; }
+
+.short_fm_item { background-color: var(--surface-3); color: var(--text); }
+.short_fm_item1 { background-color: var(--surface); color: var(--text); }
+.short_feature_bottom { border-bottom: 1px solid var(--line); }
+.short_fb_item1 { background-color: var(--surface); color: var(--text); }
+.short_fb_item2 { background-color: var(--surface-3); color: var(--text); }
+.short_fb_item3 { background-color: var(--surface-2); color: var(--text); }
+.short_fm_description b, .short_fb_desc b { color: var(--lime); }
+
+.fast_servers_container { background-color: var(--ink); color: var(--text); }
+.fast_server_headline span, .fast_server_description span { color: var(--lime); }
+/* Partner logos ship as dark marks on white; on black they need lifting. */
+.flat_item_image {
+  filter: grayscale(1) brightness(2.1) contrast(.85);
+  opacity: .62;
+  transition: opacity .25s, filter .25s;
+}
+.flag_item_inside:hover .flat_item_image { filter: grayscale(0) brightness(1); opacity: 1; }
+
+.unlimited_devices { background-color: var(--surface-2); color: var(--text); }
+.unlimited_devices_amzro_logo { border: 1px solid var(--line); background-color: var(--surface-3); }
+.udl_desc_1 b { color: var(--lime); }
+.download_device_link { color: var(--lime); }
+.download_device_link:hover { color: var(--lime-bright); }
+.platform_cl_inside {
+  color: var(--text);
+  border: 1px solid var(--line);
+  background-color: var(--surface-2);
+  box-shadow: none;
+}
+.platform_cl_inside:hover {
+  background-color: var(--surface-3);
+  color: var(--lime);
+  border-color: var(--lime);
+  box-shadow: 0 6px 24px -10px rgba(165, 199, 21, .5);
+}
+.get_24hour_free b { color: var(--lime); }
+.more_about_vpn { background-color: var(--lime); color: var(--on-lime); }
+.more_about_vpn:hover { background-color: var(--lime-bright); color: var(--on-lime); box-shadow: 0 6px 22px -8px rgba(165, 199, 21, .6); }
+
+.about_item_heading span { color: var(--lime); }
+.about_a_line_p { border-right: 1px solid var(--line); }
+.help_section_top, .email_phone_container { color: var(--text); }
+.email_phone_inside, .email_phone_left { border-color: var(--line); }
+.disclaimer { color: var(--text-mute); }
+.donwload_brief_desc_item i { color: var(--hobgoblin); }
+.download_free_text span { color: var(--lime); }
+.already_have_account_text { color: var(--text-dim); }
+.download_brief_button_text { background-color: var(--lime); color: var(--on-lime); box-shadow: none; }
+.download_brief_button_text:hover { background-color: var(--lime-bright); box-shadow: 0 6px 22px -8px rgba(165, 199, 21, .6); }
+.device_download_right { background-color: var(--surface-2); }
+
+.support_section_socials a { color: var(--on-lime); background-color: var(--lime); }
+.support_section_socials a:hover { color: var(--on-lime); background-color: var(--lime-bright); box-shadow: 0 4px 18px -4px rgba(165, 199, 21, .6); }
+.support_section_middle_heading { color: var(--on-lime); background-color: var(--lime); }
+.support_section_touch_item_inside { background-color: var(--surface-2); color: var(--text); border: 1px solid var(--line); }
+a.support_section_touch_item_inside:hover { border-color: var(--lime); box-shadow: 0 6px 24px -10px rgba(165, 199, 21, .5); }
+.support_section_touch_anchor { color: var(--lime); }
+.support_section_contact_form_container { background-color: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius); }
+.support_section_contact_form_container .try_vesopa_input { background-color: var(--surface); }
+.support_section_bottom_item_inside { border: 1px solid var(--line); background-color: var(--surface-2); }
+
+.refund_policy_inside {
+  background-color: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: none;
+  color: var(--text-dim);
+}
+.refund_policy_inside h2, .refund_policy_inside h3 { color: var(--text); }
+.refund_policy_inside a { color: var(--lime); }
+
+/* --------------------------------------------------------------------------
+   Pricing
+   -------------------------------------------------------------------------- */
+
+.pricing_plan { background-color: var(--ink); }
+.pricing_plan_heading { color: var(--text); }
+.plan_header span { color: var(--lime); }
+.select_plan { color: var(--text-mute); }
+
+.pricing_single_item_wrapper {
+  background-color: var(--surface-2);
+  border: 1px solid var(--line);
+  box-shadow: none;
+}
+.pricing_si_popular { background-color: var(--lime); }
+.pricing_single_item_wrapper, .pricing_si_popular { box-shadow: none; }
+.psiw_popular { border-color: var(--lime); box-shadow: 0 18px 50px -20px rgba(165, 199, 21, .55); }
+.highlighted_popular_pricing_text {
+  color: var(--on-lime);
+  font-weight: 800;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.pricing_single_item_inside:hover .pricing_single_item_wrapper {
+  background-color: var(--surface-3);
+  border-color: var(--lime);
+}
+.pricing_single_item_inside:hover .pricing_single_item_wrapper,
+.pricing_si_popular:hover { box-shadow: 0 16px 44px -22px rgba(165, 199, 21, .6); }
+.pricing_single_item_inside:hover .psiw_popular { box-shadow: 0 18px 50px -20px rgba(165, 199, 21, .55); }
+
+.pricing_single_save_text {
+  color: var(--clementine);
+  background-color: rgba(238, 114, 3, .12);
+  font-weight: 700;
+}
+.pricing_duration { color: var(--text); font-weight: 700; }
+.pricing_price { color: var(--text); font-family: var(--font-display); }
+.pricing_final_desc { color: var(--text-mute); }
+.pricing_final_desc del { color: var(--text-mute); }
+.pricing_final_desc span { color: var(--lime); font-weight: 700; }
+.pricing_vat_may { color: var(--text-mute); }
+.pricing_money_back { color: var(--hobgoblin); }
+
+.pricing_button_started {
+  border: 1.5px solid var(--lime);
+  background-color: transparent;
+  color: var(--lime);
+  box-shadow: none;
+  font-weight: 700;
+}
+.pricing_button_started:hover,
+.pricing_single_item_inside:hover .pricing_button_started {
+  color: var(--on-lime);
+  background-color: var(--lime);
+  box-shadow: 0 8px 26px -10px rgba(165, 199, 21, .7);
+}
+/* Only the "Most Popular" ribbon sits on lime — .pricing_si_popular is the
+   outer <a>, and .psiw_popular is a dark card inset within it. So the card's
+   contents stay light-on-dark like the other two; it is the ribbon and the
+   border that mark it out. Flipping the inner text to ink here put dark type on
+   a dark panel and made the highlighted plan the one nobody could read. */
+.pricing_button_started_popular {
+  color: var(--on-lime);
+  background-color: var(--lime);
+  border-color: var(--lime);
+  box-shadow: 0 8px 26px -12px rgba(165, 199, 21, .7);
+}
+.pricing_single_item_inside:hover .pricing_button_started_popular {
+  background-color: var(--lime-bright);
+  border-color: var(--lime-bright);
+  color: var(--on-lime);
+}
+
+/* The ribbon strip itself is the lime area. */
+.pricing_si_popular .highlighted_popular_pricing_text { color: var(--on-lime); }
+
+/* --------------------------------------------------------------------------
+   Support, testimonials, FAQ
+   -------------------------------------------------------------------------- */
+
+.customer_support_center { background-color: var(--surface); color: var(--text); }
+.customer_support_text span { color: var(--lime); }
+.customer_support_desc { color: var(--text-dim); }
+.customer_support_button {
+  color: var(--on-lime);
+  background-color: var(--lime);
+  border: 2px solid var(--lime);
+  box-shadow: none;
+  font-weight: 700;
+}
+.customer_support_button:hover {
+  color: var(--on-lime);
+  background-color: var(--lime-bright);
+  border-color: var(--lime-bright);
+  box-shadow: 0 8px 26px -10px rgba(165, 199, 21, .6);
+}
+
+.users_review_container { background-color: var(--ink); color: var(--text); }
+.user_review_headline { color: var(--text); }
+.user_review_text { color: var(--text-dim); }
+.user_review_name { color: var(--text); }
+.user_review_from { color: var(--lime); }
+.user_review_image_active::after { background-color: var(--lime); }
+.user_review_image { border-radius: 8px; }
+
+.faq_main_container { background-color: var(--surface); color: var(--text); }
+.frequently_asked_headline { color: var(--text); }
+.faq_item_inside {
+  border: 1px solid var(--line);
+  background-color: var(--surface-2);
+  box-shadow: none;
+  transition: border-color .2s;
+}
+.faq_item_inside:hover { border-color: var(--line-soft); }
+.faq_active { border-color: var(--lime); box-shadow: 0 10px 30px -18px rgba(165, 199, 21, .6); }
+.faq_question { color: var(--text); }
+.faq_answer { color: var(--text-dim); }
+.faq_answer b { color: var(--lime); }
+.faq_item_click i { color: var(--lime); }
+
+/* --------------------------------------------------------------------------
+   Forms
+   -------------------------------------------------------------------------- */
+
+.try_vesopa_container { background-color: var(--surface-2); }
+.try_vesopa_heading { color: var(--text); }
+.try_vesopa_desc { color: var(--text-dim); }
+
+.try_vesopa_input,
+.input_items_member_l,
+.coupon_code_input {
+  border: 1px solid var(--line);
+  background-color: var(--surface);
+  color: var(--text);
+  box-shadow: none;
+}
+.try_vesopa_input::placeholder,
+.coupon_code_input::placeholder { color: var(--text-mute); }
+.try_vesopa_input:hover, .input_items_member_l:hover { border-color: var(--line-soft); box-shadow: none; }
+.try_vesopa_input:focus,
+.input_items_member_l:focus,
+.coupon_code_input:focus {
+  border-color: var(--lime);
+  box-shadow: 0 0 0 3px rgba(165, 199, 21, .16);
+}
+
+.try_vesopa_button, .coupon_code_button {
+  border: none;
+  background-color: var(--lime);
+  color: var(--on-lime);
+  font-weight: 700;
+  box-shadow: none;
+}
+.try_vesopa_button:hover, .coupon_code_button:hover {
+  background-color: var(--lime-bright);
+  box-shadow: 0 8px 26px -10px rgba(165, 199, 21, .7);
+}
+.try_vesopa_button:disabled { background-color: var(--surface-3); color: var(--text-mute); cursor: progress; }
+
+.input_labels_member_l { color: var(--text-mute); }
+.input_fields_keeper_member_l .input_items_member_l:focus ~ .input_labels_member_l,
+.input_fields_keeper_member_l .input_items_member_l:valid ~ .input_labels_member_l,
+.input_fields_keeper_member_l .input_items_member_l:disabled ~ .input_labels_member_l {
+  color: var(--lime);
+  background-color: var(--surface);
+}
+.warning_message_member_l { color: #ff6b6b; }
+.login_welcome_back, .login_welcome_message, .reset_password_headline,
+.success_api_heading, .success_api_desc { color: var(--text); }
+.forget_password_link { color: var(--lime); }
+.login_form_button, .login_form_button2 {
+  border: none;
+  background-color: var(--lime);
+  color: var(--on-lime);
+  box-shadow: none;
+  font-weight: 700;
+}
+.login_form_button2 { color: var(--text-dim); background-color: var(--surface-3); }
+.login_form_button:hover, .login_form_button2:hover { box-shadow: 0 8px 24px -12px rgba(165, 199, 21, .6); }
+
+/* --------------------------------------------------------------------------
+   Checkout
+   -------------------------------------------------------------------------- */
+
+.checkout_login { color: var(--text-dim); background-color: var(--surface-3); }
+.checkout_container { color: var(--text); background-color: var(--surface); }
+.checkout_container_right, .checkout_cancel_background { background-color: var(--surface-2); }
+.email_address_brief_text, .email_why_use_text { color: var(--text-mute); }
+.checkout_email_keeper .input_items_member_l { background-color: var(--surface); }
+.encypted_payment_text i { color: var(--hobgoblin); }
+.payment_method_item {
+  background-color: var(--surface-2);
+  border: 1px solid var(--line);
+  box-shadow: none;
+}
+.payment_item_click i:hover { background-color: var(--surface-3); }
+.payment_method_bottom_border_top { border-top: 1px solid var(--line); }
+.payment_today_cost_brief { color: var(--text-dim); background-color: var(--surface-3); }
+.checkout_active { border-color: var(--lime); box-shadow: 0 10px 30px -18px rgba(165, 199, 21, .6); }
+.payment_method_item_disabled { background-color: var(--surface); opacity: .55; }
+.payment_method_item_disabled .payment_item_click i:hover { background-color: transparent; }
+.checkout_money_back_guarantee_text { color: var(--text-mute); }
+.paypal_loading_system { background-color: var(--surface-3); color: var(--text); }
+.order_summary_inside { background-color: var(--surface-2); border: 1px solid var(--line); box-shadow: none; }
+.order_summary_small_border p { background-color: var(--line); }
+.switch_to_years_inside { background-color: var(--surface-3); color: var(--text); }
+.switch_to_months_button { background-color: var(--lime); color: var(--on-lime); border: none; box-shadow: none; font-weight: 700; }
+.switch_to_months_button:hover { background-color: var(--lime-bright); box-shadow: 0 6px 20px -8px rgba(165, 199, 21, .6); }
+.order_summary_item_left { color: var(--text-mute); }
+.order_summary_item_right, .total_order_summary { color: var(--text); }
+.order_save_offer { color: var(--clementine); background-color: rgba(238, 114, 3, .12); }
+.order_coupon_offer { color: var(--hobgoblin); background-color: rgba(0, 173, 145, .12); }
+.order_summary_border_bottom { border-bottom: 1px solid var(--line); }
+.checkout_footer { background-color: var(--ink); border-top: 1px solid var(--line); }
+.checkout_footer_links { color: var(--text-mute); }
+.checkout_footer_links a { color: var(--lime); }
+.checkout_footer_links a:hover { color: var(--lime-bright); }
+.checkout_container_table { background-color: var(--surface-2); color: var(--text); }
+.checkout_container_tablet_final { border-top: 1px solid var(--line); }
+.checkout_tablet_expand i:hover { background-color: var(--surface-3); }
+.checkout_container_table:hover { background-color: var(--surface-3); box-shadow: none; }
+.checkout_container_table:hover .checkout_tablet_expand i { background-color: var(--surface-3); }
+.show_only_tablet { background-color: var(--surface-3); color: var(--text-dim); }
+
+.myaccount_container { background-color: var(--surface); }
+.myaccount_container_inside { color: var(--text); }
+.myacc_hey_text { color: var(--text-mute); }
+.manage_account_section_inside, .subscription_section_inside {
+  background-color: var(--surface-2);
+  border: 1px solid var(--line);
+  box-shadow: none;
+}
+.myaccount_section_heading { color: var(--text-mute); }
+.myaccount_section_item, .myaccount_section_item_button {
+  border: 1px solid var(--line);
+  border-left: none;
+  border-right: none;
+}
+.myaccount_section_item_button:hover { background-color: var(--surface-3); }
+.myaccount_sitem_button_text { color: var(--lime); }
+.myaccount_section_item_button:hover .myaccount_sitem_button_text { color: var(--lime-bright); }
+.subscription_date_expired { color: var(--hobgoblin); }
+.logout_btn, .subscription_button {
+  border: none;
+  color: var(--text-dim);
+  background-color: var(--surface-3);
+  box-shadow: none;
+}
+.logout_btn:hover, .subscription_button:hover { background-color: var(--line); box-shadow: none; }
+.subscrition_extend_btn { background-color: var(--lime); color: var(--on-lime); font-weight: 700; }
+.subscrition_extend_btn:hover { background-color: var(--lime-bright); }
+.account_delete_cancel_inside {
+  background-color: rgba(238, 114, 3, .07);
+  border: 1px solid rgba(238, 114, 3, .3);
+  box-shadow: none;
+  color: var(--text);
+}
+.account_delete_cancel_left i { color: var(--clementine); }
+.cancel_del_button { background-color: var(--clementine); color: #fff; border: none; box-shadow: none; }
+.cancel_del_button:hover { background-color: #ff8420; box-shadow: 0 6px 20px -8px rgba(238, 114, 3, .6); }
+
+.confirm_dialogue_fullscreen { background-color: rgba(0, 0, 0, .78); }
+.confirm_dialogue_main { background-color: var(--surface-2); border: 1px solid var(--line); box-shadow: 0 40px 80px rgba(0, 0, 0, .7); }
+.confirm_diag_brief { color: var(--text-mute); }
+.cofirm_diag_btn { border: none; background-color: var(--lime); color: var(--on-lime); box-shadow: none; font-weight: 700; }
+.cofirm_diag_cancel_btn { background-color: var(--surface-3); color: var(--text); }
+.cofirm_diag_btn:hover { box-shadow: 0 8px 24px -10px rgba(165, 199, 21, .6); }
+
+/* --------------------------------------------------------------------------
+   Footer
+   -------------------------------------------------------------------------- */
+
+.footer { background-color: var(--surface); color: var(--text); border-top: 1px solid var(--line); }
+.footer_top { border-bottom: 1px solid var(--line); color: var(--text-dim); }
+.footer_language_keeper, .footer_bottom_left { color: var(--text-mute); }
+.footer_item_heading { color: #fff; font-weight: 700; letter-spacing: .04em; }
+.footer_link { color: var(--text-dim); }
+.footer_link:hover { color: var(--lime); }
+
+#installPrompt { background-color: var(--surface-2); color: var(--text); border-top: 1px solid var(--line); box-shadow: 0 -8px 30px rgba(0, 0, 0, .6); }
+#installPrompt button { background-color: var(--lime); color: var(--on-lime); border: 2px solid var(--lime); font-weight: 700; }
+#installPrompt button:hover { border-color: var(--lime-bright); background-color: var(--lime-bright); color: var(--on-lime); }
+#installPrompt button#cancelBtn { background-color: transparent; color: var(--text-dim); border: 2px solid var(--line); }
+#installPrompt button#cancelBtn:hover { background-color: var(--surface-3); color: var(--text); border-color: var(--line); }
+
+/* --------------------------------------------------------------------------
+   Feature grid  (see partials/features.ejs)
+   -------------------------------------------------------------------------- */
+
+.vf {
+  background: var(--ink);
+  padding: 90px 24px;
+  /* A hairline lime seam between bands, so the long dark page still has
+     structure when every section shares the same near-black. */
+  border-top: 1px solid var(--line);
+}
+.vf-inner { max-width: 1180px; margin: 0 auto; }
+
+.vf-head { text-align: center; max-width: 720px; margin: 0 auto 20px; }
+.vf-kicker {
+  display: inline-block;
+  margin-bottom: 14px;
+  color: var(--lime);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+}
+.vf-title {
+  font-family: var(--font-display);
+  font-size: clamp(26px, 4vw, 40px);
+  font-weight: 800;
+  line-height: 1.12;
+  text-transform: uppercase;
+  color: #fff;
+}
+.vf-title span { color: var(--lime); }
+.vf-sub { margin-top: 16px; color: var(--text-dim); font-size: 16.5px; line-height: 1.65; }
+
+/* Tabs that switch between the till, the back office and the platform. */
+.vf-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin: 38px 0 34px;
+}
+.vf-tab {
+  padding: 10px 22px;
+  border: 1px solid var(--line);
+  border-radius: 100px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  transition: color .2s, border-color .2s, background-color .2s;
+}
+.vf-tab:hover { color: var(--text); border-color: var(--line-soft); }
+.vf-tab[aria-selected="true"] {
+  background: var(--lime);
+  border-color: var(--lime);
+  color: var(--on-lime);
+}
+
+.vf-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(268px, 1fr));
+  gap: 16px;
+}
+
+.vf-card {
+  position: relative;
+  padding: 26px 24px 28px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface-2) 0%, var(--surface) 100%);
+  overflow: hidden;
+  transition: border-color .25s, transform .25s;
+}
+/* The lime edge only appears on hover, so a wall of 30 cards is calm at rest
+   and the one under the cursor is unmistakable. */
+.vf-card::after {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--lime), transparent);
+  opacity: 0;
+  transition: opacity .25s;
+}
+.vf-card:hover { border-color: var(--line-soft); transform: translateY(-3px); }
+.vf-card:hover::after { opacity: 1; }
+
+.vf-icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  margin-bottom: 16px;
+  border-radius: 11px;
+  background: rgba(165, 199, 21, .1);
+  border: 1px solid var(--line-soft);
+  color: var(--lime);
+  font-size: 19px;
+}
+.vf-card h3 {
+  font-family: var(--font-body);
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 8px;
+}
+.vf-card p { color: var(--text-dim); font-size: 14.5px; line-height: 1.62; }
+
+/* Platform/spec strip. */
+.vf-specs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 1px;
+  margin-top: 46px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.vf-spec { padding: 22px 20px; background: var(--surface); }
+.vf-spec b {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 15px;
+  color: var(--lime);
+  margin-bottom: 5px;
+}
+.vf-spec span { font-size: 13.5px; color: var(--text-mute); line-height: 1.55; }
+
+@media (max-width: 700px) {
+  .vf { padding: 62px 18px; }
+  .vf-tabs { margin: 28px 0 24px; }
+  .vf-tab { padding: 9px 16px; font-size: 13px; }
+}
+
+/* --------------------------------------------------------------------------
+   Cookie consent  (see partials/cookie-consent.ejs)
+   -------------------------------------------------------------------------- */
+
+.cc-banner {
+  position: fixed;
+  z-index: 2147483000;
+  left: 16px;
+  right: 16px;
+  bottom: 16px;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 22px 24px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-lg);
+  background: rgba(10, 12, 7, .96);
+  backdrop-filter: blur(18px) saturate(150%);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
+  box-shadow: 0 30px 70px rgba(0, 0, 0, .7);
+  color: var(--text);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 18px 26px;
+  animation: cc-rise .32s ease-out;
+}
+@keyframes cc-rise { from { opacity: 0; transform: translateY(14px); } }
+@media (prefers-reduced-motion: reduce) { .cc-banner { animation: none; } }
+
+.cc-copy { flex: 1 1 380px; min-width: 260px; }
+.cc-copy h2 {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: #fff;
+  margin-bottom: 7px;
+}
+.cc-copy p { font-size: 14px; line-height: 1.6; color: var(--text-dim); }
+.cc-copy a { color: var(--lime); text-decoration: underline; text-underline-offset: 2px; }
+
+.cc-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+
+.cc-btn {
+  padding: 11px 22px;
+  border: 1px solid var(--line-soft);
+  border-radius: 100px;
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color .2s, border-color .2s, color .2s;
+}
+.cc-btn:hover { background: var(--surface-3); border-color: var(--lime); color: var(--lime); }
+/* "Accept all" and "Reject all" are the same size and weight on purpose:
+   a reject that is harder to find than an accept is not a free choice. */
+.cc-btn.primary {
+  background: var(--lime);
+  border-color: var(--lime);
+  color: var(--on-lime);
+  font-weight: 700;
+}
+.cc-btn.primary:hover { background: var(--lime-bright); border-color: var(--lime-bright); color: var(--on-lime); }
+
+/* Preferences dialog */
+.cc-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483001;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, .78);
+}
+.cc-modal-card {
+  width: min(560px, 100%);
+  max-height: 86vh;
+  overflow-y: auto;
+  padding: 28px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+  box-shadow: 0 40px 90px rgba(0, 0, 0, .75);
+}
+.cc-modal-card h2 {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: #fff;
+  margin-bottom: 8px;
+}
+.cc-modal-card > p { color: var(--text-dim); font-size: 14.5px; line-height: 1.6; margin-bottom: 20px; }
+
+.cc-cat {
+  display: flex;
+  gap: 14px;
+  padding: 16px 0;
+  border-top: 1px solid var(--line);
+}
+.cc-cat-text { flex: 1; }
+.cc-cat h3 { font-family: var(--font-body); font-size: 14.5px; font-weight: 700; color: #fff; }
+.cc-cat p { font-size: 13.5px; line-height: 1.55; color: var(--text-mute); margin-top: 4px; }
+.cc-locked { font-size: 12px; font-weight: 700; color: var(--lime); letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+
+/* Switch */
+.cc-switch { position: relative; width: 46px; height: 26px; flex: none; }
+.cc-switch input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+.cc-switch span {
+  position: absolute;
+  inset: 0;
+  border-radius: 100px;
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  transition: background-color .2s, border-color .2s;
+  pointer-events: none;
+}
+.cc-switch span::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--text-mute);
+  transition: transform .2s, background-color .2s;
+}
+.cc-switch input:checked + span { background: rgba(165, 199, 21, .22); border-color: var(--lime); }
+.cc-switch input:checked + span::after { transform: translateX(20px); background: var(--lime); }
+.cc-switch input:focus-visible + span { outline: 2px solid var(--lime); outline-offset: 2px; }
+
+.cc-modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
+@media (max-width: 620px) {
+  .cc-banner { padding: 18px; gap: 14px; left: 10px; right: 10px; bottom: 10px; }
+  .cc-actions { width: 100%; }
+  .cc-btn { flex: 1 1 auto; text-align: center; }
+  .cc-modal-actions .cc-btn { flex: 1 1 100%; }
+}
+
+/* --------------------------------------------------------------------------
+   Long-form policy pages
+   -------------------------------------------------------------------------- */
+
+.privacy_main_container,
+.terms_main_container,
+.refund_main_container { background-color: var(--ink); color: var(--text-dim); }
+.privacy_item_heading, .privacy_heading,
+.terms_heading, .refund_heading { color: var(--text); }
+.privacy_item_sub_heading { color: var(--text-dim); }
+
+/* Any anchor inside body copy that has no rule of its own. */
+main a:not([class]), .privacy_item_sub_heading a, p a:not([class]) { color: var(--lime); }
+
+/* ---- Text weight on a dark ground -------------------------------------------
+
+   main0.1.0.css sets font-weight: 300 on 52 text rules — effectively all of
+   the site body copy. That was a reasonable choice for dark text on white. On
+   a near-black background it is not: Light strokes thin out and go soft, which
+   is most of why the type read as odd. These are the same selectors, lifted to
+   Regular.
+
+   Matched selector-for-selector rather than with a blanket element rule,
+   because every one of them is a class and would win on specificity.
+   -------------------------------------------------------------------------- */
+
+.money_back_text,
+.hour_free_desc,
+.protect_data_p,
+.money_back_description,
+.short_ft_description,
+.short_fm_description,
+.short_fb_desc,
+.flat_item_name,
+.fast_server_description,
+.udl_desc_1,
+.udl_desc_2,
+.get_24hour_free,
+.select_plan,
+.customer_support_desc,
+.user_review_text,
+.user_review_from,
+.faq_answer,
+.try_vesopa_desc,
+.try_vesopa_input,
+.footer_link,
+.footer_bottom_left,
+.login_welcome_back,
+.input_items_member_l,
+.need_help_brief,
+.email_phone_desc,
+.support_section_brief,
+.support_section_touch_title,
+.about_item_desc,
+.privacy_item_sub_heading,
+.refund_policy_inside p,
+.terms_and_condition_inside p,
+.terms_and_condition_inside ul,
+.download_brief,
+.download_free_text,
+.checkout_text,
+.already_have_account_text,
+.email_address_brief_text,
+.email_why_use_text,
+.encypted_payment_text,
+.payment_today_cost_brief,
+.payment_method_checkout .pricing_money_back,
+.order_summary_item,
+.coupon_code_input,
+.checkout_footer_links,
+.check_tablet_total,
+.myacc_manage_text,
+.myaccount_text,
+.subscription_text,
+.myaccount_section_item_title,
+.subscription_expiry_text,
+.account_del_cancel__desc,
+.success_api_desc {
+  font-weight: 400;
+}
+
+/* Prose also needs leading. Most of these carry no line-height at all, so they
+   inherited the browser default of roughly 1.2 — too tight for a paragraph,
+   and tighter still in reverse. */
+.money_back_text,
+.hour_free_desc,
+.protect_data_p,
+.money_back_description,
+.short_ft_description,
+.short_fm_description,
+.short_fb_desc,
+.fast_server_description,
+.udl_desc_1,
+.udl_desc_2,
+.customer_support_desc,
+.user_review_text,
+.faq_answer,
+.try_vesopa_desc,
+.need_help_brief,
+.email_phone_desc,
+.support_section_brief,
+.about_item_desc,
+.privacy_item_sub_heading,
+.refund_policy_inside p,
+.terms_and_condition_inside p,
+.terms_and_condition_inside ul,
+.download_brief,
+.download_free_text,
+.checkout_text,
+.already_have_account_text,
+.email_address_brief_text,
+.email_why_use_text,
+.encypted_payment_text,
+.payment_today_cost_brief,
+.myacc_manage_text,
+.myaccount_text,
+.subscription_text,
+.subscription_expiry_text,
+.account_del_cancel__desc,
+.success_api_desc {
+  line-height: 1.7;
+}
+
+/* --------------------------------------------------------------------------
+   Download page
+   --------------------------------------------------------------------------
+
+   The product shot was a light-theme screenshot floated inside a grey panel
+   with 50px of padding, in a 50%-wide column. On a black page that read as a
+   small picture stranded in an unexplained grey rectangle, with dead space
+   under it. The panel is gone; the screenshot is now framed as a product shot
+   and fills its column.
+   -------------------------------------------------------------------------- */
+
+.device_download_section { background: var(--ink); }
+
+.device_download_right {
+  background: transparent;
+  padding: 40px 50px 40px 0;
+}
+
+.device_platform_specific_image {
+  width: 100%;
+  max-width: 760px;
+  padding: 0;
+  display: block;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  /* Lifted off the page: a dark shot on a dark ground needs an edge and a
+     shadow or it looks like a hole rather than a screen. */
+  box-shadow:
+    0 40px 90px -40px rgba(165, 199, 21, .30),
+    0 20px 60px rgba(0, 0, 0, .7);
+}
+
+.download_brief { max-width: 560px; }
+
+.downlaod_brief_desc_item { margin-bottom: 4px; }
+.donwload_brief_desc_item i { color: var(--lime); }
+
+/* ---- Platform groups ---- */
+
+.dl-platforms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 26px 46px;
+  margin: 26px 0 34px;
+}
+
+.dl-platform-label {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+  margin-bottom: 10px;
+}
+
+/* The legacy rule puts 50px under this; inside a group that is the gap between
+   the label and the next platform, so it is reset here. */
+.dl-platform .downlaod_brief_buttons_keeper {
+  margin: 0;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.dl-platform .download_brief_button { margin-left: 0; }
+
+/* Both badges ship as artwork on a light ground, so they need a plate to sit on
+   rather than being knocked out against the page. */
+.download_brief_store {
+  border-radius: 9px;
+  overflow: hidden;
+  line-height: 0;
+  border: 1px solid var(--line);
+  transition: border-color .2s, transform .15s;
+}
+.download_brief_store:hover { border-color: var(--lime); transform: translateY(-1px); }
+.download_brief_image_windows { display: block; width: 168px; height: auto; }
+
+.dl-apk-note {
+  flex-basis: 100%;
+  font-size: 12px;
+  color: var(--text-mute);
+}
+
+/* The signed, no-warning route. Lime rather than muted grey so the eye lands
+   on it before the direct installer sitting underneath. */
+.dl-note-good { color: var(--lime); }
+.dl-note-good .fa { margin-right: 5px; }
+
+.download_free_text { font-size: 20px; }
+
+@media (max-width: 900px) {
+  /* main0.1.0.css sets a light panel here for the stacked layout. */
+  .device_download_right { background-color: transparent; padding: 0 20px 40px; }
+  .device_platform_specific_image { max-width: 100%; }
+  .dl-platforms { gap: 22px 30px; }
+}
+
+/* --------------------------------------------------------------------------
+   Scroll reveal
+   --------------------------------------------------------------------------
+
+   Scoped to .js-reveal, which library/reveal.js adds to <html> only once it
+   has successfully tagged elements. Without JS the selectors never match and
+   everything renders normally — a reveal system that hides content by default
+   turns a script error into a blank page.
+   -------------------------------------------------------------------------- */
+
+.js-reveal [data-reveal] {
+  opacity: 0;
+  transform: translateY(20px);
+  /* Long, soft ease-out: the motion should be felt, not watched. */
+  transition:
+    opacity .6s cubic-bezier(.22, .61, .36, 1) var(--reveal-delay, 0ms),
+    transform .7s cubic-bezier(.22, .61, .36, 1) var(--reveal-delay, 0ms);
+  will-change: opacity, transform;
+}
+
+.js-reveal [data-reveal].is-revealed {
+  opacity: 1;
+  transform: none;
+  /* Dropped once the animation is done so long pages do not hold dozens of
+     promoted layers alive. */
+  will-change: auto;
+}
+
+/* Cards lift slightly further and scale a hair — enough to read as arriving. */
+.js-reveal .vf-card[data-reveal],
+.js-reveal .pricing_single_item[data-reveal],
+.js-reveal .faq_item[data-reveal],
+.js-reveal .short_fm_item[data-reveal],
+.js-reveal .short_fb_item[data-reveal] {
+  transform: translateY(26px) scale(.985);
+}
+
+/* Halved on phones: the same 20px on a short viewport reads as a jolt, and the
+   sections are stacked so far more of them animate per scroll. */
+@media (max-width: 700px) {
+  .js-reveal [data-reveal] { transform: translateY(11px); }
+  .js-reveal .vf-card[data-reveal],
+  .js-reveal .pricing_single_item[data-reveal],
+  .js-reveal .faq_item[data-reveal],
+  .js-reveal .short_fm_item[data-reveal],
+  .js-reveal .short_fb_item[data-reveal] { transform: translateY(13px) scale(.99); }
+}
+
+/* The belt to reveal.js's braces: even if the script somehow runs, this stops
+   the transition and shows everything. */
+@media (prefers-reduced-motion: reduce) {
+  .js-reveal [data-reveal] {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+}
+
+/* ---- Interaction polish ---- */
+
+/* Cards and plans respond to the pointer rather than sitting inert. */
+.vf-card,
+.pricing_single_item_wrapper,
+.faq_item_inside,
+.support_section_touch_item_inside,
+.platform_cl_inside {
+  transition: transform .25s cubic-bezier(.22, .61, .36, 1),
+              border-color .25s, background-color .25s, box-shadow .25s;
+}
+
+.try_vesopa_button,
+.customer_support_button,
+.download_brief_button_text,
+.pricing_button_started,
+.cc-btn {
+  transition: transform .15s, background-color .25s, box-shadow .25s,
+              border-color .2s, color .2s;
+}
+.try_vesopa_button:active,
+.customer_support_button:active,
+.download_brief_button_text:active,
+.cc-btn:active { transform: translateY(1px); }
+
+/* The carousel screenshots get a slow drift so the band is never fully still. */
+.epos_demo_item_img { transition: transform .8s cubic-bezier(.22, .61, .36, 1); }
+.epos_demo_item:hover .epos_demo_item_img { transform: scale(1.015); }
+
+@media (prefers-reduced-motion: reduce) {
+  .epos_demo_item:hover .epos_demo_item_img { transform: none; }
+}
+
+
+/* ==========================================================================
+   Blog — /blog and /blog/:slug
+   ==========================================================================
+   Kept in this file rather than a stylesheet of its own: the site already
+   loads three, and a fourth is one more place the palette can fall out of
+   step with the logo. The variables below are the same tokens the rest of
+   this override layer uses.
+   ========================================================================== */
+
+.bl {
+  padding: 90px 20px 100px;
+  background: var(--vp-ink, #0b0d0c);
+}
+
+.bl-inside { max-width: 1180px; margin: 0 auto; }
+.bl-narrow { max-width: 760px; }
+
+/* ---- Index header ---- */
+
+.bl-head { text-align: center; margin-bottom: 46px; }
+
+.bl-title {
+  font-family: var(--font-display, 'Orbitron'), sans-serif;
+  font-size: clamp(30px, 5vw, 46px);
+  color: #fff;
+  margin: 0 0 14px;
+  letter-spacing: .01em;
+}
+
+.bl-sub {
+  color: var(--vp-muted, #9aa6a0);
+  font-size: 17px;
+  line-height: 1.7;
+  max-width: 620px;
+  margin: 0 auto;
+}
+
+.bl-filters {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin-top: 28px;
+}
+.bl-filters a {
+  padding: 8px 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, .12);
+  color: var(--vp-muted, #9aa6a0);
+  font-size: 14px;
+  text-decoration: none;
+  transition: border-color .2s, color .2s, background-color .2s;
+}
+.bl-filters a:hover { color: #fff; border-color: rgba(165, 199, 21, .5); }
+.bl-filters a.is-active {
+  background: rgba(165, 199, 21, .13);
+  border-color: rgba(165, 199, 21, .45);
+  color: var(--vp-green, #a5c715);
+}
+
+/* ---- Cards ---- */
+
+.bl-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+  gap: 26px;
+}
+
+.bl-card {
+  background: rgba(255, 255, 255, .026);
+  border: 1px solid rgba(255, 255, 255, .09);
+  border-radius: 16px;
+  overflow: hidden;
+  transition: transform .28s cubic-bezier(.22, .61, .36, 1),
+              border-color .28s, box-shadow .28s;
+}
+.bl-card:hover {
+  transform: translateY(-5px);
+  border-color: rgba(165, 199, 21, .42);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, .42);
+}
+
+.bl-card-link { display: block; text-decoration: none; color: inherit; height: 100%; }
+
+.bl-card-media { aspect-ratio: 16 / 9; overflow: hidden; background: rgba(255,255,255,.04); }
+.bl-card-media img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform .5s cubic-bezier(.22, .61, .36, 1);
+}
+.bl-card:hover .bl-card-media img { transform: scale(1.045); }
+
+.bl-card-body { padding: 20px 21px 23px; }
+
+.bl-card-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 9px;
+  font-size: 12.5px;
+  color: var(--vp-muted, #9aa6a0);
+  margin: 0 0 11px;
+}
+
+.bl-chip {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .07);
+  color: var(--vp-muted, #9aa6a0);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: .03em;
+  text-decoration: none;
+}
+.bl-chip.is-update { background: rgba(165, 199, 21, .15); color: var(--vp-green, #a5c715); }
+.bl-chip.is-version { background: rgba(255, 255, 255, .1); color: #fff; font-family: ui-monospace, monospace; }
+a.bl-chip:hover { background: rgba(165, 199, 21, .2); color: var(--vp-green, #a5c715); }
+
+.bl-card-title {
+  font-size: 19px;
+  line-height: 1.35;
+  color: #fff;
+  margin: 0 0 10px;
+  font-weight: 700;
+}
+.bl-card-excerpt {
+  color: var(--vp-muted, #9aa6a0);
+  font-size: 14.5px;
+  line-height: 1.68;
+  margin: 0 0 14px;
+}
+.bl-card-more { color: var(--vp-green, #a5c715); font-size: 14px; font-weight: 500; margin: 0; }
+
+.bl-empty { text-align: center; color: var(--vp-muted, #9aa6a0); padding: 60px 20px; font-size: 16px; }
+.bl-empty a { color: var(--vp-green, #a5c715); }
+
+.bl-pager { display: flex; justify-content: center; gap: 7px; margin-top: 46px; }
+.bl-pager a {
+  min-width: 40px;
+  padding: 9px 0;
+  text-align: center;
+  border-radius: 9px;
+  border: 1px solid rgba(255, 255, 255, .12);
+  color: var(--vp-muted, #9aa6a0);
+  text-decoration: none;
+  font-size: 14px;
+}
+.bl-pager a.is-active,
+.bl-pager a:hover { border-color: rgba(165, 199, 21, .5); color: var(--vp-green, #a5c715); }
+
+.bl-feed { text-align: center; margin-top: 40px; font-size: 13.5px; }
+.bl-feed a { color: var(--vp-muted, #9aa6a0); }
+
+/* ---- Single post ---- */
+
+.bl-crumb { margin-bottom: 26px; font-size: 14px; }
+.bl-crumb a { color: var(--vp-muted, #9aa6a0); text-decoration: none; }
+.bl-crumb a:hover { color: var(--vp-green, #a5c715); }
+
+.bl-post-head { margin-bottom: 30px; }
+.bl-post-title {
+  font-size: clamp(27px, 4.4vw, 42px);
+  line-height: 1.22;
+  color: #fff;
+  margin: 0 0 16px;
+  font-weight: 700;
+}
+.bl-post-lede {
+  font-size: 18px;
+  line-height: 1.7;
+  color: var(--vp-muted, #9aa6a0);
+  margin: 0;
+}
+
+.bl-post-cover { margin: 0 0 34px; }
+.bl-post-cover img { width: 100%; border-radius: 14px; display: block; }
+
+/*
+ * The article body is the one place on the site where the markup is written by
+ * a human in a textarea rather than by a template, so it is styled by element
+ * rather than by class — there are no classes to hook.
+ */
+.bl-post-body { color: #d6ded9; font-size: 16.5px; line-height: 1.8; }
+.bl-post-body > *:first-child { margin-top: 0; }
+.bl-post-body p { margin: 0 0 22px; }
+.bl-post-body h2 {
+  font-size: 25px;
+  color: #fff;
+  margin: 44px 0 16px;
+  line-height: 1.3;
+}
+.bl-post-body h3 { font-size: 20px; color: #fff; margin: 34px 0 12px; }
+.bl-post-body h4 { font-size: 17px; color: #fff; margin: 28px 0 10px; }
+.bl-post-body a { color: var(--vp-green, #a5c715); text-decoration: underline; text-underline-offset: 3px; }
+.bl-post-body ul, .bl-post-body ol { margin: 0 0 22px; padding-left: 24px; }
+.bl-post-body li { margin-bottom: 9px; line-height: 1.75; }
+.bl-post-body strong { color: #fff; }
+.bl-post-body img { max-width: 100%; height: auto; border-radius: 11px; display: block; margin: 26px 0; }
+.bl-post-body figure { margin: 26px 0; }
+.bl-post-body figcaption { font-size: 13.5px; color: var(--vp-muted, #9aa6a0); text-align: center; margin-top: 9px; }
+.bl-post-body hr { border: none; border-top: 1px solid rgba(255,255,255,.1); margin: 38px 0; }
+
+.bl-post-body blockquote {
+  margin: 28px 0;
+  padding: 4px 0 4px 22px;
+  border-left: 3px solid var(--vp-green, #a5c715);
+  color: #fff;
+  font-size: 18px;
+  line-height: 1.7;
+}
+
+.bl-post-body code {
+  background: rgba(255, 255, 255, .08);
+  padding: 2px 6px;
+  border-radius: 5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: .89em;
+}
+.bl-post-body pre {
+  background: rgba(255, 255, 255, .05);
+  border: 1px solid rgba(255, 255, 255, .09);
+  border-radius: 11px;
+  padding: 17px 19px;
+  overflow-x: auto;
+  margin: 0 0 24px;
+}
+.bl-post-body pre code { background: none; padding: 0; }
+
+/* Wide tables scroll inside their own box; the page never scrolls sideways. */
+.bl-post-body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 24px;
+  display: block;
+  overflow-x: auto;
+  font-size: 15px;
+}
+.bl-post-body th, .bl-post-body td {
+  border: 1px solid rgba(255, 255, 255, .11);
+  padding: 10px 13px;
+  text-align: left;
+}
+.bl-post-body th { background: rgba(255, 255, 255, .05); color: #fff; font-weight: 600; }
+
+.bl-tags { display: flex; flex-wrap: wrap; gap: 8px; margin: 34px 0 0; }
+
+.bl-cta {
+  margin: 52px 0 0;
+  padding: 30px 28px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(165, 199, 21, .11), rgba(165, 199, 21, .03));
+  border: 1px solid rgba(165, 199, 21, .28);
+}
+.bl-cta h3 { color: #fff; font-size: 21px; margin: 0 0 10px; }
+.bl-cta p { color: var(--vp-muted, #9aa6a0); margin: 0 0 20px; line-height: 1.7; }
+.bl-cta-buttons { display: flex; flex-wrap: wrap; gap: 11px; }
+
+.bl-btn {
+  display: inline-block;
+  padding: 12px 26px;
+  border-radius: 9px;
+  background: var(--vp-green, #a5c715);
+  color: #101401;
+  font-weight: 700;
+  font-size: 15px;
+  text-decoration: none;
+  transition: transform .15s, background-color .2s;
+}
+.bl-btn:hover { background: #b6da1c; }
+.bl-btn:active { transform: translateY(1px); }
+.bl-btn.is-ghost {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, .2);
+  color: #fff;
+}
+.bl-btn.is-ghost:hover { border-color: var(--vp-green, #a5c715); color: var(--vp-green, #a5c715); }
+
+.bl-related { margin-top: 62px; }
+.bl-related h3 { color: #fff; font-size: 21px; margin: 0 0 22px; }
+.bl-related .bl-grid { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 18px; }
+.bl-related .bl-card-title { font-size: 16px; }
+
+/* ---- Lead card -----------------------------------------------------------
+
+   The newest featured post (or just the newest) gets a wide card above the
+   grid. Not a carousel: one post, always visible, no timer moving it out from
+   under someone mid-sentence. It only appears on the unfiltered first page —
+   see src/routes/blog-pages.js. */
+
+.bl-lead { margin-bottom: 30px; }
+
+.bl-lead-link {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: 0;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, .022);
+  text-decoration: none;
+  transition: border-color .2s, transform .2s;
+}
+.bl-lead-link:hover { border-color: var(--lime); transform: translateY(-2px); }
+
+.bl-lead-media { overflow: hidden; background: rgba(255, 255, 255, .04); min-height: 260px; }
+.bl-lead-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform .45s;
+}
+.bl-lead-link:hover .bl-lead-media img { transform: scale(1.04); }
+
+.bl-lead-body { padding: 34px 32px; align-self: center; }
+.bl-lead-title {
+  color: #fff;
+  font-size: 28px;
+  line-height: 1.22;
+  margin: 12px 0 12px;
+  font-weight: 700;
+}
+.bl-lead-excerpt { color: var(--text-mute); line-height: 1.72; margin: 0 0 18px; }
+
+.bl-chip.is-featured { border-color: var(--lime); color: var(--lime); }
+
+/* ---- Article layouts -----------------------------------------------------
+
+   Four presentations of the same template, picked per post in the admin. See
+   src/blog-layouts.js — that list and these rules have to stay in step, which
+   is why the keys are shared rather than restated. */
+
+/* hero: full-bleed cover band with the headline over it.
+
+   The band spans the viewport by having the article drop its own side padding
+   and the inner wrapper take it back, rather than by 100vw or a negative
+   margin. 100vw counts the scrollbar and pushes the page sideways on Windows;
+   a negative margin would have to know the padding, which differs at the
+   mobile breakpoint. This knows neither.
+
+   The site header is position:sticky, not fixed, so it occupies flow — the
+   band starts below it and needs no pulling up. */
+.bp-hero { padding-left: 0; padding-right: 0; padding-top: 0; }
+.bp-hero > .bl-inside { padding-left: 20px; padding-right: 20px; }
+
+.bp-heroband {
+  position: relative;
+  margin-bottom: 44px;
+  padding: 76px 20px 54px;
+  background-size: cover;
+  background-position: center;
+  isolation: isolate;
+}
+.bp-heroband-shade {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  /* Darkest at the bottom, where the type sits: a light photograph would
+     otherwise leave white text on white sky. */
+  background: linear-gradient(
+    to bottom,
+    rgba(6, 8, 4, .5) 0%,
+    rgba(6, 8, 4, .76) 55%,
+    rgba(6, 8, 4, .94) 100%
+  );
+}
+.bp-heroband-inner { position: relative; padding: 0; }
+.bp-heroband .bl-post-title { color: #fff; margin-bottom: 14px; }
+.bp-heroband .bl-post-lede { color: #e7ece1; }
+.bp-heroband .bl-card-meta { color: #cfd6c8; }
+
+/* side: cover beside the headline. Collapses to stacked below 820px, where
+   two columns leave the image too small to be worth the space. */
+.bp-head-wrap { margin-bottom: 30px; }
+
+.bp-side .bp-head-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 260px) minmax(0, 1fr);
+  gap: 28px;
+  align-items: center;
+}
+.bp-side-cover { margin: 0; }
+.bp-side-cover img {
+  width: 100%;
+  height: auto;
+  border-radius: 14px;
+  display: block;
+}
+.bp-side .bl-post-head { margin-bottom: 0; }
+
+/* The wider measure image-led layouts want, without letting the prose itself
+   run past a readable line length. */
+.bp-hero .bl-narrow, .bp-side .bl-narrow { max-width: 860px; }
+.bp-side .bl-post-body, .bp-hero .bl-post-body { max-width: 760px; }
+
+@media (max-width: 820px) {
+  .bp-side .bp-head-wrap { grid-template-columns: 1fr; gap: 18px; }
+  .bp-heroband { padding: 56px 16px 40px; }
+  .bp-heroband .bl-post-title { font-size: 30px; }
+  .bp-hero > .bl-inside { padding-left: 16px; padding-right: 16px; }
+}
+
+@media (max-width: 700px) {
+  .bl { padding: 60px 16px 70px; }
+  .bl-grid { grid-template-columns: 1fr; gap: 20px; }
+  .bl-post-body { font-size: 16px; }
+  .bl-cta { padding: 24px 20px; }
+  .bl-cta-buttons .bl-btn { flex: 1; text-align: center; }
+  .bl-lead-link { grid-template-columns: 1fr; }
+  .bl-lead-media { min-height: 0; aspect-ratio: 16 / 9; }
+  .bl-lead-body { padding: 24px 20px; }
+  .bl-lead-title { font-size: 23px; }
+}
+
+
+/* ---- Download page: files attached in /admin/files ---- */
+
+.dl-platform-extra { grid-column: 1 / -1; }
+
+.dl-extra-list { display: flex; flex-wrap: wrap; gap: 10px; }
+
+.dl-extra {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 11px 17px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, .14);
+  background: rgba(255, 255, 255, .035);
+  text-decoration: none;
+  transition: border-color .2s, background-color .2s, transform .15s;
+}
+.dl-extra:hover {
+  border-color: rgba(165, 199, 21, .5);
+  background: rgba(165, 199, 21, .08);
+}
+.dl-extra:active { transform: translateY(1px); }
+
+.dl-extra-name { color: #fff; font-size: 14.5px; font-weight: 500; }
+.dl-extra-meta { color: var(--vp-muted, #9aa6a0); font-size: 12px; }
+.dl-extra-meta:empty { display: none; }
+
+/* ---- Home page: latest from the blog -------------------------------------
+
+   Reuses .bl-card wholesale rather than restyling three cards to look almost
+   like the ones on /blog. A reader who follows one of these to the listing
+   should recognise what they clicked. */
+
+.home_blog {
+  padding: 84px 20px 90px;
+  background: var(--ink);
+  border-top: 1px solid var(--line);
+}
+
+.home_blog_inside { max-width: 1180px; margin: 0 auto; }
+
+.home_blog_head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 34px;
+}
+
+.home_blog_heading {
+  color: #fff;
+  font-size: 32px;
+  line-height: 1.2;
+  margin: 0 0 8px;
+  font-weight: 700;
+}
+.home_blog_heading span { color: var(--lime); }
+
+.home_blog_sub { color: var(--text-mute); margin: 0; font-size: 15.5px; }
+
+.home_blog_all {
+  flex-shrink: 0;
+  padding: 11px 22px;
+  border: 1px solid var(--line-soft);
+  border-radius: 9px;
+  color: var(--lime);
+  font-weight: 600;
+  font-size: 14.5px;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: border-color .2s, background-color .2s;
+}
+.home_blog_all:hover { border-color: var(--lime); background: rgba(165, 199, 21, .08); }
+
+.home_blog_grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+@media (max-width: 900px) {
+  .home_blog_grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 700px) {
+  .home_blog { padding: 60px 16px 66px; }
+  .home_blog_head { flex-direction: column; align-items: flex-start; gap: 14px; }
+  .home_blog_heading { font-size: 26px; }
+  .home_blog_grid { grid-template-columns: 1fr; }
+}

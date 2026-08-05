@@ -1,0 +1,42 @@
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
+<%- include('../partials/admin-shell', { pageTitle: 'Customers', pageSub: total + ' in total' }) %>
+
+<form class="mb-3" method="get" action="/admin/customers">
+  <div class="row" style="gap:8px">
+    <input class="input" name="q" value="<%= q %>" placeholder="Search name, email or company" style="max-width:360px">
+    <button class="btn btn-sm" type="submit">Search</button>
+    <% if (q) { %><a class="btn btn-ghost btn-sm" href="/admin/customers">Clear</a><% } %>
+  </div>
+</form>
+
+<div class="p-card p-card-flush">
+  <div class="table-wrap"><table class="table mini">
+    <thead><tr><th>Customer</th><th>Status</th><th class="num">Sites</th><th class="num">Domains</th><th>Joined</th></tr></thead>
+    <tbody>
+      <% if (!customers.length) { %>
+        <tr><td colspan="5"><p class="muted mb-0" style="padding:20px 0">No customers found.</p></td></tr>
+      <% } %>
+      <% customers.forEach(function (c) { %>
+        <tr>
+          <td>
+            <a class="strong" href="/admin/customers/<%= c.id %>"><%= (c.first_name + ' ' + c.last_name).trim() || c.email %></a>
+            <br><span class="tiny muted"><%= c.email %><% if (c.company) { %> · <%= c.company %><% } %></span>
+          </td>
+          <td>
+            <% if (c.status === 'active') { %><span class="badge badge-green">Active</span>
+            <% } else if (c.status === 'suspended') { %><span class="badge badge-red">Suspended</span>
+            <% } else { %><span class="badge badge-grey">Closed</span><% } %>
+            <% if (!c.email_verified) { %> <span class="badge badge-amber">Unverified</span><% } %>
+          </td>
+          <td class="num"><%= c.services %></td>
+          <td class="num"><%= c.domains %></td>
+          <td class="tiny muted"><%= new Date(c.created_at).toLocaleDateString('en-GB') %></td>
+        </tr>
+      <% }); %>
+    </tbody>
+  </table></div>
+</div>
+
+<%- include('../partials/pager', { base: '/admin/customers' + (q ? '?q=' + encodeURIComponent(q) : '') }) %>
+<%- include('../partials/panel-shell-end') %>
+<%- include('../partials/footer') %>

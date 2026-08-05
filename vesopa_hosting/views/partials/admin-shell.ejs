@@ -1,0 +1,90 @@
+<%# Admin chrome. Same rail geometry as the customer panel but with the lime
+    reserved for the active item only — an admin is here to scan lists, and a
+    page that shouts everywhere is a page where nothing stands out. %>
+<div class="shell">
+  <aside class="rail">
+    <a class="rail-brand" href="/admin">
+      <img src="/assets/img/brand/vesopa_logo_on_dark.png" alt="Vesopa" width="130" height="19">
+      <span class="tiny" style="color:var(--lime);letter-spacing:.14em;text-transform:uppercase;font-weight:800">Admin</span>
+    </a>
+
+    <nav class="rail-nav">
+      <%
+      const adminItems = [
+        ['/admin',           'chart',    'Overview'],
+        ['/admin/orders',    'card',     'Orders'],
+        ['/admin/customers', 'user',     'Customers'],
+        ['/admin/services',  'server',   'Services'],
+        ['/admin/domains',   'globe',    'Domains'],
+        ['/admin/tickets',   'ticket',   'Tickets'],
+        ['/admin/enquiries', 'mail',     'Enquiries'],
+        ['/admin/plans',     'folder',   'Hosting plans'],
+        ['/admin/plans/email', 'mail',   'Email plans'],
+        ['/admin/tlds',      'key',      'Domain pricing'],
+        ['/admin/currencies', 'globe',   'Currencies'],
+        ['/admin/coupons',   'bolt',     'Discount codes'],
+        ['/admin/servers',   'server',   'Servers'],
+        ['/admin/settings',  'settings', 'Settings'],
+        ['/admin/log',       'clock',    'Activity log'],
+      ];
+      /*
+       * Longest matching prefix wins, rather than every prefix that matches.
+       * A plain `indexOf(item) === 0` lit up BOTH "Hosting plans" and "Email
+       * plans" on /admin/plans/email, because the first is a prefix of the
+       * second. /admin itself is a prefix of everything, so it stays exact.
+       */
+      const activeHref = adminItems
+        .map(function (i) { return i[0]; })
+        .filter(function (href) {
+          return href === '/admin' ? currentPath === '/admin' : currentPath.indexOf(href) === 0;
+        })
+        .sort(function (a, b) { return b.length - a.length; })[0];
+
+      adminItems.forEach(function (item) {
+        const active = item[0] === activeHref;
+      %>
+        <a class="rail-link <%= active ? 'is-active' : '' %>" href="<%= item[0] %>">
+          <span class="rail-icon"><%- icon(item[1], 18) %></span>
+          <span class="rail-label"><%= item[2] %></span>
+        </a>
+      <% }); %>
+    </nav>
+
+    <div class="rail-foot">
+      <a class="rail-link" href="/" target="_blank" rel="noopener">
+        <span class="rail-icon"><%- icon('external', 18) %></span>
+        <span class="rail-label">View site</span>
+      </a>
+      <form method="post" action="/admin/logout">
+        <input type="hidden" name="_csrf" value="<%= csrf %>">
+        <button class="rail-link" type="submit" style="width:100%;border:0;background:none;cursor:pointer;text-align:left">
+          <span class="rail-icon"><%- icon('logout', 18) %></span>
+          <span class="rail-label">Sign out</span>
+        </button>
+      </form>
+    </div>
+  </aside>
+
+  <div class="shell-main">
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div>
+          <h1 class="topbar-title"><%= typeof pageTitle !== 'undefined' ? pageTitle : title %></h1>
+          <% if (typeof pageSub !== 'undefined' && pageSub) { %><p class="topbar-sub"><%= pageSub %></p><% } %>
+        </div>
+        <div class="row" style="gap:10px">
+          <% if (typeof topAction !== 'undefined' && topAction) { %>
+            <a class="btn btn-sm" href="<%= topAction.href %>"><%= topAction.label %></a>
+          <% } %>
+          <div class="topbar-user">
+            <span class="topbar-avatar" style="background:var(--ink);color:#fff"><%= (admin.name || admin.email).charAt(0).toUpperCase() %></span>
+            <span class="hide-sm">
+              <span class="strong small"><%= admin.name || admin.email %></span>
+              <span class="tiny muted" style="display:block"><%= admin.role %></span>
+            </span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main id="main" class="wrap-panel" style="max-width:1240px">

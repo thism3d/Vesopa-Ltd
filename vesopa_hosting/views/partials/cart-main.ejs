@@ -1,0 +1,205 @@
+<%# The left column of the basket: what is being bought, and what is offered
+    alongside it.
+
+    A PARTIAL RATHER THAN PART OF THE PAGE, because the server re-renders it on
+    its own every time the basket changes and hands it back as a fragment. The
+    alternative — pricing the basket a second time in JavaScript so the browser
+    could patch the numbers itself — would have put the discount rules, the
+    free-domain rules, the VAT arithmetic and the term ladder in two places, in
+    two languages, and the day they disagreed the customer would be the one to
+    find out. One pricing engine, on the server, always. %>
+<% lines.forEach(function (line, i) { %>
+  <article class="cart-item">
+    <div class="cart-item-head">
+      <span class="cart-item-icon">
+        <%- icon(line.kind === 'hosting' ? 'server' : line.kind === 'email' ? 'mail' : 'globe', 20) %>
+      </span>
+      <div class="cart-item-title">
+        <b><%= line.kind === 'hosting' ? line.plan.name + ' plan'
+              : line.kind === 'email' ? line.emailPlan.name
+              : line.domain %></b>
+        <span class="tiny muted">
+          <% if (line.kind === 'hosting') { %>
+            <%= line.plan.websites === 1 ? '1 website' : line.plan.websites + ' websites' %>
+            · <%= line.plan.storage_gb %> GB · <%= line.plan.mailboxes %> mailboxes
+          <% } else if (line.kind === 'email') { %>
+            <%= line.units %> × <%= line.emailPlan.unit_label %>
+          <% } else { %>
+            <%= line.kind === 'domain_transfer' ? 'Transfer' : 'Registration' %>,
+            <%= line.years %> year<%= line.years > 1 ? 's' : '' %>
+          <% } %>
+        </span>
+      </div>
+
+      <div class="cart-item-price">
+        <% if (line.freeWithPlan) { %>
+          <span class="was"><%= money(line.unit_pence) %></span>
+          <b class="free">Free</b>
+        <% } else { %>
+          <% if (line.was_pence) { %><span class="was"><%= money(line.was_pence) %></span><% } %>
+          <b><%= money(line.total_pence) %></b>
+          <% if (line.perMonth_pence && line.term_months > 1) { %>
+            <span class="tiny muted"><%= money(line.perMonth_pence) %>/mo</span>
+          <% } %>
+        <% } %>
+      </div>
+
+      <form method="post" action="/cart/remove" class="cart-item-remove" data-cart-form>
+        <input type="hidden" name="_csrf" value="<%= csrf %>">
+        <input type="hidden" name="index" value="<%= i %>">
+        <button class="icon-btn" type="submit" aria-label="Remove this item"><%- icon('x', 16) %></button>
+      </form>
+    </div>
+
+    <%# --- Period picker, hosting only -------------------------------------
+
+        A row of tabs, not a dropdown. Four options is too few to hide behind a
+        click, and the choice is the most consequential one on the page — the
+        price halves between the ends of it. A <select> showed one option at a
+        time and made the other three, and the saving they carry, invisible
+        until opened.
+
+        Each tab is a submit button carrying its own value, so this whole
+        control works with JavaScript switched off: clicking posts the form and
+        the server redirects back. With JavaScript, cart.js intercepts it and
+        swaps the fragments in place. Same route, same result, no reload. %>
+    <% if (line.kind === 'hosting') { %>
+      <form method="post" action="/cart/term" class="cart-period" data-cart-form>
+        <input type="hidden" name="_csrf" value="<%= csrf %>">
+        <span class="label" id="term-label-<%= i %>">Billing period</span>
+
+        <div class="seg" role="group" aria-labelledby="term-label-<%= i %>">
+          <% terms.forEach(function (t) {
+               const active = t.months === line.term_months;
+               const rate = line.plan.perMonthPence[t.months];
+               const off = line.plan.saving[t.months]; %>
+            <button class="seg-opt <%= active ? 'is-active' : '' %>"
+                    type="submit" name="term" value="<%= t.months %>"
+                    aria-pressed="<%= active %>">
+              <% if (off > 0) { %><span class="seg-off">−<%= off %>%</span><% } %>
+              <span class="seg-label"><%= t.label %></span>
+              <span class="seg-price"><%= money(rate) %><span class="seg-per">/mo</span></span>
+            </button>
+          <% }); %>
+        </div>
+
+        <% if (line.saving_pence > 0) { %>
+          <span class="save-badge"><%- icon('bolt', 13) %> You save <%= money(line.saving_pence) %></span>
+        <% } %>
+        <p class="hint mb-0">
+          <% if (line.term_months === 1) { %>
+            Billed every month. Cancel any time.
+          <% } else { %>
+            <%= money(line.total_pence) %> billed today, then
+            <b><%= money(line.renews_pence) %></b> every
+            <%= line.term.label.toLowerCase() %>. Cancel any time.
+          <% } %>
+        </p>
+      </form>
+
+      <%# --- Longer-term nudge -------------------------------------------- %>
+      <% if (line.upsell) { %>
+        <div class="cart-deal">
+          <span class="cart-deal-mark"><%- icon('star', 18) %></span>
+          <div>
+            <b>Go <%= line.upsell.label.toLowerCase() %> for <%= money(line.upsell.perMonth) %>/mo</b>
+            <span><%= money(line.upsell.saving) %> less than paying monthly, and the free domain comes with it.</span>
+          </div>
+          <form method="post" action="/cart/term" data-cart-form>
+            <input type="hidden" name="_csrf" value="<%= csrf %>">
+            <button class="btn btn-sm" type="submit" name="term" value="<%= line.upsell.months %>">Switch</button>
+          </form>
+        </div>
+      <% } %>
+    <% } %>
+
+    <%# --- Email quantity ------------------------------------------------- %>
+    <% if (line.kind === 'email') { %>
+      <form method="post" action="/cart/email-units" class="cart-period" data-cart-form>
+        <input type="hidden" name="_csrf" value="<%= csrf %>">
+        <input type="hidden" name="slug" value="<%= line.slug %>">
+        <label class="label" for="units-<%= i %>">How many?</label>
+        <div class="qty">
+          <button class="qty-btn" type="submit" name="units" value="<%= line.units - 1 %>"
+                  aria-label="One fewer" <%= line.units <= line.emailPlan.min_units ? 'disabled' : '' %>>−</button>
+          <input class="qty-input" id="units-<%= i %>" name="units" type="number"
+                 value="<%= line.units %>" min="<%= line.emailPlan.min_units %>"
+                 max="<%= line.emailPlan.max_units %>" aria-label="How many <%= line.emailPlan.unit_label %>">
+          <button class="qty-btn" type="submit" name="units" value="<%= line.units + 1 %>"
+                  aria-label="One more" <%= line.units >= line.emailPlan.max_units ? 'disabled' : '' %>>+</button>
+          <button class="btn btn-ghost btn-sm qty-go" type="submit">Update</button>
+        </div>
+        <p class="hint mb-0"><%= money(line.unit_pence) %> per <%= line.emailPlan.unit_label %>, per year.</p>
+      </form>
+    <% } %>
+  </article>
+<% }); %>
+
+<%# --- What is included ------------------------------------------------- %>
+<% if (included.length) { %>
+  <div class="cart-included">
+    <h2 class="h3 mb-2">Included at no extra cost</h2>
+    <ul>
+      <% included.forEach(function (f) { %>
+        <li><%- icon('check-circle', 17) %><span><%= f %></span></li>
+      <% }); %>
+    </ul>
+  </div>
+<% } %>
+
+<%# --- Domain search, only if the basket still needs one ----------------- %>
+<% if (needsDomain) { %>
+  <div class="cart-card">
+    <div class="row" style="gap:12px;align-items:flex-start;flex-wrap:nowrap">
+      <span class="cart-item-icon"><%- icon('globe', 20) %></span>
+      <div style="flex:1;min-width:0">
+        <h2 class="h3 mb-1">Secure your domain</h2>
+        <p class="small muted mb-3">
+          Add one now, or choose your free one after payment — either
+          works. Free on any plan of a year or more, up to <%= freeMax %>.
+        </p>
+
+        <form class="dsearch dsearch-light" data-domain-search action="/domains" method="get"
+              style="max-width:100%">
+          <div class="dsearch-form">
+            <input class="dsearch-input" type="text" name="q" autocomplete="off"
+                   spellcheck="false" placeholder="Search for a name…"
+                   aria-label="Search for a domain">
+            <button class="btn" type="submit"><%- icon('search', 18) %><span class="hide-sm">Search</span></button>
+          </div>
+        </form>
+
+        <div class="dsearch-tlds" style="justify-content:flex-start;margin-top:12px">
+          <% featuredTlds.slice(0, 6).forEach(function (t) { %>
+            <button type="button" class="dsearch-tld dsearch-tld-light" data-tld-chip="<%= t.tld %>">
+              <b>.<%= t.tld %></b> <%= money(t.register_pence) %>
+            </button>
+          <% }); %>
+        </div>
+
+        <div data-domain-results hidden style="margin-top:16px"></div>
+      </div>
+    </div>
+  </div>
+<% } %>
+
+<%# --- One cross-sell, only when it makes sense -------------------------- %>
+<% if (crossSell) { %>
+  <div class="cart-card cart-cross">
+    <span class="cart-item-icon cart-item-icon-lime"><%- icon('chart', 20) %></span>
+    <div style="flex:1;min-width:0">
+      <h2 class="h3 mb-1">Add marketing email</h2>
+      <p class="small muted mb-2">
+        Newsletters and campaigns from your own domain, authenticated
+        properly so they reach the inbox. From
+        <b><%= money(crossSell.perMonthPence[12]) %></b> per
+        <%= crossSell.unit_label %> a month.
+      </p>
+      <a class="btn btn-ghost btn-sm" href="/order/email/<%= crossSell.slug %>?term=12">
+        <%- icon('plus', 15) %> Add <%= crossSell.name %>
+      </a>
+    </div>
+  </div>
+<% } %>
+
+<a class="btn-link" href="/hosting" style="display:inline-block;margin-top:6px">← Keep shopping</a>

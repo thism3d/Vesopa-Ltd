@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light" >
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="some description about the site">
+    <meta name="keywords" content="some, keywords, for, the, site">
+    <meta name="author" content="Asaduzzaman Sarker">
+    <title>Localhost - Web Hosting Template with WHMCS + RTL</title>
+    <link rel="icon" href="assets/img/favicon.png" type="image/png">
+    <link rel="stylesheet" href="assets/css/bootstrap-icons.css">
+    <link rel="stylesheet" href="assets/css/bootstrap.css">
+    <link rel="stylesheet" href="assets/css/swiper-bundle.css">
+    <link rel="stylesheet" href="assets/css/simplebar.css">
+    <link rel="stylesheet" href="assets/css/prism.css">
+    <link rel="stylesheet" href="assets/css/ff-1.css">
+    <link rel="stylesheet" href="assets/css/ff-2.css">
+    <link rel="stylesheet" href="assets/css/ff-3.css">
+    <link rel="stylesheet" href="assets/css/style.css">
+</head>
+
+<body >
+    
+        <header class="navbar navbar-expand-lg primary-header primary-header--light primary-header--sticky top-0">
+	<div class="container align-items-lg-center py-3 ">
+		<a class="logo" href="index.html">
+			<img
+				src="assets/img/logo-dark.png"
+				alt="image"
+				class="logo__img logo__img--light"
+			/>
+			<img
+				src="assets/img/logo-light.png"
+				alt="image"
+				class="logo__img logo__img--dark"
+			/>
+		</a>
+		<button
+			class="navbar-toggler border-0"
+			type="button"
+			data-bs-toggle="collapse"
+			data-bs-target="#navbar0"
+			aria-controls="navbar0"
+			aria-expanded="false"
+			aria-label="Toggle navigation"
+		>
+			<iconify-icon icon="solar:hamburger-menu-line-duotone"></iconify-icon>
+		</button>
+		<nav class="collapse navbar-collapse" id="navbar0">
+			<div class="d-flex align-items-center gap-3 ms-lg-auto">
+				<a
+					href="#"
+					class="btn btn-sm btn-primary order-lg-2 "
+				>
+					Buy Now
+				</a>
+				<div class="dropdown dropdown-modifier dropdown-xsm order-lg-1">
+					<button
+						class="btn dropdown-toggle px-4 px-lg-0 fs-14 border-0 align-items-center gap-1"
+						type="button"
+						data-bs-toggle="dropdown"
+						aria-haspopup="true"
+						aria-expanded="false"
+					>
+						<iconify-icon id="themeDropdownIcon" icon="bi:sun"></iconify-icon>
+					</button>
+					<ul
+						class="dropdown-menu dropdown-menu-end dropdown-menu-light mw-unset"
+					>
+						<li>
+							<button
+								type="button"
+								class="dropdown-item d-flex align-items-center gap-2 fs-14"
+								id="lightTheme"
+							>
+								<span class="d-block flex-shrink-0">
+									<iconify-icon icon="bi:sun"></iconify-icon>
+								</span>
+								<span class="d-block flex-grow-1"> Light </span>
+							</button>
+						</li>
+						<li>
+							<button
+								type="button"
+								class="dropdown-item d-flex align-items-center gap-2 fs-14"
+								id="darkTheme"
+							>
+								<span class="d-block flex-shrink-0">
+									<iconify-icon icon="bi:moon-stars"></iconify-icon>
+								</span>
+								<span class="d-block flex-grow-1"> Dark </span>
+							</button>
+						</li>
+					</ul>
+				</div>
+			</div>
+		</nav>
+	</div>
+</header>
+
+    
+
+    <div class="pt-4 pt-lg-0">
+        <div class="container">
+            <div class="row g-4">
+                <div class="col-lg-3">
+                    <div class="d-flex d-lg-none align-items-center justify-content-center gap-4 px-2 py-2 rounded-1 bg-dark-subtle">
+    <span class="d-block flex-grow-1 fs-14 text-dark-emphasis">
+        Document Sidebar
+    </span>
+    <button class="btn btn-icon btn-dark doc-nav-toggler">
+        <iconify-icon icon="gg:menu-right"></iconify-icon>
+    </button>
+</div>
+                    <div class="doc-sidebar d-flex gap-4 align-items-start p-4">
+	<div class="doc-sidebar__body flex-grow-1">
+		<ul class="list gap-4">
+			<li>
+				<span class="d-flex align-items-center gap-2">
+					<span class="d-grid text-success fs-24">
+						<iconify-icon
+							icon="solar:notebook-bookmark-bold-duotone"
+						></iconify-icon>
+					</span>
+					<span class="d-inline-block text-dark-emphasis fs-14 fw-medium">
+						Getting Started
+					</span>
+				</span>
+				<ul class="list ps-3 gap-1 mt-2">
+					<li>
+						<a
+							href="index.html"
+							class="link d-flex fs-14 text-body hover:text-primary-emphasis hover:bg-primary-subtle py-1 px-4 rounded-1 text-primary-emphasis bg-primary-subtle"
+						>
+							Installation
+						</a>
+					</li>
+					<li>
+						<a
+							href="whmcs-installation.html"
+							class="link d-flex fs-14 text-body hover:text-primary-emphasis hover:bg-primary-subtle py-1 px-4 rounded-1 "
+						>
+							WHMCS Installation
+						</a>
+					</li>
+					<li>
+						<a
+							href="changelog.html"
+							class="link d-flex fs-14 text-body hover:text-primary-emphasis hover:bg-primary-subtle py-1 px-4 rounded-1 "
+						>
+							Changelog
+						</a>
+					</li>
+					<li>
+						<a
+							href="credits.html"
+							class="link d-flex fs-14 text-body hover:text-primary-emphasis hover:bg-primary-subtle py-1 px-4 rounded-1 "
+						>
+							Credits
+						</a>
+					</li>
+				</ul>
+			</li>
+			<li>
+				<span class="d-flex align-items-center gap-2">
+					<span class="d-grid text-info fs-24">
+						<iconify-icon
+							icon="solar:palette-round-bold-duotone"
+						></iconify-icon>
+					</span>
+					<span class="d-inline-block text-dark-emphasis fs-14 fw-medium">
+						Style Guide
+					</span>
+				</span>
+				<ul class="list ps-3 gap-1 mt-2">
+					<li>
+						<a
+							href="colors.html"
+							class="link d-flex fs-14 text-body hover:text-primary-emphasis hover:bg-primary-subtle py-1 px-4 rounded-1 "
+						>
+							Colors
+						</a>
+					</li>
+					<li>
+						<a
+							href="fonts.html"
+							class="link d-flex fs-14 text-body hover:text-primary-emphasis hover:bg-primary-subtle py-1 px-4 rounded-1 "
+						>
+							Fonts
+						</a>
+					</li>
+					<li>
+						<a
+							href="misc.html"
+							class="link d-flex fs-14 text-body hover:text-primary-emphasis hover:bg-primary-subtle py-1 px-4 rounded-1 "
+						>
+							Misc
+						</a>
+					</li>
+				</ul>
+			</li>
+			<li>
+				<span class="d-flex align-items-center gap-2">
+					<span class="d-grid text-primary fs-24">
+						<iconify-icon icon="solar:layers-bold-duotone"></iconify-icon>
+					</span>
+					<span class="d-inline-block text-dark-emphasis fs-14 fw-medium">
+						Customization
+					</span>
+				</span>
+				<ul class="list ps-3 gap-1 mt-2">
+					<li>
+						<a
+							href="file-structure.html"
+							class="link d-flex fs-14 text-body hover:text-primary-emphasis hover:bg-primary-subtle py-1 px-4 rounded-1 "
+						>
+							File Structure
+						</a>
+					</li>
+					<li>
+						<a
+							href="html-editing.html"
+							class="link d-flex fs-14 text-body hover:text-primary-emphasis hover:bg-primary-subtle py-1 px-4 rounded-1 "
+						>
+							HTML Editing
+						</a>
+					</li>
+					<li>
+						<a
+							href="style-editing.html"
+							class="link d-flex fs-14 text-body hover:text-primary-emphasis hover:bg-primary-subtle py-1 px-4 rounded-1 "
+						>
+							Style Editing
+						</a>
+					</li>
+				</ul>
+			</li>
+		</ul>
+	</div>
+	<button class="btn btn-icon btn-dark flex-shrink-0 d-lg-none doc-nav-toggler">
+		<iconify-icon icon="carbon:close-large"></iconify-icon>
+	</button>
+</div>
+
+                </div>
+                <div class="col-lg-9">
+                    <div class="doc-content">
+                        
+<div
+	class="rounded p-4 bg-body-tertiary bg-opacity-50 border border-secondary border-opacity-30"
+>
+	<h4>Overview</h4>
+	<p>
+		Welcome to Localhost! This guide provides everything you need to get started,
+		including details on the file structure, build tools, components, credits,
+		licensing, and frequently asked questions (FAQ). Dive in to learn more!
+	</p>
+	<p>
+		If you have any questions that are beyond the scope of this help documentation,
+		please feel free to contact us with the links below and please don't forget to
+		provide your website URL.
+	</p>
+	<a href="mailto:pixellyo01@gmail.com" class="btn btn-primary rounded-pill">
+		Contact Us
+	</a>
+	<span class="d-block mt-8 mb-2"> Please note: </span>
+	<div class="alert alert-primary alert-quote">
+		<ul class="list list-disc gap-3">
+			<li>
+				Support requests submitted on weekends or holidays will be addressed on
+				the next business day.
+			</li>
+			<li>
+				Our support covers issues related to the features included in the
+				template. However, assistance with debugging or custom modifications falls
+				outside the scope of our support.
+			</li>
+		</ul>
+	</div>
+	<span class="d-block mt-2"> Thank you for your understanding. </span>
+</div>
+<hr class="my-6" />
+<div
+	class="rounded p-4 bg-body-tertiary bg-opacity-50 border border-secondary border-opacity-30"
+>
+	<h4>File Structure</h4>
+	<ul class="list list-disc gap-5">
+		<li class="lh-1/7">
+			<span class="badge bg-primary ff-2">
+				<iconify-icon icon="bi:folder"></iconify-icon>
+				dist
+			</span>
+			- All files are here compiled from
+			<span
+				class="badge bg-light-emphasis-rgb bg-opacity-10 text-light-emphasis ff-2"
+			>
+				<iconify-icon icon="bi:folder"></iconify-icon>
+				src
+			</span>
+			folder using
+			<span
+				class="badge bg-light-emphasis-rgb bg-opacity-10 text-light-emphasis ff-2"
+			>
+				<iconify-icon icon="bi:folder"></iconify-icon>
+				Node.js / Vite
+			</span>
+			.
+			<span
+				class="badge bg-light-emphasis-rgb bg-opacity-10 text-light-emphasis ff-2"
+			>
+				<iconify-icon icon="bi:folder"></iconify-icon>
+				dist
+			</span>
+			files are ready to edit as you intend or upload live to the server. Inside
+			<span
+				class="badge bg-light-emphasis-rgb bg-opacity-10 text-light-emphasis ff-2"
+			>
+				<iconify-icon icon="bi:folder"></iconify-icon>
+				dist
+			</span>
+			folder you'll find:
+			<ul class="list list-disc mt-4 gap-3">
+				<li class="lh-1/7">
+					<span class="badge bg-primary-subtle text-primary-emphasis ff-2">
+						<iconify-icon icon="bi:folder"></iconify-icon>
+						assets
+					</span>
+					- folder contains all necessary files except the HTML files. Here are
+					the files below:
+					<ul class="list list-disc mt-4 gap-3">
+						<li class="lh-1/7">
+							<span
+								class="badge bg-light-emphasis-rgb bg-opacity-10 text-light-emphasis ff-2"
+							>
+								<iconify-icon icon="bi:folder"></iconify-icon>
+								css
+							</span>
+							- contains all css files necessary for the template style.
+						</li>
+						<li class="lh-1/7">
+							<span
+								class="badge bg-light-emphasis-rgb bg-opacity-10 text-light-emphasis ff-2"
+							>
+								<iconify-icon icon="bi:folder"></iconify-icon>
+								fonts
+							</span>
+							- contains self hosted fonts for Bootstrap icons.
+						</li>
+						<li class="lh-1/7">
+							<span
+								class="badge bg-light-emphasis-rgb bg-opacity-10 text-light-emphasis ff-2"
+							>
+								<iconify-icon icon="bi:folder"></iconify-icon>
+								img
+							</span>
+							- contains all images for the template.
+						</li>
+						<li class="lh-1/7">
+							<span
+								class="badge bg-light-emphasis-rgb bg-opacity-10 text-light-emphasis ff-2"
+							>
+								<iconify-icon icon="bi:folder"></iconify-icon>
+								js
+							</span>
+							- contains all script files used in the template.
+						</li>
+					</ul>
+				</li>
+				<li class="lh-1/7">
+					<span class="badge bg-primary-subtle text-primary-emphasis ff-2">
+						<iconify-icon icon="ph:file-html"></iconify-icon>
+						All HTML files
+					</span>
+				</li>
+			</ul>
+		</li>
+		<li class="lh-1/7">
+			<span class="badge bg-primary ff-2">
+				<iconify-icon icon="bi:folder"></iconify-icon>
+				src
+			</span>
+			- Contains all template source files like HTML / SCSS / CSS / JS that are then
+			processed (compiled) to
+			<span class="badge bg-secondary text-light bg-opacity-90 ff-2">
+				<iconify-icon icon="bi:folder"></iconify-icon>
+				dist
+			</span>
+			folder. Inside
+			<span class="badge bg-secondary text-light bg-opacity-90 ff-2">
+				<iconify-icon icon="bi:folder"></iconify-icon>
+				src
+			</span>
+			folder you'll find:
+			<ul class="list list-disc mt-4 gap-3">
+				<li class="lh-1/7">
+					<span class="badge bg-primary-subtle text-primary-emphasis ff-2">
+						<iconify-icon icon="bi:folder"></iconify-icon>
+						assets
+					</span>
+					- folder contains all necessary files except the HTML files. Here are
+					the files below:
+					<ul class="list list-disc mt-4 gap-3">
+						<li class="lh-1/7">
+							<span
+								class="badge bg-primary-subtle text-primary-emphasis ff-2"
+							>
+								<iconify-icon icon="bi:folder"></iconify-icon>
+								src/assets/fonts
+							</span>
+							- contains self hosted fonts for Bootstrap icons.
+						</li>
+						<li class="lh-1/7">
+							<span
+								class="badge bg-primary-subtle text-primary-emphasis ff-2"
+							>
+								<iconify-icon icon="bi:folder"></iconify-icon>
+								src/assets/img
+							</span>
+							- contains all images for the template.
+						</li>
+						<li class="lh-1/7">
+							<span
+								class="badge bg-primary-subtle text-primary-emphasis ff-2"
+							>
+								<iconify-icon icon="bi:folder"></iconify-icon>
+								src/assets/js
+							</span>
+							- contains main
+							<span
+								class="badge bg-light-emphasis-rgb bg-opacity-10 text-light-emphasis ff-2"
+							>
+								<iconify-icon icon="ph:file-js"></iconify-icon>
+								app.js
+							</span>
+							and JS vendor files in
+							<span
+								class="badge bg-light-emphasis-rgb bg-opacity-10 text-light-emphasis ff-2"
+							>
+								<iconify-icon icon="bi:folder"></iconify-icon>
+								vendor
+							</span>
+							folder. If you don't wish to use all included plugins and
+							scripts, just remove unwanted vendor JS files from
+							<span
+								class="badge bg-light-emphasis-rgb bg-opacity-10 text-light-emphasis ff-2"
+							>
+								<iconify-icon icon="bi:folder"></iconify-icon>
+								src/assets/js/vendor
+							</span>
+							then remove unwanted functions from
+							<span
+								class="badge bg-light-emphasis-rgb bg-opacity-10 text-light-emphasis ff-2"
+							>
+								<iconify-icon icon="ph:file-js"></iconify-icon>
+								src/assets/js/app.js
+							</span>
+							and recompile.
+						</li>
+						<li class="lh-1/7">
+							<span
+								class="badge bg-primary-subtle text-primary-emphasis ff-2"
+							>
+								<iconify-icon icon="bi:folder"></iconify-icon>
+								src/assets/scss/vendor
+							</span>
+							- Contains CSS vendor files. If you don't wish to use all
+							included plugins, just remove unwanted vendor CSS from
+							<span
+								class="badge bg-light-emphasis-rgb bg-opacity-10 text-light-emphasis ff-2"
+							>
+								<iconify-icon icon="bi:folder"></iconify-icon>
+								src/assets/scss/vendor
+							</span>
+							and recompile.
+						</li>
+						<li class="lh-1/7">
+							<span
+								class="badge bg-primary-subtle text-primary-emphasis ff-2"
+							>
+								<iconify-icon icon="bi:folder"></iconify-icon>
+								src/assets/scss
+							</span>
+							- Contains all project SCSS files that are compiled and
+							minified in
+							<span
+								class="badge bg-light-emphasis-rgb bg-opacity-10 text-light-emphasis ff-2"
+							>
+								<iconify-icon icon="bi:folder"></iconify-icon>
+								dist/assets/css
+							</span>
+							folder.
+						</li>
+					</ul>
+				</li>
+				<li class="lh-1/7">
+					<span class="badge bg-primary-subtle text-primary-emphasis ff-2">
+						<iconify-icon icon="bi:folder"></iconify-icon>
+						templates
+					</span>
+					- Contains All
+					<span
+						class="badge bg-light-emphasis-rgb bg-opacity-10 text-light-emphasis ff-2"
+					>
+						<iconify-icon icon="ph:file-html"></iconify-icon>
+						HTML
+					</span>
+					files, partials and layouts.
+					<ul class="list list-disc mt-4 gap-3">
+						<li class="lh-1/7">
+							<span
+								class="badge bg-primary-subtle text-primary-emphasis ff-2"
+							>
+								<iconify-icon icon="bi:folder"></iconify-icon>
+								layouts
+							</span>
+							- is a common HTML layout that every page shares.
+						</li>
+						<li class="lh-1/7 fs-14">
+							<span
+								class="badge bg-primary-subtle text-primary-emphasis ff-2"
+							>
+								<iconify-icon icon="bi:folder"></iconify-icon>
+								partials
+							</span>
+							- Partials are a feature of Handlebars which allow you to
+							inject HTML anywhere in a page or layout.
+						</li>
+						<li class="lh-1/7">
+							<span
+								class="badge bg-primary-subtle text-primary-emphasis ff-2"
+							>
+								<iconify-icon icon="ph:file-html"></iconify-icon>
+								HTML
+							</span>
+							- All HTML files
+						</li>
+					</ul>
+				</li>
+			</ul>
+		</li>
+		<li class="lh-1/7">
+			<span class="badge bg-primary-subtle text-primary-emphasis ff-2">
+				<iconify-icon icon="logos:nodejs-icon-alt"></iconify-icon>
+				package.json
+			</span>
+			- Includes the list of dependencies to install from npm.
+		</li>
+		<li class="lh-1/7">
+			<span class="badge bg-primary-subtle text-primary-emphasis ff-2">
+				<iconify-icon icon="material-icon-theme:postcss"></iconify-icon>
+				postcss.config.js
+			</span>
+			- Automatically adding vendor prefixes for CSS properties to ensure cross-browser compatibility.
+		</li>
+		<li class="lh-1/7">
+			<span class="badge bg-primary-subtle text-primary-emphasis ff-2">
+				<iconify-icon icon="vscode-icons:file-type-vite"></iconify-icon>
+				vite.config.cjs
+			</span>
+			- Configuration file for Vite forntend build tool. It contains all tasks to perform with vite. Learn more about it from
+			<a
+				target="_blank"
+				href="https://vite.dev/guide/"
+				class="badge bg-warning text-light bg-opacity-90 ff-2"
+			>
+				official Vite Documentation
+				<iconify-icon icon="hugeicons:copy-link"></iconify-icon>
+			</a>
+		</li>
+	</ul>
+</div>
+<hr class="my-6" />
+<h4 class="mb-6">Working With Template</h4>
+<div
+	class="rounded p-4 bg-body-tertiary bg-opacity-80 border border-secondary border-opacity-30"
+>
+	<p>There are two ways to work with template.</p>
+	<ol>
+		<li>Direct Editing</li>
+		<li>Adnvanced Editing</li>
+	</ol>
+</div>
+<hr class="my-6" />
+<h4 class="mb-6">Direct Editing</h4>
+<div
+	class="rounded p-4 bg-body-tertiary bg-opacity-80 border border-secondary border-opacity-30"
+>
+	For direct editing and less hassle just go to
+	<span class="badge bg-primary-subtle text-primary-emphasis ff-2">
+		<iconify-icon icon="bi:folder"></iconify-icon> dist
+	</span>
+	folder and edit HTML, CSS and Scripts or changes image as you required and your
+	template is ready to live.
+</div>
+<hr class="my-6" />
+<h4 class="mb-6">Adnvanced Editing</h4>
+<div class="alert alert-primary d-flex align-items-start gap-4" role="alert">
+	<span class="d-grid flex-shrink-0 fs-24">
+		<iconify-icon icon="ph:info-duotone"></iconify-icon>
+	</span>
+	<span class="d-block flex-grow-1">
+		This step aims for advanced users who want to speed up development process and is
+		optional. You can still use plain
+		<span class="badge bg-primary text-light ff-2"> HTML / CSS / JS </span>
+		to customize template. Files you need are located in
+		<span class="badge bg-primary text-light ff-2">
+			<iconify-icon icon="bi:folder"></iconify-icon>
+			dist
+		</span>
+	</span>
+</div>
+<div class="section-space-xsm-y">
+	<div
+		class="rounded p-4 bg-body-tertiary bg-opacity-80 border border-secondary border-opacity-30"
+	>
+		<p>
+			If you'd like to speed up development process with
+			<span class="badge bg-secondary text-light bg-opacity-90 ff-2">
+				Node.js / Vite / SASS </span
+			> , then follow these steps:
+		</p>
+		<ul class="list list-disc gap-3 mb-6">
+			<li class="lh-1/7">
+				Install
+				<a
+					target="_blank"
+					href="https://nodejs.org/en"
+					class="badge bg-secondary text-light bg-opacity-90 ff-2"
+				>
+					Node.js
+					<iconify-icon icon="hugeicons:copy-link"></iconify-icon>
+				</a>
+				if you don't have it yet.
+			</li>
+			<li class="lh-1/7">
+				Unzip the template package file named
+				<span class="badge bg-primary-subtle text-primary-emphasis ff-2">
+					<iconify-icon icon="icomoon-free:file-zip"></iconify-icon>
+					main
+				</span>
+				and in the root project folder you'll get
+				<span class="badge bg-primary-subtle text-primary-emphasis ff-2">
+					<iconify-icon icon="bi:folder"></iconify-icon>
+					documentation
+				</span>
+				&
+				<span class="badge bg-primary-subtle text-primary-emphasis ff-2">
+					<iconify-icon icon="bi:folder"></iconify-icon>
+					localhost
+				</span>
+				, go to your command line tool and change directory to the
+				<span class="badge bg-primary-subtle text-primary-emphasis ff-2">
+					<iconify-icon icon="bi:folder"></iconify-icon>
+					localhost
+				</span>
+				folder and run
+				<span class="badge bg-secondary text-light bg-opacity-90 ff-2">
+					<iconify-icon icon="ri:terminal-fill"></iconify-icon>
+					npm install
+				</span>
+				<strong>OR</strong> you can open
+				<span class="badge bg-primary-subtle text-primary-emphasis ff-2">
+					<iconify-icon icon="bi:folder"></iconify-icon>
+					localhost
+				</span>
+				folder in
+				<span class="badge bg-primary-subtle text-primary-emphasis ff-2">
+					<iconify-icon icon="codicon:vscode"></iconify-icon>
+					vscode
+				</span>
+				editor and open terminal from vscode editor, now run
+				<span class="badge bg-secondary text-light bg-opacity-90 ff-2">
+					<iconify-icon icon="ri:terminal-fill"></iconify-icon>
+					npm install
+				</span>
+				. This will install the npm packages listed in the
+				<span class="badge bg-secondary text-light bg-opacity-90 ff-2">
+					<iconify-icon icon="ph:file-js"></iconify-icon>
+					package.json
+				</span>
+				file.
+			</li>
+			<li class="lh-1/7">
+				You should now have the project files set up and all the npm packages
+				installed.
+			</li>
+		</ul>
+		<div class="alert alert-warning d-flex align-items-start gap-4" role="alert">
+			<span class="d-grid flex-shrink-0 fs-24">
+				<iconify-icon icon="ph:info-duotone"></iconify-icon>
+			</span>
+			<span class="d-block flex-grow-1">
+				After running
+				<span class="badge bg-warning-emphasis text-warning-subtle ff-2">
+					<iconify-icon icon="ri:terminal-fill"></iconify-icon>
+					npm install
+				</span>
+				you'll see some warning messages in terminal. Don't worry, this is due to
+				incompatibility between NodeJS versions, it does not affect your
+				development process, please ignore the warning messages.
+			</span>
+		</div>
+	</div>
+</div>
+<div class="section-space-xsm-bottom">
+	<h4 class="mb-6">Vite Commands</h4>
+	<div
+		class="rounded p-4 bg-body-tertiary bg-opacity-80 border border-secondary border-opacity-30"
+	>
+		<ul class="list list-disc gap-3">
+			<li class="lh-1/7">
+				<span class="badge bg-primary-subtle text-primary-emphasis ff-2">
+					<iconify-icon icon="ri:terminal-fill"></iconify-icon>
+					npm run build
+				</span>
+				This command will fire build task which includes: creating
+				<span class="badge bg-secondary text-light bg-opacity-90 ff-2">
+					<iconify-icon icon="bi:folder"></iconify-icon>
+					dist
+				</span>
+				folder, compiling and merging vendor libraries, JS task, SCSS and HTML.
+			</li>
+			<li class="lh-1/7">
+				<span class="badge bg-primary-subtle text-primary-emphasis ff-2">
+					<iconify-icon icon="ri:terminal-fill"></iconify-icon>
+					npm run dev
+				</span>
+				This command will launch dev server in localhost. It will watch changes
+				of your HTML / SCSS / CSS / JS files and automatically compile them.
+			</li>
+			<li>
+				When you want to kill the server just hit
+				<span class="badge bg-secondary text-light bg-opacity-90 ff-2">
+					<iconify-icon icon="solar:keyboard-outline"></iconify-icon>
+					Control + C
+				</span>
+			</li>
+		</ul>
+	</div>
+</div>
+<h4 class="mb-6">Quick Installation</h4>
+<div class="section-space-xsm-bottom">
+	<div
+		class="d-flex justify-content-center align-items-center position-relative z-1 rounded-3 overflow-hidden video-player"
+	>
+		<video
+			playsinline
+			controls
+			src="assets/img/doc.mp4"
+			class="img-fluid w-100 h-100 position-absolute top-0 start-0 video-player__is object-fit-contain"
+		></video>
+	</div>
+</div>
+<div class="section-space-xsm-bottom">
+	<div
+		class="rounded p-4 bg-body-tertiary bg-opacity-80 border border-secondary border-opacity-30"
+	>
+		<ul class="list list-disc gap-3">
+			<li class="lh-1/7">
+				Installing npm packages (Terminal command:
+				<span class="badge bg-secondary text-light bg-opacity-90 ff-2">
+					<iconify-icon icon="ri:terminal-fill"></iconify-icon>
+					npm install </span
+				>)
+			</li>
+			<li class="lh-1/7">
+				Running dev server (Terminal command:
+				<span class="badge bg-secondary text-light bg-opacity-90 ff-2">
+					<iconify-icon icon="ri:terminal-fill"></iconify-icon>
+					npm run dev </span
+				>)
+			</li>
+			<li class="lh-1/7">
+				Compiling and merging vendor libraries, JS task, SASS and HTML (Terminal
+				command at the begining or end of the project once (Optional):
+				<span class="badge bg-secondary text-light bg-opacity-90 ff-2">
+					<iconify-icon icon="ri:terminal-fill"></iconify-icon>
+					npm run build
+				</span>
+				)
+			</li>
+		</ul>
+	</div>
+</div>
+
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="assets/js/bootstrap.bundle.js"></script>
+    <script src="assets/js/swiper.js"></script>
+    <script src="assets/js/iconify.js"></script>
+    <script src="assets/js/simplebar.js"></script>
+    <script src="assets/js/prism.js"></script>
+    <script src="assets/js/app.js"></script>
+</body>
+
+</html>

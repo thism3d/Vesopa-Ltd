@@ -1,0 +1,146 @@
+@use "../global" as *;
+
+.cursor-pointer {
+	cursor: pointer;
+}
+
+.cursor-default {
+	cursor: default;
+}
+
+.ff-1 {
+	font-family: var(--ff-1);
+}
+
+.form-control {
+	&:focus {
+		box-shadow: none;
+		border-color: var(--bs-border-color);
+	}
+}
+
+.form-select {
+	&:focus {
+		box-shadow: none;
+		border-color: var(--bs-border-color);
+	}
+}
+
+.\:focus-outline-0 {
+	&:focus {
+		outline: none;
+	}
+}
+
+.inset-0 {
+	inset: 0;
+}
+
+.link {
+	text-decoration: none !important;
+	transition: all 0.3s ease;
+}
+
+.opacity-5 {
+	opacity: 0.05;
+}
+
+.opacity-10 {
+	opacity: 0.1;
+}
+
+.pointer-none {
+	pointer-events: none;
+}
+
+.place-content-center {
+	place-content: center;
+}
+
+.place-items-center {
+	place-items: center;
+}
+
+.transition {
+	transition: all 0.3s ease;
+}
+
+.z-n2 {
+	z-index: -2;
+}
+.mt-n60 {
+	margin-top: -#{rem(60)};
+}
+.mt-n100 {
+	margin-top: -#{rem(100)};
+}
+.mt-n120 {
+	margin-top: -#{rem(120)};
+}
+.mt-n150 {
+	margin-top: -#{rem(150)};
+}
+.ratio-1\/1 {
+	aspect-ratio: 1 / 1;
+}
+
+// Only For WHMCS Template
+.btn.focus,
+.btn:focus {
+	outline: 0;
+	box-shadow: unset;
+}
+@media (max-width: 991.98px) {
+	.navbar-expand-lg > .container,
+	.navbar-expand-lg > .container-fluid,
+	.navbar-expand-lg > .container-lg,
+	.navbar-expand-lg > .container-md,
+	.navbar-expand-lg > .container-sm,
+	.navbar-expand-lg > .container-xl {
+		padding-right: calc(var(--bs-gutter-x) * 0.5);
+		padding-left: calc(var(--bs-gutter-x) * 0.5);
+	}
+}
+.btn {
+	overflow: unset;
+}
+.dropdown-item {
+	white-space: normal;
+}
+@media (min-width: 576px) {
+	.modal {
+		.modal-dialog {
+			max-width: 580px;
+		}
+	}
+}
+.navigation-1__menu {
+	.nav-divider {
+		display: none;
+	}
+	.navigation-1__menu-link {
+		text-decoration: none;
+	}
+}
+section#main-body {
+	min-height: calc(100vh - var(--whmcs-header-height) - var(--whmcs-footer-height));
+	padding-block: clamp(1.25rem, 2.1vw + 1rem, 2.5rem);
+}
+.btn-container {
+	.btn {
+		align-items: center;
+		justify-content: center;
+	}
+}
+.btn {
+	align-items: center;
+}
+.list {
+	.active {
+		background-color: var(--bs-primary-bg-subtle);
+		color: var(--bs-primary-text-emphasis);
+	}
+}
+.client-home-cards .card-header {
+	background-color: var(--bs-light-bg-subtle);
+}

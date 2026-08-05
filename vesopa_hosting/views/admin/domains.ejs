@@ -1,0 +1,33 @@
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
+<%- include('../partials/admin-shell', { pageTitle: 'Domains', pageSub: total + ' under management' }) %>
+
+<div class="p-card p-card-flush">
+  <div class="table-wrap"><table class="table mini">
+    <thead><tr><th>Domain</th><th>Customer</th><th>Status</th><th>Expires</th><th>Auto-renew</th><th>Registrar ref</th></tr></thead>
+    <tbody>
+      <% if (!domains.length) { %><tr><td colspan="6"><p class="muted mb-0" style="padding:20px 0">Nothing yet.</p></td></tr><% } %>
+      <% domains.forEach(function (d) {
+           const days = d.expires_at ? Math.round((new Date(d.expires_at) - Date.now()) / 864e5) : null; %>
+        <tr>
+          <td class="strong"><%= d.domain %></td>
+          <td><a href="/admin/customers/<%= d.customer_id %>"><%= d.email %></a></td>
+          <td>
+            <% if (d.status === 'active') { %><span class="badge badge-green">Active</span>
+            <% } else if (d.status === 'expired') { %><span class="badge badge-red">Expired</span>
+            <% } else { %><span class="badge badge-grey"><%= d.status %></span><% } %>
+          </td>
+          <td>
+            <%= d.expires_at || '—' %>
+            <% if (days !== null && days <= 45 && days > 0) { %><br><span class="badge badge-amber"><%= days %> days</span><% } %>
+          </td>
+          <td><%- d.auto_renew ? '<span class="badge badge-soft">On</span>' : '<span class="badge badge-red">Off</span>' %></td>
+          <td class="tiny mono muted"><%= d.registrar_ref || '—' %></td>
+        </tr>
+      <% }); %>
+    </tbody>
+  </table></div>
+</div>
+
+<%- include('../partials/pager', { base: '/admin/domains' }) %>
+<%- include('../partials/panel-shell-end') %>
+<%- include('../partials/footer') %>

@@ -1,0 +1,987 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light" >
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="some description about the site">
+    <meta name="keywords" content="some, keywords, for, the, site">
+    <meta name="author" content="Asaduzzaman Sarker">
+    <title>Localhost - Web Hosting Template with WHMCS + RTL</title>
+    <link rel="icon" href="assets/img/favicon.png" type="image/png">
+    <link rel="stylesheet" href="assets/css/bootstrap-icons.css">
+    <link rel="stylesheet" href="assets/css/bootstrap.css">
+    <link rel="stylesheet" href="assets/css/swiper-bundle.css">
+    <link rel="stylesheet" href="assets/css/simplebar.css">
+    <link rel="stylesheet" href="assets/css/prism.css">
+    <link rel="stylesheet" href="assets/css/ff-1.css">
+    <link rel="stylesheet" href="assets/css/ff-2.css">
+    <link rel="stylesheet" href="assets/css/ff-3.css">
+    <link rel="stylesheet" href="assets/css/style.css">
+</head>
+
+<body >
+    
+        <header class="navbar navbar-expand-lg primary-header primary-header--light primary-header--sticky top-0">
+	<div class="container align-items-lg-center py-3 ">
+		<a class="logo" href="index.html">
+			<img
+				src="assets/img/logo-dark.png"
+				alt="image"
+				class="logo__img logo__img--light"
+			/>
+			<img
+				src="assets/img/logo-light.png"
+				alt="image"
+				class="logo__img logo__img--dark"
+			/>
+		</a>
+		<button
+			class="navbar-toggler border-0"
+			type="button"
+			data-bs-toggle="collapse"
+			data-bs-target="#navbar0"
+			aria-controls="navbar0"
+			aria-expanded="false"
+			aria-label="Toggle navigation"
+		>
+			<iconify-icon icon="solar:hamburger-menu-line-duotone"></iconify-icon>
+		</button>
+		<nav class="collapse navbar-collapse" id="navbar0">
+			<div class="d-flex align-items-center gap-3 ms-lg-auto">
+				<a
+					href="#"
+					class="btn btn-sm btn-primary order-lg-2 "
+				>
+					Buy Now
+				</a>
+				<div class="dropdown dropdown-modifier dropdown-xsm order-lg-1">
+					<button
+						class="btn dropdown-toggle px-4 px-lg-0 fs-14 border-0 align-items-center gap-1"
+						type="button"
+						data-bs-toggle="dropdown"
+						aria-haspopup="true"
+						aria-expanded="false"
+					>
+						<iconify-icon id="themeDropdownIcon" icon="bi:sun"></iconify-icon>
+					</button>
+					<ul
+						class="dropdown-menu dropdown-menu-end dropdown-menu-light mw-unset"
+					>
+						<li>
+							<button
+								type="button"
+								class="dropdown-item d-flex align-items-center gap-2 fs-14"
+								id="lightTheme"
+							>
+								<span class="d-block flex-shrink-0">
+									<iconify-icon icon="bi:sun"></iconify-icon>
+								</span>
+								<span class="d-block flex-grow-1"> Light </span>
+							</button>
+						</li>
+						<li>
+							<button
+								type="button"
+								class="dropdown-item d-flex align-items-center gap-2 fs-14"
+								id="darkTheme"
+							>
+								<span class="d-block flex-shrink-0">
+									<iconify-icon icon="bi:moon-stars"></iconify-icon>
+								</span>
+								<span class="d-block flex-grow-1"> Dark </span>
+							</button>
+						</li>
+					</ul>
+				</div>
+			</div>
+		</nav>
+	</div>
+</header>
+
+    
+
+    <div class="pt-4 pt-lg-0">
+        <div class="container">
+            <div class="row g-4">
+                <div class="col-lg-3">
+                    <div class="d-flex d-lg-none align-items-center justify-content-center gap-4 px-2 py-2 rounded-1 bg-dark-subtle">
+    <span class="d-block flex-grow-1 fs-14 text-dark-emphasis">
+        Document Sidebar
+    </span>
+    <button class="btn btn-icon btn-dark doc-nav-toggler">
+        <iconify-icon icon="gg:menu-right"></iconify-icon>
+    </button>
+</div>
+                    <div class="doc-sidebar d-flex gap-4 align-items-start p-4">
+	<div class="doc-sidebar__body flex-grow-1">
+		<ul class="list gap-4">
+			<li>
+				<span class="d-flex align-items-center gap-2">
+					<span class="d-grid text-success fs-24">
+						<iconify-icon
+							icon="solar:notebook-bookmark-bold-duotone"
+						></iconify-icon>
+					</span>
+					<span class="d-inline-block text-dark-emphasis fs-14 fw-medium">
+						Getting Started
+					</span>
+				</span>
+				<ul class="list ps-3 gap-1 mt-2">
+					<li>
+						<a
+							href="index.html"
+							class="link d-flex fs-14 text-body hover:text-primary-emphasis hover:bg-primary-subtle py-1 px-4 rounded-1 "
+						>
+							Installation
+						</a>
+					</li>
+					<li>
+						<a
+							href="whmcs-installation.html"
+							class="link d-flex fs-14 text-body hover:text-primary-emphasis hover:bg-primary-subtle py-1 px-4 rounded-1 "
+						>
+							WHMCS Installation
+						</a>
+					</li>
+					<li>
+						<a
+							href="changelog.html"
+							class="link d-flex fs-14 text-body hover:text-primary-emphasis hover:bg-primary-subtle py-1 px-4 rounded-1 "
+						>
+							Changelog
+						</a>
+					</li>
+					<li>
+						<a
+							href="credits.html"
+							class="link d-flex fs-14 text-body hover:text-primary-emphasis hover:bg-primary-subtle py-1 px-4 rounded-1 "
+						>
+							Credits
+						</a>
+					</li>
+				</ul>
+			</li>
+			<li>
+				<span class="d-flex align-items-center gap-2">
+					<span class="d-grid text-info fs-24">
+						<iconify-icon
+							icon="solar:palette-round-bold-duotone"
+						></iconify-icon>
+					</span>
+					<span class="d-inline-block text-dark-emphasis fs-14 fw-medium">
+						Style Guide
+					</span>
+				</span>
+				<ul class="list ps-3 gap-1 mt-2">
+					<li>
+						<a
+							href="colors.html"
+							class="link d-flex fs-14 text-body hover:text-primary-emphasis hover:bg-primary-subtle py-1 px-4 rounded-1 "
+						>
+							Colors
+						</a>
+					</li>
+					<li>
+						<a
+							href="fonts.html"
+							class="link d-flex fs-14 text-body hover:text-primary-emphasis hover:bg-primary-subtle py-1 px-4 rounded-1 "
+						>
+							Fonts
+						</a>
+					</li>
+					<li>
+						<a
+							href="misc.html"
+							class="link d-flex fs-14 text-body hover:text-primary-emphasis hover:bg-primary-subtle py-1 px-4 rounded-1 "
+						>
+							Misc
+						</a>
+					</li>
+				</ul>
+			</li>
+			<li>
+				<span class="d-flex align-items-center gap-2">
+					<span class="d-grid text-primary fs-24">
+						<iconify-icon icon="solar:layers-bold-duotone"></iconify-icon>
+					</span>
+					<span class="d-inline-block text-dark-emphasis fs-14 fw-medium">
+						Customization
+					</span>
+				</span>
+				<ul class="list ps-3 gap-1 mt-2">
+					<li>
+						<a
+							href="file-structure.html"
+							class="link d-flex fs-14 text-body hover:text-primary-emphasis hover:bg-primary-subtle py-1 px-4 rounded-1 text-primary-emphasis bg-primary-subtle"
+						>
+							File Structure
+						</a>
+					</li>
+					<li>
+						<a
+							href="html-editing.html"
+							class="link d-flex fs-14 text-body hover:text-primary-emphasis hover:bg-primary-subtle py-1 px-4 rounded-1 "
+						>
+							HTML Editing
+						</a>
+					</li>
+					<li>
+						<a
+							href="style-editing.html"
+							class="link d-flex fs-14 text-body hover:text-primary-emphasis hover:bg-primary-subtle py-1 px-4 rounded-1 "
+						>
+							Style Editing
+						</a>
+					</li>
+				</ul>
+			</li>
+		</ul>
+	</div>
+	<button class="btn btn-icon btn-dark flex-shrink-0 d-lg-none doc-nav-toggler">
+		<iconify-icon icon="carbon:close-large"></iconify-icon>
+	</button>
+</div>
+
+                </div>
+                <div class="col-lg-9">
+                    <div class="doc-content">
+                        
+<h4 class="mb-6">File Structure</h4>
+<div
+	class="rounded p-4 bg-body-tertiary bg-opacity-80 border border-secondary border-opacity-30"
+>
+	<p class="mb-0">
+		After running the
+		<span class="badge bg-secondary text-light bg-opacity-90 ff-2">
+			<iconify-icon icon="ri:terminal-fill"></iconify-icon>
+			npm run dev
+		</span>
+		command, HTML files will be generated in the dist folder. The structure of an HTML
+		file will be as follows:
+	</p>
+</div>
+<hr class="my-6" />
+<h4 class="mb-6">Head</h4>
+<div
+	class="rounded p-4 bg-body-tertiary bg-opacity-80 border border-secondary border-opacity-30"
+>
+	<div class="tab-group">
+		<div
+			class="tab__header d-flex align-items-center justify-content-between gap-4 border-bottom"
+		>
+			<div class="tab flex-grow-1">
+				<button
+					class="tab__links position-relative z-1 btn btn-sm hover:text-primary border-0"
+				>
+					HTML
+				</button>
+			</div>
+			<button
+				class="btn btn-sm border-0 text-primary hover:text-primary-emphasis align-items-center gap-1 code-snippet-expand"
+			>
+				<iconify-icon icon="quill:expand"></iconify-icon>
+				Expand Code View
+			</button>
+		</div>
+		<div class="tab__body mt-4">
+			<div class="tab__content">
+				<div
+					class="code-snippet code-snippet--expanded overflow-x-auto p-4 rounded-1 bg-body-secondary bg-opacity-40 my-1"
+				>
+					<pre><code class="language-html"><!--
+                        <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Elevate your hosting business with our premium, responsive website template. SEO-friendly, customizable, fast, and secure. Launch your professional site today">
+    <meta name="keywords" content="web hosting template, hosting company website, responsive hosting design, SEO-friendly hosting, secure web hosting, fast hosting template, customizable hosting site, premium hosting template">
+    <meta name="author" content="bplugins">
+    <title>Localhost - Web Hosting Template with WHMCS + RTL</title>
+    <link rel="icon" href="assets/img/favicon.png" type="image/png">
+    <link rel="stylesheet" href="assets/css/bootstrap.css">
+    <link rel="stylesheet" href="assets/css/bootstrap-icons.css">
+    <link rel="stylesheet" href="assets/css/simplebar.css">
+    <link rel="stylesheet" href="assets/css/swiper-bundle.css">
+    <link rel="stylesheet" href="assets/css/prism.css">
+    <link rel="stylesheet" href="assets/css/ff-1.css">
+    <link rel="stylesheet" href="assets/css/style.css">
+</head>
+                    --></code></pre>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+<hr class="my-6" />
+<h4 class="mb-6">Preloader</h4>
+<div
+	class="rounded p-4 bg-body-tertiary bg-opacity-80 border border-secondary border-opacity-30"
+>
+	<div class="tab-group">
+		<div
+			class="tab__header d-flex align-items-center justify-content-between gap-4 border-bottom"
+		>
+			<div class="tab flex-grow-1">
+				<button
+					class="tab__links position-relative z-1 btn btn-sm hover:text-primary border-0"
+				>
+					HTML
+				</button>
+			</div>
+			<button
+				class="btn btn-sm border-0 text-primary hover:text-primary-emphasis align-items-center gap-1 code-snippet-expand"
+			>
+				<iconify-icon icon="quill:expand"></iconify-icon>
+				Expand Code View
+			</button>
+		</div>
+		<div class="tab__body mt-4">
+			<div class="tab__content">
+				<div
+					class="code-snippet code-snippet--expanded overflow-x-auto p-4 rounded-1 bg-body-secondary bg-opacity-40 my-1"
+				>
+					<pre><code class="language-html"><!--
+                        <div class="preloader">
+	<div class="preloader__content">
+		<img
+			src="assets/img/logo-light.png"
+			alt="logo"
+			class="img-fluid preloader__img"
+		/>
+	</div>
+</div>
+                    --></code></pre>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+<hr class="my-6" />
+<h4 class="mb-6">Header</h4>
+<div
+	class="rounded p-4 bg-body-tertiary bg-opacity-80 border border-secondary border-opacity-30"
+>
+	<div class="tab-group">
+		<div
+			class="tab__header d-flex align-items-center justify-content-between gap-4 border-bottom"
+		>
+			<div class="tab flex-grow-1">
+				<button
+					class="tab__links position-relative z-1 btn btn-sm hover:text-primary border-0"
+				>
+					HTML
+				</button>
+			</div>
+			<button
+				class="btn btn-sm border-0 text-primary hover:text-primary-emphasis align-items-center gap-1 code-snippet-expand"
+			>
+				<iconify-icon icon="quill:expand"></iconify-icon>
+				Expand Code View
+			</button>
+		</div>
+		<div class="tab__body mt-4">
+			<div class="tab__content">
+				<div
+					class="code-snippet code-snippet--expanded overflow-x-auto p-4 rounded-1 bg-body-secondary bg-opacity-40 my-1"
+				>
+					<pre><code class="language-html"><!--
+                        //Navbar
+                        <nav class="navbar navbar-expand-lg primary-header primary-header--transparent-light-alt primary-header--fixed top-0 primary-header-crossed:full-dark">
+                            ...
+                        </nav>
+                        
+                        //Logo for light/dark
+                        <a class="logo" href="index.html">
+                            <img src="..." alt="image" class="logo__img logo__img--light">
+                            <img src="..." alt="image" class="logo__img logo__img--dark">
+                        </a>
+                        
+                        //Menu
+                        <div class="collapse navbar-collapse" id="navbar0">
+                            ...
+                        </div>
+                                            --></code></pre>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+<hr class="my-6" />
+<h4 class="mb-6">Body</h4>
+<div
+	class="rounded p-4 bg-body-tertiary bg-opacity-80 border border-secondary border-opacity-30"
+>
+	<div class="tab-group">
+		<div
+			class="tab__header d-flex align-items-center justify-content-between gap-4 border-bottom"
+		>
+			<div class="tab flex-grow-1">
+				<button
+					class="tab__links position-relative z-1 btn btn-sm hover:text-primary border-0"
+				>
+					HTML
+				</button>
+			</div>
+			<button
+				class="btn btn-sm border-0 text-primary hover:text-primary-emphasis align-items-center gap-1 code-snippet-expand"
+			>
+				<iconify-icon icon="quill:expand"></iconify-icon>
+				Expand Code View
+			</button>
+		</div>
+		<div class="tab__body mt-4">
+			<div class="tab__content">
+				<div
+					class="code-snippet code-snippet--expanded overflow-x-auto p-4 rounded-1 bg-body-secondary bg-opacity-40 my-1"
+				>
+					<pre><code class="language-html"><!--
+                                                <body class="bg-light dark:bg-dark-subtle">
+                                                    <nav class="...">
+                                                        ...
+                                                    </nav>
+                                                    <div class="...">
+                                                        ...
+                                                    </div>
+                                                    <div class="...">
+                                                        ...
+                                                    </div>
+                                                    <div class="...">
+                                                        ...
+                                                    </div>
+                                                    <footer class="...">
+                                                        ...
+                                                    </footer>
+                                                </body>
+                                            --></code></pre>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+<hr class="my-6" />
+<h4 class="mb-6">Footer</h4>
+<div
+	class="rounded p-4 bg-body-tertiary bg-opacity-80 border border-secondary border-opacity-30"
+>
+	<div class="tab-group">
+		<div
+			class="tab__header d-flex align-items-center justify-content-between gap-4 border-bottom"
+		>
+			<div class="tab flex-grow-1">
+				<button
+					class="tab__links position-relative z-1 btn btn-sm hover:text-primary border-0"
+				>
+					HTML
+				</button>
+			</div>
+			<button
+				class="btn btn-sm border-0 text-primary hover:text-primary-emphasis align-items-center gap-1 code-snippet-expand"
+			>
+				<iconify-icon icon="quill:expand"></iconify-icon>
+				Expand Code View
+			</button>
+		</div>
+		<div class="tab__body mt-4">
+			<div class="tab__content">
+				<div
+					class="code-snippet code-snippet--md overflow-x-auto p-4 rounded-1 bg-body-secondary bg-opacity-40 my-1"
+				>
+					<pre><code class="language-html"><!--
+                        <footer
+	class="section-space-top section-space-sm-bottom bg-secondary-emphasis dark:bg-secondary-subtle"
+>
+	<div class="section-space-sm-bottom">
+		<div class="container">
+			<div class="row g-4">
+				<div class="col-md-6 col-xl-3 col-xxl-2">
+					<div class="d-flex flex-column h-100">
+						<a class="logo d-inline-block mb-4" href="index.html">
+							<img
+								src="assets/img/logo-light.png"
+								alt="image"
+								class="logo__img"
+							/>
+						</a>
+						<p class="mb-8 text-light">
+							Access Localhost Kubernetes Engine through
+						</p>
+						<h6 class="mb-3 text-light fs-18 mt-auto">Follow Us</h6>
+						<ul class="list list-row flex-wrap gap-4 align-items-center">
+							<li>
+								<a href="#" class="link d-inline-block">
+									<iconify-icon
+										icon="skill-icons:instagram"
+										class="text-light fs-20"
+									></iconify-icon>
+								</a>
+							</li>
+							<li>
+								<a href="#" class="link d-inline-block">
+									<iconify-icon
+										icon="logos:youtube-icon"
+										class="text-light fs-20"
+									></iconify-icon>
+								</a>
+							</li>
+							<li>
+								<a href="#" class="link d-inline-block">
+									<iconify-icon
+										icon="logos:facebook"
+										class="text-light fs-20"
+									></iconify-icon>
+								</a>
+							</li>
+						</ul>
+					</div>
+				</div>
+				<div class="col-xl-9 col-xxl-10">
+					<div class="row row-cols-1 row-cols-sm-2 row-cols-md-5 g-4">
+						<div class="col">
+							<h6 class="mb-6 text-light fs-18">Hosting</h6>
+							<ul class="list gap-2">
+								<li>
+									<a
+										href="web-hosting.html"
+										class="link d-inline-block text-light text-opacity-80 hover:text-opacity-100 fs-14"
+									>
+										Web hosting
+									</a>
+								</li>
+								<li>
+									<a
+										href="wp-hosting.html"
+										class="link d-inline-block text-light text-opacity-80 hover:text-opacity-100 fs-14"
+									>
+										WordPress hosting
+									</a>
+								</li>
+								<li>
+									<a
+										href="vps-hosting.html"
+										class="link d-inline-block text-light text-opacity-80 hover:text-opacity-100 fs-14"
+									>
+										VPS hosting
+									</a>
+								</li>
+								<li>
+									<a
+										href="email-hosting.html"
+										class="link d-inline-block text-light text-opacity-80 hover:text-opacity-100 fs-14"
+									>
+										Email Hosting
+									</a>
+								</li>
+								<li>
+									<a
+										href="cloud-hosting.html"
+										class="link d-inline-block text-light text-opacity-80 hover:text-opacity-100 fs-14"
+									>
+										Cloud hosting
+									</a>
+								</li>
+								<li>
+									<a
+										href="reseller-hosting.html"
+										class="link d-inline-block text-light text-opacity-80 hover:text-opacity-100 fs-14"
+									>
+										Reseller hosting
+									</a>
+								</li>
+								<li>
+									<a
+										href="cpanel-hosting.html"
+										class="link d-inline-block text-light text-opacity-80 hover:text-opacity-100 fs-14"
+									>
+										Cpanel Hosting
+									</a>
+								</li>
+								<li>
+									<a
+										href="cloud-server-hosting.html"
+										class="link d-inline-block text-light text-opacity-80 hover:text-opacity-100 fs-14"
+									>
+										Cloud Server
+									</a>
+								</li>
+							</ul>
+						</div>
+						<div class="col">
+							<h6 class="mb-6 text-light fs-18">Features</h6>
+							<ul class="list gap-2">
+								<li>
+									<a
+										href="data-center.html"
+										class="link d-inline-block text-light text-opacity-80 hover:text-opacity-100 fs-14"
+									>
+										Data Center
+									</a>
+								</li>
+								<li>
+									<a
+										href="server-location.html"
+										class="link d-inline-block text-light text-opacity-80 hover:text-opacity-100 fs-14"
+									>
+										Server Location
+									</a>
+								</li>
+								<li>
+									<a
+										href="uptime.html"
+										class="link d-inline-block text-light text-opacity-80 hover:text-opacity-100 fs-14"
+									>
+										Server Uptime
+									</a>
+								</li>
+								<li>
+									<a
+										href="operating-system.html"
+										class="link d-inline-block text-light text-opacity-80 hover:text-opacity-100 fs-14"
+									>
+										Operating Systems
+									</a>
+								</li>
+							</ul>
+							<h6 class="mb-6 text-light fs-18 mt-12">Support</h6>
+							<ul class="list gap-2">
+								<li>
+									<a
+										href="acronis-backup.html"
+										class="link d-inline-block text-light text-opacity-80 hover:text-opacity-100 fs-14"
+									>
+										Acronis Backup
+									</a>
+								</li>
+								<li>
+									<a
+										href="website-management.html"
+										class="link d-inline-block text-light text-opacity-80 hover:text-opacity-100 fs-14"
+									>
+										Easy Website Manage
+									</a>
+								</li>
+							</ul>
+						</div>
+						<div class="col">
+							<h6 class="mb-6 text-light fs-18">Tools</h6>
+							<ul class="list gap-2">
+								<li>
+									<a
+										href="website-builder.html"
+										class="link d-inline-block text-light text-opacity-80 hover:text-opacity-100 fs-14"
+									>
+										Website Builder
+									</a>
+								</li>
+								<li>
+									<a
+										href="ssl-certificate.html"
+										class="link d-inline-block text-light text-opacity-80 hover:text-opacity-100 fs-14"
+									>
+										SSL Certificates
+									</a>
+								</li>
+								<li>
+									<a
+										href="email-service.html"
+										class="link d-inline-block text-light text-opacity-80 hover:text-opacity-100 fs-14"
+									>
+										Email Services
+									</a>
+								</li>
+								<li>
+									<a
+										href="review.html"
+										class="link d-inline-block text-light text-opacity-80 hover:text-opacity-100 fs-14"
+									>
+										Review
+									</a>
+								</li>
+							</ul>
+							<h6 class="mb-6 text-light fs-18 mt-12">Resources</h6>
+							<ul class="list gap-2">
+								<li>
+									<a
+										href="affiliate.html"
+										class="link d-inline-block text-light text-opacity-80 hover:text-opacity-100 fs-14"
+									>
+										Affiliate
+									</a>
+								</li>
+								<li>
+									<a
+										href="knowledge-base.html"
+										class="link d-inline-block text-light text-opacity-80 hover:text-opacity-100 fs-14"
+									>
+										Knowledge base
+									</a>
+								</li>
+							</ul>
+						</div>
+						<div class="col">
+							<h6 class="mb-6 text-light fs-18">Company</h6>
+							<ul class="list gap-2">
+								<li>
+									<a
+										href="about.html"
+										class="link d-inline-block text-light text-opacity-80 hover:text-opacity-100 fs-14"
+									>
+										About
+									</a>
+								</li>
+								<li>
+									<a
+										href="blog-1.html"
+										class="link d-inline-block text-light text-opacity-80 hover:text-opacity-100 fs-14"
+									>
+										Blog
+									</a>
+								</li>
+								<li>
+									<a
+										href="career.html"
+										class="link d-inline-block text-light text-opacity-80 hover:text-opacity-100 fs-14"
+									>
+										Career
+									</a>
+								</li>
+								<li>
+									<a
+										href="case-study.html"
+										class="link d-inline-block text-light text-opacity-80 hover:text-opacity-100 fs-14"
+									>
+										Case Studies
+									</a>
+								</li>
+								<li>
+									<a
+										href="contact.html"
+										class="link d-inline-block text-light text-opacity-80 hover:text-opacity-100 fs-14"
+									>
+										Contact Us
+									</a>
+								</li>
+								<li>
+									<a
+										href="privacy-policy.html"
+										class="link d-inline-block text-light text-opacity-80 hover:text-opacity-100 fs-14"
+									>
+										Privacy Policy
+									</a>
+								</li>
+								<li>
+									<a
+										href="ddos-protection.html"
+										class="link d-inline-block text-light text-opacity-80 hover:text-opacity-100 fs-14"
+									>
+										Security
+									</a>
+								</li>
+								<li>
+									<a
+										href="domain.html"
+										class="link d-inline-block text-light text-opacity-80 hover:text-opacity-100 fs-14"
+									>
+										Domain
+									</a>
+								</li>
+								<li>
+									<a
+										href="cart.html"
+										class="link d-inline-block text-light text-opacity-80 hover:text-opacity-100 fs-14"
+									>
+										Cart
+									</a>
+								</li>
+							</ul>
+						</div>
+						<div class="col">
+							<h6 class="mb-6 text-light fs-18">Resources</h6>
+							<ul class="list gap-2">
+								<li>
+									<a
+										href="faq.html"
+										class="link d-inline-block text-light text-opacity-80 hover:text-opacity-100 fs-14"
+									>
+										FAQ
+									</a>
+								</li>
+								<li>
+									<a
+										href="checkout.html"
+										class="link d-inline-block text-light text-opacity-80 hover:text-opacity-100 fs-14"
+									>
+										Checkout
+									</a>
+								</li>
+								<li>
+									<a
+										href="cloud-server-hosting.html"
+										class="link d-inline-block text-light text-opacity-80 hover:text-opacity-100 fs-14"
+									>
+										Cloud Server
+									</a>
+								</li>
+								<li>
+									<a
+										href="domain-transfer.html"
+										class="link d-inline-block text-light text-opacity-80 hover:text-opacity-100 fs-14"
+									>
+										Domain Transfer
+									</a>
+								</li>
+							</ul>
+							<h6 class="mb-6 text-light fs-18 mt-12">Why Choose Us</h6>
+							<ul class="list gap-2">
+								<li>
+									<a
+										href="features.html"
+										class="link d-inline-block text-light text-opacity-80 hover:text-opacity-100 fs-14"
+									>
+										Features
+									</a>
+								</li>
+								<li>
+									<a
+										href="review.html"
+										class="link d-inline-block text-light text-opacity-80 hover:text-opacity-100 fs-14"
+									>
+										Service Reviews
+									</a>
+								</li>
+							</ul>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+	<div class="section-space-sm-top border-top border-light border-opacity-10">
+		<div class="container">
+			<div class="row g-4 align-items-center justify-content-between">
+				<div class="col-md-5 col-lg-6">
+					<h6 class="text-light fs-18 fw-medium">Get Our Newsletter</h6>
+					<div
+						class="search-filter search-filter--light bg-light bg-opacity-20 rounded-1 max-text-10"
+					>
+						<input
+							type="text"
+							class="form-control search-filter__input text-light placeholder::text-light placeholder::text-opacity-50"
+							placeholder="Search Now..."
+						/>
+						<button
+							type="button"
+							class="btn btn-primary align-items-center flex-shrink-0"
+						>
+							Subscribe
+						</button>
+					</div>
+				</div>
+				<div class="col-md-7 col-lg-5 col-xl-4">
+					<h6 class="text-light fs-18 fw-medium">Payment Getaway</h6>
+					<ul class="list list-row flex-wrap gap-4 align-items-center">
+						<li>
+							<a href="#" class="d-inline-block">
+								<img
+									src="assets/img/pm-img-1.png"
+									alt="image"
+									class="img-fluid"
+								/>
+							</a>
+						</li>
+						<li>
+							<a href="#" class="d-inline-block">
+								<img
+									src="assets/img/pm-img-2.png"
+									alt="image"
+									class="img-fluid"
+								/>
+							</a>
+						</li>
+						<li>
+							<a href="#" class="d-inline-block">
+								<img
+									src="assets/img/pm-img-3.png"
+									alt="image"
+									class="img-fluid"
+								/>
+							</a>
+						</li>
+						<li>
+							<a href="#" class="d-inline-block">
+								<img
+									src="assets/img/pm-img-4.png"
+									alt="image"
+									class="img-fluid"
+								/>
+							</a>
+						</li>
+					</ul>
+				</div>
+			</div>
+		</div>
+	</div>
+</footer>
+                    --></code></pre>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+<hr class="my-6" />
+<h4 class="mb-6">Scripts</h4>
+<div
+	class="rounded p-4 bg-body-tertiary bg-opacity-80 border border-secondary border-opacity-30"
+>
+	<div class="tab-group">
+		<div
+			class="tab__header d-flex align-items-center justify-content-between gap-4 border-bottom"
+		>
+			<div class="tab flex-grow-1">
+				<button
+					class="tab__links position-relative z-1 btn btn-sm hover:text-primary border-0"
+				>
+					HTML
+				</button>
+			</div>
+			<button
+				class="btn btn-sm border-0 text-primary hover:text-primary-emphasis align-items-center gap-1 code-snippet-expand"
+			>
+				<iconify-icon icon="quill:expand"></iconify-icon>
+				Expand Code View
+			</button>
+		</div>
+		<div class="tab__body mt-4">
+			<div class="tab__content">
+				<div
+					class="code-snippet code-snippet--expanded overflow-x-auto p-4 rounded-1 bg-body-secondary bg-opacity-40 my-1"
+				>
+					<pre><code class="language-html"><!--
+                         <script src="assets/js/bootstrap.bundle.js"></script>
+    <script src="assets/js/iconify.js"></script>
+    <script src="assets/js/simplebar.js"></script>
+    <script src="assets/js/swiper.js"></script>
+    <script src="assets/js/prism.js"></script>
+    <script src="assets/js/app.js"></script>
+                    --></code></pre>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+
+
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="assets/js/bootstrap.bundle.js"></script>
+    <script src="assets/js/swiper.js"></script>
+    <script src="assets/js/iconify.js"></script>
+    <script src="assets/js/simplebar.js"></script>
+    <script src="assets/js/prism.js"></script>
+    <script src="assets/js/app.js"></script>
+</body>
+
+</html>

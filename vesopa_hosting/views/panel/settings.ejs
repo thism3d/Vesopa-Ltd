@@ -1,0 +1,113 @@
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
+<%- include('../partials/panel-shell', { pageTitle: 'Account settings', pageSub: 'Your details and your password.' }) %>
+
+<div class="p-grid p-grid-side">
+  <div>
+    <div class="p-card">
+      <h2 class="h3 mb-3">Your details</h2>
+      <form method="post" action="/panel/settings" data-guard>
+        <input type="hidden" name="_csrf" value="<%= csrf %>">
+        <div class="p-grid p-grid-2">
+          <div class="field <%= errors.first_name ? 'field-error' : '' %>">
+            <label class="label" for="first_name">First name</label>
+            <input class="input" id="first_name" name="first_name" required
+                   value="<%= values.first_name !== undefined ? values.first_name : customer.first_name %>">
+          </div>
+          <div class="field <%= errors.last_name ? 'field-error' : '' %>">
+            <label class="label" for="last_name">Last name</label>
+            <input class="input" id="last_name" name="last_name" required
+                   value="<%= values.last_name !== undefined ? values.last_name : customer.last_name %>">
+          </div>
+        </div>
+        <div class="p-grid p-grid-2">
+          <div class="field">
+            <label class="label" for="company">Company</label>
+            <input class="input" id="company" name="company" value="<%= values.company !== undefined ? values.company : customer.company %>">
+          </div>
+          <div class="field">
+            <label class="label" for="phone">Phone</label>
+            <input class="input" id="phone" name="phone" value="<%= values.phone !== undefined ? values.phone : customer.phone %>">
+          </div>
+        </div>
+        <div class="field">
+          <label class="label" for="address1">Address</label>
+          <input class="input" id="address1" name="address1" value="<%= values.address1 !== undefined ? values.address1 : customer.address1 %>">
+        </div>
+        <div class="field">
+          <input class="input" name="address2" placeholder="Address line 2 (optional)"
+                 value="<%= values.address2 !== undefined ? values.address2 : customer.address2 %>">
+        </div>
+        <div class="p-grid p-grid-3">
+          <div class="field">
+            <label class="label" for="city">Town or city</label>
+            <input class="input" id="city" name="city" value="<%= values.city !== undefined ? values.city : customer.city %>">
+          </div>
+          <div class="field">
+            <label class="label" for="postcode">Postcode</label>
+            <input class="input" id="postcode" name="postcode" value="<%= values.postcode !== undefined ? values.postcode : customer.postcode %>">
+          </div>
+          <div class="field">
+            <label class="label" for="country">Country</label>
+            <input class="input" id="country" name="country" maxlength="2"
+                   value="<%= values.country !== undefined ? values.country : customer.country %>">
+          </div>
+        </div>
+        <p class="hint mb-2">These details are the registrant of record on any domain you hold with us, so keep them accurate.</p>
+        <button class="btn" type="submit" data-busy="Saving…">Save details</button>
+      </form>
+    </div>
+
+    <div class="p-card">
+      <h2 class="h3 mb-1">Change your password</h2>
+      <p class="small muted mb-3">Changing it signs you out on every other device.</p>
+      <form method="post" action="/panel/settings/password" data-guard>
+        <input type="hidden" name="_csrf" value="<%= csrf %>">
+        <div class="field">
+          <label class="label" for="current_password">Current password</label>
+          <input class="input" id="current_password" name="current_password" type="password" autocomplete="current-password" required>
+        </div>
+        <div class="p-grid p-grid-2">
+          <div class="field">
+            <label class="label" for="new_password">New password</label>
+            <input class="input" id="new_password" name="new_password" type="password" autocomplete="new-password" required data-pw-meter>
+            <div class="pw-meter"><i></i><i></i><i></i></div>
+          </div>
+          <div class="field">
+            <label class="label" for="new_password_confirm">Confirm it</label>
+            <input class="input" id="new_password_confirm" name="new_password_confirm" type="password" autocomplete="new-password" required>
+          </div>
+        </div>
+        <button class="btn" type="submit" data-busy="Saving…">Change password</button>
+      </form>
+    </div>
+  </div>
+
+  <aside>
+    <div class="p-card">
+      <h2 class="h3 mb-2">Account</h2>
+      <div class="table-wrap"><table class="table" style="font-size:.86rem">
+        <tbody>
+          <tr><td class="muted">Email</td><td class="strong" style="word-break:break-all"><%= customer.email %></td></tr>
+          <tr><td class="muted">Confirmed</td><td><%- customer.email_verified ? '<span class="badge badge-green">Yes</span>' : '<span class="badge badge-amber">No</span>' %></td></tr>
+          <tr><td class="muted">Customer since</td><td class="strong"><%= new Date(customer.created_at).toLocaleDateString('en-GB') %></td></tr>
+        </tbody>
+      </table></div>
+      <p class="tiny muted mt-2 mb-0">
+        To change the email address on your account, open a ticket — we verify it by
+        hand so that nobody can quietly take over an account.
+      </p>
+    </div>
+
+    <div class="p-card">
+      <h2 class="h3 mb-2">Closing your account</h2>
+      <p class="small muted mb-2">
+        Cancel your services first, then open a ticket. We keep billing records for
+        seven years because HMRC requires it; everything else is deleted.
+      </p>
+      <a class="btn btn-ghost btn-sm" href="/panel/tickets/new?subject=Close%20my%20account">Request closure</a>
+    </div>
+  </aside>
+</div>
+
+<%- include('../partials/panel-shell-end') %>
+<%- include('../partials/footer') %>

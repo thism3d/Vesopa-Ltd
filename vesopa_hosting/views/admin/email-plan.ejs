@@ -1,0 +1,132 @@
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
+<%- include('../partials/admin-shell', { pageTitle: 'Edit ' + plan.name, pageSub: plan.slug + ' · ' + plan.family + ' email' }) %>
+
+<form method="post" action="/admin/plans/email/<%= plan.id %>" data-guard>
+  <input type="hidden" name="_csrf" value="<%= csrf %>">
+
+  <div class="p-grid p-grid-side">
+    <div>
+      <div class="p-card">
+        <h2 class="h3 mb-3">Name and copy</h2>
+        <div class="field">
+          <label class="label" for="name">Name</label>
+          <input class="input" id="name" name="name" value="<%= plan.name %>" required>
+        </div>
+        <div class="field">
+          <label class="label" for="tagline">Tagline</label>
+          <input class="input" id="tagline" name="tagline" value="<%= plan.tagline %>">
+        </div>
+        <div class="field">
+          <label class="label" for="badge">Badge <span class="muted">(blank for none)</span></label>
+          <input class="input" id="badge" name="badge" value="<%= plan.badge %>" placeholder="Most popular">
+        </div>
+        <div class="field">
+          <label class="label" for="features">Feature bullets</label>
+          <textarea class="textarea" id="features" name="features" style="min-height:180px"><%= plan.features %></textarea>
+          <p class="hint">One per line.</p>
+        </div>
+      </div>
+
+      <div class="p-card">
+        <h2 class="h3 mb-1">Price</h2>
+        <p class="small muted mb-3">
+          Per <b><%= plan.unit_label %></b>, in pounds, VAT included. The
+          1-year figure is the total for a whole year, for <b>one</b> unit — the
+          customer's chosen quantity multiplies it at checkout.
+        </p>
+        <div class="p-grid p-grid-2">
+          <div class="field">
+            <label class="label" for="monthly">Monthly</label>
+            <input class="input" id="monthly" name="monthly" value="<%= (plan.monthly_pence / 100).toFixed(2) %>" required>
+            <p class="hint">The no-commitment rate. Keep it the dearer of the two.</p>
+          </div>
+          <div class="field">
+            <label class="label" for="annual">1 year total</label>
+            <input class="input" id="annual" name="annual" value="<%= (plan.annual_pence / 100).toFixed(2) %>" required>
+            <p class="hint"><%= money(plan.perMonthPence[12]) %>/mo<% if (plan.saving[12] > 0) { %> · saves <%= plan.saving[12] %>%<% } %></p>
+          </div>
+        </div>
+      </div>
+
+      <div class="p-card">
+        <h2 class="h3 mb-3">What a unit buys</h2>
+        <div class="p-grid p-grid-2">
+          <div class="field">
+            <label class="label" for="unit_label">Unit label</label>
+            <input class="input" id="unit_label" name="unit_label" value="<%= plan.unit_label %>" required>
+            <p class="hint">
+              Singular. "mailbox" becomes "4 mailboxes" on an order line. A label
+              containing a number — "1,000 contacts" — is treated as a multiplier
+              and rendered "3 × 1,000 contacts" instead.
+            </p>
+          </div>
+          <div class="field">
+            <label class="label" for="storage_gb">Storage per unit (GB)</label>
+            <input class="input" id="storage_gb" name="storage_gb" type="number" min="0" value="<%= plan.storage_gb %>">
+            <p class="hint">0 hides it. Marketing plans have no mailbox storage.</p>
+          </div>
+          <div class="field">
+            <label class="label" for="min_units">Minimum units</label>
+            <input class="input" id="min_units" name="min_units" type="number" min="1" value="<%= plan.min_units %>" required>
+          </div>
+          <div class="field">
+            <label class="label" for="max_units">Maximum units</label>
+            <input class="input" id="max_units" name="max_units" type="number" min="1" value="<%= plan.max_units %>" required>
+          </div>
+          <div class="field">
+            <label class="label" for="monthly_sends">Sends per month</label>
+            <input class="input" id="monthly_sends" name="monthly_sends" type="number" min="0" value="<%= plan.monthly_sends %>">
+            <p class="hint">Marketing plans only. 0 on a business plan.</p>
+          </div>
+          <div class="field">
+            <label class="label" for="sort_order">Sort order</label>
+            <input class="input" id="sort_order" name="sort_order" type="number" value="<%= plan.sort_order %>">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="p-card">
+        <h2 class="h3 mb-3">Visibility</h2>
+        <label class="check mb-3">
+          <input type="checkbox" name="active" <%= plan.active ? 'checked' : '' %>>
+          <span>Show on the site and allow orders</span>
+        </label>
+        <p class="small muted">
+          Hiding a plan removes it from the pricing grid and blocks new orders.
+          Anyone already on it keeps their service and their price.
+        </p>
+      </div>
+
+      <div class="p-card">
+        <h2 class="h3 mb-2">Provisioning</h2>
+        <% if (plan.family === 'business') { %>
+          <p class="small mb-0">
+            <span class="badge badge-green">Automatic</span><br><br>
+            A paid order creates the mail domain on the hosting node and the
+            customer gets their mailboxes without anyone touching it.
+          </p>
+        <% } else { %>
+          <p class="small mb-0">
+            <span class="badge badge-amber">Manual</span><br><br>
+            A paid order records the subscription and flags it for a human.
+            Bulk sending is deliberately kept off the web servers — a campaign
+            from a shared node damages its sending reputation and takes every
+            other customer's ordinary mail down with it.
+          </p>
+        <% } %>
+      </div>
+
+      <div class="p-card">
+        <button class="btn btn-block" type="submit">Save changes</button>
+        <a class="btn btn-ghost btn-block mt-2" href="/admin/plans/email">Cancel</a>
+      </div>
+    </div>
+  </div>
+</form>
+
+<%- include('../partials/price-matrix') %>
+
+<%- include('../partials/panel-shell-end') %>
+<%- include('../partials/footer') %>

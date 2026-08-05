@@ -1,0 +1,168 @@
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
+<%- include('../partials/admin-shell', { pageTitle: 'Settings', pageSub: 'Company details, staff and integration status.' }) %>
+
+<div class="p-grid p-grid-side">
+  <div>
+    <div class="p-card">
+      <h2 class="h3 mb-3">Company</h2>
+      <form method="post" action="/admin/settings" data-guard>
+        <input type="hidden" name="_csrf" value="<%= csrf %>">
+        <div class="p-grid p-grid-2">
+          <div class="field"><label class="label" for="company_name">Company name</label><input class="input" id="company_name" name="company_name" value="<%= settings.company_name || '' %>"></div>
+          <div class="field"><label class="label" for="vat_number">VAT number</label><input class="input" id="vat_number" name="vat_number" value="<%= settings.vat_number || '' %>"></div>
+          <div class="field"><label class="label" for="support_email">Support email</label><input class="input" id="support_email" name="support_email" value="<%= settings.support_email || '' %>"></div>
+          <div class="field"><label class="label" for="support_phone">Support phone</label><input class="input" id="support_phone" name="support_phone" value="<%= settings.support_phone || '' %>"></div>
+        </div>
+        <div class="field"><label class="label" for="address">Address</label><input class="input" id="address" name="address" value="<%= settings.address || '' %>"></div>
+        <div class="p-grid p-grid-2">
+          <div class="field"><label class="label" for="money_back_days">Money-back days</label><input class="input" id="money_back_days" name="money_back_days" value="<%= settings.money_back_days || '30' %>"></div>
+          <div class="field"><label class="label" for="uptime_promise">Uptime promise (%)</label><input class="input" id="uptime_promise" name="uptime_promise" value="<%= settings.uptime_promise || '99.9' %>"></div>
+        </div>
+        <div class="field">
+          <label class="label" for="announcement">Site announcement</label>
+          <input class="input" id="announcement" name="announcement" value="<%= settings.announcement || '' %>" placeholder="Leave blank for none">
+          <p class="hint">Shown as a banner across the site. Use for planned maintenance.</p>
+        </div>
+        <button class="btn" type="submit" data-busy="Saving…">Save settings</button>
+      </form>
+    </div>
+
+    <div class="p-card">
+      <h2 class="h3 mb-1">Staff</h2>
+      <p class="small muted mb-3">Only an owner can add staff. Passwords are hashed with bcrypt and are never recoverable.</p>
+      <div class="table-wrap"><table class="table mini">
+        <thead><tr><th>Email</th><th>Name</th><th>Role</th><th>Last signed in</th></tr></thead>
+        <tbody>
+          <% admins.forEach(function (a) { %>
+            <tr>
+              <td class="strong"><%= a.email %></td>
+              <td><%= a.name || '—' %></td>
+              <td><span class="badge <%= a.role === 'owner' ? 'badge-lime' : 'badge-grey' %>"><%= a.role %></span></td>
+              <td class="tiny muted"><%= a.last_login_at ? new Date(a.last_login_at).toLocaleString('en-GB') : 'Never' %></td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table></div>
+
+      <% if (admin.role === 'owner') { %>
+        <hr class="divider">
+        <h3 class="h3 mb-2" style="font-size:1rem">Add a member of staff</h3>
+        <form method="post" action="/admin/settings/admins" data-guard>
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <div class="p-grid p-grid-2">
+            <div class="field"><label class="label" for="a_email">Email</label><input class="input" id="a_email" name="email" type="email" required></div>
+            <div class="field"><label class="label" for="a_name">Name</label><input class="input" id="a_name" name="name"></div>
+            <div class="field"><label class="label" for="a_password">Password</label><input class="input" id="a_password" name="password" type="password" required data-pw-meter><div class="pw-meter"><i></i><i></i><i></i></div></div>
+            <div class="field">
+              <label class="label" for="a_role">Role</label>
+              <select class="select" id="a_role" name="role">
+                <option value="support">Support — tickets and customers</option>
+                <option value="admin">Admin — everything except staff</option>
+              </select>
+            </div>
+          </div>
+          <button class="btn btn-sm" type="submit">Add staff</button>
+        </form>
+      <% } %>
+    </div>
+  </div>
+
+  <aside>
+    <div class="p-card">
+      <h2 class="h3 mb-2">Registrar</h2>
+      <div class="table-wrap"><table class="table mini">
+        <tbody>
+          <%# These cells emit markup, so they use unescaped output. Escaped
+              output printed the literal span tags into the table. %>
+          <tr>
+            <td class="muted">Mode</td>
+            <td>
+              <% if (registrarStatus.mode === 'live') { %>
+                <span class="badge badge-green">Live</span>
+              <% } else if (registrarStatus.mode === 'test') { %>
+                <span class="badge badge-blue">Test</span>
+              <% } else { %>
+                <span class="badge badge-amber">Mock</span>
+              <% } %>
+            </td>
+          </tr>
+          <tr><td class="muted">Credentials</td><td><%- registrarStatus.configured ? 'Set' : '<span class="badge badge-red">Missing</span>' %></td></tr>
+          <tr><td class="muted">Reseller</td><td class="mono"><%= registrarStatus.reseller_id || '—' %></td></tr>
+          <%# Two endpoints, because searches may answer from production while
+              registrations land in the sandbox. Showing one would be a lie. %>
+          <tr><td class="muted">Search</td><td class="tiny mono" style="word-break:break-all"><%= registrarStatus.search_url %></td></tr>
+          <tr><td class="muted">Register</td><td class="tiny mono" style="word-break:break-all"><%= registrarStatus.write_url %></td></tr>
+        </tbody>
+      </table></div>
+      <%# The live balance, always — never the sandbox's pretend credit. A zero
+          balance breaks every registration while every search keeps working. %>
+      <% if (registrarBalance && registrarBalance.ok) { %>
+        <% if (registrarBalance.amount <= 0) { %>
+          <div class="alert alert-error mt-2 mb-0">
+            <div>
+              <p class="mb-0 small">
+                <b>Live account balance is $<%= registrarBalance.amount.toFixed(2) %>.</b>
+                Searches work, but no domain can actually be registered until the
+                reseller account is funded — and that failure happens after a
+                customer has paid. Top up at dm.domainnameapi.com before going live.
+              </p>
+            </div>
+          </div>
+        <% } else { %>
+          <p class="tiny muted mt-2 mb-0">
+            Live balance <b>$<%= registrarBalance.amount.toFixed(2) %></b>
+            <%= registrarBalance.reseller_name ? '· ' + registrarBalance.reseller_name : '' %>.
+            The registrar bills in USD; our prices are in GBP.
+          </p>
+        <% } %>
+      <% } %>
+
+      <% if (registrarStatus.mode === 'test') { %>
+        <p class="tiny muted mt-2 mb-0">
+          Availability is checked against the <b>real</b> registrar, so results
+          are accurate. Registrations go to the sandbox and cost nothing. Set
+          <code>DNA_MODE=live</code> in <code>.env</code> and restart to buy
+          real domains.
+        </p>
+      <% } else if (!registrarStatus.live) { %>
+        <p class="tiny muted mt-2 mb-0">Set <code>DNA_MODE=live</code> in <code>.env</code> and restart to go live.</p>
+      <% } %>
+    </div>
+
+    <div class="p-card">
+      <h2 class="h3 mb-2">Hosting node</h2>
+      <div class="table-wrap"><table class="table mini">
+        <tbody>
+          <tr><td class="muted">Mode</td><td><%- hestiaStatus.live ? '<span class="badge badge-green">Live</span>' : '<span class="badge badge-amber">Mock</span>' %></td></tr>
+          <tr><td class="muted">Host</td><td class="tiny mono" style="word-break:break-all"><%= hestiaStatus.host %></td></tr>
+          <tr><td class="muted">Credentials</td><td><%- hestiaStatus.configured ? 'Set' : '<span class="badge badge-red">Missing</span>' %></td></tr>
+        </tbody>
+      </table></div>
+      <a class="btn btn-ghost btn-sm btn-block mt-2" href="/admin/servers">Server settings</a>
+    </div>
+
+    <div class="p-card">
+      <h2 class="h3 mb-2">Tax and currency</h2>
+      <p class="small muted mb-2">
+        VAT is set <b>per currency</b>, not once for the site — it is 20% inside
+        a sterling price and zero inside a dollar one, because UK VAT is not
+        chargeable on these services to a consumer outside the UK.
+      </p>
+      <div class="table-wrap mb-2"><table class="table mini">
+        <tbody>
+          <% currencies.forEach(function (c) { %>
+            <tr>
+              <td><span class="mono strong"><%= c.code %></span>
+                  <% if (!c.active) { %> <span class="badge badge-grey">Off</span><% } %></td>
+              <td class="num"><%= Number(c.vat_percent) ? Number(c.vat_percent) + '%' : 'None' %></td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table></div>
+      <a class="btn btn-ghost btn-sm btn-block" href="/admin/currencies">Currency settings</a>
+    </div>
+  </aside>
+</div>
+
+<%- include('../partials/panel-shell-end') %>
+<%- include('../partials/footer') %>

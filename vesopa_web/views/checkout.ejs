@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+
+		<title>Vesopa EPOS Checkout</title>
+
+		<!-- Personal Properties -->
+		<meta charset="utf-8">
+		<meta http-equiv="X-UA-Compatible" content="IE=edge">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, minimum-scale=1, user-scalable=no, shrink-to-fit=no" />
+
+		<%#
+		  This page carries its own <head> rather than including partials/header,
+		  so it gets none of the tags that partial adds. It is in sitemap.xml
+		  (one URL per live plan), and a listed page with no canonical is a page
+		  Google has to guess about — the four ?period= variants are otherwise
+		  near-identical and read as duplicates of each other.
+
+		  No og:* here on purpose: nobody shares a checkout page, and a link
+		  preview of one would be a preview of a half-finished purchase.
+		%>
+		<meta name="description" content="Start your Vesopa EPOS subscription. Pay securely by PayPal or card."/>
+		<link rel="canonical" href="<%= SITE_URL %><%= ogUrl %>"/>
+
+		<!-- Font Awesome Link -->
+		<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+
+
+		<!-- CSS For this Page -->
+		<link rel="icon" href="/assets/logo/logo.png">
+		<link rel="stylesheet" href="/library/main0.1.0.css?v=1">
+
+
+
+		<!-- jQuery 3.5.1 -->
+		<script src="/library/jquery.min.js"></script>
+
+
+
+
+        <!-- Owl Carousel Slider -->
+        <link rel="stylesheet" href="/library/owlcarousel/owl.carousel.min.css">
+        <link rel="stylesheet" href="/library/owlcarousel/owl.theme.default.min.css">
+        <script src="/library/owlcarousel/owl.carousel.min.js"></script>
+
+	</head>
+
+	<body>
+
+
+        <div class="header header_checkout">
+            <div class="header_inside">
+                <div class="header_left">
+                    <div class="header_left_img_keeper">
+                        <a href="/"><img class="header_left_img" src="/assets/logo/vesopa_logo.png" alt="Vesopa EPOS"></a>
+                        <h2 class="checkout_text">Checkout</h2>
+                    </div>
+                </div>
+
+                <div class="header_right">
+                    <p class="already_have_account_text">Already have an account?</p>
+                    <a href="<%= BACKOFFICE_URL %>" class="checkout_login">BackOffice</a>
+                </div>
+            </div>
+        </div>
+
+
+       <div class="checkout_container">
+            <div class="checkout_contianer_inside">
+
+                <div class="checkout_container_left">
+                    <div class="checkout_email_section">
+                        <h2 class="enter_email_checkout_text">Enter the email for your Vesopa EPOS account</h2>
+                        <p class="email_address_brief_text">This email address will be used for system access and account management.</p>
+
+                        <div class="input_fields_keeper_member_l checkout_email_keeper">
+                            <input id="email_input" class="input_items_member_l" name="vesopa_email" type="email" placeholder="Email Address" required autocomplete="email">
+                            <label class="input_labels_member_l">Email Address</label>
+                        </div>
+                        <p id="email_warning" class="warning_message_member_l checkout_email_warning"></p>
+
+                        <p class="email_why_use_text">Your email address will not be shared with third parties. It will only be used by Vesopa EPOS for service purposes and important system updates.</p>
+                    </div>
+
+
+                    <div class="checkout_payment_method">
+                        <h2 class="choose_payment_method_text">Choose a payment method</h2>
+                        <p class="encypted_payment_text"><i class="fa fa-lock"></i> Secure and encrypted payments</p>
+
+                        <div onclick="toggle_payment_item(this, 'paypal')" class="payment_method_item">
+                            <div class="payment_method_top">
+                                <div class="payment_method_item_left">
+                                    <p class="payment_method_name">PayPal</p>
+                                </div>
+
+                                <div class="payment_method_item_right">
+                                    <p class="payment_item_picute_keeper"><img src="/assets/icons/paypal_logo.png"></p>
+                                    <p class="payment_item_click"><i class="fa fa-angle-down"></i></p>
+                                </div>
+                            </div>
+
+                            <div class="payment_method_bottom">
+                                <p class="payment_method_bottom_border_top"></p>
+                                <p class="payment_today_cost_brief">Today, you will be charged a total of GBP <%= plan.discounted_price %> for the <%= period %>-month subscription. Your subscription will automatically renew every <%= period %> months thereafter. You can cancel at any time.</p>
+
+                                <div class="payment_method_checkout">
+
+                                    <p class="pricing_money_back pricing_money_back_center"><img src="/assets/icons/refund.svg" class="pricing_refund_icon"> 30-day money back guarantee</p>
+                                </div>
+
+                                <div id="paypal_loader">
+                                    <div class="panel">
+                                        <div id="paypal_loading_system">
+                                            <div class="paypal_loading_system">
+                                                <p class="paypal_loading_txt">Loading</p>
+                                                <img class="paypal_loading_img" src="/assets/icons/paypal_logo.png">
+                                                <i class="fa fa-spinner fa-spin"></i>
+                                            </div>
+                                        </div>
+
+                                        <div class="paypal-panel-body">
+                                            <!-- Display status message -->
+                                            <div id="paymentResponse" class="hidden"></div>
+
+                                            <!-- Set up a container element for the button -->
+                                            <div id="paypal-button-container"></div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                            </div>
+                        </div>
+
+
+                        <div class="payment_method_item payment_method_item_disabled">
+                            <div class="payment_method_top">
+                                <div class="payment_method_item_left">
+                                    <p class="payment_method_name">Credit or debit card</p>
+                                </div>
+
+                                <div class="payment_method_item_right">
+                                    <p class="payment_item_picute_keeper"><img src="/assets/icons/payment_mastercard.png"></p>
+                                    <p class="payment_item_picute_keeper"><img src="/assets/icons/payment_visacard.png"></p>
+                                    <p class="payment_item_picute_keeper"><img src="/assets/icons/payment_american_express.png"></p>
+                                    <p class="payment_item_picute_keeper"><img src="/assets/icons/payment_discover.png"></p>
+                                    <p class="payment_item_picute_keeper"><img src="/assets/icons/payment_jcb.png"></p>
+
+                                    <p class="payment_item_click"><i class="fa fa-angle-down"></i></p>
+                                </div>
+                            </div>
+                        </div>
+
+
+
+
+                        <div class="payment_method_item payment_method_item_disabled">
+                            <div class="payment_method_top">
+                                <div class="payment_method_item_left">
+                                    <p class="payment_method_name">Google Pay</p>
+                                </div>
+
+                                <div class="payment_method_item_right">
+                                    <p class="payment_item_picute_keeper"><img src="/assets/icons/payment_google_pay.png"></p>
+
+                                    <p class="payment_item_click"><i class="fa fa-angle-down"></i></p>
+                                </div>
+                            </div>
+                        </div>
+
+
+                        <div class="payment_method_item payment_method_item_disabled">
+                            <div class="payment_method_top">
+                                <div class="payment_method_item_left">
+                                    <p class="payment_method_name">Apple Pay</p>
+                                </div>
+
+                                <div class="payment_method_item_right">
+                                    <p class="payment_item_picute_keeper"><img src="/assets/icons/payment_apple_pay.png"></p>
+
+                                    <p class="payment_item_click"><i class="fa fa-angle-down"></i></p>
+                                </div>
+                            </div>
+                        </div>
+
+
+                        <div class="payment_method_item payment_method_item_disabled">
+                            <div class="payment_method_top">
+                                <div class="payment_method_item_left">
+                                    <p class="payment_method_name">UnionPay</p>
+                                </div>
+
+                                <div class="payment_method_item_right">
+                                    <p class="payment_item_picute_keeper"><img src="/assets/icons/payment_unionpay.png"></p>
+
+                                    <p class="payment_item_click"><i class="fa fa-angle-down"></i></p>
+                                </div>
+                            </div>
+                        </div>
+
+
+                        <div class="payment_method_item payment_method_item_disabled">
+                            <div class="payment_method_top">
+                                <div class="payment_method_item_left">
+                                    <p class="payment_method_name">Cryptocurrency</p>
+                                </div>
+
+                                <div class="payment_method_item_right">
+                                    <p class="payment_item_picute_keeper"><img src="/assets/icons/payment_bitcoin.png"></p>
+                                    <p class="payment_item_picute_keeper"><img src="/assets/icons/payment_etherum.png"></p>
+                                    <p class="payment_item_picute_keeper"><img src="/assets/icons/payment_tron.png"></p>
+                                    <p class="payment_item_picute_keeper"><img src="/assets/icons/payment_tether.png"></p>
+
+                                    <p class="payment_item_click"><i class="fa fa-angle-down"></i></p>
+                                </div>
+                            </div>
+                        </div>
+
+
+
+                    </div>
+
+
+                    <script>
+                        // Server-rendered facts this page needs. The plan price is NOT among
+                        // them: the server looks it up from the period when it creates the
+                        // PayPal plan, so nothing here can be edited into a cheaper sale.
+                        const CHECKOUT = {
+                            period: "<%= period %>",
+                            paypalClientId: "<%= paypalClientId %>",
+                            // A 24-month plan is a single non-renewing payment; 1 and 12 are
+                            // recurring subscriptions. Different PayPal flows entirely.
+                            isOneOff: <%= period === '24' ? 'true' : 'false' %>
+                        };
+
+                        const paypal_loading_system = document.getElementById("paypal_loading_system");
+                        const email_input = document.getElementById("email_input");
+                        const email_warning = document.getElementById("email_warning");
+
+                        function scrollToTop() {
+                            document.body.scrollTop = 0;
+                            document.documentElement.scrollTop = 0;
+                        }
+
+                        function isValidEmail(email) {
+                            const emailRegex = /^[\w-]+(\.[\w-]+)*@[\w-]+(\.[\w-]+)+$/;
+                            return emailRegex.test(email);
+                        }
+
+                        function resultMessage(msg_txt) {
+                            const messageContainer = document.querySelector("#paymentResponse");
+                            messageContainer.classList.remove("hidden");
+                            messageContainer.textContent = msg_txt;
+                            setTimeout(function () {
+                                messageContainer.classList.add("hidden");
+                                messageContainer.textContent = "";
+                            }, 5000);
+                        }
+
+                        function postJSON(url, payload) {
+                            return fetch(url, {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json", "Accept": "application/json" },
+                                body: JSON.stringify(payload)
+                            }).then((res) => res.json());
+                        }
+
+                        /** Load the PayPal SDK once, whichever flow needs it. */
+                        function loadPayPalSdk(query) {
+                            return new Promise((resolve, reject) => {
+                                const script = document.createElement("script");
+                                script.src = "https://www.paypal.com/sdk/js?client-id=" + CHECKOUT.paypalClientId + query;
+                                script.onload = resolve;
+                                script.onerror = () => reject(new Error("PayPal SDK failed to load"));
+                                document.head.appendChild(script);
+                            });
+                        }
+
+                        function load_paypal_subscription() {
+                            loadPayPalSdk("&vault=true&intent=subscription").then(() => {
+                                paypal.Buttons({
+                                    createSubscription: async (data, actions) => {
+                                        const result = await postJSON("/api/paypal/plan", { period: CHECKOUT.period });
+                                        if (result.status !== 1) {
+                                            resultMessage(result.msg || "Could not start the subscription.");
+                                            return false;
+                                        }
+                                        return actions.subscription.create({ plan_id: result.plan_id });
+                                    },
+                                    onApprove: (data) => {
+                                        postJSON("/api/paypal/subscription/capture", {
+                                            period: CHECKOUT.period,
+                                            subscription_id: data.subscriptionID,
+                                            order_id: data.orderID,
+                                            email: email_input.value.trim()
+                                        }).then((result) => {
+                                            if (result.status === 1) {
+                                                window.location.href = "/payment-status?ref=" + encodeURIComponent(result.ref_id);
+                                            } else {
+                                                resultMessage(result.msg || "We could not confirm that payment.");
+                                            }
+                                        }).catch(() => resultMessage("Network problem confirming the payment."));
+                                    },
+                                    onError: () => resultMessage("PayPal reported a problem. Please try again.")
+                                }).render("#paypal-button-container").then(() => {
+                                    paypal_loading_system.innerHTML = "";
+                                });
+                            }).catch(() => resultMessage("PayPal is unavailable right now."));
+                        }
+
+                        function load_paypal_one_off() {
+                            loadPayPalSdk("&currency=GBP").then(() => {
+                                paypal.Buttons({
+                                    createOrder: async () => {
+                                        const result = await postJSON("/api/paypal/order", { period: CHECKOUT.period });
+                                        if (result.status !== 1) {
+                                            resultMessage(result.msg || "Could not start the order.");
+                                            return false;
+                                        }
+                                        return result.order_id;
+                                    },
+                                    onApprove: (data) => {
+                                        postJSON("/api/paypal/order/capture", {
+                                            period: CHECKOUT.period,
+                                            order_id: data.orderID,
+                                            email: email_input.value.trim()
+                                        }).then((result) => {
+                                            if (result.status === 1) {
+                                                window.location.href = "/payment-status?ref=" + encodeURIComponent(result.ref_id);
+                                            } else {
+                                                resultMessage(result.msg || "We could not confirm that payment.");
+                                            }
+                                        }).catch(() => resultMessage("Network problem confirming the payment."));
+                                    },
+                                    onError: () => resultMessage("PayPal reported a problem. Please try again.")
+                                }).render("#paypal-button-container").then(() => {
+                                    paypal_loading_system.innerHTML = "";
+                                });
+                            }).catch(() => resultMessage("PayPal is unavailable right now."));
+                        }
+
+                        function toggle_payment_item(clickedItem, payment_method){
+                            email_warning.innerHTML = "";
+                            const email_input_value = email_input.value.trim();
+
+                            if(email_input_value == "" || !isValidEmail(email_input_value)){
+                                scrollToTop();
+                                email_warning.innerHTML = "Enter valid email address and checkout";
+                                email_input.focus();
+                                return;
+                            }
+
+                            if(clickedItem.className == "payment_method_item"){
+                                clickedItem.className = "payment_method_item checkout_active";
+                            }else {
+                                clickedItem.className = "payment_method_item";
+                            }
+
+                            if(payment_method == 'paypal'){
+                                // Only ever mount the buttons once.
+                                if(paypal_loading_system.innerHTML == "") return;
+                                if(CHECKOUT.isOneOff) load_paypal_one_off();
+                                else load_paypal_subscription();
+                            }
+                        }
+                    </script>
+                </div>
+
+
+
+
+
+                <div id="checkout_container_right" class="checkout_container_right">
+                    <div class="checkout_cancel_background" onclick="toggle_tablet_order_summary()"></div>
+
+                    <div class="money_back_guarantee_payment checkout_hide_tablet">
+                        <img class="checkout_money_back_guarantee_img" src="/assets/icons/money_back.svg">
+                        <p class="checkout_money_back_guarantee_text">Money back<span>Guaratee</span></p>
+                    </div>
+
+                    <div class="order_summary_section">
+                        <div class="order_summary_inside">
+                            <div class="order_summary_text_keeper">
+                                <h2 class="order_summary_text">Order Summary</h2>
+                                <i onclick="toggle_tablet_order_summary()" class="fa fa-chevron-down show_only_tablet"></i>
+                            </div>
+                            <div class="order_summary_small_border"><p></p></div>
+
+<% if (upsell) { %>
+                            <div class="switch_to_years">
+                                <div class="switch_to_years_inside">
+                                    <div class="switch_to_offer_keeper">
+                                        <img class="switch_to_img" src="/assets/icons/get_offer.svg">
+                                        <p class="swith_to_text">Switch to a <%= upsell.period %>-month subscription to <b>save <%= upsell.plan.save_percentage %>%</b>.</p>
+                                    </div>
+                                    <a href="/checkout?period=<%= upsell.period %>" class="switch_to_months_button">Switch to <%= upsell.plan.name %></a>
+                                </div>
+                            </div>
+<% } %>
+
+
+                            <div class="order_summary_main_container">
+                                <p class="order_subscription_details_text">Subscription Details</p>
+
+                                <p class="order_subscription_pack"><img class="order_sub_pack_icon" src="/assets/logo/logo.png"> <%= plan.name %></p>
+
+                                <div class="order_summary_item">
+                                    <p class="order_summary_item_left"><%= period %> months (£<%= plan.price_per_month %>/month)</p>
+                                    <p class="order_summary_item_right">£<%= money(plan.discounted_price) %></p>
+                                </div>
+
+                                <div class="order_summary_item">
+                                    <p class="order_save_offer">Save <%= plan.save_percentage %>%</p>
+                                    <p class="order_summary_item_right"><del>£<%= money(plan.total_price) %></del></p>
+                                </div>
+
+                                <div id="coupon_code_section" class="order_summary_item">
+                                    <p class="order_coupon_offer">Coupon</p>
+                                    <p class="order_summary_item_right">£0.00</p>
+                                </div>
+
+                                <p class="order_summary_border_bottom"></p>
+
+
+
+                                <div class="order_summary_item">
+                                    <p class="order_summary_item_left">VAT/TAX <span>10%</span></p>
+                                    <p class="order_summary_item_right"><del>£<%= money(plan.vat) %></del></p>
+                                </div>
+
+                                <div class="order_summary_item">
+                                    <p class="order_summary_item_left total_order_summary">Total</p>
+                                    <p class="order_summary_item_right total_order_summary">£<%= money(plan.discounted_price) %></p>
+                                </div>
+
+                                <p class="order_summary_border_bottom"></p>
+
+                                <div class="coupon_code_system">
+                                    <div class="coupon_code_system_inside">
+                                        <input class="coupon_code_input" type="text" placeholder="Enter Coupon Code">
+                                        <button class="coupon_code_button">APPLY</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+
+                </div>
+            </div>
+        </div>
+
+        <div onclick="toggle_tablet_order_summary()" id="tablet_order_summary_container" class="checkout_container_table">
+            <div class="checkout_container_tablet_inside">
+               <div class="checkout_container_tablet_final">
+                    <div class="checkout_container_tablet_left">
+                        <p class="checkout_tablet_order_summary">Order summary</p>
+                        <p class="check_tablet_total">Total: GBP <%= plan.discounted_price %></p>
+                    </div>
+                    <div class="checkout_container_tablet_right">
+                        <p class="checkout_tablet_expand"><i class="fa fa-chevron-up"></i></p>
+                    </div>
+               </div>
+            </div>
+        </div>
+
+        <script>
+            const tablet_order_summary_container = document.getElementById("tablet_order_summary_container");
+            const checkout_container_right = document.getElementById("checkout_container_right");
+
+            function toggle_tablet_order_summary(){
+                if(tablet_order_summary_container.className == "checkout_container_table"){
+                    tablet_order_summary_container.className = "checkout_container_table checkout_hide_the_summary";
+                    checkout_container_right.className = "checkout_container_right show_checkout_container_right"
+                }else {
+                    tablet_order_summary_container.className = "checkout_container_table";
+                    checkout_container_right.className = "checkout_container_right";
+                }
+            }
+        </script>
+
+
+        <div class="checkout_footer">
+            <p class="checkout_footer_links"><a href="/privacy">Privacy Policy</a>, <a href="/terms">Terms and Condition</a>, <a href="/refund">Refund Policy</a></p>
+        </div>
+
+	</body>
+</html>

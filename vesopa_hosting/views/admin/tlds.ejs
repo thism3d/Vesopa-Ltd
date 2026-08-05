@@ -1,0 +1,145 @@
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
+<%- include('../partials/admin-shell', { pageTitle: 'Domain pricing', pageSub: 'What we charge in ' + currency.code + ', and what it costs us.' }) %>
+
+<div class="alert alert-info">
+  <%- icon('info', 19) %>
+  <div>
+    <b>Cost</b> is what DomainNameAPI charges us. It is never shown to a customer —
+    it is here so the margin is visible while you are setting the price, rather
+    than worked out on a calculator afterwards.
+  </div>
+</div>
+
+<form method="post" action="/admin/tlds" data-guard>
+  <input type="hidden" name="_csrf" value="<%= csrf %>">
+  <div class="p-card p-card-flush">
+    <div class="table-wrap"><table class="table mini">
+      <thead>
+        <tr>
+          <th>Extension</th>
+          <th class="num">Register <%= currency.symbol %></th>
+          <th class="num">Renew <%= currency.symbol %></th>
+          <th class="num">Transfer <%= currency.symbol %></th>
+          <th class="num">Cost <%= currency.symbol %></th>
+          <th class="num">Margin</th>
+          <th class="center">Featured</th>
+          <th class="center">Active</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% tlds.forEach(function (t) {
+             const margin = t.register_pence - t.cost_pence;
+             const pct = t.cost_pence ? Math.round(margin / t.cost_pence * 100) : null; %>
+          <tr>
+            <td class="strong">
+              .<%= t.tld %>
+              <input type="hidden" name="id" value="<%= t.id %>">
+            </td>
+            <td><input class="input" style="width:92px;padding:7px 9px" name="register" value="<%= (t.register_pence/100).toFixed(2) %>"></td>
+            <td><input class="input" style="width:92px;padding:7px 9px" name="renew" value="<%= (t.renew_pence/100).toFixed(2) %>"></td>
+            <td><input class="input" style="width:92px;padding:7px 9px" name="transfer" value="<%= (t.transfer_pence/100).toFixed(2) %>"></td>
+            <td><input class="input" style="width:92px;padding:7px 9px" name="cost" value="<%= (t.cost_pence/100).toFixed(2) %>"></td>
+            <td class="num">
+              <% if (pct === null) { %><span class="muted tiny">—</span>
+              <% } else { %>
+                <span class="strong" style="color:<%= margin > 0 ? 'var(--lime-ink)' : 'var(--red)' %>"><%= money(margin) %></span>
+                <br><span class="tiny muted"><%= pct %>%</span>
+              <% } %>
+            </td>
+            <td class="center"><input type="checkbox" name="featured" value="<%= t.id %>" <%= t.featured ? 'checked' : '' %>></td>
+            <td class="center"><input type="checkbox" name="active" value="<%= t.id %>" <%= t.active ? 'checked' : '' %>></td>
+          </tr>
+        <% }); %>
+      </tbody>
+    </table></div>
+  </div>
+  <button class="btn" type="submit" data-busy="Saving…">Save all pricing</button>
+</form>
+
+<%# Per-currency domain prices.
+
+    One tab per currency rather than the side-by-side matrix used on a plan:
+    there are forty-odd extensions and four money columns, and twelve columns
+    across a table that already scrolls sideways is not a page anyone can edit
+    without losing their place. %>
+<% if (currencies.length) { %>
+  <div class="p-card mt-3">
+    <h2 class="h3 mb-1">Prices in other currencies</h2>
+    <p class="small muted mb-3">
+      Blank is <b>converted</b> from the <%= currency.code %> column above and
+      moves with the rate. Type a figure to fix it. Worth doing on the
+      extensions whose wholesale cost is quoted to us in dollars — those do not
+      move with the pound, and a converted price on one of them drifts away from
+      its margin every time the rate changes.
+    </p>
+
+    <div class="row mb-3" style="gap:8px;flex-wrap:wrap">
+      <% currencies.forEach(function (c) { %>
+        <a class="btn btn-sm <%= overrideCurrency && overrideCurrency.code === c.code ? '' : 'btn-ghost' %>"
+           href="/admin/tlds?currency=<%= c.code %>"><%= c.symbol %> <%= c.code %></a>
+      <% }); %>
+      <% if (overrideCurrency) { %>
+        <a class="btn btn-sm btn-ghost" href="/admin/tlds">Close</a>
+      <% } %>
+    </div>
+
+    <% if (overrideCurrency) { %>
+      <form method="post" action="/admin/prices/tld-bulk" data-guard>
+        <input type="hidden" name="_csrf" value="<%= csrf %>">
+        <input type="hidden" name="currency" value="<%= overrideCurrency.code %>">
+        <div class="table-wrap"><table class="table mini">
+          <thead>
+            <tr>
+              <th>Extension</th>
+              <th class="num">Register <%= overrideCurrency.symbol %></th>
+              <th class="num">Renew <%= overrideCurrency.symbol %></th>
+              <th class="num">Transfer <%= overrideCurrency.symbol %></th>
+            </tr>
+          </thead>
+          <tbody>
+            <% overrideRows.forEach(function (r) { %>
+              <tr>
+                <td class="strong">
+                  .<%= r.tld %>
+                  <input type="hidden" name="id" value="<%= r.id %>">
+                </td>
+                <% ['register', 'renew', 'transfer'].forEach(function (f) { %>
+                  <td class="num">
+                    <input class="input input-sm num" name="o_<%= f %>"
+                           style="width:96px"
+                           value="<%= r[f].override_minor === null ? '' : (r[f].override_minor / 100).toFixed(2) %>"
+                           placeholder="<%= (r[f].converted_minor / 100).toFixed(2) %>"
+                           aria-label=".<%= r.tld %> <%= f %> in <%= overrideCurrency.code %>">
+                  </td>
+                <% }); %>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table></div>
+        <button class="btn mt-2" type="submit" data-busy="Saving…">
+          Save <%= overrideCurrency.code %> prices
+        </button>
+      </form>
+    <% } else { %>
+      <p class="small muted mb-0">Pick a currency above to set fixed prices in it.</p>
+    <% } %>
+  </div>
+<% } %>
+
+<div class="p-card mt-3" style="max-width:640px">
+  <h2 class="h3 mb-3">Add an extension</h2>
+  <form method="post" action="/admin/tlds/new" data-guard>
+    <input type="hidden" name="_csrf" value="<%= csrf %>">
+    <div class="p-grid p-grid-tld">
+      <div class="field mb-0"><label class="label" for="tld">Extension</label><input class="input" id="tld" name="tld" placeholder="wales" required></div>
+      <div class="field mb-0"><label class="label" for="nreg">Register</label><input class="input" id="nreg" name="register" value="0.00"></div>
+      <div class="field mb-0"><label class="label" for="nren">Renew</label><input class="input" id="nren" name="renew" value="0.00"></div>
+      <div class="field mb-0"><label class="label" for="ntra">Transfer</label><input class="input" id="ntra" name="transfer" value="0.00"></div>
+      <div class="field mb-0"><label class="label" for="ncost">Cost</label><input class="input" id="ncost" name="cost" value="0.00"></div>
+    </div>
+    <button class="btn btn-sm mt-3" type="submit">Add</button>
+  </form>
+</div>
+
+<%- include('../partials/panel-shell-end') %>
+<%- include('../partials/footer') %>

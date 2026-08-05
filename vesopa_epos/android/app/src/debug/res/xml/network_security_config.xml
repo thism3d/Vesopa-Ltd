@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!--
+      Debug builds only. This file replaces the release config at build time, so
+      the permissive setting below can never ship.
+
+      Cleartext is needed here because the development EPOS server and ESC/POS
+      thermal printers speak plain TCP, not TLS.
+    -->
+    <base-config cleartextTrafficPermitted="true"/>
+</network-security-config>

@@ -1,0 +1,120 @@
+<%- include('partials/shell-top') %>
+
+<div class="ap-tabs">
+<% var keep = '&sort=' + sort + (q ? '&q=' + encodeURIComponent(q) : ''); %>
+  <a href="/admin/blog?<%= keep.slice(1) %>" class="<%= !status && !kind ? 'is-active' : '' %>">Everything</a>
+  <a href="/admin/blog?status=published<%= keep %>" class="<%= status === 'published' ? 'is-active' : '' %>">Published</a>
+  <a href="/admin/blog?status=draft<%= keep %>" class="<%= status === 'draft' ? 'is-active' : '' %>">Drafts</a>
+  <a href="/admin/blog?kind=post<%= keep %>" class="<%= kind === 'post' ? 'is-active' : '' %>">Articles</a>
+  <a href="/admin/blog?kind=update<%= keep %>" class="<%= kind === 'update' ? 'is-active' : '' %>">Product updates</a>
+</div>
+
+<%#
+  Filters and sort travel together in the query string, so switching the sort
+  keeps the tab you are on. The tabs above carry the sort back the other way
+  for the same reason.
+%>
+<form class="ap-search" method="get" action="/admin/blog">
+  <input type="hidden" name="status" value="<%= status %>">
+  <input type="hidden" name="kind" value="<%= kind %>">
+  <input class="ap-input" type="search" name="q" value="<%= q %>"
+         placeholder="Search titles, addresses and tags">
+  <select class="ap-select" name="sort" onchange="this.form.submit()">
+<% Object.keys(sorts).forEach(function (key) { %>
+    <option value="<%= key %>" <%= sort === key ? 'selected' : '' %>><%= sorts[key].label %></option>
+<% }); %>
+  </select>
+  <button class="ap-btn" type="submit">
+    <span class="material-icons">search</span> Search
+  </button>
+  <div style="flex:1"></div>
+  <a class="ap-btn ghost" href="/blog" target="_blank" rel="noopener">
+    <span class="material-icons">open_in_new</span> View the blog
+  </a>
+  <a class="ap-btn primary" href="/admin/blog/new">
+    <span class="material-icons">edit_note</span> Write a post
+  </a>
+</form>
+
+<div class="ap-table-wrap">
+  <table class="ap-table">
+    <thead>
+      <tr><th></th><th>Title</th><th>Kind</th><th>Status</th><th>Published</th>
+          <th class="num">Views</th><th>Updated</th><th class="actions"></th></tr>
+    </thead>
+    <tbody>
+<% if (!rows.length) { %>
+      <tr><td colspan="8" class="ap-empty">
+<% if (q || status || kind) { %>
+        Nothing matches that. <a href="/admin/blog">Clear the filters</a>.
+<% } else { %>
+        Nothing written yet. <a href="/admin/blog/new">Write the first post</a>.
+<% } %>
+      </td></tr>
+<% } %>
+<% rows.forEach(function (p) { %>
+      <tr>
+        <td style="width:64px">
+<% if (p.cover_url) { %>
+          <img src="<%= p.cover_url %>" alt="" style="width:52px; height:36px; object-fit:cover; border-radius:5px; display:block">
+<% } else { %>
+          <span class="material-icons ap-muted">image_not_supported</span>
+<% } %>
+        </td>
+        <td>
+          <a class="ap-primary" href="/admin/blog/<%= p.id %>/edit"><%= p.title %></a>
+<% if (p.is_featured) { %> <span class="ap-badge lime" title="Shown as the lead card on /blog">featured</span><% } %>
+          <br><span class="ap-small ap-muted ap-mono">/blog/<%= p.slug %></span>
+        </td>
+        <td>
+          <span class="ap-badge <%= p.kind === 'update' ? 'info' : 'muted' %>"><%= p.kind %></span>
+          <% if (p.version) { %> <span class="ap-badge lime">v<%= p.version %></span><% } %>
+        </td>
+        <td><span class="ap-badge <%= p.status === 'published' ? 'ok' : 'warn' %>"><%= p.status %></span></td>
+        <%#
+          Date *and* time, because two posts published on the same day are
+          otherwise indistinguishable in an ordering that depends on the time.
+          A future date is flagged: "published" and "published but not yet
+          visible" look identical from a date alone.
+        %>
+        <td class="ap-nowrap ap-small">
+<% if (!p.published_at) { %>
+          &mdash;
+<% } else if (p.status === 'published' && new Date(p.published_at) > now) { %>
+          <span class="ap-badge warn">scheduled</span>
+          <br><span class="ap-small ap-muted"><%= formatDateTime(p.published_at) %></span>
+<% } else { %>
+          <%= formatDateTime(p.published_at) %>
+<% } %>
+        </td>
+        <td class="num"><%= p.views %></td>
+        <td class="ap-nowrap ap-small ap-muted"><%= formatDateTime(p.updated_at) %></td>
+        <td class="actions">
+<% if (p.status === 'published') { %>
+          <a class="ap-icon-btn" href="/blog/<%= p.slug %>" target="_blank" rel="noopener" title="View">
+            <span class="material-icons">visibility</span>
+          </a>
+<% } %>
+          <form method="post" action="/admin/blog/<%= p.id %>/status" style="display:inline">
+            <button class="ap-icon-btn" type="submit"
+                    title="<%= p.status === 'published' ? 'Unpublish' : 'Publish' %>">
+              <span class="material-icons"><%= p.status === 'published' ? 'unpublished' : 'publish' %></span>
+            </button>
+          </form>
+          <a class="ap-icon-btn" href="/admin/blog/<%= p.id %>/edit" title="Edit">
+            <span class="material-icons">edit</span>
+          </a>
+          <form method="post" action="/admin/blog/<%= p.id %>/delete" style="display:inline">
+            <button class="ap-icon-btn danger" type="submit" title="Delete"
+                    data-confirm="Delete “<%= p.title %>” for good?">
+              <span class="material-icons">delete_outline</span>
+            </button>
+          </form>
+        </td>
+      </tr>
+<% }); %>
+    </tbody>
+  </table>
+</div>
+
+<%- include('partials/shell-bottom') %>

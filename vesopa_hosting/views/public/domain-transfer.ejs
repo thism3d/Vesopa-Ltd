@@ -1,0 +1,58 @@
+<%- include('../partials/head') %>
+<%- include('../partials/header') %>
+
+<main id="main">
+<%- include('../partials/page-hero', {
+  kicker: 'Domain transfer',
+  heading: 'Bring your domain,<br><span class="hl">keep your year</span>',
+  sub: 'Transferring adds a full year to whatever time is already left on the name. Nothing is lost and your DNS carries over unchanged.',
+  heroCta: { href: '/domains', label: 'Start a transfer' },
+}) %>
+
+<section class="section">
+  <div class="wrap wrap-narrow">
+    <div class="steps" data-reveal="0">
+      <div class="step"><div>
+        <h2 class="h3 mb-1">Unlock it at your current registrar</h2>
+        <p class="small muted mb-0">Every registrar has a "registrar lock" or "transfer lock" switch. Turn it off. This exists to stop a domain being stolen, which is why it is on by default.</p>
+      </div></div>
+      <div class="step"><div>
+        <h2 class="h3 mb-1">Get the authorisation code</h2>
+        <p class="small muted mb-0">Sometimes called an EPP code, auth code or transfer key. Your current registrar must give it to you — for .uk domains the process is different and simpler: they just change the IPS tag to ours.</p>
+      </div></div>
+      <div class="step"><div>
+        <h2 class="h3 mb-1">Start it here and pay for a year</h2>
+        <p class="small muted mb-0">That year is added to your existing expiry, not instead of it. If you had eight months left, you now have twenty.</p>
+      </div></div>
+      <div class="step"><div>
+        <h2 class="h3 mb-1">Approve the email</h2>
+        <p class="small muted mb-0">The registry emails the address on the domain's record to confirm. Click it and the transfer completes, usually within five days — often much sooner.</p>
+      </div></div>
+    </div>
+
+    <hr class="divider">
+
+    <h2 class="h2 mb-3" data-reveal="0">Before you start</h2>
+    <div class="grid" style="gap:14px" data-reveal="40">
+      <% [
+        ['warning', 'A domain registered or transferred in the last 60 days cannot move', 'This is an ICANN rule, not ours. You will have to wait out the remainder of the 60 days.'],
+        ['warning', 'Check the contact email on the domain', 'The approval goes to whatever address is on the WHOIS record. If that is an old mailbox you cannot reach, update it before you begin.'],
+        ['info', 'Your DNS records come with you', 'We copy the existing zone so mail and any subdomains keep working. If you host elsewhere, nothing about your website changes at all.'],
+        ['info', '.uk domains work differently', 'No auth code. Ask your registrar to change the IPS tag to ours and it moves, usually within minutes. Tell us and we will walk you through it.'],
+      ].forEach(function (s) { %>
+        <div class="card">
+          <div class="row" style="gap:12px;align-items:flex-start">
+            <span style="color:<%= s[0] === 'warning' ? 'var(--amber)' : 'var(--lime-ink)' %>;flex:none;margin-top:2px"><%- icon(s[0], 19) %></span>
+            <div><div class="strong"><%= s[1] %></div><div class="small muted"><%= s[2] %></div></div>
+          </div>
+        </div>
+      <% }); %>
+    </div>
+
+    <div class="center mt-4" data-reveal="80">
+      <a class="btn btn-lg" href="/domains">Look up my domain</a>
+    </div>
+  </div>
+</section>
+</main>
+<%- include('../partials/footer') %>

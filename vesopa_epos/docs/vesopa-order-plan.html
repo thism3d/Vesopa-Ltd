@@ -1,0 +1,2185 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<title>Vesopa Order — Takeaway, Delivery &amp; QR Table Ordering</title>
+<style>
+  @page { size: A4; margin: 16mm 15mm 18mm 15mm; }
+
+  :root {
+    /* The 2026 mark: a black wordmark with one lime slash. The lime is a
+       graphic colour, not a text colour — #A5C715 is 1.9:1 against both
+       white and black, so it fills shapes and rules and never carries
+       small type. Brand-coloured text uses --brand-ink. */
+    --brand:      #A5C715;
+    --brand-ink:  #6E8A0E;  /* brand text on white — 4.6:1 */
+    --brand-dark: #2F3B05;  /* headings and brand text on --brand-soft */
+    --brand-soft: #EFF6D8;
+    --on-brand:   #10130A;  /* the only ink that reads on a lime fill */
+    --ink:        #16170F;
+    --ink-2:      #4A4C41;
+    --ink-3:      #787A6E;
+    --rule:       #E1E3DA;
+    --surface-1:  #FCFCFB;
+    --surface-2:  #F6F7F2;
+    --series-1:   #2a78d6;
+    --series-2:   #eb6834;
+    --series-3:   #1baf7a;
+    --gray-mark:  #B6B8AD;
+    --good:       #1E9184;
+    --warn:       #F5B301;
+    --risk:       #E8412C;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  body {
+    margin: 0;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 8.8pt;
+    line-height: 1.42;
+    color: var(--ink);
+    background: #fff;
+  }
+
+  /* ---- Page scaffolding ------------------------------------------------ */
+  .page { page-break-after: always; }
+  .page:last-child { page-break-after: auto; }
+  .keep { page-break-inside: avoid; }
+
+  h1, h2, h3, h4 { margin: 0; font-weight: 700; letter-spacing: -0.01em; }
+
+  h2 {
+    font-size: 15pt;
+    color: var(--brand-dark);
+    margin: 0 0 1.6mm;
+    page-break-after: avoid;
+  }
+  h2 .num {
+    color: var(--brand-ink);
+    font-variant-numeric: tabular-nums;
+    margin-right: 3mm;
+  }
+  h3 {
+    font-size: 10.2pt;
+    color: var(--brand-dark);
+    margin: 4.6mm 0 1.2mm;
+    page-break-after: avoid;
+  }
+  h4 {
+    font-size: 8.8pt;
+    color: var(--ink);
+    margin: 3mm 0 0.8mm;
+    page-break-after: avoid;
+  }
+  p { margin: 0 0 1.8mm; }
+  .lede {
+    font-size: 9.8pt;
+    color: var(--ink-2);
+    line-height: 1.44;
+    margin-bottom: 3.2mm;
+    padding-bottom: 2.4mm;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  ul, ol { margin: 0 0 2.5mm; padding-left: 4.6mm; }
+  li { margin-bottom: 1.1mm; }
+  li::marker { color: var(--brand-ink); }
+
+  strong { color: var(--brand-dark); }
+  code {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 8.4pt;
+    background: var(--surface-2);
+    border: 1px solid var(--rule);
+    border-radius: 2px;
+    padding: 0 1.2mm;
+    color: var(--brand-dark);
+  }
+
+  /* ---- Cover ----------------------------------------------------------- */
+  .cover {
+    height: 258mm;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+  /* The wordmark is 1600x232, so width alone sets the height (~8.4mm at
+     58mm). The retired badge-plus-wordmark was squarer and sat at 52mm. */
+  .cover-logo { width: 58mm; }
+  .cover-mid { margin-bottom: 18mm; }
+  .cover-kicker {
+    font-size: 9pt;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--brand-ink);
+    font-weight: 700;
+    margin-bottom: 5mm;
+  }
+  .cover h1 {
+    font-size: 33pt;
+    line-height: 1.08;
+    color: var(--brand-dark);
+    max-width: 150mm;
+  }
+  .cover h1 em {
+    font-style: normal;
+    color: var(--brand-ink);
+    display: block;
+  }
+  .cover-sub {
+    font-size: 12pt;
+    color: var(--ink-2);
+    margin-top: 6mm;
+    max-width: 130mm;
+    line-height: 1.45;
+  }
+  .cover-rule {
+    height: 3px;
+    width: 34mm;
+    background: var(--brand);
+    margin: 8mm 0;
+  }
+  .cover-meta {
+    display: flex;
+    gap: 14mm;
+    font-size: 8.8pt;
+    color: var(--ink-2);
+    border-top: 1px solid var(--rule);
+    padding-top: 4mm;
+  }
+  .cover-meta dt {
+    font-size: 7.4pt;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin-bottom: 1mm;
+  }
+  .cover-meta dd { margin: 0; font-weight: 600; color: var(--ink); }
+
+  /* ---- Running header -------------------------------------------------- */
+  .rh {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    border-bottom: 2px solid var(--brand);
+    padding-bottom: 1.6mm;
+    margin-bottom: 5mm;
+    font-size: 7.4pt;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    font-weight: 700;
+  }
+  .rh b { color: var(--brand-ink); font-weight: 700; }
+
+  /* ---- Grid ------------------------------------------------------------ */
+  .cols-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; }
+  .cols-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4.5mm; }
+  .cols-2u { display: grid; grid-template-columns: 1.35fr 1fr; gap: 6mm; }
+
+  /* ---- Cards ----------------------------------------------------------- */
+  .card {
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 2.6mm 3.2mm;
+    background: var(--surface-1);
+    page-break-inside: avoid;
+  }
+  .card.accent { border-left: 3px solid var(--brand); }
+  .card h4 { margin-top: 0; }
+  .card p:last-child, .card ul:last-child { margin-bottom: 0; }
+
+  .callout {
+    border-left: 3px solid var(--brand);
+    background: var(--brand-soft);
+    padding: 2.6mm 3.4mm;
+    border-radius: 0 4px 4px 0;
+    margin: 2.8mm 0;
+    page-break-inside: avoid;
+  }
+  .callout p:last-child { margin-bottom: 0; }
+  .callout .tag {
+    display: block;
+    font-size: 7.2pt;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--brand-ink);
+    font-weight: 700;
+    margin-bottom: 1.2mm;
+  }
+
+  /* ---- KPI row --------------------------------------------------------- */
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3mm; margin: 3mm 0 3.6mm; }
+  .kpi {
+    border: 1px solid var(--rule);
+    border-top: 3px solid var(--brand);
+    border-radius: 3px;
+    padding: 3mm 3.2mm;
+    background: var(--surface-1);
+  }
+  .kpi .v {
+    font-size: 19pt;
+    font-weight: 700;
+    color: var(--brand-dark);
+    line-height: 1.05;
+    font-variant-numeric: tabular-nums;
+  }
+  .kpi .v small { font-size: 10pt; font-weight: 600; color: var(--ink-3); }
+  .kpi .l {
+    font-size: 7.6pt;
+    color: var(--ink-2);
+    margin-top: 1.4mm;
+    line-height: 1.35;
+  }
+
+  /* ---- Tables ---------------------------------------------------------- */
+  table { width: 100%; border-collapse: collapse; font-size: 8pt; margin: 2mm 0 2.6mm; }
+  thead th {
+    text-align: left;
+    font-size: 7.2pt;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    border-bottom: 1.5px solid var(--brand);
+    padding: 0 2.4mm 1.4mm 0;
+    font-weight: 700;
+  }
+  tbody td {
+    padding: 1.35mm 2.4mm 1.35mm 0;
+    border-bottom: 1px solid var(--rule);
+    vertical-align: top;
+    color: var(--ink-2);
+  }
+  tbody td:first-child { color: var(--ink); font-weight: 600; }
+  tbody tr:last-child td { border-bottom: none; }
+  table.tight tbody td { padding: 1mm 2.4mm 1mm 0; }
+
+  .pill {
+    display: inline-block;
+    font-size: 7pt;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    padding: 0.5mm 1.8mm;
+    border-radius: 8px;
+    white-space: nowrap;
+  }
+  .pill.have { background: #E3F2EF; color: #14655C; }
+  .pill.new  { background: var(--brand-soft); color: var(--brand-dark); }
+  .pill.ext  { background: #FDF3D6; color: #8A6400; }
+  .pill.hi   { background: #FBE2DE; color: #A82A19; }
+  .pill.md   { background: #FDF3D6; color: #8A6400; }
+  .pill.lo   { background: #E3F2EF; color: #14655C; }
+
+  /* ---- Figures --------------------------------------------------------- */
+  figure { margin: 2.8mm 0 3mm; page-break-inside: avoid; }
+  figcaption {
+    font-size: 7.6pt;
+    color: var(--ink-3);
+    margin-top: 1.8mm;
+    line-height: 1.4;
+  }
+  figcaption b { color: var(--ink-2); }
+  svg { display: block; width: 100%; height: auto; }
+
+  .fignum {
+    font-size: 7.2pt;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--brand-ink);
+    font-weight: 700;
+    margin-bottom: 1.6mm;
+  }
+
+  /* ---- Phone mockups --------------------------------------------------- */
+  .phones { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5mm; margin: 4mm 0 2mm; }
+  .phone {
+    border: 1.6px solid var(--ink);
+    border-radius: 6mm;
+    padding: 2mm 1.6mm;
+    background: #fff;
+    height: 91mm;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .phone .notch {
+    width: 14mm; height: 1.3mm; background: var(--ink);
+    border-radius: 1mm; margin: 0 auto 1.6mm;
+  }
+  .ph-body { flex: 1; display: flex; flex-direction: column; gap: 1.2mm; padding: 0 1mm; }
+  .ph-hero {
+    background: linear-gradient(135deg, var(--brand-ink) 0%, var(--brand-dark) 100%);
+    border-radius: 2mm; height: 13mm; color: #fff;
+    padding: 1.6mm 2mm; display: flex; flex-direction: column; justify-content: flex-end;
+  }
+  .ph-hero .t { font-size: 7.4pt; font-weight: 700; line-height: 1.1; }
+  .ph-hero .s { font-size: 5.6pt; opacity: 0.85; }
+  .ph-seg { display: flex; gap: 0.8mm; }
+  .ph-seg span {
+    flex: 1; text-align: center; font-size: 5.4pt; font-weight: 700;
+    padding: 1mm 0; border-radius: 1.2mm; background: var(--surface-2); color: var(--ink-3);
+  }
+  .ph-seg span.on { background: var(--brand); color: var(--on-brand); }
+  .ph-row {
+    display: flex; align-items: center; gap: 1.4mm;
+    border-bottom: 0.5px solid var(--rule); padding: 1.3mm 0;
+  }
+  .ph-thumb { width: 6mm; height: 6mm; border-radius: 1.2mm; background: var(--surface-2); flex: none; }
+  .ph-row .n { font-size: 6.2pt; font-weight: 700; line-height: 1.2; }
+  .ph-row .d { font-size: 5.2pt; color: var(--ink-3); line-height: 1.2; }
+  .ph-row .p { margin-left: auto; font-size: 6.2pt; font-weight: 700; color: var(--brand-dark); }
+  .ph-row .add {
+    margin-left: 1mm; width: 4mm; height: 4mm; border-radius: 2mm;
+    background: var(--brand); color: var(--on-brand); font-size: 6pt; font-weight: 700;
+    display: flex; align-items: center; justify-content: center; flex: none;
+  }
+  .ph-tot { margin-top: auto; border-top: 1px solid var(--rule); padding-top: 1.4mm; }
+  .ph-tot .l { display: flex; justify-content: space-between; font-size: 5.8pt; color: var(--ink-2); }
+  .ph-tot .l.big { font-size: 7.4pt; font-weight: 700; color: var(--brand-dark); margin-top: 0.6mm; }
+  .ph-cta {
+    background: var(--brand); color: var(--on-brand); text-align: center;
+    border-radius: 1.6mm; padding: 1.8mm 0; font-size: 6.4pt; font-weight: 700; margin-top: 1.4mm;
+  }
+  .ph-cta.alt { background: #fff; color: var(--brand-ink); border: 1px solid var(--brand-ink); margin-top: 1mm; }
+  .ph-track { display: flex; flex-direction: column; gap: 0; margin-top: 1mm; }
+  .ph-step { display: flex; gap: 1.6mm; }
+  .ph-step .dotcol { display: flex; flex-direction: column; align-items: center; flex: none; }
+  .ph-step .dot { width: 2.4mm; height: 2.4mm; border-radius: 50%; background: var(--rule); margin-top: 0.6mm; }
+  .ph-step.done .dot { background: var(--good); }
+  .ph-step.now .dot { background: var(--brand); box-shadow: 0 0 0 1mm var(--brand-soft); }
+  .ph-step .bar { width: 0.5mm; flex: 1; background: var(--rule); min-height: 4mm; }
+  .ph-step.done .bar { background: var(--good); }
+  .ph-step .txt { padding-bottom: 2mm; }
+  .ph-step .txt b { font-size: 6.2pt; display: block; line-height: 1.2; }
+  .ph-step .txt span { font-size: 5.2pt; color: var(--ink-3); }
+  .phone-cap { font-size: 7pt; color: var(--ink-2); text-align: center; margin-top: 1.6mm; font-weight: 600; }
+
+  /* ---- Till mockup ----------------------------------------------------- */
+  .till {
+    border: 1.4px solid var(--ink); border-radius: 3px; overflow: hidden;
+    background: #fff; page-break-inside: avoid;
+  }
+  .till-top {
+    background: #111111; color: #fff; padding: 2mm 3mm;
+    display: flex; align-items: center; gap: 3mm; font-size: 7pt;
+  }
+  .till-top .brand { font-weight: 700; color: var(--brand); font-size: 8pt; }
+  .till-top .sp { margin-left: auto; opacity: 0.6; font-size: 6.2pt; }
+  .till-tabs { display: flex; border-bottom: 1.5px solid var(--rule); background: var(--surface-2); }
+  .till-tabs div {
+    padding: 2mm 4mm; font-size: 7.4pt; font-weight: 700; color: var(--ink-3);
+    border-bottom: 2.5px solid transparent;
+  }
+  .till-tabs div.on { color: var(--brand-ink); border-bottom-color: var(--brand); background: #fff; }
+  .till-tabs div .badge {
+    display: inline-block; background: var(--risk); color: #fff; font-size: 5.6pt;
+    border-radius: 6px; padding: 0.2mm 1.2mm; margin-left: 1.2mm; vertical-align: 1px;
+  }
+  .till-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2.5mm; padding: 3mm; }
+  .oc { border: 1px solid var(--rule); border-radius: 2.5px; padding: 2mm 2.4mm; background: var(--surface-1); }
+  .oc.urgent { border-color: var(--risk); background: #FEF6F5; }
+  .oc.urgent .oc-h .when { color: var(--risk); }
+  .oc-h { display: flex; align-items: baseline; gap: 1.5mm; }
+  .oc-h .no { font-size: 8pt; font-weight: 700; color: var(--brand-dark); }
+  .oc-h .when { margin-left: auto; font-size: 6pt; font-weight: 700; color: var(--ink-3); }
+  .oc .chan {
+    display: inline-block; font-size: 5.4pt; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.06em; padding: 0.3mm 1.4mm; border-radius: 6px; margin-top: 1mm;
+  }
+  .oc .chan.t { background: #E7F0FC; color: #1B4F94; }
+  .oc .chan.k { background: #FDEEE7; color: #9A3D17; }
+  .oc .chan.d { background: #E3F2EF; color: #14655C; }
+  .oc .who { font-size: 6pt; color: var(--ink-2); margin-top: 1.2mm; line-height: 1.3; }
+  .oc .items { font-size: 5.8pt; color: var(--ink-3); margin-top: 1mm; line-height: 1.35;
+    border-top: 0.5px solid var(--rule); padding-top: 1mm; }
+  .oc .foot { display: flex; align-items: center; margin-top: 1.4mm; gap: 1.2mm; }
+  .oc .foot .amt { font-size: 7.4pt; font-weight: 700; color: var(--brand-dark); }
+  .oc .foot .paid { font-size: 5.4pt; font-weight: 700; color: var(--good); }
+  .oc .foot .unpaid { font-size: 5.4pt; font-weight: 700; color: var(--warn); }
+  .oc .foot .btn {
+    margin-left: auto; background: var(--brand); color: var(--on-brand); font-size: 5.8pt; font-weight: 700;
+    padding: 0.9mm 2.2mm; border-radius: 1.2mm;
+  }
+
+  /* ---- Chart helpers --------------------------------------------------- */
+  .legend { display: flex; gap: 4mm; flex-wrap: wrap; font-size: 7.4pt; color: var(--ink-2); margin-top: 2mm; }
+  .legend i { display: inline-block; width: 2.6mm; height: 2.6mm; border-radius: 1px; margin-right: 1.2mm; vertical-align: -0.3mm; }
+
+  /* ---- Misc ------------------------------------------------------------ */
+  .footnote { font-size: 7pt; color: var(--ink-3); line-height: 1.4; margin-top: 2mm; }
+  .footnote a { color: var(--ink-3); }
+  .ask {
+    display: grid; grid-template-columns: 7mm 1fr; gap: 2.5mm;
+    border-bottom: 1px solid var(--rule); padding: 2.6mm 0;
+    page-break-inside: avoid;
+  }
+  .ask:last-child { border-bottom: none; }
+  .ask .n {
+    width: 7mm; height: 7mm; border-radius: 50%; background: var(--brand); color: var(--on-brand);
+    font-size: 8.5pt; font-weight: 700; display: flex; align-items: center; justify-content: center;
+  }
+  .ask h4 { margin: 0.6mm 0 0.8mm; }
+  .ask p { margin: 0; color: var(--ink-2); }
+  .ask .rec { color: var(--brand-dark); font-weight: 600; }
+</style>
+</head>
+<body>
+
+<!-- =================================================================== -->
+<!-- COVER                                                                -->
+<!-- =================================================================== -->
+<section class="page cover">
+  <img class="cover-logo" src="../assets/brand/vesopa_logo.png" alt="Vesopa">
+
+  <div class="cover-mid">
+    <div class="cover-kicker">Product &amp; Engineering Proposal</div>
+    <h1>Vesopa Order<em>Takeaway, Delivery &amp; QR Table Ordering</em></h1>
+    <div class="cover-rule"></div>
+    <p class="cover-sub">
+      A commission-free ordering channel for Vesopa venues — native apps for
+      Android and iOS, scan-to-order at the table, and every order landing
+      straight on the till.
+    </p>
+  </div>
+
+  <dl class="cover-meta">
+    <div><dt>Prepared for</dt><dd>Meirion Davies, Director</dd></div>
+    <div><dt>Prepared by</dt><dd>Software Development, Vesopa EPOS Ltd</dd></div>
+    <div><dt>Date</dt><dd>28 July 2026</dd></div>
+    <div><dt>Status</dt><dd>For decision</dd></div>
+  </dl>
+</section>
+
+<!-- =================================================================== -->
+<!-- 1. EXECUTIVE SUMMARY                                                 -->
+<!-- =================================================================== -->
+<section class="page">
+  <div class="rh"><span>Vesopa Order — Delivery Plan</span><span><b>01</b> Executive summary</span></div>
+
+  <h2><span class="num">1</span>Executive summary</h2>
+  <p class="lede">
+    We already own the hard part. Vesopa runs the till, the menu, the pricing rules, the
+    floor plan and the card payments. What we do not yet own is the moment the
+    customer decides what to eat. This proposal adds that: three new ordering
+    channels that all feed the till we already ship.
+  </p>
+
+  <div class="kpis">
+    <div class="kpi">
+      <div class="v">3</div>
+      <div class="l">New order channels — takeaway, delivery, and scan-at-table QR ordering</div>
+    </div>
+    <div class="kpi">
+      <div class="v">2</div>
+      <div class="l">App stores — Android and iOS, from one shared Flutter codebase</div>
+    </div>
+    <div class="kpi">
+      <div class="v">8<small> wks</small></div>
+      <div class="l">All three channels delivered — two months from go-ahead</div>
+    </div>
+    <div class="kpi">
+      <div class="v">~2<small>%</small></div>
+      <div class="l">Cost to the venue per order, versus 14–30% on the aggregators</div>
+    </div>
+  </div>
+
+  <div class="cols-2">
+    <div>
+      <h3>What we are proposing to build</h3>
+      <p>
+        <strong>A consumer app for Android and iOS</strong> where a customer picks a
+        Vesopa venue, orders for collection or delivery, pays with Apple Pay,
+        Google Pay or a card, and watches the order progress. This is the main
+        focus of this document.
+      </p>
+      <p>
+        <strong>A QR mini-site for table ordering.</strong> The customer scans the QR on
+        their table, the menu opens in their phone browser with no app install,
+        they order and either pay there or pay at the counter. Sub-second to
+        first screen — nobody installs an app to order a coffee.
+      </p>
+      <p>
+        <strong>A new Orders tab on the till</strong> where takeaway, delivery and table
+        orders arrive live, are accepted or rejected by a clerk, and print to
+        the kitchen through the routing we already have.
+      </p>
+      <p>
+        <strong>Back-office controls</strong> so a venue can set its own menu per channel,
+        generate and print a QR code for each table, and point its own website
+        or domain at its ordering page.
+      </p>
+    </div>
+    <div>
+      <h3>Why it is worth doing</h3>
+      <p>
+        Independent UK restaurants pay <strong>14% to 30% commission</strong> to Deliveroo,
+        Uber Eats and Just Eat. On £10,000 of monthly online orders that is
+        £1,400–£3,000 a month leaving the business — recurring, forever, on
+        customers the venue often introduced itself.
+      </p>
+      <p>
+        A Vesopa venue ordering through its own app and its own QR codes pays
+        card processing and its Vesopa subscription. That is the entire pitch,
+        and it is a pitch our competitors in the till market already make.
+      </p>
+
+      <div class="callout">
+        <span class="tag">The strategic point</span>
+        <p>
+          This is not a side product. It is what stops Vesopa being <em>only</em> a till.
+          A venue that takes its online orders through us has its menu, its
+          customers, its payments and its ordering all in one place — and a much
+          higher cost to leave.
+        </p>
+      </div>
+
+      <h3>What I need from you</h3>
+      <p>
+        Four things, set out in section 13: the App Store publishing model, whether
+        we build delivery ourselves, the trial venue, and how the two parallel tracks
+        are resourced — that last one is the main risk to the date.
+      </p>
+    </div>
+  </div>
+
+  <h3>The shape of the build — eight weeks</h3>
+  <table class="tight">
+    <thead><tr><th style="width:22%">Phase</th><th style="width:11%">Weeks</th><th>What it delivers</th></tr></thead>
+    <tbody>
+      <tr><td>0 — Foundations</td><td>1–2</td><td>Order channels in the data model, server-side pricing, live push to the till, the till Orders tab</td></tr>
+      <tr><td>1 — QR table ordering</td><td>2–4</td><td>Scan-to-order mini-site, per-table QR codes, pay online or at the counter. <strong>First venue live at week 4.</strong></td></tr>
+      <tr><td>2 — Mobile apps</td><td>3–7</td><td><strong>Android and iOS apps for takeaway</strong>, accounts, payments, tracking, push. Submitted to both stores at week 7.</td></tr>
+      <tr><td>3 — Delivery</td><td>5–7</td><td>Delivery zones, fees, driver dispatch view, live status for the customer</td></tr>
+      <tr><td>4 — Own domain &amp; hardening</td><td>7–8</td><td>Venue's own domain and branding, trial-venue support, store-review buffer</td></tr>
+    </tbody>
+  </table>
+
+  <p class="footnote">
+    <b>The phases overlap deliberately — that is what makes eight weeks possible, and it
+    is the plan's main assumption.</b> Phase 2 starts once phase 0 has settled the API it
+    depends on, so the app and web tracks then run side by side rather than end to end.
+    Store review and venue menu onboarding run alongside and are not development weeks.
+  </p>
+</section>
+
+<!-- =================================================================== -->
+<!-- 2. THE THREE CHANNELS                                                -->
+<!-- =================================================================== -->
+<section class="page">
+  <div class="rh"><span>Vesopa Order — Delivery Plan</span><span><b>02</b> The three channels</span></div>
+
+  <h2><span class="num">2</span>The three channels</h2>
+  <p class="lede">
+    All three sell the same menu, price it with the same rules, and land in the
+    same place on the till. They differ only in how the customer arrives and how
+    the food leaves the building.
+  </p>
+
+  <div class="cols-3">
+    <div class="card accent">
+      <h4>Table ordering (QR)</h4>
+      <p style="font-size:8pt;color:var(--ink-3);margin-bottom:2mm">Customer is in the venue</p>
+      <ul style="font-size:8.4pt">
+        <li>Scans the QR on the table</li>
+        <li>Menu opens in the phone browser — <strong>no install</strong></li>
+        <li>Table number comes from the QR, not typed</li>
+        <li>Pays online, or adds to the table tab and pays at the counter</li>
+        <li>Order joins the existing table bill on the floor plan</li>
+      </ul>
+      <p style="font-size:8pt;margin-top:2mm"><strong>Wins:</strong> fewer staff walking, larger baskets, faster turnover.</p>
+    </div>
+    <div class="card accent">
+      <h4>Takeaway / collection</h4>
+      <p style="font-size:8pt;color:var(--ink-3);margin-bottom:2mm">Customer is at home, collecting</p>
+      <ul style="font-size:8.4pt">
+        <li>Orders in the <strong>Vesopa app</strong> or on the venue's site</li>
+        <li>Picks a collection time from real capacity</li>
+        <li>Always paid up front — no no-shows</li>
+        <li>Push notification when it is ready</li>
+        <li>Prints to the kitchen marked <code>TAKEAWAY</code></li>
+      </ul>
+      <p style="font-size:8pt;margin-top:2mm"><strong>Wins:</strong> the highest-margin online order there is. No courier, no commission.</p>
+    </div>
+    <div class="card accent">
+      <h4>Delivery</h4>
+      <p style="font-size:8pt;color:var(--ink-3);margin-bottom:2mm">Customer is at home, delivered</p>
+      <ul style="font-size:8.4pt">
+        <li>Address checked against the venue's <strong>delivery zone</strong></li>
+        <li>Delivery fee by zone or distance</li>
+        <li>Assigned to a driver from the till</li>
+        <li>Customer sees status; driver marks delivered</li>
+        <li>Prints a kitchen ticket <em>and</em> a driver docket</li>
+      </ul>
+      <p style="font-size:8pt;margin-top:2mm"><strong>Wins:</strong> replaces the aggregator on the venue's own repeat customers.</p>
+    </div>
+  </div>
+
+  <h3>One order, one lifecycle</h3>
+  <p>
+    Whatever the channel, an order moves through the same states. The till is the
+    system of record for what happens to it; the customer's phone is only ever a
+    view of that state.
+  </p>
+
+  <figure>
+    <div class="fignum">Figure 1 — Order lifecycle</div>
+    <svg viewBox="0 0 900 190" role="img" aria-label="Order lifecycle from placed through accepted, in kitchen, ready, to collected or delivered, with a rejected and refunded branch.">
+      <defs>
+        <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#787A6E"/>
+        </marker>
+        <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#E8412C"/>
+        </marker>
+      </defs>
+
+      <!-- main track -->
+      <g font-family="Helvetica, Arial, sans-serif">
+        <!-- states -->
+        <g>
+          <rect x="8" y="46" width="116" height="42" rx="5" fill="#EFF6D8" stroke="#6E8A0E" stroke-width="1.5"/>
+          <text x="66" y="64" text-anchor="middle" font-size="13" font-weight="700" fill="#2F3B05">PLACED</text>
+          <text x="66" y="79" text-anchor="middle" font-size="10" fill="#787A6E">paid or unpaid</text>
+        </g>
+        <g>
+          <rect x="164" y="46" width="116" height="42" rx="5" fill="#FCFCFB" stroke="#E1E3DA" stroke-width="1.5"/>
+          <text x="222" y="64" text-anchor="middle" font-size="13" font-weight="700" fill="#2F3B05">ACCEPTED</text>
+          <text x="222" y="79" text-anchor="middle" font-size="10" fill="#787A6E">clerk, on the till</text>
+        </g>
+        <g>
+          <rect x="320" y="46" width="116" height="42" rx="5" fill="#FCFCFB" stroke="#E1E3DA" stroke-width="1.5"/>
+          <text x="378" y="64" text-anchor="middle" font-size="13" font-weight="700" fill="#2F3B05">IN KITCHEN</text>
+          <text x="378" y="79" text-anchor="middle" font-size="10" fill="#787A6E">ticket printed</text>
+        </g>
+        <g>
+          <rect x="476" y="46" width="116" height="42" rx="5" fill="#FCFCFB" stroke="#E1E3DA" stroke-width="1.5"/>
+          <text x="534" y="64" text-anchor="middle" font-size="13" font-weight="700" fill="#2F3B05">READY</text>
+          <text x="534" y="79" text-anchor="middle" font-size="10" fill="#787A6E">customer pushed</text>
+        </g>
+        <g>
+          <rect x="632" y="24" width="132" height="38" rx="5" fill="#E3F2EF" stroke="#1E9184" stroke-width="1.5"/>
+          <text x="698" y="41" text-anchor="middle" font-size="12" font-weight="700" fill="#14655C">COLLECTED</text>
+          <text x="698" y="55" text-anchor="middle" font-size="9.5" fill="#14655C">takeaway / table</text>
+        </g>
+        <g>
+          <rect x="632" y="72" width="132" height="38" rx="5" fill="#E3F2EF" stroke="#1E9184" stroke-width="1.5"/>
+          <text x="698" y="89" text-anchor="middle" font-size="12" font-weight="700" fill="#14655C">DELIVERED</text>
+          <text x="698" y="103" text-anchor="middle" font-size="9.5" fill="#14655C">driver confirms</text>
+        </g>
+        <g>
+          <rect x="804" y="46" width="88" height="42" rx="5" fill="#FCFCFB" stroke="#E1E3DA" stroke-width="1.5"/>
+          <text x="848" y="64" text-anchor="middle" font-size="12" font-weight="700" fill="#2F3B05">SETTLED</text>
+          <text x="848" y="79" text-anchor="middle" font-size="9.5" fill="#787A6E">into takings</text>
+        </g>
+
+        <!-- rejected branch -->
+        <g>
+          <rect x="164" y="136" width="272" height="36" rx="5" fill="#FBE2DE" stroke="#E8412C" stroke-width="1.5"/>
+          <text x="300" y="153" text-anchor="middle" font-size="12" font-weight="700" fill="#A82A19">REJECTED → automatic refund</text>
+          <text x="300" y="166" text-anchor="middle" font-size="9.5" fill="#A82A19">kitchen too busy, item off, outside hours</text>
+        </g>
+
+        <!-- arrows -->
+        <line x1="126" y1="67" x2="160" y2="67" stroke="#787A6E" stroke-width="1.6" marker-end="url(#ar)"/>
+        <line x1="282" y1="67" x2="316" y2="67" stroke="#787A6E" stroke-width="1.6" marker-end="url(#ar)"/>
+        <line x1="438" y1="67" x2="472" y2="67" stroke="#787A6E" stroke-width="1.6" marker-end="url(#ar)"/>
+        <path d="M594,62 L612,62 L612,43 L628,43" fill="none" stroke="#787A6E" stroke-width="1.6" marker-end="url(#ar)"/>
+        <path d="M594,72 L612,72 L612,91 L628,91" fill="none" stroke="#787A6E" stroke-width="1.6" marker-end="url(#ar)"/>
+        <path d="M766,43 L784,43 L784,62 L800,62" fill="none" stroke="#787A6E" stroke-width="1.6" marker-end="url(#ar)"/>
+        <path d="M766,91 L784,91 L784,72 L800,72" fill="none" stroke="#787A6E" stroke-width="1.6" marker-end="url(#ar)"/>
+        <path d="M222,90 L222,132" fill="none" stroke="#E8412C" stroke-width="1.6" stroke-dasharray="4 3" marker-end="url(#arr)"/>
+
+        <!-- SLA note -->
+        <text x="222" y="112" text-anchor="middle" font-size="9.5" fill="#E8412C" font-weight="600">no answer in 3 min → alarm</text>
+        <text x="66" y="34" text-anchor="middle" font-size="9.5" fill="#6E8A0E" font-weight="700">customer</text>
+        <text x="300" y="34" text-anchor="middle" font-size="9.5" fill="#787A6E" font-weight="700">till</text>
+        <text x="534" y="34" text-anchor="middle" font-size="9.5" fill="#787A6E" font-weight="700">kitchen</text>
+      </g>
+    </svg>
+    <figcaption>
+      <b>The accept step is deliberate.</b> An order that appears in the kitchen
+      without a human agreeing to it is how a venue ends up cooking for a customer
+      who has already left. A clerk accepts, gives a time, or rejects with a
+      reason — and a rejection refunds the card automatically, because a venue
+      that has to phone a customer to say no will simply stop using the feature.
+    </figcaption>
+  </figure>
+
+  <h3>What the customer pays for, and when</h3>
+  <table class="tight">
+    <thead><tr><th style="width:16%">Channel</th><th style="width:22%">Payment</th><th style="width:20%">Timing</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td>Table (QR)</td><td>Online, or on the table tab</td><td>Venue chooses</td><td>A pub wants a tab; a busy café wants the money before the coffee. Both are configured per venue.</td></tr>
+      <tr><td>Takeaway</td><td>Online only</td><td>Before the order is sent</td><td>Unpaid collection orders are a no-show problem. Card up front removes it entirely.</td></tr>
+      <tr><td>Delivery</td><td>Online only</td><td>Before the order is sent</td><td>Same, plus a driver is a cost we cannot recover if nobody answers the door.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- =================================================================== -->
+<!-- 3. COMMERCIAL CASE                                                   -->
+<!-- =================================================================== -->
+<section class="page">
+  <div class="rh"><span>Vesopa Order — Delivery Plan</span><span><b>03</b> The commercial case</span></div>
+
+  <h2><span class="num">3</span>The commercial case</h2>
+  <p class="lede">
+    The aggregators are the competitor here, not other till vendors. Their
+    commission is the number a restaurant owner already resents, and it is the
+    number this product is sold against.
+  </p>
+
+  <figure>
+    <div class="fignum">Figure 2 — What a UK independent pays per order</div>
+    <svg viewBox="0 0 900 300" role="img" aria-label="Bar chart comparing commission taken per order: Uber Eats 30 percent, Deliveroo 27 percent, Just Eat 14 percent, and a Vesopa own channel at about 2 percent.">
+      <g font-family="Helvetica, Arial, sans-serif">
+        <!-- gridlines -->
+        <g stroke="#E1E3DA" stroke-width="1">
+          <line x1="230" y1="24" x2="230" y2="248"/>
+          <line x1="392" y1="24" x2="392" y2="248"/>
+          <line x1="554" y1="24" x2="554" y2="248"/>
+          <line x1="716" y1="24" x2="716" y2="248"/>
+          <line x1="878" y1="24" x2="878" y2="248"/>
+        </g>
+        <g font-size="11" fill="#787A6E" text-anchor="middle">
+          <text x="230" y="266">0%</text>
+          <text x="392" y="266">10%</text>
+          <text x="554" y="266">20%</text>
+          <text x="716" y="266">30%</text>
+          <text x="878" y="266">40%</text>
+        </g>
+
+        <!-- Uber Eats: 30% -->
+        <text x="218" y="53" text-anchor="end" font-size="13" font-weight="700" fill="#16170F">Uber Eats</text>
+        <text x="218" y="68" text-anchor="end" font-size="10" fill="#787A6E">Uber delivers</text>
+        <rect x="230" y="34" width="486" height="30" rx="4" fill="#B6B8AD"/>
+        <text x="730" y="54" font-size="13" font-weight="700" fill="#4A4C41">30%</text>
+
+        <!-- Deliveroo: 27% -->
+        <text x="218" y="105" text-anchor="end" font-size="13" font-weight="700" fill="#16170F">Deliveroo</text>
+        <text x="218" y="120" text-anchor="end" font-size="10" fill="#787A6E">typical independent</text>
+        <rect x="230" y="86" width="437" height="30" rx="4" fill="#B6B8AD"/>
+        <text x="681" y="106" font-size="13" font-weight="700" fill="#4A4C41">25–30%</text>
+
+        <!-- Just Eat: 14% -->
+        <text x="218" y="157" text-anchor="end" font-size="13" font-weight="700" fill="#16170F">Just Eat</text>
+        <text x="218" y="172" text-anchor="end" font-size="10" fill="#787A6E">headline, self-delivery</text>
+        <rect x="230" y="138" width="227" height="30" rx="4" fill="#B6B8AD"/>
+        <text x="471" y="158" font-size="13" font-weight="700" fill="#4A4C41">14%</text>
+
+        <!-- Vesopa: ~2% (emphasis) -->
+        <text x="218" y="209" text-anchor="end" font-size="13" font-weight="700" fill="#6E8A0E">Vesopa Order</text>
+        <text x="218" y="224" text-anchor="end" font-size="10" fill="#6E8A0E">venue's own channel</text>
+        <rect x="230" y="190" width="32" height="30" rx="4" fill="#A5C715"/>
+        <text x="276" y="210" font-size="13" font-weight="700" fill="#6E8A0E">~2% card processing</text>
+
+        <!-- baseline -->
+        <line x1="230" y1="24" x2="230" y2="248" stroke="#4A4C41" stroke-width="1.6"/>
+      </g>
+    </svg>
+    <figcaption>
+      Commission taken from the restaurant, as a share of order value. Uber Eats
+      publishes 30% when Uber delivers and 13% for self-delivery; Deliveroo does
+      not publish a rate card and industry guides put independents at 25–30%;
+      Just Eat's headline is 14%. Vesopa Order takes no commission — the venue
+      pays card processing plus its existing subscription. <b>Rates are
+      negotiable and vary by contract; treat these as published ranges, not
+      quotes.</b>
+    </figcaption>
+  </figure>
+
+  <div class="cols-2u">
+    <div>
+      <h3>What that means in money</h3>
+      <p>
+        A venue doing <strong>£10,000 a month</strong> of online orders — a modest number for a
+        busy independent — pays:
+      </p>
+      <table class="tight">
+        <thead><tr><th>Route</th><th style="text-align:right">Monthly cost</th><th style="text-align:right">Per year</th></tr></thead>
+        <tbody>
+          <tr><td>Uber Eats (they deliver)</td><td style="text-align:right">£3,000</td><td style="text-align:right">£36,000</td></tr>
+          <tr><td>Deliveroo (typical)</td><td style="text-align:right">£2,700</td><td style="text-align:right">£32,400</td></tr>
+          <tr><td>Just Eat (self-delivery)</td><td style="text-align:right">£1,400</td><td style="text-align:right">£16,800</td></tr>
+          <tr><td style="color:var(--brand-ink)">Vesopa Order</td><td style="text-align:right;color:var(--brand-ink);font-weight:700">~£200 + sub</td><td style="text-align:right;color:var(--brand-ink);font-weight:700">~£2,400 + sub</td></tr>
+        </tbody>
+      </table>
+      <p style="font-size:8.6pt">
+        Even against Just Eat's cheapest tier the venue keeps roughly <strong>£14,000 a
+        year</strong>. That is the sales conversation, and it is a conversation the
+        salesperson does not have to be technical to win.
+      </p>
+
+      <h3>Where Vesopa earns</h3>
+      <ul>
+        <li><strong>Subscription uplift.</strong> Ordering is a paid module on top of the existing
+          per-till subscription. Predictable, recurring, and it prices off the money the
+          venue is already saving.</li>
+        <li><strong>Payment processing.</strong> Online orders route through our Dojo /
+          Paymentsense relationship, on the same rails as the card machine.</li>
+        <li><strong>Retention.</strong> A venue whose customers have its app installed and its
+          QR codes on the tables does not change till vendor casually.</li>
+      </ul>
+    </div>
+    <div>
+      <div class="callout">
+        <span class="tag">Be honest about this</span>
+        <p>
+          We are not replacing the aggregators. They bring <em>discovery</em> — new
+          customers who did not know the venue existed — and we cannot. What we
+          replace is the <strong>repeat</strong> order: the regular who already knows the
+          venue and is being charged 27% to reorder from it.
+        </p>
+        <p style="margin-top:2mm">
+          The pitch is "keep Deliveroo for discovery, put your regulars on your
+          own app" — which is what venues already try to do by hand with a phone
+          number on the receipt.
+        </p>
+      </div>
+
+      <div class="card">
+        <h4>The lever we already have</h4>
+        <p style="font-size:8.2pt">
+          The till's receipt already supports a printed QR code
+          (<code>show_qr</code> / <code>qr_url</code> in the branding table). Every receipt a
+          venue prints today is free advertising space for its own ordering page.
+        </p>
+      </div>
+
+      <div class="card" style="margin-top:3mm">
+        <h4>Competitive position</h4>
+        <p style="font-size:8.2pt">
+          Square, Zonal, Lightspeed and Toast all ship online ordering with their
+          tills. A UK EPOS vendor without it is increasingly disqualified from
+          tenders before the demo — this is as much about <strong>not losing deals</strong> as
+          about winning new revenue.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =================================================================== -->
+<!-- 4. WHERE IT FITS                                                     -->
+<!-- =================================================================== -->
+<section class="page">
+  <div class="rh"><span>Vesopa Order — Delivery Plan</span><span><b>04</b> Architecture</span></div>
+
+  <h2><span class="num">4</span>Where this fits in what we already have</h2>
+  <p class="lede">
+    Most of this is extension, not invention. The server, the database, the
+    tenancy model, the menu, the pricing rules and the live socket to the till
+    all exist and are in production. The genuinely new parts are the customer
+    front-ends and making the order flow run <em>towards</em> the till as well as away
+    from it.
+  </p>
+
+  <figure>
+    <div class="fignum">Figure 3 — System architecture</div>
+    <svg viewBox="0 0 900 430" role="img" aria-label="Architecture diagram: iOS app, Android app, QR mini-site and venue website talk to a new Ordering API in the existing Node server, which shares MySQL with the back office and pushes orders over WebSocket to the Flutter till.">
+      <defs>
+        <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#787A6E"/>
+        </marker>
+        <marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#6E8A0E"/>
+        </marker>
+      </defs>
+      <g font-family="Helvetica, Arial, sans-serif">
+
+        <!-- ===== LAYER 1: customer ===== -->
+        <text x="12" y="18" font-size="10" font-weight="700" fill="#6E8A0E" letter-spacing="1">CUSTOMER — NEW</text>
+        <rect x="8" y="26" width="884" height="74" rx="6" fill="#EFF6D8" stroke="#6E8A0E" stroke-width="1.2" stroke-dasharray="5 3"/>
+
+        <g>
+          <rect x="26" y="40" width="185" height="46" rx="5" fill="#fff" stroke="#6E8A0E" stroke-width="1.8"/>
+          <text x="118" y="60" text-anchor="middle" font-size="13" font-weight="700" fill="#2F3B05">iOS app</text>
+          <text x="118" y="76" text-anchor="middle" font-size="10" fill="#787A6E">Flutter · App Store</text>
+        </g>
+        <g>
+          <rect x="228" y="40" width="185" height="46" rx="5" fill="#fff" stroke="#6E8A0E" stroke-width="1.8"/>
+          <text x="320" y="60" text-anchor="middle" font-size="13" font-weight="700" fill="#2F3B05">Android app</text>
+          <text x="320" y="76" text-anchor="middle" font-size="10" fill="#787A6E">Flutter · Play Store</text>
+        </g>
+        <g>
+          <rect x="430" y="40" width="200" height="46" rx="5" fill="#fff" stroke="#6E8A0E" stroke-width="1.8"/>
+          <text x="530" y="60" text-anchor="middle" font-size="13" font-weight="700" fill="#2F3B05">QR mini-site</text>
+          <text x="530" y="76" text-anchor="middle" font-size="10" fill="#787A6E">phone browser · no install</text>
+        </g>
+        <g>
+          <rect x="647" y="40" width="227" height="46" rx="5" fill="#fff" stroke="#6E8A0E" stroke-width="1.2" stroke-dasharray="4 3"/>
+          <text x="760" y="60" text-anchor="middle" font-size="13" font-weight="700" fill="#2F3B05">Venue's own website</text>
+          <text x="760" y="76" text-anchor="middle" font-size="10" fill="#787A6E">their domain · phase 4</text>
+        </g>
+
+        <!-- ===== LAYER 2: server ===== -->
+        <!-- The band label is drawn last, at the foot of this group — see the
+             note there. -->
+        <rect x="8" y="138" width="884" height="112" rx="6" fill="#FCFCFB" stroke="#4A4C41" stroke-width="1.2"/>
+
+        <g>
+          <rect x="26" y="154" width="230" height="80" rx="5" fill="#EFF6D8" stroke="#6E8A0E" stroke-width="1.8"/>
+          <text x="141" y="176" text-anchor="middle" font-size="13" font-weight="700" fill="#2F3B05">Ordering API</text>
+          <text x="141" y="192" text-anchor="middle" font-size="10" fill="#6E8A0E" font-weight="700">NEW · src/ordering.js</text>
+          <text x="141" y="208" text-anchor="middle" font-size="9.5" fill="#787A6E">menu · quote · pay · status</text>
+          <text x="141" y="222" text-anchor="middle" font-size="9.5" fill="#787A6E">table tokens · zones</text>
+        </g>
+        <g>
+          <rect x="272" y="154" width="200" height="80" rx="5" fill="#E3F2EF" stroke="#1E9184" stroke-width="1.5"/>
+          <text x="372" y="176" text-anchor="middle" font-size="13" font-weight="700" fill="#14655C">Pricing engine</text>
+          <text x="372" y="192" text-anchor="middle" font-size="10" fill="#14655C" font-weight="700">EXTEND · src/commerce.js</text>
+          <text x="372" y="208" text-anchor="middle" font-size="9.5" fill="#4A4C41">promos · vouchers</text>
+          <text x="372" y="222" text-anchor="middle" font-size="9.5" fill="#4A4C41">points · VAT · gratuity</text>
+        </g>
+        <g>
+          <rect x="488" y="154" width="184" height="80" rx="5" fill="#E3F2EF" stroke="#1E9184" stroke-width="1.5"/>
+          <text x="580" y="176" text-anchor="middle" font-size="13" font-weight="700" fill="#14655C">WebSocket</text>
+          <text x="580" y="192" text-anchor="middle" font-size="10" fill="#14655C" font-weight="700">EXTEND · dispatcher</text>
+          <text x="580" y="208" text-anchor="middle" font-size="9.5" fill="#4A4C41">order.incoming</text>
+          <text x="580" y="222" text-anchor="middle" font-size="9.5" fill="#4A4C41">order.updated</text>
+        </g>
+        <g>
+          <rect x="688" y="154" width="186" height="80" rx="5" fill="#F6F7F2" stroke="#B6B8AD" stroke-width="1.5"/>
+          <text x="781" y="176" text-anchor="middle" font-size="13" font-weight="700" fill="#4A4C41">Back office</text>
+          <text x="781" y="192" text-anchor="middle" font-size="10" fill="#787A6E" font-weight="700">EXISTS · public/</text>
+          <text x="781" y="208" text-anchor="middle" font-size="9.5" fill="#787A6E">menu · QR codes</text>
+          <text x="781" y="222" text-anchor="middle" font-size="9.5" fill="#787A6E">hours · site settings</text>
+        </g>
+
+        <!-- ===== LAYER 3: data + payments ===== -->
+        <g>
+          <rect x="26" y="288" width="330" height="58" rx="5" fill="#F6F7F2" stroke="#B6B8AD" stroke-width="1.5"/>
+          <text x="191" y="310" text-anchor="middle" font-size="13" font-weight="700" fill="#4A4C41">MySQL — vesopa_eposdb</text>
+          <text x="191" y="327" text-anchor="middle" font-size="10" fill="#787A6E">EXISTS · tenancy by office contact_email</text>
+          <text x="191" y="340" text-anchor="middle" font-size="9.5" fill="#6E8A0E" font-weight="700">+ 6 new tables</text>
+        </g>
+        <g>
+          <rect x="380" y="288" width="240" height="58" rx="5" fill="#FDF3D6" stroke="#8A6400" stroke-width="1.5"/>
+          <text x="500" y="310" text-anchor="middle" font-size="13" font-weight="700" fill="#8A6400">Dojo / Paymentsense</text>
+          <text x="500" y="327" text-anchor="middle" font-size="10" fill="#8A6400">hosted checkout · card-not-present</text>
+          <text x="500" y="340" text-anchor="middle" font-size="9.5" fill="#787A6E">3-D Secure · Apple/Google Pay</text>
+        </g>
+        <g>
+          <rect x="644" y="288" width="230" height="58" rx="5" fill="#FDF3D6" stroke="#8A6400" stroke-width="1.5"/>
+          <text x="759" y="310" text-anchor="middle" font-size="13" font-weight="700" fill="#8A6400">Push (FCM / APNs)</text>
+          <text x="759" y="327" text-anchor="middle" font-size="10" fill="#8A6400">order ready · driver on the way</text>
+          <text x="759" y="340" text-anchor="middle" font-size="9.5" fill="#787A6E">NEW</text>
+        </g>
+
+        <!-- ===== LAYER 4: till ===== -->
+        <g>
+          <rect x="26" y="376" width="848" height="46" rx="5" fill="#EFF6D8" stroke="#6E8A0E" stroke-width="1.8"/>
+          <text x="450" y="396" text-anchor="middle" font-size="13" font-weight="700" fill="#2F3B05">Vesopa till — Flutter, Windows &amp; Android · offline-first (drift/SQLite)</text>
+          <text x="450" y="412" text-anchor="middle" font-size="10" fill="#787A6E">
+            EXISTS · <tspan fill="#6E8A0E" font-weight="700">+ Orders tab, accept/reject, kitchen &amp; driver printing</tspan>
+          </text>
+        </g>
+
+        <!-- arrows: customer -> API -->
+        <path d="M118,88 L118,120 L141,120 L141,150" fill="none" stroke="#6E8A0E" stroke-width="1.6" marker-end="url(#a3)"/>
+        <path d="M320,88 L320,120 L141,120" fill="none" stroke="#6E8A0E" stroke-width="1.6"/>
+        <path d="M530,88 L530,120 L141,120" fill="none" stroke="#6E8A0E" stroke-width="1.6"/>
+        <path d="M760,88 L760,120 L141,120" fill="none" stroke="#6E8A0E" stroke-width="1.6" stroke-dasharray="4 3"/>
+
+        <!-- API <-> pricing, ws -->
+        <line x1="258" y1="194" x2="268" y2="194" stroke="#787A6E" stroke-width="1.6" marker-end="url(#a2)"/>
+        <line x1="474" y1="194" x2="484" y2="194" stroke="#787A6E" stroke-width="1.6" marker-end="url(#a2)"/>
+
+        <!-- server -> db -->
+        <line x1="141" y1="236" x2="141" y2="284" stroke="#787A6E" stroke-width="1.6" marker-end="url(#a2)"/>
+        <line x1="781" y1="236" x2="781" y2="264" stroke="#787A6E" stroke-width="1.6"/>
+        <path d="M781,264 L340,264 L340,284" fill="none" stroke="#787A6E" stroke-width="1.6" marker-end="url(#a2)"/>
+
+        <!-- API -> payments -->
+        <path d="M256,200 L500,200 L500,284" fill="none" stroke="#8A6400" stroke-width="1.6" marker-end="url(#a2)"/>
+        <!-- ws -> push -->
+        <path d="M672,200 L759,200 L759,284" fill="none" stroke="#8A6400" stroke-width="1.6" marker-end="url(#a2)"/>
+
+        <!-- ws <-> till : the two-way bit -->
+        <path d="M580,236 L580,352 L450,352 L450,372" fill="none" stroke="#6E8A0E" stroke-width="2.2" marker-end="url(#a3)"/>
+        <!-- Sat at y=300, which put it on top of the Push box. Moved into the
+             clear band below the payment row and right of the arrow's turn. -->
+        <text x="600" y="366" font-size="10.5" fill="#6E8A0E"><tspan font-weight="700">order.incoming</tspan> — the new direction</text>
+
+        <path d="M300,376 L300,356 L200,356 L200,350" fill="none" stroke="#787A6E" stroke-width="1.6" marker-end="url(#a2)"/>
+        <text x="150" y="366" font-size="9.5" fill="#787A6E">POST /till/orders (exists)</text>
+
+        <!-- The iOS-app arrow drops through "backoffice" on its way down to the
+             Ordering API. Both are where they belong, so the label knocks itself
+             out of the line instead — which means drawing it after the arrows,
+             SVG having no z-index. -->
+        <text x="12" y="130" font-size="10" font-weight="700" fill="#787A6E" letter-spacing="1"
+              paint-order="stroke" stroke="#fff" stroke-width="3.5" stroke-linejoin="round">VESOPA SERVER — backoffice.vesopaepos.com · Node/Express · pm2</text>
+      </g>
+    </svg>
+    <figcaption>
+      Teal blocks already exist and are extended. Lime blocks are new work.
+      <b>The single most important change is the thick lime arrow:</b> today
+      orders only travel from the till to the server. Online ordering makes that
+      link two-way, which is what section 11 and the offline risk in section 12
+      are about.
+    </figcaption>
+  </figure>
+
+  <h3>Build on, don't rebuild</h3>
+  <table class="tight">
+    <thead><tr><th style="width:26%">Asset we already have</th><th style="width:14%">Status</th><th>How ordering uses it</th></tr></thead>
+    <tbody>
+      <tr><td>Menu &amp; catalogue (<code>bo_products</code>)</td><td><span class="pill have">Exists</span></td><td>The ordering menu is the till menu. One place to change a price. Needs per-channel price, availability and photo.</td></tr>
+      <tr><td>Multi-venue tenancy</td><td><span class="pill have">Exists</span></td><td>Every read and write is already scoped by office contact email — the ordering API inherits that for free.</td></tr>
+      <tr><td>Floor plan (<code>floor_rooms</code>, <code>floor_tables</code>)</td><td><span class="pill have">Exists</span></td><td>Every table already has an identity. The QR code is a signed token for a row that is already there.</td></tr>
+      <tr><td>Pricing rules</td><td><span class="pill ext">Extend</span></td><td>Promotions, vouchers, points, VAT and gratuity all exist. They must now run server-side for online orders — see 11.2.</td></tr>
+      <tr><td>Card payments (Dojo / Paymentsense)</td><td><span class="pill ext">Extend</span></td><td>Existing relationship and hosted-checkout page. Online is card-not-present rather than card-present.</td></tr>
+      <tr><td>Live socket to the till</td><td><span class="pill ext">Extend</span></td><td>The socket and reconnect logic exist and push catalogue changes. We add order events to the same channel.</td></tr>
+      <tr><td>Kitchen ticket printing</td><td><span class="pill ext">Extend</span></td><td>Printer routing per product and a ticket layout that already prints a <code>TAKEAWAY</code> header.</td></tr>
+      <tr><td>Back office SPA</td><td><span class="pill ext">Extend</span></td><td>Add menu-per-channel, opening hours, QR generator, delivery zones and site settings as new sections.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- =================================================================== -->
+<!-- 5. THE MOBILE APPS — publishing decision                             -->
+<!-- =================================================================== -->
+<section class="page">
+  <div class="rh"><span>Vesopa Order — Delivery Plan</span><span><b>05</b> Mobile apps — the publishing decision</span></div>
+
+  <h2><span class="num">5</span>The mobile apps: the decision that comes first</h2>
+  <p class="lede">
+    Before a line of app code is written there is one decision that changes
+    everything downstream: <strong>do we ship one Vesopa app containing every venue, or
+    a separately branded app per venue?</strong> Getting this wrong does not cost us a
+    sprint — it costs us the App Store listing.
+  </p>
+
+  <div class="callout">
+    <span class="tag">The constraint</span>
+    <p>
+      Apple's App Review Guideline <strong>4.2.6</strong> states that apps created from a
+      commercialised template or app-generation service will be rejected
+      <em>unless they are submitted directly by the provider of the app's content</em>.
+      Fifty near-identical restaurant apps from our own developer account are
+      rejected as spam. Enforced since 2017; it removes the obvious business model.
+    </p>
+    <p style="margin-top:1.6mm">
+      Apple names the acceptable alternative explicitly: <strong>a single binary hosting
+      all client content in an aggregated or "picker" model — for example a
+      restaurant-finder app with a customised entry per client restaurant.</strong>
+      That is precisely the product described here.
+    </p>
+  </div>
+
+  <h3>The three options</h3>
+  <table>
+    <thead><tr><th style="width:19%">Option</th><th style="width:12%">Store risk</th><th style="width:11%">Cost</th><th>Assessment</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>A — One Vesopa app, venue picker<br><span class="pill new">Recommended</span></td>
+        <td><span class="pill lo">Low</span></td>
+        <td>One build</td>
+        <td>
+          Exactly the model Apple names as acceptable. One binary, one submission,
+          one review cycle. Every new venue is a database row, live the same day —
+          <strong>no store review to onboard a customer.</strong> Cross-venue discovery is a
+          genuine benefit. <em>Cost:</em> the venue's brand sits inside ours rather than
+          on the home screen.
+        </td>
+      </tr>
+      <tr>
+        <td>B — One app per venue, Vesopa's account</td>
+        <td><span class="pill hi">High</span></td>
+        <td>Very high</td>
+        <td>
+          <strong>Do not do this.</strong> The exact pattern 4.2.6 exists to reject, and a rejection
+          risks our whole developer account. Also unworkable: every venue's onboarding
+          waits on Apple.
+        </td>
+      </tr>
+      <tr>
+        <td>C — One app per venue, the <em>venue's</em> account</td>
+        <td><span class="pill md">Medium</span></td>
+        <td>Per venue</td>
+        <td>
+          Permitted — 4.2.6 is satisfied when the content provider submits from its own
+          account. The venue pays Apple $99/yr and Google's fee and owns the listing; we
+          build from the same codebase with their branding. Sell as a premium add-on.
+          <strong>Phase 4, not phase 2</strong> — the per-venue release burden is real.
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="cols-2" style="margin-top:2mm">
+    <div class="card accent">
+      <h4>Recommendation</h4>
+      <p>
+        <strong>Ship option A now; offer option C as a paid add-on from phase 4.</strong>
+      </p>
+      <p style="margin-top:1.6mm">
+        Architecturally these are the same app: option C is option A with the venue
+        picker removed and the venue's colours swapped by build flavour. Building A
+        properly makes C a configuration exercise later rather than a second product —
+        which is why branding must be data-driven from the first commit.
+      </p>
+    </div>
+    <div class="card">
+      <h4>Two things that would otherwise surprise us</h4>
+      <p style="font-size:8.6pt">
+        <strong>Apple's 30% in-app purchase cut does not apply.</strong> Physical goods and
+        services consumed outside the app — which is what food is — are explicitly
+        outside the IAP requirement. We take payment with our own processor. This
+        is the same basis on which Deliveroo and Uber Eats operate.
+      </p>
+      <p style="font-size:8.6pt;margin-top:2mm">
+        <strong>Apple will want to see real content.</strong> An app submitted with two demo
+        venues gets rejected as incomplete. We must have a handful of live venues
+        with real menus before first submission — which is why phase 1 (QR
+        ordering) deliberately comes first: it populates real menus.
+      </p>
+    </div>
+  </div>
+
+  <h3>Why Flutter for the consumer apps</h3>
+  <div class="cols-3">
+    <div class="card">
+      <h4>The team already ships it</h4>
+      <p style="font-size:8pt">
+        The till is Flutter on Dart 3.11, in production on Windows and Android, with
+        a tested pricing engine. Anything else means a second language and a second
+        toolchain for one developer.
+      </p>
+    </div>
+    <div class="card">
+      <h4>The money code is reusable</h4>
+      <p style="font-size:8pt">
+        The money model, tender kinds and display formatting are already written in
+        Dart and covered by tests. The app reuses those types rather than
+        reimplementing them in a third language.
+      </p>
+    </div>
+    <div class="card">
+      <h4>One codebase, both stores</h4>
+      <p style="font-size:8pt">
+        Native iOS plus native Android is roughly double the effort for a UI this
+        conventional. <strong>Flutter is the obvious call and I would not spend long
+        debating it</strong> — with one exception, the QR mini-site, examined in section 8.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- =================================================================== -->
+<!-- 6. THE APP ITSELF                                                    -->
+<!-- =================================================================== -->
+<section class="page">
+  <div class="rh"><span>Vesopa Order — Delivery Plan</span><span><b>06</b> Mobile apps — the product</span></div>
+
+  <h2><span class="num">6</span>The app, screen by screen</h2>
+  <p class="lede">
+    The whole app is judged on one number: how many taps from opening it to having
+    paid. The target is <strong>a repeat customer reordering their usual in under fifteen
+    seconds</strong>, and every screen below is arranged around that.
+  </p>
+
+  <div class="phones">
+    <!-- Phone 1: menu -->
+    <div>
+      <div class="phone">
+        <div class="notch"></div>
+        <div class="ph-body">
+          <div class="ph-hero">
+            <div class="t">The Vesopa Kitchen</div>
+            <div class="s">Collection in 20 min · 0.4 mi</div>
+          </div>
+          <div class="ph-seg"><span class="on">Collection</span><span>Delivery</span></div>
+          <div style="font-size:5.6pt;font-weight:700;color:var(--ink-3);letter-spacing:0.06em;margin-top:1mm">ORDER AGAIN</div>
+          <div class="ph-row">
+            <div class="ph-thumb" style="background:#EFF6D8"></div>
+            <div><div class="n">Your usual</div><div class="d">Chicken burger, fries, Coke</div></div>
+            <div class="p">£12.40</div><div class="add">+</div>
+          </div>
+          <div style="font-size:5.6pt;font-weight:700;color:var(--ink-3);letter-spacing:0.06em;margin-top:1.5mm">BURGERS</div>
+          <div class="ph-row">
+            <div class="ph-thumb"></div>
+            <div><div class="n">Chicken burger</div><div class="d">Buttermilk, slaw</div></div>
+            <div class="p">£8.50</div><div class="add">+</div>
+          </div>
+          <div class="ph-row">
+            <div class="ph-thumb"></div>
+            <div><div class="n">Halloumi burger</div><div class="d">Grilled, harissa</div></div>
+            <div class="p">£8.00</div><div class="add">+</div>
+          </div>
+          <div class="ph-row" style="opacity:0.42">
+            <div class="ph-thumb"></div>
+            <div><div class="n">Beef brisket</div><div class="d" style="color:var(--risk);font-weight:700">Sold out today</div></div>
+            <div class="p">£10.50</div>
+          </div>
+          <div class="ph-tot">
+            <div class="ph-cta">View basket · 3 items · £12.40</div>
+          </div>
+        </div>
+      </div>
+      <div class="phone-cap">1 · Menu</div>
+    </div>
+
+    <!-- Phone 2: checkout -->
+    <div>
+      <div class="phone">
+        <div class="notch"></div>
+        <div class="ph-body">
+          <div style="font-size:7.6pt;font-weight:700;color:var(--brand-dark);padding:0.5mm 0 1mm">Your order</div>
+          <div class="ph-row">
+            <div><div class="n">Chicken burger</div><div class="d">No slaw</div></div>
+            <div class="p">£8.50</div>
+          </div>
+          <div class="ph-row">
+            <div><div class="n">Fries</div><div class="d">Regular</div></div>
+            <div class="p">£3.00</div>
+          </div>
+          <div class="ph-row">
+            <div><div class="n">Coke</div><div class="d">330ml can</div></div>
+            <div class="p">£1.90</div>
+          </div>
+          <div style="font-size:5.6pt;font-weight:700;color:var(--ink-3);letter-spacing:0.06em;margin-top:1.5mm">COLLECTION TIME</div>
+          <div class="ph-seg" style="margin-top:0.6mm"><span class="on">ASAP · 20 min</span><span>Choose time</span></div>
+          <div style="font-size:5.6pt;font-weight:700;color:var(--ink-3);letter-spacing:0.06em;margin-top:1.5mm">REWARDS</div>
+          <div class="ph-row" style="border-bottom:none">
+            <div><div class="n" style="color:var(--good)">240 points available</div><div class="d">Redeem £2.40 off</div></div>
+            <div class="p" style="color:var(--good)">Apply</div>
+          </div>
+          <div class="ph-tot">
+            <div class="l"><span>Subtotal</span><span>£13.40</span></div>
+            <div class="l"><span style="color:var(--good)">Points redeemed</span><span style="color:var(--good)">−£1.00</span></div>
+            <div class="l big"><span>Total</span><span>£12.40</span></div>
+            <div class="ph-cta" style="background:#000">&#63743;&nbsp; Pay</div>
+            <div class="ph-cta alt">Pay by card</div>
+          </div>
+        </div>
+      </div>
+      <div class="phone-cap">2 · Checkout</div>
+    </div>
+
+    <!-- Phone 3: tracking -->
+    <div>
+      <div class="phone">
+        <div class="notch"></div>
+        <div class="ph-body">
+          <div class="ph-hero" style="height:11mm">
+            <div class="t">Order #1047</div>
+            <div class="s">The Vesopa Kitchen · Collection</div>
+          </div>
+          <div style="text-align:center;padding:2mm 0 1mm">
+            <div style="font-size:13pt;font-weight:700;color:var(--brand-dark);line-height:1">18:45</div>
+            <div style="font-size:5.6pt;color:var(--ink-3);margin-top:0.8mm">ESTIMATED READY</div>
+          </div>
+          <div class="ph-track">
+            <div class="ph-step done">
+              <div class="dotcol"><div class="dot"></div><div class="bar"></div></div>
+              <div class="txt"><b>Order placed</b><span>18:22 · paid £12.40</span></div>
+            </div>
+            <div class="ph-step done">
+              <div class="dotcol"><div class="dot"></div><div class="bar"></div></div>
+              <div class="txt"><b>Accepted by the kitchen</b><span>18:23 · ready by 18:45</span></div>
+            </div>
+            <div class="ph-step now">
+              <div class="dotcol"><div class="dot"></div><div class="bar"></div></div>
+              <div class="txt"><b>Being prepared</b><span>In the kitchen now</span></div>
+            </div>
+            <div class="ph-step">
+              <div class="dotcol"><div class="dot"></div></div>
+              <div class="txt"><b>Ready to collect</b><span>We'll notify you</span></div>
+            </div>
+          </div>
+          <div class="ph-tot">
+            <div class="ph-cta alt">Call the venue</div>
+            <div class="ph-cta">Reorder this</div>
+          </div>
+        </div>
+      </div>
+      <div class="phone-cap">3 · Live tracking</div>
+    </div>
+  </div>
+
+  <p class="footnote" style="margin-bottom:2.6mm">
+    Indicative layouts, not final design. The deliberate details: <b>"Your usual" is
+    first on the menu</b> (the repeat order is the business case); <b>sold-out items are
+    greyed, not hidden</b>; and <b>Apple Pay / Google Pay is the primary button</b> — it
+    roughly halves checkout abandonment against typing a card number.
+  </p>
+
+  <div class="cols-2">
+    <div>
+      <h3>What ships in the first version</h3>
+      <table class="tight">
+        <thead><tr><th style="width:38%">Area</th><th>Included</th></tr></thead>
+        <tbody>
+          <tr><td>Find a venue</td><td>Nearby list, search, recently ordered. Opening hours and "closed now" shown honestly.</td></tr>
+          <tr><td>Menu</td><td>Categories, photos, modifiers, allergen notes, per-item availability.</td></tr>
+          <tr><td>Basket</td><td>Quantities, item notes, live totals quoted by the server, promotions applied.</td></tr>
+          <tr><td>Account</td><td>Sign in by phone number and one-time code. No password to forget.</td></tr>
+          <tr><td>Payment</td><td>Apple Pay, Google Pay, saved cards, 3-D Secure. Card details never reach us.</td></tr>
+          <tr><td>Loyalty</td><td>Points earned and redeemed against the existing loyalty scheme.</td></tr>
+          <tr><td>Tracking</td><td>Live status, estimated time, push at accepted and ready.</td></tr>
+          <tr><td>Reorder</td><td>One tap from history. The highest-value screen in the app.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div>
+      <h3>Explicitly not in version one</h3>
+      <ul>
+        <li><strong>Table booking</strong> — a separate product with its own complexity; do not let it in.</li>
+        <li><strong>In-app chat with the venue</strong> — needs staffing the venue does not have. A phone button instead.</li>
+        <li><strong>Group ordering / split the bill in-app</strong> — genuinely wanted, but it doubles the basket model. Post-launch.</li>
+        <li><strong>Live driver map</strong> — status updates in phase 3, a moving pin only if delivery volume justifies it.</li>
+        <li><strong>Scheduled orders days ahead</strong> — capacity modelling gets hard fast. Same-day time slots only at first.</li>
+      </ul>
+
+      <div class="callout">
+        <span class="tag">The thing most likely to sink this</span>
+        <p>
+          Not the code — <strong>the menu data</strong>. A till menu is written for a clerk who
+          knows the products: terse names, no photos, no descriptions, no allergens.
+          A consumer will not order "CHK BRG 2" from a blank row.
+        </p>
+        <p style="margin-top:2mm">
+          Every venue needs its menu enriched before it can go live. We must
+          budget for this as an <em>onboarding service</em>, build the back-office tools to
+          make it fast, and not discover it at the first venue trial.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =================================================================== -->
+<!-- 7. PAYMENTS & PLATFORM                                               -->
+<!-- =================================================================== -->
+<section class="page">
+  <div class="rh"><span>Vesopa Order — Delivery Plan</span><span><b>07</b> Mobile apps — payments &amp; platform</span></div>
+
+  <h2><span class="num">7</span>Payments, push, and getting into the stores</h2>
+
+  <h3>7.1 Taking money without touching a card number</h3>
+  <p>
+    The till today takes <strong>card-present</strong> payments — a physical terminal, a
+    customer standing there. Online ordering is <strong>card-not-present</strong>: a different
+    integration, a different risk profile, and different rules.
+  </p>
+
+  <div class="cols-2">
+    <div>
+      <table class="tight">
+        <thead><tr><th style="width:30%">Concern</th><th>How it is handled</th></tr></thead>
+        <tbody>
+          <tr><td>PCI scope</td><td>Card details are entered in the processor's own hosted fields and never reach a Vesopa server, app or database. This keeps us in the lightest self-assessment tier — a genuinely important cost and liability difference.</td></tr>
+          <tr><td>Strong Customer Authentication</td><td>3-D Secure is mandatory for UK card-not-present. The processor's SDK handles the challenge; we handle the "customer got interrupted mid-challenge" case, which is the one that actually breaks in production.</td></tr>
+          <tr><td>Apple Pay / Google Pay</td><td>Primary payment method. Both satisfy SCA without a challenge screen, so they are faster <em>and</em> convert better. Apple Pay needs a merchant certificate per environment — a set-up task with lead time, not a coding task.</td></tr>
+          <tr><td>Refunds</td><td>A rejected order must refund automatically, from the server, with no clerk action. Anything less and staff stop rejecting orders they should reject.</td></tr>
+          <tr><td>Chargebacks</td><td>New exposure the venue does not have today. Needs a back-office view of disputes and a documented policy before the first venue goes live.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div>
+      <div class="callout">
+        <span class="tag">Open question for the payments partner</span>
+        <p>
+          We have a working card-present integration and a hosted-checkout page
+          already written for the till. What we need to confirm with Dojo /
+          Paymentsense is the <strong>card-not-present product</strong>: mobile SDKs for iOS and
+          Android, Apple Pay and Google Pay support, tokenised saved cards,
+          server-side refunds, and the commercial rate for online transactions.
+        </p>
+        <p style="margin-top:2mm">
+          <strong>This is on the critical path for phase 1 and I would like to open that
+          conversation now.</strong> If their online offering is weak, the fallback is a
+          dedicated online processor alongside them — worse commercially, but not
+          a blocker.
+        </p>
+      </div>
+
+      <h4>7.2 Push notifications</h4>
+      <p style="font-size:8.6pt">
+        Firebase Cloud Messaging for Android, APNs for iOS, both driven from the
+        server when an order changes state. Two rules: notify only on <strong>accepted</strong>
+        and <strong>ready</strong> (plus <strong>out for delivery</strong>), and never send marketing pushes
+        from the shared app without the venue's own opt-in — one venue spamming
+        would get the app uninstalled for all of them.
+      </p>
+    </div>
+  </div>
+
+  <h3>7.3 Getting into the stores, and staying in</h3>
+  <table class="tight">
+    <thead><tr><th style="width:22%">Item</th><th style="width:14%">Lead time</th><th>Note</th></tr></thead>
+    <tbody>
+      <tr><td>Apple Developer Program</td><td>Up to 3 weeks</td><td>Organisation account under Vesopa EPOS Ltd. Needs a D-U-N-S number — <strong>this must be started in week 1</strong>. On an eight-week plan it is the single likeliest cause of missing the date, and it needs no code from us.</td></tr>
+      <tr><td>Google Play Developer</td><td>Days</td><td>One-off fee. Organisation accounts now require identity verification too.</td></tr>
+      <tr><td>App review</td><td>1–3 days typical</td><td>First submission is the risky one. Budget two rejection cycles: real venues with real menus, a working demo account for the reviewer, and a privacy policy that matches what we actually collect.</td></tr>
+      <tr><td>Privacy labels</td><td>With submission</td><td>Both stores require a declaration of data collected and why. Location, contact details and order history all need declaring — and the declaration has to be true.</td></tr>
+      <tr><td>Ongoing releases</td><td>Every 2–4 weeks</td><td>Store review sits between us and every fix. <strong>Anything that might need changing urgently must be server-driven, not compiled in</strong> — menus, prices, opening hours, fees, copy.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <span class="tag">The design rule that follows from that last row</span>
+    <p>
+      Because an app release takes days and a server deploy takes minutes, the app
+      ships as a <em>thin client</em>: it renders what the server tells it and computes as
+      little as possible. Prices, availability, fees, opening hours, delivery zones
+      and even which channels a venue offers are all server-supplied. The app
+      should never need a release because a venue changed its mind.
+    </p>
+  </div>
+</section>
+
+<!-- =================================================================== -->
+<!-- 8. QR TABLE ORDERING                                                 -->
+<!-- =================================================================== -->
+<section class="page">
+  <div class="rh"><span>Vesopa Order — Delivery Plan</span><span><b>08</b> QR table ordering</span></div>
+
+  <h2><span class="num">8</span>QR ordering at the table</h2>
+  <p class="lede">
+    A customer sitting at a table will not install an app. This channel lives or
+    dies on the time between pointing a camera at a sticker and seeing food —
+    the budget is <strong>under two seconds</strong>, on a mid-range Android, on café Wi-Fi.
+  </p>
+
+  <figure>
+    <div class="fignum">Figure 4 — From sticker to kitchen</div>
+    <svg viewBox="0 0 900 130" role="img" aria-label="Six-step flow: scan the QR, menu opens, order and pay or add to tab, order reaches the till, kitchen ticket prints, order joins the table bill.">
+      <g font-family="Helvetica, Arial, sans-serif">
+        <defs>
+          <marker id="a4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#6E8A0E"/>
+          </marker>
+        </defs>
+        <g>
+          <circle cx="62" cy="46" r="26" fill="#EFF6D8" stroke="#6E8A0E" stroke-width="1.8"/>
+          <text x="62" y="52" text-anchor="middle" font-size="18" font-weight="700" fill="#6E8A0E">1</text>
+          <text x="62" y="92" text-anchor="middle" font-size="11.5" font-weight="700" fill="#2F3B05">Scan</text>
+          <text x="62" y="107" text-anchor="middle" font-size="9.5" fill="#787A6E">QR on table 12</text>
+          <text x="62" y="119" text-anchor="middle" font-size="9.5" fill="#787A6E">camera app</text>
+        </g>
+        <g>
+          <circle cx="222" cy="46" r="26" fill="#EFF6D8" stroke="#6E8A0E" stroke-width="1.8"/>
+          <text x="222" y="52" text-anchor="middle" font-size="18" font-weight="700" fill="#6E8A0E">2</text>
+          <text x="222" y="92" text-anchor="middle" font-size="11.5" font-weight="700" fill="#2F3B05">Menu opens</text>
+          <text x="222" y="107" text-anchor="middle" font-size="9.5" fill="#787A6E">no app, no login</text>
+          <text x="222" y="119" text-anchor="middle" font-size="9.5" fill="#787A6E">table known from URL</text>
+        </g>
+        <g>
+          <circle cx="382" cy="46" r="26" fill="#EFF6D8" stroke="#6E8A0E" stroke-width="1.8"/>
+          <text x="382" y="52" text-anchor="middle" font-size="18" font-weight="700" fill="#6E8A0E">3</text>
+          <text x="382" y="92" text-anchor="middle" font-size="11.5" font-weight="700" fill="#2F3B05">Order</text>
+          <text x="382" y="107" text-anchor="middle" font-size="9.5" fill="#787A6E">pay now, or</text>
+          <text x="382" y="119" text-anchor="middle" font-size="9.5" fill="#787A6E">add to the table tab</text>
+        </g>
+        <g>
+          <circle cx="542" cy="46" r="26" fill="#EFF6D8" stroke="#6E8A0E" stroke-width="1.8"/>
+          <text x="542" y="52" text-anchor="middle" font-size="18" font-weight="700" fill="#6E8A0E">4</text>
+          <text x="542" y="92" text-anchor="middle" font-size="11.5" font-weight="700" fill="#2F3B05">Till alerts</text>
+          <text x="542" y="107" text-anchor="middle" font-size="9.5" fill="#787A6E">Orders tab, sound</text>
+          <text x="542" y="119" text-anchor="middle" font-size="9.5" fill="#787A6E">clerk accepts</text>
+        </g>
+        <g>
+          <circle cx="702" cy="46" r="26" fill="#EFF6D8" stroke="#6E8A0E" stroke-width="1.8"/>
+          <text x="702" y="52" text-anchor="middle" font-size="18" font-weight="700" fill="#6E8A0E">5</text>
+          <text x="702" y="92" text-anchor="middle" font-size="11.5" font-weight="700" fill="#2F3B05">Kitchen prints</text>
+          <text x="702" y="107" text-anchor="middle" font-size="9.5" fill="#787A6E">existing routing</text>
+          <text x="702" y="119" text-anchor="middle" font-size="9.5" fill="#787A6E">"TABLE 12"</text>
+        </g>
+        <g>
+          <circle cx="852" cy="46" r="26" fill="#E3F2EF" stroke="#1E9184" stroke-width="1.8"/>
+          <text x="852" y="52" text-anchor="middle" font-size="18" font-weight="700" fill="#14655C">6</text>
+          <text x="852" y="92" text-anchor="middle" font-size="11.5" font-weight="700" fill="#14655C">On the bill</text>
+          <text x="852" y="107" text-anchor="middle" font-size="9.5" fill="#787A6E">joins table 12</text>
+          <text x="852" y="119" text-anchor="middle" font-size="9.5" fill="#787A6E">on the floor plan</text>
+        </g>
+        <g stroke="#6E8A0E" stroke-width="1.6">
+          <line x1="92" y1="46" x2="190" y2="46" marker-end="url(#a4)"/>
+          <line x1="252" y1="46" x2="350" y2="46" marker-end="url(#a4)"/>
+          <line x1="412" y1="46" x2="510" y2="46" marker-end="url(#a4)"/>
+          <line x1="572" y1="46" x2="670" y2="46" marker-end="url(#a4)"/>
+          <line x1="732" y1="46" x2="820" y2="46" marker-end="url(#a4)"/>
+        </g>
+      </g>
+    </svg>
+    <figcaption>
+      <b>Step 6 is the part competitors get wrong.</b> A QR order that creates a separate,
+      parallel bill leaves staff reconciling two tabs for one table. Ours joins the
+      order the floor plan already has, so a customer can order two rounds on their
+      phone, one at the bar, and still get a single bill.
+    </figcaption>
+  </figure>
+
+  <div class="cols-2">
+    <div>
+      <h3>The URL and the QR code</h3>
+      <p>
+        Phase 1 uses a Vesopa-hosted address, one path per venue, with a signed
+        token identifying the table:
+      </p>
+      <div class="card" style="background:var(--surface-2);font-family:monospace;font-size:8.4pt;padding:2.6mm 3mm">
+        order.vesopaepos.com/<span style="color:var(--brand-ink);font-weight:700">the-vesopa-kitchen</span>/t/<span style="color:var(--brand-ink);font-weight:700">A7K2M9</span>
+      </div>
+      <p style="font-size:8.6pt;margin-top:2mm">
+        The token is short, opaque and signed. It <strong>must not</strong> be a guessable table
+        number: a URL ending <code>/t/12</code> invites a customer to change it to 13 and
+        order onto someone else's bill. Tokens are revocable per table, so a QR
+        that leaks — printed on a sticker in a public room, photographed and posted —
+        can be rotated without reprinting the whole venue.
+      </p>
+
+      <h3>Generating and printing the codes</h3>
+      <p style="font-size:8.6pt">
+        A new back-office screen lists the venue's rooms and tables from the
+        existing floor plan and produces a <strong>print-ready A4 sheet</strong> of table tents —
+        venue logo, table number, QR, and a short "scan to order" line. Reprint one
+        table or the whole room. The venue prints it on their own printer; no
+        fulfilment, no stock, no shipping.
+      </p>
+    </div>
+    <div>
+      <h3>Why this is not the Flutter app compiled for web</h3>
+      <p style="font-size:8.6pt">
+        It is the obvious idea and it is the wrong one. A Flutter web build ships
+        a multi-megabyte engine before it renders anything; on a phone on café
+        Wi-Fi that is several seconds of blank screen, and the customer has
+        already put the phone down. A small hand-written web page is
+        <strong>an order of magnitude smaller</strong> and paints almost immediately.
+      </p>
+      <p style="font-size:8.6pt">
+        <strong>The honest cost:</strong> two customer front-ends to maintain rather than one.
+        I think that is clearly the right trade, for three reasons — the mini-site is
+        a much smaller surface than the app (menu, basket, pay: no accounts, no
+        history, no push), both front-ends call the identical API so the logic
+        lives in one place, and it matches how the back office is already built:
+        plain HTML, CSS and JavaScript with no build step, which anyone on the
+        team can pick up.
+      </p>
+
+      <div class="callout">
+        <span class="tag">Design constraints that follow</span>
+        <p style="font-size:8.4pt">
+          No framework bundle. Menu data cached so a second scan is instant. Works
+          on an iPhone that has never seen the site and will never install
+          anything. Readable one-handed. And a permanent, obvious <strong>"call the
+          waiter"</strong> button — the goal is to remove the walk to take the order, not
+          to remove the staff.
+        </p>
+      </div>
+
+      <h3>Pay now or pay at the counter</h3>
+      <p style="font-size:8.6pt">
+        Set per venue. <strong>Pay now</strong> settles the order immediately and the table bill
+        shows it as paid. <strong>Pay at the counter</strong> adds the items to the open table
+        bill and the customer settles as they do today — which is what pubs and
+        table-service restaurants will want, and what makes this sellable to
+        venues that would otherwise refuse card-only ordering.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- =================================================================== -->
+<!-- 9. THE TILL                                                          -->
+<!-- =================================================================== -->
+<section class="page">
+  <div class="rh"><span>Vesopa Order — Delivery Plan</span><span><b>09</b> The till</span></div>
+
+  <h2><span class="num">9</span>What changes on the till</h2>
+  <p class="lede">
+    From the clerk's point of view this is one new tab. Behind it is the most
+    operationally sensitive part of the whole project: a kitchen that misses an
+    order loses a customer, and blames us.
+  </p>
+
+  <figure>
+    <div class="fignum">Figure 5 — The new Orders tab</div>
+    <div class="till">
+      <div class="till-top">
+        <span class="brand">vesopa</span>
+        <span>The Vesopa Kitchen</span>
+        <span style="opacity:0.6">Clerk: Sarah</span>
+        <span class="sp">Online &nbsp;·&nbsp; 18:41 &nbsp;·&nbsp; Till 1</span>
+      </div>
+      <div class="till-tabs">
+        <div>Sale</div>
+        <div>Tables</div>
+        <div class="on">Orders <span class="badge">4</span></div>
+        <div>Receipts</div>
+        <div>Reports</div>
+        <div>Functions</div>
+      </div>
+      <div style="display:flex;gap:2mm;padding:2.4mm 3mm 0">
+        <span class="pill new">All 4</span>
+        <span class="pill" style="background:#E7F0FC;color:#1B4F94">Table 2</span>
+        <span class="pill" style="background:#FDEEE7;color:#9A3D17">Takeaway 1</span>
+        <span class="pill" style="background:#E3F2EF;color:#14655C">Delivery 1</span>
+      </div>
+      <div class="till-grid">
+        <div class="oc urgent">
+          <div class="oc-h"><span class="no">#1047</span><span class="when">NEW · 0:12</span></div>
+          <span class="chan k">Takeaway</span>
+          <div class="who">James P. · 07700 900412<br>Collect ASAP</div>
+          <div class="items">1× Chicken burger (no slaw)<br>1× Fries · 1× Coke</div>
+          <div class="foot"><span class="amt">£12.40</span><span class="paid">PAID</span><span class="btn">Accept</span></div>
+        </div>
+        <div class="oc urgent">
+          <div class="oc-h"><span class="no">#1046</span><span class="when">NEW · 0:38</span></div>
+          <span class="chan t">Table 12</span>
+          <div class="who">Scanned QR · 4 covers<br>Second round</div>
+          <div class="items">2× Peroni · 1× Aperol<br>1× Olives</div>
+          <div class="foot"><span class="amt">£24.10</span><span class="unpaid">ON TAB</span><span class="btn">Accept</span></div>
+        </div>
+        <div class="oc">
+          <div class="oc-h"><span class="no">#1045</span><span class="when">18:32</span></div>
+          <span class="chan d">Delivery</span>
+          <div class="who">A. Khan · CF10 1AB<br>2.1 mi · ETA 19:05</div>
+          <div class="items">1× Mixed grill · 2× Naan<br>1× Mango lassi</div>
+          <div class="foot"><span class="amt">£31.80</span><span class="paid">PAID</span><span class="btn">Assign driver</span></div>
+        </div>
+        <div class="oc">
+          <div class="oc-h"><span class="no">#1044</span><span class="when">18:28</span></div>
+          <span class="chan t">Table 5</span>
+          <div class="who">Scanned QR · 2 covers</div>
+          <div class="items">2× Flat white · 1× Brownie</div>
+          <div class="foot"><span class="amt">£9.70</span><span class="paid">PAID</span><span class="btn">Ready</span></div>
+        </div>
+        <div class="oc" style="border-style:dashed;background:#fff;display:flex;align-items:center;justify-content:center;color:var(--ink-3);font-size:6.4pt;text-align:center">
+          Accepted orders move down<br>and clear when collected
+        </div>
+        <div class="oc" style="border-style:dashed;background:#fff;display:flex;align-items:center;justify-content:center;color:var(--ink-3);font-size:6.4pt;text-align:center">
+          Pause online ordering<br>when the kitchen is buried
+        </div>
+      </div>
+    </div>
+    <figcaption>
+      Indicative layout on a standard till screen. <b>The count on the tab, the
+      countdown on new orders, and the sound are the whole feature.</b> A clerk
+      mid-service is not looking for orders — the till has to interrupt them, and
+      keep interrupting until someone responds.
+    </figcaption>
+  </figure>
+
+  <div class="cols-2">
+    <div>
+      <h3>Behaviour that is not optional</h3>
+      <ul>
+        <li><strong>Audible alert on arrival</strong>, repeating until acknowledged. A silent badge
+          in a busy kitchen is a missed order.</li>
+        <li><strong>Escalation.</strong> Unacknowledged after three minutes: louder, full-screen,
+          and the customer is told there is a delay before they work it out.</li>
+        <li><strong>One-tap "pause online ordering."</strong> When the kitchen is thirty minutes
+          behind, the venue must stop the tap instantly. Without it, staff turn the
+          feature off permanently after one bad Saturday.</li>
+        <li><strong>Accept with a time.</strong> Not just yes — "ready in 25 minutes", pushed to
+          the customer.</li>
+        <li><strong>Reject with a reason,</strong> refunding automatically.</li>
+        <li><strong>Prints on accept, not on arrival,</strong> so a rejected order never reaches
+          the pass.</li>
+      </ul>
+    </div>
+    <div>
+      <div class="callout">
+        <span class="tag">The hard problem</span>
+        <p>
+          The till is deliberately <strong>offline-first</strong>: it keeps selling through a
+          broken internet connection and syncs later. That design is a real
+          strength — and it does not extend to <em>incoming</em> orders. If the venue's
+          connection drops, orders customers have already paid for cannot reach
+          the till.
+        </p>
+        <p style="margin-top:1.6mm">This needs three defences, all in phase 0:</p>
+        <ol style="margin-top:1.2mm">
+          <li>The till reports its connection state; the server knows within a minute.</li>
+          <li>An offline venue is <strong>automatically taken off online ordering</strong> — customers
+            see "not accepting orders right now" rather than paying for food nobody
+            will cook.</li>
+          <li>Orders taken in a gap are queued and replayed on reconnect, with stale
+            ones flagged for a human rather than silently printed an hour late.</li>
+        </ol>
+      </div>
+      <p style="font-size:8.2pt">
+        A second defence: the Orders tab runs on any Vesopa till, including the
+        Android build — so a venue can put a cheap tablet in the kitchen on 4G,
+        independent of the shop's broadband.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- =================================================================== -->
+<!-- 10. DELIVERY + BACK OFFICE                                           -->
+<!-- =================================================================== -->
+<section class="page">
+  <div class="rh"><span>Vesopa Order — Delivery Plan</span><span><b>10</b> Delivery &amp; back office</span></div>
+
+  <h2><span class="num">10</span>Delivery, and what the venue controls</h2>
+
+  <h3>10.1 Delivery</h3>
+  <p>
+    Delivery is deliberately phase 3. It is the channel with the most moving parts
+    and the least of it is software — but for venues that already self-deliver it
+    is the one that replaces an aggregator outright.
+  </p>
+
+  <div class="cols-2">
+    <div>
+      <table class="tight">
+        <thead><tr><th style="width:30%">Piece</th><th>What we build</th></tr></thead>
+        <tbody>
+          <tr><td>Delivery zones</td><td>Postcode-prefix list or a radius, each with its own fee and minimum order. Postcodes first — venues think in postcodes, not metres.</td></tr>
+          <tr><td>Address capture</td><td>Postcode lookup with a proper address database. Free-text addresses produce failed deliveries, and a failed delivery costs the whole order.</td></tr>
+          <tr><td>Fees and minimums</td><td>Per zone, quoted by the server before payment so the total the customer approves is the total charged.</td></tr>
+          <tr><td>Driver assignment</td><td>From the Orders tab: assign to a named driver, print a docket, mark dispatched. A simple list, not a routing engine.</td></tr>
+          <tr><td>Driver status</td><td>A minimal mobile view — the driver's drops and a "delivered" button. Same Flutter codebase, sign-in by PIN.</td></tr>
+          <tr><td>Customer view</td><td>Status only in phase 3: accepted, preparing, out for delivery, delivered. A live map is a post-launch decision.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div>
+      <div class="callout">
+        <span class="tag">Decision needed — section 13</span>
+        <p>
+          <strong>We should not build a courier network.</strong> The plan above supports venues
+          that already have their own drivers, which is most independents doing
+          delivery today. Venues without drivers are served later by plugging in a
+          third-party courier API as an option — a partner integration, not a
+          fleet.
+        </p>
+        <p style="margin-top:2mm">
+          Building dispatch, driver supply and delivery liability ourselves is a
+          different company, not a feature. I want that ruled out explicitly rather
+          than left to drift into scope.
+        </p>
+      </div>
+      <div class="card">
+        <h4>The VAT trap</h4>
+        <p style="font-size:8.6pt">
+          UK VAT on food depends on how it is sold: hot food and anything eaten in
+          is standard-rated, while much cold takeaway food is zero-rated. <strong>The same
+          product needs a different VAT rate depending on the channel.</strong> Our
+          catalogue holds one rate per product today.
+        </p>
+        <p style="font-size:8.6pt;margin-top:2mm">
+          This is a data-model change, not a rounding detail — it is the venue's VAT
+          return. It is in phase 0 for that reason, and it should be confirmed with
+          the venue's accountant at the first trial.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <h3>10.2 What the venue controls in the back office</h3>
+  <div class="cols-3">
+    <div class="card">
+      <h4>Menu per channel</h4>
+      <p style="font-size:8.4pt">
+        Which products appear online; a separate online price if they want one;
+        photo, description and allergens; a per-item availability switch; and the
+        channel-specific VAT rate. A "sold out today" toggle that clears
+        overnight.
+      </p>
+    </div>
+    <div class="card">
+      <h4>Hours &amp; capacity</h4>
+      <p style="font-size:8.4pt">
+        Ordering hours per channel, separate from opening hours. Preparation
+        times. A cap on orders per fifteen minutes so a rush cannot take more
+        than the kitchen can cook — the setting that prevents most bad
+        experiences.
+      </p>
+    </div>
+    <div class="card">
+      <h4>QR codes</h4>
+      <p style="font-size:8.4pt">
+        Generate, print and rotate codes for every table on the existing floor
+        plan. Printable A4 table-tent sheets with the venue's logo. Reprint one
+        table or a whole room.
+      </p>
+    </div>
+    <div class="card">
+      <h4>Their site &amp; domain</h4>
+      <p style="font-size:8.4pt">
+        Phase 1 gives every venue a hosted page at
+        <code>order.vesopaepos.com/&lt;venue&gt;</code>. Phase 4 adds their own domain with an
+        automatic certificate, plus an embeddable "Order online" button.
+      </p>
+    </div>
+    <div class="card">
+      <h4>Branding</h4>
+      <p style="font-size:8.4pt">
+        Logo, colours and header image, applied to their ordering page, their
+        entry in the app, and their table tents. Extends the branding table the
+        receipt designer already uses.
+      </p>
+    </div>
+    <div class="card">
+      <h4>Orders &amp; reporting</h4>
+      <p style="font-size:8.4pt">
+        Online orders in the existing reports, split by channel. This is what a
+        venue looks at when deciding whether to keep paying for it.
+      </p>
+    </div>
+  </div>
+
+  <p class="footnote" style="margin-top:2.6mm">
+    <b>On "restaurants can add their own website" — worth being precise, because it is
+    easy to over-promise.</b> We are not building a website builder; that is a large
+    product unrelated to EPOS. We give the venue an ordering page they can point their
+    own domain at, and a button they can paste into whatever site they already have. A
+    venue with no site gets one decent ordering page, which is more than many have now.
+  </p>
+</section>
+
+<!-- =================================================================== -->
+<!-- 11. ENGINEERING                                                      -->
+<!-- =================================================================== -->
+<section class="page">
+  <div class="rh"><span>Vesopa Order — Delivery Plan</span><span><b>11</b> Engineering detail</span></div>
+
+  <h2><span class="num">11</span>The engineering work, honestly stated</h2>
+  <p class="lede">
+    Three changes carry most of the risk. All in the server, all in phase 0, all
+    cheaper now than retrofitted.
+  </p>
+
+  <h3>11.1 Orders must travel towards the till</h3>
+  <p>
+    Today the till posts finished sales to the server and the server pushes only
+    catalogue changes back. Online ordering needs the reverse: an order created on
+    the server, delivered live to a venue's tills, acknowledged, and updated as it
+    progresses. We extend the existing socket with <code>order.incoming</code> and
+    <code>order.updated</code> rather than building a second channel.
+  </p>
+  <div class="callout">
+    <span class="tag">Known constraint in the current deployment</span>
+    <p>
+      The server runs as a <strong>single process</strong> because the socket dispatcher holds
+      connections in memory — under multiple workers a push only reaches the worker
+      holding that till's socket. Fine for the first venues; a scaling ceiling once
+      inbound orders are business-critical. The fix is a shared pub/sub layer.
+      <strong>Flagging it now, not building it now</strong> — but it should be a known item, not a
+      surprise at the hundredth venue.
+    </p>
+  </div>
+
+  <h3>11.2 One pricing engine, not two</h3>
+  <p>
+    Money rules — automatic promotions, then manual discount, then vouchers, then
+    points, then gratuity, with VAT apportioned across discounted values — are in Dart
+    on the till, covered by a substantial test suite. An online order is priced by the
+    <em>server</em>, so without care we get two implementations of the same rules drifting.
+  </p>
+  <p>
+    <strong>The server becomes canonical for online orders.</strong> The app and mini-site display
+    an optimistic total, but every order is quoted and confirmed by the server before
+    payment, and the existing Dart tests are ported against the server implementation
+    as a contract suite so the two cannot silently diverge. The single highest-value
+    piece of engineering discipline in the plan.
+  </p>
+
+  <h3>11.3 The catalogue has to grow up</h3>
+  <p>
+    A consumer-facing menu needs what a till menu does not: photographs, descriptions,
+    allergens, modifiers, per-channel price and VAT, availability. Most does not exist.
+  </p>
+
+  <table class="tight" style="font-size:7.5pt">
+    <thead><tr><th style="width:26%">Change</th><th style="width:12%">Type</th><th>Detail</th></tr></thead>
+    <tbody>
+      <tr><td><code>epos_orders</code></td><td><span class="pill ext">Alter</span></td><td>Channel, state, requested time, contact, address, payment ref. Additive — till sales untouched.</td></tr>
+      <tr><td><code>bo_products</code></td><td><span class="pill ext">Alter</span></td><td>Online visibility, online price, description, allergens, per-channel VAT, availability.</td></tr>
+      <tr><td>Product modifiers</td><td><span class="pill new">New</span></td><td>Option groups with price deltas — "no slaw", "large". App and kitchen ticket both need them.</td></tr>
+      <tr><td>Table tokens</td><td><span class="pill new">New</span></td><td>Signed, revocable token per existing floor-plan table row. Rotatable individually.</td></tr>
+      <tr><td>Venue ordering settings</td><td><span class="pill new">New</span></td><td>Channels, hours, prep times, capacity cap, payment mode, slug, domain, branding.</td></tr>
+      <tr><td>Delivery zones</td><td><span class="pill new">New</span></td><td>Postcode prefixes or radius, fee, minimum order, per venue.</td></tr>
+      <tr><td>Online customers</td><td><span class="pill ext">Extend</span></td><td>Existing table holds points and membership. Add credentials, addresses, device tokens.</td></tr>
+      <tr><td>Order events</td><td><span class="pill new">New</span></td><td>Append-only log of every state change, who and when. This is what settles disputed orders.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="cols-2" style="line-height:1.34">
+    <div>
+      <h3>Security, in one place</h3>
+      <ul style="font-size:7.8pt">
+        <li><strong>Public endpoints are genuinely public</strong> — so they need rate limiting and
+          abuse controls the till never did.</li>
+        <li><strong>Prices come from the server, always.</strong> A client that submits a price can
+          submit £0.01; the order carries ids and quantities only.</li>
+        <li><strong>Table tokens are opaque and revocable</strong> — never a bare table number.</li>
+        <li><strong>Card data never reaches us.</strong> Hosted fields only.</li>
+        <li><strong>Personal data</strong> puts us in scope for UK GDPR: retention, deletion, and a
+          privacy policy matching the store declarations.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Testing this properly</h3>
+      <ul style="font-size:7.8pt">
+        <li>The ported pricing contract suite is the backbone — if online and till
+          totals ever differ, the build fails.</li>
+        <li>End-to-end tests through the real lifecycle including reject and refund,
+          the path least likely to be exercised by hand.</li>
+        <li>Payment testing against the processor's sandbox, including 3-D Secure
+          challenge and abandonment.</li>
+        <li><strong>A deliberate offline drill</strong> at the trial venue: pull the internet mid-service
+          and confirm customers are turned away cleanly.</li>
+        <li>Device testing on cheap Android hardware, not just new iPhones.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- =================================================================== -->
+<!-- 12. RISKS                                                            -->
+<!-- =================================================================== -->
+<section class="page">
+  <div class="rh"><span>Vesopa Order — Delivery Plan</span><span><b>12</b> Risks</span></div>
+
+  <h2><span class="num">12</span>What will actually go wrong</h2>
+  <p class="lede">
+    Every one of these is survivable if it is planned for and expensive if it is
+    discovered. They are ordered by how much damage they do, not how likely they
+    are.
+  </p>
+
+  <table>
+    <thead><tr><th style="width:20%">Risk</th><th style="width:9%">Impact</th><th style="width:36%">What happens</th><th>How we handle it</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Venue misses an order</td><td><span class="pill hi">Severe</span></td>
+        <td>A customer pays, nobody accepts, they arrive to nothing. One incident destroys a venue's confidence in the whole product permanently.</td>
+        <td>Repeating audible alert, three-minute escalation, automatic customer notification on delay, one-tap pause. Trial venue runs with us watching for two weeks.</td>
+      </tr>
+      <tr>
+        <td>App Store account &amp; rejection</td><td><span class="pill hi">Severe</span></td>
+        <td>D-U-N-S verification can take three weeks — inside an eight-week plan that is nearly half the schedule. A 4.2.6 rejection on top of it would end the date, and a per-venue app strategy risks the account itself.</td>
+        <td><strong>Open the developer account in week 1, before any code.</strong> Single-binary picker model per section 5 — the model Apple names as acceptable. Real venues and menus at first submission; budget two review cycles.</td>
+      </tr>
+      <tr>
+        <td>Internet drops at the venue</td><td><span class="pill hi">Severe</span></td>
+        <td>The till keeps selling in the room but cannot receive online orders. Customers pay for food nobody will cook.</td>
+        <td>Heartbeat from the till, automatic suspension of online ordering when a venue goes dark, queue and replay with stale orders flagged for a human. Kitchen tablet on 4G as a second path.</td>
+      </tr>
+      <tr>
+        <td>Online and till prices differ</td><td><span class="pill hi">Severe</span></td>
+        <td>Two implementations of the money rules drift. The customer is charged the wrong amount and we cannot say which total was correct.</td>
+        <td>Server canonical for online, till tests ported as a contract suite that fails the build on divergence. Section 11.2.</td>
+      </tr>
+      <tr>
+        <td>Wrong VAT by channel</td><td><span class="pill md">High</span></td>
+        <td>Eat-in and takeaway VAT differ under UK rules. One product, one rate today. Gets the venue's VAT return wrong.</td>
+        <td>Per-channel VAT in the catalogue from phase 0. Confirmed with the trial venue's accountant before any second venue.</td>
+      </tr>
+      <tr>
+        <td>Menu data is not consumer-ready</td><td><span class="pill md">High</span></td>
+        <td>Till menus are terse codes with no photos or descriptions. Onboarding stalls at every venue and the app looks empty.</td>
+        <td>Treat menu enrichment as a funded onboarding service with proper tooling — bulk edit, image upload, copy-from-template. Budget it per venue.</td>
+      </tr>
+      <tr>
+        <td>Payment partner gap</td><td><span class="pill md">High</span></td>
+        <td>Our card relationship is card-present. If the online product lacks mobile SDKs, wallets or server-side refunds, phase 1 stalls.</td>
+        <td><strong>Confirm now</strong>, before phase 0 ends. Fallback is a dedicated online processor alongside — commercially worse, not a blocker.</td>
+      </tr>
+      <tr>
+        <td>Kitchen overwhelmed</td><td><span class="pill md">High</span></td>
+        <td>Online orders arrive alongside a full dining room. Service collapses and staff blame the tablet.</td>
+        <td>Capacity caps per time slot, honest prep times, pause button, and staff training that this is a tool they control rather than one imposed on them.</td>
+      </tr>
+      <tr>
+        <td>Nobody installs the app</td><td><span class="pill md">High</span></td>
+        <td>The apps are the biggest single investment and consumer acquisition is genuinely hard.</td>
+        <td>QR ordering ships first and needs no install; receipt QR codes and table tents drive the app to people already in the venue. <strong>We never depend on cold app-store discovery.</strong></td>
+      </tr>
+      <tr>
+        <td>Single-process server ceiling</td><td><span class="pill lo">Medium</span></td>
+        <td>Live order push requires one process. Fine now; a limit once orders are business-critical across many venues.</td>
+        <td>Documented now, shared pub/sub when volume warrants. Not phase 0 work.</td>
+      </tr>
+      <tr>
+        <td>Chargebacks and fraud</td><td><span class="pill lo">Medium</span></td>
+        <td>New exposure for venues that have only ever taken card-present payments.</td>
+        <td>3-D Secure on every transaction, dispute view in the back office, documented policy before first go-live.</td>
+      </tr>
+      <tr>
+        <td>Scope creep</td><td><span class="pill lo">Medium</span></td>
+        <td>Table booking, loyalty campaigns, marketing emails, a live driver map — each reasonable, together a year.</td>
+        <td>Section 6 lists what is explicitly out. Phases 1 and 2 ship independently; anything new waits until after launch.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- =================================================================== -->
+<!-- 13. ROADMAP + ASKS                                                   -->
+<!-- =================================================================== -->
+<section class="page">
+  <div class="rh"><span>Vesopa Order — Delivery Plan</span><span><b>13</b> Roadmap &amp; decisions</span></div>
+
+  <h2><span class="num">13</span>Roadmap, and what I need decided</h2>
+
+  <figure>
+    <div class="fignum">Figure 6 — Eight-week delivery plan</div>
+    <svg viewBox="0 0 900 268" role="img" aria-label="Timeline of five overlapping phases across eight weeks: foundations weeks 1 to 2, QR table ordering weeks 2 to 4, mobile apps weeks 3 to 7, delivery weeks 5 to 7, own domain and hardening weeks 7 to 8, with go-live milestones at week 4 and week 7.">
+      <g font-family="Helvetica, Arial, sans-serif">
+        <!-- week grid: x = 212 + week*83.5 -->
+        <g stroke="#E1E3DA" stroke-width="1">
+          <line x1="212" y1="30" x2="212" y2="212"/>
+          <line x1="379" y1="30" x2="379" y2="212"/>
+          <line x1="546" y1="30" x2="546" y2="212"/>
+          <line x1="713" y1="30" x2="713" y2="212"/>
+          <line x1="880" y1="30" x2="880" y2="212"/>
+        </g>
+        <g font-size="10.5" fill="#787A6E" text-anchor="middle">
+          <text x="212" y="24">Week 0</text>
+          <text x="379" y="24">Week 2</text>
+          <text x="546" y="24">Week 4</text>
+          <text x="713" y="24">Week 6</text>
+          <text x="880" y="24">Week 8</text>
+        </g>
+
+        <!-- Phase 0: w0-2 -->
+        <text x="200" y="52" text-anchor="end" font-size="12" font-weight="700" fill="#16170F">0 · Foundations</text>
+        <text x="200" y="65" text-anchor="end" font-size="9.5" fill="#787A6E">server, data model, till tab</text>
+        <rect x="212" y="40" width="167" height="26" rx="4" fill="#2F3B05"/>
+        <text x="295" y="57" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">wks 1–2</text>
+
+        <!-- Phase 1: w2-4 -->
+        <text x="200" y="94" text-anchor="end" font-size="12" font-weight="700" fill="#16170F">1 · QR table ordering</text>
+        <text x="200" y="107" text-anchor="end" font-size="9.5" fill="#787A6E">mini-site, codes, payment</text>
+        <rect x="379" y="82" width="167" height="26" rx="4" fill="#4F6209"/>
+        <text x="462" y="99" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">wks 2–4</text>
+
+        <!-- Phase 2: w3-7 -->
+        <text x="200" y="136" text-anchor="end" font-size="12" font-weight="700" fill="#6E8A0E">2 · Mobile apps</text>
+        <text x="200" y="149" text-anchor="end" font-size="9.5" fill="#6E8A0E">Android + iOS · takeaway</text>
+        <rect x="462" y="124" width="334" height="26" rx="4" fill="#A5C715"/>
+        <text x="629" y="141" text-anchor="middle" font-size="10" font-weight="700" fill="#2F3B05">wks 3–7</text>
+
+        <!-- Phase 3: w5-7 -->
+        <text x="200" y="178" text-anchor="end" font-size="12" font-weight="700" fill="#16170F">3 · Delivery</text>
+        <text x="200" y="191" text-anchor="end" font-size="9.5" fill="#787A6E">zones, fees, drivers</text>
+        <rect x="629" y="166" width="167" height="26" rx="4" fill="#C3DE6B"/>
+        <text x="712" y="183" text-anchor="middle" font-size="10" font-weight="700" fill="#2F3B05">wks 5–7</text>
+
+        <!-- Phase 4: w7-8 -->
+        <text x="200" y="220" text-anchor="end" font-size="12" font-weight="700" fill="#16170F">4 · Domain &amp; hardening</text>
+        <text x="200" y="233" text-anchor="end" font-size="9.5" fill="#787A6E">venue sites, trial support</text>
+        <rect x="796" y="208" width="84" height="26" rx="4" fill="#DCEBA6"/>
+        <text x="838" y="225" text-anchor="middle" font-size="10" font-weight="700" fill="#2F3B05">wks 7–8</text>
+
+        <!-- milestones -->
+        <g>
+          <line x1="546" y1="36" x2="546" y2="252" stroke="#1E9184" stroke-width="1.4" stroke-dasharray="4 3"/>
+          <circle cx="546" cy="252" r="4.5" fill="#1E9184"/>
+          <text x="552" y="256" font-size="10.5" font-weight="700" fill="#14655C">First venue live on QR ordering — week 4</text>
+
+          <line x1="796" y1="120" x2="796" y2="232" stroke="#1E9184" stroke-width="1.4" stroke-dasharray="4 3"/>
+          <circle cx="796" cy="232" r="4.5" fill="#1E9184"/>
+          <text x="790" y="236" text-anchor="end" font-size="10.5" font-weight="700" fill="#14655C">Apps submitted to both stores — week 7</text>
+        </g>
+
+        <text x="212" y="264" font-size="9.5" fill="#787A6E">Store review and menu onboarding run alongside.</text>
+      </g>
+    </svg>
+    <figcaption>
+      <b>The overlap is the plan.</b> Phase 2 starts as soon as phase 0 has settled the API
+      it consumes, so the app and web tracks run in parallel rather than end to end —
+      that is what fits eight weeks, and it is the assumption the date rests on. QR
+      ordering still lands first because it needs no app store and no customer
+      acquisition: it proves the pipeline on a real venue and populates the real menus
+      Apple will want to see at submission.
+    </figcaption>
+  </figure>
+
+  <h3>Decisions I need from you</h3>
+  <p style="margin-bottom:1mm">
+    Everything else I can proceed on. On a two-month run there is no slack to
+    rediscover these later, so I would like all four settled in <strong>week 1</strong>.
+  </p>
+
+  <div class="ask">
+    <div class="n">1</div>
+    <div>
+      <h4>App Store publishing model</h4>
+      <p>
+        One Vesopa app containing every venue, or a branded app per venue?
+        <span class="rec">Recommendation: one Vesopa app with a venue picker — the model
+        Apple explicitly names as acceptable under 4.2.6 — with per-venue branded
+        apps sold later as an add-on, published from the venue's own developer
+        account.</span> This is the decision with the least room to change later.
+      </p>
+    </div>
+  </div>
+
+  <div class="ask">
+    <div class="n">2</div>
+    <div>
+      <h4>Do we get into delivery logistics?</h4>
+      <p>
+        <span class="rec">Recommendation: no.</span> Support venues with their own
+        drivers, and integrate a third-party courier later as an option. Building
+        driver supply and taking on delivery liability is a different business. I
+        want this ruled out explicitly so it cannot drift into scope.
+      </p>
+    </div>
+  </div>
+
+  <div class="ask">
+    <div class="n">3</div>
+    <div>
+      <h4>The trial venue</h4>
+      <p>
+        Which venue goes first, and are they briefed that they are a trial? I need
+        one cooperative venue that will take real orders, tell us when it breaks,
+        and let us sit in during service — <strong>confirmed by week 3</strong>, because the
+        week-4 go-live depends on it. <span class="rec">Ideally one with an existing
+        aggregator bill, so we can measure what we actually saved them.</span>
+      </p>
+    </div>
+  </div>
+
+  <div class="ask">
+    <div class="n">4</div>
+    <div>
+      <h4>How the parallel tracks are resourced</h4>
+      <p>
+        Not a scope question — a date question. Eight weeks works because the app and
+        web tracks overlap from week 3 (figure 6). <span class="rec">Run end to end by
+        one person, the same work is closer to twenty weeks.</span> I need to know what I
+        can count on from week 3. If it stays one developer, the honest move is to hold
+        the two-month date for <em>QR ordering and the apps</em> and let delivery follow,
+        rather than ship all three half-finished.
+      </p>
+    </div>
+  </div>
+
+  <div class="callout" style="margin-top:4mm">
+    <span class="tag">Two things that must start in week 1</span>
+    <p>
+      Neither needs a line of code, both have external lead times, and on an
+      eight-week plan both are on the critical path:
+      <strong>(1)</strong> open the Apple Developer organisation account — D-U-N-S
+      verification is regularly a three-week wait, which is nearly half this schedule
+      and the likeliest single reason we would miss the date;
+      <strong>(2)</strong> confirm with Dojo / Paymentsense what their online,
+      card-not-present product supports. If their offering is thin we need to know in
+      week 1, not week 5, because every channel depends on taking money.
+    </p>
+  </div>
+
+  <p class="footnote">
+    Commission figures in section 3 are published ranges for UK independents as of July
+    2026 and vary by contract; indicative, not quotations. The eight-week schedule
+    assumes the figure-6 overlap is genuinely resourced, the week-1 items start on time,
+    and the trial venue is confirmed by week 3.
+  </p>
+</section>
+
+</body>
+</html>

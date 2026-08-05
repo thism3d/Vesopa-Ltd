@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!--
+      Release posture: HTTPS only. A shipped till must never put customer or
+      card data on the wire in the clear.
+
+      Development is different: the local EPOS server and ESC/POS printers
+      (port 9100) do not speak TLS, and Android 9+ blocks plain HTTP by default.
+      The debug build overrides this file with one that permits cleartext — see
+      android/app/src/debug/res/xml/network_security_config.xml.
+
+      To point a real device at a TLS server:
+        flutter build apk - -dart-define=API_BASE=https://api.vesopa.co.uk
+    -->
+    <base-config cleartextTrafficPermitted="false"/>
+</network-security-config>

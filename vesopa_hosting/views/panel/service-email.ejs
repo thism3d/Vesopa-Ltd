@@ -1,0 +1,62 @@
+<% const pageIcon = 'mail'; %>
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
+<%- include('../partials/panel-shell', {
+  pageTitle: service.primary_domain || service.plan_name,
+  pageSub: 'Email',
+}) %>
+
+<%- include('../partials/service-tabs', { tab: 'email' }) %>
+
+<% if (error) { %>
+  <div class="alert alert-warn">
+    <%- icon('warning', 19) %>
+    <div><b>We could not reach the hosting node.</b> Your site is unaffected — only this list is unavailable. <span class="muted">(<%= error %>)</span></div>
+  </div>
+<% } %>
+<% if (!hestiaLive) { %>
+  <div class="alert alert-info">
+    <%- icon('info', 19) %>
+    <div><b>Demonstration mode.</b> This terminal is not connected to a live hosting node yet, so nothing is listed here.</div>
+  </div>
+<% } %>
+
+<div class="p-card p-card-flush">
+  <div class="p-card-head">
+    <h2>Email</h2>
+  </div>
+  <div class="p-card-body">
+    <p class="small muted mb-0">Mailboxes at your own domain. Use them in webmail, or set them up in Outlook or Apple Mail with the settings below.</p>
+  </div>
+  <% if (!items.length) { %>
+    <div class="empty">
+      <%- icon(pageIcon, 46) %>
+      <h3>Nothing here yet</h3>
+      <p>
+        <% if (service.status !== 'active') { %>
+          This account is not live yet.
+        <% } else { %>
+          Once you create one it will be listed here with everything you need to connect to it.
+        <% } %>
+      </p>
+    </div>
+  <% } else { %>
+    <% items.forEach(function (it) { %>
+      <div class="item">
+        <span class="item-icon"><%- icon(pageIcon, 19) %></span>
+        <span class="item-main">
+          <span class="item-title"><%= it.name || it.address || it.account %></span>
+          <span class="item-sub">
+            <% if (it.user) { %>User <%= it.user %> · <% } %>
+            <% if (it.type) { %><%= it.type %> · <% } %>
+            <% if (it.size_mb !== undefined) { %><%= it.size_mb %> MB<% } %>
+            <% if (it.used_mb !== undefined) { %><%= it.used_mb %> MB used<% } %>
+            <% if (it.created_at) { %><%= it.created_at %><% } %>
+          </span>
+        </span>
+      </div>
+    <% }); %>
+  <% } %>
+</div>
+
+<%- include('../partials/panel-shell-end') %>
+<%- include('../partials/footer') %>

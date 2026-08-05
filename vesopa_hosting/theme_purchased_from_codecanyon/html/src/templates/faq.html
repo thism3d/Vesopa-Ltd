@@ -1,0 +1,393 @@
+{% extends "layouts/default.html" %}
+{% set dataTheme = "domain" %}
+{% set bodyClass = "bg-light dark:bg-dark-subtle" %}
+{% set navbar = true %} 
+{% set navBtnColor = "fw-medium" %}
+{% set primaryHeader = "primary-header--light primary-header--boxed primary-header--fixed top-md-3 primary-header-crossed:top-0" %}
+{% set rtlLink = "faq-rtl.html" %}
+{% set breadcrumb = "FAQ" %}
+{% set breadcrumbLink = "text-light hover:text-secondary" %}
+{% set breadcrumbIcon = "text-light" %}
+{% set breadcrumbActive = "text-light" %}
+{% set logoLight = "logo-dark.png" %}
+{% set logoDark = "logo-light.png" %}
+<!-- Content Block -->
+{% block content %}
+
+<!-- Banner  -->
+{% include "partials/banner-11.html" %}
+<!-- Banner End -->
+
+<!-- FAQ -->
+<div class="section-space-md-y">
+	<div class="section-space-md-y">
+		<div class="container">
+			<div class="row g-4 justify-content-between">
+				<div class="col-md-6 col-xl-5">
+					<span
+						class="badge bg-primary-emphasis hover:bg-primary-emphasis text-primary-subtle hover:text-primary-subtle mb-2"
+					>
+						<iconify-icon
+							icon="uim:check-circle"
+							class="align-middle fs-20 flex-shrink-0"
+						></iconify-icon>
+						Support
+					</span>
+					<h3>General FAQ</h3>
+					<p class="mb-0">
+						We're building a company that recognizes how, when, and where our
+						Paddlers do their best work.
+					</p>
+				</div>
+				<div class="col-md-6">
+					<div
+						class="accordion accordion-separate-body"
+						id="accordion-separate-rounded"
+					>
+						<div class="accordion-item">
+							<h2 class="accordion-header">
+								<button
+									class="accordion-button fw-medium"
+									type="button"
+									data-bs-toggle="collapse"
+									data-bs-target="#accordion-s1"
+									aria-expanded="true"
+								>
+									Does BTCPayServer cost extra?
+								</button>
+							</h2>
+							<div
+								id="accordion-s1"
+								class="accordion-collapse collapse show"
+								data-bs-parent="#accordion-separate-rounded"
+							>
+								<div class="accordion-body fs-14">
+									Yes. After you deploy your Lightning Node, you can
+									click the BTCPayServer icon on the node dashboard to
+									easily start your BTCPayServer which connects to your
+									node automatically.
+								</div>
+							</div>
+						</div>
+						<div class="accordion-item">
+							<h2 class="accordion-header">
+								<button
+									class="accordion-button collapsed fw-medium"
+									type="button"
+									data-bs-toggle="collapse"
+									data-bs-target="#accordion-s2"
+									aria-expanded="false"
+								>
+									Does my Voltage Lightning Node connect to BTC Server
+									automatically?
+								</button>
+							</h2>
+							<div
+								id="accordion-s2"
+								class="accordion-collapse collapse"
+								data-bs-parent="#accordion-separate-rounded"
+							>
+								<div class="accordion-body fs-14">
+									Yes. After you deploy your Lightning Node, you can
+									click the BTCPayServer icon on the node dashboard to
+									easily start your BTCPayServer which connects to your
+									node automatically.
+								</div>
+							</div>
+						</div>
+						<div class="accordion-item">
+							<h2 class="accordion-header">
+								<button
+									class="accordion-button collapsed fw-medium"
+									type="button"
+									data-bs-toggle="collapse"
+									data-bs-target="#accordion-s3"
+									aria-expanded="false"
+								>
+									Can I accept payments on chain?
+								</button>
+							</h2>
+							<div
+								id="accordion-s3"
+								class="accordion-collapse collapse"
+								data-bs-parent="#accordion-separate-rounded"
+							>
+								<div class="accordion-body fs-14">
+									Yes. After you deploy your Lightning Node, you can
+									click the BTCPayServer icon on the node dashboard to
+									easily start your BTCPayServer which connects to your
+									node automatically.
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+	<div class="section-space-md-y">
+		<div class="container">
+			<div class="row g-4 justify-content-between">
+				<div class="col-md-6 col-xl-5">
+					<span
+						class="badge bg-primary-emphasis hover:bg-primary-emphasis text-primary-subtle hover:text-primary-subtle mb-2"
+					>
+						<iconify-icon
+							icon="uim:check-circle"
+							class="align-middle fs-20 flex-shrink-0"
+						></iconify-icon>
+						FAQ
+					</span>
+					<h3>Biling FAQ</h3>
+					<p class="mb-0">
+						We're building a company that recognizes how, when, and where our
+						Paddlers do their best work.
+					</p>
+				</div>
+				<div class="col-md-6">
+					<div
+						class="accordion accordion-separate-body"
+						id="accordion-separate-rounded-2"
+					>
+						<div class="accordion-item">
+							<h2 class="accordion-header">
+								<button
+									class="accordion-button fw-medium"
+									type="button"
+									data-bs-toggle="collapse"
+									data-bs-target="#accordion-t1"
+									aria-expanded="true"
+								>
+									Does BTCPayServer cost extra?
+								</button>
+							</h2>
+							<div
+								id="accordion-t1"
+								class="accordion-collapse collapse show"
+								data-bs-parent="#accordion-separate-rounded-2"
+							>
+								<div class="accordion-body fs-14">
+									Yes. After you deploy your Lightning Node, you can
+									click the BTCPayServer icon on the node dashboard to
+									easily start your BTCPayServer which connects to your
+									node automatically.
+								</div>
+							</div>
+						</div>
+						<div class="accordion-item">
+							<h2 class="accordion-header">
+								<button
+									class="accordion-button collapsed fw-medium"
+									type="button"
+									data-bs-toggle="collapse"
+									data-bs-target="#accordion-t2"
+									aria-expanded="false"
+								>
+									Does my Voltage Lightning Node connect to BTC Server
+									automatically?
+								</button>
+							</h2>
+							<div
+								id="accordion-t2"
+								class="accordion-collapse collapse"
+								data-bs-parent="#accordion-separate-rounded-2"
+							>
+								<div class="accordion-body fs-14">
+									Yes. After you deploy your Lightning Node, you can
+									click the BTCPayServer icon on the node dashboard to
+									easily start your BTCPayServer which connects to your
+									node automatically.
+								</div>
+							</div>
+						</div>
+						<div class="accordion-item">
+							<h2 class="accordion-header">
+								<button
+									class="accordion-button collapsed fw-medium"
+									type="button"
+									data-bs-toggle="collapse"
+									data-bs-target="#accordion-t3"
+									aria-expanded="false"
+								>
+									Can I accept payments on chain?
+								</button>
+							</h2>
+							<div
+								id="accordion-t3"
+								class="accordion-collapse collapse"
+								data-bs-parent="#accordion-separate-rounded-2"
+							>
+								<div class="accordion-body fs-14">
+									Yes. After you deploy your Lightning Node, you can
+									click the BTCPayServer icon on the node dashboard to
+									easily start your BTCPayServer which connects to your
+									node automatically.
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+	<div class="section-space-md-y">
+		<div class="container">
+			<div class="row g-4 justify-content-between">
+				<div class="col-md-6 col-xl-5">
+					<span
+						class="badge bg-primary-emphasis hover:bg-primary-emphasis text-primary-subtle hover:text-primary-subtle mb-2"
+					>
+						<iconify-icon
+							icon="uim:check-circle"
+							class="align-middle fs-20 flex-shrink-0"
+						></iconify-icon>
+						Refund
+					</span>
+					<h3>Refund FAQ</h3>
+					<p class="mb-0">
+						We're building a company that recognizes how, when, and where our
+						Paddlers do their best work.
+					</p>
+				</div>
+				<div class="col-md-6">
+					<div
+						class="accordion accordion-separate-body"
+						id="accordion-separate-rounded-3"
+					>
+						<div class="accordion-item">
+							<h2 class="accordion-header">
+								<button
+									class="accordion-button fw-medium"
+									type="button"
+									data-bs-toggle="collapse"
+									data-bs-target="#accordion-u1"
+									aria-expanded="true"
+								>
+									Does BTCPayServer cost extra?
+								</button>
+							</h2>
+							<div
+								id="accordion-u1"
+								class="accordion-collapse collapse show"
+								data-bs-parent="#accordion-separate-rounded-3"
+							>
+								<div class="accordion-body fs-14">
+									Yes. After you deploy your Lightning Node, you can
+									click the BTCPayServer icon on the node dashboard to
+									easily start your BTCPayServer which connects to your
+									node automatically.
+								</div>
+							</div>
+						</div>
+						<div class="accordion-item">
+							<h2 class="accordion-header">
+								<button
+									class="accordion-button collapsed fw-medium"
+									type="button"
+									data-bs-toggle="collapse"
+									data-bs-target="#accordion-u2"
+									aria-expanded="false"
+								>
+									Does my Voltage Lightning Node connect to BTC Server
+									automatically?
+								</button>
+							</h2>
+							<div
+								id="accordion-u2"
+								class="accordion-collapse collapse"
+								data-bs-parent="#accordion-separate-rounded-3"
+							>
+								<div class="accordion-body fs-14">
+									Yes. After you deploy your Lightning Node, you can
+									click the BTCPayServer icon on the node dashboard to
+									easily start your BTCPayServer which connects to your
+									node automatically.
+								</div>
+							</div>
+						</div>
+						<div class="accordion-item">
+							<h2 class="accordion-header">
+								<button
+									class="accordion-button collapsed fw-medium"
+									type="button"
+									data-bs-toggle="collapse"
+									data-bs-target="#accordion-u3"
+									aria-expanded="false"
+								>
+									Can I accept payments on chain?
+								</button>
+							</h2>
+							<div
+								id="accordion-u3"
+								class="accordion-collapse collapse"
+								data-bs-parent="#accordion-separate-rounded-3"
+							>
+								<div class="accordion-body fs-14">
+									Yes. After you deploy your Lightning Node, you can
+									click the BTCPayServer icon on the node dashboard to
+									easily start your BTCPayServer which connects to your
+									node automatically.
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+<!-- FAQ End -->
+
+<!-- CTA  -->
+<div class="cta-7">
+	<div class="container">
+		<div class="row">
+			<div class="col-12">
+				<div
+					class="section-space-y px-4 px-sm-6 px-md-12 bg-body rounded-4 text-center position-relative z-1"
+				>
+					<div class="row justify-content-center">
+						<div class="col-md-11">
+							<h3>Get a free web host migration</h3>
+							<p class="mb-8 max-text-15 mx-auto">
+								We'll take care of the process of moving your website from
+								your old web hosting company to our platform so you can
+								focus on what matters
+							</p>
+							<div
+								class="d-flex align-items-center justify-content-center gap-4 flex-wrap"
+							>
+								<a
+									href="{{root}}sign-in-2.html"
+									class="btn btn-secondary text-light"
+								>
+									Get Started now
+								</a>
+								<a
+									href="{{root}}contact.html"
+									class="btn btn-dark-emphasis"
+								>
+									Contact Us
+								</a>
+							</div>
+						</div>
+					</div>
+					<img
+						src="{{root}}assets/img/cta-img-16.png"
+						alt="image"
+						class="img-fluid d-none d-xl-block position-absolute start-0 top-50 translate-middle-y z-n1 pointer-none"
+					/>
+					<img
+						src="{{root}}assets/img/cta-img-17.png"
+						alt="image"
+						class="img-fluid d-none d-xl-block position-absolute end-0 top-50 translate-middle-y z-n1 pointer-none"
+					/>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+<!-- CTA End -->
+
+{% include "partials/footer-7.html" %} 
+{% endblock %}

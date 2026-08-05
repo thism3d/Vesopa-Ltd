@@ -1,0 +1,255 @@
+<%- include('../partials/head') %>
+<%- include('../partials/header') %>
+
+<main id="main">
+
+<%- include('../partials/page-hero', {
+  kicker: 'Email',
+  heading: 'Email that arrives',
+  sub: 'A proper address at your own domain, and campaigns that reach the inbox rather than the promotions tab. Two products, priced separately, because they are bought for different reasons.',
+}) %>
+
+<!-- ======================================================================
+     Pricing
+     ====================================================================== -->
+<section class="section" id="pricing">
+  <div class="wrap">
+
+    <div class="center" data-reveal="0">
+      <div class="efam" data-email-tabs role="group" aria-label="Email type">
+        <button type="button" class="efam-btn" data-efam="business" aria-pressed="true">
+          <%- icon('mail', 17) %> Business email
+        </button>
+        <button type="button" class="efam-btn" data-efam="marketing" aria-pressed="false">
+          <%- icon('chart', 17) %> Marketing email
+        </button>
+      </div>
+    </div>
+
+    <!-- Business ---------------------------------------------------------- -->
+    <div data-efam-panel="business">
+      <div class="sec-head sec-head-center mb-4">
+        <h2 class="h2">Mailboxes at your own domain</h2>
+        <p class="lede mt-2">
+          Priced per mailbox, per month. Add or remove people whenever you like
+          — there is no minimum seat count and no annual headcount lock.
+        </p>
+      </div>
+
+      <div class="eplans">
+        <% businessEmail.forEach(function (p, i) { %>
+          <div class="eplan <%= p.badge ? 'eplan-featured' : '' %>" data-reveal="<%= i * 90 %>">
+            <% if (p.badge) { %><span class="eplan-badge"><%= p.badge %></span><% } %>
+            <h3 class="eplan-name"><%= p.name %></h3>
+            <p class="eplan-tagline"><%= p.tagline %></p>
+
+            <div class="eplan-price">
+              <span class="cur"><%= p.perMonthParts[12].symbol %></span>
+              <span class="amt"><%= p.perMonthParts[12].whole %></span>
+              <span class="frac">.<%= p.perMonthParts[12].frac %></span>
+            </div>
+            <p class="eplan-unit">per <%= p.unit_label %>, per month — billed yearly</p>
+
+            <div class="units mt-3" data-units data-unit-pence="<%= p.price[12] %>">
+              <button type="button" class="units-btn" data-units-dec aria-label="One fewer mailbox">−</button>
+              <input class="units-input" type="number" value="<%= p.min_units %>"
+                     min="<%= p.min_units %>" max="<%= p.max_units %>"
+                     aria-label="Number of mailboxes">
+              <button type="button" class="units-btn" data-units-inc aria-label="One more mailbox">+</button>
+              <span class="units-label">mailboxes</span>
+            </div>
+
+            <p class="eplan-total">
+              <b data-units-total><%= money(p.price[12]) %></b> a year in total.
+              Monthly billing is <%= money(p.monthly_pence) %> per <%= p.unit_label %><% if (p.saving[12] > 0) { %> — yearly saves <%= p.saving[12] %>%<% } %>.
+            </p>
+
+            <a class="btn btn-block <%= p.badge ? '' : 'btn-dark' %>" data-units-link
+               href="/order/email/<%= p.slug %>?term=12&units=<%= p.min_units %>">
+              Choose <%= p.name %>
+            </a>
+
+            <ul class="eplan-features">
+              <% p.featureList.forEach(function (f) { %>
+                <li><%- icon('check', 15) %><span><%= f %></span></li>
+              <% }); %>
+            </ul>
+          </div>
+        <% }); %>
+      </div>
+
+      <div class="grid grid-3 mt-4">
+        <% [
+          ['lock',    'Nobody reads your mail',   'No scanning for advertising, ever. Your mail is yours, and that is a contractual position rather than a setting you have to find.'],
+          ['shield',  'Spam and virus filtering', 'Filtered before it reaches you, with a quarantine you control rather than a black box that silently eats an invoice.'],
+          ['backup',  'Free migration',           'We move your existing mailboxes across — messages, folders and all — and you keep working while we do it.'],
+        ].forEach(function (f, i) { %>
+          <article class="card card-hover card-accent" data-reveal="<%= i * 80 %>">
+            <div class="f-icon"><%- icon(f[0], 22) %></div>
+            <h3 class="h3 mb-2"><%= f[1] %></h3>
+            <p class="small muted mb-0"><%= f[2] %></p>
+          </article>
+        <% }); %>
+      </div>
+    </div>
+
+    <!-- Marketing --------------------------------------------------------- -->
+    <div data-efam-panel="marketing" hidden>
+      <div class="sec-head sec-head-center mb-4">
+        <h2 class="h2">Campaigns your customers actually get</h2>
+        <p class="lede mt-2">
+          Priced per thousand contacts, the same unit everyone else uses, so you
+          can compare it honestly against what you pay now.
+        </p>
+      </div>
+
+      <div class="eplans">
+        <% marketingEmail.forEach(function (p, i) { %>
+          <div class="eplan <%= p.badge ? 'eplan-featured' : '' %>" data-reveal="<%= i * 90 %>">
+            <% if (p.badge) { %><span class="eplan-badge"><%= p.badge %></span><% } %>
+            <h3 class="eplan-name"><%= p.name %></h3>
+            <p class="eplan-tagline"><%= p.tagline %></p>
+
+            <div class="eplan-price">
+              <span class="cur"><%= p.perMonthParts[12].symbol %></span>
+              <span class="amt"><%= p.perMonthParts[12].whole %></span>
+              <span class="frac">.<%= p.perMonthParts[12].frac %></span>
+            </div>
+            <p class="eplan-unit">per <%= p.unit_label %>, per month — billed yearly</p>
+
+            <div class="units mt-3" data-units data-unit-pence="<%= p.price[12] %>">
+              <button type="button" class="units-btn" data-units-dec aria-label="Fewer contacts">−</button>
+              <input class="units-input" type="number" value="<%= p.min_units %>"
+                     min="<%= p.min_units %>" max="<%= p.max_units %>"
+                     aria-label="Thousands of contacts">
+              <button type="button" class="units-btn" data-units-inc aria-label="More contacts">+</button>
+              <span class="units-label">× <%= p.unit_label %></span>
+            </div>
+
+            <p class="eplan-total">
+              <b data-units-total><%= money(p.price[12]) %></b> a year in total.
+              Includes up to <%= p.monthly_sends.toLocaleString('en-GB') %> sends a month.
+            </p>
+
+            <a class="btn btn-block <%= p.badge ? '' : 'btn-dark' %>" data-units-link
+               href="/order/email/<%= p.slug %>?term=12&units=<%= p.min_units %>">
+              Choose <%= p.name %>
+            </a>
+
+            <ul class="eplan-features">
+              <% p.featureList.forEach(function (f) { %>
+                <li><%- icon('check', 15) %><span><%= f %></span></li>
+              <% }); %>
+            </ul>
+          </div>
+        <% }); %>
+      </div>
+
+      <div class="alert alert-info mt-4">
+        <%- icon('info', 19) %>
+        <div>
+          <p class="mb-0">
+            <b>Marketing email is set up by hand, for now.</b> When you order,
+            we configure your sending domain, authenticate it properly with SPF,
+            DKIM and DMARC, and email you when it is ready — usually the same
+            working day. Sending is deliberately kept off the web servers so
+            that a campaign can never affect anyone's website or ordinary mail.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <p class="center small muted mt-3">
+      All prices include VAT at <%= vatPercent %>%. Every hosting plan already
+      includes mailboxes at no extra cost — see <a href="/hosting">hosting plans</a>.
+    </p>
+  </div>
+</section>
+
+<!-- ======================================================================
+     Deliverability
+     ====================================================================== -->
+<section class="section section-dark">
+  <div class="wrap">
+    <div class="split">
+      <div data-reveal="0">
+        <p class="kicker">Why mail goes missing</p>
+        <h2 class="h1 mt-2 mb-2">Authenticated properly,<br>from the first message</h2>
+        <p class="lede">
+          Most "my email goes to spam" problems are not spam at all — they are a
+          domain that never had SPF, DKIM and DMARC set up correctly. We publish
+          those records for you when the domain is added, and check them again
+          whenever your DNS changes.
+        </p>
+        <div class="row mt-3">
+          <a class="btn" href="/order/email/email-pro?term=12">Get business email</a>
+          <a class="btn btn-ghost" style="border-color:#3a3a35;color:#fff" href="/contact">Talk to someone</a>
+        </div>
+      </div>
+
+      <div class="grid" style="gap:12px" data-reveal="100">
+        <% [
+          ['SPF',   'Says which servers may send as you.',        'Published automatically'],
+          ['DKIM',  'Signs every message so it cannot be forged.', '2048-bit key'],
+          ['DMARC', 'Tells inboxes what to do with a fake.',      'Reporting enabled'],
+          ['TLS',   'Encrypts mail in transit, both directions.',  'Enforced'],
+        ].forEach(function (r) { %>
+          <div class="card" style="background:#1a1a18;border-color:#2a2a26">
+            <div class="row-between">
+              <div class="row" style="gap:12px">
+                <span style="color:var(--lime);flex:none"><%- icon('check-circle', 20) %></span>
+                <div>
+                  <div class="strong" style="color:#fff"><%= r[0] %></div>
+                  <div class="small" style="color:#9ba095"><%= r[1] %></div>
+                </div>
+              </div>
+              <span class="badge badge-lime"><%= r[2] %></span>
+            </div>
+          </div>
+        <% }); %>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================================================================
+     FAQ
+     ====================================================================== -->
+<section class="section" id="faq">
+  <div class="wrap wrap-narrow">
+    <div class="sec-head sec-head-center mb-4">
+      <p class="kicker" data-reveal="0" style="justify-content:center">Questions</p>
+      <h2 class="h1 mt-2" data-reveal="60">Before you buy</h2>
+    </div>
+
+    <div data-acc-group data-reveal="100">
+      <%
+      const faqs = [
+        ['My hosting plan already includes mailboxes. Do I need this?',
+         'Probably not. Every hosting plan comes with mailboxes at your own domain at no extra charge — Starter has 5, Business 50, Pro 200. These paid plans are for two situations: you want email from us without hosting a website here, or you have outgrown what your plan includes and want more storage per mailbox.'],
+        ['Can I keep my existing address?',
+         'Yes, as long as you control the domain. We move the mailboxes across with their messages and folders intact, and you carry on using the same address. If the domain is registered elsewhere you keep it there; only the mail records change.'],
+        ['What happens if I stop paying?',
+         'Mail stops being delivered, but nothing is deleted for 30 days. Come back inside that window and everything is where you left it. After 30 days the mailboxes are removed, and we will have emailed you twice before that happens.'],
+        ['Is there a minimum number of mailboxes?',
+         'One. Add and remove them whenever you like and we bill the difference — there is no seat count to commit to for a year, which is the thing that makes most business email quietly expensive.'],
+        ['Can I send marketing campaigns from my business mailbox?',
+         'Please do not. A shared mail server that starts sending bulk campaigns gets its reputation damaged, and that affects everybody’s ordinary mail including yours. That is exactly why marketing email is a separate product on separate infrastructure.'],
+        ['Do you read or scan my email?',
+         'No. Not for advertising, not for training anything, not at all. Mail passes through spam and virus filtering, which is automated and looks at nothing else. Support can only see a mailbox if you ask us to look and grant access.'],
+      ];
+      faqs.forEach(function (f) { %>
+        <div class="acc">
+          <button class="acc-q" type="button" aria-expanded="false">
+            <span><%= f[0] %></span><%- icon('chevron', 19) %>
+          </button>
+          <div class="acc-a"><div class="acc-a-inner"><%= f[1] %></div></div>
+        </div>
+      <% }); %>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<%- include('../partials/footer') %>

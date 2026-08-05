@@ -1,0 +1,80 @@
+<%# `bare: true` renders only the scripts and the flash hook — no footer
+    furniture. The onboarding wizard uses it: a screen whose whole job is to
+    hold the customer's attention should not end in twenty links out of it. %>
+<% if (typeof bare === 'undefined' || !bare) { %>
+<footer class="footer">
+  <div class="wrap">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <img src="/assets/img/brand/vesopa_logo_on_dark.png" alt="Vesopa" width="170" height="25">
+        <p class="small" style="max-width:30ch">
+          UK web hosting, domain names and SSL from the team behind Vesopa EPOS.
+          One panel, no jargon, and a person on the other end of the ticket.
+        </p>
+        <p class="small" style="margin-bottom:0">
+          <span class="row" style="gap:7px">
+            <span class="dot dot-live"></span>
+            <span>All systems operational</span>
+          </span>
+        </p>
+      </div>
+
+      <div>
+        <h4>Hosting</h4>
+        <ul>
+          <li><a href="/hosting">Shared hosting</a></li>
+          <li><a href="/hosting#compare">Compare plans</a></li>
+          <li><a href="/email">Business email</a></li>
+          <li><a href="/email#pricing">Marketing email</a></li>
+          <li><a href="/#wordpress">WordPress hosting</a></li>
+          <li><a href="/#vibe">Deploy an AI-built app</a></li>
+          <li><a href="/ssl">SSL certificates</a></li>
+          <li><a href="/transfer">Move your site to us</a></li>
+        </ul>
+      </div>
+
+      <div>
+        <h4>Domains</h4>
+        <ul>
+          <li><a href="/domains">Search a domain</a></li>
+          <li><a href="/domains/pricing">Domain pricing</a></li>
+          <li><a href="/domains/transfer">Transfer a domain</a></li>
+          <li><a href="/domains#faq">Domain help</a></li>
+        </ul>
+      </div>
+
+      <div>
+        <h4>Company</h4>
+        <ul>
+          <li><a href="/about">About Vesopa</a></li>
+          <li><a href="/support">Support</a></li>
+          <li><a href="/contact">Contact us</a></li>
+          <li><a href="<%= mainSiteUrl %>" target="_blank" rel="noopener">Vesopa EPOS</a></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="footer-bottom">
+      <div>
+        &copy; <%= new Date().getFullYear() %> <%= contact.company %>.
+        <span class="hide-sm">&nbsp;·&nbsp; <%= contact.address_line1 %>, <%= contact.address_line2 %></span>
+      </div>
+      <div class="row" style="gap:18px">
+        <a href="/terms">Terms</a>
+        <a href="/privacy">Privacy</a>
+        <a href="/aup">Acceptable use</a>
+        <a href="/refunds">Refunds</a>
+      </div>
+    </div>
+  </div>
+</footer>
+<% } %>
+
+<% if (typeof flash !== 'undefined' && flash && flash.message) { %>
+  <span data-flash="<%= flash.message %>" data-flash-kind="<%= flash.kind || 'ok' %>" hidden></span>
+<% } %>
+
+<script src="/assets/js/app.js" defer></script>
+<% if (typeof extraJs !== 'undefined') { %><script src="<%= extraJs %>" defer></script><% } %>
+</body>
+</html>

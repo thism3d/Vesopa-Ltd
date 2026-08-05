@@ -1,0 +1,28 @@
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
+<%- include('../partials/admin-shell', { pageTitle: 'Enquiries', pageSub: 'From the public contact form.' }) %>
+
+<div class="p-card p-card-flush">
+  <% if (!enquiries.length) { %>
+    <div class="empty"><%- icon('mail', 46) %><h3>No enquiries</h3><p>Messages from the contact form land here.</p></div>
+  <% } %>
+  <% enquiries.forEach(function (e) { %>
+    <div class="item" style="align-items:flex-start">
+      <span class="item-icon"><%- icon('mail', 18) %></span>
+      <span class="item-main">
+        <span class="item-title"><%= e.subject || '(no subject)' %></span>
+        <span class="item-sub"><%= e.name %> &lt;<%= e.email %>&gt;<% if (e.phone) { %> · <%= e.phone %><% } %> · <%= new Date(e.created_at).toLocaleString('en-GB') %></span>
+        <div class="small mt-2" style="white-space:pre-wrap;color:var(--ink-2)"><%= e.message %></div>
+      </span>
+      <span class="item-end row" style="gap:8px;justify-content:flex-end">
+        <a class="btn btn-ghost btn-sm" href="mailto:<%= e.email %>?subject=Re: <%= encodeURIComponent(e.subject || 'Your enquiry') %>">Reply</a>
+        <form method="post" action="/admin/enquiries/<%= e.id %>/handled">
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <button class="btn btn-sm <%= e.handled ? 'btn-ghost' : '' %>" type="submit"><%= e.handled ? 'Handled' : 'Mark handled' %></button>
+        </form>
+      </span>
+    </div>
+  <% }); %>
+</div>
+
+<%- include('../partials/panel-shell-end') %>
+<%- include('../partials/footer') %>

@@ -1,0 +1,427 @@
+<%- include('partials/shell-top') %>
+
+<form method="post" action="<%= post.id ? '/admin/blog/' + post.id : '/admin/blog/new' %>">
+
+  <div class="ap-btn-row" style="margin-bottom:16px">
+    <a class="ap-btn ghost sm" href="/admin/blog">
+      <span class="material-icons">arrow_back</span> All posts
+    </a>
+    <div style="flex:1"></div>
+<% if (post.id && post.status === 'published') { %>
+    <a class="ap-btn sm" href="/blog/<%= post.slug %>" target="_blank" rel="noopener">
+      <span class="material-icons">open_in_new</span> View live
+    </a>
+<% } %>
+    <button class="ap-btn sm" type="submit" name="status" value="draft">
+      <span class="material-icons">save</span> Save draft
+    </button>
+    <button class="ap-btn primary sm" type="submit" name="status" value="published">
+      <span class="material-icons">publish</span> Publish
+    </button>
+  </div>
+
+  <div class="ap-grid" style="grid-template-columns: minmax(0, 2fr) minmax(300px, 1fr)">
+
+    <%# ---- The writing ---------------------------------------------------- %>
+    <div>
+      <div class="ap-card">
+        <div class="ap-field">
+          <label>Title</label>
+          <input class="ap-input" name="title" value="<%= post.title %>" required maxlength="255"
+                 style="font-size:19px; padding:12px" data-slug-source="slug" autofocus>
+        </div>
+
+        <%#
+          The address bar under the title, the way every CMS does it. The slug
+          fills itself in from the title until it is typed in by hand, and then
+          stops — retitling a published post must never quietly move its URL.
+          On an existing post it starts out already "touched" for that reason.
+        %>
+        <div class="ap-field">
+          <label>Web address</label>
+          <div class="ap-clip">
+            <span class="ap-muted ap-small ap-nowrap"><%= SITE_URL %>/blog/</span>
+            <input class="ap-input ap-mono" name="slug" id="postSlug" value="<%= post.slug %>" maxlength="180"
+                   data-slug-target <%= post.id ? 'data-touched="1"' : '' %>>
+            <button class="ap-btn ghost sm" type="button" id="slugReset"
+                    title="Rebuild the address from the title">
+              <span class="material-icons">refresh</span>
+            </button>
+          </div>
+<% if (post.id && post.status === 'published') { %>
+          <p class="hint">
+            This post is live. Changing the address breaks any link already
+            shared — the old one will 404.
+          </p>
+<% } else { %>
+          <p class="hint">Suggested from the title. Edit it if you want something shorter.</p>
+<% } %>
+        </div>
+
+        <div class="ap-field">
+          <label>Body</label>
+          <%#
+            data-editor is what public/admin-library/editor.js binds to. The
+            textarea stays the form field — it is hidden in WYSIWYG mode and
+            shown again as the HTML source view — so there is exactly one place
+            the body lives and no way for the two to disagree at submit time.
+
+            With JavaScript off this degrades to what it was before: a plain
+            HTML textarea, which still works.
+          %>
+          <textarea class="ap-textarea tall" id="postBody" name="body" data-editor
+                    placeholder="Write your post. Use the toolbar for headings, links and images, or the &lt;/&gt; button to edit the HTML directly."><%= post.body %></textarea>
+
+          <div class="we-picker" id="bodyImagePicker" hidden>
+            <div class="ap-row-between" style="margin-bottom:8px">
+              <p class="ap-label" style="margin:0">Insert an image</p>
+              <button class="ap-btn ghost sm" type="button" id="bodyImageClose">Close</button>
+            </div>
+<% if (images.length) { %>
+            <div class="we-picker-grid">
+<% images.forEach(function (img) { %>
+              <button type="button" class="js-insert-image"
+                      data-url="<%= img.url %>" data-alt="<%= img.title %>" title="<%= img.title %>">
+                <img src="<%= img.url %>" alt="" loading="lazy">
+                <span class="we-tile-name"><%= img.title %></span>
+              </button>
+<% }); %>
+            </div>
+<% } else { %>
+            <p class="ap-small ap-muted" style="margin:0">
+              Nothing uploaded yet — add images in the
+              <a href="/admin/files">file manager</a>.
+            </p>
+<% } %>
+            <div class="ap-field" style="margin:10px 0 0">
+              <label class="ap-small">…or paste an address</label>
+              <div class="ap-clip">
+                <input class="ap-input ap-mono" id="bodyImageUrl" placeholder="/uploads/… or https://…">
+                <button class="ap-btn sm" type="button" id="bodyImageInsert">Insert</button>
+              </div>
+            </div>
+          </div>
+
+          <p class="hint">
+            Headings, bold, lists, quotes, code, links, images and tables are
+            kept. Anything that could run script is dropped when the page
+            renders — the toolbar only offers what survives.
+          </p>
+        </div>
+
+        <div class="ap-btn-row">
+          <button class="ap-btn sm ghost" type="button" id="previewBtn">
+            <span class="material-icons">preview</span> Preview
+          </button>
+          <span class="ap-small ap-muted" style="align-self:center" id="previewNote"></span>
+        </div>
+
+        <div id="previewPane" class="ap-mt bp-body" hidden
+             style="border:1px solid var(--line); border-radius:8px; padding:18px; background:var(--panel-2)"></div>
+      </div>
+
+      <div class="ap-card">
+        <div class="ap-card-head"><h3>Summary &amp; search</h3></div>
+
+        <div class="ap-field">
+          <label>Excerpt</label>
+          <textarea class="ap-textarea" name="excerpt" rows="3" maxlength="500"><%= post.excerpt || '' %></textarea>
+          <p class="hint">Shown on the listing card. Left blank, the first couple of lines are used.</p>
+        </div>
+
+        <div class="ap-form-grid">
+          <div class="ap-field">
+            <label>SEO title</label>
+            <input class="ap-input" name="seo_title" value="<%= post.seo_title || '' %>" maxlength="255">
+            <p class="hint">Defaults to the post title.</p>
+          </div>
+          <div class="ap-field">
+            <label>Tags</label>
+            <input class="ap-input" name="tags" value="<%= post.tags || '' %>" maxlength="255"
+                   placeholder="epos, hospitality, release">
+          </div>
+          <div class="ap-field span-2">
+            <label>Meta description</label>
+            <textarea class="ap-textarea" name="seo_description" rows="2" maxlength="500"><%= post.seo_description || '' %></textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <%# ---- Settings --------------------------------------------------------- %>
+    <div>
+      <div class="ap-card">
+        <div class="ap-card-head"><h3>Publishing</h3></div>
+
+        <div class="ap-field">
+          <label>Kind</label>
+          <select class="ap-select" name="kind" id="postKind">
+            <option value="post"   <%= post.kind === 'post'   ? 'selected' : '' %>>Article</option>
+            <option value="update" <%= post.kind === 'update' ? 'selected' : '' %>>Product update</option>
+          </select>
+        </div>
+
+        <div class="ap-field" id="versionField" <%= post.kind === 'update' ? '' : 'hidden' %>>
+          <label>Version</label>
+          <input class="ap-input" name="version" value="<%= post.version || '' %>" maxlength="32"
+                 placeholder="1.1.0">
+          <p class="hint">Shown as a badge on release notes.</p>
+        </div>
+
+        <%#
+          Date *and* time, and editable. published_at drives the order of the
+          listing, so without this every post is stamped with the moment
+          Publish happened — which makes it impossible to back-date something
+          written last week, or to line up a run of posts in a sensible order.
+          A future date holds the post back until then; the listing filters on
+          published_at <= NOW().
+        %>
+        <div class="ap-field">
+          <label>Publish date &amp; time</label>
+          <input class="ap-input" type="datetime-local" name="published_at"
+                 id="publishedAt" value="<%= publishedInput %>">
+          <p class="hint" id="publishHint">
+            Leave blank to use the moment you press Publish. A future time holds
+            the post back until then.
+          </p>
+        </div>
+
+        <div class="ap-field">
+          <label>Author</label>
+          <input class="ap-input" name="author" value="<%= post.author || admin.fullname %>" maxlength="120">
+        </div>
+
+        <label class="ap-check">
+          <input type="checkbox" name="is_featured" value="1" <%= post.is_featured ? 'checked' : '' %>>
+          <span>Feature at the top of the blog</span>
+        </label>
+        <p class="hint">
+          The most recent featured post gets the large card. Ticking a second
+          one is harmless — it just takes over.
+        </p>
+
+<% if (post.id) { %>
+        <hr class="ap-hr">
+        <dl class="ap-dl">
+          <dt>Status</dt>
+          <dd><span class="ap-badge <%= post.status === 'published' ? 'ok' : 'warn' %>"><%= post.status %></span></dd>
+          <dt>Published</dt>
+          <dd><%= post.published_at ? formatDateTime(post.published_at) : 'not yet' %></dd>
+          <dt>Views</dt>
+          <dd><%= post.views %></dd>
+        </dl>
+<% } %>
+      </div>
+
+      <%#
+        The layout picker. Options come from src/blog-layouts.js, which the
+        article template reads from too — so a layout offered here always has
+        a matching rendering and cannot publish a post that looks like
+        something else.
+      %>
+      <div class="ap-card">
+        <div class="ap-card-head"><h3>Layout</h3></div>
+        <div class="ap-layouts">
+<% layouts.forEach(function (l) { %>
+          <label class="ap-layout <%= post.layout === l.key ? 'is-on' : '' %>">
+            <input type="radio" name="layout" value="<%= l.key %>"
+                   <%= post.layout === l.key ? 'checked' : '' %>>
+            <span class="ap-layout-art ap-layout-<%= l.key %>" aria-hidden="true">
+              <i class="a"></i><i class="b"></i><i class="c"></i>
+            </span>
+            <span class="ap-layout-text">
+              <strong><%= l.name %></strong>
+              <em><%= l.blurb %></em>
+              <em class="ap-layout-hint"><%= l.hint %></em>
+            </span>
+          </label>
+<% }); %>
+        </div>
+      </div>
+
+      <div class="ap-card">
+        <div class="ap-card-head"><h3>Cover image</h3></div>
+
+        <div class="ap-field">
+          <input class="ap-input" name="cover_url" id="coverUrl" value="<%= post.cover_url || '' %>"
+                 maxlength="500" placeholder="/uploads/… or an absolute URL">
+        </div>
+
+        <div id="coverPreview" style="margin-bottom:12px">
+<% if (post.cover_url) { %>
+          <img src="<%= post.cover_url %>" alt="" style="width:100%; border-radius:8px; display:block">
+<% } %>
+        </div>
+
+<% if (images.length) { %>
+        <p class="ap-label">Pick from the file manager</p>
+        <div class="we-picker-grid">
+<% images.forEach(function (img) { %>
+          <%# is-on marks the cover already chosen, so reopening the editor
+              shows which one is in use rather than an undifferentiated grid. %>
+          <button type="button" class="js-pick-cover <%= post.cover_url === img.url ? 'is-on' : '' %>"
+                  data-url="<%= img.url %>" title="<%= img.title %>">
+            <img src="<%= img.url %>" alt="" loading="lazy">
+            <span class="we-tile-name"><%= img.title %></span>
+          </button>
+<% }); %>
+        </div>
+<% } else { %>
+        <p class="ap-small ap-muted">
+          No images uploaded yet — add some in the <a href="/admin/files">file manager</a>.
+        </p>
+<% } %>
+      </div>
+
+<% if (post.id) { %>
+      <div class="ap-card">
+        <div class="ap-card-head"><h3 style="color:var(--danger)">Danger zone</h3></div>
+        <button class="ap-btn danger" type="submit" formaction="/admin/blog/<%= post.id %>/delete"
+                formnovalidate data-confirm="Delete “<%= post.title %>” for good? This cannot be undone.">
+          <span class="material-icons">delete_forever</span> Delete this post
+        </button>
+      </div>
+<% } %>
+    </div>
+  </div>
+</form>
+
+<script src="/admin-library/editor.js?v=<%= APP_VERSION %>" defer></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  // Version only means anything on a release note.
+  var kind = document.getElementById('postKind');
+  var versionField = document.getElementById('versionField');
+  kind.addEventListener('change', function () {
+    versionField.hidden = kind.value !== 'update';
+  });
+
+  // Highlight the chosen layout card.
+  document.querySelectorAll('.ap-layout input').forEach(function (radio) {
+    radio.addEventListener('change', function () {
+      document.querySelectorAll('.ap-layout').forEach(function (card) {
+        card.classList.toggle('is-on', card.contains(radio) && radio.checked);
+      });
+    });
+  });
+
+  // Say plainly when a date in the future means the post is scheduled — the
+  // difference between "published" and "published, but not yet visible" is not
+  // obvious from a date field on its own.
+  var when = document.getElementById('publishedAt');
+  var whenHint = document.getElementById('publishHint');
+  var whenDefault = whenHint.textContent;
+  function checkWhen() {
+    if (when.value && new Date(when.value) > new Date()) {
+      whenHint.textContent =
+        'Scheduled — this stays off the blog until ' +
+        new Date(when.value).toLocaleString('en-GB') + '.';
+      whenHint.style.color = 'var(--warn)';
+    } else {
+      whenHint.textContent = whenDefault;
+      whenHint.style.color = '';
+    }
+  }
+  when.addEventListener('change', checkWhen);
+  when.addEventListener('input', checkWhen);
+  checkWhen();
+
+  // Rebuild the address from the title on demand, for when it was edited by
+  // hand and the author wants the suggestion back.
+  var slug = document.getElementById('postSlug');
+  document.getElementById('slugReset').addEventListener('click', function () {
+    var title = document.querySelector('[name="title"]').value;
+    slug.value = title
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 180);
+    delete slug.dataset.touched;
+  });
+
+  // Cover picker.
+  var coverInput = document.getElementById('coverUrl');
+  var coverTiles = document.querySelectorAll('.js-pick-cover');
+
+  function markCover(url) {
+    coverTiles.forEach(function (t) {
+      t.classList.toggle('is-on', t.getAttribute('data-url') === url);
+    });
+  }
+
+  coverTiles.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var url = btn.getAttribute('data-url');
+      coverInput.value = url;
+      var box = document.getElementById('coverPreview');
+      box.innerHTML = '<img alt="" style="width:100%; border-radius:8px; display:block">';
+      box.firstChild.src = url;
+      markCover(url);
+    });
+  });
+
+  // Typing or pasting a URL by hand has to move the tick too, or the grid
+  // keeps claiming an image is the cover when it no longer is.
+  coverInput.addEventListener('input', function () {
+    markCover(coverInput.value.trim());
+  });
+
+  // Body image picker, opened by the editor's image button.
+  var picker = document.getElementById('bodyImagePicker');
+  document.getElementById('bodyImageClose').addEventListener('click', function () {
+    picker.hidden = true;
+  });
+  document.querySelectorAll('.js-insert-image').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      window.vesopaEditor.putImage(btn.getAttribute('data-url'), btn.getAttribute('data-alt'));
+      picker.hidden = true;
+    });
+  });
+  document.getElementById('bodyImageInsert').addEventListener('click', function () {
+    var input = document.getElementById('bodyImageUrl');
+    if (!input.value.trim()) return;
+    window.vesopaEditor.putImage(input.value.trim(), '');
+    input.value = '';
+    picker.hidden = true;
+  });
+
+  /*
+   * Preview goes through the server rather than dropping the body into
+   * innerHTML. The whole point is to show what the sanitiser produces, and a
+   * client-side approximation of it would eventually disagree with the real one
+   * — which is the failure mode that matters here.
+   */
+  var previewBtn = document.getElementById('previewBtn');
+  var pane = document.getElementById('previewPane');
+  var note = document.getElementById('previewNote');
+
+  previewBtn.addEventListener('click', function () {
+    if (!pane.hidden) {
+      pane.hidden = true;
+      note.textContent = '';
+      return;
+    }
+    note.textContent = 'rendering…';
+    // Flush the editable area into the textarea first, or the preview shows
+    // the body as it was when the page loaded.
+    if (window.vesopaEditor) window.vesopaEditor.sync();
+
+    fetch('/admin/blog-preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ body: document.getElementById('postBody').value }),
+    })
+      .then(function (r) { return r.text(); })
+      .then(function (html) {
+        pane.innerHTML = html;
+        pane.hidden = false;
+        note.textContent = 'this is exactly what the public page will render';
+      })
+      .catch(function () { note.textContent = 'preview failed'; });
+  });
+});
+</script>
+
+<%- include('partials/shell-bottom') %>

@@ -1,0 +1,21 @@
+<%# A compact hero for the secondary pages. Same furniture as the homepage hero
+    without the domain search, so every page opens the same way. %>
+<section class="hero" style="padding:58px 0 66px">
+  <div class="hero-aura hero-aura-1"></div>
+  <div class="hero-grid"></div>
+  <div class="wrap hero-inner">
+    <p class="kicker" data-reveal="0" style="justify-content:center"><%= kicker %></p>
+    <h1 class="display" style="font-size:clamp(2rem,4.6vw,3.2rem)" data-reveal="60"><%- heading %></h1>
+    <% if (typeof sub !== 'undefined' && sub) { %>
+      <p class="lede hero-lede" data-reveal="120"><%= sub %></p>
+    <% } %>
+    <% if (typeof heroCta !== 'undefined' && heroCta) { %>
+      <div class="row" style="justify-content:center" data-reveal="160">
+        <a class="btn btn-lg" href="<%= heroCta.href %>"><%= heroCta.label %></a>
+        <% if (heroCta.secondary) { %>
+          <a class="btn btn-ghost btn-lg" style="border-color:#3a3a35;color:#fff" href="<%= heroCta.secondary.href %>"><%= heroCta.secondary.label %></a>
+        <% } %>
+      </div>
+    <% } %>
+  </div>
+</section>

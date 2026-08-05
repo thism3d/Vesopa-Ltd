@@ -1,0 +1,73 @@
+<%#
+  The PHP payment-status.php was raw unstyled HTML with no header, footer or
+  stylesheet — a customer who had just paid hundreds of pounds landed on bare
+  Times New Roman. It now uses the same chrome as the rest of the site.
+%>
+<%- include('partials/header') %>
+
+<div class="support_section">
+    <div class="support_section_top">
+<% if (payment) { %>
+        <img style="width: 100%; max-width: 300px;" src="/assets/icons/Work-Complete-Task-Illustration.svg" alt="Payment complete">
+        <h1 class="support_section_heading">Payment Successful</h1>
+        <p class="support_section_brief">Thank you — your Vesopa EPOS subscription is active. Our team will be in touch shortly to arrange setup and training.</p>
+<% } else { %>
+        <h1 class="support_section_heading">We Couldn't Find That Payment</h1>
+        <p class="support_section_brief"><%= statusMessage %></p>
+<% } %>
+    </div>
+
+<% if (payment) { %>
+    <div class="support_section_middle">
+        <div class="support_section_middle_left">
+            <h2 class="support_section_middle_heading">Payment Information</h2>
+            <div class="support_section_middle_inside">
+                <div class="support_section_touch_item">
+                    <div class="support_section_touch_item_inside">
+                        <p class="support_section_touch_icon"><i class="fa fa-hashtag"></i></p>
+                        <p class="support_section_touch_title">Reference</p>
+                        <p class="support_section_touch_anchor"><%= payment.reference %></p>
+                    </div>
+                </div>
+                <div class="support_section_touch_item">
+                    <div class="support_section_touch_item_inside">
+                        <p class="support_section_touch_icon"><i class="fa fa-cube"></i></p>
+                        <p class="support_section_touch_title">Plan</p>
+                        <p class="support_section_touch_anchor"><%= payment.plan_name %></p>
+                    </div>
+                </div>
+                <div class="support_section_touch_item">
+                    <div class="support_section_touch_item_inside">
+                        <p class="support_section_touch_icon"><i class="fa fa-gbp"></i></p>
+                        <p class="support_section_touch_title">Paid</p>
+                        <p class="support_section_touch_anchor"><%= payment.paid_amount %> <%= payment.currency_code %></p>
+                    </div>
+                </div>
+                <div class="support_section_touch_item">
+                    <div class="support_section_touch_item_inside">
+                        <p class="support_section_touch_icon"><i class="fa fa-check-circle"></i></p>
+                        <p class="support_section_touch_title">Status</p>
+                        <p class="support_section_touch_anchor"><%= payment.status %></p>
+                    </div>
+                </div>
+                <div class="support_section_touch_item">
+                    <div class="support_section_touch_item_inside">
+                        <p class="support_section_touch_icon"><i class="fa fa-user"></i></p>
+                        <p class="support_section_touch_title">Payer</p>
+                        <p class="support_section_touch_anchor"><%= payment.payer_name || '—' %></p>
+                    </div>
+                </div>
+                <div class="support_section_touch_item">
+                    <div class="support_section_touch_item_inside">
+                        <p class="support_section_touch_icon"><i class="fa fa-envelope"></i></p>
+                        <p class="support_section_touch_title">Account Email</p>
+                        <p class="support_section_touch_anchor"><%= payment.account_email || payment.payer_email || '—' %></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+<% } %>
+</div>
+
+<%- include('partials/footer') %>

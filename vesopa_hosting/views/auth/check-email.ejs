@@ -1,0 +1,30 @@
+<%- include('../partials/head') %>
+<div class="auth-page">
+  <div class="auth-card center">
+    <a class="auth-brand" href="/" style="justify-content:center">
+      <img src="/assets/img/brand/vesopa_logo.png" alt="Vesopa" width="150" height="22">
+      <span class="brand-sub">Hosting</span>
+    </a>
+
+    <div class="f-icon" style="width:56px;height:56px;margin:0 auto 16px"><%- icon('mail', 28) %></div>
+    <h1>Confirm your email</h1>
+    <p class="lede">
+      We have sent a link<% if (email) { %> to <b><%= email %></b><% } %>.
+      Click it to confirm your address.
+    </p>
+
+    <div class="alert alert-info" style="text-align:left">
+      <%- icon('info', 19) %>
+      <div>You can carry on and use your panel now — confirming just secures your account for password resets.</div>
+    </div>
+
+    <a class="btn btn-block btn-lg" href="/panel">Go to my panel</a>
+
+    <form method="post" action="/register/resend" class="mt-2" data-guard>
+      <input type="hidden" name="_csrf" value="<%= csrf %>">
+      <button class="btn btn-ghost btn-block" type="submit" data-busy="Sending…">Send the link again</button>
+    </form>
+  </div>
+  <p class="auth-foot"><a href="/logout">Sign out</a></p>
+</div>
+<%- include('../partials/footer') %>

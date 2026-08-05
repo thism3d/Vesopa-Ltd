@@ -1,0 +1,32 @@
+<%- include('../partials/head') %>
+<div class="auth-page" style="background:var(--chrome)">
+  <div class="auth-card">
+    <div class="auth-brand">
+      <img src="/assets/img/brand/vesopa_logo.png" alt="Vesopa" width="150" height="22">
+      <span class="brand-sub">Admin</span>
+    </div>
+
+    <h1>Staff sign in</h1>
+    <p class="lede">This area is for Vesopa staff.</p>
+
+    <% if (error) { %>
+      <div class="alert alert-error"><%- icon('warning', 19) %><div><%= error %></div></div>
+    <% } %>
+
+    <form method="post" action="/admin/login" data-guard>
+      <input type="hidden" name="_csrf" value="<%= csrf %>">
+      <div class="field">
+        <label class="label" for="email">Email address</label>
+        <input class="input" id="email" name="email" type="email" autocomplete="username"
+               value="<%= values.email || '' %>" required autofocus>
+      </div>
+      <div class="field">
+        <label class="label" for="password">Password</label>
+        <input class="input" id="password" name="password" type="password" autocomplete="current-password" required>
+      </div>
+      <button class="btn btn-block btn-lg btn-dark" type="submit" data-busy="Signing in…">Sign in</button>
+    </form>
+  </div>
+  <p class="auth-foot" style="color:#787a6e"><a href="/" style="color:#787a6e">← Back to the website</a></p>
+</div>
+<%- include('../partials/footer') %>

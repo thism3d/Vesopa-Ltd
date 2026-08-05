@@ -1,0 +1,39 @@
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
+<%- include('../partials/admin-shell', { pageTitle: 'Services', pageSub: total + ' hosting accounts' }) %>
+
+<div class="p-card p-card-flush">
+  <div class="table-wrap"><table class="table mini">
+    <thead><tr><th>Site</th><th>Customer</th><th>Plan</th><th>Node</th><th>Status</th><th>Due</th><th></th></tr></thead>
+    <tbody>
+      <% if (!services.length) { %><tr><td colspan="7"><p class="muted mb-0" style="padding:20px 0">Nothing yet.</p></td></tr><% } %>
+      <% services.forEach(function (s) { %>
+        <tr>
+          <td class="strong"><%= s.primary_domain || '(no domain)' %></td>
+          <td><a href="/admin/customers/<%= s.customer_id %>"><%= s.email %></a></td>
+          <td><%= s.plan_name %></td>
+          <td class="tiny muted"><%= s.hostname || '—' %></td>
+          <td>
+            <% if (s.status === 'active') { %><span class="badge badge-green">Live</span>
+            <% } else if (s.status === 'suspended') { %><span class="badge badge-red">Suspended</span>
+            <% } else { %><span class="badge badge-grey"><%= s.status %></span><% } %>
+          </td>
+          <td class="tiny muted"><%= s.next_due_at || '—' %></td>
+          <td class="num">
+            <% if (s.status === 'active' || s.status === 'suspended') { %>
+              <form method="post" action="/admin/services/<%= s.id %>/suspend"
+                    data-confirm="<%= s.status === 'active' ? 'Suspend this site? It stops serving immediately.' : 'Restore this site?' %>">
+                <input type="hidden" name="_csrf" value="<%= csrf %>">
+                <input type="hidden" name="reason" value="Suspended by staff">
+                <button class="btn btn-ghost btn-sm" type="submit"><%= s.status === 'active' ? 'Suspend' : 'Restore' %></button>
+              </form>
+            <% } %>
+          </td>
+        </tr>
+      <% }); %>
+    </tbody>
+  </table></div>
+</div>
+
+<%- include('../partials/pager', { base: '/admin/services' }) %>
+<%- include('../partials/panel-shell-end') %>
+<%- include('../partials/footer') %>

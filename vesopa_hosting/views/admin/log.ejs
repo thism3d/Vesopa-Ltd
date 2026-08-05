@@ -1,0 +1,27 @@
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
+<%- include('../partials/admin-shell', { pageTitle: 'Activity log', pageSub: total + ' entries' }) %>
+
+<div class="p-card p-card-flush">
+  <div class="table-wrap"><table class="table mini">
+    <thead><tr><th>When</th><th>Who</th><th>Action</th><th>Target</th><th>Detail</th><th>IP</th></tr></thead>
+    <tbody>
+      <% entries.forEach(function (e) { %>
+        <tr>
+          <td class="tiny muted" style="white-space:nowrap"><%= new Date(e.created_at).toLocaleString('en-GB') %></td>
+          <td><span class="badge badge-grey"><%= e.actor_type %><%= e.actor_id ? ' #' + e.actor_id : '' %></span></td>
+          <td class="strong">
+            <%= e.action %>
+            <% if (!e.ok) { %> <span class="badge badge-red">failed</span><% } %>
+          </td>
+          <td class="mono tiny"><%= e.target %></td>
+          <td class="tiny muted" style="max-width:340px;word-break:break-word"><%= e.detail || '' %></td>
+          <td class="tiny muted mono"><%= e.ip %></td>
+        </tr>
+      <% }); %>
+    </tbody>
+  </table></div>
+</div>
+
+<%- include('../partials/pager', { base: '/admin/log' }) %>
+<%- include('../partials/panel-shell-end') %>
+<%- include('../partials/footer') %>

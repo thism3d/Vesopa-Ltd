@@ -1,0 +1,1266 @@
+/* Vesopa Back Office — dark rail, light canvas, generous whitespace. */
+
+:root {
+  --rail: #111111;
+  --rail-text: #9c9c9a;
+  --rail-active: #ffffff;
+  --bg: #f5f4f7;
+  --card: #ffffff;
+  --line: #e6e3ea;
+  --text: #17141c;
+  --muted: #78717f;
+
+  /* Taken from the Vesopa mark: the lime tail on the "V". */
+  --brand: #a5c715;
+  --brand-soft: #eff6d8;
+  /* Lime is a light colour — white type on it lands near 1.9:1. Anything
+     sitting ON the brand uses this ink, and brand-coloured *text* on a light
+     canvas uses --brand-deep, because the lime itself is too pale to read. */
+  --on-brand: #10130a;
+  --brand-deep: #6e8a0e;
+  --blue: #4b8ef5;
+  --amber: #f5a524;
+  --red: #e5484d;
+  --green: #30a46c;
+
+  --radius: 12px;
+  --shadow: 0 1px 2px rgba(20, 18, 26, .04), 0 4px 16px rgba(20, 18, 26, .04);
+}
+
+* { box-sizing: border-box; }
+
+/* An explicit `display` on an element beats the `hidden` attribute, so the
+   login screen stayed on top of the app forever. This puts hidden back in
+   charge. */
+[hidden] { display: none !important; }
+
+body {
+  margin: 0;
+  font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4 { margin: 0; font-weight: 650; letter-spacing: -.01em; }
+h2 { font-size: 24px; }
+h3 { font-size: 16px; }
+.muted { color: var(--muted); }
+.small { font-size: 12.5px; }
+.right { text-align: right; }
+.error { color: var(--red); font-size: 13px; min-height: 18px; margin: 10px 0 0; }
+
+/* ---------- Login ----------
+   Split screen: form left, brand stage right.
+
+   The old version used `minmax(420px, 44%) 1fr` with a full-bleed cover photo.
+   On a 27" display that gave a ~1100px white column holding a 380px form — a
+   lake of dead space — while `background-size: cover` cropped the photo to a
+   meaningless slice. Both halves are now capped: the form column tops out via
+   clamp(), and the stage centres its own bounded composition. Neither one
+   keeps growing once the screen is bigger than the content needs. */
+
+.login-wrap {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  /* Never narrower than the form plus its gutters, never so wide that the
+     form drifts away from the fold. */
+  grid-template-columns: clamp(400px, 42vw, 620px) 1fr;
+  background: #fff;
+}
+
+.login-side {
+  display: grid;
+  place-items: center;
+  padding: clamp(28px, 5vw, 56px);
+}
+
+.login-card { width: 100%; max-width: 384px; }
+
+.login-logo { display: block; height: 34px; width: auto; margin: 0 0 30px; }
+
+.login-card h1 {
+  font-size: clamp(24px, 2.2vw, 28px);
+  letter-spacing: -.02em;
+  margin-bottom: 6px;
+}
+.login-sub { color: var(--muted); margin: 0 0 28px; font-size: 14.5px; }
+
+/* The app's forms space their inputs with a global `input { margin-top: 6px }`.
+   Login opts out of it: the show/hide toggle is centred against the input's
+   own box, and a margin on the input (which collapses through .field-pw)
+   would drag that centre off by a few pixels. The gap moves to the label. */
+.field { margin-top: 18px; }
+.field:first-of-type { margin-top: 0; }
+.field > label { display: block; margin: 0 0 6px; }
+.field input { margin-top: 0; }
+
+/* The toggle sits inside the input's box; the padding-right on the input is
+   what keeps a long password from running underneath it. */
+.field-pw { position: relative; }
+.field-pw input { padding-right: 66px; }
+
+.pw-toggle {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  border: 0;
+  background: transparent;
+  padding: 6px 8px;
+  border-radius: 7px;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+}
+.pw-toggle:hover { color: var(--text); background: var(--bg); }
+
+.login-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 18px;
+  font-size: 13.5px;
+}
+
+/* A button, not an <a href="#">, because there is no reset page to link to —
+   it discloses the hint below instead. Styled to read as a link anyway. */
+.link-quiet {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--brand-deep);
+  font-weight: 550;
+  cursor: pointer;
+}
+.link-quiet:hover { text-decoration: underline; }
+
+.login-hint {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: var(--brand-soft);
+  color: #3f4d16;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.login-hint strong { font-weight: 650; }
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--muted);
+  cursor: pointer;
+}
+.check input { width: auto; margin: 0; accent-color: var(--brand-deep); }
+
+.login-foot {
+  margin-top: 26px;
+  text-align: center;
+  font-size: 13.5px;
+  color: var(--muted);
+}
+.login-foot a { color: var(--brand-deep); font-weight: 600; text-decoration: none; }
+.login-foot a:hover { text-decoration: underline; }
+.logo { font-size: 26px; font-weight: 750; letter-spacing: -.02em; }
+.logo span { color: var(--brand); }
+
+/* ---------- Login stage ----------
+   Near-black ground with the brand's lime arc sweeping through it, echoing
+   the curve in the Vesopa key visual. The photo is a crop of that same
+   visual with the lockup removed, so the wordmark is never doubled. */
+
+.login-stage {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  padding: clamp(40px, 4vw, 72px);
+  /* The glow sits behind where the photo lands, so the product looks lit
+     rather than pasted onto a flat panel. An earlier version put it in the
+     top-right corner, which only made the empty area above look muddy. */
+  background:
+    radial-gradient(70% 45% at 50% 34%, rgba(165, 199, 21, .17) 0%,
+                    rgba(165, 199, 21, 0) 70%),
+    linear-gradient(165deg, #16190f 0%, #0a0c07 100%);
+}
+
+/* The arc, echoing the curve that sweeps under the logo in the Vesopa key
+   visual. A plain ring clipped by the panel: no banding on wide gamuts, and
+   it stays smooth at any size because nothing about it is rasterised. */
+.login-stage::before,
+.login-stage::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+}
+.login-stage::before {
+  width: 165%;
+  aspect-ratio: 1;
+  left: -34%;
+  top: 46%;
+  border: 3px solid rgba(165, 199, 21, .38);
+  /* Keeps the sweep where it enters bottom-left and lets it dissolve before
+     it can close into an obvious circle. */
+  -webkit-mask-image: linear-gradient(105deg, #000 8%, transparent 58%);
+          mask-image: linear-gradient(105deg, #000 8%, transparent 58%);
+}
+/* A second, fainter arc just inside it — reads as motion rather than a
+   drawn shape. */
+.login-stage::after {
+  width: 148%;
+  aspect-ratio: 1;
+  left: -25%;
+  top: 58%;
+  border: 1px solid rgba(165, 199, 21, .22);
+  -webkit-mask-image: linear-gradient(105deg, #000 8%, transparent 50%);
+          mask-image: linear-gradient(105deg, #000 8%, transparent 50%);
+}
+
+.stage-inner {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  /* The cap that fixes the wide-screen problem: past this the stage grows,
+     the composition inside it does not. */
+  max-width: 520px;
+}
+
+.stage-shot {
+  margin: 0 0 40px;
+  border-radius: 18px;
+  overflow: hidden;
+  /* The source crop is 620×522. Held at its own aspect ratio it never
+     stretches, and it is never scaled past roughly 1:1 on a 1x display. */
+  aspect-ratio: 620 / 522;
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, .4),
+    0 30px 70px -20px rgba(0, 0, 0, .8);
+  outline: 1px solid rgba(255, 255, 255, .08);
+  outline-offset: -1px;
+}
+.stage-shot img { display: block; width: 100%; height: 100%; object-fit: cover; }
+
+.stage-title {
+  color: #fff;
+  font-size: clamp(26px, 2.5vw, 34px);
+  line-height: 1.2;
+  letter-spacing: -.025em;
+  font-weight: 650;
+  margin: 0 0 22px;
+}
+
+.stage-points {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 11px;
+  color: rgba(255, 255, 255, .68);
+  font-size: 14.5px;
+}
+.stage-points li {
+  position: relative;
+  padding-left: 26px;
+  line-height: 1.45;
+}
+/* A lime tick, drawn rather than shipped as an icon font. */
+.stage-points li::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 5px;
+  width: 5px;
+  height: 10px;
+  border: solid var(--brand);
+  border-width: 0 2px 2px 0;
+  transform: rotate(43deg);
+}
+
+/* Short viewports run out of vertical room long before horizontal. Shrinking
+   the whole composition keeps the photo — a 1280×800 laptop is a normal way to
+   open this, and dropping the product shot there loses the point of the panel.
+   Only when there is genuinely no room does the photo go. */
+@media (max-height: 860px) {
+  .stage-inner { max-width: 430px; }
+  .stage-shot { margin-bottom: 32px; }
+}
+@media (max-height: 740px) {
+  .stage-inner { max-width: 360px; }
+  .stage-shot { margin-bottom: 26px; }
+  .stage-title { font-size: clamp(22px, 2vw, 27px); margin-bottom: 18px; }
+  .stage-points { font-size: 13.5px; gap: 9px; }
+}
+@media (max-height: 600px) {
+  .stage-shot { display: none; }
+  .stage-inner { max-width: 420px; }
+}
+
+/* Below a tablet the stage has nowhere to go; the form takes the screen. */
+@media (max-width: 980px) {
+  .login-wrap { grid-template-columns: 1fr; }
+  .login-stage { display: none; }
+}
+
+/* On a small phone "Keep me signed in" and "Forgot password?" together are
+   wider than the column, and flex items do not shrink past their text — so
+   let the row break instead of pushing the page sideways. */
+@media (max-width: 400px) {
+  .login-side { padding: 24px 20px; }
+  .login-row { flex-wrap: wrap; gap: 10px 12px; }
+}
+
+label {
+  display: block;
+  margin-top: 18px;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--muted);
+}
+input, select {
+  width: 100%;
+  margin-top: 6px;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  font-size: 15px;
+  background: #fff;
+  color: var(--text);
+}
+input:focus, select:focus {
+  outline: none;
+  border-color: var(--brand);
+  /* Left over from an earlier teal palette — the ring now matches the lime it
+     is drawn around. */
+  box-shadow: 0 0 0 3px rgba(165, 199, 21, .28);
+}
+
+.btn {
+  border: 0;
+  border-radius: 9px;
+  padding: 10px 18px;
+  font-size: 14.5px;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--line);
+  color: var(--text);
+}
+.btn.primary { background: var(--brand); color: var(--on-brand); }
+.btn.danger { background: var(--red); color: #fff; }
+.btn.ghost { background: transparent; border: 1px solid var(--line); }
+.btn.block { width: 100%; margin-top: 24px; padding: 12px; }
+.btn:hover { filter: brightness(1.06); }
+.btn.small { padding: 6px 12px; font-size: 13px; }
+
+/* ---------- Shell ---------- */
+
+#app { display: flex; min-height: 100vh; }
+
+.rail {
+  width: 236px;
+  flex: none;
+  background: var(--rail);
+  color: var(--rail-text);
+  display: flex;
+  flex-direction: column;
+  padding: 22px 0;
+}
+.rail .logo { padding: 0 22px 22px; color: #fff; font-size: 20px; }
+
+.rail nav { display: flex; flex-direction: column; gap: 2px; padding: 0 12px; }
+.nav-group {
+  padding: 18px 10px 6px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: #5f596b;
+}
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--rail-text);
+  font-size: 14.5px;
+  cursor: pointer;
+}
+.nav:hover { background: rgba(255, 255, 255, .05); color: #fff; }
+.nav.active { background: var(--brand); color: var(--on-brand); font-weight: 600; }
+
+.rail-foot {
+  margin-top: auto;
+  padding: 18px 22px 0;
+  border-top: 1px solid rgba(255, 255, 255, .07);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.link {
+  border: 0;
+  background: none;
+  color: var(--rail-text);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 0;
+  text-decoration: underline;
+  margin-left: auto;
+}
+
+/* The operator must be able to tell at a glance whether the figures in front
+   of them are live or stale. */
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.dot.online { background: #35d07f; box-shadow: 0 0 0 3px rgba(53, 208, 127, .18); }
+.dot.offline { background: #6b6478; }
+
+main { flex: 1; padding: 30px 36px 60px; overflow: auto; }
+
+.page-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+/* ---------- Cards & stats ---------- */
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 16px;
+  margin-bottom: 28px;
+}
+.stat { padding: 18px 20px; display: flex; flex-direction: column; gap: 8px; }
+.stat .label { font-size: 13px; color: var(--muted); font-weight: 550; }
+.stat .value { font-size: 27px; font-weight: 700; letter-spacing: -.02em; }
+.stat .accent { height: 3px; width: 34px; border-radius: 3px; background: var(--brand); }
+.stat.blue .accent { background: var(--blue); }
+.stat.amber .accent { background: var(--amber); }
+.stat.red .accent { background: var(--red); }
+
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+@media (max-width: 1100px) { .grid-2 { grid-template-columns: 1fr; } }
+
+.panel { padding: 20px; }
+.panel h3 { margin-bottom: 14px; }
+
+/* ---------- Tables ---------- */
+
+table { width: 100%; border-collapse: collapse; }
+th, td {
+  padding: 12px 18px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+}
+th {
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--muted);
+  font-weight: 650;
+  background: #fbfafc;
+}
+tbody tr:last-child td { border-bottom: 0; }
+tbody tr:hover { background: #fbfafc; }
+td.right, th.right { text-align: right; }
+.card > table { border-radius: var(--radius); overflow: hidden; }
+
+/* A row that just arrived over the socket. */
+@keyframes flash { from { background: #fff4d6; } to { background: transparent; } }
+tr.new { animation: flash 1.6s ease-out; }
+
+/* ---------- Bars (a chart without a chart library) ---------- */
+
+.bars { display: flex; flex-direction: column; gap: 12px; }
+.bar-row { display: grid; grid-template-columns: 120px 1fr 76px; align-items: center; gap: 12px; }
+.bar-track { height: 9px; background: #eeecf1; border-radius: 5px; overflow: hidden; }
+.bar-fill { height: 100%; border-radius: 5px; background: var(--brand); }
+.bar-row .amount { text-align: right; font-variant-numeric: tabular-nums; font-size: 13.5px; }
+
+/* ---------- Badges ---------- */
+
+.badge {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.badge.active { background: #e3f6ec; color: var(--green); }
+.badge.paused { background: #fdeceb; color: var(--red); }
+.badge.archived { background: #eeecf1; color: var(--muted); }
+.badge.due { background: #fff3e0; color: #b06d00; }
+.badge.paid { background: #e3f6ec; color: var(--green); }
+.badge.overdue { background: #fdeceb; color: var(--red); }
+
+/* ---------- Modal ---------- */
+
+.modal-back {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 18, 26, .45);
+  display: grid;
+  place-items: center;
+  z-index: 50;
+}
+.modal {
+  width: 440px;
+  max-height: 86vh;
+  overflow: auto;
+  background: var(--card);
+  border-radius: 14px;
+  padding: 26px;
+  box-shadow: 0 30px 70px rgba(0, 0, 0, .3);
+}
+.modal h3 { margin-bottom: 6px; }
+.modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 24px; }
+.row { display: flex; gap: 12px; }
+.row > * { flex: 1; }
+
+.empty { padding: 40px; text-align: center; color: var(--muted); }
+
+.thumb {
+  width: 26px;
+  height: 26px;
+  border-radius: 5px;
+  object-fit: cover;
+  vertical-align: -8px;
+  margin-right: 6px;
+}
+.emoji { font-size: 20px; vertical-align: -3px; margin-right: 4px; }
+
+.img-field { display: flex; align-items: center; gap: 12px; margin-top: 6px; }
+.img-preview {
+  width: 54px;
+  height: 54px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid var(--line);
+}
+
+.swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  margin-right: 6px;
+  vertical-align: -1px;
+  border: 1px solid rgba(0, 0, 0, .12);
+}
+
+/* ---------- Brand ---------- */
+
+.brand-logo { height: 30px; display: block; }
+.login-card .brand-logo { height: 42px; margin: 0 auto 6px; }
+
+/* ---------- Floor designer ---------- */
+
+.designer {
+  display: grid;
+  grid-template-columns: 1fr 250px;
+  gap: 20px;
+  align-items: start;
+}
+
+/* The canvas is a grid so tables land on whole units — a free-pixel drag looks
+   tidy to whoever drew it and ragged to everyone else. */
+#canvas {
+  position: relative;
+  height: 620px;
+  background-color: #fbfafc;
+  background-image:
+    linear-gradient(to right, var(--line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--line) 1px, transparent 1px);
+  background-size: 40px 40px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.tbl {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  background: #fff;
+  border: 2px solid var(--brand);
+  color: var(--text);
+  border-radius: 8px;
+  cursor: grab;
+  user-select: none;
+  box-shadow: var(--shadow);
+  transition: box-shadow .12s;
+}
+.tbl:hover { box-shadow: 0 4px 14px rgba(165, 199, 21, .28); }
+.tbl.dragging { cursor: grabbing; opacity: .85; z-index: 10; }
+.tbl.circle { border-radius: 50%; }
+.tbl.selected { border-color: var(--amber); box-shadow: 0 0 0 3px rgba(245, 165, 36, .25); }
+.tbl .num { font-weight: 700; font-size: 17px; }
+.tbl .seats { font-size: 11px; color: var(--muted); }
+
+.room-tabs { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+.room-tab {
+  padding: 7px 14px;
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: 13.5px;
+}
+.room-tab.active { background: var(--brand); color: var(--on-brand); border-color: var(--brand); }
+
+.inspector { padding: 18px; }
+.inspector h3 { margin-bottom: 12px; }
+.inspector label { margin-top: 12px; }
+.hint {
+  font-size: 12.5px;
+  color: var(--muted);
+  background: var(--brand-soft);
+  padding: 10px 12px;
+  border-radius: 8px;
+  margin-top: 14px;
+}
+.unsaved { color: var(--amber); font-weight: 600; }
+
+/* ---------- Fixed, collapsible sidebar ---------- */
+
+/* The rail stays put while the page scrolls, and scrolls internally when the
+   nav is taller than the viewport, so long menus never push the sign-out
+   button off-screen. */
+.rail {
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  height: 100vh;
+  overflow: hidden;
+}
+.rail nav {
+  flex: 1;
+  overflow-y: auto;
+  /* A thin scrollbar that does not draw attention on the dark rail. */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, .18) transparent;
+}
+.rail nav::-webkit-scrollbar { width: 6px; }
+.rail nav::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, .18);
+  border-radius: 3px;
+}
+
+/* A nav group heading is now a button that folds its section away. The caret
+   rotates to show state; a collapsed group hides every .nav until the next
+   heading. */
+.nav-group {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  user-select: none;
+}
+.nav-group .caret {
+  transition: transform .15s ease;
+  font-size: 9px;
+  opacity: .7;
+}
+.nav-group.collapsed .caret { transform: rotate(-90deg); }
+.nav.hidden-by-group { display: none; }
+
+/* ---------- Mobile: off-canvas rail ----------
+   The rail is a fixed 236px column, so on a phone it left ~140px for the
+   content and every table scrolled sideways under it. Below 960px it becomes a
+   drawer over the page instead: hidden by default, slid in by #rail-toggle in
+   the top bar, dismissed by the scrim, Escape, or picking a view. */
+
+/* Desktop keeps the rail permanently open, so the mobile chrome is not rendered
+   at all — no stray toggle, no scrim capturing clicks. */
+.topbar,
+.rail-scrim { display: none; }
+
+@media (max-width: 960px) {
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 56px;
+    padding: 0 14px;
+    background: var(--rail);
+    z-index: 45;
+  }
+  .topbar-logo { height: 24px; margin-right: auto; }
+
+  .rail-toggle {
+    width: 40px;
+    height: 40px;
+    flex: none;
+    display: grid;
+    place-items: center;
+    border: 0;
+    border-radius: 9px;
+    background: rgba(255, 255, 255, .08);
+    cursor: pointer;
+    /* Comfortably past the 44px touch target once the padding is counted. */
+    margin: 0 -2px;
+  }
+  /* Three bars drawn from one element: the middle is the box, the outer two are
+     its pseudo-elements, so the button needs no inner markup to animate. */
+  .rail-toggle-bars,
+  .rail-toggle-bars::before,
+  .rail-toggle-bars::after {
+    content: "";
+    display: block;
+    width: 18px;
+    height: 2px;
+    border-radius: 2px;
+    background: #fff;
+    transition: transform .2s ease, opacity .2s ease;
+  }
+  .rail-toggle-bars { position: relative; }
+  .rail-toggle-bars::before { position: absolute; top: -6px; }
+  .rail-toggle-bars::after { position: absolute; top: 6px; }
+
+  /* Open state folds the bars into a cross, so the same control closes it. */
+  #app.rail-open .rail-toggle-bars { background: transparent; }
+  #app.rail-open .rail-toggle-bars::before { top: 0; transform: rotate(45deg); }
+  #app.rail-open .rail-toggle-bars::after { top: 0; transform: rotate(-45deg); }
+
+  #app { display: block; }
+
+  .rail {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 272px;
+    max-width: 84vw;
+    height: 100dvh;
+    z-index: 60;
+    transform: translateX(-100%);
+    transition: transform .22s ease;
+    box-shadow: 0 0 40px rgba(0, 0, 0, .4);
+    /* A drawer that cannot reach its own sign-out button is worse than no
+       drawer; the nav scrolls inside the fixed frame. */
+    overflow: hidden;
+  }
+  #app.rail-open .rail { transform: none; }
+
+  .rail-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+    background: rgba(0, 0, 0, .5);
+  }
+
+  /* Clear the fixed top bar. */
+  main { padding: 76px 16px 48px; }
+  .page-head { flex-wrap: wrap; gap: 12px; }
+  h2 { font-size: 21px; }
+
+  /* Wide report tables scroll in their own box rather than the page body. */
+  .card > table,
+  .panel-body { display: block; overflow-x: auto; }
+  th, td { padding: 10px 12px; white-space: nowrap; }
+
+  .modal { width: 92vw; padding: 20px; }
+  .row { flex-wrap: wrap; }
+  .row > * { flex: 1 1 160px; }
+  .designer { grid-template-columns: 1fr; }
+  .bar-row { grid-template-columns: 92px 1fr 66px; }
+}
+
+/* Someone who has asked for less motion still needs the drawer — it just
+   arrives rather than slides. */
+@media (prefers-reduced-motion: reduce) {
+  .rail, .rail-toggle-bars,
+  .rail-toggle-bars::before, .rail-toggle-bars::after { transition: none; }
+}
+
+/* ---------- Drag-to-reorder rows ---------- */
+
+.drag-col { width: 34px; }
+.drag-cell { width: 34px; text-align: center; color: var(--muted); }
+.drag-handle {
+  cursor: grab;
+  user-select: none;
+  letter-spacing: -2px;
+  font-size: 15px;
+  line-height: 1;
+  opacity: .55;
+}
+.drag-handle:hover { opacity: 1; }
+tr.dragging { opacity: .5; background: var(--brand-soft); }
+tr[draggable="true"] { cursor: grabbing; }
+.nowrap { white-space: nowrap; }
+
+/* ---------- Checkbox field in the modal ---------- */
+
+.check-field { display: inline-flex; align-items: center; }
+.check-field input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--brand);
+  cursor: pointer;
+}
+
+/* ---------- Receipt / detail viewer ---------- */
+
+.receipt-view {
+  font-variant-numeric: tabular-nums;
+  max-width: 340px;
+  margin: 0 auto;
+}
+.receipt-view h3 { text-align: center; margin-bottom: 4px; }
+.receipt-view .r-sub { text-align: center; color: var(--muted); font-size: 12.5px; margin-bottom: 14px; }
+.receipt-view table { margin: 8px 0; }
+.receipt-view td, .receipt-view th { padding: 5px 4px; border: 0; font-size: 13px; }
+.receipt-view .r-tot td { border-top: 1px dashed var(--line); font-weight: 700; padding-top: 8px; }
+.receipt-view .r-line-tot { text-align: right; }
+.linkish { cursor: pointer; color: var(--brand-deep); text-decoration: underline; }
+
+/* ---------- Image cropper ---------- */
+
+.cropper { text-align: center; }
+.crop-stage {
+  position: relative;
+  margin: 14px auto;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #111;
+  touch-action: none;
+}
+#crop-canvas { display: block; cursor: grab; }
+#crop-canvas:active { cursor: grabbing; }
+/* A subtle frame + darkened surround so the framed square reads as the crop. */
+.crop-frame {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .5) inset;
+  border-radius: 10px;
+}
+.crop-zoom {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 320px;
+  margin: 6px auto 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.crop-zoom input[type="range"] { flex: 1; accent-color: var(--brand); }
+
+tr.clickable { cursor: pointer; }
+tr.clickable:hover { background: var(--brand-soft); }
+
+/* When printing a receipt, hide everything except the receipt node so the
+   browser's "Save as PDF" produces a clean slip, not the whole back office. */
+@media print {
+  body.printing-receipt #app,
+  body.printing-receipt #login { display: none !important; }
+  body.printing-receipt #modal-root .modal-back {
+    position: static;
+    background: none;
+    display: block;
+  }
+  body.printing-receipt #modal-root .modal {
+    box-shadow: none;
+    max-width: none;
+    padding: 0;
+  }
+  body.printing-receipt .modal-actions { display: none !important; }
+}
+
+/* A print area for the report tables (Till Report / Bill Report export). */
+.report-print-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+@media print {
+  body.printing-report .rail,
+  body.printing-report .page-head .btn,
+  body.printing-report #modal-root { display: none !important; }
+  body.printing-report main { padding: 0; }
+  body.printing-report .view[hidden] { display: none; }
+}
+
+/* ---- Receipt designer ---------------------------------------------------- */
+
+.rd-head-actions { display: flex; gap: 8px; }
+
+/* Editor beside a paper preview. The preview sticks so it stays visible while
+   the long form is scrolled — the whole point is watching edits land. */
+.rd-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 18px;
+  align-items: start;
+}
+
+.rd-editor { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.rd-card h3 { margin: 0 0 12px; font-size: 15px; }
+.rd-card label { display: block; margin-bottom: 10px; font-size: 13px; }
+.rd-card label.check { display: flex; align-items: center; gap: 8px; }
+.rd-card input[type="text"], .rd-card input:not([type]),
+.rd-card select, .rd-card textarea {
+  width: 100%; margin-top: 4px;
+}
+.rd-card textarea { resize: vertical; font: inherit; }
+
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+
+/* ---------- Note keys ----------
+   One row per denomination: the picture as it will appear on the till, the
+   value, the label, and the way out. The thumbnail is a real banknote crop, so
+   it keeps a note's ~2:1 shape rather than being squeezed into a square. */
+.denom-rows { display: flex; flex-direction: column; gap: 10px; }
+
+.denom-row {
+  display: grid;
+  grid-template-columns: 104px 110px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+}
+.denom-row label { margin: 0; }
+
+.denom-thumb {
+  width: 104px;
+  aspect-ratio: 2 / 1;
+  border-radius: 6px;
+  border: 1px dashed var(--line);
+  background: #fff center/cover no-repeat;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--muted);
+  text-align: center;
+  overflow: hidden;
+}
+.denom-thumb.has-image { border-style: solid; }
+.denom-thumb:hover { border-color: var(--brand); }
+
+.denom-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+@media (max-width: 720px) {
+  .denom-row { grid-template-columns: 84px 1fr; }
+  .denom-thumb { width: 84px; }
+}
+
+.rd-logo-row { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 10px; }
+.rd-logo-preview {
+  width: 120px; height: 90px; flex: none;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px dashed var(--line, #d4d7dd); border-radius: 8px;
+  background: var(--surface-2, #f7f8fa); overflow: hidden;
+}
+.rd-logo-preview img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.rd-logo-actions { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.btn.danger-ghost { color: #b3261e; }
+
+/* A PIN read back to a member of staff who forgot it. Tabular and spaced, so
+   four digits can be read aloud without a misread. */
+.staff-pin { font-family: ui-monospace, Menlo, Consolas, monospace; letter-spacing: 0.14em; }
+.pin-warn {
+  font-family: inherit; letter-spacing: 0; font-size: 11px; font-weight: 600;
+  color: #8a5300; background: #fff3d6; border-radius: 5px; padding: 1px 6px;
+  white-space: nowrap;
+}
+
+/* Idle screen preview. Drawn at 16:9 on black, because that is what a till
+   panel actually is — a preview on a white card would flatter an image that
+   turns out to be unreadable on the terminal. */
+.idle-preview {
+  aspect-ratio: 16 / 9;
+  width: 100%;
+  max-width: 460px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--line, #d4d7dd); border-radius: 10px;
+  background: #000; overflow: hidden; position: relative;
+}
+.idle-preview img { width: 100%; height: 100%; object-fit: cover; }
+.idle-preview .idle-fallback {
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+}
+.idle-preview .idle-fallback img { width: 55%; height: auto; object-fit: contain; }
+/* The lime rule from the splash, so the preview reads as the same screen. */
+.idle-preview .idle-rule { width: 55%; height: 3px; background: #c3ff00; border-radius: 2px; }
+.idle-preview .idle-msg {
+  position: absolute; bottom: 10px; left: 0; right: 0; text-align: center;
+  color: rgba(255, 255, 255, 0.85); font-size: 12px; letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.rd-preview-pane { position: sticky; top: 16px; }
+.rd-preview-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 8px;
+}
+.rd-paper-wrap {
+  background: var(--surface-2, #eef0f4);
+  border-radius: 12px; padding: 18px;
+  max-height: calc(100vh - 160px); overflow: auto;
+}
+
+/* The paper itself. Width is set in millimetres so the preview is a true
+   representation of an 80mm or 58mm roll rather than an approximation. */
+.rd-paper {
+  width: 72mm; margin: 0 auto; padding: 5mm 4mm;
+  background: #fff; color: #000;
+  font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+  font-size: 10px; line-height: 1.35;
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.18);
+}
+.rd-paper.narrow { width: 51mm; font-size: 9px; }
+
+.rp-logo { text-align: center; margin-bottom: 6px; }
+.rp-logo img { max-height: 46px; max-width: 70%; object-fit: contain; }
+.rp-name { text-align: center; font-weight: 700; font-size: 13px; letter-spacing: 0.5px; }
+.rd-paper.narrow .rp-name { font-size: 11px; }
+.rp-centre { text-align: center; }
+.rp-note { color: #444; font-size: 0.9em; }
+.rp-row { display: flex; justify-content: space-between; gap: 8px; }
+.rp-row > span:first-child { flex: 1; min-width: 0; word-break: break-word; }
+.rp-sub { color: #444; font-size: 0.9em; padding-left: 10px; }
+.rp-italic { font-style: italic; }
+.rp-rule { border-top: 1px dashed #999; margin: 5px 0; }
+.rp-rule.heavy { border-top: 2px solid #000; }
+.rp-total {
+  display: flex; justify-content: space-between;
+  font-weight: 700; font-size: 1.25em;
+  background: #eee; padding: 3px 4px; margin: 4px 0;
+}
+.rp-footer { text-align: center; font-weight: 700; margin-top: 4px; }
+
+/* Stand-ins: the real barcode and QR are generated by the till's PDF builder,
+   and drawing them here would only duplicate that logic. */
+.rp-barcode {
+  height: 30px; margin: 8px auto 4px; width: 70%;
+  background: repeating-linear-gradient(
+    90deg, #000 0 2px, #fff 2px 4px, #000 4px 5px, #fff 5px 8px);
+}
+.rp-qr {
+  width: 46px; height: 46px; margin: 6px auto;
+  display: flex; align-items: center; justify-content: center;
+  border: 2px solid #000; font-size: 9px; letter-spacing: 1px;
+}
+
+@media (max-width: 1100px) {
+  .rd-layout { grid-template-columns: 1fr; }
+  .rd-preview-pane { position: static; }
+  .grid2 { grid-template-columns: 1fr; }
+}
+
+/* ---- Charts -------------------------------------------------------------- */
+
+.chart-box { width: 100%; overflow: hidden; }
+.chart { width: 100%; height: auto; display: block; }
+.chart-grid { stroke: var(--line, #e3e6ea); stroke-width: 1; }
+.chart-axis { font-size: 11px; fill: var(--muted, #7a828c); }
+.chart-empty { padding: 22px 4px; }
+
+.donut-wrap { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
+.donut { flex: none; }
+.donut-total { font-size: 20px; font-weight: 700; fill: var(--ink, #16181d); }
+.donut-caption { font-size: 10px; fill: var(--muted, #7a828c); letter-spacing: 1px; }
+
+.chart-legend { list-style: none; margin: 0; padding: 0; flex: 1; min-width: 160px; }
+.chart-legend li {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 0; font-size: 13px;
+}
+.chart-legend .swatch {
+  width: 11px; height: 11px; border-radius: 3px; flex: none;
+}
+.chart-legend .legend-label { flex: 1; }
+.chart-legend .legend-value { font-weight: 600; }
+
+.ranked { display: flex; flex-direction: column; gap: 8px; }
+.ranked-row {
+  display: grid;
+  grid-template-columns: 20px minmax(80px, 1.4fr) 2fr auto;
+  align-items: center; gap: 10px; font-size: 13px;
+}
+.ranked-rank { color: var(--muted, #7a828c); font-size: 11px; text-align: right; }
+.ranked-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ranked-track {
+  height: 8px; border-radius: 4px;
+  background: var(--surface-2, #eef0f4); overflow: hidden;
+}
+.ranked-fill { display: block; height: 100%; border-radius: 4px; }
+.ranked-value { font-weight: 600; white-space: nowrap; }
+.ranked-meta {
+  grid-column: 2 / -1; font-size: 11px; color: var(--muted, #7a828c);
+  margin-top: -4px;
+}
+
+/* ---- Stat cards ---------------------------------------------------------- */
+
+.grid-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
+  gap: 12px; margin-bottom: 18px;
+}
+.stat-card {
+  display: flex; flex-direction: column; gap: 3px;
+  padding: 14px 16px; border-left: 3px solid var(--line, #d9dce1);
+}
+.stat-card.primary { border-left-color: var(--brand); }
+.stat-card.blue    { border-left-color: #4361ee; }
+.stat-card.amber   { border-left-color: #f77f00; }
+.stat-card.green   { border-left-color: #06d6a0; }
+.stat-card.red     { border-left-color: #ef476f; }
+.stat-label {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px;
+  color: var(--muted, #7a828c);
+}
+.stat-value { font-size: 22px; font-weight: 700; }
+.stat-hint { font-size: 11px; color: var(--muted, #7a828c); }
+.stat-delta { font-size: 12px; font-weight: 600; }
+.stat-delta.up { color: #06a77d; }
+.stat-delta.down { color: #d1495b; }
+
+/* ---- Dashboard toolbar --------------------------------------------------- */
+
+.dash-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; margin-bottom: 14px; flex-wrap: wrap;
+}
+.seg {
+  display: inline-flex; border: 1px solid var(--line, #d9dce1);
+  border-radius: 8px; overflow: hidden;
+}
+.seg-btn {
+  border: 0; background: transparent; padding: 7px 14px;
+  font: inherit; font-size: 13px; cursor: pointer;
+  border-right: 1px solid var(--line, #d9dce1);
+}
+.seg-btn:last-child { border-right: 0; }
+.seg-btn.active { background: var(--brand); color: var(--on-brand); font-weight: 600; }
+
+.panel-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.mini-list { display: flex; flex-direction: column; gap: 9px; }
+.mini-list > div {
+  display: flex; justify-content: space-between; gap: 12px;
+  font-size: 13px; padding-bottom: 8px;
+  border-bottom: 1px solid var(--line, #eef0f4);
+}
+.mini-list > div:last-child { border-bottom: 0; padding-bottom: 0; }
+.mini-list .warn b { color: #d1495b; }
+
+/* ---- Commerce tables ----------------------------------------------------- */
+
+.pill {
+  display: inline-block; padding: 2px 9px; border-radius: 11px;
+  font-size: 11px; background: var(--surface-2, #eef0f4);
+  color: var(--muted, #7a828c); text-transform: capitalize;
+}
+.pill.on { background: #e4f7ef; color: #06784f; }
+
+.promo-badge {
+  display: inline-block; padding: 3px 9px; border-radius: 5px;
+  font-size: 11px; font-weight: 700; color: #fff;
+}
+
+td code {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12px; background: var(--surface-2, #f2f4f7);
+  padding: 2px 6px; border-radius: 4px;
+}
+.pos { color: #06784f; }
+.neg { color: #d1495b; }
+
+/* ---- Loyalty tiers ------------------------------------------------------- */
+
+.tier-row {
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  padding: 9px 0; border-bottom: 1px solid var(--line, #eef0f4);
+}
+.tier-row .tier-name { flex: 1; min-width: 110px; }
+.tier-field {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 12px; margin: 0; color: var(--muted, #7a828c);
+}
+.tier-field input { width: 68px; }
+.tier-row input[type="color"] {
+  width: 34px; height: 30px; padding: 2px; border-radius: 6px;
+}
+
+/* ---- Tender preview ------------------------------------------------------ */
+
+.till-preview {
+  background: #12141a; color: #fff; border-radius: 10px; padding: 16px;
+}
+.till-preview .muted { color: #9aa3af; }
+.till-row {
+  display: flex; justify-content: space-between;
+  font-size: 17px; padding-bottom: 10px;
+  border-bottom: 1px solid #2a2f3a;
+}
+.till-keys { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.till-key {
+  padding: 7px 11px; border-radius: 7px; font-size: 12px;
+  background: #232734; border: 1px solid #313747;
+}
+.till-key.cash { background: #16351f; border-color: #1f5130; }
+
+/* ---- Wide modal ---------------------------------------------------------- */
+
+.modal.wide { max-width: 760px; width: 92vw; }
+.panel-body { max-height: 62vh; overflow: auto; }
+table.plain { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.plain th, table.plain td {
+  text-align: left; padding: 7px 9px;
+  border-bottom: 1px solid var(--line, #eef0f4);
+}
+table.plain th { color: var(--muted, #7a828c); font-weight: 600; font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.5px; }
+
+.colour-field { display: flex; gap: 8px; align-items: center; }
+.colour-field input[type="color"] {
+  width: 40px; height: 34px; padding: 2px; border-radius: 6px; flex: none;
+}
+.colour-field input[type="text"] { flex: 1; font-family: ui-monospace, monospace; }
