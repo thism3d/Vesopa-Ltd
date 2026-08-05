@@ -1,11 +1,15 @@
 # Builds the Windows till, so releasing does not depend on anyone having a
 # Windows machine set up to build it.
 #
-# Produces two artefacts on every run:
-#   * vesopa-epos-windows      — the plain runner folder, copy-and-run
-#   * vesopa-epos-msix         — an MSIX package for Store submission / sideload
+# Produces three artefacts on every run:
+#   * vesopa-epos-windows    — the plain runner folder, copy-and-run
+#   * vesopa-epos-installer  — "VesopaEPOS Installer.exe", the file the website
+#                              serves at /app/VesopaEPOS%20Installer.exe
+#   * vesopa-epos-msix       — an MSIX package for Store submission / sideload
 #
-# Tagging a release (v1.2.3) also attaches both to the GitHub release.
+# Tagging a release (v1.2.3) also attaches all three to the GitHub release, so a
+# specific till version can be re-downloaded later rather than only living in a
+# CI run's 90-day artefacts.
 name: Build Windows till
 
 on:
@@ -36,14 +40,38 @@ jobs:
       - name: Fetch dependencies
         run: flutter pub get
 
+      # pubspec.yaml is the single source of the version number; the installer
+      # takes it from here so an installer can never claim a version the app
+      # does not. `1.3.1+4` gives 1.3.1 to show a user and 1.3.1.4 for the four-
+      # part number Windows wants in file properties.
+      - name: Read version from pubspec
+        id: ver
+        shell: pwsh
+        run: |
+          $raw = (Select-String -Path pubspec.yaml -Pattern '^version:\s*(\S+)').Matches[0].Groups[1].Value
+          $app, $build = $raw.Split('+')
+          if (-not $build) { $build = '0' }
+          Add-Content $env:GITHUB_OUTPUT "app_version=$app"
+          Add-Content $env:GITHUB_OUTPUT "version_info=$app.$build"
+          Write-Host "Building $app ($app.$build)"
+
       # Fail fast on analysis before spending time on the native build.
       - name: Analyse
         run: flutter analyze lib
 
-      # `live`-tagged tests call Dojo's real sandbox; they need a key and a
-      # reader, so they are for a developer to run deliberately, not for CI.
+      # Two exclusions, for different reasons:
+      #   * `live`-tagged tests call Dojo's real sandbox; they need a key and a
+      #     reader, so they are for a developer to run deliberately.
+      #   * widget_test.dart hangs for the full ten-minute flutter_test timeout
+      #     instead of failing, which would stall every build for no
+      #     information. Run it by hand if you are working on it.
       - name: Test
-        run: flutter test --exclude-tags live
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem test -Recurse -Filter '*_test.dart' |
+            Where-Object { $_.Name -ne 'widget_test.dart' } |
+            ForEach-Object { $_.FullName }
+          flutter test --exclude-tags live @files
 
       # The Dojo key is injected at build time and never committed — this
       # repository is public. Set DOJO_API_KEY under
@@ -53,6 +81,65 @@ jobs:
         run: >
           flutter build windows --release
           --dart-define=DOJO_API_KEY=${{ secrets.DOJO_API_KEY }}
+
+      # A Flutter release build links against the MSVC runtime but does not ship
+      # it. Machines that have never had Visual Studio or a C++ redistributable
+      # on them start the till and it dies immediately with no window and no
+      # message. Copying the three DLLs next to the exe (app-local deployment,
+      # which the Visual Studio licence permits) removes that as a failure mode
+      # for both the zip and the installer.
+      - name: Bundle the MSVC runtime
+        shell: pwsh
+        run: |
+          $out = "build/windows/x64/runner/Release"
+          $crt = Get-ChildItem -Path "C:/Program Files/Microsoft Visual Studio/2022/*/VC/Redist/MSVC/*/x64/Microsoft.VC14*.CRT" `
+            -Directory -ErrorAction SilentlyContinue | Select-Object -Last 1
+          if ($null -eq $crt) {
+            Write-Warning "MSVC redistributable not found on the runner — shipping without it."
+          } else {
+            Copy-Item "$($crt.FullName)/msvcp140.dll","$($crt.FullName)/vcruntime140.dll","$($crt.FullName)/vcruntime140_1.dll" `
+              -Destination $out -Force
+            Write-Host "Bundled the MSVC runtime from $($crt.FullName)"
+          }
+
+      # Signing is optional and everything below degrades gracefully without it:
+      # an unsigned build works, it just makes SmartScreen warn on download. To
+      # sign, add a base64-encoded .pfx as the CERTIFICATE_BASE64 secret and its
+      # password as CERTIFICATE_PASSWORD.
+      # `secrets` cannot be used in an `if:` expression, so the presence check
+      # happens inside each script instead.
+      - name: Restore signing certificate
+        shell: pwsh
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.CERTIFICATE_BASE64 }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:CERTIFICATE_BASE64)) {
+            Write-Host "No signing certificate configured — building unsigned."
+          } else {
+            [IO.File]::WriteAllBytes(
+              "windows/certificate.pfx",
+              [Convert]::FromBase64String($env:CERTIFICATE_BASE64)
+            )
+            # signtool ships with the Windows SDK and is not on PATH.
+            $signtool = Get-ChildItem "C:/Program Files (x86)/Windows Kits/10/bin/*/x64/signtool.exe" |
+              Sort-Object FullName | Select-Object -Last 1
+            if ($null -eq $signtool) { throw "A certificate was supplied but signtool.exe was not found." }
+            Add-Content $env:GITHUB_ENV "SIGNTOOL=$($signtool.FullName)"
+          }
+
+      # The app is signed before packaging, so the signature is on the exe a
+      # customer actually runs and not only on the wrapper it arrived in.
+      - name: Sign the till
+        shell: pwsh
+        env:
+          CERTIFICATE_PASSWORD: ${{ secrets.CERTIFICATE_PASSWORD }}
+        run: |
+          if (Test-Path "windows/certificate.pfx") {
+            & $env:SIGNTOOL sign /f windows/certificate.pfx /p $env:CERTIFICATE_PASSWORD `
+              /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 `
+              "build/windows/x64/runner/Release/vesopa_epos.exe"
+            if ($LASTEXITCODE -ne 0) { throw "Signing the till failed." }
+          }
 
       - name: Package runner folder
         shell: pwsh
@@ -67,35 +154,49 @@ jobs:
           path: vesopa-epos-windows.zip
           if-no-files-found: error
 
-      # MSIX for the Microsoft Store. Built unsigned: Microsoft re-signs Store
-      # submissions themselves, and no certificate is committed to this repo.
-      # For a *sideloadable* signed package, add a base64 .pfx as the
-      # CERTIFICATE_BASE64 secret and its password as CERTIFICATE_PASSWORD —
-      # the step below then signs it.
-      # `secrets` cannot be used in an `if:` expression, so the presence check
-      # happens inside the script instead.
-      - name: Restore signing certificate
+      # The double-click installer for the public download link. See
+      # windows/installer/vesopa_epos.iss.
+      - name: Build the installer
+        shell: pwsh
+        run: |
+          $iscc = "C:/Program Files (x86)/Inno Setup 6/ISCC.exe"
+          if (!(Test-Path $iscc)) {
+            choco install innosetup -y --no-progress
+          }
+          & $iscc `
+            "/DAppVersion=${{ steps.ver.outputs.app_version }}" `
+            "/DVersionInfo=${{ steps.ver.outputs.version_info }}" `
+            windows/installer/vesopa_epos.iss
+          if ($LASTEXITCODE -ne 0) { throw "The installer failed to compile." }
+
+      - name: Sign the installer
         shell: pwsh
         env:
-          CERTIFICATE_BASE64: ${{ secrets.CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.CERTIFICATE_PASSWORD }}
         run: |
-          if ([string]::IsNullOrWhiteSpace($env:CERTIFICATE_BASE64)) {
-            Write-Host "No signing certificate configured — building unsigned for the Store."
-          } else {
-            [IO.File]::WriteAllBytes(
-              "windows/certificate.pfx",
-              [Convert]::FromBase64String($env:CERTIFICATE_BASE64)
-            )
+          if (Test-Path "windows/certificate.pfx") {
+            & $env:SIGNTOOL sign /f windows/certificate.pfx /p $env:CERTIFICATE_PASSWORD `
+              /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 `
+              "build/windows/installer/VesopaEPOS Installer.exe"
+            if ($LASTEXITCODE -ne 0) { throw "Signing the installer failed." }
           }
 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vesopa-epos-installer
+          path: build/windows/installer/VesopaEPOS Installer.exe
+          if-no-files-found: error
+
+      # MSIX for the Microsoft Store. Built unsigned unless a certificate is
+      # present: Microsoft re-signs Store submissions themselves, and no
+      # certificate is committed to this repo. With a certificate it becomes a
+      # signed, sideloadable package instead.
       - name: Build MSIX
         shell: pwsh
         env:
           CERTIFICATE_PASSWORD: ${{ secrets.CERTIFICATE_PASSWORD }}
         run: |
           if (Test-Path "windows/certificate.pfx") {
-            # A certificate is present: produce a signed, sideloadable package
-            # instead of a Store-signed one.
             dart run msix:create `
               --certificate-path windows/certificate.pfx `
               --certificate-password $env:CERTIFICATE_PASSWORD
@@ -110,12 +211,11 @@ jobs:
           path: build/windows/x64/runner/Release/*.msix
           if-no-files-found: error
 
-      # Tagged builds also become a GitHub release, so a specific till version
-      # can be re-downloaded later rather than only living in a CI run.
       - name: Attach to release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: |
             vesopa-epos-windows.zip
+            build/windows/installer/VesopaEPOS Installer.exe
             build/windows/x64/runner/Release/*.msix
