@@ -16,6 +16,7 @@ const registrar = require('./integrations/domainnameapi');
 const hestia = require('./integrations/hestia');
 
 const PORT = Number(process.env.PORT) || 5075;
+const HOST = process.env.HOST || '127.0.0.1';
 const app = express();
 
 // Behind nginx on the live server, so req.ip is the visitor and not the proxy.
@@ -242,8 +243,21 @@ app.use((err, req, res, _next) => {
   if (!reg.live) console.log('            No domain will actually be registered while DNA_MODE=mock.');
   if (!node.live) console.log('            No account will actually be created while HESTIA_MODE=mock.');
 
-  app.listen(PORT, () => {
-    console.log(`\n  Vesopa Hosting running on http://localhost:${PORT}`);
-    console.log(`  Admin panel:               http://localhost:${PORT}/admin\n`);
+  /*
+   * BIND TO LOOPBACK, NOT 0.0.0.0.
+   *
+   * This app always sits behind nginx, which proxies to 127.0.0.1:PORT. Binding
+   * every interface — Node's default — publishes the whole site on the server's
+   * public address at :5075 as well, in PLAINTEXT and bypassing the certificate
+   * entirely. The admin login form is then reachable over unencrypted HTTP on a
+   * port nobody is watching, which is exactly how a password gets read off the
+   * wire. It was, until this line existed.
+   *
+   * HOST is overridable for the rare case of a proxy on another machine; the
+   * default is the safe one.
+   */
+  app.listen(PORT, HOST, () => {
+    console.log(`\n  Vesopa Hosting running on http://${HOST}:${PORT}`);
+    console.log(`  Admin panel:               http://${HOST}:${PORT}/admin\n`);
   });
 })();
