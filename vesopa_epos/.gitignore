@@ -43,3 +43,44 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# -----------------------------------------------------------------------------
+# Secrets — added when this project joined the Vesopa-Ltd umbrella repo
+# -----------------------------------------------------------------------------
+# THE SIGNING KEYS ARE THE MOST DANGEROUS FILES IN THIS PROJECT.
+#
+# A leaked Android signing key lets anyone build an APK that Android accepts as
+# a genuine Vesopa update, and unlike a password it CANNOT be rotated: every
+# device with the app installed is pinned to that key for the life of the app.
+# A new key means a new listing and no upgrade path for existing users.
+#
+# They were untracked but unignored, which meant the next `git add -A` in this
+# repo would have published them.
+*.key
+*.keystore
+*.jks
+*.p12
+*.pfx
+*.pem
+key.properties
+keystore.properties
+keys/
+
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+google-services.json
+GoogleService-Info.plist
+*service-account*.json
+
+# -----------------------------------------------------------------------------
+# Windows desktop build output
+# -----------------------------------------------------------------------------
+# CMake caches, Visual Studio workspace state and compiled objects. Regenerated
+# by every build, and `cmake.db` and `CMakeCache.txt` carry absolute paths from
+# whichever machine last compiled — so they conflict on every pull for no gain.
+windows/runner/out/
+windows/runner/.vs/
+windows/flutter/ephemeral/

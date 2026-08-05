@@ -1,2 +1,21 @@
 node_modules/
 .env
+
+# -----------------------------------------------------------------------------
+# Secrets — widened when this project joined the Vesopa-Ltd umbrella repo
+# -----------------------------------------------------------------------------
+# `.env` on its own matches ONLY the file called exactly `.env`. It did not
+# cover `.env.local`, which is why that file — holding DB_PASSWORD, JWT_SECRET
+# and DOJO_API_KEY — was committed and is in this repo's history.
+#
+# Untracking it stops it changing from here on. It does NOT remove it from the
+# commits already pushed: those three credentials must be rotated.
+.env.*
+!.env.example
+!.env.*.example
+
+*.key
+*.keystore
+*.jks
+*.pem
+*.p12

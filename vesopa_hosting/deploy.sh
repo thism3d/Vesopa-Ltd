@@ -20,7 +20,7 @@
 set -euo pipefail
 
 # ---- Config ---------------------------------------------------------------
-SERVER="root@65.20.79.162"
+SERVER="root@3.72.113.21"
 DOMAIN="hosting.vesopaepos.com"
 
 REMOTE_APP="${REMOTE_APP:-/home/vesopa/web/$DOMAIN/private/nodeapp}"

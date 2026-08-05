@@ -26,7 +26,7 @@
 set -euo pipefail
 
 # ---- Config ---------------------------------------------------------------
-SERVER="root@65.20.79.162"
+SERVER="root@3.72.113.21"
 DOMAIN="vesopaepos.com"
 
 # Where the app lives on the server. Override without editing this file:

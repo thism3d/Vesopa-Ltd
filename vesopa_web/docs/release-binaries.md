@@ -21,10 +21,10 @@ directly:
 
 ```bash
 scp "build/windows/VesopaEPOS Installer.exe" \
-    root@65.20.79.162:/home/vesopa/web/vesopaepos.com/private/nodeapp/public/app/
+    root@3.72.113.21:/home/vesopa/web/vesopaepos.com/private/nodeapp/public/app/
 
 scp "build/app/outputs/flutter-apk/Vesopa EPOS.apk" \
-    root@65.20.79.162:/home/vesopa/web/vesopaepos.com/private/nodeapp/public/app/
+    root@3.72.113.21:/home/vesopa/web/vesopaepos.com/private/nodeapp/public/app/
 ```
 
 Then check both actually serve:
