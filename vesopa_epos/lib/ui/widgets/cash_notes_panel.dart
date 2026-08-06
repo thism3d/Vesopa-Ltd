@@ -8,9 +8,19 @@ import '../theme.dart';
 ///
 /// A clerk taking cash is matching what is in their hand to what is on the
 /// screen, and a picture of a £20 does that in a glance where a coloured box
-/// reading "£20" does not. Tapping a note counts one of it in; the running
-/// tally lives beside the bill so the customer can check it as they hand
-/// things over.
+/// reading "£20" does not.
+///
+/// **Tapping a note takes it.** As of v1.3.2.0 these are quick-cash keys: a tap
+/// on £20 puts £20 against the bill immediately, with no confirmation and no
+/// second press. They used to *count* into a tally that a separate "Take cash"
+/// button then committed, which meant the fastest tender on the counter needed
+/// two deliberate actions and the second one was routinely forgotten with a
+/// customer already walking away.
+///
+/// The tally did not go away, it moved underneath: consecutive taps rewrite one
+/// cash payment rather than stacking up several, so a twenty and then a five is
+/// a single £25 line reading "1 x £20, 1 x £5". The customer still watches the
+/// count build up beside the bill, which is what the pictures were for.
 ///
 /// The set comes from the back office (see cash_denominations), so a venue can
 /// swap the artwork or change what a key is worth without a new build.
@@ -20,27 +30,27 @@ class CashNotesPanel extends StatelessWidget {
     required this.denominations,
     required this.tally,
     required this.dueMinor,
-    required this.onAdd,
-    required this.onClear,
-    required this.onTake,
+    required this.changeMinor,
+    required this.onTakeNote,
+    required this.onUndo,
   });
 
   final List<CashDenomination> denominations;
+
+  /// The notes taken so far on this bill, for the badges and the summary.
   final CashTally tally;
 
-  /// What is still owed — drives the change line and whether Take is offered.
+  /// What is still owed *after* everything taken so far, including these notes.
   final int dueMinor;
 
-  final void Function(int valueMinor) onAdd;
-  final VoidCallback onClear;
+  /// What is owed back, if the notes have overshot the bill.
+  final int changeMinor;
 
-  /// Commit the counted cash as a tender.
-  final VoidCallback onTake;
+  /// Take one of this note, now.
+  final void Function(int valueMinor) onTakeNote;
 
-  int get _changeMinor {
-    final over = tally.totalMinor - dueMinor;
-    return over > 0 ? over : 0;
-  }
+  /// Hand it all back: undoes the cash payment these keys built.
+  final VoidCallback onUndo;
 
   @override
   Widget build(BuildContext context) {
@@ -48,8 +58,7 @@ class CashNotesPanel extends StatelessWidget {
 
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final counted = tally.totalMinor;
-    final short = dueMinor - counted;
+    final taken = tally.totalMinor;
 
     return Container(
       margin: const EdgeInsets.only(top: 12),
@@ -67,10 +76,12 @@ class CashNotesPanel extends StatelessWidget {
             children: [
               Icon(Icons.payments_outlined, size: 18, color: scheme.primary),
               const SizedBox(width: 8),
-              Text(
-                'Cash — tap each note as it is handed over',
-                style: theme.textTheme.titleSmall
-                    ?.copyWith(fontWeight: FontWeight.w700),
+              Expanded(
+                child: Text(
+                  'Cash — tap a note to take it',
+                  style: theme.textTheme.titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w700),
+                ),
               ),
             ],
           ),
@@ -86,11 +97,13 @@ class CashNotesPanel extends StatelessWidget {
                 _NoteKey(
                   denomination: d,
                   count: tally.counts[d.valueMinor] ?? 0,
-                  onTap: () => onAdd(d.valueMinor),
+                  onTap: () => onTakeNote(d.valueMinor),
                 ),
             ],
           ),
 
+          // What the taps have actually done. Only once something has been
+          // taken — an empty box under an untouched panel says nothing.
           if (tally.isNotEmpty) ...[
             const SizedBox(height: 12),
             Container(
@@ -102,60 +115,38 @@ class CashNotesPanel extends StatelessWidget {
               ),
               child: Column(
                 children: [
-                  _row(
-                    context,
-                    'Counted',
-                    _money(counted),
-                    bold: true,
-                  ),
-                  if (short > 0)
+                  _row(context, 'Taken', _money(taken), bold: true),
+                  if (dueMinor > 0)
                     _row(
                       context,
                       'Still to pay',
-                      _money(short),
+                      _money(dueMinor),
                       colour: scheme.error,
                     )
-                  else if (_changeMinor > 0)
+                  else if (changeMinor > 0)
                     _row(
                       context,
                       'Change',
-                      _money(_changeMinor),
+                      _money(changeMinor),
                       bold: true,
                       colour: Pos.green,
                     ),
                 ],
               ),
             ),
+            const SizedBox(height: 8),
+            // The way back out of a mis-tap, and the only control here now that
+            // the keys commit on their own. Deliberately understated next to the
+            // note pictures: undoing is the rare path.
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: onUndo,
+                icon: const Icon(Icons.undo, size: 18),
+                label: Text('Hand back ${_money(taken)}'),
+              ),
+            ),
           ],
-
-          const SizedBox(height: 12),
-          // The way out and the way through, bottom right.
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              TextButton.icon(
-                onPressed: tally.isEmpty ? null : onClear,
-                icon: const Icon(Icons.backspace_outlined, size: 18),
-                label: const Text('Clear'),
-              ),
-              const SizedBox(width: 8),
-              FilledButton.icon(
-                // Nothing counted, nothing to take. Short of the bill is fine —
-                // part payment in cash is normal, and the balance stays owed.
-                onPressed: tally.isEmpty ? null : onTake,
-                icon: const Icon(Icons.check),
-                label: Text(
-                  tally.isEmpty ? 'Take cash' : 'Take ${_money(counted)}',
-                ),
-                style: FilledButton.styleFrom(
-                  backgroundColor: Pos.brand,
-                  foregroundColor: Pos.onBrand,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                ),
-              ),
-            ],
-          ),
         ],
       ),
     );
@@ -236,6 +227,12 @@ class _NoteKey extends StatelessWidget {
                     : Image.network(
                         url,
                         fit: BoxFit.cover,
+                        // Warmed at launch by warmCashNoteImages, so on a till
+                        // that has been running this resolves straight out of
+                        // the image cache and the key is drawn on its first
+                        // frame. What follows is for the first sync of a new
+                        // terminal, and for artwork changed mid-shift.
+                        //
                         // A picture that will not load — a till on a dead
                         // network, a file removed in the back office — must
                         // never leave a blank key. The clerk still has to be
@@ -243,6 +240,20 @@ class _NoteKey extends StatelessWidget {
                         errorBuilder: (_, _, _) => _fallback(context),
                         loadingBuilder: (context, child, progress) =>
                             progress == null ? child : _fallback(context),
+                        // Fades in over the label rather than cutting to it.
+                        // `wasSynchronouslyLoaded` is the precached case, which
+                        // must not animate — a key fading in every time the
+                        // payment screen opens would look like a fault.
+                        frameBuilder:
+                            (context, child, frame, wasSynchronouslyLoaded) =>
+                                wasSynchronouslyLoaded
+                                    ? child
+                                    : AnimatedOpacity(
+                                        opacity: frame == null ? 0 : 1,
+                                        duration:
+                                            const Duration(milliseconds: 180),
+                                        child: child,
+                                      ),
                       ),
               ),
               if (count > 0)

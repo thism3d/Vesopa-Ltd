@@ -23,6 +23,29 @@ class SyncStatus {
   bool get hasBacklog => pending > 0;
 }
 
+/// One push from the back office: what changed, and which push it was.
+///
+/// The sequence number is not decoration, it is the whole reason this is a class
+/// rather than the bare `String` it used to be. Riverpod does not notify a
+/// listener when a provider's new value equals its old one, and `AsyncData` puts
+/// its value into that comparison — so a second `'till-settings'` in a row was
+/// silently dropped, and with it the second idle-screen change a manager made.
+/// The first one always worked, which is why it read as "sometimes it syncs".
+///
+/// Deliberately no `==`: two events are never the same event.
+class SyncEvent {
+  const SyncEvent(this.type, this.seq);
+
+  /// The server's event name — `'till-settings'`, `'staff.updated'`, and so on.
+  final String type;
+
+  /// Monotonic per [SyncService], so consecutive events of one type differ.
+  final int seq;
+
+  @override
+  String toString() => 'SyncEvent($type, #$seq)';
+}
+
 /// Drains the outbox to the server and receives live updates from it.
 ///
 /// Sending uses plain HTTP, deliberately. A till must be able to record a sale
@@ -393,14 +416,28 @@ class SyncService {
     }
     // Re-broadcast the event so providers that aren't DB-backed (the floor
     // plan, chiefly) can refresh themselves when the back office changes.
-    if (type != null && !_events.isClosed) _events.add(type);
+    if (type != null && !_events.isClosed) emit(type);
   }
 
-  /// Server-push event types, for UI that needs to refresh on a back-office
-  /// change but isn't fed by a database stream. Broadcast so many listeners can
+  /// Server-push events, for UI that needs to refresh on a back-office change
+  /// but isn't fed by a database stream. Broadcast so many listeners can
   /// subscribe.
-  final _events = StreamController<String>.broadcast();
-  Stream<String> get events => _events.stream;
+  final _events = StreamController<SyncEvent>.broadcast();
+  Stream<SyncEvent> get events => _events.stream;
+
+  int _eventSeq = 0;
+
+  /// Publish an event to the listeners above, stamping it so consecutive
+  /// events of one type are distinguishable. See [SyncEvent].
+  ///
+  /// This is the connected-terminal route only. A till that was offline when the
+  /// back office pushed hears nothing here — the socket serves whoever is
+  /// attached at the time — and is brought up to date instead by the providers
+  /// that watch for the link coming back, and by their own polling.
+  void emit(String type) {
+    if (_events.isClosed) return;
+    _events.add(SyncEvent(type, ++_eventSeq));
+  }
 
   /// Refresh the category buttons — picture, emoji and colour per department.
   ///

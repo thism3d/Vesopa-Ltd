@@ -179,8 +179,15 @@ class _IdleScreenState extends ConsumerState<IdleScreen> {
           //
           // None at all when there is no picture — the screen is already black,
           // and darkening black only dulls the lime rule.
+          //
+          // 85% behind the pad, up from 70%. The keys below were reported as too
+          // see-through to read; part of that fix is the keys themselves (see
+          // [_PadKey]) and part is this, because how solid a translucent key
+          // looks is decided as much by what is behind it as by its own alpha.
+          // Worst case for both is a white photograph, and 85% is what puts the
+          // key faces onto a base dark enough for white to clear 4.5:1 on it.
           if (_asking)
-            const ColoredBox(color: Color(0xB3000000))
+            const ColoredBox(color: Color(0xD9000000))
           else if (overImage)
             const DecoratedBox(
               decoration: BoxDecoration(
@@ -597,6 +604,30 @@ class _PadKey extends StatelessWidget {
   /// be recognised from a glyph on a busy counter.
   final IconData? icon;
 
+  /// How solid a key face is.
+  ///
+  /// Raised from 8%/14% at the venue's request — the keys read as barely there
+  /// over a photograph, which on a PIN pad is not a style problem but a "did
+  /// that press register" one.
+  ///
+  /// The numbers are set by measurement, not by eye, because the backdrop is a
+  /// picture the venue chose and could be anything. Worst case is a white
+  /// photograph, where the 85% scrim leaves a #262626 base; against that:
+  ///
+  ///   * digits, white on 30% white (#676767) — 5.6:1
+  ///   * action label, 90% white on 20% white (#525252) — 6.8:1
+  ///   * action icon, white on the same — 7.9:1
+  ///
+  /// All clear 4.5:1, so they hold even for the 12pt action labels, which are
+  /// normal text rather than large. Over black — the far commoner case, a venue
+  /// with no picture — every one of these is higher again.
+  static const _digitFace = Color(0x4DFFFFFF);
+  static const _actionFace = Color(0x33FFFFFF);
+
+  /// A hairline so a key still has an edge where its face happens to land on
+  /// something of nearly the same tone.
+  static const _edge = Color(0x40FFFFFF);
+
   @override
   Widget build(BuildContext context) {
     final isAction = icon != null;
@@ -604,8 +635,11 @@ class _PadKey extends StatelessWidget {
     return Material(
       // The two action keys sit back a shade, so the digits stay the thing the
       // eye lands on.
-      color: isAction ? const Color(0x14FFFFFF) : const Color(0x24FFFFFF),
-      borderRadius: BorderRadius.circular(12),
+      color: isAction ? _actionFace : _digitFace,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: const BorderSide(color: _edge),
+      ),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
@@ -619,7 +653,7 @@ class _PadKey extends StatelessWidget {
                     Text(
                       label,
                       style: const TextStyle(
-                        color: Color(0xCCFFFFFF),
+                        color: Color(0xE6FFFFFF),
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
                       ),

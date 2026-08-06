@@ -17,6 +17,7 @@ class TillSettings {
     this.idleRequirePin = true,
     this.idleMessage = 'Touch to begin',
     this.signoffSeconds = 180,
+    this.changeWindowSeconds = 30,
   });
 
   final bool idleEnabled;
@@ -40,11 +41,51 @@ class TillSettings {
   /// 0 disables it.
   final int signoffSeconds;
 
+  /// How long the change box stays up after a sale settles, before the till
+  /// signs the staff member off and drops to the idle screen. 0 leaves it up
+  /// until somebody taps it, which is how it behaved before this was settable.
+  final int changeWindowSeconds;
+
   bool get autoSignOff => signoffSeconds > 0;
 
   Duration get signoffAfter => Duration(seconds: signoffSeconds);
 
+  /// Whether the change box counts down rather than waiting for a tap.
+  bool get changeWindowTimed => changeWindowSeconds > 0;
+
+  Duration get changeWindow => Duration(seconds: changeWindowSeconds);
+
   static const defaults = TillSettings();
+
+  /// Compared by value, so a poll that fetches an identical row changes nothing.
+  ///
+  /// The till re-reads these every couple of minutes as a backstop against a
+  /// missed push. Without this, each of those fetches would hand the tree a new
+  /// object, Riverpod would call it a change, and the idle screen — which is the
+  /// widget most likely to be on screen at the time — would rebuild for nothing
+  /// every two minutes for the life of the terminal.
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TillSettings &&
+          other.idleEnabled == idleEnabled &&
+          other.idleImageUrl == idleImageUrl &&
+          other.idleAfterSale == idleAfterSale &&
+          other.idleRequirePin == idleRequirePin &&
+          other.idleMessage == idleMessage &&
+          other.signoffSeconds == signoffSeconds &&
+          other.changeWindowSeconds == changeWindowSeconds;
+
+  @override
+  int get hashCode => Object.hash(
+        idleEnabled,
+        idleImageUrl,
+        idleAfterSale,
+        idleRequirePin,
+        idleMessage,
+        signoffSeconds,
+        changeWindowSeconds,
+      );
 
   // The server sends MySQL TINYINT(1) for the switches, which arrives as 0/1
   // rather than a bool.
@@ -65,6 +106,16 @@ class TillSettings {
         <= 0 => 0,
         final n when n < 20 => 20,
         final n when n > 3600 => 3600,
+        final n => n,
+      },
+      // Same bounds as the server's changeWindowSeconds, and clamped here for
+      // the same reason: a bad row must not leave a customer's change on screen
+      // for a fifth of a second, or for the rest of the shift.
+      changeWindowSeconds:
+          switch ((j['change_window_seconds'] as num?)?.toInt() ?? 30) {
+        <= 0 => 0,
+        final n when n < 5 => 5,
+        final n when n > 300 => 300,
         final n => n,
       },
     );

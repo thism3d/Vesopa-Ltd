@@ -306,7 +306,7 @@ function backofficeRoutes({ pool, broadcast, secret }) {
   /** Columns the idle-screen editor may write. */
   const TILL_FIELDS = [
     'idle_enabled', 'idle_image_url', 'idle_after_sale', 'idle_require_pin',
-    'idle_message', 'signoff_seconds',
+    'idle_message', 'signoff_seconds', 'change_window_seconds',
   ];
 
   const TILL_DEFAULTS = {
@@ -316,6 +316,7 @@ function backofficeRoutes({ pool, broadcast, secret }) {
     idle_require_pin: 1,
     idle_message: 'Touch to begin',
     signoff_seconds: 180,
+    change_window_seconds: 30,
   };
 
   /**
@@ -329,6 +330,21 @@ function backofficeRoutes({ pool, broadcast, secret }) {
     const n = Number(v);
     if (!Number.isFinite(n) || n <= 0) return 0;
     return Math.min(3600, Math.max(20, Math.round(n)));
+  }
+
+  /**
+   * Clamp how long the change box stays up before the till signs off.
+   *
+   * 0 means "wait for a tap", the behaviour before this setting existed. The
+   * floor is 5 seconds rather than 20: unlike the sign-off timer this one is
+   * counting down in front of a customer who is being handed money, and a venue
+   * that wants it brisk should be allowed to have it brisk. The ceiling is five
+   * minutes — past that it is not a change window, it is the till being left.
+   */
+  function changeWindowSeconds(v) {
+    const n = Number(v);
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    return Math.min(300, Math.max(5, Math.round(n)));
   }
 
   router.get('/till-settings', auth, async (req, res, next) => {
@@ -375,6 +391,7 @@ function backofficeRoutes({ pool, broadcast, secret }) {
       const values = given.map((f) => {
         const v = req.body[f];
         if (f === 'signoff_seconds') return signoffSeconds(v);
+        if (f === 'change_window_seconds') return changeWindowSeconds(v);
         if (f === 'idle_image_url') {
           // Same rule as the note-key images: the picture has to live here, or
           // a till with no route to the open internet shows a broken frame.

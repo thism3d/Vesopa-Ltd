@@ -180,6 +180,23 @@ class TenderState {
     return next;
   }
 
+  /// Swap the last payment for a revised one.
+  ///
+  /// What the note keys are built on. A customer handing over a twenty and then
+  /// a five has made *one* cash payment of £25, not two — the receipt has to say
+  /// "2 x £20, 1 x £5" against a single line, and the drawer has to balance
+  /// against a single line. So the second tap rewrites the first payment rather
+  /// than adding another beside it.
+  ///
+  /// Deliberately not offered on a split bill. [addTender] moves to the next
+  /// unsettled share when one is cleared, so a remove-then-add on a share that
+  /// has just been settled would credit the revised amount to the *next* person.
+  /// The callers check [isSplit] first and take a fresh tender instead.
+  TenderState replaceLastTender(TenderEntry entry) {
+    if (tenders.isEmpty) return addTender(entry);
+    return removeLastTender().addTender(entry);
+  }
+
   /// Undo the last payment. Used when a card is declined after the clerk has
   /// already recorded it, or a note is handed back.
   TenderState removeLastTender() {
@@ -265,6 +282,19 @@ class TenderState {
   TenderState selectShare(int index) =>
       index >= 0 && index < shares.length ? copyWith(activeShare: index) : this;
 
+  /// Notes a UK counter will not take, so a key is never offered for one.
+  ///
+  /// £50 only, and it is here rather than in the venue's presets because the
+  /// round-up below *manufactures* amounts: a £47 bill rounds to £50 on its own,
+  /// with nothing in the settings to stop it. Dropping 5000 from the configured
+  /// presets alone would leave that key appearing on exactly the bills where a
+  /// clerk is most likely to press it by reflex.
+  ///
+  /// A venue that does take £50 notes puts 5000 back in its cash presets, and
+  /// the check below lets a configured preset through — this only governs what
+  /// the till invents.
+  static const _notOffered = {5000};
+
   /// Cash rounded up to a sensible note or coin, for the quick keys.
   ///
   /// Returns only amounts above what is owed — a key offering less than the
@@ -273,15 +303,17 @@ class TenderState {
     final due = dueNowMinor;
     if (due <= 0) return const [];
 
+    // Exact is always offered, whatever it comes to: it is not a note the
+    // customer has to have, it is the bill.
     final out = <int>{due};
     for (final preset in presets) {
       if (preset > due) out.add(preset);
     }
     // The next round pound and the next round five.
     final nextPound = ((due + 99) ~/ 100) * 100;
-    if (nextPound > due) out.add(nextPound);
+    if (nextPound > due && !_notOffered.contains(nextPound)) out.add(nextPound);
     final nextFive = ((due + 499) ~/ 500) * 500;
-    if (nextFive > due) out.add(nextFive);
+    if (nextFive > due && !_notOffered.contains(nextFive)) out.add(nextFive);
 
     final list = out.toList()..sort();
     return list.take(5).toList();

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show OrderingTerm, OrderingMode;
@@ -77,8 +78,13 @@ final authServiceProvider = Provider<AuthService>(
 );
 
 /// Server-push events, surfaced from the sync service so non-DB providers can
-/// refresh when the back office changes. Emits the event `type` string.
-final syncEventsProvider = StreamProvider<String>((ref) {
+/// refresh when the back office changes.
+///
+/// Carries a [SyncEvent] rather than the event name on its own so that two
+/// pushes of the same kind are two distinct values — Riverpod drops a state
+/// change that compares equal to the one before it, which used to swallow every
+/// repeat. Listeners want `next.value?.type`.
+final syncEventsProvider = StreamProvider<SyncEvent>((ref) {
   return ref.watch(syncServiceProvider).events;
 });
 
@@ -90,7 +96,7 @@ final syncEventsProvider = StreamProvider<String>((ref) {
 final floorPlanProvider = FutureProvider<List<FloorRoom>>((ref) async {
   // A floor (or catalogue) push from the server re-runs this provider.
   ref.listen(syncEventsProvider, (_, next) {
-    final type = next.value;
+    final type = next.value?.type;
     if (type == 'floor.updated' || type == 'catalogue.updated') {
       ref.invalidateSelf();
     }
@@ -282,6 +288,35 @@ final cashDenominationsProvider = StreamProvider<List<CashDenomination>>((ref) {
       .watch();
 });
 
+/// Pull the note-key artwork into Flutter's image cache before anybody needs it.
+///
+/// The note keys are photographs fetched over the network, and they were taking
+/// a visible second or two to appear the first time a clerk opened the payment
+/// screen — which is the one moment on a till where a picture arriving late
+/// actually matters, because the clerk is matching what is in their hand to what
+/// is on the screen while a customer waits.
+///
+/// Nothing is awaited and nothing is reported. A picture that will not load is
+/// already handled where it is drawn (see CashNotesPanel, which falls back to
+/// the label), and warming the cache is an optimisation — it must never be able
+/// to delay the till opening or fail it. `onError` is what makes that true: a
+/// precache that throws with no handler takes the error to the zone.
+void warmCashNoteImages(
+  Iterable<CashDenomination> denominations,
+  BuildContext context,
+) {
+  final urls = <String>{
+    for (final d in denominations)
+      if (d.imageUrl != null && d.imageUrl!.isNotEmpty) d.imageUrl!,
+  };
+
+  for (final url in urls) {
+    unawaited(
+      precacheImage(NetworkImage(url), context, onError: (_, _) {}),
+    );
+  }
+}
+
 /// Reads whatever branding has already been fetched.
 ///
 /// Deliberately pure: it starts no network work of its own, so reading it on
@@ -302,7 +337,7 @@ final brandingRefreshProvider = FutureProvider<Branding>((ref) async {
   if (office.isEmpty) return const Branding();
 
   ref.listen(syncEventsProvider, (_, next) {
-    if (next.value == 'branding') ref.invalidateSelf();
+    if (next.value?.type == 'branding') ref.invalidateSelf();
   });
 
   final branding = await ref.watch(brandingRepositoryProvider).load();
@@ -331,18 +366,51 @@ final tillSettingsProvider = Provider<TillSettings>(
       ref.watch(tillSettingsRepositoryProvider).cached ?? TillSettings.defaults,
 );
 
+/// How often the till re-reads its settings when nothing has told it to.
+///
+/// The backstop behind the push below, and the reason a new idle screen now
+/// reliably appears. The socket only reaches terminals that are connected at the
+/// moment the manager saves — a till on a dropped link, one still booting, one
+/// behind a router that ate the frame, gets nothing. Before this, that terminal
+/// kept the old picture until somebody restarted it, which is exactly the
+/// "adding an idle screen doesn't update on the till" the venue reported.
+///
+/// Two minutes is chosen against what it costs: one small unauthenticated GET
+/// per terminal, against a manager standing at a till waiting to see their
+/// change land. Nothing here is on the path of a sale.
+const _tillSettingsPoll = Duration(minutes: 2);
+
 /// Keeps the till settings current, and hands the sign-off timer its numbers.
 ///
 /// The `configure` call is the link between the back office and the timer: a
 /// manager changing three minutes to five, or switching the PIN off, reaches
 /// every terminal without anyone restarting one.
+///
+/// Three routes in, because one was not enough:
+///
+///  1. **The push**, for a terminal that is connected — a second or two.
+///  2. **The network coming back**, which is the moment a terminal that missed
+///     the push is able to ask.
+///  3. **The poll**, for everything the first two do not cover.
 final tillSettingsRefreshProvider = FutureProvider<TillSettings>((ref) async {
   final office = ref.watch(officeProvider);
   if (office.isEmpty) return TillSettings.defaults;
 
   ref.listen(syncEventsProvider, (_, next) {
-    if (next.value == 'till-settings') ref.invalidateSelf();
+    if (next.value?.type == 'till-settings') ref.invalidateSelf();
   });
+
+  // Offline -> online. Same treatment as the staff list, and for the same
+  // reason: a till switched on before the broadband was up otherwise keeps
+  // whatever it had.
+  ref.listen(syncStatusProvider, (previous, next) {
+    final was = previous?.value?.online ?? false;
+    final now = next.value?.online ?? false;
+    if (!was && now) ref.invalidateSelf();
+  });
+
+  final timer = Timer.periodic(_tillSettingsPoll, (_) => ref.invalidateSelf());
+  ref.onDispose(timer.cancel);
 
   final settings = await ref.watch(tillSettingsRepositoryProvider).load();
   ref.invalidate(tillSettingsProvider);
@@ -401,7 +469,7 @@ final staffSyncProvider = FutureProvider<void>((ref) async {
   // time, which is why it is a supplement to SyncService.resync rather than the
   // only route.
   ref.listen(syncEventsProvider, (_, next) {
-    if (next.value == 'staff.updated') ref.invalidateSelf();
+    if (next.value?.type == 'staff.updated') ref.invalidateSelf();
   });
 
   // The network coming back is the other moment a stale list gets corrected.
@@ -513,7 +581,7 @@ final commerceRefreshProvider = FutureProvider<void>((ref) async {
 
   ref.listen(syncEventsProvider, (_, next) {
     const watched = {'promotions', 'tender.settings', 'loyalty', 'vouchers'};
-    if (watched.contains(next.value)) ref.invalidateSelf();
+    if (watched.contains(next.value?.type)) ref.invalidateSelf();
   });
 
   final repo = ref.watch(commerceRepositoryProvider);
@@ -629,6 +697,20 @@ class _VesopaEposAppState extends ConsumerState<VesopaEposApp> {
     // on startup before settling into the operator's actual choice.
     final mode = ref.watch(themeControllerProvider).value ?? ThemeMode.dark;
     final session = ref.watch(sessionControllerProvider);
+
+    // Warm the note-key pictures. Listened for here, at the root, because this
+    // widget is alive from launch — so the first emission of the cached set
+    // lands while the splash is still animating and the images are decoded
+    // before the till has even opened, which is what the venue asked for.
+    //
+    // It is a listen rather than a one-shot at startup because the set moves:
+    // the first sync of a new terminal, and any artwork changed in the back
+    // office afterwards, both arrive as a fresh emission here and get the same
+    // treatment.
+    ref.listen(cashDenominationsProvider, (_, next) {
+      final rows = next.value;
+      if (rows != null && rows.isNotEmpty) warmCashNoteImages(rows, context);
+    });
 
     final current = session.value;
     if (current != null) _recommissionIfNeeded(current);

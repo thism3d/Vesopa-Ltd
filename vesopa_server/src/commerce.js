@@ -44,7 +44,9 @@ function commerceRoutes({ pool, broadcast, secret }) {
     gratuity_default_bp: 125,
     gratuity_removable: 1,
     gratuity_min_covers: 0,
-    cash_presets: '500,1000,2000,5000',
+    // No £50: most UK counters will not take one, so the key never gets
+    // pressed. A venue that does take them adds it back here.
+    cash_presets: '500,1000,2000',
     cash_quick_round: 1,
     allow_partial_card: 1,
     allow_split_bill: 1,

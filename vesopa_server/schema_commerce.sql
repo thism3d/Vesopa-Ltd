@@ -39,8 +39,12 @@ CREATE TABLE IF NOT EXISTS epos_tender_settings (
   -- Only apply the automatic charge from this many covers upwards (0 = always).
   gratuity_min_covers TINYINT      NOT NULL DEFAULT 0,
 
-  -- Cash quick-keys, in minor units, e.g. "500,1000,2000,5000".
-  cash_presets        VARCHAR(160) NOT NULL DEFAULT '500,1000,2000,5000',
+  -- Cash quick-keys, in minor units, e.g. "500,1000,2000".
+  --
+  -- No £50 by default: most UK counters will not take one, so the key is dead
+  -- weight next to the notes that are actually handed over. A venue that does
+  -- take them puts 5000 back from the back office.
+  cash_presets        VARCHAR(160) NOT NULL DEFAULT '500,1000,2000',
   -- Offer a "round up to the next note" key.
   cash_quick_round    TINYINT(1)   NOT NULL DEFAULT 1,
 

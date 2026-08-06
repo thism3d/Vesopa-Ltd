@@ -49,10 +49,26 @@ CREATE TABLE IF NOT EXISTS cash_denominations (
 --
 -- Descending order: the biggest note first, because that is the one most often
 -- handed over for a bill of any size.
+--
+-- No £50. It is rare enough in UK retail that most counters will not take one,
+-- so a key for it is a key that is never pressed — and one that occupies the
+-- best position on the panel while it is not being pressed. A venue that does
+-- take them adds it back in the back office under Tender › Note keys; this is a
+-- default, not a rule.
 INSERT IGNORE INTO cash_denominations
   (office_id, value_minor, label, image_url, sort_order, active)
 VALUES
-  (NULL, 5000, '£50', '/assets/notes/gbp-50.jpg', 1, 1),
   (NULL, 2000, '£20', '/assets/notes/gbp-20.jpg', 2, 1),
   (NULL, 1000, '£10', '/assets/notes/gbp-10.jpg', 3, 1),
   (NULL,  500, '£5',  '/assets/notes/gbp-5.jpg',  4, 1);
+
+-- Retire the £50 default on databases that were seeded before it was dropped.
+--
+-- Scoped to `office_id IS NULL` on purpose: this is the platform default set,
+-- and a venue that deliberately added its own £50 key keeps it. Deactivated
+-- rather than deleted so the decision is visible — and reversible — in the back
+-- office rather than silently gone.
+UPDATE cash_denominations
+   SET active = 0
+ WHERE office_id IS NULL
+   AND value_minor = 5000;

@@ -11,6 +11,7 @@ import '../data/pricing_engine.dart';
 import '../data/receipt_repository.dart';
 import '../data/staff_session.dart';
 import '../data/tender_engine.dart';
+import '../data/till_settings.dart';
 import '../main.dart';
 import '../payments/connect_pac.dart';
 import '../payments/dojo_desktop.dart';
@@ -828,25 +829,84 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     });
   }
 
-  /// Commit the counted notes as a cash tender.
+  /// Take one note, the moment it is tapped.
   ///
-  /// Goes through the same [_take] path as every other cash payment so the
-  /// confirmation, the split accounting and the settle-on-paid behaviour are
-  /// identical — the note keys are a way of *counting* the money, not a second
-  /// way of taking it. The breakdown is carried alongside so the receipt can
-  /// show what was actually handed over.
-  Future<void> _takeCountedCash() async {
-    final tally = _cash;
-    if (tally.isEmpty) return;
+  /// The note keys are quick-cash keys as of v1.3.2.0: tapping £20 puts £20
+  /// against the bill straight away, with no confirmation. They used to count
+  /// into a tally that a separate "Take cash" button committed, and the second
+  /// press was routinely never made — the clerk had the money in the drawer and
+  /// the customer was already leaving.
+  ///
+  /// Consecutive taps *rewrite one payment* rather than stacking up several.
+  /// Three twenties is one £60 cash line reading "3 x £20", which is what the
+  /// receipt has to say and what the drawer has to reconcile against; three
+  /// separate £20 lines would be a worse record of the same event.
+  ///
+  /// Two cases fall back to a fresh tender rather than merging:
+  ///
+  ///  * **A split bill.** See [TenderState.replaceLastTender] — rewriting a
+  ///    payment that has just settled a share would credit the revision to the
+  ///    next person.
+  ///  * **Anything taken since.** A card, a voucher, a gift card between the
+  ///    notes means the cash line is no longer the last one, and reaching past
+  ///    the card to amend it would undo the card.
+  Future<void> _takeNote(int valueMinor) async {
+    if (valueMinor <= 0) return;
 
-    final before = _tender.tenders.length;
-    await _take(TenderKind.cash, tally.totalMinor, cashBreakdown: tally.encode());
+    final last = _tender.tenders.isEmpty ? null : _tender.tenders.last;
+    final merging = !_tender.isSplit &&
+        _cash.isNotEmpty &&
+        last != null &&
+        last.kind == TenderKind.cash &&
+        last.cashBreakdown != null;
 
-    // Only clear once the tender actually landed — a declined confirmation must
-    // leave the count on screen rather than wiping what the clerk just did.
-    if (mounted && _tender.tenders.length > before) {
-      setState(() => _cash = CashTally.empty);
+    final tally = (merging ? _cash : CashTally.empty).add(valueMinor);
+
+    if (merging) {
+      // Straight to the state: [_take] would add a payment beside the cash line
+      // rather than growing it, and there is nothing to authorise for cash.
+      setState(() {
+        _entry = '';
+        _cash = tally;
+        _tender = _tender.replaceLastTender(TenderEntry(
+          kind: TenderKind.cash,
+          amountMinor: tally.totalMinor,
+          cashBreakdown: tally.encode(),
+        ));
+      });
+      _settleIfPaid();
+      return;
     }
+
+    // The first note of a run goes through the same [_take] path as every other
+    // cash payment, so the split accounting and settle-on-paid behaviour are
+    // identical however the money was keyed.
+    final before = _tender.tenders.length;
+    await _take(TenderKind.cash, valueMinor, cashBreakdown: tally.encode());
+    if (!mounted) return;
+
+    // Only claim the note once the tender actually landed. A tap on a settled
+    // bill is refused upstream, and a badge for money that was never taken is
+    // worse than no badge.
+    setState(() {
+      _cash = _tender.tenders.length > before ? tally : CashTally.empty;
+    });
+  }
+
+  /// Hand the counted notes back: undo the cash payment the keys built.
+  ///
+  /// Removes the whole run rather than the last note. A customer taking their
+  /// money back takes all of it, and a clerk who mis-tapped one key is quicker
+  /// re-tapping two than hunting for a per-note undo.
+  void _undoCashNotes() {
+    if (_cash.isEmpty) return;
+    final last = _tender.tenders.isEmpty ? null : _tender.tenders.last;
+    setState(() {
+      if (last != null && last.kind == TenderKind.cash) {
+        _tender = _tender.removeLastTender();
+      }
+      _cash = CashTally.empty;
+    });
   }
 
   /// Void the picked lines from the payment screen.
@@ -935,10 +995,29 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     });
   }
 
+  /// Whether the sale is already being committed.
+  ///
+  /// [_settleNow] is a long run of awaits — the order rows, the voucher, the
+  /// points — before anything modal covers the screen, and a second entry during
+  /// that window would write every tender to the order a second time. That was
+  /// always reachable in principle; it becomes likely with the note keys, which
+  /// land a payment per tap and invite exactly the double-tap that triggers it.
+  bool _settling = false;
+
   /// Commit the sale once everything is paid.
   Future<void> _settleIfPaid() async {
-    if (!_tender.settled) return;
+    if (_settling || !_tender.settled) return;
+    _settling = true;
+    try {
+      await _settleNow();
+    } finally {
+      // Not re-armed when the page has gone: a completed sale pops it, and the
+      // flag has nothing left to guard.
+      if (mounted) _settling = false;
+    }
+  }
 
+  Future<void> _settleNow() async {
     final repo = ref.read(orderRepositoryProvider);
     final session = await ref.read(sessionRepositoryProvider).current();
 
@@ -1003,99 +1082,80 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     if (!mounted) return;
     unawaited(_publishReceipt());
 
-    // Change first, before anything else can cover it. The customer is standing
-    // there waiting for money out of the drawer, and a receipt prompt in front of
-    // that instruction is how change gets forgotten.
-    await _showChange();
-    if (!mounted) return;
-
-    await _offerReceipt();
-    if (!mounted) return;
-
     // Resolved through the root container *before* the page pops, and used
     // after. This State is disposed by the pop, and `ref` with it — the same
     // reason _publishReceipt goes through the container.
     final container = ProviderScope.containerOf(context, listen: false);
     final settings = container.read(tillSettingsProvider);
 
+    // Change first, before anything else can cover it. The customer is standing
+    // there waiting for money out of the drawer, and a receipt prompt in front of
+    // that instruction is how change gets forgotten.
+    final timedOut = await _showChange(settings);
+    if (!mounted) return;
+
+    // A change window that ran all the way down is the terminal being left, not
+    // a clerk moving on: nobody touched it for the whole countdown. Putting a
+    // receipt prompt up at that point would only park a dialog behind the idle
+    // screen for the next person to find, so it is skipped and the sale is
+    // finished the way the countdown said it would be.
+    if (!timedOut) {
+      await _offerReceipt();
+      if (!mounted) return;
+    }
+
     widget.onSettled();
     Navigator.of(context).pop();
 
-    // Drop to the idle screen, if the venue has asked for one after every sale.
-    if (settings.idleEnabled && settings.idleAfterSale) {
-      container.read(staffSessionProvider.notifier).showIdle();
+    final staff = container.read(staffSessionProvider.notifier);
+
+    // What the countdown promised, and the reason the venue asked for it: the
+    // member of staff is signed off and the screen goes back to the picture, so
+    // an unattended till is not left open on somebody's shift.
+    if (timedOut) staff.signOff();
+
+    // Drop to the idle screen, if the venue has asked for one after every sale —
+    // or if the window timed out, which is the same instruction arriving by a
+    // different route.
+    if (settings.idleEnabled && (settings.idleAfterSale || timedOut)) {
+      staff.showIdle();
     }
   }
 
   /// How much change to hand over.
   ///
-  /// A box with one number on it, which is what the request asked for and what
-  /// the moment needs: the clerk is counting notes out of a drawer and the only
-  /// question is how much. Everything else the old confirmation dialog said has
-  /// either already happened or is on the receipt.
+  /// A box with one number on it, which is what the moment needs: the clerk is
+  /// counting notes out of a drawer and the only question is how much.
+  /// Everything else the old confirmation dialog said has either already
+  /// happened or is on the receipt.
   ///
   /// Nothing is shown when there is no change — the customer paid exactly, or by
   /// card — because a box saying "£0.00 change" is one more tap between the sale
   /// and the next customer.
   ///
-  /// Dismissed by a tap, never on a timer. Change that vanishes on its own is
-  /// change the customer leaves without.
-  Future<void> _showChange() async {
+  /// It used to wait for a tap and nothing else, on the reasoning that change
+  /// which vanishes on its own is change the customer leaves without. That was
+  /// the wrong half of the problem. The tap does not always come — the clerk
+  /// hands the money over and turns to the next customer — and what was actually
+  /// left behind was a till sat open on somebody's shift with a change box on
+  /// it. So it counts down instead, and the countdown is *visible*: the number
+  /// stays up, the box says what is about to happen, and any touch stops it.
+  ///
+  /// Returns true when the countdown ran out rather than being dismissed, which
+  /// is what tells the caller to sign the staff member off.
+  Future<bool> _showChange(TillSettings settings) async {
     final change = _tender.changeMinor;
-    if (change <= 0) return;
+    if (change <= 0) return false;
 
-    await showDialog<void>(
+    final timedOut = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (context) {
-        final theme = Theme.of(context);
-        return AlertDialog(
-          backgroundColor: theme.colorScheme.tertiaryContainer,
-          contentPadding: const EdgeInsets.fromLTRB(32, 32, 32, 16),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'CHANGE',
-                style: theme.textTheme.labelLarge?.copyWith(
-                  color: theme.colorScheme.onTertiaryContainer
-                      .withValues(alpha: 0.75),
-                  letterSpacing: 3,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 10),
-              // Deliberately the largest thing the till ever draws. It is read
-              // across a counter, at a glance, while counting.
-              Text(
-                _money(change),
-                style: theme.textTheme.displayLarge?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  color: theme.colorScheme.onTertiaryContainer,
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            SizedBox(
-              width: double.infinity,
-              height: 64,
-              child: FilledButton(
-                onPressed: () => Navigator.pop(context),
-                style: FilledButton.styleFrom(
-                  backgroundColor: Pos.brand,
-                  foregroundColor: Pos.onBrand,
-                ),
-                child: const Text(
-                  'Given',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
-                ),
-              ),
-            ),
-          ],
-        );
-      },
+      builder: (context) => _ChangeWindow(
+        changeMinor: change,
+        seconds: settings.changeWindowSeconds,
+      ),
     );
+    return timedOut ?? false;
   }
 
   @override
@@ -1164,7 +1224,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
                   : _CashCount(
                       tally: _cash,
                       labels: labelsFor(denominations),
-                      onClear: () => setState(() => _cash = CashTally.empty),
+                      onUndo: _undoCashNotes,
                     ),
             );
 
@@ -1178,9 +1238,9 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
                 denominations: denominations,
                 tally: _cash,
                 dueMinor: _tender.dueNowMinor,
-                onAdd: (value) => setState(() => _cash = _cash.add(value)),
-                onClear: () => setState(() => _cash = CashTally.empty),
-                onTake: _takeCountedCash,
+                changeMinor: _tender.changeMinor,
+                onTakeNote: _takeNote,
+                onUndo: _undoCashNotes,
               ),
               onGratuity: _chooseGratuity,
               onSplit: settings.allowSplitBill ? _chooseSplit : null,
@@ -1188,8 +1248,19 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
                   setState(() => _tender = _tender.selectShare(i)),
               onClearSplit: () =>
                   setState(() => _tender = _tender.clearSplit()),
-              onUndo: () =>
-                  setState(() => _tender = _tender.removeLastTender()),
+              // Clears the note count alongside the payment when the payment
+              // being undone is the one the note keys built. Left behind, the
+              // badges would go on claiming money that had just been handed
+              // back.
+              onUndo: () => setState(() {
+                final last = _tender.tenders.isEmpty
+                    ? null
+                    : _tender.tenders.last;
+                if (last != null && last.cashBreakdown != null) {
+                  _cash = CashTally.empty;
+                }
+                _tender = _tender.removeLastTender();
+              }),
               onCustomer: _attachCustomer,
               onDiscount: _applyManualDiscount,
               compact: !context.isPhone,
@@ -1307,6 +1378,177 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
   }
 }
 
+/// What to hand back, and how long the till will wait before it signs off.
+///
+/// Deliberately close to full screen. The venue asked for it bigger, and the
+/// reason it should be is that this number is read from the far side of a
+/// counter by two people at once — the clerk counting it out of the drawer and
+/// the customer checking it. So the amount takes whatever room the terminal has:
+/// a [FittedBox] rather than a fixed size, because a phone, a 10" tablet and a
+/// 1920px Windows till are all in service and a single font size cannot be right
+/// on all three.
+///
+/// The countdown is stated rather than implied. A bar draining silently would
+/// leave the clerk guessing how long they had; a line that says the till is
+/// about to sign off, with the seconds on it, does not. Touching anywhere stops
+/// it — the point is to catch a terminal nobody is at, not to hurry somebody who
+/// is standing there counting.
+class _ChangeWindow extends StatefulWidget {
+  const _ChangeWindow({required this.changeMinor, required this.seconds});
+
+  final int changeMinor;
+
+  /// How long to wait. 0 means wait indefinitely, which is how this behaved
+  /// before the timer was settable, and what a venue gets by setting the back
+  /// office field to 0.
+  final int seconds;
+
+  @override
+  State<_ChangeWindow> createState() => _ChangeWindowState();
+}
+
+class _ChangeWindowState extends State<_ChangeWindow> {
+  Timer? _ticker;
+  late int _left = widget.seconds;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.seconds <= 0) return;
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      if (_left <= 1) {
+        _ticker?.cancel();
+        // True: ran out rather than dismissed. The caller signs the staff member
+        // off on the strength of this.
+        Navigator.of(context).pop(true);
+        return;
+      }
+      setState(() => _left--);
+    });
+  }
+
+  /// Stop the clock. Any touch counts — somebody is at the till, which is the
+  /// whole question the countdown was asking.
+  void _hold() {
+    if (_ticker == null) return;
+    _ticker?.cancel();
+    setState(() => _ticker = null);
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final ink = scheme.onTertiaryContainer;
+    final counting = _ticker != null;
+
+    return Dialog(
+      backgroundColor: scheme.tertiaryContainer,
+      // Nearly the whole screen. This is the only thing the terminal is doing.
+      insetPadding: const EdgeInsets.all(24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: (_) => _hold(),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(32, 32, 32, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'CHANGE',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: ink.withValues(alpha: 0.75),
+                  letterSpacing: 4,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // The amount, as large as the terminal will draw it. Flexible so
+              // it yields to the countdown and the button on a short screen
+              // rather than overflowing them off the bottom.
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.contain,
+                  child: Text(
+                    _money(widget.changeMinor),
+                    maxLines: 1,
+                    style: TextStyle(
+                      fontSize: 200,
+                      fontWeight: FontWeight.w800,
+                      height: 1.05,
+                      color: ink,
+                    ),
+                  ),
+                ),
+              ),
+
+              if (widget.seconds > 0) ...[
+                const SizedBox(height: 20),
+                // Drains left to right, so the time left is readable without
+                // reading the number — but the number is there as well, because
+                // "about a third of a bar" is not an answer to "how long have I
+                // got".
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: counting ? _left / widget.seconds : 1,
+                    minHeight: 7,
+                    backgroundColor: ink.withValues(alpha: 0.15),
+                    valueColor: AlwaysStoppedAnimation(
+                      counting ? Pos.brand : ink.withValues(alpha: 0.35),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  counting
+                      ? 'Signing off in $_left second${_left == 1 ? '' : 's'}'
+                      : 'Timer stopped — tap Given when the change is handed '
+                            'over.',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    color: ink.withValues(alpha: 0.8),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                height: 76,
+                child: FilledButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Pos.brand,
+                    foregroundColor: Pos.onBrand,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  child: const Text(
+                    'Given',
+                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// The notes counted in so far, shown on the receipt directly above Subtotal.
 ///
 /// This is the customer's side of the transaction: they have handed over three
@@ -1317,7 +1559,7 @@ class _CashCount extends StatelessWidget {
   const _CashCount({
     required this.tally,
     required this.labels,
-    required this.onClear,
+    required this.onUndo,
   });
 
   final CashTally tally;
@@ -1326,7 +1568,9 @@ class _CashCount extends StatelessWidget {
   /// sees its own wording here too.
   final Map<int, String> labels;
 
-  final VoidCallback onClear;
+  /// Hands the notes back — this money has already been taken, so clearing the
+  /// list on its own would leave the receipt disagreeing with the drawer.
+  final VoidCallback onUndo;
 
   @override
   Widget build(BuildContext context) {
@@ -1357,7 +1601,7 @@ class _CashCount extends StatelessWidget {
               ),
               // The way back out of a miscount, right where the count is.
               InkWell(
-                onTap: onClear,
+                onTap: onUndo,
                 borderRadius: BorderRadius.circular(6),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
@@ -1365,7 +1609,7 @@ class _CashCount extends StatelessWidget {
                     vertical: 3,
                   ),
                   child: Text(
-                    'Clear',
+                    'Hand back',
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
