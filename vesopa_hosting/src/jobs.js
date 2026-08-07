@@ -95,7 +95,20 @@ async function reconcilePayments() {
       [payment.id],
     );
 
-    const dead = payment.expires_at && new Date(payment.expires_at) < new Date();
+    /*
+     * When this attempt stops being worth asking about.
+     *
+     * `expires_at` is written when the attempt is opened — but rows that
+     * predate that column have none, and a NULL treated as "never expires"
+     * means those get polled for the rest of the server's life. There were
+     * eight such rows on the live database the day this shipped, one of them a
+     * PayPal order PayPal itself had already forgotten. So the age of the
+     * attempt is the fallback, which reaches the same answer.
+     */
+    const deadline = payment.expires_at
+      ? new Date(payment.expires_at)
+      : new Date(new Date(payment.created_at).getTime() + PAYMENT_SESSION_MINUTES * 60_000);
+    const dead = deadline < new Date();
 
     try {
       const result = await payments.reconcilePayment(payment);

@@ -486,7 +486,19 @@ async function reconcilePayment(payment) {
 
   if (payment.gateway === 'stripe') {
     if (stripe.MODE === 'mock') return { outcome: 'unsupported', detail: 'Stripe is in mock mode.' };
-    const session = await stripe.retrieveSession(ref);
+
+    let session;
+    try {
+      session = await stripe.retrieveSession(ref);
+    } catch (err) {
+      // The session is gone from Stripe entirely. Nothing will ever settle it,
+      // so it is closed rather than asked about every five minutes forever.
+      if (err.stripeCode === 'resource_missing') {
+        await fail(ref, 'NOT_FOUND', { source: 'reconcile', error: err.message }, 'cancelled');
+        return { outcome: 'failed', detail: 'Stripe no longer has that session.' };
+      }
+      throw err;
+    }
     if (stripe.isPaidSession(session)) {
       await settle(ref, { ...session, source: 'reconcile' }, { methodDetail: stripe.describeMethod(session) });
       return { outcome: 'paid' };
@@ -500,7 +512,24 @@ async function reconcilePayment(payment) {
 
   if (payment.gateway === 'paypal') {
     if (paypal.MODE === 'mock') return { outcome: 'unsupported', detail: 'PayPal is in mock mode.' };
-    const order = await paypal.getOrder(ref);
+
+    let order;
+    try {
+      order = await paypal.getOrder(ref);
+    } catch (err) {
+      /*
+       * PayPal has no record of this order. Seen for real on the first live
+       * pass: an approval the customer never completed, on an order PayPal has
+       * since dropped — it answers 404 RESOURCE_NOT_FOUND and will do so
+       * forever. Retrying it every five minutes achieves nothing except a
+       * noisy log, so the attempt is closed.
+       */
+      if (err.paypalName === 'RESOURCE_NOT_FOUND') {
+        await fail(ref, 'NOT_FOUND', { source: 'reconcile', error: err.message.slice(0, 400) }, 'cancelled');
+        return { outcome: 'failed', detail: 'PayPal no longer has that order.' };
+      }
+      throw err;
+    }
     if (paypal.isPaidOrder(order)) {
       await settle(ref, { ...order, source: 'reconcile' }, { methodDetail: paypal.describeMethod(order) });
       return { outcome: 'paid' };
