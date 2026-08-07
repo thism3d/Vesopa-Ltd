@@ -16,7 +16,6 @@ import '../main.dart';
 import '../payments/connect_pac.dart';
 import '../payments/dojo_desktop.dart';
 import '../payments/payment_provider.dart';
-import 'layout.dart';
 import 'card_checkout_page.dart';
 import 'card_payment_dialog.dart';
 import 'confirm_tender_dialog.dart';
@@ -24,9 +23,10 @@ import 'discount_dialog.dart';
 import 'print_receipt_sheet.dart';
 import 'redemption_dialogs.dart';
 import '../data/cash_tally.dart';
+import 'till_actions.dart';
 import 'void_dialog.dart';
 import 'widgets/cash_notes_panel.dart';
-import 'widgets/live_receipt.dart';
+import 'widgets/pay_check_panel.dart';
 import 'widgets/pos_message.dart';
 import 'widgets/tender_panel.dart';
 import 'receipts_page.dart' show receiptListProvider;
@@ -1158,11 +1158,25 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     return timedOut ?? false;
   }
 
+  /// The amount a tender key will take: what the clerk has keyed, or — when
+  /// they have keyed nothing — the whole balance.
+  ///
+  /// Lives here rather than in the tender column because the keypad and the
+  /// tender keys are separate columns of the board now, and both have to agree
+  /// on the figure. One owner, read by both.
+  int get _amountMinor {
+    final keyed = double.tryParse(_entry);
+    if (keyed != null && keyed > 0) return (keyed * 100).round();
+    return _tender.dueNowMinor;
+  }
+
   @override
   Widget build(BuildContext context) {
     final repo = ref.watch(orderRepositoryProvider);
     final settings = ref.watch(tenderSettingsProvider);
     final branding = ref.watch(brandingProvider);
+    final pay = PayPalette.of(context);
+    final width = MediaQuery.sizeOf(context).width;
 
     return StreamBuilder<Order>(
       stream: repo.watchOrder(widget.orderId),
@@ -1199,10 +1213,9 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
                 .where((id) => lines.any((l) => l.id == id))
                 .toSet();
 
-            final receipt = LiveReceipt(
+            final check = PayCheckPanel(
               totals: totals,
               branding: branding,
-              tender: _tender,
               tableNumber: order?.tableNumber,
               covers: order?.covers,
               clerkName: ref.read(servedByProvider),
@@ -1216,29 +1229,17 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
                         if (!_selected.remove(l.id)) _selected.add(l.id);
                       })
                   : null,
-              // What the customer has handed over so far, sat directly above
-              // Subtotal — both of them can watch the count build up, which is
-              // the whole reason for tapping notes rather than keying a figure.
-              aboveTotals: _cash.isEmpty
-                  ? null
-                  : _CashCount(
-                      tally: _cash,
-                      labels: labelsFor(denominations),
-                      onUndo: _undoCashNotes,
-                    ),
             );
 
-            final panel = TenderPanel(
+            final column = TenderColumn(
               state: _tender,
               settings: settings,
-              entry: _entry,
-              onKey: _key,
+              denominations: denominations,
+              amountMinor: _amountMinor,
               onTender: _take,
-              cashNotes: CashNotesPanel(
+              noteKeys: CashNotesPanel(
                 denominations: denominations,
                 tally: _cash,
-                dueMinor: _tender.dueNowMinor,
-                changeMinor: _tender.changeMinor,
                 onTakeNote: _takeNote,
                 onUndo: _undoCashNotes,
               ),
@@ -1263,103 +1264,181 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
               }),
               onCustomer: _attachCustomer,
               onDiscount: _applyManualDiscount,
-              compact: !context.isPhone,
+              onPrintBill: () =>
+                  TillActions.printCurrentBill(context, ref, widget.orderId),
+            );
+
+            final keypad = PayKeypad(
+              state: _tender,
+              settings: settings,
+              entry: _entry,
+              amountMinor: _amountMinor,
+              onKey: _key,
+              onTender: _take,
             );
 
             return Scaffold(
-              appBar: AppBar(
-                backgroundColor: Pos.chrome,
-                foregroundColor: Colors.white,
-                title: const Text('Payment'),
-                leading: IconButton(
-                  icon: const Icon(Icons.arrow_back),
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-                // Void and Cancel live here as well as on the sale screen. A
-                // mis-rung item is most often spotted at the moment the total
-                // is read out to the customer, and having to back out to the
-                // sale screen to fix it is how a whole check ends up cancelled
-                // instead of one line.
-                actions: [
-                  TextButton.icon(
-                    onPressed: _canAmend
-                        ? () => _voidSelected(lines: lines, selected: selected)
-                        : null,
-                    icon: const Icon(Icons.backspace_outlined, size: 18),
-                    label: const Text('Void'),
-                    style: TextButton.styleFrom(
-                      foregroundColor: Colors.white,
-                      disabledForegroundColor: Colors.white38,
+              backgroundColor: pay.canvas,
+              body: SafeArea(
+                child: Column(
+                  children: [
+                    _PayHeader(
+                      tableNumber: order?.tableNumber,
+                      covers: order?.covers,
+                      clerkName: ref.read(servedByProvider),
+                      // Void and Cancel live here as well as on the sale
+                      // screen. A mis-rung item is most often spotted at the
+                      // moment the total is read out to the customer, and
+                      // having to back out to the sale screen to fix it is how
+                      // a whole check ends up cancelled instead of one line.
+                      onVoid: _canAmend
+                          ? () => _voidSelected(
+                                lines: lines,
+                                selected: selected,
+                              )
+                          : null,
+                      onCancel:
+                          _canAmend ? () => _cancelCheck(lines: lines) : null,
                     ),
-                  ),
-                  TextButton.icon(
-                    onPressed:
-                        _canAmend ? () => _cancelCheck(lines: lines) : null,
-                    icon: const Icon(Icons.block, size: 18),
-                    label: const Text('Cancel'),
-                    style: TextButton.styleFrom(
-                      foregroundColor: Colors.white,
-                      disabledForegroundColor: Colors.white38,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                ],
-              ),
-              // On a desktop or tablet till the receipt stays visible beside
-              // the tender keys: the clerk is reading the bill to the customer
-              // while taking the money, and a full-screen keypad hides it.
-              body: context.isPhone
-                  ? DefaultTabController(
-                      length: 2,
-                      child: Column(
-                        children: [
-                          const TabBar(tabs: [
-                            Tab(text: 'Pay'),
-                            Tab(text: 'Receipt'),
-                          ]),
-                          Expanded(
-                            child: TabBarView(
-                              children: [
-                                SingleChildScrollView(
-                                  padding: const EdgeInsets.all(14),
-                                  child: panel,
-                                ),
-                                Padding(
-                                  padding: const EdgeInsets.all(14),
-                                  child: receipt,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
+                    Expanded(
+                      child: _board(
+                        context,
+                        width: width,
+                        check: check,
+                        column: column,
+                        keypad: keypad,
                       ),
-                    )
-                  // The check keeps a fixed, readable column and the payment
-                  // controls take everything else. It used to be the other way
-                  // round — the bill had three quarters of the screen while the
-                  // keys a clerk actually presses were squeezed into 380px.
-                  : Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        SizedBox(
-                          width: 320,
-                          child: Padding(
-                            padding: const EdgeInsets.fromLTRB(14, 14, 8, 14),
-                            child: receipt,
-                          ),
-                        ),
-                        Expanded(
-                          child: SingleChildScrollView(
-                            padding: const EdgeInsets.fromLTRB(6, 14, 14, 14),
-                            child: panel,
-                          ),
-                        ),
-                      ],
                     ),
+                  ],
+                ),
+              ),
             );
           },
         );
       },
+    );
+  }
+
+  /// Lay the three columns out for the terminal in front of us.
+  ///
+  /// The board is a 1920px design and it is drawn as one wherever there is room:
+  /// the check on the left, the money in the middle, the keypad on the right,
+  /// in the proportions it was accepted at. What changes below that is *how
+  /// many columns are on screen at once*, never the columns themselves — a
+  /// clerk who learns the till on the counter must find the same keys in the
+  /// same order on a handheld.
+  Widget _board(
+    BuildContext context, {
+    required double width,
+    required Widget check,
+    required Widget column,
+    required Widget keypad,
+  }) {
+    const pad = 20.0;
+    const gap = 20.0;
+
+    // Three columns. The proportions are the design's own — 460 / 844 / 520 of
+    // 1824 — held as ratios so a 1366px till gets the same board rather than
+    // the same pixels with the keypad off the edge.
+    if (width >= 1100) {
+      final horizontal = width >= 1500 ? 28.0 : 16.0;
+      final content = width - horizontal * 2 - gap * 2;
+      final checkWidth = (content * 0.252).clamp(280.0, 460.0);
+      final keypadWidth = (content * 0.285).clamp(300.0, 520.0);
+
+      return Padding(
+        padding: EdgeInsets.fromLTRB(horizontal, pad, horizontal, pad + 8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(width: checkWidth, child: check),
+            const SizedBox(width: gap),
+            Expanded(child: column),
+            const SizedBox(width: gap),
+            SizedBox(width: keypadWidth, child: keypad),
+          ],
+        ),
+      );
+    }
+
+    // Not wide enough for three. The money and the keypad stay together —
+    // keying an amount and taking it is one action — and the check moves to a
+    // tab beside them.
+    if (width >= 760) {
+      return _tabbed(
+        context,
+        tabs: const ['Pay', 'Check'],
+        views: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(child: column),
+              const SizedBox(width: 14),
+              SizedBox(width: width * 0.34, child: keypad),
+            ],
+          ),
+          check,
+        ],
+      );
+    }
+
+    // A handheld. One column at a time.
+    return _tabbed(
+      context,
+      tabs: const ['Pay', 'Keys', 'Check'],
+      views: [column, keypad, check],
+    );
+  }
+
+  /// The shortest a column may be drawn before the tab scrolls instead. Below
+  /// this the scale factors are producing keys nobody can hit.
+  static const _minColumnHeight = 620.0;
+
+  Widget _tabbed(
+    BuildContext context, {
+    required List<String> tabs,
+    required List<Widget> views,
+  }) {
+    final pay = PayPalette.of(context);
+
+    return DefaultTabController(
+      length: tabs.length,
+      child: Column(
+        children: [
+          TabBar(
+            labelColor: pay.accent,
+            unselectedLabelColor: pay.inkMuted,
+            indicatorColor: pay.accent,
+            dividerColor: pay.panelLine,
+            tabs: [for (final t in tabs) Tab(text: t)],
+          ),
+          Expanded(
+            child: TabBarView(
+              children: [
+                for (final v in views)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 14, 14, 18),
+                    // The columns are laid out against the height they are
+                    // given, and on a handheld in landscape that height is not
+                    // enough to draw a keypad and a note strip at a size worth
+                    // having. Rather than compress everything past legibility,
+                    // the column keeps a floor and the tab scrolls to it — the
+                    // one place on this screen where scrolling is the lesser
+                    // evil, because the alternative is keys too small to hit.
+                    child: LayoutBuilder(
+                      builder: (context, box) {
+                        if (box.maxHeight >= _minColumnHeight) return v;
+                        return SingleChildScrollView(
+                          child: SizedBox(height: _minColumnHeight, child: v),
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1549,115 +1628,191 @@ class _ChangeWindowState extends State<_ChangeWindow> {
   }
 }
 
-/// The notes counted in so far, shown on the receipt directly above Subtotal.
+/// The bar across the top of the payment board.
 ///
-/// This is the customer's side of the transaction: they have handed over three
-/// twenties and want to see three twenties on the screen. A single "£60" would
-/// not let them check it, which is the point of counting notes in one at a time
-/// rather than keying the total.
-class _CashCount extends StatelessWidget {
-  const _CashCount({
-    required this.tally,
-    required this.labels,
-    required this.onUndo,
+/// A plain [AppBar] would put this screen back inside the till's ordinary
+/// chrome, which is exactly what the board is not: it is a surface the terminal
+/// gives over entirely to taking money, and the bar is part of the surface
+/// rather than a frame around it.
+///
+/// It carries the three facts a clerk needs to know they are on the right bill —
+/// table, covers, who is serving — and the two keys that change it. Void and
+/// Cancel are as far from Cash and Card as the screen allows, because they are
+/// the two irreversible things here and both are one tap.
+class _PayHeader extends StatelessWidget {
+  const _PayHeader({
+    this.tableNumber,
+    this.covers,
+    this.clerkName,
+    this.onVoid,
+    this.onCancel,
   });
 
-  final CashTally tally;
+  final int? tableNumber;
+  final int? covers;
+  final String? clerkName;
 
-  /// Denomination labels from the back office, so a venue that renamed its keys
-  /// sees its own wording here too.
-  final Map<int, String> labels;
-
-  /// Hands the notes back — this money has already been taken, so clearing the
-  /// list on its own would leave the receipt disagreeing with the drawer.
-  final VoidCallback onUndo;
+  /// Null once money has been taken: the bill may no longer be amended, and a
+  /// live key that refuses is worse than a dead one that explains itself by
+  /// being dead.
+  final VoidCallback? onVoid;
+  final VoidCallback? onCancel;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final pay = PayPalette.of(context);
+    final compact = MediaQuery.sizeOf(context).width < 1100;
+
+    final facts = <String>[
+      if (tableNumber != null) 'Table $tableNumber',
+      if (covers != null && covers! > 0) '$covers covers',
+      if (clerkName?.isNotEmpty ?? false) clerkName!,
+    ];
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+      height: compact ? 68 : 88,
+      padding: EdgeInsets.symmetric(horizontal: compact ? 14 : 28),
       decoration: BoxDecoration(
-        color: scheme.primary.withValues(alpha: 0.10),
-        border: Border(top: BorderSide(color: scheme.outlineVariant)),
+        border: Border(bottom: BorderSide(color: pay.panelLine)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
+      child: Row(
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Cash on the counter',
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.4,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
-              // The way back out of a miscount, right where the count is.
-              InkWell(
-                onTap: onUndo,
-                borderRadius: BorderRadius.circular(6),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 3,
-                  ),
-                  child: Text(
-                    'Hand back',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: scheme.primary,
-                    ),
-                  ),
-                ),
-              ),
-            ],
+          _HeaderKey(
+            fill: pay.chip,
+            ink: pay.inkSoft,
+            square: true,
+            compact: compact,
+            onTap: () => Navigator.of(context).pop(),
+            child: const Icon(Icons.arrow_back, size: 22),
           ),
-          const SizedBox(height: 2),
-          for (final entry in tally.descending)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 1),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      '${entry.value} × ${labels[entry.key] ?? _money(entry.key)}',
-                      style: const TextStyle(fontSize: 13),
-                    ),
-                  ),
-                  Text(
-                    _money(entry.key * entry.value),
-                    style: const TextStyle(fontSize: 13),
-                  ),
-                ],
+          SizedBox(width: compact ? 14 : 22),
+          Text(
+            'Payment',
+            style: TextStyle(
+              fontSize: compact ? 19 : 23,
+              fontWeight: FontWeight.w600,
+              color: pay.ink,
+            ),
+          ),
+          if (facts.isNotEmpty && !compact) ...[
+            const SizedBox(width: 22),
+            Container(width: 1, height: 30, color: pay.panelLine),
+            const SizedBox(width: 22),
+            // Flexible so a long staff name shortens the chips rather than
+            // pushing Void and Cancel off the right-hand edge.
+            Flexible(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    for (final fact in facts)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 10),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 9,
+                          ),
+                          decoration: BoxDecoration(
+                            color: pay.chip,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            fact,
+                            style: TextStyle(
+                              fontSize: 15,
+                              color: pay.inkSoft,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
-          const Divider(height: 12),
-          Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'Counted',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
-                ),
-              ),
-              Text(
-                _money(tally.totalMinor),
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
+          ],
+          const Spacer(),
+          _HeaderKey(
+            fill: Colors.transparent,
+            ink: pay.inkSoft,
+            outline: pay.softLine,
+            compact: compact,
+            onTap: onVoid,
+            child: const Text('Void'),
+          ),
+          SizedBox(width: compact ? 8 : 12),
+          _HeaderKey(
+            fill: pay.dangerFill,
+            ink: pay.dangerInk,
+            compact: compact,
+            onTap: onCancel,
+            child: Text(compact ? 'Cancel' : 'Cancel sale'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// One key in the header bar.
+class _HeaderKey extends StatelessWidget {
+  const _HeaderKey({
+    required this.fill,
+    required this.ink,
+    required this.child,
+    this.outline,
+    this.square = false,
+    this.compact = false,
+    this.onTap,
+  });
+
+  final Color fill;
+  final Color ink;
+  final Color? outline;
+  final Widget child;
+  final bool square;
+  final bool compact;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final pay = PayPalette.of(context);
+    final size = compact ? 44.0 : 52.0;
+    final off = onTap == null;
+
+    return SizedBox(
+      height: size,
+      width: square ? size : null,
+      child: Material(
+        color: fill,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            alignment: Alignment.center,
+            padding: square
+                ? EdgeInsets.zero
+                : EdgeInsets.symmetric(horizontal: compact ? 14 : 22),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: outline == null
+                  ? null
+                  : Border.all(color: off ? pay.panelLine : outline!),
+            ),
+            child: DefaultTextStyle(
+              style: TextStyle(
+                fontSize: compact ? 15 : 16,
+                fontWeight: FontWeight.w500,
+                color: off ? pay.inkDim : ink,
+              ),
+              child: IconTheme(
+                data: IconThemeData(color: off ? pay.inkDim : ink),
+                child: child,
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

@@ -175,6 +175,173 @@ extension PosColors on ThemeData {
   Color get posBrandOnChrome => isDark ? Pos.brand : Pos.brandDeep;
 }
 
+/// The payment screen's own surfaces — the "Ledger" board.
+///
+/// The tender screen was rebuilt in v1.3.3.0 to an accepted design that is not
+/// expressible in the Material scheme the rest of the till runs on. It is a
+/// *board*, not a page: a near-black canvas with the check, the money and the
+/// keypad each sitting on it as a separate raised panel, one lime accent for
+/// what is owed and one deep teal for cash. Pulling those values out of
+/// `ColorScheme` would mean fighting Material's surface tinting for every one
+/// of them and still landing somewhere else, so they are named here instead.
+///
+/// Both brightnesses are given, and Night is the accepted design value for
+/// value. Day is not a second design — it is the same board with the same
+/// relationships inverted (panels lighter than the canvas rather than darker),
+/// because a venue that runs its till in Day must not be the one venue that
+/// gets a black slab where everyone else gets the design. The two brand
+/// colours are shared: lime and the teal are legible on both.
+///
+/// The one thing Day may not share is lime *as type*. #A5C715 on white is
+/// 1.9:1 — the "left to pay" figure, which is the largest and most-read number
+/// on the till, would be the least legible thing on the screen. Day uses
+/// [Pos.brandDeep] for ink and keeps the raw lime for fills.
+class PayPalette {
+  const PayPalette({
+    required this.canvas,
+    required this.panel,
+    required this.panelLine,
+    required this.chip,
+    required this.keyFill,
+    required this.keyLine,
+    required this.softFill,
+    required this.softLine,
+    required this.ink,
+    required this.inkSoft,
+    required this.inkMuted,
+    required this.inkDim,
+    required this.rowAlt,
+    required this.accent,
+    required this.accentFill,
+    required this.accentLine,
+    required this.cash,
+    required this.onCash,
+    required this.card,
+    required this.onCard,
+    required this.dangerFill,
+    required this.dangerInk,
+    required this.changeFill,
+    required this.changeLabel,
+    required this.changeInk,
+  });
+
+  /// Behind everything. The board itself.
+  final Color canvas;
+
+  /// A panel resting on the canvas: the check, the balance, the amount box.
+  final Color panel;
+
+  /// The hairline around a panel. It is what separates panel from canvas in
+  /// Night, where the two are only a few values apart.
+  final Color panelLine;
+
+  /// Small pill surfaces in the header — the back key and the table chips.
+  final Color chip;
+
+  /// A keypad digit, and its edge.
+  final Color keyFill;
+  final Color keyLine;
+
+  /// The quieter keys: manual card, split, and the eight function keys.
+  final Color softFill;
+  final Color softLine;
+
+  /// Type, in three weights of emphasis, plus a fourth for absent values
+  /// ("Nothing taken yet") that must read as a placeholder rather than a fact.
+  final Color ink;
+  final Color inkSoft;
+  final Color inkMuted;
+  final Color inkDim;
+
+  /// Every other row of the check, so a long bill can be read across.
+  final Color rowAlt;
+
+  /// The brand, as type. See the class note: not the same value in Day.
+  final Color accent;
+
+  /// The brand as a surface — the quick-cash keys.
+  final Color accentFill;
+  final Color accentLine;
+
+  /// Cash. A deep teal rather than a second lime, so the two largest keys on
+  /// the screen can never be confused with one another at a glance.
+  final Color cash;
+  final Color onCash;
+
+  /// Card, which is the brand key.
+  final Color card;
+  final Color onCard;
+
+  /// Cancel sale, and the CL key.
+  final Color dangerFill;
+  final Color dangerInk;
+
+  /// Change owed. Deliberately the cash teal: the clerk is being told to open
+  /// the drawer, and the colour says which key that money came in on.
+  final Color changeFill;
+  final Color changeLabel;
+  final Color changeInk;
+
+  static const dark = PayPalette(
+    canvas: Color(0xFF000000),
+    panel: Color(0xFF0E1113),
+    panelLine: Color(0x14FFFFFF),
+    chip: Color(0xFF161A1C),
+    keyFill: Color(0xFF14181B),
+    keyLine: Color(0x1AFFFFFF),
+    softFill: Color(0xFF12161A),
+    softLine: Color(0x24FFFFFF),
+    ink: Color(0xFFFFFFFF),
+    inkSoft: Color(0xB8FFFFFF),
+    inkMuted: Color(0x73FFFFFF),
+    inkDim: Color(0x4DFFFFFF),
+    rowAlt: Color(0x08FFFFFF),
+    accent: Pos.brand,
+    accentFill: Color(0x1AA5C715),
+    accentLine: Color(0x66A5C715),
+    cash: Color(0xFF00373A),
+    onCash: Color(0xFFFFFFFF),
+    card: Pos.brand,
+    onCard: Pos.onBrand,
+    dangerFill: Color(0xFF2A1213),
+    dangerInk: Color(0xFFFF8B84),
+    changeFill: Color(0xFF00373A),
+    changeLabel: Color(0xFF8FD9CF),
+    changeInk: Color(0xFFFFFFFF),
+  );
+
+  static const light = PayPalette(
+    canvas: Color(0xFFEDEEE8),
+    panel: Color(0xFFFFFFFF),
+    panelLine: Color(0xFFD8D9D3),
+    chip: Color(0xFFE7E9E1),
+    keyFill: Color(0xFFFFFFFF),
+    keyLine: Color(0xFFCFD1C8),
+    softFill: Color(0xFFF7F8F2),
+    softLine: Color(0xFFC6C8BE),
+    ink: Pos.onBrand,
+    inkSoft: Color(0xFF3E4038),
+    inkMuted: Pos.graphite,
+    inkDim: Color(0xFFA3A49E),
+    rowAlt: Color(0x0A000000),
+    accent: Pos.brandDeep,
+    accentFill: Color(0x2EA5C715),
+    accentLine: Color(0x8C6E8A0E),
+    cash: Color(0xFF00373A),
+    onCash: Color(0xFFFFFFFF),
+    card: Pos.brand,
+    onCard: Pos.onBrand,
+    dangerFill: Color(0xFFFBE3DF),
+    dangerInk: Color(0xFF9C2417),
+    changeFill: Color(0xFFD7EDE8),
+    changeLabel: Color(0xFF0B5F5A),
+    changeInk: Color(0xFF00373A),
+  );
+
+  static PayPalette of(BuildContext context) =>
+      Theme.of(context).brightness == Brightness.dark ? dark : light;
+}
+
 ThemeData buildPosTheme(Brightness brightness) {
   final dark = brightness == Brightness.dark;
 

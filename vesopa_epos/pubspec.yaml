@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.3.2+5
+version: 1.3.3+6
 
 environment:
   sdk: ^3.11.3
@@ -86,7 +86,20 @@ dev_dependencies:
   flutter_launcher_icons: ^0.14.4
   msix: ^3.18.0
 
-# Microsoft Store packaging. Build with `dart run msix:create --store`.
+# Microsoft Store packaging.
+#
+# ONE COMMAND, from a clean checkout:
+#
+#     dart run msix:create --store
+#
+# That builds the Windows release itself and writes the finished, unsigned Store
+# package to build\store\vesopa-epos-store.msix. Nothing else needs running
+# first and no other flags are needed — everything they would have said is set
+# in this block (see output_path / output_name / windows_build_args below).
+#
+# Before each release bump `version:` at the top of this file AND msix_version
+# below. The Store refuses a version it has already accepted, so a resubmission
+# after a failed certification needs a bump too.
 #
 # The three identity values below are assigned by the Store (Partner Center ->
 # Product -> Product identity) and must match it character for character, or
@@ -112,7 +125,7 @@ msix_config:
   # Four parts, and the Store requires the last to be 0. A version can never be
   # reused, so bump this for every submission — including a resubmission after
   # a failed certification.
-  msix_version: 1.3.2.0
+  msix_version: 1.3.3.0
   # The full-resolution master, not the .ico. msix scales this one file up to
   # the Store's Wide310x150Logo and to Square150x150Logo at scale-400 (600px),
   # so feeding it the icon meant generating 600px tiles from a 48px frame.
@@ -128,6 +141,57 @@ msix_config:
   # first submission. Revisit enable_at_startup once the app is through review.
   install_certificate: false
   enable_at_startup: false
+  # ---------------------------------------------------------------------------
+  # WHERE THE PACKAGE LANDS. This is what makes `dart run msix:create --store`
+  # correct on its own, with no flags to remember.
+  #
+  # Without these two, msix writes the package to
+  #
+  #     build\windows\x64\runner\Release\vesopa_epos.msix
+  #
+  # which is wrong twice over. That folder is the one msix itself wipes of every
+  # *.msix at the start of each run, so the package sits in the blast radius of
+  # the next build. And the name is the *app* name, identical for every version
+  # ever built — nothing on the file says whether it is 1.3.2.0 or 1.3.3.0.
+  #
+  # That is exactly how a stale 1.3.2.0 package reached Partner Center after
+  # 1.3.3.0 had been built and Partner Center answered "Multiple uploaded files
+  # contain the same package". The build was never the problem; telling two
+  # identically-named files apart was.
+  #
+  # So: one fixed path, one fixed name, overwritten on every build. There is only
+  # ever one package on the machine and it is always the current one. Upload
+  # build\store\vesopa-epos-store.msix and nothing else — in particular nothing
+  # out of Downloads, which is where old CI artefacts accumulate under names that
+  # look authoritative.
+  #
+  # The version is deliberately NOT in the filename. A filename can go stale; the
+  # Identity/Version in the manifest cannot, and that is the one Partner Center
+  # actually reads. To check before uploading:
+  #
+  #   Add-Type -AssemblyName System.IO.Compression.FileSystem
+  #   $z=[IO.Compression.ZipFile]::OpenRead((Resolve-Path build\store\vesopa-epos-store.msix))
+  #   $e=$z.Entries|?{$_.FullName -eq 'AppxManifest.xml'}
+  #   $r=[IO.StreamReader]::new($e.Open());$x=$r.ReadToEnd();$r.Close();$z.Dispose()
+  #   [regex]::Match($x,'<Identity.*?/>','Singleline').Value
+  #
+  # CI overrides both of these on the command line to get a version-stamped
+  # artefact name, which is safe there because a fresh runner has no old files.
+  output_path: build/store
+  output_name: vesopa-epos-store
+  # Passed straight through to the `flutter build windows` that msix runs for
+  # itself. `flutter build` already defaults to release, so this pins intent
+  # rather than changing behaviour — a Store package built in debug would be
+  # accepted by the packer and rejected by certification, and that is not a
+  # thing to leave resting on a default.
+  #
+  # This is also the only place a --dart-define could reach that build, and the
+  # reason DOJO_API_KEY is NOT here: it is a secret and this file is public. A
+  # package built by this command therefore carries no card key, and the till
+  # starts unconfigured with the key entered in Settings › Card payments. For a
+  # package with the key compiled in, let CI build it — the workflow injects the
+  # secret and passes --build-windows false so this build never runs.
+  windows_build_args: --release
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

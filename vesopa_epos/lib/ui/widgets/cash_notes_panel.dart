@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../data/cash_tally.dart';
@@ -17,10 +19,18 @@ import '../theme.dart';
 /// two deliberate actions and the second one was routinely forgotten with a
 /// customer already walking away.
 ///
-/// The tally did not go away, it moved underneath: consecutive taps rewrite one
-/// cash payment rather than stacking up several, so a twenty and then a five is
-/// a single £25 line reading "1 x £20, 1 x £5". The customer still watches the
-/// count build up beside the bill, which is what the pictures were for.
+/// The tally did not go away, it moved: consecutive taps rewrite one cash
+/// payment rather than stacking up several, so a twenty and then a five is a
+/// single £25 line reading "1 x £20, 1 x £5". That line is now shown in the
+/// Tendered column of the payment board rather than under these keys — the
+/// customer's side of the transaction belongs with the money, and this panel
+/// went back to being what it is for, which is pictures.
+///
+/// The pictures size themselves to whatever room the board gives them (see
+/// [_arrange]) rather than sitting at a fixed 132×70. That is the whole point of
+/// the v1.3.3.0 layout: the function keys below were halved specifically so
+/// these could be big enough to recognise, and a strip that ignored the room it
+/// was handed would have thrown that away.
 ///
 /// The set comes from the back office (see cash_denominations), so a venue can
 /// swap the artwork or change what a key is worth without a new build.
@@ -29,22 +39,14 @@ class CashNotesPanel extends StatelessWidget {
     super.key,
     required this.denominations,
     required this.tally,
-    required this.dueMinor,
-    required this.changeMinor,
     required this.onTakeNote,
     required this.onUndo,
   });
 
   final List<CashDenomination> denominations;
 
-  /// The notes taken so far on this bill, for the badges and the summary.
+  /// The notes taken so far on this bill, for the badges.
   final CashTally tally;
-
-  /// What is still owed *after* everything taken so far, including these notes.
-  final int dueMinor;
-
-  /// What is owed back, if the notes have overshot the bill.
-  final int changeMinor;
 
   /// Take one of this note, now.
   final void Function(int valueMinor) onTakeNote;
@@ -52,133 +54,169 @@ class CashNotesPanel extends StatelessWidget {
   /// Hand it all back: undoes the cash payment these keys built.
   final VoidCallback onUndo;
 
+  /// Roughly a real banknote's proportions, so the picture is never distorted.
+  static const _ratio = 1.9;
+
   @override
   Widget build(BuildContext context) {
     if (denominations.isEmpty) return const SizedBox.shrink();
 
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
+    final pay = PayPalette.of(context);
     final taken = tally.totalMinor;
 
-    return Container(
-      margin: const EdgeInsets.only(top: 12),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: scheme.outlineVariant),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.payments_outlined, size: 18, color: scheme.primary),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Cash — tap a note to take it',
-                  style: theme.textTheme.titleSmall
-                      ?.copyWith(fontWeight: FontWeight.w700),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'CASH — TAP A NOTE TO TAKE IT',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 14,
+                  letterSpacing: 2,
+                  fontWeight: FontWeight.w500,
+                  color: pay.inkMuted,
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-
-          // Notes wrap rather than scroll: a key a clerk has to scroll to find
-          // is a key that gets missed while a customer is waiting.
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              for (final d in denominations)
-                _NoteKey(
-                  denomination: d,
-                  count: tally.counts[d.valueMinor] ?? 0,
-                  onTap: () => onTakeNote(d.valueMinor),
-                ),
-            ],
-          ),
-
-          // What the taps have actually done. Only once something has been
-          // taken — an empty box under an untouched panel says nothing.
-          if (tally.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: scheme.surface,
-                borderRadius: BorderRadius.circular(9),
-                border: Border.all(color: scheme.outlineVariant),
-              ),
-              child: Column(
-                children: [
-                  _row(context, 'Taken', _money(taken), bold: true),
-                  if (dueMinor > 0)
-                    _row(
-                      context,
-                      'Still to pay',
-                      _money(dueMinor),
-                      colour: scheme.error,
-                    )
-                  else if (changeMinor > 0)
-                    _row(
-                      context,
-                      'Change',
-                      _money(changeMinor),
-                      bold: true,
-                      colour: Pos.green,
-                    ),
-                ],
               ),
             ),
-            const SizedBox(height: 8),
             // The way back out of a mis-tap, and the only control here now that
-            // the keys commit on their own. Deliberately understated next to the
-            // note pictures: undoing is the rare path.
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                onPressed: onUndo,
-                icon: const Icon(Icons.undo, size: 18),
-                label: Text('Hand back ${_money(taken)}'),
+            // the keys commit on their own.
+            if (tally.isNotEmpty)
+              Material(
+                color: Colors.transparent,
+                borderRadius: BorderRadius.circular(8),
+                child: InkWell(
+                  onTap: onUndo,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    child: Text(
+                      'Hand back ${_money(taken)}',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: pay.dangerInk,
+                      ),
+                    ),
+                  ),
+                ),
               ),
-            ),
           ],
-        ],
-      ),
+        ),
+        const SizedBox(height: 10),
+        Expanded(
+          child: LayoutBuilder(
+            builder: (context, box) {
+              final layout = _arrange(
+                count: denominations.length,
+                width: box.maxWidth,
+                height: box.maxHeight,
+              );
+
+              // Wrap rather than scroll: a key a clerk has to scroll to find is
+              // a key that gets missed while a customer is waiting.
+              //
+              // Centred, because the strip is usually limited by width rather
+              // than height — three notes at a proper 1.9:1 run out of column
+              // before they run out of board — and the slack that leaves reads
+              // as a hole when it is all dumped underneath them.
+              return Align(
+                alignment: Alignment.center,
+                child: Wrap(
+                  spacing: layout.gap,
+                  runSpacing: layout.gap,
+                  alignment: WrapAlignment.center,
+                  children: [
+                    for (final d in denominations)
+                      SizedBox(
+                        width: layout.width,
+                        height: layout.height,
+                        child: _NoteKey(
+                          denomination: d,
+                          count: tally.counts[d.valueMinor] ?? 0,
+                          onTap: () => onTakeNote(d.valueMinor),
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 
-  Widget _row(
-    BuildContext context,
-    String label,
-    String value, {
-    bool bold = false,
-    Color? colour,
+  /// The biggest the notes can be drawn in [width] × [height].
+  ///
+  /// Tries every row count and keeps whichever draws the largest note. One row
+  /// is not automatically best: five denominations across a 840px column gives
+  /// notes 160px wide and 84 tall, where two rows of three gives 270 × 142 —
+  /// nearly twice the picture, in the same box. Since the whole reason these
+  /// keys are pictures is that a picture is recognised faster than a label,
+  /// bigger wins over tidier.
+  static _NoteLayout _arrange({
+    required int count,
+    required double width,
+    required double height,
   }) {
-    final style = TextStyle(
-      fontSize: bold ? 16 : 14,
-      fontWeight: bold ? FontWeight.w700 : FontWeight.w500,
-      color: colour,
-    );
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
-        children: [
-          Expanded(child: Text(label, style: style)),
-          Text(value, style: style),
-        ],
-      ),
-    );
+    const gap = 14.0;
+    var best = const _NoteLayout(width: 0, height: 0, gap: gap);
+
+    for (var rows = 1; rows <= count; rows++) {
+      final columns = (count / rows).ceil();
+      final cellWidth = (width - gap * (columns - 1)) / columns;
+      final cellHeight = (height - gap * (rows - 1)) / rows;
+      if (cellWidth <= 0 || cellHeight <= 0) continue;
+
+      // Fit the note inside the cell without distorting it.
+      final noteHeight = math.min(cellHeight, cellWidth / _ratio);
+      if (noteHeight > best.height) {
+        best = _NoteLayout(
+          width: noteHeight * _ratio,
+          height: noteHeight,
+          gap: gap,
+        );
+      }
+    }
+
+    // A box too small for any sensible arrangement still has to draw keys the
+    // clerk can hit, so it falls back to one row across whatever there is.
+    if (best.height <= 0) {
+      final cellWidth = (width - gap * (count - 1)) / count;
+      final noteHeight = math.max(28.0, math.min(height, cellWidth / _ratio));
+      return _NoteLayout(
+        width: noteHeight * _ratio,
+        height: noteHeight,
+        gap: gap,
+      );
+    }
+    return best;
   }
 }
 
+/// The size one note is drawn at, and the space between them.
+class _NoteLayout {
+  const _NoteLayout({
+    required this.width,
+    required this.height,
+    required this.gap,
+  });
+
+  final double width;
+  final double height;
+  final double gap;
+}
+
 /// One note. Shows the artwork when there is any, and how many have been
-/// counted in as a badge — the count is the whole point, so it is not hidden
-/// in a list somewhere else.
+/// counted in as a badge — the count is the whole point, so it is not hidden in
+/// a list somewhere else.
 class _NoteKey extends StatelessWidget {
   const _NoteKey({
     required this.denomination,
@@ -190,13 +228,9 @@ class _NoteKey extends StatelessWidget {
   final int count;
   final VoidCallback onTap;
 
-  /// Roughly a real banknote's proportions, so the picture is not distorted.
-  static const _width = 132.0;
-  static const _height = 70.0;
-
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final pay = PayPalette.of(context);
     final url = denomination.imageUrl;
 
     return Semantics(
@@ -206,20 +240,18 @@ class _NoteKey extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(9),
+          borderRadius: BorderRadius.circular(12),
           child: Stack(
             clipBehavior: Clip.none,
             children: [
               Container(
-                width: _width,
-                height: _height,
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(9),
+                  borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: count > 0 ? Pos.brand : scheme.outlineVariant,
-                    width: count > 0 ? 2.5 : 1,
+                    color: count > 0 ? Pos.brand : pay.softLine,
+                    width: count > 0 ? 3 : 1,
                   ),
-                  color: scheme.surface,
+                  color: pay.panel,
                 ),
                 clipBehavior: Clip.antiAlias,
                 child: (url == null || url.isEmpty)
@@ -258,23 +290,23 @@ class _NoteKey extends StatelessWidget {
               ),
               if (count > 0)
                 Positioned(
-                  top: -6,
-                  right: -6,
+                  top: -8,
+                  right: -8,
                   child: Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 3,
+                      horizontal: 10,
+                      vertical: 4,
                     ),
                     decoration: BoxDecoration(
                       color: Pos.brand,
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: scheme.surface, width: 2),
+                      border: Border.all(color: pay.canvas, width: 2),
                     ),
                     child: Text(
                       '×$count',
                       style: const TextStyle(
                         color: Pos.onBrand,
-                        fontSize: 13,
+                        fontSize: 15,
                         fontWeight: FontWeight.w800,
                       ),
                     ),
@@ -289,16 +321,22 @@ class _NoteKey extends StatelessWidget {
 
   /// The label on a plain card — what a key looks like with no artwork.
   Widget _fallback(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final pay = PayPalette.of(context);
     return Container(
       alignment: Alignment.center,
-      color: scheme.surfaceContainerHighest,
-      child: Text(
-        denomination.label,
-        style: TextStyle(
-          fontSize: 22,
-          fontWeight: FontWeight.w800,
-          color: scheme.onSurface,
+      color: pay.softFill,
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Text(
+            denomination.label,
+            style: TextStyle(
+              fontSize: 34,
+              fontWeight: FontWeight.w800,
+              color: pay.ink,
+            ),
+          ),
         ),
       ),
     );
