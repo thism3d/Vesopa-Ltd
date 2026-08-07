@@ -4,38 +4,117 @@
 <div class="alert alert-info">
   <%- icon('info', 19) %>
   <div>
-    <b>Cost</b> is what DomainNameAPI charges us. It is never shown to a customer —
-    it is here so the margin is visible while you are setting the price, rather
-    than worked out on a calculator afterwards.
+    <b>Cost</b> is what DomainNameAPI charges us, converted from their dollar
+    rate card at the USD rate in Admin → Currencies. It is never shown to a
+    customer — it is here so the margin is visible while you are setting the
+    price, rather than worked out on a calculator afterwards.
+    Re-import the rate card with <code>node scripts/import-tlds.js</code>.
   </div>
 </div>
 
+<% if (tally.loss) { %>
+  <%# The single most important thing this screen can tell an admin. Eleven
+      extensions were selling below cost after the rate card landed, and
+      without this banner they would stay that way indefinitely. %>
+  <div class="alert alert-error">
+    <%- icon('warning', 19) %>
+    <div>
+      <b><%= tally.loss %> extension<%= tally.loss === 1 ? ' is' : 's are' %> priced below cost.</b>
+      Every sale of one loses money.
+      <a href="/admin/tlds?show=loss"><b>Show them</b></a> — you can reprice the
+      whole list from the markup ladder in one click.
+    </div>
+  </div>
+<% } %>
+
+<%# --- Filters ----------------------------------------------------------- %>
+<form method="get" action="/admin/tlds" class="p-card mb-3">
+  <div class="row" style="gap:10px;flex-wrap:wrap;align-items:flex-end">
+    <div class="field mb-0" style="flex:1 1 190px">
+      <label class="label" for="fq">Find an extension</label>
+      <input class="input" id="fq" name="q" value="<%= filters.q %>" placeholder="shop, co.uk, io">
+    </div>
+    <div class="field mb-0" style="flex:0 1 200px">
+      <label class="label" for="fcat">Category</label>
+      <select class="input" id="fcat" name="category">
+        <option value="">All categories</option>
+        <% categories.forEach(function (c) { %>
+          <option value="<%= c.slug %>" <%= filters.category === c.slug ? 'selected' : '' %>><%= c.label %></option>
+        <% }); %>
+      </select>
+    </div>
+    <div class="field mb-0" style="flex:0 1 190px">
+      <label class="label" for="fshow">Show</label>
+      <select class="input" id="fshow" name="show">
+        <option value="">Everything (<%= tally.all %>)</option>
+        <option value="loss" <%= filters.show === 'loss' ? 'selected' : '' %>>Below cost (<%= tally.loss %>)</option>
+        <option value="featured" <%= filters.show === 'featured' ? 'selected' : '' %>>Popular (<%= tally.featured %>)</option>
+        <option value="inactive" <%= filters.show === 'inactive' ? 'selected' : '' %>>Switched off (<%= tally.inactive %>)</option>
+        <option value="nocost" <%= filters.show === 'nocost' ? 'selected' : '' %>>No cost recorded (<%= tally.nocost %>)</option>
+      </select>
+    </div>
+    <button class="btn btn-sm" type="submit">Filter</button>
+    <% if (filters.q || filters.category || filters.show) { %>
+      <a class="btn btn-sm btn-ghost" href="/admin/tlds">Clear</a>
+    <% } %>
+  </div>
+</form>
+
+<p class="small muted mb-2">
+  <b><%= matchedCount %></b> extension<%= matchedCount === 1 ? '' : 's' %> match.
+  Showing <%= tlds.length %> — page <%= page %> of <%= pages %>.
+  <span class="muted">Saving affects only the rows on this page.</span>
+</p>
+
 <form method="post" action="/admin/tlds" data-guard>
   <input type="hidden" name="_csrf" value="<%= csrf %>">
+  <%# The filter state rides along so the redirect after saving comes back
+      here rather than to page 1 of everything. %>
+  <input type="hidden" name="f_q" value="<%= filters.q %>">
+  <input type="hidden" name="f_category" value="<%= filters.category %>">
+  <input type="hidden" name="f_show" value="<%= filters.show %>">
+  <input type="hidden" name="f_page" value="<%= page %>">
+
   <div class="p-card p-card-flush">
     <div class="table-wrap"><table class="table mini">
       <thead>
         <tr>
           <th>Extension</th>
+          <th>Category</th>
           <th class="num">Register <%= currency.symbol %></th>
           <th class="num">Renew <%= currency.symbol %></th>
           <th class="num">Transfer <%= currency.symbol %></th>
           <th class="num">Cost <%= currency.symbol %></th>
           <th class="num">Margin</th>
-          <th class="center">Featured</th>
+          <th class="center">Popular</th>
           <th class="center">Active</th>
         </tr>
       </thead>
       <tbody>
         <% tlds.forEach(function (t) {
              const margin = t.register_pence - t.cost_pence;
-             const pct = t.cost_pence ? Math.round(margin / t.cost_pence * 100) : null; %>
-          <tr>
+             const pct = t.cost_pence ? Math.round(margin / t.cost_pence * 100) : null;
+             const loss = t.register_pence > 0 && t.register_pence < t.cost_pence;
+             const suggested = suggest(t.cost_pence); %>
+          <tr<%= loss ? ' style="background:#fdf0ee"' : '' %>>
             <td class="strong">
               .<%= t.tld %>
               <input type="hidden" name="id" value="<%= t.id %>">
+              <br><a class="tiny muted" href="/domains/tld/<%= encodeURIComponent(t.tld) %>" target="_blank" rel="noopener">view page</a>
             </td>
-            <td><input class="input" style="width:92px;padding:7px 9px" name="register" value="<%= (t.register_pence/100).toFixed(2) %>"></td>
+            <td>
+              <select class="input" style="width:126px;padding:6px 8px;font-size:.8rem" name="category">
+                <% categories.forEach(function (c) { %>
+                  <option value="<%= c.slug %>" <%= (t.category || 'other') === c.slug ? 'selected' : '' %>><%= c.label %></option>
+                <% }); %>
+              </select>
+            </td>
+            <td>
+              <input class="input" style="width:92px;padding:7px 9px" name="register" value="<%= (t.register_pence/100).toFixed(2) %>">
+              <% if (suggested && suggested !== t.register_pence) { %>
+                <br><span class="tiny muted" title="What the markup ladder would charge">→ <%= (suggested/100).toFixed(2) %></span>
+              <% } %>
+            </td>
             <td><input class="input" style="width:92px;padding:7px 9px" name="renew" value="<%= (t.renew_pence/100).toFixed(2) %>"></td>
             <td><input class="input" style="width:92px;padding:7px 9px" name="transfer" value="<%= (t.transfer_pence/100).toFixed(2) %>"></td>
             <td><input class="input" style="width:92px;padding:7px 9px" name="cost" value="<%= (t.cost_pence/100).toFixed(2) %>"></td>
@@ -50,11 +129,45 @@
             <td class="center"><input type="checkbox" name="active" value="<%= t.id %>" <%= t.active ? 'checked' : '' %>></td>
           </tr>
         <% }); %>
+        <% if (!tlds.length) { %>
+          <tr><td colspan="9" class="center muted" style="padding:26px">Nothing matches that filter.</td></tr>
+        <% } %>
       </tbody>
     </table></div>
   </div>
-  <button class="btn" type="submit" data-busy="Saving…">Save all pricing</button>
+
+  <div class="row mt-2" style="gap:10px;flex-wrap:wrap;align-items:center">
+    <button class="btn" type="submit" data-busy="Saving…">Save this page</button>
+
+    <%# The bulk action shares the form, so it posts the same ids and the same
+        filter state. `formaction` is what lets one form have two destinations
+        without a second copy of every hidden field. %>
+    <button class="btn btn-ghost" type="submit" formaction="/admin/tlds/reprice"
+            data-confirm="Reprice all <%= tlds.length %> extensions on this page from the markup ladder? Prices you have set by hand will be overwritten.">
+      <%- icon('bolt', 16) %> Reprice this page from cost
+    </button>
+  </div>
 </form>
+
+<% if (pages > 1) { %>
+  <%
+  // Build a page link that keeps the filters. Written once here rather than
+  // three times inline.
+  const pageHref = function (n) {
+    const p = new URLSearchParams();
+    if (filters.q) p.set('q', filters.q);
+    if (filters.category) p.set('category', filters.category);
+    if (filters.show) p.set('show', filters.show);
+    p.set('page', n);
+    return '/admin/tlds?' + p.toString();
+  };
+  %>
+  <div class="row mt-3" style="gap:8px;flex-wrap:wrap;align-items:center">
+    <% if (page > 1) { %><a class="btn btn-sm btn-ghost" href="<%= pageHref(page - 1) %>">← Previous</a><% } %>
+    <span class="small muted">Page <%= page %> of <%= pages %></span>
+    <% if (page < pages) { %><a class="btn btn-sm btn-ghost" href="<%= pageHref(page + 1) %>">Next →</a><% } %>
+  </div>
+<% } %>
 
 <%# Per-currency domain prices.
 

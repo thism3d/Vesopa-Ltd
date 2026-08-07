@@ -69,7 +69,67 @@
           </div>
         </div>
 
-        <% if (paymentsMode === 'manual') { %>
+        <% if (isFree) { %>
+          <%# Zero total. Nothing to send to a gateway; one button finishes it. %>
+          <form method="post" action="/pay/<%= order.id %>/start" class="mt-3">
+            <input type="hidden" name="_csrf" value="<%= csrf %>">
+            <button class="btn btn-lg" type="submit" data-busy="Confirming…">
+              Confirm — nothing to pay
+            </button>
+          </form>
+
+        <% } else if (canPayOnline) { %>
+          <%#
+            The retry path. A customer who cancelled at the gateway, or whose
+            card was declined, lands back here — and the one thing that screen
+            must have is a way to try again without rebuilding the basket.
+          %>
+          <form method="post" action="/pay/<%= order.id %>/start" class="setup-pay mt-3">
+            <input type="hidden" name="_csrf" value="<%= csrf %>">
+
+            <% if (gateways.filter(function (g) { return g.available; }).length > 1) { %>
+              <div class="paypick mb-3">
+                <% gateways.forEach(function (g) { %>
+                  <label class="paypick-opt <%= g.available ? '' : 'is-off' %>">
+                    <input type="radio" name="gateway" value="<%= g.id %>"
+                           <%= g.id === selectedGateway ? 'checked' : '' %>
+                           <%= g.available ? '' : 'disabled' %>>
+                    <span class="paypick-body">
+                      <img class="paypick-logo" src="<%= g.logo %>" alt="<%= g.name %>" width="200" height="48">
+                      <span class="paypick-note"><%= g.blurb %><% if (g.note) { %> <b class="paypick-tag"><%= g.note %></b><% } %></span>
+                    </span>
+                    <span class="paypick-tick"><%- icon('check', 15) %></span>
+                  </label>
+                <% }); %>
+              </div>
+            <% } else { %>
+              <input type="hidden" name="gateway" value="<%= selectedGateway %>">
+            <% } %>
+
+            <button class="btn btn-lg" type="submit" data-busy="Taking you to payment…">
+              Pay <%= money(order.total_pence, order.currency) %> <%- icon('arrow', 17) %>
+            </button>
+
+            <% if (chargeQuote) { %>
+              <%# The customer is quoted in their own currency and charged in the
+                  gateway's. Saying so here, before they are redirected, is what
+                  stops a taka figure on the gateway's page reading as a
+                  different price than the one they agreed to. %>
+              <p class="tiny muted mt-2 mb-0">
+                Charged as <b><%= chargeQuote.display %></b> by SSLCommerz, which
+                settles in <%= chargeQuote.currency %>. Your invoice stays in
+                <%= order.currency %>.
+              </p>
+            <% } %>
+          </form>
+
+          <p class="small muted mt-3 mb-0">
+            <%- icon('lock', 14) %>
+            Paid on the gateway's own secure page. Nothing is set up and nothing
+            is registered until the payment clears.
+          </p>
+
+        <% } else { %>
           <div class="alert alert-warn mt-3" style="text-align:left">
             <%- icon('clock', 19) %>
             <div>
@@ -81,11 +141,13 @@
               </p>
             </div>
           </div>
+          <div class="row mt-3" style="justify-content:center">
+            <a class="btn btn-lg" href="/contact">Arrange payment</a>
+          </div>
         <% } %>
 
         <div class="row mt-3" style="justify-content:center">
-          <a class="btn btn-lg" href="/contact">Arrange payment</a>
-          <a class="btn btn-ghost btn-lg" href="/panel">Go to my account</a>
+          <a class="btn btn-ghost" href="/panel">Go to my account</a>
         </div>
       </section>
 

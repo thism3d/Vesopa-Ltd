@@ -13,7 +13,7 @@
     </h1>
 
     <div data-reveal="120" class="mt-3">
-      <form class="dsearch" data-domain-search action="/domains" method="get">
+      <form class="dsearch" data-domain-search action="/domains#results" method="get">
         <div class="dsearch-form">
           <input class="dsearch-input" type="text" name="q" autocomplete="off" spellcheck="false"
                  value="<%= q %>" placeholder="yourbusiness.co.uk" aria-label="Search for a domain name">
@@ -31,7 +31,16 @@
   </div>
 </section>
 
-<section class="section-sm">
+<%#
+  `id="results"` is a real anchor and the whole fix for the reported confusion.
+
+  Searching from this page reloads it (or re-renders in place), and the results
+  land BELOW the hero — off screen on a laptop. The page looked like it had done
+  nothing. The id gives the client script something to scroll to, and gives a
+  no-script submit a fragment to land on: the form's action carries #results, so
+  even a plain GET arrives with the answer in view.
+%>
+<section class="section-sm" id="results">
   <div class="wrap" style="max-width:780px">
     <%# Server-rendered results when the page was linked to with ?q=. The client
         script takes over from here on subsequent searches. %>
@@ -118,8 +127,15 @@
       <div>
         <p class="kicker" data-reveal="0">Pricing</p>
         <h2 class="h2 mt-2" data-reveal="40">Popular extensions</h2>
+        <%# The count is the invitation. "See every extension" is a link nobody
+            clicks; "browse all 680" says there is something behind it. %>
+        <p class="small muted mt-1 mb-0">
+          These are the ones most people want. We sell <b><%= totalTlds %></b> altogether.
+        </p>
       </div>
-      <a class="btn btn-ghost btn-sm" href="/domains/pricing">See every extension <%- icon('arrow', 16) %></a>
+      <a class="btn btn-ghost btn-sm" href="/domains/pricing">
+        Browse all <%= totalTlds %> <%- icon('arrow', 16) %>
+      </a>
     </div>
 
     <div class="card card-flush" data-reveal="80">

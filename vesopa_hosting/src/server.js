@@ -52,7 +52,14 @@ app.use((req, res, next) => {
       "img-src 'self' data:",
       "font-src 'self'",
       "connect-src 'self'",
-      "form-action 'self'",
+      // Checkout POSTs to /checkout (self) and the server 303s the browser on
+      // to the payment gateway. Chromium and WebKit apply form-action to that
+      // REDIRECT TARGET too, not just the form's own action attribute — so
+      // without the gateway's origins here, the browser silently blocks the
+      // hand-off and the customer is left stuck on the checkout page with an
+      // order that was, in fact, created. BosheBoshe is the merchant of
+      // record; it routes to SSLCommerz's own hosted payment pages.
+      "form-action 'self' https://bosheboshe.com https://*.bosheboshe.com https://sslcommerz.com https://*.sslcommerz.com",
       "frame-ancestors 'self'",
       "base-uri 'self'",
       "object-src 'none'",
@@ -163,10 +170,19 @@ app.use((req, res, next) => {
 // Routes
 // ---------------------------------------------------------------------------
 app.use('/', require('./routes/pages'));
+app.use('/', require('./routes/domains'));
 app.use('/', require('./routes/legal'));
 app.use('/', require('./routes/auth-routes'));
 app.use('/api/domains', require('./routes/domains-api'));
 app.use('/', require('./routes/cart'));
+/*
+ * Payments sit OUTSIDE /panel deliberately.
+ *
+ * /pay/ipn is called by the gateway's server, which has no session cookie and
+ * would be bounced straight into a login redirect by the panel guard. The two
+ * customer-facing routes under here do their own signed-in check.
+ */
+app.use('/', require('./routes/pay'));
 app.use('/panel', require('./routes/panel'));
 app.use('/admin', require('./routes/admin'));
 
@@ -242,6 +258,14 @@ app.use((err, req, res, _next) => {
   console.log(`[hestia]    node in ${node.mode.toUpperCase()} mode — ${node.host}`);
   if (!reg.live) console.log('            No domain will actually be registered while DNA_MODE=mock.');
   if (!node.live) console.log('            No account will actually be created while HESTIA_MODE=mock.');
+
+  const pay = require('./integrations/sslcommerz').status();
+  const payments = require('./payments');
+  console.log(
+    `[payments]  SSLCommerz in ${pay.mode.toUpperCase()} mode${pay.configured ? '' : ' (no credentials set)'}`
+    + `, settling in ${payments.SETTLE_CURRENCY}`,
+  );
+  if (!pay.live) console.log('            No card will actually be charged while SSLCZ_MODE=mock.');
 
   /*
    * BIND TO LOOPBACK, NOT 0.0.0.0.

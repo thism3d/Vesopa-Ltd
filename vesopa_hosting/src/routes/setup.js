@@ -22,6 +22,7 @@ const auth = require('../auth');
 const pricing = require('../pricing');
 const registrar = require('../integrations/domainnameapi');
 const provisioning = require('../provisioning');
+const payments = require('../payments');
 const { flash, field, rateLimited } = require('../http-utils');
 const currency = require('../currency');
 const { FREE_DOMAIN_MAX_PENCE, tldQualifiesFree, NAMESERVERS } = require('../config');
@@ -101,6 +102,17 @@ router.get('/setup/:id', async (req, res, next) => {
       freeTlds: await freeTlds(ctx.cur),
       freeMax: currency.format(currency.convert(FREE_DOMAIN_MAX_PENCE, ctx.cur), ctx.cur),
       paymentsMode: (process.env.PAYMENTS_MODE || 'manual').toLowerCase(),
+      // The payment step. Only meaningful in the `pay` state, but passed
+      // always — an EJS template that references an undefined local throws, and
+      // guarding every use with `typeof` in the view is worse than four cheap
+      // locals here.
+      gateways: payments.gateways(),
+      selectedGateway: payments.defaultGateway(),
+      canPayOnline: payments.anyGatewayAvailable(),
+      isFree: Number(ctx.order.total_pence) === 0,
+      // What SSLCommerz will actually take, when that differs from what the
+      // order is denominated in. Null when it does not.
+      chargeQuote: ctx.state === 'pay' ? await payments.quote(ctx.order) : null,
     });
   } catch (err) {
     next(err);

@@ -21,6 +21,7 @@ const { sendMail, shell, detailTable, escapeHtml, DEFAULT_TO } = require('../mai
 const { flash, field, isEmail } = require('../http-utils');
 const coupons = require('../coupons');
 const currency = require('../currency');
+const payments = require('../payments');
 const {
   resolveTerm, NAMESERVERS,
   termEarnsFreeDomain, tldQualifiesFree, TERMS, perMonth, FREE_DOMAIN_MAX_PENCE,
@@ -695,6 +696,28 @@ router.get('/cart', async (req, res, next) => {
 // ---------------------------------------------------------------------------
 // Checkout
 // ---------------------------------------------------------------------------
+
+/**
+ * The payment step's own state, derived from the priced basket.
+ *
+ * Kept in one function because the checkout renders three times — once on GET
+ * and twice more on a validation failure — and three copies of "is this basket
+ * free" is three chances for the free path to be offered on one render and not
+ * the next.
+ */
+function paymentChoices(priced) {
+  const list = payments.gateways();
+  return {
+    gateways: list,
+    // A basket a coupon has taken to nothing skips the gateway entirely. There
+    // is no payment to choose, and offering one would be a form that cannot be
+    // completed.
+    isFree: priced.total_pence === 0,
+    canPayOnline: payments.anyGatewayAvailable(),
+    selectedGateway: payments.defaultGateway(),
+  };
+}
+
 router.get('/checkout', async (req, res, next) => {
   try {
     const priced = await priceCart(req.cart, ctxOf(req));
@@ -705,6 +728,7 @@ router.get('/checkout', async (req, res, next) => {
       robots: 'noindex',
       ...priced,
       paymentsMode: PAYMENTS_MODE,
+      ...paymentChoices(priced),
       values: req.customer
         ? {
             email: req.customer.email,
@@ -745,6 +769,17 @@ router.post('/checkout', async (req, res, next) => {
       country: field(req.body.country, 2).toUpperCase() || 'GB',
     };
 
+    /*
+     * The gateway is validated against the server's own list, never taken as
+     * typed. A hand-edited `gateway=stripe` on a form where Stripe is disabled
+     * must not create an order nobody can pay for; it falls back to whatever is
+     * actually available.
+     */
+    const wanted = payments.gatewayById(req.body.gateway);
+    const chosenGateway = priced.total_pence === 0
+      ? 'free'
+      : (wanted && wanted.available ? wanted.id : payments.defaultGateway());
+
     const errors = {};
     if (!auth.checkCsrf(req)) errors.form = 'Your session expired. Please try again.';
     // Email and password are only asked for when nobody is signed in — the form
@@ -780,6 +815,7 @@ router.post('/checkout', async (req, res, next) => {
         robots: 'noindex',
         ...priced,
         paymentsMode: PAYMENTS_MODE,
+        ...paymentChoices(priced),
         values,
         errors,
       });
@@ -842,7 +878,10 @@ router.post('/checkout', async (req, res, next) => {
           priced.discount + priced.couponDiscount_pence,
           priced.couponCode || '',
           priced.currencyCode, priced.fxRate, priced.base_total_pence,
-          PAYMENTS_MODE,
+          // What they CHOSE, not what mode the app is in. The gateway rewrites
+          // this to its own id when the payment settles; recording the intent
+          // now is what makes an abandoned checkout legible in the admin.
+          chosenGateway || PAYMENTS_MODE,
         ],
       );
       const orderId = orderIns.insertId;
@@ -1022,8 +1061,40 @@ router.post('/checkout', async (req, res, next) => {
       }),
     });
 
-    // Straight into onboarding. It decides for itself whether to show the
-    // payment gate, the free-domain step or the provisioning progress.
+    /*
+     * WHERE THEY GO NEXT, in three cases.
+     *
+     * The setup wizard is the destination in all of them — it decides for
+     * itself whether to show the payment gate, the free-domain step or the
+     * provisioning progress. The question here is only whether the customer
+     * detours through a gateway on the way.
+     */
+
+    // 1. Nothing to pay. A 100%-off coupon, or a basket that came to zero.
+    //    Settled here rather than at a gateway that would reject it, and the
+    //    customer lands on the free-domain step already paid up.
+    if (priced.total_pence === 0) {
+      const order = await db.one('SELECT * FROM orders WHERE id = ? LIMIT 1', [result.orderId]);
+      await payments.settleFree(order);
+      flash(res, 'No payment needed — your order is confirmed.');
+      return res.redirect(`/panel/setup/${result.orderId}`);
+    }
+
+    // 2. A gateway they can actually use: hand straight off to it. Anything
+    //    that goes wrong opening the session lands them on the wizard with the
+    //    reason and a Pay now button, rather than on an error page holding an
+    //    order they cannot see.
+    const gateway = payments.gatewayById(chosenGateway);
+    if (gateway && gateway.available) {
+      const order = await db.one('SELECT * FROM orders WHERE id = ? LIMIT 1', [result.orderId]);
+      const started = await payments.begin(order, customer, gateway.id, payments.callbackUrls());
+      if (started.ok) return res.redirect(303, started.redirectUrl);
+      flash(res, `${started.error} Your order is saved — you can try again below.`, 'error');
+      return res.redirect(`/panel/setup/${result.orderId}`);
+    }
+
+    // 3. No gateway at all. The manual path this app shipped with: an invoice
+    //    by email and an admin marking it paid.
     res.redirect(`/panel/setup/${result.orderId}`);
   } catch (err) {
     /*

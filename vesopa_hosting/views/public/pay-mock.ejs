@@ -1,0 +1,73 @@
+<%- include('../partials/head') %>
+
+<%#
+  The fake gateway.
+
+  Reachable only when SSLCZ_MODE=mock — the route refuses to render it
+  otherwise. It stands in for the SSLCommerz hosted page so the whole journey
+  (checkout, redirect, callback, settle, provision) can be walked on a laptop
+  with no account and no card.
+
+  Made to look UNMISTAKEABLY like a test screen. A convincing fake payment page
+  is exactly the thing somebody eventually mistakes for the real one.
+%>
+<main id="main" class="mockpay">
+  <div class="mockpay-card">
+    <p class="mockpay-tag">Test mode — no money moves</p>
+
+    <h1 class="h2 mb-1">Simulated payment</h1>
+    <p class="small muted mb-3">
+      This screen stands in for the SSLCommerz hosted checkout. It exists because
+      <code>SSLCZ_MODE=mock</code>. Set a real API key and it disappears.
+    </p>
+
+    <div class="mockpay-amount">
+      <span class="small muted">Amount</span>
+      <b><%= amount %></b>
+    </div>
+
+    <dl class="mockpay-rows">
+      <div><dt>Transaction</dt><dd><code><%= tranId %></code></dd></div>
+      <div><dt>Our reference</dt><dd><code><%= payment.order_ref %></code></dd></div>
+      <div><dt>Order total</dt><dd><%= (payment.amount_minor / 100).toFixed(2) %> <%= payment.currency %></dd></div>
+    </dl>
+
+    <%# Plain links, because mock mode skips signature verification and there is
+        nothing to sign with. Each one lands on the real /pay/return handler. %>
+    <div class="mockpay-actions">
+      <a class="btn btn-lg btn-block"
+         href="/pay/return?r=ok&amp;status=VALID&amp;tran_id=<%= encodeURIComponent(tranId) %>&amp;card_brand=VISA&amp;card_issuer=Test%20Bank">
+        Approve this payment
+      </a>
+      <a class="btn btn-ghost btn-block"
+         href="/pay/return?r=fail&amp;status=FAILED&amp;tran_id=<%= encodeURIComponent(tranId) %>">
+        Decline it
+      </a>
+      <a class="btn btn-ghost btn-block"
+         href="/pay/return?r=cancel&amp;status=CANCELLED&amp;tran_id=<%= encodeURIComponent(tranId) %>">
+        Cancel and go back
+      </a>
+    </div>
+  </div>
+</main>
+
+<style>
+  .mockpay { display: grid; place-items: center; min-height: 100vh; padding: 40px 20px; background: var(--bg-2); }
+  .mockpay-card { width: 100%; max-width: 430px; background: #fff; border: 2px dashed var(--amber);
+                  border-radius: var(--radius-lg); padding: 28px; }
+  .mockpay-tag { display: inline-block; margin: 0 0 14px; padding: 5px 11px; border-radius: 999px;
+                 background: #fdf3d6; color: #8a6400; font-size: .74rem; font-weight: 700;
+                 text-transform: uppercase; letter-spacing: .06em; }
+  .mockpay-amount { display: flex; align-items: baseline; justify-content: space-between;
+                    padding: 15px 0; margin: 4px 0 8px; border-top: 1px solid var(--rule);
+                    border-bottom: 1px solid var(--rule); }
+  .mockpay-amount b { font-size: 1.7rem; font-weight: 750; letter-spacing: -.02em; }
+  .mockpay-rows { margin: 0 0 20px; font-size: .82rem; }
+  .mockpay-rows > div { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; }
+  .mockpay-rows dt { color: var(--ink-3); }
+  .mockpay-rows dd { margin: 0; font-weight: 600; }
+  .mockpay-rows code { font-family: var(--mono); font-size: .76rem; }
+  .mockpay-actions { display: flex; flex-direction: column; gap: 9px; }
+</style>
+
+<%- include('../partials/footer', { bare: true }) %>

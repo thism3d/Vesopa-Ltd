@@ -75,6 +75,57 @@
         </div>
       <% }); %>
     </div>
+  <%#
+    Payment attempts.
+
+    One row per attempt, not per order — a customer who abandoned the gateway
+    and came back has two, and the pair is the whole answer to "they say they
+    were charged twice". Shown before the status card because when this page is
+    open at all, it is usually to answer that question.
+  %>
+  <% if (payments && payments.length) { %>
+    <div class="p-card mt-3">
+      <h2 class="h3 mb-2">Payments</h2>
+      <div class="table-wrap"><table class="table mini">
+        <thead>
+          <tr>
+            <th>When</th><th>Gateway</th><th>Status</th>
+            <th class="num">Order</th><th class="num">Charged</th><th>Reference</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% payments.forEach(function (p) { %>
+            <tr>
+              <td class="tiny"><%= new Date(p.created_at).toLocaleString('en-GB') %></td>
+              <td class="strong"><%= p.gateway %><% if (p.method_detail) { %><br><span class="tiny muted"><%= p.method_detail %></span><% } %></td>
+              <td>
+                <% if (p.status === 'paid') { %><span class="badge badge-green">Paid</span>
+                <% } else if (p.status === 'pending') { %><span class="badge badge-amber">Started</span>
+                <% } else if (p.status === 'refunded') { %><span class="badge badge-blue">Refunded</span>
+                <% } else { %><span class="badge badge-red"><%= p.status %></span><% } %>
+                <% if (p.failure_reason) { %><br><span class="tiny muted"><%= p.failure_reason %></span><% } %>
+              </td>
+              <td class="num"><%= p.amount_display %> <span class="tiny muted"><%= p.currency %></span></td>
+              <td class="num">
+                <% if (p.converted) { %>
+                  <%= p.charged_display %> <span class="tiny muted"><%= p.charged_currency %></span>
+                  <br><span class="tiny muted">at <%= Number(p.fx_rate).toFixed(4) %></span>
+                <% } else { %>
+                  <span class="muted tiny">same</span>
+                <% } %>
+              </td>
+              <td class="tiny"><code><%= p.gateway_ref || '—' %></code></td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table></div>
+      <p class="tiny muted mb-0 mt-2">
+        <b>Order</b> is what the customer was quoted and what the invoice says.
+        <b>Charged</b> is what the gateway actually took — SSLCommerz settles in
+        taka. A refund is worked out from the charged figure.
+      </p>
+    </div>
+  <% } %>
   </div>
 
   <aside>

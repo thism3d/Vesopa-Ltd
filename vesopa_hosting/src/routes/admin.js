@@ -22,6 +22,8 @@ const { flash, rateLimited, clearRateLimit, field, paging, isEmail } = require('
 const currency = require('../currency');
 const geo = require('../geo');
 const config = require('../config');
+const catalogue = require('../domain-catalogue');
+const markup = require('../tld-markup');
 
 const router = express.Router();
 
@@ -312,19 +314,39 @@ router.get('/orders/:id', async (req, res, next) => {
     );
     if (!order) return next();
 
-    const [items, services, domains] = await Promise.all([
+    const [items, services, domains, paymentRows] = await Promise.all([
       db.query('SELECT * FROM order_items WHERE order_id = ?', [order.id]),
       db.query(
         `SELECT s.*, p.name AS plan_name FROM services s JOIN plans p ON p.id = s.plan_id WHERE s.order_id = ?`,
         [order.id],
       ),
       db.query('SELECT * FROM domains WHERE order_id = ?', [order.id]),
+      // Newest first. A customer who tried three times has three rows, and the
+      // last one is the one being asked about.
+      db.query('SELECT * FROM payments WHERE order_id = ? ORDER BY id DESC', [order.id]),
     ]);
+
+    /*
+     * Payments are formatted here rather than in the template because each row
+     * carries TWO currencies — what the order was in, and what the gateway
+     * actually took — and neither is the admin's own currency. Formatting them
+     * in the view with the page's `money()` would print a taka figure with a
+     * pound sign in front of it.
+     */
+    const { all: allCurrencies } = await currency.load({ includeInactive: true });
+    const findCur = (code) => allCurrencies.find((c) => c.code === code) || null;
+    const payments = paymentRows.map((p) => ({
+      ...p,
+      amount_display: currency.format(p.amount_minor, findCur(p.currency)),
+      charged_display: currency.format(p.charged_minor, findCur(p.charged_currency)),
+      // Only worth showing when the two genuinely differ.
+      converted: p.currency !== p.charged_currency,
+    }));
 
     res.render('admin/order', {
       title: `Order ${order.reference}`,
       robots: 'noindex',
-      order, items, services, domains,
+      order, items, services, domains, payments,
       hestiaLive: hestia.isLive(),
       registrarLive: registrar.isLive(),
     });
@@ -784,10 +806,81 @@ router.post('/plans/:id', async (req, res, next) => {
 // ---------------------------------------------------------------------------
 // TLD pricing
 // ---------------------------------------------------------------------------
+/**
+ * Filter and page the TLD table.
+ *
+ * THE TABLE IS 715 ROWS NOW. It was 23 when this screen was written, and a
+ * single form containing every one of them is 3,000 inputs, several megabytes
+ * of HTML, and a save that rewrites the whole catalogue to change one price.
+ *
+ * So the page shows one filtered slice at a time, and the save posts only what
+ * is on screen. That is safe because the save has always updated BY ID — the
+ * rows that were not rendered are simply not in the request and are not
+ * touched.
+ */
+const TLDS_PER_PAGE = 50;
+
+function tldFilters(query) {
+  return {
+    q: String(query.q || '').trim().toLowerCase().replace(/^\./, '').slice(0, 40),
+    category: String(query.category || ''),
+    // `loss` is the reason this filter set exists at all: the rate-card import
+    // found eleven extensions selling below cost, and finding them again in a
+    // 715-row table without a filter is not realistic.
+    show: String(query.show || ''),
+    page: Math.max(1, Number(query.page) || 1),
+  };
+}
+
+/**
+ * Rebuild the filter query string from whatever a form posted back.
+ *
+ * Every write on this screen redirects, and a redirect that drops the filters
+ * dumps the admin back at page 1 of 715 rows. The forms carry the four filter
+ * values as hidden fields and this turns them back into a query string.
+ */
+function backQuery(body) {
+  const p = new URLSearchParams();
+  for (const key of ['q', 'category', 'show', 'page']) {
+    const value = String(body[`f_${key}`] || '').trim();
+    if (value) p.set(key, value);
+  }
+  const qs = p.toString();
+  return qs ? `?${qs}` : '';
+}
+
+function filterTlds(rows, f) {
+  let out = rows;
+  if (f.q) out = out.filter((t) => t.tld.includes(f.q));
+  if (f.category) out = out.filter((t) => (t.category || 'other') === f.category);
+  if (f.show === 'loss') out = out.filter((t) => t.register_pence > 0 && t.register_pence < t.cost_pence);
+  if (f.show === 'featured') out = out.filter((t) => t.featured);
+  if (f.show === 'inactive') out = out.filter((t) => !t.active);
+  if (f.show === 'nocost') out = out.filter((t) => !t.cost_pence);
+  return out;
+}
+
 router.get('/tlds', async (req, res, next) => {
   try {
-    const { tlds } = await pricing.load({ fresh: true, includeInactive: true });
+    const { tlds: allTlds } = await pricing.load({ fresh: true, includeInactive: true });
     const others = (await currency.load({ includeInactive: true })).all.filter((c) => !c.is_base);
+
+    const f = tldFilters(req.query);
+    const matched = filterTlds(allTlds, f);
+    const pages = Math.max(1, Math.ceil(matched.length / TLDS_PER_PAGE));
+    const page = Math.min(f.page, pages);
+    const tlds = matched.slice((page - 1) * TLDS_PER_PAGE, page * TLDS_PER_PAGE);
+
+    // Counts for the filter buttons, computed on the WHOLE table rather than
+    // the current page — a badge saying "11 below cost" that only counted the
+    // fifty rows on screen would be worse than no badge.
+    const tally = {
+      all: allTlds.length,
+      loss: allTlds.filter((t) => t.register_pence > 0 && t.register_pence < t.cost_pence).length,
+      featured: allTlds.filter((t) => t.featured).length,
+      inactive: allTlds.filter((t) => !t.active).length,
+      nocost: allTlds.filter((t) => !t.cost_pence).length,
+    };
 
     /*
      * The per-currency editor is a TAB, opened with ?currency=USD, rather than
@@ -799,6 +892,8 @@ router.get('/tlds', async (req, res, next) => {
     const overrideCurrency = others.find((c) => c.code === wanted) || null;
 
     let overrideRows = [];
+    // The per-currency editor follows the SAME slice. Two tables on one page
+    // showing different sets of extensions would be unusable.
     if (overrideCurrency) {
       // Built straight off the base layer rather than by calling
       // currencyMatrix() forty times — that helper re-reads the whole override
@@ -826,6 +921,16 @@ router.get('/tlds', async (req, res, next) => {
       currencies: others,
       overrideCurrency,
       overrideRows,
+      // Paging and filtering
+      filters: f,
+      page,
+      pages,
+      matchedCount: matched.length,
+      tally,
+      categories: catalogue.CATEGORIES,
+      // What the markup ladder would charge, so an admin can see the suggestion
+      // beside the price without leaving the row.
+      suggest: (cost) => markup.sellFrom(cost),
     });
   } catch (err) {
     next(err);
@@ -844,15 +949,26 @@ router.post('/tlds', async (req, res, next) => {
     const ren = [].concat(req.body.renew || []);
     const tra = [].concat(req.body.transfer || []);
     const cost = [].concat(req.body.cost || []);
+    const cat = [].concat(req.body.category || []);
     const featured = new Set([].concat(req.body.featured || []).map(String));
     const active = new Set([].concat(req.body.active || []).map(String));
 
+    /*
+     * Only the rows on screen are posted, and only they are touched.
+     *
+     * The update is BY ID, so a filtered page of fifty saves those fifty and
+     * leaves the other 665 exactly as they were. That is what makes paginating
+     * this form safe — and it is also why the checkbox columns are read as a
+     * set of posted ids rather than as an array: an unchecked checkbox sends
+     * nothing at all, so the arrays would not line up with `ids`.
+     */
     for (let i = 0; i < ids.length; i++) {
       await db.query(
         `UPDATE tlds SET register_pence=?, renew_pence=?, transfer_pence=?, cost_pence=?,
-                featured=?, active=? WHERE id = ?`,
+                category=?, featured=?, active=? WHERE id = ?`,
         [
           toPence(reg[i]), toPence(ren[i]), toPence(tra[i]), toPence(cost[i]),
+          catalogue.CATEGORY_BY_SLUG[cat[i]] ? cat[i] : 'other',
           featured.has(String(ids[i])) ? 1 : 0,
           active.has(String(ids[i])) ? 1 : 0,
           ids[i],
@@ -862,8 +978,72 @@ router.post('/tlds', async (req, res, next) => {
 
     pricing.invalidate();
     await db.logActivity({ actorType: 'admin', actorId: req.admin.id, action: 'tlds.updated', target: `${ids.length} rows`, ip: req.ip });
-    flash(res, 'Domain pricing saved.');
-    res.redirect('/admin/tlds');
+    flash(res, `Saved ${ids.length} extension${ids.length === 1 ? '' : 's'}.`);
+    // Back to the same filtered page, not to the top of an unfiltered table.
+    // Losing your place after every save makes a 715-row catalogue unworkable.
+    res.redirect(`/admin/tlds${backQuery(req.body)}`);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Reprice the extensions currently on screen from the markup ladder.
+ *
+ * The same function the rate-card importer uses — src/tld-markup.js — applied
+ * to whatever the filter has selected. The intended use is the one the import
+ * flagged: filter to "below cost", check the suggestions, reprice those eleven.
+ *
+ * It works on the POSTED IDS, not on the filter re-run server-side, and that is
+ * deliberate. The admin is looking at a page of suggestions; repricing has to
+ * change exactly the rows they were shown, not whatever the filter happens to
+ * match a second later after somebody else's edit.
+ */
+router.post('/tlds/reprice', async (req, res, next) => {
+  try {
+    const back = `/admin/tlds${backQuery(req.body)}`;
+    if (!guard(req, res, back)) return;
+
+    const ids = [].concat(req.body.id || []).map(Number).filter(Boolean);
+    if (!ids.length) {
+      flash(res, 'Nothing to reprice.', 'warn');
+      return res.redirect(back);
+    }
+
+    const rows = await db.query(
+      `SELECT id, tld, cost_pence, register_pence FROM tlds WHERE id IN (${ids.map(() => '?').join(',')})`,
+      ids,
+    );
+
+    let changed = 0;
+    let skipped = 0;
+    for (const row of rows) {
+      // No cost, no suggestion. Repricing off a zero cost would set every one
+      // of them to zero and give the catalogue away.
+      if (!row.cost_pence) {
+        skipped += 1;
+        continue;
+      }
+      const target = markup.sellFrom(row.cost_pence);
+      if (target === row.register_pence) continue;
+      await db.query(
+        'UPDATE tlds SET register_pence = ?, renew_pence = GREATEST(renew_pence, ?) WHERE id = ?',
+        [target, target, row.id],
+      );
+      changed += 1;
+    }
+
+    pricing.invalidate();
+    await db.logActivity({
+      actorType: 'admin', actorId: req.admin.id, action: 'tlds.repriced',
+      target: `${changed} rows`, detail: `${skipped} skipped for having no cost`, ip: req.ip,
+    });
+    flash(
+      res,
+      `Repriced ${changed} extension${changed === 1 ? '' : 's'} from the markup ladder.`
+      + (skipped ? ` ${skipped} skipped — no cost recorded.` : ''),
+    );
+    res.redirect(back);
   } catch (err) {
     next(err);
   }

@@ -101,7 +101,7 @@ const BRAND = {
   theme_color: '#a5c715',
 };
 
-const APP_VERSION = '1.3.1.0';
+const APP_VERSION = '1.3.2.0';
 
 module.exports = {
   SITE_URL,

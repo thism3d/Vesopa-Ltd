@@ -31,6 +31,35 @@
   const esc = (s) =>
     String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
+  /**
+   * Bring the results into view.
+   *
+   * THE SEARCH USED TO LOOK BROKEN, AND THIS IS WHY.
+   *
+   * The box is in the hero and the answers render a screenful below it. On a
+   * laptop nothing visible changed when you pressed Search: the skeleton, the
+   * result and the price all appeared off screen, so the page read as "clicked,
+   * nothing happened" and people clicked again. The request had worked every
+   * time.
+   *
+   * Called on submit rather than on arrival, so it happens once per search
+   * while the answer is still loading and the reader is already looking at the
+   * right place when it lands.
+   *
+   * `smooth` is skipped for anyone who has asked for less motion — a page that
+   * lurches is worse than one that jumps.
+   */
+  function revealResults() {
+    if (!results) return;
+    const anchor = results.closest('section') || results;
+    const top = anchor.getBoundingClientRect().top + window.scrollY - 18;
+    // Already there, or above it? Leave the scroll alone. Yanking somebody back
+    // up to the results they are already reading is its own annoyance.
+    if (Math.abs(window.scrollY - top) < 40) return;
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    window.scrollTo({ top, behavior: reduced ? 'auto' : 'smooth' });
+  }
+
   /* Quick-pick extension chips under the box. */
   $$('[data-tld-chip]').forEach((chip) => {
     chip.addEventListener('click', () => {
@@ -102,10 +131,16 @@
     // lie the layout has to take back a second later.
     results.innerHTML = skeleton(1);
     results.hidden = false;
+    // Move to the answer WHILE it loads, not after. The skeleton is already on
+    // screen, so the scroll lands on something rather than on blank space.
+    revealResults();
 
-    // So a reload or a shared link shows the same search.
+    // So a reload or a shared link shows the same search. The #results fragment
+    // is kept on the URL for the same reason the form action carries it: a
+    // reload of a shared link should open on the answer.
     const url = new URL(window.location.href);
     url.searchParams.set('q', raw);
+    url.hash = 'results';
     window.history.replaceState({}, '', url);
 
     // Bumped on every submit. A slow suggestions response from a previous
@@ -192,10 +227,23 @@
     }
   });
 
-  // A ?q= already in the URL means the page was linked to or reloaded — run it.
+  // A ?q= already in the URL means the page was linked to or reloaded.
   const initial = new URLSearchParams(window.location.search).get('q');
-  if (initial && results && !results.dataset.serverRendered) {
-    input.value = initial;
-    form.requestSubmit();
+  if (initial && results) {
+    if (results.dataset.serverRendered) {
+      /*
+       * The server already drew the answer, so there is nothing to fetch — but
+       * the reader still arrives at the top of a hero with the result off
+       * screen, which is the same confusion by a different route. The #results
+       * fragment handles most arrivals; this covers the ones without it (an old
+       * bookmark, a link shared before this change, a form posted from another
+       * page). Deferred a frame so it runs after the browser's own fragment
+       * scroll rather than fighting it.
+       */
+      requestAnimationFrame(revealResults);
+    } else {
+      input.value = initial;
+      form.requestSubmit();
+    }
   }
 })();

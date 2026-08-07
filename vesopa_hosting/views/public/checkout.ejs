@@ -102,8 +102,71 @@
 
         <div class="card mt-3">
           <h2 class="h3 mb-2">Payment</h2>
-          <% if (paymentsMode === 'manual') { %>
-            <div class="alert alert-info mb-2">
+
+          <% if (isFree) { %>
+            <%#
+              A basket a coupon has taken to zero.
+
+              No gateway is offered because there is nothing for one to do —
+              SSLCommerz rejects a zero amount, correctly, and sending someone
+              to a payment page to pay nothing fails at the exact moment they
+              expected to be finished. The order is confirmed on submit.
+            %>
+            <div class="alert alert-ok mb-3">
+              <%- icon('check-circle', 19) %>
+              <div>
+                <b>Nothing to pay.</b>
+                <% if (couponCode) { %>
+                  <%= couponCode %> covers this order in full — there is no payment
+                  step and no card needed.
+                <% } else { %>
+                  This order comes to <%= money(0) %>, so there is no payment step.
+                <% } %>
+                Your services are set up as soon as you place it.
+              </div>
+            </div>
+
+          <% } else if (canPayOnline) { %>
+            <p class="small muted mb-3">Choose how you would like to pay.</p>
+
+            <div class="paypick">
+              <% gateways.forEach(function (g) { %>
+                <%#
+                  Every gateway is listed, and the two that are not ready are
+                  shown disabled rather than hidden. A checkout offering exactly
+                  one way to pay reads as a limitation; one that shows three and
+                  labels two "coming soon" says the same thing about today and
+                  something better about tomorrow.
+
+                  `disabled` on the input is what actually enforces it — a
+                  hand-edited value is re-checked server-side against the same
+                  list this loop renders, so the class is decoration and the
+                  server is the rule.
+                %>
+                <label class="paypick-opt <%= g.available ? '' : 'is-off' %>">
+                  <input type="radio" name="gateway" value="<%= g.id %>"
+                         <%= g.id === selectedGateway ? 'checked' : '' %>
+                         <%= g.available ? '' : 'disabled' %>>
+                  <span class="paypick-body">
+                    <img class="paypick-logo" src="<%= g.logo %>" alt="<%= g.name %>" width="200" height="48" loading="lazy">
+                    <span class="paypick-note">
+                      <%= g.blurb %>
+                      <% if (g.note) { %><b class="paypick-tag"><%= g.note %></b><% } %>
+                    </span>
+                  </span>
+                  <span class="paypick-tick"><%- icon('check', 15) %></span>
+                </label>
+              <% }); %>
+            </div>
+
+            <p class="tiny muted mt-2 mb-3">
+              <%- icon('lock', 13) %>
+              You are taken to the gateway's own secure page to pay. Your card
+              details are never sent to us and never touch this server.
+            </p>
+
+          <% } else { %>
+            <div class="alert alert-info mb-3">
               <%- icon('info', 19) %>
               <div>
                 <b>Card payment is not switched on yet.</b> Place the order and we will
@@ -112,6 +175,7 @@
               </div>
             </div>
           <% } %>
+
           <label class="check mb-3">
             <input type="checkbox" name="agree" required>
             <span class="small">
@@ -121,8 +185,16 @@
               domain registration fees cannot be refunded once the registry has taken them.
             </span>
           </label>
-          <button class="btn btn-lg btn-block" type="submit" data-busy="Placing your order…">
-            Place order — <%= money(total_pence) %>
+
+          <button class="btn btn-lg btn-block" type="submit"
+                  data-busy="<%= isFree ? 'Confirming your order…' : 'Taking you to payment…' %>">
+            <% if (isFree) { %>
+              Confirm order — <%= money(0) %>
+            <% } else if (canPayOnline) { %>
+              Pay <%= money(total_pence) %> <%- icon('arrow', 17) %>
+            <% } else { %>
+              Place order — <%= money(total_pence) %>
+            <% } %>
           </button>
         </div>
       </form>

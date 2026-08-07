@@ -21,6 +21,7 @@
 const express = require('express');
 const registrar = require('../integrations/domainnameapi');
 const pricing = require('../pricing');
+const catalogue = require('../domain-catalogue');
 const currency = require('../currency');
 const { rateLimited } = require('../http-utils');
 
@@ -142,6 +143,67 @@ router.post('/suggestions', async (req, res) => {
     // Not a 502: the exact answer is already on screen and is the one that
     // matters. Losing the cross-sell is not worth an error banner.
     res.json({ suggestions: [] });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// The catalogue browser's next page.
+// ---------------------------------------------------------------------------
+/**
+ * GET, not POST, and no rate limit.
+ *
+ * The other two endpoints in this file spend a registrar call per request and
+ * are limited accordingly. This one reads a cache that is already in memory and
+ * costs about as much as serving a static file — limiting it would only ever
+ * break the infinite scroll for somebody scrolling quickly, which is the
+ * behaviour we are trying to encourage.
+ *
+ * It is a GET because it is idempotent and cacheable, and because the filter
+ * state it takes is the same state that is in the page's own URL. The client
+ * builds this request by copying the address bar.
+ */
+router.get('/catalogue', async (req, res) => {
+  try {
+    const view = await catalogue.browse({
+      cur: req.currency,
+      category: String(req.query.category || ''),
+      band: String(req.query.band || ''),
+      q: String(req.query.q || '').slice(0, 40),
+      sort: String(req.query.sort || 'popular'),
+      page: Number(req.query.page) || 1,
+      promoOnly: req.query.promo === '1',
+      featuredOnly: req.query.popular === '1',
+    });
+
+    /*
+     * HTML OUT, NOT JSON ROWS.
+     *
+     * The cards come off the same `partials/tld-cards` the page server-rendered
+     * its first batch from, so the two hundredth card is drawn by the same
+     * template as the first. Returning rows instead would put a copy of that
+     * markup in a JavaScript template literal, and the two would drift.
+     *
+     * It also keeps `cost_pence` where it belongs. Every row in the priced
+     * catalogue carries what we pay the registrar, and a JSON endpoint that
+     * serialised rows would publish our margin on 715 extensions to anyone who
+     * opened the network tab. The partial prints prices; it cannot print a
+     * field it does not reference.
+     */
+    const html = await new Promise((resolve, reject) => {
+      res.render('partials/tld-cards', { rows: view.rows }, (err, out) => (err ? reject(err) : resolve(out)));
+    });
+
+    res.json({
+      html,
+      count: view.rows.length,
+      total: view.total,
+      page: view.page,
+      pages: view.pages,
+      hasMore: view.hasMore,
+    });
+  } catch (err) {
+    console.error('[domains] catalogue failed:', err.message);
+    res.status(500).json({ error: 'Could not load the catalogue.', html: '', hasMore: false });
   }
 });
 

@@ -803,9 +803,129 @@ class _LockedTill extends ConsumerWidget {
       child: Stack(
         children: [
           child,
-          if (showIdle) IdleScreen(settings: settings),
+          // The idle screen does not blink in and out. It comes down over the
+          // till like a shutter and goes back up off it, which is what makes
+          // "the till locked" and "the till opened" read as events rather than
+          // as a repaint. [_IdleShutter] owns that movement, and keeps the
+          // screen mounted for as long as it takes to leave.
+          _IdleShutter(
+            showing: showIdle,
+            builder: (_) => IdleScreen(settings: settings),
+          ),
         ],
       ),
+    );
+  }
+}
+
+/// The idle screen's entrance and exit: down from the top, and back up to it.
+///
+/// This exists because `if (showIdle) IdleScreen(...)` cannot animate away — by
+/// the time the flag is false the widget is already gone, so an exit has nothing
+/// left to run on. Holding the screen here keeps it mounted through the whole
+/// closing move and only then lets it go, which is also what resets it: the
+/// state (and with it any half-typed PIN) is disposed when the shutter finishes
+/// lifting, never while it is still on screen.
+class _IdleShutter extends StatefulWidget {
+  const _IdleShutter({required this.showing, required this.builder});
+
+  final bool showing;
+  final WidgetBuilder builder;
+
+  @override
+  State<_IdleShutter> createState() => _IdleShutterState();
+}
+
+class _IdleShutterState extends State<_IdleShutter>
+    with SingleTickerProviderStateMixin {
+  /// Slower coming down than going up, on purpose. The lock is the till taking
+  /// itself away and can afford to be seen doing it; the unlock is answering
+  /// someone who has just typed their PIN and is waiting, so it gets out of the
+  /// way. Equal timings made the unlock feel like a delay.
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 460),
+    reverseDuration: const Duration(milliseconds: 320),
+    // A till that starts up locked is locked, not caught mid-close.
+    value: widget.showing ? 1 : 0,
+  );
+
+  /// Decelerating in and accelerating out, so the shutter lands rather than
+  /// stops, and leaves rather than drifts.
+  late final Animation<double> _slide = CurvedAnimation(
+    parent: _controller,
+    curve: Curves.easeOutCubic,
+    reverseCurve: Curves.easeInCubic,
+  );
+
+  @override
+  void didUpdateWidget(covariant _IdleShutter oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.showing != oldWidget.showing) {
+      if (widget.showing) {
+        _controller.forward();
+      } else {
+        _controller.reverse();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _slide,
+      builder: (context, _) {
+        // Fully up and out of the way: nothing in the tree, so the till below is
+        // untouched by a lock that is not happening. This is also what disposes
+        // the idle screen's state, so the next lock opens a clean one.
+        if (_controller.isDismissed) return const SizedBox.shrink();
+
+        // Off the top by its own height at 0, flush at 1. Unpositioned, exactly
+        // as the screen was before: SlideTransition is a transform and passes
+        // the stack's constraints straight through, so the shutter still covers
+        // everything.
+        return FractionalTranslation(
+          translation: Offset(0, _slide.value - 1),
+          // The leading edge, and the only thing on this screen that is not
+          // black: a lime rule riding the bottom of the shutter as it travels.
+          // It reads as the brand closing the till rather than the display
+          // failing, which on a shop floor is the difference that matters. It
+          // fades out as the shutter seats, so the screen at rest is the
+          // venue's picture and nothing else.
+          child: Stack(
+            children: [
+              widget.builder(context),
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: IgnorePointer(
+                  child: Opacity(
+                    // Gone by the time it lands. Held at full while travelling
+                    // so the edge is legible for the whole move.
+                    opacity: (1 - _slide.value).clamp(0.0, 1.0),
+                    child: Container(
+                      height: 3,
+                      decoration: const BoxDecoration(
+                        color: Pos.brand,
+                        boxShadow: [
+                          BoxShadow(color: Pos.brand, blurRadius: 18, spreadRadius: 1),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

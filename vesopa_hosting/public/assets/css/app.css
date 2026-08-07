@@ -1431,3 +1431,117 @@ body.nav-open .nav-sheet-foot {
 .pw-meter.is-1 i:nth-child(1) { background: var(--red); }
 .pw-meter.is-2 i:nth-child(-n+2) { background: var(--amber); }
 .pw-meter.is-3 i { background: var(--green); }
+
+/* ===========================================================================
+   The payment method picker.
+   ---------------------------------------------------------------------------
+   Three cards, one radio. Two of them are disabled today and shown anyway —
+   see the note in checkout.ejs for why.
+   =========================================================================== */
+.paypick { display: flex; flex-direction: column; gap: 10px; }
+
+.paypick-opt {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 14px 16px;
+  border: 2px solid var(--rule);
+  border-radius: var(--radius);
+  background: #fff;
+  cursor: pointer;
+  transition: border-color .16s var(--ease), background .16s var(--ease), box-shadow .16s var(--ease);
+}
+.paypick-opt:hover { border-color: var(--ink-3); }
+
+/* The radio itself is hidden but still focusable and still the thing that is
+   checked — :has() keys the whole card off it, so the card cannot look selected
+   while the form posts something else. */
+.paypick-opt input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+}
+.paypick-opt:has(input:checked) {
+  border-color: var(--lime);
+  background: linear-gradient(180deg, #fbfef2, #fff 70%);
+  box-shadow: 0 0 0 3px rgba(165, 199, 21, .16);
+}
+/* Keyboard users get the same ring the rest of the app uses. */
+.paypick-opt:has(input:focus-visible) { outline: 2px solid var(--lime-ink); outline-offset: 2px; }
+
+/* `align-items: flex-start` is load-bearing, not tidiness.
+
+   Without it the logo is a stretched flex item: width:auto on the CROSS axis of
+   a column flex container resolves to stretch, so the <img> box became the full
+   width of the card and the SVG — which defaults to preserveAspectRatio
+   xMidYMid — drew itself centred inside it, floating away from the left-aligned
+   text underneath. */
+.paypick-body { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; flex: 1; min-width: 0; }
+.paypick-logo { display: block; height: 34px; width: auto; max-width: 100%; }
+.paypick-note { font-size: .8rem; color: var(--ink-3); }
+.paypick-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--bg-3);
+  color: var(--ink-2);
+  font-size: .68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
+.paypick-tick {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid var(--rule);
+  color: transparent;
+  transition: all .16s var(--ease);
+}
+.paypick-opt:has(input:checked) .paypick-tick {
+  background: var(--lime);
+  border-color: var(--lime);
+  color: var(--on-lime);
+}
+
+/* Disabled: dimmed, not hidden, and not clickable. */
+.paypick-opt.is-off {
+  cursor: not-allowed;
+  background: var(--bg-2);
+  border-color: var(--rule-soft);
+}
+.paypick-opt.is-off .paypick-logo { filter: grayscale(1); opacity: .5; }
+.paypick-opt.is-off .paypick-note { opacity: .7; }
+.paypick-opt.is-off:hover { border-color: var(--rule-soft); }
+.paypick-opt.is-off .paypick-tag { background: #fdf3d6; color: #8a6400; }
+
+/* :has() is everywhere we support, but a browser without it must not render
+   three cards that never look selected. The radio comes back if it is missing. */
+@supports not selector(:has(*)) {
+  .paypick-opt input { position: static; opacity: 1; width: 18px; height: 18px; accent-color: var(--lime-ink); }
+  .paypick-tick { display: none; }
+}
+
+/* Visible to a screen reader, to nothing else. The clip-path pair rather than
+   `display:none` (which removes it from the accessibility tree too) or a bare
+   `text-indent` (which some readers still announce as empty). */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}

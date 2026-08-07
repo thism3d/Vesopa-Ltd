@@ -1,70 +1,211 @@
-<%- include('../partials/head') %>
+<%- include('../partials/head', { extraCss: '/assets/css/domains.css' }) %>
 <%- include('../partials/header') %>
 
 <main id="main">
-<%- include('../partials/page-hero', {
-  kicker: 'Domain pricing',
-  heading: 'Every price,<br><span class="hl">including the renewal</span>',
-  sub: 'Register, renew and transfer for every extension we sell. Both numbers, side by side, before you buy.',
-}) %>
+
+<%#
+  THE NAME BOX IS THE POINT OF THIS PAGE.
+
+  Every row used to carry a Check button that went to /domains?q=yourname.<tld>
+  and searched for the literal string "yourname" — 715 buttons that all did the
+  same useless thing. The box below holds the visitor's OWN name, every Check
+  button reads it, and the buttons relabel themselves as it is typed so you can
+  see what you are about to search for before you click it.
+%>
+<section class="hero dcat-hero">
+  <div class="hero-aura hero-aura-1"></div>
+  <div class="hero-grid"></div>
+  <div class="wrap hero-inner">
+    <p class="kicker" data-reveal="0" style="justify-content:center">
+      <%= category ? category.label : 'Domain pricing' %>
+    </p>
+    <h1 class="display dcat-h1" data-reveal="60">
+      <% if (category) { %>
+        <%= category.label %> domains<br><span class="hl"><%= total %> extensions</span>
+      <% } else { %>
+        Every extension we sell<br><span class="hl">and what it renews at</span>
+      <% } %>
+    </h1>
+    <p class="lede hero-lede" data-reveal="100">
+      <% if (category) { %>
+        <%= category.blurb %>
+      <% } else { %>
+        All <%= total %> of them, with the renewal price next to the first year —
+        because the second year is the one that surprises people.
+      <% } %>
+    </p>
+
+    <div data-reveal="140" class="mt-3">
+      <form class="dsearch dcat-name" data-name-form action="/domains" method="get">
+        <div class="dsearch-form">
+          <input class="dsearch-input" type="text" name="q" autocomplete="off" spellcheck="false"
+                 data-name-input maxlength="63"
+                 placeholder="Type your name — then check it against any extension below"
+                 aria-label="The domain name you want to check">
+          <button class="btn btn-lg" type="submit"><%- icon('search', 19) %><span class="hide-sm">Search</span></button>
+        </div>
+        <p class="dcat-name-hint">
+          Just the name, no extension — <b data-name-echo>yourname</b> is checked against
+          whichever one you press <em>Check</em> on.
+        </p>
+      </form>
+    </div>
+  </div>
+</section>
+
+<%# ------------------------------------------------------------------------
+    The filter bar. Sticky, because on a list this long the controls have to
+    stay reachable from row 600 — scrolling back to the top to change a filter
+    is the moment somebody gives up on browsing.
+    ------------------------------------------------------------------------ %>
+<div class="dcat-bar" data-catalogue-bar>
+  <div class="wrap">
+    <div class="dcat-bar-row">
+      <div class="dcat-find">
+        <%- icon('search', 17) %>
+        <input type="search" class="dcat-find-input" data-filter="q" value="<%= filters.q %>"
+               placeholder="Filter extensions — try shop, uk, io" aria-label="Filter the extension list">
+      </div>
+
+      <div class="dcat-bands" role="group" aria-label="Maximum first-year price">
+        <% bands.forEach(function (b) { %>
+          <button type="button" class="dcat-chip <%= filters.band === b.slug ? 'is-on' : '' %>"
+                  data-filter="band" data-value="<%= b.slug %>"><%= b.label %></button>
+        <% }); %>
+        <button type="button" class="dcat-chip <%= filters.featuredOnly ? 'is-on' : '' %>"
+                data-filter="popular" data-value="1"><%- icon('star', 14) %> Popular</button>
+        <button type="button" class="dcat-chip <%= filters.promoOnly ? 'is-on' : '' %>"
+                data-filter="promo" data-value="1"><%- icon('tag', 14) %> First-year deals</button>
+      </div>
+
+      <label class="dcat-sort">
+        <span class="sr-only">Sort by</span>
+        <select data-filter="sort" aria-label="Sort the extension list">
+          <% sorts.forEach(function (s) { %>
+            <option value="<%= s.slug %>" <%= filters.sort === s.slug ? 'selected' : '' %>><%= s.label %></option>
+          <% }); %>
+        </select>
+        <%- icon('chevron', 15) %>
+      </label>
+    </div>
+
+    <%# The shelves. A horizontal scroller rather than a wrapped block: nineteen
+        categories wrapped to four rows push the actual results below the fold
+        on a laptop, which is the content the page is for. %>
+    <div class="dcat-cats" role="group" aria-label="Category">
+      <a class="dcat-cat <%= !filters.category ? 'is-on' : '' %>" href="/domains/pricing">
+        All<span class="dcat-cat-n"><%= categoryCounts.reduce(function (s, c) { return s + c.count; }, 0) %></span>
+      </a>
+      <% categoryCounts.forEach(function (c) { %>
+        <a class="dcat-cat <%= filters.category === c.slug ? 'is-on' : '' %>" href="/domains/category/<%= c.slug %>">
+          <%- icon(c.icon, 15) %><%= c.label %><span class="dcat-cat-n"><%= c.count %></span>
+        </a>
+      <% }); %>
+    </div>
+  </div>
+</div>
+
+<section class="section-sm">
+  <div class="wrap">
+    <div class="dcat-meta">
+      <p class="dcat-count" data-catalogue-count aria-live="polite">
+        <b><%= total %></b> extension<%= total === 1 ? '' : 's' %><%= filters.q ? ` matching “${filters.q}”` : '' %>
+        <% if (cheapest) { %> · from <b><%= cheapest.register_display %></b> a year<% } %>
+      </p>
+      <% if (filters.category || filters.band || filters.q || filters.promoOnly || filters.featuredOnly) { %>
+        <a class="dcat-clear" href="/domains/pricing" data-clear-filters>Clear filters</a>
+      <% } %>
+    </div>
+
+    <%# The grid the client appends to. Cards rather than table rows: a table
+        with 715 rows and a price in every cell is a spreadsheet, and this is
+        meant to be browsed. %>
+    <div class="dcat-grid" data-catalogue-grid>
+      <%- include('../partials/tld-cards', { rows }) %>
+    </div>
+
+    <% if (!total) { %>
+      <div class="empty">
+        <%- icon('search', 46) %>
+        <h3>Nothing matches that</h3>
+        <p>Try a shorter word, a higher price, or <a href="/domains/pricing">clear the filters</a>.</p>
+      </div>
+    <% } %>
+
+    <%# The scroll sentinel AND a real button.
+
+        The observer does the work for almost everybody; the button is what
+        keyboard and screen-reader users get, and what happens when the observer
+        never fires because the grid is shorter than the viewport. An infinite
+        scroll with no button is a page some people simply cannot reach the end
+        of. %>
+    <div class="dcat-more" data-catalogue-more <%= hasMore ? '' : 'hidden' %>>
+      <div class="dcat-sentinel" data-catalogue-sentinel aria-hidden="true"></div>
+      <button type="button" class="btn btn-ghost" data-catalogue-load>
+        Show more extensions
+      </button>
+      <p class="dcat-progress" data-catalogue-progress>
+        Showing <b><%= rows.length %></b> of <%= total %>
+      </p>
+    </div>
+
+    <div class="dcat-end" data-catalogue-end <%= hasMore ? 'hidden' : '' %>>
+      <%- icon('check-circle', 18) %>
+      <span>That is all <b><%= total %></b> of them.</span>
+    </div>
+  </div>
+</section>
+
+<%# ------------------------------------------------------------------------
+    Category index. Real links, server-rendered, one per shelf — this is what
+    a crawler follows to find the category pages, and what a visitor uses when
+    the filter bar has scrolled away.
+    ------------------------------------------------------------------------ %>
+<section class="section section-tint">
+  <div class="wrap">
+    <div class="center mb-4">
+      <p class="kicker" data-reveal="0" style="justify-content:center">Browse by what you do</p>
+      <h2 class="h1 mt-2" data-reveal="60">Pick a shelf</h2>
+    </div>
+    <div class="dcat-shelves">
+      <% categoryCounts.forEach(function (c, i) { %>
+        <a class="dcat-shelf" href="<%= c.href %>" data-reveal="<%= Math.min(i * 30, 240) %>">
+          <span class="dcat-shelf-icon"><%- icon(c.icon, 20) %></span>
+          <span class="dcat-shelf-body">
+            <b><%= c.label %></b>
+            <span class="small muted"><%= c.count %> extensions<%= c.from_display ? ` · from ${c.from_display}` : '' %></span>
+          </span>
+          <%- icon('arrow', 16) %>
+        </a>
+      <% }); %>
+    </div>
+  </div>
+</section>
 
 <section class="section">
   <div class="wrap">
-    <div class="card card-flush" data-reveal="0">
-      <div class="table-wrap">
-        <table class="table">
-          <thead>
-            <tr>
-              <th>Extension</th>
-              <th class="num">Register</th>
-              <th class="num">Renew</th>
-              <th class="num">Transfer</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            <% tlds.forEach(function (t) {
-                 const jump = t.renew_pence > t.register_pence * 1.6; %>
-              <tr>
-                <td>
-                  <span class="strong">.<%= t.tld %></span>
-                  <% if (t.featured) { %> <span class="badge badge-soft">Popular</span><% } %>
-                </td>
-                <td class="num"><%= money(t.register_pence) %></td>
-                <td class="num">
-                  <%= money(t.renew_pence) %>
-                  <% if (jump) { %>
-                    <span class="badge badge-amber" title="The registry discounts the first year on this extension">1st yr promo</span>
-                  <% } %>
-                </td>
-                <td class="num"><%= money(t.transfer_pence) %></td>
-                <td class="num"><a class="btn btn-ghost btn-sm" href="/domains?q=yourname.<%= t.tld %>">Check</a></td>
-              </tr>
-            <% }); %>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="alert alert-info mt-3" data-reveal="40">
+    <div class="alert alert-info" data-reveal="0">
       <%- icon('info', 19) %>
       <div>
-        <b>About the promotional extensions.</b> On a few names — .online, .shop,
-        .store, .site, .tech — the registry itself sells a heavily discounted
-        first year to drive adoption, then charges the standard rate from year
-        two. That is the registry's pricing, not a markup of ours, and we show
-        you both figures here rather than only at renewal. On .com, .co.uk, .uk
-        and .net the two prices are close and stable.
+        <b>About the first-year deals.</b> On some extensions the registry itself
+        sells a heavily discounted first year to drive adoption, then charges the
+        standard rate from year two — .online, .shop, .store, .site and .tech are
+        the obvious ones. That is the registry's pricing, not a markup of ours,
+        and it is why both figures are on every card here rather than only on the
+        renewal notice. Filter by <b>First-year deals</b> to see every extension
+        that does it.
       </div>
     </div>
 
-    <p class="small muted mt-2">
-      All prices are per year and exclude VAT at <%= vatPercent %>%. Prices are
-      reviewed when the registries change theirs; the price you renew at is the
-      one shown in your panel at the time of renewal, and we email before we take
-      it.
+    <p class="small muted mt-3">
+      All prices are per year and
+      <% if (showVat) { %>include <%= vatLabel %> at <%= vatPercent %>%<% } else { %>are shown in <%= currency.code %><% } %>.
+      Register and transfer prices are for the first year; renewal is what you pay
+      every year after that. Prices are reviewed when the registries change theirs,
+      and we email before we take a renewal.
     </p>
   </div>
 </section>
+
 </main>
-<%- include('../partials/footer') %>
+<%- include('../partials/footer', { extraJs: '/assets/js/domain-catalogue.js' }) %>

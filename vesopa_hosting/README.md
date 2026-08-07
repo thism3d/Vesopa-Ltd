@@ -50,6 +50,33 @@ Three product lines, three tables, three pricing screens in the admin.
 | **Email** | per mailbox, or per 1,000 contacts | 1 month, 1 year | `/admin/plans/email` |
 | **Domains** | per year, per extension | 1–10 years | `/admin/tlds` |
 
+### The domain catalogue
+
+The `tlds` table carries the **whole DomainNameAPI rate card** — 715 extensions,
+imported from `data/dna-rate-card.csv`:
+
+```
+node scripts/import-tlds.js --dry      # show what it would do
+node scripts/import-tlds.js            # add new ones, refresh costs
+node scripts/import-tlds.js --reprice  # also rewrite sell prices from the ladder
+```
+
+Costs are quoted in dollars and converted at the USD rate in the `currencies`
+table, so a recorded margin and a displayed price never rest on two different
+rates. **An extension already in the table keeps its sell price** — only cost and
+category are refreshed — because the 23 hand-seeded ones were priced on purpose.
+`--reprice` is how you say you meant it.
+
+The markup ladder lives in `src/tld-markup.js` and is shared with the admin's
+"reprice from cost" button, so the two cannot disagree.
+
+Every run prints any extension **selling below cost**, and the admin shows the
+same count as a red banner on `/admin/tlds` until it is dealt with.
+
+Browsing is at `/domains/pricing` — filters, price bands and an infinite scroll —
+with an indexable page per shelf (`/domains/category/tech`) and per extension
+(`/domains/tld/agency`). Both are in the sitemap; the filtered views are not.
+
 ### The term ladder
 
 Monthly is deliberately the **dearest** rate; every longer term brings it down.
@@ -323,7 +350,8 @@ created.
 | -------------- | ----------------------------------------------------------------- |
 | `DNA_MODE`     | `mock` fake · `test` real API, sandbox registry · `live` real money |
 | `HESTIA_MODE`  | `mock` logs the commands · `live` real accounts on the node        |
-| `PAYMENTS_MODE`| `manual` — order sits at "awaiting payment" until an admin marks it paid |
+| `SSLCZ_MODE`   | `mock` a fake gateway page at `/pay/mock/*` · `live` real payments  |
+| `PAYMENTS_MODE`| `manual` — the fallback when no gateway is available at all         |
 
 The admin dashboard shows an amber banner whenever either is in mock mode, so
 "why did no domain get registered" is answered before it is asked.
@@ -560,7 +588,15 @@ nginx needs a server block for `hosting.vesopaepos.com` proxying to `127.0.0.1:5
 
 ## Not built yet
 
-- **Payment gateway** — every order path exists; only the charge step is stubbed.
+- **Stripe and crypto checkout** — both are shown at the checkout, disabled, with
+  no adapter behind them. SSLCommerz is live. Adding one is a matter of writing
+  an adapter and having it report itself configured; `payments.gateways()`
+  computes availability rather than being told it.
+- **Refunds** — `payments.status` has a `refunded` value and the API secret can
+  sign a refund request, but nothing calls it. Refunds are manual at the gateway
+  today, and must be worked out from `charged_minor`, not the order total.
+- **Renewal charging through the gateway** — `next_due_at` is set and shown; no
+  job charges a stored card, and no card is stored.
 - **DNS record editor** — the panel sets nameservers; per-record editing is not built.
 - **One-click WordPress** — advertised on the site, needs `v-add-web-app` wiring.
 - **Node/Python app deploys** — advertised in the "vibe code" section. Static and

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -114,8 +115,15 @@ class _IdleScreenState extends ConsumerState<IdleScreen> {
     setState(() {
       _checking = false;
       _error = 'That PIN was not recognised. Check it, or clear and start again.';
+      // Counts rejections rather than flagging one, so a second wrong PIN shakes
+      // again. A bool would have set true and stayed true, leaving the till
+      // silent on exactly the attempt the clerk is most likely to doubt.
+      _rejections++;
     });
   }
+
+  /// How many PINs have been turned away, purely to drive the shake below.
+  int _rejections = 0;
 
   /// Which backdrop failed to render, if one did.
   ///
@@ -186,20 +194,56 @@ class _IdleScreenState extends ConsumerState<IdleScreen> {
           // looks is decided as much by what is behind it as by its own alpha.
           // Worst case for both is a white photograph, and 85% is what puts the
           // key faces onto a base dark enough for white to clear 4.5:1 on it.
-          if (_asking)
-            const ColoredBox(color: Color(0xD9000000))
-          else if (overImage)
-            const DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.center,
-                  end: Alignment.bottomCenter,
-                  colors: [Color(0x00000000), Color(0xB3000000)],
-                ),
+          //
+          // Faded between rather than swapped. The pad's scrim arriving in one
+          // frame reads as the picture being switched off; brought up over a
+          // quarter-second it reads as the picture being dimmed to make room.
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 260),
+            child: _asking
+                ? const ColoredBox(
+                    key: ValueKey('scrim'),
+                    color: Color(0xD9000000),
+                  )
+                : overImage
+                    ? const DecoratedBox(
+                        key: ValueKey('gradient'),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.center,
+                            end: Alignment.bottomCenter,
+                            colors: [Color(0x00000000), Color(0xB3000000)],
+                          ),
+                        ),
+                      )
+                    : const SizedBox.shrink(key: ValueKey('none')),
+          ),
+
+          // Waking the pad is the one moment on this screen the clerk is
+          // waiting on, so it gets a move of its own rather than replacing the
+          // picture outright: the pad rises the last few pixels into place as it
+          // fades up, and drops back the same way on Cancel.
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 280),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeIn,
+            transitionBuilder: (child, animation) => FadeTransition(
+              opacity: animation,
+              child: SlideTransition(
+                position: Tween(
+                  begin: const Offset(0, 0.04),
+                  end: Offset.zero,
+                ).animate(animation),
+                child: child,
               ),
             ),
-
-          if (_asking) _pad(context) else _resting(context, overImage: overImage),
+            child: _asking
+                ? KeyedSubtree(key: const ValueKey('pad'), child: _pad(context))
+                : KeyedSubtree(
+                    key: const ValueKey('rest'),
+                    child: _resting(context, overImage: overImage),
+                  ),
+          ),
         ],
       ),
     );
@@ -330,14 +374,25 @@ class _IdleScreenState extends ConsumerState<IdleScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  _Dots(length: _pin.length, busy: _checking),
-                  if (_error != null) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      _error!,
-                      style: const TextStyle(color: Pos.red, fontSize: 14),
+                  // The dots and the message move together, because they are
+                  // one answer to one question: "did that PIN work?"
+                  _Shake(
+                    trigger: _rejections,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _Dots(length: _pin.length, busy: _checking),
+                        if (_error != null) ...[
+                          const SizedBox(height: 12),
+                          Text(
+                            _error!,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(color: Pos.red, fontSize: 14),
+                          ),
+                        ],
+                      ],
                     ),
-                  ],
+                  ),
                   const SizedBox(height: 20),
                   _Keypad(onKey: _key),
                   const SizedBox(height: 14),
@@ -354,6 +409,64 @@ class _IdleScreenState extends ConsumerState<IdleScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Shakes its child once, every time [trigger] changes.
+///
+/// The refusal message says what went wrong, but it is small text on a screen
+/// the clerk is not reading — they are looking at the keypad. The movement is
+/// what carries "that was rejected" to someone whose eyes are elsewhere, and it
+/// arrives before a word of the message has been read.
+///
+/// Horizontal only. A head-shake is the gesture for "no" almost everywhere this
+/// till is sold, and a vertical shudder reads as the app struggling instead.
+class _Shake extends StatefulWidget {
+  const _Shake({required this.trigger, required this.child});
+
+  /// Any value that changes when a shake is due; the value itself is not read.
+  final int trigger;
+  final Widget child;
+
+  @override
+  State<_Shake> createState() => _ShakeState();
+}
+
+class _ShakeState extends State<_Shake> with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 420),
+  );
+
+  @override
+  void didUpdateWidget(covariant _Shake oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // `from: 0` rather than `forward()`, so a rejection while the last shake is
+    // still running restarts it instead of being swallowed.
+    if (widget.trigger != oldWidget.trigger) _controller.forward(from: 0);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      // Passed through rather than rebuilt: the child is the dots and the
+      // message, and neither depends on where the shake currently is.
+      child: widget.child,
+      builder: (context, child) {
+        // Three passes out and back, each smaller than the last. The decay is
+        // what stops it looking like a loop that was cut off.
+        final t = _controller.value;
+        final offset = math.sin(t * math.pi * 6) * 9 * (1 - t);
+        return Transform.translate(offset: Offset(offset, 0), child: child);
+      },
     );
   }
 }
@@ -472,37 +585,73 @@ class _Dots extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (busy) {
-      return const SizedBox(
-        height: 22,
-        width: 22,
-        child: CircularProgressIndicator(strokeWidth: 2.4, color: Pos.brand),
-      );
-    }
+    // Cross-faded rather than swapped, so submitting on the fourth digit is one
+    // continuous move instead of the dots vanishing and a spinner appearing
+    // where they were.
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 220),
+      child: busy
+          ? const SizedBox(
+              key: ValueKey('busy'),
+              height: 22,
+              width: 22,
+              child: CircularProgressIndicator(strokeWidth: 2.4, color: Pos.brand),
+            )
+          : _slots(),
+    );
+  }
 
+  Widget _slots() {
     // Four slots for the common case, growing for a longer PIN so the display
     // never disagrees with what has been typed.
     final slots = length > 4 ? length : 4;
     return SizedBox(
+      key: const ValueKey('dots'),
       height: 22,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           for (var i = 0; i < slots; i++)
-            Container(
-              width: 14,
-              height: 14,
-              margin: const EdgeInsets.symmetric(horizontal: 7),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: i < length ? Pos.brand : Colors.transparent,
-                border: Border.all(
-                  color: i < length ? Pos.brand : const Color(0x66FFFFFF),
-                  width: 1.6,
-                ),
-              ),
-            ),
+            _Dot(filled: i < length),
         ],
+      ),
+    );
+  }
+}
+
+/// One PIN slot, empty or filled.
+///
+/// The fill is the only confirmation a clerk gets that a key landed — the digit
+/// itself is deliberately never shown — so it is worth animating. It springs up
+/// to size rather than appearing at it, which puts the feedback in peripheral
+/// vision: the eye catches movement next to the keypad without leaving the keys.
+class _Dot extends StatelessWidget {
+  const _Dot({required this.filled});
+
+  final bool filled;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedScale(
+      scale: filled ? 1 : 0.7,
+      // easeOutBack overshoots once and settles. Deliberately not a spring:
+      // four of these in a row wobbling is a novelty the twentieth PIN of the
+      // shift does not want.
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOutBack,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        width: 14,
+        height: 14,
+        margin: const EdgeInsets.symmetric(horizontal: 7),
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: filled ? Pos.brand : Colors.transparent,
+          border: Border.all(
+            color: filled ? Pos.brand : const Color(0x66FFFFFF),
+            width: 1.6,
+          ),
+        ),
       ),
     );
   }
@@ -594,7 +743,7 @@ class _Keypad extends StatelessWidget {
   }
 }
 
-class _PadKey extends StatelessWidget {
+class _PadKey extends StatefulWidget {
   const _PadKey({required this.label, required this.onTap, this.icon});
 
   final String label;
@@ -629,45 +778,89 @@ class _PadKey extends StatelessWidget {
   static const _edge = Color(0x40FFFFFF);
 
   @override
-  Widget build(BuildContext context) {
-    final isAction = icon != null;
+  State<_PadKey> createState() => _PadKeyState();
+}
 
-    return Material(
-      // The two action keys sit back a shade, so the digits stay the thing the
-      // eye lands on.
-      color: isAction ? _actionFace : _digitFace,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: const BorderSide(color: _edge),
-      ),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Center(
-          child: isAction
-              ? Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(icon, color: Colors.white, size: 20),
-                    const SizedBox(height: 2),
-                    Text(
-                      label,
+class _PadKeyState extends State<_PadKey> {
+  /// Whether a finger is currently down on this key.
+  ///
+  /// Drives the press effect rather than relying on the ink splash alone. A
+  /// splash is a stain that spreads *after* the fact and, on a translucent key
+  /// over a photograph, is close to invisible — which is the "did that press
+  /// register" complaint the key faces were already raised once to answer. A
+  /// key that physically dips under the finger cannot be missed, and it is
+  /// there on contact rather than after it.
+  bool _down = false;
+
+  void _setDown(bool down) {
+    if (_down == down) return;
+    setState(() => _down = down);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isAction = widget.icon != null;
+
+    return AnimatedScale(
+      // Small on purpose. A key that visibly shrinks is a toy; 4% is felt more
+      // than seen, which is what a counter wants.
+      scale: _down ? 0.94 : 1,
+      duration: Duration(milliseconds: _down ? 90 : 160),
+      curve: _down ? Curves.easeOut : Curves.easeOutBack,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          // The face brightens under the finger, and the edge goes brand lime.
+          // Both track the press directly, so the key is lit for exactly as
+          // long as it is held.
+          color: _down
+              ? const Color(0x66A5C715)
+              : (isAction ? _PadKey._actionFace : _PadKey._digitFace),
+          border: Border.all(
+            color: _down ? Pos.brand : _PadKey._edge,
+            width: _down ? 1.6 : 1,
+          ),
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: widget.onTap,
+            onTapDown: (_) => _setDown(true),
+            onTapUp: (_) => _setDown(false),
+            // Both of these matter. A finger that slides off a key still has to
+            // release it, or the key stays lit for the rest of the shift.
+            onTapCancel: () => _setDown(false),
+            borderRadius: BorderRadius.circular(12),
+            splashColor: const Color(0x4DA5C715),
+            highlightColor: Colors.transparent,
+            child: Center(
+              child: isAction
+                  ? Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(widget.icon, color: Colors.white, size: 20),
+                        const SizedBox(height: 2),
+                        Text(
+                          widget.label,
+                          style: const TextStyle(
+                            color: Color(0xE6FFFFFF),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    )
+                  : Text(
+                      widget.label,
                       style: const TextStyle(
-                        color: Color(0xE6FFFFFF),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                        fontSize: 26,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
-                  ],
-                )
-              : Text(
-                  label,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 26,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
+            ),
+          ),
         ),
       ),
     );

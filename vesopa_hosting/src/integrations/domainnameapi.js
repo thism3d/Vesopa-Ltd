@@ -120,11 +120,37 @@ const isConnected = () => MODE === 'live' || MODE === 'test';
 /** Does this mode spend money? */
 const isLive = () => MODE === 'live';
 
-/** Split "shop.example.co.uk" into { sld: 'example', tld: 'co.uk' }. */
+/**
+ * Split "shop.example.co.uk" into { sld: 'example', tld: 'co.uk' }.
+ *
+ * THIS SET HAS TO KNOW EVERY DOTTED EXTENSION WE SELL, or the split is wrong in
+ * the one direction that costs money: `example.com.au` with `com.au` missing
+ * parses as sld `example.com` under tld `au`, and the customer is quoted and
+ * sold the wrong name entirely.
+ *
+ * The hardcoded list below is the floor — the extensions this function must get
+ * right even if the database is unreachable. `learn()` adds the rest from the
+ * `tlds` table on catalogue load, which is what keeps the two in step now that
+ * the catalogue carries some ninety dotted extensions rather than sixteen.
+ */
 const MULTI_PART_TLDS = new Set([
   'co.uk', 'org.uk', 'me.uk', 'ltd.uk', 'plc.uk', 'net.uk', 'sch.uk', 'ac.uk', 'gov.uk',
   'com.au', 'net.au', 'org.au', 'co.nz', 'co.za', 'com.br', 'co.in', 'co.jp',
 ]);
+
+/**
+ * Teach the splitter the dotted extensions in the catalogue.
+ *
+ * Additive and idempotent: called on every catalogue load, and never removes a
+ * hardcoded entry, so a row deactivated in the admin still parses correctly on
+ * the way to being told we do not sell it.
+ */
+function learnTlds(tlds) {
+  for (const t of tlds || []) {
+    const name = typeof t === 'string' ? t : t?.tld;
+    if (name && name.includes('.')) MULTI_PART_TLDS.add(name);
+  }
+}
 
 function splitDomain(input) {
   const clean = String(input || '')
@@ -628,6 +654,7 @@ function status() {
 module.exports = {
   RegistrarError,
   splitDomain,
+  learnTlds,
   validateLabel,
   checkAvailability,
   checkBulk,

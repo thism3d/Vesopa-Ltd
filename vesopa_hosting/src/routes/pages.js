@@ -8,7 +8,10 @@
 const express = require('express');
 const db = require('../db');
 const pricing = require('../pricing');
-const registrar = require('../integrations/domainnameapi');
+// Not `catalogue` — the home route already binds that name to the priced
+// product catalogue, and a module shadowed by a local in one route and not in
+// the next is a bug waiting for whoever edits this file next.
+const domainCatalogue = require('../domain-catalogue');
 const { sendMail, shell, detailTable, escapeHtml, DEFAULT_TO } = require('../mailer');
 const { checkCsrf } = require('../auth');
 const { flash, rateLimited } = require('../http-utils');
@@ -110,80 +113,13 @@ router.get('/email', async (req, res, next) => {
   }
 });
 
-// ---------------------------------------------------------------------------
-// Domains
-// ---------------------------------------------------------------------------
-router.get('/domains', async (req, res, next) => {
-  try {
-    const q = String(req.query.q || '').trim();
-    const [featured, { tlds }] = await Promise.all([
-      pricing.featuredTlds(8, req.currency),
-      pricing.load({ cur: req.currency }),
-    ]);
-
-    // Server-render the first result set when the page is linked to with ?q=,
-    // so a shared search works with JS disabled and the crawler sees content.
-    let serverResults = null;
-    if (q) {
-      const { sld, tld } = registrar.splitDomain(q);
-      const invalid = registrar.validateLabel(sld);
-      if (!invalid) {
-        const wanted = tld ? [tld] : [];
-        const others = featured.map((t) => t.tld).filter((t) => t !== tld).slice(0, 6);
-        const checks = await registrar.checkMany(sld, [...wanted, ...others]);
-        serverResults = checks.map((r) => {
-          const price = tlds.find((t) => t.tld === r.tld);
-          return {
-            ...r,
-            sld,
-            price_display: price ? currency.format(price.register_pence, req.currency) : '',
-            sellable: Boolean(price && price.active),
-          };
-        });
-      }
-    }
-
-    const fmt = (minor) => currency.format(minor, req.currency);
-    const priceOf = (t) => tlds.find((row) => row.tld === t && row.active)?.register_pence;
-    const quotes = [['.co.uk', priceOf('co.uk')], ['.com', priceOf('com')]]
-      .filter(([, p]) => p > 0)
-      .map(([name, p]) => `${name} from ${fmt(p)}`)
-      .join(', ');
-
-    res.render('public/domains', {
-      title: 'Domain names',
-      description:
-        `Search and register a domain with Vesopa.${quotes ? ` ${quotes},` : ''} `
-        + 'free WHOIS privacy and DNS included.',
-      q,
-      featuredTlds: featured,
-      tlds: tlds.filter((t) => t.active),
-      serverResults,
-    });
-  } catch (err) {
-    next(err);
-  }
-});
-
-router.get('/domains/pricing', async (req, res, next) => {
-  try {
-    const { tlds } = await pricing.load({ cur: req.currency });
-    res.render('public/domain-pricing', {
-      title: 'Domain pricing',
-      description: 'What every extension costs to register, renew and transfer. No hidden renewal jumps.',
-      tlds: tlds.filter((t) => t.active),
-    });
-  } catch (err) {
-    next(err);
-  }
-});
-
-router.get('/domains/transfer', (req, res) => {
-  res.render('public/domain-transfer', {
-    title: 'Transfer a domain',
-    description: 'Move a domain to Vesopa. We add a year to whatever time is left, and DNS carries over unchanged.',
-  });
-});
+/*
+ * The domain pages moved to routes/domains.js.
+ *
+ * There are five of them now — search, the catalogue browser, a page per
+ * category and a page per extension — and they share a filter parser and a
+ * render helper. Left here they would have been half of this file.
+ */
 
 // ---------------------------------------------------------------------------
 // SSL, migration, support, about
@@ -307,14 +243,48 @@ router.get('/robots.txt', (req, res) => {
   );
 });
 
-router.get('/sitemap.xml', (req, res) => {
-  const paths = ['/', '/hosting', '/email', '/domains', '/domains/pricing', '/domains/transfer', '/ssl', '/transfer', '/support', '/about', '/contact', '/terms', '/privacy', '/aup', '/refunds'];
-  const urls = paths
-    .map((p) => `  <url><loc>${SITE_URL}${p}</loc><changefreq>weekly</changefreq></url>`)
-    .join('\n');
-  res
-    .type('application/xml')
-    .send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>`);
+/**
+ * The sitemap now carries the domain catalogue.
+ *
+ * A page per extension is roughly seven hundred URLs, which is a large sitemap
+ * for a site this size and exactly the right one: each of those pages answers a
+ * real query ("how much is a .agency domain") with its own price, its own
+ * renewal figure and its own FAQ. They are the SEO reason the per-extension
+ * route exists at all, and a page a crawler is never told about is a page that
+ * may as well not.
+ *
+ * Only sellable extensions go in. Listing a URL that returns 404 — which is
+ * what /domains/tld/ai does, because we cannot register one — teaches the
+ * crawler to trust the file less.
+ *
+ * Priority is set rather than left off: without it every URL is equal and the
+ * homepage competes with .abogado.
+ */
+router.get('/sitemap.xml', async (req, res, next) => {
+  try {
+    const core = ['/', '/hosting', '/email', '/domains', '/domains/pricing', '/domains/transfer',
+      '/ssl', '/transfer', '/support', '/about', '/contact', '/terms', '/privacy', '/aup', '/refunds'];
+    const { tlds } = await pricing.load();
+    const counts = await domainCatalogue.categoryCounts();
+
+    const entry = (path, priority, freq = 'weekly') =>
+      `  <url><loc>${SITE_URL}${path}</loc><changefreq>${freq}</changefreq>`
+      + `<priority>${priority}</priority></url>`;
+
+    const urls = [
+      ...core.map((p) => entry(p, p === '/' ? '1.0' : '0.8')),
+      ...counts.map((c) => entry(`/domains/category/${c.slug}`, '0.7')),
+      ...tlds
+        .filter((t) => t.active && t.register_pence > 0)
+        .map((t) => entry(`/domains/tld/${encodeURIComponent(t.tld)}`, t.featured ? '0.7' : '0.5', 'monthly')),
+    ].join('\n');
+
+    res
+      .type('application/xml')
+      .send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>`);
+  } catch (err) {
+    next(err);
+  }
 });
 
 module.exports = router;

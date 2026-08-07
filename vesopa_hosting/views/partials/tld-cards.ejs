@@ -1,0 +1,55 @@
+<%#
+  One card per extension.
+
+  RENDERED IN TWO PLACES AND WRITTEN IN ONE.
+
+  The pricing page server-renders the first page through this partial, and
+  /api/domains/catalogue renders every page after it through the SAME partial
+  and returns the HTML. The obvious alternative — JSON out, markup built in
+  JavaScript — is a second copy of this file living in a template literal, and
+  the day the two disagree the visitor gets a card that looks different below
+  the fold than above it. It is the same reasoning as the basket fragments in
+  routes/cart.js.
+
+  Expects: rows — decorated TLD rows from domain-catalogue.js
+%>
+<% rows.forEach(function (t) { %>
+  <article class="dtld <%= t.featured ? 'is-featured' : '' %>">
+    <% if (t.promo) { %>
+      <%# The ribbon says what the deal IS, not just that there is one. A card
+          shouting "94% off" next to a renewal price four times higher has to
+          explain itself on the card, or it reads as a trick when the renewal
+          notice lands. %>
+      <span class="dtld-ribbon" title="First year only — it renews at <%= t.renew_display %>">
+        <%= t.promo_percent %>% off year one
+      </span>
+    <% } %>
+
+    <div class="dtld-head">
+      <h3 class="dtld-name">.<%= t.tld %></h3>
+      <% if (t.featured) { %><span class="badge badge-soft">Popular</span><% } %>
+    </div>
+
+    <div class="dtld-price">
+      <span class="dtld-amt"><%= t.register_display %></span>
+      <span class="dtld-per">first year</span>
+    </div>
+
+    <dl class="dtld-rows">
+      <div><dt>Renews at</dt><dd class="<%= t.promo ? 'is-warn' : '' %>"><%= t.renew_display %></dd></div>
+      <div><dt>Transfer in</dt><dd><%= t.transfer_display %></dd></div>
+    </dl>
+
+    <div class="dtld-actions">
+      <%# `data-tld` is what the name box hooks: the button's href is rewritten
+          as the visitor types, so it always searches the name they actually
+          want rather than a placeholder. It carries a working href from the
+          server too, so it is a real link before any script runs. %>
+      <a class="btn btn-sm dtld-check" href="/domains?q=<%= encodeURIComponent(t.tld) %>"
+         data-tld="<%= t.tld %>"><span>Check</span><span class="dtld-check-name" data-check-name>a name</span></a>
+      <a class="dtld-more" href="<%= t.href %>">
+        About .<%= t.tld %> <%- icon('arrow', 14) %>
+      </a>
+    </div>
+  </article>
+<% }); %>

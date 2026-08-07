@@ -23,6 +23,7 @@
 
 const db = require('./db');
 const currency = require('./currency');
+const registrar = require('./integrations/domainnameapi');
 const { TERMS, perMonth, savingPercent } = require('./config');
 
 /** Email is sold on two terms only — monthly or annual. */
@@ -87,6 +88,17 @@ async function loadBase({ fresh = false } = {}) {
     const byCur = (byId[String(row.currency).toUpperCase()] ||= {});
     byCur[row.field] = Number(row.amount_minor);
   }
+
+  /*
+   * The domain splitter learns the dotted extensions from here.
+   *
+   * This is the only place that reads every TLD we sell, and splitDomain() has
+   * to agree with it or `example.com.au` is parsed as a `.au` name called
+   * "example.com". Doing it on load rather than at boot means an extension
+   * added in the admin is understood as soon as the cache turns over, without
+   * a restart.
+   */
+  registrar.learnTlds(tldRows);
 
   baseCache = { planRows, emailRows, tldRows, overrides };
   baseAt = Date.now();

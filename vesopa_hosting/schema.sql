@@ -317,9 +317,22 @@ CREATE TABLE IF NOT EXISTS tlds (
   featured           TINYINT(1) NOT NULL DEFAULT 0,
   active             TINYINT(1) NOT NULL DEFAULT 1,
   sort_order         INT NOT NULL DEFAULT 0,
+  -- Which shelf this extension sits on in the browser: `business`, `tech`,
+  -- `country` and so on. One category per TLD, not a tag list — the whole
+  -- point of the filter is that every extension appears exactly once when you
+  -- page through a category, and a .shop that is both `shop` and `business`
+  -- would show up twice in one infinite scroll.
+  category           VARCHAR(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'other',
+  -- Free text shown on the extension's own page: who it is for, what the
+  -- registry requires. Blank means the page falls back to a generated line.
+  blurb              VARCHAR(400) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
   PRIMARY KEY (id),
   UNIQUE KEY uq_tlds_tld (tld),
-  KEY idx_tlds_featured (featured, sort_order)
+  KEY idx_tlds_featured (featured, sort_order),
+  -- The catalogue browser's two hot paths: filter by shelf, and order by
+  -- first-year price for the "under £2" bands.
+  KEY idx_tlds_category (active, category, sort_order),
+  KEY idx_tlds_register (active, register_pence)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- ---------------------------------------------------------------------------
@@ -374,6 +387,63 @@ CREATE TABLE IF NOT EXISTS order_items (
   PRIMARY KEY (id),
   KEY idx_order_items_order (order_id),
   CONSTRAINT fk_order_items_order
+    FOREIGN KEY (order_id) REFERENCES orders (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- ---------------------------------------------------------------------------
+-- Payment attempts.
+--
+-- One row per attempt, NOT one per order: a customer who abandons the gateway
+-- and comes back is two rows, and the pair is the only record of what actually
+-- happened. Overwriting a single row per order would lose the first attempt
+-- and, with it, the answer to "they say they were charged twice".
+--
+-- TWO AMOUNTS, DELIBERATELY.
+--
+-- `amount_minor` / `currency` is what the ORDER says — sterling, dollars,
+-- whatever the customer was quoted and what the invoice must show. `charged_minor`
+-- / `charged_currency` is what the GATEWAY actually took, which for SSLCommerz
+-- is taka. They are different numbers in different currencies and neither one
+-- can be derived from the other after the fact, because the rate moves. A
+-- refund is worked out from the charged pair; the invoice from the order pair.
+--
+-- `gateway_ref` is the provider's own transaction id and is UNIQUE: it is the
+-- key the IPN and the browser return both arrive with, and the uniqueness is
+-- what stops the two of them settling the same payment twice.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS payments (
+  id                INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  order_id          INT UNSIGNED NOT NULL,
+  customer_id       INT UNSIGNED NOT NULL,
+  -- sslcommerz | stripe | crypto | manual | free
+  gateway           VARCHAR(24) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'sslcommerz',
+  status            ENUM('pending','paid','failed','cancelled','refunded') NOT NULL DEFAULT 'pending',
+  amount_minor      INT UNSIGNED NOT NULL DEFAULT 0,
+  currency          CHAR(3) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'GBP',
+  charged_minor     INT UNSIGNED NOT NULL DEFAULT 0,
+  charged_currency  CHAR(3) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'BDT',
+  -- The rate used to get from one to the other, frozen. Same reasoning as
+  -- orders.fx_rate: re-deriving it next month rewrites history.
+  fx_rate           DECIMAL(14,6) NOT NULL DEFAULT 1.000000,
+  -- Ours, sent as order_ref. Theirs, returned as tran_id.
+  order_ref         VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  gateway_ref       VARCHAR(190) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL,
+  -- Card brand, wallet name, bank — whatever the provider tells us, for the
+  -- admin to read. Never anything that could be a card number.
+  method_detail     VARCHAR(120) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  -- The verified callback, kept verbatim for disputes. Written only after the
+  -- signature check passes, so it is evidence rather than an open log.
+  payload           TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL,
+  failure_reason    VARCHAR(190) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  settled_at        DATETIME NULL,
+  created_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_payments_gateway_ref (gateway_ref),
+  UNIQUE KEY uq_payments_order_ref (order_ref),
+  KEY idx_payments_order (order_id, created_at),
+  KEY idx_payments_status (status, created_at),
+  CONSTRAINT fk_payments_order
     FOREIGN KEY (order_id) REFERENCES orders (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
@@ -739,6 +809,49 @@ BEGIN
     ALTER TABLE email_services
       ADD COLUMN currency CHAR(3) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci
                  NOT NULL DEFAULT 'GBP' AFTER price_pence;
+  END IF;
+
+  -- The catalogue browser: a shelf per extension, and a place to say what the
+  -- extension is for. Added with the full DomainNameAPI rate card, which took
+  -- the table from 23 rows to some 800 — at which point an unfiltered list is
+  -- not a page anybody can use.
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tlds'
+       AND COLUMN_NAME = 'category'
+  ) THEN
+    ALTER TABLE tlds
+      ADD COLUMN category VARCHAR(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci
+                 NOT NULL DEFAULT 'other' AFTER sort_order,
+      ADD COLUMN blurb VARCHAR(400) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci
+                 NOT NULL DEFAULT '' AFTER category,
+      ADD KEY idx_tlds_category (active, category, sort_order),
+      ADD KEY idx_tlds_register (active, register_pence);
+  END IF;
+
+  -- Payment attempts. Before this, `orders.payment_ref` was the only record of
+  -- a payment and an admin typed it in by hand.
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.TABLES
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'payments'
+  ) THEN
+    -- The CREATE TABLE above already made it on a fresh install; this branch
+    -- only ever runs on a database that predates the gateway, and there the
+    -- CREATE has just made it too. Left as a no-op guard so the section reads
+    -- the same as every other step.
+    SET @noop = 1;
+  END IF;
+
+  -- A gateway that settles in taka needs a taka rate, and the currencies table
+  -- is where every rate in this app lives. INACTIVE on purpose: it is FX
+  -- plumbing, not a currency anyone is offered at the top of the page.
+  IF NOT EXISTS (SELECT 1 FROM currencies WHERE code = 'BDT') THEN
+    INSERT INTO currencies
+      (code, name, symbol, locale, rate, rounding, vat_percent, vat_label,
+       countries, is_base, is_default, active, sort_order)
+    VALUES
+      ('BDT', 'Bangladeshi taka', '৳', 'en-BD', 149.000000, 'nearest100', 0.00, '',
+       '', 0, 0, 0, 90);
   END IF;
 END //
 DELIMITER ;
