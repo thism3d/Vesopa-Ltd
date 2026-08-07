@@ -12,7 +12,8 @@ const { pool } = require('../db');
 const { filesFor } = require('../admin/files');
 const { bytes, formatDate, isoDateTime } = require('../admin/util');
 const { plans: pricingPlans, list: planList, resolvePeriod } = require('../plans-store');
-const { clientId: paypalClientId } = require('../paypal');
+const { clientId: paypalClientId, IS_LIVE: paypalIsLive } = require('../paypal');
+const { isConfigured: stripeConfigured } = require('../stripe');
 const { findPaymentByReference } = require('../payments');
 
 const router = express.Router();
@@ -124,6 +125,18 @@ router.get('/checkout', (req, res) => {
     plan: all[period],
     upsell: longer ? { period: longer.period, plan: longer } : null,
     paypalClientId: paypalClientId(),
+    // Whether the card / Apple Pay / Google Pay tiles are live or shown
+    // greyed out. Computed from whether Stripe has a key, never typed — the
+    // same rule the gateway list in vesopa_hosting follows.
+    stripeEnabled: stripeConfigured(),
+    /*
+     * Sandbox PayPal takes no real money but still records a real, paid
+     * subscription. Running that on a public site without saying so on the
+     * page is how a customer believes they have bought something they have
+     * not — and how anyone with a PayPal sandbox account gets a plan for
+     * nothing, quietly. Said out loud instead.
+     */
+    paypalSandbox: Boolean(paypalClientId()) && !paypalIsLive,
   });
 });
 

@@ -1,5 +1,11 @@
 /**
- * The PayPal endpoints the checkout page calls.
+ * The payment endpoints the checkout page calls — PayPal and Stripe.
+ *
+ * Mounted at `/api`, and every route names its own provider, so the two cannot
+ * collide and neither has to know the other's paths. The PayPal URLs are
+ * unchanged from when this router was mounted at `/api/paypal`: they are in
+ * the checkout page's JavaScript already, and a payment endpoint that moves is
+ * a checkout that breaks for anyone holding a stale page.
  *
  * Responses keep the `{ status: 1 | 0, msg, ... }` shape the front end already
  * spoke, so the page's error handling did not have to be redesigned.
@@ -7,8 +13,10 @@
 
 const express = require('express');
 const { call, createPlan, getSubscription, CURRENCY } = require('../paypal');
+const stripe = require('../stripe');
 const { plans: pricingPlans, resolvePeriod } = require('../plans-store');
-const { recordSubscription, recordOrder } = require('../payments');
+const { recordSubscription, recordOrder, recordStripe } = require('../payments');
+const { SITE_URL } = require('../config');
 
 const router = express.Router();
 
@@ -23,7 +31,7 @@ function fail(res, e, context) {
  * The price comes from the period, server side — the browser sends only which
  * plan it wants, never what it costs.
  */
-router.post('/plan', async (req, res) => {
+router.post('/paypal/plan', async (req, res) => {
   try {
     const plan = await createPlan(req.body && req.body.period);
     return res.json({ status: 1, plan_id: plan.id });
@@ -38,7 +46,7 @@ router.post('/plan', async (req, res) => {
  * browser: `data.subscriptionID` arrives from client-side JavaScript and a
  * forged one would otherwise book a free account.
  */
-router.post('/subscription/capture', async (req, res) => {
+router.post('/paypal/subscription/capture', async (req, res) => {
   const { subscription_id: subscriptionId, order_id: orderId, email } = req.body || {};
   const period = resolvePeriod(req.body && req.body.period);
 
@@ -64,7 +72,7 @@ router.post('/subscription/capture', async (req, res) => {
  * Create the one-off order for the 24-month plan.
  * Built here rather than in the browser so the amount is ours, not the page's.
  */
-router.post('/order', async (req, res) => {
+router.post('/paypal/order', async (req, res) => {
   const period = resolvePeriod(req.body && req.body.period);
   if (period !== '24') {
     return res.json({ status: 0, msg: 'That plan is billed as a subscription.' });
@@ -111,7 +119,7 @@ router.post('/order', async (req, res) => {
  * asked the server to verify, which left a window where a customer could be
  * charged for a sale we never saw.
  */
-router.post('/order/capture', async (req, res) => {
+router.post('/paypal/order/capture', async (req, res) => {
   const { order_id: orderId, email } = req.body || {};
   const period = resolvePeriod(req.body && req.body.period);
 
@@ -136,6 +144,68 @@ router.post('/order/capture', async (req, res) => {
     return res.json({ status: 1, msg: 'Transaction completed!', ref_id: reference });
   } catch (e) {
     return fail(res, e, 'order capture');
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Stripe — card, Apple Pay and Google Pay
+// ---------------------------------------------------------------------------
+/**
+ * Open a Checkout Session and hand back the URL to send the browser to.
+ *
+ * The three tiles on the page (card, Apple Pay, Google Pay) all post here. They
+ * are one gateway: Stripe decides which of them the customer can actually use
+ * from what the device supports, so there is nothing here that varies by which
+ * tile was clicked.
+ */
+router.post('/stripe/session', async (req, res) => {
+  if (!stripe.isConfigured()) {
+    return res.json({ status: 0, msg: 'Card payment is not available right now.' });
+  }
+  const base = String(SITE_URL || '').replace(/\/+$/, '');
+  try {
+    const session = await stripe.createSession({
+      period: req.body && req.body.period,
+      email: req.body && req.body.email,
+      successUrl: `${base}/api/stripe/return`,
+      cancelUrl: `${base}/checkout?period=${resolvePeriod(req.body && req.body.period)}`,
+    });
+    return res.json({ status: 1, url: session.url, session_id: session.id });
+  } catch (e) {
+    console.error('[checkout] stripe session:', e.message);
+    return res.json({ status: 0, msg: 'We could not start that payment. Please try again.' });
+  }
+});
+
+/**
+ * Where Stripe sends the browser back.
+ *
+ * A GET that redirects, not JSON — the customer arrives here from Stripe's own
+ * page, so this is a navigation and has to end on something they can read.
+ *
+ * NOTHING FROM THIS REQUEST IS TRUSTED. `session_id` says only which session to
+ * ask Stripe about; whether it was paid comes from Stripe's own answer.
+ */
+router.get('/stripe/return', async (req, res) => {
+  const sessionId = String(req.query.session_id || '');
+  if (!sessionId) return res.redirect('/checkout');
+
+  try {
+    const session = await stripe.getSession(sessionId);
+    if (!stripe.isPaid(session)) {
+      console.warn('[checkout] stripe session not paid:', sessionId, session.payment_status);
+      return res.redirect(`/checkout?period=${resolvePeriod(session.metadata && session.metadata.period)}`);
+    }
+    const period = resolvePeriod(session.metadata && session.metadata.period);
+    const reference = await recordStripe({
+      period,
+      session,
+      accountEmail: (session.customer_details && session.customer_details.email) || null,
+    });
+    return res.redirect(`/payment-status?ref=${encodeURIComponent(reference)}`);
+  } catch (e) {
+    console.error('[checkout] stripe return:', e.message);
+    return res.redirect('/checkout');
   }
 });
 

@@ -185,7 +185,9 @@ app.use(
   })
 );
 
-app.use('/api/paypal', checkoutApiRouter);
+// Mounted at /api, not /api/paypal: the router now carries Stripe as well, and
+// each route names its own provider. The PayPal paths it serves are unchanged.
+app.use('/api', checkoutApiRouter);
 app.use('/admin', adminRouter);
 app.use('/', formsRouter);
 app.use('/', blogPagesRouter);

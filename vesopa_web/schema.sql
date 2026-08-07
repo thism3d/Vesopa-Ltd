@@ -153,3 +153,42 @@ CREATE TABLE IF NOT EXISTS paypal_transactions (
   UNIQUE KEY uq_paypal_transactions_reference (reference),
   UNIQUE KEY uq_paypal_transactions_order (paypal_order_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- ---------------------------------------------------------------------------
+-- Stripe Checkout — card, Apple Pay and Google Pay
+-- ---------------------------------------------------------------------------
+-- ONE table for both shapes Stripe sells here, unlike PayPal's two.
+--
+-- The PayPal side needs two tables because a subscription and a one-off order
+-- are different objects with different ids at PayPal. A Stripe Checkout Session
+-- is one object either way — `stripe_subscription_id` is simply null on the
+-- 24-month plan — so splitting it would create a second table that differed by
+-- one nullable column and a name.
+CREATE TABLE IF NOT EXISTS stripe_payments (
+  id                     INTEGER PRIMARY KEY AUTO_INCREMENT NOT NULL,
+  created                TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  -- Ours, and unguessable: it goes in the receipt URL, so it must carry no
+  -- information and must not be derivable from a Stripe id. Same reasoning as
+  -- the note on newReference() in payments.js.
+  reference              CHAR(32) NOT NULL,
+  period_months          INTEGER NOT NULL,
+  plan_name              VARCHAR(255),
+  stripe_session_id      VARCHAR(255) NOT NULL,
+  stripe_payment_intent  VARCHAR(255),
+  -- Null on the 24-month plan, which is a single payment and not a subscription.
+  stripe_subscription_id VARCHAR(255),
+  stripe_customer_id     VARCHAR(255),
+  paid_amount            DECIMAL(10,2),
+  currency_code          VARCHAR(8),
+  -- "visa ···· 4242", or the wallet's name. Never anything resembling a card
+  -- number — Stripe does not hand one over and we would not store it.
+  payment_method         VARCHAR(120),
+  payer_name             VARCHAR(255),
+  payer_email            VARCHAR(255),
+  account_email          VARCHAR(255),
+  status                 VARCHAR(32),
+  UNIQUE KEY uq_stripe_payments_reference (reference),
+  -- What makes re-recording the same session return the reference already
+  -- issued instead of writing a second row.
+  UNIQUE KEY uq_stripe_payments_session (stripe_session_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;

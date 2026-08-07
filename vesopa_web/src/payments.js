@@ -138,6 +138,79 @@ async function recordOrder({ period, order, accountEmail }) {
 }
 
 /**
+ * Persist a verified paid Stripe Checkout Session.
+ *
+ * One function for both shapes: `mode: subscription` fills
+ * `stripe_subscription_id`, `mode: payment` leaves it null. Re-recording the
+ * same session returns the reference already issued rather than a second row,
+ * so the browser return and a retry cannot book twice — the same guarantee the
+ * PayPal pair give, by the same means.
+ */
+async function recordStripe({ period, session, accountEmail }) {
+  const plan = pricingPlans()[period];
+  const sessionId = session.id;
+
+  const [existing] = await pool.query(
+    'SELECT reference FROM stripe_payments WHERE stripe_session_id = ?',
+    [sessionId]
+  );
+  if (existing.length) return existing[0].reference;
+
+  const intent = session.payment_intent && typeof session.payment_intent === 'object'
+    ? session.payment_intent
+    : null;
+  const method = intent && intent.payment_method && typeof intent.payment_method === 'object'
+    ? intent.payment_method
+    : null;
+
+  // "visa ···· 4242" reads better on an admin screen than "card", and is all
+  // Stripe gives us that a human would recognise.
+  let methodLabel = null;
+  if (method && method.type === 'card' && method.card) {
+    methodLabel = `${method.card.brand || 'card'} ···· ${method.card.last4 || ''}`.trim();
+  } else if (method && method.type) {
+    methodLabel = method.type;
+  } else if (Array.isArray(session.payment_method_types)) {
+    methodLabel = session.payment_method_types.join(' · ') || null;
+  }
+
+  const subscription = session.subscription && typeof session.subscription === 'object'
+    ? session.subscription.id
+    : session.subscription || null;
+
+  const details = session.customer_details || {};
+  const reference = newReference();
+
+  await pool.query(
+    `INSERT INTO stripe_payments
+       (reference, period_months, plan_name, stripe_session_id, stripe_payment_intent,
+        stripe_subscription_id, stripe_customer_id, paid_amount, currency_code,
+        payment_method, payer_name, payer_email, account_email, status)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [
+      reference,
+      Number(period),
+      plan.name,
+      sessionId,
+      intent ? intent.id : (typeof session.payment_intent === 'string' ? session.payment_intent : null),
+      subscription,
+      typeof session.customer === 'string' ? session.customer : (session.customer && session.customer.id) || null,
+      // amount_total is in minor units; the plan price is the fallback for the
+      // vanishingly rare session that has none.
+      session.amount_total != null ? Number(session.amount_total) / 100 : plan.discounted_price,
+      (session.currency || 'gbp').toUpperCase(),
+      methodLabel ? methodLabel.slice(0, 120) : null,
+      details.name || null,
+      details.email || null,
+      accountEmail || details.email || null,
+      session.payment_status || null,
+    ]
+  );
+
+  return reference;
+}
+
+/**
  * Look up a payment for the receipt page, whichever kind it was.
  * Returns null for an unknown reference — the page then says so rather than
  * leaking whether the reference format was close.
@@ -159,7 +232,21 @@ async function findPaymentByReference(reference) {
   );
   if (orders.length) return { ...orders[0], kind: 'order' };
 
+  const [stripes] = await pool.query(
+    `SELECT reference, plan_name, paid_amount, currency_code, status,
+            payer_name, payer_email, account_email, payment_method,
+            stripe_subscription_id, stripe_payment_intent AS transaction_id
+     FROM stripe_payments WHERE reference = ?`,
+    [reference]
+  );
+  // A Stripe subscription and a Stripe one-off are told apart by whether there
+  // is a subscription id, so the receipt page can keep saying "subscription"
+  // or "order" without knowing which provider took the money.
+  if (stripes.length) {
+    return { ...stripes[0], kind: stripes[0].stripe_subscription_id ? 'subscription' : 'order' };
+  }
+
   return null;
 }
 
-module.exports = { recordSubscription, recordOrder, findPaymentByReference };
+module.exports = { recordSubscription, recordOrder, recordStripe, findPaymentByReference };

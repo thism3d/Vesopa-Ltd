@@ -3749,3 +3749,70 @@ a.support_section_touch_item_inside:hover{
     .account_del_cancel_heading{ font-size: 20px; letter-spacing: normal;}
     .account_del_cancel__desc, .cancel_del_button{ font-size: 13px;}
 }
+/* ---------------------------------------------------------------------------
+   Stripe — the card / Google Pay / Apple Pay tiles
+   ---------------------------------------------------------------------------
+   The PayPal tile mounts PayPal's own rendered button, so it brings its
+   styling with it. Stripe's hosted page is reached by an ordinary navigation,
+   so the button that starts it is ours and has to look like it belongs beside
+   PayPal's rather than like a default form control.
+   --------------------------------------------------------------------------- */
+.stripe_pay_button {
+    display: block;
+    width: 100%;
+    padding: 14px 24px;
+    border: none;
+    border-radius: 7px;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+    color: #fff;
+    background-color: var(--primary_color);
+    cursor: pointer;
+    box-shadow: 1px 1px 2px 0 #f2f2f2;
+    transition: background-color 0.3s, box-shadow 0.3s;
+}
+
+.stripe_pay_button:hover:not(:disabled) {
+    background-color: var(--primary_bold);
+    box-shadow: 2px 2px 5px 0 #bebebe;
+}
+
+/* Held down while the session is being minted — the click has been taken and
+   a second one would open a second session. */
+.stripe_pay_button:disabled {
+    opacity: 0.65;
+    cursor: default;
+}
+
+.stripe_secure_note {
+    margin: 12px 0 4px;
+    font-size: 12.5px;
+    font-weight: 300;
+    line-height: 1.45rem;
+    color: #6b7885;
+    text-align: center;
+}
+
+.stripe_secure_note i {
+    margin-right: 5px;
+}
+
+/* PayPal pointed at its sandbox — an amber warning, not a quiet note. It has to
+   read as "this will not take your money" at a glance. */
+.paypal_sandbox_note {
+    margin: 20px 0 0;
+    padding: 14px 18px;
+    border: 1px solid #f0d48a;
+    border-left: 4px solid #e6a817;
+    border-radius: 6px;
+    background-color: #fdf6e3;
+    color: #7a5c00;
+    font-size: 13.5px;
+    font-weight: 300;
+    line-height: 1.5rem;
+}
+
+.paypal_sandbox_note i {
+    margin-right: 6px;
+}

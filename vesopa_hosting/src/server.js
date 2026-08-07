@@ -52,14 +52,25 @@ app.use((req, res, next) => {
       "img-src 'self' data:",
       "font-src 'self'",
       "connect-src 'self'",
-      // Checkout POSTs to /checkout (self) and the server 303s the browser on
-      // to the payment gateway. Chromium and WebKit apply form-action to that
-      // REDIRECT TARGET too, not just the form's own action attribute — so
-      // without the gateway's origins here, the browser silently blocks the
-      // hand-off and the customer is left stuck on the checkout page with an
-      // order that was, in fact, created. BosheBoshe is the merchant of
-      // record; it routes to SSLCommerz's own hosted payment pages.
-      "form-action 'self' https://bosheboshe.com https://*.bosheboshe.com https://sslcommerz.com https://*.sslcommerz.com",
+      /*
+       * Checkout POSTs to /checkout (self) and the server 303s the browser on
+       * to whichever gateway was chosen. Chromium and WebKit apply form-action
+       * to that REDIRECT TARGET too, not just the form's own action attribute
+       * — so without a gateway's origin here, the browser silently blocks the
+       * hand-off and the customer is left stuck on the checkout page with an
+       * order that was, in fact, created. No error is shown; it simply does
+       * nothing, which is the worst way for a payment to fail.
+       *
+       * EVERY GATEWAY NEEDS ITS ORIGIN LISTED HERE. Adding an adapter without
+       * adding it to this line reproduces that bug exactly.
+       *   BosheBoshe   merchant of record, routes to SSLCommerz's own pages
+       *   Stripe       checkout.stripe.com hosts the Checkout Session
+       *   PayPal       www.paypal.com live, www.sandbox.paypal.com sandbox
+       */
+      "form-action 'self' https://bosheboshe.com https://*.bosheboshe.com "
+        + 'https://sslcommerz.com https://*.sslcommerz.com '
+        + 'https://checkout.stripe.com https://*.stripe.com '
+        + 'https://www.paypal.com https://www.sandbox.paypal.com https://*.paypal.com',
       "frame-ancestors 'self'",
       "base-uri 'self'",
       "object-src 'none'",
@@ -259,13 +270,44 @@ app.use((err, req, res, _next) => {
   if (!reg.live) console.log('            No domain will actually be registered while DNA_MODE=mock.');
   if (!node.live) console.log('            No account will actually be created while HESTIA_MODE=mock.');
 
-  const pay = require('./integrations/sslcommerz').status();
+  /*
+   * Every gateway announces itself, not just the first one.
+   *
+   * With three adapters, a single line about SSLCommerz was how Stripe sat in
+   * mock mode unnoticed: the banner said "LIVE" and meant a different gateway
+   * than the one the customer was about to be sent to. One line each, and the
+   * mode is read from the adapter rather than from the environment directly,
+   * so what is printed is what the adapter will actually do.
+   */
   const payments = require('./payments');
+  const ssl = require('./integrations/sslcommerz').status();
+  const str = require('./integrations/stripe').status();
+  const pp = require('./integrations/paypal').status();
+
   console.log(
-    `[payments]  SSLCommerz in ${pay.mode.toUpperCase()} mode${pay.configured ? '' : ' (no credentials set)'}`
+    `[payments]  SSLCommerz in ${ssl.mode.toUpperCase()} mode${ssl.configured ? '' : ' (no credentials set)'}`
     + `, settling in ${payments.SETTLE_CURRENCY}`,
   );
-  if (!pay.live) console.log('            No card will actually be charged while SSLCZ_MODE=mock.');
+  console.log(
+    `            Stripe in ${str.mode.toUpperCase()} mode${str.configured ? '' : ' (no credentials set)'}`
+    + ', charging the order currency',
+  );
+  console.log(
+    `            PayPal in ${pp.mode.toUpperCase()} mode${pp.configured ? '' : ' (no credentials set)'}`
+    + ', charging the order currency',
+  );
+
+  const mocked = [
+    !ssl.live && 'SSLCZ_MODE=mock',
+    str.mode === 'mock' && 'STRIPE_MODE=mock',
+    pp.mode === 'mock' && 'PAYPAL_MODE=mock',
+  ].filter(Boolean);
+  if (mocked.length) {
+    console.log(`            No card will actually be charged while ${mocked.join(', ')}.`);
+  }
+  if (pp.mode === 'sandbox') {
+    console.log('            PayPal is on sandbox.paypal.com — real journey, fake money.');
+  }
 
   /*
    * BIND TO LOOPBACK, NOT 0.0.0.0.

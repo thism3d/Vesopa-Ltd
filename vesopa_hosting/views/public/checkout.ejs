@@ -127,19 +127,27 @@
             </div>
 
           <% } else if (canPayOnline) { %>
-            <p class="small muted mb-3">Choose how you would like to pay.</p>
+            <h3 class="h4 mb-1">Choose a payment method</h3>
+            <p class="tiny muted mb-3 paypick-lead"><%- icon('lock', 13) %> Secure and encrypted payments</p>
 
             <div class="paypick">
               <% gateways.forEach(function (g) { %>
                 <%#
-                  Every gateway is listed, and the two that are not ready are
-                  shown disabled rather than hidden. A checkout offering exactly
-                  one way to pay reads as a limitation; one that shows three and
-                  labels two "coming soon" says the same thing about today and
-                  something better about tomorrow.
+                  Every gateway is listed, and crypto — not ready yet — is
+                  shown disabled rather than hidden. A checkout offering
+                  exactly one way to pay reads as a limitation; one that shows
+                  several and labels the unready one "coming soon" says the
+                  same thing about today and something better about tomorrow.
 
-                  `disabled` on the input is what actually enforces it — a
-                  hand-edited value is re-checked server-side against the same
+                  Only the SELECTED card's detail opens — one method's worth of
+                  explanation at a time reads better than all of them at once —
+                  and that expansion is driven entirely by `:has(input:checked)`
+                  in app.css, not by JavaScript. A checkout is the one part of
+                  the site with the least excuse to depend on a script that
+                  might not have loaded.
+
+                  `disabled` on the input is what actually enforces the choice —
+                  a hand-edited value is re-checked server-side against the same
                   list this loop renders, so the class is decoration and the
                   server is the rule.
                 %>
@@ -147,23 +155,24 @@
                   <input type="radio" name="gateway" value="<%= g.id %>"
                          <%= g.id === selectedGateway ? 'checked' : '' %>
                          <%= g.available ? '' : 'disabled' %>>
-                  <span class="paypick-body">
-                    <img class="paypick-logo" src="<%= g.logo %>" alt="<%= g.name %>" width="200" height="48" loading="lazy">
-                    <span class="paypick-note">
-                      <%= g.blurb %>
-                      <% if (g.note) { %><b class="paypick-tag"><%= g.note %></b><% } %>
+                  <span class="paypick-head">
+                    <img class="paypick-logo" src="<%= g.logo %>" alt="<%= g.name %>" width="180" height="40" loading="lazy">
+                    <% if (g.note) { %><b class="paypick-tag"><%= g.note %></b><% } %>
+                    <span class="paypick-tick"><%- icon('check', 14) %></span>
+                    <span class="paypick-chevron"><%- icon('chevron', 16) %></span>
+                  </span>
+                  <span class="paypick-detail">
+                    <span class="paypick-detail-inner">
+                      <span class="paypick-note"><%= g.blurb %></span>
+                      <span class="paypick-secure">
+                        <%- icon('lock', 13) %> You are taken to <%= g.name %>'s own secure page to
+                        pay. Your card details are never sent to us and never touch this server.
+                      </span>
                     </span>
                   </span>
-                  <span class="paypick-tick"><%- icon('check', 15) %></span>
                 </label>
               <% }); %>
             </div>
-
-            <p class="tiny muted mt-2 mb-3">
-              <%- icon('lock', 13) %>
-              You are taken to the gateway's own secure page to pay. Your card
-              details are never sent to us and never touch this server.
-            </p>
 
           <% } else { %>
             <div class="alert alert-info mb-3">

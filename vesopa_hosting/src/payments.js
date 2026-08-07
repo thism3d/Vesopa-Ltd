@@ -22,6 +22,11 @@ const currency = require('./currency');
 const provisioning = require('./provisioning');
 const { SITE_URL } = require('./config');
 const sslcommerz = require('./integrations/sslcommerz');
+const stripe = require('./integrations/stripe');
+const paypal = require('./integrations/paypal');
+
+/** One adapter per gateway id, all sharing the same initiate() contract. */
+const INTEGRATIONS = { sslcommerz, stripe, paypal };
 
 /**
  * The currency the gateway settles in.
@@ -55,6 +60,8 @@ const PASSTHROUGH = String(process.env.SSLCZ_PASSTHROUGH || SETTLE_CURRENCY)
  */
 function gateways() {
   const ssl = sslcommerz.status();
+  const str = stripe.status();
+  const pp = paypal.status();
   return [
     {
       id: 'sslcommerz',
@@ -72,8 +79,18 @@ function gateways() {
       name: 'Stripe',
       blurb: 'Card payments, Apple Pay and Google Pay.',
       logo: '/assets/img/pay/stripe.svg',
-      available: false,
-      note: 'Coming soon',
+      available: str.configured || str.mode === 'mock',
+      mock: str.mode === 'mock',
+      note: str.mode === 'mock' ? 'Test mode — no money moves.' : '',
+    },
+    {
+      id: 'paypal',
+      name: 'PayPal',
+      blurb: 'Pay with your PayPal account.',
+      logo: '/assets/img/pay/paypal.svg',
+      available: pp.configured || pp.mode === 'mock',
+      mock: pp.mode === 'mock',
+      note: pp.mode === 'sandbox' ? 'Sandbox — no real money moves.' : (pp.mode === 'mock' ? 'Test mode — no money moves.' : ''),
     },
     {
       id: 'crypto',
@@ -98,9 +115,26 @@ function gateways() {
  * One return URL for success, failure and cancellation, told apart by `r`. The
  * gateway signs the whole query string it is given, `r` included, so the flag
  * cannot be tampered with in transit.
+ *
+ * Stripe and PayPal each verify a payment by asking their own API for the
+ * session/order back by id — never by trusting the query string — so unlike
+ * SSLCommerz they need no shared signature and no IPN, and each gets its own
+ * return route rather than reusing `/pay/return`.
  */
-function callbackUrls() {
+function callbackUrls(gatewayId) {
   const base = String(SITE_URL || '').replace(/\/+$/, '');
+  if (gatewayId === 'stripe') {
+    return {
+      successUrl: `${base}/pay/stripe/return?r=ok`,
+      cancelUrl: `${base}/pay/stripe/return?r=cancel`,
+    };
+  }
+  if (gatewayId === 'paypal') {
+    return {
+      successUrl: `${base}/pay/paypal/return?r=ok`,
+      cancelUrl: `${base}/pay/paypal/return?r=cancel`,
+    };
+  }
   return {
     successUrl: `${base}/pay/return?r=ok`,
     failUrl: `${base}/pay/return?r=fail`,
@@ -213,9 +247,16 @@ async function begin(order, customer, gatewayId, urls) {
    */
   const orderRef = `${order.reference}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
 
+  /*
+   * Only SSLCommerz settles in taka. Stripe and PayPal both take GBP/USD/CAD
+   * directly, so they charge the order's own currency and skip the BDT
+   * conversion entirely — a rate that does not apply cannot be misapplied.
+   */
   let charge;
   try {
-    charge = await toSettlement(order.total_pence, order.currency);
+    charge = gateway.id === 'sslcommerz'
+      ? await toSettlement(order.total_pence, order.currency)
+      : { minor: order.total_pence, currency: order.currency, rate: 1, converted: false };
   } catch (err) {
     console.error('[payments] settlement currency:', err.message);
     return {
@@ -224,10 +265,12 @@ async function begin(order, customer, gatewayId, urls) {
     };
   }
 
-  const started = await sslcommerz.initiate({
+  const integration = INTEGRATIONS[gateway.id];
+  const started = await integration.initiate({
     amount: charge.minor / currency.MINOR,
     currency: charge.currency,
     orderRef,
+    description: `Order ${order.reference} — Vesopa Hosting`,
     cusName: `${customer.first_name || ''} ${customer.last_name || ''}`.trim(),
     cusEmail: customer.email,
     cusPhone: customer.phone,

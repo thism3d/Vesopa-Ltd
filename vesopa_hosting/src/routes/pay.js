@@ -25,6 +25,8 @@ const db = require('../db');
 const auth = require('../auth');
 const payments = require('../payments');
 const sslcommerz = require('../integrations/sslcommerz');
+const stripe = require('../integrations/stripe');
+const paypal = require('../integrations/paypal');
 const currency = require('../currency');
 const { flash } = require('../http-utils');
 
@@ -65,7 +67,7 @@ router.post('/pay/:id/start', async (req, res, next) => {
       return res.redirect(back);
     }
 
-    const started = await payments.begin(order, req.customer, req.body.gateway, payments.callbackUrls());
+    const started = await payments.begin(order, req.customer, req.body.gateway, payments.callbackUrls(req.body.gateway));
     if (!started.ok) {
       flash(res, started.error, 'error');
       return res.redirect(back);
@@ -130,6 +132,123 @@ router.get('/pay/return', async (req, res, next) => {
 });
 
 // ---------------------------------------------------------------------------
+// Stripe: the browser comes back
+// ---------------------------------------------------------------------------
+/**
+ * No signature to check here — nothing from this request is trusted at all.
+ * `session_id` only tells us which session to ask Stripe about; the answer
+ * that decides whether the order is paid comes from Stripe's own API, fetched
+ * fresh, the same principle as SSLCommerz's HMAC check applied a different
+ * way. A forged `session_id` for someone else's session would just return
+ * that other session back, still `payment_status !== 'paid'` from this
+ * customer's side of it, or — if genuinely paid — settle a payment that was
+ * genuinely made, which is not a hole.
+ */
+router.get('/pay/stripe/return', async (req, res, next) => {
+  try {
+    const outcome = String(req.query.r || 'ok');
+    const sessionId = String(req.query.session_id || '');
+
+    if (outcome === 'cancel' || !sessionId) {
+      const failed = sessionId ? await payments.fail(sessionId, 'CANCELLED', {}, 'cancelled') : null;
+      flash(res, 'Payment cancelled — nothing has been charged and your order is still here.', 'warn');
+      return res.redirect(failed ? `/panel/setup/${failed.order_id}` : '/panel');
+    }
+
+    // Mock mode skips the real lookup — there is no genuine session at Stripe
+    // to ask about — and trusts `r` instead, the same one exception
+    // sslcommerz.js's mock mode makes for its own signature check.
+    let paid;
+    let methodDetail;
+    let payload;
+    if (stripe.MODE === 'mock') {
+      paid = outcome === 'ok';
+      methodDetail = 'Test card';
+      payload = { mock: true, session_id: sessionId, payment_status: paid ? 'paid' : 'unpaid' };
+    } else {
+      try {
+        payload = await stripe.retrieveSession(sessionId);
+      } catch (err) {
+        console.error('[pay] stripe retrieve failed:', err.message);
+        flash(res, 'We could not verify that payment. If money has left your account, contact us and we will sort it out today.', 'error');
+        return res.redirect('/panel');
+      }
+      paid = stripe.isPaidSession(payload);
+      methodDetail = stripe.describeMethod(payload);
+    }
+
+    if (paid) {
+      const settled = await payments.settle(sessionId, payload, { methodDetail });
+      if (!settled.ok) return next();
+      flash(res, settled.already ? 'That payment is already confirmed.' : 'Payment received — thank you.');
+      return res.redirect(`/panel/setup/${settled.orderId}`);
+    }
+
+    const failed = await payments.fail(sessionId, payload.payment_status || 'FAILED', payload);
+    flash(res, 'That payment did not go through. Nothing has been charged; you can try again.', 'error');
+    res.redirect(failed ? `/panel/setup/${failed.order_id}` : '/panel');
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PayPal: the browser comes back
+// ---------------------------------------------------------------------------
+/**
+ * PayPal appends the order id as `token` to whichever of return_url /
+ * cancel_url it sends the browser back to — that is PayPal's own convention,
+ * not ours. Capturing here is what confirms the money moved; nothing about a
+ * capture succeeding depends on anything the browser supplied.
+ */
+router.get('/pay/paypal/return', async (req, res, next) => {
+  try {
+    const outcome = String(req.query.r || 'ok');
+    const orderId = String(req.query.token || '');
+
+    if (outcome === 'cancel' || !orderId) {
+      const failed = orderId ? await payments.fail(orderId, 'CANCELLED', {}, 'cancelled') : null;
+      flash(res, 'Payment cancelled — nothing has been charged and your order is still here.', 'warn');
+      return res.redirect(failed ? `/panel/setup/${failed.order_id}` : '/panel');
+    }
+
+    // Mock mode skips the real capture — there is no genuine order at PayPal
+    // to capture — and trusts `r` instead, same exception as sslcommerz.js.
+    let paid;
+    let methodDetail;
+    let payload;
+    if (paypal.MODE === 'mock') {
+      paid = outcome === 'ok';
+      methodDetail = 'paypal';
+      payload = { mock: true, id: orderId, status: paid ? 'COMPLETED' : 'FAILED' };
+    } else {
+      try {
+        payload = await paypal.captureOrder(orderId);
+      } catch (err) {
+        console.error('[pay] paypal capture failed:', err.message);
+        flash(res, 'We could not verify that payment. If money has left your account, contact us and we will sort it out today.', 'error');
+        return res.redirect('/panel');
+      }
+      paid = paypal.isPaidOrder(payload);
+      methodDetail = paypal.describeMethod(payload);
+    }
+
+    if (paid) {
+      const settled = await payments.settle(orderId, payload, { methodDetail });
+      if (!settled.ok) return next();
+      flash(res, settled.already ? 'That payment is already confirmed.' : 'Payment received — thank you.');
+      return res.redirect(`/panel/setup/${settled.orderId}`);
+    }
+
+    const failed = await payments.fail(orderId, payload.status || 'FAILED', payload);
+    flash(res, 'That payment did not go through. Nothing has been charged; you can try again.', 'error');
+    res.redirect(failed ? `/panel/setup/${failed.order_id}` : '/panel');
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
 // The IPN
 // ---------------------------------------------------------------------------
 /**
@@ -174,14 +293,18 @@ router.post('/pay/ipn', async (req, res) => {
  * Mock mode only, and refused outright otherwise.
  *
  * This page settles a real order without any money moving, so the guard is not
- * a nicety. It is checked against the adapter's mode — a server-side constant
+ * a nicety. Each gateway has its own mode, so the check is against the mode of
+ * the gateway THIS PAYMENT was actually opened under — a server-side constant
  * read from the environment — and nothing in the request can influence it.
  */
-router.get('/pay/mock/:tranId', async (req, res, next) => {
-  if (sslcommerz.MODE !== 'mock') return next();
+const MOCK_GUARD = { sslcommerz, stripe, paypal };
 
+router.get('/pay/mock/:tranId', async (req, res, next) => {
   const payment = await db.one('SELECT * FROM payments WHERE gateway_ref = ? LIMIT 1', [req.params.tranId]);
   if (!payment) return next();
+
+  const integration = MOCK_GUARD[payment.gateway];
+  if (!integration || integration.MODE !== 'mock') return next();
 
   // NOT currency.resolve(): that returns active currencies only and falls back
   // to the default, so a taka charge would be printed with a dollar sign. The

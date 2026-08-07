@@ -101,6 +101,13 @@
 
                             <div class="payment_method_bottom">
                                 <p class="payment_method_bottom_border_top"></p>
+<% if (paypalSandbox) { %>
+                                <%# PayPal is pointed at its sandbox. Nothing here takes
+                                    real money, and only a PayPal sandbox account can
+                                    complete it — which has to be on the page, not just
+                                    in an environment variable. %>
+                                <p class="paypal_sandbox_note"><i class="fa fa-exclamation-triangle"></i> <b>PayPal is in test mode.</b> No real payment is taken and only a PayPal sandbox account can complete it. Use another method to pay for real.</p>
+<% } %>
                                 <p class="payment_today_cost_brief">Today, you will be charged a total of GBP <%= plan.discounted_price %> for the <%= period %>-month subscription. Your subscription will automatically renew every <%= period %> months thereafter. You can cancel at any time.</p>
 
                                 <div class="payment_method_checkout">
@@ -132,7 +139,20 @@
                         </div>
 
 
-                        <div class="payment_method_item payment_method_item_disabled">
+                        <%#
+                          Card, Google Pay and Apple Pay are ONE integration —
+                          a Stripe Checkout Session — listed as three because
+                          that is how a customer looks for them. Stripe decides
+                          which are actually offered from what the device
+                          supports, so a tile here is a description of what they
+                          will find, not a separate gateway.
+
+                          They stay greyed out until Stripe has a key, the same
+                          rule the PayPal tile follows: whether a method is
+                          offered is computed, never typed.
+                        %>
+                        <div <%- stripeEnabled ? `onclick="toggle_payment_item(this, 'stripe')"` : '' %>
+                             class="payment_method_item<%= stripeEnabled ? '' : ' payment_method_item_disabled' %>">
                             <div class="payment_method_top">
                                 <div class="payment_method_item_left">
                                     <p class="payment_method_name">Credit or debit card</p>
@@ -148,12 +168,29 @@
                                     <p class="payment_item_click"><i class="fa fa-angle-down"></i></p>
                                 </div>
                             </div>
+
+<% if (stripeEnabled) { %>
+                            <div class="payment_method_bottom">
+                                <p class="payment_method_bottom_border_top"></p>
+                                <p class="payment_today_cost_brief">Today, you will be charged a total of GBP <%= plan.discounted_price %> for the <%= period %>-month subscription.<%= period === '24' ? ' This is a single payment and does not renew.' : ` Your subscription will automatically renew every ${period} months thereafter. You can cancel at any time.` %></p>
+
+                                <div class="payment_method_checkout">
+                                    <p class="pricing_money_back pricing_money_back_center"><img src="/assets/icons/refund.svg" class="pricing_refund_icon"> 30-day money back guarantee</p>
+                                </div>
+
+                                <button type="button" class="stripe_pay_button" onclick="start_stripe(event)">
+                                    Pay GBP <%= plan.discounted_price %> by card
+                                </button>
+                                <p class="stripe_secure_note"><i class="fa fa-lock"></i> You are taken to Stripe's own secure page. Your card details never touch this server.</p>
+                            </div>
+<% } %>
                         </div>
 
 
 
 
-                        <div class="payment_method_item payment_method_item_disabled">
+                        <div <%- stripeEnabled ? `onclick="toggle_payment_item(this, 'stripe')"` : '' %>
+                             class="payment_method_item<%= stripeEnabled ? '' : ' payment_method_item_disabled' %>">
                             <div class="payment_method_top">
                                 <div class="payment_method_item_left">
                                     <p class="payment_method_name">Google Pay</p>
@@ -165,10 +202,23 @@
                                     <p class="payment_item_click"><i class="fa fa-angle-down"></i></p>
                                 </div>
                             </div>
+
+<% if (stripeEnabled) { %>
+                            <div class="payment_method_bottom">
+                                <p class="payment_method_bottom_border_top"></p>
+                                <p class="payment_today_cost_brief">Google Pay is offered on Stripe's secure page when your browser supports it — on Chrome with a card saved to your Google account. If it is not available you can pay by card on the same page.</p>
+
+                                <button type="button" class="stripe_pay_button" onclick="start_stripe(event)">
+                                    Continue with Google Pay
+                                </button>
+                                <p class="stripe_secure_note"><i class="fa fa-lock"></i> You are taken to Stripe's own secure page. Your card details never touch this server.</p>
+                            </div>
+<% } %>
                         </div>
 
 
-                        <div class="payment_method_item payment_method_item_disabled">
+                        <div <%- stripeEnabled ? `onclick="toggle_payment_item(this, 'stripe')"` : '' %>
+                             class="payment_method_item<%= stripeEnabled ? '' : ' payment_method_item_disabled' %>">
                             <div class="payment_method_top">
                                 <div class="payment_method_item_left">
                                     <p class="payment_method_name">Apple Pay</p>
@@ -180,9 +230,23 @@
                                     <p class="payment_item_click"><i class="fa fa-angle-down"></i></p>
                                 </div>
                             </div>
+
+<% if (stripeEnabled) { %>
+                            <div class="payment_method_bottom">
+                                <p class="payment_method_bottom_border_top"></p>
+                                <p class="payment_today_cost_brief">Apple Pay is offered on Stripe's secure page when your device supports it — on Safari, on a Mac or iPhone with a card in Wallet. If it is not available you can pay by card on the same page.</p>
+
+                                <button type="button" class="stripe_pay_button" onclick="start_stripe(event)">
+                                    Continue with Apple Pay
+                                </button>
+                                <p class="stripe_secure_note"><i class="fa fa-lock"></i> You are taken to Stripe's own secure page. Your card details never touch this server.</p>
+                            </div>
+<% } %>
                         </div>
 
 
+                        <%# UnionPay and JCB ride along on the Stripe card page rather than
+                            being their own tile — they are card networks, not gateways. %>
                         <div class="payment_method_item payment_method_item_disabled">
                             <div class="payment_method_top">
                                 <div class="payment_method_item_left">
@@ -338,6 +402,73 @@
                             }).catch(() => resultMessage("PayPal is unavailable right now."));
                         }
 
+                        /**
+                         * Open a Stripe Checkout Session and go there.
+                         *
+                         * The card, Google Pay and Apple Pay tiles all call this — one
+                         * gateway behind three labels. The amount is never sent: the
+                         * server prices the period itself, so a tampered payload cannot
+                         * buy a 24-month plan for a pound.
+                         */
+                        let stripe_starting = false;
+
+                        /**
+                         * Say what went wrong somewhere the customer is actually looking.
+                         *
+                         * NOT resultMessage(): that writes into #paymentResponse, which
+                         * lives inside the PayPal panel and is collapsed whenever a card
+                         * tile is the one open — the message would be real, and invisible.
+                         * The warning line under the email field is above every tile and
+                         * always on screen.
+                         */
+                        function stripeProblem(msg_txt){
+                            email_warning.innerHTML = msg_txt;
+                            scrollToTop();
+                        }
+
+                        function start_stripe(ev){
+                            // The tile's own onclick would otherwise collapse the panel
+                            // the button lives in, the moment it is pressed.
+                            ev.stopPropagation();
+
+                            const email_input_value = email_input.value.trim();
+                            if(email_input_value == "" || !isValidEmail(email_input_value)){
+                                scrollToTop();
+                                email_warning.innerHTML = "Enter valid email address and checkout";
+                                email_input.focus();
+                                return;
+                            }
+
+                            // A second click while the session is being minted would open
+                            // a second session and leave one abandoned at Stripe.
+                            if(stripe_starting) return;
+                            stripe_starting = true;
+
+                            const button = ev.currentTarget;
+                            const label = button.innerHTML;
+                            button.disabled = true;
+                            button.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Taking you to Stripe…';
+
+                            postJSON("/api/stripe/session", {
+                                period: CHECKOUT.period,
+                                email: email_input_value
+                            }).then((result) => {
+                                if (result.status === 1 && result.url) {
+                                    window.location.href = result.url;
+                                    return;
+                                }
+                                stripeProblem(result.msg || "Could not start that payment.");
+                                stripe_starting = false;
+                                button.disabled = false;
+                                button.innerHTML = label;
+                            }).catch(() => {
+                                stripeProblem("Network problem starting the payment.");
+                                stripe_starting = false;
+                                button.disabled = false;
+                                button.innerHTML = label;
+                            });
+                        }
+
                         function toggle_payment_item(clickedItem, payment_method){
                             email_warning.innerHTML = "";
                             const email_input_value = email_input.value.trim();
@@ -349,11 +480,18 @@
                                 return;
                             }
 
-                            if(clickedItem.className == "payment_method_item"){
-                                clickedItem.className = "payment_method_item checkout_active";
-                            }else {
-                                clickedItem.className = "payment_method_item";
-                            }
+                            /*
+                             * classList, not an exact className comparison.
+                             *
+                             * This was `className == "payment_method_item"`, which is a
+                             * string match against the ENTIRE attribute: one extra class,
+                             * or even a trailing space from a template conditional, and
+                             * the test silently fails and the panel can never open. It
+                             * also wiped every other class off the element on the way
+                             * past. Toggling the one class that means "open" says what is
+                             * meant and cannot be broken by anything else in the list.
+                             */
+                            clickedItem.classList.toggle("checkout_active");
 
                             if(payment_method == 'paypal'){
                                 // Only ever mount the buttons once.

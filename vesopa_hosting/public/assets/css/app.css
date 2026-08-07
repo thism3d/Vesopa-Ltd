@@ -1438,14 +1438,18 @@ body.nav-open .nav-sheet-foot {
    Three cards, one radio. Two of them are disabled today and shown anyway —
    see the note in checkout.ejs for why.
    =========================================================================== */
-.paypick { display: flex; flex-direction: column; gap: 10px; }
+/* The reset sets `svg { display: block }`, so an icon dropped straight into a
+   paragraph starts its own line. Every icon+text pair in this component is a
+   flex row for that reason, not for alignment polish. */
+.paypick-lead { display: flex; align-items: center; gap: 6px; }
+.paypick-lead svg { flex: none; }
+
+.paypick { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
 
 .paypick-opt {
   position: relative;
-  display: flex;
-  align-items: center;
-  gap: 13px;
-  padding: 14px 16px;
+  display: block;
+  padding: 3px 16px;
   border: 2px solid var(--rule);
   border-radius: var(--radius);
   background: #fff;
@@ -1456,7 +1460,7 @@ body.nav-open .nav-sheet-foot {
 
 /* The radio itself is hidden but still focusable and still the thing that is
    checked — :has() keys the whole card off it, so the card cannot look selected
-   while the form posts something else. */
+   or expanded while the form posts something else. */
 .paypick-opt input {
   position: absolute;
   opacity: 0;
@@ -1472,19 +1476,13 @@ body.nav-open .nav-sheet-foot {
 /* Keyboard users get the same ring the rest of the app uses. */
 .paypick-opt:has(input:focus-visible) { outline: 2px solid var(--lime-ink); outline-offset: 2px; }
 
-/* `align-items: flex-start` is load-bearing, not tidiness.
-
-   Without it the logo is a stretched flex item: width:auto on the CROSS axis of
-   a column flex container resolves to stretch, so the <img> box became the full
-   width of the card and the SVG — which defaults to preserveAspectRatio
-   xMidYMid — drew itself centred inside it, floating away from the left-aligned
-   text underneath. */
-.paypick-body { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; flex: 1; min-width: 0; }
-.paypick-logo { display: block; height: 34px; width: auto; max-width: 100%; }
-.paypick-note { font-size: .8rem; color: var(--ink-3); }
+/* The collapsed row: logo, an optional tag, the tick, the chevron. Same
+   flex-stretch gotcha as before — `align-items: center` on the ROW axis is
+   fine here, the column-stretch trap only bit the old single-row layout. */
+.paypick-head { display: flex; align-items: center; gap: 10px; padding: 14px 0; }
+.paypick-logo { display: block; height: 32px; width: auto; max-width: 100%; }
 .paypick-tag {
   display: inline-block;
-  margin-left: 6px;
   padding: 2px 7px;
   border-radius: 999px;
   background: var(--bg-3);
@@ -1498,8 +1496,9 @@ body.nav-open .nav-sheet-foot {
 .paypick-tick {
   display: grid;
   place-items: center;
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
+  margin-left: auto;
   flex: none;
   border-radius: 50%;
   border: 2px solid var(--rule);
@@ -1512,6 +1511,21 @@ body.nav-open .nav-sheet-foot {
   color: var(--on-lime);
 }
 
+.paypick-chevron { display: grid; place-items: center; flex: none; color: var(--ink-3); transition: transform .22s var(--ease); }
+.paypick-chevron svg { display: block; width: 16px; height: 16px; }
+.paypick-opt:has(input:checked) .paypick-chevron { transform: rotate(180deg); color: var(--lime-ink); }
+
+/* The expandable detail — only the selected card's opens. A CSS grid row
+   animated between 0fr and 1fr, not max-height: the usual max-height trick
+   needs a guessed-too-large number or it clips; grid-template-rows animates
+   to the content's real height with nothing measured in JavaScript. */
+.paypick-detail { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .28s var(--ease); }
+.paypick-detail-inner { overflow: hidden; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+.paypick-opt:has(input:checked) .paypick-detail { grid-template-rows: 1fr; }
+.paypick-note { font-size: .84rem; color: var(--ink-2); padding-top: 2px; }
+.paypick-secure { display: flex; align-items: flex-start; gap: 6px; font-size: .74rem; color: var(--ink-3); padding-bottom: 14px; }
+.paypick-secure svg { flex: none; margin-top: 1px; }
+
 /* Disabled: dimmed, not hidden, and not clickable. */
 .paypick-opt.is-off {
   cursor: not-allowed;
@@ -1522,12 +1536,16 @@ body.nav-open .nav-sheet-foot {
 .paypick-opt.is-off .paypick-note { opacity: .7; }
 .paypick-opt.is-off:hover { border-color: var(--rule-soft); }
 .paypick-opt.is-off .paypick-tag { background: #fdf3d6; color: #8a6400; }
+.paypick-opt.is-off .paypick-chevron { display: none; }
 
 /* :has() is everywhere we support, but a browser without it must not render
-   three cards that never look selected. The radio comes back if it is missing. */
+   cards that never look selected or ever open. The radio comes back if it is
+   missing, and every card's detail is shown open rather than stuck shut —
+   the safer failure when the only way to open one has gone away too. */
 @supports not selector(:has(*)) {
   .paypick-opt input { position: static; opacity: 1; width: 18px; height: 18px; accent-color: var(--lime-ink); }
   .paypick-tick { display: none; }
+  .paypick-detail { grid-template-rows: 1fr; }
 }
 
 /* Visible to a screen reader, to nothing else. The clip-path pair rather than

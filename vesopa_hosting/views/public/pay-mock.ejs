@@ -17,8 +17,9 @@
 
     <h1 class="h2 mb-1">Simulated payment</h1>
     <p class="small muted mb-3">
-      This screen stands in for the SSLCommerz hosted checkout. It exists because
-      <code>SSLCZ_MODE=mock</code>. Set a real API key and it disappears.
+      This screen stands in for the <%= payment.gateway %> hosted checkout. It
+      exists because that gateway has no live credentials set. Set a real one
+      and it disappears.
     </p>
 
     <div class="mockpay-amount">
@@ -32,19 +33,33 @@
       <div><dt>Order total</dt><dd><%= (payment.amount_minor / 100).toFixed(2) %> <%= payment.currency %></dd></div>
     </dl>
 
-    <%# Plain links, because mock mode skips signature verification and there is
-        nothing to sign with. Each one lands on the real /pay/return handler. %>
+    <%#
+      Plain links, because mock mode skips whatever verification the real
+      gateway would need and there is nothing to sign with or capture. Each
+      gateway has its own return route and its own idea of what the browser
+      carries back — SSLCommerz reads `tran_id`, Stripe reads `session_id`,
+      PayPal reads `token` — so the link shape is chosen by `payment.gateway`
+      rather than assumed to be SSLCommerz's.
+    %>
+    <%
+      const returnPath = { stripe: '/pay/stripe/return', paypal: '/pay/paypal/return' }[payment.gateway] || '/pay/return';
+      const idParam = { stripe: 'session_id', paypal: 'token' }[payment.gateway] || 'tran_id';
+      const extra = payment.gateway === 'sslcommerz' ? '&amp;card_brand=VISA&amp;card_issuer=Test%20Bank' : '';
+      const statusParam = payment.gateway === 'sslcommerz' ? '&amp;status=VALID' : '';
+      const failStatusParam = payment.gateway === 'sslcommerz' ? '&amp;status=FAILED' : '';
+      const cancelStatusParam = payment.gateway === 'sslcommerz' ? '&amp;status=CANCELLED' : '';
+    %>
     <div class="mockpay-actions">
       <a class="btn btn-lg btn-block"
-         href="/pay/return?r=ok&amp;status=VALID&amp;tran_id=<%= encodeURIComponent(tranId) %>&amp;card_brand=VISA&amp;card_issuer=Test%20Bank">
+         href="<%= returnPath %>?r=ok<%- statusParam %>&amp;<%= idParam %>=<%= encodeURIComponent(tranId) %><%- extra %>">
         Approve this payment
       </a>
       <a class="btn btn-ghost btn-block"
-         href="/pay/return?r=fail&amp;status=FAILED&amp;tran_id=<%= encodeURIComponent(tranId) %>">
+         href="<%= returnPath %>?r=fail<%- failStatusParam %>&amp;<%= idParam %>=<%= encodeURIComponent(tranId) %>">
         Decline it
       </a>
       <a class="btn btn-ghost btn-block"
-         href="/pay/return?r=cancel&amp;status=CANCELLED&amp;tran_id=<%= encodeURIComponent(tranId) %>">
+         href="<%= returnPath %>?r=cancel<%- cancelStatusParam %>&amp;<%= idParam %>=<%= encodeURIComponent(tranId) %>">
         Cancel and go back
       </a>
     </div>

@@ -415,7 +415,7 @@ CREATE TABLE IF NOT EXISTS payments (
   id                INT UNSIGNED NOT NULL AUTO_INCREMENT,
   order_id          INT UNSIGNED NOT NULL,
   customer_id       INT UNSIGNED NOT NULL,
-  -- sslcommerz | stripe | crypto | manual | free
+  -- sslcommerz | stripe | paypal | crypto | manual | free
   gateway           VARCHAR(24) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'sslcommerz',
   status            ENUM('pending','paid','failed','cancelled','refunded') NOT NULL DEFAULT 'pending',
   amount_minor      INT UNSIGNED NOT NULL DEFAULT 0,

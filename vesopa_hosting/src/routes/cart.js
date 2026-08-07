@@ -1087,7 +1087,7 @@ router.post('/checkout', async (req, res, next) => {
     const gateway = payments.gatewayById(chosenGateway);
     if (gateway && gateway.available) {
       const order = await db.one('SELECT * FROM orders WHERE id = ? LIMIT 1', [result.orderId]);
-      const started = await payments.begin(order, customer, gateway.id, payments.callbackUrls());
+      const started = await payments.begin(order, customer, gateway.id, payments.callbackUrls(gateway.id));
       if (started.ok) return res.redirect(303, started.redirectUrl);
       flash(res, `${started.error} Your order is saved — you can try again below.`, 'error');
       return res.redirect(`/panel/setup/${result.orderId}`);
