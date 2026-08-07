@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.3.1+4
+version: 1.3.2+5
 
 environment:
   sdk: ^3.11.3
@@ -112,7 +112,7 @@ msix_config:
   # Four parts, and the Store requires the last to be 0. A version can never be
   # reused, so bump this for every submission — including a resubmission after
   # a failed certification.
-  msix_version: 1.3.1.0
+  msix_version: 1.3.2.0
   # The full-resolution master, not the .ico. msix scales this one file up to
   # the Store's Wide310x150Logo and to Square150x150Logo at scale-400 (600px),
   # so feeding it the icon meant generating 600px tiles from a 48px frame.

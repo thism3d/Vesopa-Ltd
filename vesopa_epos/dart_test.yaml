@@ -4,6 +4,15 @@
 #
 #     flutter test --tags live
 #
+# Tests tagged `golden` compare a rendered screenshot against a checked-in PNG.
+# The goldens are generated on macOS, and Windows rasterises text differently
+# enough that they never match there — so a Windows runner fails them however
+# correct the layout is. They are kept out of CI for that reason alone. Refresh
+# and check them on the machine that owns them with:
+#
+#     flutter test --tags golden --update-goldens
+#
 # Declared here so the runner does not warn about an unknown tag.
 tags:
   live:
+  golden:

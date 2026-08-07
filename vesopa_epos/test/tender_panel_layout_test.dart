@@ -161,5 +161,5 @@ void main() {
       find.byType(MaterialApp),
       matchesGoldenFile('goldens/tender_panel_wide.png'),
     );
-  });
+  }, tags: 'golden');
 }

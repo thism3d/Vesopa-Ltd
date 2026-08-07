@@ -1,16 +1,28 @@
-# Builds the Windows till, so releasing does not depend on anyone having a
-# Windows machine set up to build it.
+# Builds the Windows till as an MSIX package for the Microsoft Store, so
+# releasing does not depend on anyone having a Windows machine set up to build
+# it.
 #
-# Produces three artefacts on every run:
-#   * vesopa-epos-windows    — the plain runner folder, copy-and-run
-#   * vesopa-epos-installer  — "VesopaEPOS Installer.exe", the file the website
-#                              serves at /app/VesopaEPOS%20Installer.exe
-#   * vesopa-epos-msix       — an MSIX package for Store submission / sideload
+# WHAT TO DOWNLOAD
 #
-# Tagging a release (v1.2.3) also attaches all three to the GitHub release, so a
-# specific till version can be re-downloaded later rather than only living in a
-# CI run's 90-day artefacts.
-name: Build Windows till
+# Every successful run publishes one artefact named for the version:
+#
+#     vesopa-epos-<msix_version>.msix        e.g. vesopa-epos-1.3.2.0.msix
+#
+# It is uploaded unzipped, so the download is the .msix itself and goes
+# straight into Partner Center -> your product -> Packages. Nothing to extract,
+# and the filename already says which version it is.
+#
+# It is deliberately UNSIGNED: `--store` omits signing because Microsoft
+# re-signs every submission themselves, and a package signed with our own
+# certificate is rejected at upload for a publisher mismatch.
+#
+# Tagging a release (v1.2.3) also tries to attach the package to the GitHub
+# release. That step is allowed to fail — see "Attach to release" at the bottom.
+#
+# A second, signed artefact for SIDELOADING is produced only when a certificate
+# secret is configured. It is never the Store package and is never named as if
+# it were.
+name: Build Windows MSIX
 
 on:
   push:
@@ -20,12 +32,30 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# A second push while a build is still running makes the first one pointless —
+# the till is only ever shipped from the newest commit. Cancelling frees the
+# runner instead of queueing a package nobody will upload.
+concurrency:
+  group: msix-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: windows-latest
 
+    # Only the release step needs more than read access, but the token is
+    # granted per job. Without this the default token is read-only on repos
+    # created since 2023 and "Attach to release" fails with a 403 — which is
+    # invisible until the first tag is actually pushed.
+    permissions:
+      contents: write
+
     steps:
-      - uses: actions/checkout@v4
+      # v5 rather than v4 on the first-party actions: v4 runs on Node 20, which
+      # GitHub retired on the hosted runners. v4 still works because the runner
+      # silently forces it onto Node 24, but it warns on every run and that
+      # grace period ends.
+      - uses: actions/checkout@v5
 
       - uses: subosito/flutter-action@v2
         with:
@@ -40,28 +70,66 @@ jobs:
       - name: Fetch dependencies
         run: flutter pub get
 
-      # pubspec.yaml is the single source of the version number; the installer
-      # takes it from here so an installer can never claim a version the app
-      # does not. `1.3.1+4` gives 1.3.1 to show a user and 1.3.1.4 for the four-
-      # part number Windows wants in file properties.
-      - name: Read version from pubspec
-        id: ver
+      # ----------------------------------------------------------------------
+      # The Store rejects a package whose version has been used before, and it
+      # rejects it AFTER the upload — a full CI run, a download and a Partner
+      # Center round trip before anybody finds out.
+      #
+      # There are two version numbers in pubspec.yaml and nothing keeps them in
+      # step: `version:` (Flutter's, x.y.z+build) and `msix_config.msix_version`
+      # (the Store's, four parts, last part always 0). Bumping one and not the
+      # other is the easy mistake. Two seconds here beats finding out there.
+      # ----------------------------------------------------------------------
+      - name: Check the version numbers agree
         shell: pwsh
         run: |
-          $raw = (Select-String -Path pubspec.yaml -Pattern '^version:\s*(\S+)').Matches[0].Groups[1].Value
-          $app, $build = $raw.Split('+')
-          if (-not $build) { $build = '0' }
-          Add-Content $env:GITHUB_OUTPUT "app_version=$app"
-          Add-Content $env:GITHUB_OUTPUT "version_info=$app.$build"
-          Write-Host "Building $app ($app.$build)"
+          $pubspec = Get-Content pubspec.yaml -Raw
+
+          # Anchored to column 0, so this is the top-level `version:` and not
+          # the indented `msix_version:` a few lines further down.
+          if ($pubspec -match '(?m)^version:\s*(\d+\.\d+\.\d+)') {
+            $appVersion = $Matches[1]
+          } else {
+            throw "Could not read 'version:' from pubspec.yaml."
+          }
+
+          # [ \t] rather than \s, because \s matches a newline and would let
+          # this start on the line above.
+          if ($pubspec -match '(?m)^[ \t]+msix_version:\s*(\d+\.\d+\.\d+\.\d+)') {
+            $msixVersion = $Matches[1]
+          } else {
+            throw "Could not read 'msix_version:' from the msix_config block in pubspec.yaml."
+          }
+
+          if ($msixVersion -ne "$appVersion.0") {
+            throw ("Version mismatch in pubspec.yaml: version is $appVersion so " +
+                   "msix_version should be $appVersion.0, but it is $msixVersion. " +
+                   "The Store requires the fourth part to be 0, so the build number " +
+                   "after the '+' cannot go there — bump the x.y.z instead.")
+          }
+
+          # The Store also refuses a version it has already seen, and CI cannot
+          # know what has been submitted. This is a reminder, not a check.
+          Write-Host "Building msix_version $msixVersion"
+          Write-Host "If $msixVersion has already been submitted, bump pubspec.yaml before uploading."
+
+          $name = "vesopa-epos-$msixVersion"
+          Add-Content $env:GITHUB_ENV "MSIX_VERSION=$msixVersion"
+          Add-Content $env:GITHUB_ENV "MSIX_NAME=$name"
+          Add-Content $env:GITHUB_ENV "MSIX_STORE_PATH=build/store/$name.msix"
 
       # Fail fast on analysis before spending time on the native build.
       - name: Analyse
         run: flutter analyze lib
 
-      # Two exclusions, for different reasons:
+      # Three exclusions, for different reasons:
       #   * `live`-tagged tests call Dojo's real sandbox; they need a key and a
       #     reader, so they are for a developer to run deliberately.
+      #   * `golden`-tagged tests compare against PNGs rendered on macOS. Windows
+      #     rasterises text differently, so they fail on this runner no matter
+      #     how correct the layout is — this is what was breaking every build.
+      #     The layout assertions in those same files still run here; only the
+      #     screenshot comparisons are skipped. See dart_test.yaml.
       #   * widget_test.dart hangs for the full ten-minute flutter_test timeout
       #     instead of failing, which would stall every build for no
       #     information. Run it by hand if you are working on it.
@@ -71,50 +139,143 @@ jobs:
           $files = Get-ChildItem test -Recurse -Filter '*_test.dart' |
             Where-Object { $_.Name -ne 'widget_test.dart' } |
             ForEach-Object { $_.FullName }
-          flutter test --exclude-tags live @files
+          flutter test --exclude-tags "live || golden" @files
 
       # The Dojo key is injected at build time and never committed — this
       # repository is public. Set DOJO_API_KEY under
       # Settings → Secrets and variables → Actions. With no secret the till
       # simply starts unconfigured and a key can be entered in Settings.
+      #
+      # THIS IS THE ONLY BUILD OF THE APP. See the note on --build-windows
+      # below for why that sentence has to be written down.
       - name: Build Windows release
         run: >
           flutter build windows --release
           --dart-define=DOJO_API_KEY=${{ secrets.DOJO_API_KEY }}
 
-      # A Flutter release build links against the MSVC runtime but does not ship
-      # it. Machines that have never had Visual Studio or a C++ redistributable
-      # on them start the till and it dies immediately with no window and no
-      # message. Copying the three DLLs next to the exe (app-local deployment,
-      # which the Visual Studio licence permits) removes that as a failure mode
-      # for both the zip and the installer.
-      - name: Bundle the MSVC runtime
+      # ----------------------------------------------------------------------
+      # THE STORE PACKAGE. This is the artefact.
+      #
+      # --build-windows false is not an optimisation, it is a correctness fix.
+      #
+      # `msix:create` runs `flutter build windows` ITSELF by default
+      # (Configuration.buildWindows defaults to true). That second build carries
+      # no --dart-define, so it recompiles the Dart code with DOJO_API_KEY unset
+      # and overwrites the release build made in the step above. The package
+      # then ships to the Store with no payment key in it, and nothing anywhere
+      # says so: CI is green, the .msix installs, and the till simply cannot
+      # take a card. Skipping the rebuild also saves a couple of minutes.
+      #
+      # --output-path keeps the finished package OUT of the Release folder.
+      # msix deletes every *.msix under the build folder each time it runs
+      # (Assets.cleanTemporaryFiles(clearMsixFiles: true)), so a package left
+      # there would be destroyed by the sideload build further down.
+      #
+      # Everything else — identity, publisher, logo, capabilities, version —
+      # comes from the msix_config block in pubspec.yaml.
+      #
+      # No MSVC runtime step is needed here. msix copies the ten VC++ CRT DLLs
+      # into the package itself, taking a version-matched set from the runner's
+      # Visual Studio redistributable and falling back to its own bundled copy.
+      # It then deletes them from the build folder again — which is why copying
+      # three of them in by hand beforehand, as this workflow used to, achieved
+      # nothing at all.
+      # ----------------------------------------------------------------------
+      - name: Build the Store MSIX
         shell: pwsh
         run: |
-          $out = "build/windows/x64/runner/Release"
-          $crt = Get-ChildItem -Path "C:/Program Files/Microsoft Visual Studio/2022/*/VC/Redist/MSVC/*/x64/Microsoft.VC14*.CRT" `
-            -Directory -ErrorAction SilentlyContinue | Select-Object -Last 1
-          if ($null -eq $crt) {
-            Write-Warning "MSVC redistributable not found on the runner — shipping without it."
-          } else {
-            Copy-Item "$($crt.FullName)/msvcp140.dll","$($crt.FullName)/vcruntime140.dll","$($crt.FullName)/vcruntime140_1.dll" `
-              -Destination $out -Force
-            Write-Host "Bundled the MSVC runtime from $($crt.FullName)"
+          New-Item -ItemType Directory -Force -Path build/store | Out-Null
+          dart run msix:create `
+            --store `
+            --build-windows false `
+            --output-path build/store `
+            --output-name $env:MSIX_NAME
+          if ($LASTEXITCODE -ne 0) { throw "Building the Store MSIX failed." }
+
+      - name: Verify the package
+        shell: pwsh
+        run: |
+          $msix = Get-Item $env:MSIX_STORE_PATH -ErrorAction SilentlyContinue
+          if ($null -eq $msix) {
+            throw "msix:create reported success but $env:MSIX_STORE_PATH does not exist."
           }
 
-      # Signing is optional and everything below degrades gracefully without it:
-      # an unsigned build works, it just makes SmartScreen warn on download. To
-      # sign, add a base64-encoded .pfx as the CERTIFICATE_BASE64 secret and its
-      # password as CERTIFICATE_PASSWORD.
+          # A package this small means the Flutter bundle was left out — the
+          # till packs to roughly 20MB. Better caught here than by a
+          # certification failure days later.
+          $mb = [math]::Round($msix.Length / 1MB, 1)
+          if ($msix.Length -lt 5MB) {
+            throw "$($msix.Name) is only $mb MB — too small to contain the app."
+          }
+
+          # Confirm it really is unsigned. Partner Center rejects a signed
+          # package, and the way that would happen is a stray certificate_path
+          # in pubspec.yaml, which nothing else here would catch. An MSIX is a
+          # zip, and a signed one carries AppxSignature.p7x.
+          #
+          # Being unable to look is a warning, not a failure — this check must
+          # never be the reason a good package is thrown away.
+          $signed = $null
+          try {
+            $zip = [IO.Compression.ZipFile]::OpenRead($msix.FullName)
+            $signed = $null -ne ($zip.Entries | Where-Object { $_.FullName -eq 'AppxSignature.p7x' })
+            $zip.Dispose()
+          } catch {
+            Write-Warning "Could not open the package to check for a signature: $($_.Exception.Message)"
+          }
+          if ($signed -eq $true) {
+            throw "$($msix.Name) is signed. Store packages must be unsigned — Microsoft signs them on submission."
+          }
+
+          Write-Host "$($msix.Name) — $mb MB, unsigned. Ready for Partner Center."
+
+          $summary = $env:GITHUB_STEP_SUMMARY
+          Add-Content $summary "### Microsoft Store package ready"
+          Add-Content $summary ""
+          Add-Content $summary "| | |"
+          Add-Content $summary "|---|---|"
+          Add-Content $summary "| **File** | ``$($msix.Name)`` |"
+          Add-Content $summary "| **Version** | ``$env:MSIX_VERSION`` |"
+          Add-Content $summary "| **Size** | $mb MB |"
+          Add-Content $summary "| **Signed** | no — Microsoft signs it on submission |"
+          Add-Content $summary ""
+          Add-Content $summary "Download it from **Artifacts** below, then upload it at Partner Center → your product → Packages."
+
+      # archive: false uploads the file as-is instead of zipping it, so what
+      # comes down from the Artifacts panel is the .msix itself, ready to hand
+      # to Partner Center. The artefact takes the file's own name — which is
+      # why the version is in it, so three downloads from three runs no longer
+      # all arrive called the same thing.
+      - name: Upload the Store MSIX
+        uses: actions/upload-artifact@v7
+        with:
+          path: ${{ env.MSIX_STORE_PATH }}
+          archive: false
+          if-no-files-found: error
+          retention-days: 90
+
+      # ----------------------------------------------------------------------
+      # OPTIONAL: a signed package for sideloading.
+      #
+      # Everything below is skipped unless CERTIFICATE_BASE64 (a base64-encoded
+      # .pfx) and CERTIFICATE_PASSWORD are set as secrets. It runs AFTER the
+      # Store package is built and uploaded, and writes to its own folder under
+      # its own artefact name, because the two are not interchangeable: a
+      # sideload package signed with our own certificate is rejected by the
+      # Store. This workflow used to produce whichever of the two a secret
+      # happened to select, under one artefact name — so which package you were
+      # about to submit was not something the download could tell you.
+      #
       # `secrets` cannot be used in an `if:` expression, so the presence check
       # happens inside each script instead.
+      # ----------------------------------------------------------------------
       - name: Restore signing certificate
         shell: pwsh
         env:
           CERTIFICATE_BASE64: ${{ secrets.CERTIFICATE_BASE64 }}
         run: |
           if ([string]::IsNullOrWhiteSpace($env:CERTIFICATE_BASE64)) {
-            Write-Host "No signing certificate configured — building unsigned."
+            Write-Host "No signing certificate configured — Store package only."
           } else {
             [IO.File]::WriteAllBytes(
               "windows/certificate.pfx",
@@ -128,7 +289,7 @@ jobs:
           }
 
       # The app is signed before packaging, so the signature is on the exe a
-      # customer actually runs and not only on the wrapper it arrived in.
+      # customer actually runs and not only on the package it arrived in.
       - name: Sign the till
         shell: pwsh
         env:
@@ -141,81 +302,50 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "Signing the till failed." }
           }
 
-      - name: Package runner folder
-        shell: pwsh
-        run: |
-          $out = "build/windows/x64/runner/Release"
-          if (!(Test-Path $out)) { throw "Build output not found at $out" }
-          Compress-Archive -Path "$out/*" -DestinationPath vesopa-epos-windows.zip
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: vesopa-epos-windows
-          path: vesopa-epos-windows.zip
-          if-no-files-found: error
-
-      # The double-click installer for the public download link. See
-      # windows/installer/vesopa_epos.iss.
-      - name: Build the installer
-        shell: pwsh
-        run: |
-          $iscc = "C:/Program Files (x86)/Inno Setup 6/ISCC.exe"
-          if (!(Test-Path $iscc)) {
-            choco install innosetup -y --no-progress
-          }
-          & $iscc `
-            "/DAppVersion=${{ steps.ver.outputs.app_version }}" `
-            "/DVersionInfo=${{ steps.ver.outputs.version_info }}" `
-            windows/installer/vesopa_epos.iss
-          if ($LASTEXITCODE -ne 0) { throw "The installer failed to compile." }
-
-      - name: Sign the installer
+      - name: Build the sideload MSIX
         shell: pwsh
         env:
           CERTIFICATE_PASSWORD: ${{ secrets.CERTIFICATE_PASSWORD }}
         run: |
           if (Test-Path "windows/certificate.pfx") {
-            & $env:SIGNTOOL sign /f windows/certificate.pfx /p $env:CERTIFICATE_PASSWORD `
-              /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 `
-              "build/windows/installer/VesopaEPOS Installer.exe"
-            if ($LASTEXITCODE -ne 0) { throw "Signing the installer failed." }
-          }
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: vesopa-epos-installer
-          path: build/windows/installer/VesopaEPOS Installer.exe
-          if-no-files-found: error
-
-      # MSIX for the Microsoft Store. Built unsigned unless a certificate is
-      # present: Microsoft re-signs Store submissions themselves, and no
-      # certificate is committed to this repo. With a certificate it becomes a
-      # signed, sideloadable package instead.
-      - name: Build MSIX
-        shell: pwsh
-        env:
-          CERTIFICATE_PASSWORD: ${{ secrets.CERTIFICATE_PASSWORD }}
-        run: |
-          if (Test-Path "windows/certificate.pfx") {
+            New-Item -ItemType Directory -Force -Path build/sideload | Out-Null
             dart run msix:create `
+              --build-windows false `
+              --output-path build/sideload `
+              --output-name "$env:MSIX_NAME-sideload" `
               --certificate-path windows/certificate.pfx `
               --certificate-password $env:CERTIFICATE_PASSWORD
-          } else {
-            # --store omits signing; Microsoft signs the package on submission.
-            dart run msix:create --store
+            if ($LASTEXITCODE -ne 0) { throw "Building the sideload MSIX failed." }
           }
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload the sideload MSIX
+        uses: actions/upload-artifact@v7
         with:
-          name: vesopa-epos-msix
-          path: build/windows/x64/runner/Release/*.msix
-          if-no-files-found: error
+          name: vesopa-epos-sideload-signed
+          path: build/sideload/*.msix
+          # Not `error`: with no certificate configured there is nothing here,
+          # and that is the normal case.
+          if-no-files-found: ignore
+          retention-days: 90
 
+      # ----------------------------------------------------------------------
+      # Convenience only. The artefact above is the deliverable.
+      #
+      # continue-on-error because this step has already failed a run that had
+      # produced a perfectly good package (run 14, tag v1.3.2):
+      #
+      #     Resource not accessible by integration
+      #     https://docs.github.com/rest/releases/releases#create-a-release
+      #
+      # That is a repository setting, not a fault in the build:
+      #     Settings → Actions → General → Workflow permissions
+      #     → "Read and write permissions"
+      # Until that is changed, a red tick against a good MSIX teaches everyone
+      # to ignore red ticks, which is worse than not attaching the file.
+      # ----------------------------------------------------------------------
       - name: Attach to release
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+        continue-on-error: true
+        uses: softprops/action-gh-release@v3
         with:
-          files: |
-            vesopa-epos-windows.zip
-            build/windows/installer/VesopaEPOS Installer.exe
-            build/windows/x64/runner/Release/*.msix
+          files: ${{ env.MSIX_STORE_PATH }}

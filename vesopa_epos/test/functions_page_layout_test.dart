@@ -84,5 +84,5 @@ void main() {
       find.byType(MaterialApp),
       matchesGoldenFile('goldens/functions_page_desktop.png'),
     );
-  });
+  }, tags: 'golden');
 }
