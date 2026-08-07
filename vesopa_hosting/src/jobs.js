@@ -181,6 +181,9 @@ async function finishPaidOrders() {
  * outcome. It comes back into scope the moment they buy hosting, because that
  * is when `hestia_user` is filled in.
  */
+/** When the nameserver complaint below was last written. See its note. */
+let lastNsComplaint = 0;
+
 async function sweepDomains() {
   /*
    * Nothing happens if our own nameservers are not answering.
@@ -195,10 +198,21 @@ async function sweepDomains() {
    */
   const self = await nameservers.ourNameserversResolve();
   if (!self.ok) {
-    console.error(
-      `[jobs] SKIPPING the domain sweep — our own nameservers do not resolve: ${self.missing.join(', ')}. `
-      + 'Nobody can point a domain at us until they do, so nothing is verified and nothing is removed.',
-    );
+    /*
+     * Said once an hour, not once a pass. It is a real fault and it has to stay
+     * visible, but at a five-minute tick the unthrottled version writes 288
+     * identical lines a day — which is how the one line that matters gets
+     * missed. The condition is not going to change in the next five minutes;
+     * whoever fixes it has to publish DNS.
+     */
+    if (Date.now() - lastNsComplaint > 3600_000) {
+      lastNsComplaint = Date.now();
+      console.error(
+        `[jobs] SKIPPING the domain sweep — our own nameservers do not resolve: ${self.missing.join(', ')}. `
+        + 'Nobody can point a domain at us until they do, so nothing is verified and nothing is removed. '
+        + '(Said once an hour while it lasts.)',
+      );
+    }
     return { skipped: true, reason: 'nameservers_unresolvable', missing: self.missing };
   }
 
