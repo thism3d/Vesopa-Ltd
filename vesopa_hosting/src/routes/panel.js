@@ -16,9 +16,11 @@ const auth = require('../auth');
 const hestia = require('../integrations/hestia');
 const registrar = require('../integrations/domainnameapi');
 const pricing = require('../pricing');
+const linking = require('../domain-linking');
+const mailboxes = require('../mailboxes');
 const { sendMail, shell, detailTable, escapeHtml, DEFAULT_TO } = require('../mailer');
 const { flash, field, rateLimited } = require('../http-utils');
-const { NAMESERVERS } = require('../config');
+const { NAMESERVERS, DOMAIN_NS_GRACE_DAYS } = require('../config');
 
 const router = express.Router();
 
@@ -78,7 +80,7 @@ router.get('/', async (req, res, next) => {
         [req.customer.id],
       ),
       db.query(
-        `SELECT * FROM domains WHERE customer_id = ? AND status <> 'cancelled'
+        `SELECT * FROM domains WHERE customer_id = ? AND status NOT IN ('cancelled','removed')
           ORDER BY expires_at IS NULL, expires_at ASC`,
         [req.customer.id],
       ),
@@ -150,9 +152,18 @@ router.get('/services/:id', async (req, res, next) => {
     }
 
     const addonDomains = await db.query(
-      'SELECT * FROM domains WHERE customer_id = ? AND service_id = ?',
-      [req.customer.id, service.id],
+      'SELECT * FROM domains WHERE customer_id = ? AND service_id = ? AND status <> ?',
+      [req.customer.id, service.id, 'removed'],
     );
+
+    // The site's own domain, so the page can say whether a certificate is even
+    // possible yet rather than offering a button that cannot work.
+    const primaryDomain = service.primary_domain
+      ? await db.one(
+        'SELECT * FROM domains WHERE domain = ? AND customer_id = ? LIMIT 1',
+        [service.primary_domain, req.customer.id],
+      )
+      : null;
 
     res.render('panel/service', {
       title: service.primary_domain || service.plan_name,
@@ -161,6 +172,7 @@ router.get('/services/:id', async (req, res, next) => {
       stats,
       statsError,
       addonDomains,
+      primaryDomain,
       nameservers: NAMESERVERS,
       hestiaLive: hestia.isLive(),
     });
@@ -175,6 +187,19 @@ router.get('/services/:id', async (req, res, next) => {
  * The single most-used button in the panel, because "my padlock is missing"
  * almost always means "DNS had not propagated when we first tried". Making it
  * self-service removes an entire category of ticket.
+ *
+ * THREE THINGS HAVE TO BE TRUE, and all three are checked here rather than
+ * relied upon from the page that drew the button:
+ *
+ *   the hosting is ours     a certificate is installed on a web server. We can
+ *                           only install one on ours, so there is nothing this
+ *                           button could do for a site hosted elsewhere.
+ *   the hosting is live     paid for and provisioned. `status = 'active'` is
+ *                           reached only through a settled payment.
+ *   the domain points here  Let's Encrypt proves control by fetching a file
+ *                           over the domain. If it does not resolve to us the
+ *                           challenge fails, and issuing for a name we do not
+ *                           serve would be certifying somebody else's domain.
  */
 router.post('/services/:id/ssl', async (req, res, next) => {
   try {
@@ -186,9 +211,60 @@ router.post('/services/:id/ssl', async (req, res, next) => {
       flash(res, 'Add a domain to this site first.', 'warn');
       return res.redirect(`/panel/services/${service.id}`);
     }
+    if (service.status !== 'active') {
+      flash(
+        res,
+        service.status === 'pending'
+          ? 'This hosting account is not live yet — certificates are issued once it is set up.'
+          : `This hosting account is ${service.status}, so a certificate cannot be issued for it.`,
+        'warn',
+      );
+      return res.redirect(`/panel/services/${service.id}`);
+    }
     if (rateLimited(req.customer.id, 'ssl-retry', { max: 6, windowMs: 3600_000 })) {
       flash(res, 'You have tried several times. Wait a few minutes and try again — DNS can take up to an hour.', 'warn');
       return res.redirect(`/panel/services/${service.id}`);
+    }
+
+    /*
+     * Checked live rather than read off the row: the customer is pressing this
+     * button precisely because they have just changed their nameservers, and
+     * the stored answer is by definition the one from before they did.
+     * Verifying also creates the site on the node if the sweep has not got to
+     * it yet, which is the other half of why the padlock was missing.
+     */
+    const domainRow = await db.one(
+      'SELECT * FROM domains WHERE domain = ? AND customer_id = ? LIMIT 1',
+      [service.primary_domain, req.customer.id],
+    );
+
+    let verdict = null;
+    if (domainRow) {
+      verdict = await linking.verify(domainRow, { customer: req.customer });
+
+      /*
+       * THE ONE HARD STOP: an external domain that has never proved it points
+       * here. There is no website for it on the node and issuing a certificate
+       * for a name we have no relationship with is the impersonation case.
+       *
+       * A NAMESERVER MISMATCH ON ITS OWN IS NOT A STOP, and an earlier version
+       * of this made it one — which would have refused every customer running
+       * their DNS at Cloudflare with an A record pointed at us. Their site
+       * resolves here, so the ACME challenge succeeds, and their nameservers
+       * are none of our business. Let's Encrypt decides; we only decline the
+       * request we know we have no standing to make.
+       */
+      const verified = verdict.matched || Boolean(domainRow.ns_verified_at);
+      if (!linking.mayPoint({ ...domainRow, ns_verified_at: verified ? new Date() : null })) {
+        flash(
+          res,
+          `${service.primary_domain} is not pointing at us yet${verdict.nameservers.length
+            ? ` — we can see ${verdict.nameservers.join(' and ')}`
+            : ''}. Set the nameservers below, then try again in a few minutes.`,
+          'warn',
+        );
+        return res.redirect(`/panel/services/${service.id}`);
+      }
     }
 
     try {
@@ -203,9 +279,17 @@ router.post('/services/:id/ssl', async (req, res, next) => {
         actorType: 'customer', actorId: req.customer.id, action: 'ssl.failed',
         target: service.primary_domain, detail: err.message, ok: false, ip: req.ip,
       });
+      /*
+       * When the lookup above told us where the domain actually points, say so.
+       * "Check the nameservers" is advice; "we can see ns1.othercompany.com" is
+       * the answer, and it is the difference between a fix and a ticket.
+       */
       flash(
         res,
-        'We could not issue the certificate yet. This nearly always means the domain is not pointing at us — check the nameservers below, then try again in a few minutes.',
+        verdict && !verdict.matched && verdict.nameservers.length
+          ? `We could not issue the certificate yet. ${service.primary_domain} points at `
+            + `${verdict.nameservers.join(' and ')} — if your DNS is elsewhere, make sure its A record points at us.`
+          : 'We could not issue the certificate yet. This nearly always means the domain is not pointing at us — check the nameservers below, then try again in a few minutes.',
         'error',
       );
     }
@@ -247,14 +331,134 @@ router.get('/services/:id/:tab', async (req, res, next) => {
       }
     }
 
+    /*
+     * The mailbox allowance is computed for the tab that spends it, and only
+     * there. It reads the node, so putting it on every service page would cost
+     * a round trip to Hestia to render a backups list.
+     */
+    const quota = req.params.tab === 'email' ? await mailboxes.allowance(req.customer) : null;
+    const mailDomains = req.params.tab === 'email' ? await mailboxes.usableDomains(req.customer) : [];
+
     res.render(`panel/service-${req.params.tab}`, {
       title: `${service.primary_domain || service.plan_name} — ${req.params.tab}`,
       robots: 'noindex',
       service,
       items,
       error,
+      quota,
+      mailDomains,
       hestiaLive: hestia.isLive(),
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Create a mailbox.
+ *
+ * The allowance is checked HERE, against the node's own count, and not against
+ * anything the page was rendered with. A form drawn when three mailboxes were
+ * free and submitted twenty minutes later has to be told the truth as it is
+ * now, and a customer with two tabs open must not be able to spend the same
+ * last mailbox in both.
+ */
+router.post('/services/:id/email', async (req, res, next) => {
+  try {
+    const back = `/panel/services/${req.params.id}/email`;
+    if (!auth.checkCsrf(req)) return res.redirect(back);
+    const service = await ownedService(req);
+    if (!service) return next();
+
+    if (service.status !== 'active') {
+      flash(res, 'This hosting account is not live yet.', 'warn');
+      return res.redirect(back);
+    }
+
+    const account = field(req.body.account, 60).toLowerCase();
+    const domain = field(req.body.domain, 190).toLowerCase();
+    const password = String(req.body.password || '');
+
+    if (!/^[a-z0-9._-]{1,60}$/.test(account)) {
+      flash(res, 'A mailbox name can only contain letters, numbers, dots, hyphens and underscores.', 'error');
+      return res.redirect(back);
+    }
+    const problem = auth.passwordProblem(password);
+    if (problem) {
+      flash(res, problem, 'error');
+      return res.redirect(back);
+    }
+
+    // The domain has to be one we actually serve mail for — see usableDomains().
+    const allowedDomains = await mailboxes.usableDomains(req.customer);
+    const target = allowedDomains.find((d) => d.domain === domain) ? domain : '';
+    if (!target) {
+      flash(res, 'Pick one of your own domains, pointed at us, to create the mailbox at.', 'error');
+      return res.redirect(back);
+    }
+
+    const verdict = await mailboxes.canCreate(req.customer);
+    if (!verdict.ok) {
+      flash(res, verdict.reason, 'warn');
+      return res.redirect(back);
+    }
+
+    try {
+      // The mail domain may not exist on the node yet — a second hosting
+      // account, or a domain added after provisioning. Creating it is cheap and
+      // "already exists" is not a failure.
+      await hestia.addMailDomain({ username: req.customer.hestia_user, domain: target })
+        .catch((err) => { if (err.code !== 4) throw err; });
+
+      await hestia.addMailAccount({
+        username: req.customer.hestia_user,
+        domain: target,
+        account,
+        password,
+      });
+      await db.logActivity({
+        actorType: 'customer', actorId: req.customer.id, action: 'mailbox.created',
+        target: `${account}@${target}`,
+        detail: `${verdict.quota.used + 1} of ${verdict.quota.total}`, ip: req.ip,
+      });
+      flash(res, `${account}@${target} is ready. Sign in to webmail with the password you just set.`);
+    } catch (err) {
+      flash(res, `The mail server refused that: ${err.message}`, 'error');
+    }
+    res.redirect(back);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** Delete a mailbox — and everything in it, which the page says twice. */
+router.post('/services/:id/email/delete', async (req, res, next) => {
+  try {
+    const back = `/panel/services/${req.params.id}/email`;
+    if (!auth.checkCsrf(req)) return res.redirect(back);
+    const service = await ownedService(req);
+    if (!service) return next();
+
+    const account = field(req.body.account, 60).toLowerCase();
+    const domain = field(req.body.domain, 190).toLowerCase();
+
+    // Ownership again, from the database: the address in the form is the one
+    // thing a customer can edit, and deleting a mailbox at somebody else's
+    // domain is exactly what that edit would be for.
+    const allowedDomains = await mailboxes.usableDomains(req.customer);
+    if (!account || !allowedDomains.find((d) => d.domain === domain)) return next();
+
+    try {
+      await hestia.deleteMailAccount({ username: req.customer.hestia_user, domain, account });
+      await db.logActivity({
+        actorType: 'customer', actorId: req.customer.id, action: 'mailbox.deleted',
+        target: `${account}@${domain}`, ip: req.ip,
+      });
+      flash(res, `${account}@${domain} has been deleted.`);
+    } catch (err) {
+      flash(res, `The mail server refused that: ${err.message}`, 'error');
+    }
+    res.redirect(back);
   } catch (err) {
     next(err);
   }
@@ -288,11 +492,120 @@ router.post('/services/:id/backups', async (req, res, next) => {
 // ---------------------------------------------------------------------------
 router.get('/domains', async (req, res, next) => {
   try {
+    // A removed domain is history, not a holding. It stays in the table so the
+    // activity log and any future re-add have something to point at, and out of
+    // this list so the panel only ever shows domains the account actually has.
     const domains = await db.query(
-      'SELECT * FROM domains WHERE customer_id = ? ORDER BY expires_at IS NULL, expires_at ASC',
+      `SELECT * FROM domains WHERE customer_id = ? AND status <> 'removed'
+        ORDER BY expires_at IS NULL, expires_at ASC`,
       [req.customer.id],
     );
-    res.render('panel/domains', { title: 'Your domains', robots: 'noindex', domains });
+    res.render('panel/domains', {
+      title: 'Your domains',
+      robots: 'noindex',
+      domains,
+      graceDays: DOMAIN_NS_GRACE_DAYS,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Add a domain you already own.
+ *
+ * Registered ABOVE `/domains/:id` on purpose — Express matches in order, and a
+ * parameter route declared first would swallow `/domains/add` and answer 404.
+ */
+router.get('/domains/add', async (req, res, next) => {
+  try {
+    const services = await db.query(
+      `SELECT s.id, s.primary_domain, p.name AS plan_name FROM services s
+         JOIN plans p ON p.id = s.plan_id
+        WHERE s.customer_id = ? AND s.status = 'active'`,
+      [req.customer.id],
+    );
+    res.render('panel/domain-add', {
+      title: 'Add a domain',
+      robots: 'noindex',
+      services,
+      nameservers: NAMESERVERS,
+      graceDays: DOMAIN_NS_GRACE_DAYS,
+      values: {},
+      errors: {},
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/domains/add', async (req, res, next) => {
+  try {
+    if (!auth.checkCsrf(req)) return res.redirect('/panel/domains/add');
+
+    if (rateLimited(req.customer.id, 'domain-add', { max: 10, windowMs: 3600_000 })) {
+      flash(res, 'That is a lot of domains in one go. Try again in a little while.', 'warn');
+      return res.redirect('/panel/domains');
+    }
+
+    const wanted = field(req.body.domain, 190);
+    const serviceId = Number(req.body.service_id) || null;
+
+    // The service, if one was chosen, has to be this customer's own.
+    let attachTo = null;
+    if (serviceId) {
+      const owned = await db.one(
+        'SELECT id FROM services WHERE id = ? AND customer_id = ? LIMIT 1',
+        [serviceId, req.customer.id],
+      );
+      attachTo = owned ? owned.id : null;
+    }
+
+    const added = await linking.addExternal({
+      customer: req.customer,
+      domain: wanted,
+      serviceId: attachTo,
+    });
+
+    if (!added.ok) {
+      if (added.id) {
+        flash(res, added.error, 'warn');
+        return res.redirect(`/panel/domains/${added.id}`);
+      }
+      const services = await db.query(
+        `SELECT s.id, s.primary_domain, p.name AS plan_name FROM services s
+           JOIN plans p ON p.id = s.plan_id
+          WHERE s.customer_id = ? AND s.status = 'active'`,
+        [req.customer.id],
+      );
+      return res.status(400).render('panel/domain-add', {
+        title: 'Add a domain',
+        robots: 'noindex',
+        services,
+        nameservers: NAMESERVERS,
+        graceDays: DOMAIN_NS_GRACE_DAYS,
+        values: { domain: wanted, service_id: serviceId },
+        errors: { domain: added.error },
+      });
+    }
+
+    /*
+     * Checked once, immediately. Most people add a domain AFTER changing the
+     * nameservers, so this is usually the moment it goes live — and being told
+     * "you are all set" on the same screen is worth far more than the same
+     * message arriving from a sweep fifteen minutes later.
+     */
+    const verdict = await linking.verify(added.row, { customer: req.customer });
+
+    flash(
+      res,
+      verdict.matched
+        ? `${added.domain} is pointing at us — we are setting it up now.`
+        : `${added.domain} has been added. Set the nameservers below at your registrar; `
+          + `we check every few minutes and will email you when it is live.`,
+      verdict.matched ? 'ok' : 'warn',
+    );
+    res.redirect(`/panel/domains/${added.id}`);
   } catch (err) {
     next(err);
   }
@@ -312,7 +625,215 @@ router.get('/domains/:id', async (req, res, next) => {
       price,
       defaultNameservers: NAMESERVERS,
       registrarLive: registrar.isLive(),
+      graceDays: DOMAIN_NS_GRACE_DAYS,
+      // What the customer may do with it, decided by the server. The template
+      // asks these rather than re-deriving the rules in EJS, where they would
+      // be a second copy that drifts.
+      canEditDns: linking.mayEditDns(domain, req.customer),
+      // Only an external domain can be taken off the account — one registered
+      // here is the customer's property and leaves by transfer, not by button.
+      canRemove: domain.source === 'external',
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Check the nameservers now.
+ *
+ * The whole point of a manual check is impatience — somebody has just saved the
+ * change at their registrar and wants to know. Rate-limited because a DNS
+ * lookup per click is a lookup somebody will hold down the button on, and
+ * because propagation is not measured in seconds.
+ */
+router.post('/domains/:id/verify', async (req, res, next) => {
+  try {
+    if (!auth.checkCsrf(req)) return res.redirect(`/panel/domains/${req.params.id}`);
+    const domain = await ownedDomain(req);
+    if (!domain) return next();
+
+    const back = `/panel/domains/${domain.id}`;
+    if (rateLimited(req.customer.id, 'domain-verify', { max: 12, windowMs: 600_000 })) {
+      flash(res, 'We have just checked a few times. Give DNS a couple of minutes and try again.', 'warn');
+      return res.redirect(back);
+    }
+
+    const verdict = await linking.verify(domain, { customer: req.customer });
+
+    if (verdict.matched) {
+      flash(
+        res,
+        verdict.pointed?.pointed
+          ? `${domain.domain} points at us and the site is set up.`
+          : `${domain.domain} points at us. ${verdict.pointed?.reason || ''}`.trim(),
+      );
+    } else {
+      flash(
+        res,
+        verdict.nameservers.length
+          ? `Not yet — ${domain.domain} still points at ${verdict.nameservers.join(' and ')}.`
+          : `Not yet — ${verdict.error || 'we could not read its nameservers.'}`,
+        'warn',
+      );
+    }
+    res.redirect(back);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** Take an external domain off the account. The domain itself is untouched. */
+router.post('/domains/:id/remove', async (req, res, next) => {
+  try {
+    if (!auth.checkCsrf(req)) return res.redirect(`/panel/domains/${req.params.id}`);
+    const domain = await ownedDomain(req);
+    if (!domain) return next();
+
+    if (domain.source !== 'external') {
+      flash(
+        res,
+        'This domain is registered with us, so it cannot be removed here — open a ticket and we will transfer it out for you.',
+        'warn',
+      );
+      return res.redirect(`/panel/domains/${domain.id}`);
+    }
+
+    await db.query("UPDATE domains SET status = 'removed', service_id = NULL WHERE id = ?", [domain.id]);
+    await db.logActivity({
+      actorType: 'customer', actorId: req.customer.id, action: 'domain.removed',
+      target: domain.domain, ip: req.ip,
+    });
+    flash(res, `${domain.domain} has been removed from your account. The domain itself is untouched.`);
+    res.redirect('/panel/domains');
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// DNS
+//
+// Editable for any domain we are actually answering for — see mayEditDns().
+// The records live on the node, which is what our nameservers serve from, so
+// there is no copy here to keep in step and no "save and publish" step: an edit
+// is live as soon as the node accepts it.
+// ---------------------------------------------------------------------------
+router.get('/domains/:id/dns', async (req, res, next) => {
+  try {
+    const domain = await ownedDomain(req);
+    if (!domain) return next();
+
+    const allowed = linking.mayEditDns(domain, req.customer);
+    let records = [];
+    let error = '';
+
+    if (allowed.ok) {
+      try {
+        records = await hestia.listDnsRecords({
+          username: req.customer.hestia_user,
+          domain: domain.domain,
+        });
+      } catch (err) {
+        // Exit code 5 is "no such object" — the zone has not been created yet,
+        // which is a state, not a fault. Anything else is worth showing.
+        error = err.code === 5 ? '' : err.message;
+      }
+    }
+
+    res.render('panel/domain-dns', {
+      title: `${domain.domain} — DNS`,
+      robots: 'noindex',
+      domain,
+      records,
+      error,
+      allowed,
+      types: hestia.DNS_TYPES,
+      hestiaLive: hestia.isLive(),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/domains/:id/dns', async (req, res, next) => {
+  try {
+    const back = `/panel/domains/${req.params.id}/dns`;
+    if (!auth.checkCsrf(req)) return res.redirect(back);
+    const domain = await ownedDomain(req);
+    if (!domain) return next();
+
+    const allowed = linking.mayEditDns(domain, req.customer);
+    if (!allowed.ok) {
+      flash(res, allowed.reason, 'warn');
+      return res.redirect(back);
+    }
+
+    const action = String(req.body.action || 'add');
+    const username = req.customer.hestia_user;
+    const id = field(req.body.record_id, 12);
+
+    /*
+     * Delete takes only the record id, and takes it from the node's own list
+     * rather than trusting the form: an id that is not in this zone belongs to
+     * somebody else's, and Hestia would happily delete it if asked as admin.
+     */
+    if (action === 'delete') {
+      try {
+        const existing = await hestia.listDnsRecords({ username, domain: domain.domain });
+        if (!existing.some((r) => r.id === id)) return res.redirect(back);
+        await hestia.deleteDnsRecord({ username, domain: domain.domain, id });
+        await db.logActivity({
+          actorType: 'customer', actorId: req.customer.id, action: 'dns.deleted',
+          target: domain.domain, detail: `record ${id}`, ip: req.ip,
+        });
+        flash(res, 'Record deleted. DNS changes reach everyone within the record’s TTL.');
+      } catch (err) {
+        flash(res, `The server refused that: ${err.message}`, 'error');
+      }
+      return res.redirect(back);
+    }
+
+    const checked = linking.validateRecord({
+      name: req.body.name,
+      type: req.body.type,
+      value: req.body.value,
+      priority: req.body.priority,
+      ttl: req.body.ttl,
+    });
+    if (!checked.ok) {
+      flash(res, checked.error, 'error');
+      return res.redirect(back);
+    }
+    const record = checked.record;
+
+    try {
+      if (action === 'edit' && id) {
+        const existing = await hestia.listDnsRecords({ username, domain: domain.domain });
+        if (!existing.some((r) => r.id === id)) return res.redirect(back);
+        await hestia.changeDnsRecord({
+          username, domain: domain.domain, id,
+          name: record.name, type: record.type, value: record.value, priority: record.priority,
+        });
+      } else {
+        await hestia.addDnsRecord({
+          username, domain: domain.domain,
+          name: record.name, type: record.type, value: record.value,
+          priority: record.priority, ttl: record.ttl,
+        });
+      }
+      await db.logActivity({
+        actorType: 'customer', actorId: req.customer.id,
+        action: action === 'edit' ? 'dns.changed' : 'dns.added',
+        target: domain.domain,
+        detail: `${record.name} ${record.type} ${record.value}`.slice(0, 190),
+        ip: req.ip,
+      });
+      flash(res, action === 'edit' ? 'Record updated.' : 'Record added.');
+    } catch (err) {
+      flash(res, `The server refused that: ${err.message}`, 'error');
+    }
+    res.redirect(back);
   } catch (err) {
     next(err);
   }
@@ -323,6 +844,21 @@ router.post('/domains/:id/nameservers', async (req, res, next) => {
     if (!auth.checkCsrf(req)) return res.redirect(`/panel/domains/${req.params.id}`);
     const domain = await ownedDomain(req);
     if (!domain) return next();
+
+    /*
+     * Only for a domain we hold. An external one is registered somewhere else
+     * entirely and its nameservers are set in that registrar's control panel —
+     * a form here would send a change to a registrar that has never heard of
+     * the name, and the customer would believe they had done what we asked.
+     */
+    if (domain.source === 'external') {
+      flash(
+        res,
+        'This domain is registered elsewhere, so its nameservers are changed at that registrar, not here.',
+        'warn',
+      );
+      return res.redirect(`/panel/domains/${domain.id}`);
+    }
 
     const ns = [req.body.ns1, req.body.ns2, req.body.ns3, req.body.ns4]
       .map((n) => field(n, 190).toLowerCase())
@@ -335,9 +871,19 @@ router.post('/domains/:id/nameservers', async (req, res, next) => {
 
     try {
       await registrar.setNameservers({ domain: domain.domain, nameservers: ns });
-      await db.query('UPDATE domains SET ns1=?, ns2=?, ns3=?, ns4=? WHERE id = ?', [
-        ns[0] || '', ns[1] || '', ns[2] || '', ns[3] || '', domain.id,
-      ]);
+      /*
+       * The verification is dropped along with the old delegation. Pointing a
+       * domain away from us has to stop it counting as pointed at us — that
+       * flag is what lets a certificate be issued and a mailbox be created for
+       * the name, and leaving it set after the customer moved the domain
+       * elsewhere would be recording something that is no longer true. The
+       * sweep re-checks and restores it if the new nameservers are still ours.
+       */
+      await db.query(
+        `UPDATE domains SET ns1=?, ns2=?, ns3=?, ns4=?, ns_verified_at = NULL, ns_checked_at = NULL
+          WHERE id = ?`,
+        [ns[0] || '', ns[1] || '', ns[2] || '', ns[3] || '', domain.id],
+      );
       await db.logActivity({
         actorType: 'customer', actorId: req.customer.id, action: 'domain.nameservers_changed',
         target: domain.domain, detail: ns.join(', '), ip: req.ip,

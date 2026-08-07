@@ -296,6 +296,74 @@ async function deleteDatabase({ username, name }) {
   return { ok: true };
 }
 
+// ---------------------------------------------------------------------------
+// DNS
+//
+// The zone lives HERE, on the node, because our nameservers are this node — so
+// a customer editing an MX record in the panel is editing the file that answers
+// the query. There is no second copy at the registrar to keep in step, and no
+// mirror of the records in our own database either: a mirror would be a second
+// source of truth for something a support engineer can also change on the box,
+// and the day the two disagree is the day nobody can say which is live.
+// ---------------------------------------------------------------------------
+
+/** The record types a customer is offered. Anything else is refused. */
+const DNS_TYPES = ['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'SRV', 'NS', 'CAA'];
+
+async function addDnsDomain({ username, domain, ip = '' }) {
+  await run('v-add-dns-domain', [username, domain, ip]);
+  return { ok: true, domain };
+}
+
+async function dnsDomainExists({ username, domain }) {
+  if (!isLive()) return false;
+  try {
+    await run('v-list-dns-domain', [username, domain], { json: true });
+    return true;
+  } catch (err) {
+    if (err.code === 5) return false;
+    throw err;
+  }
+}
+
+/**
+ * The records in a zone.
+ *
+ * Hestia keys them by ID and the ID is what every edit and delete is addressed
+ * by, so it is carried through rather than the record name — two `A` records
+ * called `www` are legal, and a delete by name would remove the wrong one.
+ */
+async function listDnsRecords({ username, domain }) {
+  if (!isLive()) return [];
+  const data = await run('v-list-dns-records', [username, domain], { json: true });
+  return Object.entries(data).map(([id, r]) => ({
+    id: String(id),
+    name: r.RECORD,
+    type: r.TYPE,
+    value: r.VALUE,
+    priority: r.PRIORITY === '' || r.PRIORITY == null ? null : Number(r.PRIORITY),
+    ttl: Number(r.TTL || 0),
+    suspended: String(r.SUSPENDED || 'no') === 'yes',
+  }));
+}
+
+/** v-add-dns-record USER DOMAIN RECORD TYPE VALUE [PRIORITY] [ID] [TTL] */
+async function addDnsRecord({ username, domain, name, type, value, priority = '', ttl = 3600 }) {
+  await run('v-add-dns-record', [username, domain, name, type, value, priority, '', ttl]);
+  return { ok: true };
+}
+
+/** v-change-dns-record USER DOMAIN ID RECORD TYPE VALUE [PRIORITY] */
+async function changeDnsRecord({ username, domain, id, name, type, value, priority = '' }) {
+  await run('v-change-dns-record', [username, domain, id, name, type, value, priority]);
+  return { ok: true };
+}
+
+async function deleteDnsRecord({ username, domain, id }) {
+  await run('v-delete-dns-record', [username, domain, id]);
+  return { ok: true };
+}
+
 async function addMailDomain({ username, domain }) {
   await run('v-add-mail-domain', [username, domain]);
   return { ok: true };
@@ -304,6 +372,30 @@ async function addMailDomain({ username, domain }) {
 async function addMailAccount({ username, domain, account, password, quota = 1024 }) {
   await run('v-add-mail-account', [username, domain, account, password, quota]);
   return { ok: true, address: `${account}@${domain}` };
+}
+
+async function listMailDomains(username) {
+  if (!isLive()) return [];
+  const data = await run('v-list-mail-domains', [username], { json: true });
+  return Object.entries(data).map(([domain, d]) => ({
+    domain,
+    accounts: Number(d.U_MAIL_ACCOUNTS || 0),
+    suspended: String(d.SUSPENDED || 'no') === 'yes',
+  }));
+}
+
+/**
+ * How many mailboxes this account is using, across every mail domain on it.
+ *
+ * Counted on the NODE, not in our database. The allowance is enforced against
+ * this number, and a count we keep ourselves would drift the first time support
+ * added a mailbox by hand — in the direction that lets a customer exceed what
+ * they bought.
+ */
+async function countMailAccounts(username) {
+  if (!isLive()) return 0;
+  const domains = await listMailDomains(username);
+  return domains.reduce((sum, d) => sum + d.accounts, 0);
 }
 
 async function listMailAccounts({ username, domain }) {
@@ -428,8 +520,17 @@ module.exports = {
   addDatabase,
   listDatabases,
   deleteDatabase,
+  DNS_TYPES,
+  addDnsDomain,
+  dnsDomainExists,
+  listDnsRecords,
+  addDnsRecord,
+  changeDnsRecord,
+  deleteDnsRecord,
   addMailDomain,
   addMailAccount,
+  listMailDomains,
+  countMailAccounts,
   listMailAccounts,
   deleteMailAccount,
   listBackups,

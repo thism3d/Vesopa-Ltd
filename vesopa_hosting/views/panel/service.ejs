@@ -68,15 +68,37 @@
       <% } %>
     </div>
 
+    <%
+      /*
+       * Three conditions decide whether a certificate is possible, and the card
+       * says which one is missing rather than offering a button that fails. The
+       * route re-checks all three — this is the explanation, not the guard.
+       */
+      const sslPointsHere = primaryDomain
+        ? (primaryDomain.source !== 'external' || Boolean(primaryDomain.ns_verified_at))
+        : false;
+    %>
     <div class="p-card">
       <h2 class="h3 mb-2">SSL certificate</h2>
       <% if (!service.primary_domain) { %>
         <p class="small muted mb-2">Add a domain to this site before a certificate can be issued.</p>
+        <a class="btn btn-ghost btn-sm" href="/panel/domains/add">Add a domain</a>
+      <% } else if (service.status !== 'active') { %>
+        <p class="small muted mb-0">
+          Certificates are issued once this hosting account is live. It is
+          <%= service.status === 'pending' ? 'still being set up' : service.status %> at the moment.
+        </p>
       <% } else { %>
         <p class="small muted mb-2">
-          Certificates are issued automatically once <b><%= service.primary_domain %></b> points at us,
-          and renewed for as long as you host here. If your padlock is missing, it is nearly
-          always because DNS has not propagated yet — press the button and we will try again.
+          <% if (primaryDomain && !sslPointsHere) { %>
+            <b><%= service.primary_domain %></b> is not pointing at us yet, and a certificate can
+            only be issued for a domain that resolves here — that is Let's Encrypt's rule, not ours.
+            Set the nameservers on the right, then press the button.
+          <% } else { %>
+            Certificates are issued automatically once <b><%= service.primary_domain %></b> points at us,
+            and renewed for as long as you host here. If your padlock is missing, it is nearly
+            always because DNS has not propagated yet — press the button and we will try again.
+          <% } %>
         </p>
         <form method="post" action="/panel/services/<%= service.id %>/ssl" data-guard>
           <input type="hidden" name="_csrf" value="<%= csrf %>">

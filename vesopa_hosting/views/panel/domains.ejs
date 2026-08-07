@@ -2,7 +2,7 @@
 <%- include('../partials/panel-shell', {
   pageTitle: 'Your domains',
   pageSub: 'Registered with us, or pointed here from elsewhere.',
-  topAction: { href: '/domains', label: 'Find a domain', icon: 'search' },
+  topAction: { href: '/panel/domains/add', label: 'Add a domain', icon: 'plus' },
 }) %>
 
 <div class="p-card p-card-flush">
@@ -10,23 +10,35 @@
     <div class="empty">
       <%- icon('globe', 46) %>
       <h3>No domains yet</h3>
-      <p>Register one here and it is pointed at your hosting automatically.</p>
+      <p>Register one here and it is pointed at your hosting automatically — or add one you already own.</p>
       <a class="btn mt-2" href="/domains">Search a domain</a>
+      <a class="btn btn-ghost mt-2" href="/panel/domains/add">Add one I own</a>
     </div>
   <% } else { %>
     <% domains.forEach(function (d) {
-         const days = d.expires_at ? Math.round((new Date(d.expires_at) - Date.now()) / 864e5) : null; %>
+         const days = d.expires_at ? Math.round((new Date(d.expires_at) - Date.now()) / 864e5) : null;
+         const external = d.source === 'external';
+         const deadline = d.ns_grace_until ? new Date(d.ns_grace_until) : null;
+         const graceLeft = deadline ? Math.max(0, Math.ceil((deadline - Date.now()) / 864e5)) : null; %>
       <a class="item" href="/panel/domains/<%= d.id %>">
         <span class="item-icon"><%- icon('globe', 19) %></span>
         <span class="item-main">
           <span class="item-title"><%= d.domain %></span>
           <span class="item-sub">
-            <% if (d.expires_at) { %>Expires <%= d.expires_at %><% } else { %>Not yet registered<% } %>
-            · <%= d.auto_renew ? 'Auto-renew on' : 'Auto-renew off' %>
+            <% if (d.status === 'awaiting_ns') { %>
+              Waiting for your nameservers<% if (graceLeft !== null) { %> · <%= graceLeft === 0 ? 'last day' : graceLeft + ' day' + (graceLeft === 1 ? '' : 's') + ' left' %><% } %>
+            <% } else if (external) { %>
+              Registered elsewhere<% if (d.ns_verified_at) { %> · hosted here<% } %>
+            <% } else if (d.expires_at) { %>
+              Expires <%= d.expires_at %> · <%= d.auto_renew ? 'Auto-renew on' : 'Auto-renew off' %>
+            <% } else { %>
+              Being registered…
+            <% } %>
           </span>
         </span>
         <span class="item-end">
-          <% if (days !== null && days <= 30 && days > 0) { %>
+          <% if (d.status === 'awaiting_ns') { %><span class="badge badge-amber">Not pointing here</span>
+          <% } else if (days !== null && days <= 30 && days > 0) { %>
             <span class="badge badge-amber"><%= days %> days left</span>
           <% } else if (d.status === 'active') { %><span class="badge badge-green">Active</span>
           <% } else if (d.status === 'pending') { %><span class="badge badge-amber">Pending</span>
@@ -37,6 +49,12 @@
     <% }); %>
   <% } %>
 </div>
+
+<p class="small muted mt-2">
+  A domain you own elsewhere is hosted here as soon as its nameservers point at us. If that has
+  not happened within <%= graceDays %> days we take it off this list — we would not be hosting it,
+  and the domain itself is never touched.
+</p>
 
 <%- include('../partials/panel-shell-end') %>
 <%- include('../partials/footer') %>

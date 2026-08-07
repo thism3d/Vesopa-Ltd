@@ -20,7 +20,7 @@ const crypto = require('crypto');
 const db = require('./db');
 const currency = require('./currency');
 const provisioning = require('./provisioning');
-const { SITE_URL } = require('./config');
+const { SITE_URL, PAYMENT_SESSION_MINUTES } = require('./config');
 const sslcommerz = require('./integrations/sslcommerz');
 const stripe = require('./integrations/stripe');
 const paypal = require('./integrations/paypal');
@@ -295,16 +295,23 @@ async function begin(order, customer, gatewayId, urls) {
    * a `gateway_ref` that does not exist yet, find nothing, and the payment would
    * settle only if the browser happened to come back.
    */
+  /*
+   * `expires_at` is when this attempt stops being worth asking the gateway
+   * about. Until then the reconciler polls it — a customer who pays and then
+   * closes the tab never hits the return URL, and Stripe and PayPal send no
+   * IPN of their own, so without that poll their money would sit at the
+   * gateway with an order marked pending behind it.
+   */
   await db.query(
     `INSERT INTO payments
        (order_id, customer_id, gateway, status, amount_minor, currency,
-        charged_minor, charged_currency, fx_rate, order_ref, gateway_ref)
-     VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)`,
+        charged_minor, charged_currency, fx_rate, order_ref, gateway_ref, expires_at)
+     VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL ? MINUTE))`,
     [
       order.id, customer.id, gateway.id,
       order.total_pence, order.currency,
       charge.minor, charge.currency, charge.rate,
-      orderRef, started.tranId,
+      orderRef, started.tranId, PAYMENT_SESSION_MINUTES,
     ],
   );
 
@@ -371,29 +378,27 @@ async function settle(gatewayRef, payload = {}, { methodDetail = '' } = {}) {
   });
 
   /*
-   * Provision, unless the customer still owes us an answer.
+   * THE ACCOUNT IS BUILT HERE, and nowhere earlier.
    *
-   * Exactly the rule the admin's "mark paid" button follows, and for the same
-   * reason: a hosting service sitting at the `domain` step is waiting to be
-   * told which domain it is for, including the free one. Provisioning here
-   * would answer that with "none" before the customer ever saw the question,
-   * and the free domain would be quietly lost.
+   * activateOrder() writes the service, domain and mailbox rows this order paid
+   * for and then starts provisioning — unless a hosting service is still
+   * waiting to be told which domain it is for, in which case the setup wizard
+   * asks and starts it. Every other route that can confirm a payment calls the
+   * same function, so the rule has one home.
    */
-  const waiting = await db.one(
-    `SELECT id FROM services WHERE order_id = ? AND setup_step = 'domain' AND status = 'pending' LIMIT 1`,
-    [order.id],
-  );
+  const activated = await provisioning.activateOrder(order.id, {
+    actorType: 'customer',
+    actorId: order.customer_id,
+  });
 
-  if (!waiting) {
-    // Not awaited. Provisioning talks to a registrar and a hosting node and can
-    // take a minute; the customer is mid-redirect and must not be held on it.
-    // The setup screen polls `setup_steps` and shows the progress.
-    provisioning
-      .provisionOrder(order.id, { actorType: 'customer', actorId: order.customer_id })
-      .catch((err) => console.error('[payments] provisioning failed:', err.message));
-  }
-
-  return { ok: true, already: false, orderId: order.id, order, payment, waiting: Boolean(waiting) };
+  return {
+    ok: true,
+    already: false,
+    orderId: order.id,
+    order,
+    payment,
+    waiting: Boolean(activated.waiting),
+  };
 }
 
 /** Record a payment that did not happen, and say why. */
@@ -447,22 +452,112 @@ async function settleFree(order) {
     detail: order.coupon_code ? `100% off with ${order.coupon_code}` : 'Zero total',
   });
 
-  const waiting = await db.one(
-    `SELECT id FROM services WHERE order_id = ? AND setup_step = 'domain' AND status = 'pending' LIMIT 1`,
-    [order.id],
-  );
-  if (!waiting) {
-    provisioning
-      .provisionOrder(order.id, { actorType: 'customer', actorId: order.customer_id })
-      .catch((err) => console.error('[payments] provisioning failed:', err.message));
+  const activated = await provisioning.activateOrder(order.id, {
+    actorType: 'customer',
+    actorId: order.customer_id,
+  });
+
+  return { ok: true, orderId: order.id, waiting: Boolean(activated.waiting) };
+}
+
+// ---------------------------------------------------------------------------
+// Asking the gateway what became of a payment
+// ---------------------------------------------------------------------------
+
+/**
+ * Re-check one pending attempt against the gateway that owns it.
+ *
+ * THE CUSTOMER'S BROWSER IS NOT PART OF THIS. The return URL exists to show
+ * somebody a page; it is not how we find out whether we were paid. A tab closed
+ * on the confirmation screen, a phone that lost signal on the way back, a
+ * gateway whose IPN never arrived — in all three the money moved and only the
+ * gateway knows it. So the server asks, on a timer, until the attempt is
+ * settled or its session is dead.
+ *
+ * Settlement itself still goes through `settle()`, with its
+ * status-in-the-WHERE-clause guard, so an answer arriving here at the same
+ * moment as an IPN cannot provision an order twice.
+ *
+ * @returns {Promise<{outcome: 'paid'|'failed'|'expired'|'pending'|'unsupported', detail?: string}>}
+ */
+async function reconcilePayment(payment) {
+  const ref = payment.gateway_ref;
+  if (!ref) return { outcome: 'pending', detail: 'No gateway reference.' };
+
+  if (payment.gateway === 'stripe') {
+    if (stripe.MODE === 'mock') return { outcome: 'unsupported', detail: 'Stripe is in mock mode.' };
+    const session = await stripe.retrieveSession(ref);
+    if (stripe.isPaidSession(session)) {
+      await settle(ref, { ...session, source: 'reconcile' }, { methodDetail: stripe.describeMethod(session) });
+      return { outcome: 'paid' };
+    }
+    if (session.status === 'expired') {
+      await fail(ref, 'EXPIRED', { ...session, source: 'reconcile' }, 'failed');
+      return { outcome: 'failed', detail: 'The Stripe session expired.' };
+    }
+    return { outcome: 'pending', detail: session.status || '' };
   }
 
-  return { ok: true, orderId: order.id, waiting: Boolean(waiting) };
+  if (payment.gateway === 'paypal') {
+    if (paypal.MODE === 'mock') return { outcome: 'unsupported', detail: 'PayPal is in mock mode.' };
+    const order = await paypal.getOrder(ref);
+    if (paypal.isPaidOrder(order)) {
+      await settle(ref, { ...order, source: 'reconcile' }, { methodDetail: paypal.describeMethod(order) });
+      return { outcome: 'paid' };
+    }
+    /*
+     * APPROVED means the payer said yes and nobody has taken the money. That is
+     * the exact state a closed tab leaves behind, and capturing it is the whole
+     * reason this reconciler exists — the alternative is an authorised payment
+     * that quietly expires and a customer who believes they have paid.
+     */
+    if (paypal.isApprovedOrder(order)) {
+      const captured = await paypal.captureOrder(ref);
+      if (paypal.isPaidOrder(captured)) {
+        await settle(ref, { ...captured, source: 'reconcile' }, { methodDetail: paypal.describeMethod(captured) });
+        return { outcome: 'paid', detail: 'Captured an approved order.' };
+      }
+      return { outcome: 'pending', detail: captured.status || 'capture did not complete' };
+    }
+    if (['VOIDED', 'EXPIRED'].includes(String(order.status || '').toUpperCase())) {
+      await fail(ref, order.status, { ...order, source: 'reconcile' }, 'failed');
+      return { outcome: 'failed', detail: order.status };
+    }
+    return { outcome: 'pending', detail: order.status || '' };
+  }
+
+  /*
+   * SSLCommerz, via BosheBoshe, offers this integration no transaction-status
+   * endpoint — settlement arrives by IPN and by the browser return, both signed.
+   * Rather than invent a URL to poll, an attempt of theirs is left alone until
+   * its session expires and is then closed out below. Said plainly here so the
+   * next person does not go looking for the query call that is "missing".
+   */
+  return { outcome: 'unsupported', detail: 'This gateway has no status lookup.' };
+}
+
+/** Close out an attempt whose gateway session is long dead. */
+async function expirePayment(payment) {
+  const closed = await fail(
+    payment.gateway_ref,
+    'SESSION_EXPIRED',
+    { source: 'reconcile', note: 'The payment session expired without settling.' },
+    'cancelled',
+  );
+  if (closed) {
+    await db.logActivity({
+      actorType: 'system', actorId: payment.customer_id, action: 'payment.expired',
+      target: payment.order_ref, detail: `${payment.gateway} attempt never completed`, ok: false,
+    });
+  }
+  return Boolean(closed);
 }
 
 module.exports = {
   SETTLE_CURRENCY,
   PASSTHROUGH,
+  reconcilePayment,
+  expirePayment,
   gateways,
   gatewayById,
   callbackUrls,

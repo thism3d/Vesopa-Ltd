@@ -22,6 +22,7 @@ const auth = require('../auth');
 const pricing = require('../pricing');
 const registrar = require('../integrations/domainnameapi');
 const provisioning = require('../provisioning');
+const linking = require('../domain-linking');
 const payments = require('../payments');
 const { flash, field, rateLimited } = require('../http-utils');
 const currency = require('../currency');
@@ -163,11 +164,24 @@ router.post('/setup/:id/domain', async (req, res, next) => {
         return res.redirect(back);
       }
 
+      /*
+       * The name is taken here, not merely wanted: `domains.domain` is unique,
+       * and a row already held by somebody else means the claim cannot be
+       * honoured. Checked before the insert so the customer gets "pick another"
+       * rather than a duplicate-key error page.
+       */
+      const held = await db.one('SELECT customer_id FROM domains WHERE domain = ? LIMIT 1', [domain]);
+      if (held && held.customer_id !== req.customer.id) {
+        flash(res, `${domain} has just been taken. Try another.`, 'error');
+        return res.redirect(back);
+      }
+
       await db.transaction(async (conn) => {
         await conn.query(
-          `INSERT INTO domains (customer_id, order_id, domain, tld, status, years, ns1, ns2)
-           VALUES (?, ?, ?, ?, 'pending', 1, ?, ?)
-           ON DUPLICATE KEY UPDATE order_id = VALUES(order_id)`,
+          `INSERT INTO domains (customer_id, order_id, domain, tld, status, source, years, ns1, ns2)
+           VALUES (?, ?, ?, ?, 'pending', 'registered', 1, ?, ?)
+           ON DUPLICATE KEY UPDATE order_id = VALUES(order_id), status = 'pending',
+                                   source = 'registered', ns1 = VALUES(ns1), ns2 = VALUES(ns2)`,
           [req.customer.id, ctx.order.id, domain, tld, NAMESERVERS[0], NAMESERVERS[1]],
         );
         await conn.query(
@@ -189,7 +203,33 @@ router.post('/setup/:id/domain', async (req, res, next) => {
         ip: req.ip,
       });
     } else if (choice === 'existing') {
-      const existing = registrar.splitDomain(field(req.body.existing_domain, 190)).domain;
+      /*
+       * A domain registered somewhere else. It goes on the account through the
+       * same door as the panel's "add a domain" — as an EXTERNAL domain waiting
+       * on its nameservers — rather than being written straight onto the
+       * service as a fact. Nobody has proved they own it yet, and we will not
+       * build a website, accept mail or issue a certificate for a name on the
+       * strength of it having been typed into a form.
+       *
+       * The service still records it as the primary domain, so the panel can
+       * say what this account is for and the sweep knows what to build when the
+       * delegation lands.
+       */
+      const wanted = field(req.body.existing_domain, 190);
+      const { domain: existing } = registrar.splitDomain(wanted);
+
+      if (existing) {
+        const added = await linking.addExternal({
+          customer: req.customer,
+          domain: existing,
+          serviceId: ctx.service.id,
+        });
+        if (!added.ok && !added.id) {
+          flash(res, added.error, 'error');
+          return res.redirect(back);
+        }
+      }
+
       await db.query(
         `UPDATE services SET primary_domain = ?, setup_step = 'provisioning' WHERE id = ?`,
         [existing || '', ctx.service.id],

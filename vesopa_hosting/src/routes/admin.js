@@ -386,36 +386,35 @@ router.post('/orders/:id/pay', async (req, res, next) => {
     });
 
     /*
-     * PAYMENT NO LONGER PROVISIONS IMMEDIATELY, and that is the point of the
-     * new flow.
+     * MARKING PAID IS WHAT CREATES THE ACCOUNT.
      *
-     * The customer's setup wizard opens the moment the order is paid, and its
-     * first question is which domain the hosting is for — including the free
-     * one they are owed. Provisioning here would answer that question for them
-     * (with "none") before they ever saw it, and the free domain would be
-     * quietly lost.
+     * Until this moment the order is lines on an invoice; `activateOrder()`
+     * writes the service, domain and mailbox rows from those lines and then
+     * provisions them — the same single function the gateway callbacks and the
+     * reconciler call, so a payment taken over the phone and a payment taken by
+     * card produce exactly the same account.
      *
-     * So: if a hosting service is still waiting at the `domain` step, leave it
-     * for the customer. Anything else — a domain-only order, an email-only
-     * order, or a service whose domain question is already settled — has
-     * nothing to ask and is provisioned right here as before.
-     *
-     * The "Provision now" button on the order page overrides this, for the
-     * customer who telephones rather than finishing the wizard.
+     * It stops short of provisioning when a hosting service is still waiting to
+     * be told which domain it is for, including the free one owed. Doing it
+     * here would answer that question with "none" before the customer ever saw
+     * it, and the free domain would be quietly lost. The "Provision now" button
+     * on the order page overrides that, for the customer who telephones rather
+     * than finishing the wizard.
      */
-    const waiting = await db.one(
-      `SELECT id FROM services WHERE order_id = ? AND setup_step = 'domain' AND status = 'pending' LIMIT 1`,
-      [order.id],
-    );
+    const activated = await provisioning.activateOrder(order.id, {
+      actorType: 'admin', actorId: req.admin.id, ip: req.ip, awaitProvisioning: true,
+    });
 
-    if (waiting) {
-      flash(res, 'Marked paid. The customer is choosing their domain — setup starts when they do.');
+    if (activated.waiting) {
+      flash(res, 'Marked paid and the account created. The customer is choosing their domain — setup starts when they do.');
       return res.redirect(back);
     }
 
-    const result = await provisioning.provisionOrder(order.id, {
-      actorType: 'admin', actorId: req.admin.id, ip: req.ip,
-    });
+    const result = activated.provisioned;
+    if (!result) {
+      flash(res, `Marked paid, but the account could not be created: ${activated.reason || 'unknown reason'}.`, 'warn');
+      return res.redirect(back);
+    }
 
     if (result.ok) {
       flash(res, 'Paid and provisioned. The welcome email has gone out.');
@@ -437,6 +436,14 @@ router.post('/orders/:id/provision', async (req, res, next) => {
   try {
     const back = `/admin/orders/${req.params.id}`;
     if (!guard(req, res, back)) return;
+
+    /*
+     * Materialise first, and deliberately not through activateOrder(): this
+     * button exists to push past the wizard for a customer who telephoned
+     * rather than finishing it, so it must provision even when a service is
+     * still sitting at the domain step. Both calls are idempotent.
+     */
+    await provisioning.materialiseOrder(req.params.id);
 
     const result = await provisioning.provisionOrder(req.params.id, {
       actorType: 'admin', actorId: req.admin.id, ip: req.ip,

@@ -1,0 +1,82 @@
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
+<%- include('../partials/panel-shell', {
+  pageTitle: 'Add a domain you already own',
+  pageSub: 'Registered somewhere else? Point it here and we will host it.',
+}) %>
+
+<div class="p-grid p-grid-side">
+  <div>
+    <div class="p-card">
+      <form method="post" action="/panel/domains/add" data-guard>
+        <input type="hidden" name="_csrf" value="<%= csrf %>">
+
+        <div class="field <%= errors.domain ? 'field-error' : '' %>">
+          <label class="label" for="domain">Your domain</label>
+          <input class="input mono" id="domain" name="domain" required autofocus
+                 placeholder="yourbusiness.co.uk" autocomplete="off" spellcheck="false"
+                 value="<%= values.domain || '' %>">
+          <% if (errors.domain) { %><p class="error-text"><%= errors.domain %></p><% } %>
+          <p class="hint">Just the domain — no https:// and no www.</p>
+        </div>
+
+        <% if (services.length) { %>
+          <div class="field">
+            <label class="label" for="service_id">Host it on</label>
+            <select class="select" id="service_id" name="service_id">
+              <option value="">Decide later</option>
+              <% services.forEach(function (s) { %>
+                <option value="<%= s.id %>" <%= String(values.service_id) === String(s.id) ? 'selected' : '' %>>
+                  <%= s.primary_domain || s.plan_name %>
+                </option>
+              <% }); %>
+            </select>
+          </div>
+        <% } %>
+
+        <button class="btn btn-lg" type="submit" data-busy="Adding…">Add this domain</button>
+      </form>
+    </div>
+
+    <div class="p-card">
+      <h2 class="h3 mb-2">What happens next</h2>
+      <ol class="small muted" style="margin:0;padding-left:18px;line-height:1.75">
+        <li>Sign in wherever the domain is registered and set its nameservers to the two on the right.</li>
+        <li>We check every few minutes. The moment the change is visible, we build the site, the mailboxes and the certificate for you.</li>
+        <li>Nothing to do here in the meantime — you can close this page and we will email you.</li>
+      </ol>
+    </div>
+  </div>
+
+  <aside>
+    <div class="p-card">
+      <h2 class="h3 mb-2">Set these nameservers</h2>
+      <p class="small muted mb-2">At your current registrar, replace whatever is there with these two.</p>
+      <% nameservers.forEach(function (ns) { %>
+        <div class="copyable">
+          <span><%= ns %></span>
+          <button type="button" class="btn btn-ghost btn-sm copy-btn" data-copy="<%= ns %>">Copy</button>
+        </div>
+      <% }); %>
+    </div>
+
+    <div class="p-card">
+      <div class="f-icon"><%- icon('clock', 22) %></div>
+      <h2 class="h3 mb-2">You have <%= graceDays %> days</h2>
+      <p class="small muted mb-0">
+        A domain that has not been pointed at us within <%= graceDays %> days is taken off your
+        account again — we would not be hosting it, so listing it would be telling you
+        something untrue. Nothing is charged either way, the domain itself is
+        untouched, and you can add it again whenever you are ready.
+      </p>
+    </div>
+
+    <div class="p-card">
+      <h2 class="h3 mb-2">Would rather we held it?</h2>
+      <p class="small muted mb-2">Transfer the domain to us and renewals, DNS and hosting all sit in one place.</p>
+      <a class="btn btn-ghost btn-sm btn-block" href="/domains/transfer">Transfer a domain</a>
+    </div>
+  </aside>
+</div>
+
+<%- include('../partials/panel-shell-end') %>
+<%- include('../partials/footer') %>

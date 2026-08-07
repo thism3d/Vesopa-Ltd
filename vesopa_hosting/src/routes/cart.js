@@ -15,7 +15,6 @@ const crypto = require('crypto');
 const db = require('../db');
 const pricing = require('../pricing');
 const registrar = require('../integrations/domainnameapi');
-const hestia = require('../integrations/hestia');
 const auth = require('../auth');
 const { sendMail, shell, detailTable, escapeHtml, DEFAULT_TO } = require('../mailer');
 const { flash, field, isEmail } = require('../http-utils');
@@ -23,7 +22,7 @@ const coupons = require('../coupons');
 const currency = require('../currency');
 const payments = require('../payments');
 const {
-  resolveTerm, NAMESERVERS,
+  resolveTerm,
   termEarnsFreeDomain, tldQualifiesFree, TERMS, perMonth, FREE_DOMAIN_MAX_PENCE,
 } = require('../config');
 
@@ -903,76 +902,51 @@ router.post('/checkout', async (req, res, next) => {
         }
       }
 
+      /*
+       * THE LINES ARE THE ONLY THING WRITTEN. No service, no domain, no mailbox
+       * subscription — an unpaid order puts nothing in anybody's account.
+       *
+       * It used to create all three here, pending, and the panel then showed a
+       * hosting account and a domain to somebody who had not paid for either.
+       * The domain row was worse than cosmetic: `domains.domain` is unique, so
+       * an abandoned checkout took the name and the next customer to genuinely
+       * buy it collided with a row nobody had paid for.
+       *
+       * So the lines carry everything needed to build the account instead — the
+       * plan, the email plan, the term, the units, and the free-domain
+       * entitlement exactly as it stood at the moment of sale — and
+       * provisioning.materialiseOrder() reads them back when the money arrives.
+       * An order that is never paid simply never becomes anything.
+       */
       for (const line of priced.lines) {
+        const eligible = line.kind === 'hosting'
+          && line.plan.free_domain
+          && termEarnsFreeDomain(line.term_months) ? 1 : 0;
+
         await conn.query(
           `INSERT INTO order_items
-             (order_id, kind, description, plan_id, domain, term_months, years, unit_pence, qty, total_pence)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             (order_id, kind, description, plan_id, email_plan_id, domain, term_months, years,
+              unit_pence, qty, total_pence, free_domain_eligible, free_domain_spent, free_with_plan)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             orderId,
             line.kind,
             line.freeWithPlan ? `${line.description} (free with plan)` : line.description,
             line.plan ? line.plan.id : null,
+            line.emailPlan ? line.emailPlan.id : null,
             line.domain || '',
             line.term_months || 12,
             line.years || 1,
             line.unit_pence,
             line.qty || 1,
             line.freeWithPlan ? 0 : line.total_pence,
+            eligible,
+            // The basket already contained the domain the plan paid for, so the
+            // setup wizard must not offer a second free one.
+            line.freeDomainSpent ? 1 : 0,
+            line.freeWithPlan ? 1 : 0,
           ],
         );
-
-        // The service and domain rows are created now, pending. Provisioning
-        // happens when the order is marked paid — by the gateway webhook later,
-        // by an admin today.
-        if (line.kind === 'hosting') {
-          /*
-           * The entitlement is frozen onto the service at the moment of sale.
-           *
-           * `eligible` is what the customer was actually sold; `claimed` is
-           * already true when the basket contained a domain we zeroed, so the
-           * setup wizard will not offer a second one. Recomputing either later
-           * from the plan row would let an admin editing `free_domain` change
-           * what someone was sold after the fact.
-           */
-          const eligible = line.plan.free_domain && termEarnsFreeDomain(line.term_months) ? 1 : 0;
-          await conn.query(
-            `INSERT INTO services
-               (customer_id, plan_id, order_id, primary_domain, status, term_months, price_pence,
-                currency, free_domain_eligible, free_domain_claimed, setup_step)
-             VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)`,
-            [
-              customer.id, line.plan.id, orderId, line.domain || '', line.term_months, line.total_pence,
-              // The renewal price is meaningless without the currency it is in.
-              priced.currencyCode,
-              eligible,
-              line.freeDomainSpent ? 1 : 0,
-              // Nothing to ask if they already have a domain on the order, or
-              // if there is no free one to claim.
-              (eligible && !line.freeDomainSpent) || !line.domain ? 'domain' : 'provisioning',
-            ],
-          );
-        }
-        if (line.kind === 'email') {
-          await conn.query(
-            `INSERT INTO email_services
-               (customer_id, email_plan_id, order_id, domain, units, status, term_months,
-                price_pence, currency)
-             VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)`,
-            [
-              customer.id, line.emailPlan.id, orderId, line.domain || '',
-              line.units, line.term_months, line.total_pence, priced.currencyCode,
-            ],
-          );
-        }
-        if (line.kind === 'domain' || line.kind === 'domain_transfer') {
-          await conn.query(
-            `INSERT INTO domains (customer_id, order_id, domain, tld, status, years, ns1, ns2)
-             VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)
-             ON DUPLICATE KEY UPDATE order_id = VALUES(order_id), years = VALUES(years)`,
-            [customer.id, orderId, line.domain, line.tld, line.years, NAMESERVERS[0], NAMESERVERS[1]],
-          );
-        }
       }
 
       return { orderId, customer };

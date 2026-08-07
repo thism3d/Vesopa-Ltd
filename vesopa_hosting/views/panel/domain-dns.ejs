@@ -1,0 +1,155 @@
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
+<%- include('../partials/panel-shell', {
+  pageTitle: domain.domain,
+  pageSub: 'DNS records',
+  topAction: { href: '/panel/domains/' + domain.id, label: 'Back to domain', icon: 'globe' },
+}) %>
+
+<nav class="tabs">
+  <a class="tab" href="/panel/domains/<%= domain.id %>">Overview</a>
+  <a class="tab is-active" href="/panel/domains/<%= domain.id %>/dns">DNS</a>
+</nav>
+
+<% if (!allowed.ok) { %>
+  <div class="alert alert-warn">
+    <%- icon('warning', 19) %>
+    <div>
+      <b>DNS for this domain is not ours to edit.</b> <%= allowed.reason %>
+      <% if (domain.status === 'awaiting_ns') { %>
+        <a href="/panel/domains/<%= domain.id %>">Check the nameservers</a>
+      <% } %>
+    </div>
+  </div>
+<% } else { %>
+  <% if (!hestiaLive) { %>
+    <div class="alert alert-info">
+      <%- icon('info', 19) %>
+      <div><b>Demonstration mode.</b> This terminal is not connected to a live hosting node, so no records are listed and edits are recorded but not applied.</div>
+    </div>
+  <% } %>
+  <% if (error) { %>
+    <div class="alert alert-warn">
+      <%- icon('warning', 19) %>
+      <div><b>We could not read the zone.</b> Your DNS is unaffected — only this page cannot see it. <span class="muted">(<%= error %>)</span></div>
+    </div>
+  <% } %>
+
+  <div class="p-card p-card-flush">
+    <div class="p-card-head">
+      <h2>Records</h2>
+      <span class="small muted"><%= records.length %> record<%= records.length === 1 ? '' : 's' %></span>
+    </div>
+
+    <% if (!records.length) { %>
+      <div class="empty">
+        <%- icon('globe', 46) %>
+        <h3>No records yet</h3>
+        <p>Add the first one below. Most sites need an <b>A</b> record at <b>@</b> and a <b>CNAME</b> at <b>www</b>.</p>
+      </div>
+    <% } else { %>
+      <div class="table-wrap">
+        <table class="table" style="font-size:.86rem">
+          <thead>
+            <tr><th>Name</th><th>Type</th><th>Value</th><th>Priority</th><th>TTL</th><th></th></tr>
+          </thead>
+          <tbody>
+            <% records.forEach(function (r) { %>
+              <tr>
+                <td class="mono"><%= r.name %></td>
+                <td><span class="badge badge-grey"><%= r.type %></span></td>
+                <td class="mono" style="word-break:break-all;max-width:340px"><%= r.value %></td>
+                <td><%= r.priority === null ? '—' : r.priority %></td>
+                <td><%= r.ttl %></td>
+                <td style="text-align:right;white-space:nowrap">
+                  <details>
+                    <summary class="btn-link">Edit</summary>
+                    <form method="post" action="/panel/domains/<%= domain.id %>/dns" class="mt-2" data-guard>
+                      <input type="hidden" name="_csrf" value="<%= csrf %>">
+                      <input type="hidden" name="action" value="edit">
+                      <input type="hidden" name="record_id" value="<%= r.id %>">
+                      <input type="hidden" name="ttl" value="<%= r.ttl %>">
+                      <div class="p-grid p-grid-2">
+                        <div class="field">
+                          <label class="label" for="name-<%= r.id %>">Name</label>
+                          <input class="input mono" id="name-<%= r.id %>" name="name" value="<%= r.name %>" required>
+                        </div>
+                        <div class="field">
+                          <label class="label" for="type-<%= r.id %>">Type</label>
+                          <select class="select" id="type-<%= r.id %>" name="type">
+                            <% types.forEach(function (t) { %>
+                              <option value="<%= t %>" <%= r.type === t ? 'selected' : '' %>><%= t %></option>
+                            <% }); %>
+                          </select>
+                        </div>
+                      </div>
+                      <div class="field">
+                        <label class="label" for="value-<%= r.id %>">Value</label>
+                        <input class="input mono" id="value-<%= r.id %>" name="value" value="<%= r.value %>" required>
+                      </div>
+                      <div class="field">
+                        <label class="label" for="priority-<%= r.id %>">Priority <span class="muted">(MX and SRV only)</span></label>
+                        <input class="input" id="priority-<%= r.id %>" name="priority" value="<%= r.priority === null ? '' : r.priority %>">
+                      </div>
+                      <button class="btn btn-sm" type="submit" data-busy="Saving…">Save record</button>
+                    </form>
+
+                    <form method="post" action="/panel/domains/<%= domain.id %>/dns" class="mt-2"
+                          data-confirm="Delete this <%= r.type %> record? Anything relying on it stops working as soon as the change propagates.">
+                      <input type="hidden" name="_csrf" value="<%= csrf %>">
+                      <input type="hidden" name="action" value="delete">
+                      <input type="hidden" name="record_id" value="<%= r.id %>">
+                      <button class="btn-link" type="submit">Delete this record</button>
+                    </form>
+                  </details>
+                </td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
+  </div>
+
+  <div class="p-card">
+    <h2 class="h3 mb-2">Add a record</h2>
+    <p class="small muted mb-3">
+      Changes are live as soon as they are saved, but the internet remembers the old
+      answer until the record’s TTL runs out — usually an hour.
+    </p>
+    <form method="post" action="/panel/domains/<%= domain.id %>/dns" data-guard>
+      <input type="hidden" name="_csrf" value="<%= csrf %>">
+      <input type="hidden" name="action" value="add">
+      <div class="p-grid p-grid-2">
+        <div class="field">
+          <label class="label" for="name">Name</label>
+          <input class="input mono" id="name" name="name" value="@" required>
+          <p class="hint"><b>@</b> is <%= domain.domain %> itself. <b>www</b> is www.<%= domain.domain %>.</p>
+        </div>
+        <div class="field">
+          <label class="label" for="type">Type</label>
+          <select class="select" id="type" name="type">
+            <% types.forEach(function (t) { %><option value="<%= t %>"><%= t %></option><% }); %>
+          </select>
+        </div>
+      </div>
+      <div class="field">
+        <label class="label" for="value">Value</label>
+        <input class="input mono" id="value" name="value" required placeholder="203.0.113.10">
+      </div>
+      <div class="p-grid p-grid-2">
+        <div class="field">
+          <label class="label" for="priority">Priority <span class="muted">(MX and SRV only)</span></label>
+          <input class="input" id="priority" name="priority" placeholder="10">
+        </div>
+        <div class="field">
+          <label class="label" for="ttl">TTL <span class="muted">(seconds)</span></label>
+          <input class="input" id="ttl" name="ttl" value="3600">
+        </div>
+      </div>
+      <button class="btn" type="submit" data-busy="Adding…">Add record</button>
+    </form>
+  </div>
+<% } %>
+
+<%- include('../partials/panel-shell-end') %>
+<%- include('../partials/footer') %>

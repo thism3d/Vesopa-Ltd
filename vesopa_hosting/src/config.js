@@ -54,6 +54,36 @@ const NAMESERVERS = [
 ];
 
 /**
+ * How long a domain somebody already owns has to point at us.
+ *
+ * Anyone can open an account and add a domain they own — that is how a customer
+ * moving a live site checks the panel out before they switch. What they cannot
+ * do is leave it there: a name that never points at our nameservers is not
+ * hosted here, and a list of domains a company does not actually serve is a
+ * list nobody can trust. Three days is long enough for a registrar's control
+ * panel and DNS propagation together, and short enough that the list stays true.
+ *
+ * ONLY EXTERNAL DOMAINS ARE EVER DROPPED. A domain registered or transferred
+ * through us was paid for and belongs to the customer whether it points here or
+ * not; removing one of those would be taking away something they own.
+ */
+const DOMAIN_NS_GRACE_DAYS = Number(process.env.DOMAIN_NS_GRACE_DAYS || 3);
+
+/**
+ * How long a gateway session is worth asking about.
+ *
+ * A payment attempt is opened, the customer is sent to the gateway, and then
+ * anything can happen — including nothing. The reconciler asks the gateway what
+ * became of each pending attempt until it is settled or this long has passed,
+ * at which point the session is dead at the gateway too and the attempt is
+ * closed as expired. See src/jobs.js.
+ */
+const PAYMENT_SESSION_MINUTES = Number(process.env.PAYMENT_SESSION_MINUTES || 90);
+
+/** How often the background jobs run, in minutes. 0 turns them off entirely. */
+const JOB_INTERVAL_MINUTES = Number(process.env.JOB_INTERVAL_MINUTES || 5);
+
+/**
  * The four terms every plan is sold on. `months` drives the renewal date;
  * `column` names the price column on the plan row.
  *
@@ -185,6 +215,9 @@ module.exports = {
   CONTACT,
   BRAND,
   NAMESERVERS,
+  DOMAIN_NS_GRACE_DAYS,
+  PAYMENT_SESSION_MINUTES,
+  JOB_INTERVAL_MINUTES,
   TERMS,
   DEFAULT_TERM_MONTHS,
   FREE_DOMAIN_MIN_MONTHS,

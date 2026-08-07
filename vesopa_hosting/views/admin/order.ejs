@@ -52,7 +52,15 @@
     <div class="p-card p-card-flush">
       <div class="p-card-head"><h2>What this order created</h2></div>
       <% if (!services.length && !domains.length) { %>
-        <div class="p-card-body"><p class="muted small mb-0">Nothing yet.</p></div>
+        <div class="p-card-body"><p class="muted small mb-0">
+          <% if (order.status === 'pending') { %>
+            Nothing — and deliberately so. An order creates no service, no domain and no
+            mailbox subscription until it is paid; the lines above are the whole of it
+            until then. Marking it paid builds all three.
+          <% } else { %>
+            Nothing yet.
+          <% } %>
+        </p></div>
       <% } %>
       <% services.forEach(function (s) { %>
         <div class="item">

@@ -344,6 +344,12 @@ CREATE TABLE IF NOT EXISTS orders (
   customer_id      INT UNSIGNED NOT NULL,
   status           ENUM('pending','paid','provisioning','active','cancelled','refunded')
                      NOT NULL DEFAULT 'pending',
+  -- When the order's services, domains and mailboxes were WRITTEN INTO THE
+  -- ACCOUNT. Not the same thing as paid_at: paid_at says money arrived,
+  -- activated_at says we acted on it. It is also the idempotency guard — the
+  -- browser return and the IPN both try to activate, and the one that wins is
+  -- the one whose UPDATE ... WHERE activated_at IS NULL changes a row.
+  activated_at     DATETIME NULL,
   -- VAT is INCLUDED in the price, never added at the end:
   --     subtotal_pence + vat_pence = total_pence
   -- and total_pence is exactly what the customer was shown and pays.
@@ -370,6 +376,15 @@ CREATE TABLE IF NOT EXISTS orders (
     FOREIGN KEY (customer_id) REFERENCES customers (id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+-- ---------------------------------------------------------------------------
+-- The lines of an order.
+--
+-- THESE ROWS ARE THE ONLY RECORD OF AN UNPAID ORDER, and they carry everything
+-- needed to build the account from — the plan, the email plan, the term, the
+-- units, and the free-domain entitlement as it stood at the moment of sale.
+-- Nothing is created in `services`, `domains` or `email_services` until the
+-- money arrives; see the note above provisioning.materialiseOrder().
+-- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS order_items (
   id             INT UNSIGNED NOT NULL AUTO_INCREMENT,
   order_id       INT UNSIGNED NOT NULL,
@@ -378,12 +393,25 @@ CREATE TABLE IF NOT EXISTS order_items (
   -- not rewrite what an old invoice says was bought.
   description    VARCHAR(190) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   plan_id        INT UNSIGNED NULL,
+  -- Email lines point at `email_plans`, which is a different table from
+  -- `plans` — one column each rather than a polymorphic id, because a join
+  -- that has to check `kind` first is a join somebody will forget to check.
+  email_plan_id  INT UNSIGNED NULL,
   domain         VARCHAR(190) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
   term_months    INT UNSIGNED NOT NULL DEFAULT 12,
   years          TINYINT UNSIGNED NOT NULL DEFAULT 1,
   unit_pence     INT UNSIGNED NOT NULL DEFAULT 0,
   qty            INT UNSIGNED NOT NULL DEFAULT 1,
   total_pence    INT UNSIGNED NOT NULL DEFAULT 0,
+  -- The free-domain entitlement, decided by the basket and frozen here.
+  -- `eligible` is what the customer was sold; `spent` means the basket already
+  -- contained the domain it paid for, so the setup wizard must not offer a
+  -- second one. Recomputing either at activation time would let an admin
+  -- editing a plan change what somebody was sold last week.
+  free_domain_eligible TINYINT(1) NOT NULL DEFAULT 0,
+  free_domain_spent    TINYINT(1) NOT NULL DEFAULT 0,
+  -- This domain line is the one the plan paid for; it registers for nothing.
+  free_with_plan       TINYINT(1) NOT NULL DEFAULT 0,
   PRIMARY KEY (id),
   KEY idx_order_items_order (order_id),
   CONSTRAINT fk_order_items_order
@@ -436,6 +464,17 @@ CREATE TABLE IF NOT EXISTS payments (
   payload           TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL,
   failure_reason    VARCHAR(190) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
   settled_at        DATETIME NULL,
+  -- The reconciler's own bookkeeping — see src/jobs.js.
+  --
+  -- A customer who pays and then closes the tab never hits the return URL, and
+  -- not every gateway sends a server-to-server notification. So the server asks
+  -- the gateway itself, on a timer, until the attempt is settled or its session
+  -- is long dead. `expires_at` is when that session stops being worth asking
+  -- about; `last_checked_at` and `checks` are what keep the polling honest
+  -- across restarts instead of starting again from zero.
+  expires_at        DATETIME NULL,
+  last_checked_at   DATETIME NULL,
+  checks            INT UNSIGNED NOT NULL DEFAULT 0,
   created_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
@@ -488,7 +527,24 @@ CREATE TABLE IF NOT EXISTS services (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- ---------------------------------------------------------------------------
--- Registered / transferred domains.
+-- Domains: registered with us, transferred in, or simply pointed at us.
+--
+-- `source` is the difference that matters, because the three are not the same
+-- kind of object at all:
+--
+--   registered  we bought it at the registry on the customer's behalf. It is
+--               theirs, it was paid for, and NOTHING in this app may delete it.
+--   transfer    same, arriving from another registrar.
+--   external    registered somewhere else entirely. The customer added it here
+--               to host it with us, and we have no claim on it whatsoever —
+--               which is exactly why an external domain that never points at
+--               our nameservers is dropped from the account after the grace
+--               period rather than sitting in a list forever.
+--
+-- A domain is only POINTED at our platform once its nameservers actually
+-- resolve to ours. Until then it is `awaiting_ns`: visible to the customer,
+-- with the nameservers to set and the deadline to set them by, and no web
+-- domain, no mail domain and no certificate on the node.
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS domains (
   id                INT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -497,13 +553,25 @@ CREATE TABLE IF NOT EXISTS domains (
   order_id          INT UNSIGNED NULL,
   domain            VARCHAR(190) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   tld               VARCHAR(32)  CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
-  status            ENUM('pending','active','expired','transferred_away','cancelled')
+  status            ENUM('pending','awaiting_ns','active','expired','transferred_away','cancelled','removed')
                       NOT NULL DEFAULT 'pending',
+  source            ENUM('registered','transfer','external') NOT NULL DEFAULT 'registered',
   years             TINYINT UNSIGNED NOT NULL DEFAULT 1,
   auto_renew        TINYINT(1) NOT NULL DEFAULT 1,
   privacy           TINYINT(1) NOT NULL DEFAULT 1,
   registered_at     DATE NULL,
   expires_at        DATE NULL,
+  -- The nameserver check: when it last ran, when it last passed, what the
+  -- public DNS actually answered, and the moment an unverified EXTERNAL domain
+  -- is dropped. `ns_grace_until` is written when the row is created so the
+  -- deadline the customer is shown is the deadline that is enforced, rather
+  -- than one recomputed from created_at by whichever job happens to run.
+  ns_verified_at    DATETIME NULL,
+  ns_checked_at     DATETIME NULL,
+  ns_grace_until    DATETIME NULL,
+  ns_observed       VARCHAR(400) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  -- When the zone and the web/mail domain were actually created on the node.
+  pointed_at        DATETIME NULL,
   -- The registrar's own id for this domain, so a reconcile can match rows up.
   registrar_ref     VARCHAR(120) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
   ns1               VARCHAR(190) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
@@ -516,6 +584,9 @@ CREATE TABLE IF NOT EXISTS domains (
   UNIQUE KEY uq_domains_domain (domain),
   KEY idx_domains_customer (customer_id, status),
   KEY idx_domains_expiry (expires_at),
+  -- The sweep's own query: everything still waiting on a nameserver change,
+  -- oldest check first.
+  KEY idx_domains_ns (status, ns_checked_at),
   CONSTRAINT fk_domains_customer
     FOREIGN KEY (customer_id) REFERENCES customers (id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
@@ -840,6 +911,119 @@ BEGIN
     -- CREATE has just made it too. Left as a no-op guard so the section reads
     -- the same as every other step.
     SET @noop = 1;
+  END IF;
+
+  -- -------------------------------------------------------------------------
+  -- Nothing is added to the account until the money arrives.
+  --
+  -- Services, domains and mailbox subscriptions used to be written at checkout,
+  -- pending, whether or not the order was ever paid — so an unpaid order put a
+  -- hosting account and a domain in the customer's panel, and a pending domain
+  -- row took the unique index on a name nobody had bought. They are created at
+  -- activation now, from the order lines, which is why the lines have to carry
+  -- the email plan and the free-domain entitlement.
+  -- -------------------------------------------------------------------------
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'order_items'
+       AND COLUMN_NAME = 'email_plan_id'
+  ) THEN
+    ALTER TABLE order_items
+      ADD COLUMN email_plan_id INT UNSIGNED NULL AFTER plan_id,
+      ADD COLUMN free_domain_eligible TINYINT(1) NOT NULL DEFAULT 0 AFTER total_pence,
+      ADD COLUMN free_domain_spent    TINYINT(1) NOT NULL DEFAULT 0 AFTER free_domain_eligible,
+      ADD COLUMN free_with_plan       TINYINT(1) NOT NULL DEFAULT 0 AFTER free_domain_spent;
+    -- A line already sold at zero against a plan was the free domain. That is
+    -- the only signal an old row carries, and it is the right one.
+    UPDATE order_items SET free_with_plan = 1
+     WHERE kind = 'domain' AND total_pence = 0;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'orders'
+       AND COLUMN_NAME = 'activated_at'
+  ) THEN
+    ALTER TABLE orders ADD COLUMN activated_at DATETIME NULL AFTER paid_at;
+    -- Anything already paid was already built into the account by the old
+    -- checkout, so it is activated by definition. Without this the first run of
+    -- the reconciler would try to create a second set of rows for every order
+    -- ever placed.
+    UPDATE orders SET activated_at = COALESCE(paid_at, updated_at)
+     WHERE status IN ('paid','provisioning','active') AND activated_at IS NULL;
+
+    /*
+     * And clear out what the old checkout left in people's accounts.
+     *
+     * Every row deleted here belongs to an order that is STILL PENDING and was
+     * never acted on — nothing provisioned, no account on the node, no domain
+     * at the registry. They are exactly the rows checkout no longer writes, and
+     * if any of those orders is ever paid, materialiseOrder() creates them
+     * again from the order lines.
+     *
+     * The conditions are deliberately narrow. A service with a
+     * `provisioned_at`, or a domain with a registrar reference or a
+     * registration date, is a real thing somebody has and is left alone
+     * whatever its order says.
+     */
+    -- A domain that is being KEPT must not be left pointing at a service that
+    -- is about to go. `domains.service_id` carries no foreign key, so nothing
+    -- would stop it becoming a dangling id.
+    UPDATE domains d
+      JOIN services s ON s.id = d.service_id
+      JOIN orders   o ON o.id = s.order_id
+       SET d.service_id = NULL
+     WHERE o.status = 'pending' AND s.status = 'pending' AND s.provisioned_at IS NULL;
+
+    DELETE s FROM services s
+      JOIN orders o ON o.id = s.order_id
+     WHERE o.status = 'pending' AND s.status = 'pending' AND s.provisioned_at IS NULL;
+
+    DELETE e FROM email_services e
+      JOIN orders o ON o.id = e.order_id
+     WHERE o.status = 'pending' AND e.status = 'pending';
+
+    DELETE d FROM domains d
+      JOIN orders o ON o.id = d.order_id
+     WHERE o.status = 'pending' AND d.status = 'pending'
+       AND d.registrar_ref = '' AND d.registered_at IS NULL;
+  END IF;
+
+  -- The payment reconciler's bookkeeping.
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'payments'
+       AND COLUMN_NAME = 'last_checked_at'
+  ) THEN
+    ALTER TABLE payments
+      ADD COLUMN expires_at      DATETIME NULL AFTER settled_at,
+      ADD COLUMN last_checked_at DATETIME NULL AFTER expires_at,
+      ADD COLUMN checks          INT UNSIGNED NOT NULL DEFAULT 0 AFTER last_checked_at;
+  END IF;
+
+  -- Nameserver verification, and the difference between a domain we sold and a
+  -- domain somebody merely pointed at us.
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'domains'
+       AND COLUMN_NAME = 'source'
+  ) THEN
+    ALTER TABLE domains
+      MODIFY COLUMN status ENUM('pending','awaiting_ns','active','expired','transferred_away','cancelled','removed')
+             NOT NULL DEFAULT 'pending',
+      ADD COLUMN source ENUM('registered','transfer','external') NOT NULL DEFAULT 'registered' AFTER status,
+      ADD COLUMN ns_verified_at DATETIME NULL AFTER expires_at,
+      ADD COLUMN ns_checked_at  DATETIME NULL AFTER ns_verified_at,
+      ADD COLUMN ns_grace_until DATETIME NULL AFTER ns_checked_at,
+      ADD COLUMN ns_observed VARCHAR(400) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci
+                 NOT NULL DEFAULT '' AFTER ns_grace_until,
+      ADD COLUMN pointed_at DATETIME NULL AFTER ns_observed,
+      ADD KEY idx_domains_ns (status, ns_checked_at);
+    -- Everything that predates this was registered through us and is live, so
+    -- it is already pointed here — the sweep re-checks it on its own schedule
+    -- and will correct anything that is not.
+    UPDATE domains SET ns_verified_at = COALESCE(registered_at, created_at), pointed_at = created_at
+     WHERE status = 'active';
   END IF;
 
   -- A gateway that settles in taka needs a taka rate, and the currencies table

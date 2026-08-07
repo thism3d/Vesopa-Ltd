@@ -1,41 +1,112 @@
+<% const external = domain.source === 'external';
+   const verified = Boolean(domain.ns_verified_at);
+   const observed = (domain.ns_observed || '').split(' ').filter(Boolean);
+   const deadline = domain.ns_grace_until ? new Date(domain.ns_grace_until) : null;
+   const daysLeft = deadline ? Math.max(0, Math.ceil((deadline - Date.now()) / 864e5)) : null; %>
 <%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
 <%- include('../partials/panel-shell', {
   pageTitle: domain.domain,
-  pageSub: domain.status === 'active' ? 'Registered with Vesopa' : 'Status: ' + domain.status,
+  pageSub: external ? 'Registered elsewhere, hosted here' : 'Registered with Vesopa',
 }) %>
 
-<% if (!registrarLive) { %>
+<nav class="tabs">
+  <a class="tab is-active" href="/panel/domains/<%= domain.id %>">Overview</a>
+  <a class="tab" href="/panel/domains/<%= domain.id %>/dns">DNS</a>
+</nav>
+
+<% if (!registrarLive && !external) { %>
   <div class="alert alert-info">
     <%- icon('info', 19) %>
     <div><b>Demonstration mode.</b> The registrar connection is not live, so changes here are recorded but not sent to the registry.</div>
   </div>
 <% } %>
 
+<% if (domain.status === 'awaiting_ns') { %>
+  <div class="alert alert-warn">
+    <%- icon('clock', 19) %>
+    <div>
+      <b>Waiting for your nameservers.</b>
+      We are not hosting <%= domain.domain %> yet — it points at
+      <% if (observed.length) { %><span class="mono"><%= observed.join(', ') %></span><% } else { %>somewhere else<% } %>.
+      Set the two nameservers on the right at whoever the domain is registered with.
+      <% if (daysLeft !== null) { %>
+        <br><b><%= daysLeft === 0 ? 'Today is the last day' : daysLeft + ' day' + (daysLeft === 1 ? '' : 's') + ' left' %></b>
+        — a domain that has not pointed at us by then comes off the account. The domain itself is never touched.
+      <% } %>
+    </div>
+  </div>
+<% } %>
+
 <div class="p-grid p-grid-side">
   <div>
     <div class="p-card">
-      <h2 class="h3 mb-2">Nameservers</h2>
-      <p class="small muted mb-3">
-        These decide where your domain points. Leave them as ours to host with us;
-        change them to point the domain somewhere else. Changes take a few hours
-        to reach everyone.
+      <div class="row-between mb-2">
+        <h2 class="h3">Where this domain points</h2>
+        <% if (verified) { %>
+          <span class="badge badge-green">Pointing at us</span>
+        <% } else { %>
+          <span class="badge badge-amber">Not pointing here yet</span>
+        <% } %>
+      </div>
+
+      <p class="small muted mb-2">
+        <% if (verified) { %>
+          Checked against public DNS<% if (domain.ns_checked_at) { %> on <%= domain.ns_checked_at %><% } %>.
+          Everything we host for this domain — the site, the mailboxes and the certificate — works because of this.
+        <% } else { %>
+          We look this up on the public internet rather than taking anyone's word for it, because it is
+          what decides whether we can serve the site, accept the mail and issue the certificate.
+          <% if (observed.length) { %>
+            Right now it answers <span class="mono"><%= observed.join(', ') %></span>.
+          <% } else if (domain.ns_checked_at) { %>
+            Right now we cannot read its nameservers at all.
+          <% } %>
+        <% } %>
       </p>
-      <form method="post" action="/panel/domains/<%= domain.id %>/nameservers" data-guard>
+
+      <form method="post" action="/panel/domains/<%= domain.id %>/verify">
         <input type="hidden" name="_csrf" value="<%= csrf %>">
-        <div class="p-grid p-grid-2">
-          <% [1,2,3,4].forEach(function (n) { %>
-            <div class="field">
-              <label class="label" for="ns<%= n %>">Nameserver <%= n %><% if (n > 2) { %> <span class="muted">(optional)</span><% } %></label>
-              <input class="input mono" id="ns<%= n %>" name="ns<%= n %>"
-                     value="<%= domain['ns' + n] || (n <= 2 ? defaultNameservers[n-1] : '') %>"
-                     <%= n <= 2 ? 'required' : '' %>>
-            </div>
-          <% }); %>
-        </div>
-        <button class="btn btn-sm" type="submit" data-busy="Saving…">Save nameservers</button>
+        <button class="btn btn-sm <%= verified ? 'btn-ghost' : '' %>" type="submit" data-busy="Checking…">
+          <%- icon('search', 15) %> Check now
+        </button>
       </form>
     </div>
 
+    <% if (!external) { %>
+      <div class="p-card">
+        <h2 class="h3 mb-2">Nameservers</h2>
+        <p class="small muted mb-3">
+          These decide where your domain points. Leave them as ours to host with us;
+          change them to point the domain somewhere else. Changes take a few hours
+          to reach everyone.
+        </p>
+        <form method="post" action="/panel/domains/<%= domain.id %>/nameservers" data-guard>
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <div class="p-grid p-grid-2">
+            <% [1,2,3,4].forEach(function (n) { %>
+              <div class="field">
+                <label class="label" for="ns<%= n %>">Nameserver <%= n %><% if (n > 2) { %> <span class="muted">(optional)</span><% } %></label>
+                <input class="input mono" id="ns<%= n %>" name="ns<%= n %>"
+                       value="<%= domain['ns' + n] || (n <= 2 ? defaultNameservers[n-1] : '') %>"
+                       <%= n <= 2 ? 'required' : '' %>>
+              </div>
+            <% }); %>
+          </div>
+          <button class="btn btn-sm" type="submit" data-busy="Saving…">Save nameservers</button>
+        </form>
+      </div>
+    <% } else { %>
+      <div class="p-card">
+        <h2 class="h3 mb-2">Nameservers</h2>
+        <p class="small muted mb-2">
+          <%= domain.domain %> is registered somewhere else, so its nameservers are changed
+          in that registrar's control panel — not here. Set them to the two on the right
+          and this page updates itself within a few minutes.
+        </p>
+      </div>
+    <% } %>
+
+    <% if (!external) { %>
     <div class="p-card">
       <h2 class="h3 mb-2">Automatic renewal</h2>
       <p class="small muted mb-3">
@@ -67,22 +138,69 @@
       </p>
       <a class="btn btn-ghost btn-sm" href="/panel/tickets/new?subject=Transfer%20out%20<%= encodeURIComponent(domain.domain) %>">Request the code</a>
     </div>
+    <% } %>
+
+    <% if (canRemove) { %>
+      <div class="p-card">
+        <h2 class="h3 mb-2">Remove from this account</h2>
+        <p class="small muted mb-2">
+          Takes <%= domain.domain %> off your Vesopa account and stops us hosting it.
+          The domain itself is registered elsewhere and is not affected in any way —
+          you can add it back at any time.
+        </p>
+        <form method="post" action="/panel/domains/<%= domain.id %>/remove"
+              data-confirm="Remove <%= domain.domain %> from your account? Any site, mailboxes and certificate we host for it stop working.">
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <button class="btn btn-ghost btn-sm" type="submit">Remove this domain</button>
+        </form>
+      </div>
+    <% } %>
   </div>
 
   <aside>
     <div class="p-card">
+      <h2 class="h3 mb-2">Point it at us</h2>
+      <p class="small muted mb-2">
+        <% if (external) { %>Set these two at your registrar.<% } else { %>Ours, and already set unless you have changed them.<% } %>
+      </p>
+      <% defaultNameservers.forEach(function (ns) { %>
+        <div class="copyable">
+          <span><%= ns %></span>
+          <button type="button" class="btn btn-ghost btn-sm copy-btn" data-copy="<%= ns %>">Copy</button>
+        </div>
+      <% }); %>
+    </div>
+
+    <div class="p-card">
       <h2 class="h3 mb-2">Details</h2>
       <div class="table-wrap"><table class="table" style="font-size:.86rem">
         <tbody>
-          <tr><td class="muted">Status</td><td class="strong"><%= domain.status %></td></tr>
-          <tr><td class="muted">Registered</td><td class="strong"><%= domain.registered_at || '—' %></td></tr>
-          <tr><td class="muted">Expires</td><td class="strong"><%= domain.expires_at || '—' %></td></tr>
-          <tr><td class="muted">WHOIS privacy</td><td class="strong"><%= domain.privacy ? 'On' : 'Off' %></td></tr>
-          <% if (price) { %>
-            <tr><td class="muted">Renewal</td><td class="strong"><%= money(price.renew_pence) %>/yr</td></tr>
+          <tr><td class="muted">Status</td><td class="strong"><%= domain.status === 'awaiting_ns' ? 'Waiting for nameservers' : domain.status %></td></tr>
+          <tr><td class="muted">Held by</td><td class="strong"><%= external ? 'Another registrar' : 'Vesopa' %></td></tr>
+          <tr><td class="muted">Points at us</td><td class="strong"><%= verified ? 'Yes' : 'Not yet' %></td></tr>
+          <tr><td class="muted">Last checked</td><td class="strong"><%= domain.ns_checked_at || 'Not yet' %></td></tr>
+          <% if (!external) { %>
+            <tr><td class="muted">Registered</td><td class="strong"><%= domain.registered_at || '—' %></td></tr>
+            <tr><td class="muted">Expires</td><td class="strong"><%= domain.expires_at || '—' %></td></tr>
+            <tr><td class="muted">WHOIS privacy</td><td class="strong"><%= domain.privacy ? 'On' : 'Off' %></td></tr>
+            <% if (price) { %>
+              <tr><td class="muted">Renewal</td><td class="strong"><%= money(price.renew_pence) %>/yr</td></tr>
+            <% } %>
           <% } %>
         </tbody>
       </table></div>
+    </div>
+
+    <div class="p-card">
+      <h2 class="h3 mb-2">DNS records</h2>
+      <p class="small muted mb-2">
+        <% if (canEditDns.ok) { %>
+          Add or change the A, CNAME, MX and TXT records for this domain.
+        <% } else { %>
+          <%= canEditDns.reason %>
+        <% } %>
+      </p>
+      <a class="btn btn-ghost btn-sm btn-block" href="/panel/domains/<%= domain.id %>/dns">Open DNS records</a>
     </div>
   </aside>
 </div>

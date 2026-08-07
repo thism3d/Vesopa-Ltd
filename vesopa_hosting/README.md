@@ -290,6 +290,65 @@ before the customer ever saw it, and quietly lose them the free domain they are
 owed. The admin's "Provision now" button overrides this for the customer who
 telephones instead of finishing the wizard.
 
+### Nothing joins the account until the money does
+
+**Checkout writes an order and its lines. That is all it writes.** No service,
+no domain, no mailbox subscription. An unpaid order is a quote.
+
+It did not always work that way, and the old behaviour was worse than untidy: a
+customer who reached the payment page and left had a hosting account and a
+domain sitting in their panel, and the domain row — `domains.domain` is unique —
+held a name nobody had bought, so the next person to genuinely buy it collided
+with it.
+
+So the account is built at the moment of payment instead, by
+`provisioning.materialiseOrder()`, from the order lines:
+
+```
+checkout   orders + order_items                    ← the only rows an unpaid order has
+payment    services + domains + email_services     ← materialiseOrder()
+           then provisionOrder() makes them real
+```
+
+The lines therefore have to carry everything the account needs — `plan_id`,
+`email_plan_id`, the term, the units, and the free-domain entitlement as it
+stood at the moment of sale. That last one is the reason the entitlement lives
+on `order_items` rather than being recomputed later: an admin editing a plan
+next week must not change what somebody was sold last week.
+
+**One door, four callers.** `provisioning.activateOrder()` is what every path
+that can learn an order is paid goes through — the browser return, the gateway's
+IPN, the reconciler, and an admin marking it paid by hand. They used to carry
+four copies of the "is a service still waiting for its domain" rule between
+them, and three of the four would have been wrong the first time it changed.
+
+**Idempotent by row lock, not by checking first.** `orders.activated_at` is
+claimed under `SELECT … FOR UPDATE`. The browser return and the IPN routinely
+arrive within milliseconds of each other and both call this; the loser sees the
+timestamp the winner wrote and does nothing. A read-then-write would leave a
+window, and that window is where a customer gets two hosting accounts for one
+payment.
+
+### The server checks the gateway, because the browser is not evidence
+
+A customer who pays and closes the tab never reaches the return URL. Stripe and
+PayPal send no notification of their own. Their money moved and only the gateway
+knows it.
+
+So `src/jobs.js` asks. Every pending payment attempt is re-checked against the
+gateway that owns it until it settles or its session dies:
+
+| Gateway | How it is checked |
+| ------- | ----------------- |
+| Stripe | the Checkout Session is retrieved by id; `expired` closes the attempt |
+| PayPal | the order is read back — and an `APPROVED` one, which is exactly what a closed tab leaves behind, is captured |
+| SSLCommerz | no status endpoint exists through BosheBoshe. Settlement is by signed IPN and signed return; the reconciler only ages the attempt out |
+
+An attempt past `expires_at` — `PAYMENT_SESSION_MINUTES`, 90 by default — is
+closed as cancelled, so "nothing has been charged, you can try again" is true
+when the customer reads it. The same pass also finishes any order that is paid
+but has no `activated_at`, which is the process having been restarted mid-flight.
+
 ### The free domain
 
 **One domain free with any hosting plan bought for 12 months or more.** Never on
@@ -297,11 +356,12 @@ the monthly plan: a registration costs real money at the registry the moment it
 happens and cannot be handed back, so it must not ride on a term that can be
 cancelled after four weeks.
 
-The entitlement is **frozen onto the service row** at the moment of sale
-(`free_domain_eligible`), not recomputed later — an admin editing a plan must
-not change what someone was already sold. `free_domain_claimed` is what stops a
-second one being taken; it is set either by the basket zeroing a domain already
-in it, or by the wizard, **never both**.
+The entitlement is **frozen onto the order line** at the moment of sale
+(`order_items.free_domain_eligible`), not recomputed later — an admin editing a
+plan must not change what someone was already sold. It is copied onto the
+service when the order is paid. `free_domain_claimed` is what stops a second one
+being taken; it is set either by the basket zeroing a domain already in it, or
+by the wizard, **never both**.
 
 Which extensions qualify is a **price cap, not a list** — `tldQualifiesFree()`
 in `src/config.js`. A list has to be edited every time a TLD is added and the
@@ -327,10 +387,78 @@ Provisioning is **not awaited by the HTTP request** that starts it. It takes
 seconds to a minute; holding the request open would show a blank tab and then
 time out behind nginx.
 
+### Domains on an account
+
+**Anyone with an account can add a domain they already own.** Registering one
+through us is a purchase and goes through checkout; naming one you own is not,
+and gating it behind a sale would mean a customer moving a live site cannot see
+the panel they are being asked to trust. `/panel/domains/add`.
+
+**It gets them nothing until the nameservers agree.** A domain typed into a form
+is a claim, not a fact — the person typing it may not own it, and a platform
+that will serve a site, accept mail and issue a certificate for any name it is
+handed is a platform for impersonating other people's domains. The delegation is
+the proof: `src/nameservers.js` asks the *public* DNS (1.1.1.1 and 8.8.8.8, not
+the node's own resolver, which would answer authoritatively for zones it holds
+and turn the check into "do we have a zone for this") and every nameserver it
+answers with has to be one of ours. One of two is not enough — a domain
+delegated half to us and half to somebody else is served by both at random.
+
+| `domains.source` | Where it came from | Can it be dropped? |
+| ---------------- | ------------------ | ------------------ |
+| `registered` | bought through us at the registry | **Never.** It was paid for and it is theirs. |
+| `transfer` | transferred in | **Never**, same reason. |
+| `external` | registered elsewhere, added here | Yes, if it never points at us. |
+
+**An external domain has `DOMAIN_NS_GRACE_DAYS` — three — to point at us.** The
+deadline is written onto the row when it is added, so the date the customer is
+shown is the date that is enforced. Past it, the sweep sets the row `removed`,
+logs it and emails them what to do about it; the domain itself is untouched and
+adding it again later is allowed. Leaving it in the list forever would mean the
+panel shows domains this company does not host.
+
+Verification runs from three places, all the same function: the sweep every
+`DOMAIN_RECHECK_MINUTES`, the customer's own **Check now** button, and the SSL
+retry — because somebody pressing that button has usually *just* changed their
+nameservers, and the stored answer is by definition the one from before they
+did. When it passes, `pointAtNode()` creates the zone, the website and the mail
+domain and issues the certificate, all tolerating "already exists".
+
+**DNS is editable for any domain we are answering for.** The zone lives on the
+node — our nameservers *are* the node — so `/panel/domains/:id/dns` is editing
+the file that answers the query, with no copy in our database to drift and no
+publish step. It is refused when the domain is delegated elsewhere, because an
+editor writing into a zone nobody queries is worse than no editor at all: the
+customer would believe the change had been made.
+
+### SSL
+
+**Three conditions, all checked in the route and all explained on the page:**
+
+1. the hosting is ours — a certificate is installed on a web server, and we can
+   only install one on ours;
+2. the hosting is **paid and active** — `status = 'active'` is reachable only
+   through a settled payment;
+3. the domain resolves to us — Let's Encrypt proves control by fetching over the
+   domain, so issuing for a name we do not serve is not possible and would be
+   certifying somebody else's domain if it were.
+
 ### Email
 
 Business email provisions automatically: a paid order creates the mail domain on
 the Hestia node, reusing the customer's existing account if they have one.
+
+**Mailboxes are free with a hosting plan** — how many is `plans.mailboxes`, per
+plan, editable in the admin — and a business email plan adds more by the
+mailbox. `src/mailboxes.js` adds the two together, counts what is in use **on
+the node** rather than from a counter of our own (support can add a mailbox by
+hand, and a counter would be wrong in the direction that lets somebody exceed
+what they bought), and the create route re-checks the allowance at the moment of
+the click rather than trusting the page it was drawn on.
+
+Both sources only count while `active`: a suspended hosting account or a lapsed
+mail subscription grants nothing. Marketing plans count for nothing here — they
+are contact lists, not inboxes.
 
 **Marketing email is set up by hand and says so on the page.** Bulk sending is
 deliberately kept off the web servers — a campaign from a shared node damages
@@ -382,11 +510,51 @@ A lookup is read-only. It registers nothing and costs nothing. Set
    Create the packages `starter`, `business` and `pro` on the node first — they
    are what actually enforce the plan limits, and `v-add-user` fails without
    them. Add this server's IP to Hestia's API allow list.
-3. **Payments.** `src/routes/cart.js` already writes the order, the lines, the
-   service and the domain rows. Only the charge step is missing. The webhook
-   should call `provisioning.provisionOrder(orderId)` — the same function the
-   admin's "Mark paid & provision" button calls, which is why that logic is a
-   module and not inline in the route.
+3. **Payments.** Set the gateway credentials and take the adapters off mock.
+   Everything downstream of a confirmed payment already runs through
+   `provisioning.activateOrder(orderId)` — the same function the admin's "Mark
+   paid" button and the reconciler call — which is why that logic is a module
+   and not inline in a route.
+4. **Nameservers.** `NS1` and `NS2` must actually be the hosting node, because
+   they are what every domain is checked against. Point them at the box, then
+   confirm from somewhere else on the internet that they answer.
+
+---
+
+## The background jobs
+
+`src/jobs.js`, started from `server.js`, one timer, three duties. All three
+exist for the same reason: something outside this process changes state and
+never tells us.
+
+| Job | What it does |
+| --- | ------------ |
+| `reconcilePayments()` | asks each gateway what became of every pending attempt; closes the ones whose session has died |
+| `finishPaidOrders()` | builds the account for any order that is paid but has no `activated_at` |
+| `sweepDomains()` | checks delegations, serves what now points here, drops external domains past their grace period |
+
+```
+JOB_INTERVAL_MINUTES     5     how often a pass runs. 0 turns the timers off
+JOB_BATCH                25    rows one job will touch in a pass
+PAYMENT_SESSION_MINUTES  90    how long an attempt is worth asking about
+PAYMENT_RECHECK_MINUTES  5     floor between two questions about the same attempt
+DOMAIN_NS_GRACE_DAYS     3     how long an external domain has to point at us
+DOMAIN_RECHECK_MINUTES   15    floor between two lookups of the same domain
+DOMAIN_PROBE_DAYS        45    stop probing a domain that has never pointed here
+DNS_RESOLVERS            1.1.1.1,8.8.8.8
+```
+
+**A timer, not cron.** Every job needs the same pool, adapters and provisioning
+code as the web routes; a crontab entry would be a second copy of the boot
+sequence maintained by hand. **If this ever runs on more than one node**, set
+`JOB_INTERVAL_MINUTES=0` on all but one of them — the jobs are safe to run twice
+(every write is guarded) but there is nothing to be gained by it.
+
+Every job swallows its own errors and every one is batched: a sweep that throws
+must not take the web server down, and a weekend's backlog must not open four
+hundred sockets at once. The pass logs **only when something happened** — a line
+every five minutes saying "nothing to do" is a log nobody reads, and this is a
+log that has to be read on the day a payment goes missing.
 
 ---
 
@@ -588,16 +756,19 @@ nginx needs a server block for `hosting.vesopaepos.com` proxying to `127.0.0.1:5
 
 ## Not built yet
 
-- **Stripe and crypto checkout** — both are shown at the checkout, disabled, with
-  no adapter behind them. SSLCommerz is live. Adding one is a matter of writing
+- **Crypto checkout** — shown at the checkout, disabled, with no adapter behind
+  it. SSLCommerz, Stripe and PayPal are wired. Adding one is a matter of writing
   an adapter and having it report itself configured; `payments.gateways()`
-  computes availability rather than being told it.
+  computes availability rather than being told it. A new adapter should also get
+  a branch in `payments.reconcilePayment()` — without one, its abandoned
+  attempts can only be aged out, never recovered.
 - **Refunds** — `payments.status` has a `refunded` value and the API secret can
   sign a refund request, but nothing calls it. Refunds are manual at the gateway
   today, and must be worked out from `charged_minor`, not the order total.
 - **Renewal charging through the gateway** — `next_due_at` is set and shown; no
   job charges a stored card, and no card is stored.
-- **DNS record editor** — the panel sets nameservers; per-record editing is not built.
+- **DNS templates** — records are editable one at a time. There is no "set this
+  up for Google Workspace" button that writes five MX records at once.
 - **One-click WordPress** — advertised on the site, needs `v-add-web-app` wiring.
 - **Node/Python app deploys** — advertised in the "vibe code" section. Static and
   PHP work today; the Node and Python runtimes need proxy templates on the Hestia

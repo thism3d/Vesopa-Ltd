@@ -209,7 +209,10 @@
                      placeholder="yourbusiness.co.uk" autocomplete="off" spellcheck="false">
               <button class="btn btn-ghost" type="submit" style="flex:none">Use this</button>
             </div>
-            <p class="hint">We will show you the two nameservers to paste at your current registrar.</p>
+            <p class="hint">
+              We will show you the two nameservers to paste at your current registrar. Your site,
+              mailboxes and certificate are built the moment the domain points at us.
+            </p>
           </form>
 
           <form method="post" action="/panel/setup/<%= order.id %>/domain" data-guard style="margin-top:14px">

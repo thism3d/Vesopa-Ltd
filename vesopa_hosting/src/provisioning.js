@@ -1,16 +1,27 @@
 /**
  * Turning a paid order into working services.
  *
- * Called from exactly one place today — an admin marking an order paid — and
- * designed so the payment gateway's webhook can call the same function
- * unchanged when it arrives. That is the whole reason it is a module and not a
- * block inside the admin route.
+ * ## The order of events
  *
- * ## Two rules
+ * Checkout writes an ORDER and its LINES, and nothing else. No service, no
+ * domain, no mailbox subscription — an unpaid order puts nothing in anybody's
+ * account. `materialiseOrder()` creates those rows the moment the money is
+ * confirmed, `provisionOrder()` then makes them real on the node and at the
+ * registrar, and `activateOrder()` is the one door both halves are reached
+ * through. Every path that can confirm a payment — the browser return, the
+ * gateway's IPN, the reconciler, an admin marking an order paid by hand — calls
+ * that same function.
  *
- * **Idempotent.** A webhook that fires twice, or an admin who double-clicks,
- * must not create two Hestia accounts or register a domain twice. Every step
- * checks its own row's status first and returns early if the work is done.
+ * ## Three rules
+ *
+ * **Nothing before the money.** The account is what has been paid for. A
+ * pending order that is never paid leaves no service to explain, no domain row
+ * holding a name nobody bought, and nothing to clean up.
+ *
+ * **Idempotent.** A webhook that fires twice, an admin who double-clicks and
+ * the reconciler arriving late must not create two Hestia accounts or register
+ * a domain twice. Materialisation is guarded by `orders.activated_at` under a
+ * row lock; every provisioning step checks its own row's status first.
  *
  * **Partial success is recorded, not thrown away.** If the hosting account is
  * created and the domain registration then fails, the account stays and the
@@ -23,8 +34,13 @@ const db = require('./db');
 const hestia = require('./integrations/hestia');
 const registrar = require('./integrations/domainnameapi');
 const auth = require('./auth');
+const linking = require('./domain-linking');
+const nameservers = require('./nameservers');
 const { sendMail, shell, detailTable, escapeHtml } = require('./mailer');
 const { SITE_URL, NAMESERVERS } = require('./config');
+
+/** The order states that mean the money is in. */
+const PAID_STATES = ['paid', 'provisioning', 'active'];
 
 // ---------------------------------------------------------------------------
 // Live progress
@@ -134,8 +150,220 @@ function dueDate(months) {
 }
 
 // ---------------------------------------------------------------------------
+// Writing a paid order into the account
+// ---------------------------------------------------------------------------
+
+/**
+ * Create the service, domain and mailbox rows an order was bought for.
+ *
+ * THIS IS THE MOMENT SOMETHING JOINS THE ACCOUNT, and it is reached only from a
+ * confirmed payment. Before it runs, an order is a quote: lines, a total and a
+ * customer. After it runs, the customer owns a hosting account and the domains
+ * on it, and the panel will show them.
+ *
+ * Guarded by `orders.activated_at` under `SELECT … FOR UPDATE`. The browser
+ * return and the IPN routinely arrive within milliseconds of each other and
+ * both call this; the row lock makes the second one wait, and it then sees the
+ * timestamp the first one wrote and does nothing. Checking a status and acting
+ * on it in two statements would leave a window, and that window is where a
+ * customer gets two hosting accounts for one payment.
+ *
+ * @returns {Promise<{ok: boolean, already?: boolean, reason?: string, created?: object}>}
+ */
+async function materialiseOrder(orderId) {
+  return db.transaction(async (conn) => {
+    const [[order]] = await conn.query('SELECT * FROM orders WHERE id = ? FOR UPDATE', [orderId]);
+    if (!order) return { ok: false, reason: 'unknown_order' };
+    if (!PAID_STATES.includes(order.status)) return { ok: false, reason: 'not_paid' };
+    if (order.activated_at) return { ok: true, already: true };
+
+    const [[customer]] = await conn.query('SELECT * FROM customers WHERE id = ? LIMIT 1', [order.customer_id]);
+    if (!customer) return { ok: false, reason: 'unknown_customer' };
+
+    const [items] = await conn.query('SELECT * FROM order_items WHERE order_id = ? ORDER BY id', [orderId]);
+    const created = { services: 0, domains: 0, emails: 0, skipped: [] };
+
+    for (const line of items) {
+      /*
+       * A line that cannot say what it is for is recorded and skipped, never
+       * guessed at. The only way to reach this is an order placed before the
+       * lines carried `email_plan_id` and paid afterwards, which is a handful
+       * of rows at most — and a wrong guess would provision somebody the wrong
+       * plan, which is far worse than an admin having to read a log line.
+       */
+      if ((line.kind === 'hosting' && !line.plan_id) || (line.kind === 'email' && !line.email_plan_id)) {
+        created.skipped.push(`${line.description} (no plan on the line)`);
+        continue;
+      }
+
+      if (line.kind === 'hosting' && line.plan_id) {
+        await conn.query(
+          `INSERT INTO services
+             (customer_id, plan_id, order_id, primary_domain, status, term_months, price_pence,
+              currency, free_domain_eligible, free_domain_claimed, setup_step)
+           VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)`,
+          [
+            order.customer_id, line.plan_id, order.id, line.domain || '',
+            line.term_months, line.total_pence, order.currency,
+            line.free_domain_eligible ? 1 : 0,
+            line.free_domain_spent ? 1 : 0,
+            /*
+             * Where the wizard opens. Exactly the rule checkout used to apply,
+             * moved here with the row it belongs to: there is nothing to ask if
+             * the customer already named a domain and has no free one owing.
+             */
+            (line.free_domain_eligible && !line.free_domain_spent) || !line.domain
+              ? 'domain'
+              : 'provisioning',
+          ],
+        );
+        created.services += 1;
+      }
+
+      if (line.kind === 'email' && line.email_plan_id) {
+        await conn.query(
+          `INSERT INTO email_services
+             (customer_id, email_plan_id, order_id, domain, units, status, term_months,
+              price_pence, currency)
+           VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)`,
+          [
+            order.customer_id, line.email_plan_id, order.id, line.domain || '',
+            line.qty || 1, line.term_months, line.total_pence, order.currency,
+          ],
+        );
+        created.emails += 1;
+      }
+
+      if (line.kind === 'domain' || line.kind === 'domain_transfer') {
+        /*
+         * `domains.domain` is unique across the whole table, and by the time an
+         * order is paid somebody else may hold the row — a name registered
+         * through us in the meantime, or one another customer added to their
+         * own account. Taking it over would move a live domain between
+         * accounts, so the line is skipped, recorded, and left for a human. The
+         * registration itself has not happened yet, so nothing is lost but the
+         * automation.
+         */
+        const [[existing]] = await conn.query(
+          'SELECT * FROM domains WHERE domain = ? LIMIT 1',
+          [line.domain],
+        );
+        const claimable = !existing
+          || (existing.customer_id === order.customer_id
+              && ['removed', 'cancelled', 'expired'].includes(existing.status));
+
+        if (!claimable) {
+          created.skipped.push(`${line.domain} (already held by another account)`);
+          continue;
+        }
+
+        const source = line.kind === 'domain_transfer' ? 'transfer' : 'registered';
+        if (existing) {
+          await conn.query(
+            `UPDATE domains
+                SET order_id = ?, status = 'pending', source = ?, years = ?,
+                    ns1 = ?, ns2 = ?, ns_verified_at = NULL, ns_grace_until = NULL
+              WHERE id = ?`,
+            [order.id, source, line.years || 1, NAMESERVERS[0], NAMESERVERS[1], existing.id],
+          );
+        } else {
+          await conn.query(
+            `INSERT INTO domains (customer_id, order_id, domain, tld, status, source, years, ns1, ns2)
+             VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?)`,
+            [
+              order.customer_id, order.id, line.domain,
+              registrar.splitDomain(line.domain).tld, source, line.years || 1,
+              NAMESERVERS[0], NAMESERVERS[1],
+            ],
+          );
+        }
+        created.domains += 1;
+      }
+    }
+
+    await conn.query('UPDATE orders SET activated_at = NOW() WHERE id = ?', [order.id]);
+    return { ok: true, already: false, created };
+  });
+}
+
+/**
+ * A payment has been confirmed: build the account, then set it running.
+ *
+ * The single entry point for every route that can learn an order is paid. It
+ * exists so that "what happens when money arrives" is written once — the
+ * browser return, the IPN, the reconciler and the admin's own button used to
+ * each carry their own copy of the waiting-for-a-domain rule, and three of the
+ * four would have been wrong the first time it changed.
+ *
+ * Provisioning is NOT awaited by default. It talks to a registrar and a hosting
+ * node and can take a minute; the customer is mid-redirect and the setup screen
+ * polls `setup_steps` for the progress. The admin's button passes
+ * `awaitProvisioning` because it has a result to report.
+ */
+async function activateOrder(orderId, {
+  actorType = 'system', actorId = null, ip = '', awaitProvisioning = false,
+} = {}) {
+  const materialised = await materialiseOrder(orderId);
+  if (!materialised.ok) return { ...materialised, waiting: false };
+
+  /*
+   * Anything the order paid for that could not be built. Logged rather than
+   * thrown: the rest of the order is real and must go live, and this is a
+   * message for a human to act on with the customer.
+   */
+  if (materialised.created?.skipped?.length) {
+    await db.logActivity({
+      actorType: 'system',
+      action: 'order.line_not_built',
+      target: `order#${orderId}`,
+      detail: `Needs a human: ${materialised.created.skipped.join(', ')}`,
+      ok: false,
+    });
+  }
+
+  /*
+   * A hosting service still sitting at the `domain` step is waiting to be told
+   * which domain it is for, including the free one it is owed. Provisioning now
+   * would answer that with "none" before the customer ever saw the question,
+   * and the free domain would be quietly lost.
+   */
+  const waiting = await db.one(
+    `SELECT id FROM services WHERE order_id = ? AND setup_step = 'domain' AND status = 'pending' LIMIT 1`,
+    [orderId],
+  );
+  if (waiting) return { ...materialised, waiting: true };
+
+  const running = provisionOrder(orderId, { actorType, actorId, ip });
+  if (!awaitProvisioning) {
+    running.catch((err) => console.error('[activate] provisioning failed:', err.message));
+    return { ...materialised, waiting: false, started: true };
+  }
+  return { ...materialised, waiting: false, provisioned: await running };
+}
+
+// ---------------------------------------------------------------------------
 // Hosting
 // ---------------------------------------------------------------------------
+
+/**
+ * May we build a website for this name on the node?
+ *
+ * A domain sold through us: yes — we set the nameservers to ours at the
+ * registry ourselves, and the delegation follows within the hour. A domain the
+ * customer merely typed in: only once the public DNS says it is delegated here.
+ * The distinction is what stops one customer having a site, a mailbox and a
+ * certificate stood up for a domain that belongs to somebody else.
+ */
+async function serveableDomain(name) {
+  if (!name) return { allowed: false, row: null };
+  const row = await db.one('SELECT * FROM domains WHERE domain = ? LIMIT 1', [name]);
+  if (row) return { allowed: linking.mayPoint(row), row };
+  // No row at all — an older service, or one typed straight onto the record.
+  // Fall back to asking the DNS, which is the same evidence by another route.
+  const check = await nameservers.check(name);
+  return { allowed: check.matched, row: null, check };
+}
+
 async function provisionService(service, customer) {
   if (service.status !== 'pending') {
     return { skipped: true, reason: `Service is already ${service.status}.` };
@@ -152,14 +380,24 @@ async function provisionService(service, customer) {
   // needs SFTP or SSH.
   const password = auth.generatePassword(20);
 
+  /*
+   * The account is created either way; only the WEBSITE waits on the domain.
+   * A customer whose domain is still propagating still gets storage, databases
+   * and an FTP login they can start uploading to — and the sweep adds the site
+   * the moment the delegation lands. Refusing to create the account at all
+   * would leave them with nothing to do for three hours.
+   */
+  const serveable = await serveableDomain(service.primary_domain);
+
   const result = await hestia.provision({
     username,
     password,
     email: customer.email,
     package: plan.hestia_package,
     name: `${customer.first_name} ${customer.last_name}`.trim() || customer.email,
-    domain: service.primary_domain || '',
+    domain: serveable.allowed ? service.primary_domain : '',
   });
+  result.domainWaiting = Boolean(service.primary_domain) && !serveable.allowed;
 
   await db.query(
     `UPDATE services
@@ -176,7 +414,15 @@ async function provisionService(service, customer) {
     ok: true,
   });
 
-  return { ok: true, username, password, server, steps: result.steps || [], warning: result.warning };
+  return {
+    ok: true,
+    username,
+    password,
+    server,
+    steps: result.steps || [],
+    warning: result.warning,
+    domainWaiting: result.domainWaiting,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -305,6 +551,14 @@ async function provisionDomain(domainRow, customer) {
     [result.expires_at || null, result.registrar_ref || '', NAMESERVERS[0], NAMESERVERS[1], domainRow.id],
   );
 
+  /*
+   * The registry has our nameservers, but the world does not know it yet —
+   * delegation takes minutes to hours to publish. So the name is NOT marked
+   * verified here on the strength of what we asked for; the sweep confirms it
+   * against public DNS like every other domain, and builds the site when it
+   * does. One rule, one place, no special case for names we happen to trust.
+   */
+
   await db.logActivity({
     actorType: 'system',
     action: 'domain.registered',
@@ -368,11 +622,17 @@ async function provisionOrder(orderId, { actorType = 'admin', actorId = null, ip
       // SSL is reported separately because it is the step most likely to be
       // the slow or failing one, and hiding it inside "hosting account" would
       // make a working account look broken when only the certificate waited.
+      //
+      // A certificate cannot be issued for a name that does not resolve to us —
+      // that is Let's Encrypt's rule, not ours — so a domain still waiting on
+      // its nameservers is reported as waiting rather than as a failure.
       await stepStart(orderId, `ssl-${service.id}`);
       await atLeast(MIN_STEP_MS, Date.now());
       await stepEnd(orderId, `ssl-${service.id}`,
-        r.warning ? 'skipped' : 'ok',
-        r.warning || (service.primary_domain ? 'HTTPS is on' : 'Ready when your domain points at us'));
+        r.warning || r.domainWaiting ? 'skipped' : 'ok',
+        r.domainWaiting
+          ? 'Waiting for your nameservers — we set this up automatically when they point at us'
+          : r.warning || (service.primary_domain ? 'HTTPS is on' : 'Ready when your domain points at us'));
     } catch (err) {
       outcome.services.push({ id: service.id, domain: service.primary_domain, ok: false, error: err.message });
       await stepEnd(orderId, key, 'failed', err.message);
@@ -492,9 +752,13 @@ async function sendWelcome(order, customer, outcome) {
 }
 
 module.exports = {
+  PAID_STATES,
+  materialiseOrder,
+  activateOrder,
   provisionOrder,
   provisionService,
   provisionDomain,
+  serveableDomain,
   allocateUsername,
   pickServer,
   dueDate,

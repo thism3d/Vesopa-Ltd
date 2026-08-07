@@ -161,8 +161,26 @@ async function captureOrder(orderId) {
   }
 }
 
+/**
+ * Read an order back without capturing it.
+ *
+ * What the reconciler asks with. A customer who approved the payment and then
+ * closed the tab leaves an order sitting at APPROVED — the money is authorised
+ * and nobody has taken it, and only asking PayPal reveals that. Capturing is a
+ * separate, deliberate step afterwards, so this can be called on a schedule
+ * without ever moving money by accident.
+ */
+async function getOrder(orderId) {
+  return call(`/v2/checkout/orders/${encodeURIComponent(orderId)}`, { method: 'GET' });
+}
+
 function isPaidOrder(order) {
   return Boolean(order) && order.status === 'COMPLETED';
+}
+
+/** Approved by the payer but not yet captured — money waiting to be taken. */
+function isApprovedOrder(order) {
+  return Boolean(order) && (order.status === 'APPROVED' || order.status === 'SAVED');
 }
 
 /** What the customer paid with, for the admin. */
@@ -177,7 +195,9 @@ module.exports = {
   isConfigured,
   initiate,
   captureOrder,
+  getOrder,
   isPaidOrder,
+  isApprovedOrder,
   describeMethod,
   MODE,
 };

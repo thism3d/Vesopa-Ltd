@@ -310,6 +310,14 @@ app.use((err, req, res, _next) => {
   }
 
   /*
+   * The background jobs: payment reconciliation, late order activation and the
+   * nameserver sweep. Started after everything above has reported, so the
+   * banner reads as one block and a job's first line cannot appear in the
+   * middle of the boot log.
+   */
+  require('./jobs').start();
+
+  /*
    * BIND TO LOOPBACK, NOT 0.0.0.0.
    *
    * This app always sits behind nginx, which proxies to 127.0.0.1:PORT. Binding
