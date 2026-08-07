@@ -104,4 +104,45 @@ async function check(domain) {
   }
 }
 
-module.exports = { check, matchesOurs, normalise, OURS, RESOLVERS };
+/**
+ * Do OUR OWN nameservers exist?
+ *
+ * Asked before anything is decided on the strength of a customer's delegation,
+ * because the whole check is only meaningful if the thing they are being asked
+ * to point at is answering. If ns1 and ns2 do not resolve, then NOBODY can
+ * point a domain at us — every verification fails, and a sweep that acted on
+ * that would drop domains from accounts for a failure that is entirely ours.
+ *
+ * This is not hypothetical. On the day this was written, `ns1.vesopaepos.com`
+ * and `ns2.vesopaepos.com` had no records at all: the parent domain is
+ * delegated elsewhere and the glue was never published. Anything that trusted
+ * the check would have deleted every customer's domain three days later.
+ *
+ * Cached for a few minutes — it is the same answer for every domain in a pass,
+ * and this runs at the top of each one.
+ */
+let selfCheck = { at: 0, result: null };
+const SELF_TTL_MS = 5 * 60_000;
+
+async function ourNameserversResolve({ fresh = false } = {}) {
+  if (!fresh && selfCheck.result && Date.now() - selfCheck.at < SELF_TTL_MS) return selfCheck.result;
+
+  const resolver = makeResolver();
+  const missing = [];
+  for (const host of OURS) {
+    try {
+      // Either family will do — what matters is that the name answers at all.
+      const v4 = await resolver.resolve4(host).catch(() => []);
+      const v6 = v4.length ? [] : await resolver.resolve6(host).catch(() => []);
+      if (!v4.length && !v6.length) missing.push(host);
+    } catch {
+      missing.push(host);
+    }
+  }
+
+  const result = { ok: OURS.length > 0 && missing.length === 0, missing, checked: OURS };
+  selfCheck = { at: Date.now(), result };
+  return result;
+}
+
+module.exports = { check, matchesOurs, normalise, ourNameserversResolve, OURS, RESOLVERS };

@@ -31,6 +31,7 @@ const db = require('./db');
 const payments = require('./payments');
 const provisioning = require('./provisioning');
 const linking = require('./domain-linking');
+const nameservers = require('./nameservers');
 const {
   JOB_INTERVAL_MINUTES, PAYMENT_SESSION_MINUTES, DOMAIN_NS_GRACE_DAYS, NAMESERVERS,
 } = require('./config');
@@ -168,6 +169,26 @@ async function finishPaidOrders() {
  * is when `hestia_user` is filled in.
  */
 async function sweepDomains() {
+  /*
+   * Nothing happens if our own nameservers are not answering.
+   *
+   * Every domain in the table would fail its check, and the grace period would
+   * then remove them all — for a failure that is ours, not the customer's. A
+   * customer who did exactly what they were told, on the day our DNS was down,
+   * must not lose their domain from the account for it.
+   *
+   * Loud, because this is not a state to sit in: while it lasts, nothing new
+   * can be verified, pointed or certified.
+   */
+  const self = await nameservers.ourNameserversResolve();
+  if (!self.ok) {
+    console.error(
+      `[jobs] SKIPPING the domain sweep — our own nameservers do not resolve: ${self.missing.join(', ')}. `
+      + 'Nobody can point a domain at us until they do, so nothing is verified and nothing is removed.',
+    );
+    return { skipped: true, reason: 'nameservers_unresolvable', missing: self.missing };
+  }
+
   const rows = await db.query(
     `SELECT d.*, c.hestia_user
        FROM domains d
@@ -294,6 +315,24 @@ function start() {
     `[jobs]      every ${JOB_INTERVAL_MINUTES} min — payments re-checked for ${PAYMENT_SESSION_MINUTES} min, `
     + `domains given ${DOMAIN_NS_GRACE_DAYS} days to point at ${NAMESERVERS.join(' / ')}`,
   );
+
+  /*
+   * Say at boot whether the nameservers we publish actually exist. It is the
+   * one piece of configuration in this app that fails silently and completely:
+   * the site sells hosting, the panel tells customers to point their domain at
+   * two hostnames, and if those hostnames do not resolve then nothing anybody
+   * does will ever work. Better on the first line of the log than discovered
+   * from a customer.
+   */
+  nameservers.ourNameserversResolve().then((self) => {
+    if (self.ok) console.log(`[jobs]      ${NAMESERVERS.join(' and ')} resolve — domain checks are meaningful`);
+    else {
+      console.error(
+        `[jobs]      WARNING: ${self.missing.join(' and ')} DO NOT RESOLVE. Nobody can point a domain at us. `
+        + 'Domain verification and removal are both suspended until they do.',
+      );
+    }
+  }).catch(() => {});
 
   // A first pass shortly after boot, not immediately: the database and the
   // adapters have just been checked and there is no reason to compete with the

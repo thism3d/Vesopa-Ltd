@@ -417,6 +417,20 @@ logs it and emails them what to do about it; the domain itself is untouched and
 adding it again later is allowed. Leaving it in the list forever would mean the
 panel shows domains this company does not host.
 
+**The sweep will not run at all unless `NS1` and `NS2` themselves resolve.**
+If our own nameservers are not answering, then nobody can point a domain at
+them, every check fails for a reason that is entirely ours, and a grace period
+enforced on top of that would delete customers' domains as punishment for our
+outage. The job logs loudly and does nothing instead.
+
+> This is not a hypothetical guard. When it was written,
+> `ns1.vesopaepos.com` and `ns2.vesopaepos.com` had **no DNS records at all** —
+> `vesopaepos.com` is delegated to `ns1/ns2.onzep.uk` and the glue for the
+> hosting nameservers was never published. Until A records (and, since they are
+> inside the domain they serve, glue at the registry) exist for both, domain
+> verification cannot succeed for anybody, and the boot log says so on the line
+> that starts `[jobs]`.
+
 Verification runs from three places, all the same function: the sweep every
 `DOMAIN_RECHECK_MINUTES`, the customer's own **Check now** button, and the SSL
 retry — because somebody pressing that button has usually *just* changed their
