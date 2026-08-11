@@ -25,7 +25,11 @@
     <h2>Databases</h2>
   </div>
   <div class="p-card-body">
-    <p class="small muted mb-0">MySQL databases on this account. Use these details in your application's configuration.</p>
+    <p class="small muted mb-0">
+      MySQL and PostgreSQL databases on this account. Use these details in your application's
+      configuration<% if (ssoReady) { %>, or open one in the database manager — you are signed in
+      already, so there is no second password to remember<% } %>.
+    </p>
   </div>
   <% if (!items.length) { %>
     <div class="empty">
@@ -53,6 +57,13 @@
             <% if (it.created_at) { %><%= it.created_at %><% } %>
           </span>
         </span>
+        <% if (ssoReady && it.name) { %>
+          <span class="item-end">
+            <a class="btn btn-sm"
+               href="/panel/services/<%= service.id %>/databases/<%= encodeURIComponent(it.name) %>/open"
+               rel="noopener">Open<span class="sr-only"> <%= it.name %> in the database manager</span></a>
+          </span>
+        <% } %>
       </div>
     <% }); %>
   <% } %>

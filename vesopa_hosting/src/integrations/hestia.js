@@ -27,6 +27,14 @@ const HOST = process.env.HESTIA_HOST || '';
 const PORT = Number(process.env.HESTIA_PORT || 8083);
 const ADMIN_USER = process.env.HESTIA_ADMIN_USER || 'admin';
 const ADMIN_PASSWORD = process.env.HESTIA_ADMIN_PASSWORD || '';
+
+/**
+ * An access key — `ID:SECRET`, made by `v-add-access-key`. Preferred over the
+ * admin password because a key carries an explicit list of commands it is
+ * allowed to run, so a hole in the web tier cannot reach `v-delete-user`.
+ * The admin password stays supported as a fallback for a node without a key.
+ */
+const API_KEY = process.env.HESTIA_API_KEY || '';
 const VERIFY_TLS = String(process.env.HESTIA_VERIFY_TLS || 'true') === 'true';
 const DEFAULT_PACKAGE = process.env.HESTIA_DEFAULT_PACKAGE || 'default';
 
@@ -75,16 +83,18 @@ async function run(cmd, args = [], { json = false } = {}) {
     return json ? {} : { ok: true, mock: true };
   }
 
-  if (!HOST || !ADMIN_PASSWORD) {
+  if (!HOST || !(API_KEY || ADMIN_PASSWORD)) {
     throw new HestiaError('Hosting node is not configured.', { code: 'no_credentials', cmd });
   }
 
-  const body = new URLSearchParams({
-    user: ADMIN_USER,
-    password: ADMIN_PASSWORD,
-    returncode: json ? 'no' : 'yes',
-    cmd,
-  });
+  // A key authenticates as `hash`; without one we fall back to admin+password.
+  const body = new URLSearchParams(
+    API_KEY
+      ? { hash: API_KEY, returncode: json ? 'no' : 'yes', cmd }
+      : {
+        user: ADMIN_USER, password: ADMIN_PASSWORD, returncode: json ? 'no' : 'yes', cmd,
+      },
+  );
   args.forEach((arg, i) => body.set(`arg${i + 1}`, String(arg)));
   if (json) body.set(`arg${args.length + 1}`, 'json');
 
@@ -490,7 +500,8 @@ function status() {
   return {
     mode: MODE,
     live: isLive(),
-    configured: Boolean(HOST && ADMIN_PASSWORD),
+    configured: Boolean(HOST && (API_KEY || ADMIN_PASSWORD)),
+    auth: API_KEY ? 'access key' : (ADMIN_PASSWORD ? 'admin password' : '(none)'),
     host: HOST || '(not set)',
     port: PORT,
     verify_tls: VERIFY_TLS,

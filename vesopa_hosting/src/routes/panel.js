@@ -14,6 +14,7 @@ const express = require('express');
 const db = require('../db');
 const auth = require('../auth');
 const hestia = require('../integrations/hestia');
+const sso = require('../integrations/hestia-sso');
 const registrar = require('../integrations/domainnameapi');
 const pricing = require('../pricing');
 const linking = require('../domain-linking');
@@ -348,9 +349,57 @@ router.get('/services/:id/:tab', async (req, res, next) => {
       quota,
       mailDomains,
       hestiaLive: hestia.isLive(),
+      ssoReady: sso.configured(),
     });
   } catch (err) {
     next(err);
+  }
+});
+
+/**
+ * Open a database in phpMyAdmin, already signed in.
+ *
+ * This is a redirect and not a link rendered into the page on purpose. The
+ * node gives a signed handoff sixty seconds to be used, so a URL baked into
+ * HTML would be stale before most people finished reading the page. Minting it
+ * at the moment of the click also keeps the token out of our own page source.
+ *
+ * Ownership is re-derived from the node's list rather than trusted from the
+ * URL — the same rule the DNS record routes follow. A customer editing the
+ * database name in the address bar gets a 404, not somebody else's data.
+ */
+router.get('/services/:id/databases/:name/open', async (req, res, next) => {
+  try {
+    const service = await ownedService(req);
+    if (!service) return next();
+
+    const user = req.customer.hestia_user;
+    if (!user || service.status !== 'active') return next();
+
+    if (!sso.configured()) {
+      flash(res, 'One-click database access is not set up on this server yet.', 'warn');
+      return res.redirect(`/panel/services/${service.id}/databases`);
+    }
+
+    // The node is the authority on what this account owns.
+    const owned = await hestia.listDatabases(user);
+    const target = owned.find((d) => d.name === req.params.name);
+    if (!target) return next();
+
+    const url = target.type === 'pgsql'
+      ? sso.phpPgAdminUrl(req, { username: user, database: target.name })
+      : sso.phpMyAdminUrl(req, { username: user, database: target.name });
+
+    await db.logActivity({
+      actorType: 'customer', actorId: req.customer.id, action: 'database.sso_opened',
+      target: target.name, detail: target.type || 'mysql', ip: req.ip,
+    });
+    return res.redirect(url);
+  } catch (err) {
+    // A node that cannot mint the handoff must not 500 the panel — the
+    // customer still has the connection details on the page behind them.
+    flash(res, `Could not open that database: ${err.message}`, 'error');
+    return res.redirect(`/panel/services/${req.params.id}/databases`);
   }
 });
 
