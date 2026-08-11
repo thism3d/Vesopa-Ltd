@@ -136,18 +136,6 @@ class _PosShellState extends ConsumerState<PosShell> {
                   Navigator.of(context).pop();
                   _logout();
                 },
-                onSignOff: onSignOff == null
-                    ? null
-                    : () {
-                        Navigator.of(context).pop();
-                        onSignOff();
-                      },
-                onSignOn: onSignOn == null
-                    ? null
-                    : () {
-                        Navigator.of(context).pop();
-                        onSignOn();
-                      },
               ),
             ),
           );
@@ -158,8 +146,6 @@ class _PosShellState extends ConsumerState<PosShell> {
       selected: _index,
       onSelect: (i) => setState(() => _index = i),
       onLogout: _logout,
-      onSignOff: onSignOff,
-      onSignOn: onSignOn,
     );
 
     if (context.useCompactNav && !pinned) {

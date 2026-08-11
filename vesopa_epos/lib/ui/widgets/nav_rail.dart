@@ -20,34 +20,24 @@ const navDestinations = <NavDestination>[
 ];
 
 /// Left-hand navigation, with Logout pinned to the bottom as in the mockups.
+///
+/// Starting and ending a shift are not here — they live in the top bar, which
+/// is on every screen. See [StaffChip].
 class PosNavRail extends StatelessWidget {
   const PosNavRail({
     super.key,
     required this.selected,
     required this.onSelect,
     required this.onLogout,
-    this.onSignOff,
-    this.onSignOn,
   });
 
   final int selected;
   final ValueChanged<int> onSelect;
+
+  /// De-commission this terminal from the venue. Needs a password, and is a
+  /// different act from ending a shift — which is why it is the only exit left
+  /// on the rail rather than one of three that read alike.
   final VoidCallback onLogout;
-
-  /// Ask for a PIN and start a shift. Shown in place of [onSignOff] while nobody
-  /// is on, so the slot always carries the one action that makes sense — the
-  /// operator never has to work out which of the two applies.
-  final VoidCallback? onSignOn;
-
-  /// Hand the till to the next member of staff. Null when the venue does not
-  /// use staff sign-on, in which case the key is not drawn at all.
-  ///
-  /// Deliberately a different act from [onLogout], and sitting above it: Sign off
-  /// hands over to a colleague and takes a second, Logout de-commissions the
-  /// terminal from the venue and needs a password. Two very different buttons
-  /// that read alike, so they are labelled for what they do rather than stacked
-  /// as a pair of exits.
-  final VoidCallback? onSignOff;
 
   @override
   Widget build(BuildContext context) {
@@ -74,33 +64,18 @@ class PosNavRail extends StatelessWidget {
             ),
           const Spacer(),
 
-          // Sign Out, then a rule, then Logout.
+          // Logout, and only Logout.
           //
-          // No name on the button: the title bar already shows who is on shift,
-          // and repeating it here made the label the longest thing on the rail
-          // for information the operator had just read.
+          // The shift keys used to sit here too, above a rule meant to keep
+          // them apart. They have moved to the top bar, where they are on every
+          // screen instead of only the ones with the rail open — so a copy here
+          // would be a second button for an action already on screen.
           //
-          // The rule matters more than it looks. These two sit next to each other
-          // and read alike, and they are not remotely the same act — one hands the
-          // till to a colleague, the other de-commissions the terminal from the
-          // venue and wants a password. Separating them is what stops the wrong
-          // one being tapped in a hurry.
-          if (onSignOff != null || onSignOn != null) ...[
-            _NavItem(
-              destination: onSignOff != null
-                  ? const NavDestination(Icons.how_to_reg_outlined, 'Sign Out')
-                  : const NavDestination(Icons.login, 'Sign On'),
-              active: false,
-              onTap: onSignOff ?? onSignOn!,
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 6, 20, 6),
-              child: Divider(
-                height: 1,
-                color: Theme.of(context).posLine,
-              ),
-            ),
-          ],
+          // It was worse than a duplicate: the rail's copy was labelled "Sign
+          // Out" while calling sign *off*. Two labels, one action, sitting one
+          // row above the genuine "Logout" that de-commissions the terminal and
+          // wants a password. Whichever of the three an operator learned, the
+          // other two were a trap.
           _NavItem(
             destination: const NavDestination(Icons.logout, 'Logout'),
             active: false,
