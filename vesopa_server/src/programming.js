@@ -22,30 +22,52 @@ function programmingRoutes({ pool, broadcast, secret }) {
   function crud(path, table, columns, event, {
     sortable = true,
     tenantColumn = null,
+    tenantBy = 'officeId',
   } = {}) {
     const orderBy = sortable ? 'sort_order, id' : 'id';
     const selectCols = sortable ? [...columns, 'sort_order'] : columns;
 
     /**
-     * The office this request belongs to, for tables that carry one.
+     * The office's contact email, which is the tenant key the catalogue tables
+     * inherited from the PHP schema. Resolved per request rather than taken
+     * from the token, because the token carries the *user's* email and two
+     * managers in one shop must reach the same rows.
+     */
+    async function tenantEmail(req) {
+      if (req.user.officeId) {
+        const [[office]] = await pool.query(
+          'SELECT contact_email FROM offices WHERE id = ?',
+          [req.user.officeId]
+        );
+        if (office) return office.contact_email;
+      }
+      return req.user.email;
+    }
+
+    /**
+     * The value this request's rows are owned by, or null when the table is
+     * not tenanted — which leaves every query below exactly as it was.
      *
      * Admins have no office of their own and see everything; an office user is
-     * confined to theirs. Returns null when the table is not tenanted, which
-     * leaves every query below exactly as it was.
+     * confined to theirs.
      */
-    const tenantId = (req) =>
-      tenantColumn && req.user.role !== 'admin' ? req.user.officeId ?? null : null;
+    const tenantValue = async (req) => {
+      if (!tenantColumn || req.user.role === 'admin') return null;
+      return tenantBy === 'email'
+        ? await tenantEmail(req)
+        : req.user.officeId ?? null;
+    };
 
-    const scope = (req) => {
-      const id = tenantId(req);
-      return id == null
+    const scope = async (req) => {
+      const value = await tenantValue(req);
+      return value == null
         ? { sql: '', params: [] }
-        : { sql: ` AND ${tenantColumn} = ?`, params: [id] };
+        : { sql: ` AND ${tenantColumn} = ?`, params: [value] };
     };
 
     router.get(`/${path}`, auth, async (req, res, next) => {
       try {
-        const { sql, params } = scope(req);
+        const { sql, params } = await scope(req);
         const [rows] = await pool.query(
           `SELECT id, ${selectCols.join(', ')} FROM ${table}
            WHERE 1 = 1${sql} ORDER BY ${orderBy}`,
@@ -98,15 +120,26 @@ function programmingRoutes({ pool, broadcast, secret }) {
         // NULL office_id, and the till's lookup joins through that column — so
         // every voucher the back office issued was invisible to every terminal,
         // which is exactly how the voucher scheme came to look broken.
-        const owner = tenantId(req);
+        //
+        // On `bo_product_departments` the same omission was fatal rather than
+        // merely invisible: its `email` column is NOT NULL with no default, so
+        // adding a category — the screen where a manager assigns a button
+        // image — failed outright with a null complaint about a column the
+        // form never showed them.
+        const owner = await tenantValue(req);
         if (owner != null) {
           insertCols.push(tenantColumn);
           values.push(owner);
         }
 
         if (sortable) {
+          // Scoped to this office, so a new row lands at the bottom of *their*
+          // list rather than after every other office's rows.
+          const { sql, params } = await scope(req);
           const [[{ next_order }]] = await pool.query(
-            `SELECT COALESCE(MAX(sort_order), 0) + 1 AS next_order FROM ${table}`
+            `SELECT COALESCE(MAX(sort_order), 0) + 1 AS next_order
+             FROM ${table} WHERE 1 = 1${sql}`,
+            params
           );
           insertCols.push('sort_order');
           values.push(next_order);
@@ -126,7 +159,7 @@ function programmingRoutes({ pool, broadcast, secret }) {
     router.put(`/${path}/:id`, auth, async (req, res, next) => {
       try {
         const values = columns.map((c) => req.body[c] ?? null);
-        const { sql, params } = scope(req);
+        const { sql, params } = await scope(req);
         const [r] = await pool.execute(
           `UPDATE ${table} SET ${columns.map((c) => `${c} = ?`).join(', ')}
            WHERE id = ?${sql}`,
@@ -144,7 +177,7 @@ function programmingRoutes({ pool, broadcast, secret }) {
 
     router.delete(`/${path}/:id`, auth, async (req, res, next) => {
       try {
-        const { sql, params } = scope(req);
+        const { sql, params } = await scope(req);
         const [r] = await pool.execute(
           `DELETE FROM ${table} WHERE id = ?${sql}`,
           [req.params.id, ...params]
@@ -178,8 +211,13 @@ function programmingRoutes({ pool, broadcast, secret }) {
     'icon',
   ], 'programming.updated', { tenantColumn: 'office_id' });
   crud('mix-match', 'bo_mix_match', ['name', 'trigger_qty', 'deal_price_minor', 'active'], 'programming.updated');
-  crud('departments', 'bo_product_departments', ['department_name', 'group_name', 'accounting_code', 'emoji', 'image_url', 'button_color'], 'catalogue.updated');
-  crud('groups', 'bo_product_groups', ['group_name', 'accounting_code'], 'catalogue.updated');
+  // Tenanted on `email`, not `office_id`: these two tables carry the office's
+  // contact email as their owner, inherited from the PHP schema, and it is NOT
+  // NULL on both. Running them untenanted meant every office read every other
+  // office's categories, and adding one failed on the missing email — the
+  // "can't be null" a manager hit when they gave a category a button image.
+  crud('departments', 'bo_product_departments', ['department_name', 'group_name', 'accounting_code', 'emoji', 'image_url', 'button_color'], 'catalogue.updated', { tenantColumn: 'email', tenantBy: 'email' });
+  crud('groups', 'bo_product_groups', ['group_name', 'accounting_code'], 'catalogue.updated', { tenantColumn: 'email', tenantBy: 'email' });
 
   // ---- Floor plan ---------------------------------------------------------
 
