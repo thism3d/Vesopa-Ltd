@@ -310,9 +310,8 @@ const CRUD = {
       { name: 'department_name', label: 'Department', required: true },
       { name: 'group_name', label: 'Group' },
       { name: 'accounting_code', label: 'Accounting code' },
-      // The category button on the till. Same picker/cropper as products, so a
-      // manager only learns it once and the till gets a square, resized PNG
-      // rather than a 4MB phone photo.
+      // The category button on the till, rendered square there — so unlike a
+      // product's picture this one keeps the cropper's default square crop.
       { name: 'image_url', label: 'Button image', type: 'image' },
       { name: 'emoji', label: 'Emoji (used when there is no image)' },
       { name: 'button_color', label: 'Button colour', type: 'color' },
@@ -1088,7 +1087,7 @@ function fieldHtml(f) {
       <input type="hidden" name="${f.name}" value="${esc(f.value ?? '')}" />
       <div class="img-field" data-img-for="${f.name}">
         ${f.value ? `<img class="img-preview" src="${esc(f.value)}" alt="" />` : ''}
-        <input type="file" accept="image/*" data-upload-for="${f.name}" />
+        <input type="file" accept="image/*" data-upload-for="${f.name}" data-crop-shape="${f.crop || 'square'}" />
       </div>`;
   }
   if (f.type === 'stations') {
@@ -1124,19 +1123,31 @@ function fieldHtml(f) {
   } value="${esc(String(f.value ?? ''))}" />`;
 }
 
+// Crop-frame shapes, matched to how each picture actually renders on the
+// till: a department's category button is a square (_CategoryThumb in
+// vesopa_epos/lib/ui/sale_page.dart), a product's sale-grid tile gives the
+// picture a wide 16:9-ish band under the name instead (_image(), same file).
+// Both use BoxFit.cover on the till, so a mismatched crop shape just gets
+// re-cropped unpredictably there — this is what keeps the two in sync.
+const CROP_SHAPES = {
+  square: { OUT_W: 512, OUT_H: 512, VIEW_W: 320, VIEW_H: 320 },
+  landscape: { OUT_W: 512, OUT_H: 288, VIEW_W: 320, VIEW_H: 180 },
+};
+
 /**
  * Crop / zoom / resize a chosen image before it is uploaded.
  *
- * Returns a Promise that resolves with a 512×512 PNG Blob, or rejects if the
- * manager cancels. Hand-rolled on a <canvas> rather than pulling in a cropper
- * library, to keep the back office a dependency-free set of static files.
+ * Returns a Promise that resolves with a PNG Blob sized per `shape` (see
+ * CROP_SHAPES), or rejects if the manager cancels. Hand-rolled on a <canvas>
+ * rather than pulling in a cropper library, to keep the back office a
+ * dependency-free set of static files.
  *
- * The image is drawn into a square viewport; the manager drags to pan and uses
- * the slider to zoom. On save we redraw the visible region into an offscreen
- * 512×512 canvas at the same scale/offset, so what they framed is exactly what
- * uploads — resized down so till buttons stay small and uniform.
+ * The image is drawn into a viewport shaped like the field's on-till target;
+ * the manager drags to pan and uses the slider to zoom. On save we redraw the
+ * visible region into an offscreen canvas at the same scale/offset, so what
+ * they framed is exactly what uploads.
  */
-function openCropper(file) {
+function openCropper(file, shape = 'square') {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
     const img = new Image();
@@ -1144,8 +1155,7 @@ function openCropper(file) {
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Bad image')); };
     img.src = url;
 
-    const OUT = 512;   // exported size
-    const VIEW = 320;  // on-screen viewport size
+    const { OUT_W, OUT_H, VIEW_W, VIEW_H } = CROP_SHAPES[shape] || CROP_SHAPES.square;
 
     function start() {
       const root = $('cropper-root');
@@ -1153,9 +1163,9 @@ function openCropper(file) {
         <div class="modal-back">
           <div class="modal cropper">
             <h3>Position the picture</h3>
-            <p class="muted small">Drag to move, slide to zoom. The square is what appears on the till.</p>
-            <div class="crop-stage" style="width:${VIEW}px;height:${VIEW}px">
-              <canvas id="crop-canvas" width="${VIEW}" height="${VIEW}"></canvas>
+            <p class="muted small">Drag to move, slide to zoom. The frame is what appears on the till.</p>
+            <div class="crop-stage" style="width:${VIEW_W}px;height:${VIEW_H}px">
+              <canvas id="crop-canvas" width="${VIEW_W}" height="${VIEW_H}"></canvas>
               <div class="crop-frame"></div>
             </div>
             <label class="crop-zoom">Zoom
@@ -1173,22 +1183,22 @@ function openCropper(file) {
 
       // Base scale: cover the viewport (shortest side fills it), then the zoom
       // slider multiplies on top. Offset is the top-left of the drawn image in
-      // viewport pixels, clamped so the square is always fully covered.
-      const cover = Math.max(VIEW / img.width, VIEW / img.height);
+      // viewport pixels, clamped so the frame is always fully covered.
+      const cover = Math.max(VIEW_W / img.width, VIEW_H / img.height);
       let zoom = 1;
-      let offX = (VIEW - img.width * cover) / 2;
-      let offY = (VIEW - img.height * cover) / 2;
+      let offX = (VIEW_W - img.width * cover) / 2;
+      let offY = (VIEW_H - img.height * cover) / 2;
 
       const scale = () => cover * zoom;
       function clamp() {
         const w = img.width * scale();
         const h = img.height * scale();
-        offX = Math.min(0, Math.max(VIEW - w, offX));
-        offY = Math.min(0, Math.max(VIEW - h, offY));
+        offX = Math.min(0, Math.max(VIEW_W - w, offX));
+        offY = Math.min(0, Math.max(VIEW_H - h, offY));
       }
       function draw() {
         clamp();
-        ctx.clearRect(0, 0, VIEW, VIEW);
+        ctx.clearRect(0, 0, VIEW_W, VIEW_H);
         ctx.drawImage(img, offX, offY, img.width * scale(), img.height * scale());
       }
       draw();
@@ -1210,7 +1220,7 @@ function openCropper(file) {
       // Zoom keeps the viewport centre stable so the framing does not lurch.
       $('crop-zoom').addEventListener('input', (e) => {
         const next = parseFloat(e.target.value);
-        const cx = VIEW / 2, cy = VIEW / 2;
+        const cx = VIEW_W / 2, cy = VIEW_H / 2;
         const k = (cover * next) / scale();
         offX = cx - (cx - offX) * k;
         offY = cy - (cy - offY) * k;
@@ -1223,9 +1233,9 @@ function openCropper(file) {
       $('crop-save').onclick = () => {
         // Redraw the framed region at output resolution.
         const out = document.createElement('canvas');
-        out.width = OUT; out.height = OUT;
+        out.width = OUT_W; out.height = OUT_H;
         const octx = out.getContext('2d');
-        const r = OUT / VIEW;
+        const r = OUT_W / VIEW_W;
         octx.drawImage(
           img,
           offX * r, offY * r,
@@ -1253,16 +1263,16 @@ function modal(title, fields, onSubmit) {
       </form>
     </div>`;
 
-  // On file select, open the cropper (zoom / pan / square crop). What it
-  // returns is a resized square PNG — never the raw camera image — so the till
-  // buttons all get a consistent, small, square picture.
+  // On file select, open the cropper (zoom / pan / crop). What it returns is
+  // a resized PNG in the shape that field displays on the till — never the
+  // raw camera image — so till buttons all get a consistent, small picture.
   root.querySelectorAll('[data-upload-for]').forEach((input) => {
     input.addEventListener('change', async () => {
       const file = input.files[0];
       if (!file) return;
       let blob;
       try {
-        blob = await openCropper(file);
+        blob = await openCropper(file, input.dataset.cropShape);
       } catch {
         input.value = '';
         return; // cancelled
@@ -1598,7 +1608,10 @@ document.addEventListener('click', async (e) => {
     { label: 'Button position (blank = unassigned)', name: 'button_position', type: 'number', value: p.button_position ?? '' },
     { label: 'Button colour (e.g. #4BA3F5)', name: 'button_color', value: p.button_color ?? '' },
     { label: 'Emoji (e.g. 🍔)', name: 'emoji', value: p.emoji ?? '' },
-    { label: 'Image', name: 'image_url', type: 'image', value: p.image_url ?? '' },
+    // The sale-grid button gives a product picture a wide band under the name
+    // (see _image() in vesopa_epos/lib/ui/sale_page.dart), unlike a department's
+    // square category button — so this one crops to 16:9, not square.
+    { label: 'Image', name: 'image_url', type: 'image', crop: 'landscape', value: p.image_url ?? '' },
     {
       label: 'Kitchen printers — prints when sold and when saved to a table',
       name: 'printer_routes',
