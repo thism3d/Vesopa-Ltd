@@ -116,16 +116,31 @@ class $ProductsTable extends Products with TableInfo<$ProductsTable, Product> {
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
-  static const VerificationMeta _printerRouteMeta = const VerificationMeta(
-    'printerRoute',
+  static const VerificationMeta _printerRoutesMeta = const VerificationMeta(
+    'printerRoutes',
   );
   @override
-  late final GeneratedColumn<String> printerRoute = GeneratedColumn<String>(
-    'printer_route',
+  late final GeneratedColumn<String> printerRoutes = GeneratedColumn<String>(
+    'printer_routes',
     aliasedName,
     true,
     type: DriftSqlType.string,
     requiredDuringInsert: false,
+  );
+  static const VerificationMeta _printToReceiptMeta = const VerificationMeta(
+    'printToReceipt',
+  );
+  @override
+  late final GeneratedColumn<bool> printToReceipt = GeneratedColumn<bool>(
+    'print_to_receipt',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("print_to_receipt" IN (0, 1))',
+    ),
+    defaultValue: const Constant(true),
   );
   static const VerificationMeta _emojiMeta = const VerificationMeta('emoji');
   @override
@@ -159,7 +174,8 @@ class $ProductsTable extends Products with TableInfo<$ProductsTable, Product> {
     stockQuantity,
     buttonPosition,
     buttonColor,
-    printerRoute,
+    printerRoutes,
+    printToReceipt,
     emoji,
     imageUrl,
   ];
@@ -257,12 +273,21 @@ class $ProductsTable extends Products with TableInfo<$ProductsTable, Product> {
         ),
       );
     }
-    if (data.containsKey('printer_route')) {
+    if (data.containsKey('printer_routes')) {
       context.handle(
-        _printerRouteMeta,
-        printerRoute.isAcceptableOrUnknown(
-          data['printer_route']!,
-          _printerRouteMeta,
+        _printerRoutesMeta,
+        printerRoutes.isAcceptableOrUnknown(
+          data['printer_routes']!,
+          _printerRoutesMeta,
+        ),
+      );
+    }
+    if (data.containsKey('print_to_receipt')) {
+      context.handle(
+        _printToReceiptMeta,
+        printToReceipt.isAcceptableOrUnknown(
+          data['print_to_receipt']!,
+          _printToReceiptMeta,
         ),
       );
     }
@@ -327,10 +352,14 @@ class $ProductsTable extends Products with TableInfo<$ProductsTable, Product> {
         DriftSqlType.string,
         data['${effectivePrefix}button_color'],
       ),
-      printerRoute: attachedDatabase.typeMapping.read(
+      printerRoutes: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
-        data['${effectivePrefix}printer_route'],
+        data['${effectivePrefix}printer_routes'],
       ),
+      printToReceipt: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}print_to_receipt'],
+      )!,
       emoji: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}emoji'],
@@ -367,9 +396,20 @@ class Product extends DataClass implements Insertable<Product> {
   /// Overrides the department colour for this one button.
   final String? buttonColor;
 
-  /// Which kitchen printer this item routes to (e.g. "kitchen", "bar").
-  /// Null means it is not sent to the kitchen at all.
-  final String? printerRoute;
+  /// Which kitchen printers this item routes to, comma-separated station keys
+  /// ("kp1,kp3"). Empty or null means it is not sent to a kitchen at all.
+  ///
+  /// A list rather than one station because a single dish routinely belongs to
+  /// two of them — the grill cooks it and the pass plates it, and both need the
+  /// ticket. Stored as text because the till only ever reads the whole set.
+  final String? printerRoutes;
+
+  /// Whether this item appears on the customer's receipt.
+  ///
+  /// Defaults to true, which is what all but a handful of items want. The
+  /// exceptions are real though: a kitchen instruction rung up as a product
+  /// ("allergy - table 4") belongs on the ticket and nowhere near the bill.
+  final bool printToReceipt;
 
   /// An emoji shown large on the till button, and an optional uploaded image
   /// which takes precedence over the emoji when present.
@@ -386,7 +426,8 @@ class Product extends DataClass implements Insertable<Product> {
     required this.stockQuantity,
     this.buttonPosition,
     this.buttonColor,
-    this.printerRoute,
+    this.printerRoutes,
+    required this.printToReceipt,
     this.emoji,
     this.imageUrl,
   });
@@ -413,9 +454,10 @@ class Product extends DataClass implements Insertable<Product> {
     if (!nullToAbsent || buttonColor != null) {
       map['button_color'] = Variable<String>(buttonColor);
     }
-    if (!nullToAbsent || printerRoute != null) {
-      map['printer_route'] = Variable<String>(printerRoute);
+    if (!nullToAbsent || printerRoutes != null) {
+      map['printer_routes'] = Variable<String>(printerRoutes);
     }
+    map['print_to_receipt'] = Variable<bool>(printToReceipt);
     if (!nullToAbsent || emoji != null) {
       map['emoji'] = Variable<String>(emoji);
     }
@@ -447,9 +489,10 @@ class Product extends DataClass implements Insertable<Product> {
       buttonColor: buttonColor == null && nullToAbsent
           ? const Value.absent()
           : Value(buttonColor),
-      printerRoute: printerRoute == null && nullToAbsent
+      printerRoutes: printerRoutes == null && nullToAbsent
           ? const Value.absent()
-          : Value(printerRoute),
+          : Value(printerRoutes),
+      printToReceipt: Value(printToReceipt),
       emoji: emoji == null && nullToAbsent
           ? const Value.absent()
           : Value(emoji),
@@ -475,7 +518,8 @@ class Product extends DataClass implements Insertable<Product> {
       stockQuantity: serializer.fromJson<double>(json['stockQuantity']),
       buttonPosition: serializer.fromJson<int?>(json['buttonPosition']),
       buttonColor: serializer.fromJson<String?>(json['buttonColor']),
-      printerRoute: serializer.fromJson<String?>(json['printerRoute']),
+      printerRoutes: serializer.fromJson<String?>(json['printerRoutes']),
+      printToReceipt: serializer.fromJson<bool>(json['printToReceipt']),
       emoji: serializer.fromJson<String?>(json['emoji']),
       imageUrl: serializer.fromJson<String?>(json['imageUrl']),
     );
@@ -494,7 +538,8 @@ class Product extends DataClass implements Insertable<Product> {
       'stockQuantity': serializer.toJson<double>(stockQuantity),
       'buttonPosition': serializer.toJson<int?>(buttonPosition),
       'buttonColor': serializer.toJson<String?>(buttonColor),
-      'printerRoute': serializer.toJson<String?>(printerRoute),
+      'printerRoutes': serializer.toJson<String?>(printerRoutes),
+      'printToReceipt': serializer.toJson<bool>(printToReceipt),
       'emoji': serializer.toJson<String?>(emoji),
       'imageUrl': serializer.toJson<String?>(imageUrl),
     };
@@ -511,7 +556,8 @@ class Product extends DataClass implements Insertable<Product> {
     double? stockQuantity,
     Value<int?> buttonPosition = const Value.absent(),
     Value<String?> buttonColor = const Value.absent(),
-    Value<String?> printerRoute = const Value.absent(),
+    Value<String?> printerRoutes = const Value.absent(),
+    bool? printToReceipt,
     Value<String?> emoji = const Value.absent(),
     Value<String?> imageUrl = const Value.absent(),
   }) => Product(
@@ -531,7 +577,10 @@ class Product extends DataClass implements Insertable<Product> {
         ? buttonPosition.value
         : this.buttonPosition,
     buttonColor: buttonColor.present ? buttonColor.value : this.buttonColor,
-    printerRoute: printerRoute.present ? printerRoute.value : this.printerRoute,
+    printerRoutes: printerRoutes.present
+        ? printerRoutes.value
+        : this.printerRoutes,
+    printToReceipt: printToReceipt ?? this.printToReceipt,
     emoji: emoji.present ? emoji.value : this.emoji,
     imageUrl: imageUrl.present ? imageUrl.value : this.imageUrl,
   );
@@ -561,9 +610,12 @@ class Product extends DataClass implements Insertable<Product> {
       buttonColor: data.buttonColor.present
           ? data.buttonColor.value
           : this.buttonColor,
-      printerRoute: data.printerRoute.present
-          ? data.printerRoute.value
-          : this.printerRoute,
+      printerRoutes: data.printerRoutes.present
+          ? data.printerRoutes.value
+          : this.printerRoutes,
+      printToReceipt: data.printToReceipt.present
+          ? data.printToReceipt.value
+          : this.printToReceipt,
       emoji: data.emoji.present ? data.emoji.value : this.emoji,
       imageUrl: data.imageUrl.present ? data.imageUrl.value : this.imageUrl,
     );
@@ -582,7 +634,8 @@ class Product extends DataClass implements Insertable<Product> {
           ..write('stockQuantity: $stockQuantity, ')
           ..write('buttonPosition: $buttonPosition, ')
           ..write('buttonColor: $buttonColor, ')
-          ..write('printerRoute: $printerRoute, ')
+          ..write('printerRoutes: $printerRoutes, ')
+          ..write('printToReceipt: $printToReceipt, ')
           ..write('emoji: $emoji, ')
           ..write('imageUrl: $imageUrl')
           ..write(')'))
@@ -601,7 +654,8 @@ class Product extends DataClass implements Insertable<Product> {
     stockQuantity,
     buttonPosition,
     buttonColor,
-    printerRoute,
+    printerRoutes,
+    printToReceipt,
     emoji,
     imageUrl,
   );
@@ -619,7 +673,8 @@ class Product extends DataClass implements Insertable<Product> {
           other.stockQuantity == this.stockQuantity &&
           other.buttonPosition == this.buttonPosition &&
           other.buttonColor == this.buttonColor &&
-          other.printerRoute == this.printerRoute &&
+          other.printerRoutes == this.printerRoutes &&
+          other.printToReceipt == this.printToReceipt &&
           other.emoji == this.emoji &&
           other.imageUrl == this.imageUrl);
 }
@@ -635,7 +690,8 @@ class ProductsCompanion extends UpdateCompanion<Product> {
   final Value<double> stockQuantity;
   final Value<int?> buttonPosition;
   final Value<String?> buttonColor;
-  final Value<String?> printerRoute;
+  final Value<String?> printerRoutes;
+  final Value<bool> printToReceipt;
   final Value<String?> emoji;
   final Value<String?> imageUrl;
   const ProductsCompanion({
@@ -649,7 +705,8 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     this.stockQuantity = const Value.absent(),
     this.buttonPosition = const Value.absent(),
     this.buttonColor = const Value.absent(),
-    this.printerRoute = const Value.absent(),
+    this.printerRoutes = const Value.absent(),
+    this.printToReceipt = const Value.absent(),
     this.emoji = const Value.absent(),
     this.imageUrl = const Value.absent(),
   });
@@ -664,7 +721,8 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     this.stockQuantity = const Value.absent(),
     this.buttonPosition = const Value.absent(),
     this.buttonColor = const Value.absent(),
-    this.printerRoute = const Value.absent(),
+    this.printerRoutes = const Value.absent(),
+    this.printToReceipt = const Value.absent(),
     this.emoji = const Value.absent(),
     this.imageUrl = const Value.absent(),
   }) : name = Value(name),
@@ -680,7 +738,8 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     Expression<double>? stockQuantity,
     Expression<int>? buttonPosition,
     Expression<String>? buttonColor,
-    Expression<String>? printerRoute,
+    Expression<String>? printerRoutes,
+    Expression<bool>? printToReceipt,
     Expression<String>? emoji,
     Expression<String>? imageUrl,
   }) {
@@ -695,7 +754,8 @@ class ProductsCompanion extends UpdateCompanion<Product> {
       if (stockQuantity != null) 'stock_quantity': stockQuantity,
       if (buttonPosition != null) 'button_position': buttonPosition,
       if (buttonColor != null) 'button_color': buttonColor,
-      if (printerRoute != null) 'printer_route': printerRoute,
+      if (printerRoutes != null) 'printer_routes': printerRoutes,
+      if (printToReceipt != null) 'print_to_receipt': printToReceipt,
       if (emoji != null) 'emoji': emoji,
       if (imageUrl != null) 'image_url': imageUrl,
     });
@@ -712,7 +772,8 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     Value<double>? stockQuantity,
     Value<int?>? buttonPosition,
     Value<String?>? buttonColor,
-    Value<String?>? printerRoute,
+    Value<String?>? printerRoutes,
+    Value<bool>? printToReceipt,
     Value<String?>? emoji,
     Value<String?>? imageUrl,
   }) {
@@ -727,7 +788,8 @@ class ProductsCompanion extends UpdateCompanion<Product> {
       stockQuantity: stockQuantity ?? this.stockQuantity,
       buttonPosition: buttonPosition ?? this.buttonPosition,
       buttonColor: buttonColor ?? this.buttonColor,
-      printerRoute: printerRoute ?? this.printerRoute,
+      printerRoutes: printerRoutes ?? this.printerRoutes,
+      printToReceipt: printToReceipt ?? this.printToReceipt,
       emoji: emoji ?? this.emoji,
       imageUrl: imageUrl ?? this.imageUrl,
     );
@@ -766,8 +828,11 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     if (buttonColor.present) {
       map['button_color'] = Variable<String>(buttonColor.value);
     }
-    if (printerRoute.present) {
-      map['printer_route'] = Variable<String>(printerRoute.value);
+    if (printerRoutes.present) {
+      map['printer_routes'] = Variable<String>(printerRoutes.value);
+    }
+    if (printToReceipt.present) {
+      map['print_to_receipt'] = Variable<bool>(printToReceipt.value);
     }
     if (emoji.present) {
       map['emoji'] = Variable<String>(emoji.value);
@@ -791,7 +856,8 @@ class ProductsCompanion extends UpdateCompanion<Product> {
           ..write('stockQuantity: $stockQuantity, ')
           ..write('buttonPosition: $buttonPosition, ')
           ..write('buttonColor: $buttonColor, ')
-          ..write('printerRoute: $printerRoute, ')
+          ..write('printerRoutes: $printerRoutes, ')
+          ..write('printToReceipt: $printToReceipt, ')
           ..write('emoji: $emoji, ')
           ..write('imageUrl: $imageUrl')
           ..write(')'))
@@ -2185,6 +2251,18 @@ class $OrderLinesTable extends OrderLines
     type: DriftSqlType.dateTime,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _kitchenPrintedAtMeta = const VerificationMeta(
+    'kitchenPrintedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> kitchenPrintedAt =
+      GeneratedColumn<DateTime>(
+        'kitchen_printed_at',
+        aliasedName,
+        true,
+        type: DriftSqlType.dateTime,
+        requiredDuringInsert: false,
+      );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -2198,6 +2276,7 @@ class $OrderLinesTable extends OrderLines
     lineDiscountMinor,
     addedBy,
     addedAt,
+    kitchenPrintedAt,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -2293,6 +2372,15 @@ class $OrderLinesTable extends OrderLines
         addedAt.isAcceptableOrUnknown(data['added_at']!, _addedAtMeta),
       );
     }
+    if (data.containsKey('kitchen_printed_at')) {
+      context.handle(
+        _kitchenPrintedAtMeta,
+        kitchenPrintedAt.isAcceptableOrUnknown(
+          data['kitchen_printed_at']!,
+          _kitchenPrintedAtMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -2346,6 +2434,10 @@ class $OrderLinesTable extends OrderLines
         DriftSqlType.dateTime,
         data['${effectivePrefix}added_at'],
       ),
+      kitchenPrintedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}kitchen_printed_at'],
+      ),
     );
   }
 
@@ -2381,6 +2473,15 @@ class OrderLine extends DataClass implements Insertable<OrderLine> {
   /// shown without a header.
   final String? addedBy;
   final DateTime? addedAt;
+
+  /// When this line was last sent to a kitchen printer, or null if it never
+  /// has been.
+  ///
+  /// This is what stops a table being re-fired every time it is saved. A bill
+  /// added to four times across a service would otherwise hand the kitchen the
+  /// first course four times, and a kitchen that has learned to ignore
+  /// duplicate tickets is a kitchen that will eventually ignore a real one.
+  final DateTime? kitchenPrintedAt;
   const OrderLine({
     required this.id,
     required this.orderId,
@@ -2393,6 +2494,7 @@ class OrderLine extends DataClass implements Insertable<OrderLine> {
     required this.lineDiscountMinor,
     this.addedBy,
     this.addedAt,
+    this.kitchenPrintedAt,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -2413,6 +2515,9 @@ class OrderLine extends DataClass implements Insertable<OrderLine> {
     }
     if (!nullToAbsent || addedAt != null) {
       map['added_at'] = Variable<DateTime>(addedAt);
+    }
+    if (!nullToAbsent || kitchenPrintedAt != null) {
+      map['kitchen_printed_at'] = Variable<DateTime>(kitchenPrintedAt);
     }
     return map;
   }
@@ -2436,6 +2541,9 @@ class OrderLine extends DataClass implements Insertable<OrderLine> {
       addedAt: addedAt == null && nullToAbsent
           ? const Value.absent()
           : Value(addedAt),
+      kitchenPrintedAt: kitchenPrintedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(kitchenPrintedAt),
     );
   }
 
@@ -2456,6 +2564,9 @@ class OrderLine extends DataClass implements Insertable<OrderLine> {
       lineDiscountMinor: serializer.fromJson<int>(json['lineDiscountMinor']),
       addedBy: serializer.fromJson<String?>(json['addedBy']),
       addedAt: serializer.fromJson<DateTime?>(json['addedAt']),
+      kitchenPrintedAt: serializer.fromJson<DateTime?>(
+        json['kitchenPrintedAt'],
+      ),
     );
   }
   @override
@@ -2473,6 +2584,7 @@ class OrderLine extends DataClass implements Insertable<OrderLine> {
       'lineDiscountMinor': serializer.toJson<int>(lineDiscountMinor),
       'addedBy': serializer.toJson<String?>(addedBy),
       'addedAt': serializer.toJson<DateTime?>(addedAt),
+      'kitchenPrintedAt': serializer.toJson<DateTime?>(kitchenPrintedAt),
     };
   }
 
@@ -2488,6 +2600,7 @@ class OrderLine extends DataClass implements Insertable<OrderLine> {
     int? lineDiscountMinor,
     Value<String?> addedBy = const Value.absent(),
     Value<DateTime?> addedAt = const Value.absent(),
+    Value<DateTime?> kitchenPrintedAt = const Value.absent(),
   }) => OrderLine(
     id: id ?? this.id,
     orderId: orderId ?? this.orderId,
@@ -2500,6 +2613,9 @@ class OrderLine extends DataClass implements Insertable<OrderLine> {
     lineDiscountMinor: lineDiscountMinor ?? this.lineDiscountMinor,
     addedBy: addedBy.present ? addedBy.value : this.addedBy,
     addedAt: addedAt.present ? addedAt.value : this.addedAt,
+    kitchenPrintedAt: kitchenPrintedAt.present
+        ? kitchenPrintedAt.value
+        : this.kitchenPrintedAt,
   );
   OrderLine copyWithCompanion(OrderLinesCompanion data) {
     return OrderLine(
@@ -2520,6 +2636,9 @@ class OrderLine extends DataClass implements Insertable<OrderLine> {
           : this.lineDiscountMinor,
       addedBy: data.addedBy.present ? data.addedBy.value : this.addedBy,
       addedAt: data.addedAt.present ? data.addedAt.value : this.addedAt,
+      kitchenPrintedAt: data.kitchenPrintedAt.present
+          ? data.kitchenPrintedAt.value
+          : this.kitchenPrintedAt,
     );
   }
 
@@ -2536,7 +2655,8 @@ class OrderLine extends DataClass implements Insertable<OrderLine> {
           ..write('notes: $notes, ')
           ..write('lineDiscountMinor: $lineDiscountMinor, ')
           ..write('addedBy: $addedBy, ')
-          ..write('addedAt: $addedAt')
+          ..write('addedAt: $addedAt, ')
+          ..write('kitchenPrintedAt: $kitchenPrintedAt')
           ..write(')'))
         .toString();
   }
@@ -2554,6 +2674,7 @@ class OrderLine extends DataClass implements Insertable<OrderLine> {
     lineDiscountMinor,
     addedBy,
     addedAt,
+    kitchenPrintedAt,
   );
   @override
   bool operator ==(Object other) =>
@@ -2569,7 +2690,8 @@ class OrderLine extends DataClass implements Insertable<OrderLine> {
           other.notes == this.notes &&
           other.lineDiscountMinor == this.lineDiscountMinor &&
           other.addedBy == this.addedBy &&
-          other.addedAt == this.addedAt);
+          other.addedAt == this.addedAt &&
+          other.kitchenPrintedAt == this.kitchenPrintedAt);
 }
 
 class OrderLinesCompanion extends UpdateCompanion<OrderLine> {
@@ -2584,6 +2706,7 @@ class OrderLinesCompanion extends UpdateCompanion<OrderLine> {
   final Value<int> lineDiscountMinor;
   final Value<String?> addedBy;
   final Value<DateTime?> addedAt;
+  final Value<DateTime?> kitchenPrintedAt;
   final Value<int> rowid;
   const OrderLinesCompanion({
     this.id = const Value.absent(),
@@ -2597,6 +2720,7 @@ class OrderLinesCompanion extends UpdateCompanion<OrderLine> {
     this.lineDiscountMinor = const Value.absent(),
     this.addedBy = const Value.absent(),
     this.addedAt = const Value.absent(),
+    this.kitchenPrintedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   OrderLinesCompanion.insert({
@@ -2611,6 +2735,7 @@ class OrderLinesCompanion extends UpdateCompanion<OrderLine> {
     this.lineDiscountMinor = const Value.absent(),
     this.addedBy = const Value.absent(),
     this.addedAt = const Value.absent(),
+    this.kitchenPrintedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        orderId = Value(orderId),
@@ -2629,6 +2754,7 @@ class OrderLinesCompanion extends UpdateCompanion<OrderLine> {
     Expression<int>? lineDiscountMinor,
     Expression<String>? addedBy,
     Expression<DateTime>? addedAt,
+    Expression<DateTime>? kitchenPrintedAt,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -2643,6 +2769,7 @@ class OrderLinesCompanion extends UpdateCompanion<OrderLine> {
       if (lineDiscountMinor != null) 'line_discount_minor': lineDiscountMinor,
       if (addedBy != null) 'added_by': addedBy,
       if (addedAt != null) 'added_at': addedAt,
+      if (kitchenPrintedAt != null) 'kitchen_printed_at': kitchenPrintedAt,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -2659,6 +2786,7 @@ class OrderLinesCompanion extends UpdateCompanion<OrderLine> {
     Value<int>? lineDiscountMinor,
     Value<String?>? addedBy,
     Value<DateTime?>? addedAt,
+    Value<DateTime?>? kitchenPrintedAt,
     Value<int>? rowid,
   }) {
     return OrderLinesCompanion(
@@ -2673,6 +2801,7 @@ class OrderLinesCompanion extends UpdateCompanion<OrderLine> {
       lineDiscountMinor: lineDiscountMinor ?? this.lineDiscountMinor,
       addedBy: addedBy ?? this.addedBy,
       addedAt: addedAt ?? this.addedAt,
+      kitchenPrintedAt: kitchenPrintedAt ?? this.kitchenPrintedAt,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -2713,6 +2842,9 @@ class OrderLinesCompanion extends UpdateCompanion<OrderLine> {
     if (addedAt.present) {
       map['added_at'] = Variable<DateTime>(addedAt.value);
     }
+    if (kitchenPrintedAt.present) {
+      map['kitchen_printed_at'] = Variable<DateTime>(kitchenPrintedAt.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -2733,6 +2865,7 @@ class OrderLinesCompanion extends UpdateCompanion<OrderLine> {
           ..write('lineDiscountMinor: $lineDiscountMinor, ')
           ..write('addedBy: $addedBy, ')
           ..write('addedAt: $addedAt, ')
+          ..write('kitchenPrintedAt: $kitchenPrintedAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -6731,7 +6864,8 @@ typedef $$ProductsTableCreateCompanionBuilder =
       Value<double> stockQuantity,
       Value<int?> buttonPosition,
       Value<String?> buttonColor,
-      Value<String?> printerRoute,
+      Value<String?> printerRoutes,
+      Value<bool> printToReceipt,
       Value<String?> emoji,
       Value<String?> imageUrl,
     });
@@ -6747,7 +6881,8 @@ typedef $$ProductsTableUpdateCompanionBuilder =
       Value<double> stockQuantity,
       Value<int?> buttonPosition,
       Value<String?> buttonColor,
-      Value<String?> printerRoute,
+      Value<String?> printerRoutes,
+      Value<bool> printToReceipt,
       Value<String?> emoji,
       Value<String?> imageUrl,
     });
@@ -6811,8 +6946,13 @@ class $$ProductsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<String> get printerRoute => $composableBuilder(
-    column: $table.printerRoute,
+  ColumnFilters<String> get printerRoutes => $composableBuilder(
+    column: $table.printerRoutes,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get printToReceipt => $composableBuilder(
+    column: $table.printToReceipt,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -6886,8 +7026,13 @@ class $$ProductsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<String> get printerRoute => $composableBuilder(
-    column: $table.printerRoute,
+  ColumnOrderings<String> get printerRoutes => $composableBuilder(
+    column: $table.printerRoutes,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get printToReceipt => $composableBuilder(
+    column: $table.printToReceipt,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -6955,8 +7100,13 @@ class $$ProductsTableAnnotationComposer
     builder: (column) => column,
   );
 
-  GeneratedColumn<String> get printerRoute => $composableBuilder(
-    column: $table.printerRoute,
+  GeneratedColumn<String> get printerRoutes => $composableBuilder(
+    column: $table.printerRoutes,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get printToReceipt => $composableBuilder(
+    column: $table.printToReceipt,
     builder: (column) => column,
   );
 
@@ -7005,7 +7155,8 @@ class $$ProductsTableTableManager
                 Value<double> stockQuantity = const Value.absent(),
                 Value<int?> buttonPosition = const Value.absent(),
                 Value<String?> buttonColor = const Value.absent(),
-                Value<String?> printerRoute = const Value.absent(),
+                Value<String?> printerRoutes = const Value.absent(),
+                Value<bool> printToReceipt = const Value.absent(),
                 Value<String?> emoji = const Value.absent(),
                 Value<String?> imageUrl = const Value.absent(),
               }) => ProductsCompanion(
@@ -7019,7 +7170,8 @@ class $$ProductsTableTableManager
                 stockQuantity: stockQuantity,
                 buttonPosition: buttonPosition,
                 buttonColor: buttonColor,
-                printerRoute: printerRoute,
+                printerRoutes: printerRoutes,
+                printToReceipt: printToReceipt,
                 emoji: emoji,
                 imageUrl: imageUrl,
               ),
@@ -7035,7 +7187,8 @@ class $$ProductsTableTableManager
                 Value<double> stockQuantity = const Value.absent(),
                 Value<int?> buttonPosition = const Value.absent(),
                 Value<String?> buttonColor = const Value.absent(),
-                Value<String?> printerRoute = const Value.absent(),
+                Value<String?> printerRoutes = const Value.absent(),
+                Value<bool> printToReceipt = const Value.absent(),
                 Value<String?> emoji = const Value.absent(),
                 Value<String?> imageUrl = const Value.absent(),
               }) => ProductsCompanion.insert(
@@ -7049,7 +7202,8 @@ class $$ProductsTableTableManager
                 stockQuantity: stockQuantity,
                 buttonPosition: buttonPosition,
                 buttonColor: buttonColor,
-                printerRoute: printerRoute,
+                printerRoutes: printerRoutes,
+                printToReceipt: printToReceipt,
                 emoji: emoji,
                 imageUrl: imageUrl,
               ),
@@ -7822,6 +7976,7 @@ typedef $$OrderLinesTableCreateCompanionBuilder =
       Value<int> lineDiscountMinor,
       Value<String?> addedBy,
       Value<DateTime?> addedAt,
+      Value<DateTime?> kitchenPrintedAt,
       Value<int> rowid,
     });
 typedef $$OrderLinesTableUpdateCompanionBuilder =
@@ -7837,6 +7992,7 @@ typedef $$OrderLinesTableUpdateCompanionBuilder =
       Value<int> lineDiscountMinor,
       Value<String?> addedBy,
       Value<DateTime?> addedAt,
+      Value<DateTime?> kitchenPrintedAt,
       Value<int> rowid,
     });
 
@@ -7918,6 +8074,11 @@ class $$OrderLinesTableFilterComposer
 
   ColumnFilters<DateTime> get addedAt => $composableBuilder(
     column: $table.addedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get kitchenPrintedAt => $composableBuilder(
+    column: $table.kitchenPrintedAt,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -8004,6 +8165,11 @@ class $$OrderLinesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<DateTime> get kitchenPrintedAt => $composableBuilder(
+    column: $table.kitchenPrintedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$OrdersTableOrderingComposer get orderId {
     final $$OrdersTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -8073,6 +8239,11 @@ class $$OrderLinesTableAnnotationComposer
   GeneratedColumn<DateTime> get addedAt =>
       $composableBuilder(column: $table.addedAt, builder: (column) => column);
 
+  GeneratedColumn<DateTime> get kitchenPrintedAt => $composableBuilder(
+    column: $table.kitchenPrintedAt,
+    builder: (column) => column,
+  );
+
   $$OrdersTableAnnotationComposer get orderId {
     final $$OrdersTableAnnotationComposer composer = $composerBuilder(
       composer: this,
@@ -8136,6 +8307,7 @@ class $$OrderLinesTableTableManager
                 Value<int> lineDiscountMinor = const Value.absent(),
                 Value<String?> addedBy = const Value.absent(),
                 Value<DateTime?> addedAt = const Value.absent(),
+                Value<DateTime?> kitchenPrintedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => OrderLinesCompanion(
                 id: id,
@@ -8149,6 +8321,7 @@ class $$OrderLinesTableTableManager
                 lineDiscountMinor: lineDiscountMinor,
                 addedBy: addedBy,
                 addedAt: addedAt,
+                kitchenPrintedAt: kitchenPrintedAt,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -8164,6 +8337,7 @@ class $$OrderLinesTableTableManager
                 Value<int> lineDiscountMinor = const Value.absent(),
                 Value<String?> addedBy = const Value.absent(),
                 Value<DateTime?> addedAt = const Value.absent(),
+                Value<DateTime?> kitchenPrintedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => OrderLinesCompanion.insert(
                 id: id,
@@ -8177,6 +8351,7 @@ class $$OrderLinesTableTableManager
                 lineDiscountMinor: lineDiscountMinor,
                 addedBy: addedBy,
                 addedAt: addedAt,
+                kitchenPrintedAt: kitchenPrintedAt,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../../data/branding.dart';
 import '../../data/pricing_engine.dart';
 import '../../data/tender_engine.dart';
+import '../theme.dart';
 
 String _money(int minor) =>
     NumberFormat.currency(locale: 'en_GB', symbol: '£').format(minor / 100);
@@ -101,11 +102,16 @@ class LiveReceipt extends StatelessWidget {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
 
+    // The Ledger board's panel, so the bill reads as one of the three panels
+    // resting on the sale screen's ground rather than as a lighter slab that
+    // happened to land there. See PayPalette.
+    final pal = PayPalette.of(context);
+
     return Container(
       decoration: BoxDecoration(
-        color: scheme.surface,
+        color: pal.panel,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: scheme.outlineVariant),
+        border: Border.all(color: pal.panelLine),
       ),
       clipBehavior: Clip.antiAlias,
       // The type scale needs to know how much room the list actually got, which
@@ -301,13 +307,15 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final name = branding.venueName.isNotEmpty ? branding.venueName : 'VESOPA';
 
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
-      color: scheme.surfaceContainerHighest,
+      // The board's own chip surface rather than a Material container. The
+      // scheme is seeded from the brand lime, so its containers carry an olive
+      // cast that reads as a tint against the neutral panels around it.
+      color: PayPalette.of(context).chip,
       child: Column(
         children: [
           Text(
@@ -585,8 +593,10 @@ class _Totals extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
-        border: Border(top: BorderSide(color: scheme.outlineVariant)),
+        color: PayPalette.of(context).rowAlt,
+        border: Border(
+          top: BorderSide(color: PayPalette.of(context).panelLine),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,

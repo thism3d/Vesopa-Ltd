@@ -12,13 +12,83 @@ enum PrinterKind { network, serial }
 /// What a printer is for. A venue routinely has one printer at the counter and
 /// another in the kitchen, and they need different documents: the receipt
 /// carries prices and branding, the ticket carries items and modifiers.
+///
+/// The kitchen printers are numbered rather than named ("KP 1", not "Kitchen"
+/// and "Bar") because the number is what the back office assigns products to.
+/// A venue with a grill, a fryer, a cold section and a bar has four stations
+/// and no vocabulary the till could have guessed; a number lets them label the
+/// physical printer however they like and route to it by position.
 enum PrinterRole {
-  receipt('Receipt printer'),
-  kitchen('Kitchen printer'),
-  bar('Bar printer');
+  receipt('Receipt printer', 'receipt'),
+  kp1('KP 1', 'kp1'),
+  kp2('KP 2', 'kp2'),
+  kp3('KP 3', 'kp3'),
+  kp4('KP 4', 'kp4'),
+  kp5('KP 5', 'kp5'),
+  kp6('KP 6', 'kp6');
 
-  const PrinterRole(this.label);
+  const PrinterRole(this.label, this.station);
+
   final String label;
+
+  /// The key the back office routes products to, and the key this role is
+  /// stored under. Kept separate from [name] so the enum can be renamed
+  /// without invalidating every terminal's saved printer setup.
+  final String station;
+
+  /// Every kitchen printer, in order. The receipt printer is deliberately not
+  /// in this list: it is the one printer whose document is different.
+  static List<PrinterRole> get kitchenPrinters =>
+      values.where((r) => r != PrinterRole.receipt).toList();
+
+  /// The role a stored `station` key belongs to, or null.
+  ///
+  /// Accepts the two names this used to have. A venue that set up "kitchen"
+  /// and "bar" before the numbered stations existed keeps printing: kitchen
+  /// becomes KP 1 and bar becomes KP 2, which is the order they were listed in
+  /// and so the order their printers were almost certainly plugged in.
+  static PrinterRole? fromStation(String? key) {
+    if (key == null || key.isEmpty) return null;
+    final k = key.trim().toLowerCase();
+    for (final role in values) {
+      if (role.station == k || role.name == k) return role;
+    }
+    return switch (k) {
+      'kitchen' => PrinterRole.kp1,
+      'bar' => PrinterRole.kp2,
+      _ => null,
+    };
+  }
+}
+
+/// Reading and writing the comma-separated station list a product carries.
+///
+/// One place for it because three layers touch the same string — the sync that
+/// stores it, the product editor that sets it, and the print run that reads it
+/// — and a routing list that round-trips differently in any of them sends food
+/// to the wrong printer.
+abstract final class KitchenRouting {
+  /// The stations named by a stored routing string, unknown names dropped.
+  ///
+  /// Unknown rather than invalid: a back office offering KP 7 to a till that
+  /// only knows six should route to the six it has, not refuse the product.
+  static Set<String> parse(String? raw) {
+    if (raw == null || raw.isEmpty) return const {};
+    return {
+      for (final part in raw.split(','))
+        if (PrinterRole.fromStation(part) case final role?) role.station,
+    };
+  }
+
+  /// The storable form, in station order. Null for "not sent to a kitchen",
+  /// which is what the column means by empty.
+  static String? format(Iterable<String> stations) {
+    final roles = <PrinterRole>{
+      for (final s in stations)
+        if (PrinterRole.fromStation(s) case final role?) role,
+    }.toList()..sort((a, b) => a.index.compareTo(b.index));
+    return roles.isEmpty ? null : roles.map((r) => r.station).join(',');
+  }
 }
 
 class PrinterConfig {
@@ -83,7 +153,7 @@ class PrinterConfig {
         'id': id,
         'name': name,
         'kind': kind.name,
-        'role': role.name,
+        'role': role.station,
         'host': host,
         'port': port,
         'serial_port': serialPort,
@@ -98,10 +168,8 @@ class PrinterConfig {
           (k) => k.name == j['kind'],
           orElse: () => PrinterKind.network,
         ),
-        role: PrinterRole.values.firstWhere(
-          (r) => r.name == j['role'],
-          orElse: () => PrinterRole.receipt,
-        ),
+        role: PrinterRole.fromStation(j['role'] as String?) ??
+            PrinterRole.receipt,
         host: j['host'] as String?,
         port: (j['port'] as num?)?.toInt() ?? 9100,
         serialPort: j['serial_port'] as String?,

@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../data/local/database.dart';
 import '../main.dart';
+import '../printing/printer_transport.dart';
 import 'widgets/pos_message.dart';
 
 String _money(int minor) =>
@@ -110,7 +111,8 @@ class _ProductsPageState extends ConsumerState<ProductsPage> {
         priceMinor: Value(result.priceMinor),
         stockQuantity: Value(result.stockQuantity),
         taxPercentage: Value(result.taxPercentage),
-        printerRoute: Value(result.printerRoute),
+        printerRoutes: Value(result.printerRoutes),
+        printToReceipt: Value(result.printToReceipt),
       ),
     );
 
@@ -400,9 +402,16 @@ class _ProductRow extends StatelessWidget {
                           _Tag(product.departmentName!),
                         if (product.groupName?.isNotEmpty ?? false)
                           _Tag(product.groupName!),
-                        if (product.printerRoute?.isNotEmpty ?? false)
-                          _Tag('→ ${product.printerRoute}',
-                              icon: Icons.print_outlined),
+                        // Every station it prints on, not a count: a manager
+                        // scanning this list is checking a specific printer.
+                        for (final station
+                            in KitchenRouting.parse(product.printerRoutes))
+                          _Tag(
+                            PrinterRole.fromStation(station)?.label ?? station,
+                            icon: Icons.print_outlined,
+                          ),
+                        if (!product.printToReceipt)
+                          _Tag('Not on receipt', tone: scheme.outline),
                         if (product.buttonPosition == null)
                           _Tag('No button', tone: scheme.outline),
                       ],
@@ -570,13 +579,17 @@ class _ProductEdit {
     required this.priceMinor,
     required this.stockQuantity,
     required this.taxPercentage,
-    this.printerRoute,
+    this.printerRoutes,
+    this.printToReceipt = true,
   });
 
   final int priceMinor;
   final double stockQuantity;
   final double taxPercentage;
-  final String? printerRoute;
+
+  /// Comma-separated station keys — see [KitchenRouting].
+  final String? printerRoutes;
+  final bool printToReceipt;
 }
 
 class _ProductDialog extends StatefulWidget {
@@ -597,7 +610,9 @@ class _ProductDialogState extends State<_ProductDialog> {
   late final _tax = TextEditingController(
       text: widget.product.taxPercentage.toStringAsFixed(
           widget.product.taxPercentage % 1 == 0 ? 0 : 1));
-  late String? _route = widget.product.printerRoute;
+  late final Set<String> _routes =
+      KitchenRouting.parse(widget.product.printerRoutes);
+  late bool _printToReceipt = widget.product.printToReceipt;
 
   @override
   void dispose() {
@@ -639,18 +654,58 @@ class _ProductDialogState extends State<_ProductDialog> {
               decoration: const InputDecoration(
                   labelText: 'VAT rate', suffixText: '%'),
             ),
-            const SizedBox(height: 10),
-            DropdownButtonFormField<String?>(
-              initialValue: _route,
-              decoration: const InputDecoration(labelText: 'Kitchen printer'),
-              items: const [
-                DropdownMenuItem(value: null, child: Text('Not sent to kitchen')),
-                DropdownMenuItem(value: 'kitchen', child: Text('Kitchen')),
-                DropdownMenuItem(value: 'bar', child: Text('Bar')),
-              ],
-              onChanged: (v) => setState(() => _route = v),
+            const SizedBox(height: 16),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Kitchen printers',
+                style: Theme.of(context).textTheme.labelLarge,
+              ),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 2),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Tick every printer this item should print on. It prints '
+                'when the item is sold and when it is saved to a table.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+            const SizedBox(height: 8),
+            // Wrapped chips rather than six rows of checkboxes: six stations
+            // stacked vertically pushed the dialog past the height of a till
+            // screen, and the state is binary either way.
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final role in PrinterRole.kitchenPrinters)
+                  FilterChip(
+                    label: Text(role.label),
+                    selected: _routes.contains(role.station),
+                    onSelected: (on) => setState(() {
+                      if (on) {
+                        _routes.add(role.station);
+                      } else {
+                        _routes.remove(role.station);
+                      }
+                    }),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: _printToReceipt,
+              onChanged: (v) => setState(() => _printToReceipt = v),
+              title: const Text('Show on the customer receipt'),
+              subtitle: const Text(
+                'Turn off for kitchen-only items, such as an allergy note '
+                'rung up as a product.',
+                style: TextStyle(fontSize: 12),
+              ),
+            ),
+            const SizedBox(height: 8),
             Text(
               'Changes apply to this terminal and sync to the back office. '
               'Names, departments and buttons are set in the back office.',
@@ -672,7 +727,8 @@ class _ProductDialogState extends State<_ProductDialog> {
                   ((double.tryParse(_price.text) ?? 0) * 100).round(),
               stockQuantity: double.tryParse(_stock.text) ?? 0,
               taxPercentage: double.tryParse(_tax.text) ?? 0,
-              printerRoute: _route,
+              printerRoutes: KitchenRouting.format(_routes),
+              printToReceipt: _printToReceipt,
             ),
           ),
           child: const Text('Save'),

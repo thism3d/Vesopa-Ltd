@@ -12,6 +12,7 @@ import 'data/auth_service.dart';
 import 'data/branding.dart';
 import 'data/commerce.dart';
 import 'data/floor_repository.dart';
+import 'data/kitchen_printing.dart';
 import 'data/local/database.dart';
 import 'data/loyalty_repository.dart';
 import 'data/session_controller.dart';
@@ -54,6 +55,10 @@ final orderRepositoryProvider = Provider<OrderRepository>(
 
 final sessionRepositoryProvider = Provider<SessionRepository>(
   (ref) => SessionRepository(ref.watch(databaseProvider)),
+);
+
+final kitchenPrintingProvider = Provider<KitchenPrinting>(
+  (ref) => KitchenPrinting(ref.watch(databaseProvider)),
 );
 
 final tableRepositoryProvider = Provider<TableRepository>(

@@ -599,10 +599,27 @@ class SyncService {
               (raw['stock_quantity'] as num? ?? 0).toDouble(),
             ),
             // Set in the back office: where the product sits on the till grid
-            // and which kitchen printer it routes to.
+            // and which kitchen printers it routes to.
             buttonPosition: Value(raw['button_position'] as int?),
             buttonColor: Value(raw['button_color'] as String?),
-            printerRoute: Value(raw['printer_route'] as String?),
+            // `printer_routes` is the current field; `printer_route` is what a
+            // server that has not been updated yet still sends. Reading both
+            // means a new till against an old server keeps routing to the one
+            // station it knows about instead of silently routing nowhere.
+            printerRoutes: Value(
+              (raw['printer_routes'] ?? raw['printer_route']) as String?,
+            ),
+            printToReceipt: Value(
+              // Absent means yes. A server that has never heard of this field
+              // must not be read as "hide every product from every receipt".
+              switch (raw['print_to_receipt']) {
+                null => true,
+                final num n => n != 0,
+                final bool b => b,
+                final String s => s != '0' && s.toLowerCase() != 'false',
+                _ => true,
+              },
+            ),
             emoji: Value(raw['emoji'] as String?),
             // Uploaded images are served relative to the server; store the
             // absolute URL so the till can load it directly.

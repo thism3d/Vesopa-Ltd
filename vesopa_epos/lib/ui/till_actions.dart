@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/kitchen_printing.dart';
 import '../data/receipt_repository.dart';
 import '../main.dart';
 import '../printing/printer_transport.dart';
@@ -53,6 +54,67 @@ abstract final class TillActions {
           context,
           'Could not open the drawer',
           'The till could not reach ${printer.name}.\n\n$e',
+        );
+      }
+    }
+  }
+
+  /// Send the kitchen whatever on this bill it has not been sent yet.
+  ///
+  /// Called from the two moments the venue asked for — an item is sold, or the
+  /// bill is saved to a table — and deliberately from nowhere else, so a clerk
+  /// can predict when paper appears in the kitchen.
+  ///
+  /// Failures are shown as a message and never thrown. By the time this runs
+  /// the sale is already recorded or the table is already saved; a printer
+  /// nobody plugged in must not undo either, and the clerk needs telling so
+  /// they can carry the order through by hand.
+  static Future<void> fireKitchen(
+    BuildContext context,
+    WidgetRef ref, {
+    required String orderId,
+    required KitchenFire reason,
+  }) async {
+    final printers = await ref.read(printerSettingsProvider.future);
+
+    // Nothing set up on this terminal: silent by design. A counter till with
+    // no kitchen printer would otherwise complain on every single sale.
+    if (printers.stations.isEmpty) return;
+
+    final failure = await ref.read(kitchenPrintingProvider).fire(
+          orderId: orderId,
+          reason: reason,
+          printers: printers,
+          staffName: ref.read(servedByProvider),
+        );
+
+    if (failure != null && context.mounted) {
+      PosMessenger.error(context, 'Kitchen printing: $failure');
+    }
+  }
+
+  /// Pull everything the back office owns down to this terminal again.
+  ///
+  /// The till already does this on startup and on every reconnect, so this key
+  /// is not how the catalogue normally arrives. It exists for the minute after
+  /// a manager changes a price: they want to see it on the till *now*, and
+  /// without this the honest answer is "wait for the push". A visible key that
+  /// settles the question in two seconds is worth more than the argument that
+  /// it should never be needed.
+  ///
+  /// Pushes queued sales first (that is what [SyncService.resync] does), so it
+  /// doubles as the key to reach for when a till has been offline.
+  static Future<void> refreshData(BuildContext context, WidgetRef ref) async {
+    try {
+      await ref.read(syncServiceProvider).resync();
+      if (context.mounted) _toast(context, 'Data refreshed.');
+    } catch (e) {
+      if (context.mounted) {
+        _explain(
+          context,
+          'Could not refresh',
+          'The till could not reach the back office. It carries on selling '
+              'from the copy it already has.\n\n$e',
         );
       }
     }

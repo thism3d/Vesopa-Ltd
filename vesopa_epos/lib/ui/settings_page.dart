@@ -10,12 +10,14 @@ import '../main.dart';
 import '../payments/connect_pac.dart';
 import '../payments/dojo_config.dart';
 import '../payments/payment_provider.dart';
+import '../printing/printer_transport.dart';
 import 'card_diagnostics_page.dart';
 import 'layout.dart';
 import 'nav_panel_controller.dart';
 import 'printers_page.dart';
 import 'theme.dart';
 import 'theme_controller.dart';
+import 'till_actions.dart';
 import 'widgets/pos_message.dart';
 
 /// Terminal settings. Anything that belongs to the venue lives in the back
@@ -155,17 +157,13 @@ class SettingsPage extends ConsumerWidget {
               const Divider(height: 1),
               _Row(
                 icon: Icons.sync,
-                label: 'Catalogue',
-                value: 'Synced from the back office',
+                // "Catalogue" named the data; staff asking for this key ask
+                // for the thing it does. It pulls products, deals, departments
+                // and staff, so the old name was also only a third true.
+                label: 'Refresh Data',
+                value: 'Products, deals and staff from the back office',
                 trailing: TextButton(
-                  onPressed: () async {
-                    final sync = ref.read(syncServiceProvider);
-                    await sync.pullCatalogue();
-                    await sync.pullDeals();
-                    if (context.mounted) {
-                      PosMessenger.success(context, 'Catalogue refreshed.');
-                    }
-                  },
+                  onPressed: () => TillActions.refreshData(context, ref),
                   child: const Text('Refresh'),
                 ),
               ),
@@ -225,7 +223,11 @@ class SettingsPage extends ConsumerWidget {
                 builder: (context, ref, _) {
                   final settings = ref.watch(printerSettingsProvider).value;
                   final receipt = settings?.receiptPrinter;
-                  final kitchen = settings?.kitchenPrinter;
+                  // Named individually rather than counted: "2 kitchen
+                  // printers" does not tell a manager whether the one they
+                  // just routed a product to is the one that is missing.
+                  final kitchen = (settings?.stations.keys.toList() ?? [])
+                    ..sort();
                   return ListTile(
                     leading: const Icon(Icons.settings_outlined),
                     title: const Text('Set up printers'),
@@ -234,9 +236,12 @@ class SettingsPage extends ConsumerWidget {
                         receipt == null
                             ? 'No receipt printer'
                             : 'Receipt: ${receipt.name} (${receipt.paperWidthMm}mm)',
-                        kitchen == null
-                            ? 'No kitchen printer'
-                            : 'Kitchen: ${kitchen.name} (${kitchen.paperWidthMm}mm)',
+                        kitchen.isEmpty
+                            ? 'No kitchen printers'
+                            : kitchen
+                                .map((s) =>
+                                    PrinterRole.fromStation(s)?.label ?? s)
+                                .join(', '),
                       ].join('  ·  '),
                     ),
                     trailing: const Icon(Icons.chevron_right),

@@ -29,9 +29,21 @@ class Products extends Table {
   /// Overrides the department colour for this one button.
   TextColumn get buttonColor => text().nullable()();
 
-  /// Which kitchen printer this item routes to (e.g. "kitchen", "bar").
-  /// Null means it is not sent to the kitchen at all.
-  TextColumn get printerRoute => text().nullable()();
+  /// Which kitchen printers this item routes to, comma-separated station keys
+  /// ("kp1,kp3"). Empty or null means it is not sent to a kitchen at all.
+  ///
+  /// A list rather than one station because a single dish routinely belongs to
+  /// two of them — the grill cooks it and the pass plates it, and both need the
+  /// ticket. Stored as text because the till only ever reads the whole set.
+  TextColumn get printerRoutes => text().nullable()();
+
+  /// Whether this item appears on the customer's receipt.
+  ///
+  /// Defaults to true, which is what all but a handful of items want. The
+  /// exceptions are real though: a kitchen instruction rung up as a product
+  /// ("allergy - table 4") belongs on the ticket and nowhere near the bill.
+  BoolColumn get printToReceipt =>
+      boolean().withDefault(const Constant(true))();
 
   /// An emoji shown large on the till button, and an optional uploaded image
   /// which takes precedence over the emoji when present.
@@ -244,6 +256,15 @@ class OrderLines extends Table {
   TextColumn get addedBy => text().nullable()();
   DateTimeColumn get addedAt => dateTime().nullable()();
 
+  /// When this line was last sent to a kitchen printer, or null if it never
+  /// has been.
+  ///
+  /// This is what stops a table being re-fired every time it is saved. A bill
+  /// added to four times across a service would otherwise hand the kitchen the
+  /// first course four times, and a kitchen that has learned to ignore
+  /// duplicate tickets is a kitchen that will eventually ignore a real one.
+  DateTimeColumn get kitchenPrintedAt => dateTime().nullable()();
+
   @override
   Set<Column> get primaryKey => {id};
 }
@@ -361,7 +382,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 10;
+  int get schemaVersion => 11;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -379,7 +400,14 @@ class AppDatabase extends _$AppDatabase {
             await m.createTable(loyaltyEntries);
             await m.addColumn(products, products.buttonPosition);
             await m.addColumn(products, products.buttonColor);
-            await m.addColumn(products, products.printerRoute);
+            // Raw SQL because `printer_route` is no longer a column the Dart
+            // schema declares — step 11 folds it into `printer_routes`. A
+            // migration step is a historical record of what the database looked
+            // like at the time, so it has to keep adding the column it added
+            // then, or the step-11 transform below has nothing to read.
+            await m.database.customStatement(
+              'ALTER TABLE products ADD COLUMN printer_route TEXT NULL',
+            );
             await m.addColumn(orders, orders.sessionId);
             await m.addColumn(orders, orders.customerId);
             await m.addColumn(orders, orders.splitFromOrderId);
@@ -418,6 +446,28 @@ class AppDatabase extends _$AppDatabase {
             await m.addColumn(orderLines, orderLines.addedAt);
             await m.addColumn(orders, orders.staffId);
             await m.addColumn(orders, orders.staffName);
+          }
+          if (from < 11) {
+            // One station per product became a set of them. The old value is
+            // carried across rather than left to the next sync: a till that
+            // opens offline after an update must still route its food, and
+            // "printers stopped working after the update" is the one bug a
+            // kitchen never forgives.
+            //
+            // `PrinterRole.fromStation` maps the two old names onto numbered
+            // stations at read time, so "kitchen" surviving in this column is
+            // correct rather than something to translate here.
+            await m.alterTable(
+              TableMigration(
+                products,
+                newColumns: [products.printerRoutes, products.printToReceipt],
+                columnTransformer: {
+                  products.printerRoutes:
+                      const CustomExpression<String>('printer_route'),
+                },
+              ),
+            );
+            await m.addColumn(orderLines, orderLines.kitchenPrintedAt);
           }
         },
       );

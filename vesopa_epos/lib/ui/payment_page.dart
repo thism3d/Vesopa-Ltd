@@ -8,7 +8,6 @@ import '../data/commerce.dart';
 import '../data/local/database.dart';
 import '../data/order_repository.dart';
 import '../data/pricing_engine.dart';
-import '../data/receipt_repository.dart';
 import '../data/staff_session.dart';
 import '../data/tender_engine.dart';
 import '../data/till_settings.dart';
@@ -16,11 +15,14 @@ import '../main.dart';
 import '../payments/connect_pac.dart';
 import '../payments/dojo_desktop.dart';
 import '../payments/payment_provider.dart';
+import '../data/kitchen_printing.dart';
+import '../printing/print_service.dart';
+import '../printing/receipt_builder.dart';
 import 'card_checkout_page.dart';
+import 'printers_page.dart' show printerSettingsProvider;
 import 'card_payment_dialog.dart';
 import 'confirm_tender_dialog.dart';
 import 'discount_dialog.dart';
-import 'print_receipt_sheet.dart';
 import 'redemption_dialogs.dart';
 import '../data/cash_tally.dart';
 import 'till_actions.dart';
@@ -97,68 +99,104 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     container.invalidate(receiptListProvider);
   }
 
-  /// After payment, offer to print the receipt. Built from the just-settled
-  /// local order, so it works even if the sale has not yet synced to the
-  /// server — the customer gets their receipt regardless of the network.
-  Future<void> _offerReceipt() async {
+  /// Print the receipt for the sale just settled, if the venue has asked for
+  /// one on every sale.
+  ///
+  /// The till used to stop and ask. That question was being put to a clerk
+  /// several hundred times a shift, over the head of the next customer, and
+  /// the answer never changed within a venue — so the venue answers it once,
+  /// in the back office, and the counter stops being interrupted.
+  ///
+  /// Nothing is lost by not asking: a customer who wants one is served from
+  /// the Receipts screen or the Last Bill key, which is where somebody who
+  /// changes their mind two minutes later was always going to be served from.
+  ///
+  /// Built from the just-settled *local* order, so it works even if the sale
+  /// has not yet reached the server — the customer gets their receipt
+  /// regardless of the network.
+  Future<void> _autoPrintReceipt() async {
+    final settings = ref.read(tillSettingsProvider);
+    if (!settings.receiptAutoPrint) return;
+
+    final printer =
+        (await ref.read(printerSettingsProvider.future)).receiptPrinter;
+    if (printer == null) {
+      // Asked for automatic receipts on a till with no receipt printer. Worth
+      // saying once, at the counter, rather than silently doing nothing: the
+      // venue has switched something on that is not happening.
+      if (mounted) {
+        PosMessenger.error(
+          context,
+          'Automatic receipts are on, but no receipt printer is set up.',
+        );
+      }
+      return;
+    }
+
     final repo = ref.read(orderRepositoryProvider);
     final order = await repo.watchOrder(widget.orderId).first;
+    final payments = await repo.paymentsFor(widget.orderId);
+    final lines = await _receiptLines(repo);
+
+    final branding = ref.read(brandingProvider);
+
+    try {
+      // ESC/POS straight down the wire rather than the PDF path the print
+      // sheet uses. The sheet is a preview a clerk chose to open, so a system
+      // print dialog is fine there; this one is meant to happen without anyone
+      // touching the screen, and a dialog would defeat the whole setting.
+      final service = PrintService(
+        await ReceiptBuilder.create(),
+        PrinterSetup(
+          receipt: printer,
+          shopName: branding.venueName.isNotEmpty
+              ? branding.venueName
+              : ref.read(sessionProvider).venueName,
+          footer: branding.footerMessage,
+          logo: branding.showLogo ? branding.logoBytes : null,
+        ),
+      );
+      await service.printReceipt(
+        order: order,
+        lines: lines,
+        payments: payments,
+      );
+    } catch (e) {
+      // The money is taken and the sale is recorded. A printer that will not
+      // answer is worth telling the clerk about, and worth nothing more than
+      // that — they can reprint from Receipts once it is back.
+      if (mounted) PosMessenger.error(context, 'Could not print receipt: $e');
+    }
+  }
+
+  /// The bill's lines, less anything the back office keeps off the receipt.
+  ///
+  /// Only free lines can be hidden, and that restriction is the whole design:
+  /// this setting exists for a kitchen instruction rung up as a product
+  /// ("allergy — nut free"), which belongs on the ticket and nowhere near the
+  /// customer's bill. Hiding a line the customer is being *charged* for would
+  /// print a receipt whose items do not add up to its total, which is a
+  /// receipt no venue can hand over and no accountant can accept — so a
+  /// priced item stays on, whatever the flag says.
+  Future<List<OrderLine>> _receiptLines(OrderRepository repo) async {
     final lines = await repo.watchLines(widget.orderId).first;
-    final tenders = await repo.paymentsFor(widget.orderId);
+    if (lines.isEmpty) return lines;
 
-    if (!mounted) return;
+    final db = ref.read(databaseProvider);
 
-    final session = ref.read(sessionProvider);
-    final detail = ReceiptDetail(
-      summary: ReceiptSummary(
-        id: order.id,
-        totalMinor: order.totalMinor,
-        taxMinor: order.taxMinor,
-        discountMinor: order.discountMinor,
-        tableNumber: order.tableNumber,
-        closedAt: order.closedAt ?? DateTime.now(),
-        covers: order.covers,
-        // Who served it and who it was for — both print, and both are what
-        // makes a receipt traceable back to a person rather than a terminal.
-        clerkName: ref.read(servedByProvider),
-        customerName: _customer?.name ?? order.customerName,
-        orderNote: order.notes,
-        // What was taken off, so the printed receipt explains its own total.
-        voucherCode: _voucherCode,
-        voucherMinor: _voucherMinor,
-        serviceMinor: _tender.totals.gratuityMinor,
-        pointsRedeemed: _pointsRedeemed,
-        pointsEarned: _customer?.pointsFor(_tender.totals.netGoodsMinor) ?? 0,
-        pointsBalance: _customer?.pointsBalance,
-      ),
-      lines: [
-        for (final l in lines)
-          ReceiptLine(
-            name: l.name,
-            quantity: l.quantity,
-            unitPriceMinor: l.unitPriceMinor,
-            taxPercentage: l.taxPercentage,
-            note: l.notes,
-          ),
-      ],
-      tenders: [
-        for (final t in tenders)
-          ReceiptTender(
-            method: t.method,
-            amountMinor: t.amountMinor,
-            cashBreakdown: t.cashBreakdown,
-          ),
-      ],
-    );
+    final onBill = await (db.select(db.products)
+          ..where((p) => p.pluId.isIn(lines.map((l) => l.pluId).toSet())))
+        .get();
 
-    await PrintReceiptSheet.show(
-      context,
-      receipt: detail,
-      venueName: session.venueName,
-      branding: ref.read(brandingProvider),
-      // A takeaway counter has no kitchen ticket to send; a table order does.
-      showKitchenOption: order.tableNumber != null,
-    );
+    final hiddenPlus = {
+      for (final p in onBill)
+        if (!p.printToReceipt) p.pluId,
+    };
+    if (hiddenPlus.isEmpty) return lines;
+    return lines
+        .where((l) =>
+            !hiddenPlus.contains(l.pluId) || l.unitPriceMinor * l.quantity != 0)
+        .toList();
   }
 
   /// Hand the clerk's signature decision back to the waiting provider.
@@ -1082,6 +1120,17 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     if (!mounted) return;
     unawaited(_publishReceipt());
 
+    // The kitchen's copy, before anything can take the screen away. Only the
+    // lines it has not already been sent go out, so a table that was fired
+    // when it was saved does not print a second time when it is paid.
+    await TillActions.fireKitchen(
+      context,
+      ref,
+      orderId: widget.orderId,
+      reason: KitchenFire.sale,
+    );
+    if (!mounted) return;
+
     // Resolved through the root container *before* the page pops, and used
     // after. This State is disposed by the pop, and `ref` with it — the same
     // reason _publishReceipt goes through the container.
@@ -1094,15 +1143,12 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     final timedOut = await _showChange(settings);
     if (!mounted) return;
 
-    // A change window that ran all the way down is the terminal being left, not
-    // a clerk moving on: nobody touched it for the whole countdown. Putting a
-    // receipt prompt up at that point would only park a dialog behind the idle
-    // screen for the next person to find, so it is skipped and the sale is
-    // finished the way the countdown said it would be.
-    if (!timedOut) {
-      await _offerReceipt();
-      if (!mounted) return;
-    }
+    // Printed whether or not the window timed out. This is no longer a dialog
+    // that could be left stranded behind the idle screen — it is a receipt
+    // coming out of a printer, and a customer who walked away from the counter
+    // is exactly who a printed receipt is waiting for.
+    await _autoPrintReceipt();
+    if (!mounted) return;
 
     widget.onSettled();
     Navigator.of(context).pop();

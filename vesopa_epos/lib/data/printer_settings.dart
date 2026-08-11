@@ -23,22 +23,26 @@ class PrinterSettings {
   }
 
   PrinterConfig? get receiptPrinter => forRole(PrinterRole.receipt);
-  PrinterConfig? get kitchenPrinter => forRole(PrinterRole.kitchen);
-  PrinterConfig? get barPrinter => forRole(PrinterRole.bar);
+
+  /// The kitchen printers this terminal has, keyed by the station a product is
+  /// routed to. A station with no printer plugged in simply is not here, which
+  /// is what lets the print service report it rather than fail silently.
+  Map<String, PrinterConfig> get stations => {
+        for (final printer in printers)
+          if (printer.role != PrinterRole.receipt)
+            printer.role.station: printer,
+      };
 
   /// The roll the receipt should be laid out for. Falls back to 80mm, the
   /// common size, when no receipt printer has been configured yet.
   int get receiptWidthMm => receiptPrinter?.paperWidthMm ?? 80;
 
-  /// Where a kitchen ticket for [route] goes. Falls back to the kitchen
-  /// printer so a product routed to "bar" still prints somewhere rather than
-  /// being silently dropped.
+  /// Where a kitchen ticket for [route] goes, or null if nothing is plugged in
+  /// at that station. Understands the old "kitchen"/"bar" keys — see
+  /// [PrinterRole.fromStation].
   PrinterConfig? printerForRoute(String? route) {
-    if (route == null || route.isEmpty) return null;
-    if (route.toLowerCase() == 'bar') {
-      return barPrinter ?? kitchenPrinter;
-    }
-    return kitchenPrinter;
+    final role = PrinterRole.fromStation(route);
+    return role == null ? null : forRole(role);
   }
 
   PrinterSettings upsert(PrinterConfig printer) {

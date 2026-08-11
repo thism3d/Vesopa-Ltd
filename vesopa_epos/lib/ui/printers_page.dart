@@ -10,8 +10,8 @@ import '../printing/printer_transport.dart';
 /// The terminal's printers, loaded once and kept in memory.
 final printerSettingsProvider =
     AsyncNotifierProvider<PrinterSettingsController, PrinterSettings>(
-  PrinterSettingsController.new,
-);
+      PrinterSettingsController.new,
+    );
 
 class PrinterSettingsController extends AsyncNotifier<PrinterSettings> {
   final _store = const PrinterSettingsStore();
@@ -48,12 +48,15 @@ class PrintersPage extends ConsumerWidget {
 
     return settings.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text('Could not read printer settings: $e')),
+      error: (e, _) =>
+          Center(child: Text('Could not read printer settings: $e')),
       data: (data) => ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          Text('Printers on this terminal',
-              style: Theme.of(context).textTheme.titleLarge),
+          Text(
+            'Printers on this terminal',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
           const SizedBox(height: 6),
           Text(
             'Each till keeps its own printers, because they are physically '
@@ -68,11 +71,18 @@ class PrintersPage extends ConsumerWidget {
               role: role,
               printer: data.forRole(role),
               onEdit: (existing) => _edit(context, ref, role, existing),
-              onRemove: (id) => ref.read(printerSettingsProvider.notifier)
-                  .remove(id),
+              onRemove: (id) =>
+                  ref.read(printerSettingsProvider.notifier).remove(id),
             ),
-            const SizedBox(height: 14),
+            SizedBox(height: data.forRole(role) == null ? 8 : 14),
           ],
+          const SizedBox(height: 10),
+          Text(
+            'Products are assigned to KP 1 to KP 6 in the back office. A '
+            'station with no printer set up here is reported when something '
+            'routed to it is sold, rather than being dropped quietly.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
         ],
       ),
     );
@@ -112,6 +122,34 @@ class _RoleSection extends StatelessWidget {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final p = printer;
+    final icon = role == PrinterRole.receipt
+        ? Icons.receipt_long
+        : Icons.soup_kitchen_outlined;
+
+    // A station with nothing plugged in collapses to a single row. Seven full
+    // cards is most of a screen of scrolling on a till that, in the ordinary
+    // case, has two printers — and the five empty ones would be the biggest
+    // things on the page.
+    if (p == null) {
+      return Card(
+        margin: EdgeInsets.zero,
+        child: ListTile(
+          leading: Icon(icon, color: scheme.outline),
+          title: Text(
+            role.label,
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          subtitle: const Text('Not set up', style: TextStyle(fontSize: 12.5)),
+          trailing: TextButton.icon(
+            onPressed: () => onEdit(null),
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text('Add'),
+          ),
+        ),
+      );
+    }
 
     return Card(
       margin: EdgeInsets.zero,
@@ -122,78 +160,64 @@ class _RoleSection extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(
-                  role == PrinterRole.receipt
-                      ? Icons.receipt_long
-                      : Icons.soup_kitchen_outlined,
-                  color: scheme.primary,
-                ),
+                Icon(icon, color: scheme.primary),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: Text(role.label,
-                      style: theme.textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w700)),
-                ),
-                if (p != null)
-                  Chip(
-                    label: Text('${p.paperWidthMm}mm'),
-                    visualDensity: VisualDensity.compact,
+                  child: Text(
+                    role.label,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
+                ),
+                Chip(
+                  label: Text('${p.paperWidthMm}mm'),
+                  visualDensity: VisualDensity.compact,
+                ),
               ],
             ),
             const SizedBox(height: 10),
-
-            if (p == null)
-              Row(
-                children: [
-                  Expanded(
-                    child: Text('Not set up',
-                        style: theme.textTheme.bodyMedium
-                            ?.copyWith(color: scheme.onSurfaceVariant)),
-                  ),
-                  FilledButton.tonalIcon(
-                    onPressed: () => onEdit(null),
-                    icon: const Icon(Icons.add),
-                    label: const Text('Add printer'),
-                  ),
-                ],
-              )
-            else ...[
-              Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(p.name,
-                            style: theme.textTheme.bodyLarge
-                                ?.copyWith(fontWeight: FontWeight.w600)),
-                        Text(
-                          p.kind == PrinterKind.network
-                              ? '${p.host}:${p.port} (network)'
-                              : '${p.serialPort} @ ${p.baudRate} (serial)',
-                          style: theme.textTheme.bodySmall
-                              ?.copyWith(color: scheme.onSurfaceVariant),
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        p.name,
+                        style: theme.textTheme.bodyLarge?.copyWith(
+                          fontWeight: FontWeight.w600,
                         ),
-                        Text('${p.columns} characters per line',
-                            style: theme.textTheme.bodySmall
-                                ?.copyWith(color: scheme.onSurfaceVariant)),
-                      ],
-                    ),
+                      ),
+                      Text(
+                        p.kind == PrinterKind.network
+                            ? '${p.host}:${p.port} (network)'
+                            : '${p.serialPort} @ ${p.baudRate} (serial)',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                      Text(
+                        '${p.columns} characters per line',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
                   ),
-                  IconButton(
-                    onPressed: () => onEdit(p),
-                    icon: const Icon(Icons.edit_outlined),
-                    tooltip: 'Edit',
-                  ),
-                  IconButton(
-                    onPressed: () => onRemove(p.id),
-                    icon: const Icon(Icons.delete_outline),
-                    tooltip: 'Remove',
-                  ),
-                ],
-              ),
-            ],
+                ),
+                IconButton(
+                  onPressed: () => onEdit(p),
+                  icon: const Icon(Icons.edit_outlined),
+                  tooltip: 'Edit',
+                ),
+                IconButton(
+                  onPressed: () => onRemove(p.id),
+                  icon: const Icon(Icons.delete_outline),
+                  tooltip: 'Remove',
+                ),
+              ],
+            ),
           ],
         ),
       ),
@@ -213,16 +237,21 @@ class _PrinterDialog extends StatefulWidget {
 
 class _PrinterDialogState extends State<_PrinterDialog> {
   late final _name = TextEditingController(
-      text: widget.existing?.name ?? widget.role.label);
+    text: widget.existing?.name ?? widget.role.label,
+  );
   late final _host = TextEditingController(text: widget.existing?.host ?? '');
-  late final _port =
-      TextEditingController(text: '${widget.existing?.port ?? 9100}');
-  late final _serial =
-      TextEditingController(text: widget.existing?.serialPort ?? '');
-  late final _baud =
-      TextEditingController(text: '${widget.existing?.baudRate ?? 9600}');
+  late final _port = TextEditingController(
+    text: '${widget.existing?.port ?? 9100}',
+  );
+  late final _serial = TextEditingController(
+    text: widget.existing?.serialPort ?? '',
+  );
+  late final _baud = TextEditingController(
+    text: '${widget.existing?.baudRate ?? 9600}',
+  );
 
-  late PrinterKind _kind = widget.existing?.kind ??
+  late PrinterKind _kind =
+      widget.existing?.kind ??
       // Serial is only reachable on desktop; a tablet has no COM port, so
       // offering it as the default there would be a dead end.
       (_desktop ? PrinterKind.serial : PrinterKind.network);
@@ -244,9 +273,11 @@ class _PrinterDialogState extends State<_PrinterDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(widget.existing == null
-          ? 'Add ${widget.role.label.toLowerCase()}'
-          : 'Edit ${widget.role.label.toLowerCase()}'),
+      title: Text(
+        widget.existing == null
+            ? 'Add ${widget.role.label.toLowerCase()}'
+            : 'Edit ${widget.role.label.toLowerCase()}',
+      ),
       content: SizedBox(
         width: 420,
         child: SingleChildScrollView(
@@ -260,8 +291,7 @@ class _PrinterDialogState extends State<_PrinterDialog> {
               ),
               const SizedBox(height: 14),
 
-              Text('Roll width',
-                  style: Theme.of(context).textTheme.labelLarge),
+              Text('Roll width', style: Theme.of(context).textTheme.labelLarge),
               const SizedBox(height: 6),
               SegmentedButton<int>(
                 segments: const [
@@ -280,13 +310,14 @@ class _PrinterDialogState extends State<_PrinterDialog> {
               ),
               const SizedBox(height: 16),
 
-              Text('Connection',
-                  style: Theme.of(context).textTheme.labelLarge),
+              Text('Connection', style: Theme.of(context).textTheme.labelLarge),
               const SizedBox(height: 6),
               SegmentedButton<PrinterKind>(
                 segments: [
                   const ButtonSegment(
-                      value: PrinterKind.network, label: Text('Network')),
+                    value: PrinterKind.network,
+                    label: Text('Network'),
+                  ),
                   ButtonSegment(
                     value: PrinterKind.serial,
                     label: const Text('Serial / USB'),
@@ -320,7 +351,9 @@ class _PrinterDialogState extends State<_PrinterDialog> {
                   controller: _serial,
                   decoration: InputDecoration(
                     labelText: 'Port',
-                    hintText: Platform.isWindows ? 'COM3' : '/dev/tty.usbserial',
+                    hintText: Platform.isWindows
+                        ? 'COM3'
+                        : '/dev/tty.usbserial',
                   ),
                 ),
                 const SizedBox(height: 10),
@@ -341,7 +374,8 @@ class _PrinterDialogState extends State<_PrinterDialog> {
         ),
         FilledButton(
           onPressed: () {
-            final id = widget.existing?.id ??
+            final id =
+                widget.existing?.id ??
                 // Stable enough for a device-local list.
                 '${widget.role.name}-${Random().nextInt(1 << 32)}';
             Navigator.pop(
@@ -355,8 +389,9 @@ class _PrinterDialogState extends State<_PrinterDialog> {
                 role: widget.role,
                 host: _host.text.trim().isEmpty ? null : _host.text.trim(),
                 port: int.tryParse(_port.text) ?? 9100,
-                serialPort:
-                    _serial.text.trim().isEmpty ? null : _serial.text.trim(),
+                serialPort: _serial.text.trim().isEmpty
+                    ? null
+                    : _serial.text.trim(),
                 baudRate: int.tryParse(_baud.text) ?? 9600,
                 paperWidthMm: _width,
               ),

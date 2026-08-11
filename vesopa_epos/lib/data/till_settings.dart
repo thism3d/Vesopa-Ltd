@@ -18,6 +18,8 @@ class TillSettings {
     this.idleMessage = 'Touch to begin',
     this.signoffSeconds = 180,
     this.changeWindowSeconds = 30,
+    this.receiptAutoPrint = false,
+    this.buttonsShowPrices = true,
   });
 
   final bool idleEnabled;
@@ -45,6 +47,19 @@ class TillSettings {
   /// signs the staff member off and drops to the idle screen. 0 leaves it up
   /// until somebody taps it, which is how it behaved before this was settable.
   final int changeWindowSeconds;
+
+  /// Print the customer's receipt automatically the moment a sale settles.
+  ///
+  /// The till no longer asks. Off means no paper at the counter — the clerk
+  /// prints one on request from the Receipts screen or the Last Bill key,
+  /// which is where a customer who changes their mind is served from anyway.
+  final bool receiptAutoPrint;
+
+  /// Whether product buttons carry their price.
+  ///
+  /// On by default. A venue whose prices change by the hour, or whose staff
+  /// know the menu cold, gets a cleaner grid with it off.
+  final bool buttonsShowPrices;
 
   bool get autoSignOff => signoffSeconds > 0;
 
@@ -74,7 +89,9 @@ class TillSettings {
           other.idleRequirePin == idleRequirePin &&
           other.idleMessage == idleMessage &&
           other.signoffSeconds == signoffSeconds &&
-          other.changeWindowSeconds == changeWindowSeconds;
+          other.changeWindowSeconds == changeWindowSeconds &&
+          other.receiptAutoPrint == receiptAutoPrint &&
+          other.buttonsShowPrices == buttonsShowPrices;
 
   @override
   int get hashCode => Object.hash(
@@ -85,6 +102,8 @@ class TillSettings {
         idleMessage,
         signoffSeconds,
         changeWindowSeconds,
+        receiptAutoPrint,
+        buttonsShowPrices,
       );
 
   // The server sends MySQL TINYINT(1) for the switches, which arrives as 0/1
@@ -118,6 +137,14 @@ class TillSettings {
         final n when n > 300 => 300,
         final n => n,
       },
+      // Absent means off, matching the column default: a server that has not
+      // run the migration yet must not have every till start printing.
+      receiptAutoPrint: _flag(j['receipt_auto_print']),
+      // Absent means *on* — the behaviour every terminal has had until now.
+      // Only an explicit 0 takes prices off the buttons.
+      buttonsShowPrices: j['buttons_show_prices'] == null
+          ? true
+          : _flag(j['buttons_show_prices']),
     );
   }
 }

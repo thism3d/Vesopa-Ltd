@@ -103,12 +103,17 @@ class _PosShellState extends ConsumerState<PosShell> {
     // Built only when it will be used: a Scaffold with a drawer it never opens
     // still swallows the edge swipe, which on the Sale screen is the gesture
     // that scrolls the category rail.
-    // Staff sign-on is only offered where the venue actually uses it — an office
-    // that has switched the idle screen's PIN off has no sign-on to end, and a
-    // dead "Sign off" key on the rail would be a question with no answer.
+    // Staff sign-on is offered wherever there is somebody to sign on — that is,
+    // wherever the venue has staff with PINs.
+    //
+    // It used to also require the idle screen's PIN lock to be on, which tied
+    // two separate decisions together: a venue can perfectly well want its
+    // sales attributed to whoever rang them up without wanting the screen to
+    // lock between customers. What the check does still guard is the case with
+    // no answer — a till with no staff list, where a Sign On key would open a
+    // PIN pad that could never accept a PIN.
     final staffSession = ref.watch(staffSessionProvider);
-    final usesSignOn = ref.watch(tillSettingsProvider).idleRequirePin &&
-        ref.watch(canSignOnProvider);
+    final usesSignOn = ref.watch(canSignOnProvider);
     final onSignOff = usesSignOn && staffSession.signedOn
         ? () => ref.read(staffSessionProvider.notifier).signOff()
         : null;
@@ -180,8 +185,12 @@ class _PosShellState extends ConsumerState<PosShell> {
               Text(navDestinations[_index].label),
             ],
           ),
-          actions: const [
-            Padding(
+          actions: [
+            // The same pair as the desktop bar. A tablet till is still a till,
+            // and "hand it to the next person" is a mid-service action there
+            // too — burying it in the drawer means it does not get used.
+            StaffChip(onSignOn: onSignOn, onSignOff: onSignOff, compact: true),
+            const Padding(
               padding: EdgeInsets.only(right: 12),
               child: Center(child: SyncStatusBadge()),
             ),
@@ -205,6 +214,8 @@ class _PosShellState extends ConsumerState<PosShell> {
             onOpenMenu: pinned
                 ? null
                 : () => _scaffold.currentState?.openDrawer(),
+            onSignOn: onSignOn,
+            onSignOff: onSignOff,
           ),
           Expanded(
             child: pinned
@@ -326,12 +337,21 @@ class _PosShellState extends ConsumerState<PosShell> {
 /// target — but it buys back the ~210px the fixed nav rail used to take off the
 /// width of every screen, which is the trade Meirion asked for.
 class _TitleBar extends StatelessWidget {
-  const _TitleBar({required this.section, required this.onOpenMenu});
+  const _TitleBar({
+    required this.section,
+    required this.onOpenMenu,
+    required this.onSignOn,
+    required this.onSignOff,
+  });
 
   final NavDestination section;
 
   /// Null when the nav rail is fixed on screen and there is no drawer to open.
   final VoidCallback? onOpenMenu;
+
+  /// Whichever of the shift pair currently applies — see [StaffChip].
+  final VoidCallback? onSignOn;
+  final VoidCallback? onSignOff;
 
   @override
   Widget build(BuildContext context) {
@@ -375,10 +395,11 @@ class _TitleBar extends StatelessWidget {
                 ),
               ),
               const Spacer(),
-              // Whose shift this is. It settles the question the moment it is
-              // asked — "am I about to ring this onto my own name or the last
-              // person's?" — which matters once the check shows attribution.
-              const _SignedOnBadge(),
+              // Whose shift this is, and the key that ends it. It settles the
+              // question the moment it is asked — "am I about to ring this
+              // onto my own name or the last person's?" — which matters once
+              // the check shows attribution.
+              StaffChip(onSignOn: onSignOn, onSignOff: onSignOff),
               // The clerk needs to know at a glance whether the till is live with
               // the back office or working offline with a backlog to send.
               const SyncStatusBadge(),
@@ -391,44 +412,153 @@ class _TitleBar extends StatelessWidget {
   }
 }
 
-/// Who is on shift, for the desktop title bar.
+/// Who is on shift, and the key that ends or starts it.
 ///
-/// Draws nothing at all when the venue does not use staff sign-on, rather than
-/// showing an empty slot or the word "nobody" — a venue that has switched the
-/// feature off should not have a hole in its chrome where it used to be.
-class _SignedOnBadge extends ConsumerWidget {
-  const _SignedOnBadge();
+/// Lives in the top bar, which is the one piece of chrome on every screen —
+/// so Sign On and Sign Off are reachable from the Sale screen, the Tables
+/// plan, Reports, Settings and everywhere else without going hunting. That was
+/// the point of the request: a shift change happens wherever the person
+/// handing over happens to be standing.
+///
+/// The name and the key are one control rather than two, because they answer
+/// the same question. "Am I about to ring this onto my own name?" and "how do
+/// I stop being the name?" are the same thought half a second apart, and
+/// putting the answer anywhere but next to the name makes it a search.
+///
+/// Draws nothing when the terminal has nobody to sign on — see the note in the
+/// shell's build about why that is the only case still guarded.
+class StaffChip extends ConsumerWidget {
+  const StaffChip({
+    super.key,
+    required this.onSignOn,
+    required this.onSignOff,
+    this.compact = false,
+  });
+
+  /// Exactly one of these is non-null when sign-on is available: whichever of
+  /// the pair currently applies. Both null means this terminal has no staff
+  /// list, and the chip draws nothing.
+  final VoidCallback? onSignOn;
+  final VoidCallback? onSignOff;
+
+  /// The app-bar variant, which has less width to spend.
+  final bool compact;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (!ref.watch(tillSettingsProvider).idleRequirePin) {
-      return const SizedBox.shrink();
-    }
-
-    final name = ref.watch(staffSessionProvider).name;
-    if (name == null) return const SizedBox.shrink();
+    if (onSignOn == null && onSignOff == null) return const SizedBox.shrink();
 
     final theme = Theme.of(context);
+    final signedOn = onSignOff != null;
+    final name = ref.watch(staffSessionProvider).name;
+
+    // Signed on: the name, then a quiet Sign Off. Signed off: one lime key,
+    // because at that moment starting a shift is the only thing the terminal
+    // is for and it should look like the way forward.
     return Padding(
-      padding: const EdgeInsets.only(right: 14),
+      padding: EdgeInsets.only(right: compact ? 4 : 12),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            Icons.how_to_reg_outlined,
-            size: 14,
-            color: theme.posBrandOnChrome,
-          ),
-          const SizedBox(width: 6),
-          Text(
-            name,
-            style: TextStyle(
-              color: theme.posOnChrome,
-              fontSize: 12.5,
-              fontWeight: FontWeight.w600,
+          if (signedOn && name != null) ...[
+            Icon(
+              Icons.how_to_reg_outlined,
+              size: 15,
+              color: theme.posBrandOnChrome,
             ),
+            const SizedBox(width: 6),
+            // Bounded so a long name cannot push the sync badge off a narrow
+            // bar — the badge is the one thing here that must never vanish.
+            ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: compact ? 90 : 160),
+              child: Text(
+                name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: theme.posOnChrome,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
+          _ShiftKey(
+            label: signedOn ? 'Sign Off' : 'Sign On',
+            icon: signedOn ? Icons.logout : Icons.login,
+            // Sign Off is a quiet outline: it is pressed a handful of times a
+            // shift and must not compete with the section it sits beside.
+            filled: !signedOn,
+            compact: compact,
+            onTap: onSignOff ?? onSignOn!,
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// One key on the top bar, in the two weights [StaffChip] uses.
+class _ShiftKey extends StatelessWidget {
+  const _ShiftKey({
+    required this.label,
+    required this.icon,
+    required this.filled,
+    required this.compact,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool filled;
+  final bool compact;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    // On the lime fill the ink must be the dark one — see Pos.onBrand. On the
+    // outline it follows the bar, which is white in Night and near-black in
+    // Day.
+    final ink = filled ? Pos.onBrand : theme.posOnChrome;
+
+    return Material(
+      color: filled ? Pos.brand : Colors.transparent,
+      borderRadius: BorderRadius.circular(7),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(7),
+        child: Container(
+          height: 32,
+          padding: EdgeInsets.symmetric(horizontal: compact ? 9 : 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(7),
+            border: filled
+                ? null
+                : Border.all(color: theme.posOnChrome.withValues(alpha: 0.28)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 15, color: ink),
+              // The label is dropped on a narrow app bar, where the two icons
+              // are distinct enough on their own and the room is better spent
+              // on the section title.
+              if (!compact) ...[
+                const SizedBox(width: 7),
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: ink,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }

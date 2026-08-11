@@ -105,6 +105,20 @@ class FunctionsPage extends ConsumerWidget {
           ),
         ),
       ]),
+      _Group('Terminal', [
+        // The same key as Settings › Refresh Data, put where staff actually
+        // are. A manager who has just changed a price is standing at the till
+        // asking why it has not changed, and Settings is three taps and a
+        // different mental mode away.
+        _Function(
+          'Refresh Data',
+          Icons.sync,
+          Pos.teal,
+          'Pull the latest products, prices, deals and staff from the back '
+              'office, and send anything this till still has queued.',
+          () => TillActions.refreshData(context, ref),
+        ),
+      ]),
       _Group('End of day', [
         _Function(
           'X Report',

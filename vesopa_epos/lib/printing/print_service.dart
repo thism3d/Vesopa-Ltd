@@ -61,40 +61,54 @@ class PrintService {
     );
   }
 
-  /// Send each line to the station its product is routed to. One ticket per
-  /// station, so the kitchen is not handed drinks orders and the bar is not
-  /// handed food.
+  /// Send each line to every station its product is routed to.
+  ///
+  /// A product may sit on more than one printer — a steak goes to the grill
+  /// and to the pass — so this is a fan-out, not a lookup: one ticket per
+  /// station, each carrying only that station's items. A station gets a ticket
+  /// or it does not; it never gets somebody else's items to filter out by eye.
+  ///
+  /// Stations are printed in a stable order (KP 1 before KP 2) so a kitchen
+  /// reading two printers sees the same sequence every service.
   Future<void> printKitchenTickets({
     required Order order,
     required List<OrderLine> lines,
-    required Map<int, String?> routeByPlu,
+    required Map<int, Set<String>> routesByPlu,
+    String? headline,
+    String? staffName,
   }) async {
     final byStation = <String, List<OrderLine>>{};
     for (final line in lines) {
-      final station = routeByPlu[line.pluId];
-      if (station == null || station.isEmpty) continue;
-      byStation.putIfAbsent(station, () => []).add(line);
+      for (final station in routesByPlu[line.pluId] ?? const <String>{}) {
+        if (station.isEmpty) continue;
+        byStation.putIfAbsent(station, () => []).add(line);
+      }
     }
+    if (byStation.isEmpty) return;
+
+    final stations = byStation.keys.toList()..sort();
 
     final failures = <String>[];
-    for (final entry in byStation.entries) {
-      final printer = setup.stations[entry.key];
+    for (final station in stations) {
+      final printer = setup.stations[station];
       if (printer == null) {
-        failures.add('${entry.key}: no printer configured');
+        failures.add('${_stationLabel(station)}: no printer set up');
         continue;
       }
       try {
         await PrinterTransport.of(printer).send(
           _builder.kitchenTicket(
             order: order,
-            lines: entry.value,
-            station: entry.key,
+            lines: byStation[station]!,
+            station: _stationLabel(station),
+            headline: headline,
+            staffName: staffName,
           ),
         );
       } catch (e) {
-        // Carry on to the other stations: one dead bar printer must not stop
-        // the food reaching the kitchen.
-        failures.add('${entry.key}: $e');
+        // Carry on to the other stations: one dead printer at the bar must not
+        // stop the food reaching the kitchen.
+        failures.add('${_stationLabel(station)}: $e');
       }
     }
 
@@ -102,6 +116,11 @@ class PrintService {
       throw PrintException(failures.join('; '));
     }
   }
+
+  /// "kp1" as the kitchen reads it. Falls back to the raw key so an
+  /// unrecognised station still names itself on the ticket.
+  static String _stationLabel(String station) =>
+      PrinterRole.fromStation(station)?.label ?? station.toUpperCase();
 
   Future<void> printTillReport(TillReport report) async {
     final printer = setup.receipt;

@@ -60,8 +60,9 @@ void main() {
     await tester.pumpAndSettle();
 
     // The category rail is driven by the catalogue's departments, not a
-    // hardcoded menu.
-    expect(find.text('Drinks'), findsOneWidget);
+    // hardcoded menu. It appears twice: once as the rail key, once as the
+    // heading over the grid naming what the clerk is looking at.
+    expect(find.text('Drinks'), findsNWidgets(2));
     expect(find.text('Cola'), findsOneWidget);
 
     await tester.tap(find.text('Cola'));

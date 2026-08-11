@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/kitchen_printing.dart';
 import '../data/local/database.dart';
 import '../data/mix_match_engine.dart';
 import '../data/order_repository.dart';
@@ -51,7 +52,10 @@ class CategoryMedia {
 /// did, and the till never depends on this having synced to be able to sell.
 final categoryMediaProvider = StreamProvider<Map<String, CategoryMedia>>((ref) {
   final db = ref.watch(databaseProvider);
-  return db.select(db.departments).watch().map(
+  return db
+      .select(db.departments)
+      .watch()
+      .map(
         (rows) => {
           for (final d in rows)
             d.name: CategoryMedia(
@@ -105,8 +109,9 @@ class SelectedLines extends Notifier<LineSelection> {
   void clear() => state = (orderId: null, ids: const {});
 }
 
-final selectedLinesProvider =
-    NotifierProvider<SelectedLines, LineSelection>(SelectedLines.new);
+final selectedLinesProvider = NotifierProvider<SelectedLines, LineSelection>(
+  SelectedLines.new,
+);
 
 /// The mix & match deals firing on this bill. Recomputed whenever the lines
 /// change, so the saving appears the moment the qualifying item is rung up.
@@ -160,7 +165,8 @@ class SalePage extends ConsumerWidget {
         (categories.isNotEmpty ? categories.first : null);
 
     final categoryMedia =
-        ref.watch(categoryMediaProvider).value ?? const <String, CategoryMedia>{};
+        ref.watch(categoryMediaProvider).value ??
+        const <String, CategoryMedia>{};
 
     // Honour the button layout set in the back office: positioned products come
     // first, in the manager's order; anything unassigned follows alphabetically
@@ -194,272 +200,302 @@ class SalePage extends ConsumerWidget {
             final selectedLines = selection.orderId != orderId
                 ? const <String>{}
                 : selection.ids
-                    .where((id) => lines.any((l) => l.id == id))
-                    .toSet();
+                      .where((id) => lines.any((l) => l.id == id))
+                      .toSet();
 
             final grid = _ProductGrid(
               products: visible,
-              color: categoryMedia[selected]?.colour ??
+              category: selected,
+              color:
+                  categoryMedia[selected]?.colour ??
                   Pos.categoryColor(selected ?? ''),
+              // Set once per venue in the back office rather than per till: a
+              // clerk moving between two terminals in the same shop must not
+              // find the buttons reading differently on each.
+              showPrices: ref.watch(tillSettingsProvider).buttonsShowPrices,
               // Attributed to whoever is signed on. Falls back to the terminal's
               // own account so a venue that does not use staff sign-on still
               // records a name against its sales, as it always has.
               onTap: (p) => repo.addLine(
                 orderId,
                 p,
-                addedBy: ref.read(staffSessionProvider).name ??
+                addedBy:
+                    ref.read(staffSessionProvider).name ??
                     ref.read(sessionProvider).name,
               ),
-              promotions:
-                  PricingEngine(promotions: ref.watch(promotionsProvider)),
+              promotions: PricingEngine(
+                promotions: ref.watch(promotionsProvider),
+              ),
             );
 
             void selectCategory(String c) =>
                 ref.read(selectedCategoryProvider.notifier).select(c);
 
-            return Column(
-              children: [
-                // Switch between concurrent bills: every booked table plus this
-                // one, so several parties can be served at once.
-                _OpenOrdersBar(
-                  currentOrderId: orderId,
-                  currentOrder: order,
-                  onSwitch: onSwitchOrder,
-                ),
-                Expanded(
-                  child: context.isPhone
-                      // One thing at a time: categories as a scrolling strip,
-                      // the grid below, and the bill behind a pull-up sheet.
-                      ? Column(
-                          children: [
-                            _CategoryStrip(
-                              categories: categories,
-                              selected: selected,
-                              onSelect: selectCategory,
-                              media: categoryMedia,
-                            ),
-                            Expanded(child: grid),
-                            _BasketBar(
-                              order: order,
-                              lineCount: lines.length,
-                              onTap: () => _showBasketSheet(
-                                context,
-                                ref: ref,
-                                orderId: orderId,
-                                repo: repo,
+            // The Ledger board: one dark ground with the bill, the grid and
+            // the category rail sitting on it as separate panels. The same
+            // surfaces the payment screen is built from, deliberately — the
+            // sale screen and the screen it hands over to should not look like
+            // two different products.
+            return ColoredBox(
+              color: PayPalette.of(context).canvas,
+              child: Column(
+                children: [
+                  // Switch between concurrent bills: every booked table plus this
+                  // one, so several parties can be served at once.
+                  _OpenOrdersBar(
+                    currentOrderId: orderId,
+                    currentOrder: order,
+                    onSwitch: onSwitchOrder,
+                  ),
+                  Expanded(
+                    child: context.isPhone
+                        // One thing at a time: categories as a scrolling strip,
+                        // the grid below, and the bill behind a pull-up sheet.
+                        ? Column(
+                            children: [
+                              _CategoryStrip(
+                                categories: categories,
+                                selected: selected,
+                                onSelect: selectCategory,
+                                media: categoryMedia,
                               ),
-                            ),
-                          ],
-                        )
-                      : Row(
-                          children: [
-                            // The bill as the receipt it will become, so the
-                            // clerk (and the customer leaning over the counter)
-                            // watch it build as items are rung up — and what is
-                            // approved here is exactly what prints.
-                            // Widened from 340px in v1.3.1.0. The check view's
-                            // type is now sized to fit fifteen items on a
-                            // 15-inch panel, and bigger type in the old width
-                            // truncated half the product names — the two changes
-                            // only work together.
-                            SizedBox(
-                              width: 420,
-                              child: Padding(
-                                padding: const EdgeInsets.fromLTRB(10, 10, 4, 10),
-                                child: LiveReceipt(
-                                  // The order's own reductions are fed in, not
-                                  // just the lines. Priced from the lines alone
-                                  // this panel showed the full price while the
-                                  // stored total was already discounted, which
-                                  // is what made the customer discount look
-                                  // like it did nothing.
-                                  totals: PricingEngine(
-                                    promotions: ref.watch(promotionsProvider),
-                                  ).price(
-                                    [
-                                      for (final l in lines)
-                                        PricedLine(
-                                          id: l.id,
-                                          pluid: l.pluId,
-                                          name: l.name,
-                                          quantity: l.quantity,
-                                          unitPriceMinor: l.unitPriceMinor,
-                                          taxPercentage: l.taxPercentage,
-                                          note: l.notes,
-                                          // Carried through so the check can
-                                          // head each run of items with who
-                                          // rang them and when.
-                                          addedBy: l.addedBy,
-                                          addedAt: l.addedAt,
-                                        ),
-                                    ],
-                                    manualDiscountMinor:
-                                        order?.manualDiscountMinor ?? 0,
-                                    customerDiscountMinor: order == null
-                                        ? 0
-                                        : OrderRepository.customerDiscountOn(
-                                            order,
-                                            lines.fold<int>(
-                                              0,
-                                              (s, l) =>
-                                                  s +
-                                                  (l.unitPriceMinor *
-                                                          l.quantity)
-                                                      .round(),
-                                            ),
-                                          ),
-                                  ),
-                                  branding: ref.watch(brandingProvider),
-                                  tableNumber: order?.tableNumber,
-                                  covers: order?.covers,
-                                  customerName: order?.customerName,
-                                  emptyMessage: 'Ring up an item to start',
-                                  selectedLineIds: selectedLines,
-                                  // Tap picks the line out for Void; tap it
-                                  // again and it goes back. Symmetric, because
-                                  // tapping a second time is the only thing
-                                  // anyone tries when they hit the wrong row.
-                                  onTapLine: (l) => ref
-                                      .read(selectedLinesProvider.notifier)
-                                      .toggle(orderId, l.id),
-                                  // The item box, opened from the pencil that
-                                  // appears on a selected row. A visible
-                                  // control rather than a long press: a hidden
-                                  // gesture has to be taught to every new
-                                  // member of staff, and costs half a second
-                                  // every time it is used.
-                                  onEditLine: (l) {
-                                    final line = lines.firstWhere(
-                                      (x) => x.id == l.id,
-                                      orElse: () => lines.first,
-                                    );
-                                    showLineEditor(
-                                      context,
-                                      ref,
-                                      orderId: orderId,
-                                      line: line,
-                                    );
-                                  },
-                                  // Exactly one line picked: offer its quantity
-                                  // right above Subtotal. With several picked
-                                  // there is no single quantity to show, so the
-                                  // strip stays out of the way.
-                                  aboveTotals: selectedLines.length == 1
-                                      ? _QuantityStepper(
-                                          key: ValueKey(selectedLines.first),
-                                          line: lines.firstWhere(
-                                            (l) => l.id == selectedLines.first,
-                                          ),
-                                          onChanged: (q) => repo
-                                              .setLineQuantity(
-                                                orderId,
-                                                selectedLines.first,
-                                                q.toDouble(),
-                                              ),
-                                        )
-                                      : null,
+                              Expanded(child: grid),
+                              _BasketBar(
+                                order: order,
+                                lineCount: lines.length,
+                                onTap: () => _showBasketSheet(
+                                  context,
+                                  ref: ref,
+                                  orderId: orderId,
+                                  repo: repo,
                                 ),
                               ),
-                            ),
-                            Expanded(child: grid),
-                            _CategoryRail(
-                              categories: categories,
-                              selected: selected,
-                              onSelect: selectCategory,
-                              media: categoryMedia,
-                            ),
-                          ],
-                        ),
-                ),
-                // What Void is about to take off, and the way back out of a
-                // selection. Without this there is no visible way to deselect,
-                // because tapping a picked line opens the editor.
-                if (selectedLines.isNotEmpty)
-                  _SelectionBar(
-                    count: selectedLines.length,
-                    onClear: () =>
-                        ref.read(selectedLinesProvider.notifier).clear(),
+                            ],
+                          )
+                        : Row(
+                            children: [
+                              // The bill as the receipt it will become, so the
+                              // clerk (and the customer leaning over the counter)
+                              // watch it build as items are rung up — and what is
+                              // approved here is exactly what prints.
+                              // Widened from 340px in v1.3.1.0. The check view's
+                              // type is now sized to fit fifteen items on a
+                              // 15-inch panel, and bigger type in the old width
+                              // truncated half the product names — the two changes
+                              // only work together.
+                              SizedBox(
+                                width: 420,
+                                child: Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    10,
+                                    10,
+                                    4,
+                                    10,
+                                  ),
+                                  child: LiveReceipt(
+                                    // The order's own reductions are fed in, not
+                                    // just the lines. Priced from the lines alone
+                                    // this panel showed the full price while the
+                                    // stored total was already discounted, which
+                                    // is what made the customer discount look
+                                    // like it did nothing.
+                                    totals:
+                                        PricingEngine(
+                                          promotions: ref.watch(
+                                            promotionsProvider,
+                                          ),
+                                        ).price(
+                                          [
+                                            for (final l in lines)
+                                              PricedLine(
+                                                id: l.id,
+                                                pluid: l.pluId,
+                                                name: l.name,
+                                                quantity: l.quantity,
+                                                unitPriceMinor:
+                                                    l.unitPriceMinor,
+                                                taxPercentage: l.taxPercentage,
+                                                note: l.notes,
+                                                // Carried through so the check can
+                                                // head each run of items with who
+                                                // rang them and when.
+                                                addedBy: l.addedBy,
+                                                addedAt: l.addedAt,
+                                              ),
+                                          ],
+                                          manualDiscountMinor:
+                                              order?.manualDiscountMinor ?? 0,
+                                          customerDiscountMinor: order == null
+                                              ? 0
+                                              : OrderRepository.customerDiscountOn(
+                                                  order,
+                                                  lines.fold<int>(
+                                                    0,
+                                                    (s, l) =>
+                                                        s +
+                                                        (l.unitPriceMinor *
+                                                                l.quantity)
+                                                            .round(),
+                                                  ),
+                                                ),
+                                        ),
+                                    branding: ref.watch(brandingProvider),
+                                    tableNumber: order?.tableNumber,
+                                    covers: order?.covers,
+                                    customerName: order?.customerName,
+                                    emptyMessage: 'Ring up an item to start',
+                                    selectedLineIds: selectedLines,
+                                    // Tap picks the line out for Void; tap it
+                                    // again and it goes back. Symmetric, because
+                                    // tapping a second time is the only thing
+                                    // anyone tries when they hit the wrong row.
+                                    onTapLine: (l) => ref
+                                        .read(selectedLinesProvider.notifier)
+                                        .toggle(orderId, l.id),
+                                    // The item box, opened from the pencil that
+                                    // appears on a selected row. A visible
+                                    // control rather than a long press: a hidden
+                                    // gesture has to be taught to every new
+                                    // member of staff, and costs half a second
+                                    // every time it is used.
+                                    onEditLine: (l) {
+                                      final line = lines.firstWhere(
+                                        (x) => x.id == l.id,
+                                        orElse: () => lines.first,
+                                      );
+                                      showLineEditor(
+                                        context,
+                                        ref,
+                                        orderId: orderId,
+                                        line: line,
+                                      );
+                                    },
+                                    // Exactly one line picked: offer its quantity
+                                    // right above Subtotal. With several picked
+                                    // there is no single quantity to show, so the
+                                    // strip stays out of the way.
+                                    aboveTotals: selectedLines.length == 1
+                                        ? _QuantityStepper(
+                                            key: ValueKey(selectedLines.first),
+                                            line: lines.firstWhere(
+                                              (l) =>
+                                                  l.id == selectedLines.first,
+                                            ),
+                                            onChanged: (q) =>
+                                                repo.setLineQuantity(
+                                                  orderId,
+                                                  selectedLines.first,
+                                                  q.toDouble(),
+                                                ),
+                                          )
+                                        : null,
+                                  ),
+                                ),
+                              ),
+                              Expanded(child: grid),
+                              _CategoryRail(
+                                categories: categories,
+                                selected: selected,
+                                onSelect: selectCategory,
+                                media: categoryMedia,
+                              ),
+                            ],
+                          ),
                   ),
-                PosActionBar(
-                  primaryLabel: 'PAY',
-                  primaryIcon: Icons.credit_card,
-                  onPrimary: total == 0
-                      ? null
-                      : () => Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => PaymentPage(
-                              orderId: orderId,
-                              onSettled: onNewOrder,
+                  // What Void is about to take off, and the way back out of a
+                  // selection. Without this there is no visible way to deselect,
+                  // because tapping a picked line opens the editor.
+                  if (selectedLines.isNotEmpty)
+                    _SelectionBar(
+                      count: selectedLines.length,
+                      onClear: () =>
+                          ref.read(selectedLinesProvider.notifier).clear(),
+                    ),
+                  PosActionBar(
+                    primaryLabel: 'Pay',
+                    // What the clerk is about to charge, on the key they press
+                    // to charge it.
+                    primaryValue: total == 0 ? null : money(total),
+                    primaryIcon: Icons.credit_card,
+                    onPrimary: total == 0
+                        ? null
+                        : () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => PaymentPage(
+                                orderId: orderId,
+                                onSettled: onNewOrder,
+                              ),
                             ),
                           ),
+                    actions: [
+                      // Void takes off the picked lines, not the sale. It and
+                      // Cancel both stay on the bar even on a phone: they are the
+                      // two destructive keys a clerk needs at a moment's notice,
+                      // and burying either in "More" is how a mis-rung item ends
+                      // up being fixed by cancelling the whole check.
+                      PosAction(
+                        label: 'Void',
+                        icon: Icons.backspace_outlined,
+                        color: Pos.red,
+                        onTap: () => _voidSelected(
+                          context,
+                          ref,
+                          lines: lines,
+                          selected: selectedLines,
                         ),
-                  actions: [
-                    // Void takes off the picked lines, not the sale. It and
-                    // Cancel both stay on the bar even on a phone: they are the
-                    // two destructive keys a clerk needs at a moment's notice,
-                    // and burying either in "More" is how a mis-rung item ends
-                    // up being fixed by cancelling the whole check.
-                    PosAction(
-                      label: 'Void',
-                      icon: Icons.backspace_outlined,
-                      color: Pos.red,
-                      onTap: () => _voidSelected(
-                        context,
-                        ref,
-                        lines: lines,
-                        selected: selectedLines,
                       ),
-                    ),
-                    PosAction(
-                      label: 'Cancel',
-                      icon: Icons.block,
-                      color: Pos.red,
-                      onTap: () => _cancelCheck(context, ref, lines: lines),
-                    ),
-                    PosAction(
-                      label: 'Save Table',
-                      icon: Icons.table_restaurant,
-                      onTap: () => _promptTable(context, ref),
-                    ),
-                    PosAction(
-                      label: 'Covers',
-                      icon: Icons.people,
-                      onTap: () => _promptCovers(context, ref),
-                    ),
-                    PosAction(
-                      label: 'Customer',
-                      icon: Icons.person,
-                      onTap: () => _promptCustomer(context, ref),
-                    ),
-                    PosAction(
-                      label: 'Notes',
-                      icon: Icons.edit_note,
-                      onTap: () => _noteSelected(
-                        context,
-                        ref,
-                        lines: lines,
-                        selected: selectedLines,
+                      PosAction(
+                        label: 'Cancel',
+                        icon: Icons.block,
+                        color: Pos.red,
+                        onTap: () => _cancelCheck(context, ref, lines: lines),
                       ),
-                    ),
-                    PosAction(
-                      label: 'No Sale',
-                      icon: Icons.point_of_sale,
-                      onTap: () => TillActions.openCashDrawer(context, ref),
-                    ),
-                    PosAction(
-                      label: 'Print',
-                      icon: Icons.print,
-                      onTap: () =>
-                          TillActions.printCurrentBill(context, ref, orderId),
-                    ),
-                    PosAction(
-                      label: 'Last Bill',
-                      icon: Icons.receipt_long,
-                      onTap: () => TillActions.reprintLastReceipt(context, ref),
-                    ),
-                  ],
-                ),
-              ],
+                      PosAction(
+                        label: 'Save Table',
+                        icon: Icons.table_restaurant,
+                        onTap: () => _promptTable(context, ref),
+                      ),
+                      PosAction(
+                        label: 'Covers',
+                        icon: Icons.people,
+                        onTap: () => _promptCovers(context, ref),
+                      ),
+                      PosAction(
+                        label: 'Customer',
+                        icon: Icons.person,
+                        onTap: () => _promptCustomer(context, ref),
+                      ),
+                      PosAction(
+                        label: 'Notes',
+                        icon: Icons.edit_note,
+                        onTap: () => _noteSelected(
+                          context,
+                          ref,
+                          lines: lines,
+                          selected: selectedLines,
+                        ),
+                      ),
+                      PosAction(
+                        label: 'No Sale',
+                        icon: Icons.point_of_sale,
+                        onTap: () => TillActions.openCashDrawer(context, ref),
+                      ),
+                      PosAction(
+                        label: 'Print',
+                        icon: Icons.print,
+                        onTap: () =>
+                            TillActions.printCurrentBill(context, ref, orderId),
+                      ),
+                      PosAction(
+                        label: 'Last Bill',
+                        icon: Icons.receipt_long,
+                        onTap: () =>
+                            TillActions.reprintLastReceipt(context, ref),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             );
           },
         );
@@ -473,7 +509,8 @@ class SalePage extends ConsumerWidget {
     if (number == null) return;
 
     final tables = ref.read(tableRepositoryProvider);
-    final lines = await ref.read(orderRepositoryProvider)
+    final lines = await ref
+        .read(orderRepositoryProvider)
         .watchLines(orderId)
         .first;
 
@@ -500,6 +537,18 @@ class SalePage extends ConsumerWidget {
       // till needs a fresh order afterwards.
       await tables.merge(orderId, existing.id);
       await tables.park(existing.id, number);
+
+      // Fired against the surviving bill, and only its unsent lines go — so
+      // the round just added prints and the courses already sent do not.
+      if (context.mounted) {
+        await TillActions.fireKitchen(
+          context,
+          ref,
+          orderId: existing.id,
+          reason: KitchenFire.table,
+        );
+      }
+
       onNewOrder();
       if (!context.mounted) return;
       PosMessenger.success(
@@ -523,6 +572,19 @@ class SalePage extends ConsumerWidget {
     // clerk hops back to any of them from the open-orders bar or the tables
     // plan.
     await tables.park(orderId, number);
+
+    // The kitchen gets the order the moment the table is saved, which is the
+    // point of saving it. Parked first so a printer that hangs cannot cost the
+    // clerk the table.
+    if (context.mounted) {
+      await TillActions.fireKitchen(
+        context,
+        ref,
+        orderId: orderId,
+        reason: KitchenFire.table,
+      );
+    }
+
     onNewOrder();
     if (!context.mounted) return;
     PosMessenger.success(context, 'Saved to table $number.');
@@ -660,7 +722,9 @@ class SalePage extends ConsumerWidget {
 
     final note = await _textDialog(
       context,
-      target.length == 1 ? 'Note on ${target.first.name}' : 'Note on ${target.length} items',
+      target.length == 1
+          ? 'Note on ${target.first.name}'
+          : 'Note on ${target.length} items',
       initial: existing ?? '',
       hint: 'e.g. no ice, well done',
     );
@@ -678,11 +742,11 @@ class SalePage extends ConsumerWidget {
       context,
       note.isEmpty
           ? (target.length == 1
-              ? 'Note cleared on ${target.first.name}'
-              : 'Note cleared on ${target.length} items')
+                ? 'Note cleared on ${target.first.name}'
+                : 'Note cleared on ${target.length} items')
           : (target.length == 1
-              ? 'Note added to ${target.first.name}'
-              : 'Note added to ${target.length} items'),
+                ? 'Note added to ${target.first.name}'
+                : 'Note added to ${target.length} items'),
     );
   }
 }
@@ -743,53 +807,127 @@ Future<String?> _textDialog(
   );
 }
 
+/// The product grid, headed by the category the clerk is in.
+///
+/// The heading is not decoration: with the categories on a rail down the right
+/// and the bill down the left, the grid is the one panel with nothing naming
+/// it, and "which category am I looking at?" was being answered by reading the
+/// rail back the other way. The count beside it answers the next question —
+/// whether what is on screen is all of it.
 class _ProductGrid extends StatelessWidget {
   const _ProductGrid({
     required this.products,
+    required this.category,
     required this.color,
     required this.onTap,
     required this.promotions,
+    required this.showPrices,
   });
 
   final List<Product> products;
+
+  /// The department these belong to, for the heading. Null before the
+  /// catalogue has synced, when there is no category to be in.
+  final String? category;
+
   final Color color;
   final void Function(Product) onTap;
 
   /// Prices the offers so a discounted product can be flagged on its button.
   final PricingEngine promotions;
 
+  /// Whether buttons carry their price. Set per venue in the back office.
+  final bool showPrices;
+
   @override
   Widget build(BuildContext context) {
-    if (products.isEmpty) {
-      return const Center(child: Text('No products in this category.'));
-    }
-
-    // The grid adapts to the width it is given rather than to the platform:
-    // a Windows till and an Android tablet at the same size get the same
-    // layout. Tiles are sized by a max extent so they stay a comfortable touch
-    // target on a large desk-mounted screen instead of stretching into a few
-    // enormous buttons.
+    final pal = PayPalette.of(context);
     final phone = context.isPhone;
 
-    // Media tiles are near-square to give the picture room; a plain text menu
-    // is shallower, but still tall enough for a name above a price.
-    final ratio = _hasMedia ? 1.0 : 1.5;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (category != null)
+          Padding(
+            padding: EdgeInsets.fromLTRB(phone ? 12 : 18, 14, 12, 10),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                // The name gets the room and the count gives way. A long
+                // category on a narrow grid — which is most of them once the
+                // bill and the rail have taken their share — otherwise pushes
+                // the count off the edge and overflows the row.
+                Flexible(
+                  child: Text(
+                    category!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: pal.ink,
+                      fontSize: phone ? 18 : 21,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.2,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Flexible(
+                  child: Text(
+                    products.length == 1
+                        ? '1 product'
+                        : '${products.length} products',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: pal.inkMuted, fontSize: 13),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        Expanded(child: _tiles(context, phone)),
+      ],
+    );
+  }
 
+  Widget _tiles(BuildContext context, bool phone) {
+    if (products.isEmpty) {
+      return Center(
+        child: Text(
+          'No products in this category.',
+          style: TextStyle(color: PayPalette.of(context).inkMuted),
+        ),
+      );
+    }
+
+    // The grid adapts to the width it is given rather than to the platform: a
+    // Windows till and an Android tablet at the same size get the same layout.
+    // Tiles are sized by a max extent so they stay a comfortable touch target
+    // on a large desk-mounted screen instead of stretching into a few enormous
+    // buttons.
+    //
+    // One ratio for the whole grid, whether or not anything in it has a
+    // picture: tiles that changed shape depending on the category made the
+    // grid jump every time the rail was tapped, and a clerk builds muscle
+    // memory on where a button *is*.
     return GridView.builder(
-      padding: const EdgeInsets.all(12),
+      padding: EdgeInsets.fromLTRB(
+        phone ? 12 : 18,
+        0,
+        phone ? 12 : 18,
+        phone ? 12 : 16,
+      ),
       gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: phone ? 220 : 240,
+        maxCrossAxisExtent: phone ? 220 : 260,
         mainAxisSpacing: 10,
         crossAxisSpacing: 10,
-        childAspectRatio: ratio,
+        childAspectRatio: 1.12,
       ),
       itemCount: products.length,
       itemBuilder: (context, i) => _ProductTile(
         product: products[i],
-        color: Pos.parseColor(products[i].buttonColor) ?? color,
-        // The price is part of the button on every platform — a till button
-        // without a price makes the clerk guess.
-        showPrice: true,
+        accent: Pos.parseColor(products[i].buttonColor) ?? color,
+        showPrice: showPrices,
         // An offer running on this product right now, so the clerk can see it
         // is discounted before ringing it up rather than after.
         promotion: promotions.badgeFor(
@@ -801,246 +939,196 @@ class _ProductGrid extends StatelessWidget {
       ),
     );
   }
-
-  /// When any product carries an image or emoji, the whole grid switches to
-  /// taller media tiles so the visuals have room — a menu of pictures should
-  /// not sit in wide, shallow buttons.
-  bool get _hasMedia => products.any(
-    (p) => (p.imageUrl?.isNotEmpty ?? false) || (p.emoji?.isNotEmpty ?? false),
-  );
 }
 
+/// One product button.
+///
+/// Laid out the same way whatever the product carries: the name reads from the
+/// top-left, the price sits bottom-left, and anything visual — an uploaded
+/// picture or an emoji — takes the space between them. That constant frame is
+/// the point. A grid where a photographed item and a plain one are different
+/// shapes reads as two different menus, and the clerk has to look at each tile
+/// rather than at the position they already know.
+///
+/// The back office's button colour rides as a bar down the left edge instead
+/// of filling the tile. Colour-coding a menu is genuinely useful and venues
+/// use it; a wall of saturated fills is not what the counter should look like,
+/// and it makes the offer flash — the one thing that should shout — compete
+/// with sixteen things that should not.
 class _ProductTile extends StatelessWidget {
   const _ProductTile({
     required this.product,
-    required this.color,
+    required this.accent,
     required this.showPrice,
     required this.onTap,
     this.promotion,
   });
 
   final Product product;
-  final Color color;
+
+  /// This product's colour from the back office, or its department's.
+  final Color accent;
+
   final bool showPrice;
   final VoidCallback onTap;
 
   /// The offer covering this product now, if any.
   final Promotion? promotion;
 
-  /// Layers the offer flash over a finished tile, when one applies.
-  Widget _withBadge(Widget tile) {
-    final badge = _badge;
-    if (badge == null) return tile;
-    return Stack(
-      // The badge deliberately sits inside the tile bounds so a grid with
-      // tight spacing does not clip it.
-      children: [Positioned.fill(child: tile), badge],
-    );
-  }
-
-  /// The offer flash, pinned to the tile's top-right corner.
-  Widget? get _badge {
-    final promo = promotion;
-    if (promo == null || (promo.badgeText?.isEmpty ?? true)) return null;
-    final badgeColour =
-        Pos.parseColor(promo.badgeColour) ?? const Color(0xFFD81B60);
-
-    return Positioned(
-      top: 6,
-      right: 6,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-        decoration: BoxDecoration(
-          color: badgeColour,
-          borderRadius: BorderRadius.circular(5),
-          boxShadow: const [
-            BoxShadow(color: Color(0x33000000), blurRadius: 4, offset: Offset(0, 1)),
-          ],
-        ),
-        child: Text(
-          promo.badgeText!,
-          // The badge colour is set per-promotion in the back office, so a
-          // yellow "HALF PRICE" flash would otherwise be white-on-yellow.
-          style: TextStyle(
-            color: Pos.inkOn(badgeColour),
-            fontSize: 10,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 0.3,
-          ),
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
+    final pal = PayPalette.of(context);
     final hasImage = product.imageUrl?.isNotEmpty ?? false;
     final hasEmoji = product.emoji?.isNotEmpty ?? false;
 
-    // A product with a picture: the picture fills the tile and the name and
-    // price sit in a band along the bottom, over a scrim so they stay legible
-    // whatever the image is. The clerk recognises the item by sight but never
-    // has to guess what it costs.
-    if (hasImage) {
-      return _withBadge(_PressableTile(
-        onTap: onTap,
-        child: Material(
-          color: color,
-          borderRadius: BorderRadius.circular(6),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: onTap,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                Image.network(
-                  product.imageUrl!,
-                  fit: BoxFit.cover,
-                  // A broken image URL falls back to the name on the coloured
-                  // tile, so the button is still usable rather than blank.
-                  errorBuilder: (_, _, _) => _LabelTile(
-                    name: product.name,
-                    background: color,
-                    priceMinor: showPrice ? product.priceMinor : null,
-                  ),
-                ),
-                // Scrim: only over the lower part, so it darkens the text band
-                // without dulling the whole picture.
-                const Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [Colors.transparent, Colors.black87],
-                      ),
-                    ),
-                    child: SizedBox(height: 72, width: double.infinity),
-                  ),
-                ),
-                Positioned(
-                  left: 8,
-                  right: 8,
-                  bottom: 8,
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          product.name,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.w600,
-                            height: 1.2,
-                            shadows: [
-                              Shadow(blurRadius: 4, color: Colors.black87),
-                            ],
-                          ),
-                        ),
-                      ),
-                      if (showPrice) ...[
-                        const SizedBox(width: 6),
-                        // The price rides in a solid pill rather than as bare
-                        // text: over a photograph, plain white numerals lose
-                        // contrast against whatever happens to be behind them.
-                        DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: color,
-                            borderRadius: BorderRadius.circular(20),
-                            boxShadow: const [
-                              BoxShadow(
-                                color: Colors.black45,
-                                blurRadius: 6,
-                                offset: Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 4,
-                            ),
-                            child: Text(
-                              money(product.priceMinor),
-                              // The pill is filled with the tile colour, so the
-                              // numerals follow that colour rather than being
-                              // a fixed white that disappears on a pale one.
-                              style: TextStyle(
-                                color: Pos.inkOn(color),
-                                fontSize: 15,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ));
-    }
-
-    return _withBadge(_PressableTile(
+    return _PressableTile(
       onTap: onTap,
       child: Material(
-        color: color,
-        borderRadius: BorderRadius.circular(6),
+        color: pal.panel,
+        borderRadius: BorderRadius.circular(10),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(8),
-            child: Column(
-              // Name and price sit centred in the tile — the whole button is the
-              // target, so the label reads best in the middle of it. Picture
-              // tiles are the exception: there the text moves to a band at the
-              // foot so it does not cover the image.
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                if (hasEmoji) ...[
-                  Text(product.emoji!, style: const TextStyle(fontSize: 32)),
-                  const SizedBox(height: 4),
-                ],
-                Text(
-                  product.name,
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Pos.inkOn(color),
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                if (showPrice)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Text(
-                      money(product.priceMinor),
-                      style: TextStyle(
-                        color: Pos.inkOn(color),
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                      ),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              border: Border(
+                left: BorderSide(color: accent, width: 3),
+                top: BorderSide(color: pal.panelLine),
+                right: BorderSide(color: pal.panelLine),
+                bottom: BorderSide(color: pal.panelLine),
+              ),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(11, 10, 10, 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    product.name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: pal.ink,
+                      fontSize: 15,
+                      height: 1.2,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
-              ],
+                  // Takes whatever the name and price leave, and gives it to
+                  // the picture. An item with neither picture nor emoji simply
+                  // has air here, which is what holds the price on the same
+                  // line across the row.
+                  Expanded(
+                    child: hasImage
+                        ? _image(pal)
+                        : hasEmoji
+                        ? Center(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                product.emoji!,
+                                style: const TextStyle(fontSize: 42),
+                              ),
+                            ),
+                          )
+                        : const SizedBox.expand(),
+                  ),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      if (showPrice)
+                        Expanded(
+                          child: Text(
+                            money(product.priceMinor),
+                            maxLines: 1,
+                            style: TextStyle(
+                              color: pal.ink,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: -0.3,
+                            ),
+                          ),
+                        )
+                      else
+                        const Spacer(),
+                      if (_badgeText case final text?) ...[
+                        const SizedBox(width: 6),
+                        _OfferChip(text: text, colour: _badgeColour),
+                      ],
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),
       ),
-    ));
+    );
+  }
+
+  /// The uploaded picture, inset so the tile's own edge still reads as the
+  /// button and the accent bar is not covered.
+  Widget _image(PayPalette pal) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 8),
+    child: ClipRRect(
+      borderRadius: BorderRadius.circular(7),
+      child: Image.network(
+        product.imageUrl!,
+        fit: BoxFit.cover,
+        width: double.infinity,
+        // A picture that will not load leaves the tile exactly as a
+        // product with no picture: name, space, price. The button stays
+        // usable rather than showing a broken frame.
+        errorBuilder: (_, _, _) => const SizedBox.expand(),
+        loadingBuilder: (context, child, progress) => progress == null
+            ? child
+            : DecoratedBox(
+                decoration: BoxDecoration(
+                  color: pal.rowAlt,
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                child: const SizedBox.expand(),
+              ),
+      ),
+    ),
+  );
+
+  String? get _badgeText {
+    final text = promotion?.badgeText;
+    return text == null || text.isEmpty ? null : text;
+  }
+
+  Color get _badgeColour =>
+      Pos.parseColor(promotion?.badgeColour) ?? const Color(0xFFD81B60);
+}
+
+/// The offer flash on a product button.
+class _OfferChip extends StatelessWidget {
+  const _OfferChip({required this.text, required this.colour});
+
+  final String text;
+  final Color colour;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: colour,
+        borderRadius: BorderRadius.circular(5),
+      ),
+      child: Text(
+        text,
+        // The badge colour is set per-promotion in the back office, so a
+        // yellow "HALF PRICE" flash would otherwise be white-on-yellow.
+        style: TextStyle(
+          color: Pos.inkOn(colour),
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0.3,
+        ),
+      ),
+    );
   }
 }
 
@@ -1080,56 +1168,6 @@ class _PressableTileState extends State<_PressableTile> {
         // The tap itself is handled by the InkWell inside, which also draws the
         // ripple; this layer only tracks the press for the scale.
         child: widget.child,
-      ),
-    );
-  }
-}
-
-/// The label+price shown on a coloured tile, used as the fallback when a
-/// product's image fails to load.
-class _LabelTile extends StatelessWidget {
-  const _LabelTile({required this.name, required this.background, this.priceMinor});
-
-  final String name;
-
-  /// The tile behind the text. The ink is derived from it rather than assumed:
-  /// this was a fixed white, which bypassed [Pos.inkOn] entirely and left the
-  /// label at 2-3:1 on the cyan, blue, teal and green tiles — and worse on any
-  /// pale colour the back office picked.
-  final Color background;
-
-  final int? priceMinor;
-
-  @override
-  Widget build(BuildContext context) {
-    final ink = Pos.inkOn(background);
-
-    return Padding(
-      padding: const EdgeInsets.all(8),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            name,
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: ink,
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          if (priceMinor != null)
-            Text(
-              money(priceMinor!),
-              style: TextStyle(
-                color: ink,
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-        ],
       ),
     );
   }
@@ -1403,8 +1441,9 @@ class _QuantityStepper extends StatefulWidget {
 }
 
 class _QuantityStepperState extends State<_QuantityStepper> {
-  late final TextEditingController _controller =
-      TextEditingController(text: _quantity.toString());
+  late final TextEditingController _controller = TextEditingController(
+    text: _quantity.toString(),
+  );
   final _focus = FocusNode();
 
   int get _quantity => widget.line.quantity.round().clamp(1, 999);
@@ -1491,10 +1530,7 @@ class _QuantityStepperState extends State<_QuantityStepper> {
               textAlign: TextAlign.center,
               keyboardType: TextInputType.number,
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
-              ),
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
               decoration: const InputDecoration(
                 isDense: true,
                 contentPadding: EdgeInsets.symmetric(vertical: 8),
@@ -1575,10 +1611,7 @@ class _SelectionBar extends StatelessWidget {
             ),
             Text(
               'Void removes these',
-              style: TextStyle(
-                fontSize: 12,
-                color: scheme.onSurfaceVariant,
-              ),
+              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
             ),
             TextButton(onPressed: onClear, child: const Text('Clear')),
             const SizedBox(width: 6),
@@ -1646,19 +1679,24 @@ Future<void> _showBasketSheet(
                             // never repaint when the clerk taps a line.
                             return Consumer(
                               builder: (context, ref, _) {
-                                final selection =
-                                    ref.watch(selectedLinesProvider);
-                                final picked = selection.orderId == orderId &&
+                                final selection = ref.watch(
+                                  selectedLinesProvider,
+                                );
+                                final picked =
+                                    selection.orderId == orderId &&
                                     selection.ids.contains(line.id);
                                 final scheme = Theme.of(context).colorScheme;
 
                                 return ListTile(
                                   selected: picked,
-                                  selectedTileColor:
-                                      scheme.primary.withValues(alpha: 0.18),
+                                  selectedTileColor: scheme.primary.withValues(
+                                    alpha: 0.18,
+                                  ),
                                   leading: picked
-                                      ? Icon(Icons.check_circle,
-                                          color: scheme.primary)
+                                      ? Icon(
+                                          Icons.check_circle,
+                                          color: scheme.primary,
+                                        )
                                       : null,
                                   title: Text(line.name),
                                   subtitle: Text(
@@ -1750,18 +1788,11 @@ class _CategoryRail extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Proportional, for the same reason as the basket: a fixed width overflows
-    // the row on a smaller tablet. Wider than it was — the nav rail no longer
-    // takes a fixed slice of the screen, and the rows now carry a picture.
-    final width = MediaQuery.sizeOf(context)
-        .width
-        .clamp(600.0, 1600.0) *
-        0.24;
+    // the row on a smaller tablet.
+    final width = MediaQuery.sizeOf(context).width.clamp(600.0, 1600.0) * 0.20;
 
-    return Container(
-      width: width.clamp(150.0, 340.0),
-      decoration: BoxDecoration(
-        border: Border(left: BorderSide(color: Theme.of(context).posLine)),
-      ),
+    return SizedBox(
+      width: width.clamp(150.0, 300.0),
       child: LayoutBuilder(
         builder: (context, constraints) {
           // Share the height out so at least ten rows fit. Rows grow when there
@@ -1771,24 +1802,31 @@ class _CategoryRail extends StatelessWidget {
           final slots = categories.length < _minVisible
               ? _minVisible
               : categories.length;
-          final rowHeight =
-              (constraints.maxHeight / slots).clamp(44.0, 76.0);
+          // The gap between pills comes out of each slot, so the arithmetic
+          // still lands on ten visible rows.
+          final rowHeight = (constraints.maxHeight / slots - 6).clamp(
+            42.0,
+            70.0,
+          );
 
           return ListView.builder(
-            padding: EdgeInsets.zero,
+            padding: const EdgeInsets.fromLTRB(0, 14, 14, 14),
             itemCount: categories.length,
             itemBuilder: (context, i) {
               final category = categories[i];
-              return _CategoryTile(
-                label: category,
-                media: media[category],
-                // The office's colour wins; the till's per-name default is the
-                // fallback for categories it was never set on.
-                colour: media[category]?.colour ??
-                    Pos.categoryColor(category),
-                active: category == selected,
-                height: rowHeight,
-                onTap: () => onSelect(category),
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: _CategoryTile(
+                  label: category,
+                  media: media[category],
+                  // The office's colour wins; the till's per-name default is
+                  // the fallback for categories it was never set on.
+                  colour:
+                      media[category]?.colour ?? Pos.categoryColor(category),
+                  active: category == selected,
+                  height: rowHeight,
+                  onTap: () => onSelect(category),
+                ),
               );
             },
           );
@@ -1798,8 +1836,17 @@ class _CategoryRail extends StatelessWidget {
   }
 }
 
-/// One row on the category rail: a picture (or emoji) if the back office set
-/// one, the name, and the category's colour when it is the active one.
+/// One key on the category rail.
+///
+/// The selected one is the brand lime, and the rest are quiet panels. That is
+/// a change from filling every key with its own category colour, which made
+/// the rail the loudest thing on a screen whose subject is the bill and the
+/// grid — and left the clerk no single cue for *which one they are in*, since
+/// everything was already shouting.
+///
+/// The category's own colour is not lost: it rides as a bar down the left of
+/// the unselected keys, so a venue that has colour-coded its menu still reads
+/// the rail by colour at a glance.
 class _CategoryTile extends StatelessWidget {
   const _CategoryTile({
     required this.label,
@@ -1819,24 +1866,32 @@ class _CategoryTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    // Category colours are set in the back office and can be anything, so the
-    // label picks black or white off the actual luminance rather than assuming.
-    final ink = active ? Pos.inkOn(colour) : theme.colorScheme.onSurface;
+    final pal = PayPalette.of(context);
+    final ink = active ? Pos.onBrand : pal.ink;
     // The thumbnail scales with the row so it never crowds out the name when
     // the rail is packed with categories.
-    final thumb = (height - 14).clamp(26.0, 46.0);
+    final thumb = (height - 16).clamp(24.0, 42.0);
 
     return Material(
-      // The active category takes its own colour, matching the grid, so the
-      // two panels are visibly linked.
-      color: active ? colour : Colors.transparent,
+      color: active ? Pos.brand : pal.panel,
+      borderRadius: BorderRadius.circular(9),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
         child: Container(
           height: height,
           alignment: Alignment.centerLeft,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
+          padding: EdgeInsets.only(left: active ? 14 : 11, right: 12),
+          decoration: BoxDecoration(
+            border: active
+                ? null
+                : Border(
+                    left: BorderSide(color: colour, width: 3),
+                    top: BorderSide(color: pal.panelLine),
+                    right: BorderSide(color: pal.panelLine),
+                    bottom: BorderSide(color: pal.panelLine),
+                  ),
+          ),
           child: Row(
             children: [
               if (media != null && media!.hasVisual) ...[
@@ -1849,10 +1904,11 @@ class _CategoryTile extends StatelessWidget {
               // is what makes a rail hard to hit at a glance.
               //
               // The base size is taken from the row height, then FittedBox
-              // shrinks it if a long name will not fit. The inner ConstrainedBox
-              // is what makes wrapping possible: FittedBox gives its child
-              // unbounded width, so without it `maxLines: 2` could never wrap
-              // and every long name would be scaled down to a single thin line.
+              // shrinks it if a long name will not fit. The inner
+              // ConstrainedBox is what makes wrapping possible: FittedBox
+              // gives its child unbounded width, so without it `maxLines: 2`
+              // could never wrap and every long name would be scaled down to a
+              // single thin line.
               Expanded(
                 child: LayoutBuilder(
                   builder: (context, box) => FittedBox(
@@ -1865,10 +1921,11 @@ class _CategoryTile extends StatelessWidget {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontSize: (height * 0.42).clamp(16.0, 28.0),
+                          fontSize: (height * 0.38).clamp(15.0, 24.0),
                           height: 1.1,
-                          fontWeight:
-                              active ? FontWeight.w700 : FontWeight.w600,
+                          fontWeight: active
+                              ? FontWeight.w700
+                              : FontWeight.w600,
                           color: ink,
                         ),
                       ),

@@ -163,6 +163,8 @@ class ReceiptBuilder {
     required Order order,
     required List<OrderLine> lines,
     required String station,
+    String? headline,
+    String? staffName,
   }) {
     final bytes = <int>[];
 
@@ -177,6 +179,19 @@ class ReceiptBuilder {
         ),
       ),
     );
+
+    // Why this ticket exists — a sale that has been paid for, or a table that
+    // has just been saved. The kitchen works these two differently, and a
+    // ticket that does not say which is a ticket somebody has to come and ask
+    // about.
+    if (headline != null && headline.isNotEmpty) {
+      bytes.addAll(
+        _generator.text(
+          headline.toUpperCase(),
+          styles: const PosStyles(align: PosAlign.center, bold: true),
+        ),
+      );
+    }
 
     if (order.tableNumber != null) {
       bytes.addAll(
@@ -217,6 +232,13 @@ class ReceiptBuilder {
     if (order.notes != null && order.notes!.isNotEmpty) {
       bytes.addAll(_generator.hr());
       bytes.addAll(_generator.text('NOTE: ${order.notes}'));
+    }
+
+    // Who rang it, so the kitchen has somebody to ask about a query rather
+    // than having to work out which till the ticket came off.
+    if (staffName != null && staffName.isNotEmpty) {
+      bytes.addAll(_generator.hr());
+      bytes.addAll(_generator.text(staffName));
     }
 
     bytes.addAll(_generator.feed(2));

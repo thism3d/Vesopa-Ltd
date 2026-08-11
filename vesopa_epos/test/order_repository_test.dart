@@ -21,6 +21,7 @@ void main() {
     priceMinor: 250,
     taxPercentage: 20,
     stockQuantity: 0,
+    printToReceipt: true,
   );
 
   const cola = Product(
@@ -29,6 +30,7 @@ void main() {
     priceMinor: 150,
     taxPercentage: 20,
     stockQuantity: 0,
+    printToReceipt: true,
   );
 
   test('subtotal is the gross price and VAT is the part inside it', () async {
