@@ -1148,7 +1148,7 @@ function openCropper(file) {
     const VIEW = 320;  // on-screen viewport size
 
     function start() {
-      const root = $('modal-root');
+      const root = $('cropper-root');
       root.innerHTML = `
         <div class="modal-back">
           <div class="modal cropper">
