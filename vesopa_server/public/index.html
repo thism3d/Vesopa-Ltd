@@ -232,9 +232,15 @@
             <div><h2>Dashboard</h2><p class="muted small" id="who"></p></div>
           </div>
           <div class="dash-toolbar">
+            <!-- Today first, and selected: the question a manager opens this
+                 page to answer is almost always "how are we doing today?", and
+                 a dashboard that opens on the last thirty days answers a
+                 different one. The longer ranges are a click away for when the
+                 question really is about the trend. -->
             <div class="seg" id="dash-range">
-              <button class="seg-btn" data-days="7">7 days</button>
-              <button class="seg-btn active" data-days="30">30 days</button>
+              <button class="seg-btn active" data-days="1">Today</button>
+              <button class="seg-btn" data-days="7">Last 7 days</button>
+              <button class="seg-btn" data-days="30">Last 30 days</button>
               <button class="seg-btn" data-days="90">90 days</button>
               <button class="seg-btn" data-days="365">Year</button>
             </div>
@@ -329,7 +335,7 @@
             <thead><tr>
               <th>PLU</th><th>Name</th><th>Department</th>
               <th class="right">Price</th><th class="right">VAT</th>
-              <th class="right">Button</th><th>Colour</th><th>Printer</th><th></th>
+              <th class="right">Button</th><th>Colour</th><th>Printing</th><th></th>
             </tr></thead>
             <tbody id="products"></tbody>
           </table></div>
@@ -507,6 +513,34 @@
                   reaches zero it signs the staff member off and drops to the idle screen, so the
                   terminal is ready for the next customer without anyone touching it. 30 seconds is
                   the default; 5 to 300 is accepted. 0 leaves the box up until it is tapped.
+                </p>
+              </div>
+
+              <div class="card rd-card">
+                <h3>Receipt printing</h3>
+                <label class="check">
+                  <input type="checkbox" data-idle="receipt_auto_print">
+                  <span>Print a receipt automatically after every sale</span>
+                </label>
+                <p class="muted small" style="margin:6px 0 0">
+                  The till no longer asks the clerk whether the customer wants a receipt — that
+                  question was being put over the head of the next person in the queue, several
+                  hundred times a day, and the answer is the same every time in any given venue.
+                  Leave this off and no paper comes out at the counter; staff print one on request
+                  from the Receipts screen or the Last Bill key.
+                </p>
+              </div>
+
+              <div class="card rd-card">
+                <h3>Product buttons</h3>
+                <label class="check">
+                  <input type="checkbox" data-idle="buttons_show_prices">
+                  <span>Show prices on product buttons</span>
+                </label>
+                <p class="muted small" style="margin:6px 0 0">
+                  On by default. Turn it off for a cleaner grid where staff know the menu, or where
+                  prices change often enough that the button is not where anyone should be reading
+                  them. The price still shows on the bill as soon as the item is rung up.
                 </p>
               </div>
             </div>

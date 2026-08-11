@@ -1264,3 +1264,59 @@ table.plain th { color: var(--muted, #7a828c); font-weight: 600; font-size: 11px
   width: 40px; height: 34px; padding: 2px; border-radius: 6px; flex: none;
 }
 .colour-field input[type="text"] { flex: 1; font-family: ui-monospace, monospace; }
+
+/* ---- Kitchen printer routing --------------------------------------------
+   Six tick boxes that have to read as a set of physical printers, not as a
+   list of settings. Laid out as a grid of cards so a routed station is
+   legible at a glance across the form, which is how a manager checks their
+   work: they scan for the lit ones rather than reading every label. */
+.station-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: 8px;
+  margin-top: 6px;
+}
+.station {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.12s, border-color 0.12s;
+}
+.station:hover { border-color: var(--brand-deep); }
+/* Ticked: the lime wash plus a solid edge. Filling the whole card with the
+   brand lime would make six selected stations the loudest thing on a form
+   whose subject is the product, so the fill stays a wash. */
+.station.on {
+  background: var(--brand-soft);
+  border-color: var(--brand-deep);
+  font-weight: 600;
+}
+.station input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+  flex: none;
+  accent-color: var(--brand-deep);
+}
+.station span { flex: 1; }
+
+/* A routed station in the catalogue table. */
+.chip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--brand-soft);
+  color: var(--brand-deep);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+/* The unusual setting, so it must not read the same as a routing chip. */
+.chip.warn { background: #fdeceb; color: #9c2417; }

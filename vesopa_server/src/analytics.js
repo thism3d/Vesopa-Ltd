@@ -33,6 +33,36 @@ function analyticsRoutes({ pool, secret }) {
   }
 
   /**
+   * The reporting window, aligned to calendar days.
+   *
+   * `days=1` is today — from this morning's midnight, not from this time
+   * yesterday. That distinction is the whole reason this exists: a rolling
+   * 24-hour window shows a manager checking the tills at 4pm a "today" that
+   * includes half of yesterday evening's trade, which is worse than useless in
+   * a venue whose evenings are its business.
+   *
+   * The same alignment applies to every other range, so "last 7 days" means
+   * seven whole days ending with today rather than 168 hours ending now.
+   * Otherwise the daily chart's first and last bars are always part-days and
+   * always look like a slump.
+   *
+   * The boundaries are interpolated rather than bound as parameters because
+   * MySQL will not take a placeholder inside INTERVAL. [days] has been through
+   * [windowDays], so it is an integer between 1 and 730 and nothing else.
+   */
+  function reportWindow(req, fallback = 30) {
+    const days = windowDays(req, fallback);
+    return {
+      days,
+      // Midnight at the start of the window.
+      from: `DATE_SUB(CURDATE(), INTERVAL ${days - 1} DAY)`,
+      // The same length again, immediately before it, so a trend compares like
+      // with like.
+      previousFrom: `DATE_SUB(CURDATE(), INTERVAL ${days * 2 - 1} DAY)`,
+    };
+  }
+
+  /**
    * Headline figures plus the series the dashboard charts.
    *
    * Returned in one call rather than six: the dashboard needs all of it at
@@ -42,7 +72,7 @@ function analyticsRoutes({ pool, secret }) {
   router.get('/analytics/overview', auth, async (req, res, next) => {
     try {
       const office = await tenantEmail(req);
-      const days = windowDays(req);
+      const w = reportWindow(req);
 
       const [[totals]] = await pool.query(
         `SELECT
@@ -57,8 +87,8 @@ function analyticsRoutes({ pool, secret }) {
            COALESCE(AVG(total_minor), 0)         AS average_minor
          FROM epos_orders
          WHERE email = ? AND closed_at IS NOT NULL
-           AND closed_at >= DATE_SUB(NOW(), INTERVAL ? DAY)`,
-        [office, days]
+           AND closed_at >= ${w.from}`,
+        [office]
       );
 
       // The previous window of the same length, so the dashboard can show a
@@ -69,9 +99,9 @@ function analyticsRoutes({ pool, secret }) {
            COALESCE(SUM(total_minor), 0) AS gross_minor
          FROM epos_orders
          WHERE email = ? AND closed_at IS NOT NULL
-           AND closed_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
-           AND closed_at <  DATE_SUB(NOW(), INTERVAL ? DAY)`,
-        [office, days * 2, days]
+           AND closed_at >= ${w.previousFrom}
+           AND closed_at <  ${w.from}`,
+        [office]
       );
 
       const [daily] = await pool.query(
@@ -81,10 +111,10 @@ function analyticsRoutes({ pool, secret }) {
                 COALESCE(SUM(gratuity_minor), 0) AS gratuity_minor
          FROM epos_orders
          WHERE email = ? AND closed_at IS NOT NULL
-           AND closed_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+           AND closed_at >= ${w.from}
          GROUP BY DATE(closed_at)
          ORDER BY day`,
-        [office, days]
+        [office]
       );
 
       // Trade by hour: what a venue staffs to.
@@ -94,10 +124,10 @@ function analyticsRoutes({ pool, secret }) {
                 COALESCE(SUM(total_minor), 0) AS gross_minor
          FROM epos_orders
          WHERE email = ? AND closed_at IS NOT NULL
-           AND closed_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+           AND closed_at >= ${w.from}
          GROUP BY HOUR(closed_at)
          ORDER BY hour`,
-        [office, days]
+        [office]
       );
 
       const [weekday] = await pool.query(
@@ -106,10 +136,10 @@ function analyticsRoutes({ pool, secret }) {
                 COALESCE(SUM(total_minor), 0) AS gross_minor
          FROM epos_orders
          WHERE email = ? AND closed_at IS NOT NULL
-           AND closed_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+           AND closed_at >= ${w.from}
          GROUP BY DAYOFWEEK(closed_at)
          ORDER BY dow`,
-        [office, days]
+        [office]
       );
 
       const [tenders] = await pool.query(
@@ -119,10 +149,10 @@ function analyticsRoutes({ pool, secret }) {
          FROM epos_payments p
          JOIN epos_orders o ON o.id = p.order_id
          WHERE o.email = ? AND o.closed_at IS NOT NULL
-           AND o.closed_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+           AND o.closed_at >= ${w.from}
          GROUP BY p.method
          ORDER BY total_minor DESC`,
-        [office, days]
+        [office]
       );
 
       const [topProducts] = await pool.query(
@@ -132,11 +162,11 @@ function analyticsRoutes({ pool, secret }) {
          FROM epos_order_lines l
          JOIN epos_orders o ON o.id = l.order_id
          WHERE o.email = ? AND o.closed_at IS NOT NULL
-           AND o.closed_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+           AND o.closed_at >= ${w.from}
          GROUP BY l.name
          ORDER BY gross_minor DESC
          LIMIT 12`,
-        [office, days]
+        [office]
       );
 
       const [departments] = await pool.query(
@@ -147,10 +177,10 @@ function analyticsRoutes({ pool, secret }) {
          JOIN epos_orders o ON o.id = l.order_id
          LEFT JOIN bo_products p ON p.pluid = l.plu_id AND p.email = o.email
          WHERE o.email = ? AND o.closed_at IS NOT NULL
-           AND o.closed_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+           AND o.closed_at >= ${w.from}
          GROUP BY department
          ORDER BY gross_minor DESC`,
-        [office, days]
+        [office]
       );
 
       const [[stock]] = await pool.query(
@@ -185,7 +215,7 @@ function analyticsRoutes({ pool, secret }) {
       );
 
       res.json({
-        window_days: days,
+        window_days: w.days,
         totals,
         previous,
         daily,
@@ -205,7 +235,7 @@ function analyticsRoutes({ pool, secret }) {
   router.get('/analytics/clerks', auth, async (req, res, next) => {
     try {
       const office = await tenantEmail(req);
-      const days = windowDays(req);
+      const w = reportWindow(req);
       const [rows] = await pool.query(
         `SELECT COALESCE(o.clerk_name, o.clerk_pin, 'Unknown') AS clerk,
                 COUNT(*)                              AS sales,
@@ -215,10 +245,10 @@ function analyticsRoutes({ pool, secret }) {
                 COALESCE(SUM(o.discount_minor), 0)    AS discount_minor
          FROM epos_orders o
          WHERE o.email = ? AND o.closed_at IS NOT NULL
-           AND o.closed_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+           AND o.closed_at >= ${w.from}
          GROUP BY clerk
          ORDER BY gross_minor DESC`,
-        [office, days]
+        [office]
       );
       res.json(rows);
     } catch (e) { next(e); }
@@ -228,7 +258,7 @@ function analyticsRoutes({ pool, secret }) {
   router.get('/analytics/promotions', auth, async (req, res, next) => {
     try {
       const office = await tenantEmail(req);
-      const days = windowDays(req);
+      const w = reportWindow(req);
 
       const [promotions] = await pool.query(
         `SELECT l.promotion_name                      AS name,
@@ -239,10 +269,10 @@ function analyticsRoutes({ pool, secret }) {
          JOIN epos_orders o ON o.id = l.order_id
          WHERE o.email = ? AND o.closed_at IS NOT NULL
            AND l.promotion_name IS NOT NULL
-           AND o.closed_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+           AND o.closed_at >= ${w.from}
          GROUP BY l.promotion_name
          ORDER BY discount_minor DESC`,
-        [office, days]
+        [office]
       );
 
       const [vouchers] = await pool.query(
@@ -252,10 +282,10 @@ function analyticsRoutes({ pool, secret }) {
          FROM epos_orders
          WHERE email = ? AND closed_at IS NOT NULL
            AND voucher_code IS NOT NULL
-           AND closed_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+           AND closed_at >= ${w.from}
          GROUP BY voucher_code
          ORDER BY discount_minor DESC`,
-        [office, days]
+        [office]
       );
 
       res.json({ promotions, vouchers });
@@ -266,17 +296,17 @@ function analyticsRoutes({ pool, secret }) {
   router.get('/analytics/loyalty', auth, async (req, res, next) => {
     try {
       const office = await tenantEmail(req);
-      const days = windowDays(req);
+      const w = reportWindow(req);
 
       const [movement] = await pool.query(
         `SELECT DATE(created_at)  AS day,
                 kind,
                 SUM(ABS(points))  AS points
          FROM epos_loyalty_txns
-         WHERE office = ? AND created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+         WHERE office = ? AND created_at >= ${w.from}
          GROUP BY day, kind
          ORDER BY day`,
-        [office, days]
+        [office]
       );
 
       const [tiers] = await pool.query(

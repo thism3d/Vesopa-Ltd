@@ -64,13 +64,75 @@ function backofficeRoutes({ pool, broadcast, secret }) {
 
   // ---- Products -----------------------------------------------------------
 
+  /**
+   * The kitchen stations a product may be routed to.
+   *
+   * Fixed at six because the till's printer setup has six slots: offering a
+   * seventh here would let a manager route food to a station no terminal can
+   * print to, and the failure would surface in the kitchen at service rather
+   * than in the form.
+   */
+  const KP_STATIONS = ['kp1', 'kp2', 'kp3', 'kp4', 'kp5', 'kp6'];
+
+  /**
+   * Normalise whatever the form sent into a stored routing string.
+   *
+   * Accepts an array (what the checkbox form posts) or a comma-separated
+   * string (what an older client or an import sends), and understands the two
+   * pre-numbering names so a legacy row edited in the new form is upgraded
+   * rather than blanked. Unknown stations are dropped: a typo must not become
+   * a route to a printer that does not exist.
+   *
+   * Returns null for "no kitchen", which is what the column means by empty.
+   */
+  function normaliseRoutes(value) {
+    const parts = Array.isArray(value)
+      ? value
+      : String(value ?? '').split(',');
+
+    const seen = new Set();
+    for (const raw of parts) {
+      const key = String(raw ?? '').trim().toLowerCase();
+      if (!key) continue;
+      const station = key === 'kitchen' ? 'kp1' : key === 'bar' ? 'kp2' : key;
+      if (KP_STATIONS.includes(station)) seen.add(station);
+    }
+
+    // Sorted so the stored value is stable: "kp3,kp1" and "kp1,kp3" are the
+    // same routing and should not read as an edit in the activity log.
+    const routes = KP_STATIONS.filter((s) => seen.has(s));
+    return routes.length ? routes.join(',') : null;
+  }
+
+  /**
+   * The single station an older till should use for this product.
+   *
+   * The lowest-numbered one it is routed to, translated back into the names
+   * that release understands. A product on KP 1 and KP 3 reaches an old
+   * terminal as "kitchen" — one of its two printers rather than neither, which
+   * is the better failure while a venue is mid-rollout.
+   */
+  function legacyRoute(p) {
+    const routes = normaliseRoutes(p.printer_routes ?? p.printer_route);
+    if (!routes) return null;
+    const first = routes.split(',')[0];
+    return first === 'kp1' ? 'kitchen' : first === 'kp2' ? 'bar' : first;
+  }
+
+  /** A form checkbox: absent means off, and "0" means off rather than truthy. */
+  const flag = (v, fallback = 1) => {
+    if (v === undefined || v === null || v === '') return fallback;
+    return v === 0 || v === '0' || v === false || v === 'false' ? 0 : 1;
+  };
+
   router.get('/products', auth, async (req, res, next) => {
     try {
       const email = scope(req, await tenantEmail(req));
       const [rows] = await pool.query(
         `SELECT id, pluid, product_name, department_name, group_name,
                 accounting_code, price, tax_percentage, stock_quantity,
-                button_position, button_color, printer_route, emoji, image_url
+                button_position, button_color, printer_routes,
+                print_to_receipt, emoji, image_url
          FROM bo_products
          WHERE email = ?
          ORDER BY department_name, button_position IS NULL, button_position,
@@ -107,8 +169,9 @@ function backofficeRoutes({ pool, broadcast, secret }) {
         `INSERT INTO bo_products
            (email, pluid, product_name, department_name, group_name,
             accounting_code, price, tax_percentage, stock_quantity,
-            button_position, button_color, printer_route, emoji, image_url)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            button_position, button_color, printer_route, printer_routes,
+            print_to_receipt, emoji, image_url)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           // The office's key, not the individual's: two managers in one shop
           // must add to the same catalogue.
@@ -123,7 +186,12 @@ function backofficeRoutes({ pool, broadcast, secret }) {
           p.stock_quantity ?? 0,
           p.button_position || null,
           p.button_color || null,
-          p.printer_route || null,
+          // The legacy column keeps the first station, so a terminal on the
+          // previous release still routes this product somewhere sensible
+          // instead of stopping. Dropped once no till reports an old version.
+          legacyRoute(p),
+          normaliseRoutes(p.printer_routes ?? p.printer_route),
+          flag(p.print_to_receipt),
           p.emoji || null,
           p.image_url || null,
         ]
@@ -145,7 +213,8 @@ function backofficeRoutes({ pool, broadcast, secret }) {
          SET product_name = ?, department_name = ?, group_name = ?,
              accounting_code = ?, price = ?, tax_percentage = ?,
              stock_quantity = ?, button_position = ?, button_color = ?,
-             printer_route = ?, emoji = ?, image_url = ?
+             printer_route = ?, printer_routes = ?, print_to_receipt = ?,
+             emoji = ?, image_url = ?
          WHERE id = ? AND email = ?`,
         [
           p.product_name,
@@ -157,7 +226,9 @@ function backofficeRoutes({ pool, broadcast, secret }) {
           p.stock_quantity ?? 0,
           p.button_position || null,
           p.button_color || null,
-          p.printer_route || null,
+          legacyRoute(p),
+          normaliseRoutes(p.printer_routes ?? p.printer_route),
+          flag(p.print_to_receipt),
           p.emoji || null,
           p.image_url || null,
           req.params.id,
@@ -303,10 +374,11 @@ function backofficeRoutes({ pool, broadcast, secret }) {
   // How the terminal behaves *between* sales, as opposed to what it prints
   // around one. One row per office, created on first save.
 
-  /** Columns the idle-screen editor may write. */
+  /** Columns the till-behaviour editor may write. */
   const TILL_FIELDS = [
     'idle_enabled', 'idle_image_url', 'idle_after_sale', 'idle_require_pin',
     'idle_message', 'signoff_seconds', 'change_window_seconds',
+    'receipt_auto_print', 'buttons_show_prices',
   ];
 
   const TILL_DEFAULTS = {
@@ -317,6 +389,12 @@ function backofficeRoutes({ pool, broadcast, secret }) {
     idle_message: 'Touch to begin',
     signoff_seconds: 180,
     change_window_seconds: 30,
+    // Off by default, and deliberately: the till no longer asks whether the
+    // customer wants a receipt, so leaving this on would have every venue
+    // that upgrades start printing paper for every sale without being asked.
+    // A venue that wants one every time switches it on once.
+    receipt_auto_print: 0,
+    buttons_show_prices: 1,
   };
 
   /**
@@ -398,6 +476,9 @@ function backofficeRoutes({ pool, broadcast, secret }) {
           const url = v ? String(v) : null;
           if (url && !/^\/(uploads|assets)\//.test(url)) return null;
           return url;
+        }
+        if (f === 'receipt_auto_print' || f === 'buttons_show_prices') {
+          return v ? 1 : 0;
         }
         if (f.startsWith('idle_') && f !== 'idle_message') return v ? 1 : 0;
         return v == null ? '' : String(v);

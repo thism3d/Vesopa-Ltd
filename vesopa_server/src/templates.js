@@ -115,7 +115,8 @@ function templateRoutes({ pool, broadcast, secret }) {
         const [products] = await pool.query(
           `SELECT pluid, product_name, department_name, group_name,
                   accounting_code, price, tax_percentage, stock_quantity,
-                  button_position, button_color, printer_route, emoji
+                  button_position, button_color, printer_routes,
+                  print_to_receipt, emoji
            FROM bo_products WHERE email = ?`, [email]);
         payload.products = products;
 
@@ -195,14 +196,19 @@ function templateRoutes({ pool, broadcast, secret }) {
             `INSERT INTO bo_products
                (email, pluid, product_name, department_name, group_name,
                 accounting_code, price, tax_percentage, stock_quantity,
-                button_position, button_color, printer_route, emoji)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+                button_position, button_color, printer_routes,
+                print_to_receipt, emoji)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
             [
               email, p.pluid, p.product_name, p.department_name || null,
               p.group_name || null, p.accounting_code || null,
               p.price ?? 0, p.tax_percentage ?? 0, p.stock_quantity ?? null,
               p.button_position ?? null, p.button_color || null,
-              p.printer_route || null, p.emoji || null,
+              // A template exported before the stations were numbered carries
+              // `printer_route`; read both so an old template still routes.
+              p.printer_routes || p.printer_route || null,
+              p.print_to_receipt === 0 || p.print_to_receipt === false ? 0 : 1,
+              p.emoji || null,
             ]
           );
         }

@@ -469,9 +469,13 @@ app.get(['/till/products', '/products.json'], async (req, res, next) => {
 
   try {
     const [rows] = await pool.query(
+      // `printer_route` rides along beside `printer_routes` for terminals on
+      // the previous release, which only know the singular field. See
+      // schema_product_printing.sql.
       `SELECT pluid, product_name, department_name, group_name,
               accounting_code, price, tax_percentage, stock_quantity,
-              button_position, button_color, printer_route, emoji, image_url
+              button_position, button_color, printer_route, printer_routes,
+              print_to_receipt, emoji, image_url
        FROM bo_products
        WHERE email = ?
        ORDER BY button_position IS NULL, button_position`,

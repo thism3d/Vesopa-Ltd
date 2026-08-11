@@ -656,6 +656,29 @@ async function loadSales() {
     .join('') || '<tr><td colspan="5" class="empty">No sales recorded.</td></tr>';
 }
 
+/**
+ * A product's printing, for the catalogue table.
+ *
+ * Every station is named rather than counted: a manager scanning this column
+ * is checking one specific printer, and "3 printers" does not answer that.
+ * "Not on receipt" is called out because it is the unusual setting and the one
+ * that surprises somebody looking at a bill with an item missing from it.
+ */
+function routeChips(p) {
+  const stations = String(p.printer_routes ?? p.printer_route ?? '')
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean)
+    .map((s) => (s === 'kitchen' ? 'kp1' : s === 'bar' ? 'kp2' : s))
+    .map((s) => (/^kp[1-6]$/.test(s) ? `KP ${s.slice(2)}` : s));
+
+  const chips = stations.map((s) => `<span class="chip">${esc(s)}</span>`);
+  if (Number(p.print_to_receipt) === 0) {
+    chips.push('<span class="chip warn">Not on receipt</span>');
+  }
+  return chips.length ? chips.join(' ') : '<span class="muted">—</span>';
+}
+
 async function loadProducts() {
   const rows = await api('/products');
   $('products').innerHTML = rows
@@ -674,7 +697,7 @@ async function loadProducts() {
         <td>${p.button_color
           ? `<span class="swatch" style="background:${esc(p.button_color)}"></span>${esc(p.button_color)}`
           : '<span class="muted">default</span>'}</td>
-        <td>${esc(p.printer_route || '—')}</td>
+        <td>${routeChips(p)}</td>
         <td class="right">
           <button class="btn small ghost" data-edit-product="${p.id}">Edit</button>
           <button class="btn small danger" data-del-product="${p.id}">Delete</button>
@@ -1068,6 +1091,31 @@ function fieldHtml(f) {
         <input type="file" accept="image/*" data-upload-for="${f.name}" />
       </div>`;
   }
+  if (f.type === 'stations') {
+    // Every station gets a box, including the ones this venue has not set up:
+    // the back office does not know which printers are plugged into which
+    // till, and a station hidden here would be a station no product could ever
+    // be routed to. Several may be ticked — a dish the grill cooks and the
+    // pass plates belongs on both.
+    const on = new Set(
+      String(f.value ?? '')
+        .split(',')
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean)
+    );
+    return `<div class="station-grid">
+      ${f.options
+        .map(
+          (o) => `<label class="station${on.has(o.value) ? ' on' : ''}">
+            <input type="checkbox" name="${f.name}" value="${esc(o.value)}"
+                   ${on.has(o.value) ? 'checked' : ''}
+                   onchange="this.closest('.station').classList.toggle('on', this.checked)" />
+            <span>${esc(o.label)}</span>
+          </label>`
+        )
+        .join('')}
+    </div>`;
+  }
   // `money` is a pounds amount entered as a decimal number.
   const htmlType = f.type === 'money' ? 'number' : (f.type || 'text');
   const step = f.type === 'money' ? ' step="0.01"' : '';
@@ -1250,7 +1298,15 @@ function modal(title, fields, onSubmit) {
   $('modal-cancel').onclick = () => (root.innerHTML = '');
   $('modal-form').onsubmit = async (e) => {
     e.preventDefault();
-    const data = Object.fromEntries(new FormData(e.target));
+    // Not Object.fromEntries: that keeps only the last value for a repeated
+    // name, which would reduce a product ticked for KP 1, KP 3 and KP 5 to
+    // KP 5 alone — silently, and only discoverable in a kitchen at service.
+    const form = new FormData(e.target);
+    const data = {};
+    for (const key of new Set(form.keys())) {
+      const values = form.getAll(key);
+      data[key] = values.length > 1 ? values : values[0];
+    }
     try {
       await onSubmit(data);
       root.innerHTML = '';
@@ -1517,6 +1573,21 @@ document.addEventListener('click', async (e) => {
     membership_expiry: d.membership_expiry || null,
   });
 
+  // Six, matching the till's six kitchen printer slots. Offering a seventh
+  // here would let a manager route food to a station no terminal can print to,
+  // and the failure would show up in a kitchen at service rather than in this
+  // form.
+  const KP_STATIONS = [1, 2, 3, 4, 5, 6].map((n) => ({
+    value: `kp${n}`,
+    label: `KP ${n}`,
+  }));
+
+  /** The pre-numbering routing names, as the station they now mean. */
+  const legacyStation = (route) => {
+    const key = String(route ?? '').trim().toLowerCase();
+    return key === 'kitchen' ? 'kp1' : key === 'bar' ? 'kp2' : key;
+  };
+
   const productFields = (p = {}) => [
     { label: 'PLU number', name: 'pluid', type: 'number', required: true, value: p.pluid ?? '' },
     { label: 'Name', name: 'product_name', required: true, value: p.product_name ?? '' },
@@ -1526,9 +1597,25 @@ document.addEventListener('click', async (e) => {
     { label: 'Stock', name: 'stock_quantity', type: 'number', value: p.stock_quantity ?? 0 },
     { label: 'Button position (blank = unassigned)', name: 'button_position', type: 'number', value: p.button_position ?? '' },
     { label: 'Button colour (e.g. #4BA3F5)', name: 'button_color', value: p.button_color ?? '' },
-    { label: 'Kitchen printer (kitchen / bar / blank)', name: 'printer_route', value: p.printer_route ?? '' },
     { label: 'Emoji (e.g. 🍔)', name: 'emoji', value: p.emoji ?? '' },
     { label: 'Image', name: 'image_url', type: 'image', value: p.image_url ?? '' },
+    {
+      label: 'Kitchen printers — prints when sold and when saved to a table',
+      name: 'printer_routes',
+      type: 'stations',
+      options: KP_STATIONS,
+      // Falls back to the pre-numbering column so a product that has never
+      // been re-saved still shows its routing rather than looking unrouted.
+      value: p.printer_routes ?? legacyStation(p.printer_route),
+    },
+    {
+      label: 'Show on the customer receipt',
+      name: 'print_to_receipt',
+      type: 'checkbox',
+      // New products default to on. Only an explicit 0 turns it off, so a
+      // catalogue imported without the field is not hidden from every bill.
+      value: p.print_to_receipt === undefined ? 1 : p.print_to_receipt,
+    },
   ];
 
   if (t.id === 'add-product') {
@@ -2148,7 +2235,9 @@ function statCards(el, cards) {
 
 // ---- Dashboard analytics --------------------------------------------------
 
-let dashDays = 30;
+// Today, matching the button marked active in the markup. The two have to
+// agree or the dashboard opens showing one range with another highlighted.
+let dashDays = 1;
 
 async function loadDashboardAnalytics() {
   let data;
@@ -2187,7 +2276,11 @@ async function loadDashboardAnalytics() {
     { label: 'Covers', value: String(t.covers || 0) },
   ]);
 
-  $('dash-window').textContent = `Last ${data.window_days} days`;
+  // Named the way the range button is, so the figure on screen and the button
+  // that produced it agree. "Last 1 days" was the giveaway that they did not.
+  $('dash-window').textContent = data.window_days === 1
+    ? 'Today'
+    : `Last ${data.window_days} days`;
 
   Charts.line($('dash-line'), (data.daily || []).map((d) => ({
     label: shortDate(d.day),
@@ -2264,7 +2357,7 @@ function tenderLabel(method) {
 document.addEventListener('click', (e) => {
   const btn = e.target.closest('#dash-range .seg-btn');
   if (!btn) return;
-  dashDays = Number(btn.dataset.days) || 30;
+  dashDays = Number(btn.dataset.days) || 1;
   document.querySelectorAll('#dash-range .seg-btn')
     .forEach((b) => b.classList.toggle('active', b === btn));
   loadDashboardAnalytics();
