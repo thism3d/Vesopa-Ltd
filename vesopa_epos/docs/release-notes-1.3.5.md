@@ -1,50 +1,40 @@
-# Vesopa EPOS 1.3.4 — release notes
+# Vesopa EPOS 1.3.5 — release notes
 
-Store submission: `msix_version: 1.3.4.0` (previous submission was 1.3.3.0).
-Flutter `version: 1.3.4+7`.
+Store submission: `msix_version: 1.3.5.0` (previous submission was 1.3.4.0).
+Flutter `version: 1.3.5+8`.
 
-Server: run `schema_printer_names.sql` before deploying the back office. It is
-guarded like every other migration, so `deploy.sh` can run the whole
+1.3.4.0 shipped the new sale screen and the six kitchen printers. This release
+is about the printing underneath them: how the bytes actually reach the paper,
+and what happens when they do not.
+
+Server: already deployed, including `schema_printer_names.sql`. On a fresh
+server run the migration set as usual — every file is guarded, so
+`deploy.sh --schema` (or `deploy.ps1 -Schema` on Windows) can run the whole
 `schema_*.sql` set on every deploy.
 
 ---
 
 ## Microsoft Store — "What's new in this version"
 
+Paste the block below into Partner Center → Store listings → What's new in this
+version. Written for a venue owner: no spooler internals, no API names, and
+every claim is something they can see happen. 1,460 of the 1,500 characters
+Partner Center allows — check the count again if you edit it.
+
+Prose rather than bullets, matching how 1.3.4.0 was written.
+
 ```
-Printing, rebuilt. Direct printing that does not go near the Windows spooler,
-a printer for every document, and a kitchen that tells you when it did not get
-the ticket.
+Version 1.3.5.0 – Printing That Doesn't Wait, and a Printer for Every Job
 
-DIRECT PRINTING
-• USB printers are now driven directly, bypassing the Windows print spooler
-  entirely — the most reliable way to print on a busy counter
-• Network printers already went straight to the printer; serial still does
-• Printers already set up in Windows can still be used, chosen from a list
-• Receipts print with no Windows print dialog and no waiting behind a queue
-• Every printer has a Test print key, so you find a problem at set-up rather
-  than with a customer at the counter
+Printing has been rebuilt. Receipts and kitchen tickets now go straight to the printer instead of queuing through Windows — the difference between paper appearing now and paper appearing eventually.
 
-A PRINTER FOR EVERY DOCUMENT
-• Set a different printer for the customer receipt, your own merchant copy,
-  the bill, the X/Z report, the cash drawer, and each kitchen station
-• Print your copy and the customer's copy on separate printers
-• Merchant copies can print on card sales, every sale, or never
-• Anything you do not set follows the receipt printer, exactly as before
+Direct Printing: USB printers are driven directly, with the Windows print spooler out of the way entirely. Network and serial printers already worked this way. A printer already set up in Windows can still be picked from a list. Every printer gets a Test Print key, so you find a problem while setting up rather than with a customer waiting.
 
-KITCHEN PRINTING
-• A status appears in the top bar when a ticket goes to the kitchen — it never
-  interrupts you and never blocks the till
-• If a station fails you are told which one, and can print again to just that
-  station without reprinting the whole bill
-• A dead printer at one station no longer causes duplicate tickets at the
-  working ones
+A Printer for Every Job: Choose a different printer for the customer's receipt, your own copy, the bill, the X and Z reports, the cash drawer, and each kitchen station. Your own copy can print on card sales, every sale, or never. Anything you don't set follows the receipt printer, exactly as before.
 
-BACK OFFICE
-• The receipt printer can now be a printing destination for a product, so the
-  counter gets its own ticket for an item
-• Name your printers once for the venue — call KP 3 "Fryer" and it reads
-  "Fryer" on the tills, on the tickets and in the catalogue
+Kitchen Tickets: A marker in the top right tells you the kitchen got the ticket, without ever interrupting a sale. If a station fails you are told which one, and can send it again to just that station. A dead printer at one station no longer causes duplicate tickets at the others.
+
+Printer Names: Name your printers once in the Back Office — call KP 3 "Fryer" and it reads Fryer on the tills, on the tickets and in your product list. The receipt printer can now take kitchen tickets too, so the counter gets its own copy of an item.
 ```
 
 ---
