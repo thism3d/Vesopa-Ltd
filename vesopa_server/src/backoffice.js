@@ -375,10 +375,20 @@ function backofficeRoutes({ pool, broadcast, secret }) {
   // around one. One row per office, created on first save.
 
   /** Columns the till-behaviour editor may write. */
+  /**
+   * The printer slots a venue can name, in the order they are shown. The
+   * receipt printer is last because that is where it was asked for, and
+   * because a venue reading this list is nearly always looking for a kitchen
+   * station.
+   */
+  const PRINTER_SLOTS = ['kp1', 'kp2', 'kp3', 'kp4', 'kp5', 'kp6', 'receipt'];
+  const PRINTER_NAME_FIELDS = PRINTER_SLOTS.map((s) => `printer_name_${s}`);
+
   const TILL_FIELDS = [
     'idle_enabled', 'idle_image_url', 'idle_after_sale', 'idle_require_pin',
     'idle_message', 'signoff_seconds', 'change_window_seconds',
     'receipt_auto_print', 'buttons_show_prices',
+    ...PRINTER_NAME_FIELDS,
   ];
 
   const TILL_DEFAULTS = {
@@ -395,6 +405,11 @@ function backofficeRoutes({ pool, broadcast, secret }) {
     // A venue that wants one every time switches it on once.
     receipt_auto_print: 0,
     buttons_show_prices: 1,
+    // Null, not "KP 1". An empty name means "use the built-in label", so a
+    // venue that never opens this screen sees exactly what it always saw —
+    // and a venue that later clears a name gets the default back rather than
+    // an empty chip.
+    ...Object.fromEntries(PRINTER_NAME_FIELDS.map((f) => [f, null])),
   };
 
   /**
@@ -479,6 +494,13 @@ function backofficeRoutes({ pool, broadcast, secret }) {
         }
         if (f === 'receipt_auto_print' || f === 'buttons_show_prices') {
           return v ? 1 : 0;
+        }
+        // A printer name is free text, trimmed, and blank means "no name" —
+        // stored as NULL so the till falls back to the built-in label rather
+        // than showing a station with an empty string for a name.
+        if (f.startsWith('printer_name_')) {
+          const name = String(v ?? '').trim().slice(0, 40);
+          return name || null;
         }
         if (f.startsWith('idle_') && f !== 'idle_message') return v ? 1 : 0;
         return v == null ? '' : String(v);

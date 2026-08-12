@@ -10,6 +10,7 @@ import 'print_receipt_sheet.dart';
 import 'printers_page.dart';
 import 'receipts_page.dart' show receiptListProvider;
 import 'widgets/pos_message.dart';
+import 'widgets/print_status.dart';
 
 /// The till functions that touch hardware or reprint paper.
 ///
@@ -65,31 +66,45 @@ abstract final class TillActions {
   /// bill is saved to a table — and deliberately from nowhere else, so a clerk
   /// can predict when paper appears in the kitchen.
   ///
-  /// Failures are shown as a message and never thrown. By the time this runs
-  /// the sale is already recorded or the table is already saved; a printer
-  /// nobody plugged in must not undo either, and the clerk needs telling so
-  /// they can carry the order through by hand.
+  /// Never throws, and never blocks. By the time this runs the sale is already
+  /// recorded or the table is already saved; a printer nobody plugged in must
+  /// not undo either.
+  ///
+  /// The outcome goes to the top-bar status chip rather than to a dialog or a
+  /// centre-screen message. Both of those sat in front of a clerk who had
+  /// already moved on to the next customer, and neither offered them anything
+  /// to *do* about it — where the chip stays put until the failure is retried
+  /// or dismissed, and carries the retry itself.
+  ///
+  /// [context] is no longer needed to report anything, and is kept only so
+  /// every call site reads the same as the other till actions.
   static Future<void> fireKitchen(
     BuildContext context,
     WidgetRef ref, {
     required String orderId,
     required KitchenFire reason,
   }) async {
+    final status = ref.read(printStatusProvider.notifier);
     final printers = await ref.read(printerSettingsProvider.future);
 
     // Nothing set up on this terminal: silent by design. A counter till with
     // no kitchen printer would otherwise complain on every single sale.
     if (printers.stations.isEmpty) return;
 
-    final failure = await ref.read(kitchenPrintingProvider).fire(
-          orderId: orderId,
-          reason: reason,
-          printers: printers,
-          staffName: ref.read(servedByProvider),
-        );
-
-    if (failure != null && context.mounted) {
-      PosMessenger.error(context, 'Kitchen printing: $failure');
+    status.printing('Sending to the kitchen…');
+    try {
+      final result = await ref
+          .read(kitchenPrintingProvider)
+          .fire(
+            orderId: orderId,
+            reason: reason,
+            printers: printers,
+            stationNames: ref.read(tillSettingsProvider).printerNames,
+            staffName: ref.read(servedByProvider),
+          );
+      status.finished(result);
+    } catch (e) {
+      status.failed('Kitchen printing: $e');
     }
   }
 

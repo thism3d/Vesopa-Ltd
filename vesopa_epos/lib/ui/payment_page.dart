@@ -17,6 +17,7 @@ import '../payments/dojo_desktop.dart';
 import '../payments/payment_provider.dart';
 import '../data/kitchen_printing.dart';
 import '../printing/print_service.dart';
+import '../printing/print_targets.dart';
 import '../printing/receipt_builder.dart';
 import 'card_checkout_page.dart';
 import 'printers_page.dart' show printerSettingsProvider;
@@ -118,8 +119,8 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     final settings = ref.read(tillSettingsProvider);
     if (!settings.receiptAutoPrint) return;
 
-    final printer =
-        (await ref.read(printerSettingsProvider.future)).receiptPrinter;
+    final printers = await ref.read(printerSettingsProvider.future);
+    final printer = printers.receiptPrinter;
     if (printer == null) {
       // Asked for automatic receipts on a till with no receipt printer. Worth
       // saying once, at the counter, rather than silently doing nothing: the
@@ -148,7 +149,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
       final service = PrintService(
         await ReceiptBuilder.create(),
         PrinterSetup(
-          receipt: printer,
+          printers: printers,
           shopName: branding.venueName.isNotEmpty
               ? branding.venueName
               : ref.read(sessionProvider).venueName,
@@ -161,6 +162,18 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
         lines: lines,
         payments: payments,
       );
+
+      // The venue's own copy, if they asked for one. After the customer's, so
+      // a printer that dies partway through has already produced the one that
+      // has to be handed over.
+      if (_wantsMerchantCopy(printers.merchantCopyWhen, payments)) {
+        await service.printReceipt(
+          order: order,
+          lines: lines,
+          payments: payments,
+          target: PrintTarget.merchantCopy,
+        );
+      }
     } catch (e) {
       // The money is taken and the sale is recorded. A printer that will not
       // answer is worth telling the clerk about, and worth nothing more than
@@ -168,6 +181,22 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
       if (mounted) PosMessenger.error(context, 'Could not print receipt: $e');
     }
   }
+
+  /// Whether this sale earns the venue a copy of its own.
+  ///
+  /// "Card sales" is the common setting, and it means any card in the tender —
+  /// a split bill settled part cash, part card is still the one a chargeback
+  /// could later name.
+  static bool _wantsMerchantCopy(
+    MerchantCopyWhen when,
+    List<Payment> payments,
+  ) => switch (when) {
+    MerchantCopyWhen.never => false,
+    MerchantCopyWhen.everySale => true,
+    MerchantCopyWhen.cardSales => payments.any(
+      (p) => p.method.toLowerCase().contains('card'),
+    ),
+  };
 
   /// The bill's lines, less anything the back office keeps off the receipt.
   ///

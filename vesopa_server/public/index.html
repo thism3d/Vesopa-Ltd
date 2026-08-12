@@ -189,7 +189,7 @@
           <button class="nav" data-view="finalise_keys">Finalise Keys</button>
           <button class="nav" data-view="error_reasons">Error Reasons</button>
           <button class="nav" data-view="tax">Tax</button>
-          <button class="nav" data-view="idle">Idle screen</button>
+          <button class="nav" data-view="idle">Till &amp; printers</button>
 
           <button class="nav-group" data-group="floor">Floor<span class="caret">▼</span></button>
           <button class="nav" data-view="tables">Table Designer</button>
@@ -456,8 +456,8 @@
         <section id="view-idle" class="view" hidden>
           <div class="page-head">
             <div>
-              <h2>Idle screen</h2>
-              <p class="muted small">The screen saver the till drops to between customers. Touching it asks for a staff PIN.</p>
+              <h2>Till &amp; printers</h2>
+              <p class="muted small">What every terminal in this venue does between customers, and what the venue calls each printer.</p>
             </div>
             <button class="btn primary" id="idle-save">Save settings</button>
           </div>
@@ -528,6 +528,33 @@
                   hundred times a day, and the answer is the same every time in any given venue.
                   Leave this off and no paper comes out at the counter; staff print one on request
                   from the Receipts screen or the Last Bill key.
+                </p>
+              </div>
+
+              <!-- Naming only. Which IP or USB device a printer actually is
+                   stays on the terminal, because that is physical to a
+                   counter — but the *vocabulary* belongs to the venue, or
+                   "KP 3" means a different station in every room. -->
+              <div class="card rd-card">
+                <h3>Printer names</h3>
+                <p class="muted small" style="margin:0 0 10px">
+                  What this venue calls each printer. These names appear on the product
+                  editor, in the catalogue, and on every till — so a station called
+                  “Fryer” here is “Fryer” everywhere. Leave one blank to use its
+                  standard name. Which printer is physically plugged in where is set on
+                  each till, under Settings › Printing.
+                </p>
+                <label>KP 1 <input data-idle="printer_name_kp1" maxlength="40" placeholder="KP 1"></label>
+                <label>KP 2 <input data-idle="printer_name_kp2" maxlength="40" placeholder="KP 2"></label>
+                <label>KP 3 <input data-idle="printer_name_kp3" maxlength="40" placeholder="KP 3"></label>
+                <label>KP 4 <input data-idle="printer_name_kp4" maxlength="40" placeholder="KP 4"></label>
+                <label>KP 5 <input data-idle="printer_name_kp5" maxlength="40" placeholder="KP 5"></label>
+                <label>KP 6 <input data-idle="printer_name_kp6" maxlength="40" placeholder="KP 6"></label>
+                <label>Receipt printer <input data-idle="printer_name_receipt" maxlength="40" placeholder="Receipt printer"></label>
+                <p class="muted small" style="margin:8px 0 0">
+                  The receipt printer is a routing destination too: tick it on a product
+                  and the counter gets its own ticket for that item, as well as the
+                  kitchen getting theirs.
                 </p>
               </div>
 

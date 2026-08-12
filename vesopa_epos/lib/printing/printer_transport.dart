@@ -1,121 +1,128 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:flutter_libserialport/flutter_libserialport.dart';
 
-/// How a printer is reached. Both are supported because a venue may have a
-/// modern networked kitchen printer and a legacy till printer wired to a COM
-/// port at the same counter.
-enum PrinterKind { network, serial }
+import 'windows_printing.dart';
 
-/// What a printer is for. A venue routinely has one printer at the counter and
-/// another in the kitchen, and they need different documents: the receipt
-/// carries prices and branding, the ticket carries items and modifiers.
+export 'print_targets.dart';
+
+/// How a printer is reached.
 ///
-/// The kitchen printers are numbered rather than named ("KP 1", not "Kitchen"
-/// and "Bar") because the number is what the back office assigns products to.
-/// A venue with a grill, a fryer, a cold section and a bar has four stations
-/// and no vocabulary the till could have guessed; a number lets them label the
-/// physical printer however they like and route to it by position.
-enum PrinterRole {
-  receipt('Receipt printer', 'receipt'),
-  kp1('KP 1', 'kp1'),
-  kp2('KP 2', 'kp2'),
-  kp3('KP 3', 'kp3'),
-  kp4('KP 4', 'kp4'),
-  kp5('KP 5', 'kp5'),
-  kp6('KP 6', 'kp6');
+/// Ordered by how directly each one talks to the hardware, which is also the
+/// order a venue should prefer them in. The first three put the bytes on the
+/// wire themselves; only [windowsQueue] involves the Windows spooler, and it is
+/// last because a spooler in the path is the thing that goes wrong at eight on
+/// a Friday.
+enum PrinterKind {
+  /// Raw TCP to port 9100. The standard for networked thermal printers, the
+  /// only path that works from an iOS or Android till, and completely outside
+  /// the spooler.
+  network(
+    'Network',
+    'Straight to the printer over the network. No spooler, no driver.',
+    isDirect: true,
+  ),
 
-  const PrinterRole(this.label, this.station);
+  /// The printer's `usbprint.sys` device interface, written to directly.
+  /// Windows desktop only.
+  usb(
+    'USB (direct)',
+    'Straight to a USB printer, bypassing the Windows spooler entirely. The '
+        'most reliable option on a busy counter.',
+    isDirect: true,
+  ),
+
+  /// A COM port. Desktop only, and still common on older till printers.
+  serial(
+    'Serial',
+    'A COM port. No spooler, no driver.',
+    isDirect: true,
+  ),
+
+  /// A named Windows printer queue, written as a RAW job.
+  ///
+  /// The driver never renders anything — the ESC/POS goes through untouched —
+  /// but the spooler does queue it. Here for printers already set up in
+  /// Windows, printers on a Windows share, and any printer whose driver does
+  /// not expose a direct USB interface.
+  windowsQueue(
+    'Windows printer',
+    'A printer already set up in Windows. The bytes are sent raw, so nothing '
+        'is re-rendered, but the job still passes through the Windows spooler.',
+    isDirect: false,
+  );
+
+  const PrinterKind(this.label, this.blurb, {required this.isDirect});
 
   final String label;
+  final String blurb;
 
-  /// The key the back office routes products to, and the key this role is
-  /// stored under. Kept separate from [name] so the enum can be renamed
-  /// without invalidating every terminal's saved printer setup.
-  final String station;
+  /// Whether this path avoids the Windows spooler altogether.
+  final bool isDirect;
 
-  /// Every kitchen printer, in order. The receipt printer is deliberately not
-  /// in this list: it is the one printer whose document is different.
-  static List<PrinterRole> get kitchenPrinters =>
-      values.where((r) => r != PrinterRole.receipt).toList();
+  /// Whether this terminal can use this connection at all.
+  bool get isAvailableHere => switch (this) {
+    PrinterKind.network => true,
+    PrinterKind.serial =>
+      Platform.isWindows || Platform.isMacOS || Platform.isLinux,
+    PrinterKind.usb || PrinterKind.windowsQueue => Platform.isWindows,
+  };
 
-  /// The role a stored `station` key belongs to, or null.
-  ///
-  /// Accepts the two names this used to have. A venue that set up "kitchen"
-  /// and "bar" before the numbered stations existed keeps printing: kitchen
-  /// becomes KP 1 and bar becomes KP 2, which is the order they were listed in
-  /// and so the order their printers were almost certainly plugged in.
-  static PrinterRole? fromStation(String? key) {
-    if (key == null || key.isEmpty) return null;
-    final k = key.trim().toLowerCase();
-    for (final role in values) {
-      if (role.station == k || role.name == k) return role;
+  static PrinterKind fromName(String? name) {
+    for (final kind in values) {
+      if (kind.name == name) return kind;
     }
-    return switch (k) {
-      'kitchen' => PrinterRole.kp1,
-      'bar' => PrinterRole.kp2,
-      _ => null,
-    };
+    // "usbprint" was the name this shipped under briefly; anything else
+    // unrecognised falls back to the one connection every platform has.
+    return name == 'usbprint' ? PrinterKind.usb : PrinterKind.network;
   }
 }
 
-/// Reading and writing the comma-separated station list a product carries.
+/// One physical printer wired to this terminal.
 ///
-/// One place for it because three layers touch the same string — the sync that
-/// stores it, the product editor that sets it, and the print run that reads it
-/// — and a routing list that round-trips differently in any of them sends food
-/// to the wrong printer.
-abstract final class KitchenRouting {
-  /// The stations named by a stored routing string, unknown names dropped.
-  ///
-  /// Unknown rather than invalid: a back office offering KP 7 to a till that
-  /// only knows six should route to the six it has, not refuse the product.
-  static Set<String> parse(String? raw) {
-    if (raw == null || raw.isEmpty) return const {};
-    return {
-      for (final part in raw.split(','))
-        if (PrinterRole.fromStation(part) case final role?) role.station,
-    };
-  }
-
-  /// The storable form, in station order. Null for "not sent to a kitchen",
-  /// which is what the column means by empty.
-  static String? format(Iterable<String> stations) {
-    final roles = <PrinterRole>{
-      for (final s in stations)
-        if (PrinterRole.fromStation(s) case final role?) role,
-    }.toList()..sort((a, b) => a.index.compareTo(b.index));
-    return roles.isEmpty ? null : roles.map((r) => r.station).join(',');
-  }
-}
-
+/// A device, not a job. What it *prints* is decided by the target assignments
+/// in `PrinterSettings` — the same printer can be the customer's receipt and
+/// the cash drawer and KP 3 at once, which is exactly the small venue that
+/// owns one printer.
 class PrinterConfig {
   const PrinterConfig({
     required this.id,
     required this.name,
     required this.kind,
-    this.role = PrinterRole.receipt,
     this.host,
     this.port = 9100,
     this.serialPort,
     this.baudRate = 9600,
+    this.windowsQueueName,
+    this.usbDevicePath,
+    this.usbLabel,
     this.paperWidthMm = 80,
   });
 
   final String id;
   final String name;
   final PrinterKind kind;
-  final PrinterRole role;
 
   /// Network printers.
   final String? host;
   final int port;
 
-  /// Serial printers: the device path (COM3 on Windows, /dev/tty.* on macOS).
+  /// Serial printers: the device path (COM3 on Windows, /dev/tty.* elsewhere).
   final String? serialPort;
   final int baudRate;
+
+  /// The Windows queue name, for [PrinterKind.windowsQueue].
+  final String? windowsQueueName;
+
+  /// The `\\?\usb#…` interface path, for [PrinterKind.usb].
+  final String? usbDevicePath;
+
+  /// What that USB device called itself when it was chosen, so the setup screen
+  /// can still name a printer that has since been unplugged.
+  final String? usbLabel;
 
   /// The roll loaded in this printer: 80mm or 58mm. Set per printer rather
   /// than per venue, because a counter printer and a kitchen printer often
@@ -127,69 +134,89 @@ class PrinterConfig {
   /// builder lays columns out against.
   int get columns => paperWidthMm == 58 ? 32 : 48;
 
+  /// Whether this printer avoids the Windows spooler.
+  bool get isDirect => kind.isDirect;
+
+  /// Whether enough has been filled in for this to have any chance of printing.
+  bool get isComplete => switch (kind) {
+    PrinterKind.network => (host ?? '').trim().isNotEmpty,
+    PrinterKind.serial => (serialPort ?? '').trim().isNotEmpty,
+    PrinterKind.usb => (usbDevicePath ?? '').trim().isNotEmpty,
+    PrinterKind.windowsQueue => (windowsQueueName ?? '').trim().isNotEmpty,
+  };
+
+  /// How this printer is reached, for a human reading the setup screen.
+  String get connectionSummary => switch (kind) {
+    PrinterKind.network => '${host ?? '?'}:$port',
+    PrinterKind.serial => '${serialPort ?? '?'} @ $baudRate',
+    PrinterKind.usb => usbLabel ?? usbDevicePath ?? '?',
+    PrinterKind.windowsQueue => windowsQueueName ?? '?',
+  };
+
   PrinterConfig copyWith({
     String? name,
     PrinterKind? kind,
-    PrinterRole? role,
     String? host,
     int? port,
     String? serialPort,
     int? baudRate,
+    String? windowsQueueName,
+    String? usbDevicePath,
+    String? usbLabel,
     int? paperWidthMm,
-  }) =>
-      PrinterConfig(
-        id: id,
-        name: name ?? this.name,
-        kind: kind ?? this.kind,
-        role: role ?? this.role,
-        host: host ?? this.host,
-        port: port ?? this.port,
-        serialPort: serialPort ?? this.serialPort,
-        baudRate: baudRate ?? this.baudRate,
-        paperWidthMm: paperWidthMm ?? this.paperWidthMm,
-      );
+  }) => PrinterConfig(
+    id: id,
+    name: name ?? this.name,
+    kind: kind ?? this.kind,
+    host: host ?? this.host,
+    port: port ?? this.port,
+    serialPort: serialPort ?? this.serialPort,
+    baudRate: baudRate ?? this.baudRate,
+    windowsQueueName: windowsQueueName ?? this.windowsQueueName,
+    usbDevicePath: usbDevicePath ?? this.usbDevicePath,
+    usbLabel: usbLabel ?? this.usbLabel,
+    paperWidthMm: paperWidthMm ?? this.paperWidthMm,
+  );
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'kind': kind.name,
-        'role': role.station,
-        'host': host,
-        'port': port,
-        'serial_port': serialPort,
-        'baud_rate': baudRate,
-        'paper_width_mm': paperWidthMm,
-      };
+    'id': id,
+    'name': name,
+    'kind': kind.name,
+    'host': host,
+    'port': port,
+    'serial_port': serialPort,
+    'baud_rate': baudRate,
+    'windows_queue': windowsQueueName,
+    'usb_device_path': usbDevicePath,
+    'usb_label': usbLabel,
+    'paper_width_mm': paperWidthMm,
+  };
 
   factory PrinterConfig.fromJson(Map<String, dynamic> j) => PrinterConfig(
-        id: j['id'] as String? ?? '',
-        name: j['name'] as String? ?? 'Printer',
-        kind: PrinterKind.values.firstWhere(
-          (k) => k.name == j['kind'],
-          orElse: () => PrinterKind.network,
-        ),
-        role: PrinterRole.fromStation(j['role'] as String?) ??
-            PrinterRole.receipt,
-        host: j['host'] as String?,
-        port: (j['port'] as num?)?.toInt() ?? 9100,
-        serialPort: j['serial_port'] as String?,
-        baudRate: (j['baud_rate'] as num?)?.toInt() ?? 9600,
-        paperWidthMm: (j['paper_width_mm'] as num?)?.toInt() == 58 ? 58 : 80,
-      );
+    id: j['id'] as String? ?? '',
+    name: j['name'] as String? ?? 'Printer',
+    kind: PrinterKind.fromName(j['kind'] as String?),
+    host: j['host'] as String?,
+    port: (j['port'] as num?)?.toInt() ?? 9100,
+    serialPort: j['serial_port'] as String?,
+    baudRate: (j['baud_rate'] as num?)?.toInt() ?? 9600,
+    windowsQueueName: j['windows_queue'] as String?,
+    usbDevicePath: j['usb_device_path'] as String?,
+    usbLabel: j['usb_label'] as String?,
+    paperWidthMm: (j['paper_width_mm'] as num?)?.toInt() == 58 ? 58 : 80,
+  );
 }
 
 /// Sends raw ESC/POS bytes to a printer.
 abstract class PrinterTransport {
   Future<void> send(List<int> bytes);
 
-  factory PrinterTransport.of(PrinterConfig config) {
-    switch (config.kind) {
-      case PrinterKind.network:
-        return _NetworkTransport(config);
-      case PrinterKind.serial:
-        return _SerialTransport(config);
-    }
-  }
+  factory PrinterTransport.of(PrinterConfig config) => switch (config.kind) {
+    PrinterKind.network => _NetworkTransport(config),
+    PrinterKind.serial => _SerialTransport(config),
+    PrinterKind.usb => _UsbTransport(config),
+    PrinterKind.windowsQueue => _WindowsQueueTransport(config),
+  };
 }
 
 /// Raw TCP on port 9100 — the standard for networked thermal printers, and the
@@ -253,10 +280,83 @@ class _SerialTransport implements PrinterTransport {
   }
 }
 
+/// USB, straight to the device, with the spooler out of the picture.
+///
+/// The Win32 calls block until the printer has taken the bytes, so they run on
+/// a worker isolate. On a till that matters: a printer that has run out of
+/// paper can hold a write open for seconds, and doing that on the UI isolate
+/// would freeze the sale screen mid-service — which is precisely the thing
+/// direct printing is meant to prevent.
+class _UsbTransport implements PrinterTransport {
+  _UsbTransport(this.config);
+
+  final PrinterConfig config;
+
+  @override
+  Future<void> send(List<int> bytes) async {
+    final path = config.usbDevicePath;
+    if (path == null || path.isEmpty) {
+      throw StateError('No USB printer chosen for ${config.name}.');
+    }
+    // Copied into a plain list before crossing the isolate boundary.
+    final payload = List<int>.unmodifiable(bytes);
+    await Isolate.run(() => sendToUsbDevice(path, payload));
+  }
+}
+
+/// A Windows print queue, written as a RAW job. Runs on a worker isolate for
+/// the same reason as [_UsbTransport].
+class _WindowsQueueTransport implements PrinterTransport {
+  _WindowsQueueTransport(this.config);
+
+  final PrinterConfig config;
+
+  @override
+  Future<void> send(List<int> bytes) async {
+    final queue = config.windowsQueueName;
+    if (queue == null || queue.isEmpty) {
+      throw StateError('No Windows printer chosen for ${config.name}.');
+    }
+    final payload = List<int>.unmodifiable(bytes);
+    final name = config.name;
+    await Isolate.run(
+      () => sendToWindowsQueue(queue, payload, documentName: name),
+    );
+  }
+}
+
 /// Available serial ports, for the printer setup screen.
 List<String> availableSerialPorts() {
   if (!(Platform.isWindows || Platform.isMacOS || Platform.isLinux)) {
     return const [];
   }
   return SerialPort.availablePorts;
+}
+
+/// USB printers plugged in right now. Enumeration is a blocking Win32 walk of
+/// the device tree, so it happens off the UI isolate.
+Future<List<UsbPrinterDevice>> discoverUsbPrinters() async {
+  if (!Platform.isWindows) return const [];
+  final found = await Isolate.run(
+    () => usbPrinterDevices()
+        .map((d) => (path: d.devicePath, label: d.label))
+        .toList(),
+  );
+  return [
+    for (final d in found)
+      UsbPrinterDevice(devicePath: d.path, label: d.label),
+  ];
+}
+
+/// Printer queues Windows knows about, for the setup screen.
+Future<List<WindowsPrintQueue>> discoverWindowsQueues() async {
+  if (!Platform.isWindows) return const [];
+  final found = await Isolate.run(
+    () => windowsPrintQueues()
+        .map((q) => (name: q.name, server: q.server))
+        .toList(),
+  );
+  return [
+    for (final q in found) WindowsPrintQueue(name: q.name, server: q.server),
+  ];
 }

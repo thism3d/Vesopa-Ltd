@@ -656,6 +656,15 @@ async function loadSales() {
 }
 
 /**
+ * The venue's own name for a printer slot, or '' for the built-in label.
+ *
+ * Top level on purpose: both the catalogue table and the product editor read
+ * it, and they live in different scopes.
+ */
+const printerSlotName = (slot) =>
+  String(idleState?.[`printer_name_${slot}`] ?? '').trim();
+
+/**
  * A product's printing, for the catalogue table.
  *
  * Every station is named rather than counted: a manager scanning this column
@@ -669,7 +678,15 @@ function routeChips(p) {
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean)
     .map((s) => (s === 'kitchen' ? 'kp1' : s === 'bar' ? 'kp2' : s))
-    .map((s) => (/^kp[1-6]$/.test(s) ? `KP ${s.slice(2)}` : s));
+    .map((s) => {
+      // The venue's own name for the slot wins over the built-in label. A
+      // kitchen that calls KP 3 "Fryer" should read "Fryer" here too, or this
+      // column and the printer setup screen disagree about the same printer.
+      const named = printerSlotName(s);
+      if (named) return named;
+      if (/^kp[1-6]$/.test(s)) return `KP ${s.slice(2)}`;
+      return s === 'receipt' ? 'Receipt printer' : s;
+    });
 
   const chips = stations.map((s) => `<span class="chip">${esc(s)}</span>`);
   if (Number(p.print_to_receipt) === 0) {
@@ -678,7 +695,30 @@ function routeChips(p) {
   return chips.length ? chips.join(' ') : '<span class="muted">—</span>';
 }
 
+/**
+ * Make sure the venue's printer names are in hand before anything renders one.
+ *
+ * They live on the till-settings row, which is only fetched when the Idle
+ * screen view is opened — so a manager who goes straight to Products would
+ * otherwise see "KP 3" for a station they have named "Fryer". Fetched once,
+ * and merged *under* whatever is already in hand so an unsaved edit on the
+ * settings form is not overwritten by this.
+ */
+let printerNamesLoaded = false;
+async function ensurePrinterNames() {
+  if (printerNamesLoaded) return;
+  try {
+    const row = await api('/till-settings');
+    idleState = { ...row, ...idleState };
+    printerNamesLoaded = true;
+  } catch {
+    // Not worth failing the catalogue over. Every slot falls back to its
+    // built-in label, which is what the venue saw before naming existed.
+  }
+}
+
 async function loadProducts() {
+  await ensurePrinterNames();
   const rows = await api('/products');
   $('products').innerHTML = rows
     .map(
@@ -1583,14 +1623,25 @@ document.addEventListener('click', async (e) => {
     membership_expiry: d.membership_expiry || null,
   });
 
-  // Six, matching the till's six kitchen printer slots. Offering a seventh
-  // here would let a manager route food to a station no terminal can print to,
-  // and the failure would show up in a kitchen at service rather than in this
-  // form.
-  const KP_STATIONS = [1, 2, 3, 4, 5, 6].map((n) => ({
-    value: `kp${n}`,
-    label: `KP ${n}`,
-  }));
+  // The till's six kitchen slots, plus the receipt printer at the end.
+  //
+  // Six kitchen stations and no more: offering a seventh would let a manager
+  // route food to a station no terminal can print to, and the failure would
+  // show up in a kitchen at service rather than in this form.
+  //
+  // The receipt printer is a routing target too, because a counter often wants
+  // its own ticket for an item — a coffee the barista behind the till makes —
+  // and the alternative was a kitchen printer pointed at the counter.
+  const printerStations = () => [
+    ...[1, 2, 3, 4, 5, 6].map((n) => ({
+      value: `kp${n}`,
+      label: printerSlotName(`kp${n}`) || `KP ${n}`,
+    })),
+    {
+      value: 'receipt',
+      label: printerSlotName('receipt') || 'Receipt printer',
+    },
+  ];
 
   /** The pre-numbering routing names, as the station they now mean. */
   const legacyStation = (route) => {
@@ -1613,10 +1664,10 @@ document.addEventListener('click', async (e) => {
     // square category button — so this one crops to 16:9, not square.
     { label: 'Image', name: 'image_url', type: 'image', crop: 'landscape', value: p.image_url ?? '' },
     {
-      label: 'Kitchen printers — prints when sold and when saved to a table',
+      label: 'Printers — prints when sold and when saved to a table',
       name: 'printer_routes',
       type: 'stations',
-      options: KP_STATIONS,
+      options: printerStations(),
       // Falls back to the pre-numbering column so a product that has never
       // been re-saved still shows its routing rather than looking unrouted.
       value: p.printer_routes ?? legacyStation(p.printer_route),

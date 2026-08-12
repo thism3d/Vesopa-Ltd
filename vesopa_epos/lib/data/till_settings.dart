@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../printing/print_targets.dart';
+
 /// How the terminal behaves *between* sales: the idle screen it drops to, and
 /// how long it waits before signing the current member of staff off.
 ///
@@ -20,6 +22,7 @@ class TillSettings {
     this.changeWindowSeconds = 30,
     this.receiptAutoPrint = false,
     this.buttonsShowPrices = true,
+    this.printerNames = const {},
   });
 
   final bool idleEnabled;
@@ -61,6 +64,27 @@ class TillSettings {
   /// know the menu cold, gets a cleaner grid with it off.
   final bool buttonsShowPrices;
 
+  /// What the venue calls each printer slot, keyed by station ("kp3").
+  ///
+  /// The hardware stays on the terminal — which USB device, which IP — because
+  /// that is physical to a counter. The *naming* is venue-wide, so a station
+  /// the kitchen calls "Fryer" reads "Fryer" on every till and in the back
+  /// office, rather than "KP 3" in one place and "Fryer" in another.
+  ///
+  /// A slot with no name here is absent, and falls back to its built-in label.
+  final Map<String, String> printerNames;
+
+  /// The name to show for [target]: the venue's, or the built-in one.
+  String labelFor(PrintTarget target) => labelForStation(target.station!);
+
+  /// The same, from a stored routing key. Falls back to the raw key so an
+  /// unrecognised station still names itself rather than vanishing.
+  String labelForStation(String station) {
+    final named = printerNames[station]?.trim();
+    if (named != null && named.isNotEmpty) return named;
+    return PrintTarget.fromStation(station)?.label ?? station.toUpperCase();
+  }
+
   bool get autoSignOff => signoffSeconds > 0;
 
   Duration get signoffAfter => Duration(seconds: signoffSeconds);
@@ -91,7 +115,18 @@ class TillSettings {
           other.signoffSeconds == signoffSeconds &&
           other.changeWindowSeconds == changeWindowSeconds &&
           other.receiptAutoPrint == receiptAutoPrint &&
-          other.buttonsShowPrices == buttonsShowPrices;
+          other.buttonsShowPrices == buttonsShowPrices &&
+          _sameNames(other.printerNames, printerNames);
+
+  /// Seven short strings, compared by hand rather than pulling in a collection
+  /// dependency for one call. Order does not matter; contents do.
+  static bool _sameNames(Map<String, String> a, Map<String, String> b) {
+    if (a.length != b.length) return false;
+    for (final entry in a.entries) {
+      if (b[entry.key] != entry.value) return false;
+    }
+    return true;
+  }
 
   @override
   int get hashCode => Object.hash(
@@ -104,6 +139,12 @@ class TillSettings {
         changeWindowSeconds,
         receiptAutoPrint,
         buttonsShowPrices,
+        // Order-independent, so two identical maps built in different orders
+        // hash the same — which is what stops a re-fetch of the same row
+        // looking like a change and rebuilding the idle screen for nothing.
+        Object.hashAllUnordered([
+          for (final e in printerNames.entries) '${e.key}=${e.value}',
+        ]),
       );
 
   // The server sends MySQL TINYINT(1) for the switches, which arrives as 0/1
@@ -145,6 +186,15 @@ class TillSettings {
       buttonsShowPrices: j['buttons_show_prices'] == null
           ? true
           : _flag(j['buttons_show_prices']),
+      // Only slots the venue has actually named. An empty column stays out of
+      // the map so [labelFor] falls back to the built-in label rather than
+      // showing a station with a blank name.
+      printerNames: {
+        for (final target in PrintTarget.routable)
+          if ((j['printer_name_${target.station}'] as String?)?.trim()
+              case final name? when name.isNotEmpty)
+            target.station!: name,
+      },
     );
   }
 }

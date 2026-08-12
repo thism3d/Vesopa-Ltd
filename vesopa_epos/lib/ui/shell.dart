@@ -19,6 +19,7 @@ import 'sale_page.dart';
 import 'tables_page.dart';
 import 'theme.dart';
 import 'widgets/nav_rail.dart';
+import 'widgets/print_status.dart';
 
 /// The till frame: fixed nav rail on the left, the selected page beside it.
 class PosShell extends ConsumerStatefulWidget {
@@ -176,6 +177,7 @@ class _PosShellState extends ConsumerState<PosShell> {
             // and "hand it to the next person" is a mid-service action there
             // too — burying it in the drawer means it does not get used.
             StaffChip(onSignOn: onSignOn, onSignOff: onSignOff, compact: true),
+            const Center(child: PrintStatusBadge(compact: true)),
             const Padding(
               padding: EdgeInsets.only(right: 12),
               child: Center(child: SyncStatusBadge()),
@@ -386,6 +388,11 @@ class _TitleBar extends StatelessWidget {
               // onto my own name or the last person's?" — which matters once
               // the check shows attribution.
               StaffChip(onSignOn: onSignOn, onSignOff: onSignOff),
+              // Whether the kitchen actually got the last ticket. Beside the
+              // sync badge because it answers the same shape of question —
+              // "did what I just did land?" — and draws nothing at all when
+              // there is nothing to report.
+              const PrintStatusBadge(),
               // The clerk needs to know at a glance whether the till is live with
               // the back office or working offline with a backlog to send.
               const SyncStatusBadge(),

@@ -341,7 +341,7 @@ class _Toolbar extends StatelessWidget {
 }
 
 /// One product, showing everything the terminal knows about it.
-class _ProductRow extends StatelessWidget {
+class _ProductRow extends ConsumerWidget {
   const _ProductRow({
     required this.product,
     required this.onEdit,
@@ -353,7 +353,7 @@ class _ProductRow extends StatelessWidget {
   final VoidCallback onStock;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final out = product.stockQuantity <= 0;
@@ -407,7 +407,11 @@ class _ProductRow extends StatelessWidget {
                         for (final station
                             in KitchenRouting.parse(product.printerRoutes))
                           _Tag(
-                            PrinterRole.fromStation(station)?.label ?? station,
+                            // The venue's own name for the station, where they
+                            // have set one in the back office.
+                            ref
+                                .watch(tillSettingsProvider)
+                                .labelForStation(station),
                             icon: Icons.print_outlined,
                           ),
                         if (!product.printToReceipt)
@@ -592,16 +596,16 @@ class _ProductEdit {
   final bool printToReceipt;
 }
 
-class _ProductDialog extends StatefulWidget {
+class _ProductDialog extends ConsumerStatefulWidget {
   const _ProductDialog({required this.product});
 
   final Product product;
 
   @override
-  State<_ProductDialog> createState() => _ProductDialogState();
+  ConsumerState<_ProductDialog> createState() => _ProductDialogState();
 }
 
-class _ProductDialogState extends State<_ProductDialog> {
+class _ProductDialogState extends ConsumerState<_ProductDialog> {
   late final _price = TextEditingController(
       text: (widget.product.priceMinor / 100).toStringAsFixed(2));
   late final _stock = TextEditingController(
@@ -658,7 +662,7 @@ class _ProductDialogState extends State<_ProductDialog> {
             Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                'Kitchen printers',
+                'Printers',
                 style: Theme.of(context).textTheme.labelLarge,
               ),
             ),
@@ -667,27 +671,29 @@ class _ProductDialogState extends State<_ProductDialog> {
               alignment: Alignment.centerLeft,
               child: Text(
                 'Tick every printer this item should print on. It prints '
-                'when the item is sold and when it is saved to a table.',
+                'when the item is sold and when it is saved to a table. The '
+                'receipt printer is here too, for an item the counter needs a '
+                'ticket for.',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ),
             const SizedBox(height: 8),
-            // Wrapped chips rather than six rows of checkboxes: six stations
+            // Wrapped chips rather than a row of checkboxes: seven stations
             // stacked vertically pushed the dialog past the height of a till
             // screen, and the state is binary either way.
             Wrap(
               spacing: 8,
               runSpacing: 8,
               children: [
-                for (final role in PrinterRole.kitchenPrinters)
+                for (final target in PrintTarget.routable)
                   FilterChip(
-                    label: Text(role.label),
-                    selected: _routes.contains(role.station),
+                    label: Text(ref.watch(tillSettingsProvider).labelFor(target)),
+                    selected: _routes.contains(target.station),
                     onSelected: (on) => setState(() {
                       if (on) {
-                        _routes.add(role.station);
+                        _routes.add(target.station!);
                       } else {
-                        _routes.remove(role.station);
+                        _routes.remove(target.station);
                       }
                     }),
                   ),

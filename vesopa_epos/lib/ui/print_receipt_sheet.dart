@@ -1,12 +1,18 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:printing/printing.dart';
 
 import '../data/branding.dart';
 import '../data/receipt_repository.dart';
+// Re-exports print_targets.dart, which is where PrintTarget lives.
+import '../printing/printer_transport.dart';
+import '../printing/receipt_builder.dart';
 import 'kitchen_ticket_pdf.dart';
+import 'printers_page.dart' show printerSettingsProvider;
 import 'receipt_pdf.dart';
+import 'widgets/pos_message.dart';
 
 /// What the clerk chose to do with a finished sale.
 enum PrintChoice { customerReceipt, kitchenTicket, both, none }
@@ -17,7 +23,7 @@ enum PrintChoice { customerReceipt, kitchenTicket, both, none }
 /// see what will come out of the printer before it does — a receipt with the
 /// wrong logo or a missing voucher line is discovered at the customer's hand
 /// otherwise — and needs the common actions reachable in one tap.
-class PrintReceiptSheet extends StatefulWidget {
+class PrintReceiptSheet extends ConsumerStatefulWidget {
   const PrintReceiptSheet({
     super.key,
     required this.receipt,
@@ -76,10 +82,10 @@ class PrintReceiptSheet extends StatefulWidget {
   }
 
   @override
-  State<PrintReceiptSheet> createState() => _PrintReceiptSheetState();
+  ConsumerState<PrintReceiptSheet> createState() => _PrintReceiptSheetState();
 }
 
-class _PrintReceiptSheetState extends State<PrintReceiptSheet> {
+class _PrintReceiptSheetState extends ConsumerState<PrintReceiptSheet> {
   bool _busy = false;
 
   Future<Uint8List> _receiptPdf() => buildReceiptPdf(
@@ -95,10 +101,69 @@ class _PrintReceiptSheetState extends State<PrintReceiptSheet> {
         branding: widget.branding,
       );
 
-  /// Sends straight to the configured printer, falling back to the system
-  /// dialog when there is none — a till with a bound thermal printer should
-  /// never make the clerk pick it again mid-service.
-  Future<void> _print(PrintChoice choice) async {
+  /// The printer a target will actually use, or null if none is set up.
+  PrinterConfig? _printerFor(PrintTarget target) =>
+      ref.read(printerSettingsProvider).value?.deviceFor(target);
+
+  /// Print straight to the assigned printer as ESC/POS.
+  ///
+  /// No print dialog, no driver, and on a USB or network printer no spooler
+  /// either — the bytes go from here to the paper. That is the whole point: a
+  /// clerk mid-service should never be handed a Windows print dialog, and a
+  /// receipt should not be waiting behind whatever else is in a queue.
+  ///
+  /// Falls back to the PDF path when nothing is set up, so a till being
+  /// configured — or one with no thermal printer at all — can still put a
+  /// receipt in a customer's hand.
+  Future<void> _printDirect(PrintTarget target) async {
+    if (_busy) return;
+
+    final printer = _printerFor(target);
+    if (printer == null) {
+      await _printViaWindows();
+      return;
+    }
+
+    setState(() => _busy = true);
+    try {
+      final builder = await ReceiptBuilder.create();
+      await PrinterTransport.of(printer).send(
+        builder.receiptFromDetail(
+          widget.receipt,
+          shopName: widget.venueName,
+          footer: widget.branding.footerMessage,
+          logo: widget.branding.showLogo ? widget.branding.logoBytes : null,
+          heading: switch (target) {
+            PrintTarget.merchantCopy => 'MERCHANT COPY',
+            _ when widget.isBill => 'BILL — NOT A RECEIPT',
+            _ when widget.isReprint => 'REPRINT',
+            _ => null,
+          },
+        ),
+      );
+      if (!mounted) return;
+      // The merchant copy is an extra, not the outcome: printing one must not
+      // close the sheet before the customer's copy has been dealt with.
+      if (target == PrintTarget.merchantCopy) {
+        PosMessenger.success(context, 'Merchant copy printed.');
+      } else {
+        Navigator.of(context).pop(PrintChoice.customerReceipt);
+      }
+    } catch (e) {
+      if (mounted) {
+        PosMessenger.error(context, 'Could not print on ${printer.name}.\n\n$e');
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// The old path: render a PDF and hand it to Windows.
+  ///
+  /// Kept deliberately. It is what a till with no thermal printer uses, what a
+  /// venue reaches for when a printer has died mid-service, and the only way to
+  /// get a receipt onto an A4 office printer.
+  Future<void> _printViaWindows([PrintChoice choice = PrintChoice.customerReceipt]) async {
     if (_busy) return;
     setState(() => _busy = true);
     try {
@@ -241,7 +306,11 @@ class _PrintReceiptSheetState extends State<PrintReceiptSheet> {
                           child: FilledButton.icon(
                             onPressed: _busy
                                 ? null
-                                : () => _print(PrintChoice.customerReceipt),
+                                : () => _printDirect(
+                                    widget.isBill
+                                        ? PrintTarget.bill
+                                        : PrintTarget.customerReceipt,
+                                  ),
                             icon: _busy
                                 ? const SizedBox(
                                     width: 18,
@@ -256,30 +325,82 @@ class _PrintReceiptSheetState extends State<PrintReceiptSheet> {
                       ),
                     ],
                   ),
-                  if (widget.showKitchenOption) ...[
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
+
+                  const SizedBox(height: 6),
+                  // The secondary row. Everything here is an escape hatch, so
+                  // it is deliberately quieter than the key above it — the one
+                  // a clerk hits a hundred times a shift.
+                  Row(
+                    children: [
+                      if (_printerFor(PrintTarget.merchantCopy) != null)
                         Expanded(
                           child: TextButton.icon(
                             onPressed: _busy
                                 ? null
-                                : () => _print(PrintChoice.kitchenTicket),
-                            icon: const Icon(Icons.soup_kitchen_outlined),
+                                : () =>
+                                      _printDirect(PrintTarget.merchantCopy),
+                            icon: const Icon(Icons.content_copy, size: 18),
+                            label: const Text('Merchant copy'),
+                          ),
+                        ),
+                      if (widget.showKitchenOption)
+                        Expanded(
+                          child: TextButton.icon(
+                            onPressed: _busy
+                                ? null
+                                : () => _printViaWindows(
+                                    PrintChoice.kitchenTicket,
+                                  ),
+                            icon: const Icon(
+                              Icons.soup_kitchen_outlined,
+                              size: 18,
+                            ),
                             label: const Text('Kitchen ticket'),
                           ),
                         ),
-                        Expanded(
-                          child: TextButton.icon(
-                            onPressed:
-                                _busy ? null : () => _print(PrintChoice.both),
-                            icon: const Icon(Icons.done_all),
-                            label: const Text('Both'),
-                          ),
+                      Expanded(
+                        child: TextButton.icon(
+                          onPressed: _busy ? null : () => _printViaWindows(),
+                          icon: const Icon(Icons.desktop_windows_outlined,
+                              size: 18),
+                          label: const Text('Windows / PDF'),
                         ),
-                      ],
+                      ),
+                    ],
+                  ),
+
+                  // Says which printer the big key will use, because "Print
+                  // receipt" doing something different on two tills in the same
+                  // venue is exactly the confusion per-document printers
+                  // introduce if nobody is told.
+                  if (_printerFor(
+                        widget.isBill
+                            ? PrintTarget.bill
+                            : PrintTarget.customerReceipt,
+                      )
+                      case final printer?)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        printer.isDirect
+                            ? 'Prints directly on ${printer.name} — no '
+                                  'Windows dialog, no spooler.'
+                            : 'Prints on ${printer.name} through the Windows '
+                                  'spooler.',
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    )
+                  else
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        'No receipt printer set up on this till, so this opens '
+                        'the Windows print dialog.',
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodySmall,
+                      ),
                     ),
-                  ],
                 ],
               ),
             ),

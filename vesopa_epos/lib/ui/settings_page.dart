@@ -209,8 +209,9 @@ class SettingsPage extends ConsumerWidget {
                     Expanded(
                       child: Text(
                         'Printers belong to this terminal, because they are '
-                        'plugged into it. Set the roll width to match the paper '
-                        'loaded — 80mm or 58mm.',
+                        'plugged into it. Every document can go to its own '
+                        'printer, and a USB printer is driven directly, '
+                        'without the Windows spooler.',
                         style: TextStyle(fontSize: 13, height: 1.4),
                       ),
                     ),
@@ -226,8 +227,10 @@ class SettingsPage extends ConsumerWidget {
                   // Named individually rather than counted: "2 kitchen
                   // printers" does not tell a manager whether the one they
                   // just routed a product to is the one that is missing.
-                  final kitchen = (settings?.stations.keys.toList() ?? [])
-                    ..sort();
+                  final kitchen = [
+                    for (final target in PrintTarget.kitchenStations)
+                      if (settings?.deviceFor(target) != null) target.label,
+                  ];
                   return ListTile(
                     leading: const Icon(Icons.settings_outlined),
                     title: const Text('Set up printers'),
@@ -235,13 +238,12 @@ class SettingsPage extends ConsumerWidget {
                       [
                         receipt == null
                             ? 'No receipt printer'
-                            : 'Receipt: ${receipt.name} (${receipt.paperWidthMm}mm)',
+                            : 'Receipt: ${receipt.name} '
+                                  '(${receipt.paperWidthMm}mm, '
+                                  '${receipt.isDirect ? 'direct' : 'spooled'})',
                         kitchen.isEmpty
                             ? 'No kitchen printers'
-                            : kitchen
-                                .map((s) =>
-                                    PrinterRole.fromStation(s)?.label ?? s)
-                                .join(', '),
+                            : kitchen.join(', '),
                       ].join('  ·  '),
                     ),
                     trailing: const Icon(Icons.chevron_right),
