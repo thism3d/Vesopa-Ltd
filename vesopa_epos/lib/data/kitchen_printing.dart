@@ -194,7 +194,7 @@ class KitchenPrinting {
     }
 
     final service = PrintService(
-      await ReceiptBuilder.create(),
+      await ReceiptBuilder.create(paperWidthMm: printers.receiptWidthMm),
       PrinterSetup(printers: printers, stationNames: stationNames),
     );
 

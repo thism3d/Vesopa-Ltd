@@ -147,7 +147,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
       // print dialog is fine there; this one is meant to happen without anyone
       // touching the screen, and a dialog would defeat the whole setting.
       final service = PrintService(
-        await ReceiptBuilder.create(),
+        await ReceiptBuilder.create(paperWidthMm: printers.receiptWidthMm),
         PrinterSetup(
           printers: printers,
           shopName: branding.venueName.isNotEmpty

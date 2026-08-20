@@ -225,7 +225,11 @@ class PrintersPage extends ConsumerWidget {
   /// it with a customer at the counter.
   Future<void> _test(BuildContext context, PrinterConfig printer) async {
     try {
-      final builder = await ReceiptBuilder.create();
+      // The slip's own ruler line only means anything if it is laid out for the
+      // width this printer was set up with.
+      final builder = await ReceiptBuilder.create(
+        paperWidthMm: printer.paperWidthMm,
+      );
       await PrinterTransport.of(printer).send(builder.testSlip(printer));
       if (context.mounted) {
         PosMessenger.success(context, 'Test sent to ${printer.name}.');

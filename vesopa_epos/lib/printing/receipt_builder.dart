@@ -15,17 +15,158 @@ String _money(int minor) =>
 
 final _time = DateFormat('dd/MM/yyyy HH:mm');
 
-/// Renders EPOS documents as ESC/POS byte streams for an 80mm thermal printer.
+/// The code page every document is printed in.
+///
+/// A thermal printer powers up in its factory code page, which is almost always
+/// CP437 — and in CP437 the byte 0xA3 is "ú", not "£". Nothing here used to
+/// select a page at all, so the till encoded "£12.00" correctly and the printer
+/// then drew it as "ú12.00".
+///
+/// CP1252 is the fix because it agrees with Latin-1 across the whole 0xA0–0xFF
+/// range, and Latin-1 is what [Generator] encodes with. The bytes the till
+/// already produced are right; this is what makes the printer read them the
+/// same way.
+const _codePage = 'CP1252';
+
+/// Characters no CP1252 printer can render, mapped to what a receipt should
+/// show instead.
+///
+/// The pound and euro signs are deliberately absent from the *dropping* side of
+/// this: "£" is a plain CP1252 byte and must survive untouched, while "€" has
+/// no Latin-1 encoding at all and has to be spelled out. Everything else here
+/// is typography that reaches the printer from human-entered text — a footer
+/// message typed in the back office, a product name pasted from a supplier's
+/// spreadsheet, a customer's name.
+const _substitutions = {
+  '€': 'EUR ',
+  '—': '-',
+  '–': '-',
+  '‑': '-',
+  '’': "'",
+  '‘': "'",
+  '‚': ',',
+  '“': '"',
+  '”': '"',
+  '„': '"',
+  '…': '...',
+  '•': '*',
+  '×': 'x',
+  '÷': '/',
+  '≥': '>=',
+  '≤': '<=',
+  '→': '->',
+  '™': 'TM',
+  // A non-breaking space (U+00A0), flattened to an ordinary one. It survives
+  // Latin-1 intact, but it arrives invisibly in text pasted from a spreadsheet
+  // or a web page, and some printers draw it as a solid block, not a gap.
+  ' ': ' ',
+};
+
+/// Makes [text] safe to put on a thermal printer.
+///
+/// This exists because the failure it prevents is not a cosmetic one. The
+/// generator encodes with Latin-1, and Latin-1 *throws* on anything it cannot
+/// represent — so a single em dash in a heading did not print a wrong
+/// character, it threw `Invalid argument (string): Contains invalid
+/// characters.` and no receipt came out at all. The venue's own footer message
+/// and any product name from the back office both land here, so this cannot be
+/// left to whoever writes the string literals.
+///
+/// Anything unrecognised outside Latin-1 becomes "?" rather than vanishing:
+/// visible evidence of a problem beats a blank where a customer's name should
+/// be. Control characters become spaces, because a stray newline or carriage
+/// return in a product name silently derails the column layout for the rest of
+/// the line.
+String escPosSafe(String text) {
+  final out = StringBuffer();
+  for (final rune in text.runes) {
+    final ch = String.fromCharCode(rune);
+    final swap = _substitutions[ch];
+    if (swap != null) {
+      out.write(swap);
+    } else if (rune == 0x0a) {
+      out.write(ch);
+    } else if (rune < 0x20 || (rune >= 0x7f && rune <= 0x9f)) {
+      out.write(' ');
+    } else if (rune <= 0xff) {
+      out.write(ch);
+    } else {
+      out.write('?');
+    }
+  }
+  return out.toString();
+}
+
+/// Renders EPOS documents as ESC/POS byte streams for a thermal printer.
 class ReceiptBuilder {
-  ReceiptBuilder(this._generator);
+  ReceiptBuilder(this._generator, {this.columns = 48}) {
+    // Recorded on the generator rather than emitted, so that every later
+    // `reset()` re-selects it: `reset()` sends ESC @, which drops the printer
+    // back to its factory code page, and then re-applies whatever was set here.
+    // [_begin] is what actually puts the selection on the wire.
+    _generator.setGlobalCodeTable(_codePage);
+  }
 
   final Generator _generator;
 
-  /// 80mm roll. The profile is loaded once and reused.
-  static Future<ReceiptBuilder> create() async {
+  /// Characters per line at Font A on the roll this builder is laying out for.
+  final int columns;
+
+  /// The profile is loaded once and reused.
+  ///
+  /// [paperWidthMm] must match the roll actually loaded in the printer this
+  /// document is going to. It drives the column arithmetic, so an 80mm layout
+  /// sent to a 58mm roll does not wrap — it prints off the edge of the paper,
+  /// taking the right-hand price column with it.
+  static Future<ReceiptBuilder> create({int paperWidthMm = 80}) async {
     final profile = await CapabilityProfile.load();
-    return ReceiptBuilder(Generator(PaperSize.mm80, profile));
+    final narrow = paperWidthMm == 58;
+    return ReceiptBuilder(
+      Generator(narrow ? PaperSize.mm58 : PaperSize.mm80, profile),
+      columns: narrow ? 32 : 48,
+    );
   }
+
+  /// Opens a document: clears whatever the last job left behind and selects the
+  /// code page. Every builder below starts with this.
+  List<int> _begin() => _generator.reset();
+
+  /// Text, with anything the printer cannot render dealt with first.
+  List<int> _text(String text, {PosStyles styles = const PosStyles()}) =>
+      _generator.text(escPosSafe(text), styles: styles);
+
+  /// A column, sanitised the same way. Named exactly like [PosColumn] so the
+  /// two are not confusable at a call site.
+  PosColumn _col({
+    String text = '',
+    int width = 2,
+    PosStyles styles = const PosStyles(),
+  }) => PosColumn(text: escPosSafe(text), width: width, styles: styles);
+
+  /// The venue's name, sized to the roll.
+  ///
+  /// Double width is the look a receipt wants, but it halves how much fits on a
+  /// line — 24 characters on an 80mm roll — and a name longer than that wraps
+  /// into a block of oversized text several lines deep at the top of the
+  /// receipt. Past that length the name drops to single width, which still
+  /// reads as a heading and still fits.
+  List<int> _shopName(String name) {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return const [];
+    final wide = escPosSafe(trimmed).length <= _wideColumns;
+    return _text(
+      trimmed,
+      styles: PosStyles(
+        align: PosAlign.center,
+        height: wide ? PosTextSize.size2 : PosTextSize.size1,
+        width: wide ? PosTextSize.size2 : PosTextSize.size1,
+        bold: true,
+      ),
+    );
+  }
+
+  /// Characters that fit on one double-width line.
+  int get _wideColumns => columns ~/ 2;
 
   /// The customer's receipt.
   List<int> receipt({
@@ -37,7 +178,7 @@ class ReceiptBuilder {
     Uint8List? logo,
     String? heading,
   }) {
-    final bytes = <int>[];
+    final bytes = _begin();
 
     if (logo != null) {
       final decoded = img.decodeImage(logo);
@@ -50,17 +191,7 @@ class ReceiptBuilder {
     }
 
     if (shopName != null) {
-      bytes.addAll(
-        _generator.text(
-          shopName,
-          styles: const PosStyles(
-            align: PosAlign.center,
-            height: PosTextSize.size2,
-            width: PosTextSize.size2,
-            bold: true,
-          ),
-        ),
-      );
+      bytes.addAll(_shopName(shopName));
     }
 
     // Which copy this is, when it is not the customer's. A merchant copy that
@@ -69,7 +200,7 @@ class ReceiptBuilder {
     // never given out.
     if (heading != null && heading.isNotEmpty) {
       bytes.addAll(
-        _generator.text(
+        _text(
           heading,
           styles: const PosStyles(align: PosAlign.center, bold: true),
         ),
@@ -78,14 +209,14 @@ class ReceiptBuilder {
 
     bytes.addAll(_generator.hr());
     bytes.addAll(
-      _generator.text(
+      _text(
         _time.format(order.createdAt),
         styles: const PosStyles(align: PosAlign.center),
       ),
     );
     if (order.tableNumber != null) {
       bytes.addAll(
-        _generator.text(
+        _text(
           'Table ${order.tableNumber}',
           styles: const PosStyles(align: PosAlign.center),
         ),
@@ -97,11 +228,11 @@ class ReceiptBuilder {
       final lineTotal = (line.unitPriceMinor * line.quantity).round();
       bytes.addAll(
         _generator.row([
-          PosColumn(
+          _col(
             text: '${line.quantity.toStringAsFixed(0)}x ${line.name}',
             width: 8,
           ),
-          PosColumn(
+          _col(
             text: _money(lineTotal),
             width: 4,
             styles: const PosStyles(align: PosAlign.right),
@@ -113,7 +244,7 @@ class ReceiptBuilder {
       // receipt has always shown them, so the same sale printed two ways said
       // two different things.
       if (line.notes != null && line.notes!.isNotEmpty) {
-        bytes.addAll(_generator.text('   * ${line.notes}'));
+        bytes.addAll(_text('   * ${line.notes}'));
       }
     }
 
@@ -125,12 +256,12 @@ class ReceiptBuilder {
     bytes.addAll(_row('VAT', _money(order.taxMinor)));
     bytes.addAll(
       _generator.row([
-        PosColumn(
+        _col(
           text: 'TOTAL',
           width: 6,
           styles: const PosStyles(bold: true, height: PosTextSize.size2),
         ),
-        PosColumn(
+        _col(
           text: _money(order.totalMinor),
           width: 6,
           styles: const PosStyles(
@@ -149,7 +280,7 @@ class ReceiptBuilder {
       // keys — so the customer can check the receipt against their wallet.
       final tally = CashTally.decode(p.cashBreakdown);
       if (tally.isNotEmpty) {
-        bytes.addAll(_generator.text('   ${tally.describe()}'));
+        bytes.addAll(_text('   ${tally.describe()}'));
       }
     }
 
@@ -163,7 +294,7 @@ class ReceiptBuilder {
     if (footer != null) {
       bytes.addAll(_generator.feed(1));
       bytes.addAll(
-        _generator.text(footer, styles: const PosStyles(align: PosAlign.center)),
+        _text(footer, styles: const PosStyles(align: PosAlign.center)),
       );
     }
 
@@ -187,7 +318,7 @@ class ReceiptBuilder {
     Uint8List? logo,
     String? heading,
   }) {
-    final bytes = <int>[];
+    final bytes = _begin();
     final summary = detail.summary;
 
     if (logo != null) {
@@ -199,22 +330,12 @@ class ReceiptBuilder {
     }
 
     if (shopName != null && shopName.isNotEmpty) {
-      bytes.addAll(
-        _generator.text(
-          shopName,
-          styles: const PosStyles(
-            align: PosAlign.center,
-            height: PosTextSize.size2,
-            width: PosTextSize.size2,
-            bold: true,
-          ),
-        ),
-      );
+      bytes.addAll(_shopName(shopName));
     }
 
     if (heading != null && heading.isNotEmpty) {
       bytes.addAll(
-        _generator.text(
+        _text(
           heading,
           styles: const PosStyles(align: PosAlign.center, bold: true),
         ),
@@ -223,14 +344,14 @@ class ReceiptBuilder {
 
     bytes.addAll(_generator.hr());
     bytes.addAll(
-      _generator.text(
+      _text(
         _time.format(summary.closedAt),
         styles: const PosStyles(align: PosAlign.center),
       ),
     );
     if (summary.tableNumber != null) {
       bytes.addAll(
-        _generator.text(
+        _text(
           'Table ${summary.tableNumber}'
           '${summary.covers != null ? '  ·  ${summary.covers} covers' : ''}',
           styles: const PosStyles(align: PosAlign.center),
@@ -239,7 +360,7 @@ class ReceiptBuilder {
     }
     if (summary.clerkName?.isNotEmpty ?? false) {
       bytes.addAll(
-        _generator.text(
+        _text(
           'Served by ${summary.clerkName}',
           styles: const PosStyles(align: PosAlign.center),
         ),
@@ -250,11 +371,11 @@ class ReceiptBuilder {
     for (final line in detail.lines) {
       bytes.addAll(
         _generator.row([
-          PosColumn(
+          _col(
             text: '${line.quantity.toStringAsFixed(0)}x ${line.name}',
             width: 8,
           ),
-          PosColumn(
+          _col(
             text: _money(line.lineTotalMinor),
             width: 4,
             styles: const PosStyles(align: PosAlign.right),
@@ -262,7 +383,7 @@ class ReceiptBuilder {
         ]),
       );
       if (line.note?.isNotEmpty ?? false) {
-        bytes.addAll(_generator.text('   * ${line.note}'));
+        bytes.addAll(_text('   * ${line.note}'));
       }
     }
 
@@ -287,12 +408,12 @@ class ReceiptBuilder {
     bytes.addAll(_row('VAT', _money(summary.taxMinor)));
     bytes.addAll(
       _generator.row([
-        PosColumn(
+        _col(
           text: 'TOTAL',
           width: 6,
           styles: const PosStyles(bold: true, height: PosTextSize.size2),
         ),
-        PosColumn(
+        _col(
           text: _money(summary.totalMinor),
           width: 6,
           styles: const PosStyles(
@@ -311,7 +432,7 @@ class ReceiptBuilder {
       );
       final tally = CashTally.decode(tender.cashBreakdown);
       if (tally.isNotEmpty) {
-        bytes.addAll(_generator.text('   ${tally.describe()}'));
+        bytes.addAll(_text('   ${tally.describe()}'));
       }
     }
 
@@ -328,7 +449,7 @@ class ReceiptBuilder {
         summary.pointsBalance != null) {
       bytes.addAll(_generator.hr());
       if (summary.customerName?.isNotEmpty ?? false) {
-        bytes.addAll(_generator.text(summary.customerName!));
+        bytes.addAll(_text(summary.customerName!));
       }
       if (summary.pointsEarned > 0) {
         bytes.addAll(_row('Points earned', '${summary.pointsEarned}'));
@@ -344,7 +465,7 @@ class ReceiptBuilder {
     if (footer != null && footer.isNotEmpty) {
       bytes.addAll(_generator.feed(1));
       bytes.addAll(
-        _generator.text(footer, styles: const PosStyles(align: PosAlign.center)),
+        _text(footer, styles: const PosStyles(align: PosAlign.center)),
       );
     }
 
@@ -363,10 +484,10 @@ class ReceiptBuilder {
     String? headline,
     String? staffName,
   }) {
-    final bytes = <int>[];
+    final bytes = _begin();
 
     bytes.addAll(
-      _generator.text(
+      _text(
         station.toUpperCase(),
         styles: const PosStyles(
           align: PosAlign.center,
@@ -383,7 +504,7 @@ class ReceiptBuilder {
     // about.
     if (headline != null && headline.isNotEmpty) {
       bytes.addAll(
-        _generator.text(
+        _text(
           headline.toUpperCase(),
           styles: const PosStyles(align: PosAlign.center, bold: true),
         ),
@@ -392,7 +513,7 @@ class ReceiptBuilder {
 
     if (order.tableNumber != null) {
       bytes.addAll(
-        _generator.text(
+        _text(
           'TABLE ${order.tableNumber}',
           styles: const PosStyles(
             align: PosAlign.center,
@@ -404,7 +525,7 @@ class ReceiptBuilder {
     }
 
     bytes.addAll(
-      _generator.text(
+      _text(
         _time.format(DateTime.now()),
         styles: const PosStyles(align: PosAlign.center),
       ),
@@ -413,7 +534,7 @@ class ReceiptBuilder {
 
     for (final line in lines) {
       bytes.addAll(
-        _generator.text(
+        _text(
           '${line.quantity.toStringAsFixed(0)}x  ${line.name}',
           styles: const PosStyles(
             height: PosTextSize.size2,
@@ -422,20 +543,20 @@ class ReceiptBuilder {
         ),
       );
       if (line.notes != null && line.notes!.isNotEmpty) {
-        bytes.addAll(_generator.text('   * ${line.notes}'));
+        bytes.addAll(_text('   * ${line.notes}'));
       }
     }
 
     if (order.notes != null && order.notes!.isNotEmpty) {
       bytes.addAll(_generator.hr());
-      bytes.addAll(_generator.text('NOTE: ${order.notes}'));
+      bytes.addAll(_text('NOTE: ${order.notes}'));
     }
 
     // Who rang it, so the kitchen has somebody to ask about a query rather
     // than having to work out which till the ticket came off.
     if (staffName != null && staffName.isNotEmpty) {
       bytes.addAll(_generator.hr());
-      bytes.addAll(_generator.text(staffName));
+      bytes.addAll(_text(staffName));
     }
 
     bytes.addAll(_generator.feed(2));
@@ -445,19 +566,19 @@ class ReceiptBuilder {
 
   /// X or Z report.
   List<int> tillReport(TillReport report, {String? shopName}) {
-    final bytes = <int>[];
+    final bytes = _begin();
     final title = report.isZ ? 'Z REPORT' : 'X REPORT';
 
     if (shopName != null) {
       bytes.addAll(
-        _generator.text(
+        _text(
           shopName,
           styles: const PosStyles(align: PosAlign.center, bold: true),
         ),
       );
     }
     bytes.addAll(
-      _generator.text(
+      _text(
         report.isZ && report.zNumber != null ? '$title #${report.zNumber}' : title,
         styles: const PosStyles(
           align: PosAlign.center,
@@ -483,7 +604,7 @@ class ReceiptBuilder {
     if (report.byMethod.isNotEmpty) {
       bytes.addAll(_generator.hr());
       bytes.addAll(
-        _generator.text('BY TENDER', styles: const PosStyles(bold: true)),
+        _text('BY TENDER', styles: const PosStyles(bold: true)),
       );
       for (final entry in report.byMethod.entries) {
         bytes.addAll(_row(entry.key.toUpperCase(), _money(entry.value)));
@@ -493,7 +614,7 @@ class ReceiptBuilder {
     if (report.byDepartment.isNotEmpty) {
       bytes.addAll(_generator.hr());
       bytes.addAll(
-        _generator.text('BY DEPARTMENT', styles: const PosStyles(bold: true)),
+        _text('BY DEPARTMENT', styles: const PosStyles(bold: true)),
       );
       for (final entry in report.byDepartment.entries) {
         bytes.addAll(_row(entry.key, _money(entry.value)));
@@ -505,12 +626,12 @@ class ReceiptBuilder {
     bytes.addAll(_row('Float', _money(report.openingFloatMinor)));
     bytes.addAll(
       _generator.row([
-        PosColumn(
+        _col(
           text: 'CASH EXPECTED',
           width: 7,
           styles: const PosStyles(bold: true),
         ),
-        PosColumn(
+        _col(
           text: _money(report.expectedCashMinor),
           width: 5,
           styles: const PosStyles(align: PosAlign.right, bold: true),
@@ -521,7 +642,7 @@ class ReceiptBuilder {
     if (report.isZ) {
       bytes.addAll(_generator.feed(1));
       bytes.addAll(
-        _generator.text(
+        _text(
           '*** TOTALS RESET ***',
           styles: const PosStyles(align: PosAlign.center, bold: true),
         ),
@@ -546,10 +667,10 @@ class ReceiptBuilder {
   /// the price column off the edge of a 58mm roll. The ruler line makes the
   /// second visible at a glance — if it wraps, the width is wrong.
   List<int> testSlip(PrinterConfig printer) {
-    final bytes = <int>[];
+    final bytes = _begin();
 
     bytes.addAll(
-      _generator.text(
+      _text(
         'TEST PRINT',
         styles: const PosStyles(
           align: PosAlign.center,
@@ -569,21 +690,36 @@ class ReceiptBuilder {
     bytes.addAll(_row('Roll', '${printer.paperWidthMm}mm'));
     bytes.addAll(_row('Printed', _time.format(DateTime.now())));
     bytes.addAll(_generator.hr());
+
+    // The pound sign, checked on paper rather than on screen. It depends on the
+    // printer being on the right code page, which is a property of the printer
+    // and not of the till — so it is only ever really answered by printing one.
+    bytes.addAll(_row('Currency', _money(123456)));
     bytes.addAll(
-      _generator.text(
+      _text(
+        'The amount above must show a £ sign.',
+        styles: const PosStyles(align: PosAlign.center),
+      ),
+    );
+
+    bytes.addAll(_generator.hr());
+    bytes.addAll(
+      _text(
         'The line below should fit on one line.',
         styles: const PosStyles(align: PosAlign.center),
       ),
     );
-    bytes.addAll(_generator.text('1234567890' * 5));
+    // Exactly one full line for this roll: if it wraps, the printer is loaded
+    // with narrower paper than it has been set up for.
+    bytes.addAll(_text(('1234567890' * 5).substring(0, columns)));
     bytes.addAll(_generator.feed(2));
     bytes.addAll(_generator.cut());
     return bytes;
   }
 
   List<int> _row(String label, String value) => _generator.row([
-        PosColumn(text: label, width: 7),
-        PosColumn(
+        _col(text: label, width: 7),
+        _col(
           text: value,
           width: 5,
           styles: const PosStyles(align: PosAlign.right),

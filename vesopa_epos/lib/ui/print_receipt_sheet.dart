@@ -105,6 +105,18 @@ class _PrintReceiptSheetState extends ConsumerState<PrintReceiptSheet> {
   PrinterConfig? _printerFor(PrintTarget target) =>
       ref.read(printerSettingsProvider).value?.deviceFor(target);
 
+  /// What to print across the top of the receipt.
+  ///
+  /// The venue's trading name as set in the back office, and only then the
+  /// session's fallback. [Session.venueName] is the back-office *account* name,
+  /// which for a sole trader is a person's name — so a till that had branding
+  /// configured still headed every reprint with the owner's name in
+  /// double-height text. The PDF path has always preferred branding here; this
+  /// is the direct path catching up.
+  String get _shopName => widget.branding.venueName.isNotEmpty
+      ? widget.branding.venueName
+      : widget.venueName;
+
   /// Print straight to the assigned printer as ESC/POS.
   ///
   /// No print dialog, no driver, and on a USB or network printer no spooler
@@ -126,16 +138,21 @@ class _PrintReceiptSheetState extends ConsumerState<PrintReceiptSheet> {
 
     setState(() => _busy = true);
     try {
-      final builder = await ReceiptBuilder.create();
+      // Laid out for the roll in *this* printer, not a default. The bill and
+      // the receipt can be assigned to different printers taking different
+      // paper.
+      final builder = await ReceiptBuilder.create(
+        paperWidthMm: printer.paperWidthMm,
+      );
       await PrinterTransport.of(printer).send(
         builder.receiptFromDetail(
           widget.receipt,
-          shopName: widget.venueName,
+          shopName: _shopName,
           footer: widget.branding.footerMessage,
           logo: widget.branding.showLogo ? widget.branding.logoBytes : null,
           heading: switch (target) {
             PrintTarget.merchantCopy => 'MERCHANT COPY',
-            _ when widget.isBill => 'BILL — NOT A RECEIPT',
+            _ when widget.isBill => 'BILL - NOT A RECEIPT',
             _ when widget.isReprint => 'REPRINT',
             _ => null,
           },

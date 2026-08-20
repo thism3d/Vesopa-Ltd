@@ -86,7 +86,10 @@ class PrintService {
   PrinterSetup setup;
 
   static Future<PrintService> create(PrinterSetup setup) async {
-    return PrintService(await ReceiptBuilder.create(), setup);
+    return PrintService(
+      await ReceiptBuilder.create(paperWidthMm: setup.printers.receiptWidthMm),
+      setup,
+    );
   }
 
   /// The customer's copy, or the venue's own — same document, different paper,
