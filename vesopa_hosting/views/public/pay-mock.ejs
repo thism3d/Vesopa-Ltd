@@ -42,8 +42,15 @@
       rather than assumed to be SSLCommerz's.
     %>
     <%
-      const returnPath = { stripe: '/pay/stripe/return', paypal: '/pay/paypal/return' }[payment.gateway] || '/pay/return';
-      const idParam = { stripe: 'session_id', paypal: 'token' }[payment.gateway] || 'tran_id';
+      const returnPath = { stripe: '/pay/stripe/return', paypal: '/pay/paypal/return', crypto: '/pay/crypto/return' }[payment.gateway] || '/pay/return';
+      const idParam = { stripe: 'session_id', paypal: 'token', crypto: 'ref' }[payment.gateway] || 'tran_id';
+      /*
+        Crypto is the odd one out: BTCPay's redirect carries OUR order
+        reference, not its invoice id, because the redirect target has to be
+        fixed before the invoice exists. So the mock link sends back the same
+        thing the real one would, which is the point of a mock.
+      */
+      const idValue = payment.gateway === 'crypto' ? payment.order_ref : tranId;
       const extra = payment.gateway === 'sslcommerz' ? '&amp;card_brand=VISA&amp;card_issuer=Test%20Bank' : '';
       const statusParam = payment.gateway === 'sslcommerz' ? '&amp;status=VALID' : '';
       const failStatusParam = payment.gateway === 'sslcommerz' ? '&amp;status=FAILED' : '';
@@ -51,15 +58,15 @@
     %>
     <div class="mockpay-actions">
       <a class="btn btn-lg btn-block"
-         href="<%= returnPath %>?r=ok<%- statusParam %>&amp;<%= idParam %>=<%= encodeURIComponent(tranId) %><%- extra %>">
+         href="<%= returnPath %>?r=ok<%- statusParam %>&amp;<%= idParam %>=<%= encodeURIComponent(idValue) %><%- extra %>">
         Approve this payment
       </a>
       <a class="btn btn-ghost btn-block"
-         href="<%= returnPath %>?r=fail<%- failStatusParam %>&amp;<%= idParam %>=<%= encodeURIComponent(tranId) %>">
+         href="<%= returnPath %>?r=fail<%- failStatusParam %>&amp;<%= idParam %>=<%= encodeURIComponent(idValue) %>">
         Decline it
       </a>
       <a class="btn btn-ghost btn-block"
-         href="<%= returnPath %>?r=cancel<%- cancelStatusParam %>&amp;<%= idParam %>=<%= encodeURIComponent(tranId) %>">
+         href="<%= returnPath %>?r=cancel<%- cancelStatusParam %>&amp;<%= idParam %>=<%= encodeURIComponent(idValue) %>">
         Cancel and go back
       </a>
     </div>

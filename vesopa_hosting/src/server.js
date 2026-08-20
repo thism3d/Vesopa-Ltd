@@ -28,7 +28,19 @@ app.set('views', path.join(__dirname, '..', 'views'));
 
 app.use(compression());
 app.use(express.urlencoded({ extended: false, limit: '512kb' }));
-app.use(express.json({ limit: '512kb' }));
+/*
+ * The raw bytes are kept alongside the parsed body, for one caller.
+ *
+ * BTCPay signs its webhook with an HMAC over the exact bytes it sent, and
+ * `JSON.stringify(req.body)` is not those bytes — it is a re-serialisation
+ * that agrees with the original only by luck of key order and number
+ * formatting. So the buffer is stashed as it goes past. It costs one reference
+ * per JSON request and it is the only way the signature check can be honest.
+ */
+app.use(express.json({
+  limit: '512kb',
+  verify: (req, _res, buf) => { req.rawBody = buf; },
+}));
 app.use(cookieParser());
 
 // ---------------------------------------------------------------------------
@@ -283,6 +295,7 @@ app.use((err, req, res, _next) => {
   const ssl = require('./integrations/sslcommerz').status();
   const str = require('./integrations/stripe').status();
   const pp = require('./integrations/paypal').status();
+  const btc = require('./integrations/btcpay').status();
 
   console.log(
     `[payments]  SSLCommerz in ${ssl.mode.toUpperCase()} mode${ssl.configured ? '' : ' (no credentials set)'}`
@@ -296,14 +309,30 @@ app.use((err, req, res, _next) => {
     `            PayPal in ${pp.mode.toUpperCase()} mode${pp.configured ? '' : ' (no credentials set)'}`
     + ', charging the order currency',
   );
+  console.log(
+    `            Crypto via BTCPay in ${btc.mode.toUpperCase()} mode${btc.configured ? '' : ' (no credentials set)'}`
+    + ', charging the order currency',
+  );
+  /*
+   * A live crypto gateway with no webhook secret is worth a line of its own.
+   * It works — the reconciler picks the payment up on its next pass — so
+   * nothing looks broken, and the only symptom is that every crypto order sits
+   * "awaiting payment" for up to five minutes after the customer has paid.
+   * That is precisely the window in which they open a ticket.
+   */
+  if (btc.live && !btc.webhook) {
+    console.warn('            BTCPAY_WEBHOOK_SECRET is not set — crypto payments will settle on the'
+      + ' reconciler\'s poll rather than immediately.');
+  }
 
   const mocked = [
     !ssl.live && 'SSLCZ_MODE=mock',
     str.mode === 'mock' && 'STRIPE_MODE=mock',
     pp.mode === 'mock' && 'PAYPAL_MODE=mock',
+    btc.mode === 'mock' && 'BTCPAY_MODE=mock',
   ].filter(Boolean);
   if (mocked.length) {
-    console.log(`            No card will actually be charged while ${mocked.join(', ')}.`);
+    console.log(`            No payment will actually be taken while ${mocked.join(', ')}.`);
   }
   if (pp.mode === 'sandbox') {
     console.log('            PayPal is on sandbox.paypal.com — real journey, fake money.');

@@ -133,11 +133,11 @@
             <div class="paypick">
               <% gateways.forEach(function (g) { %>
                 <%#
-                  Every gateway is listed, and crypto — not ready yet — is
+                  Every gateway is listed, and one that is not configured is
                   shown disabled rather than hidden. A checkout offering
                   exactly one way to pay reads as a limitation; one that shows
-                  several and labels the unready one "coming soon" says the
-                  same thing about today and something better about tomorrow.
+                  several and labels the unready one says the same thing about
+                  today and something better about tomorrow.
 
                   Only the SELECTED card's detail opens — one method's worth of
                   explanation at a time reads better than all of them at once —
@@ -164,9 +164,17 @@
                   <span class="paypick-detail">
                     <span class="paypick-detail-inner">
                       <span class="paypick-note"><%= g.blurb %></span>
+                      <%#
+                        The stock line is about card details, which is the
+                        wrong promise for a method that has none — so a gateway
+                        may carry its own. See the crypto entry in payments.js.
+                      %>
                       <span class="paypick-secure">
-                        <%- icon('lock', 13) %> You are taken to <%= g.name %>'s own secure page to
-                        pay. Your card details are never sent to us and never touch this server.
+                        <%- icon('lock', 13) %>
+                        <% if (g.secure) { %><%= g.secure %><% } else { %>
+                          You are taken to <%= g.name %>'s own secure page to
+                          pay. Your card details are never sent to us and never touch this server.
+                        <% } %>
                       </span>
                     </span>
                   </span>

@@ -97,6 +97,23 @@
                     <span class="paypick-body">
                       <img class="paypick-logo" src="<%= g.logo %>" alt="<%= g.name %>" width="200" height="48">
                       <span class="paypick-note"><%= g.blurb %><% if (g.note) { %> <b class="paypick-tag"><%= g.note %></b><% } %></span>
+                      <%#
+                        The settlement-currency warning belongs to the ONE
+                        gateway it is true of.
+
+                        It used to sit under the whole form, so a customer who
+                        picked Stripe, PayPal or crypto — all of which take the
+                        invoice currency directly — was told they would be
+                        charged in taka. Attached to the option instead, it is
+                        read by exactly the people it applies to, and it needs
+                        no script to follow the radio button.
+                      %>
+                      <% if (g.id === 'sslcommerz' && chargeQuote) { %>
+                        <span class="paypick-note tiny muted">
+                          Charged as <b><%= chargeQuote.display %></b>, which is what this
+                          gateway settles in. Your invoice stays in <%= order.currency %>.
+                        </span>
+                      <% } %>
                     </span>
                     <span class="paypick-tick"><%- icon('check', 15) %></span>
                   </label>
@@ -110,15 +127,16 @@
               Pay <%= money(order.total_pence, order.currency) %> <%- icon('arrow', 17) %>
             </button>
 
-            <% if (chargeQuote) { %>
-              <%# The customer is quoted in their own currency and charged in the
-                  gateway's. Saying so here, before they are redirected, is what
-                  stops a taka figure on the gateway's page reading as a
-                  different price than the one they agreed to. %>
+            <%#
+              When the picker is not shown there is only one gateway on offer,
+              and the customer never chose it — so if that one happens to be
+              the one that settles elsewhere, the warning still has to appear.
+            %>
+            <% if (chargeQuote && selectedGateway === 'sslcommerz'
+                   && gateways.filter(function (g) { return g.available; }).length <= 1) { %>
               <p class="tiny muted mt-2 mb-0">
-                Charged as <b><%= chargeQuote.display %></b> by SSLCommerz, which
-                settles in <%= chargeQuote.currency %>. Your invoice stays in
-                <%= order.currency %>.
+                Charged as <b><%= chargeQuote.display %></b>, which is what this gateway
+                settles in. Your invoice stays in <%= order.currency %>.
               </p>
             <% } %>
           </form>

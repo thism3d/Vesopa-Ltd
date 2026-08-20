@@ -24,9 +24,18 @@ const { SITE_URL, PAYMENT_SESSION_MINUTES } = require('./config');
 const sslcommerz = require('./integrations/sslcommerz');
 const stripe = require('./integrations/stripe');
 const paypal = require('./integrations/paypal');
+const btcpay = require('./integrations/btcpay');
 
-/** One adapter per gateway id, all sharing the same initiate() contract. */
-const INTEGRATIONS = { sslcommerz, stripe, paypal };
+/**
+ * One adapter per gateway id, all sharing the same initiate() contract.
+ *
+ * The key is the GATEWAY ID, which is what lands in `payments.gateway` and what
+ * every lookup here goes through — so crypto's adapter is filed under `crypto`
+ * even though the file is named for BTCPay. The product sells "cryptocurrency";
+ * which server implements it is an implementation detail that could change
+ * without rewriting every historical payment row.
+ */
+const INTEGRATIONS = { sslcommerz, stripe, paypal, crypto: btcpay };
 
 /**
  * The currency the gateway settles in.
@@ -58,20 +67,65 @@ const PASSTHROUGH = String(process.env.SSLCZ_PASSTHROUGH || SETTLE_CURRENCY)
  * `available` is computed, never typed — turning one on is a matter of the
  * adapter reporting itself configured.
  */
+/**
+ * May a gateway that does not take real money be offered?
+ *
+ * NOT IN PRODUCTION, ever. A mock gateway settles an order and provisions it
+ * without a payment, and PayPal's sandbox does the same thing with a more
+ * convincing screen in the middle — the customer approves on
+ * sandbox.paypal.com, comes back, and the order goes green having cost them
+ * nothing. On a dev box that is the whole point; on the live site it is a
+ * checkout that gives the product away to anyone who picks the right radio
+ * button, and it is invisible afterwards because the order looks exactly like
+ * a paid one.
+ *
+ * Gated on NODE_ENV rather than on each adapter's own mode, so a gateway left
+ * in test mode by mistake cannot be reached by a customer at all. It still
+ * shows on the checkout, disabled, and the admin dashboard says why.
+ */
+const ALLOW_TEST_GATEWAYS = process.env.NODE_ENV !== 'production';
+
+/** Is this adapter taking real money, as opposed to pretending to? */
+function takesRealMoney(st) {
+  return st.configured && st.mode !== 'mock' && st.mode !== 'sandbox';
+}
+
+/** Should this gateway be offered at all? */
+function offerable(st) {
+  return takesRealMoney(st) || (ALLOW_TEST_GATEWAYS && (st.configured || st.mode === 'mock'));
+}
+
+/**
+ * Why a gateway is not on offer, in words an admin can act on.
+ *
+ * "Off" on its own sends somebody to check credentials that are perfectly
+ * fine. A gateway held back because it is in test mode on a production box is
+ * a different problem with a different fix, and the two look identical from
+ * every screen unless this says so.
+ */
+function unavailableReason(st) {
+  if (offerable(st)) return '';
+  if (!st.configured && st.mode !== 'mock') return 'No credentials set.';
+  return `In ${st.mode} mode, which cannot take real money — not offered on a production site.`;
+}
+
 function gateways() {
   const ssl = sslcommerz.status();
   const str = stripe.status();
   const pp = paypal.status();
+  const btc = btcpay.status();
   return [
     {
       id: 'sslcommerz',
       name: 'SSLCommerz',
       blurb: 'Cards, mobile wallets and net banking.',
       logo: '/assets/img/pay/sslcommerz.svg',
-      // Mock counts as available on purpose: it is how the whole journey is
-      // walked on a dev machine, and the checkout has to offer it to do that.
-      available: ssl.configured || ssl.mode === 'mock',
-      mock: ssl.mode === 'mock',
+      // Mock counts as available on a dev machine on purpose: it is how the
+      // whole journey is walked without a gateway account. Never in production
+      // — see ALLOW_TEST_GATEWAYS.
+      available: offerable(ssl),
+      reason: unavailableReason(ssl),
+      mock: !takesRealMoney(ssl),
       note: ssl.mode === 'mock' ? 'Test mode — no money moves.' : '',
     },
     {
@@ -79,8 +133,9 @@ function gateways() {
       name: 'Stripe',
       blurb: 'Card payments, Apple Pay and Google Pay.',
       logo: '/assets/img/pay/stripe.svg',
-      available: str.configured || str.mode === 'mock',
-      mock: str.mode === 'mock',
+      available: offerable(str),
+      reason: unavailableReason(str),
+      mock: !takesRealMoney(str),
       note: str.mode === 'mock' ? 'Test mode — no money moves.' : '',
     },
     {
@@ -88,17 +143,51 @@ function gateways() {
       name: 'PayPal',
       blurb: 'Pay with your PayPal account.',
       logo: '/assets/img/pay/paypal.svg',
-      available: pp.configured || pp.mode === 'mock',
-      mock: pp.mode === 'mock',
+      available: offerable(pp),
+      reason: unavailableReason(pp),
+      // Sandbox counts as mock HERE even though PayPal calls it a real
+      // environment, because the only thing this flag decides is "can an order
+      // paid this way have actually been paid for", and the answer is no.
+      mock: !takesRealMoney(pp),
       note: pp.mode === 'sandbox' ? 'Sandbox — no real money moves.' : (pp.mode === 'mock' ? 'Test mode — no money moves.' : ''),
     },
     {
       id: 'crypto',
       name: 'Cryptocurrency',
-      blurb: 'Bitcoin, Ethereum and USDT.',
+      /*
+       * WHAT THE STORE ACTUALLY OFFERS, which is not the same as what it has
+       * enabled. The BTCPay store has USDT switched on for Tron, Polygon and
+       * Ethereum, but no invoice it issues offers them — Polygon has no
+       * receiving address configured at all and the Tron pool is too small to
+       * reserve one per invoice — so every invoice comes back offering BTC
+       * on-chain, Lightning and LNURL only. Naming USDT here would promise a
+       * customer a method that is not on the page they are sent to. Put it
+       * back the day an invoice offers it.
+       */
+      blurb: 'Bitcoin and Lightning, on our own payment server.',
       logo: '/assets/img/pay/crypto.svg',
-      available: false,
-      note: 'Coming soon',
+      available: offerable(btc),
+      reason: unavailableReason(btc),
+      mock: !takesRealMoney(btc),
+      /*
+       * Crypto gets a longer session than the card gateways — see the note on
+       * BTCPAY_SESSION_MINUTES. A card either authorises or does not; an
+       * on-chain payment can be broadcast inside the window and confirm well
+       * outside it, and closing the attempt at ninety minutes would write off a
+       * payment that is simply waiting for a block.
+       */
+      sessionMinutes: btcpay.SESSION_MINUTES,
+      note: btc.mode === 'mock' ? 'Test mode — no money moves.' : '',
+      /*
+       * Crypto needs its own reassurance line, because the stock one is about
+       * card details and this method has none. It also has to set the right
+       * expectation about time: a card is decided in seconds, a chain payment
+       * is not, and a customer who is not told that reads a few minutes of
+       * "confirming" as something having gone wrong.
+       */
+      secure: 'You are taken to our own payment server to pay. We wait for the'
+        + ' network to confirm — usually a few minutes — and your order starts'
+        + ' the moment it does.',
     },
   ];
 }
@@ -134,6 +223,16 @@ function callbackUrls(gatewayId) {
       successUrl: `${base}/pay/paypal/return?r=ok`,
       cancelUrl: `${base}/pay/paypal/return?r=cancel`,
     };
+  }
+  /*
+   * BTCPay redirects to ONE url and has no cancel target — a customer who
+   * changes their mind on the checkout page just closes it, and the invoice
+   * expires on its own. So there is no cancel branch to write here, and the
+   * attempt is closed by the reconciler rather than by a callback that will
+   * never come.
+   */
+  if (gatewayId === 'crypto') {
+    return { successUrl: `${base}/pay/crypto/return` };
   }
   return {
     successUrl: `${base}/pay/return?r=ok`,
@@ -248,9 +347,14 @@ async function begin(order, customer, gatewayId, urls) {
   const orderRef = `${order.reference}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
 
   /*
-   * Only SSLCommerz settles in taka. Stripe and PayPal both take GBP/USD/CAD
-   * directly, so they charge the order's own currency and skip the BDT
-   * conversion entirely — a rate that does not apply cannot be misapplied.
+   * Only SSLCommerz settles in taka. Stripe, PayPal and BTCPay all take
+   * GBP/USD/CAD directly, so they charge the order's own currency and skip the
+   * BDT conversion entirely — a rate that does not apply cannot be misapplied.
+   *
+   * BTCPay in particular is handed the FIAT figure and does its own conversion
+   * to whichever coin the customer picks. Converting to a coin here would mean
+   * two rates for one payment, ours and BTCPay's, and the customer would be
+   * quoted against whichever we happened to fetch first.
    */
   let charge;
   try {
@@ -311,7 +415,10 @@ async function begin(order, customer, gatewayId, urls) {
       order.id, customer.id, gateway.id,
       order.total_pence, order.currency,
       charge.minor, charge.currency, charge.rate,
-      orderRef, started.tranId, PAYMENT_SESSION_MINUTES,
+      orderRef, started.tranId,
+      // Per gateway, not one number for all of them: see the crypto entry in
+      // gateways(), whose session has to outlive a slow block confirmation.
+      Number(gateway.sessionMinutes) || PAYMENT_SESSION_MINUTES,
     ],
   );
 
@@ -553,6 +660,68 @@ async function reconcilePayment(payment) {
       return { outcome: 'failed', detail: order.status };
     }
     return { outcome: 'pending', detail: order.status || '' };
+  }
+
+  if (payment.gateway === 'crypto') {
+    if (btcpay.MODE === 'mock') return { outcome: 'unsupported', detail: 'BTCPay is in mock mode.' };
+
+    let invoice;
+    try {
+      invoice = await btcpay.getInvoice(ref);
+    } catch (err) {
+      /*
+       * 403 AND 404 BOTH MEAN "no invoice for you", and only one of them means
+       * the invoice is gone — see storeReachable(). A revoked or expired API
+       * key answers 403 for every invoice there is, and closing attempts on
+       * that would cancel payments that are confirming perfectly well.
+       *
+       * So the store is asked whether it still knows us. If it does, this one
+       * invoice really is missing and the attempt is closed. If it does not,
+       * nothing is touched: the attempt keeps its pending status, the log says
+       * why, and it closes on its session expiry like any other stall.
+       */
+      if (err.httpStatus === 404 || err.httpStatus === 403) {
+        if (await btcpay.storeReachable()) {
+          await fail(ref, 'NOT_FOUND', { source: 'reconcile', error: err.message }, 'cancelled');
+          return { outcome: 'failed', detail: 'BTCPay no longer has that invoice.' };
+        }
+        console.error('[payments] BTCPay refused the store as well — check BTCPAY_API_KEY. Leaving attempts alone.');
+        return { outcome: 'pending', detail: 'BTCPay is refusing our key.' };
+      }
+      throw err;
+    }
+
+    if (btcpay.isPaidInvoice(invoice)) {
+      await settle(ref, { ...invoice, source: 'reconcile' }, { methodDetail: btcpay.describeMethod(invoice) });
+      return { outcome: 'paid' };
+    }
+
+    if (btcpay.isDeadInvoice(invoice)) {
+      await fail(ref, invoice.status, { ...invoice, source: 'reconcile' }, 'failed');
+      return { outcome: 'failed', detail: invoice.status };
+    }
+
+    /*
+     * Anything else stays pending ON PURPOSE, including an expired invoice that
+     * received money.
+     *
+     * `Processing` is a payment waiting on a block and will settle itself.
+     * `Expired` with a partial or late payment is coins we are holding against
+     * an order nobody has fulfilled, and the worst thing this function could do
+     * with that is tidy it away as a failure — the customer would see a
+     * cancelled order and an empty wallet. It is left open and shouted about in
+     * the log so a human deals with it; the sweep below closes it only once the
+     * session is properly dead, and the payload keeps the evidence either way.
+     */
+    if (btcpay.hasPartialPayment(invoice)) {
+      console.warn(
+        `[payments] crypto invoice ${ref} is ${invoice.status}/${invoice.additionalStatus}`
+        + ' — money arrived but the invoice did not settle. Needs a human.',
+      );
+      return { outcome: 'pending', detail: `${invoice.status} · ${invoice.additionalStatus}` };
+    }
+
+    return { outcome: 'pending', detail: invoice.status || '' };
   }
 
   /*

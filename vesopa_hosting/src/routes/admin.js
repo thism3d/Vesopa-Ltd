@@ -16,6 +16,7 @@ const auth = require('../auth');
 const pricing = require('../pricing');
 const hestia = require('../integrations/hestia');
 const registrar = require('../integrations/domainnameapi');
+const payments = require('../payments');
 const provisioning = require('../provisioning');
 const { sendMail, shell, escapeHtml } = require('../mailer');
 const { flash, rateLimited, clearRateLimit, field, paging, isEmail } = require('../http-utils');
@@ -176,6 +177,22 @@ router.get('/', async (req, res, next) => {
       activity,
       registrarStatus: registrar.status(),
       hestiaStatus: hestia.status(),
+      gateways: payments.gateways(),
+      /*
+       * Which plans name a Hestia package the node has not got.
+       *
+       * Checked here rather than left to fail at provisioning time, because
+       * provisioning happens AFTER the customer has paid: `v-add-user` refuses
+       * an unknown package, activateOrder() throws, and what is left is a paid
+       * order with no hosting behind it and nothing on any screen explaining
+       * why. On the dashboard it is a line of text before anyone has ordered.
+       *
+       * Never allowed to break the dashboard — a node that cannot be reached
+       * returns no complaints rather than a page of them.
+       */
+      missingPackages: await hestia
+        .missingPackages((await db.query("SELECT hestia_package FROM plans WHERE active = 1")).map((r) => r.hestia_package))
+        .catch(() => []),
     });
   } catch (err) {
     next(err);
@@ -1587,6 +1604,7 @@ router.get('/settings', async (req, res, next) => {
       registrarStatus: registrar.status(),
       registrarBalance: balance,
       hestiaStatus: hestia.status(),
+      gateways: payments.gateways(),
       geoStatus: geo.status(),
       // VAT lives on the currency row now, so the settings page points at the
       // screen that owns it rather than printing a number it cannot change.
