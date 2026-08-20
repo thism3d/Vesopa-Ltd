@@ -7,7 +7,7 @@
  *
  * ## How Hestia's API works
  *
- * A single endpoint, `https://host:8083/api/`, POSTed as urlencoded form data:
+ * A single endpoint, `https://host:2083/api/`, POSTed as urlencoded form data:
  *
  *   user=admin & password=… & returncode=yes & cmd=v-add-user & arg1=… & arg2=…
  *
@@ -22,9 +22,19 @@
  * the Azure box — and so a mistake in development cannot create real accounts.
  */
 
+const https = require('https');
+
 const MODE = (process.env.HESTIA_MODE || 'mock').toLowerCase();
 const HOST = process.env.HESTIA_HOST || '';
-const PORT = Number(process.env.HESTIA_PORT || 8083);
+/*
+ * 2083, not 8083.
+ *
+ * 8083 was Hestia's port up to 1.8; 1.9 moved the panel and the API to 2083 and
+ * the node this app drives is 1.9.6. A default that names a port nothing is
+ * listening on fails as a connection timeout twenty seconds later, which reads
+ * like a firewall problem rather than a wrong number.
+ */
+const PORT = Number(process.env.HESTIA_PORT || 2083);
 const ADMIN_USER = process.env.HESTIA_ADMIN_USER || 'admin';
 const ADMIN_PASSWORD = process.env.HESTIA_ADMIN_PASSWORD || '';
 
@@ -36,22 +46,55 @@ const ADMIN_PASSWORD = process.env.HESTIA_ADMIN_PASSWORD || '';
  */
 const API_KEY = process.env.HESTIA_API_KEY || '';
 const VERIFY_TLS = String(process.env.HESTIA_VERIFY_TLS || 'true') === 'true';
+/**
+ * The name to present in SNI and verify the certificate against, when it is
+ * not the same string as HOST. Set this when reaching the node by IP or over
+ * loopback while still wanting a verified connection.
+ */
+const SERVER_NAME = process.env.HESTIA_SERVER_NAME || '';
 const DEFAULT_PACKAGE = process.env.HESTIA_DEFAULT_PACKAGE || 'default';
 
 const TIMEOUT_MS = 20_000;
 
-/** Hestia's exit codes, as messages a support agent can act on. */
+/**
+ * Hestia's exit codes, as messages a support agent can act on.
+ *
+ * TAKEN FROM `/usr/local/hestia/func/main.sh` ON THE NODE, not from memory.
+ * An earlier version of this table was off by a place or two in the middle —
+ * it had 5 as "does not exist" when 5 is "suspended" and 3 is "does not
+ * exist" — and NOT_EXIST is the one code this file branches on rather than
+ * merely prints (see userExists), so a wrong number there is not a cosmetic
+ * bug: it turns "no such user" into a thrown error and stops provisioning.
+ * If Hestia ever renumbers these, that file is the source.
+ */
+const E_NOT_EXIST = 3;
+
 const EXIT_CODES = {
-  1: 'Command failed on the server.',
-  2: 'The server rejected the arguments.',
-  3: 'That value is not valid.',
+  1: 'The server rejected the arguments.',
+  2: 'That value is not valid.',
+  3: 'That object does not exist.',
   4: 'That object already exists.',
-  5: 'That object does not exist.',
-  6: 'The password was rejected.',
-  7: 'That account is suspended.',
+  5: 'That account is suspended.',
+  6: 'That account is not suspended.',
+  7: 'That object is still in use.',
   8: 'The package limit was reached.',
-  12: 'The server is out of disk space.',
-  19: 'Permission denied on the server.',
+  9: 'The password was rejected.',
+  /*
+   * In practice this is almost always the API allow-list rather than a
+   * permission on the object: Hestia's `API_ALLOWED_IP` defaults to 127.0.0.1,
+   * so the API answers everything from anywhere else with a flat 10. Worth
+   * naming, because "permission denied" sends you looking at the account.
+   */
+  10: 'The node refused this address — check API_ALLOWED_IP in hestia.conf.',
+  11: 'That feature is disabled on the server.',
+  12: 'The server could not parse its own config.',
+  13: 'The server is out of disk space.',
+  14: 'The server is too busy — try again shortly.',
+  15: 'The server could not connect to a service it needs.',
+  16: 'The FTP server refused the request.',
+  17: 'The database server refused the request.',
+  19: 'The server could not apply the update.',
+  20: 'A service failed to restart on the server.',
 };
 
 class HestiaError extends Error {
@@ -98,52 +141,132 @@ async function run(cmd, args = [], { json = false } = {}) {
   args.forEach((arg, i) => body.set(`arg${i + 1}`, String(arg)));
   if (json) body.set(`arg${args.length + 1}`, 'json');
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-
+  let res;
   try {
-    const res = await fetch(`https://${HOST}:${PORT}/api/`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body,
-      signal: controller.signal,
-      // A fresh Hestia install serves the API on a self-signed certificate.
-      // Node's fetch has no per-request TLS switch, so an unverified node needs
-      // NODE_TLS_REJECT_UNAUTHORIZED handled at the process level — see the
-      // note in server.js. Left strict here so nothing is silently insecure.
-      ...(VERIFY_TLS ? {} : {}),
-    });
-
-    const text = (await res.text()).trim();
-
-    if (json) {
-      if (!text) return {};
-      try {
-        return JSON.parse(text);
-      } catch {
-        throw new HestiaError(`Node returned unparseable data for ${cmd}.`, { code: 'bad_response', cmd });
-      }
-    }
-
-    // returncode=yes gives a bare number. Anything else means the API itself
-    // refused — usually a wrong admin password or an IP not in the allow list.
-    if (!/^\d+$/.test(text)) {
-      throw new HestiaError(`Node refused the request: ${text.slice(0, 120)}`, { code: 'refused', cmd });
-    }
-    const code = Number(text);
-    if (code !== 0) {
-      throw new HestiaError(EXIT_CODES[code] || `Server returned error ${code}.`, { code, cmd });
-    }
-    return { ok: true };
+    res = await post(body);
   } catch (err) {
-    if (err.name === 'AbortError') {
+    if (err.code === 'timeout') {
       throw new HestiaError('The hosting node did not respond in time.', { code: 'timeout', cmd });
     }
-    if (err instanceof HestiaError) throw err;
     throw new HestiaError(`Could not reach the hosting node: ${err.message}`, { code: 'network', cmd });
-  } finally {
-    clearTimeout(timer);
   }
+
+  const text = res.body.trim();
+
+  /*
+   * THE EXIT CODE IS IN A HEADER, and it is the only place it is always
+   * readable.
+   *
+   * With returncode=yes the body is a bare number and either would do. With
+   * returncode=no — every json call below — a failure answers `Error: …` prose
+   * and the number appears ONLY as `Hestia-Exit-Code`. Reading it here rather
+   * than in the returncode=yes branch is what lets userExists() and
+   * dnsDomainExists() tell "no such user" from "the node is unreachable": they
+   * branch on err.code, and before this the json path could only ever raise a
+   * parse failure with no code attached, so a missing user threw instead of
+   * answering false and provisioning stopped on a healthy node.
+   */
+  const headerCode = Number(res.headers['hestia-exit-code']);
+  const exitCode = Number.isInteger(headerCode) ? headerCode : null;
+
+  if (json) {
+    if (exitCode) {
+      throw new HestiaError(EXIT_CODES[exitCode] || `Server returned error ${exitCode}.`, { code: exitCode, cmd });
+    }
+    /*
+     * A data-mode failure answers HTTP 200 with `Error: …` prose and NO exit
+     * code anywhere — the header above is set by the API's own error handler,
+     * which a command that merely returns non-zero never reaches. So the one
+     * outcome callers branch on has to be read out of the sentence.
+     *
+     * This is a fallback, not the mechanism: exists() below asks the same
+     * question in code mode, where the answer is the number. This branch is
+     * here so that a `doesn't exist` reaching any other json call still
+     * arrives as E_NOT_EXIST rather than as an unhelpful generic refusal.
+     */
+    if (/^Error:/i.test(text)) {
+      const missing = /(doesn't|does not) exist/i.test(text);
+      throw new HestiaError(
+        missing ? EXIT_CODES[E_NOT_EXIST] : `Node refused the request: ${text.slice(0, 160)}`,
+        { code: missing ? E_NOT_EXIST : 'refused', cmd },
+      );
+    }
+    if (res.status >= 400) {
+      throw new HestiaError(`Node refused the request: ${text.slice(0, 160)}`, { code: 'refused', cmd });
+    }
+    if (!text) return {};
+    try {
+      return JSON.parse(text);
+    } catch {
+      throw new HestiaError(`Node returned unparseable data for ${cmd}.`, { code: 'bad_response', cmd });
+    }
+  }
+
+  // returncode=yes gives a bare number. Anything else means the API itself
+  // refused — usually a wrong admin password or an IP not in the allow list.
+  if (!/^\d+$/.test(text)) {
+    throw new HestiaError(`Node refused the request: ${text.slice(0, 160)}`, { code: 'refused', cmd });
+  }
+  const code = Number(text);
+  if (code !== 0) {
+    throw new HestiaError(EXIT_CODES[code] || `Server returned error ${code}.`, { code, cmd });
+  }
+  return { ok: true };
+}
+
+/**
+ * One POST to the node, on Node's own https client rather than fetch.
+ *
+ * fetch() IS THE WRONG CLIENT FOR THIS ONE CALL. It has no per-request TLS
+ * option, so `HESTIA_VERIFY_TLS=false` had nothing to switch and the flag sat
+ * in .env doing literally nothing — the old code read it and then wrote
+ * `...(VERIFY_TLS ? {} : {})`, which is the same empty object either way. A
+ * node still on its self-signed install cert was therefore unreachable no
+ * matter what the config said, and the only escape was
+ * NODE_TLS_REJECT_UNAUTHORIZED, which turns verification off for the whole
+ * process — including the calls to the registrar and the payment gateways.
+ * https.request takes `rejectUnauthorized` per request, so the exception stays
+ * on the one connection it is meant for.
+ */
+function post(body) {
+  return new Promise((resolve, reject) => {
+    const payload = body.toString();
+    const req = https.request(
+      {
+        host: HOST,
+        port: PORT,
+        path: '/api/',
+        method: 'POST',
+        rejectUnauthorized: VERIFY_TLS,
+        // The node answers on its panel hostname's certificate. When HOST is an
+        // IP or loopback — which is how you reach a node whose API is limited to
+        // 127.0.0.1 — SNI has to name the certificate, or a verified connection
+        // fails on a name mismatch that is not actually a mismatch.
+        ...(SERVER_NAME ? { servername: SERVER_NAME } : {}),
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Content-Length': Buffer.byteLength(payload),
+        },
+        timeout: TIMEOUT_MS,
+      },
+      (res) => {
+        const chunks = [];
+        res.on('data', (c) => chunks.push(c));
+        res.on('end', () => resolve({
+          status: res.statusCode,
+          headers: res.headers,
+          body: Buffer.concat(chunks).toString('utf8'),
+        }));
+      },
+    );
+    req.on('timeout', () => {
+      const err = new Error('timed out');
+      err.code = 'timeout';
+      req.destroy(err);
+    });
+    req.on('error', reject);
+    req.end(payload);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -166,15 +289,32 @@ function suggestUsername(email, suffix = '') {
   return `${safe}${suffix}`.slice(0, 16);
 }
 
-async function userExists(username) {
-  if (!isLive()) return false;
+/**
+ * Does this object exist? Asked in CODE MODE, deliberately.
+ *
+ * `returncode=yes` makes the whole response the exit code — "0" present, "3"
+ * missing — so the answer is a number rather than a sentence that has to be
+ * pattern-matched. The list commands in data mode do not carry the code
+ * anywhere, in a header or otherwise, so this is the only place the question
+ * gets a machine-readable answer.
+ *
+ * Anything that is NOT "missing" is re-thrown. A node that is unreachable, or
+ * a password that has been rotated, must not read as "no such account" — that
+ * is the answer that makes provisioning go on to create one.
+ */
+async function exists(cmd, args) {
   try {
-    await run('v-list-user', [username], { json: true });
+    await run(cmd, args);
     return true;
   } catch (err) {
-    if (err.code === 5) return false;
+    if (err.code === E_NOT_EXIST) return false;
     throw err;
   }
+}
+
+async function userExists(username) {
+  if (!isLive()) return false;
+  return exists('v-list-user', [username]);
 }
 
 /** v-add-user USER PASSWORD EMAIL [PACKAGE] [NAME] */
@@ -207,6 +347,41 @@ async function unsuspendUser(username) {
 async function deleteUser(username) {
   await run('v-delete-user', [username]);
   return { ok: true };
+}
+
+/**
+ * The user packages this node has.
+ *
+ * Worth its own function because `plans.hestia_package` is a STRING NAMING
+ * SOMETHING ON ANOTHER MACHINE, with nothing keeping the two in step. If the
+ * package is missing, `v-add-user` fails — and it fails after the customer has
+ * paid, because that is the order the checkout runs in. So the names are
+ * checkable from our side, and src/routes/admin.js checks them.
+ */
+async function listPackages() {
+  if (!isLive()) return [];
+  const data = await run('v-list-user-packages', [], { json: true });
+  return Object.keys(data);
+}
+
+/**
+ * Which active plans name a package this node does not have?
+ *
+ * Returns [] when the node is mocked or cannot be reached — a check that
+ * cannot run is not the same as a check that failed, and turning an
+ * unreachable node into "every plan is broken" would put a red banner on the
+ * admin every time the network hiccupped.
+ */
+async function missingPackages(planPackages) {
+  if (!isLive()) return [];
+  let have;
+  try {
+    have = await listPackages();
+  } catch {
+    return [];
+  }
+  if (!have.length) return [];
+  return [...new Set(planPackages.filter(Boolean))].filter((p) => !have.includes(p));
 }
 
 /** Disk, bandwidth and object counts — what the panel's usage bars read. */
@@ -327,13 +502,7 @@ async function addDnsDomain({ username, domain, ip = '' }) {
 
 async function dnsDomainExists({ username, domain }) {
   if (!isLive()) return false;
-  try {
-    await run('v-list-dns-domain', [username, domain], { json: true });
-    return true;
-  } catch (err) {
-    if (err.code === 5) return false;
-    throw err;
-  }
+  return exists('v-list-dns-domain', [username, domain]);
 }
 
 /**
@@ -357,15 +526,28 @@ async function listDnsRecords({ username, domain }) {
   }));
 }
 
-/** v-add-dns-record USER DOMAIN RECORD TYPE VALUE [PRIORITY] [ID] [TTL] */
-async function addDnsRecord({ username, domain, name, type, value, priority = '', ttl = 3600 }) {
-  await run('v-add-dns-record', [username, domain, name, type, value, priority, '', ttl]);
+/**
+ * v-add-dns-record USER DOMAIN RECORD TYPE VALUE [PRIORITY] [ID] [RESTART] [TTL]
+ *
+ * NINE ARGUMENTS, AND TTL IS THE NINTH. The signature above is copied from
+ * `/usr/local/hestia/bin/v-add-dns-record` on the node; an earlier version of
+ * this call passed eight and put the TTL where RESTART goes, so every record a
+ * customer added got the zone's default TTL and the number they typed was read
+ * as a restart flag. It failed silently in the direction that looks like it
+ * worked — the record appears, just never with the lifetime that was asked for.
+ */
+async function addDnsRecord({
+  username, domain, name, type, value, priority = '', ttl = 3600,
+}) {
+  await run('v-add-dns-record', [username, domain, name, type, value, priority, '', 'yes', ttl]);
   return { ok: true };
 }
 
-/** v-change-dns-record USER DOMAIN ID RECORD TYPE VALUE [PRIORITY] */
-async function changeDnsRecord({ username, domain, id, name, type, value, priority = '' }) {
-  await run('v-change-dns-record', [username, domain, id, name, type, value, priority]);
+/** v-change-dns-record USER DOMAIN ID RECORD TYPE VALUE [PRIORITY] [RESTART] [TTL] */
+async function changeDnsRecord({
+  username, domain, id, name, type, value, priority = '', ttl = 3600,
+}) {
+  await run('v-change-dns-record', [username, domain, id, name, type, value, priority, 'yes', ttl]);
   return { ok: true };
 }
 
@@ -515,10 +697,13 @@ module.exports = {
   isLive,
   run,
   suggestUsername,
+  exists,
   userExists,
   addUser,
   changeUserPassword,
   changeUserPackage,
+  listPackages,
+  missingPackages,
   suspendUser,
   unsuspendUser,
   deleteUser,

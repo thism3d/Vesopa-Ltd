@@ -863,6 +863,11 @@ router.post('/domains/:id/dns', async (req, res, next) => {
         await hestia.changeDnsRecord({
           username, domain: domain.domain, id,
           name: record.name, type: record.type, value: record.value, priority: record.priority,
+          // The form has a TTL field and validateRecord() checks it, but edit
+          // used to drop it on the floor — so a customer could set a TTL when
+          // adding a record and never change it again, with the form showing
+          // the new number back to them as though it had been saved.
+          ttl: record.ttl,
         });
       } else {
         await hestia.addDnsRecord({
