@@ -27,6 +27,7 @@ const payments = require('../payments');
 const sslcommerz = require('../integrations/sslcommerz');
 const stripe = require('../integrations/stripe');
 const paypal = require('../integrations/paypal');
+const btcpay = require('../integrations/btcpay');
 const currency = require('../currency');
 const { flash } = require('../http-utils');
 
@@ -249,6 +250,148 @@ router.get('/pay/paypal/return', async (req, res, next) => {
 });
 
 // ---------------------------------------------------------------------------
+// Crypto: the browser comes back
+// ---------------------------------------------------------------------------
+/**
+ * BTCPay sends the browser here with OUR order reference, and nothing else.
+ *
+ * That reference finds our own payment row; the invoice id we then ask BTCPay
+ * about comes from the row, never from the query string. So the worst a forged
+ * `ref` can do is name somebody else's attempt, which is then looked up under
+ * this customer's id and found not to be theirs.
+ *
+ * THE INTERESTING CASE IS "PAID BUT NOT CONFIRMED".
+ *
+ * On a card, the browser comes back to a yes or a no. On-chain it comes back to
+ * `Processing` almost every time — the customer has paid, the transaction is in
+ * the mempool, and it is not yet money. Telling them that failed would be wrong
+ * and telling them it succeeded would be worse, because the order has not
+ * started and will not until the webhook or the reconciler sees `Settled`. So
+ * that state gets its own message and its own colour, and the order is left
+ * exactly as it is.
+ */
+router.get('/pay/crypto/return', async (req, res, next) => {
+  try {
+    const orderRef = String(req.query.ref || '');
+    if (!orderRef) return res.redirect('/panel');
+
+    const payment = await db.one('SELECT * FROM payments WHERE order_ref = ? LIMIT 1', [orderRef]);
+    if (!payment) return next();
+    const back = `/panel/setup/${payment.order_id}`;
+
+    // Mock mode has no invoice at BTCPay to ask about, so it trusts `r` —
+    // the same single exception the other three adapters' mocks make.
+    if (btcpay.MODE === 'mock') {
+      const outcome = String(req.query.r || 'ok');
+      if (outcome === 'ok') {
+        const settled = await payments.settle(payment.gateway_ref, { mock: true, status: 'Settled' }, { methodDetail: 'BTC-CHAIN (test)' });
+        flash(res, settled.already ? 'That payment is already confirmed.' : 'Payment received — thank you.');
+        return res.redirect(settled.ok ? `/panel/setup/${settled.orderId}` : back);
+      }
+      await payments.fail(payment.gateway_ref, outcome === 'cancel' ? 'CANCELLED' : 'FAILED', { mock: true }, outcome === 'cancel' ? 'cancelled' : 'failed');
+      flash(res, 'Payment cancelled — nothing has been charged and your order is still here.', 'warn');
+      return res.redirect(back);
+    }
+
+    let invoice;
+    try {
+      invoice = await btcpay.getInvoice(payment.gateway_ref);
+    } catch (err) {
+      console.error('[pay] btcpay lookup failed:', err.message);
+      flash(res, 'We could not check that payment just now. If you have sent the payment it will be picked up automatically — nothing is lost.', 'warn');
+      return res.redirect(back);
+    }
+
+    if (btcpay.isPaidInvoice(invoice)) {
+      const settled = await payments.settle(payment.gateway_ref, invoice, { methodDetail: btcpay.describeMethod(invoice) });
+      if (!settled.ok) return next();
+      flash(res, settled.already ? 'That payment is already confirmed.' : 'Payment received — thank you.');
+      return res.redirect(`/panel/setup/${settled.orderId}`);
+    }
+
+    if (btcpay.isPendingInvoice(invoice) || btcpay.hasPartialPayment(invoice)) {
+      flash(
+        res,
+        'Payment received and waiting to confirm on the network. This usually takes a few minutes'
+        + ' — your order starts automatically as soon as it does, and there is nothing else to do.',
+        'warn',
+      );
+      return res.redirect(back);
+    }
+
+    /*
+     * Nothing was paid — an invoice the customer opened and left. It is NOT
+     * failed here: the invoice may still be inside its window and payable, and
+     * marking the attempt failed would take away the "Pay now" they came back
+     * for. The reconciler closes it once the session is genuinely dead.
+     */
+    flash(res, 'No payment received yet. Your order is still here whenever you are ready.', 'warn');
+    res.redirect(back);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Crypto: the webhook
+// ---------------------------------------------------------------------------
+/**
+ * BTCPay tells the server, out of band. This is what actually settles a
+ * crypto payment in practice — see the return handler above for why the
+ * browser almost never comes back to a settled invoice.
+ *
+ * Verified against the RAW body, and nothing in the delivery is trusted beyond
+ * the invoice id it names: the invoice is fetched back from BTCPay and its
+ * status read from that, so a replayed delivery for an invoice that has since
+ * gone Invalid cannot settle an order.
+ *
+ * No CSRF check, for the same reason as the SSLCommerz IPN: this is a
+ * server-to-server request with no cookie and no session. The signature is the
+ * authentication.
+ */
+router.post('/pay/crypto/webhook', async (req, res) => {
+  if (!btcpay.verifyWebhook(req.rawBody, req.get('BTCPay-Sig'))) {
+    console.warn('[pay] rejected an unverified BTCPay webhook');
+    return res.status(401).json({ ok: false, error: 'Invalid signature' });
+  }
+
+  const invoiceId = String(req.body?.invoiceId || '');
+  const type = String(req.body?.type || '');
+  if (!invoiceId) return res.json({ ok: true, ignored: 'no invoice id' });
+
+  try {
+    const invoice = await btcpay.getInvoice(invoiceId);
+
+    if (btcpay.isPaidInvoice(invoice)) {
+      await payments.settle(invoiceId, { ...invoice, source: 'webhook', type }, { methodDetail: btcpay.describeMethod(invoice) });
+      return res.json({ ok: true });
+    }
+
+    if (btcpay.isDeadInvoice(invoice)) {
+      await payments.fail(invoiceId, invoice.status, { ...invoice, source: 'webhook', type }, 'failed');
+      return res.json({ ok: true });
+    }
+
+    /*
+     * Processing, or expired with money on it. Neither is settled and neither
+     * is a failure, so the attempt is left alone — the reconciler is watching
+     * it and a partial payment is a support job, not a status change. Answered
+     * 200 all the same: BTCPay retries anything else, and there is nothing here
+     * for a retry to fix.
+     */
+    if (btcpay.hasPartialPayment(invoice)) {
+      console.warn(`[pay] crypto invoice ${invoiceId} is ${invoice.status}/${invoice.additionalStatus} — needs a human.`);
+    }
+    res.json({ ok: true, noted: invoice.status });
+  } catch (err) {
+    console.error('[pay] btcpay webhook failed:', err.message);
+    // A 500 asks BTCPay to redeliver, and that is right: we failed to record
+    // something about a payment that may well have happened.
+    res.status(500).json({ ok: false });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // The IPN
 // ---------------------------------------------------------------------------
 /**
@@ -297,7 +440,7 @@ router.post('/pay/ipn', async (req, res) => {
  * the gateway THIS PAYMENT was actually opened under — a server-side constant
  * read from the environment — and nothing in the request can influence it.
  */
-const MOCK_GUARD = { sslcommerz, stripe, paypal };
+const MOCK_GUARD = { sslcommerz, stripe, paypal, crypto: btcpay };
 
 router.get('/pay/mock/:tranId', async (req, res, next) => {
   const payment = await db.one('SELECT * FROM payments WHERE gateway_ref = ? LIMIT 1', [req.params.tranId]);

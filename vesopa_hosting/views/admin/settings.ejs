@@ -142,6 +142,37 @@
     </div>
 
     <div class="p-card">
+      <h2 class="h3 mb-2">Payment gateways</h2>
+      <div class="table-wrap"><table class="table mini">
+        <tbody>
+          <% gateways.forEach(function (g) { %>
+            <tr>
+              <td><%= g.name %>
+                <% if (g.reason) { %><br><span class="tiny muted"><%= g.reason %></span><% } %>
+              </td>
+              <td>
+                <%- !g.available
+                      ? '<span class="badge badge-grey">Off</span>'
+                      : (g.mock
+                          ? '<span class="badge badge-amber">Test</span>'
+                          : '<span class="badge badge-green">Live</span>') %>
+              </td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table></div>
+      <%#
+        Said in the admin rather than left to the .env, because "test mode" is
+        invisible from every other screen: a test payment produces the same
+        green order row a real one does.
+      %>
+      <p class="tiny muted mt-2 mb-0">
+        A gateway marked <b>Test</b> settles orders without taking money. One
+        marked <b>Off</b> has no credentials and is not offered at checkout.
+      </p>
+    </div>
+
+    <div class="p-card">
       <h2 class="h3 mb-2">Tax and currency</h2>
       <p class="small muted mb-2">
         VAT is set <b>per currency</b>, not once for the site — it is 20% inside

@@ -1,13 +1,67 @@
 <%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
 <%- include('../partials/admin-shell', { pageTitle: 'Overview', pageSub: 'How the business is doing right now.' }) %>
 
-<% if (!registrarStatus.live || !hestiaStatus.live) { %>
+<%
+  /*
+    A gateway in test mode is the one that costs money to miss.
+
+    A mocked registrar or node announces itself the first time somebody orders,
+    because nothing appears. A gateway quietly in test mode does the opposite:
+    the checkout works, the order goes green, the account is built and nobody
+    is ever charged. So it is banner-worthy on its own, and named — "payments
+    are in test mode" without saying which of four is useless to act on.
+  */
+  const testGateways = gateways.filter(function (g) { return g.available && g.mock; });
+  const liveGateways = gateways.filter(function (g) { return g.available && !g.mock; });
+  /*
+    Held back rather than broken: configured, but in a mode that cannot take
+    money, so production refuses to offer it at all. Worth its own sentence —
+    "Off" on the settings page otherwise sends somebody to check credentials
+    that are perfectly correct.
+  */
+  const heldBack = gateways.filter(function (g) { return !g.available && g.mock; });
+%>
+<% if (missingPackages && missingPackages.length) { %>
+  <%#
+    Its own banner, above the mode one, and worded as an instruction rather
+    than a status. This is the only warning on the site that describes an order
+    that will take money and then fail — everything else in the mode banner is
+    the opposite, work that quietly does not happen.
+  %>
   <div class="mode-banner">
     <%- icon('warning', 19) %>
     <div>
-      <b>Integrations are in demonstration mode.</b>
-      <% if (!registrarStatus.live) { %>No domain will actually be registered (DNA_MODE=mock).<% } %>
+      <b>An order for some plans will be paid for and then fail to provision.</b>
+      The hosting node has no package called
+      <% missingPackages.forEach(function (p, i) { %><code><%= p %></code><%= i < missingPackages.length - 1 ? ', ' : '' %><% }); %>,
+      which the plan asks for — <code>v-add-user</code> refuses an unknown package,
+      and it refuses it after the customer has been charged. Run
+      <code>scripts/create-hestia-packages.sh</code> on the node to create them
+      from the plan limits.
+    </div>
+  </div>
+<% } %>
+
+<% if (!registrarStatus.live || !hestiaStatus.live || testGateways.length || heldBack.length || !liveGateways.length) { %>
+  <div class="mode-banner">
+    <%- icon('warning', 19) %>
+    <div>
+      <b>Some integrations are not taking real traffic.</b>
+      <% if (!registrarStatus.live) { %> No domain will actually be registered (DNA_MODE=mock).<% } %>
       <% if (!hestiaStatus.live) { %> No hosting account will actually be created (HESTIA_MODE=mock).<% } %>
+      <% if (!liveGateways.length) { %>
+        <b>No payment gateway can take real money.</b>
+      <% } else if (testGateways.length) { %>
+        <%= testGateways.map(function (g) { return g.name; }).join(' and ') %>
+        <%= testGateways.length > 1 ? 'are' : 'is' %> in test mode — an order paid
+        that way is marked paid and provisioned without being charged.
+      <% } %>
+      <% if (heldBack.length) { %>
+        <%= heldBack.map(function (g) { return g.name; }).join(' and ') %>
+        <%= heldBack.length > 1 ? 'are' : 'is' %> configured but in test mode, so
+        <%= heldBack.length > 1 ? 'they are' : 'it is' %> not offered at checkout at all —
+        an order paid that way would cost the customer nothing.
+      <% } %>
       Set them to <code>live</code> in <code>.env</code> when the credentials are in.
     </div>
   </div>

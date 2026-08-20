@@ -84,3 +84,8 @@ GoogleService-Info.plist
 windows/runner/out/
 windows/runner/.vs/
 windows/flutter/ephemeral/
+
+# Golden-test diff artefacts. Written on every failed golden and regenerated
+# from scratch each run — evidence for the person looking at the failure, not
+# something the next clone needs.
+test/failures/
