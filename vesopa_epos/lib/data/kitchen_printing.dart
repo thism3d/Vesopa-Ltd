@@ -1,8 +1,10 @@
 import 'package:drift/drift.dart';
+import 'package:uuid/uuid.dart';
 
 import '../printing/print_service.dart';
 import '../printing/printer_transport.dart';
 import '../printing/receipt_builder.dart';
+import 'kitchen_screens.dart';
 import 'local/database.dart';
 import 'printer_settings.dart';
 
@@ -13,12 +15,19 @@ import 'printer_settings.dart';
 /// open, a sale is food already paid for. A ticket that does not say which is
 /// a ticket somebody has to walk out and ask about.
 enum KitchenFire {
-  sale('Sale'),
-  table('Table saved'),
-  reprint('Reprint');
+  sale('Sale', 'sale'),
+  table('Table saved', 'table'),
+  reprint('Reprint', 'reprint');
 
-  const KitchenFire(this.headline);
+  const KitchenFire(this.headline, this.ticketKind);
+
+  /// What prints at the top of the paper ticket.
   final String headline;
+
+  /// What the server stores, and what the board reads to decide how a card is
+  /// labelled. Kept separate from [headline] so the printed wording can be
+  /// changed without invalidating every row already in the database.
+  final String ticketKind;
 }
 
 /// What one firing of a bill did.
@@ -33,10 +42,21 @@ class KitchenFireResult {
     required this.orderId,
     this.stations = const [],
     this.lineIds = const [],
+    this.screens,
   });
 
   final String orderId;
   final List<StationPrintResult> stations;
+
+  /// What happened to the half of this fire that went to kitchen screens, or
+  /// null when nothing on the bill was routed to one — which is every venue
+  /// that has not set a station to `screen`, and so almost every venue.
+  ///
+  /// Kept apart from [stations] rather than folded in as a seventh entry
+  /// because the two fail differently and are recovered differently. A dead
+  /// printer needs somebody to walk over and press retry; an unreachable back
+  /// office is already being retried in the background and needs nobody.
+  final KitchenScreenResult? screens;
 
   /// The lines this run was carrying, so a retry sends the same ticket.
   final List<String> lineIds;
@@ -51,7 +71,7 @@ class KitchenFireResult {
 
   /// Nothing was routed anywhere — the ordinary case on a counter till with no
   /// kitchen. Not worth telling anybody about.
-  bool get isSilent => stations.isEmpty;
+  bool get isSilent => stations.isEmpty && screens == null;
 
   /// The stations to send again.
   Set<String> get failedStations => {for (final s in failures) s.station};
@@ -59,14 +79,27 @@ class KitchenFireResult {
   /// One line describing what happened, for the status chip.
   String get summary {
     if (isSilent) return 'Nothing to send to the kitchen.';
-    if (!hasFailures) {
-      final names = printed.map((s) => s.label).join(', ');
-      return 'Sent to $names.';
+
+    final parts = <String>[];
+    if (stations.isNotEmpty) {
+      if (!hasFailures) {
+        parts.add('Sent to ${printed.map((s) => s.label).join(', ')}.');
+      } else {
+        final failed = failures.map((s) => '${s.label} (${s.error})').join('; ');
+        if (printed.isNotEmpty) {
+          parts.add('Sent to ${printed.map((s) => s.label).join(', ')}.');
+        }
+        parts.add('Could not print: $failed');
+      }
     }
-    final failed = failures.map((s) => '${s.label} (${s.error})').join('; ');
-    if (printed.isEmpty) return 'Could not print: $failed';
-    return 'Sent to ${printed.map((s) => s.label).join(', ')}. '
-        'Could not print: $failed';
+    // Only worth a sentence when it did *not* simply work. On a venue running
+    // screens the successful case is every single fire, and a chip that says
+    // "sent to the kitchen screens" several hundred times a day is a chip the
+    // clerk stops reading — including on the day it says something else.
+    final screen = screens;
+    if (screen != null && !screen.delivered) parts.add(screen.summary);
+
+    return parts.isEmpty ? 'Sent to the kitchen.' : parts.join(' ');
   }
 }
 
@@ -76,12 +109,20 @@ class KitchenFireResult {
 /// question — *which* items, to *which* printers — is a catalogue question,
 /// and the print service should not have to know what a product is.
 ///
+/// It answers the same question for kitchen *screens*, which is why it is one
+/// class and not two. A station's delivery mode decides whether its share of
+/// the bill goes on paper, onto a screen, or both — and the split has to be
+/// made after the routing is resolved and before either half is sent, or a
+/// venue running one of each gets two tickets for the same food.
+///
 /// Nothing in here is allowed to stop a sale. Every entry point returns a
 /// description of what happened rather than throwing: the money has already
 /// been taken by the time the kitchen hears about it, and a dead printer in
 /// the kitchen must never be able to hold up the queue at the counter.
 class KitchenPrinting {
   const KitchenPrinting(this._db);
+
+  static const _uuid = Uuid();
 
   final AppDatabase _db;
 
@@ -102,6 +143,10 @@ class KitchenPrinting {
     required KitchenFire reason,
     required PrinterSettings printers,
     Map<String, String> stationNames = const {},
+    Map<String, KitchenDelivery> delivery = const {},
+    KitchenScreenSender? screens,
+    String? office,
+    String? roomName,
     String? staffName,
   }) async {
     final order = await (_db.select(
@@ -122,6 +167,10 @@ class KitchenPrinting {
       reason: reason,
       printers: printers,
       stationNames: stationNames,
+      delivery: delivery,
+      screens: screens,
+      office: office,
+      roomName: roomName,
       staffName: staffName,
     );
 
@@ -140,6 +189,12 @@ class KitchenPrinting {
     Map<String, String> stationNames = const {},
     String? staffName,
   }) async {
+    // Printers only, and on purpose. A screen delivery that did not land is
+    // already queued and being retried in the background by
+    // [KitchenScreenSender], so sending it again from here would be a second
+    // attempt racing the first — harmless, because the ticket id de-duplicates
+    // it, but it would also tell the clerk they had fixed something they had
+    // not.
     final order = await (_db.select(
       _db.orders,
     )..where((o) => o.id.equals(previous.orderId))).getSingleOrNull();
@@ -159,6 +214,7 @@ class KitchenPrinting {
       staffName: staffName,
       onlyStations: previous.failedStations,
     );
+
   }
 
   Future<KitchenFireResult> _run({
@@ -167,6 +223,10 @@ class KitchenPrinting {
     required KitchenFire reason,
     required PrinterSettings printers,
     Map<String, String> stationNames = const {},
+    Map<String, KitchenDelivery> delivery = const {},
+    KitchenScreenSender? screens,
+    String? office,
+    String? roomName,
     String? staffName,
     Set<String>? onlyStations,
   }) async {
@@ -193,14 +253,84 @@ class KitchenPrinting {
       );
     }
 
+    // Which of the stations this bill actually touches go where. Computed from
+    // the routing rather than from the whole six, so a venue that put a screen
+    // on the fryer does not build a screen ticket for a round of drinks.
+    final routed = {for (final set in routesByPlu.values) ...set};
+    final toPrinter = {
+      for (final station in routed)
+        if ((delivery[station] ?? KitchenDelivery.printer).toPrinter) station,
+    };
+    final toScreen = {
+      for (final station in routed)
+        if ((delivery[station] ?? KitchenDelivery.printer).toScreen) station,
+    };
+
+    // Both halves are started before either is awaited. They are independent —
+    // a POST to the back office and an ESC/POS write to a printer on the
+    // counter — and running them one after the other adds the slower one's
+    // latency to the clerk's wait for no reason at all.
+    final screenSend = toScreen.isEmpty || screens == null || office == null
+        ? null
+        : screens.send(
+            buildKitchenTicket(
+              id: _uuid.v4(),
+              office: office,
+              order: order,
+              lines: lines,
+              routesByPlu: routesByPlu,
+              screenStations: toScreen,
+              kind: reason.ticketKind,
+              roomName: roomName,
+              staffName: staffName,
+            ),
+          );
+
+    final stations = toPrinter.isEmpty
+        ? const <StationPrintResult>[]
+        : await _print(
+            order: order,
+            lines: lines,
+            reason: reason,
+            printers: printers,
+            stationNames: stationNames,
+            routesByPlu: routesByPlu,
+            staffName: staffName,
+            // The intersection, so a retry aimed at one failed station cannot
+            // drag in a station that was never on paper to begin with.
+            onlyStations: onlyStations == null
+                ? toPrinter
+                : toPrinter.intersection(onlyStations),
+          );
+
+    return KitchenFireResult(
+      orderId: order.id,
+      stations: stations,
+      lineIds: lines.map((l) => l.id).toList(),
+      screens: await screenSend,
+    );
+  }
+
+  /// The paper half. Split out only so [_run] reads as the decision it is.
+  Future<List<StationPrintResult>> _print({
+    required Order order,
+    required List<OrderLine> lines,
+    required KitchenFire reason,
+    required PrinterSettings printers,
+    required Map<String, String> stationNames,
+    required Map<int, Set<String>> routesByPlu,
+    required Set<String> onlyStations,
+    String? staffName,
+  }) async {
+    if (onlyStations.isEmpty) return const [];
+
     final service = PrintService(
       await ReceiptBuilder.create(paperWidthMm: printers.receiptWidthMm),
       PrinterSetup(printers: printers, stationNames: stationNames),
     );
 
-    List<StationPrintResult> stations;
     try {
-      stations = await service.printKitchenTickets(
+      return await service.printKitchenTickets(
         order: order,
         lines: lines,
         routesByPlu: routesByPlu,
@@ -212,16 +342,8 @@ class KitchenPrinting {
       // printKitchenTickets reports per station rather than throwing, so this
       // is something further up — building the ticket, say. Reported as a
       // single unnamed failure rather than lost.
-      stations = [
-        StationPrintResult(station: '', label: 'Kitchen', error: '$e'),
-      ];
+      return [StationPrintResult(station: '', label: 'Kitchen', error: '$e')];
     }
-
-    return KitchenFireResult(
-      orderId: order.id,
-      stations: stations,
-      lineIds: lines.map((l) => l.id).toList(),
-    );
   }
 
   /// Let a bill be fired again from scratch — the reprint path.

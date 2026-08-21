@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/printer_settings.dart';
 import '../main.dart' show tillSettingsProvider;
+import 'kitchen_delivery_card.dart';
 // printer_transport re-exports print_targets.dart, where PrintTarget lives.
 import '../printing/printer_transport.dart';
 import '../printing/receipt_builder.dart';
@@ -148,6 +149,9 @@ class PrintersPage extends ConsumerWidget {
 
           const SizedBox(height: 20),
           _MerchantCopyCard(settings: data),
+
+          const SizedBox(height: 20),
+          const KitchenDeliveryCard(),
 
           const SizedBox(height: 16),
           Text(

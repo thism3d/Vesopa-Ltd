@@ -23,6 +23,7 @@ class TillSettings {
     this.receiptAutoPrint = false,
     this.buttonsShowPrices = true,
     this.printerNames = const {},
+    this.kitchenDelivery = const {},
   });
 
   final bool idleEnabled;
@@ -74,6 +75,26 @@ class TillSettings {
   /// A slot with no name here is absent, and falls back to its built-in label.
   final Map<String, String> printerNames;
 
+  /// Where each kitchen station's tickets come out, keyed by station ("kp3").
+  ///
+  /// A station that is absent from this map delivers to a printer, which is
+  /// what every station did before kitchen screens existed and what every
+  /// station keeps doing until somebody says otherwise in the back office.
+  /// Only stations the venue has actually changed are carried, so the map is
+  /// empty on the overwhelming majority of venues.
+  final Map<String, KitchenDelivery> kitchenDelivery;
+
+  /// Where [station]'s tickets come out. Printer unless told otherwise.
+  KitchenDelivery deliveryFor(String station) =>
+      kitchenDelivery[station] ?? KitchenDelivery.printer;
+
+  /// Whether any station in this venue delivers to a screen at all.
+  ///
+  /// The till asks before doing any of the work of composing a ticket for one,
+  /// so a venue with no kitchen screens pays nothing for the feature existing.
+  bool get usesKitchenScreens =>
+      kitchenDelivery.values.any((mode) => mode.toScreen);
+
   /// The name to show for [target]: the venue's, or the built-in one.
   String labelFor(PrintTarget target) => labelForStation(target.station!);
 
@@ -116,11 +137,25 @@ class TillSettings {
           other.changeWindowSeconds == changeWindowSeconds &&
           other.receiptAutoPrint == receiptAutoPrint &&
           other.buttonsShowPrices == buttonsShowPrices &&
-          _sameNames(other.printerNames, printerNames);
+          _sameNames(other.printerNames, printerNames) &&
+          _sameDelivery(other.kitchenDelivery, kitchenDelivery);
 
   /// Seven short strings, compared by hand rather than pulling in a collection
   /// dependency for one call. Order does not matter; contents do.
   static bool _sameNames(Map<String, String> a, Map<String, String> b) {
+    if (a.length != b.length) return false;
+    for (final entry in a.entries) {
+      if (b[entry.key] != entry.value) return false;
+    }
+    return true;
+  }
+
+  /// The same, for the six delivery modes. Separate only because the value type
+  /// differs; the reasoning is identical.
+  static bool _sameDelivery(
+    Map<String, KitchenDelivery> a,
+    Map<String, KitchenDelivery> b,
+  ) {
     if (a.length != b.length) return false;
     for (final entry in a.entries) {
       if (b[entry.key] != entry.value) return false;
@@ -144,6 +179,9 @@ class TillSettings {
         // looking like a change and rebuilding the idle screen for nothing.
         Object.hashAllUnordered([
           for (final e in printerNames.entries) '${e.key}=${e.value}',
+        ]),
+        Object.hashAllUnordered([
+          for (final e in kitchenDelivery.entries) '${e.key}=${e.value.key}',
         ]),
       );
 
@@ -195,6 +233,18 @@ class TillSettings {
               case final name? when name.isNotEmpty)
             target.station!: name,
       },
+      // Only the stations that are *not* on a printer. Absent means printer,
+      // so a server that has not run schema_till_kitchen.sql yet — where every
+      // one of these columns is missing and reads as null — leaves every till
+      // printing, which is exactly right.
+      kitchenDelivery: {
+        for (final target in PrintTarget.kitchenStations)
+          if (KitchenDelivery.fromKey(
+                j['kitchen_mode_${target.station}'] as String?,
+              )
+              case final mode when mode != KitchenDelivery.printer)
+            target.station!: mode,
+      },
     );
   }
 }
@@ -237,5 +287,86 @@ class TillSettingsRepository {
       // Offline, slow, or malformed: keep whatever was working.
       return _cached ?? TillSettings.defaults;
     }
+  }
+}
+
+/// Writing the venue's kitchen delivery modes from a till.
+///
+/// The rest of the till-settings row is read-only here and edited in the back
+/// office, which is right for an idle-screen picture nobody sets up twice. The
+/// six delivery modes are the exception the brief asks for, and it is the right
+/// exception: the person plugging a screen into the kitchen wall is standing at
+/// a till, not at a laptop, and making them walk to the office to say "the
+/// fryer has a screen now" is how a feature goes unused.
+///
+/// Authorised with the **terminal token**, not a session. A till has no usable
+/// session — the one it was commissioned with expired months ago — and the
+/// scope is exactly right anyway: a commissioned terminal may say where its own
+/// venue's kitchen stations deliver, and may do nothing else through this route.
+class KitchenDeliveryClient {
+  KitchenDeliveryClient({
+    required this.apiBase,
+    required this.terminalToken,
+    http.Client? client,
+  }) : _client = client ?? http.Client();
+
+  final String apiBase;
+
+  /// Null on a terminal commissioned before terminal tokens existed. Such a
+  /// till is told to sign in again rather than shown a screen whose Save button
+  /// cannot work.
+  final String? terminalToken;
+
+  final http.Client _client;
+
+  bool get canWrite => terminalToken != null;
+
+  /// Set [station] to [mode]. Returns the venue's modes as the server now holds
+  /// them, so the till shows what was actually saved rather than what it asked
+  /// for.
+  Future<Map<String, KitchenDelivery>> setMode(
+    String station,
+    KitchenDelivery mode,
+  ) async {
+    final token = terminalToken;
+    if (token == null) {
+      throw StateError(
+        'This till needs to be signed in again before it can change where the '
+        'kitchen stations deliver.',
+      );
+    }
+
+    final res = await _client
+        .put(
+          Uri.parse('$apiBase/till/kitchen/modes'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+          body: jsonEncode({station: mode.key}),
+        )
+        .timeout(const Duration(seconds: 10));
+
+    if (res.statusCode != 200) {
+      throw StateError(_errorFrom(res.body, res.statusCode));
+    }
+
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    return {
+      for (final entry in body.entries)
+        entry.key: KitchenDelivery.fromKey(entry.value as String?),
+    };
+  }
+
+  /// The server's message if it sent one, so a paused office or an expired
+  /// terminal token explains itself rather than arriving as a status code.
+  static String _errorFrom(String body, int status) {
+    try {
+      final message = (jsonDecode(body) as Map<String, dynamic>)['error'];
+      if (message is String && message.isNotEmpty) return message;
+    } catch (_) {
+      // Not JSON; fall through to the status.
+    }
+    return 'The back office refused the change (HTTP $status).';
   }
 }

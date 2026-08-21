@@ -86,10 +86,17 @@ abstract final class TillActions {
   }) async {
     final status = ref.read(printStatusProvider.notifier);
     final printers = await ref.read(printerSettingsProvider.future);
+    final settings = ref.read(tillSettingsProvider);
 
-    // Nothing set up on this terminal: silent by design. A counter till with
-    // no kitchen printer would otherwise complain on every single sale.
-    if (printers.stations.isEmpty) return;
+    // Nothing set up on this terminal *and* no screens in the venue: silent by
+    // design. A counter till with no kitchen would otherwise complain on every
+    // single sale.
+    //
+    // The screen half is checked as well as the printer half, and that is the
+    // whole reason this reads the way it does: a venue that has taken the
+    // printers out and works entirely off screens has no stations here, and
+    // returning on that alone would have left its kitchen with nothing.
+    if (printers.stations.isEmpty && !settings.usesKitchenScreens) return;
 
     status.printing('Sending to the kitchen…');
     try {
@@ -99,12 +106,43 @@ abstract final class TillActions {
             orderId: orderId,
             reason: reason,
             printers: printers,
-            stationNames: ref.read(tillSettingsProvider).printerNames,
+            stationNames: settings.printerNames,
+            delivery: settings.kitchenDelivery,
+            screens: ref.read(kitchenScreenSenderProvider),
+            office: ref.read(officeProvider),
+            roomName: await _roomFor(ref, orderId),
             staffName: ref.read(servedByProvider),
           );
       status.finished(result);
     } catch (e) {
       status.failed('Kitchen printing: $e');
+    }
+  }
+
+  /// Which room the bill's table is in, for the top of the kitchen card.
+  ///
+  /// "Table 4" on its own is ambiguous in any venue with two floors, and a chef
+  /// carrying a plate to the wrong one is the cost. Read from the cached floor
+  /// plan, so it still resolves with no network.
+  ///
+  /// Null for a counter sale, for a bill on no table, and for a till whose plan
+  /// has not loaded — none of which is worth delaying a ticket over.
+  static Future<String?> _roomFor(WidgetRef ref, String orderId) async {
+    try {
+      final order = await ref.read(orderRepositoryProvider)
+          .watchOrder(orderId)
+          .first;
+      final number = order.tableNumber;
+      if (number == null) return null;
+
+      final rooms = ref.read(floorPlanProvider).value;
+      if (rooms == null) return null;
+      for (final room in rooms) {
+        if (room.tables.any((t) => t.number == number)) return room.name;
+      }
+      return null;
+    } catch (_) {
+      return null;
     }
   }
 

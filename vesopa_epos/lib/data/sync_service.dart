@@ -189,6 +189,18 @@ class SyncService {
   /// startup, reconnects and the 30-second backstop. Staff belongs in it.
   Future<void> Function()? pullStaff;
 
+  /// Re-sends kitchen tickets that could not be posted when they fired.
+  ///
+  /// Injected for the same reason [pullStaff] is — it needs the office, which
+  /// belongs to the session — and hung off [resync] for the same reason too:
+  /// the moment the link comes back is exactly when a queued ticket is still
+  /// worth cooking. Nothing else in the till would notice it otherwise, because
+  /// the next fire could be an hour away on a quiet table service.
+  ///
+  /// Unlike the outbox this is *not* the sale, and it is allowed to give up:
+  /// see KitchenScreenSender, which discards anything older than ten minutes.
+  Future<void> Function()? flushKitchen;
+
   /// Full catch-up with the back office: push everything queued, then pull the
   /// latest catalogue, deals and staff. Runs on startup and on every reconnect,
   /// so a spell offline never leaves the till selling from a stale price list or
@@ -207,6 +219,13 @@ class SyncService {
       await pullStaff?.call();
     } catch (_) {
       // The cached list carries on working. See StaffRepository.
+    }
+
+    try {
+      await flushKitchen?.call();
+    } catch (_) {
+      // Best effort by design. A ticket that still cannot be delivered stays
+      // queued until it ages out, and nothing in the till waits on it.
     }
   }
 

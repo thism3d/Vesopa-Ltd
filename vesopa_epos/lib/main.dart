@@ -13,6 +13,7 @@ import 'data/branding.dart';
 import 'data/commerce.dart';
 import 'data/floor_repository.dart';
 import 'data/kitchen_printing.dart';
+import 'data/kitchen_screens.dart';
 import 'data/local/database.dart';
 import 'data/loyalty_repository.dart';
 import 'data/session_controller.dart';
@@ -59,6 +60,19 @@ final sessionRepositoryProvider = Provider<SessionRepository>(
 
 final kitchenPrintingProvider = Provider<KitchenPrinting>(
   (ref) => KitchenPrinting(ref.watch(databaseProvider)),
+);
+
+/// Posts fired tickets to the venue's kitchen screens.
+///
+/// Built even on a till whose venue has no screens: it costs one object and no
+/// network, and it means the decision about whether to *use* it stays in one
+/// place — the delivery mode on each station — rather than being spread across
+/// a provider that may or may not exist.
+final kitchenScreenSenderProvider = Provider<KitchenScreenSender>(
+  (ref) => KitchenScreenSender(
+    apiBase: ref.watch(apiBaseProvider),
+    office: ref.watch(officeProvider),
+  ),
 );
 
 final tableRepositoryProvider = Provider<TableRepository>(
@@ -611,6 +625,10 @@ final syncServiceProvider = Provider<SyncService>((ref) {
   // captured now, so a terminal that signs in later picks up its token without
   // this service being rebuilt.
   sync.pullStaff = () => ref.read(staffRepositoryProvider).sync();
+
+  // Kitchen tickets that could not be posted when they fired ride on the same
+  // catch-up. Read lazily for the same reason as above.
+  sync.flushKitchen = () => ref.read(kitchenScreenSenderProvider).flush();
 
   ref.onDispose(sync.dispose);
   return sync;

@@ -116,6 +116,49 @@ enum PrintTarget {
   }
 }
 
+/// Where a kitchen station's tickets come out.
+///
+/// The station itself is unchanged — it is still one of the six a product is
+/// routed to in the back office — and so is the routing. All this decides is
+/// what happens at the far end of it: paper, a screen, or both.
+///
+/// Venue-wide, and owned by the back office alongside the station *names*, for
+/// the same reason those are: "KP 3 is the fryer, and the fryer has a screen" is
+/// a fact about the venue. Left on the terminal, two tills in one room could
+/// disagree about whether the fryer prints, and the kitchen would get a ticket
+/// or not depending on which counter served the customer.
+///
+/// [printer] is the default everywhere it is absent. That is the whole
+/// compatibility story: a venue that upgrades and never opens the kitchen app
+/// prints exactly as it did yesterday.
+enum KitchenDelivery {
+  printer('Printer only', 'printer'),
+  screen('Kitchen screen only', 'screen'),
+
+  /// Both — which is what a venue actually runs for the fortnight it spends
+  /// trusting the screen enough to unplug the printer.
+  both('Printer and screen', 'both');
+
+  const KitchenDelivery(this.label, this.key);
+
+  final String label;
+  final String key;
+
+  bool get toPrinter => this != screen;
+  bool get toScreen => this != printer;
+
+  /// Unknown values fall back to [printer], deliberately. A till reading a mode
+  /// a later release introduced must keep printing rather than route food to
+  /// something it does not understand.
+  static KitchenDelivery fromKey(String? key) {
+    final k = key?.trim().toLowerCase();
+    for (final v in values) {
+      if (v.key == k) return v;
+    }
+    return printer;
+  }
+}
+
 /// When the venue's own copy of a receipt is printed.
 ///
 /// Separate from the printer assignment because they answer different
