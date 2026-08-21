@@ -3555,6 +3555,9 @@ if (!openResetIfLinked() && token) start();
 
 const KDS_STATIONS = ['kp1', 'kp2', 'kp3', 'kp4', 'kp5', 'kp6'];
 
+/** Per-station product counts from /kitchen/routing. */
+let kdsRouting = { counts: {}, products: 0, routed: 0 };
+
 const KDS_MODES = [
   ['printer', 'Printer', 'A ticket prints at that station, as it does today.'],
   ['screen', 'Screen', 'It appears on the kitchen screens. No paper.'],
@@ -3577,14 +3580,18 @@ async function loadKitchen() {
   // answers both — and reading it here rather than reusing whatever loadIdle()
   // last left in `idleState` means this page is correct when it is the first
   // one opened.
-  const [settings, users, screens] = await Promise.all([
+  const [settings, users, screens, routing] = await Promise.all([
     api('/till-settings'),
     api('/kitchen/users'),
     api('/kitchen/screens'),
+    // How many products point at each station. Without it the six toggles
+    // below are unlabelled guesses — see the note on the route.
+    api('/kitchen/routing'),
   ]);
   kdsSettings = settings;
   kdsUsers = users;
   kdsScreens = screens;
+  kdsRouting = routing;
 
   renderKitchenModes();
   renderKitchenUsers();
@@ -3613,9 +3620,21 @@ function renderKitchenModes() {
       '</button>'
     ).join('');
 
-    return '<div class="kds-mode-row">' +
-      '<div class="kds-mode-name">' + esc(kdsLabel(station)) +
-        '<span class="muted small">' + slot + '</span></div>' +
+    // What actually points here, and whether that is going anywhere.
+    const routed = (kdsRouting.counts || {})[station] || 0;
+    let note = '<span class="muted small">' + slot + '</span>';
+    if (routed > 0) {
+      note += '<span class="kds-routed">' + routed + ' product' +
+        (routed === 1 ? '' : 's') + '</span>';
+    }
+
+    // The exact shape of the fault this page could not explain: a station
+    // every product on the menu points at, still set to paper. Said plainly,
+    // because a manager reading "Printer" has no way to know it is wrong.
+    const stranded = routed > 0 && current === 'printer';
+
+    return '<div class="kds-mode-row' + (stranded ? ' kds-stranded' : '') + '">' +
+      '<div class="kds-mode-name">' + esc(kdsLabel(station)) + note + '</div>' +
       '<div class="seg kds-mode-seg" data-station="' + station + '">' +
         buttons + '</div>' +
     '</div>';

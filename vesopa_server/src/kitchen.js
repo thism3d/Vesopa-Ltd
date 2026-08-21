@@ -591,6 +591,45 @@ function kitchenRoutes({ pool, broadcast, secret }) {
   // router that would have served it. Every screen in every venue would have
   // gone blank.
 
+  /**
+   * How many products point at each station.
+   *
+   * The Kitchen screens page is otherwise six toggles with nothing to tell a
+   * manager which of them matter. A venue rang up saying orders were not
+   * reaching the screens, and the answer was that every one of their products
+   * routed to DRINKS while DRINKS was still set to Printer — visible in ten
+   * seconds with this next to the toggle, and not visible at all without it.
+   *
+   * Counted over `printer_routes`, the comma-separated column the product
+   * editor writes, so a dish on the grill *and* the pass counts for both.
+   */
+  router.get('/kitchen/routing', auth, async (req, res, next) => {
+    try {
+      const office = await tenantEmail(req);
+      const [rows] = await pool.query(
+        `SELECT printer_routes FROM bo_products
+          WHERE email = ? AND printer_routes IS NOT NULL
+            AND printer_routes <> ''`,
+        [office]
+      );
+
+      const counts = Object.fromEntries(KP_STATIONS.map((s) => [s, 0]));
+      for (const row of rows) {
+        for (const station of parseStations(row.printer_routes)) {
+          counts[station] += 1;
+        }
+      }
+
+      const [[total]] = await pool.query(
+        'SELECT COUNT(*) n FROM bo_products WHERE email = ?',
+        [office]
+      );
+      res.json({ counts, products: total.n, routed: rows.length });
+    } catch (e) {
+      next(e);
+    }
+  });
+
   router.get('/kitchen/monitor', auth, async (req, res, next) => {
     try {
       const office = await tenantEmail(req);

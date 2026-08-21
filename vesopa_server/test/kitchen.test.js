@@ -442,6 +442,53 @@ async function check(name, fn) {
     assert.strictEqual(res.status, 400, JSON.stringify(res.body));
   });
 
+  await check('the routing count says what points at each station', async () => {
+    // The number that makes the delivery toggles mean something. A venue rang
+    // up because their screens stayed empty, and the answer was that all 64 of
+    // their products routed to DRINKS while DRINKS was still set to Printer —
+    // ten seconds to see with this on the page, and invisible without it.
+    const pool = fakePool([
+      ['FROM offices WHERE id', [{ contact_email: 'venue@example.com' }]],
+      [
+        'FROM bo_products',
+        [
+          { printer_routes: 'kp1' },
+          { printer_routes: 'kp2' },
+          // On the grill *and* the pass. Counts for both, not once.
+          { printer_routes: 'kp1,kp3' },
+          // Junk stations are dropped rather than counted.
+          { printer_routes: 'kp9,bar' },
+        ],
+      ],
+    ]);
+    const server = await listen(appWith(pool));
+    const res = await call(server, 'GET', '/api/kitchen/routing', {
+      token: sessionToken,
+    });
+    server.close();
+
+    assert.strictEqual(res.status, 200, JSON.stringify(res.body));
+    assert.strictEqual(res.body.counts.kp1, 2);
+    assert.strictEqual(res.body.counts.kp2, 1);
+    assert.strictEqual(res.body.counts.kp3, 1);
+    // Present and zero, not missing: the page draws a row for all six.
+    assert.strictEqual(res.body.counts.kp4, 0);
+    assert.strictEqual(res.body.counts.kp5, 0);
+    assert.strictEqual(res.body.counts.kp6, 0);
+  });
+
+  await check('the routing count is scoped to the venue', async () => {
+    const pool = fakePool([
+      ['FROM offices WHERE id', [{ contact_email: 'venue@example.com' }]],
+    ]);
+    const server = await listen(appWith(pool));
+    await call(server, 'GET', '/api/kitchen/routing', { token: sessionToken });
+    server.close();
+
+    const q = pool.asked.find((a) => a.sql.includes('FROM bo_products'));
+    assert.deepStrictEqual(q.params, ['venue@example.com']);
+  });
+
   await check('an email address is a usable kitchen login', async () => {
     // Venues do use one: the office address is the string everybody on site
     // already knows, so it is what gets written on the card by the screen.

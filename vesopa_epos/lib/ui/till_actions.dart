@@ -88,17 +88,29 @@ abstract final class TillActions {
     final printers = await ref.read(printerSettingsProvider.future);
     final settings = ref.read(tillSettingsProvider);
 
-    // Nothing set up on this terminal *and* no screens in the venue: silent by
-    // design. A counter till with no kitchen would otherwise complain on every
-    // single sale.
+    // No guard here, deliberately. There used to be one — return early when
+    // this terminal had no printers *and* the venue had no screens — and it
+    // was the reason a venue could save table after table and never find out
+    // that nothing reached the kitchen. Their products were routed to DRINKS,
+    // DRINKS was still set to Printer, and no printer was bound on the till:
+    // three settings that are each individually reasonable and together mean
+    // silence. Nothing was shown, because the guard fired before anything had
+    // been worked out.
     //
-    // The screen half is checked as well as the printer half, and that is the
-    // whole reason this reads the way it does: a venue that has taken the
-    // printers out and works entirely off screens has no stations here, and
-    // returning on that alone would have left its kitchen with nothing.
-    if (printers.stations.isEmpty && !settings.usesKitchenScreens) return;
-
-    status.printing('Sending to the kitchen…');
+    // The decision belongs one level down, in `_run`, which knows something
+    // this does not: whether any line on *this* bill is routed anywhere at
+    // all. A counter till with no kitchen routes nothing, so it stays as quiet
+    // as it ever was — and a bill that is routed to a station with nowhere to
+    // go now says so, per station, on the chip.
+    //
+    // What the old guard is still good for is the *optimistic* half. "Sending
+    // to the kitchen…" on a till with no kitchen configured at all is a chip
+    // that flashes on every sale and means nothing, so it is held back here —
+    // while the send itself goes ahead, and anything that fails is still
+    // reported by `finished` below.
+    final expectsAKitchen =
+        printers.stations.isNotEmpty || settings.usesKitchenScreens;
+    if (expectsAKitchen) status.printing('Sending to the kitchen…');
     try {
       final result = await ref
           .read(kitchenPrintingProvider)

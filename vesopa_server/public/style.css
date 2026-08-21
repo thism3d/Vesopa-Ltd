@@ -1343,6 +1343,30 @@ table.plain th { color: var(--muted, #7a828c); font-weight: 600; font-size: 11px
    appears on each. */
 .kds-mode-name span { display: block; font-weight: 400; }
 
+/* How many products point at this station. Next to the toggle rather than in a
+   tooltip, because it is the number that decides whether the toggle matters —
+   a station nothing routes to can stay on Printer for ever. */
+.kds-routed {
+  display: block;
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* Products routed here, and still going to paper. This is the exact shape of
+   the fault the page could not explain: a venue whose whole menu pointed at
+   one station, that station left on Printer, and a kitchen screen that stayed
+   empty all service. Amber rather than red — it is correct for a venue that
+   prints, and only suspicious for one that has just set a screen up. */
+.kds-stranded .kds-routed {
+  color: #9a6206;
+  font-weight: 600;
+}
+.kds-stranded .kds-routed::after {
+  content: ' routed here, still going to paper';
+  font-weight: 400;
+}
+
 /* The three-way control has to survive a narrow rail without wrapping into
    something unreadable, so it shrinks rather than reflows. */
 .kds-mode-seg { flex: none; }
