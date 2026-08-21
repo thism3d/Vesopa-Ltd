@@ -36,7 +36,22 @@ void main() {
   Ticket byNo(String ticketNo) =>
       board.tickets.firstWhere((t) => t.ticketNo == ticketNo);
 
-  BoardState state() => BoardState(tickets: board.tickets, online: true);
+  /// The board as `TicketBoard` builds it, including the clock.
+  ///
+  /// The skew is not decoration. Every age on a card, and the whole of the
+  /// completed tab's recall window, is measured against `BoardState.now` —
+  /// which is this machine's clock plus the server's offset. Left at zero, the
+  /// fixture's tickets age in real time against a wall clock, so the two
+  /// completed-tab checks below passed on the afternoon the fixture was
+  /// captured and failed an hour later when its bumps fell out of the sixty
+  /// minute recall window. Pinning the clock the way the notifier does at
+  /// ticket_board.dart:356 makes these tests about the board rather than about
+  /// what time it is.
+  BoardState state() => BoardState(
+    tickets: board.tickets,
+    online: true,
+    clockSkew: board.serverTime.difference(DateTime.now()),
+  );
 
   setUpAll(() {
     board = BoardSnapshot.fromJson(_fixture('board.json'));
