@@ -1,0 +1,134 @@
+name: vesopa_epos_kitchen
+# Plain ASCII, deliberately. The msix tool copies this straight into
+# AppxManifest.xml's Description and mangles a non-ASCII character on the way —
+# an em-dash here came out as a replacement glyph on the Store tile.
+description: "Vesopa Kitchen: the kitchen display screen for Vesopa EPOS."
+# Private, like the till. Never published to pub.dev.
+publish_to: 'none'
+
+# Tracks the till's release line rather than starting at 1.0.0, because the two
+# ship together: a kitchen screen and a till on different major versions is a
+# support question nobody can answer over the phone. The build number is this
+# app's own.
+version: 1.3.6+1
+
+environment:
+  sdk: ^3.11.3
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  # State. Same choice as the till, so a developer moving between the two
+  # repositories is reading the same idioms.
+  riverpod: ^3.3.2
+  flutter_riverpod: ^3.3.2
+
+  # Talking to the back office: REST for the things this screen asks for, and a
+  # socket for the tickets the server pushes at it.
+  http: ^1.6.0
+  web_socket_channel: ^3.0.3
+  connectivity_plus: ^7.2.0
+
+  # The screen's own memory: which stations it watches, who is signed in, and
+  # the last board it drew. All small, all local to this device.
+  shared_preferences: ^2.5.5
+
+  intl: ^0.20.3
+  uuid: ^4.5.3
+
+  # Kitchen screens are hung on a wall and run one app. The window is sized,
+  # centred and — in service — full screen, and none of that is possible with
+  # Flutter's default desktop window.
+  window_manager: ^0.5.2
+
+  # A ticket printed from the screen goes to a Windows printer, through the
+  # same spooler the till drives.
+  win32: ^6.4.0
+  ffi: ^2.2.0
+
+  # The printed ticket is laid out as a PDF and handed to the spooler, exactly
+  # as the till lays out a receipt — one renderer for both, so a ticket looks
+  # the same whichever machine printed it.
+  pdf: ^3.12.0
+  printing: ^5.14.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
+  msix: ^3.18.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/brand/
+    # Also listed as plain assets, not only as a font family: the printed
+    # ticket loads these through `rootBundle` to embed them in the PDF, and a
+    # `fonts:` declaration alone does not make a file readable that way.
+    - assets/fonts/
+
+  fonts:
+    # The same face the till prints with. A kitchen screen is read across a
+    # pass, through steam, by somebody holding a pan — so the board is set in a
+    # bundled font rather than whatever Windows happens to substitute.
+    - family: OpenSans
+      fonts:
+        - asset: assets/fonts/OpenSans-Regular.ttf
+        - asset: assets/fonts/OpenSans-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/OpenSans-Italic.ttf
+          style: italic
+
+# The application icon.
+#
+# The Kitchen mark, not the till's: same geometry, inverted palette — a
+# near-black square with a lime V. A venue running both pins both to one
+# taskbar, and two identical lime squares there is a chef opening the till by
+# mistake in the middle of a service. See tool/make_icons.py, which derives it
+# from the brand mark rather than redrawing it.
+flutter_launcher_icons:
+  windows:
+    generate: true
+    image_path: "assets/brand/kitchen_mark.png"
+    icon_size: 256
+
+# Microsoft Store packaging.
+#
+# `identity_name` and `publisher` are **assigned by the Store** and are not ours
+# to choose — they are what binds an upload to the listing at
+# https://apps.microsoft.com/detail/9P29NN3R5PGS. Getting either wrong produces
+# a package the Store rejects with a message about the publisher not matching.
+# See docs/microsoft-store.md for the rest of the identity, and for how to
+# build and submit.
+#
+# The package identity keeps the old spelling — `VesopaEPOSKitchen` — while the
+# *display* name is "Vesopa Kitchen". That is not an oversight: the identity is
+# registered and immutable, and changing the name a customer reads costs
+# nothing while changing the identity would orphan every installed copy.
+msix_config:
+  display_name: Vesopa Kitchen
+  publisher_display_name: Vesopa EPOS Ltd
+  identity_name: MeirionDavies.VesopaEPOSKitchen
+  publisher: CN=3AD172E6-2CBA-4B09-AD50-B52C88D57FB3
+
+  # Four parts, and the last must be 0 — the Store reserves the revision field
+  # and rejects anything else. Tracks `version:` at the top of this file.
+  msix_version: 1.3.6.0
+
+  logo_path: assets/brand/kitchen_mark.png
+
+  # internetClient          reaches the back office over HTTPS.
+  # privateNetworkClientServer  reaches a back office on the venue's own LAN,
+  #                         which is how a site with a local server runs.
+  capabilities: internetClient, privateNetworkClientServer
+
+  # The Store signs the package, so no local certificate is used or needed.
+  store: true
+
+  architecture: x64
+  languages: en-gb
