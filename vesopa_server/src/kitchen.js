@@ -329,7 +329,11 @@ function kitchenRoutes({ pool, broadcast, secret }) {
     const name = String(raw || '').trim().toLowerCase();
     if (name.length < 2) return null;
     if (name.length > 60) return null;
-    if (!/^[a-z0-9._-]+$/.test(name)) return null;
+    // `@` and `+` are allowed because venues do use an email address as the
+    // login for the screen in the office — it is the one string everybody
+    // there already knows. Still no spaces and no upper case: this is typed
+    // one character at a time on glass, and a capital costs a shift tap.
+    if (!/^[a-z0-9._+@-]+$/.test(name)) return null;
     return name;
   }
 
@@ -343,8 +347,8 @@ function kitchenRoutes({ pool, broadcast, secret }) {
         return res.status(400).json({
           error:
             'A username of two or more characters, using letters, numbers, ' +
-            'dots, dashes or underscores. It gets typed on a screen with a ' +
-            'finger, so keep it short.',
+            'dots, dashes, underscores, + or @. It gets typed on a screen ' +
+            'with a finger, so keep it short.',
         });
       }
       // Four, not eight. This is a shared login for a screen in a locked

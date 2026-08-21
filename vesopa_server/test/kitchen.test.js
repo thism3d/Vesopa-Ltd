@@ -442,6 +442,26 @@ async function check(name, fn) {
     assert.strictEqual(res.status, 400, JSON.stringify(res.body));
   });
 
+  await check('an email address is a usable kitchen login', async () => {
+    // Venues do use one: the office address is the string everybody on site
+    // already knows, so it is what gets written on the card by the screen.
+    // The validator used to reject `@`, which made the login a manager asked
+    // for impossible to create with no way to tell why from the back office.
+    const pool = fakePool([
+      ['FROM offices WHERE id', [{ contact_email: 'venue@example.com' }]],
+    ]);
+    const server = await listen(appWith(pool));
+    const res = await call(server, 'POST', '/api/kitchen/users', {
+      token: sessionToken,
+      body: { username: 'Manager@Vesopa.co.uk', password: 'aaaa' },
+    });
+    server.close();
+    assert.strictEqual(res.status, 201, JSON.stringify(res.body));
+    // Folded to lower case on the way in, because that is what a screen sends
+    // and the lookup is an exact match.
+    assert.strictEqual(res.body.username, 'manager@vesopa.co.uk');
+  });
+
   await check('a screen’s red always arrives after its amber', async () => {
     const pool = fakePool([
       ['FROM offices WHERE id', [{ contact_email: 'venue@example.com' }]],

@@ -3836,108 +3836,169 @@ document.addEventListener('click', async (e) => {
   }
 });
 
-async function kdsEditUser(user) {
-  const username = prompt(
-    'Kitchen login — short, lower case, no spaces. This gets typed on the ' +
-      'screen with a finger.',
-    user ? user.username : ''
-  );
-  if (username === null) return;
+/**
+ * The kitchen-login editor.
+ *
+ * A form in a modal, like every other editor in this back office. It used to
+ * be three `prompt()` calls in a row, and that is why nothing could be added:
+ * a browser that has been asked to stop showing dialogs — Chrome offers the
+ * tick box on the *second* one, which is exactly where a three-prompt chain
+ * puts it — makes every later `prompt()` return null instantly. The function
+ * then returned at its first `if (x === null) return;` and did nothing at all,
+ * and the `alert()` that would have explained was suppressed by the same
+ * setting. Silent, permanent, and un-recoverable without clearing site data.
+ *
+ * The username is settable only on create. It is what somebody types into a
+ * screen on a wall, and the server has never accepted a change to it — a
+ * renamed login would sign out a kitchen with no warning.
+ */
+function kdsEditUser(user) {
+  const fields = [];
 
-  const displayName = prompt(
-    'A name for it, shown on the screen’s info panel (optional).',
-    user ? (user.display_name || '') : ''
-  );
-  if (displayName === null) return;
-
-  // Asked separately rather than folded into one form, and blank means "leave
-  // it alone" on an edit: renaming a login must not be able to silently clear
-  // its password.
-  const password = prompt(
-    user
-      ? 'New password, or leave blank to keep the current one.'
-      : 'Password for this login. At least 4 characters.',
-    ''
-  );
-  if (password === null) return;
-
-  try {
-    if (user) {
-      const body = { display_name: displayName };
-      if (password) body.password = password;
-      await api('/kitchen/users/' + user.id, {
-        method: 'PUT',
-        body: JSON.stringify(body),
-      });
-    } else {
-      await api('/kitchen/users', {
-        method: 'POST',
-        body: JSON.stringify({
-          username: username,
-          password: password,
-          display_name: displayName,
-        }),
-      });
-    }
-    await loadKitchen();
-  } catch (err) {
-    alert(err.message);
+  if (!user) {
+    fields.push({
+      name: 'username',
+      label: 'Login — short, lower case, no spaces. Typed on glass with a finger.',
+      required: true,
+      value: '',
+    });
   }
+
+  fields.push(
+    {
+      name: 'display_name',
+      label: 'Name for it, shown on the screen’s info panel (optional)',
+      value: user ? user.display_name || '' : '',
+    },
+    {
+      // Deliberately not type="password". The manager setting this has to read
+      // it back to write it on a card for the kitchen, and it is a shared
+      // login for a screen on a wall rather than anybody's personal password.
+      // The old prompt() showed it in clear too.
+      name: 'password',
+      label: user
+        ? 'New password — leave blank to keep the current one'
+        : 'Password — at least 4 characters',
+      value: '',
+    }
+  );
+
+  if (user) {
+    fields.push({
+      name: 'active',
+      label: 'Active — a screen cannot sign in while this is off',
+      type: 'checkbox',
+      value: user.active ? 1 : 0,
+    });
+  }
+
+  modal(user ? 'Kitchen login — ' + user.username : 'New kitchen login', fields,
+    async (data) => {
+      if (user) {
+        const body = {
+          display_name: data.display_name,
+          active: data.active === '1',
+        };
+        // Blank means "leave it alone". Sending an empty string would be a
+        // password change to nothing, which the server rejects — but only
+        // after the manager thought they had merely renamed the login.
+        if (data.password) body.password = data.password;
+        await api('/kitchen/users/' + user.id, {
+          method: 'PUT',
+          body: JSON.stringify(body),
+        });
+      } else {
+        await api('/kitchen/users', {
+          method: 'POST',
+          body: JSON.stringify({
+            username: data.username,
+            password: data.password,
+            display_name: data.display_name,
+          }),
+        });
+      }
+    });
 }
 
-async function kdsEditScreen(screen) {
-  const name = prompt(
-    'What is this screen called? e.g. Grill, Pass, Bar.',
-    screen ? screen.name : ''
-  );
-  if (name === null) return;
+/**
+ * The screen editor. Five chained prompts before, for the same reason.
+ *
+ * Columns and sound are on the form now. They are stored per screen and were
+ * previously settable from nowhere at all — the old dialog sent whatever the
+ * row already held, so a screen created with the defaults kept them forever.
+ */
+function kdsEditScreen(screen) {
+  const stationOptions = KDS_STATIONS.map((s) => ({
+    value: s,
+    label: kdsLabel(s),
+  }));
 
-  const stations = prompt(
-    'Which stations does it show? Comma separated — kp1, kp3.\n' +
-      'Leave blank for every station, which is what a one-screen kitchen wants.',
-    screen ? screen.stations.join(', ') : ''
-  );
-  if (stations === null) return;
+  modal(screen ? 'Screen — ' + screen.name : 'New screen', [
+    {
+      name: 'name',
+      label: 'What this screen is called — Grill, Pass, Bar',
+      required: true,
+      value: screen ? screen.name : '',
+    },
+    {
+      name: 'stations',
+      label: 'Stations it shows — none ticked means every station, which is ' +
+        'what a one-screen kitchen wants',
+      type: 'stations',
+      options: stationOptions,
+      value: screen ? screen.stations.join(',') : '',
+    },
+    {
+      name: 'warn_minutes',
+      label: 'Minutes before an order turns amber',
+      type: 'number',
+      value: screen ? Math.round(screen.warn_seconds / 60) : 8,
+    },
+    {
+      name: 'late_minutes',
+      label: 'Minutes before it turns red and starts pulsing',
+      type: 'number',
+      value: screen ? Math.round(screen.late_seconds / 60) : 15,
+    },
+    {
+      name: 'recall_minutes',
+      label: 'Minutes a completed order stays recallable',
+      type: 'number',
+      value: screen ? screen.recall_minutes : 60,
+    },
+    {
+      name: 'columns_count',
+      label: 'Columns — 0 for as many as fit, which suits most panels',
+      type: 'number',
+      value: screen ? screen.columns_count : 0,
+    },
+    {
+      name: 'sound',
+      label: 'Chime when an order lands',
+      type: 'checkbox',
+      value: screen ? screen.sound : 1,
+    },
+  ], async (data) => {
+    // A checkbox set of one submits a string, a set of several an array, and
+    // a set of none does not submit at all — so all three are normalised here
+    // rather than trusted. None ticked is meaningful: it means every station.
+    const stations = data.stations === undefined
+      ? []
+      : [].concat(data.stations);
 
-  const warn = prompt(
-    'Minutes before an order turns amber.',
-    String(Math.round((screen ? screen.warn_seconds : 480) / 60))
-  );
-  if (warn === null) return;
-
-  const late = prompt(
-    'Minutes before it turns red and starts pulsing.',
-    String(Math.round((screen ? screen.late_seconds : 900) / 60))
-  );
-  if (late === null) return;
-
-  const recall = prompt(
-    'Minutes a completed order stays recallable, so it can be put back on the '
-      + 'board.',
-    String(screen ? screen.recall_minutes : 60)
-  );
-  if (recall === null) return;
-
-  const body = {
-    name: name,
-    stations: stations.split(',').map((s) => s.trim()).filter(Boolean),
-    warn_seconds: Math.round(Number(warn) * 60),
-    late_seconds: Math.round(Number(late) * 60),
-    recall_minutes: Math.round(Number(recall)),
-    // Untouched by this dialog. Both are sent because the server writes the
-    // whole row, and omitting them would reset a screen's columns to "as many
-    // as fit" every time somebody adjusted its clock.
-    columns_count: screen ? screen.columns_count : 0,
-    sound: screen ? screen.sound : 1,
-  };
-
-  try {
     await api(screen ? '/kitchen/screens/' + screen.id : '/kitchen/screens', {
       method: screen ? 'PUT' : 'POST',
-      body: JSON.stringify(body),
+      body: JSON.stringify({
+        name: data.name,
+        stations: stations,
+        warn_seconds: Math.round(Number(data.warn_minutes) * 60),
+        late_seconds: Math.round(Number(data.late_minutes) * 60),
+        recall_minutes: Math.round(Number(data.recall_minutes)),
+        columns_count: Math.round(Number(data.columns_count)) || 0,
+        // The server reads `false` and nothing else as off, so the hidden
+        // field's "0" has to become a boolean before it is sent.
+        sound: data.sound === '1',
+      }),
     });
-    await loadKitchen();
-  } catch (err) {
-    alert(err.message);
-  }
+  });
 }
