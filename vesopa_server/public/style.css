@@ -1320,3 +1320,86 @@ table.plain th { color: var(--muted, #7a828c); font-weight: 600; font-size: 11px
 }
 /* The unusual setting, so it must not read the same as a routing chip. */
 .chip.warn { background: #fdeceb; color: #9c2417; }
+
+/* ---- Kitchen screens ------------------------------------------------------
+   Vesopa EPOS Kitchen: where each station's tickets come out, the logins, the
+   named boards, and a live monitor of what the kitchen is looking at. */
+
+.kds-modes { display: flex; flex-direction: column; gap: 4px; }
+
+.kds-mode-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+}
+.kds-mode-row:last-child { border-bottom: 0; }
+
+.kds-mode-name { font-weight: 600; }
+/* The slot number under the venue's own name for it. The product editor lists
+   both, and a manager cross-referencing the two screens needs the key that
+   appears on each. */
+.kds-mode-name span { display: block; font-weight: 400; }
+
+/* The three-way control has to survive a narrow rail without wrapping into
+   something unreadable, so it shrinks rather than reflows. */
+.kds-mode-seg { flex: none; }
+.kds-mode-seg .seg-btn { padding: 6px 12px; font-size: 12.5px; }
+
+/* ---- The live monitor -----------------------------------------------------
+   Read-only, and deliberately: bumping an order is a decision made by somebody
+   who can see the plate. This answers "is the kitchen actually getting these?",
+   which is the first question anybody asks after moving a station to a screen. */
+
+.kds-board {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  /* Bounded, because this is a panel beside a form rather than the board
+     itself — a busy service would otherwise push the page metres long. */
+  max-height: 520px;
+  overflow-y: auto;
+}
+
+.kds-ticket {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 9px 11px;
+  background: var(--card);
+}
+
+.kds-ticket-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 5px;
+}
+
+.kds-ticket-line {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  font-size: 13.5px;
+  padding: 1px 0;
+}
+
+/* A fixed column, so item names line up down the ticket. A ragged left edge
+   costs a fraction of a second per line to read. */
+.kds-qty {
+  min-width: 20px;
+  text-align: right;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+/* The modifier. Red here as on the screen itself, because it is the one thing
+   on a ticket that is not the recipe — and a manager checking a complaint is
+   looking for exactly this line. */
+.kds-note {
+  color: var(--red);
+  font-style: normal;
+  font-weight: 600;
+}

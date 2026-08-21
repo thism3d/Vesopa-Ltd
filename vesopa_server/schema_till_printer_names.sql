@@ -18,6 +18,22 @@
 -- Guarded with the same helper the other migrations use, so deploy.sh can run
 -- the whole schema_*.sql set on every deploy without this failing the second
 -- time.
+--
+-- Named `schema_till_*`, and that is not cosmetic. deploy.sh applies these
+-- files in `sort` order, and this one alters `epos_till_settings`, which
+-- schema_staff_idle.sql creates. As `schema_printer_names.sql` it sorted
+-- *before* that file, so on a fresh database every CALL below failed with
+-- "table doesn't exist" and the venue silently had no printer names at all —
+-- only visible on a first install, because an existing server already had the
+-- columns and the errors read as "already applied".
+--
+-- It stopped being merely untidy when the kitchen screens arrived: they read
+-- these columns to label a station, so a missing one took the whole board down
+-- rather than just falling back to "KP 3".
+--
+-- schema_till_change_window.sql, schema_till_receipt_buttons.sql and
+-- schema_till_kitchen.sql extend the same row and are named the same way for
+-- the same reason.
 
 DROP PROCEDURE IF EXISTS vesopa_add_column;
 DELIMITER //

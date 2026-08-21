@@ -25,6 +25,11 @@ const { programmingRoutes } = require('./programming');
 const { commerceRoutes } = require('./commerce');
 const { analyticsRoutes } = require('./analytics');
 const { templateRoutes } = require('./templates');
+const {
+  kitchenRoutes,
+  kitchenAppRoutes,
+  tillKitchenRoutes,
+} = require('./kitchen');
 
 const PORT = process.env.PORT || 4000;
 
@@ -73,11 +78,28 @@ app.use(express.json({ limit: '1mb' }));
 
 const clients = new Set();
 
-/** Push to every connected terminal (kitchen screens, other tills). */
-function broadcast(message) {
+/**
+ * Push to connected terminals (kitchen screens, other tills).
+ *
+ * Two audiences, and the difference matters. Without `options.office` this goes
+ * to every socket, which is what the existing signals are: "the catalogue
+ * moved", "till settings changed" — a nudge to re-fetch, carrying nothing a
+ * terminal is not entitled to read anyway, and the re-fetch is scoped by the
+ * caller's own tenancy.
+ *
+ * A kitchen ticket is not that. It carries what a named venue is cooking, so it
+ * is delivered only to sockets that have said which office they belong to and
+ * said this one. A socket that has never subscribed hears nothing office-scoped
+ * at all — the default is silence, not everybody, because the failure mode of
+ * the other default is one venue's orders appearing on another's wall.
+ */
+function broadcast(message, options = {}) {
   const payload = JSON.stringify(message);
+  const office = options.office || null;
   for (const ws of clients) {
-    if (ws.readyState === ws.OPEN) ws.send(payload);
+    if (ws.readyState !== ws.OPEN) continue;
+    if (office && ws.office !== office) continue;
+    ws.send(payload);
   }
 }
 
@@ -142,6 +164,13 @@ app.use('/api', commerceRoutes({ pool, broadcast, secret: JWT_SECRET }));
 app.use('/api', analyticsRoutes({ pool, secret: JWT_SECRET }));
 app.use('/api/admin', adminRoutes({ pool, broadcast, secret: JWT_SECRET }));
 app.use('/api/admin', templateRoutes({ pool, broadcast, secret: JWT_SECRET }));
+
+// Kitchen screens. Three routers because they are authorised three different
+// ways — the back office on a session, the screens on a kitchen token, and the
+// tills on nothing at all, exactly as /till/orders is. See src/kitchen.js.
+app.use('/api', kitchenRoutes({ pool, broadcast, secret: JWT_SECRET }));
+app.use('/api', kitchenAppRoutes({ pool, broadcast, secret: JWT_SECRET }));
+app.use(tillKitchenRoutes({ pool, broadcast, secret: JWT_SECRET }));
 
 /**
  * The floor plan, as the till sees it. Unauthenticated like /products: a
@@ -701,6 +730,31 @@ wss.on('connection', (ws) => {
   ws.on('pong', () => { ws.isAlive = true; });
   ws.on('close', () => clients.delete(ws));
   ws.on('error', () => clients.delete(ws));
+
+  /**
+   * `{"type":"subscribe","office":"…"}` — which venue this socket belongs to.
+   *
+   * Only office-scoped pushes need it, and only kitchen tickets are office
+   * scoped today. It is not a credential and is not treated as one: what
+   * arrives over the socket is a *nudge* carrying an id, and every screen still
+   * reads the board over HTTP with a kitchen token that says which office it
+   * may read. So the worst a forged subscribe can do is learn that somebody,
+   * somewhere, placed an order — and then be refused the order itself.
+   *
+   * Anything else on this socket is ignored rather than erroring: a client from
+   * a future release saying something we do not understand yet must not have
+   * its connection dropped for it.
+   */
+  ws.on('message', (raw) => {
+    try {
+      const msg = JSON.parse(raw.toString());
+      if (msg && msg.type === 'subscribe' && typeof msg.office === 'string') {
+        ws.office = msg.office.trim() || null;
+      }
+    } catch {
+      // Not JSON. Nothing here reads anything else, so there is nothing to do.
+    }
+  });
 });
 
 /**

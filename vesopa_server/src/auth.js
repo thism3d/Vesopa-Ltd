@@ -135,9 +135,19 @@ function requireAuth(secret) {
 
     try {
       const claims = jwt.verify(token, secret);
-      // A terminal token is not a sign-in. Without this check, the long-lived
-      // credential sitting on every till would open the whole back office.
-      if (claims.scope === 'terminal') {
+      // **Any** scoped token is refused, not just the terminal one.
+      //
+      // A session token carries no `scope`; every credential issued to a
+      // *device* does — `terminal` for a commissioned till, `kitchen` for a
+      // screen on a wall. Naming them one at a time was a bug waiting for the
+      // next one to be added, and it duly arrived: the kitchen token passed
+      // this check and opened the whole back office to a shared login taped to
+      // a wall in a room full of people.
+      //
+      // Written as "reject anything scoped" so the next device credential is
+      // safe the day it is minted rather than the day somebody remembers this
+      // line.
+      if (claims.scope) {
         return res.status(401).json({ error: 'Not signed in' });
       }
       req.user = claims;

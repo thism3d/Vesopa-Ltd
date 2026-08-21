@@ -190,6 +190,7 @@
           <button class="nav" data-view="error_reasons">Error Reasons</button>
           <button class="nav" data-view="tax">Tax</button>
           <button class="nav" data-view="idle">Till &amp; printers</button>
+          <button class="nav" data-view="kitchen">Kitchen screens</button>
 
           <button class="nav-group" data-group="floor">Floor<span class="caret">▼</span></button>
           <button class="nav" data-view="tables">Table Designer</button>
@@ -569,6 +570,91 @@
                   prices change often enough that the button is not where anyone should be reading
                   them. The price still shows on the bill as soon as the item is rung up.
                 </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Vesopa EPOS Kitchen.
+             Sits next to Till & printers because it is the same decision seen
+             from the other end: what a station *is*, and where its tickets come
+             out. See vesopa_epos_kitchen/docs/architecture.md. -->
+        <section id="view-kitchen" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Kitchen screens</h2>
+              <p class="muted small">
+                Vesopa Kitchen shows a station its orders on a touch screen instead of
+                printing them. Products are still routed to KP&nbsp;1 to KP&nbsp;6 in the product
+                editor exactly as they are now — this decides where each station’s ticket comes out.
+              </p>
+            </div>
+            <button class="btn primary" id="kitchen-save-modes">Save delivery</button>
+          </div>
+
+          <div class="rd-layout">
+            <div class="rd-editor">
+              <div class="card rd-card">
+                <h3>Where each station delivers</h3>
+                <p class="muted small" style="margin:0 0 10px">
+                  Every station starts on <strong>Printer</strong>, which is what your tills do
+                  today — nothing changes until you move one. <strong>Both</strong> is worth
+                  running for a week or two before you unplug anything.
+                </p>
+                <div id="kitchen-modes" class="kds-modes"></div>
+                <p class="muted small" style="margin:10px 0 0">
+                  Which printer is physically plugged in where is still set on each till, under
+                  Settings › Printing — that is a fact about a counter, not about the venue. A
+                  station set to <em>Screen</em> needs no printer at all.
+                </p>
+              </div>
+
+              <div class="card rd-card">
+                <h3>Kitchen logins</h3>
+                <p class="muted small" style="margin:0 0 10px">
+                  What gets typed into the screen on the wall. These belong to the screen, not to a
+                  member of staff — one per kitchen is usually right. Keep the username short: it is
+                  typed on glass with a finger.
+                </p>
+                <div id="kitchen-users"></div>
+                <div class="denom-actions" style="margin-top:10px">
+                  <button type="button" class="btn ghost small" id="kitchen-user-add">
+                    Add a kitchen login
+                  </button>
+                </div>
+              </div>
+
+              <div class="card rd-card">
+                <h3>Screens</h3>
+                <p class="muted small" style="margin:0 0 10px">
+                  A named board: which stations it shows, and how it behaves. Each machine picks
+                  which of these it is when it is signed in, so “the grill screen” means one thing
+                  in the venue and you can change it from here without touching the wall.
+                </p>
+                <p class="muted small" style="margin:0 0 10px">
+                  A kitchen with one screen needs none of this — an unconfigured screen shows every
+                  station, which is the right answer for them.
+                </p>
+                <div id="kitchen-screens"></div>
+                <div class="denom-actions" style="margin-top:10px">
+                  <button type="button" class="btn ghost small" id="kitchen-screen-add">
+                    Add a screen
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- The live board.
+                 Here so a manager can answer "is the kitchen actually getting
+                 these?" without walking into the kitchen, which is the first
+                 question anybody asks after switching a station to Screen. -->
+            <div class="rd-preview">
+              <div class="card rd-card">
+                <div class="panel-head">
+                  <h3>Live board</h3>
+                  <span class="muted small" id="kitchen-board-status">—</span>
+                </div>
+                <div id="kitchen-board" class="kds-board"></div>
               </div>
             </div>
           </div>

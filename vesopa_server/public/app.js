@@ -79,7 +79,22 @@ function connectSocket() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   socket = new WebSocket(`${proto}://${location.host}/ws`);
 
-  socket.onopen = () => setLive(true);
+  socket.onopen = () => {
+    setLive(true);
+    // Which venue this browser is watching. Only office-scoped pushes need it,
+    // and only kitchen tickets are office-scoped today — without it the live
+    // board would sit there polling while every other panel updated instantly.
+    //
+    // Not a credential, and not treated as one: what arrives over the socket is
+    // a nudge carrying an id, and the board itself is fetched over HTTP with
+    // this session's token deciding what may be read.
+    // `officeEmail` is the tenant key the API scopes by; `email` is the
+    // informal one every older row is keyed on, and what tenantEmail() falls
+    // back to server side. A session stored before offices existed has only
+    // the second, so both are tried.
+    const office = me && (me.officeEmail || me.email);
+    if (office) socket.send(JSON.stringify({ type: 'subscribe', office }));
+  };
   socket.onerror = () => setLive(false);
   socket.onclose = () => {
     setLive(false);
@@ -97,6 +112,13 @@ function connectSocket() {
     if (msg.type === 'customers.updated' && currentView === 'customers') render();
     if (msg.type === 'offices.updated' && ['offices', 'billing'].includes(currentView)) render();
     if (msg.type === 'programming.updated') render();
+    // The kitchen monitor polls, but a ticket firing while a manager is
+    // watching should appear when it fires rather than up to ten seconds
+    // later — that gap is exactly the one that makes somebody think the
+    // screen is not working.
+    if (msg.type === 'kitchen.ticket' && currentView === 'kitchen') {
+      refreshKitchenBoard();
+    }
     // Do NOT reload the plan mid-edit: it would throw away the manager's
     // unsaved drag work.
     if (msg.type === 'floor.updated' && currentView === 'tables' && !dirty) loadFloor();
@@ -200,6 +222,7 @@ const ROUTES = {
   error_reasons: '/error-reasons',
   tax: '/tax',
   idle: '/idle-screen',
+  kitchen: '/kitchen-screens',
   tables: '/tables',
   users: '/users',
   staff: '/staff',
@@ -544,6 +567,7 @@ function render() {
     error_reasons: () => loadCrud('error-reasons'),
     tax: () => loadCrud('tax'),
     idle: loadIdle,
+    kitchen: loadKitchen,
     vouchers: () => loadCrud('vouchers'),
     receipt_designer: loadReceiptDesigner,
     promotions: loadPromotions,
@@ -3512,3 +3536,408 @@ function showPanel(title, html) {
 // A /reset?token=… link wins over a live session: someone who followed a reset
 // email means to change their password, not to be dropped into the dashboard.
 if (!openResetIfLinked() && token) start();
+
+// ---- Kitchen screens ------------------------------------------------------
+//
+// Vesopa Kitchen: the touch screen that replaces a station's printer.
+// Three things are edited here and they belong to three different places,
+// which is worth keeping straight:
+//
+//   * **Delivery** is a property of the venue's stations, and lives on the
+//     till-settings row beside the station names. Every till re-reads it.
+//   * **Logins** are what gets typed into a screen on a wall. They belong to
+//     the screen, not to a member of staff.
+//   * **Screens** are named boards. Which board a given machine *is* stays on
+//     that machine — the same split the till draws between printer names (the
+//     venue's) and printer hardware (the terminal's).
+//
+// See vesopa_epos_kitchen/docs/architecture.md.
+
+const KDS_STATIONS = ['kp1', 'kp2', 'kp3', 'kp4', 'kp5', 'kp6'];
+
+const KDS_MODES = [
+  ['printer', 'Printer', 'A ticket prints at that station, as it does today.'],
+  ['screen', 'Screen', 'It appears on the kitchen screens. No paper.'],
+  ['both', 'Both', 'Paper and screen, for a venue still building trust in it.'],
+];
+
+let kdsSettings = {};
+let kdsUsers = [];
+let kdsScreens = [];
+let kdsBoardTimer = null;
+
+/** What the venue calls a station, or its slot number. */
+function kdsLabel(station) {
+  const named = String(kdsSettings['printer_name_' + station] || '').trim();
+  return named || station.toUpperCase().replace('KP', 'KP ');
+}
+
+async function loadKitchen() {
+  // The station names and the delivery modes are on the same row, so one fetch
+  // answers both — and reading it here rather than reusing whatever loadIdle()
+  // last left in `idleState` means this page is correct when it is the first
+  // one opened.
+  const [settings, users, screens] = await Promise.all([
+    api('/till-settings'),
+    api('/kitchen/users'),
+    api('/kitchen/screens'),
+  ]);
+  kdsSettings = settings;
+  kdsUsers = users;
+  kdsScreens = screens;
+
+  renderKitchenModes();
+  renderKitchenUsers();
+  renderKitchenScreens();
+  await refreshKitchenBoard();
+
+  // The board is a live view, so it keeps itself current while the page is
+  // open. It stops itself the moment the view changes — see the guard in
+  // refreshKitchenBoard — so a manager who navigates away is not polling the
+  // kitchen all afternoon.
+  clearInterval(kdsBoardTimer);
+  kdsBoardTimer = setInterval(refreshKitchenBoard, 10000);
+}
+
+function renderKitchenModes() {
+  const box = $('kitchen-modes');
+  if (!box) return;
+
+  box.innerHTML = KDS_STATIONS.map((station) => {
+    const current = kdsSettings['kitchen_mode_' + station] || 'printer';
+    const slot = station.toUpperCase().replace('KP', 'KP ');
+    const buttons = KDS_MODES.map(([value, label, hint]) =>
+      '<button type="button" class="seg-btn' +
+      (current === value ? ' active' : '') +
+      '" data-mode="' + value + '" title="' + esc(hint) + '">' + label +
+      '</button>'
+    ).join('');
+
+    return '<div class="kds-mode-row">' +
+      '<div class="kds-mode-name">' + esc(kdsLabel(station)) +
+        '<span class="muted small">' + slot + '</span></div>' +
+      '<div class="seg kds-mode-seg" data-station="' + station + '">' +
+        buttons + '</div>' +
+    '</div>';
+  }).join('');
+}
+
+function renderKitchenUsers() {
+  const box = $('kitchen-users');
+  if (!box) return;
+
+  if (kdsUsers.length === 0) {
+    box.innerHTML = '<p class="muted small">No kitchen logins yet. ' +
+      'A screen cannot sign in until there is one.</p>';
+    return;
+  }
+
+  box.innerHTML =
+    '<table class="table"><thead><tr>' +
+      '<th>Login</th><th>Name</th><th>Last used</th><th>Active</th><th></th>' +
+    '</tr></thead><tbody>' +
+    kdsUsers.map((u) =>
+      '<tr>' +
+        '<td><strong>' + esc(u.username) + '</strong></td>' +
+        '<td>' + esc(u.display_name || '—') + '</td>' +
+        '<td class="muted small">' +
+          (u.last_seen_at ? date(u.last_seen_at) : 'Never') + '</td>' +
+        '<td>' + (u.active ? 'Yes' : 'No') + '</td>' +
+        '<td class="right">' +
+          '<button class="btn ghost small" data-kds-user-edit="' + u.id +
+            '">Edit</button> ' +
+          '<button class="btn ghost small" data-kds-user-del="' + u.id +
+            '">Delete</button>' +
+        '</td>' +
+      '</tr>'
+    ).join('') +
+    '</tbody></table>';
+}
+
+function renderKitchenScreens() {
+  const box = $('kitchen-screens');
+  if (!box) return;
+
+  if (kdsScreens.length === 0) {
+    box.innerHTML = '<p class="muted small">No named screens. Every kitchen ' +
+      'screen shows all six stations until you add one — which is exactly ' +
+      'right for a kitchen with a single screen.</p>';
+    return;
+  }
+
+  box.innerHTML =
+    '<table class="table"><thead><tr>' +
+      '<th>Screen</th><th>Stations</th><th>Amber / red</th>' +
+      '<th>Recall</th><th></th>' +
+    '</tr></thead><tbody>' +
+    kdsScreens.map((s) =>
+      '<tr>' +
+        '<td><strong>' + esc(s.name) + '</strong></td>' +
+        '<td>' + (s.stations.length
+          ? esc(s.stations.map(kdsLabel).join(', '))
+          : '<span class="muted">Every station</span>') + '</td>' +
+        '<td class="muted small">' + Math.round(s.warn_seconds / 60) + 'm / ' +
+          Math.round(s.late_seconds / 60) + 'm</td>' +
+        '<td class="muted small">' + s.recall_minutes + 'm</td>' +
+        '<td class="right">' +
+          '<button class="btn ghost small" data-kds-screen-edit="' + s.id +
+            '">Edit</button> ' +
+          '<button class="btn ghost small" data-kds-screen-del="' + s.id +
+            '">Delete</button>' +
+        '</td>' +
+      '</tr>'
+    ).join('') +
+    '</tbody></table>';
+}
+
+/**
+ * The live board.
+ *
+ * Read-only, and deliberately: bumping an order is a decision made by somebody
+ * who can see the plate. This exists to answer "is the kitchen actually getting
+ * these?", which is the first question anybody asks after moving a station onto
+ * a screen, and which otherwise means walking into the kitchen.
+ */
+async function refreshKitchenBoard() {
+  const box = $('kitchen-board');
+  if (!box || currentView !== 'kitchen') {
+    clearInterval(kdsBoardTimer);
+    kdsBoardTimer = null;
+    return;
+  }
+
+  try {
+    // The back office's own view of the board. A separate path from the one
+    // the screens use — see the note in src/kitchen.js, where sharing it would
+    // have put this router's auth in front of every kitchen screen's fetch.
+    const data = await api('/kitchen/monitor?minutes=30');
+    const now = new Date(data.serverTime).getTime();
+    const open = data.tickets.filter((t) =>
+      t.stations.some((s) => s.status !== 'done')
+    );
+
+    $('kitchen-board-status').textContent = open.length === 0
+      ? 'Nothing outstanding'
+      : open.length + ' open · updated ' + time(data.serverTime);
+
+    if (open.length === 0) {
+      box.innerHTML = '<p class="muted small">Nothing is waiting in the ' +
+        'kitchen. Orders appear here the moment a till rings up something ' +
+        'routed to a station set to Screen or Both.</p>';
+      return;
+    }
+
+    box.innerHTML = open.map((t) => {
+      const minutes = Math.max(
+        0,
+        Math.round((now - new Date(t.placedAt).getTime()) / 60000)
+      );
+      const lines = t.lines.map((l) =>
+        '<div class="kds-ticket-line">' +
+          '<span class="kds-qty">' + esc(String(l.quantity)) + '</span>' +
+          '<span>' + esc(l.name) + '</span>' +
+          (l.note ? '<em class="kds-note">' + esc(l.note) + '</em>' : '') +
+        '</div>'
+      ).join('');
+      const waiting = t.stations
+        .filter((s) => s.status !== 'done')
+        .map((s) => kdsLabel(s.station))
+        .join(', ');
+
+      return '<div class="kds-ticket">' +
+        '<div class="kds-ticket-head">' +
+          '<strong>' +
+            esc(t.tableNumber ? 'Table #' + t.tableNumber : 'Counter') +
+          '</strong>' +
+          '<span class="muted small">' + minutes + 'm · ' +
+            esc(t.staffName || '') + '</span>' +
+        '</div>' + lines +
+        '<div class="muted small">' + esc(waiting) + '</div>' +
+      '</div>';
+    }).join('');
+  } catch (err) {
+    $('kitchen-board-status').textContent = 'Could not read the board';
+    box.innerHTML = '<p class="muted small">' + esc(err.message) + '</p>';
+  }
+}
+
+// ---- Editing --------------------------------------------------------------
+
+document.addEventListener('click', async (e) => {
+  // Delivery mode. Held locally until Save, so a manager can set all six and
+  // send one write — six separate saves would broadcast six till-settings
+  // reloads to every terminal in the venue.
+  const modeButton = e.target.closest && e.target.closest('.kds-mode-seg button');
+  if (modeButton) {
+    const station = modeButton.closest('.kds-mode-seg').dataset.station;
+    kdsSettings['kitchen_mode_' + station] = modeButton.dataset.mode;
+    renderKitchenModes();
+    return;
+  }
+
+  if (e.target.id === 'kitchen-save-modes') {
+    const button = e.target;
+    button.disabled = true;
+    try {
+      const body = {};
+      for (const station of KDS_STATIONS) {
+        body['kitchen_mode_' + station] =
+          kdsSettings['kitchen_mode_' + station] || 'printer';
+      }
+      kdsSettings = await api('/till-settings', {
+        method: 'PUT',
+        body: JSON.stringify(body),
+      });
+      renderKitchenModes();
+      button.textContent = 'Saved ✓';
+      setTimeout(() => { button.textContent = 'Save delivery'; }, 1500);
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      button.disabled = false;
+    }
+    return;
+  }
+
+  if (e.target.id === 'kitchen-user-add') return kdsEditUser(null);
+
+  if (e.target.dataset && e.target.dataset.kdsUserEdit) {
+    const id = e.target.dataset.kdsUserEdit;
+    return kdsEditUser(kdsUsers.find((u) => String(u.id) === id));
+  }
+
+  if (e.target.dataset && e.target.dataset.kdsUserDel) {
+    const id = e.target.dataset.kdsUserDel;
+    const user = kdsUsers.find((u) => String(u.id) === id);
+    if (!user) return;
+    // Named in the prompt, because these are short and similar and deleting
+    // the wrong one blinds a kitchen mid-service.
+    if (!confirm('Delete the kitchen login "' + user.username + '"? ' +
+        'Any screen signed in with it stops working.')) return;
+    await api('/kitchen/users/' + user.id, { method: 'DELETE' });
+    return loadKitchen();
+  }
+
+  if (e.target.id === 'kitchen-screen-add') return kdsEditScreen(null);
+
+  if (e.target.dataset && e.target.dataset.kdsScreenEdit) {
+    const id = e.target.dataset.kdsScreenEdit;
+    return kdsEditScreen(kdsScreens.find((s) => String(s.id) === id));
+  }
+
+  if (e.target.dataset && e.target.dataset.kdsScreenDel) {
+    const id = e.target.dataset.kdsScreenDel;
+    const screen = kdsScreens.find((s) => String(s.id) === id);
+    if (!screen) return;
+    if (!confirm('Delete the screen "' + screen.name + '"? Any machine set ' +
+        'to it falls back to showing every station.')) return;
+    await api('/kitchen/screens/' + screen.id, { method: 'DELETE' });
+    return loadKitchen();
+  }
+});
+
+async function kdsEditUser(user) {
+  const username = prompt(
+    'Kitchen login — short, lower case, no spaces. This gets typed on the ' +
+      'screen with a finger.',
+    user ? user.username : ''
+  );
+  if (username === null) return;
+
+  const displayName = prompt(
+    'A name for it, shown on the screen’s info panel (optional).',
+    user ? (user.display_name || '') : ''
+  );
+  if (displayName === null) return;
+
+  // Asked separately rather than folded into one form, and blank means "leave
+  // it alone" on an edit: renaming a login must not be able to silently clear
+  // its password.
+  const password = prompt(
+    user
+      ? 'New password, or leave blank to keep the current one.'
+      : 'Password for this login. At least 4 characters.',
+    ''
+  );
+  if (password === null) return;
+
+  try {
+    if (user) {
+      const body = { display_name: displayName };
+      if (password) body.password = password;
+      await api('/kitchen/users/' + user.id, {
+        method: 'PUT',
+        body: JSON.stringify(body),
+      });
+    } else {
+      await api('/kitchen/users', {
+        method: 'POST',
+        body: JSON.stringify({
+          username: username,
+          password: password,
+          display_name: displayName,
+        }),
+      });
+    }
+    await loadKitchen();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+async function kdsEditScreen(screen) {
+  const name = prompt(
+    'What is this screen called? e.g. Grill, Pass, Bar.',
+    screen ? screen.name : ''
+  );
+  if (name === null) return;
+
+  const stations = prompt(
+    'Which stations does it show? Comma separated — kp1, kp3.\n' +
+      'Leave blank for every station, which is what a one-screen kitchen wants.',
+    screen ? screen.stations.join(', ') : ''
+  );
+  if (stations === null) return;
+
+  const warn = prompt(
+    'Minutes before an order turns amber.',
+    String(Math.round((screen ? screen.warn_seconds : 480) / 60))
+  );
+  if (warn === null) return;
+
+  const late = prompt(
+    'Minutes before it turns red and starts pulsing.',
+    String(Math.round((screen ? screen.late_seconds : 900) / 60))
+  );
+  if (late === null) return;
+
+  const recall = prompt(
+    'Minutes a completed order stays recallable, so it can be put back on the '
+      + 'board.',
+    String(screen ? screen.recall_minutes : 60)
+  );
+  if (recall === null) return;
+
+  const body = {
+    name: name,
+    stations: stations.split(',').map((s) => s.trim()).filter(Boolean),
+    warn_seconds: Math.round(Number(warn) * 60),
+    late_seconds: Math.round(Number(late) * 60),
+    recall_minutes: Math.round(Number(recall)),
+    // Untouched by this dialog. Both are sent because the server writes the
+    // whole row, and omitting them would reset a screen's columns to "as many
+    // as fit" every time somebody adjusted its clock.
+    columns_count: screen ? screen.columns_count : 0,
+    sound: screen ? screen.sound : 1,
+  };
+
+  try {
+    await api(screen ? '/kitchen/screens/' + screen.id : '/kitchen/screens', {
+      method: screen ? 'PUT' : 'POST',
+      body: JSON.stringify(body),
+    });
+    await loadKitchen();
+  } catch (err) {
+    alert(err.message);
+  }
+}

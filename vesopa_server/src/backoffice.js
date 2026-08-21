@@ -384,11 +384,32 @@ function backofficeRoutes({ pool, broadcast, secret }) {
   const PRINTER_SLOTS = ['kp1', 'kp2', 'kp3', 'kp4', 'kp5', 'kp6', 'receipt'];
   const PRINTER_NAME_FIELDS = PRINTER_SLOTS.map((s) => `printer_name_${s}`);
 
+  /**
+   * Where each kitchen station's tickets come out: a printer, a Vesopa EPOS
+   * Kitchen screen, or both.
+   *
+   * On this row rather than in a table of its own for the same reason the
+   * printer *names* are: the till already fetches this row on startup and
+   * re-polls it, and the till-settings broadcast already cache-busts it on
+   * every terminal. Six short strings do not justify their own sync.
+   *
+   * The receipt printer has no mode. It is a routing destination — a product
+   * routed there prints at the counter, which is the point of it — but it is
+   * not a kitchen station, so it is deliberately absent from this list while
+   * being present in the one above.
+   */
+  const KITCHEN_MODE_FIELDS = PRINTER_SLOTS
+    .filter((s) => s !== 'receipt')
+    .map((s) => `kitchen_mode_${s}`);
+
+  const KITCHEN_MODES = ['printer', 'screen', 'both'];
+
   const TILL_FIELDS = [
     'idle_enabled', 'idle_image_url', 'idle_after_sale', 'idle_require_pin',
     'idle_message', 'signoff_seconds', 'change_window_seconds',
     'receipt_auto_print', 'buttons_show_prices',
     ...PRINTER_NAME_FIELDS,
+    ...KITCHEN_MODE_FIELDS,
   ];
 
   const TILL_DEFAULTS = {
@@ -410,6 +431,10 @@ function backofficeRoutes({ pool, broadcast, secret }) {
     // and a venue that later clears a name gets the default back rather than
     // an empty chip.
     ...Object.fromEntries(PRINTER_NAME_FIELDS.map((f) => [f, null])),
+    // Every station on a printer, which is what every venue does today. A
+    // venue that upgrades and never opens the kitchen page prints exactly as
+    // it did yesterday.
+    ...Object.fromEntries(KITCHEN_MODE_FIELDS.map((f) => [f, 'printer'])),
   };
 
   /**
@@ -501,6 +526,13 @@ function backofficeRoutes({ pool, broadcast, secret }) {
         if (f.startsWith('printer_name_')) {
           const name = String(v ?? '').trim().slice(0, 40);
           return name || null;
+        }
+        // Anything unrecognised becomes 'printer'. A back office sent a mode
+        // it does not know about must leave the kitchen printing, not leave it
+        // silent — the failure of the safe default is paper nobody wanted, and
+        // of the other one is food nobody cooks.
+        if (f.startsWith('kitchen_mode_')) {
+          return KITCHEN_MODES.includes(v) ? v : 'printer';
         }
         if (f.startsWith('idle_') && f !== 'idle_message') return v ? 1 : 0;
         return v == null ? '' : String(v);
