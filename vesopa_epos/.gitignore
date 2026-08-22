@@ -89,3 +89,18 @@ windows/flutter/ephemeral/
 # from scratch each run — evidence for the person looking at the failure, not
 # something the next clone needs.
 test/failures/
+
+# -----------------------------------------------------------------------------
+# Reference recordings from other vendors' software
+# -----------------------------------------------------------------------------
+# Screen captures and stills of a competitor's back office, kept while a feature
+# is being designed against them. Deliberately not committed, for the reason
+# vesopa_epos_kitchen/docs/reference-kitchen-demo.md gives about the kitchen
+# demo: several megabytes of phone footage in every clone is a poor way to carry
+# a handful of design decisions, and the decisions are what actually need to
+# survive. Write those into docs/ instead — the recording is the working
+# material, the notes are the artefact.
+#
+# They stay on disk; this only keeps them out of the history.
+VesopaScreenProgrammingDemo.MP4
+ScreenProgrammingDemoImages/

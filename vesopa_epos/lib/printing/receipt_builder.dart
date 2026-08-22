@@ -483,6 +483,7 @@ class ReceiptBuilder {
     required String station,
     String? headline,
     String? staffName,
+    String? roomName,
   }) {
     final bytes = _begin();
 
@@ -520,6 +521,25 @@ class ReceiptBuilder {
             height: PosTextSize.size2,
             bold: true,
           ),
+        ),
+      );
+    }
+
+    // Which room that table is in.
+    //
+    // "Table 4" is not an address in a venue with a Main Floor and a Terrace —
+    // both have a table 4, and the cost of the ambiguity is a chef handing a
+    // plate to a runner who walks it to the wrong one. Printed under the number
+    // rather than beside it, so the number keeps the whole width and stays the
+    // thing read first from a metre away.
+    //
+    // Single height, not double: it qualifies the table, and a room name set as
+    // loud as the table number competes with it.
+    if (roomName != null && roomName.trim().isNotEmpty) {
+      bytes.addAll(
+        _text(
+          roomName.trim().toUpperCase(),
+          styles: const PosStyles(align: PosAlign.center, bold: true),
         ),
       );
     }

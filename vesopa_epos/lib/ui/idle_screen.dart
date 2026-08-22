@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -75,10 +76,28 @@ class _IdleScreenState extends ConsumerState<IdleScreen> {
       _error = null;
       if (key == 'CL') {
         _pin = '';
+        _rejected = false;
       } else if (key == '<') {
+        // Backspace still corrects rather than restarts. One wrong key is the
+        // usual mistake, and fixing it beats retyping all four — so a rejected
+        // PIN keeps its digits for exactly as long as the clerk is correcting
+        // them.
         if (_pin.isNotEmpty) _pin = _pin.substring(0, _pin.length - 1);
-      } else if (_pin.length < _pinLength) {
-        _pin += key;
+        _rejected = false;
+      } else {
+        // A digit after a rejection starts the next attempt, there and then.
+        //
+        // This is what Clear used to be for, and why it had to be pressed: a
+        // refused PIN is four digits long, so `_pin.length < _pinLength` was
+        // false and every further tap did nothing at all. The clerk was left
+        // pressing digits at a pad that ignored them until they found Clear —
+        // on the one screen where somebody is already standing over them
+        // waiting to be served.
+        if (_rejected) {
+          _pin = '';
+          _rejected = false;
+        }
+        if (_pin.length < _pinLength) _pin += key;
       }
     });
 
@@ -110,11 +129,16 @@ class _IdleScreenState extends ConsumerState<IdleScreen> {
     // nothing at all, and the clerk had no idea whether the till had registered
     // the taps.
     //
-    // The digits are kept rather than wiped: one wrong key is the usual mistake,
-    // and backspacing it beats retyping all four.
+    // The digits are kept on screen rather than wiped, so backspacing a single
+    // wrong key still beats retyping all four — but the pad no longer *waits*
+    // for that. Pressing any digit starts the next attempt immediately, which
+    // is what somebody who simply mistyped will do, and what they were
+    // previously blocked from doing until they found Clear.
     setState(() {
       _checking = false;
-      _error = 'That PIN was not recognised. Check it, or clear and start again.';
+      _error = 'That PIN was not recognised. Type it again, or correct it.';
+      // The next digit starts a new attempt. See `_key`.
+      _rejected = true;
       // Counts rejections rather than flagging one, so a second wrong PIN shakes
       // again. A bool would have set true and stayed true, leaving the till
       // silent on exactly the attempt the clerk is most likely to doubt.
@@ -124,6 +148,13 @@ class _IdleScreenState extends ConsumerState<IdleScreen> {
 
   /// How many PINs have been turned away, purely to drive the shake below.
   int _rejections = 0;
+
+  /// Whether the PIN currently on the pad has already been refused.
+  ///
+  /// Separate from [_rejections], which only ever counts up to animate. This
+  /// one answers a different question — "is the next digit a correction or a
+  /// fresh attempt?" — and so it is cleared the moment the clerk does either.
+  bool _rejected = false;
 
   /// Which backdrop failed to render, if one did.
   ///
@@ -188,12 +219,18 @@ class _IdleScreenState extends ConsumerState<IdleScreen> {
           // None at all when there is no picture — the screen is already black,
           // and darkening black only dulls the lime rule.
           //
-          // 85% behind the pad, up from 70%. The keys below were reported as too
-          // see-through to read; part of that fix is the keys themselves (see
-          // [_PadKey]) and part is this, because how solid a translucent key
-          // looks is decided as much by what is behind it as by its own alpha.
-          // Worst case for both is a white photograph, and 85% is what puts the
-          // key faces onto a base dark enough for white to clear 4.5:1 on it.
+          // 35% behind the pad, down from 85%. The venue chose that picture and
+          // an 85% scrim was blacking it out: on a light photograph the sign-on
+          // screen read as a dark slab with a pad on it rather than as the
+          // venue's own screen.
+          //
+          // Readability is held up by the two things that do not cost
+          // transparency — a blur under the pad, which stops key faces sitting
+          // directly on photographic detail, and a shadow on the glyphs
+          // themselves. See [_PadKey]. Both work on a white photograph, where
+          // alpha alone does not: this is a lighter scrim than the one that was
+          // raised for exactly that case, so it is worth checking against your
+          // brightest idle image.
           //
           // Faded between rather than swapped. The pad's scrim arriving in one
           // frame reads as the picture being switched off; brought up over a
@@ -203,20 +240,20 @@ class _IdleScreenState extends ConsumerState<IdleScreen> {
             child: _asking
                 ? const ColoredBox(
                     key: ValueKey('scrim'),
-                    color: Color(0xD9000000),
+                    color: Color(0x59000000),
                   )
                 : overImage
-                    ? const DecoratedBox(
-                        key: ValueKey('gradient'),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.center,
-                            end: Alignment.bottomCenter,
-                            colors: [Color(0x00000000), Color(0xB3000000)],
-                          ),
-                        ),
-                      )
-                    : const SizedBox.shrink(key: ValueKey('none')),
+                ? const DecoratedBox(
+                    key: ValueKey('gradient'),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.center,
+                        end: Alignment.bottomCenter,
+                        colors: [Color(0x00000000), Color(0xB3000000)],
+                      ),
+                    ),
+                  )
+                : const SizedBox.shrink(key: ValueKey('none')),
           ),
 
           // Waking the pad is the one moment on this screen the clerk is
@@ -270,7 +307,9 @@ class _IdleScreenState extends ConsumerState<IdleScreen> {
             style: TextStyle(
               // A shade brighter over a photograph, where it competes with
               // whatever is behind it rather than with black.
-              color: overImage ? const Color(0xF2FFFFFF) : const Color(0xCCFFFFFF),
+              color: overImage
+                  ? const Color(0xF2FFFFFF)
+                  : const Color(0xCCFFFFFF),
               fontSize: overImage ? 14 : 13,
               letterSpacing: 2.4,
               fontWeight: FontWeight.w600,
@@ -299,10 +338,7 @@ class _IdleScreenState extends ConsumerState<IdleScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const _Wordmark(),
-                  if (caption != null) ...[
-                    const SizedBox(height: 28),
-                    caption,
-                  ],
+                  if (caption != null) ...[const SizedBox(height: 28), caption],
                 ],
               ),
             ),
@@ -336,7 +372,8 @@ class _IdleScreenState extends ConsumerState<IdleScreen> {
                 if (staff.isEmpty) ...[
                   const _Notice(
                     icon: Icons.info_outline,
-                    text: 'No staff have been set up yet. Add them in the back '
+                    text:
+                        'No staff have been set up yet. Add them in the back '
                         'office under People › Staff — this till picks them up '
                         'on its own, straight away.',
                   ),
@@ -387,7 +424,10 @@ class _IdleScreenState extends ConsumerState<IdleScreen> {
                           Text(
                             _error!,
                             textAlign: TextAlign.center,
-                            style: const TextStyle(color: Pos.red, fontSize: 14),
+                            style: const TextStyle(
+                              color: Pos.red,
+                              fontSize: 14,
+                            ),
                           ),
                         ],
                       ],
@@ -478,7 +518,7 @@ class _ShakeState extends State<_Shake> with SingleTickerProviderStateMixin {
 /// the case where that local file exists but will not decode.
 class _Backdrop {
   const _Backdrop({this.file, this.url, this.fallbackUrl})
-      : assert(file != null || url != null, 'A backdrop needs a source');
+    : assert(file != null || url != null, 'A backdrop needs a source');
 
   final File? file;
   final String? url;
@@ -524,15 +564,15 @@ class _Background extends StatelessWidget {
   }
 
   Widget _network(String url) => Image.network(
-        url,
-        fit: BoxFit.cover,
-        // A background that failed to load must leave the drawn brand screen
-        // behind it, never a broken-image glyph on a shop floor.
-        errorBuilder: (_, _, _) {
-          onFailed(backdrop.key);
-          return const SizedBox.shrink();
-        },
-      );
+    url,
+    fit: BoxFit.cover,
+    // A background that failed to load must leave the drawn brand screen
+    // behind it, never a broken-image glyph on a shop floor.
+    errorBuilder: (_, _, _) {
+      onFailed(backdrop.key);
+      return const SizedBox.shrink();
+    },
+  );
 }
 
 /// The wordmark over the lime rule — the splash composition, held still.
@@ -595,7 +635,10 @@ class _Dots extends StatelessWidget {
               key: ValueKey('busy'),
               height: 22,
               width: 22,
-              child: CircularProgressIndicator(strokeWidth: 2.4, color: Pos.brand),
+              child: CircularProgressIndicator(
+                strokeWidth: 2.4,
+                color: Pos.brand,
+              ),
             )
           : _slots(),
     );
@@ -610,10 +653,7 @@ class _Dots extends StatelessWidget {
       height: 22,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          for (var i = 0; i < slots; i++)
-            _Dot(filled: i < length),
-        ],
+        children: [for (var i = 0; i < slots; i++) _Dot(filled: i < length)],
       ),
     );
   }
@@ -665,30 +705,30 @@ class _Notice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: const Color(0x1AFFFFFF),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0x33FFFFFF)),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, color: Pos.brand, size: 20),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                text,
-                style: const TextStyle(
-                  color: Color(0xE6FFFFFF),
-                  fontSize: 14,
-                  height: 1.4,
-                ),
-              ),
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      color: const Color(0x1AFFFFFF),
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: const Color(0x33FFFFFF)),
+    ),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, color: Pos.brand, size: 20),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            text,
+            style: const TextStyle(
+              color: Color(0xE6FFFFFF),
+              fontSize: 14,
+              height: 1.4,
             ),
-          ],
+          ),
         ),
-      );
+      ],
+    ),
+  );
 }
 
 /// The PIN pad. Sized for a thumb on a counter, not for a mouse.
@@ -723,7 +763,17 @@ class _Keypad extends StatelessWidget {
           crossAxisSpacing: 10,
           childAspectRatio: 1.5,
           children: [
-            for (final key in const ['1', '2', '3', '4', '5', '6', '7', '8', '9'])
+            for (final key in const [
+              '1',
+              '2',
+              '3',
+              '4',
+              '5',
+              '6',
+              '7',
+              '8',
+              '9',
+            ])
               _PadKey(label: key, onTap: () => press(key)),
             _PadKey(
               label: 'Clear',
@@ -770,12 +820,30 @@ class _PadKey extends StatefulWidget {
   /// All clear 4.5:1, so they hold even for the 12pt action labels, which are
   /// normal text rather than large. Over black — the far commoner case, a venue
   /// with no picture — every one of these is higher again.
-  static const _digitFace = Color(0x4DFFFFFF);
-  static const _actionFace = Color(0x33FFFFFF);
+  // Down from 0x4D/0x33. The keys are meant to read as glass over the venue's
+  // picture, not as panels on top of it.
+  static const _digitFace = Color(0x2EFFFFFF);
+  static const _actionFace = Color(0x1FFFFFFF);
 
   /// A hairline so a key still has an edge where its face happens to land on
   /// something of nearly the same tone.
-  static const _edge = Color(0x40FFFFFF);
+  // The edge does more work now that the face does less: with a faint fill it
+  // is the border that says where the key stops, which is what makes a grid of
+  // them hittable without looking at it.
+  static const _edge = Color(0x73FFFFFF);
+
+  /// A dark halo under every glyph on the pad.
+  ///
+  /// The other half of holding readability while the faces are see-through.
+  /// White type on a translucent key over a *white* photograph is the case that
+  /// alpha cannot win — there is no tint faint enough to show the picture and
+  /// solid enough to carry white text. A shadow sidesteps it: the contrast is
+  /// carried by the glyph's own edge rather than by the panel behind it, so it
+  /// holds over any picture at all and costs nothing in transparency.
+  static const _glyphShadow = [
+    Shadow(color: Color(0xB3000000), blurRadius: 5),
+    Shadow(color: Color(0x66000000), blurRadius: 12),
+  ];
 
   @override
   State<_PadKey> createState() => _PadKeyState();
@@ -807,58 +875,79 @@ class _PadKeyState extends State<_PadKey> {
       scale: _down ? 0.94 : 1,
       duration: Duration(milliseconds: _down ? 90 : 160),
       curve: _down ? Curves.easeOut : Curves.easeOutBack,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 120),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          // The face brightens under the finger, and the edge goes brand lime.
-          // Both track the press directly, so the key is lit for exactly as
-          // long as it is held.
-          color: _down
-              ? const Color(0x66A5C715)
-              : (isAction ? _PadKey._actionFace : _PadKey._digitFace),
-          border: Border.all(
-            color: _down ? Pos.brand : _PadKey._edge,
-            width: _down ? 1.6 : 1,
-          ),
-        ),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: widget.onTap,
-            onTapDown: (_) => _setDown(true),
-            onTapUp: (_) => _setDown(false),
-            // Both of these matter. A finger that slides off a key still has to
-            // release it, or the key stays lit for the rest of the shift.
-            onTapCancel: () => _setDown(false),
-            borderRadius: BorderRadius.circular(12),
-            splashColor: const Color(0x4DA5C715),
-            highlightColor: Colors.transparent,
-            child: Center(
-              child: isAction
-                  ? Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(widget.icon, color: Colors.white, size: 20),
-                        const SizedBox(height: 2),
-                        Text(
+      // Frosted, not merely faint.
+      //
+      // The blur is what lets the faces be this transparent at all: it puts a
+      // smooth field behind the glyph instead of photographic detail, so a
+      // digit does not have to compete with a face or a doorway that happens to
+      // be behind it. It costs nothing in transparency — the picture is still
+      // there, just softened under the pad — which is why it is doing the work
+      // that alpha used to.
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 120),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              // The face brightens under the finger, and the edge goes brand lime.
+              // Both track the press directly, so the key is lit for exactly as
+              // long as it is held.
+              color: _down
+                  ? const Color(0x66A5C715)
+                  : (isAction ? _PadKey._actionFace : _PadKey._digitFace),
+              border: Border.all(
+                color: _down ? Pos.brand : _PadKey._edge,
+                width: _down ? 1.6 : 1,
+              ),
+            ),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: widget.onTap,
+                onTapDown: (_) => _setDown(true),
+                onTapUp: (_) => _setDown(false),
+                // Both of these matter. A finger that slides off a key still has to
+                // release it, or the key stays lit for the rest of the shift.
+                onTapCancel: () => _setDown(false),
+                borderRadius: BorderRadius.circular(12),
+                splashColor: const Color(0x4DA5C715),
+                highlightColor: Colors.transparent,
+                child: Center(
+                  child: isAction
+                      ? Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              widget.icon,
+                              color: Colors.white,
+                              size: 20,
+                              shadows: _PadKey._glyphShadow,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              widget.label,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                shadows: _PadKey._glyphShadow,
+                              ),
+                            ),
+                          ],
+                        )
+                      : Text(
                           widget.label,
                           style: const TextStyle(
-                            color: Color(0xE6FFFFFF),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                            fontSize: 26,
+                            fontWeight: FontWeight.w700,
+                            shadows: _PadKey._glyphShadow,
                           ),
                         ),
-                      ],
-                    )
-                  : Text(
-                      widget.label,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 26,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
+                ),
+              ),
             ),
           ),
         ),

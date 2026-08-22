@@ -9,12 +9,22 @@ class PosAction {
     required this.label,
     required this.icon,
     required this.onTap,
+    this.onLongPress,
     this.color,
   });
 
   final String label;
   final IconData icon;
   final VoidCallback onTap;
+
+  /// The variant of this key, for when the ordinary tap has become the common
+  /// case and the old behaviour is still occasionally wanted.
+  ///
+  /// Used by Save Table: a bill already sitting on a table saves straight back
+  /// to it, and a long press is how it gets moved somewhere else. Deliberately
+  /// rare — a function nobody can find is not a function, so this is only for
+  /// keys whose label already says what the tap will do.
+  final VoidCallback? onLongPress;
 
   /// A tint for the destructive keys. Left null for the ordinary ones, which
   /// take the bar's own surface.
@@ -218,6 +228,7 @@ class _Key extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: action.onTap,
+        onLongPress: action.onLongPress,
         child: Container(
           constraints: const BoxConstraints(minHeight: 56),
           decoration: BoxDecoration(

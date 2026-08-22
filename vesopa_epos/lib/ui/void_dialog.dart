@@ -170,6 +170,22 @@ class _VoidDialogState extends ConsumerState<_VoidDialog> {
                   child: TextField(
                     controller: _custom,
                     autofocus: true,
+                    // Rebuild on every keystroke.
+                    //
+                    // Without this the Void button never came back to life: it
+                    // is gated on `_canConfirm`, which reads this field, and a
+                    // TextEditingController changing does not rebuild the
+                    // widget that reads it. So a clerk typed a perfectly good
+                    // reason and watched the only button that would accept it
+                    // stay grey — with no way forward except cancelling.
+                    onChanged: (_) => setState(() {}),
+                    // The green key on the on-screen keyboard, and Enter on a
+                    // hardware one, mean "that is my reason" — not "insert a
+                    // newline into a single-line field".
+                    textInputAction: TextInputAction.done,
+                    onSubmitted: (_) {
+                      if (_canConfirm) _confirm();
+                    },
                     decoration: const InputDecoration(
                       hintText: 'Type the reason',
                       border: OutlineInputBorder(),

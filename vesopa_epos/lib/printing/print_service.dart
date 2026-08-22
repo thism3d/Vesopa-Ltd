@@ -139,6 +139,7 @@ class PrintService {
     required Map<int, Set<String>> routesByPlu,
     String? headline,
     String? staffName,
+    String? roomName,
     Set<String>? onlyStations,
   }) async {
     final byStation = <String, List<OrderLine>>{};
@@ -176,6 +177,7 @@ class PrintService {
             station: label,
             headline: headline,
             staffName: staffName,
+            roomName: roomName,
           ),
         );
         results.add(StationPrintResult(station: station, label: label));

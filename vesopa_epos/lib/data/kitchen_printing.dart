@@ -43,6 +43,7 @@ class KitchenFireResult {
     this.stations = const [],
     this.lineIds = const [],
     this.screens,
+    this.roomName,
   });
 
   final String orderId;
@@ -60,6 +61,14 @@ class KitchenFireResult {
 
   /// The lines this run was carrying, so a retry sends the same ticket.
   final List<String> lineIds;
+
+  /// The room the table was in, carried for the same reason as [lineIds].
+  ///
+  /// A retry re-prints the ticket that failed, and the floor plan is read on
+  /// the way *into* a fire — so without this the reprint would come out with
+  /// the table number and no room, which is the one ticket where somebody is
+  /// already confused about where the food is going.
+  final String? roomName;
 
   List<StationPrintResult> get failures =>
       stations.where((s) => !s.printed).toList();
@@ -212,6 +221,7 @@ class KitchenPrinting {
       printers: printers,
       stationNames: stationNames,
       staffName: staffName,
+      roomName: previous.roomName,
       onlyStations: previous.failedStations,
     );
 
@@ -296,6 +306,7 @@ class KitchenPrinting {
             stationNames: stationNames,
             routesByPlu: routesByPlu,
             staffName: staffName,
+            roomName: roomName,
             // The intersection, so a retry aimed at one failed station cannot
             // drag in a station that was never on paper to begin with.
             onlyStations: onlyStations == null
@@ -308,6 +319,7 @@ class KitchenPrinting {
       stations: stations,
       lineIds: lines.map((l) => l.id).toList(),
       screens: await screenSend,
+      roomName: roomName,
     );
   }
 
@@ -321,6 +333,7 @@ class KitchenPrinting {
     required Map<int, Set<String>> routesByPlu,
     required Set<String> onlyStations,
     String? staffName,
+    String? roomName,
   }) async {
     if (onlyStations.isEmpty) return const [];
 
@@ -336,6 +349,10 @@ class KitchenPrinting {
         routesByPlu: routesByPlu,
         headline: reason.headline,
         staffName: staffName,
+        // The screens have carried this since kitchen screens landed; paper had
+        // been left behind, so a venue with one screen and one printer got the
+        // room on one ticket and not the other.
+        roomName: roomName,
         onlyStations: onlyStations,
       );
     } catch (e) {

@@ -450,10 +450,25 @@ class SalePage extends ConsumerWidget {
                         color: Pos.red,
                         onTap: () => _cancelCheck(context, ref, lines: lines),
                       ),
+                      // A bill that is already sitting on a table saves back to
+                      // it without asking. Recalling table 5, ringing another
+                      // round and being shown the floor plan again is the till
+                      // asking a question it already knows the answer to — and
+                      // the answer it is fishing for is the table the clerk
+                      // just came from.
+                      //
+                      // The label carries the destination so the tap is never a
+                      // guess, and a long press still opens the plan for the
+                      // one case the tap cannot serve: moving the bill.
                       PosAction(
-                        label: 'Save Table',
+                        label: order?.tableNumber == null
+                            ? 'Save Table'
+                            : 'Save to Table ${order!.tableNumber}',
                         icon: Icons.table_restaurant,
-                        onTap: () => _promptTable(context, ref),
+                        onTap: () => _saveTable(context, ref, order),
+                        onLongPress: order?.tableNumber == null
+                            ? null
+                            : () => _promptTable(context, ref),
                       ),
                       PosAction(
                         label: 'Covers',
@@ -501,6 +516,18 @@ class SalePage extends ConsumerWidget {
         );
       },
     );
+  }
+
+  /// Save Table's ordinary tap.
+  ///
+  /// Straight back to the table this bill is already on, when it is on one, and
+  /// the floor plan only when there is a genuine question to ask. The plan is
+  /// still one long press away, because "this round is actually for table 9" is
+  /// a real thing that happens.
+  Future<void> _saveTable(BuildContext context, WidgetRef ref, Order? order) {
+    final table = order?.tableNumber;
+    if (table == null) return _promptTable(context, ref);
+    return _saveToTable(context, ref, table);
   }
 
   Future<void> _promptTable(BuildContext context, WidgetRef ref) async {
@@ -560,21 +587,45 @@ class SalePage extends ConsumerWidget {
       return;
     }
 
+    if (!context.mounted) return;
+    await _saveToTable(context, ref, number);
+  }
+
+  /// Park this bill on [number], fire the kitchen, and clear the till.
+  ///
+  /// The one path that actually saves a table, whether the number came from the
+  /// floor plan or from the bill already being on it. Kept in one place so the
+  /// two entry points cannot drift — an earlier arrangement had the parking and
+  /// the firing written out twice, and the second copy is exactly where a
+  /// course goes unsent.
+  Future<void> _saveToTable(
+    BuildContext context,
+    WidgetRef ref,
+    int number,
+  ) async {
+    final repo = ref.read(orderRepositoryProvider);
+    final lines = await repo.watchLines(orderId).first;
+
     if (lines.isEmpty) {
       if (!context.mounted) return;
       PosMessenger.error(context, 'Ring up some items first.');
       return;
     }
 
-    // Free table. Park the current bill against it and clear the till for the
-    // next customer. Parking keeps the order live (it is not takings until
-    // settled) and frees the sale screen so several tables can run at once; the
-    // clerk hops back to any of them from the open-orders bar or the tables
-    // plan.
+    // How many of these the kitchen has not seen. Worked out before firing,
+    // because firing marks them sent — and it is what the clerk is told, so
+    // "Added 2 items" means two items are being cooked rather than two items
+    // are on a bill that already had nine.
+    final unsent = lines.where((l) => l.kitchenPrintedAt == null).length;
+
+    // Park keeps the order live — it is not takings until it is settled — and
+    // frees the sale screen so several tables can run at once. The clerk hops
+    // back to any of them from the open-orders bar or the tables plan.
+    final tables = ref.read(tableRepositoryProvider);
     await tables.park(orderId, number);
 
     // The kitchen gets the order the moment the table is saved, which is the
-    // point of saving it. Parked first so a printer that hangs cannot cost the
+    // point of saving it. Parked first, so a printer that hangs cannot cost the
     // clerk the table.
     if (context.mounted) {
       await TillActions.fireKitchen(
@@ -587,7 +638,14 @@ class SalePage extends ConsumerWidget {
 
     onNewOrder();
     if (!context.mounted) return;
-    PosMessenger.success(context, 'Saved to table $number.');
+    PosMessenger.success(
+      context,
+      unsent == 0
+          ? 'Saved to table $number.'
+          : unsent == 1
+          ? 'Added 1 item to table $number.'
+          : 'Added $unsent items to table $number.',
+    );
   }
 
   Future<void> _promptCovers(BuildContext context, WidgetRef ref) async {
