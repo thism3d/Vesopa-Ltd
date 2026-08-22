@@ -24,6 +24,7 @@ import '../data/pricing_engine.dart';
 import 'widgets/basket_panel.dart';
 import 'widgets/live_receipt.dart';
 import 'widgets/line_editor.dart';
+import 'widgets/on_screen_keyboard.dart';
 import 'widgets/pos_message.dart';
 
 /// Live catalogue, straight from the local database so the grid renders with
@@ -810,29 +811,12 @@ class SalePage extends ConsumerWidget {
 }
 
 Future<int?> _numberDialog(BuildContext context, String title) async {
-  final controller = TextEditingController();
-  return showDialog<int>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: Text(title),
-      content: TextField(
-        controller: controller,
-        keyboardType: TextInputType.number,
-        autofocus: true,
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () =>
-              Navigator.pop(context, int.tryParse(controller.text.trim())),
-          child: const Text('OK'),
-        ),
-      ],
-    ),
+  final typed = await _fieldDialog(
+    context,
+    title,
+    mode: PosKeyboardMode.number,
   );
+  return typed == null ? null : int.tryParse(typed.trim());
 }
 
 Future<String?> _textDialog(
@@ -840,16 +824,122 @@ Future<String?> _textDialog(
   String title, {
   String initial = '',
   String? hint,
+}) => _fieldDialog(context, title, initial: initial, hint: hint);
+
+/// Ask for a value, with a keyboard the clerk can actually reach.
+///
+/// Every free-text field on this screen goes through here. A till is a touch
+/// screen on a counter and most of them have no keyboard behind them, so a
+/// dialog with a bare `TextField` in it was a dialog that could be opened and
+/// not answered — Covers, Notes and Customer were all effectively unusable on a
+/// terminal without one plugged in.
+///
+/// A hardware keyboard still works, and is still what a machine on a bench
+/// during setup will use: the field keeps focus and accepts real keystrokes.
+/// What is suppressed is the *operating system's* touch keyboard, which would
+/// otherwise slide up on top of ours.
+Future<String?> _fieldDialog(
+  BuildContext context,
+  String title, {
+  String initial = '',
+  String? hint,
+  PosKeyboardMode mode = PosKeyboardMode.text,
 }) async {
   final controller = TextEditingController(text: initial);
   return showDialog<String>(
     context: context,
-    builder: (context) => AlertDialog(
-      title: Text(title),
-      content: TextField(
-        controller: controller,
-        autofocus: true,
-        decoration: InputDecoration(hintText: hint),
+    builder: (context) => _FieldDialog(
+      title: title,
+      hint: hint,
+      mode: mode,
+      controller: controller,
+    ),
+  );
+}
+
+class _FieldDialog extends StatefulWidget {
+  const _FieldDialog({
+    required this.title,
+    required this.controller,
+    required this.mode,
+    this.hint,
+  });
+
+  final String title;
+  final TextEditingController controller;
+  final PosKeyboardMode mode;
+  final String? hint;
+
+  @override
+  State<_FieldDialog> createState() => _FieldDialogState();
+}
+
+class _FieldDialogState extends State<_FieldDialog> {
+  @override
+  void initState() {
+    super.initState();
+    // Rebuild as the value changes, so the green key can be greyed out while
+    // there is nothing to submit. The same omission is what left the Void
+    // dialog's confirm button dead after a reason had been typed into it.
+    widget.controller.addListener(_onChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_onChanged);
+    super.dispose();
+  }
+
+  void _onChanged() => setState(() {});
+
+  bool get _canSubmit => widget.controller.text.trim().isNotEmpty;
+
+  void _submit() {
+    if (_canSubmit) Navigator.pop(context, widget.controller.text.trim());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.title),
+      // Wide enough for the keyboard to lay out at a usable key size, and
+      // scrollable so it survives the shortest till anybody runs this on.
+      content: SizedBox(
+        width: widget.mode == PosKeyboardMode.text ? 660 : 380,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TextField(
+                controller: widget.controller,
+                autofocus: true,
+                textAlign: widget.mode == PosKeyboardMode.text
+                    ? TextAlign.start
+                    : TextAlign.center,
+                style: widget.mode == PosKeyboardMode.text
+                    ? null
+                    : const TextStyle(fontSize: 26, fontWeight: FontWeight.w700),
+                decoration: InputDecoration(
+                  hintText: widget.hint,
+                  border: const OutlineInputBorder(),
+                ),
+                onSubmitted: (_) => _submit(),
+                // Ours is the input method. A hardware keyboard still types
+                // into it; this only stops Windows sliding its own touch
+                // keyboard over the top of the one below.
+                keyboardType: TextInputType.none,
+              ),
+              const SizedBox(height: 12),
+              OnScreenKeyboard(
+                controller: widget.controller,
+                mode: widget.mode,
+                submitLabel: 'Save',
+                onSubmit: _canSubmit ? _submit : null,
+              ),
+            ],
+          ),
+        ),
       ),
       actions: [
         TextButton(
@@ -857,12 +947,12 @@ Future<String?> _textDialog(
           child: const Text('Cancel'),
         ),
         FilledButton(
-          onPressed: () => Navigator.pop(context, controller.text.trim()),
+          onPressed: _canSubmit ? _submit : null,
           child: const Text('OK'),
         ),
       ],
-    ),
-  );
+    );
+  }
 }
 
 /// The product grid, headed by the category the clerk is in.

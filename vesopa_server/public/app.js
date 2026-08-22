@@ -1199,6 +1199,41 @@ const CROP_SHAPES = {
 };
 
 /**
+ * The two reference scales for fitting a picture into a crop frame, and the
+ * floor the zoom slider is allowed to reach.
+ *
+ *   cover   — the shortest side fills the frame; the long side is cropped off.
+ *   contain — the longest side fits inside it, so the whole picture is visible
+ *             with clear space around it.
+ *
+ * `minZoom` is contain expressed as a multiple of cover, because that is what
+ * the slider speaks in. It is always <= 1, and exactly 1 for a picture already
+ * the frame's shape — there is nothing to zoom out to.
+ *
+ * At module scope rather than inside openCropper so it can be tested without a
+ * canvas: everything below this line is DOM, and everything in here is
+ * arithmetic. See test/backoffice-cropper.test.js.
+ */
+function cropGeometry(imgW, imgH, viewW, viewH) {
+  const cover = Math.max(viewW / imgW, viewH / imgH);
+  const contain = Math.min(viewW / imgW, viewH / imgH);
+  return { cover, contain, minZoom: Math.min(1, contain / cover) };
+}
+
+/**
+ * Where the drawn picture sits along one axis.
+ *
+ * Pinned to the frame while it still covers it, centred once it no longer does.
+ * The second half is what zooming out needs: a gap is a legitimate thing to ask
+ * for now, and a fitted picture shoved into a corner by the old "never show a
+ * gap" rule looks like a bug rather than a choice.
+ */
+function clampCropOffset(drawn, view, off) {
+  if (drawn <= view) return (view - drawn) / 2;
+  return Math.min(0, Math.max(view - drawn, off));
+}
+
+/**
  * Crop / zoom / resize a chosen image before it is uploaded.
  *
  * Returns a Promise that resolves with a PNG Blob sized per `shape` (see
@@ -1228,6 +1263,7 @@ function openCropper(file, shape = 'square') {
           <div class="modal cropper">
             <h3>Position the picture</h3>
             <p class="muted small">Drag to move, slide to zoom. The frame is what appears on the till.</p>
+            <p class="muted small">Zoom out past the frame to fit a whole picture in — the space around it stays clear.</p>
             <div class="crop-stage" style="width:${VIEW_W}px;height:${VIEW_H}px">
               <canvas id="crop-canvas" width="${VIEW_W}" height="${VIEW_H}"></canvas>
               <div class="crop-frame"></div>
@@ -1235,6 +1271,10 @@ function openCropper(file, shape = 'square') {
             <label class="crop-zoom">Zoom
               <input type="range" id="crop-zoom" min="1" max="4" step="0.01" value="1" />
             </label>
+            <div class="crop-presets">
+              <button type="button" class="btn ghost small" id="crop-fit">Fit whole picture</button>
+              <button type="button" class="btn ghost small" id="crop-fill">Fill the frame</button>
+            </div>
             <div class="modal-actions">
               <button type="button" class="btn ghost" id="crop-cancel">Cancel</button>
               <button type="button" class="btn primary" id="crop-save">Use picture</button>
@@ -1245,20 +1285,38 @@ function openCropper(file, shape = 'square') {
       const canvas = $('crop-canvas');
       const ctx = canvas.getContext('2d');
 
-      // Base scale: cover the viewport (shortest side fills it), then the zoom
-      // slider multiplies on top. Offset is the top-left of the drawn image in
-      // viewport pixels, clamped so the frame is always fully covered.
-      const cover = Math.max(VIEW_W / img.width, VIEW_H / img.height);
+      // Two reference scales, and the difference between them is the whole of
+      // this control.
+      //
+      //   cover   — the shortest side fills the frame. The long side is cropped
+      //             off. This is where the slider starts, because it is what a
+      //             till tile wants most of the time.
+      //   contain — the LONGEST side fits inside the frame, so the entire
+      //             picture is visible with clear space around it.
+      //
+      // The slider used to bottom out at cover, which meant a picture could
+      // only ever be cropped and never fitted: a tall bottle shot lost its top
+      // and bottom and there was no way to get them back. That is the "too
+      // zoomed in" complaint — not that the zoom was wrong, but that the floor
+      // was in the wrong place.
+      const { cover, minZoom } = cropGeometry(
+        img.width, img.height, VIEW_W, VIEW_H
+      );
+
       let zoom = 1;
       let offX = (VIEW_W - img.width * cover) / 2;
       let offY = (VIEW_H - img.height * cover) / 2;
 
       const scale = () => cover * zoom;
+
+      // Clamped to the frame while the picture covers it, centred once it no
+      // longer does. Without the second half, zooming out would leave the
+      // picture pinned to a corner by the old "never show a gap" rule — a gap
+      // is now a legitimate thing to ask for, and a fitted picture that sits
+      // off to one side looks like a bug rather than a choice.
       function clamp() {
-        const w = img.width * scale();
-        const h = img.height * scale();
-        offX = Math.min(0, Math.max(VIEW_W - w, offX));
-        offY = Math.min(0, Math.max(VIEW_H - h, offY));
+        offX = clampCropOffset(img.width * scale(), VIEW_W, offX);
+        offY = clampCropOffset(img.height * scale(), VIEW_H, offY);
       }
       function draw() {
         clamp();
@@ -1281,16 +1339,32 @@ function openCropper(file, shape = 'square') {
       });
       canvas.addEventListener('pointerup', () => (dragging = false));
 
+      // The slider can now go below 1. Set here rather than in the markup
+      // because it depends on the picture's own proportions — a panorama can
+      // zoom a long way out, a square cannot zoom out at all.
+      const zoomEl = $('crop-zoom');
+      zoomEl.min = minZoom.toFixed(4);
+      zoomEl.value = 1;
+
       // Zoom keeps the viewport centre stable so the framing does not lurch.
-      $('crop-zoom').addEventListener('input', (e) => {
-        const next = parseFloat(e.target.value);
+      function setZoom(next) {
+        const wanted = Math.min(4, Math.max(minZoom, next));
         const cx = VIEW_W / 2, cy = VIEW_H / 2;
-        const k = (cover * next) / scale();
+        const k = (cover * wanted) / scale();
         offX = cx - (cx - offX) * k;
         offY = cy - (cy - offY) * k;
-        zoom = next;
+        zoom = wanted;
+        zoomEl.value = wanted;
         draw();
-      });
+      }
+
+      zoomEl.addEventListener('input', (e) => setZoom(parseFloat(e.target.value)));
+
+      // The two ends of the slider, as buttons. A manager who wants the whole
+      // bottle in the picture should not have to discover that by dragging a
+      // slider to a place it previously refused to go.
+      $('crop-fit').onclick = () => setZoom(minZoom);
+      $('crop-fill').onclick = () => setZoom(1);
 
       const done = (blob) => { URL.revokeObjectURL(url); root.innerHTML = ''; blob ? resolve(blob) : reject(new Error('cancelled')); };
       $('crop-cancel').onclick = () => done(null);
@@ -1299,6 +1373,11 @@ function openCropper(file, shape = 'square') {
         const out = document.createElement('canvas');
         out.width = OUT_W; out.height = OUT_H;
         const octx = out.getContext('2d');
+        // Transparent, not white. A zoomed-out picture now has space around it,
+        // and on the till that space should let the tile's own colour through —
+        // a white box on a coloured button reads as a broken image. PNG carries
+        // the alpha; the upload is already PNG.
+        octx.clearRect(0, 0, OUT_W, OUT_H);
         const r = OUT_W / VIEW_W;
         octx.drawImage(
           img,

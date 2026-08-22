@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 
 import '../main.dart';
 import 'theme.dart';
+import 'widgets/on_screen_keyboard.dart';
 
 /// The void reasons offered on the till. Defined in the back office; cached in
 /// prefs is overkill for a short list, so this just fetches with a sensible
@@ -106,7 +107,11 @@ class _VoidDialogState extends ConsumerState<_VoidDialog> {
       // Scrollable so that when "Other reason…" pulls up the on-screen
       // keyboard, the shrunken content area scrolls instead of overflowing.
       content: SizedBox(
-        width: 380,
+        // Widened once the keyboard is showing. The keyboard divides its keys
+        // out of whatever width it is given and will not overflow a narrow one
+        // — it just makes the keys too small to hit, which on a list of
+        // reasons somebody is typing under pressure is the same as broken.
+        width: isCustom ? 660 : 380,
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -186,10 +191,27 @@ class _VoidDialogState extends ConsumerState<_VoidDialog> {
                     onSubmitted: (_) {
                       if (_canConfirm) _confirm();
                     },
+                    // Ours is the input method — see the keyboard below. A
+                    // hardware keyboard still types into this; this only stops
+                    // Windows sliding its own touch keyboard over the top.
+                    keyboardType: TextInputType.none,
                     decoration: const InputDecoration(
                       hintText: 'Type the reason',
                       border: OutlineInputBorder(),
                     ),
+                  ),
+                ),
+              // The keyboard this dialog's scroll view was already built to
+              // accommodate. A void reason is free text on a machine that
+              // usually has no keyboard behind it, so without one the "Other"
+              // option was an option a clerk could choose and then not answer.
+              if (isCustom)
+                Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: OnScreenKeyboard(
+                    controller: _custom,
+                    submitLabel: whole ? 'Cancel check' : 'Void',
+                    onSubmit: _canConfirm ? _confirm : null,
                   ),
                 ),
             ],
