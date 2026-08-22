@@ -30,6 +30,7 @@ const {
   kitchenAppRoutes,
   tillKitchenRoutes,
 } = require('./kitchen');
+const { screensRoutes, tillScreenRoutes } = require('./screens');
 
 const PORT = process.env.PORT || 4000;
 
@@ -170,6 +171,14 @@ app.use('/api/admin', templateRoutes({ pool, broadcast, secret: JWT_SECRET }));
 // tills on nothing at all, exactly as /till/orders is. See src/kitchen.js.
 app.use('/api', kitchenRoutes({ pool, broadcast, secret: JWT_SECRET }));
 app.use('/api', kitchenAppRoutes({ pool, broadcast, secret: JWT_SECRET }));
+
+// Screen programming: the venue's own sale-screen layouts. The back office's
+// half is session-authorised under /api; the tills read theirs from /till/,
+// unauthenticated and scoped by an office query, exactly as
+// /api/till-settings/public already is. The two do not share a path, which is
+// deliberate — see the note at the top of src/screens.js.
+app.use('/api', screensRoutes({ pool, broadcast, secret: JWT_SECRET }));
+app.use('/api', tillScreenRoutes({ pool }));
 app.use(tillKitchenRoutes({ pool, broadcast, secret: JWT_SECRET }));
 
 /**
