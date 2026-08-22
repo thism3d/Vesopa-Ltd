@@ -1,8 +1,12 @@
+import 'dart:io' show Platform, exit;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:window_manager/window_manager.dart';
 
 import '../data/providers.dart';
 import '../data/screen_profile.dart';
+import 'branding_page.dart';
 import 'theme.dart';
 
 /// What *this* machine is, as against what the venue has set up.
@@ -171,12 +175,134 @@ class _SettingsSheet extends ConsumerWidget {
                     label: const Text('Refresh now'),
                   ),
                 ),
+
+                // ---- Branding ------------------------------------------
+                //
+                // Venue-wide, not this machine's — so it sits under its own
+                // heading rather than in "On this machine" above, and it costs
+                // the kitchen password to change. A panel on a wall in a room
+                // full of people should not be able to restyle every screen on
+                // the site on a stray tap.
+                const Divider(height: 30),
+                const _SectionTitle('Branding'),
+                Text(
+                  session.branding.isCustomised
+                      ? 'These screens carry this venue’s own branding.'
+                      : 'These screens carry the standard Vesopa Kitchen '
+                            'branding.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Kds.inkMuted,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.palette_outlined),
+                  title: const Text('Start screen & branding'),
+                  subtitle: const Text(
+                    'The name, the colours and the start screen, for every '
+                    'kitchen screen in this venue. Needs the kitchen password.',
+                    style: TextStyle(fontSize: 12.5),
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => showKitchenBranding(context),
+                ),
+
+                // ---- Closing the app -----------------------------------
+                //
+                // The window has no X and no minimise button (see
+                // _lockWindowToKiosk in main.dart), for a sharper version of
+                // the till's reason: a till that gets minimised stops taking
+                // money and somebody notices in seconds, while a kitchen screen
+                // that gets minimised keeps *looking* like a working computer
+                // and the orders behind it are found when a customer asks where
+                // their food is. That leaves this as the only way out, so it has
+                // to be here and it has to be findable.
+                if (_canQuit) ...[
+                  const Divider(height: 30),
+                  const _SectionTitle('Close this screen'),
+                  Card(
+                    margin: EdgeInsets.zero,
+                    child: ListTile(
+                      leading: const Icon(
+                        Icons.power_settings_new,
+                        color: Kds.late,
+                      ),
+                      title: const Text('Exit application'),
+                      subtitle: const Text(
+                        'Shuts the kitchen screen down completely. Orders will '
+                        'carry on reaching the other screens and the printers, '
+                        'and will be here when it is started again.',
+                        style: TextStyle(fontSize: 12.5),
+                      ),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => _confirmExit(context),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 8),
               ],
             ),
           ),
         ],
       ),
     );
+  }
+
+  /// Only desktop has a window to close. Windows is the only platform this app
+  /// ships on today; the check is here so the button does not have to be
+  /// remembered if that ever stops being true.
+  bool get _canQuit =>
+      Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+
+  /// Ask before quitting.
+  ///
+  /// Not password-gated, unlike signing out, and the difference is worth
+  /// stating: quitting is *recoverable by the person standing there* — they
+  /// start the app again and the screen comes back signed in, because the
+  /// token is on the machine. Signing out is not, because it throws the token
+  /// away. So this asks once, plainly, and does not send anybody looking for a
+  /// credential in the middle of a service.
+  Future<void> _confirmExit(BuildContext context) async {
+    final quit = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        icon: const Icon(
+          Icons.power_settings_new,
+          size: 30,
+          color: Kds.late,
+        ),
+        title: const Text('Exit Vesopa Kitchen?'),
+        content: const Text(
+          'This screen will close and stop showing orders. Nothing is lost — '
+          'the orders are on the server, and they will be here when somebody '
+          'starts it again.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Stay open'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: FilledButton.styleFrom(backgroundColor: Kds.late),
+            child: const Text('Exit'),
+          ),
+        ],
+      ),
+    );
+
+    if (quit != true) return;
+
+    // destroy(), not close(): the window was made unclosable at startup and a
+    // close request against it is simply ignored. destroy() tears it down
+    // regardless, and exit(0) is the backstop if the platform channel is not
+    // there for any reason.
+    try {
+      await windowManager.destroy();
+    } catch (_) {
+      exit(0);
+    }
   }
 
   static String _describe(

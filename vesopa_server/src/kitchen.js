@@ -281,6 +281,166 @@ async function stationNames(pool, office) {
 }
 
 // ---------------------------------------------------------------------------
+// White-label branding for the screen
+// ---------------------------------------------------------------------------
+//
+// What a kitchen screen calls itself and what it shows on its start screen.
+// Stored on the venue's existing `epos_branding` row in its own `kitchen_*`
+// columns — see schema_kitchen_branding.sql for why they are separate from the
+// receipt's name and logo rather than shared with them.
+//
+// Every field falls back rather than failing: an empty kitchen name becomes
+// "Vesopa Kitchen", an empty logo becomes the venue's receipt logo and then the
+// bundled mark. A venue that has never opened this page has no row at all, and
+// gets the built-in look — which is the same look it has today.
+
+/** The defaults, and the shape every read returns. */
+const KITCHEN_BRANDING_DEFAULTS = {
+  splashEnabled: true,
+  splashMs: 1800,
+  appName: '',
+  tagline: '',
+  logoUrl: null,
+  splashBg: '',
+  accent: '',
+  showPoweredBy: true,
+};
+
+/**
+ * How long the start screen may hold, in milliseconds.
+ *
+ * Clamped, and not merely validated. The person typing in this box is branding
+ * a screen; the person who pays for a number they got wrong is a chef watching
+ * a logo instead of an order. Zero is allowed and means "no hold" — the way to
+ * turn the thing off entirely is the toggle beside it.
+ */
+const SPLASH_MS_MAX = 6000;
+
+/** `#RRGGBB`, or '' — never anything else, because every screen parses it. */
+function cleanHex(raw) {
+  const hex = String(raw || '').trim();
+  if (!hex) return '';
+  const withHash = hex.startsWith('#') ? hex : `#${hex}`;
+  return /^#[0-9a-fA-F]{6}$/.test(withHash) ? withHash.toLowerCase() : '';
+}
+
+/**
+ * Read a venue's kitchen branding, with the receipt row as the fallback.
+ *
+ * **Never throws.** This is bundled into `/kitchen/login` and
+ * `/kitchen/profile`, so anything that escapes here stops every screen in every
+ * venue from signing in — over a logo. The specific way that happens is a
+ * server deployed ahead of its migration: `deploy.sh` applies the schema before
+ * restarting node, but a hand-rolled deploy, a rollback, or a migration that
+ * failed quietly does not, and then these columns do not exist and the SELECT
+ * is an ER_BAD_FIELD_ERROR.
+ *
+ * So a read that fails degrades to the built-in look, which is exactly what the
+ * app does with an empty value anyway. The venue's screens carry on showing
+ * orders, unbranded, until somebody applies the migration.
+ */
+async function kitchenBranding(pool, office) {
+  let row;
+  try {
+    [[row]] = await pool.query(
+      `SELECT venue_name, logo_url,
+              kitchen_splash_enabled, kitchen_splash_ms, kitchen_app_name,
+              kitchen_tagline, kitchen_logo_url, kitchen_splash_bg,
+              kitchen_accent, kitchen_show_powered_by
+         FROM epos_branding
+        WHERE office = ?`,
+      [office]
+    );
+  } catch (e) {
+    console.error('kitchen branding unreadable, falling back to standard', e);
+    return { ...KITCHEN_BRANDING_DEFAULTS };
+  }
+  if (!row) return { ...KITCHEN_BRANDING_DEFAULTS };
+
+  return {
+    splashEnabled: row.kitchen_splash_enabled !== 0,
+    splashMs: Math.min(
+      SPLASH_MS_MAX,
+      Math.max(0, Number(row.kitchen_splash_ms ?? KITCHEN_BRANDING_DEFAULTS.splashMs))
+    ),
+    appName: String(row.kitchen_app_name || '').trim(),
+    // The venue's trading name is a better second choice than nothing: a screen
+    // showing a logo and "The Bell" is branded, and one showing a logo alone is
+    // ambiguous in a group that runs four sites.
+    tagline: String(row.kitchen_tagline || '').trim() ||
+      String(row.venue_name || '').trim(),
+    logoUrl:
+      String(row.kitchen_logo_url || '').trim() ||
+      String(row.logo_url || '').trim() ||
+      null,
+    splashBg: cleanHex(row.kitchen_splash_bg),
+    accent: cleanHex(row.kitchen_accent),
+    showPoweredBy: row.kitchen_show_powered_by !== 0,
+  };
+}
+
+/**
+ * The columns a write may set, and the only ones it may.
+ *
+ * A whitelist rather than a spread of req.body, because this row also carries
+ * the receipt's layout and a caller that could name its own columns could
+ * restyle every VAT receipt the venue prints from the kitchen's settings panel.
+ */
+function kitchenBrandingUpdate(body) {
+  const patch = {};
+  const has = (key) => body && Object.prototype.hasOwnProperty.call(body, key);
+
+  if (has('splashEnabled')) {
+    patch.kitchen_splash_enabled = body.splashEnabled ? 1 : 0;
+  }
+  if (has('splashMs')) {
+    const ms = Number(body.splashMs);
+    patch.kitchen_splash_ms = Number.isFinite(ms)
+      ? Math.min(SPLASH_MS_MAX, Math.max(0, Math.round(ms)))
+      : KITCHEN_BRANDING_DEFAULTS.splashMs;
+  }
+  if (has('appName')) {
+    patch.kitchen_app_name = String(body.appName || '').trim().slice(0, 40);
+  }
+  if (has('tagline')) {
+    patch.kitchen_tagline = String(body.tagline || '').trim().slice(0, 80);
+  }
+  if (has('logoUrl')) {
+    const url = String(body.logoUrl || '').trim().slice(0, 255);
+    // Only a path this server serves. A remote URL here would have every screen
+    // in the venue fetching a third party's image on every launch, and would be
+    // the one thing on a kitchen wall that a stranger could change.
+    patch.kitchen_logo_url = /^\/uploads\/[A-Za-z0-9._-]+$/.test(url) ? url : null;
+  }
+  if (has('splashBg')) patch.kitchen_splash_bg = cleanHex(body.splashBg);
+  if (has('accent')) patch.kitchen_accent = cleanHex(body.accent);
+  if (has('showPoweredBy')) {
+    patch.kitchen_show_powered_by = body.showPoweredBy ? 1 : 0;
+  }
+  return patch;
+}
+
+/**
+ * Apply a branding patch, creating the venue's row if it has none.
+ *
+ * `INSERT … ON DUPLICATE KEY UPDATE` rather than a read-modify-write: two
+ * screens saving at once is not a race worth losing a logo to, and a venue that
+ * has never opened the receipt designer has no row for an UPDATE to find.
+ */
+async function saveKitchenBranding(pool, office, patch) {
+  if (!Object.keys(patch).length) return;
+  const cols = Object.keys(patch);
+  await pool.execute(
+    `INSERT INTO epos_branding (office, ${cols.map((c) => `\`${c}\``).join(', ')})
+     VALUES (?${', ?'.repeat(cols.length)})
+     ON DUPLICATE KEY UPDATE
+       ${cols.map((c) => `\`${c}\` = VALUES(\`${c}\`)`).join(', ')}`,
+    [office, ...cols.map((c) => patch[c])]
+  );
+}
+
+
+// ---------------------------------------------------------------------------
 // The back office
 // ---------------------------------------------------------------------------
 
@@ -582,6 +742,41 @@ function kitchenRoutes({ pool, broadcast, secret }) {
     }
   });
 
+  // ---- Branding -----------------------------------------------------------
+  //
+  // What the screens in this venue call themselves, and what their start screen
+  // shows. Venue-wide, like the station names and for the same reason: "the
+  // kitchen screen" should mean one thing across a site, and a manager should be
+  // able to restyle it without climbing onto a stool with a keyboard.
+  //
+  // The kitchen app can write these too, over its own token — see
+  // kitchenAppRoutes below. That is a deliberate second door and it is narrower:
+  // it costs the screen's own password to open. A back-office session is already
+  // the venue's credential, so here it does not.
+
+  router.get('/kitchen/branding', auth, async (req, res, next) => {
+    try {
+      res.json(await kitchenBranding(pool, await tenantEmail(req)));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.put('/kitchen/branding', auth, async (req, res, next) => {
+    try {
+      const office = await tenantEmail(req);
+      await saveKitchenBranding(pool, office, kitchenBrandingUpdate(req.body));
+      const branding = await kitchenBranding(pool, office);
+      // Screens cache this, so tell them it has moved rather than leaving it to
+      // the next reconnect: a manager who has just changed the logo is standing
+      // in front of the wall waiting to see it.
+      broadcast({ type: 'kitchen.branding', office, branding }, { office });
+      res.json(branding);
+    } catch (e) {
+      next(e);
+    }
+  });
+
   // ---- The board, for a manager watching from the office ------------------
   //
   // `/kitchen/monitor`, not `/kitchen/board`, and the difference is load-bearing:
@@ -679,6 +874,11 @@ function kitchenAppRoutes({ pool, broadcast, secret }) {
       office,
       officeName: venue?.name || null,
       stationNames: await stationNames(pool, office),
+      // Sent on every sign-in and every reconnect, and cached by the screen, so
+      // the start screen is branded on a cold boot with no network. A logo that
+      // needs the server to be up is a logo nobody sees on the one morning the
+      // line is down.
+      branding: await kitchenBranding(pool, office),
       screens: screens.map((s) => ({ ...s, stations: parseStations(s.stations) })),
     };
   }
@@ -763,6 +963,109 @@ function kitchenAppRoutes({ pool, broadcast, secret }) {
         user: { username: req.kitchen.user, name: req.kitchen.name },
         ...(await profile(req.office)),
       });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+
+  /**
+   * Check the password of the login this screen is already signed in as.
+   *
+   * Two callers, one question. Signing a screen out asks for it, because the
+   * button sits on a header a chef leans against and the cost of a mis-tap is a
+   * board that stops showing orders until somebody who knows the venue's
+   * credentials walks in. Editing the venue's branding asks for it because that
+   * is a venue-wide change being made from a shared panel on a wall.
+   *
+   * Deliberately *not* a second login: it does not issue a token and it cannot
+   * be used to become a different user. It answers "is the person at this
+   * screen the person who set it up?" and nothing else.
+   *
+   * Rate limiting is the bcrypt round cost and the fact that the caller already
+   * holds a valid kitchen token — this route tells an attacker who has one
+   * nothing they could not learn from /kitchen/login, which needs no token.
+   */
+  async function passwordMatches(office, username, password) {
+    if (!password) return false;
+    const [[user]] = await pool.query(
+      `SELECT password, active FROM epos_kitchen_users
+        WHERE office = ? AND username = ?`,
+      [office, username]
+    );
+    if (!user || !user.active) return false;
+    return bcrypt.compare(password, user.password || '');
+  }
+
+  /**
+   * 200 either way, with the answer in the body.
+   *
+   * A wrong password is not an authorisation failure of *this request* — the
+   * request carried a good token and is entitled to an answer. Saying 401 would
+   * make it indistinguishable from the token having expired, and the screen
+   * would tell somebody their password was wrong when what actually happened is
+   * that it needs signing in again. Those two send a chef to two different
+   * places at six o'clock on a Saturday.
+   */
+  router.post('/kitchen/verify', kitchen, async (req, res, next) => {
+    try {
+      const ok = await passwordMatches(
+        req.office,
+        req.kitchen.user,
+        String(req.body?.password || '')
+      );
+      res.json({ ok });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /**
+   * Restyle the venue's screens from one of them.
+   *
+   * The same fields the back office edits, behind the screen's own password.
+   * Venue-wide, so it is broadcast: a venue with a grill board and a fryer board
+   * should not end up with two different logos because somebody changed one.
+   *
+   * The logo itself is not settable here — only the back office uploads images.
+   * A kiosk in full screen with no keyboard is a poor place to browse a
+   * filesystem, and it keeps the one route that writes files behind a session.
+   *
+   * `/kitchen/profile/branding`, and *not* `/kitchen/branding`, for the same
+   * load-bearing reason `/kitchen/monitor` is not `/kitchen/board`: both routers
+   * are mounted under /api with the back office's first, so a shared path would
+   * put `requireAuth` in front of this handler — and requireAuth refuses a
+   * kitchen token, ends the request, and never falls through to the router that
+   * would have served it. Every screen's save would have failed with 401 while
+   * the back office's worked, which is the sort of bug that gets diagnosed in a
+   * kitchen at service.
+   */
+  router.put('/kitchen/profile/branding', kitchen, async (req, res, next) => {
+    try {
+      const ok = await passwordMatches(
+        req.office,
+        req.kitchen.user,
+        String(req.body?.password || '')
+      );
+      // 403, not 401, and for the same reason /kitchen/verify answers 200: the
+      // token is fine and the screen must not be told to sign in again over a
+      // mistyped password.
+      if (!ok) {
+        return res
+          .status(403)
+          .json({ error: 'That is not the password for this screen.' });
+      }
+
+      const patch = kitchenBrandingUpdate(req.body);
+      delete patch.kitchen_logo_url;
+
+      await saveKitchenBranding(pool, req.office, patch);
+      const branding = await kitchenBranding(pool, req.office);
+      broadcast(
+        { type: 'kitchen.branding', office: req.office, branding },
+        { office: req.office }
+      );
+      res.json(branding);
     } catch (e) {
       next(e);
     }

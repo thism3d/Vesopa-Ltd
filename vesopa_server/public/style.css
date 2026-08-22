@@ -1427,3 +1427,92 @@ table.plain th { color: var(--muted, #7a828c); font-weight: 600; font-size: 11px
   font-style: normal;
   font-weight: 600;
 }
+
+/* ---- Kitchen: white-label branding --------------------------------------
+   The colour pair and a preview of the start screen the wall will show.
+   Drawn here rather than left to the app so a manager choosing a background
+   and an accent can see the pair together — the two failure modes are a lime
+   accent on a white ground, which vanishes, and a dark accent on a dark
+   ground, which never appears at all. */
+
+.kb-colours {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.kb-colours label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12.5px;
+  margin: 0;
+}
+
+.kb-colours input[type='color'] {
+  width: 64px;
+  height: 34px;
+  padding: 2px;
+  border: 1px solid var(--line, #d7dbe2);
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.kds-splash-preview {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  border-radius: 10px;
+  border: 1px solid var(--line, #d7dbe2);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-align: center;
+  padding: 18px;
+}
+
+.kds-splash-preview .kds-splash-mark {
+  width: 84px;
+  height: 84px;
+  border-radius: 19px;
+  object-fit: contain;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 44px;
+  line-height: 1;
+}
+
+.kds-splash-preview .kds-splash-name {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+.kds-splash-preview .kds-splash-tagline {
+  font-size: 13px;
+  opacity: 0.75;
+}
+
+/* The accent's own job on the real screen: a sweep under the name. Shown here
+   as a static bar, because an animation in a settings preview is a thing a
+   manager waits for rather than reads. */
+.kds-splash-preview .kds-splash-rule {
+  width: 120px;
+  height: 4px;
+  border-radius: 2px;
+}
+
+.kds-splash-preview .kds-splash-powered {
+  position: absolute;
+  bottom: 12px;
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  opacity: 0.55;
+}

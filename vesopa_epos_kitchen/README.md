@@ -50,6 +50,33 @@ Delivery can also be set from a till, under **Settings › Printing › Kitchen
 screens** — which is usually where the person plugging the screen in is
 standing.
 
+## Making it yours
+
+**Back office → Kitchen screens → Start screen & branding.** A logo, a name, a
+line under it and two colours, applied to every kitchen screen in the venue and
+shown on the animated start screen while the app launches. Leave a box empty and
+it falls back — to your receipt logo, then to the built-in Vesopa mark — so a
+venue that sets nothing looks exactly as it does today.
+
+The same panel is on the screen itself, under **Settings › Start screen &
+branding**, because the person who can see that a colour is wrong is standing in
+the kitchen. Changing it from there costs the kitchen password. The logo is the
+one thing you can only set in the back office: a screen running full screen with
+no keyboard is a poor place to go looking for a file.
+
+The start screen never delays an order — the board loads behind it, one tap
+skips it, and it can be switched off altogether.
+
+## Closing a screen
+
+The window has no X and no minimise button, so there are two ways out and they
+ask for different things:
+
+- **Sign out** (header) asks for the **kitchen password**. It throws the token
+  away, so coming back needs the venue's office email and the kitchen login.
+- **Settings › Exit application** just asks you to confirm. Starting the app
+  again brings the screen back signed in.
+
 ## Running it
 
 ```bash

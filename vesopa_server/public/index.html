@@ -642,6 +642,78 @@
                   </button>
                 </div>
               </div>
+
+              <!-- White-label branding for the screens themselves.
+                   Separate from the receipt designer's logo and venue name on
+                   purpose: restyling the screen above a pass must not restyle
+                   every VAT receipt the venue hands a customer. See
+                   schema_kitchen_branding.sql. -->
+              <div class="card rd-card">
+                <h3>Start screen &amp; branding</h3>
+                <p class="muted small" style="margin:0 0 10px">
+                  What the screens in this venue call themselves, and what they show while they
+                  start up. Leave a box empty and the screen falls back — to your receipt logo,
+                  then to the built-in Vesopa mark. This applies to every kitchen screen on the
+                  site, and takes effect on each one within a few seconds.
+                </p>
+
+                <div class="rd-logo-row">
+                  <div class="rd-logo-preview" id="kitchen-logo-preview">
+                    <span class="muted small">No logo</span>
+                  </div>
+                  <div class="rd-logo-actions">
+                    <input type="file" id="kitchen-logo-file" accept="image/*" hidden>
+                    <button type="button" class="btn" id="kitchen-logo-pick">Upload logo</button>
+                    <button type="button" class="btn danger-ghost" id="kitchen-logo-clear">Remove</button>
+                    <p class="muted small">PNG with a transparent background works best. Shown on
+                      glass at about 120&nbsp;px, so a mark reads better than a wordmark.</p>
+                  </div>
+                </div>
+
+                <label style="margin-top:12px">What the screen calls itself
+                  <input data-kb="appName" maxlength="40" placeholder="Vesopa Kitchen">
+                </label>
+                <label style="margin-top:10px">The line under it
+                  <input data-kb="tagline" maxlength="80" placeholder="Your venue’s name">
+                </label>
+
+                <div class="kb-colours">
+                  <label>Background
+                    <input type="color" data-kb="splashBg">
+                  </label>
+                  <label>Accent
+                    <input type="color" data-kb="accent">
+                  </label>
+                  <button type="button" class="btn ghost small" id="kitchen-colours-clear">
+                    Use the built-in colours
+                  </button>
+                </div>
+
+                <label class="check" style="margin-top:12px">
+                  <input type="checkbox" data-kb="splashEnabled"> Show the start screen when a screen launches
+                </label>
+                <label class="check">
+                  <input type="checkbox" data-kb="showPoweredBy"> Show “Powered by Vesopa” on it
+                </label>
+
+                <label style="margin-top:10px">Hold it on screen for this many milliseconds
+                  <input type="number" min="0" max="6000" step="100" data-kb="splashMs">
+                </label>
+                <p class="muted small" style="margin:6px 0 0">
+                  0 lets it clear the moment the board is ready. The board is fetched behind the
+                  start screen either way, so this never delays the orders arriving — it only
+                  decides how long they wait to be looked at. Six seconds is the most allowed.
+                </p>
+
+                <div class="denom-actions" style="margin-top:12px">
+                  <button type="button" class="btn primary small" id="kitchen-branding-save">
+                    Save branding
+                  </button>
+                  <button type="button" class="btn ghost small" id="kitchen-branding-reset">
+                    Revert
+                  </button>
+                </div>
+              </div>
             </div>
 
             <!-- The live board.
@@ -649,6 +721,17 @@
                  these?" without walking into the kitchen, which is the first
                  question anybody asks after switching a station to Screen. -->
             <div class="rd-preview">
+              <!-- What the wall will look like. Drawn from the same values
+                   the screens read, so a manager is not guessing at a colour
+                   pair they cannot see until they walk into the kitchen. -->
+              <div class="card rd-card">
+                <div class="panel-head">
+                  <h3>Start screen</h3>
+                  <span class="muted small">As the wall will see it</span>
+                </div>
+                <div id="kitchen-splash-preview" class="kds-splash-preview"></div>
+              </div>
+
               <div class="card rd-card">
                 <div class="panel-head">
                   <h3>Live board</h3>

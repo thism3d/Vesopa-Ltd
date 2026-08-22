@@ -3569,6 +3569,24 @@ let kdsUsers = [];
 let kdsScreens = [];
 let kdsBoardTimer = null;
 
+/**
+ * White-label branding for the screens, and the copy last saved.
+ *
+ * Two objects rather than one so Revert has something to revert *to* — the same
+ * shape the receipt designer uses, and for the same reason: a manager who has
+ * changed four fields and thought better of it should not have to remember what
+ * three of them were.
+ */
+let kdsBranding = {};
+let kdsBrandingSaved = {};
+
+/** The built-in look, mirroring ui/theme.dart in the kitchen app. */
+const KDS_BRAND_FALLBACK = {
+  bg: '#111111',
+  accent: '#a5c715',
+  name: 'Vesopa Kitchen',
+};
+
 /** What the venue calls a station, or its slot number. */
 function kdsLabel(station) {
   const named = String(kdsSettings['printer_name_' + station] || '').trim();
@@ -3580,22 +3598,27 @@ async function loadKitchen() {
   // answers both — and reading it here rather than reusing whatever loadIdle()
   // last left in `idleState` means this page is correct when it is the first
   // one opened.
-  const [settings, users, screens, routing] = await Promise.all([
+  const [settings, users, screens, routing, branding] = await Promise.all([
     api('/till-settings'),
     api('/kitchen/users'),
     api('/kitchen/screens'),
     // How many products point at each station. Without it the six toggles
     // below are unlabelled guesses — see the note on the route.
     api('/kitchen/routing'),
+    api('/kitchen/branding'),
   ]);
   kdsSettings = settings;
   kdsUsers = users;
   kdsScreens = screens;
   kdsRouting = routing;
+  kdsBranding = { ...branding };
+  kdsBrandingSaved = { ...branding };
 
   renderKitchenModes();
   renderKitchenUsers();
   renderKitchenScreens();
+  kdsFillBranding();
+  kdsBindBranding();
   await refreshKitchenBoard();
 
   // The board is a live view, so it keeps itself current while the page is
@@ -3777,6 +3800,194 @@ async function refreshKitchenBoard() {
   } catch (err) {
     $('kitchen-board-status').textContent = 'Could not read the board';
     box.innerHTML = '<p class="muted small">' + esc(err.message) + '</p>';
+  }
+}
+
+// ---- Branding -------------------------------------------------------------
+//
+// What the venue's screens call themselves and what they show while starting
+// up. Venue-wide, and stored beside the receipt branding but never on the same
+// columns — restyling a kitchen screen must not restyle a customer's VAT
+// receipt. See schema_kitchen_branding.sql.
+
+let kdsBrandingBound = false;
+
+/** Wired once; the view is re-rendered on every navigation. */
+function kdsBindBranding() {
+  if (kdsBrandingBound) return;
+  kdsBrandingBound = true;
+
+  document.querySelectorAll('[data-kb]').forEach((el) => {
+    const key = el.dataset.kb;
+    const event = el.type === 'checkbox' || el.type === 'color' ? 'change' : 'input';
+    el.addEventListener(event, () => {
+      if (el.type === 'checkbox') kdsBranding[key] = el.checked;
+      else if (el.type === 'number') kdsBranding[key] = Number(el.value);
+      else kdsBranding[key] = el.value;
+      kdsRenderSplashPreview();
+    });
+  });
+
+  $('kitchen-logo-pick').addEventListener('click', () => $('kitchen-logo-file').click());
+  $('kitchen-logo-file').addEventListener('change', kdsUploadLogo);
+  $('kitchen-logo-clear').addEventListener('click', () => {
+    // Null, not '': the screen falls back to the receipt logo and then to the
+    // built-in mark, so "Remove" means "stop overriding" rather than "show
+    // nothing at all".
+    kdsBranding.logoUrl = null;
+    kdsFillBranding();
+  });
+
+  $('kitchen-colours-clear').addEventListener('click', () => {
+    kdsBranding.splashBg = '';
+    kdsBranding.accent = '';
+    kdsFillBranding();
+  });
+
+  $('kitchen-branding-save').addEventListener('click', kdsSaveBranding);
+  $('kitchen-branding-reset').addEventListener('click', () => {
+    kdsBranding = { ...kdsBrandingSaved };
+    kdsFillBranding();
+  });
+}
+
+function kdsFillBranding() {
+  document.querySelectorAll('[data-kb]').forEach((el) => {
+    const value = kdsBranding[el.dataset.kb];
+    if (el.type === 'checkbox') el.checked = !!value;
+    else if (el.type === 'color') {
+      // A colour input has no empty state — it shows black for '' and a manager
+      // reads that as a choice they made. Show the fallback instead, so the
+      // swatch always says what the screen will actually do.
+      el.value = value || (el.dataset.kb === 'accent'
+        ? KDS_BRAND_FALLBACK.accent
+        : KDS_BRAND_FALLBACK.bg);
+    } else el.value = value ?? '';
+  });
+
+  const preview = $('kitchen-logo-preview');
+  if (preview) {
+    preview.innerHTML = kdsBranding.logoUrl
+      ? '<img src="' + esc(kdsBranding.logoUrl) + '" alt="Kitchen screen logo">'
+      : '<span class="muted small">No logo</span>';
+  }
+
+  kdsRenderSplashPreview();
+}
+
+/** The wall's start screen, as this venue has it configured. */
+function kdsRenderSplashPreview() {
+  const box = $('kitchen-splash-preview');
+  if (!box) return;
+
+  const bg = kdsBranding.splashBg || KDS_BRAND_FALLBACK.bg;
+  const accent = kdsBranding.accent || KDS_BRAND_FALLBACK.accent;
+  const name = (kdsBranding.appName || '').trim() || KDS_BRAND_FALLBACK.name;
+  const tagline = (kdsBranding.tagline || '').trim();
+
+  box.style.background = bg;
+  box.style.color = kdsInkOn(bg);
+
+  if (!kdsBranding.splashEnabled) {
+    box.innerHTML =
+      '<span class="small" style="opacity:.7">' +
+      'The start screen is switched off — screens go straight to the board.</span>';
+    return;
+  }
+
+  const mark = kdsBranding.logoUrl
+    ? '<img class="kds-splash-mark" src="' + esc(kdsBranding.logoUrl) + '" alt="">'
+    : '<span class="kds-splash-mark" style="background:' + esc(accent) +
+      ';color:' + esc(kdsInkOn(accent)) + '">V</span>';
+
+  box.innerHTML =
+    mark +
+    '<div class="kds-splash-name">' + esc(name) + '</div>' +
+    (tagline ? '<div class="kds-splash-tagline">' + esc(tagline) + '</div>' : '') +
+    '<div class="kds-splash-rule" style="background:' + esc(accent) + '"></div>' +
+    (kdsBranding.showPoweredBy
+      ? '<div class="kds-splash-powered">POWERED BY VESOPA</div>'
+      : '');
+}
+
+/**
+ * Readable ink for a chosen background.
+ *
+ * The same rule the app uses (`Kds.inkOn` in ui/theme.dart): pick the
+ * higher-contrast of the two rather than guessing from brightness. A manager
+ * who picks lime as a background should see the preview go dark, because that
+ * is what the wall will do.
+ */
+function kdsInkOn(hex) {
+  const rgb = String(hex || '').replace('#', '');
+  if (rgb.length !== 6) return '#ffffff';
+  const channel = (i) => {
+    const c = parseInt(rgb.slice(i * 2, i * 2 + 2), 16) / 255;
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  };
+  const l = 0.2126 * channel(0) + 0.7152 * channel(1) + 0.0722 * channel(2);
+  return (l + 0.05) / 0.05 > 1.05 / (l + 0.05) ? '#10130a' : '#ffffff';
+}
+
+async function kdsUploadLogo(event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+
+  const body = new FormData();
+  body.append('image', file);
+  try {
+    // FormData sets its own multipart boundary, so the JSON content-type that
+    // api() adds must not be used here. Same endpoint the receipt designer
+    // uploads to — it stores a file and hands back a URL, and says nothing
+    // about what the picture is for.
+    const res = await fetch('/api/branding/logo', {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body,
+    });
+    if (!res.ok) {
+      throw new Error((await res.json().catch(() => ({}))).error || 'Upload failed');
+    }
+    const { url } = await res.json();
+    kdsBranding.logoUrl = url;
+    kdsFillBranding();
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    // Cleared so choosing the same file twice in a row still fires a change.
+    event.target.value = '';
+  }
+}
+
+async function kdsSaveBranding() {
+  const button = $('kitchen-branding-save');
+  button.disabled = true;
+  try {
+    const saved = await api('/kitchen/branding', {
+      method: 'PUT',
+      body: JSON.stringify({
+        splashEnabled: !!kdsBranding.splashEnabled,
+        splashMs: Number(kdsBranding.splashMs) || 0,
+        appName: kdsBranding.appName || '',
+        tagline: kdsBranding.tagline || '',
+        logoUrl: kdsBranding.logoUrl || '',
+        splashBg: kdsBranding.splashBg || '',
+        accent: kdsBranding.accent || '',
+        showPoweredBy: !!kdsBranding.showPoweredBy,
+      }),
+    });
+    // Redrawn from what came back rather than from what was sent: the server
+    // clamps the hold and drops a colour it could not parse, and a manager
+    // should be looking at the value the screens will actually use.
+    kdsBranding = { ...saved };
+    kdsBrandingSaved = { ...saved };
+    kdsFillBranding();
+    button.textContent = 'Saved ✓';
+    setTimeout(() => { button.textContent = 'Save branding'; }, 1500);
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    button.disabled = false;
   }
 }
 

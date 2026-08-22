@@ -12,6 +12,7 @@ import 'open_board.dart';
 import 'settings_page.dart';
 import 'theme.dart';
 import 'widgets/brand_mark.dart';
+import 'widgets/password_prompt.dart';
 
 /// The chrome, and everything that lives in it.
 ///
@@ -151,34 +152,34 @@ class _KitchenShellState extends ConsumerState<KitchenShell> {
     );
   }
 
+  /// Sign out, behind the screen's own password.
+  ///
+  /// A confirmation dialog alone was not enough. This is the only irreversible
+  /// key on the header, it sits inches from the one that prints, and the two
+  /// taps it used to cost are two taps a sleeve can make on its own — after
+  /// which the board stops showing orders until somebody who knows the venue's
+  /// office email *and* the kitchen password walks in, which at half past seven
+  /// on a Saturday is nobody.
+  ///
+  /// The password is the same one that signed the screen in, so anybody
+  /// entitled to sign it out already has it, and nobody else is delayed by
+  /// having to find it.
   Future<void> _confirmSignOut(BuildContext context) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Sign this screen out?'),
-        // Said plainly, because it is the only irreversible key on the header
-        // and the person reaching for it may have meant the one next to it.
-        // Signing back in needs the venue's office email and the kitchen
-        // password, which is not something a chef mid-service will have.
-        content: const Text(
-          'The board will stop showing orders until somebody signs it back in '
-          'with the venue’s kitchen login. Orders already sent are not lost — '
-          'they will be here when it is.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Stay signed in'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Sign out'),
-          ),
-        ],
-      ),
+    final password = await askForKitchenPassword(
+      context,
+      ref,
+      icon: Icons.logout,
+      tone: Kds.late,
+      title: 'Sign this screen out?',
+      explanation:
+          'Enter the kitchen password to sign out. The board will stop showing '
+          'orders until somebody signs it back in with the venue’s office '
+          'email and this login. Orders already sent are not lost — they will '
+          'be here when it is.',
+      confirmLabel: 'Sign out',
     );
 
-    if (confirmed == true) {
+    if (password != null) {
       await ref.read(kitchenSessionProvider.notifier).signOut();
     }
   }

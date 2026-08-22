@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'kitchen_api.dart';
+import 'kitchen_branding.dart';
 import 'providers.dart';
 import 'screen_profile.dart';
 
@@ -28,6 +29,7 @@ class KitchenSession {
     this.screens = const [],
     this.screenId,
     this.soundOverride,
+    this.branding = KitchenBranding.standard,
   });
 
   final String? token;
@@ -53,6 +55,15 @@ class KitchenSession {
   /// — somebody is working next to it — and that is not a fact the office can
   /// know.
   final bool? soundOverride;
+
+  /// The venue's white-label branding, cached with the rest of the session.
+  ///
+  /// Cached, and not fetched when the start screen needs it, because the start
+  /// screen is the *first* thing drawn — on a machine that has just been
+  /// switched on, possibly before the venue's wifi has come back. A logo that
+  /// needs the server to be up is a logo nobody sees on the one morning the
+  /// line is down.
+  final KitchenBranding branding;
 
   bool get signedIn => token != null && office != null;
 
@@ -95,6 +106,7 @@ class KitchenSession {
     bool clearScreenId = false,
     bool? soundOverride,
     bool clearSoundOverride = false,
+    KitchenBranding? branding,
   }) => KitchenSession(
     token: token ?? this.token,
     office: office ?? this.office,
@@ -106,6 +118,7 @@ class KitchenSession {
     soundOverride: clearSoundOverride
         ? null
         : (soundOverride ?? this.soundOverride),
+    branding: branding ?? this.branding,
   );
 
   Map<String, dynamic> toJson() => {
@@ -117,6 +130,7 @@ class KitchenSession {
     'screens': [for (final s in screens) s.toJson()],
     'screenId': screenId,
     'soundOverride': soundOverride,
+    'branding': branding.toJson(),
   };
 
   factory KitchenSession.fromJson(Map<String, dynamic> j) => KitchenSession(
@@ -134,6 +148,7 @@ class KitchenSession {
         .toList(),
     screenId: (j['screenId'] as num?)?.toInt(),
     soundOverride: j['soundOverride'] as bool?,
+    branding: KitchenBranding.fromJson(j['branding'] as Map<String, dynamic>?),
   );
 
   static const empty = KitchenSession();
@@ -194,6 +209,7 @@ class KitchenSessionController extends AsyncNotifier<KitchenSession> {
       userName: profile.userName,
       stationNames: profile.stationNames,
       screens: profile.screens,
+      branding: profile.branding,
       // Left unset deliberately. The screen picker is shown straight after a
       // first sign-in, and guessing here would put a chef in front of a board
       // that is nearly right — which is harder to notice than one that is
@@ -221,6 +237,7 @@ class KitchenSessionController extends AsyncNotifier<KitchenSession> {
           userName: profile.userName,
           stationNames: profile.stationNames,
           screens: profile.screens,
+          branding: profile.branding,
         ),
       );
     } on KitchenApiError catch (e) {
@@ -250,6 +267,31 @@ class KitchenSessionController extends AsyncNotifier<KitchenSession> {
           ? current.copyWith(clearSoundOverride: true)
           : current.copyWith(soundOverride: on),
     );
+  }
+
+  /// Check the password of the login this screen is signed in as.
+  ///
+  /// Throws when the server cannot be reached, rather than answering false — a
+  /// screen that could not ask has not established that the password is wrong,
+  /// and telling somebody it is would send them looking for a credential that
+  /// was never the problem.
+  Future<bool> verifyPassword(String password) =>
+      _api.verifyPassword(password);
+
+  /// Restyle every screen in the venue, from this one.
+  ///
+  /// Venue-wide, so the local copy is replaced with what the server returns
+  /// rather than with what was sent: it clamps the hold and drops a colour it
+  /// could not parse, and the panel should settle on the value the wall will
+  /// actually use. Every other screen finds out on the branding push.
+  Future<void> saveBranding(
+    KitchenBranding branding, {
+    required String password,
+  }) async {
+    final current = state.value;
+    if (current == null || !current.signedIn) return;
+    final saved = await _api.saveBranding(branding, password: password);
+    await _persist(current.copyWith(branding: saved));
   }
 
   Future<void> signOut() async {

@@ -153,6 +153,56 @@ split the till already draws between printer names (venue) and printer hardware
 A venue that never defines a screen gets a built-in **All stations** profile, so
 the app works before anybody configures anything.
 
+### Branding
+
+The same split, applied to what the screen *looks* like. A venue — or a reseller
+selling to one — can put its own mark, name and colours on every kitchen screen
+on the site: the **start screen**, an animated brand moment shown while the app
+launches.
+
+Stored on the venue's existing `epos_branding` row, in its own `kitchen_*`
+columns. Separate columns rather than a reuse of the receipt's `venue_name` and
+`logo_url`, and that is the whole point of `schema_kitchen_branding.sql`: a
+reseller white-labelling the screen above a pass must not silently restyle every
+VAT receipt the venue hands a customer. Where a kitchen column is empty the app
+falls back — to the receipt's value, then to the bundled Vesopa mark — so a
+venue that sets nothing looks exactly as it does today.
+
+It is editable from two places, and the second one is deliberate:
+
+| | Who | What it costs |
+| --- | --- | --- |
+| Back office → Kitchen screens | A manager, on a session token | Nothing — a session is already the venue's own credential |
+| The screen itself → Settings › Branding | Anybody at the wall | **The kitchen password**, checked server-side on the save |
+
+The second exists because the person who can see that a colour is wrong is
+standing in the kitchen, not in the office. It is gated because a panel on a
+wall in a room full of people should not be able to restyle a whole site on a
+stray tap.
+
+The **logo is back-office only**. Uploading a file needs a file browser, and a
+kiosk running full screen with no keyboard is a poor place to find one — and it
+keeps the one route that writes files behind a session token.
+
+Two hazards worth naming, both of which have tests rather than only comments
+(`vesopa_server/test/kitchen-branding.test.js`):
+
+  * The screen's save is `PUT /api/kitchen/profile/branding`, **not**
+    `/api/kitchen/branding`. Both routers are mounted under `/api` with the back
+    office's first, so a shared path would put `requireAuth` in front of the
+    screen's handler — refusing the kitchen token and never falling through.
+    Exactly the trap `/kitchen/monitor` was named around; see §10.
+  * The update is built from a **whitelist**, not from the request body, because
+    that row also carries the receipt designer's columns.
+
+The start screen never delays an order. It is a layer over the app rather than a
+page in front of it, so the board mounts, reads its cache and fires its first
+poll underneath it — what the hold costs is the moment the board is *looked at*,
+not the moment it arrives. It is skippable with one tap, and a venue can switch
+it off entirely. That is the answer to the objection this app was originally
+written with: *a wall-mounted panel that shows a logo for two seconds on every
+restart is two seconds of a kitchen not seeing its orders.*
+
 ---
 
 ## 6. Ageing
@@ -186,8 +236,24 @@ building with no spare attention.
 
 Off the header: **print** (put the visible board or one ticket on paper, for when
 the screen has to be abandoned), **settings** (this device: profile, columns,
-sound, connection), **info** (what this screen is, what it is connected to, and
-who to ring), **sign out**.
+sound, connection — and branding, and the way out), **info** (what this screen
+is, what it is connected to, and who to ring), **sign out**.
+
+### The two ways out
+
+The window has no X and no minimise button, so both of them are in the app, and
+they ask for different things because they cost different things:
+
+| | Asks for | Why |
+| --- | --- | --- |
+| **Sign out** (header) | The kitchen password | It throws the token away. The screen then needs the venue's office email *and* the kitchen login to come back — which, at half past seven on a Saturday, nobody in the building has. A confirmation dialog was not enough for a key that sits inches from the one that prints, on a header a chef leans against. |
+| **Exit application** (Settings) | A plain confirmation | Recoverable by the person standing there: start it again and it comes back signed in, because the token is on the machine. Asking for a password here would send somebody looking for a credential mid-service for no gain. |
+
+The password check is `POST /api/kitchen/verify`, which answers **200 with the
+verdict in the body** rather than 401. A wrong password and an expired token
+send a chef to two different places, and a screen that cannot tell them apart
+tells somebody their password is wrong when the truth is that it needs signing
+in again.
 
 Off the hamburger: station filters, density, sound, a manual refresh, and the
 about box.
@@ -236,6 +302,7 @@ vesopa_epos_kitchen/
     ├── config/constants.dart        server endpoints, brand, defaults
     ├── data/
     │   ├── kitchen_api.dart         REST client
+    │   ├── kitchen_branding.dart    the venue's white label, and its fallbacks
     │   ├── kitchen_session.dart     sign-in, token, this device's identity
     │   ├── live_link.dart           socket, reconnection, poll backstop
     │   ├── screen_profile.dart      which stations this board watches
@@ -245,6 +312,8 @@ vesopa_epos_kitchen/
     └── ui/
         ├── theme.dart               the palette, shared with the till
         ├── sign_in_page.dart
+        ├── splash_screen.dart       the branded start screen
+        ├── branding_page.dart       editing it from the wall
         ├── kitchen_shell.dart       header, tabs, drawer
         ├── open_board.dart
         ├── counts_board.dart
@@ -254,6 +323,7 @@ vesopa_epos_kitchen/
         ├── info_page.dart
         └── widgets/
             ├── ticket_card.dart
+            ├── password_prompt.dart the kitchen password, on glass
             └── on_screen_keyboard.dart
 ```
 
@@ -267,6 +337,8 @@ vesopa_epos_kitchen/
 | `vesopa_server` | `schema_printer_names.sql` renamed to `schema_till_printer_names.sql` — see below |
 | `vesopa_server` | `test/kitchen.test.js` (`npm test`, no database), `test/kitchen.integration.js` (end to end against MySQL), `test/capture-fixtures.js` |
 | `vesopa_epos_kitchen` | `test/board_test.dart`, run against JSON captured from the real server |
+| `vesopa_server` | `schema_kitchen_branding.sql` (white-label columns on `epos_branding`), the branding read/write in `src/kitchen.js`, and `test/kitchen-branding.test.js` |
+| `vesopa_server/public` | Back office: **Start screen & branding** on the Kitchen screens page, with a live preview of the wall |
 | `vesopa_server/public` | Back office: **Kitchen screens** — logins, screens, per-station delivery, and a live board |
 | `vesopa_epos` | `data/kitchen_screens.dart`; `KitchenPrinting` splits a fire between paper and screens; `TillSettings` carries the modes; `SyncService` re-sends queued tickets on reconnect; Settings › Printing gains a Kitchen screens card |
 
@@ -313,9 +385,14 @@ this class of bug ever shows up.
 
 ```bash
 # Server, no database needed — who may call what, and what gets written.
+# Includes kitchen-branding.test.js: who may restyle a venue, and what a
+# malformed colour typed in an office does to a screen on a wall.
 cd vesopa_server && npm test
 
-# The kitchen screen's models, against JSON captured from the real server.
+# The kitchen screen's models, against JSON captured from the real server —
+# plus the start screen's own widget tests, which are there to keep the two
+# promises it makes: that it finishes exactly once, and that it never becomes
+# something a chef has to sit through.
 cd vesopa_epos_kitchen && flutter test
 ```
 

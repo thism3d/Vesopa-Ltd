@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import 'kitchen_branding.dart';
 import 'screen_profile.dart';
 import 'ticket.dart';
 
@@ -33,6 +34,7 @@ class KitchenProfile {
     this.officeName,
     this.userName,
     this.stationNames = const {},
+    this.branding = KitchenBranding.standard,
   });
 
   final String office;
@@ -48,6 +50,11 @@ class KitchenProfile {
   final Map<String, String> stationNames;
 
   final List<ScreenProfile> screens;
+
+  /// What this venue's screens call themselves. Venue-wide, like the station
+  /// names, and cached by the screen so the start screen is branded on a cold
+  /// boot with no network.
+  final KitchenBranding branding;
 
   /// The profiles a screen may be, always including the built-in one.
   ///
@@ -74,6 +81,7 @@ class KitchenProfile {
       for (final e in ((j['stationNames'] as Map?) ?? const {}).entries)
         '${e.key}': '${e.value}',
     },
+    branding: KitchenBranding.fromJson(j['branding'] as Map<String, dynamic>?),
     screens: ((j['screens'] as List?) ?? const [])
         .cast<Map<String, dynamic>>()
         .map(ScreenProfile.fromJson)
@@ -85,6 +93,7 @@ class KitchenProfile {
     if (officeName != null) 'officeName': officeName,
     if (userName != null) 'user': {'name': userName},
     'stationNames': stationNames,
+    'branding': branding.toJson(),
     'screens': [for (final s in screens) s.toJson()],
   };
 }
@@ -204,6 +213,46 @@ class KitchenApi {
     '/api/kitchen/tickets/$ticketId/rush',
     body: {'rushed': rushed},
   );
+
+  /// Check the password of the login this screen is already signed in as.
+  ///
+  /// Not a second sign-in: it issues no token and cannot be used to become
+  /// somebody else. It answers one question — is the person standing at this
+  /// screen the person who set it up? — for the two places that have to ask it,
+  /// signing out and restyling the venue.
+  ///
+  /// Returns false for a wrong password and *throws* for anything else, because
+  /// the two must not be confused: a screen that cannot reach the server has
+  /// not established that the password is wrong.
+  ///
+  /// The server answers 200 either way and puts the verdict in the body — a 401
+  /// here means the *token* has expired, which is a different problem needing a
+  /// different sentence in front of somebody holding a pan.
+  Future<bool> verifyPassword(String password) async {
+    final body = await _send(
+      'POST',
+      '/api/kitchen/verify',
+      body: {'password': password},
+    );
+    return body['ok'] == true;
+  }
+
+  /// Restyle the venue's screens from this one. Costs the screen's password.
+  ///
+  /// `/kitchen/profile/branding`, not `/kitchen/branding`: the back office's
+  /// router is mounted first and owns the shorter path behind a session token,
+  /// which refuses this one. See the note on the route in src/kitchen.js.
+  Future<KitchenBranding> saveBranding(
+    KitchenBranding branding, {
+    required String password,
+  }) async {
+    final body = await _send(
+      'PUT',
+      '/api/kitchen/profile/branding',
+      body: {...branding.toJson(), 'password': password},
+    );
+    return KitchenBranding.fromJson(body);
+  }
 
   Future<Map<String, dynamic>> _send(
     String method,

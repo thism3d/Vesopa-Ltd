@@ -101,6 +101,11 @@ class LiveLink {
       final event = switch (type) {
         'kitchen.ticket' => LiveEvent.board,
         'kitchen.screens' => LiveEvent.profile,
+        // The venue's white-label branding. Carried on the same event as the
+        // screens because it arrives the same way — in the profile — so a
+        // manager who changes the logo sees the wall follow within a second or
+        // two rather than at the next restart.
+        'kitchen.branding' => LiveEvent.profile,
         // The till-settings row carries the station *names*, which are drawn on
         // every card's station chips. A venue renaming KP 3 to "Fryer" should
         // see it change on the wall, not at the next restart.
