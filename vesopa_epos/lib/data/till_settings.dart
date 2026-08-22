@@ -24,7 +24,17 @@ class TillSettings {
     this.buttonsShowPrices = true,
     this.printerNames = const {},
     this.kitchenDelivery = const {},
+    this.homeScreenId,
   });
+
+  /// The programmed screen this venue's tills open on, or null.
+  ///
+  /// Null is not an absence of configuration — it is the venue's answer, and it
+  /// means the built-in Default: the catalogue-driven grid the till has always
+  /// drawn. So a venue that has programmed nothing, or has deleted everything
+  /// it programmed, still gets a working sale screen. See
+  /// docs/screen-programming.md §2.
+  final int? homeScreenId;
 
   final bool idleEnabled;
 
@@ -128,6 +138,7 @@ class TillSettings {
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is TillSettings &&
+          other.homeScreenId == homeScreenId &&
           other.idleEnabled == idleEnabled &&
           other.idleImageUrl == idleImageUrl &&
           other.idleAfterSale == idleAfterSale &&
@@ -165,6 +176,7 @@ class TillSettings {
 
   @override
   int get hashCode => Object.hash(
+        homeScreenId,
         idleEnabled,
         idleImageUrl,
         idleAfterSale,
@@ -192,6 +204,7 @@ class TillSettings {
   factory TillSettings.fromJson(Map<String, dynamic> j) {
     final url = (j['idle_image_url'] as String?)?.trim();
     return TillSettings(
+      homeScreenId: (j['home_screen_id'] as num?)?.toInt(),
       idleEnabled: _flag(j['idle_enabled']),
       idleImageUrl: url == null || url.isEmpty ? null : url,
       idleAfterSale: _flag(j['idle_after_sale']),

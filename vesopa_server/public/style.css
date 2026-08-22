@@ -1536,3 +1536,121 @@ table.plain th { color: var(--muted, #7a828c); font-weight: 600; font-size: 11px
   justify-content: center;
   margin-top: 8px;
 }
+
+/* ---------- Screen programming ----------
+   The grid is drawn at the till's own proportions, so what a manager arranges
+   here is what a clerk sees. Selection is the interaction — drag a box, or hold
+   Shift — so the panel beside it can act on several buttons at once. */
+
+.sp-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line, #d7dbe2);
+  border-radius: 10px;
+  background: var(--panel, #fff);
+}
+.sp-bar .sp-spacer { flex: 1 1 auto; }
+.sp-pick { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; margin: 0; }
+.sp-pick select, .sp-pick input { min-width: 90px; }
+.sp-bar .check { margin: 0; }
+
+.sp-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 1100px) { .sp-layout { grid-template-columns: 1fr; } }
+
+.sp-panel { display: flex; flex-direction: column; gap: 14px; }
+
+.sp-grid {
+  display: grid;
+  gap: 6px;
+  /* 16:9, the shape of the space a sale grid actually occupies on a till.
+     Fixing it here is what stops a 4-row screen drawing keys twice the height
+     of a 8-row one and giving a false impression of both. */
+  aspect-ratio: 16 / 9;
+  padding: 8px;
+  border-radius: 12px;
+  background: #1b1f27;
+  outline: none;
+  /* The drag-select gesture: without this the browser starts a text selection
+     the moment a pointer moves across the grid. */
+  user-select: none;
+  touch-action: none;
+}
+.sp-grid:focus-visible { box-shadow: 0 0 0 3px rgba(165, 199, 21, .5); }
+
+.sp-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 4px;
+  border-radius: 8px;
+  border: 1px dashed rgba(255, 255, 255, .18);
+  background: rgba(255, 255, 255, .04);
+  color: rgba(255, 255, 255, .35);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.15;
+  text-align: center;
+  cursor: pointer;
+  overflow: hidden;
+}
+.sp-cell span {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+/* A programmed button: solid, and in the till's default key colour until the
+   manager gives it one of its own. */
+.sp-cell.filled {
+  border-style: solid;
+  border-color: rgba(255, 255, 255, .14);
+  background: #2b313d;
+  color: #fff;
+}
+.sp-cell.selected {
+  outline: 3px solid var(--brand, #a5c715);
+  outline-offset: -3px;
+}
+/* A product or screen that no longer exists. Called out here rather than left
+   to be found on a till, which is the whole reason the editor knows about it. */
+.sp-cell.missing {
+  border-color: #d03227;
+  color: #ffd7d2;
+  background: repeating-linear-gradient(
+    45deg, #4a1f1c, #4a1f1c 6px, #3a1815 6px, #3a1815 12px
+  );
+}
+.sp-arrow { font-style: normal; font-size: 11px; opacity: .8; letter-spacing: 1px; }
+
+.sp-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+.sp-swatch {
+  width: 34px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid var(--line, #d7dbe2);
+  cursor: pointer;
+  padding: 0;
+}
+.sp-swatch.on { outline: 3px solid var(--brand, #a5c715); outline-offset: -3px; }
+
+.sp-spans { display: flex; gap: 10px; margin-top: 12px; }
+.sp-spans label { flex: 1; font-size: 12.5px; }

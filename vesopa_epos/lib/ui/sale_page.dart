@@ -24,8 +24,10 @@ import '../data/pricing_engine.dart';
 import 'widgets/basket_panel.dart';
 import 'widgets/live_receipt.dart';
 import 'widgets/line_editor.dart';
+import '../data/screens.dart';
 import 'widgets/on_screen_keyboard.dart';
 import 'widgets/pos_message.dart';
+import 'widgets/programmed_grid.dart';
 
 /// Live catalogue, straight from the local database so the grid renders with
 /// no network at all.
@@ -80,6 +82,26 @@ class SelectedCategory extends Notifier<String?> {
 final selectedCategoryProvider = NotifierProvider<SelectedCategory, String?>(
   SelectedCategory.new,
 );
+
+/// Which programmed screen the clerk has navigated to, or null for home.
+///
+/// Only meaningful on a venue that has programmed its sale screen. Held here
+/// rather than on [SalePage] because the page is rebuilt whenever the bill
+/// changes — ringing something up would otherwise bounce the clerk back to the
+/// home screen mid-round, which is the opposite of what a page of mixers is
+/// for.
+///
+/// Reset to null when the venue's layout changes underneath it, so a screen
+/// deleted in the back office cannot leave a till looking at nothing.
+class OpenScreen extends Notifier<int?> {
+  @override
+  int? build() => null;
+
+  void open(int id) => state = id;
+  void home() => state = null;
+}
+
+final openScreenProvider = NotifierProvider<OpenScreen, int?>(OpenScreen.new);
 
 /// Which lines on the current bill the clerk has picked out.
 ///
@@ -232,6 +254,77 @@ class SalePage extends ConsumerWidget {
             void selectCategory(String c) =>
                 ref.read(selectedCategoryProvider.notifier).select(c);
 
+            // ---- The venue's own screen, when it has one ----------------
+            //
+            // `homeScreenId` null means the built-in Default, and everything
+            // above carries on exactly as it always has. That fallback is the
+            // point: a venue that has programmed nothing, or has deleted what
+            // it programmed, still has a till that sells things.
+            final settings = ref.watch(tillSettingsProvider);
+            final screenSet =
+                ref.watch(screensProvider).value ?? ScreenSet.empty;
+            final openId =
+                ref.watch(openScreenProvider) ?? settings.homeScreenId;
+            final home = screenSet.byId(settings.homeScreenId);
+            // Falling back to home rather than to the Default, so a sub-screen
+            // deleted in the office while a clerk is standing on it drops them
+            // one level up instead of into a different sale screen entirely.
+            final programmed = screenSet.byId(openId) ?? home;
+
+            // Indexed once per build rather than searched per key: a screen is
+            // up to 120 buttons and a catalogue is thousands of rows.
+            final byPlu = {for (final p in products) p.pluId: p};
+
+            void addProduct(Product p) => repo.addLine(
+              orderId,
+              p,
+              addedBy:
+                  ref.read(staffSessionProvider).name ??
+                  ref.read(sessionProvider).name,
+            );
+
+            final Widget surface = programmed == null
+                ? grid
+                : Column(
+                    children: [
+                      // The way back, and it is the till's rather than the
+                      // venue's on purpose. A layout that forgot to include a
+                      // button home would otherwise strand a clerk on a page of
+                      // mixers, and "add a button" is not a fix anybody can
+                      // apply from behind a counter.
+                      if (programmed.id != settings.homeScreenId)
+                        _ScreenCrumb(
+                          name: programmed.name,
+                          homeName: home?.name,
+                          onHome: () =>
+                              ref.read(openScreenProvider.notifier).home(),
+                        ),
+                      Expanded(
+                        child: ProgrammedGrid(
+                          screen: programmed,
+                          screens: screenSet,
+                          products: byPlu,
+                          showPrices: settings.buttonsShowPrices,
+                          onProduct: addProduct,
+                          onPage: (target) =>
+                              ref.read(openScreenProvider.notifier).open(target.id),
+                          onFunction: (key) => _runScreenFunction(
+                            context,
+                            ref,
+                            key,
+                            lines: lines,
+                            selected: selectedLines,
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+
+            // The rail is the catalogue's own navigation. A programmed screen
+            // brings its own — its page buttons — so showing both would be two
+            // ways to the same place, disagreeing.
+            final showRail = programmed == null;
+
             // The Ledger board: one dark ground with the bill, the grid and
             // the category rail sitting on it as separate panels. The same
             // surfaces the payment screen is built from, deliberately — the
@@ -254,13 +347,14 @@ class SalePage extends ConsumerWidget {
                         // the grid below, and the bill behind a pull-up sheet.
                         ? Column(
                             children: [
-                              _CategoryStrip(
-                                categories: categories,
-                                selected: selected,
-                                onSelect: selectCategory,
-                                media: categoryMedia,
-                              ),
-                              Expanded(child: grid),
+                              if (showRail)
+                                _CategoryStrip(
+                                  categories: categories,
+                                  selected: selected,
+                                  onSelect: selectCategory,
+                                  media: categoryMedia,
+                                ),
+                              Expanded(child: surface),
                               _BasketBar(
                                 order: order,
                                 lineCount: lines.length,
@@ -393,13 +487,14 @@ class SalePage extends ConsumerWidget {
                                   ),
                                 ),
                               ),
-                              Expanded(child: grid),
-                              _CategoryRail(
-                                categories: categories,
-                                selected: selected,
-                                onSelect: selectCategory,
-                                media: categoryMedia,
-                              ),
+                              Expanded(child: surface),
+                              if (showRail)
+                                _CategoryRail(
+                                  categories: categories,
+                                  selected: selected,
+                                  onSelect: selectCategory,
+                                  media: categoryMedia,
+                                ),
                             ],
                           ),
                   ),
@@ -647,6 +742,61 @@ class SalePage extends ConsumerWidget {
           ? 'Added 1 item to table $number.'
           : 'Added $unsent items to table $number.',
     );
+  }
+
+  /// Run a till function placed on a programmed screen.
+  ///
+  /// Every key here maps to something the action bar already does, and that is
+  /// deliberate: this offers a venue a second *place* to reach a function, not
+  /// a second implementation of it. The list is the server's FUNCTION_KEYS, and
+  /// anything outside it never gets this far — [ProgrammedGrid] draws an
+  /// unrecognised key as inert rather than pressing it.
+  Future<void> _runScreenFunction(
+    BuildContext context,
+    WidgetRef ref,
+    String key, {
+    required List<OrderLine> lines,
+    required Set<String> selected,
+  }) async {
+    switch (key) {
+      case 'covers':
+        return _promptCovers(context, ref);
+      case 'customer':
+        return _promptCustomer(context, ref);
+      case 'note':
+        return _noteSelected(context, ref, lines: lines, selected: selected);
+      case 'open_drawer':
+        return TillActions.openCashDrawer(context, ref);
+      case 'print_bill':
+        return TillActions.printCurrentBill(context, ref, orderId);
+
+      // Quantity acts on picked lines, so it needs some. Said plainly rather
+      // than doing nothing: a key that appears dead is a key a clerk presses
+      // again, and then asks somebody about.
+      case 'qty':
+        if (selected.isEmpty) {
+          PosMessenger.info(context, 'Pick a line on the bill first.');
+          return;
+        }
+        final typed = await _numberDialog(context, 'Quantity');
+        if (typed == null || typed <= 0) return;
+        final repo = ref.read(orderRepositoryProvider);
+        for (final id in selected) {
+          await repo.setLineQuantity(orderId, id, typed.toDouble());
+        }
+        return;
+
+      // A key this build does not know. It should have been drawn inert, so
+      // reaching here means the two lists have drifted — say so rather than
+      // failing silently, because the alternative is a venue reporting "that
+      // button does nothing" with nothing to go on.
+      default:
+        if (!context.mounted) return;
+        PosMessenger.error(
+          context,
+          'This till does not support that button yet. Update it.',
+        );
+    }
   }
 
   Future<void> _promptCovers(BuildContext context, WidgetRef ref) async {
@@ -951,6 +1101,61 @@ class _FieldDialogState extends State<_FieldDialog> {
           child: const Text('OK'),
         ),
       ],
+    );
+  }
+}
+
+/// The way back from a programmed sub-screen.
+///
+/// The till's, not the venue's, and that is the point. A layout that forgot to
+/// include a button home would otherwise strand a clerk on a page of mixers,
+/// and "add a button in the back office" is not a fix anybody can apply from
+/// behind a counter mid-service.
+class _ScreenCrumb extends StatelessWidget {
+  const _ScreenCrumb({
+    required this.name,
+    required this.homeName,
+    required this.onHome,
+  });
+
+  final String name;
+
+  /// Named when it is known, so the key says where it goes rather than just
+  /// that it goes somewhere.
+  final String? homeName;
+
+  final VoidCallback onHome;
+
+  @override
+  Widget build(BuildContext context) {
+    final pal = PayPalette.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+      child: Row(
+        children: [
+          TextButton.icon(
+            onPressed: onHome,
+            icon: const Icon(Icons.arrow_back, size: 18),
+            label: Text(homeName == null ? 'Back' : 'Back to $homeName'),
+            style: TextButton.styleFrom(foregroundColor: pal.ink),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                color: pal.inkMuted,
+                fontWeight: FontWeight.w700,
+                fontSize: 15,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

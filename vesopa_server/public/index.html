@@ -183,6 +183,7 @@
           <button class="nav" data-view="stock">Stock</button>
 
           <button class="nav-group" data-group="programming">Programming<span class="caret">▼</span></button>
+          <button class="nav" data-view="screens">Screen programming</button>
           <button class="nav" data-view="program_departments">Departments</button>
           <button class="nav" data-view="program_groups">Groups</button>
           <button class="nav" data-view="mix_match">Mix &amp; Match</button>
@@ -743,6 +744,135 @@
           </div>
         </section>
 
+        <!-- Screen programming.
+             The venue lays out its own sale screen; every till in the venue
+             draws it. See vesopa_epos/docs/screen-programming.md — in
+             particular for why there is no screen in this list called Default,
+             and why the pay page is not here. -->
+        <section id="view-screens" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Screen programming</h2>
+              <p class="muted small">
+                Lay out the buttons your tills show when they ring up a sale. Every button is
+                either a product, a jump to another screen, or a till function — so a category
+                down the side is just a screen with a button pointing at it.
+              </p>
+            </div>
+            <div class="denom-actions">
+              <button type="button" class="btn ghost" id="sp-revert">Revert</button>
+              <button type="button" class="btn primary" id="sp-save">Save layout</button>
+            </div>
+          </div>
+
+          <div class="sp-bar">
+            <label class="sp-pick">Screen
+              <select id="sp-screen"></select>
+            </label>
+            <button type="button" class="btn ghost small" id="sp-new">New…</button>
+            <button type="button" class="btn ghost small" id="sp-rename">Rename</button>
+            <button type="button" class="btn danger-ghost small" id="sp-delete">Delete</button>
+            <span class="sp-spacer"></span>
+            <label class="sp-pick">Rows
+              <input type="number" id="sp-rows" min="1" max="10" step="1">
+            </label>
+            <label class="sp-pick">Columns
+              <input type="number" id="sp-cols" min="1" max="12" step="1">
+            </label>
+            <span class="sp-spacer"></span>
+            <label class="check" title="The screen a till opens on. Off means the built-in Default, which is drawn from your product list.">
+              <input type="checkbox" id="sp-home"> Tills open on this screen
+            </label>
+          </div>
+
+          <div class="sp-layout">
+            <div>
+              <!-- The grid, drawn at the till's own proportions so what is
+                   arranged here is what a clerk sees. -->
+              <div id="sp-grid" class="sp-grid" tabindex="0"></div>
+              <p class="muted small" id="sp-hint" style="margin:8px 0 0">
+                Click a button to select it. Drag across several, or hold Shift, to select more.
+                Then use the panel on the right. Backspace clears the selection.
+              </p>
+            </div>
+
+            <!-- The inspector.
+                 Always reflects the current selection, rather than the
+                 reference's double-click-for-a-modal — the common act here is
+                 "colour these six the same", and a modal per button makes that
+                 six modals. -->
+            <div class="sp-panel">
+              <div class="card rd-card">
+                <h3 id="sp-sel-title">Nothing selected</h3>
+                <p class="muted small" id="sp-sel-hint" style="margin:0 0 10px">
+                  Pick a button on the left to change what it does.
+                </p>
+
+                <div id="sp-inspector" hidden>
+                  <label>What this does
+                    <select id="sp-kind">
+                      <option value="blank">Nothing (empty)</option>
+                      <option value="product">Ring up a product</option>
+                      <option value="page">Go to another screen</option>
+                      <option value="function">Till function</option>
+                    </select>
+                  </label>
+
+                  <label class="sp-field" data-for="product" hidden>Product
+                    <select id="sp-product"></select>
+                  </label>
+
+                  <label class="sp-field" data-for="page" hidden>Screen
+                    <select id="sp-target"></select>
+                  </label>
+
+                  <label class="sp-field" data-for="function" hidden>Function
+                    <select id="sp-function"></select>
+                  </label>
+
+                  <label style="margin-top:10px">Label
+                    <input id="sp-label" maxlength="40" placeholder="Leave empty to use its own name">
+                  </label>
+
+                  <div class="sp-swatches" id="sp-fills"></div>
+                  <div class="denom-actions" style="margin-top:8px">
+                    <button type="button" class="btn ghost small" id="sp-clear-style">Use the till’s colours</button>
+                  </div>
+
+                  <div class="sp-spans">
+                    <label>Width
+                      <input type="number" id="sp-colspan" min="1" max="12" step="1">
+                    </label>
+                    <label>Height
+                      <input type="number" id="sp-rowspan" min="1" max="10" step="1">
+                    </label>
+                  </div>
+
+                  <div class="denom-actions" style="margin-top:10px">
+                    <button type="button" class="btn danger-ghost small" id="sp-clear">Clear these buttons</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Bulk fill. The reference's best idea, and the one thing that
+                   turns laying out a screen from an afternoon into a minute. -->
+              <div class="card rd-card">
+                <h3>Fill from a department</h3>
+                <p class="muted small" style="margin:0 0 10px">
+                  Select some empty buttons, choose a department, and its products drop in — in
+                  the order they appear on your product list.
+                </p>
+                <label>Department
+                  <select id="sp-dept"></select>
+                </label>
+                <div class="denom-actions" style="margin-top:10px">
+                  <button type="button" class="btn ghost small" id="sp-fill">Fill the selection</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <section id="view-customers" class="view" hidden>
           <div class="page-head">
             <div>
@@ -1058,5 +1188,9 @@
     <div id="cropper-root"></div>
     <script src="/charts.js"></script>
     <script src="/app.js"></script>
+    <!-- Screen programming. After app.js, whose `$`, `api`, `esc` and `modal`
+         it uses; the navigation table there resolves loadScreens when the view
+         is opened, by which time this has parsed. -->
+    <script src="/screens.js"></script>
   </body>
 </html>

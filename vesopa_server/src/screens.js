@@ -37,11 +37,16 @@ const BUTTON_KINDS = ['product', 'page', 'function', 'blank'];
  *
  * Deliberately excludes Pay, Void and Save Table. Those live on the till's own
  * action bar and are not layout — see the design doc, §4.
+ *
+ * It also excludes anything the till cannot actually do. `price_check` and
+ * `discount` were both in an earlier draft of this list: the first is a feature
+ * that does not exist, and the second lives on the payment screen and is
+ * applied against a tender rather than a bill. Offering either would have let a
+ * manager place a key that looked programmed and did nothing, which is worse
+ * than not offering it — they are added here the day the till gains them.
  */
 const FUNCTION_KEYS = [
   'qty',
-  'price_check',
-  'discount',
   'note',
   'covers',
   'customer',
