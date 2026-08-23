@@ -5,7 +5,7 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "test": "node test/kitchen.test.js && node test/kitchen-branding.test.js && node test/backoffice-kitchen-ui.test.js && node test/backoffice-cropper.test.js && node test/screens.test.js && node test/backoffice-screens-ui.test.js"
+    "test": "node test/kitchen.test.js && node test/kitchen-branding.test.js && node test/backoffice-kitchen-ui.test.js && node test/backoffice-cropper.test.js && node test/screens.test.js && node test/backoffice-screens-ui.test.js && node test/backoffice-layout.test.js"
   },
   "keywords": [],
   "author": "",

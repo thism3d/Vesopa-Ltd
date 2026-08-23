@@ -280,7 +280,7 @@
 
         <!-- Report -->
         <section id="view-report" class="view" hidden>
-          <div class="page-head"><h2>Report</h2></div>
+          <div class="page-head"><div><h2>Report</h2><p class="muted small">Your biggest sellers across every closed bill, by group, department, staff member and product.</p></div></div>
           <div class="grid-2">
             <div class="card panel"><h3>Group Sales Total</h3><div class="bars" id="r-groups"></div></div>
             <div class="card panel"><h3>Department Sales Total</h3><div class="bars" id="r-depts"></div></div>
@@ -291,8 +291,8 @@
 
         <!-- Sales Explorer -->
         <section id="view-sales_explorer" class="view" hidden>
-          <div class="page-head"><h2>Sales Explorer</h2></div>
-          <div class="card panel" style="margin-bottom:18px">
+          <div class="page-head"><div><h2>Sales Explorer</h2><p class="muted small">Every product line sold, searchable by date and department. Click a row to see the receipt it came from.</p></div></div>
+          <div class="card panel">
             <div class="row">
               <label>From<input type="date" id="ex-from" /></label>
               <label>To<input type="date" id="ex-to" /></label>
@@ -308,7 +308,7 @@
 
         <!-- Till Report -->
         <section id="view-till_report" class="view" hidden>
-          <div class="page-head"><h2>Till Report</h2><button class="btn ghost" data-print-report>Export PDF</button></div>
+          <div class="page-head"><div><h2>Till Report</h2><p class="muted small">One row per trading day, with the takings behind it.</p></div><button class="btn ghost" data-print-report>Export PDF</button></div>
           <div class="card"><table>
             <thead><tr><th>Day</th><th class="right">Orders</th><th class="right">Discounts</th><th class="right">VAT</th><th class="right">Gross</th></tr></thead>
             <tbody id="tillreport"></tbody>
@@ -345,7 +345,7 @@
 
         <!-- Stock -->
         <section id="view-stock" class="view" hidden>
-          <div class="page-head"><h2>Stock</h2></div>
+          <div class="page-head"><div><h2>Stock</h2><p class="muted small">How many of each product remain, and the department it sells under.</p></div></div>
           <div class="card"><table>
             <thead><tr><th>PLU</th><th>Product</th><th>Department</th><th class="right">In stock</th></tr></thead>
             <tbody id="stock"></tbody>
@@ -994,7 +994,7 @@
             <thead><tr><th>Name</th><th>Type</th><th>Applies to</th><th>Value</th><th>Runs</th><th>Badge</th><th>Active</th><th></th></tr></thead>
             <tbody id="promotions"></tbody>
           </table></div>
-          <div class="card rd-card" style="margin-top:14px">
+          <div class="card rd-card">
             <h3>Performance</h3>
             <div id="promo-chart" class="chart-box"></div>
           </div>
@@ -1065,7 +1065,7 @@
             <div class="rd-preview-pane">
               <div class="rd-preview-head"><span class="small muted">Points movement</span></div>
               <div class="card rd-card"><div id="loyalty-chart" class="chart-box"></div></div>
-              <div class="card rd-card" style="margin-top:12px">
+              <div class="card rd-card">
                 <h3>Top customers</h3>
                 <div id="loyalty-top"></div>
               </div>
@@ -1167,7 +1167,7 @@
 
         <!-- Admin -->
         <section id="view-offices" class="view" hidden>
-          <div class="page-head"><h2>Offices</h2><button class="btn primary" id="add-office">New office</button></div>
+          <div class="page-head"><div><h2>Offices</h2><p class="muted small">Every office on this installation, what it is charged, and when it is next due.</p></div><button class="btn primary" id="add-office">New office</button></div>
           <div class="card"><table>
             <thead><tr><th>Office</th><th>Contact</th><th>Status</th><th>Users</th><th class="right">Charge</th><th>Next due</th><th></th></tr></thead>
             <tbody id="offices"></tbody>
@@ -1175,7 +1175,7 @@
         </section>
 
         <section id="view-billing" class="view" hidden>
-          <div class="page-head"><h2>Billing</h2><button class="btn ghost" id="sweep">Flag overdue</button></div>
+          <div class="page-head"><div><h2>Billing</h2><p class="muted small">Invoices raised against each office. Flag overdue marks anything still due after its date has passed.</p></div><button class="btn ghost" id="sweep">Flag overdue</button></div>
           <div class="card"><table>
             <thead><tr><th>Office</th><th>Due</th><th class="right">Amount</th><th>Status</th><th></th></tr></thead>
             <tbody id="invoices"></tbody>
