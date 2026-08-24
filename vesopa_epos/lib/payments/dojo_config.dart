@@ -31,23 +31,24 @@ enum CardPlatform {
     CardPlatform.connect => 'Paymentsense Connect',
   };
 
-  /// The shipped URL and key for this platform in the given environment, so the
-  /// Settings toggle can load a working configuration with one tap.
+  /// The URL and key for this platform in the given environment, so the
+  /// Settings toggle can load a matching pair with one tap.
   ///
-  /// We only hold real credentials for the two corners the venue actually uses —
-  /// Dojo's sandbox for testing, Paymentsense's live account for trading — so
-  /// the other two return a blank key for the operator to paste. The host is
-  /// always filled in: Dojo shares one host across both environments, and the
-  /// Connect host is this merchant's whichever way the environment flag sits.
+  /// The host is always filled in — Dojo shares one host across both
+  /// environments, and the Connect host is this merchant's whichever way the
+  /// environment flag sits. The *key* is only ever non-blank when the build
+  /// supplied one through a `--dart-define`; no key is committed, so on an
+  /// ordinary build every one of these returns blank and the operator pastes
+  /// the key in Settings. That is deliberate — see the SECURITY note below.
   ({String url, String key}) presetFor({required bool sandbox}) => switch (this) {
     // Dojo routes by the key, not the host: `sk_sandbox_…` vs `sk_live_…` on
-    // the same `api.dojo.tech`. We ship the sandbox key; a live key is pasted.
+    // the same `api.dojo.tech`.
     CardPlatform.dojo => (
       url: DojoConfig.dojoBaseUrl,
       key: sandbox ? DojoConfig.sandboxKey : DojoConfig.dojoLiveKey,
     ),
-    // Connect issues a per-merchant host. We ship this venue's live one; there
-    // is no sandbox host, so a sandbox key would have nowhere to go.
+    // Connect issues a per-merchant host. There is no sandbox host, so a
+    // sandbox key would have nowhere to go.
     CardPlatform.connect => (
       url: DojoConfig.liveBaseUrl,
       key: sandbox ? '' : DojoConfig.liveKey,
@@ -78,16 +79,26 @@ class DojoConfig {
 
   // ---- Presets ------------------------------------------------------------
   //
-  // Both environments ship configured so a freshly installed till can take a
-  // test card, or go live, without anyone pasting credentials in first. The
-  // operator can still change any of it in Settings, and whatever they save
-  // wins from then on.
+  // Both environments ship with their *host* configured, so choosing a platform
+  // and environment in Settings fills in a URL that matches. The key is not
+  // shipped: the operator pastes it, or CI bakes it in for a managed build.
   //
-  // SECURITY: this repository is public. A key committed here is a published
-  // key, so every one of these is overridable by a build-time define — CI
-  // passes the real values from repository secrets. Rotate the live key at
-  // Paymentsense and move it to `DOJO_LIVE_API_KEY` before the next push if
-  // that matters more than out-of-the-box configuration.
+  // SECURITY: this repository is public, so no key is committed here. Every
+  // one of these is a build-time define with a BLANK default; CI passes the
+  // real values from repository secrets, and an operator can paste one in
+  // Settings on a till that was built without them.
+  //
+  // This is also an accreditation requirement, not only good sense: Dojo's
+  // pay-at-counter go-live checklist tests "POS allows configuring different
+  // API Keys. The API Key should never be hard-coded", and separately requires
+  // that keys are not publicly exposed. A default value in a public repository
+  // fails both.
+  //
+  // Two keys were previously committed here and must be treated as published:
+  //   * a Paymentsense Connect LIVE key — rotate it at Paymentsense;
+  //   * a Dojo sandbox key — lower stakes, but rotate it in the developer
+  //     portal too.
+  // Removing them from the source does not remove them from git history.
 
   /// Dojo's sandbox. There is no separate sandbox *host*: the key decides the
   /// environment, and an `sk_sandbox_…` key on this host returns `pi_sandbox_…`
@@ -97,12 +108,7 @@ class DojoConfig {
     defaultValue: 'https://api.dojo.tech',
   );
 
-  static const sandboxKey = String.fromEnvironment(
-    'DOJO_SANDBOX_API_KEY',
-    defaultValue:
-        'sk_sandbox_c8oLGaI__msxsXbpBDpdtwJEz_eIhfQoKHmedqgZPCdBx59zpKZLSk8O'
-        'PLT0cZolbeuYJSBvzDVVsYvtpo5RkQ',
-  );
+  static const sandboxKey = String.fromEnvironment('DOJO_SANDBOX_API_KEY');
 
   /// Dojo's single host, used for both its sandbox and live keys — the key
   /// prefix (`sk_sandbox_` vs `sk_live_`) is what selects the environment, not
@@ -128,10 +134,7 @@ class DojoConfig {
     defaultValue: 'https://SP068110XGBLoc1.connect.paymentsense.cloud',
   );
 
-  static const liveKey = String.fromEnvironment(
-    'DOJO_LIVE_API_KEY',
-    defaultValue: '99f0c457-63c8-4fdb-aad2-ef3f33ef377d',
-  );
+  static const liveKey = String.fromEnvironment('DOJO_LIVE_API_KEY');
 
   /// The key a fresh install starts with. `DOJO_API_KEY` still overrides, for
   /// builds that inject their own.

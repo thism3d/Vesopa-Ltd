@@ -2943,6 +2943,40 @@ class $PaymentsTable extends Payments with TableInfo<$PaymentsTable, Payment> {
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _referenceMeta = const VerificationMeta(
+    'reference',
+  );
+  @override
+  late final GeneratedColumn<String> reference = GeneratedColumn<String>(
+    'reference',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _gratuityMinorMeta = const VerificationMeta(
+    'gratuityMinor',
+  );
+  @override
+  late final GeneratedColumn<int> gratuityMinor = GeneratedColumn<int>(
+    'gratuity_minor',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _entryModeMeta = const VerificationMeta(
+    'entryMode',
+  );
+  @override
+  late final GeneratedColumn<String> entryMode = GeneratedColumn<String>(
+    'entry_mode',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -2951,6 +2985,9 @@ class $PaymentsTable extends Payments with TableInfo<$PaymentsTable, Payment> {
     amountMinor,
     takenAt,
     cashBreakdown,
+    reference,
+    gratuityMinor,
+    entryMode,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -3011,6 +3048,27 @@ class $PaymentsTable extends Payments with TableInfo<$PaymentsTable, Payment> {
         ),
       );
     }
+    if (data.containsKey('reference')) {
+      context.handle(
+        _referenceMeta,
+        reference.isAcceptableOrUnknown(data['reference']!, _referenceMeta),
+      );
+    }
+    if (data.containsKey('gratuity_minor')) {
+      context.handle(
+        _gratuityMinorMeta,
+        gratuityMinor.isAcceptableOrUnknown(
+          data['gratuity_minor']!,
+          _gratuityMinorMeta,
+        ),
+      );
+    }
+    if (data.containsKey('entry_mode')) {
+      context.handle(
+        _entryModeMeta,
+        entryMode.isAcceptableOrUnknown(data['entry_mode']!, _entryModeMeta),
+      );
+    }
     return context;
   }
 
@@ -3044,6 +3102,18 @@ class $PaymentsTable extends Payments with TableInfo<$PaymentsTable, Payment> {
         DriftSqlType.string,
         data['${effectivePrefix}cash_breakdown'],
       ),
+      reference: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}reference'],
+      ),
+      gratuityMinor: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}gratuity_minor'],
+      )!,
+      entryMode: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}entry_mode'],
+      ),
     );
   }
 
@@ -3069,6 +3139,25 @@ class Payment extends DataClass implements Insertable<Payment> {
   /// read back only to reprint the same receipt, and never queried across
   /// sales. Null for card, and for cash simply keyed as an amount.
   final String? cashBreakdown;
+
+  /// The acquirer's own id for this payment — Dojo's `paymentIntentId`.
+  ///
+  /// Without it a card sale cannot be tied back to the acquirer at all: no
+  /// matched refund, no way for a Dojo webhook to find the sale it is talking
+  /// about, and nothing to quote when a customer disputes a charge. Null for
+  /// cash and for anything taken on a platform that does not issue one.
+  final String? reference;
+
+  /// The tip inside [amountMinor], so the takings report can separate what the
+  /// business earned from what belongs to the staff.
+  final int gratuityMinor;
+
+  /// How the card was captured: `terminal` | `manual` | `hosted` | `native`.
+  ///
+  /// A keyed card carries different interchange and different liability from
+  /// one dipped in a reader, so the two must not be reported as the same thing.
+  /// Null for cash.
+  final String? entryMode;
   const Payment({
     required this.id,
     required this.orderId,
@@ -3076,6 +3165,9 @@ class Payment extends DataClass implements Insertable<Payment> {
     required this.amountMinor,
     required this.takenAt,
     this.cashBreakdown,
+    this.reference,
+    required this.gratuityMinor,
+    this.entryMode,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -3087,6 +3179,13 @@ class Payment extends DataClass implements Insertable<Payment> {
     map['taken_at'] = Variable<DateTime>(takenAt);
     if (!nullToAbsent || cashBreakdown != null) {
       map['cash_breakdown'] = Variable<String>(cashBreakdown);
+    }
+    if (!nullToAbsent || reference != null) {
+      map['reference'] = Variable<String>(reference);
+    }
+    map['gratuity_minor'] = Variable<int>(gratuityMinor);
+    if (!nullToAbsent || entryMode != null) {
+      map['entry_mode'] = Variable<String>(entryMode);
     }
     return map;
   }
@@ -3101,6 +3200,13 @@ class Payment extends DataClass implements Insertable<Payment> {
       cashBreakdown: cashBreakdown == null && nullToAbsent
           ? const Value.absent()
           : Value(cashBreakdown),
+      reference: reference == null && nullToAbsent
+          ? const Value.absent()
+          : Value(reference),
+      gratuityMinor: Value(gratuityMinor),
+      entryMode: entryMode == null && nullToAbsent
+          ? const Value.absent()
+          : Value(entryMode),
     );
   }
 
@@ -3116,6 +3222,9 @@ class Payment extends DataClass implements Insertable<Payment> {
       amountMinor: serializer.fromJson<int>(json['amountMinor']),
       takenAt: serializer.fromJson<DateTime>(json['takenAt']),
       cashBreakdown: serializer.fromJson<String?>(json['cashBreakdown']),
+      reference: serializer.fromJson<String?>(json['reference']),
+      gratuityMinor: serializer.fromJson<int>(json['gratuityMinor']),
+      entryMode: serializer.fromJson<String?>(json['entryMode']),
     );
   }
   @override
@@ -3128,6 +3237,9 @@ class Payment extends DataClass implements Insertable<Payment> {
       'amountMinor': serializer.toJson<int>(amountMinor),
       'takenAt': serializer.toJson<DateTime>(takenAt),
       'cashBreakdown': serializer.toJson<String?>(cashBreakdown),
+      'reference': serializer.toJson<String?>(reference),
+      'gratuityMinor': serializer.toJson<int>(gratuityMinor),
+      'entryMode': serializer.toJson<String?>(entryMode),
     };
   }
 
@@ -3138,6 +3250,9 @@ class Payment extends DataClass implements Insertable<Payment> {
     int? amountMinor,
     DateTime? takenAt,
     Value<String?> cashBreakdown = const Value.absent(),
+    Value<String?> reference = const Value.absent(),
+    int? gratuityMinor,
+    Value<String?> entryMode = const Value.absent(),
   }) => Payment(
     id: id ?? this.id,
     orderId: orderId ?? this.orderId,
@@ -3147,6 +3262,9 @@ class Payment extends DataClass implements Insertable<Payment> {
     cashBreakdown: cashBreakdown.present
         ? cashBreakdown.value
         : this.cashBreakdown,
+    reference: reference.present ? reference.value : this.reference,
+    gratuityMinor: gratuityMinor ?? this.gratuityMinor,
+    entryMode: entryMode.present ? entryMode.value : this.entryMode,
   );
   Payment copyWithCompanion(PaymentsCompanion data) {
     return Payment(
@@ -3160,6 +3278,11 @@ class Payment extends DataClass implements Insertable<Payment> {
       cashBreakdown: data.cashBreakdown.present
           ? data.cashBreakdown.value
           : this.cashBreakdown,
+      reference: data.reference.present ? data.reference.value : this.reference,
+      gratuityMinor: data.gratuityMinor.present
+          ? data.gratuityMinor.value
+          : this.gratuityMinor,
+      entryMode: data.entryMode.present ? data.entryMode.value : this.entryMode,
     );
   }
 
@@ -3171,14 +3294,26 @@ class Payment extends DataClass implements Insertable<Payment> {
           ..write('method: $method, ')
           ..write('amountMinor: $amountMinor, ')
           ..write('takenAt: $takenAt, ')
-          ..write('cashBreakdown: $cashBreakdown')
+          ..write('cashBreakdown: $cashBreakdown, ')
+          ..write('reference: $reference, ')
+          ..write('gratuityMinor: $gratuityMinor, ')
+          ..write('entryMode: $entryMode')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode =>
-      Object.hash(id, orderId, method, amountMinor, takenAt, cashBreakdown);
+  int get hashCode => Object.hash(
+    id,
+    orderId,
+    method,
+    amountMinor,
+    takenAt,
+    cashBreakdown,
+    reference,
+    gratuityMinor,
+    entryMode,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -3188,7 +3323,10 @@ class Payment extends DataClass implements Insertable<Payment> {
           other.method == this.method &&
           other.amountMinor == this.amountMinor &&
           other.takenAt == this.takenAt &&
-          other.cashBreakdown == this.cashBreakdown);
+          other.cashBreakdown == this.cashBreakdown &&
+          other.reference == this.reference &&
+          other.gratuityMinor == this.gratuityMinor &&
+          other.entryMode == this.entryMode);
 }
 
 class PaymentsCompanion extends UpdateCompanion<Payment> {
@@ -3198,6 +3336,9 @@ class PaymentsCompanion extends UpdateCompanion<Payment> {
   final Value<int> amountMinor;
   final Value<DateTime> takenAt;
   final Value<String?> cashBreakdown;
+  final Value<String?> reference;
+  final Value<int> gratuityMinor;
+  final Value<String?> entryMode;
   final Value<int> rowid;
   const PaymentsCompanion({
     this.id = const Value.absent(),
@@ -3206,6 +3347,9 @@ class PaymentsCompanion extends UpdateCompanion<Payment> {
     this.amountMinor = const Value.absent(),
     this.takenAt = const Value.absent(),
     this.cashBreakdown = const Value.absent(),
+    this.reference = const Value.absent(),
+    this.gratuityMinor = const Value.absent(),
+    this.entryMode = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   PaymentsCompanion.insert({
@@ -3215,6 +3359,9 @@ class PaymentsCompanion extends UpdateCompanion<Payment> {
     required int amountMinor,
     this.takenAt = const Value.absent(),
     this.cashBreakdown = const Value.absent(),
+    this.reference = const Value.absent(),
+    this.gratuityMinor = const Value.absent(),
+    this.entryMode = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        orderId = Value(orderId),
@@ -3227,6 +3374,9 @@ class PaymentsCompanion extends UpdateCompanion<Payment> {
     Expression<int>? amountMinor,
     Expression<DateTime>? takenAt,
     Expression<String>? cashBreakdown,
+    Expression<String>? reference,
+    Expression<int>? gratuityMinor,
+    Expression<String>? entryMode,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -3236,6 +3386,9 @@ class PaymentsCompanion extends UpdateCompanion<Payment> {
       if (amountMinor != null) 'amount_minor': amountMinor,
       if (takenAt != null) 'taken_at': takenAt,
       if (cashBreakdown != null) 'cash_breakdown': cashBreakdown,
+      if (reference != null) 'reference': reference,
+      if (gratuityMinor != null) 'gratuity_minor': gratuityMinor,
+      if (entryMode != null) 'entry_mode': entryMode,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -3247,6 +3400,9 @@ class PaymentsCompanion extends UpdateCompanion<Payment> {
     Value<int>? amountMinor,
     Value<DateTime>? takenAt,
     Value<String?>? cashBreakdown,
+    Value<String?>? reference,
+    Value<int>? gratuityMinor,
+    Value<String?>? entryMode,
     Value<int>? rowid,
   }) {
     return PaymentsCompanion(
@@ -3256,6 +3412,9 @@ class PaymentsCompanion extends UpdateCompanion<Payment> {
       amountMinor: amountMinor ?? this.amountMinor,
       takenAt: takenAt ?? this.takenAt,
       cashBreakdown: cashBreakdown ?? this.cashBreakdown,
+      reference: reference ?? this.reference,
+      gratuityMinor: gratuityMinor ?? this.gratuityMinor,
+      entryMode: entryMode ?? this.entryMode,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -3281,6 +3440,15 @@ class PaymentsCompanion extends UpdateCompanion<Payment> {
     if (cashBreakdown.present) {
       map['cash_breakdown'] = Variable<String>(cashBreakdown.value);
     }
+    if (reference.present) {
+      map['reference'] = Variable<String>(reference.value);
+    }
+    if (gratuityMinor.present) {
+      map['gratuity_minor'] = Variable<int>(gratuityMinor.value);
+    }
+    if (entryMode.present) {
+      map['entry_mode'] = Variable<String>(entryMode.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -3296,6 +3464,9 @@ class PaymentsCompanion extends UpdateCompanion<Payment> {
           ..write('amountMinor: $amountMinor, ')
           ..write('takenAt: $takenAt, ')
           ..write('cashBreakdown: $cashBreakdown, ')
+          ..write('reference: $reference, ')
+          ..write('gratuityMinor: $gratuityMinor, ')
+          ..write('entryMode: $entryMode, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -8429,6 +8600,9 @@ typedef $$PaymentsTableCreateCompanionBuilder =
       required int amountMinor,
       Value<DateTime> takenAt,
       Value<String?> cashBreakdown,
+      Value<String?> reference,
+      Value<int> gratuityMinor,
+      Value<String?> entryMode,
       Value<int> rowid,
     });
 typedef $$PaymentsTableUpdateCompanionBuilder =
@@ -8439,6 +8613,9 @@ typedef $$PaymentsTableUpdateCompanionBuilder =
       Value<int> amountMinor,
       Value<DateTime> takenAt,
       Value<String?> cashBreakdown,
+      Value<String?> reference,
+      Value<int> gratuityMinor,
+      Value<String?> entryMode,
       Value<int> rowid,
     });
 
@@ -8495,6 +8672,21 @@ class $$PaymentsTableFilterComposer
 
   ColumnFilters<String> get cashBreakdown => $composableBuilder(
     column: $table.cashBreakdown,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get reference => $composableBuilder(
+    column: $table.reference,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get gratuityMinor => $composableBuilder(
+    column: $table.gratuityMinor,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get entryMode => $composableBuilder(
+    column: $table.entryMode,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -8556,6 +8748,21 @@ class $$PaymentsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get reference => $composableBuilder(
+    column: $table.reference,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get gratuityMinor => $composableBuilder(
+    column: $table.gratuityMinor,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get entryMode => $composableBuilder(
+    column: $table.entryMode,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$OrdersTableOrderingComposer get orderId {
     final $$OrdersTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -8607,6 +8814,17 @@ class $$PaymentsTableAnnotationComposer
     column: $table.cashBreakdown,
     builder: (column) => column,
   );
+
+  GeneratedColumn<String> get reference =>
+      $composableBuilder(column: $table.reference, builder: (column) => column);
+
+  GeneratedColumn<int> get gratuityMinor => $composableBuilder(
+    column: $table.gratuityMinor,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get entryMode =>
+      $composableBuilder(column: $table.entryMode, builder: (column) => column);
 
   $$OrdersTableAnnotationComposer get orderId {
     final $$OrdersTableAnnotationComposer composer = $composerBuilder(
@@ -8666,6 +8884,9 @@ class $$PaymentsTableTableManager
                 Value<int> amountMinor = const Value.absent(),
                 Value<DateTime> takenAt = const Value.absent(),
                 Value<String?> cashBreakdown = const Value.absent(),
+                Value<String?> reference = const Value.absent(),
+                Value<int> gratuityMinor = const Value.absent(),
+                Value<String?> entryMode = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => PaymentsCompanion(
                 id: id,
@@ -8674,6 +8895,9 @@ class $$PaymentsTableTableManager
                 amountMinor: amountMinor,
                 takenAt: takenAt,
                 cashBreakdown: cashBreakdown,
+                reference: reference,
+                gratuityMinor: gratuityMinor,
+                entryMode: entryMode,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -8684,6 +8908,9 @@ class $$PaymentsTableTableManager
                 required int amountMinor,
                 Value<DateTime> takenAt = const Value.absent(),
                 Value<String?> cashBreakdown = const Value.absent(),
+                Value<String?> reference = const Value.absent(),
+                Value<int> gratuityMinor = const Value.absent(),
+                Value<String?> entryMode = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => PaymentsCompanion.insert(
                 id: id,
@@ -8692,6 +8919,9 @@ class $$PaymentsTableTableManager
                 amountMinor: amountMinor,
                 takenAt: takenAt,
                 cashBreakdown: cashBreakdown,
+                reference: reference,
+                gratuityMinor: gratuityMinor,
+                entryMode: entryMode,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

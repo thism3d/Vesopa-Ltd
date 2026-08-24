@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../main.dart';
 import '../payments/connect_pac.dart';
+import '../payments/payment_provider.dart';
 import 'theme.dart';
 
 String _money(int minor) =>
@@ -27,15 +28,29 @@ class _CardMachinePageState extends ConsumerState<CardMachinePage> {
   ConnectReportResult? _report;
   String? _status;
 
-  /// The reader, when this till talks to one that supports these functions.
+  /// The reader, when this till talks to a Connect one.
   ///
-  /// Only Connect exposes reports and PDQ refunds over the till's API; a Dojo
-  /// account manages the reader from Dojo's own portal. So this page says which
-  /// it is rather than showing keys that would fail.
+  /// Only Connect exposes the PDQ's own *reports* — end of day, X balance — to
+  /// the till. A Dojo reader is cashed up from Dojo's portal, so those keys are
+  /// hidden rather than shown and left to fail.
   ConnectPacProvider? get _connect {
     final provider = ref.read(dojoProvider);
     return provider is ConnectPacProvider ? provider : null;
   }
+
+  /// The Dojo reader, when there is one.
+  ///
+  /// Refunds are the part both platforms can do, so this page offers them for
+  /// either. Null when the till has no reader configured — the keyed fallbacks
+  /// (the drop-in, the hosted checkout) present a card for a *sale* and have
+  /// nowhere to send a refund.
+  DojoProvider? get _dojo {
+    final provider = ref.read(dojoProvider);
+    return provider is DojoProvider ? provider : null;
+  }
+
+  /// Whether this till can refund at all — i.e. whether there is a reader.
+  bool get _canRefund => _connect != null || _dojo != null;
 
   Future<void> _run(ConnectReport report) async {
     final connect = _connect;
@@ -62,8 +77,7 @@ class _CardMachinePageState extends ConsumerState<CardMachinePage> {
   /// spelled out: this hands money back, and a mis-key here is not recoverable
   /// from the till.
   Future<void> _refund() async {
-    final connect = _connect;
-    if (connect == null || _busy) return;
+    if (_busy) return;
 
     final amount = await _askAmount();
     if (amount == null || !mounted) return;
@@ -76,7 +90,12 @@ class _CardMachinePageState extends ConsumerState<CardMachinePage> {
         title: const Text('Refund to card'),
         content: Text(
           'This gives ${_money(amount)} back to the customer\'s card.\n\n'
-          'They will need to present the card on the machine.',
+          'They will need to present the card on the machine.\n\n'
+          // Said plainly because it is true and because it is the whole risk:
+          // an unlinked refund references no sale, so nothing checks this
+          // amount against anything that was ever taken.
+          'This refund is not linked to a sale, so nothing checks the amount. '
+          'Make sure it is right.',
         ),
         actions: [
           TextButton(
@@ -96,19 +115,120 @@ class _CardMachinePageState extends ConsumerState<CardMachinePage> {
       _busy = true;
       _status = 'Ask the customer to present their card…';
     });
-    connect.onProgress = (p) {
-      if (mounted) setState(() => _status = p.prompt);
-    };
 
-    final result = await connect.refund(amount);
-    connect.onProgress = null;
-    if (!mounted) return;
-    setState(() {
-      _busy = false;
-      _status = result.approved
-          ? 'Refunded ${_money(result.amountMinor)}.'
-          : result.message ?? 'The refund was not completed.';
-    });
+    final connect = _connect;
+    if (connect != null) {
+      connect.onProgress = (p) {
+        if (mounted) setState(() => _status = p.prompt);
+      };
+      final result = await connect.refund(amount);
+      connect.onProgress = null;
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _status = result.approved
+            ? 'Refunded ${_money(result.amountMinor)}.'
+            : result.message ?? 'The refund was not completed.';
+      });
+      return;
+    }
+
+    await _refundOnDojo(amount);
+  }
+
+  /// Refund on a Dojo reader.
+  ///
+  /// This is an *unlinked* refund: it carries no reference to an original sale,
+  /// which is why the confirmation above spells the amount out and why it lives
+  /// behind the manager's functions rather than on the sale screen. A matched
+  /// refund — tied to the sale's `paymentIntentId`, and therefore capped at what
+  /// was actually taken — is the safer form and belongs on the sale itself.
+  ///
+  /// The session is polled exactly as a sale is, once a second, so the clerk
+  /// sees the same prompts; the signature step is answered the same way too,
+  /// because a refund can ask for one just as a sale can.
+  Future<void> _refundOnDojo(int amount) async {
+    final dojo = _dojo;
+    if (dojo == null) return;
+
+    try {
+      final sessionId = await dojo.startRefundSession(amountMinor: amount);
+      final deadline = DateTime.now().add(const Duration(minutes: 3));
+      var answeredSignature = false;
+
+      while (DateTime.now().isBefore(deadline)) {
+        final session = await dojo.fetchSession(sessionId);
+        if (!mounted) return;
+        setState(() => _status = session.prompt);
+
+        if (session.needsSignature && !answeredSignature) {
+          answeredSignature = true;
+          final accepted = await _askSignature();
+          if (!mounted) return;
+          await dojo.answerSignature(sessionId, accepted: accepted);
+          continue;
+        }
+
+        if (session.captured) {
+          setState(() {
+            _busy = false;
+            _status = 'Refunded ${_money(amount)}.';
+          });
+          return;
+        }
+        if (session.failed) {
+          setState(() {
+            _busy = false;
+            _status = 'The refund was ${session.status.toLowerCase()}.';
+          });
+          return;
+        }
+        await Future<void>.delayed(const Duration(seconds: 1));
+      }
+
+      // Ran out of time without a verdict. This is the one outcome that must
+      // not be guessed at: the money may or may not have gone back.
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _status = 'The result could not be confirmed. Check the card machine '
+            'screen before refunding again.';
+      });
+    } on DojoException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _status = e.clerkMessage;
+      });
+    }
+  }
+
+  /// The signature prompt. Returns false — reject — if the dialog is dismissed,
+  /// because an unanswered signature must never be taken as approval.
+  Future<bool> _askSignature() async {
+    final accepted = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        icon: const Icon(Icons.draw_outlined, size: 30),
+        title: const Text('Check the signature'),
+        content: const Text(
+          'Compare the signature on the receipt with the one on the card.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            style: TextButton.styleFrom(foregroundColor: Pos.red),
+            child: const Text('Reject'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Accept'),
+          ),
+        ],
+      ),
+    );
+    return accepted ?? false;
   }
 
   Future<int?> _askAmount() async {
@@ -152,7 +272,7 @@ class _CardMachinePageState extends ConsumerState<CardMachinePage> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Card machine')),
-      body: connect == null
+      body: !_canRefund
           ? Center(
               child: Padding(
                 padding: const EdgeInsets.all(28),
@@ -162,16 +282,15 @@ class _CardMachinePageState extends ConsumerState<CardMachinePage> {
                     const Icon(Icons.point_of_sale, size: 44),
                     const SizedBox(height: 14),
                     Text(
-                      'No Paymentsense card machine on this till',
+                      'No card machine on this till',
                       style: theme.textTheme.titleMedium,
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Reports and card refunds are driven through the PDQ, and '
-                      'only a Paymentsense Connect account exposes them to the '
-                      'till. A Dojo reader is managed from the Dojo portal '
-                      'instead.',
+                      'These functions run on the reader itself, so they need '
+                      'one paired to this till. Set the card machine up in '
+                      'Settings and they appear here.',
                       style: theme.textTheme.bodySmall,
                       textAlign: TextAlign.center,
                     ),
@@ -183,35 +302,45 @@ class _CardMachinePageState extends ConsumerState<CardMachinePage> {
               padding: const EdgeInsets.all(20),
               children: [
                 Text(
-                  'Machine ${connect.terminalId ?? '—'}',
+                  'Machine ${connect?.terminalId ?? _dojo?.terminalId ?? '—'}',
                   style: theme.textTheme.titleMedium,
                 ),
                 const SizedBox(height: 4),
-                Text(
-                  'End of day closes the machine\'s own banking day. It has to '
-                  'be started from here — the PDQ cannot do it on its own when '
-                  'it is integrated with a till.',
-                  style: theme.textTheme.bodySmall,
-                ),
-                const SizedBox(height: 18),
 
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    for (final report in ConnectReport.values)
-                      FilledButton.tonalIcon(
-                        onPressed: _busy ? null : () => _run(report),
-                        icon: Icon(
-                          report == ConnectReport.endOfDay
-                              ? Icons.lock_clock
-                              : Icons.summarize_outlined,
-                          size: 18,
+                // The reports are Connect's alone. A Dojo reader is cashed up
+                // from Dojo's portal, so a Dojo till gets the refund key and
+                // an explanation instead of buttons that would 404.
+                if (connect != null) ...[
+                  Text(
+                    'End of day closes the machine\'s own banking day. It has '
+                    'to be started from here — the PDQ cannot do it on its own '
+                    'when it is integrated with a till.',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 18),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      for (final report in ConnectReport.values)
+                        FilledButton.tonalIcon(
+                          onPressed: _busy ? null : () => _run(report),
+                          icon: Icon(
+                            report == ConnectReport.endOfDay
+                                ? Icons.lock_clock
+                                : Icons.summarize_outlined,
+                            size: 18,
+                          ),
+                          label: Text(report.label),
                         ),
-                        label: Text(report.label),
-                      ),
-                  ],
-                ),
+                    ],
+                  ),
+                ] else
+                  Text(
+                    'End of day and balance reports for a Dojo reader are run '
+                    'from the Dojo portal rather than the till.',
+                    style: theme.textTheme.bodySmall,
+                  ),
                 const SizedBox(height: 14),
                 OutlinedButton.icon(
                   onPressed: _busy ? null : _refund,

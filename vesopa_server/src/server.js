@@ -31,6 +31,7 @@ const {
   tillKitchenRoutes,
 } = require('./kitchen');
 const { screensRoutes, tillScreenRoutes } = require('./screens');
+const { dojoWebhookRoutes, webhookStatus } = require('./dojo');
 
 const PORT = process.env.PORT || 4000;
 
@@ -75,7 +76,20 @@ const app = express();
 // the whole platform after a handful of requests.
 app.set('trust proxy', 1);
 app.use(cors());
-app.use(express.json({ limit: '1mb' }));
+/*
+ * The raw bytes are kept alongside the parsed body, for one caller.
+ *
+ * Dojo signs its webhook with an HMAC over the exact bytes it sent, and
+ * `JSON.stringify(req.body)` is not those bytes — it is a re-serialisation that
+ * agrees with the original only by luck of key order and number formatting. So
+ * the buffer is stashed as it goes past. It costs one reference per JSON
+ * request and it is the only way the signature check in src/dojo.js can be
+ * honest.
+ */
+app.use(express.json({
+  limit: '1mb',
+  verify: (req, _res, buf) => { req.rawBody = buf; },
+}));
 
 const clients = new Set();
 
@@ -153,6 +167,14 @@ app.post('/api/login', async (req, res, next) => {
 // exists. Mounted before the authenticated routers so requireAuth cannot
 // swallow them.
 app.use('/api', passwordRoutes({ pool }));
+
+// Dojo's webhooks. Also unauthenticated, and for the same structural reason:
+// the caller is the acquirer, which has no session here and proves itself with
+// an HMAC over the raw body instead. Mounted at the root because the path
+// carries the environment (/api/webhooks/dojo/sandbox|live) — sandbox and live
+// are separate subscriptions with separate signing secrets, and the handler has
+// to know which secret to check before it can trust anything in the payload.
+app.use(dojoWebhookRoutes({ pool, broadcast }));
 
 // The till's note keys. The authenticated half is office-scoped; the pull is
 // mounted at the root alongside /till/products.
@@ -654,8 +676,9 @@ app.post(['/till/orders', '/orders'], async (req, res, next) => {
     for (const payment of order.payments || []) {
       await conn.execute(
         `INSERT INTO epos_payments
-           (id, order_id, method, amount_minor, cash_breakdown)
-         VALUES (UUID(), ?, ?, ?, ?)`,
+           (id, order_id, method, amount_minor, cash_breakdown,
+            reference, gratuity_minor, entry_mode)
+         VALUES (UUID(), ?, ?, ?, ?, ?, ?, ?)`,
         [
           order.id,
           payment.method,
@@ -663,6 +686,17 @@ app.post(['/till/orders', '/orders'], async (req, res, next) => {
           // Which notes were handed over, when the clerk counted them in on
           // the till's cash keys. Null for card and for keyed-in cash.
           payment.cash_breakdown ?? null,
+          // The acquirer's own id for this payment — Dojo's paymentIntentId.
+          // The column has existed since schema_commerce.sql but nothing ever
+          // wrote it, which left every card sale unlinkable to the acquirer:
+          // no matched refund, and no way for a Dojo webhook to find the sale
+          // it is talking about. Null for cash.
+          payment.reference ?? null,
+          payment.gratuity_minor ?? 0,
+          // 'terminal' | 'manual' | 'hosted' | 'native' — a keyed card carries
+          // different interchange and different liability from a dipped one,
+          // and the card report has to be able to tell them apart.
+          payment.entry_mode ?? null,
         ]
       );
     }
@@ -726,6 +760,30 @@ const server = app.listen(PORT, () =>
 // Say at boot whether password-reset mail can actually leave the building.
 // Only logs — an unreachable mailbox must never stop the tills from selling.
 verifyMail();
+
+/*
+ * Say at boot which Dojo webhook environments can actually verify a delivery.
+ *
+ * Worth a line of its own because the failure is silent from the outside: an
+ * endpoint with no signing secret still answers, still returns a well-formed
+ * error, and still looks alive to anything that curls it — while rejecting
+ * every genuine event Dojo sends. Better to see it in the deploy log than to
+ * find it in a reconciliation gap a week later.
+ */
+{
+  const wh = webhookStatus();
+  const configured = Object.entries(wh)
+    .filter(([, on]) => on)
+    .map(([env]) => env);
+  if (configured.length) {
+    console.log(`[dojo] webhook signing configured for: ${configured.join(', ')}`);
+  } else {
+    console.warn(
+      '[dojo] no webhook signing secret set — every Dojo delivery will be ' +
+      'rejected. Set DOJO_WEBHOOK_SECRET_SANDBOX and/or _LIVE in .env'
+    );
+  }
+}
 
 // Server -> terminal push: kitchen tickets, live table status, catalogue
 // changes. Sales never travel this way; they go over HTTP so they can be

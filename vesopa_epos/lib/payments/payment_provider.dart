@@ -200,6 +200,81 @@ class CashProvider implements PaymentProvider {
   }
 }
 
+/// One line of the basket, as the card machine and the Dojo receipt show it.
+///
+/// Deliberately not the till's own order-line type. That one carries tax rates,
+/// promotion ids, kitchen notes and who rang it up — none of which the acquirer
+/// has any business holding, and some of which is arguably personal data once
+/// it is sitting on someone else's server. This is the subset that makes an
+/// itemised bill legible and nothing more.
+class DojoItemLine {
+  const DojoItemLine({
+    required this.name,
+    required this.quantity,
+    required this.totalMinor,
+    this.plu,
+    this.modifiers = const [],
+  });
+
+  final String name;
+  final int quantity;
+
+  /// The line total in pence, before discounts and tax — Dojo's `amountTotal`.
+  final int totalMinor;
+
+  /// The till's own product code, so a line on a Dojo receipt can be traced
+  /// back to a button on the sale screen.
+  final String? plu;
+
+  /// What was done to the item: "Oat milk", "No ice". Dojo display these under
+  /// the line, and the checklist asks specifically that discounts appear here
+  /// as modifiers rather than silently shrinking the total.
+  final List<DojoModifier> modifiers;
+
+  Map<String, dynamic> toJson() => {
+    'name': name,
+    'quantity': quantity,
+    'amountTotal': {'value': totalMinor, 'currencyCode': 'GBP'},
+    if (plu != null && plu!.isNotEmpty) 'plu': plu,
+    if (modifiers.isNotEmpty)
+      'modifiers': [for (final m in modifiers) m.toJson()],
+  };
+}
+
+/// A modifier on an item line: an extra, or a discount.
+///
+/// [amountMinor] is negative for a discount, which is how the checklist expects
+/// a promotion to appear — visible as its own line on the bill rather than
+/// silently shrinking the item's price. Dojo require all four fields; a
+/// modifier missing [id] or [quantity] fails the whole intent with a 400.
+///
+/// The amount is *excluded* from the parent line's `amountTotal`, per Dojo's
+/// schema — a modifier is added to the line, not already inside it.
+class DojoModifier {
+  const DojoModifier({
+    required this.id,
+    required this.name,
+    required this.amountMinor,
+    this.quantity = 1,
+  });
+
+  /// Machine-readable id — the till's own option or promotion code.
+  final String id;
+  final String name;
+  final int amountMinor;
+
+  /// How many times this modifier applies to a *single* item. Two burgers each
+  /// with double cheese is a quantity of 2, not 4.
+  final int quantity;
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    'quantity': quantity,
+    'amountPerModifier': {'value': amountMinor, 'currencyCode': 'GBP'},
+  };
+}
+
 /// Dojo card payments.
 ///
 /// Verified against the sandbox: base URL, `Basic` auth, and the mandatory
@@ -275,11 +350,26 @@ class DojoProvider implements PaymentProvider {
   /// distinct intents. The caller must therefore hold onto the id it gets back
   /// and reuse it on retry, or a flaky connection will charge the customer
   /// twice. That is why this is separate from [confirm].
+  /// [itemLines] puts the basket on the card machine's screen and on the
+  /// customer's Dojo receipt, which is what lets a PDQ print an itemised bill
+  /// rather than just a total.
+  ///
+  /// [preAuth] switches the intent to `Manual` capture: the card is authorised
+  /// now and the money taken later with [capture]. Dojo make `autoExpireIn` and
+  /// `autoExpireAction` mandatory in that mode — an authorisation that is never
+  /// captured has to resolve itself one way or the other — and reject anything
+  /// under 30 seconds or over 7 days, so [preAuthExpiry] is clamped to that.
   Future<DojoIntent> createIntent(
     int amountMinor, {
     String? orderId,
     bool withClientSecret = false,
     bool cardHolderNotPresent = false,
+    List<DojoItemLine> itemLines = const [],
+    bool preAuth = false,
+    Duration preAuthExpiry = const Duration(days: 6),
+    int tipsMinor = 0,
+    int cashbackMinor = 0,
+    int serviceChargeMinor = 0,
   }) async {
     final res = await _client
         .post(
@@ -288,14 +378,36 @@ class DojoProvider implements PaymentProvider {
           body: jsonEncode({
             'Amount': {'Value': amountMinor, 'CurrencyCode': 'GBP'},
             'Reference': orderId ?? 'vesopa',
-            'CaptureMode': 'Auto',
+            'CaptureMode': preAuth ? 'Manual' : 'Auto',
+            // Tip, cashback and service charge all belong on the intent at
+            // creation, not on a later call: this account rejects the
+            // /tips-amount endpoint outright (405, "Tips are not allowed on
+            // payment intent"), and each of these adds to `totalAmount` — the
+            // figure the card machine actually asks the customer to approve.
+            if (tipsMinor > 0)
+              'tipsAmount': {'value': tipsMinor, 'currencyCode': 'GBP'},
+            if (cashbackMinor > 0)
+              'cashbackAmount': {'value': cashbackMinor, 'currencyCode': 'GBP'},
+            if (serviceChargeMinor > 0)
+              'serviceChargeAmount': {
+                'value': serviceChargeMinor,
+                'currencyCode': 'GBP',
+              },
+            if (preAuth) ...{
+              'autoExpireIn': _dojoTimeSpan(preAuthExpiry),
+              // Release, not Capture: an authorisation nobody came back for
+              // should let the customer's money go, not help itself to it.
+              'autoExpireAction': 'Release',
+            },
             if (cardHolderNotPresent) 'CardHolderNotPresent': true,
+            if (itemLines.isNotEmpty)
+              'itemLines': [for (final l in itemLines) l.toJson()],
           }),
         )
         .timeout(const Duration(seconds: 30));
 
     if (res.statusCode < 200 || res.statusCode >= 300) {
-      throw DojoException('Could not start payment: ${res.body}');
+      throw _exception(res, 'Could not start the payment');
     }
 
     final json = jsonDecode(res.body) as Map<String, dynamic>;
@@ -346,7 +458,7 @@ class DojoProvider implements PaymentProvider {
         .timeout(const Duration(seconds: 20));
 
     if (res.statusCode < 200 || res.statusCode >= 300) {
-      throw DojoException('Could not read payment: ${res.body}');
+      throw _exception(res, 'Could not read the payment');
     }
     return jsonDecode(res.body) as Map<String, dynamic>;
   }
@@ -375,7 +487,7 @@ class DojoProvider implements PaymentProvider {
         .timeout(const Duration(seconds: 20));
 
     if (res.statusCode < 200 || res.statusCode >= 300) {
-      throw DojoException('Could not list card machines: ${res.body}');
+      throw _exception(res, 'Could not list the card machines');
     }
     return (jsonDecode(res.body) as List)
         .map((t) => DojoTerminal.fromJson(t as Map<String, dynamic>))
@@ -409,7 +521,7 @@ class DojoProvider implements PaymentProvider {
         .timeout(const Duration(seconds: 30));
 
     if (res.statusCode < 200 || res.statusCode >= 300) {
-      throw DojoException('The card machine refused the payment: ${res.body}');
+      throw _exception(res, 'The card machine refused the payment');
     }
     return (jsonDecode(res.body) as Map<String, dynamic>)['id'] as String;
   }
@@ -425,7 +537,7 @@ class DojoProvider implements PaymentProvider {
         .timeout(const Duration(seconds: 20));
 
     if (res.statusCode < 200 || res.statusCode >= 300) {
-      throw DojoException('Could not read the card machine: ${res.body}');
+      throw _exception(res, 'Could not read the card machine');
     }
     return DojoSession.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
   }
@@ -442,7 +554,7 @@ class DojoProvider implements PaymentProvider {
         .timeout(const Duration(seconds: 20));
 
     if (res.statusCode < 200 || res.statusCode >= 300) {
-      throw DojoException('Could not confirm the signature: ${res.body}');
+      throw _exception(res, 'Could not confirm the signature');
     }
   }
 
@@ -460,6 +572,250 @@ class DojoProvider implements PaymentProvider {
     } catch (_) {
       return false;
     }
+  }
+
+  // ---- Refunds ------------------------------------------------------------
+  //
+  // Dojo mandate that at least one refund route works before they will
+  // accredit an integration. There are two, and they are not interchangeable:
+  //
+  //   * [refundToCard] puts the money back on the original card without anyone
+  //     re-presenting it. This is the one a manager wants for "they phoned up
+  //     about last Tuesday".
+  //   * [startRefundSession] sends a refund to the PDQ, with (matched) or
+  //     without (unlinked) a reference to the original sale. The customer and
+  //     their card have to be standing there.
+  //
+  // Both are implemented, because they fail in different circumstances: a card
+  // refund needs a settled transaction to reverse, and an unlinked refund
+  // needs nothing at all — which is exactly why it is the one that needs a
+  // manager's authority behind it in the UI.
+
+  /// Refund an already-captured payment back to the original card.
+  ///
+  /// [amountMinor] may be less than the original for a partial refund, in
+  /// which case the intent stays `Captured` and carries a `refundedAmount`
+  /// rather than moving to `Refunded`.
+  ///
+  /// Dojo require an `idempotencyKey` header here — unusually, since they
+  /// ignore idempotency on intent creation. Without one the call is a 400. The
+  /// caller passes it so a retry after a dropped connection reuses the same key
+  /// and cannot refund twice; a fresh key per attempt would defeat the point.
+  Future<String> refundToCard(
+    String intentId, {
+    required int amountMinor,
+    required String idempotencyKey,
+    String? reason,
+  }) async {
+    final res = await _client
+        .post(
+          Uri.parse('$baseUrl/payment-intents/$intentId/refunds'),
+          headers: {..._terminalHeaders, 'idempotencyKey': idempotencyKey},
+          body: jsonEncode({
+            'amount': amountMinor,
+            if (reason != null && reason.trim().isNotEmpty) 'refundReason': reason,
+          }),
+        )
+        .timeout(const Duration(seconds: 30));
+
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw _exception(res, 'The refund was not accepted');
+    }
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    return (body['refundId'] ?? body['id'] ?? '') as String;
+  }
+
+  /// Send a refund to the card machine.
+  ///
+  /// With [intentId] this is a *matched* refund: Dojo ties it to the original
+  /// sale and will not give back more than was taken. Without one it is an
+  /// *unlinked* refund, which has no such protection — it will return any
+  /// amount to any card — so the caller is responsible for putting a manager
+  /// behind it.
+  ///
+  /// Returns the session id, polled through [fetchSession] exactly as a sale is.
+  Future<String> startRefundSession({
+    required int amountMinor,
+    String? intentId,
+  }) async {
+    if (terminalId == null || softwareHouseId == null || resellerId == null) {
+      throw DojoException(
+        'Card machine not configured. A terminal id, software-house-id and '
+        'reseller-id are all required to refund at the counter.',
+      );
+    }
+
+    final matched = intentId != null && intentId.isNotEmpty;
+    final res = await _client
+        .post(
+          Uri.parse('$baseUrl/terminal-sessions'),
+          headers: _terminalHeaders,
+          body: jsonEncode({
+            'terminalId': terminalId,
+            'details': matched
+                ? {
+                    'sessionType': 'MatchedRefund',
+                    'matchedRefund': {'paymentIntentId': intentId},
+                  }
+                : {
+                    'sessionType': 'UnlinkedRefund',
+                    'unlinkedRefund': {
+                      'amount': {'value': amountMinor, 'currencyCode': 'GBP'},
+                    },
+                  },
+          }),
+        )
+        .timeout(const Duration(seconds: 30));
+
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw _exception(res, 'The card machine refused the refund');
+    }
+    return (jsonDecode(res.body) as Map<String, dynamic>)['id'] as String;
+  }
+
+  // ---- Intent management --------------------------------------------------
+
+  /// Change the amount on an intent that has not been authorised yet, or
+  /// increase a pre-authorised one.
+  ///
+  /// Dojo reject zero outright, and reject any change to an intent that has
+  /// already captured. Both are surfaced rather than swallowed: the checklist
+  /// tests that the till explains *why* rather than showing a generic failure.
+  Future<void> setAmount(String intentId, int amountMinor) async {
+    if (amountMinor <= 0) {
+      throw DojoException('A payment has to be for more than nothing.');
+    }
+    final res = await _client
+        .post(
+          Uri.parse('$baseUrl/payment-intents/$intentId/amount'),
+          headers: _terminalHeaders,
+          body: jsonEncode({
+            'amount': {'value': amountMinor, 'currencyCode': 'GBP'},
+          }),
+        )
+        .timeout(const Duration(seconds: 20));
+
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw _exception(res, 'Could not change the amount');
+    }
+  }
+
+  /// Record the gratuity against the intent, so it lands on the acquirer's
+  /// side of the books and not only on ours.
+  Future<void> setTips(String intentId, int tipsMinor) async {
+    final res = await _client
+        .post(
+          Uri.parse('$baseUrl/payment-intents/$intentId/tips-amount'),
+          headers: _terminalHeaders,
+          body: jsonEncode({
+            'tipsAmount': {'value': tipsMinor, 'currencyCode': 'GBP'},
+          }),
+        )
+        .timeout(const Duration(seconds: 20));
+
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw _exception(res, 'Could not record the gratuity');
+    }
+  }
+
+  /// Take the money on a pre-authorised (`Manual` capture) intent.
+  ///
+  /// [amountMinor] may be less than was authorised, and Dojo allow several
+  /// partial captures against one authorisation.
+  ///
+  /// Note the shape: `amount` here is a bare integer of minor units, not the
+  /// `{value, currencyCode}` object every other endpoint takes. Sending the
+  /// object fails with a deserialisation error, not a helpful message.
+  Future<void> capture(
+    String intentId,
+    int amountMinor, {
+    int tipsMinor = 0,
+  }) async {
+    final res = await _client
+        .post(
+          Uri.parse('$baseUrl/payment-intents/$intentId/captures'),
+          headers: {
+            ..._terminalHeaders,
+            'idempotencyKey': 'capture-$intentId',
+          },
+          body: jsonEncode({
+            'amount': amountMinor,
+            if (tipsMinor > 0) 'tipsAmount': tipsMinor,
+          }),
+        )
+        .timeout(const Duration(seconds: 30));
+
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw _exception(res, 'Could not capture the payment');
+    }
+  }
+
+  /// Abandon an intent that was never authorised, so it does not sit open
+  /// against the account.
+  ///
+  /// Returns false rather than throwing when Dojo refuse: an intent that has
+  /// already been paid cannot be cancelled, and that is not an error worth
+  /// interrupting the clerk over.
+  Future<bool> cancelIntent(String intentId) async {
+    try {
+      final res = await _client
+          .delete(
+            Uri.parse('$baseUrl/payment-intents/$intentId'),
+            headers: _terminalHeaders,
+          )
+          .timeout(const Duration(seconds: 20));
+      return res.statusCode >= 200 && res.statusCode < 300;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Format a duration the way .NET parses a `TimeSpan`: `d.hh:mm:ss`.
+  ///
+  /// Dojo's API is .NET underneath and `autoExpireIn` is a TimeSpan, so an ISO
+  /// 8601 duration ("P6D") is rejected. Clamped to the documented window —
+  /// longer than 30 seconds, shorter than 7 days — because both ends are a 400
+  /// and neither is worth discovering at the counter.
+  static String _dojoTimeSpan(Duration d) {
+    const min = Duration(seconds: 31);
+    const max = Duration(days: 6, hours: 23);
+    final clamped = d < min ? min : (d > max ? max : d);
+    final hh = clamped.inHours.remainder(24).toString().padLeft(2, '0');
+    final mm = clamped.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final ss = clamped.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '${clamped.inDays}.$hh:$mm:$ss';
+  }
+
+  /// Turn a failed response into an exception the till can act on.
+  ///
+  /// Dojo use at least three error shapes: `{Detail}` on the payment-intent
+  /// endpoints, `{detail, title}` on the terminal ones, and
+  /// `{errors: {field: [...]}}` for validation. All three are tried, in the
+  /// order that yields the most specific sentence, before falling back.
+  DojoException _exception(http.Response res, String fallback) {
+    String? detail;
+    String? trace;
+    try {
+      final body = jsonDecode(res.body);
+      if (body is Map<String, dynamic>) {
+        trace = body['traceId'] as String?;
+        detail = (body['Detail'] ?? body['detail'] ?? body['title']) as String?;
+        if (detail == null || detail.trim().isEmpty) {
+          final errors = body['errors'];
+          if (errors is Map && errors.isNotEmpty) {
+            final first = errors.values.first;
+            if (first is List && first.isNotEmpty) detail = '${first.first}';
+          }
+        }
+      }
+    } catch (_) {
+      // A non-JSON body (an empty 401, an HTML gateway page) is not worth
+      // reporting verbatim to someone serving a customer.
+    }
+    final message = (detail != null && detail.trim().isNotEmpty)
+        ? detail.trim()
+        : fallback;
+    return DojoException(message, statusCode: res.statusCode, traceId: trace);
   }
 
   /// Intent statuses that mean the money is in, and the ones that mean it will
@@ -614,19 +970,65 @@ class DojoProvider implements PaymentProvider {
     } catch (e) {
       // An errored card payment is NOT a payment. Never fall back to assuming
       // it worked — the till would record money it never took.
+      //
+      // A Dojo failure reports its clerk-facing message rather than its
+      // `toString()`: a wrong API key has to read "check the API key in
+      // Settings", not "payment failed" and not a wall of JSON. Anything else
+      // is stringified, because there is nothing better to say about it.
       return PaymentResult(
         approved: false,
         amountMinor: amountMinor,
-        message: '$e',
+        message: e is DojoException ? e.clerkMessage : '$e',
       );
     }
   }
 }
 
+/// A Dojo call that failed, with enough detail for the till to say something
+/// useful and for support to trace it afterwards.
+///
+/// [statusCode] is carried because the accreditation checklist tests the four
+/// HTTP codes separately, and because they mean genuinely different things to
+/// the person standing at the till:
+///
+///   * 400 — we sent something wrong. Not the clerk's fault and not fixable at
+///           the counter; it is a bug to report.
+///   * 401 — the API key is wrong. Fixable, in Settings, by whoever installed
+///           the till. This is the one that must never read "payment failed".
+///   * 404 — the card machine (or the intent) is not there. Check the PDQ.
+///   * 409 — the card machine is busy with something else.
+///   * 422 — the request made sense but not right now, e.g. cancelling after
+///           the card has already been presented. The original flow continues.
+///
+/// [traceId] is Dojo's own correlation id. It costs nothing to keep and it is
+/// the first thing their support asks for.
 class DojoException implements Exception {
-  DojoException(this.message);
+  DojoException(this.message, {this.statusCode, this.traceId});
+
   final String message;
+  final int? statusCode;
+  final String? traceId;
+
+  /// Whether retrying the identical request could plausibly work. A 409 means
+  /// the terminal is busy now and might not be in a moment; a 400 will fail
+  /// identically for ever.
+  bool get retryable => statusCode == 409 || (statusCode ?? 0) >= 500;
+
+  /// What the clerk should be told. Dojo returns at least three different
+  /// error shapes depending on the endpoint, so the message is chosen by what
+  /// the situation *is* rather than by parsing all of them perfectly.
+  String get clerkMessage => switch (statusCode) {
+    401 => 'The card system rejected our credentials. Check the API key in '
+        'Settings.',
+    404 => 'The card machine could not be found. Check it is switched on and '
+        'connected.',
+    409 => 'The card machine is busy. Finish or cancel what is on its screen, '
+        'then try again.',
+    422 => message,
+    _ => message,
+  };
 
   @override
-  String toString() => message;
+  String toString() =>
+      statusCode == null ? message : '$message (HTTP $statusCode)';
 }

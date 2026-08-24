@@ -287,6 +287,25 @@ class Payments extends Table {
   /// sales. Null for card, and for cash simply keyed as an amount.
   TextColumn get cashBreakdown => text().nullable()();
 
+  /// The acquirer's own id for this payment — Dojo's `paymentIntentId`.
+  ///
+  /// Without it a card sale cannot be tied back to the acquirer at all: no
+  /// matched refund, no way for a Dojo webhook to find the sale it is talking
+  /// about, and nothing to quote when a customer disputes a charge. Null for
+  /// cash and for anything taken on a platform that does not issue one.
+  TextColumn get reference => text().nullable()();
+
+  /// The tip inside [amountMinor], so the takings report can separate what the
+  /// business earned from what belongs to the staff.
+  IntColumn get gratuityMinor => integer().withDefault(const Constant(0))();
+
+  /// How the card was captured: `terminal` | `manual` | `hosted` | `native`.
+  ///
+  /// A keyed card carries different interchange and different liability from
+  /// one dipped in a reader, so the two must not be reported as the same thing.
+  /// Null for cash.
+  TextColumn get entryMode => text().nullable()();
+
   @override
   Set<Column> get primaryKey => {id};
 }
@@ -382,7 +401,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 11;
+  int get schemaVersion => 12;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -468,6 +487,15 @@ class AppDatabase extends _$AppDatabase {
               ),
             );
             await m.addColumn(orderLines, orderLines.kitchenPrintedAt);
+          }
+          if (from < 12) {
+            // Card payments gain the acquirer's own id, the tip inside the
+            // amount, and how the card was captured. Nullable and defaulted, so
+            // every sale already on the till stays valid — they simply carry no
+            // acquirer reference, which is true: nothing ever recorded one.
+            await m.addColumn(payments, payments.reference);
+            await m.addColumn(payments, payments.gratuityMinor);
+            await m.addColumn(payments, payments.entryMode);
           }
         },
       );

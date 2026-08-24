@@ -419,6 +419,10 @@ class OrderRepository {
   ///
   /// [staffId] and [staffName] are the member of staff who took the money, for
   /// the same reason and stamped at the same moment.
+  /// [reference] is the acquirer's own id for a card payment — Dojo's
+  /// `paymentIntentId`. It is what makes a refund, a webhook and a chargeback
+  /// enquiry all able to find this sale, so a card tender that arrives without
+  /// one is worth noticing rather than quietly accepting.
   Future<void> settle(
     String orderId,
     String method,
@@ -427,6 +431,9 @@ class OrderRepository {
     String? cashBreakdown,
     int? staffId,
     String? staffName,
+    String? reference,
+    int gratuityMinor = 0,
+    String? entryMode,
   }) async {
     await _db.transaction(() async {
       await _db.into(_db.payments).insert(
@@ -438,6 +445,11 @@ class OrderRepository {
               // Which notes were handed over, when the clerk counted them in
               // on the cash keys. Null for everything else.
               cashBreakdown: Value(cashBreakdown),
+              // The acquirer's id for this payment, and how the card was
+              // taken. Null for cash, which has neither.
+              reference: Value(reference),
+              gratuityMinor: Value(gratuityMinor),
+              entryMode: Value(entryMode),
             ),
           );
 
@@ -521,6 +533,12 @@ class OrderRepository {
             // Which notes were handed over, so a reprint can reproduce the
             // same breakdown the customer was given at the counter.
             'cash_breakdown': pay.cashBreakdown,
+            // The acquirer's own id for this payment. Without it the back
+            // office cannot match a Dojo webhook to this sale, and a manager
+            // cannot refund it to the original card.
+            'reference': pay.reference,
+            'gratuity_minor': pay.gratuityMinor,
+            'entry_mode': pay.entryMode,
           },
       ],
     });
