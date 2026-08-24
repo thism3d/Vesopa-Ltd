@@ -73,6 +73,24 @@ matched refund, no way for an acquirer webhook to find the sale it was talking
 about, and nothing to quote on a chargeback. The payment intent id now travels
 till → server → column.
 
+### An expired card payment was being shown as a decline
+
+Found by running the accreditation checklist through the till's *own* payment
+code rather than through a script beside it, which is the whole reason that
+suite exists: the API-level run passed this scenario — the session did reach
+`Expired` — while the till's handling of it was wrong.
+
+`Declined`, `Canceled` and `Expired` were all treated as one outcome. The first
+two are verdicts: the money did not move and the reader knows it. `Expired`
+means the reader stopped answering, and the card may have been approved with the
+result lost on the way back. Showing that as a decline invites the clerk to take
+the payment again, which is how a customer gets charged twice.
+
+An expired session now returns `PaymentUncertainty.checkTerminal` and says the
+result could not be confirmed. The poll-timeout path had the same defect in a
+quieter form — its comment said "this is unknown, never a decline" but it never
+set the flag, so the message said one thing and the till booked the other.
+
 ### "Payment failed" was the wrong thing to say
 
 A wrong API key reported a failed payment, which sends somebody hunting a card

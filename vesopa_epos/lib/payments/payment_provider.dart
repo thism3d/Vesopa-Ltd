@@ -903,11 +903,27 @@ class DojoProvider implements PaymentProvider {
         );
       }
       if (session.failed) {
+        // `Expired` is not a decline and must never be shown as one.
+        //
+        // Declined and Canceled are verdicts: the money did not move and the
+        // reader knows it. Expired means the reader stopped answering — the
+        // card may have been approved and the result lost on the way back. The
+        // accreditation checklist is explicit that the till has to say the
+        // result cannot be confirmed and offer to record it manually or retry,
+        // which is a different screen from "declined" and a different action
+        // from the clerk.
+        final expired = session.status.toLowerCase() == 'expired';
         return PaymentResult(
           approved: false,
           amountMinor: amountMinor,
           reference: intentId,
-          message: 'Card payment ${session.status.toLowerCase()}',
+          uncertainty: expired
+              ? PaymentUncertainty.checkTerminal
+              : PaymentUncertainty.none,
+          message: expired
+              ? 'The card machine did not confirm the result. Check its screen '
+                    'before retrying — the payment may still have gone through.'
+              : 'Card payment ${session.status.toLowerCase()}',
         );
       }
       if (session.needsSignature && !signatureAnswered) {
@@ -928,11 +944,14 @@ class DojoProvider implements PaymentProvider {
     }
 
     // Out of time with the session unresolved. The card may still be mid-flight
-    // on the reader, so this is "unknown", never a decline.
+    // on the reader, so this is "unknown", never a decline — and it has to be
+    // flagged as such, or the message says one thing while the till books the
+    // other.
     return PaymentResult(
       approved: false,
       amountMinor: amountMinor,
       reference: intentId,
+      uncertainty: PaymentUncertainty.checkTerminal,
       message: 'Timed out at the card machine. Check it before retrying — the '
           'payment may still have gone through.',
     );
