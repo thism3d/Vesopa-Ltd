@@ -3,10 +3,11 @@
 <div class="device_download_section">
     <div class="device_download_main_body">
         <div class="device_download_left">
-            <%# Was "…for Windows". The page now also offers the Android build,
-                so the heading can no longer name one platform. %>
+            <%# One platform is offered here on purpose — see the note above
+                the Store badge. The Android build is not published from this
+                page; it is sent to a venue that asks for it. %>
             <h1 class="downlaod_heading">Download Vesopa EPOS</h1>
-            <p class="download_brief">Optimize your business with an advanced EPOS system for seamless transactions. Available for Windows and Android.</p>
+            <p class="download_brief">Optimize your business with an advanced EPOS system for seamless transactions. Installs on Windows in a couple of taps.</p>
 
             <div class="downlaod_brief_description">
                 <p class="donwload_brief_desc_item"><i class="fa fa-check"></i> Efficient sales and inventory management</p>
@@ -16,26 +17,30 @@
                 <p class="donwload_brief_desc_item"><i class="fa fa-check"></i> Dedicated customer support for uninterrupted operations</p>
             </div>
 
-            <%#
-              Both direct downloads are served from public/app/ — see the note in
-              deploy.sh about why that directory is excluded from rsync.
-
-              The store badge previously had no href at all, and Download Now
-              pointed at /downloads/VesopaEPOS.msi, which does not exist.
-            %>
             <div class="dl-platforms">
                 <%#
-                  The Store badge is first and labelled "recommended" on
-                  purpose. The direct installer is not code-signed, so Chrome
-                  warns that it "may be dangerous" and SmartScreen shows
-                  "Windows protected your PC" — which reads to a customer as
-                  the site being malicious. The Store build is signed by
-                  Microsoft and shows neither.
+                  The Microsoft Store and nothing else — no direct installer,
+                  no Android file, no version number.
 
-                  This is signposting, not a fix. The fix is an Authenticode
-                  certificate on the installer; until there is one, saying
-                  plainly what the prompt is beats a customer meeting it with
-                  no warning and closing the tab.
+                  The unsigned direct installer that used to sit here was removed
+                  deliberately. It carries no Authenticode signature, so Chrome
+                  warned that it "may be dangerous" and SmartScreen showed
+                  "Windows protected your PC" — which reads to a customer as this
+                  site being malicious. The Store build is signed by Microsoft,
+                  shows neither, and updates itself.
+
+                  No version number is printed anywhere on this page either. The
+                  Store always serves the current build, and a number in the page
+                  is a number that goes stale the moment a release ships — a
+                  customer comparing it against what they have installed then
+                  draws the wrong conclusion.
+
+                  The Android build is deliberately not offered here either. It
+                  is a file rather than a store listing, so it lands a customer
+                  in Android's "install blocked" prompt with no signature behind
+                  it — the same problem as the Windows installer, on a platform
+                  where the warning is harder to get past. A venue that needs it
+                  is sent it directly.
                 %>
                 <div class="dl-platform">
                     <p class="dl-platform-label">Windows</p>
@@ -47,32 +52,18 @@
                                  src="/assets/icons/microsoft_store.png"
                                  alt="Get Vesopa EPOS from the Microsoft Store">
                         </a>
-                        <p class="dl-apk-note dl-note-good"><i class="fa fa-shield"></i> Recommended &middot; installs and updates automatically</p>
-
-                        <a href="/app/VesopaEPOS%20Installer.exe" download class="download_brief_button">
-                            <p class="download_brief_button_text">Download Now<span>v<%= APP_VERSION %></span></p>
-                        </a>
-                        <p class="dl-apk-note">Direct installer &middot; Windows may ask you to confirm before it runs</p>
-                    </div>
-                </div>
-
-                <div class="dl-platform">
-                    <p class="dl-platform-label">Android</p>
-                    <div class="downlaod_brief_buttons_keeper">
-                        <a class="download_brief_store" href="/app/Vesopa%20EPOS.apk" download>
-                            <img class="download_brief_image_windows"
-                                 src="/assets/icons/download_google_play.svg"
-                                 alt="Download Vesopa EPOS for Android">
-                        </a>
-                        <p class="dl-apk-note">Direct APK &middot; allow installs from this source when prompted</p>
+                        <p class="dl-apk-note dl-note-good"><i class="fa fa-shield"></i> Installs and updates itself &middot; nothing to configure</p>
                     </div>
                 </div>
 
 <%#
   Anything else the admin has attached to this page in /admin/files — a macOS
-  build, a beta, a setup guide PDF, a store listing. The two platforms above
-  stay hardcoded because they are the ones the page is built around and must
-  never silently vanish if a row is deleted; this block is the extension point.
+  build, a beta, a setup guide PDF, a store listing. The Store badge above stays
+  hardcoded because it is what the page is built around and must never silently
+  vanish if a row is deleted; this block is the extension point.
+
+  The version each row carries is held back for the same reason the Windows one
+  is: /admin/files is where a version is edited, not where it is read.
 %>
 <% if (extraFiles && extraFiles.length) { %>
                 <div class="dl-platform dl-platform-extra">
@@ -83,10 +74,7 @@
                            href="<%= f.url %>"
                            <%= f.kind === 'file' ? 'download' : 'target="_blank" rel="noopener"' %>>
                             <span class="dl-extra-name"><%= f.label || f.title %></span>
-                            <span class="dl-extra-meta">
-                                <% if (f.version) { %>v<%= f.version %><% } %>
-                                <% if (f.size_bytes) { %> &middot; <%= bytes(f.size_bytes) %><% } %>
-                            </span>
+                            <span class="dl-extra-meta"><% if (f.size_bytes) { %><%= bytes(f.size_bytes) %><% } %></span>
                         </a>
 <% }); %>
                     </div>
@@ -105,6 +93,71 @@
             <img class="device_platform_specific_image mac_app_screenshot"
                  src="/assets/demo_screenshots/demo1.jpg"
                  alt="The Vesopa EPOS till running on Windows">
+        </div>
+    </div>
+</div>
+
+<%#
+  Vesopa Kitchen is a second Store listing, not a second platform, so it gets a
+  band of its own rather than a third tile in .dl-platforms — a tile there would
+  read as "Vesopa EPOS for kitchens", which is the wrong idea. It is the screen
+  the till sends its orders to, and on its own it does nothing.
+%>
+<div class="kds-band">
+    <div class="kds-band-inner">
+        <div class="kds-band-copy">
+            <p class="kds-eyebrow">Also from Vesopa</p>
+            <h2 class="kds-title">Vesopa Kitchen</h2>
+            <p class="kds-lede">The screen that replaces the kitchen printer. Orders arrive the moment they are rung up on the till &mdash; no paper, and no ticket blown off the pass.</p>
+
+            <ul class="kds-points">
+                <li><b>Tap an item once it is cooked</b> and it rules through. When the last one goes, the ticket takes itself to Completed.</li>
+                <li><b>One screen or six.</b> Grill, fryer and pass each answer for their own items, exactly as their own printers used to.</li>
+                <li><b>Keep the printers if you want them.</b> Every station can be paper, screen or both &mdash; a venue that never opens the app prints as it always did.</li>
+                <li><b>Your name on it.</b> Your logo, colours and venue name carry onto every kitchen screen.</li>
+            </ul>
+
+            <div class="kds-cta">
+                <a class="download_brief_store"
+                   href="https://apps.microsoft.com/detail/9P29NN3R5PGS"
+                   target="_blank" rel="noopener">
+                    <img class="download_brief_image_windows"
+                         src="/assets/icons/microsoft_store.png"
+                         alt="Get Vesopa Kitchen from the Microsoft Store">
+                </a>
+                <p class="dl-apk-note dl-note-good"><i class="fa fa-shield"></i> Works with the Vesopa EPOS tills and Back Office you already have</p>
+            </div>
+        </div>
+
+        <%# The board, drawn rather than screenshotted: a capture of a real pass
+            is either a customer's order data or an invented one, and this says
+            what the app is in a tenth of the bytes. %>
+        <div class="kds-board" aria-hidden="true">
+            <div class="kds-tabs">
+                <span class="kds-tab is-on">3 Open</span>
+                <span class="kds-tab">Counts</span>
+                <span class="kds-tab">35 Completed</span>
+            </div>
+            <div class="kds-cards">
+                <div class="kds-card">
+                    <div class="kds-card-top">
+                        <span class="kds-where">Table #4</span>
+                        <span class="kds-elapsed">00:41</span>
+                    </div>
+                    <p class="kds-line is-made"><span class="kds-qty">1</span> The Front Row <i class="fa fa-check"></i></p>
+                    <p class="kds-line kds-mod is-made">Extra sausage</p>
+                    <p class="kds-line"><span class="kds-qty">1</span> Poached eggs on toast</p>
+                </div>
+                <div class="kds-card">
+                    <div class="kds-card-top">
+                        <span class="kds-where">Table #3</span>
+                        <span class="kds-elapsed kds-late">06:52</span>
+                    </div>
+                    <p class="kds-line"><span class="kds-qty">1</span> Crispy chicken burger</p>
+                    <p class="kds-line kds-mod">no tomato, no garlic</p>
+                    <p class="kds-line is-made"><span class="kds-qty">1</span> Kids breakfast <i class="fa fa-check"></i></p>
+                </div>
+            </div>
         </div>
     </div>
 </div>

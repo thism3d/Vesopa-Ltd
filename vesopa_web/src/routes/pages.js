@@ -84,12 +84,12 @@ router.get('/download', async (_req, res) => {
   try {
     extraFiles = await filesFor('download');
   } catch (e) {
-    // The page's own two buttons are hardcoded, so a database problem costs
-    // the extras and nothing else. Far better than 500-ing the download page.
+    // The page's own buttons are hardcoded, so a database problem costs the
+    // extras and nothing else. Far better than 500-ing the download page.
     console.error('[download] could not list attached files:', e.message);
   }
   res.render('download', {
-    title: 'Download Vesopa EPOS for Windows and Android',
+    title: 'Download Vesopa EPOS for Windows | Vesopa Kitchen',
     extraFiles,
     bytes,
   });

@@ -138,21 +138,41 @@ app.use((req, res, next) => {
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
 /**
- * Installers, before the general static mount so these headers win.
+ * Everything in /app, before the general static mount so these headers win.
  *
- * Content-Disposition: attachment states outright that the response is a file
- * to save. Without it the browser decides from the content type, and the
- * default for .exe — application/x-msdos-program — is a legacy type that some
- * scanners and proxies treat with more suspicion than a plain binary stream.
+ * The default is Content-Disposition: attachment, which states outright that
+ * the response is a file to save. Without it the browser decides from the
+ * content type, and the default for .exe — application/x-msdos-program — is a
+ * legacy type that some scanners and proxies treat with more suspicion than a
+ * plain binary stream. INLINE_TYPES below is the short list of exceptions.
  *
  * To be straight about the limits of this: it does not stop Chrome or
- * SmartScreen warning about the installer. That warning is about the *file*,
- * not the response — VesopaEPOS Installer.exe carries no Authenticode
- * signature, and an unsigned executable from a domain with no download history
- * is exactly what those warnings exist to flag. No header fixes that; a
- * code-signing certificate does. The Microsoft Store build is signed and is
- * why /download offers it first.
+ * SmartScreen warning about an unsigned installer. That warning is about the
+ * *file*, not the response — no header fixes it; a code-signing certificate
+ * does, which is why /download now offers the Store build and nothing else.
  */
+/**
+ * The few things in /app that are documents rather than installers.
+ *
+ * Everything else keeps the forced attachment below. This is an allow-list and
+ * not a MIME lookup on purpose: /admin/files accepts uploads into this
+ * directory, and anything served inline is served from this origin. An SVG is
+ * the obvious trap - an image everywhere else, a script document here - so it
+ * is deliberately absent and downloads like an installer.
+ *
+ * PDFs are here because they get linked to rather than installed: a document
+ * sent to a third party should open in their browser, not arrive as an unnamed
+ * binary stream that their mail gateway has to form a view about.
+ */
+const INLINE_TYPES = {
+  '.pdf': 'application/pdf',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+};
+
 app.use(
   '/app',
   express.static(path.join(__dirname, '..', 'public', 'app'), {
@@ -160,15 +180,18 @@ app.use(
     index: false,
     setHeaders(res, filePath) {
       const name = path.basename(filePath);
+      const inlineType = INLINE_TYPES[path.extname(name).toLowerCase()];
+
       // Both forms: the quoted one for older clients, filename* (RFC 5987) so
       // spaces and any non-ASCII survive intact. "Vesopa EPOS.apk" would
       // otherwise arrive as "Vesopa" on a strict client.
       res.setHeader(
         'Content-Disposition',
-        `attachment; filename="${name.replace(/["\\]/g, '')}"; ` +
+        `${inlineType ? 'inline' : 'attachment'}; ` +
+          `filename="${name.replace(/["\\]/g, '')}"; ` +
           `filename*=UTF-8''${encodeURIComponent(name)}`
       );
-      res.setHeader('Content-Type', 'application/octet-stream');
+      res.setHeader('Content-Type', inlineType || 'application/octet-stream');
     },
   })
 );
