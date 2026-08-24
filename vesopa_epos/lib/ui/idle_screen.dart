@@ -224,13 +224,12 @@ class _IdleScreenState extends ConsumerState<IdleScreen> {
           // screen read as a dark slab with a pad on it rather than as the
           // venue's own screen.
           //
-          // Readability is held up by the two things that do not cost
-          // transparency — a blur under the pad, which stops key faces sitting
-          // directly on photographic detail, and a shadow on the glyphs
-          // themselves. See [_PadKey]. Both work on a white photograph, where
-          // alpha alone does not: this is a lighter scrim than the one that was
-          // raised for exactly that case, so it is worth checking against your
-          // brightest idle image.
+          // This scrim is no longer what makes the pad readable, and it is
+          // worth being clear about that: readability now comes from the pad's
+          // own opaque console (see [_Keypad]), which is the only thing that
+          // holds against *any* picture the venue picks. What is left here is
+          // focus — a quarter-second dim that says the screen is asking for
+          // something — so it can stay light without a legibility cost.
           //
           // Faded between rather than swapped. The pad's scrim arriving in one
           // frame reads as the picture being switched off; brought up over a
@@ -753,6 +752,45 @@ class _Keypad extends StatelessWidget {
       onKey(key);
     }
 
+    // The pad sits on its own surface, not on the venue's picture.
+    //
+    // Transparent keys were tried twice and lost twice, and the second failure
+    // is the instructive one: over a high-contrast backdrop — a gold wordmark
+    // across the middle of the screen — a 35% scrim and a blur still left the
+    // digits fighting the letters underneath, and "5" and "0" were close to
+    // unreadable. Alpha cannot win that, because the thing behind is not a
+    // texture the blur can flatten; it is type with the same tonal weight as
+    // the digits.
+    //
+    // So the picture stops at the pad rather than being dimmed everywhere. The
+    // console is opaque, which is the only setting that holds against *any*
+    // image the venue might choose, and it covers a small enough area that the
+    // backdrop is still plainly theirs around it — which is what the venue
+    // actually asked for when they rejected the 85% full-screen scrim. The blur
+    // stays underneath so the edge reads as glass over the picture rather than
+    // as a panel dropped on top of it.
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            color: _consoleFace,
+            border: Border.all(color: _consoleEdge),
+          ),
+          child: _grid(press),
+        ),
+      ),
+    );
+  }
+
+  /// The console's own face. Near-opaque on purpose — see [build].
+  static const _consoleFace = Color(0xF01B2026);
+  static const _consoleEdge = Color(0x2EFFFFFF);
+
+  Widget _grid(void Function(String key) press) {
     return Column(
       children: [
         GridView.count(
@@ -805,32 +843,24 @@ class _PadKey extends StatefulWidget {
 
   /// How solid a key face is.
   ///
-  /// Raised from 8%/14% at the venue's request — the keys read as barely there
-  /// over a photograph, which on a PIN pad is not a style problem but a "did
-  /// that press register" one.
+  /// These are now composited over the pad's own opaque console rather than
+  /// over the venue's picture, which is what makes them safe to state as fixed
+  /// numbers at last: the surface behind a key is #1B2026 whatever the backdrop
+  /// is, instead of being whatever pixel of a photograph happened to land
+  /// there. Against that console:
   ///
-  /// The numbers are set by measurement, not by eye, because the backdrop is a
-  /// picture the venue chose and could be anything. Worst case is a white
-  /// photograph, where the 85% scrim leaves a #262626 base; against that:
+  ///   * digits, white on #3C4148 — 8.9:1
+  ///   * action label, white on #2F343A — 11.2:1
   ///
-  ///   * digits, white on 30% white (#676767) — 5.6:1
-  ///   * action label, 90% white on 20% white (#525252) — 6.8:1
-  ///   * action icon, white on the same — 7.9:1
-  ///
-  /// All clear 4.5:1, so they hold even for the 12pt action labels, which are
-  /// normal text rather than large. Over black — the far commoner case, a venue
-  /// with no picture — every one of these is higher again.
-  // Down from 0x4D/0x33. The keys are meant to read as glass over the venue's
-  // picture, not as panels on top of it.
-  static const _digitFace = Color(0x2EFFFFFF);
-  static const _actionFace = Color(0x1FFFFFFF);
+  /// Both clear 4.5:1 comfortably, and — unlike every previous setting — they
+  /// stay there when the venue changes the picture, because the picture no
+  /// longer reaches the key.
+  static const _digitFace = Color(0x24FFFFFF);
+  static const _actionFace = Color(0x14FFFFFF);
 
   /// A hairline so a key still has an edge where its face happens to land on
   /// something of nearly the same tone.
-  // The edge does more work now that the face does less: with a faint fill it
-  // is the border that says where the key stops, which is what makes a grid of
-  // them hittable without looking at it.
-  static const _edge = Color(0x73FFFFFF);
+  static const _edge = Color(0x59FFFFFF);
 
   /// A dark halo under every glyph on the pad.
   ///
@@ -875,34 +905,31 @@ class _PadKeyState extends State<_PadKey> {
       scale: _down ? 0.94 : 1,
       duration: Duration(milliseconds: _down ? 90 : 160),
       curve: _down ? Curves.easeOut : Curves.easeOutBack,
-      // Frosted, not merely faint.
+      // No blur of its own any more.
       //
-      // The blur is what lets the faces be this transparent at all: it puts a
-      // smooth field behind the glyph instead of photographic detail, so a
-      // digit does not have to compete with a face or a doorway that happens to
-      // be behind it. It costs nothing in transparency — the picture is still
-      // there, just softened under the pad — which is why it is doing the work
-      // that alpha used to.
+      // Each key used to carry a BackdropFilter, because each key was a window
+      // onto the venue's photograph and needed that detail flattened before a
+      // digit could sit on it. The console behind the pad is opaque now, so a
+      // per-key blur is a shader pass over a flat colour — twelve of them, on
+      // the one screen a tired clerk taps fastest.
       child: ClipRRect(
         borderRadius: BorderRadius.circular(12),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 120),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              // The face brightens under the finger, and the edge goes brand lime.
-              // Both track the press directly, so the key is lit for exactly as
-              // long as it is held.
-              color: _down
-                  ? const Color(0x66A5C715)
-                  : (isAction ? _PadKey._actionFace : _PadKey._digitFace),
-              border: Border.all(
-                color: _down ? Pos.brand : _PadKey._edge,
-                width: _down ? 1.6 : 1,
-              ),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            // The face brightens under the finger, and the edge goes brand lime.
+            // Both track the press directly, so the key is lit for exactly as
+            // long as it is held.
+            color: _down
+                ? const Color(0x66A5C715)
+                : (isAction ? _PadKey._actionFace : _PadKey._digitFace),
+            border: Border.all(
+              color: _down ? Pos.brand : _PadKey._edge,
+              width: _down ? 1.6 : 1,
             ),
-            child: Material(
+          ),
+          child: Material(
               color: Colors.transparent,
               child: InkWell(
                 onTap: widget.onTap,
@@ -951,7 +978,6 @@ class _PadKeyState extends State<_PadKey> {
             ),
           ),
         ),
-      ),
     );
   }
 }

@@ -63,6 +63,14 @@ abstract class Kds {
   /// keeps meaning "read this bit".
   static const modifier = Color(0xFFD32F2F);
 
+  /// The same red on an item that has been crossed off.
+  ///
+  /// Faded rather than greyed, so a struck "no bacon" still reads as the
+  /// instruction it was — a chef checking back over a ticket needs to see that
+  /// it was there, and a modifier that turns grey on completion looks like one
+  /// that was never flagged.
+  static const modifierMuted = Color(0x8CD32F2F);
+
   /// The selected segment in the header.
   static const selected = Color(0xFF4B57E8);
   static const selectedTrack = Color(0xFFDDE0FB);

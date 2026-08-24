@@ -16,6 +16,8 @@ class TicketLine {
     required this.name,
     required this.stations,
     this.note,
+    this.madeAt,
+    this.madeBy,
   });
 
   final String id;
@@ -33,6 +35,29 @@ class TicketLine {
 
   /// The stations this line was routed to.
   final Set<String> stations;
+
+  /// When this item was crossed off as made, and by whom. Null until it is.
+  ///
+  /// Held on the server rather than on the screen, because the board re-fetches
+  /// on a timer: a local-only tick would vanish under the chef mid-service,
+  /// which looks exactly like the screen losing the order.
+  final DateTime? madeAt;
+  final String? madeBy;
+
+  /// Whether this item has been cooked.
+  bool get made => madeAt != null;
+
+  /// The same line, crossed off or put back.
+  TicketLine asMade(bool value, {String? by, DateTime? at}) => TicketLine(
+    id: id,
+    seq: seq,
+    quantity: quantity,
+    name: name,
+    note: note,
+    stations: stations,
+    madeAt: value ? (at ?? DateTime.now()) : null,
+    madeBy: value ? by : null,
+  );
 
   /// Whether this line belongs on a board watching [watched].
   ///
@@ -56,6 +81,8 @@ class TicketLine {
         ? null
         : (j['note'] as String).trim(),
     stations: _stations(j['stations']),
+    madeAt: _time(j['madeAt']),
+    madeBy: j['madeBy'] as String?,
   );
 
   Map<String, dynamic> toJson() => {
@@ -65,6 +92,8 @@ class TicketLine {
     'name': name,
     if (note != null) 'note': note,
     'stations': stations.toList(),
+    if (madeAt != null) 'madeAt': madeAt!.toUtc().toIso8601String(),
+    if (madeBy != null) 'madeBy': madeBy,
   };
 }
 
@@ -159,6 +188,30 @@ class Ticket {
   /// The lines a board watching [watched] should draw.
   List<TicketLine> linesFor(Set<String> watched) =>
       lines.where((l) => l.isFor(watched)).toList();
+
+  /// Whether every item this board is responsible for has been crossed off.
+  ///
+  /// Scoped to [watched] for the same reason bumping is: on a kitchen with two
+  /// screens the grill finishing its own items should close the grill, not
+  /// declare the fryer's work done. A board with no lines at all returns false
+  /// — there is nothing to have finished, and auto-completing an empty card
+  /// would take it off the screen the moment it arrived.
+  bool allMadeFor(Set<String> watched) {
+    final mine = linesFor(watched);
+    return mine.isNotEmpty && mine.every((l) => l.made);
+  }
+
+  /// The same ticket with one item crossed off, or put back.
+  ///
+  /// Applied locally the moment it is tapped, before the server has answered,
+  /// for the same reason bumping is: a screen that waits for a round trip
+  /// before the line strikes through is a screen somebody taps twice.
+  Ticket lineMade(String lineId, bool made, {String? by, DateTime? at}) => _copy(
+    lines: [
+      for (final l in lines)
+        if (l.id == lineId) l.asMade(made, by: by, at: at) else l,
+    ],
+  );
 
   /// The stations a board watching [watched] is responsible for.
   ///
@@ -303,15 +356,25 @@ class Ticket {
 
   /// The same ticket, everything re-opened. Recall is all-or-nothing because
   /// "that went out wrong" has no partial reading.
+  ///
+  /// The items are un-crossed too, matching what the server does: a ticket that
+  /// comes back to the board with every line already struck through tells the
+  /// kitchen there is nothing to cook, which is the opposite of what recalling
+  /// it meant.
   Ticket recalled() => _copy(
     stations: [
       for (final s in stations) TicketStation(station: s.station, done: false),
     ],
+    lines: [for (final l in lines) l.asMade(false)],
   );
 
   Ticket rushedTo(bool value) => _copy(rushed: value);
 
-  Ticket _copy({List<TicketStation>? stations, bool? rushed}) => Ticket(
+  Ticket _copy({
+    List<TicketStation>? stations,
+    List<TicketLine>? lines,
+    bool? rushed,
+  }) => Ticket(
     id: id,
     orderId: orderId,
     ticketNo: ticketNo,
@@ -323,7 +386,7 @@ class Ticket {
     covers: covers,
     note: note,
     rushed: rushed ?? this.rushed,
-    lines: lines,
+    lines: lines ?? this.lines,
     stations: stations ?? this.stations,
   );
 }

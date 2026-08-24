@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
 import '../../data/screen_profile.dart';
@@ -37,6 +38,7 @@ class TicketCard extends StatefulWidget {
     this.onRecall,
     this.onDetails,
     this.onRush,
+    this.onLineMade,
   });
 
   final Ticket ticket;
@@ -54,6 +56,10 @@ class TicketCard extends StatefulWidget {
   final VoidCallback? onRecall;
   final VoidCallback? onDetails;
   final ValueChanged<bool>? onRush;
+
+  /// Cross one item off, or put it back. Null on the Completed tab, where the
+  /// work is already done and the only useful action is recall.
+  final void Function(TicketLine line, bool made)? onLineMade;
 
   @override
   State<TicketCard> createState() => _TicketCardState();
@@ -238,6 +244,9 @@ class _TicketCardState extends State<TicketCard>
                       // same thing, which is noise on the one surface that
                       // cannot afford any.
                       station: _stationChipFor(line),
+                      onMade: widget.onLineMade == null
+                          ? null
+                          : () => widget.onLineMade!(line, !line.made),
                     ),
 
                   if (ticket.note != null) ...[
@@ -419,15 +428,35 @@ class _Pill extends StatelessWidget {
   }
 }
 
+/// One item on the card, and the thing a chef actually taps.
+///
+/// Tapping crosses it off: the name rules through, the row fades back, and a
+/// tick appears where the eye is already going. Tapping again puts it back,
+/// because the commonest reason to cross off the wrong line is a wet finger on
+/// a busy pass and there has to be a way out of it that is not "recall the
+/// whole ticket".
+///
+/// The modifier rules through with its line. A struck item whose "no bacon"
+/// still reads at full strength looks like an instruction that has been missed
+/// rather than one that has been followed.
 class _LineRow extends StatelessWidget {
-  const _LineRow({required this.line, this.station});
+  const _LineRow({required this.line, this.station, this.onMade});
 
   final TicketLine line;
   final String? station;
+  final VoidCallback? onMade;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
+    final made = line.made;
+
+    // Faded, not hidden. A crossed-off item is still part of the order — the
+    // chef needs to be able to read back what has been done, and the pass needs
+    // to see the whole ticket when it lands.
+    final nameColour = made ? Kds.inkMuted : Kds.ink;
+    final decoration = made ? TextDecoration.lineThrough : TextDecoration.none;
+
+    final row = Padding(
       padding: const EdgeInsets.fromLTRB(12, 3, 12, 3),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -443,10 +472,13 @@ class _LineRow extends StatelessWidget {
                 child: Text(
                   line.quantityLabel,
                   textAlign: TextAlign.right,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 17,
                     fontWeight: FontWeight.w700,
-                    color: Kds.ink,
+                    color: nameColour,
+                    decoration: decoration,
+                    decorationColor: nameColour,
+                    decorationThickness: 2,
                   ),
                 ),
               ),
@@ -454,11 +486,14 @@ class _LineRow extends StatelessWidget {
               Expanded(
                 child: Text(
                   line.name,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 17,
                     fontWeight: FontWeight.w600,
-                    color: Kds.ink,
+                    color: nameColour,
                     height: 1.25,
+                    decoration: decoration,
+                    decorationColor: nameColour,
+                    decorationThickness: 2,
                   ),
                 ),
               ),
@@ -482,6 +517,16 @@ class _LineRow extends StatelessWidget {
                     ),
                   ),
                 ),
+
+              // The tick sits in a fixed slot whether or not it is showing, so
+              // crossing a line off does not shuffle the text under the finger
+              // that is still moving down the ticket.
+              SizedBox(
+                width: 26,
+                child: made
+                    ? const Icon(Icons.check, size: 19, color: Kds.inkMuted)
+                    : null,
+              ),
             ],
           ),
 
@@ -493,15 +538,35 @@ class _LineRow extends StatelessWidget {
               padding: const EdgeInsets.only(left: 36, top: 1),
               child: Text(
                 line.note!,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 15.5,
                   fontWeight: FontWeight.w600,
-                  color: Kds.modifier,
+                  color: made ? Kds.modifierMuted : Kds.modifier,
                   height: 1.25,
+                  decoration: decoration,
+                  decorationColor: made ? Kds.modifierMuted : Kds.modifier,
+                  decorationThickness: 2,
                 ),
               ),
             ),
         ],
+      ),
+    );
+
+    if (onMade == null) return row;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          // Kitchens are loud and screens are greasy. A tap that gives nothing
+          // back gets repeated, and the repeat un-crosses the line.
+          HapticFeedback.selectionClick();
+          onMade!();
+        },
+        // The whole row, not just the words. A chef aiming at "Chips" with the
+        // side of a thumb should not have to hit the glyphs.
+        child: row,
       ),
     );
   }

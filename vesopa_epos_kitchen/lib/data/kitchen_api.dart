@@ -205,6 +205,13 @@ class KitchenApi {
     body: {'stations': stations.toList()},
   );
 
+  /// Cross one item off a ticket, or put it back.
+  Future<void> markLine(String ticketId, String lineId, bool made) => _send(
+    'POST',
+    '/api/kitchen/tickets/$ticketId/lines/$lineId',
+    body: {'made': made},
+  );
+
   Future<void> recall(String ticketId) =>
       _send('POST', '/api/kitchen/tickets/$ticketId/recall');
 

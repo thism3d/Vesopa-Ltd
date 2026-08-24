@@ -119,7 +119,7 @@ async function loadTickets(pool, ids) {
   );
 
   const [lines] = await pool.query(
-    `SELECT id, ticket_id, seq, quantity, name, note, stations
+    `SELECT id, ticket_id, seq, quantity, name, note, stations, made_at, made_by
        FROM epos_kitchen_ticket_lines
       WHERE ticket_id IN (${holes})
       ORDER BY ticket_id, seq`,
@@ -143,6 +143,9 @@ async function loadTickets(pool, ids) {
       name: line.name,
       note: line.note,
       stations: parseStations(line.stations),
+      // When this item was crossed off as made, and by whom. Null until it is.
+      madeAt: line.made_at,
+      madeBy: line.made_by,
     });
   }
 
@@ -1132,6 +1135,65 @@ function kitchenAppRoutes({ pool, broadcast, secret }) {
     }
   });
 
+  /**
+   * Cross one item off a ticket, or put it back.
+   *
+   * The unit a chef actually works in. Station progress decides which tab a
+   * card sits in; this decides what is left to cook on the card in front of
+   * them, so a long ticket does not have to be held in someone's head until
+   * every item is ready.
+   *
+   * Persisted rather than kept on the screen because the board re-fetches on a
+   * timer: local-only ticks would vanish under the chef mid-service, which
+   * looks exactly like the screen losing the order. It also means two screens
+   * watching the same station agree about what has been made.
+   *
+   * A state assignment, like bumping, so a double tap on a steamed-up screen is
+   * one tap.
+   */
+  router.post(
+    '/kitchen/tickets/:id/lines/:lineId',
+    kitchen,
+    async (req, res, next) => {
+      try {
+        const made = req.body?.made !== false;
+
+        // Joined to the ticket so a screen cannot reach another venue's line by
+        // guessing an id — the office filter has to be on the ticket, which is
+        // where it lives.
+        const [[line]] = await pool.query(
+          `SELECT l.id
+             FROM epos_kitchen_ticket_lines l
+             JOIN epos_kitchen_tickets t ON t.id = l.ticket_id
+            WHERE l.id = ? AND l.ticket_id = ? AND t.office = ?`,
+          [req.params.lineId, req.params.id, req.office]
+        );
+        if (!line) return res.status(404).json({ error: 'No such item' });
+
+        const by = String(req.kitchen.name || req.kitchen.user || '').slice(0, 120);
+
+        await pool.execute(
+          made
+            ? `UPDATE epos_kitchen_ticket_lines
+                  SET made_at = NOW(), made_by = ?
+                WHERE id = ? AND made_at IS NULL`
+            : `UPDATE epos_kitchen_ticket_lines
+                  SET made_at = NULL, made_by = NULL
+                WHERE id = ?`,
+          made ? [by, req.params.lineId] : [req.params.lineId]
+        );
+
+        broadcast(
+          { type: 'kitchen.ticket', id: req.params.id, office: req.office },
+          { office: req.office }
+        );
+        res.json({ ok: true });
+      } catch (e) {
+        next(e);
+      }
+    }
+  );
+
   /** Put it back on the board. Every station, whichever screen asked. */
   router.post('/kitchen/tickets/:id/recall', kitchen, async (req, res, next) => {
     try {
@@ -1144,6 +1206,17 @@ function kitchenAppRoutes({ pool, broadcast, secret }) {
       await pool.execute(
         `UPDATE epos_kitchen_ticket_stations
             SET status = 'open', done_at = NULL, done_by = NULL
+          WHERE ticket_id = ?`,
+        [req.params.id]
+      );
+
+      // The items go back too. Recall means "that went out wrong", and a ticket
+      // that returns to the board with every line already crossed off tells the
+      // kitchen there is nothing to do — which is the opposite of what pressing
+      // it meant.
+      await pool.execute(
+        `UPDATE epos_kitchen_ticket_lines
+            SET made_at = NULL, made_by = NULL
           WHERE ticket_id = ?`,
         [req.params.id]
       );

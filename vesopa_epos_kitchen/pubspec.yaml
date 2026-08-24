@@ -10,7 +10,7 @@ publish_to: 'none'
 # ship together: a kitchen screen and a till on different major versions is a
 # support question nobody can answer over the phone. The build number is this
 # app's own.
-version: 1.3.8+1
+version: 1.4.0+2
 
 environment:
   sdk: ^3.11.3
@@ -118,7 +118,7 @@ msix_config:
 
   # Four parts, and the last must be 0 — the Store reserves the revision field
   # and rejects anything else. Tracks `version:` at the top of this file.
-  msix_version: 1.3.8.0
+  msix_version: 1.4.0.0
 
   logo_path: assets/brand/kitchen_mark.png
 
