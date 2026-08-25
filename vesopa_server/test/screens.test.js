@@ -22,7 +22,12 @@ const {
   tillScreenRoutes,
   normaliseButton,
   cleanHex,
+  cleanImage,
+  cleanEmoji,
+  functionKeysFor,
+  limitsFor,
   FUNCTION_KEYS,
+  BAR_KEYS,
 } = require('../src/screens');
 
 const SECRET = 'test-secret-not-a-real-one';
@@ -452,6 +457,291 @@ async function check(name, fn) {
       sent.some((s) => s.msg.type === 'till-settings'),
       'the tills were never told'
     );
+  });
+
+  // -------------------------------------------------------------------------
+  // The bars
+  //
+  // A bar is a screen: same table, same buttons, same whole-grid save. So what
+  // is worth testing is only where it is NOT the same — which keys it accepts,
+  // what shape it may be, and the two places a bar and a sale screen must not
+  // be allowed to be mistaken for one another.
+  // -------------------------------------------------------------------------
+
+  const BAR = [
+    'FROM epos_screens WHERE id',
+    [
+      {
+        id: 9,
+        office: 'venue@example.com',
+        name: 'Counter bar',
+        surface: 'bottombar',
+        grid_rows: 1,
+        grid_cols: 12,
+        sort_order: 0,
+      },
+    ],
+  ];
+
+  await check('a bar accepts Pay and a sale screen does not', async () => {
+    const onBar = normaliseButton(
+      { row: 0, col: 0, kind: 'function', functionKey: 'pay' },
+      { rows: 1, cols: 12, surface: 'bottombar' }
+    );
+    assert.strictEqual(onBar.function_key, 'pay');
+
+    // The reason the whitelist is per surface rather than one longer list: a
+    // Pay key in the middle of a page of lagers, one row above Cancel, is a
+    // mis-press that costs a venue a bill.
+    const onGrid = normaliseButton(
+      { row: 0, col: 0, kind: 'function', functionKey: 'pay' },
+      grid
+    );
+    assert.strictEqual(onGrid.function_key, null);
+  });
+
+  await check('a live display cannot be placed on a sale grid', async () => {
+    const b = normaliseButton(
+      { row: 0, col: 0, kind: 'function', functionKey: 'open_bills' },
+      grid
+    );
+    assert.strictEqual(b.function_key, null, 'nothing on the sale grid draws it');
+  });
+
+  await check('a sale function still works on a bar', async () => {
+    // The bar list is a superset for the ordinary keys, so a venue rebuilding
+    // its own bar can place Covers and Notes where they already are.
+    for (const key of FUNCTION_KEYS) {
+      assert.ok(BAR_KEYS.includes(key), `${key} is missing from the bar list`);
+    }
+    assert.deepStrictEqual(functionKeysFor('sale'), FUNCTION_KEYS);
+    assert.deepStrictEqual(functionKeysFor('topbar'), BAR_KEYS);
+  });
+
+  await check('a bar is one or two rows and up to sixteen across', async () => {
+    assert.deepStrictEqual(limitsFor('bottombar'), {
+      rows: 2,
+      cols: 16,
+      defRows: 1,
+      defCols: 10,
+    });
+    assert.deepStrictEqual(limitsFor('sale'), {
+      rows: 10,
+      cols: 12,
+      defRows: 5,
+      defCols: 6,
+    });
+  });
+
+  await check('a new bar is created on the surface it was asked for', async () => {
+    const pool = fakePool([
+      OFFICE,
+      ['COALESCE(MAX(sort_order)', [{ next: 0 }]],
+      ['INSERT INTO epos_screens', { insertId: 12 }],
+      BAR,
+    ]);
+    const server = await listen(appWith(pool));
+    const res = await call(server, 'POST', '/api/screens', {
+      token: sessionToken,
+      body: { name: 'Counter bar', surface: 'bottombar', rows: 9, cols: 40 },
+    });
+    server.close();
+
+    assert.strictEqual(res.status, 201);
+    const insert = pool.asked.find((a) => a.sql.startsWith('INSERT INTO epos_screens'));
+    assert.strictEqual(insert.params[2], 'bottombar');
+    // Clamped to a bar's ceilings, not a screen's — nine rows of action bar
+    // would leave nothing to sell from.
+    assert.strictEqual(insert.params[3], 2);
+    assert.strictEqual(insert.params[4], 16);
+  });
+
+  await check('a nonsense surface falls back to a sale screen', async () => {
+    const pool = fakePool([
+      OFFICE,
+      ['COALESCE(MAX(sort_order)', [{ next: 0 }]],
+      ['INSERT INTO epos_screens', { insertId: 12 }],
+      SCREEN,
+    ]);
+    const server = await listen(appWith(pool));
+    await call(server, 'POST', '/api/screens', {
+      token: sessionToken,
+      body: { name: 'Whatever', surface: 'wallpaper' },
+    });
+    server.close();
+
+    const insert = pool.asked.find((a) => a.sql.startsWith('INSERT INTO epos_screens'));
+    assert.strictEqual(insert.params[2], 'sale');
+  });
+
+  await check('a bar cannot be copied into a sale screen', async () => {
+    // Half the keys would be dropped on save and the copy would look like it
+    // worked. Refused with the reason instead.
+    const pool = fakePool([OFFICE, BAR]);
+    const server = await listen(appWith(pool));
+    const res = await call(server, 'POST', '/api/screens', {
+      token: sessionToken,
+      body: { name: 'Food', surface: 'sale', copyFromId: 9 },
+    });
+    server.close();
+
+    assert.strictEqual(res.status, 400);
+    assert.match(res.body.error, /bottombar/);
+  });
+
+  // -------------------------------------------------------------------------
+  // What the tills wear
+  // -------------------------------------------------------------------------
+
+  await check('/screens/defaults is matched before /screens/:id', async () => {
+    // The same trap /screens/home sits above, and the reason the next literal
+    // path added here has to go above the parameter too: with `:id` first this
+    // arrives as a screen whose id is the string "defaults" and 404s for ever.
+    const pool = fakePool([OFFICE, SCREEN]);
+    const server = await listen(appWith(pool));
+    const res = await call(server, 'PUT', '/api/screens/defaults', {
+      token: sessionToken,
+      body: { homeScreenId: 3 },
+    });
+    server.close();
+
+    assert.strictEqual(res.status, 200);
+    assert.ok(
+      pool.asked.some((a) => a.sql.includes('INSERT INTO epos_till_settings')),
+      'the defaults were never written'
+    );
+  });
+
+  await check('a sale screen cannot be worn as a bottom bar', async () => {
+    // A manager who picks the wrong row from a list has to be told at the
+    // moment they pick it, not by walking to a till and finding a page of
+    // lagers squashed into the bottom two inches of it.
+    const pool = fakePool([OFFICE, SCREEN]);
+    const server = await listen(appWith(pool));
+    const res = await call(server, 'PUT', '/api/screens/defaults', {
+      token: sessionToken,
+      body: { bottomBarScreenId: 3 },
+    });
+    server.close();
+
+    assert.strictEqual(res.status, 400);
+    assert.match(res.body.error, /not a bottombar one/);
+  });
+
+  await check('clearing a default back to the built-in is allowed', async () => {
+    // null is a real value here, which is why the route checks hasOwnProperty
+    // rather than truth — otherwise there would be no way back to the bar the
+    // till ships with.
+    const pool = fakePool([OFFICE]);
+    const server = await listen(appWith(pool));
+    const res = await call(server, 'PUT', '/api/screens/defaults', {
+      token: sessionToken,
+      body: { topBarScreenId: null },
+    });
+    server.close();
+
+    assert.strictEqual(res.status, 200);
+    const write = pool.asked.find((a) => a.sql.includes('INSERT INTO epos_till_settings'));
+    assert.deepStrictEqual(write.params, ['venue@example.com', null]);
+  });
+
+  await check('setting the defaults pushes till-settings, not screens', async () => {
+    const sent = [];
+    const pool = fakePool([OFFICE, SCREEN]);
+    const server = await listen(
+      appWith(pool, (msg, opts) => sent.push({ msg, opts }))
+    );
+    await call(server, 'PUT', '/api/screens/defaults', {
+      token: sessionToken,
+      body: { homeScreenId: 3 },
+    });
+    server.close();
+
+    assert.ok(sent.some((s) => s.msg.type === 'till-settings'));
+    assert.ok(!sent.some((s) => s.msg.type === 'screens'));
+  });
+
+  await check('another venue’s screen cannot be worn', async () => {
+    const pool = fakePool([OFFICE]);
+    const server = await listen(appWith(pool));
+    const res = await call(server, 'PUT', '/api/screens/defaults', {
+      token: sessionToken,
+      body: { bottomBarScreenId: 999 },
+    });
+    server.close();
+
+    assert.strictEqual(res.status, 404);
+  });
+
+  await check('a deleted bar stops being worn', async () => {
+    // Without this a venue that deletes the bar it was wearing gets tills
+    // pointing at a row that is not there — and no foreign key to catch it,
+    // deliberately, because a cascade here would take a venue's home screen
+    // away as a side effect of tidying up.
+    const pool = fakePool([OFFICE, BAR]);
+    const server = await listen(appWith(pool));
+    await call(server, 'DELETE', '/api/screens/9', { token: sessionToken });
+    server.close();
+
+    const cleared = pool.asked.filter((a) =>
+      a.sql.includes('top_bar_screen_id = IF')
+    );
+    assert.strictEqual(cleared.length, 1, 'the tills still wear a deleted bar');
+    const pages = pool.asked.filter((a) => a.sql.includes('top_bar_id = IF'));
+    assert.strictEqual(pages.length, 1, 'a page still asks for a deleted bar');
+  });
+
+  // -------------------------------------------------------------------------
+  // The face on a key
+  // -------------------------------------------------------------------------
+
+  await check('a picture must live on this server', async () => {
+    // The same rule as the idle image, and for the same reason: a till on a
+    // venue's own network with no route to the open internet must not be able
+    // to end up drawing a broken frame across its sale screen — weeks after the
+    // layout was arranged, in front of customers.
+    assert.strictEqual(cleanImage('/uploads/burger.png'), '/uploads/burger.png');
+    assert.strictEqual(cleanImage('/assets/logo.svg'), '/assets/logo.svg');
+    assert.strictEqual(cleanImage('https://example.com/burger.png'), null);
+    assert.strictEqual(cleanImage('  '), null);
+    assert.strictEqual(cleanImage(undefined), null);
+  });
+
+  await check('an emoji is bounded, not policed', async () => {
+    assert.strictEqual(cleanEmoji('🍔'), '🍔');
+    // A venue that types "1/2" into this box has made a perfectly good key
+    // face. A regex that let one through and not the other would be a bug
+    // report nobody could act on.
+    assert.strictEqual(cleanEmoji('1/2'), '1/2');
+    assert.strictEqual(cleanEmoji(''), null);
+    assert.ok(cleanEmoji('x'.repeat(50)).length <= 16);
+  });
+
+  await check('a key carries its own face through a save', async () => {
+    const b = normaliseButton(
+      {
+        row: 0,
+        col: 0,
+        kind: 'page',
+        targetScreenId: 4,
+        emoji: '🍔',
+        imageUrl: '/uploads/food.png',
+      },
+      grid
+    );
+    // A page key could never carry either of these before, which is why the
+    // venue that photographed its menu could not put its own picture on the
+    // FOOD key that leads to it.
+    assert.strictEqual(b.emoji, '🍔');
+    assert.strictEqual(b.image_url, '/uploads/food.png');
+  });
+
+  await check('an off-site picture is dropped, not stored', async () => {
+    const b = normaliseButton(
+      { row: 0, col: 0, kind: 'product', pluId: 1, imageUrl: 'http://evil/x.png' },
+      grid
+    );
+    assert.strictEqual(b.image_url, null);
   });
 
   console.log(`\n${passed} checks passed`);

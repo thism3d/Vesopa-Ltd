@@ -14,7 +14,6 @@ import 'layout.dart';
 import 'customer_picker.dart';
 import 'payment_page.dart';
 import 'table_picker.dart';
-import 'tables_page.dart' show parkedOrdersProvider;
 import 'theme.dart';
 import 'till_actions.dart';
 import 'void_dialog.dart';
@@ -28,6 +27,8 @@ import 'widgets/line_editor.dart';
 import '../data/screens.dart';
 import 'widgets/on_screen_keyboard.dart';
 import 'widgets/pos_message.dart';
+import 'widgets/open_bills_strip.dart';
+import 'widgets/programmed_bar.dart';
 import 'widgets/programmed_grid.dart';
 
 /// Live catalogue, straight from the local database so the grid renders with
@@ -162,6 +163,7 @@ class SalePage extends ConsumerWidget {
     required this.orderId,
     required this.onNewOrder,
     required this.onSwitchOrder,
+    this.onNavigate,
   });
 
   final String orderId;
@@ -170,6 +172,15 @@ class SalePage extends ConsumerWidget {
   /// Jump to another open bill — a parked table the clerk wants to add to or
   /// settle. Runs several tables at once without losing any of them.
   final void Function(String orderId) onSwitchOrder;
+
+  /// Leave the sale screen for another section, by its nav label.
+  ///
+  /// Only used by a programmed bar's `go_*` keys. A venue that hides the nav
+  /// rail to buy back 208px of bill — which [NavPanelMode] exists to let it do —
+  /// needs somewhere to put Tables and Receipts, and the bar is where. Optional
+  /// so the sale page still builds in a test with no shell around it, in which
+  /// case those keys say so rather than doing nothing.
+  final void Function(String label)? onNavigate;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -272,6 +283,28 @@ class SalePage extends ConsumerWidget {
             // one level up instead of into a different sale screen entirely.
             final programmed = screenSet.byId(openId) ?? home;
 
+            // The two strips of chrome, which are layouts now as well.
+            //
+            // Null anywhere along the chain means the built-in bar, and that
+            // fallback is the point: a venue that has programmed nothing, or
+            // has deleted what it programmed, still has a till with a Pay key
+            // on it and a way to reach a bill sitting on a table.
+            //
+            // Resolved through `barFor`, so a single page may ask for a
+            // different bar from the rest of the venue — and so a row pointing
+            // at the wrong kind of layout is treated as pointing at nothing
+            // rather than drawing a page of lagers along the bottom inch.
+            final topBar = screenSet.barFor(
+              programmed,
+              ScreenSurface.topBar,
+              settings.topBarScreenId,
+            );
+            final bottomBar = screenSet.barFor(
+              programmed,
+              ScreenSurface.bottomBar,
+              settings.bottomBarScreenId,
+            );
+
             // Indexed once per build rather than searched per key: a screen is
             // up to 120 buttons and a catalogue is thousands of rows.
             final byPlu = {for (final p in products) p.pluId: p};
@@ -321,6 +354,7 @@ class SalePage extends ConsumerWidget {
                             key,
                             lines: lines,
                             selected: selectedLines,
+                            order: order,
                           ),
                         ),
                       ),
@@ -343,11 +377,42 @@ class SalePage extends ConsumerWidget {
                 children: [
                   // Switch between concurrent bills: every booked table plus this
                   // one, so several parties can be served at once.
-                  _OpenOrdersBar(
-                    currentOrderId: orderId,
-                    currentOrder: order,
-                    onSwitch: onSwitchOrder,
-                  ),
+                  //
+                  // The venue's own bar when it has laid one out. That bar can
+                  // carry this same strip as a key — see `open_bills` — which
+                  // is what stops programming a top bar costing a venue the
+                  // ability to serve two parties at once.
+                  if (topBar == null)
+                    _OpenOrdersBar(
+                      currentOrderId: orderId,
+                      currentOrder: order,
+                      onSwitch: onSwitchOrder,
+                    )
+                  else
+                    ProgrammedBar(
+                      bar: topBar,
+                      screens: screenSet,
+                      products: byPlu,
+                      showPrices: settings.buttonsShowPrices,
+                      live: BarLive(
+                        currentOrderId: orderId,
+                        currentOrder: order,
+                        totalMinor: total,
+                        screenName: programmed?.name ?? 'Sale',
+                        onSwitchOrder: onSwitchOrder,
+                      ),
+                      onProduct: addProduct,
+                      onPage: (target) =>
+                          ref.read(openScreenProvider.notifier).open(target.id),
+                      onFunction: (key) => _runScreenFunction(
+                        context,
+                        ref,
+                        key,
+                        lines: lines,
+                        selected: selectedLines,
+                        order: order,
+                      ),
+                    ),
                   Expanded(
                     child: context.isPhone
                         // One thing at a time: categories as a scrolling strip,
@@ -514,6 +579,36 @@ class SalePage extends ConsumerWidget {
                       onClear: () =>
                           ref.read(selectedLinesProvider.notifier).clear(),
                     ),
+                  // The venue's own bottom bar, when it has laid one out.
+                  // Otherwise the one every till has always had — which is
+                  // still the right answer for most venues and is what a venue
+                  // gets back the moment it deletes the bar it made.
+                  if (bottomBar != null)
+                    ProgrammedBar(
+                      bar: bottomBar,
+                      screens: screenSet,
+                      products: byPlu,
+                      showPrices: settings.buttonsShowPrices,
+                      live: BarLive(
+                        currentOrderId: orderId,
+                        currentOrder: order,
+                        totalMinor: total,
+                        screenName: programmed?.name ?? 'Sale',
+                        onSwitchOrder: onSwitchOrder,
+                      ),
+                      onProduct: addProduct,
+                      onPage: (target) =>
+                          ref.read(openScreenProvider.notifier).open(target.id),
+                      onFunction: (key) => _runScreenFunction(
+                        context,
+                        ref,
+                        key,
+                        lines: lines,
+                        selected: selectedLines,
+                        order: order,
+                      ),
+                    )
+                  else
                   PosActionBar(
                     primaryLabel: 'Pay',
                     // What the clerk is about to charge, on the key they press
@@ -764,8 +859,78 @@ class SalePage extends ConsumerWidget {
     String key, {
     required List<OrderLine> lines,
     required Set<String> selected,
+    Order? order,
   }) async {
     switch (key) {
+      // ---- The keys a bar carries ----------------------------------------
+      //
+      // Every one of these is something the built-in action bar already does,
+      // reached from a key a venue placed instead of a key we placed. Not a
+      // second implementation of anything: each line below hands straight to
+      // the method the stock bar's own PosAction calls, so a bar programmed in
+      // an office cannot behave differently from the one beside it.
+      case 'pay':
+        if (order == null || (order.totalMinor) == 0) return;
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => PaymentPage(orderId: orderId, onSettled: onNewOrder),
+          ),
+        );
+        return;
+      case 'void':
+        return _voidSelected(
+          context,
+          ref,
+          lines: lines,
+          selected: selected,
+        );
+      case 'cancel':
+        return _cancelCheck(context, ref, lines: lines);
+      case 'save_table':
+        return _saveTable(context, ref, order);
+      case 'new_bill':
+        onNewOrder();
+        return;
+      case 'last_bill':
+        return TillActions.reprintLastReceipt(context, ref);
+
+      // Leaving the sale screen. A venue that keeps the nav rail hidden to buy
+      // back the width needs these somewhere, and the bar is where.
+      case 'go_sale':
+      case 'go_tables':
+      case 'go_receipts':
+      case 'go_reports':
+      case 'go_products':
+      case 'go_functions':
+      case 'go_settings':
+        final label = const {
+          'go_sale': 'Sale',
+          'go_tables': 'Table',
+          'go_receipts': 'Receipts',
+          'go_reports': 'Reports',
+          'go_products': 'Product',
+          'go_functions': 'Functions',
+          'go_settings': 'Settings',
+        }[key]!;
+        final go = onNavigate;
+        if (go == null) {
+          // No shell around this page. Said plainly rather than doing nothing,
+          // because a key that appears dead is one a clerk presses again and
+          // then asks somebody about.
+          PosMessenger.info(context, 'That section is not open from here.');
+          return;
+        }
+        go(label);
+        return;
+
+      // Ends the shift, not the terminal's registration. The rail's Logout
+      // de-commissions the till and needs a password; putting that on a bar
+      // where it could be leaned on would be a different feature with a much
+      // worse failure.
+      case 'sign_off':
+        ref.read(staffSessionProvider.notifier).signOff();
+        return;
+
       case 'covers':
         return _promptCovers(context, ref);
       case 'customer':
@@ -1520,12 +1685,6 @@ class _OpenOrdersBar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final booked = ref.watch(parkedOrdersProvider).value ?? const <Order>[];
-
-    // The current bill is shown first when it is not itself one of the booked
-    // tables (i.e. a fresh walk-in, or a table just recalled onto the till).
-    final currentIsBooked = booked.any((o) => o.id == currentOrderId);
-
     // This bar used to carry a "+ New" key on the right. It was removed in
     // v1.3.1.0 at the venue's request: a fresh bill already appears on its own
     // whenever the current one leaves the till — settled, saved to a table, or
@@ -1541,92 +1700,15 @@ class _OpenOrdersBar extends ConsumerWidget {
     return Container(
       height: 52,
       color: Theme.of(context).posSurface,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        children: [
-          if (!currentIsBooked)
-            _OrderChip(
-              label: currentOrder?.tableNumber != null
-                  ? 'Table ${currentOrder!.tableNumber}'
-                  : 'Current',
-              total: currentOrder?.totalMinor ?? 0,
-              active: true,
-              onTap: () {},
-            ),
-          for (final o in booked)
-            _OrderChip(
-              label: 'Table ${o.tableNumber}',
-              total: o.totalMinor,
-              active: o.id == currentOrderId,
-              onTap: () => onSwitch(o.id),
-            ),
-        ],
+      child: OpenBillsStrip(
+        currentOrderId: currentOrderId,
+        currentOrder: currentOrder,
+        onSwitch: onSwitch,
       ),
     );
   }
 }
 
-class _OrderChip extends StatelessWidget {
-  const _OrderChip({
-    required this.label,
-    required this.total,
-    required this.active,
-    required this.onTap,
-  });
-
-  final String label;
-  final int total;
-  final bool active;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: Material(
-        color: active ? Pos.brand : Theme.of(context).posIdle,
-        borderRadius: BorderRadius.circular(8),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(8),
-          onTap: active ? null : onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: active
-                        ? Pos.onBrand
-                        : Theme.of(context).colorScheme.onSurface,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  money(total),
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: active
-                        ? Pos.onBrand.withValues(alpha: 0.7)
-                        : Theme.of(context).hintColor,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Phone: the bill lives behind this bar rather than taking a column. It always
-/// shows the total, because that is the one number the clerk must never lose
-/// sight of.
 class _BasketBar extends StatelessWidget {
   const _BasketBar({
     required this.order,

@@ -52,6 +52,8 @@ class ScreenButton {
     this.label,
     this.fill,
     this.ink,
+    this.emoji,
+    this.imageUrl,
   });
 
   final int row;
@@ -77,11 +79,30 @@ class ScreenButton {
   final Color? fill;
   final Color? ink;
 
+  /// The key's own picture, set in the back office.
+  ///
+  /// Null is the common case and has to cost nothing: most keys on most screens
+  /// are a word on a colour, and that is the layout the venue arranged.
+  ///
+  /// When both are null a *product* key still falls back to the product's own
+  /// emoji and picture, which the catalogue grid has always shown. That
+  /// fallback is what stops this feature quietly un-decorating every screen a
+  /// venue had already programmed before it existed.
+  final String? emoji;
+
+  /// A path on the venue's own server — `/uploads/…` or `/assets/…`. The back
+  /// office refuses anything off-site, because a till on a venue network with
+  /// no route to the open internet must not be able to draw a broken frame
+  /// across its sale screen.
+  final String? imageUrl;
+
   factory ScreenButton.fromJson(Map<String, dynamic> j) => ScreenButton(
     row: (j['row'] as num?)?.toInt() ?? 0,
     col: (j['col'] as num?)?.toInt() ?? 0,
     rowSpan: ((j['rowSpan'] as num?)?.toInt() ?? 1).clamp(1, 10),
-    colSpan: ((j['colSpan'] as num?)?.toInt() ?? 1).clamp(1, 12),
+    // Sixteen to match a bar's width. A key on a sale grid cannot be wider
+    // than its screen anyway — the renderer positions it inside one.
+    colSpan: ((j['colSpan'] as num?)?.toInt() ?? 1).clamp(1, 16),
     kind: ScreenButtonKind.fromKey(j['kind'] as String?),
     pluId: (j['pluId'] as num?)?.toInt(),
     targetScreenId: (j['targetScreenId'] as num?)?.toInt(),
@@ -89,6 +110,8 @@ class ScreenButton {
     label: (j['label'] as String?)?.trim(),
     fill: _colour(j['fill']),
     ink: _colour(j['ink']),
+    emoji: (j['emoji'] as String?)?.trim(),
+    imageUrl: (j['imageUrl'] as String?)?.trim(),
   );
 
   Map<String, dynamic> toJson() => {
@@ -103,6 +126,8 @@ class ScreenButton {
     if (label != null) 'label': label,
     if (fill != null) 'fill': _hex(fill!),
     if (ink != null) 'ink': _hex(ink!),
+    if (emoji != null) 'emoji': emoji,
+    if (imageUrl != null) 'imageUrl': imageUrl,
   };
 
   /// `#RRGGBB` to a colour, and null for anything else.
@@ -126,21 +151,61 @@ class ScreenButton {
   }
 }
 
-/// One page of buttons.
+/// What a layout lays out.
+///
+/// A bar is a screen. The strip of open bills along the top of the till and the
+/// strip of keys along the bottom are one or two rows of the same buttons the
+/// sale grid is made of, so everything that reads a screen — the cache, the
+/// push, the fallback chain — works on them without knowing they are bars.
+///
+/// [unknown] is not an error, for the same reason [ScreenButtonKind.unknown] is
+/// not: the server stores this as a string precisely so a till running an older
+/// release meets a surface it has never heard of and ignores it, rather than
+/// failing to parse the venue's whole layout.
+enum ScreenSurface {
+  sale,
+  topBar,
+  bottomBar,
+  unknown;
+
+  static ScreenSurface fromKey(String? key) => switch (key) {
+    'sale' => sale,
+    'topbar' => topBar,
+    'bottombar' => bottomBar,
+    _ => unknown,
+  };
+
+  bool get isBar => this == topBar || this == bottomBar;
+}
+
+/// One page of buttons — or one bar.
 class TillScreen {
   const TillScreen({
     required this.id,
     required this.name,
+    this.surface = ScreenSurface.sale,
     this.rows = 5,
     this.cols = 6,
     this.buttons = const [],
+    this.topBarId,
+    this.bottomBarId,
   });
 
   final int id;
   final String name;
+  final ScreenSurface surface;
   final int rows;
   final int cols;
   final List<ScreenButton> buttons;
+
+  /// The bars this one page wants, when it does not want the venue's.
+  ///
+  /// Null is the answer for nearly every screen and means "whatever the venue's
+  /// default is". Set, it lets one page carry a different action bar from the
+  /// rest — a Drinks page whose bottom bar offers a round and a tab, where the
+  /// food page offers Covers and Save Table.
+  final int? topBarId;
+  final int? bottomBarId;
 
   /// The button drawn at a cell, if any.
   ScreenButton? at(int row, int col) {
@@ -167,20 +232,33 @@ class TillScreen {
   factory TillScreen.fromJson(Map<String, dynamic> j) => TillScreen(
     id: (j['id'] as num?)?.toInt() ?? 0,
     name: (j['name'] as String?)?.trim() ?? '',
+    surface: ScreenSurface.fromKey(j['surface'] as String?),
     rows: ((j['rows'] as num?)?.toInt() ?? 5).clamp(1, 10),
-    cols: ((j['cols'] as num?)?.toInt() ?? 6).clamp(1, 12),
+    // Sixteen, not twelve: a bar's cells are narrow by nature, and the built-in
+    // bottom bar is already ten keys plus a wide Pay. See MAX_BAR_COLS.
+    cols: ((j['cols'] as num?)?.toInt() ?? 6).clamp(1, 16),
     buttons: ((j['buttons'] as List?) ?? const [])
         .cast<Map<String, dynamic>>()
         .map(ScreenButton.fromJson)
         .toList(),
+    topBarId: (j['topBarId'] as num?)?.toInt(),
+    bottomBarId: (j['bottomBarId'] as num?)?.toInt(),
   );
 
   Map<String, dynamic> toJson() => {
     'id': id,
     'name': name,
+    'surface': switch (surface) {
+      ScreenSurface.sale => 'sale',
+      ScreenSurface.topBar => 'topbar',
+      ScreenSurface.bottomBar => 'bottombar',
+      ScreenSurface.unknown => 'unknown',
+    },
     'rows': rows,
     'cols': cols,
     'buttons': [for (final b in buttons) b.toJson()],
+    if (topBarId != null) 'topBarId': topBarId,
+    if (bottomBarId != null) 'bottomBarId': bottomBarId,
   };
 }
 
@@ -204,6 +282,28 @@ class ScreenSet {
       if (s.id == id) return s;
     }
     return null;
+  }
+
+  /// A screen by id, but only if it is the kind asked for.
+  ///
+  /// The whole fallback chain rests on this returning null rather than the
+  /// wrong thing. A sale page worn as a bottom bar would draw a page of lagers
+  /// squashed into the bottom two inches of the till; a bar opened as a sale
+  /// screen would leave a clerk with eleven keys and no products. The back
+  /// office refuses to set either, but a till reads rows it did not write —
+  /// from its own cache, written by an older release — so it checks here too.
+  TillScreen? surfaceById(int? id, ScreenSurface surface) {
+    final found = byId(id);
+    return found != null && found.surface == surface ? found : null;
+  }
+
+  /// The bar a screen wears: its own if it asked for one, otherwise the
+  /// venue's, otherwise none — which means the till's built-in bar.
+  TillScreen? barFor(TillScreen? screen, ScreenSurface surface, int? venueDefault) {
+    final own = surface == ScreenSurface.topBar
+        ? screen?.topBarId
+        : screen?.bottomBarId;
+    return surfaceById(own, surface) ?? surfaceById(venueDefault, surface);
   }
 
   factory ScreenSet.fromJson(Map<String, dynamic> j) => ScreenSet(

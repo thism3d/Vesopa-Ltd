@@ -37,7 +37,12 @@ function lift(names) {
     let terminator = '\n}\n';
     if (from < 0) {
       from = source.indexOf(`const ${name} = `);
-      terminator = '\n];\n';
+      // An array literal ends `];`, a `new Map([…])` ends `]);`. Both are used
+      // for the same kind of thing in that file — a fixed list written out for
+      // people to read — and neither is worth a real parser to lift.
+      terminator = source.startsWith(`const ${name} = new Map(`, from)
+        ? '\n]);\n'
+        : '\n];\n';
     }
     assert.ok(from > 0, `${name} not found in public/screens.js`);
 
@@ -51,6 +56,13 @@ function lift(names) {
 
 const ctx = lift([
   'SP_FUNCTIONS',
+  'SP_BAR_GROUPS',
+  'SP_FUNCTION_LABEL',
+  'SP_WIDGET_KEYS',
+  'spFunctionsFor',
+  'spLimits',
+  'spIssues',
+  'spFaceFor',
   'spSetKind',
   'spCovered',
   'spOrigin',
@@ -75,7 +87,18 @@ function withState({
   ctx.spSelection = new Set(selection);
   // spCovered uses spKey, which is an arrow const the lifter does not take.
   ctx.spKey = (row, col) => `${row}:${col}`;
+  ctx.spIsBar = (surface) => surface === 'topbar' || surface === 'bottombar';
+  ctx.spCurrentSurface = () => (current && current.surface) || 'sale';
+  ctx.spCellTitle = () => '';
 }
+
+// Scalars the lifter cannot take — it works on `function name(` and
+// `const NAME = [`, and a bare number matches neither. Repeated here rather
+// than parsed, and the parity check below is what keeps them honest.
+ctx.SP_MAX_ROWS = 10;
+ctx.SP_MAX_COLS = 12;
+ctx.SP_MAX_BAR_ROWS = 2;
+ctx.SP_MAX_BAR_COLS = 16;
 
 /** A cell as "row:col". An object made inside the vm carries that realm's
     prototype, so deepStrictEqual refuses it however alike the two look —
@@ -426,6 +449,163 @@ check('a drag past the edge keeps selecting to the edge', () => {
 
   assert.strictEqual(cell(ctx.spCellFromPoint(g, -400, -400)), '0:0');
   assert.strictEqual(cell(ctx.spCellFromPoint(g, 4000, 4000)), '1:2');
+});
+
+// ---------------------------------------------------------------------------
+// The bars
+//
+// A bar is a screen — one or two rows of the same buttons — so nearly nothing
+// about it needs its own test. These cover the three places where it is not the
+// same: the list of functions on offer, the ceilings, and the advice that stops
+// a venue saving a bar that looks finished and cannot take money.
+// ---------------------------------------------------------------------------
+
+check('every bar function offered here is one the server accepts', () => {
+  // The same drift check as the sale list above, and it matters more here: the
+  // bar list is twenty-eight keys long and was written out twice.
+  const { BAR_KEYS } = require('../src/screens');
+  const offered = vm
+    .runInContext('SP_BAR_GROUPS', ctx)
+    .flatMap(([, keys]) => keys.map(([key]) => key));
+
+  for (const key of offered) {
+    assert.ok(BAR_KEYS.includes(key), `${key} is not a server bar key`);
+  }
+  assert.strictEqual(
+    new Set(offered).size,
+    BAR_KEYS.length,
+    'the server knows bar functions the editor does not offer'
+  );
+});
+
+check('a bar is offered the bar functions and a sale screen is not', () => {
+  const keysOn = (surface) =>
+    vm
+      .runInContext('spFunctionsFor', ctx)(surface)
+      .flatMap(([, keys]) => keys.map(([key]) => key));
+
+  assert.ok(keysOn('bottombar').includes('pay'), 'a bottom bar cannot take money');
+  assert.ok(keysOn('topbar').includes('open_bills'), 'a top bar cannot show its tables');
+  // The one that matters. A Pay key in the middle of a page of lagers, one row
+  // above Cancel, is a mis-press that costs a venue a bill.
+  assert.ok(!keysOn('sale').includes('pay'), 'Pay is on offer in the sale grid');
+  assert.ok(!keysOn('sale').includes('open_bills'), 'a widget is on offer in the sale grid');
+});
+
+check('a bar has a bar’s ceilings, not a screen’s', () => {
+  const limits = vm.runInContext('spLimits', ctx);
+  assert.strictEqual(limits('bottombar').rows, 2, 'a bar may be three rows deep');
+  assert.strictEqual(limits('bottombar').cols, 16);
+  assert.strictEqual(limits('sale').rows, 10);
+  assert.strictEqual(limits('sale').cols, 12);
+  // The default a New… dialog offers. One row, because that is what a bar is.
+  assert.strictEqual(limits('topbar').defRows, 1);
+});
+
+check('a top bar with no open-tables key is called out', () => {
+  // The failure this exists to stop: a venue programs its own top bar, the
+  // layout is not broken in any way a machine would notice, and the venue
+  // silently loses the ability to run two bills at once — discovered at the
+  // counter, on a Friday.
+  withState({
+    current: {
+      id: 1,
+      surface: 'topbar',
+      rows: 1,
+      cols: 6,
+      buttons: [{ row: 0, col: 0, kind: 'function', functionKey: 'clock' }],
+    },
+  });
+  const issues = vm.runInContext('spIssues', ctx)();
+  assert.ok(
+    issues.some((i) => i.severity === 'warn' && /open-tables/i.test(i.where)),
+    'a top bar with no bills strip was reported as sound'
+  );
+});
+
+check('a bottom bar with no Pay key is called out', () => {
+  withState({
+    current: {
+      id: 1,
+      surface: 'bottombar',
+      rows: 1,
+      cols: 6,
+      buttons: [{ row: 0, col: 0, kind: 'function', functionKey: 'void' }],
+    },
+  });
+  const issues = vm.runInContext('spIssues', ctx)();
+  assert.ok(
+    issues.some((i) => i.severity === 'warn' && /Pay/.test(i.where)),
+    'a bottom bar that cannot take money was reported as sound'
+  );
+});
+
+check('a bar that has both is not nagged', () => {
+  withState({
+    current: {
+      id: 1,
+      surface: 'bottombar',
+      rows: 1,
+      cols: 6,
+      buttons: [
+        { row: 0, col: 0, kind: 'function', functionKey: 'void' },
+        { row: 0, col: 1, kind: 'function', functionKey: 'pay' },
+      ],
+    },
+  });
+  assert.strictEqual(vm.runInContext('spIssues', ctx)().length, 0);
+});
+
+check('a sale screen is not asked for a Pay key', () => {
+  // The advice is about bars. Offering it on a sale screen would be advice to
+  // do something the server refuses.
+  withState({
+    current: {
+      id: 1,
+      surface: 'sale',
+      rows: 2,
+      cols: 2,
+      buttons: [{ row: 0, col: 0, kind: 'function', functionKey: 'qty' }],
+    },
+  });
+  assert.strictEqual(vm.runInContext('spIssues', ctx)().length, 0);
+});
+
+// ---------------------------------------------------------------------------
+// The face on a key
+// ---------------------------------------------------------------------------
+
+check('a key with no face of its own borrows the product’s', () => {
+  withState({
+    products: [{ pluid: 7, product_name: 'Cappuccino', emoji: '☕', image_url: null }],
+  });
+  const face = vm.runInContext('spFaceFor', ctx)({ kind: 'product', pluId: 7 });
+  assert.strictEqual(face.emoji, '☕');
+  // The distinction the editor draws faded, and the reason "Remove" is disabled
+  // on it: there is nothing on this key to remove.
+  assert.strictEqual(face.own, false);
+});
+
+check('and its own beats the product’s', () => {
+  withState({
+    products: [{ pluid: 7, product_name: 'Cappuccino', emoji: '☕', image_url: null }],
+  });
+  const face = vm
+    .runInContext('spFaceFor', ctx)({ kind: 'product', pluId: 7, emoji: '🔥' });
+  assert.strictEqual(face.emoji, '🔥');
+  assert.strictEqual(face.own, true);
+});
+
+check('a page key may carry a picture, which it never could before', () => {
+  withState({});
+  const face = vm
+    .runInContext('spFaceFor', ctx)({ kind: 'page', targetScreenId: 2, emoji: '🍔' });
+  assert.strictEqual(face.emoji, '🍔');
+});
+
+check('a key with nothing on it has no face at all', () => {
+  withState({ products: [{ pluid: 7, product_name: 'Tea', emoji: null, image_url: null }] });
+  assert.strictEqual(vm.runInContext('spFaceFor', ctx)({ kind: 'product', pluId: 7 }), null);
 });
 
 check('no editor calls prompt', () => {

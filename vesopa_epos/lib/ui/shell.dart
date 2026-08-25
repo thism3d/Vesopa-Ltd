@@ -278,6 +278,9 @@ class _PosShellState extends ConsumerState<PosShell> {
           orderId: orderId,
           onNewOrder: _newOrder,
           onSwitchOrder: _switchToOrder,
+          // So a programmed bar's `go_*` keys can leave the sale screen. The
+          // shell owns which section is showing; the bar only names one.
+          onNavigate: _goTo,
         );
       case 'Table':
         return TablesPage(currentOrderId: orderId, onRecall: _switchToOrder);

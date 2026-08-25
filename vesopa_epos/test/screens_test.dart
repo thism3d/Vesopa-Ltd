@@ -75,9 +75,13 @@ void main() {
         'buttons': [button({'rowSpan': 900, 'colSpan': 900})],
       });
       expect(screen.rows, 10);
-      expect(screen.cols, 12);
+      // Sixteen, not twelve, since the bars arrived: a bar's cells are narrow
+      // by nature and the built-in bottom bar is already ten keys plus a wide
+      // Pay. The ceiling is shared rather than split by surface — a sale key
+      // cannot be wider than the screen it is positioned inside anyway.
+      expect(screen.cols, 16);
       expect(screen.buttons.single.rowSpan, 10);
-      expect(screen.buttons.single.colSpan, 12);
+      expect(screen.buttons.single.colSpan, 16);
     });
   });
 

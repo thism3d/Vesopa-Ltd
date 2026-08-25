@@ -88,8 +88,32 @@ function startStub() {
   const state = {
     screens: [
       layout(),
-      { id: 2, name: 'Drinks', surface: 'sale', rows: 3, cols: 3, sortOrder: 1, buttons: [] },
+      { id: 2, name: 'Drinks', surface: 'sale', rows: 3, cols: 3, sortOrder: 1, buttons: [], topBarId: null, bottomBarId: null },
+      {
+        id: 7,
+        name: 'Counter bar',
+        surface: 'bottombar',
+        rows: 1,
+        cols: 4,
+        sortOrder: 0,
+        buttons: [
+          { id: 9, row: 0, col: 0, rowSpan: 1, colSpan: 1, kind: 'function', functionKey: 'void', pluId: null, targetScreenId: null, label: null, fill: '#d03227', ink: null, emoji: null, imageUrl: null },
+          { id: 10, row: 0, col: 1, rowSpan: 1, colSpan: 3, kind: 'function', functionKey: 'pay', pluId: null, targetScreenId: null, label: 'Pay', fill: '#a5c715', ink: null, emoji: null, imageUrl: null },
+        ],
+      },
+      {
+        id: 8,
+        name: 'Tables strip',
+        surface: 'topbar',
+        rows: 1,
+        cols: 4,
+        sortOrder: 0,
+        buttons: [
+          { id: 11, row: 0, col: 0, rowSpan: 1, colSpan: 4, kind: 'function', functionKey: 'open_bills', pluId: null, targetScreenId: null, label: null, fill: null, ink: null, emoji: null, imageUrl: null },
+        ],
+      },
     ],
+    defaults: null,
     products: catalogue(),
     saved: null,
     resized: null,
@@ -138,7 +162,15 @@ function startStub() {
         }
         if (url.pathname === '/api/products') return send(200, state.products);
         if (url.pathname === '/api/till-settings') {
-          return send(200, { home_screen_id: 1 });
+          return send(200, {
+            home_screen_id: 1,
+            top_bar_screen_id: null,
+            bottom_bar_screen_id: 7,
+          });
+        }
+        if (url.pathname === '/api/screens/defaults') {
+          state.defaults = json;
+          return send(200, { ok: true, ...json });
         }
         if (/^\/api\/screens\/\d+\/buttons$/.test(url.pathname)) {
           state.saved = json.buttons;
@@ -444,6 +476,28 @@ async function main() {
         process.exitCode = 1;
       }
     }
+
+    // `SHOT=<dir> node test/backoffice-screens-browser.test.js` leaves a picture
+    // of each surface behind. Worth the dozen lines: this suite is the only
+    // thing on the machine that renders this page at all, and half of what goes
+    // wrong with an editor is a layout no assertion is watching — a card that
+    // pushes the grid off the bottom of the window, say, which is exactly what
+    // happened when the defaults card was added.
+    if (process.env.SHOT) {
+      fs.mkdirSync(process.env.SHOT, { recursive: true });
+      for (const surface of ['sale', 'topbar', 'bottombar']) {
+        await cdp.eval(
+          `document.querySelector('.sp-surface[data-surface="${surface}"]').click();
+           window.scrollTo(0, 0);
+           return true;`
+        );
+        await sleep(200);
+        const shot = await cdp.send('Page.captureScreenshot', { format: 'png' });
+        const file = path.join(process.env.SHOT, `editor-${surface}.png`);
+        fs.writeFileSync(file, Buffer.from(shot.data, 'base64'));
+        console.log(`  -- wrote ${file}`);
+      }
+    }
   } finally {
     if (cdp) cdp.socket.close();
     browser.kill();
@@ -478,7 +532,19 @@ async function reset(cdp) {
     spSelection = new Set();
     spClipboard = null;
     spPreview = false;
+    // Back to the sale screens as well. The tab is deliberately sticky in the
+    // app — a manager who opens the bottom bars and reloads should still be
+    // looking at them — so a check that leaves it on the bars would hand the
+    // next one a bar to drag across.
+    spSurface = 'sale';
     return loadScreens().then(() => true);`);
+  // Scrolled to where a person would have it before touching the grid. Nothing
+  // here scrolls on its own any more (see spDragStart), so this is the only
+  // place the page moves.
+  await cdp.eval(
+    `document.getElementById('sp-grid').scrollIntoView({ block: 'center' });
+     return true;`
+  );
 }
 
 check('the grid draws one key per cell, and none for the ones a 2x2 swallows', async (cdp) => {
@@ -734,6 +800,125 @@ check('the check list names the keys that point at nothing', async (cdp) => {
   assert.strictEqual(state.hidden, false, 'a broken key was not called out');
   assert.strictEqual(state.issues, 1);
   assert.strictEqual(state.missing, 1);
+});
+
+// ---------------------------------------------------------------------------
+// The bars
+// ---------------------------------------------------------------------------
+
+check('the tabs keep sale screens and bars apart', async (cdp) => {
+  await reset(cdp);
+  const sale = await cdp.eval(
+    `return [...document.getElementById('sp-screen').options].map((o) => o.text).join('|');`
+  );
+  assert.ok(sale.includes('OnzepTest'), 'the sale screens are not listed');
+  assert.ok(!sale.includes('Counter bar'), 'a bar is listed among the screens');
+
+  await cdp.eval(
+    `document.querySelector('.sp-surface[data-surface="bottombar"]').click(); return true;`
+  );
+  const bars = await cdp.eval(
+    `return [...document.getElementById('sp-screen').options].map((o) => o.text).join('|');`
+  );
+  // The bar this venue's tills are wearing, said in the picker rather than
+  // only in the card above it.
+  assert.strictEqual(bars, 'Counter bar — on your tills');
+
+  const isBar = await cdp.eval(
+    `return document.getElementById('sp-grid').classList.contains('bar');`
+  );
+  assert.ok(isBar, 'a bar is being drawn as a sale grid');
+});
+
+check('a bar is offered Pay, and a sale screen is not', async (cdp) => {
+  await reset(cdp);
+  const offered = async () =>
+    cdp.eval(
+      `spSelection = new Set(['0:0']); spRenderInspector();
+       return [...document.getElementById('sp-function').options].map((o) => o.value).join(',');`
+    );
+
+  const onSale = await offered();
+  assert.ok(!onSale.includes('pay'), 'Pay is on offer in the middle of the products');
+
+  await cdp.eval(
+    `document.querySelector('.sp-surface[data-surface="bottombar"]').click(); return true;`
+  );
+  const onBar = await offered();
+  assert.ok(onBar.includes('pay'), 'a bottom bar cannot take money');
+  assert.ok(onBar.includes('open_bills'), 'a bar cannot show the open tables');
+});
+
+check('a bar with no Pay key is called out before it reaches a counter', async (cdp) => {
+  await reset(cdp);
+  const warned = await cdp.eval(
+    `document.querySelector('.sp-surface[data-surface="topbar"]').click();
+     return document.getElementById('sp-issues').textContent;`
+  );
+  // The top bar in the fixture has its open-bills key, so it is sound.
+  assert.ok(
+    !/open-tables/i.test(warned),
+    'a sound top bar was reported as broken'
+  );
+
+  const nagged = await cdp.eval(
+    `spEdit(() => { spCurrent.buttons = []; });
+     return document.getElementById('sp-issues').textContent;`
+  );
+  assert.ok(/empty/i.test(nagged), 'an empty bar was reported as finished');
+});
+
+check('the card says what the tills are wearing', async (cdp) => {
+  await reset(cdp);
+  const drawn = await cdp.eval(
+    `return [...document.querySelectorAll('#sp-till-preview [data-part]')]
+       .map((el) => el.dataset.part + '=' + el.textContent).join('|');`
+  );
+  // Named where a name has been chosen, and the built-in described where one
+  // has not — which is the question a manager was opening this page to answer.
+  assert.strictEqual(
+    drawn,
+    'topbar=Open tables|sale=OnzepTest|bottombar=Counter bar'
+  );
+});
+
+check('choosing a default sends it straight away', async (cdp) => {
+  await reset(cdp);
+  const sent = await cdp.eval(
+    `const el = document.getElementById('sp-def-top');
+     el.value = '8';
+     el.dispatchEvent(new Event('change'));
+     return new Promise((go) => setTimeout(() => go(spDefaults.top), 250));`
+  );
+  assert.strictEqual(sent, 8, 'the top bar was never set');
+});
+
+// The bug the taller page exposed: `grid.focus()` ran before the geometry was
+// measured, so the focus scroll moved the grid between the pointer's
+// coordinates being taken and the box being read — and the first press after
+// landing on the page selected a key rows away from the one under the finger.
+check('a press lands on the key under it even when the page must scroll', async (cdp) => {
+  await reset(cdp);
+  // Bottom of the page, so the top of the grid is above the viewport and the
+  // browser has somewhere to scroll to if anything asks it to.
+  const before = await cdp.eval(
+    `window.scrollTo(0, document.documentElement.scrollHeight);
+     document.getElementById('sp-grid').blur();
+     return Math.round(window.scrollY);`
+  );
+
+  const at = await cdp.cell(3, 0);
+  await cdp.click(at.x, at.y);
+
+  const after = await cdp.eval(
+    `return { y: Math.round(window.scrollY), sel: [...spSelection].join(',') };`
+  );
+  assert.strictEqual(
+    after.y,
+    before,
+    'the press scrolled the page, which is what moved the grid under it'
+  );
+  assert.strictEqual(after.sel, '3:0', 'the press selected the wrong key');
 });
 
 check('nothing on the page threw while all that happened', async (cdp) => {

@@ -25,6 +25,8 @@ class TillSettings {
     this.printerNames = const {},
     this.kitchenDelivery = const {},
     this.homeScreenId,
+    this.topBarScreenId,
+    this.bottomBarScreenId,
   });
 
   /// The programmed screen this venue's tills open on, or null.
@@ -35,6 +37,16 @@ class TillSettings {
   /// it programmed, still gets a working sale screen. See
   /// docs/screen-programming.md §2.
   final int? homeScreenId;
+
+  /// The bars this venue's tills wear, or null for the built-in ones.
+  ///
+  /// Null carries exactly the same weight as it does on [homeScreenId]: it is
+  /// the venue's answer, not an absence of one, and it means the strip of open
+  /// bills along the top and Void / Cancel / Save Table … Pay along the bottom
+  /// — what every till has shown since before these were programmable, and what
+  /// a venue gets back the moment it deletes the bar it made.
+  final int? topBarScreenId;
+  final int? bottomBarScreenId;
 
   final bool idleEnabled;
 
@@ -139,6 +151,8 @@ class TillSettings {
       identical(this, other) ||
       other is TillSettings &&
           other.homeScreenId == homeScreenId &&
+          other.topBarScreenId == topBarScreenId &&
+          other.bottomBarScreenId == bottomBarScreenId &&
           other.idleEnabled == idleEnabled &&
           other.idleImageUrl == idleImageUrl &&
           other.idleAfterSale == idleAfterSale &&
@@ -177,6 +191,8 @@ class TillSettings {
   @override
   int get hashCode => Object.hash(
         homeScreenId,
+        topBarScreenId,
+        bottomBarScreenId,
         idleEnabled,
         idleImageUrl,
         idleAfterSale,
@@ -205,6 +221,8 @@ class TillSettings {
     final url = (j['idle_image_url'] as String?)?.trim();
     return TillSettings(
       homeScreenId: (j['home_screen_id'] as num?)?.toInt(),
+      topBarScreenId: (j['top_bar_screen_id'] as num?)?.toInt(),
+      bottomBarScreenId: (j['bottom_bar_screen_id'] as num?)?.toInt(),
       idleEnabled: _flag(j['idle_enabled']),
       idleImageUrl: url == null || url.isEmpty ? null : url,
       idleAfterSale: _flag(j['idle_after_sale']),

@@ -323,15 +323,34 @@ class _Key extends StatelessWidget {
     );
   }
 
-  /// The product's picture, or its emoji, or nothing.
+  /// The key's picture, or its emoji, or nothing.
   ///
   /// Nothing is the common case and has to cost nothing: most keys on most
   /// screens are a word on a colour, and that is the layout the venue arranged.
+  ///
+  /// The chain is the key's own face, then the product's. Two things follow
+  /// from that order and both were asked for:
+  ///
+  ///   * a page key can carry a picture at all — until the back office could
+  ///     set one, the only way a key had a face was to be a product that had
+  ///     one, so the venue that photographed its menu could not put its own
+  ///     picture on the FOOD key that leads to it;
+  ///   * a product key can be given a different face on one screen without
+  ///     changing the product everywhere else.
+  ///
+  /// And the fallback is what stops the feature un-decorating every screen a
+  /// venue had already programmed before it existed.
   Widget? _media() {
     final p = product;
-    if (p == null || button.kind != ScreenButtonKind.product) return null;
+    final isProduct = button.kind == ScreenButtonKind.product;
 
-    final image = p.imageUrl;
+    final image = button.imageUrl?.isNotEmpty == true
+        ? button.imageUrl
+        : (isProduct ? p?.imageUrl : null);
+    final ownEmoji = button.emoji?.isNotEmpty == true
+        ? button.emoji
+        : (isProduct ? p?.emoji : null);
+
     if (image != null && image.isNotEmpty) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(6),
@@ -349,12 +368,11 @@ class _Key extends StatelessWidget {
       );
     }
 
-    final emoji = p.emoji;
-    if (emoji != null && emoji.isNotEmpty) {
+    if (ownEmoji != null && ownEmoji.isNotEmpty) {
       return Center(
         child: FittedBox(
           fit: BoxFit.scaleDown,
-          child: Text(emoji, style: const TextStyle(fontSize: 34)),
+          child: Text(ownEmoji, style: const TextStyle(fontSize: 34)),
         ),
       );
     }

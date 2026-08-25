@@ -160,12 +160,25 @@ buys a venue nothing it wants and offers it a failure it cannot recover from at
 a counter.
 
 So the pay page's keys stay driven by configuration. The schema is shaped so
-that changing our minds is additive — a screen has a `surface` column, set to
-`sale` on every row, and nothing about a second surface would need a migration.
+that changing our minds is additive — a screen has a `surface` column, and
+nothing about a second surface would need a migration.
 
-The function strip along the bottom of the sale page is the same argument at
-smaller scale, and gets the same answer for now: Void, Save Table and Pay are
-not layout.
+> **The strip along the bottom used to be in this list, and is not any more.**
+>
+> It said: "the function strip along the bottom of the sale page is the same
+> argument at smaller scale, and gets the same answer for now: Void, Save Table
+> and Pay are not layout."
+>
+> That was wrong, and the way it was wrong is worth keeping. The pay page is a
+> workflow because *the order of its steps is load-bearing* — you cannot tender
+> before you have chosen how. The bottom bar has no order at all. It is ten
+> unrelated keys, and which ten, in what order, at what size, is exactly the
+> kind of thing that differs at every site: a table-service restaurant wants
+> Covers and Save Table where a takeaway counter wants neither and would rather
+> have Print and No Sale twice the size.
+>
+> The test "is this a menu or a workflow" was the right test. The strip was
+> filed on the wrong side of it. See §9.
 
 ---
 
@@ -318,3 +331,166 @@ terminal's sales are untouched and nothing needs clearing. `tool/inspect_db.dart
 is what told the two apart in the first place.
 
 Guarded by `test/startup_repair_test.dart` and `test/migration_rerun_test.dart`.
+
+---
+
+## 9. The bars
+
+The two strips of chrome around the sale grid are laid out by the venue too:
+
+* the **top bar** — the strip of open bills, `Current · Table 6 · Table 8 …`;
+* the **bottom bar** — `Void · Cancel · Save Table · … · Pay`.
+
+### A bar is a screen
+
+Not a new table, a new editor, or a new renderer. A bar is one or two rows of
+the same buttons the sale grid is made of, told apart by `epos_screens.surface`:
+
+```
+surface = 'sale'       a page of products              up to 10 x 12
+surface = 'topbar'     the strip along the top         up to  2 x 16
+surface = 'bottombar'  the strip along the bottom      up to  2 x 16
+```
+
+`surface` has been on that table since the first migration, waiting for exactly
+this. So the drag-select, the undo stack, the bulk colour, the whole-grid PUT,
+the socket push and the tenancy scoping all worked on bars on the day they
+existed, because none of them ever asked what kind of screen they were holding.
+
+Two rows rather than one, because `PosActionBar` already spills onto a second
+when the keys will not fit across one — a venue rebuilding its bar has to be
+able to express the bar it is replacing. Not three: past two the bar starts
+eating the grid, which is the screen a clerk actually works in.
+
+Sixteen columns rather than twelve, because a bar's cells are narrow by nature
+and the stock bottom bar is already ten keys plus a wide Pay. Twelve would have
+made "rebuild what you have, then change one thing" impossible on the first try.
+
+### Which bar a till wears
+
+```
+epos_till_settings.top_bar_screen_id       the venue's, or NULL
+epos_till_settings.bottom_bar_screen_id
+epos_screens.top_bar_id                    this one page's, or NULL
+epos_screens.bottom_bar_id
+```
+
+Resolved by `ScreenSet.barFor`: the screen's own, then the venue's, then none.
+**None means the built-in bar** — the same weight `home_screen_id` carries in
+§3. It is the venue's answer, not an absence of one, and it is what a venue gets
+back the moment it deletes the bar it made.
+
+The per-page override exists for a real request: a Drinks page whose bottom bar
+offers a round and a tab, where the food page offers Covers and Save Table. It
+costs two nullable columns and a dropdown, and it is null on nearly every row.
+
+No foreign keys, deliberately — same reasoning as `home_screen_id`. A bar
+deleted in the back office leaves these pointing at nothing and the till falling
+back to the built-in, rather than the delete being refused or a venue's home
+screen being cascaded away as a side effect of tidying up.
+
+`barFor` also checks the *surface* of what it finds, not just that it exists. A
+sale page worn as a bottom bar would draw a page of lagers squashed into the
+bottom two inches of a till. The back office refuses to set that — but a till
+reads rows it did not write, out of its own cache, put there by an older
+release, so it is checked at both ends.
+
+### The keys a bar may carry
+
+`BAR_KEYS` in `vesopa_server/src/screens.js`, in three groups:
+
+| group | keys |
+| --- | --- |
+| the bill | `pay` `void` `cancel` `save_table` `new_bill` `qty` `note` `covers` `customer` |
+| paper and cash | `print_bill` `last_bill` `open_drawer` |
+| go to | `go_sale` `go_tables` `go_receipts` `go_reports` `go_products` `go_functions` `go_settings` `sign_off` |
+| live displays | `open_bills` `order_total` `clock` `venue_name` `staff_name` `sync_status` `screen_name` `spacer` |
+
+The whitelist is per surface. `pay`, `void` and `cancel` are refused on a sale
+grid — a Pay key in the middle of a page of lagers, one row above Cancel, is a
+mis-press that costs a venue a bill — and the live displays are refused there
+too, because nothing on the grid draws them.
+
+`sign_off` ends the shift. It is deliberately **not** the rail's Logout, which
+de-commissions the terminal and needs a password: that on a bar, where it can be
+leaned on, is a different feature with a far worse failure.
+
+### Why the live displays exist
+
+This is the group that makes the feature safe rather than a trap.
+
+The top bar today *is* the strip of open bills. Without `open_bills` as a
+placeable key, a venue that programmed its own top bar would silently lose the
+ability to run two bills at once, and would find out at a counter on a Friday
+rather than in an office on a Tuesday. So the strip is a key you place, widen
+and colour — `OpenBillsStrip`, the same widget the built-in bar draws, inside
+one cell. It scrolls sideways rather than wrapping, so nine open tables in a
+narrow key is a strip you push along, not nine chips too small to read.
+
+The editor will not let that go quietly either: a top bar with no `open_bills`,
+or a bottom bar with no `pay`, is reported in **Needs attention** as a warning
+rather than an error. Neither is broken. Both are a layout somebody will save,
+walk away from, and discover in service.
+
+### The face on a key
+
+Buttons gained `emoji` and `image_url`. The chain is: the key's own, then — on a
+product key only — the product's own.
+
+Two things follow from that order, and both were asked for:
+
+* a **page** key can carry a picture at all. Until now the only way a key had a
+  face was to be a product that had one, so the venue that photographed its menu
+  could not put its own picture on the FOOD key that leads to it;
+* a **product** key can be given a different face on one screen without changing
+  the product everywhere else.
+
+And the fallback is what stops the feature quietly un-decorating every screen a
+venue had already programmed before it existed. The editor draws a borrowed face
+faded, and disables **Remove** on it, so "this key has a picture" and "this key
+was given a picture" stay distinguishable — otherwise clearing a key's own emoji
+looks like it did nothing.
+
+Pictures are on-site only, `/uploads/…` or `/assets/…`. A till on a venue
+network with no route to the open internet must not be able to draw a broken
+frame across its sale screen, weeks after the layout was arranged, in front of
+customers. The server drops anything else rather than storing it.
+
+### Finding it in the back office
+
+"How do I choose the screen my tills open on?" was being asked by people looking
+straight at the tick box that does it. A tick box on the screen you happen to be
+editing answers *is this one the default*; it never answers *which one is*.
+
+So the page now opens with **What your tills open with**: three named choices —
+sale screen, top bar, bottom bar — with a small drawing of a till beside them,
+each part labelled with the layout it is wearing and clickable as the way in to
+editing that part. The tick box stays, because it is the quick way once you know
+where you are.
+
+### Where it lives
+
+```
+vesopa_server/
+  schema_screens_bars.sql        emoji, image_url, top_bar_id, bottom_bar_id
+  schema_till_bars.sql           top_bar_screen_id, bottom_bar_screen_id
+  src/screens.js                 SURFACES, BAR_KEYS, PUT /screens/defaults
+  public/screens.js              surface tabs, the defaults card, the key face
+vesopa_epos/
+  lib/data/screens.dart          ScreenSurface, barFor, surfaceById
+  lib/ui/widgets/programmed_bar.dart    a bar, drawn
+  lib/ui/widgets/open_bills_strip.dart  the table strip, drawn by both bars
+```
+
+Guarded by `test/programmed_bar_test.dart`, `vesopa_server/test/screens.test.js`
+and `vesopa_server/test/backoffice-screens-ui.test.js`.
+
+**The two schema files are two on purpose.** `deploy.sh` applies `schema_*.sql`
+in `sort` order, and `epos_till_settings` is created in `schema_staff_idle.sql` —
+which sorts *after* `schema_screens_bars.sql`. A column added to that row from
+the screens file would fail on a fresh database and succeed on every server that
+already had one: green in testing, discovered by the first new venue. That is
+the failure in `vesopa_epos_kitchen/docs/architecture.md` under "The migration
+rename", which cost a venue its printer names, and this is the second time this
+feature has had to be split in two to avoid it. Adding another column to that
+row? Put it in a file named `schema_till_*.sql` and it is safe by construction.

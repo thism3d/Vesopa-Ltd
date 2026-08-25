@@ -10,6 +10,14 @@
  *
  *   screensRoutes     the back office, on a session token. Creates screens,
  *                     lays out buttons, decides which one is home.
+ *
+ *                     And "screen" here now includes the till's two bars. The
+ *                     strip of open bills along the top and the action bar
+ *                     along the bottom are rows of the same buttons the sale
+ *                     grid is made of, told apart by `surface` — so they are
+ *                     created, laid out, copied, pushed and scoped by the code
+ *                     that was already here rather than by a second system
+ *                     beside it. See §9 of the design doc.
  *   tillScreenRoutes  the tills, unauthenticated and scoped by an `office`
  *                     query — exactly as /till-settings/public already is. A
  *                     sale-screen layout is no more sensitive than the product
@@ -29,21 +37,32 @@ const { requireAuth } = require('./auth');
 const BUTTON_KINDS = ['product', 'page', 'function', 'blank'];
 
 /**
- * The till actions a button may be bound to.
+ * What a screen lays out. `epos_screens.surface` has held this since the first
+ * migration; 'sale' was the only value until the bars arrived.
+ */
+const SURFACES = ['sale', 'topbar', 'bottombar'];
+
+const isBar = (surface) => surface === 'topbar' || surface === 'bottombar';
+
+/**
+ * The till actions a button on a *sale screen* may be bound to.
  *
  * A whitelist, because this string is dispatched on by the till: an unknown key
  * is ignored there, but storing arbitrary text would mean a venue could fill a
  * screen with buttons that do nothing and have no way to find out why.
  *
- * Deliberately excludes Pay, Void and Save Table. Those live on the till's own
- * action bar and are not layout — see the design doc, §4.
+ * It excludes anything the till cannot actually do. `price_check` and
+ * `discount` were both in an earlier draft: the first is a feature that does
+ * not exist, and the second lives on the payment screen and is applied against
+ * a tender rather than a bill. Offering either would have let a manager place a
+ * key that looked programmed and did nothing, which is worse than not offering
+ * it — they are added here the day the till gains them.
  *
- * It also excludes anything the till cannot actually do. `price_check` and
- * `discount` were both in an earlier draft of this list: the first is a feature
- * that does not exist, and the second lives on the payment screen and is
- * applied against a tender rather than a bill. Offering either would have let a
- * manager place a key that looked programmed and did nothing, which is worse
- * than not offering it — they are added here the day the till gains them.
+ * Pay, Void and Save Table used to be excluded on the grounds that they "live
+ * on the till's action bar and are not layout". That was true right up until
+ * the action bar became layout, and they are offered on the bar surfaces below.
+ * They stay off the sale grid: a Pay key in the middle of a page of lagers,
+ * one row above Cancel, is a mis-press that costs a venue a bill.
  */
 const FUNCTION_KEYS = [
   'qty',
@@ -54,9 +73,106 @@ const FUNCTION_KEYS = [
   'print_bill',
 ];
 
+/**
+ * And what a button on a *bar* may be bound to.
+ *
+ * A longer list, because a bar is chrome: it is where the things that act on
+ * the whole bill live, and where the way out of the sale screen lives. Every
+ * key in here does something on the till today — the same rule as above, and
+ * the reason `discount` is still absent.
+ *
+ * Three groups, and the third is the interesting one:
+ *
+ *   actions      what the built-in bars already do, one key each, so a venue
+ *                that just wants its own order and colours can rebuild the
+ *                stock bar exactly and then change one thing.
+ *   navigation   `go_*`, which is the nav rail as keys. A venue that hides the
+ *                rail to buy back 208px of bill (see NavPanelMode) has to be
+ *                able to put Tables and Receipts back somewhere.
+ *   widgets      keys that are not keys. `open_bills` draws the live strip of
+ *                every bill in play — the thing the top bar *is* today — and
+ *                `clock`, `order_total`, `staff_name`, `venue_name`,
+ *                `sync_status` and `spacer` are the furniture around it.
+ *
+ * Without that widget group the whole feature would be a trap: a venue that
+ * programmed a top bar would silently lose the ability to serve two tables at
+ * once, and would find out at the counter. So the live bills are a key you can
+ * place, resize and colour, rather than something the bar loses when a venue
+ * touches it.
+ *
+ * One list for both bars rather than two. The top bar is the natural home for
+ * the total and the clock and the bottom bar for Pay, but a venue that wants
+ * Pay across the top of a handheld is not wrong, and a whitelist that enforced
+ * our taste would only be discovered as a missing option.
+ */
+const BAR_KEYS = [
+  // Actions — the built-in bottom bar, key for key.
+  'pay',
+  'void',
+  'cancel',
+  'save_table',
+  'new_bill',
+  'last_bill',
+  'qty',
+  'note',
+  'covers',
+  'customer',
+  'open_drawer',
+  'print_bill',
+
+  // Navigation — the nav rail, as keys.
+  'go_sale',
+  'go_tables',
+  'go_receipts',
+  'go_reports',
+  'go_products',
+  'go_functions',
+  'go_settings',
+  'sign_off',
+
+  // Widgets — the parts of the bar that draw rather than wait.
+  'open_bills',
+  'order_total',
+  'clock',
+  'venue_name',
+  'staff_name',
+  'sync_status',
+  'screen_name',
+  'spacer',
+];
+
+/** The keys a given surface will accept. */
+function functionKeysFor(surface) {
+  return isBar(surface) ? BAR_KEYS : FUNCTION_KEYS;
+}
+
 /** The largest grid worth offering. Past this the keys stop being tappable. */
 const MAX_ROWS = 10;
 const MAX_COLS = 12;
+
+/**
+ * A bar is a different shape of thing, so it gets different ceilings.
+ *
+ * Two rows, because the built-in action bar already spills onto a second when
+ * the keys will not fit across one, and a venue rebuilding it has to be able to
+ * express what it is replacing. Not three: past two rows the bar starts eating
+ * the grid, which is the screen a clerk actually works in — the same judgement
+ * PosActionBar makes in `_maxRows`, held in both places on purpose.
+ *
+ * Sixteen columns rather than twelve, because a bar's cells are narrow by
+ * nature and the stock bottom bar is already ten keys plus a wide Pay. Twelve
+ * would have made "rebuild what you have, then change one thing" impossible on
+ * the very first attempt.
+ */
+const MAX_BAR_ROWS = 2;
+const MAX_BAR_COLS = 16;
+
+/** The ceilings for one surface, as one thing, so nothing has to remember. */
+function limitsFor(surface) {
+  return isBar(surface)
+    ? { rows: MAX_BAR_ROWS, cols: MAX_BAR_COLS, defRows: 1, defCols: 10 }
+    : { rows: MAX_ROWS, cols: MAX_COLS, defRows: 5, defCols: 6 };
+}
 
 /** `#RRGGBB`, or null. Never anything else — the till parses this. */
 function cleanHex(raw) {
@@ -64,6 +180,33 @@ function cleanHex(raw) {
   if (!hex) return null;
   const withHash = hex.startsWith('#') ? hex : `#${hex}`;
   return /^#[0-9a-fA-F]{6}$/.test(withHash) ? withHash.toLowerCase() : null;
+}
+
+/**
+ * A picture path, or null.
+ *
+ * On-site only: `/uploads/...` or `/assets/...`, never an off-site URL. Same
+ * rule as the idle image and for the same reason — a till on a venue's own
+ * network with no route to the open internet must not be able to end up drawing
+ * a broken frame across its sale screen, and the failure would appear weeks
+ * after the layout was arranged, in front of customers.
+ */
+function cleanImage(raw) {
+  const url = String(raw ?? '').trim().slice(0, 500);
+  if (!url) return null;
+  return /^\/(uploads|assets)\//.test(url) ? url : null;
+}
+
+/**
+ * The emoji on a key.
+ *
+ * Not validated against a list of what is or is not an emoji. A venue that
+ * types "1/2" or "£" into this box has made a perfectly good key face, and a
+ * regex that let one through and not the other would be a bug report nobody
+ * could act on. Bounded and stored.
+ */
+function cleanEmoji(raw) {
+  return String(raw ?? '').trim().replace(/\s+/g, ' ').slice(0, 16) || null;
 }
 
 function clampInt(value, min, max, fallback) {
@@ -80,7 +223,7 @@ function clampInt(value, min, max, fallback) {
  * with a typo in it, a `kind` nobody has heard of: each of them is something a
  * person can produce, and each has to come out as a screen that draws.
  */
-function normaliseButton(raw, { rows, cols }) {
+function normaliseButton(raw, { rows, cols, surface = 'sale' }) {
   if (!raw || typeof raw !== 'object') return null;
 
   const kind = BUTTON_KINDS.includes(raw.kind) ? raw.kind : 'blank';
@@ -120,13 +263,21 @@ function normaliseButton(raw, { rows, cols }) {
     plu_id: kind === 'product' ? clampInt(raw.pluId, 0, 2147483647, null) : null,
     target_screen_id:
       kind === 'page' ? clampInt(raw.targetScreenId, 1, 2147483647, null) : null,
+    // Checked against the list for THIS surface, so a Pay key cannot be posted
+    // onto a page of lagers by hand-rolling the request, and a widget cannot be
+    // posted onto the sale grid where nothing would draw it.
     function_key:
-      kind === 'function' && FUNCTION_KEYS.includes(raw.functionKey)
+      kind === 'function' && functionKeysFor(surface).includes(raw.functionKey)
         ? raw.functionKey
         : null,
     label,
     fill: cleanHex(raw.fill),
     ink: cleanHex(raw.ink),
+    // The key's own face. Independent of the product's: a key with neither
+    // still falls back to the product's picture, which is what stops this
+    // feature un-decorating every screen a venue has already programmed.
+    emoji: cleanEmoji(raw.emoji),
+    image_url: cleanImage(raw.imageUrl),
   };
 }
 
@@ -145,6 +296,8 @@ function buttonToJson(row) {
     label: row.label,
     fill: row.fill,
     ink: row.ink,
+    emoji: row.emoji ?? null,
+    imageUrl: row.image_url ?? null,
   };
 }
 
@@ -156,18 +309,34 @@ function screenToJson(row, buttons = []) {
     rows: row.grid_rows,
     cols: row.grid_cols,
     sortOrder: row.sort_order,
+    // Which bars this page wants, when it does not want the venue's. Null is
+    // the answer for nearly every screen and means "use the default".
+    topBarId: row.top_bar_id ?? null,
+    bottomBarId: row.bottom_bar_id ?? null,
     buttons: buttons.map(buttonToJson),
   };
 }
 
-/** Every screen a venue has, with its buttons, in one query pair. */
-async function loadScreens(pool, office, { surface = 'sale' } = {}) {
+/**
+ * Every screen a venue has, with its buttons, in one query pair.
+ *
+ * Every *surface*, not just the sale pages. The till needs its bars in the same
+ * breath as its screens — a terminal that fetched the layout and then had to go
+ * back for the bar it wears would draw the stock bar for as long as that took,
+ * on every launch, and a venue would see its own bar snap into place a moment
+ * late for ever. `surface` comes back on each row and the caller sorts them out.
+ *
+ * `surface` may still be passed to ask for one kind, which the back office does
+ * not need and a future caller might.
+ */
+async function loadScreens(pool, office, { surface = null } = {}) {
   const [screens] = await pool.query(
-    `SELECT id, name, surface, grid_rows, grid_cols, sort_order
+    `SELECT id, name, surface, grid_rows, grid_cols, sort_order,
+            top_bar_id, bottom_bar_id
        FROM epos_screens
-      WHERE office = ? AND surface = ?
-      ORDER BY sort_order, name`,
-    [office, surface]
+      WHERE office = ?${surface ? ' AND surface = ?' : ''}
+      ORDER BY surface, sort_order, name`,
+    surface ? [office, surface] : [office]
   );
   if (!screens.length) return [];
 
@@ -256,6 +425,81 @@ function screensRoutes({ pool, broadcast, secret }) {
     }
   });
 
+  /**
+   * The three screens a till wears: its sale page, its top bar, its bottom bar.
+   *
+   * One route rather than three, because they are one decision — "this is what
+   * my tills look like" — and because a manager who sets a bottom bar and a home
+   * screen in one gesture should not be able to get half of it.
+   *
+   * Every key is optional and only what is sent is written, so this can also be
+   * used to change one of them. `null` is a real value here and means "back to
+   * the built-in", which is why the check is hasOwnProperty rather than truth.
+   *
+   * Declared BEFORE `/screens/:id`, exactly as /screens/home is, and for the
+   * same reason: with `:id` first this arrives as a screen whose id is the
+   * string "defaults", finds nothing and answers 404 for ever.
+   */
+  router.put('/screens/defaults', auth, async (req, res, next) => {
+    try {
+      const office = await tenantEmail(req);
+      const body = req.body || {};
+
+      const columns = {
+        homeScreenId: 'home_screen_id',
+        topBarScreenId: 'top_bar_screen_id',
+        bottomBarScreenId: 'bottom_bar_screen_id',
+      };
+
+      const sent = Object.keys(columns).filter((k) =>
+        Object.prototype.hasOwnProperty.call(body, k)
+      );
+      if (!sent.length) return res.status(400).json({ error: 'Nothing to set.' });
+
+      const values = {};
+      for (const key of sent) {
+        const id = body[key] === null || body[key] === '' ? null : body[key];
+        if (id !== null) {
+          const screen = await screenFor(office, id);
+          if (!screen) return res.status(404).json({ error: 'No such screen' });
+
+          // A sale page cannot be worn as a bar, and a bar cannot be opened as
+          // a sale page. Refused rather than accepted-and-ignored: a manager who
+          // picks the wrong one from a list has to be told at the moment they
+          // pick it, not by walking to a till.
+          const wants =
+            key === 'homeScreenId'
+              ? 'sale'
+              : key === 'topBarScreenId'
+                ? 'topbar'
+                : 'bottombar';
+          if (screen.surface !== wants) {
+            return res.status(400).json({
+              error: `"${screen.name}" is a ${screen.surface} layout, not a ${wants} one.`,
+            });
+          }
+        }
+        values[columns[key]] = id;
+      }
+
+      const cols = Object.keys(values);
+      await pool.execute(
+        `INSERT INTO epos_till_settings (office, ${cols.join(', ')})
+         VALUES (?${', ?'.repeat(cols.length)})
+         ON DUPLICATE KEY UPDATE
+           ${cols.map((c) => `${c} = VALUES(${c})`).join(', ')}`,
+        [office, ...cols.map((c) => values[c])]
+      );
+
+      // The tills read all three off the till-settings row, so it is that
+      // broadcast they are listening for — not the screens one.
+      broadcast({ type: 'till-settings', office }, { office });
+      res.json({ ok: true, ...body });
+    } catch (e) {
+      next(e);
+    }
+  });
+
   router.get('/screens', auth, async (req, res, next) => {
     try {
       res.json(await loadScreens(pool, await tenantEmail(req)));
@@ -294,8 +538,13 @@ function screensRoutes({ pool, broadcast, secret }) {
       const name = String(req.body?.name || '').trim().slice(0, 60);
       if (!name) return res.status(400).json({ error: 'A name is required.' });
 
-      const rows = clampInt(req.body?.rows, 1, MAX_ROWS, 5);
-      const cols = clampInt(req.body?.cols, 1, MAX_COLS, 6);
+      const surface = SURFACES.includes(req.body?.surface)
+        ? req.body.surface
+        : 'sale';
+      const max = limitsFor(surface);
+
+      const rows = clampInt(req.body?.rows, 1, max.rows, max.defRows);
+      const cols = clampInt(req.body?.cols, 1, max.cols, max.defCols);
 
       const source = req.body?.copyFromId
         ? await screenFor(office, req.body.copyFromId)
@@ -303,21 +552,34 @@ function screensRoutes({ pool, broadcast, secret }) {
       if (req.body?.copyFromId && !source) {
         return res.status(404).json({ error: 'No such screen to copy.' });
       }
+      // Copying across surfaces would bring keys the destination cannot hold —
+      // a Pay key onto a sale page, an `open_bills` widget onto a grid that has
+      // nothing to draw it with. Refused with the reason rather than silently
+      // dropping half the buttons, which is how a copy looks like it worked.
+      if (source && source.surface !== surface) {
+        return res.status(400).json({
+          error: `"${source.name}" is a ${source.surface} layout and cannot be copied into a ${surface} one.`,
+        });
+      }
 
+      // Per surface, so a new bottom bar does not sort itself to the end of the
+      // sale screens and land the venue's pages in an order nobody chose.
       const [[{ next: sortOrder }]] = await pool.query(
         `SELECT COALESCE(MAX(sort_order), -1) + 1 AS next
-           FROM epos_screens WHERE office = ?`,
-        [office]
+           FROM epos_screens WHERE office = ? AND surface = ?`,
+        [office, surface]
       );
 
       let created;
       try {
         [created] = await pool.execute(
-          `INSERT INTO epos_screens (office, name, grid_rows, grid_cols, sort_order)
-           VALUES (?, ?, ?, ?, ?)`,
+          `INSERT INTO epos_screens
+             (office, name, surface, grid_rows, grid_cols, sort_order)
+           VALUES (?, ?, ?, ?, ?, ?)`,
           [
             office,
             name,
+            surface,
             source ? source.grid_rows : rows,
             source ? source.grid_cols : cols,
             sortOrder,
@@ -339,9 +601,11 @@ function screensRoutes({ pool, broadcast, secret }) {
         await pool.execute(
           `INSERT INTO epos_screen_buttons
              (screen_id, office, grid_row, grid_col, row_span, col_span,
-              kind, plu_id, target_screen_id, function_key, label, fill, ink)
+              kind, plu_id, target_screen_id, function_key, label, fill, ink,
+              emoji, image_url)
            SELECT ?, office, grid_row, grid_col, row_span, col_span,
-                  kind, plu_id, target_screen_id, function_key, label, fill, ink
+                  kind, plu_id, target_screen_id, function_key, label, fill, ink,
+                  emoji, image_url
              FROM epos_screen_buttons WHERE screen_id = ?`,
           [created.insertId, source.id]
         );
@@ -371,18 +635,50 @@ function screensRoutes({ pool, broadcast, secret }) {
         : screen.name;
       if (!name) return res.status(400).json({ error: 'A name is required.' });
 
-      const rows = clampInt(req.body?.rows, 1, MAX_ROWS, screen.grid_rows);
-      const cols = clampInt(req.body?.cols, 1, MAX_COLS, screen.grid_cols);
+      const max = limitsFor(screen.surface);
+      const rows = clampInt(req.body?.rows, 1, max.rows, screen.grid_rows);
+      const cols = clampInt(req.body?.cols, 1, max.cols, screen.grid_cols);
+
+      // Which bars this page wants. Only touched when sent, and `null` is a
+      // real value meaning "back to the venue's default" — so the check is
+      // hasOwnProperty, not truth, exactly as /screens/defaults does it.
+      //
+      // The referenced screen is verified to be this office's and to be a bar
+      // of the right end. A sale page set as a bottom bar would draw nothing a
+      // clerk could press, and would look like the feature was broken rather
+      // than like the wrong row was picked from a list.
+      const bars = {};
+      for (const [field, column, wants] of [
+        ['topBarId', 'top_bar_id', 'topbar'],
+        ['bottomBarId', 'bottom_bar_id', 'bottombar'],
+      ]) {
+        if (!Object.prototype.hasOwnProperty.call(req.body || {}, field)) continue;
+        const id = req.body[field] === null || req.body[field] === ''
+          ? null
+          : req.body[field];
+        if (id !== null) {
+          const bar = await screenFor(office, id);
+          if (!bar || bar.surface !== wants) {
+            return res.status(400).json({ error: `No such ${wants}.` });
+          }
+        }
+        bars[column] = id;
+      }
+
+      const barSet = Object.keys(bars)
+        .map((c) => `, ${c} = ?`)
+        .join('');
 
       await pool.execute(
         `UPDATE epos_screens
-            SET name = ?, grid_rows = ?, grid_cols = ?, sort_order = ?
+            SET name = ?, grid_rows = ?, grid_cols = ?, sort_order = ?${barSet}
           WHERE id = ? AND office = ?`,
         [
           name,
           rows,
           cols,
           clampInt(req.body?.sortOrder, 0, 100000, screen.sort_order),
+          ...Object.values(bars),
           screen.id,
           office,
         ]
@@ -399,7 +695,12 @@ function screensRoutes({ pool, broadcast, secret }) {
       );
 
       pushed(office);
-      res.json(screenToJson(await screenFor(office, screen.id)));
+      const [kept] = await pool.query(
+        `SELECT * FROM epos_screen_buttons WHERE screen_id = ?
+          ORDER BY grid_row, grid_col`,
+        [screen.id]
+      );
+      res.json(screenToJson(await screenFor(office, screen.id), kept));
     } catch (e) {
       next(e);
     }
@@ -429,6 +730,24 @@ function screensRoutes({ pool, broadcast, secret }) {
           WHERE office = ? AND home_screen_id = ?`,
         [office, screen.id]
       );
+      // The same, for a bar. Both columns in one statement: a bar deleted while
+      // it was the venue's top bar has to leave the tills wearing the built-in
+      // one, not wearing a row that is no longer there.
+      await pool.execute(
+        `UPDATE epos_till_settings
+            SET top_bar_screen_id = IF(top_bar_screen_id = ?, NULL, top_bar_screen_id),
+                bottom_bar_screen_id = IF(bottom_bar_screen_id = ?, NULL, bottom_bar_screen_id)
+          WHERE office = ?`,
+        [screen.id, screen.id, office]
+      );
+      // And any single page that had asked for it.
+      await pool.execute(
+        `UPDATE epos_screens
+            SET top_bar_id = IF(top_bar_id = ?, NULL, top_bar_id),
+                bottom_bar_id = IF(bottom_bar_id = ?, NULL, bottom_bar_id)
+          WHERE office = ?`,
+        [screen.id, screen.id, office]
+      );
       await pool.execute('DELETE FROM epos_screens WHERE id = ? AND office = ?', [
         screen.id,
         office,
@@ -455,7 +774,11 @@ function screensRoutes({ pool, broadcast, secret }) {
       const screen = await screenFor(office, req.params.id);
       if (!screen) return res.status(404).json({ error: 'No such screen' });
 
-      const grid = { rows: screen.grid_rows, cols: screen.grid_cols };
+      const grid = {
+        rows: screen.grid_rows,
+        cols: screen.grid_cols,
+        surface: screen.surface,
+      };
       const seen = new Set();
       const rows = [];
 
@@ -491,8 +814,9 @@ function screensRoutes({ pool, broadcast, secret }) {
           await connection.execute(
             `INSERT INTO epos_screen_buttons
                (screen_id, office, grid_row, grid_col, row_span, col_span,
-                kind, plu_id, target_screen_id, function_key, label, fill, ink)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                kind, plu_id, target_screen_id, function_key, label, fill, ink,
+                emoji, image_url)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               screen.id,
               office,
@@ -507,6 +831,8 @@ function screensRoutes({ pool, broadcast, secret }) {
               b.label,
               b.fill,
               b.ink,
+              b.emoji,
+              b.image_url,
             ]
           );
         }
@@ -570,8 +896,16 @@ module.exports = {
   tillScreenRoutes,
   normaliseButton,
   cleanHex,
+  cleanImage,
+  cleanEmoji,
+  functionKeysFor,
+  limitsFor,
   BUTTON_KINDS,
+  SURFACES,
   FUNCTION_KEYS,
+  BAR_KEYS,
   MAX_ROWS,
   MAX_COLS,
+  MAX_BAR_ROWS,
+  MAX_BAR_COLS,
 };

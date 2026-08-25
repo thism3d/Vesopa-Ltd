@@ -776,9 +776,10 @@
             <div>
               <h2>Screen programming</h2>
               <p class="muted small">
-                Lay out the buttons your tills show when they ring up a sale. Every button is
-                either a product, a jump to another screen, or a till function — so a category
-                down the side is just a screen with a button pointing at it.
+                Lay out what your tills show. The sale screen is a grid of buttons — each one a
+                product, a jump to another screen, or a till function — and the two strips of
+                chrome around it are laid out the same way: the <strong>top bar</strong> that
+                carries your open tables, and the <strong>bottom bar</strong> that carries Pay.
               </p>
             </div>
             <div class="denom-actions">
@@ -789,7 +790,69 @@
             </div>
           </div>
 
+          <!-- What the tills wear.
+               First on the page and its own card, because "how do I choose the
+               screen my tills open on?" was being asked by people looking
+               straight at the tick box that does it. A tick box on the screen
+               you happen to be editing answers "is this one the default"; it
+               never answers "which one is". Three named choices, in one place,
+               with the till drawn beside them, do. -->
+          <div class="card sp-defaults">
+            <div class="sp-defaults-head">
+              <h3>What your tills open with</h3>
+              <span class="muted small">
+                Every till in this venue. <em>Built-in</em> leaves that part exactly as it is today.
+              </span>
+              <span class="sp-flag" id="sp-defaults-state" hidden></span>
+            </div>
+            <div class="sp-defaults-grid">
+              <label>Sale screen
+                <select id="sp-def-home"></select>
+              </label>
+              <label>Top bar
+                <select id="sp-def-top"></select>
+              </label>
+              <label>Bottom bar
+                <select id="sp-def-bottom"></select>
+              </label>
+              <!-- A drawing of the till, not a list of names. Which of three
+                   layouts is the bottom one is a question a picture answers and
+                   a dropdown does not. -->
+              <div class="sp-till" id="sp-till-preview" aria-hidden="true">
+                <div class="sp-till-top" data-part="topbar"></div>
+                <div class="sp-till-body">
+                  <div class="sp-till-bill"></div>
+                  <div class="sp-till-grid" data-part="sale"></div>
+                </div>
+                <div class="sp-till-bottom" data-part="bottombar"></div>
+              </div>
+            </div>
+          </div>
+
           <div class="sp-bar">
+            <!-- Which kind of layout is being edited. Tabs rather than a fourth
+                 dropdown: a bar and a sale screen are not two rows in one list,
+                 they are different things that happen to be built the same way,
+                 and mixing them in one picker is how a manager opens a bottom
+                 bar expecting a sale page.
+
+                 In the toolbar rather than on a row of their own, because three
+                 stacked strips of chrome pushed the bottom of the grid off a
+                 1000px window — and the grid is the thing this page is for. -->
+            <div class="sp-surfaces" role="tablist">
+              <button type="button" class="sp-surface on" role="tab" data-surface="sale" title="Pages of products">
+                <span class="sp-surface-art sale"></span>
+                Screens
+              </button>
+              <button type="button" class="sp-surface" role="tab" data-surface="topbar" title="The strip that carries your open tables">
+                <span class="sp-surface-art top"></span>
+                Top bars
+              </button>
+              <button type="button" class="sp-surface" role="tab" data-surface="bottombar" title="The strip that carries Pay">
+                <span class="sp-surface-art bottom"></span>
+                Bottom bars
+              </button>
+            </div>
             <label class="sp-pick">Screen
               <select id="sp-screen"></select>
             </label>
@@ -806,22 +869,47 @@
               <input type="number" id="sp-rows" min="1" max="10" step="1">
             </label>
             <label class="sp-pick">Columns
-              <input type="number" id="sp-cols" min="1" max="12" step="1">
+              <input type="number" id="sp-cols" min="1" max="16" step="1">
             </label>
+            <!-- Per-screen bars. Hidden on the bar surfaces themselves, where
+                 the question makes no sense, and hidden until a venue has a bar
+                 to choose — an empty dropdown offering nothing is a feature
+                 that looks broken. -->
+            <span class="sp-perscreen" id="sp-perscreen" hidden>
+              <label class="sp-pick" title="Give just this screen a different top bar from the rest of the venue.">Top bar
+                <select id="sp-screen-top"></select>
+              </label>
+              <label class="sp-pick" title="Give just this screen a different bottom bar from the rest of the venue.">Bottom bar
+                <select id="sp-screen-bottom"></select>
+              </label>
+            </span>
             <span class="sp-spacer"></span>
             <label class="check" title="Hide the editor's empty cells and see the grid as a clerk does.">
               <input type="checkbox" id="sp-preview"> Preview
             </label>
-            <label class="check" title="The screen a till opens on. Off means the built-in Default, which is drawn from your product list.">
-              <input type="checkbox" id="sp-home"> Tills open on this screen
+            <label class="check" id="sp-home-wrap" title="The screen a till opens on. Off means the built-in Default, which is drawn from your product list.">
+              <input type="checkbox" id="sp-home"> Tills open on this
             </label>
           </div>
 
+
           <div class="sp-layout">
             <div>
-              <!-- The grid, drawn at the till's own proportions so what is
-                   arranged here is what a clerk sees. -->
-              <div id="sp-grid" class="sp-grid" tabindex="0"></div>
+              <!-- The stage: the grid, with a dimmed drawing of the rest of the
+                   till around it when a bar is being edited. A bottom bar laid
+                   out in a box on its own is eleven keys in a vacuum; laid out
+                   under a ghost of the sale screen it is obviously the strip
+                   along the bottom of a till, and how wide each key wants to be
+                   becomes a thing you can see rather than work out. -->
+              <div class="sp-stage" id="sp-stage">
+                <div class="sp-ghost sp-ghost-top" id="sp-ghost-top" hidden>
+                  <span>the sale screen sits here</span>
+                </div>
+                <div id="sp-grid" class="sp-grid" tabindex="0"></div>
+                <div class="sp-ghost sp-ghost-bottom" id="sp-ghost-bottom" hidden>
+                  <span>the sale screen sits here</span>
+                </div>
+              </div>
               <!-- What the layout holds, and whether it is saved. Under the
                    grid rather than in the panel: it is about the screen, not
                    about the selection. -->
@@ -873,13 +961,42 @@
                     <select id="sp-target"></select>
                   </label>
 
-                  <label class="sp-field" data-for="function" hidden>Function
-                    <select id="sp-function"></select>
-                  </label>
+                  <div class="sp-field" data-for="function" hidden>
+                    <label>Function
+                      <select id="sp-function"></select>
+                    </label>
+                    <p class="muted small" id="sp-function-note" style="margin:4px 0 0"></p>
+                  </div>
 
                   <label style="margin-top:10px">Label
                     <input id="sp-label" maxlength="40" placeholder="Leave empty to use its own name">
                   </label>
+
+                  <!-- The key's face.
+                       Until now the only way a key could carry a picture was to
+                       be a product that had one, so a page key could never be
+                       anything but a word — and the venue that photographed its
+                       menu could not put its own picture on the FOOD key that
+                       leads to it. -->
+                  <div class="sp-face">
+                    <div class="sp-face-head">
+                      <span>Picture on the key</span>
+                      <button type="button" class="btn ghost small" id="sp-face-clear">Remove</button>
+                    </div>
+                    <div class="sp-emoji-row">
+                      <input id="sp-emoji" maxlength="16" placeholder="Emoji, or a couple of characters">
+                      <div class="sp-emoji-palette" id="sp-emoji-palette"></div>
+                    </div>
+                    <div class="sp-image-row">
+                      <span class="sp-image-preview" id="sp-image-preview"></span>
+                      <div class="sp-image-actions">
+                        <button type="button" class="btn ghost small" id="sp-image-upload">Upload a picture…</button>
+                        <input type="file" id="sp-image-file" accept="image/*" hidden>
+                      </div>
+                    </div>
+                    <div class="sp-gallery" id="sp-gallery"></div>
+                    <p class="muted small" id="sp-face-note" style="margin:6px 0 0"></p>
+                  </div>
 
                   <div class="sp-swatches" id="sp-fills"></div>
                   <label style="margin-top:10px">Lettering
@@ -901,7 +1018,7 @@
 
                   <div class="sp-spans">
                     <label>Width
-                      <input type="number" id="sp-colspan" min="1" max="12" step="1">
+                      <input type="number" id="sp-colspan" min="1" max="16" step="1">
                     </label>
                     <label>Height
                       <input type="number" id="sp-rowspan" min="1" max="10" step="1">
@@ -922,15 +1039,15 @@
               <div class="card rd-card" id="sp-issues-card" hidden>
                 <h3>Needs attention</h3>
                 <p class="muted small" style="margin:0 0 10px">
-                  These keys point at something that no longer exists. A clerk meets them as a
-                  key that refuses the press.
+                  Things a clerk would meet at the counter. A key that points at something no
+                  longer there refuses the press.
                 </p>
                 <div id="sp-issues" class="sp-issues"></div>
               </div>
 
               <!-- Bulk fill. The reference's best idea, and the one thing that
                    turns laying out a screen from an afternoon into a minute. -->
-              <div class="card rd-card">
+              <div class="card rd-card" id="sp-fill-card">
                 <h3>Fill from a department</h3>
                 <p class="muted small" style="margin:0 0 10px">
                   Select some empty buttons, choose a department, and its products drop in — in
@@ -941,6 +1058,20 @@
                 </label>
                 <div class="denom-actions" style="margin-top:10px">
                   <button type="button" class="btn ghost small" id="sp-fill">Fill the selection</button>
+                </div>
+              </div>
+
+              <!-- The same idea for a bar, and the reason a venue ever gets one
+                   finished: eleven keys typed in one at a time is where this
+                   feature would otherwise be abandoned. -->
+              <div class="card rd-card" id="sp-preset-card" hidden>
+                <h3>Start from the built-in bar</h3>
+                <p class="muted small" style="margin:0 0 10px">
+                  Drops in the bar your tills show today, key for key, so you can move one thing
+                  rather than rebuild ten.
+                </p>
+                <div class="denom-actions">
+                  <button type="button" class="btn ghost small" id="sp-preset">Lay out the built-in bar</button>
                 </div>
               </div>
             </div>

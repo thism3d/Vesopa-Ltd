@@ -42,7 +42,25 @@
  * `selected` class is toggled.
  */
 
-/** The till functions a button may be bound to. Mirrors FUNCTION_KEYS. */
+/**
+ * What a screen lays out.
+ *
+ * A bar is a screen. The strip of open tables along the top of the till and the
+ * strip of keys along the bottom are one or two rows of the same buttons the
+ * sale grid is made of, so everything below — the drag, the undo, the bulk
+ * colour, the whole-grid save — works on them without knowing they are bars.
+ * Only three things differ: the ceilings, the list of functions on offer, and
+ * the shape the editor draws them in.
+ */
+const SP_SURFACES = [
+  ['sale', 'Sale screens'],
+  ['topbar', 'Top bars'],
+  ['bottombar', 'Bottom bars'],
+];
+
+const spIsBar = (surface) => surface === 'topbar' || surface === 'bottombar';
+
+/** The till functions a button on a sale screen may be bound to. */
 const SP_FUNCTIONS = [
   ['qty', 'Quantity'],
   ['note', 'Note'],
@@ -50,6 +68,94 @@ const SP_FUNCTIONS = [
   ['customer', 'Customer'],
   ['open_drawer', 'No sale (open drawer)'],
   ['print_bill', 'Print bill'],
+];
+
+/**
+ * And on a bar. Mirrors BAR_KEYS in vesopa_server/src/screens.js.
+ *
+ * Grouped, because it is a long list and a flat one of twenty-eight options is
+ * a list nobody reads to the end of. The last group is the one that makes the
+ * feature safe: `open_bills` is the strip of open tables the top bar *is*
+ * today, offered as a key you can place, widen and colour — so a venue that
+ * programs its own top bar does not silently lose the ability to run two bills
+ * at once and find out at the counter.
+ */
+const SP_BAR_GROUPS = [
+  ['The bill', [
+    ['pay', 'Pay'],
+    ['void', 'Void'],
+    ['cancel', 'Cancel'],
+    ['save_table', 'Save to table'],
+    ['new_bill', 'New bill'],
+    ['qty', 'Quantity'],
+    ['note', 'Note'],
+    ['covers', 'Covers'],
+    ['customer', 'Customer'],
+  ]],
+  ['Paper and cash', [
+    ['print_bill', 'Print bill'],
+    ['last_bill', 'Last bill'],
+    ['open_drawer', 'No sale (open drawer)'],
+  ]],
+  ['Go to', [
+    ['go_sale', 'Sale'],
+    ['go_tables', 'Tables'],
+    ['go_receipts', 'Receipts'],
+    ['go_reports', 'Reports'],
+    ['go_products', 'Products'],
+    ['go_functions', 'Functions'],
+    ['go_settings', 'Settings'],
+    ['sign_off', 'Sign off'],
+  ]],
+  ['Live displays', [
+    ['open_bills', 'Open bills — the table strip'],
+    ['order_total', 'Bill total'],
+    ['clock', 'Clock'],
+    ['venue_name', 'Venue name'],
+    ['staff_name', 'Who is signed on'],
+    ['sync_status', 'Online / offline'],
+    ['screen_name', 'Name of the open screen'],
+    ['spacer', 'Blank space'],
+  ]],
+];
+
+/** Every function name in one lookup, whatever surface it belongs to. */
+const SP_FUNCTION_LABEL = new Map([
+  ...SP_FUNCTIONS,
+  ...SP_BAR_GROUPS.flatMap(([, keys]) => keys),
+]);
+
+/** The functions on offer for a surface, as [group, [[key, label], …]] pairs. */
+function spFunctionsFor(surface) {
+  return spIsBar(surface) ? SP_BAR_GROUPS : [['', SP_FUNCTIONS]];
+}
+
+/** Keys that draw something live rather than waiting to be pressed. */
+const SP_WIDGET_KEYS = new Set([
+  'open_bills',
+  'order_total',
+  'clock',
+  'venue_name',
+  'staff_name',
+  'sync_status',
+  'screen_name',
+  'spacer',
+]);
+
+/**
+ * A starting point for the emoji field.
+ *
+ * A palette rather than a picker, for the same reason the colours are swatches:
+ * an emoji keyboard on a back-office screen is a search box, and what a venue
+ * actually wants is the twenty pictures that mean something on a till. Anything
+ * else can still be typed or pasted into the box beside it — this is a shortcut,
+ * not a whitelist.
+ */
+const SP_EMOJI = [
+  '🍔', '🍟', '🍕', '🌭', '🥪', '🍗', '🐟', '🥗', '🍜', '🍝',
+  '🍰', '🍨', '🍩', '🍪', '☕', '🫖', '🍺', '🍷', '🥃', '🍸',
+  '🥤', '🧃', '🧊', '🔥', '⭐', '❤️', '🎁', '🧾', '💷', '💳',
+  '🔙', '➡️', '🏠', '🧑‍🍳', '🪑', '🚬', '🥡', '📦', '🕒', '🔔',
 ];
 
 /**
@@ -69,12 +175,36 @@ const SP_FILLS = [
 const SP_MAX_ROWS = 10;
 const SP_MAX_COLS = 12;
 
+/** A bar's own. Mirrors MAX_BAR_ROWS / MAX_BAR_COLS. */
+const SP_MAX_BAR_ROWS = 2;
+const SP_MAX_BAR_COLS = 16;
+
+function spLimits(surface) {
+  return spIsBar(surface)
+    ? { rows: SP_MAX_BAR_ROWS, cols: SP_MAX_BAR_COLS, defRows: 1, defCols: 10 }
+    : { rows: SP_MAX_ROWS, cols: SP_MAX_COLS, defRows: 5, defCols: 6 };
+}
+
 /** Deep enough to cover a session's mistakes, shallow enough to hold in hand. */
 const SP_UNDO_LIMIT = 60;
 
 let spScreens = [];
 let spProducts = [];
-let spHomeId = null;
+
+/**
+ * The three screens this venue's tills wear, by id. Null means the built-in.
+ *
+ * All three together rather than a lone `spHomeId`, because they are one
+ * decision — "this is what my tills look like" — and the page now draws them
+ * as one.
+ */
+let spDefaults = { home: null, top: null, bottom: null };
+
+/** Which kind of layout is being edited: the tab across the top. */
+let spSurface = 'sale';
+
+/** Every picture this venue already has to hand, for the key-face gallery. */
+let spGallery = [];
 
 /** The screen being edited, as a working copy so Revert has a target. */
 let spCurrent = null;
@@ -138,10 +268,28 @@ async function loadScreens() {
 
   spScreens = screens;
   spProducts = products;
-  spHomeId = settings.home_screen_id ?? null;
+  spDefaults = {
+    home: settings.home_screen_id ?? null,
+    top: settings.top_bar_screen_id ?? null,
+    bottom: settings.bottom_bar_screen_id ?? null,
+  };
   spProductOptionsSig = '';
 
+  // Pictures this venue already has, offered as a strip to click rather than a
+  // path to type. Products first because they are the ones with pictures, then
+  // anything already used on a key — so a venue's second FOOD button can wear
+  // the same picture as its first without going to find the file again.
+  spGallery = [
+    ...new Set([
+      ...spProducts.map((p) => p.image_url).filter(Boolean),
+      ...spScreens.flatMap((s) => (s.buttons || []).map((b) => b.imageUrl)).filter(Boolean),
+    ]),
+  ].slice(0, 40);
+
+  // A screen deleted, or the tab moved: keep the editor pointing at something
+  // that exists on the surface being shown.
   const keep = spCurrent && spScreens.find((s) => s.id === spCurrent.id);
+  if (keep) spSurface = keep.surface || 'sale';
 
   if (keep && spDirty()) {
     // Unsaved work in hand. The lists behind the pickers are refreshed — a
@@ -151,11 +299,22 @@ async function loadScreens() {
   } else {
     // Stay on the screen being edited across a reload, so saving does not
     // bounce the manager back to the first one in the list.
-    spSelect(keep ? keep.id : spScreens[0] ? spScreens[0].id : null);
+    const first = spOnSurface()[0];
+    spSelect(keep ? keep.id : first ? first.id : null);
   }
 
   spBind();
   spRenderChrome();
+}
+
+/** The screens on the surface being edited, in the order the tills read them. */
+function spOnSurface(surface = spSurface) {
+  return spScreens.filter((s) => (s.surface || 'sale') === surface);
+}
+
+/** The surface of the screen in hand, which is what every limit follows. */
+function spCurrentSurface() {
+  return (spCurrent && spCurrent.surface) || spSurface;
 }
 
 /** Point the editor at a screen, discarding whatever was in hand. */
@@ -233,10 +392,28 @@ function spLabelFor(b) {
     return target ? target.name : 'Missing screen';
   }
   if (b.kind === 'function') {
-    const found = SP_FUNCTIONS.find(([k]) => k === b.functionKey);
-    return found ? found[1] : 'Unset function';
+    return SP_FUNCTION_LABEL.get(b.functionKey) || 'Unset function';
   }
   return '';
+}
+
+/**
+ * The product whose picture a key would borrow, if it borrows one.
+ *
+ * A key with no face of its own still shows the product's — which is what stops
+ * this feature quietly un-decorating every screen a venue has already
+ * programmed. The editor draws the borrowed one dimmed, so "this key has a
+ * picture" and "this key was given a picture" stay distinguishable.
+ */
+function spFaceFor(b) {
+  if (!b) return null;
+  if (b.emoji || b.imageUrl) {
+    return { emoji: b.emoji || '', image: b.imageUrl || '', own: true };
+  }
+  if (b.kind !== 'product') return null;
+  const p = spProducts.find((x) => Number(x.pluid) === Number(b.pluId));
+  if (!p || (!p.emoji && !p.image_url)) return null;
+  return { emoji: p.emoji || '', image: p.image_url || '', own: false };
 }
 
 function spMissing(b) {
@@ -284,6 +461,8 @@ function spShape(screen) {
         b.label ?? '',
         b.fill ?? '',
         b.ink ?? '',
+        b.emoji ?? '',
+        b.imageUrl ?? '',
       ].join('|')
     )
     .sort();
@@ -559,9 +738,10 @@ function spPasteClipboard() {
  */
 function spResizeGrid(rows, cols) {
   if (!spCurrent) return;
+  const max = spLimits(spCurrentSurface());
   const wanted = {
-    rows: Math.max(1, Math.min(SP_MAX_ROWS, Number(rows) || spCurrent.rows)),
-    cols: Math.max(1, Math.min(SP_MAX_COLS, Number(cols) || spCurrent.cols)),
+    rows: Math.max(1, Math.min(max.rows, Number(rows) || spCurrent.rows)),
+    cols: Math.max(1, Math.min(max.cols, Number(cols) || spCurrent.cols)),
   };
   if (wanted.rows === spCurrent.rows && wanted.cols === spCurrent.cols) return;
 
@@ -591,21 +771,30 @@ function spResizeGrid(rows, cols) {
 // ---------------------------------------------------------------------------
 
 function spRenderChrome() {
+  const surface = spCurrentSurface();
+  const bar = spIsBar(surface);
+  const mine = spOnSurface(surface);
+
+  for (const tab of document.querySelectorAll('.sp-surface')) {
+    tab.classList.toggle('on', tab.dataset.surface === spSurface);
+    tab.setAttribute('aria-selected', String(tab.dataset.surface === spSurface));
+  }
+
   const picker = $('sp-screen');
-  picker.innerHTML = spScreens.length
-    ? spScreens
+  picker.innerHTML = mine.length
+    ? mine
         .map(
           (s) =>
             `<option value="${s.id}"${s.id === (spCurrent && spCurrent.id) ? ' selected' : ''}>` +
             esc(s.name) +
-            (s.id === spHomeId ? ' — opens on tills' : '') +
+            (s.id === spDefaultFor(surface) ? ' — on your tills' : '') +
             '</option>'
         )
         .join('')
-    : '<option value="">No screens yet</option>';
+    : `<option value="">No ${bar ? 'bars' : 'screens'} yet</option>`;
 
   const has = !!spCurrent;
-  const at = has ? spScreens.findIndex((s) => s.id === spCurrent.id) : -1;
+  const at = has ? mine.findIndex((s) => s.id === spCurrent.id) : -1;
   for (const id of [
     'sp-rename',
     'sp-duplicate',
@@ -613,20 +802,43 @@ function spRenderChrome() {
     'sp-save',
     'sp-revert',
     'sp-fill',
+    'sp-preset',
   ]) {
     $(id).disabled = !has;
   }
   $('sp-up').disabled = at <= 0;
-  $('sp-down').disabled = at < 0 || at >= spScreens.length - 1;
+  $('sp-down').disabled = at < 0 || at >= mine.length - 1;
 
+  // The ceilings follow the surface, so the number boxes cannot offer a shape
+  // the server would clamp back on save — a resize that silently un-does itself
+  // is worse than one that will not go past its limit.
+  const max = spLimits(surface);
+  $('sp-rows').max = max.rows;
+  $('sp-cols').max = max.cols;
   $('sp-rows').value = has ? spCurrent.rows : '';
   $('sp-cols').value = has ? spCurrent.cols : '';
   $('sp-rows').disabled = !has;
   $('sp-cols').disabled = !has;
-  $('sp-home').checked = has && spCurrent.id === spHomeId;
+
+  $('sp-home').checked = has && spCurrent.id === spDefaultFor(surface);
   $('sp-home').disabled = !has;
+  $('sp-home-wrap').lastChild.textContent = bar
+    ? ' Tills wear this bar'
+    : ' Tills open on this';
   $('sp-preview').checked = spPreview;
   $('sp-preview').disabled = !has;
+
+  // A department fill makes no sense on a bar, and the built-in-bar preset
+  // makes none on a sale screen. Each card is shown where it is the obvious
+  // next thing to press and hidden where it is noise.
+  $('sp-fill-card').hidden = bar;
+  $('sp-preset-card').hidden = !bar;
+  if (bar) {
+    $('sp-preset').textContent =
+      surface === 'topbar'
+        ? 'Lay out the built-in top bar'
+        : 'Lay out the built-in bottom bar';
+  }
 
   $('sp-dept').innerHTML = [
     ...new Set(spProducts.map((p) => p.department_name).filter(Boolean)),
@@ -635,9 +847,120 @@ function spRenderChrome() {
     .map((d) => `<option value="${esc(d)}">${esc(d)}</option>`)
     .join('');
 
+  spRenderDefaults();
+  spRenderPerScreenBars();
   spRenderGrid();
   spRenderInspector();
   spRenderStatus();
+}
+
+/** Which screen this venue's tills wear on a given surface. */
+function spDefaultFor(surface) {
+  if (surface === 'topbar') return spDefaults.top;
+  if (surface === 'bottombar') return spDefaults.bottom;
+  return spDefaults.home;
+}
+
+/** The options for a "which layout" dropdown, plus the built-in at the top. */
+function spLayoutOptions(surface, selected, builtIn) {
+  return (
+    `<option value="">${esc(builtIn)}</option>` +
+    spOnSurface(surface)
+      .map(
+        (s) =>
+          `<option value="${s.id}"${s.id === selected ? ' selected' : ''}>` +
+          esc(s.name) +
+          '</option>'
+      )
+      .join('')
+  );
+}
+
+/**
+ * The three choices, and the till drawn beside them.
+ *
+ * The drawing is the point. "Which of my three layouts is the bottom one" is a
+ * question a picture answers instantly and a list of names does not, and it is
+ * the question that had a manager looking straight past the tick box that sets
+ * it. Each part of the drawing is also the way in: press the bottom strip and
+ * the editor opens the bottom bar.
+ */
+function spRenderDefaults() {
+  $('sp-def-home').innerHTML = spLayoutOptions(
+    'sale',
+    spDefaults.home,
+    'Built-in — drawn from your product list'
+  );
+  $('sp-def-top').innerHTML = spLayoutOptions(
+    'topbar',
+    spDefaults.top,
+    'Built-in — your open tables'
+  );
+  $('sp-def-bottom').innerHTML = spLayoutOptions(
+    'bottombar',
+    spDefaults.bottom,
+    'Built-in — Void, Cancel … Pay'
+  );
+
+  const named = (surface, fallback) => {
+    const id = spDefaultFor(surface);
+    const found = spScreens.find((s) => s.id === id);
+    return found ? found.name : fallback;
+  };
+
+  const preview = $('sp-till-preview');
+  const parts = [
+    ['topbar', named('topbar', 'Open tables')],
+    ['sale', named('sale', 'Your products')],
+    ['bottombar', named('bottombar', 'Void … Pay')],
+  ];
+  for (const [surface, label] of parts) {
+    const el = preview.querySelector(`[data-part="${surface}"]`);
+    if (!el) continue;
+    el.textContent = label;
+    el.classList.toggle('custom', spDefaultFor(surface) != null);
+    el.classList.toggle('editing', surface === spSurface);
+  }
+
+  const set = SP_SURFACES.filter(([k]) => spDefaultFor(k) != null).length;
+  const flag = $('sp-defaults-state');
+  flag.hidden = set === 0;
+  flag.className = 'sp-flag ok';
+  flag.textContent =
+    set === 3 ? 'All three are yours' : `${set} of 3 set to your own`;
+}
+
+/**
+ * Which bars this one page wants, when it does not want the venue's.
+ *
+ * Hidden on the bars themselves, where the question is meaningless, and hidden
+ * until the venue has a bar to choose — a dropdown offering nothing but
+ * "Venue default" is a feature that looks broken.
+ */
+function spRenderPerScreenBars() {
+  const wrap = $('sp-perscreen');
+  const tops = spOnSurface('topbar');
+  const bottoms = spOnSurface('bottombar');
+  const show =
+    !!spCurrent &&
+    spCurrentSurface() === 'sale' &&
+    (tops.length > 0 || bottoms.length > 0);
+
+  wrap.hidden = !show;
+  if (!show) return;
+
+  $('sp-screen-top').innerHTML = spLayoutOptions(
+    'topbar',
+    spCurrent.topBarId ?? null,
+    'Venue default'
+  );
+  $('sp-screen-bottom').innerHTML = spLayoutOptions(
+    'bottombar',
+    spCurrent.bottomBarId ?? null,
+    'Venue default'
+  );
+  $('sp-screen-top').disabled = !tops.length;
+  $('sp-screen-bottom').disabled = !bottoms.length;
 }
 
 // ---------------------------------------------------------------------------
@@ -648,13 +971,26 @@ function spRenderGrid() {
   const box = $('sp-grid');
   spCells = new Map();
 
+  const surface = spCurrentSurface();
+  const bar = spIsBar(surface);
+  box.classList.toggle('bar', bar);
+  $('sp-ghost-top').hidden = surface !== 'bottombar';
+  $('sp-ghost-bottom').hidden = surface !== 'topbar';
+  $('sp-stage').classList.toggle('framed', bar);
+
   if (!spCurrent) {
     box.removeAttribute('style');
     box.classList.remove('preview');
-    box.innerHTML =
-      '<p class="muted small" style="padding:24px">This venue has no programmed screens, so ' +
-      'tills are showing the built-in <strong>Default</strong> — the one drawn from your ' +
-      'product list. Press <strong>New…</strong> to lay one out.</p>';
+    box.innerHTML = bar
+      ? '<p class="muted small" style="padding:24px">Your tills are wearing the built-in ' +
+        (surface === 'topbar'
+          ? '<strong>top bar</strong> — the strip of open tables. '
+          : '<strong>bottom bar</strong> — Void, Cancel, Save Table … Pay. ') +
+        'Press <strong>New…</strong> to lay out your own, then ' +
+        '<strong>Lay out the built-in bar</strong> to start from what you have today.</p>'
+      : '<p class="muted small" style="padding:24px">This venue has no programmed screens, so ' +
+        'tills are showing the built-in <strong>Default</strong> — the one drawn from your ' +
+        'product list. Press <strong>New…</strong> to lay one out.</p>';
     return;
   }
 
@@ -692,17 +1028,42 @@ function spRenderGrid() {
         cell.title = spCellTitle(b);
       }
 
+      // The key's face, above its words, exactly as the till stacks them. A
+      // picture the key has borrowed from its product is drawn faded, so
+      // "this key has a picture" and "this key was given one" stay apart —
+      // otherwise clearing a key's own emoji looks like it did nothing.
+      const face = b && spFaceFor(b);
+      if (face) {
+        const art = document.createElement('span');
+        art.className = 'sp-face-art' + (face.own ? '' : ' inherited');
+        if (face.image) {
+          art.style.backgroundImage = `url("${face.image.replace(/"/g, '%22')}")`;
+          art.classList.add('img');
+        } else {
+          art.textContent = face.emoji;
+        }
+        cell.append(art);
+      }
+
       const text = document.createElement('span');
       text.textContent = b ? spLabelFor(b) : '';
       cell.append(text);
 
-      if (b && b.kind === 'page') {
+      // A live display is not a key, and drawing it as one is how a manager
+      // ends up sizing the open-tables strip like a button. Each shows a sketch
+      // of what the till will put there.
+      if (b && b.kind === 'function' && SP_WIDGET_KEYS.has(b.functionKey)) {
+        cell.classList.add('widget');
+        const mock = document.createElement('span');
+        mock.className = 'sp-widget';
+        mock.innerHTML = spWidgetSketch(b.functionKey);
+        cell.append(mock);
+      } else if (b && b.kind === 'page') {
         const arrow = document.createElement('em');
         arrow.className = 'sp-arrow';
         arrow.textContent = '›››';
         cell.append(arrow);
-      }
-      if (b && b.kind === 'function') {
+      } else if (b && b.kind === 'function') {
         const mark = document.createElement('em');
         mark.className = 'sp-arrow';
         mark.textContent = 'ƒ';
@@ -715,6 +1076,40 @@ function spRenderGrid() {
   }
   box.append(fragment);
   spPaintSelection();
+}
+
+/**
+ * A sketch of what a live display puts on the till.
+ *
+ * Deliberately fake numbers and a fixed clock: this is a drawing of a shape,
+ * not a preview of data, and a real total here would be read as one. The shapes
+ * are what matter — the open-tables strip is chips, the total is money, the
+ * clock is short — because they are what tells a manager how wide to make it.
+ */
+function spWidgetSketch(key) {
+  switch (key) {
+    case 'open_bills':
+      return (
+        '<i class="sp-chip on">Current</i><i class="sp-chip">Table 6</i>' +
+        '<i class="sp-chip">Table 8</i><i class="sp-chip">Table 12</i>'
+      );
+    case 'order_total':
+      return '<i class="sp-mono">£32.85</i>';
+    case 'clock':
+      return '<i class="sp-mono">12:46</i>';
+    case 'venue_name':
+      return '<i>THE BRIDGE</i>';
+    case 'staff_name':
+      return '<i>👤 Muzahid</i>';
+    case 'sync_status':
+      return '<i>● Online</i>';
+    case 'screen_name':
+      return '<i>Drinks</i>';
+    case 'spacer':
+      return '';
+    default:
+      return '';
+  }
 }
 
 /** What hovering a key says. Worth having: the grid shows a name, not a PLU. */
@@ -730,8 +1125,8 @@ function spCellTitle(b) {
     return target ? `Goes to ${target.name}` : 'Goes to a screen that has been deleted';
   }
   if (b.kind === 'function') {
-    const found = SP_FUNCTIONS.find(([k]) => k === b.functionKey);
-    return found ? `Till function — ${found[1]}` : 'Till function — none chosen';
+    const name = SP_FUNCTION_LABEL.get(b.functionKey);
+    return name ? `Till function — ${name}` : 'Till function — none chosen';
   }
   return '';
 }
@@ -779,7 +1174,8 @@ function spRenderStatus() {
     (n, b) => n + (b.rowSpan || 1) * (b.colSpan || 1),
     0
   );
-  const broken = spCurrent.buttons.filter(spMissing);
+  const found = spIssues();
+  const broken = found.filter((i) => i.severity === 'bad');
 
   const parts = [
     `${spCurrent.buttons.length} button${spCurrent.buttons.length === 1 ? '' : 's'} ` +
@@ -796,23 +1192,93 @@ function spRenderStatus() {
       : '<span class="sp-flag ok">Saved</span>') +
     (broken.length
       ? `<span class="sp-flag bad">${broken.length} broken</span>`
+      : '') +
+    (found.length > broken.length
+      ? `<span class="sp-flag warn">${found.length - broken.length} to check</span>`
       : '');
 
   $('sp-undo').disabled = !spUndoStack.length;
   $('sp-redo').disabled = !spRedoStack.length;
 
-  // The check list. Only shown when there is something wrong with the layout,
-  // because a permanently empty panel is one nobody reads when it fills up.
+  // The check list. Only shown when there is something to say, because a
+  // permanently empty panel is one nobody reads when it fills up.
   const issues = $('sp-issues');
-  $('sp-issues-card').hidden = !broken.length;
-  issues.innerHTML = broken
+  $('sp-issues-card').hidden = !found.length;
+  issues.innerHTML = found
     .map(
-      (b) =>
-        `<button type="button" class="sp-issue" data-row="${b.row}" data-col="${b.col}">` +
-        `<strong>Row ${b.row + 1}, column ${b.col + 1}</strong>` +
-        `<span class="muted small">${esc(spCellTitle(b))}</span></button>`
+      (i) =>
+        `<button type="button" class="sp-issue ${i.severity}"` +
+        (i.row == null ? '' : ` data-row="${i.row}" data-col="${i.col}"`) +
+        `><strong>${esc(i.where)}</strong>` +
+        `<span class="muted small">${esc(i.what)}</span></button>`
     )
     .join('');
+}
+
+/**
+ * Everything wrong with this layout, in the order a manager should look at it.
+ *
+ * Two severities, and the second one is why this function exists rather than a
+ * filter over `spMissing`:
+ *
+ *   bad   a key that points at something no longer there. The clerk meets it as
+ *         a key that refuses the press.
+ *   warn  a bar that is missing the thing that made it worth having. A top bar
+ *         with no open-tables key looks finished and quietly costs the venue the
+ *         ability to run two bills at once; a bottom bar with no Pay key looks
+ *         finished and cannot take money. Neither is broken — both are a layout
+ *         somebody will save, walk away from, and discover in service.
+ *
+ * That second class is the whole risk in letting a venue replace its chrome, so
+ * it is checked here rather than hoped for.
+ */
+function spIssues() {
+  if (!spCurrent) return [];
+  const surface = spCurrentSurface();
+  const buttons = spCurrent.buttons || [];
+  const out = [];
+
+  for (const b of buttons.filter(spMissing)) {
+    out.push({
+      severity: 'bad',
+      row: b.row,
+      col: b.col,
+      where: `Row ${b.row + 1}, column ${b.col + 1}`,
+      what: spCellTitle(b),
+    });
+  }
+
+  const hasKey = (key) =>
+    buttons.some((b) => b.kind === 'function' && b.functionKey === key);
+
+  if (spIsBar(surface) && !buttons.length) {
+    out.push({
+      severity: 'warn',
+      row: null,
+      where: 'This bar is empty',
+      what: 'Tills wearing it would show a blank strip. Press "Lay out the built-in bar" to start from what you have today.',
+    });
+  }
+
+  if (surface === 'topbar' && buttons.length && !hasKey('open_bills')) {
+    out.push({
+      severity: 'warn',
+      row: null,
+      where: 'No open-tables key',
+      what: 'The strip of open bills is the top bar today. Without it staff cannot switch between tables, and there is no other way to reach a bill that is sitting on one.',
+    });
+  }
+
+  if (surface === 'bottombar' && buttons.length && !hasKey('pay')) {
+    out.push({
+      severity: 'warn',
+      row: null,
+      where: 'No Pay key',
+      what: 'Nothing on this bar takes money. A clerk would have to leave the sale screen to settle a bill.',
+    });
+  }
+
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -859,9 +1325,13 @@ function spRenderInspector() {
 
   $('sp-target').innerHTML =
     '<option value="">Choose a screen…</option>' +
-    spScreens
+    spOnSurface('sale')
+      // Sale screens only. A key that jumped to a bottom bar would open a strip
+      // of eleven keys where a page of products belongs, and there is no reading
+      // of it that is useful — the same argument as the line below.
+      //
       // A screen may not point at itself: the button would do nothing and look
-      // broken, and there is no reading of it that is useful.
+      // broken.
       .filter((s) => s.id !== spCurrent.id)
       .map(
         (s) =>
@@ -871,14 +1341,33 @@ function spRenderInspector() {
       )
       .join('');
 
+  const groups = spFunctionsFor(spCurrentSurface());
   $('sp-function').innerHTML =
     '<option value="">Choose a function…</option>' +
-    SP_FUNCTIONS.map(
-      ([key, label]) =>
-        `<option value="${key}"${key === first.functionKey ? ' selected' : ''}>` +
-        esc(label) +
-        '</option>'
-    ).join('');
+    groups
+      .map(([group, keys]) => {
+        const options = keys
+          .map(
+            ([key, label]) =>
+              `<option value="${key}"${key === first.functionKey ? ' selected' : ''}>` +
+              esc(label) +
+              '</option>'
+          )
+          .join('');
+        return group ? `<optgroup label="${esc(group)}">${options}</optgroup>` : options;
+      })
+      .join('');
+
+  // What a live display will actually put there, said in words next to the
+  // dropdown — the grid draws a sketch of it, but the sketch cannot say that
+  // this key is the only way staff reach a bill sitting on a table.
+  const note = $('sp-function-note');
+  note.textContent =
+    first.functionKey === 'open_bills'
+      ? 'Draws the strip of open bills — this bill plus every booked table. Give it plenty of width; it scrolls sideways when there are more tables than fit.'
+      : SP_WIDGET_KEYS.has(first.functionKey)
+        ? 'Draws something live. It is not pressed.'
+        : '';
 
   spSet($('sp-label'), first.label || '');
   spSet($('sp-rowspan'), String(first.rowSpan || 1));
@@ -910,6 +1399,68 @@ function spRenderInspector() {
         first.fill === fill ? ' on' : ''
       }" style="background:${fill}" data-fill="${fill}" title="${fill}"></button>`
   ).join('');
+
+  spRenderFace(first, styleable);
+}
+
+/**
+ * The picture on the key.
+ *
+ * An emoji, or an uploaded picture, or neither — and neither is the common case
+ * and has to cost nothing, because most keys on most screens are a word on a
+ * colour and that is the layout the venue arranged.
+ *
+ * The inherited case is the one worth being careful about. A product key with
+ * no face of its own already shows the product's picture on the till, and has
+ * for years. Showing that here as though the key had been given it would make
+ * "Remove" look broken; showing nothing would make the till look like it had
+ * invented a picture. So it is shown, faded, and said in words.
+ */
+function spRenderFace(first, styleable) {
+  const face = spFaceFor(first);
+  const own = face && face.own;
+
+  spSet($('sp-emoji'), (own && face.emoji) || '');
+  $('sp-emoji').disabled = !styleable;
+  $('sp-image-upload').disabled = !styleable;
+  $('sp-face-clear').disabled = !styleable || !own;
+
+  const preview = $('sp-image-preview');
+  preview.className = 'sp-image-preview';
+  preview.textContent = '';
+  preview.style.backgroundImage = '';
+  if (face && face.image) {
+    preview.classList.add('img', ...(own ? [] : ['inherited']));
+    preview.style.backgroundImage = `url("${face.image.replace(/"/g, '%22')}")`;
+  } else if (face && face.emoji) {
+    preview.classList.add(...(own ? [] : ['inherited']));
+    preview.textContent = face.emoji;
+  } else {
+    preview.classList.add('empty');
+    preview.textContent = '—';
+  }
+
+  $('sp-emoji-palette').innerHTML = SP_EMOJI.map(
+    (e) =>
+      `<button type="button" class="sp-emoji-key${
+        own && face.emoji === e ? ' on' : ''
+      }" data-emoji="${e}">${e}</button>`
+  ).join('');
+
+  $('sp-gallery').innerHTML = spGallery
+    .map(
+      (url) =>
+        `<button type="button" class="sp-gallery-key${
+          own && face.image === url ? ' on' : ''
+        }" data-image="${esc(url)}" style="background-image:url('${esc(url)}')"></button>`
+    )
+    .join('');
+
+  $('sp-face-note').textContent = !styleable
+    ? ''
+    : face && !face.own
+      ? 'Showing this product’s own picture. Set one here to override it just on this key.'
+      : '';
 }
 
 /**
@@ -1056,7 +1607,23 @@ function spDragStart(e) {
   if (!grid.contains(e.target)) return;
 
   e.preventDefault();
-  grid.focus();
+
+  // Geometry FIRST, focus second, and the focus must not scroll.
+  //
+  // `grid.focus()` used to run above this line, and on any page tall enough to
+  // scroll it moved the grid between the pointer's coordinates being taken and
+  // the grid's box being measured — so `e.clientY` was pre-scroll and `box.top`
+  // was post-scroll, and the first press after landing on the page selected a
+  // key one or two rows away from the one under the finger. Every press after
+  // it was right, because nothing scrolled the second time. That is precisely
+  // the shape of "the editor is buggy on my Windows 11 laptop": intermittent,
+  // only on a short window, and impossible to reproduce on the machine of
+  // whoever it is reported to.
+  //
+  // `preventScroll` because the grid is already under the pointer. There is
+  // nothing to bring into view, and the browser's idea of "into view" is what
+  // moved it.
+  grid.focus({ preventScroll: true });
 
   const g = spGridGeometry();
   const under = spCellFromPoint(g, e.clientX, e.clientY);
@@ -1276,6 +1843,49 @@ function spBind() {
     spRenderChrome();
   });
 
+  // ---- Which kind of layout ----
+  for (const tab of document.querySelectorAll('.sp-surface')) {
+    tab.addEventListener('click', () => {
+      if (tab.dataset.surface === spSurface) return;
+      if (!spGuardUnsaved()) return;
+      spSurface = tab.dataset.surface;
+      const first = spOnSurface()[0];
+      spSelect(first ? first.id : null);
+      spRenderChrome();
+    });
+  }
+
+  // ---- What the tills wear ----
+  for (const [id, surface] of [
+    ['sp-def-home', 'sale'],
+    ['sp-def-top', 'topbar'],
+    ['sp-def-bottom', 'bottombar'],
+  ]) {
+    $(id).addEventListener('change', (e) =>
+      spSetDefault(surface, e.target.value ? Number(e.target.value) : null)
+    );
+  }
+
+  // The drawing is the way in as well as the answer: press the strip along the
+  // bottom of the little till and the editor opens the bottom bars.
+  $('sp-till-preview').addEventListener('click', (e) => {
+    const part = e.target.closest('[data-part]');
+    if (!part) return;
+    const tab = document.querySelector(
+      `.sp-surface[data-surface="${part.dataset.part}"]`
+    );
+    if (tab) tab.click();
+  });
+
+  for (const [id, field] of [
+    ['sp-screen-top', 'topBarId'],
+    ['sp-screen-bottom', 'bottomBarId'],
+  ]) {
+    $(id).addEventListener('change', (e) =>
+      spSetScreenBar(field, e.target.value ? Number(e.target.value) : null)
+    );
+  }
+
   $('sp-new').addEventListener('click', spNewScreen);
   $('sp-rename').addEventListener('click', spRenameScreen);
   $('sp-duplicate').addEventListener('click', spDuplicateScreen);
@@ -1325,7 +1935,9 @@ function spBind() {
 
   $('sp-issues').addEventListener('click', (e) => {
     const issue = e.target.closest('.sp-issue');
-    if (!issue) return;
+    // An advisory about the layout as a whole — "no Pay key on this bar" — has
+    // no cell to jump to. It is still worth showing; it is just not a link.
+    if (!issue || issue.dataset.row === undefined) return;
     const cell = { row: Number(issue.dataset.row), col: Number(issue.dataset.col) };
     spSelection = new Set([spKey(cell.row, cell.col)]);
     spFocusCell = cell;
@@ -1424,6 +2036,54 @@ function spBind() {
   $('sp-clear').addEventListener('click', () =>
     spApplyToSelection((b) => spSetKind(b, 'blank'), { create: false })
   );
+  // A face is committed on change, not on every keystroke, so the undo stack
+  // holds "put an emoji on this key" once rather than once per character —
+  // the same rule the label field follows and for the same reason.
+  $('sp-emoji').addEventListener('change', (e) => {
+    const emoji = e.target.value.trim().slice(0, 16);
+    spApplyToSelection(
+      (b) => {
+        b.emoji = emoji || null;
+      },
+      { create: false }
+    );
+  });
+  $('sp-emoji-palette').addEventListener('click', (e) => {
+    const key = e.target.closest('.sp-emoji-key');
+    if (!key) return;
+    // Pressing the one already on the key takes it off, so the palette is a
+    // toggle rather than a one-way door with an undo.
+    const chosen = key.classList.contains('on') ? null : key.dataset.emoji;
+    spApplyToSelection(
+      (b) => {
+        b.emoji = chosen;
+      },
+      { create: false }
+    );
+  });
+  $('sp-gallery').addEventListener('click', (e) => {
+    const key = e.target.closest('.sp-gallery-key');
+    if (!key) return;
+    const chosen = key.classList.contains('on') ? null : key.dataset.image;
+    spApplyToSelection(
+      (b) => {
+        b.imageUrl = chosen;
+      },
+      { create: false }
+    );
+  });
+  $('sp-face-clear').addEventListener('click', () =>
+    spApplyToSelection(
+      (b) => {
+        b.emoji = null;
+        b.imageUrl = null;
+      },
+      { create: false }
+    )
+  );
+  $('sp-image-upload').addEventListener('click', () => $('sp-image-file').click());
+  $('sp-image-file').addEventListener('change', spUploadKeyImage);
+
   $('sp-copy').addEventListener('click', () => spCopySelection());
   $('sp-paste').addEventListener('click', () => spPasteClipboard());
 
@@ -1440,6 +2100,7 @@ function spBind() {
   }
 
   $('sp-fill').addEventListener('click', spFillFromDepartment);
+  $('sp-preset').addEventListener('click', spLayOutBuiltInBar);
 
   // A tab closed on an unsaved layout is the one loss nothing can undo.
   window.addEventListener('beforeunload', (e) => {
@@ -1473,10 +2134,15 @@ function spGuardUnsaved() {
  */
 function spNewScreen() {
   if (!spGuardUnsaved()) return;
+  const surface = spSurface;
+  const max = spLimits(surface);
+  const noun =
+    surface === 'topbar' ? 'top bar' : surface === 'bottombar' ? 'bottom bar' : 'screen';
+
   modal(
-    'New screen',
+    `New ${noun}`,
     [
-      { name: 'name', label: 'What is this screen called?', required: true, value: '' },
+      { name: 'name', label: `What is this ${noun} called?`, required: true, value: '' },
       {
         name: 'copy',
         label: spCurrent
@@ -1485,19 +2151,28 @@ function spNewScreen() {
         type: 'checkbox',
         value: 0,
       },
-      { name: 'rows', label: 'Rows', type: 'number', value: 5 },
-      { name: 'cols', label: 'Columns', type: 'number', value: 6 },
+      { name: 'rows', label: 'Rows', type: 'number', value: max.defRows },
+      { name: 'cols', label: 'Columns', type: 'number', value: max.defCols },
     ],
     async (data) => {
       const created = await api('/screens', {
         method: 'POST',
         body: JSON.stringify({
           name: data.name,
-          rows: Number(data.rows) || 5,
-          cols: Number(data.cols) || 6,
-          copyFromId: data.copy && spCurrent ? spCurrent.id : null,
+          surface,
+          rows: Number(data.rows) || max.defRows,
+          cols: Number(data.cols) || max.defCols,
+          // Only ever a copy of something on the same surface. The server
+          // refuses a cross-surface copy outright — a Pay key has nowhere to go
+          // on a page of lagers — and the tab this was opened from is the
+          // surface being made.
+          copyFromId:
+            data.copy && spCurrent && spCurrentSurface() === surface
+              ? spCurrent.id
+              : null,
         }),
       });
+      spSurface = created.surface || 'sale';
       spCurrent = created;
       spSavedShape = spShape(created);
       await loadScreens();
@@ -1536,16 +2211,21 @@ async function spDuplicateScreen() {
   if (spDirty() && !confirm('Save this screen first, then copy it?')) return;
   if (spDirty()) await spSaveLayout({ quiet: true });
 
+  // Unique on this surface, which is what the database's key is: (office,
+  // surface, name). A bottom bar called "Main" and a sale screen called "Main"
+  // are allowed to coexist, so a copy must not be renamed to dodge a clash that
+  // is not one.
+  const surface = spCurrentSurface();
   const base = spCurrent.name.replace(/ \(copy( \d+)?\)$/, '');
   let name = `${base} (copy)`;
-  for (let n = 2; spScreens.some((s) => s.name === name); n++) {
+  for (let n = 2; spOnSurface(surface).some((s) => s.name === name); n++) {
     name = `${base} (copy ${n})`;
   }
 
   try {
     const created = await api('/screens', {
       method: 'POST',
-      body: JSON.stringify({ name, copyFromId: spCurrent.id }),
+      body: JSON.stringify({ name, surface, copyFromId: spCurrent.id }),
     });
     spCurrent = created;
     spSavedShape = spShape(created);
@@ -1558,7 +2238,7 @@ async function spDuplicateScreen() {
 /** Move this screen up or down the list the pickers and the tills read. */
 async function spReorder(direction) {
   if (!spCurrent) return;
-  const order = spScreens.map((s) => s.id);
+  const order = spOnSurface(spCurrentSurface()).map((s) => s.id);
   const at = order.indexOf(spCurrent.id);
   const to = at + direction;
   if (at < 0 || to < 0 || to >= order.length) return;
@@ -1585,9 +2265,11 @@ async function spDeleteScreen() {
   if (!spCurrent) return;
   if (
     !confirm(
-      `Delete the screen "${spCurrent.name}"?\n\n` +
-        'Buttons on other screens that point at it become empty, and if your tills ' +
-        'open on it they fall back to the built-in Default.'
+      `Delete "${spCurrent.name}"?\n\n` +
+        (spIsBar(spCurrentSurface())
+          ? 'Any till or screen wearing it goes back to the built-in bar.'
+          : 'Buttons on other screens that point at it become empty, and if your tills ' +
+            'open on it they fall back to the built-in Default.')
     )
   ) {
     return;
@@ -1602,18 +2284,176 @@ async function spDeleteScreen() {
   }
 }
 
+/** The tick box beside the screen picker: "my tills wear this one". */
 async function spSetHome(e) {
   if (!spCurrent) return;
+  await spSetDefault(spCurrentSurface(), e.target.checked ? spCurrent.id : null);
+}
+
+/**
+ * Set one of the three things a till wears, or clear it back to the built-in.
+ *
+ * Applied straight away rather than on Save. It is not part of the layout in
+ * hand — a manager who ticks this and then reverts their button changes has not
+ * asked to un-set their home screen — and it is the one setting on this page
+ * that every till in the building acts on.
+ */
+async function spSetDefault(surface, id) {
+  const field =
+    surface === 'topbar'
+      ? 'topBarScreenId'
+      : surface === 'bottombar'
+        ? 'bottomBarScreenId'
+        : 'homeScreenId';
   try {
-    const res = await api('/screens/home', {
+    await api('/screens/defaults', {
       method: 'PUT',
-      body: JSON.stringify({ screenId: e.target.checked ? spCurrent.id : null }),
+      body: JSON.stringify({ [field]: id }),
     });
-    spHomeId = res.homeScreenId;
+    if (surface === 'topbar') spDefaults.top = id;
+    else if (surface === 'bottombar') spDefaults.bottom = id;
+    else spDefaults.home = id;
     spRenderChrome();
   } catch (err) {
     alert(err.message);
+    spRenderChrome();
   }
+}
+
+/**
+ * Give this one page a different bar from the rest of the venue.
+ *
+ * Saved on the screen row rather than with the buttons, so it takes effect
+ * without a layout save — the same reasoning as the defaults above, and the
+ * same reason it is written through even when the grid is dirty.
+ */
+async function spSetScreenBar(field, id) {
+  if (!spCurrent) return;
+  try {
+    await api('/screens/' + spCurrent.id, {
+      method: 'PUT',
+      body: JSON.stringify({ [field]: id }),
+    });
+    spCurrent[field] = id;
+    const stored = spScreens.find((s) => s.id === spCurrent.id);
+    if (stored) stored[field] = id;
+    spRenderChrome();
+  } catch (err) {
+    alert(err.message);
+    spRenderChrome();
+  }
+}
+
+/**
+ * Put a picture on the selected keys.
+ *
+ * Uploaded through the same route product pictures use, so it lands under
+ * /uploads and is served by this server — the till has to be able to fetch it
+ * on a venue network with no route to the open internet, which is why the
+ * server refuses an off-site URL outright.
+ */
+async function spUploadKeyImage(e) {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+
+  const button = $('sp-image-upload');
+  const was = button.textContent;
+  button.disabled = true;
+  button.textContent = 'Uploading…';
+  try {
+    const form = new FormData();
+    form.append('image', file);
+    const res = await fetch('/api/product-image', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+    });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.error || 'The picture would not upload.');
+
+    spApplyToSelection(
+      (b) => {
+        b.imageUrl = body.url;
+      },
+      { create: false }
+    );
+    if (!spGallery.includes(body.url)) spGallery.unshift(body.url);
+    spRenderInspector();
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    button.disabled = false;
+    button.textContent = was;
+  }
+}
+
+/**
+ * Lay the built-in bar into this one, key for key.
+ *
+ * The reason a venue ever gets a bar finished. Eleven keys placed, coloured and
+ * labelled one at a time is where this feature would otherwise be abandoned
+ * half-done — and a half-done bottom bar is one with no way to take money on it.
+ *
+ * These lists mirror the till's own: PosActionBar's `actions` in sale_page.dart
+ * for the bottom, and _OpenOrdersBar for the top. They are a starting point,
+ * not a contract — a venue is expected to change them, which is the point.
+ */
+function spLayOutBuiltInBar() {
+  if (!spCurrent || !spIsBar(spCurrentSurface())) return;
+  const top = spCurrentSurface() === 'topbar';
+
+  const keys = top
+    ? [
+        ['open_bills', null, null, 8],
+        ['staff_name', null, null, 2],
+        ['clock', null, null, 2],
+      ]
+    : [
+        ['void', 'Void', '#d03227', 1],
+        ['cancel', 'Cancel', '#d03227', 1],
+        ['save_table', 'Save Table', null, 1],
+        ['covers', 'Covers', null, 1],
+        ['customer', 'Customer', null, 1],
+        ['note', 'Notes', null, 1],
+        ['open_drawer', 'No Sale', null, 1],
+        ['print_bill', 'Print', null, 1],
+        ['last_bill', 'Last Bill', null, 1],
+        ['pay', 'Pay', '#a5c715', 3],
+      ];
+
+  const width = keys.reduce((n, k) => n + k[3], 0);
+  const message = top
+    ? 'Your tills\u2019 top bar today is the strip of open tables and nothing else. ' +
+      'This lays that in across most of the width, with who is signed on and a clock ' +
+      'beside it \u2014 delete either if you do not want them.\n\nAnything already on ' +
+      'this bar is replaced.'
+    : 'This lays in the bottom bar your tills show today, key for key, ending with a ' +
+      'wide green Pay.\n\nAnything already on this bar is replaced.';
+  if (spCurrent.buttons.length && !confirm(message)) return;
+
+  spEdit(() => {
+    spCurrent.rows = 1;
+    spCurrent.cols = width;
+    spCurrent.buttons = keys.map(([key, label, fill, span], i) => ({
+      row: 0,
+      col: keys.slice(0, i).reduce((n, k) => n + k[3], 0),
+      rowSpan: 1,
+      colSpan: span,
+      kind: 'function',
+      pluId: null,
+      targetScreenId: null,
+      functionKey: key,
+      // Null where the built-in label is already right, so a key renamed in a
+      // later release renames itself here too.
+      label: label,
+      fill,
+      ink: null,
+      emoji: null,
+      imageUrl: null,
+    }));
+    spSelection = new Set();
+  });
 }
 
 /**
