@@ -89,10 +89,17 @@ class ProgrammedBar extends ConsumerWidget {
   static const rowHeight = 58.0;
   static const _gap = 6.0;
 
-  /// How tall this bar will be, so the sale page can lay out around it without
-  /// measuring. Public because a bar's height is the caller's problem too.
-  static double heightOf(TillScreen bar) =>
-      bar.rows * rowHeight + (bar.rows - 1) * _gap + 16;
+  /// Below this a key stops being reliably hittable with a thumb on a busy
+  /// counter — the same figure, for the same reason, as PosActionBar's
+  /// `_minKeyWidth`.
+  ///
+  /// A bar is laid out in an office against a counter terminal and then met on
+  /// whatever the venue happens to be holding. Twelve keys across a handheld is
+  /// 30px each, which is a bar a clerk cannot use and cannot fix. So the bar
+  /// keeps the width it was given and scrolls sideways instead of shrinking —
+  /// the same trade the open-bills strip makes, and the one that leaves the
+  /// venue's layout intact rather than silently rearranging it.
+  static const _minKeyWidth = 72.0;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -110,8 +117,10 @@ class ProgrammedBar extends ConsumerWidget {
             height: bar.rows * rowHeight + (bar.rows - 1) * _gap,
             child: LayoutBuilder(
               builder: (context, box) {
-                final cellW =
+                final natural =
                     (box.maxWidth - _gap * (bar.cols - 1)) / bar.cols;
+                final cellW = natural < _minKeyWidth ? _minKeyWidth : natural;
+                final width = cellW * bar.cols + _gap * (bar.cols - 1);
 
                 final keys = <Widget>[];
                 for (var r = 0; r < bar.rows; r++) {
@@ -146,7 +155,17 @@ class ProgrammedBar extends ConsumerWidget {
                   }
                 }
 
-                return Stack(children: keys);
+                final stack = SizedBox(width: width, child: Stack(children: keys));
+                // Only scrollable when it has to be. A bar that fits is an
+                // ordinary bar, and wrapping every one of them in a scroll view
+                // would let a clerk drag the whole strip sideways by accident
+                // while reaching for Pay.
+                return natural < _minKeyWidth
+                    ? SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: stack,
+                      )
+                    : stack;
               },
             ),
           ),

@@ -432,6 +432,17 @@ or a bottom bar with no `pay`, is reported in **Needs attention** as a warning
 rather than an error. Neither is broken. Both are a layout somebody will save,
 walk away from, and discover in service.
 
+### A bar on a narrow terminal
+
+A bar is laid out in an office against a counter terminal and then met on
+whatever the venue happens to be holding. Sixteen keys across a handheld is
+25px each — a bar a clerk cannot use and cannot fix from behind a counter.
+
+So below 72px a key stops shrinking and the bar scrolls sideways instead: the
+same figure `PosActionBar._minKeyWidth` uses, for the same reason, and the same
+trade the open-bills strip makes. The venue's layout survives intact rather than
+being silently rearranged into something it did not arrange.
+
 ### The face on a key
 
 Buttons gained `emoji` and `image_url`. The chain is: the key's own, then — on a

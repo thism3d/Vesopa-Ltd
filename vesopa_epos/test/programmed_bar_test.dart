@@ -55,6 +55,7 @@ void main() {
     int total = 3285,
     ScreenSet? screens,
     List<Order> parked = const [],
+    double width = 900,
     void Function(String)? onFunction,
   }) {
     return ProviderScope(
@@ -69,7 +70,7 @@ void main() {
         theme: buildPosTheme(Brightness.light),
         home: Scaffold(
           body: SizedBox(
-            width: 900,
+            width: width,
             height: 120,
             child: ProgrammedBar(
               bar: it,
@@ -273,6 +274,36 @@ void main() {
       await tester.tap(find.byType(ProgrammedBar), warnIfMissed: false);
       await tester.pump();
       expect(pressed, isEmpty);
+    });
+  });
+
+  // A bar is laid out in an office against a counter terminal and then met on
+  // whatever the venue is holding. Sixteen keys across a handheld is 25px each,
+  // which is a bar a clerk cannot use and cannot fix from behind a counter.
+  group('on a narrow terminal', () {
+    testWidgets('the keys keep a size a thumb can hit', (tester) async {
+      final wide = bar(
+        [for (var c = 0; c < 12; c++) key('covers', col: c)],
+        cols: 12,
+      );
+      await tester.pumpWidget(host(wide, width: 420));
+      await tester.pump();
+
+      // Every key is still there and still a real target — the bar gave up
+      // fitting rather than giving up being pressable.
+      final first = tester.getSize(
+        find.ancestor(
+          of: find.text('Covers').first,
+          matching: find.byType(Material),
+        ).first,
+      );
+      expect(first.width, greaterThanOrEqualTo(60));
+      expect(find.byType(SingleChildScrollView), findsOneWidget);
+    });
+
+    testWidgets('and a bar that fits is not made scrollable', (tester) async {
+      await tester.pumpWidget(host(bar([key('pay')], cols: 2), width: 900));
+      expect(find.byType(SingleChildScrollView), findsNothing);
     });
   });
 
