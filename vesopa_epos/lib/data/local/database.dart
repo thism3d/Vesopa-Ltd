@@ -403,22 +403,56 @@ class AppDatabase extends _$AppDatabase {
   @override
   int get schemaVersion => 12;
 
+
+  /// Add a column only if the table has not already got it.
+  ///
+  /// Drift decides which migration steps to run from the stored
+  /// `user_version` alone, and that number can disagree with what is
+  /// actually in the file. It is written *after* the steps complete, so a
+  /// terminal killed — or losing power, which is what a till at a counter
+  /// does — between the ALTER and the version bump comes back with the
+  /// columns present and the version behind.
+  ///
+  /// What happened next was the worst kind of failure. The migration ran
+  /// again, SQLite refused with "duplicate column name", and the open never
+  /// completed — so the version was never written, so it happened again on
+  /// the next launch, and every launch after that, for ever. The till showed
+  /// a spinner where the sale buttons go, on a database that
+  /// `PRAGMA quick_check` calls perfectly sound and that still held the
+  /// venue's unsent sales. The only cure anybody found was deleting the
+  /// file, which threw those sales away.
+  ///
+  /// Asking the table what it has costs one PRAGMA per column, on the one
+  /// launch after an update, and it makes every step below safe to re-run.
+  Future<void> _addColumnIfMissing(
+    Migrator m,
+    TableInfo table,
+    GeneratedColumn column,
+  ) async {
+    final rows = await customSelect(
+      'PRAGMA table_info("${table.actualTableName}")',
+    ).get();
+    final present = rows.map((r) => r.read<String>('name')).toSet();
+    if (present.contains(column.name)) return;
+    await m.addColumn(table, column);
+  }
+
   @override
   MigrationStrategy get migration => MigrationStrategy(
         onUpgrade: (m, from, to) async {
           if (from < 2) {
-            await m.addColumn(orders, orders.discountMinor);
-            await m.addColumn(orders, orders.covers);
-            await m.addColumn(orders, orders.notes);
-            await m.addColumn(orders, orders.customerName);
+            await _addColumnIfMissing(m, orders, orders.discountMinor);
+            await _addColumnIfMissing(m, orders, orders.covers);
+            await _addColumnIfMissing(m, orders, orders.notes);
+            await _addColumnIfMissing(m, orders, orders.customerName);
           }
           if (from < 3) {
             await m.createTable(tillSessions);
             await m.createTable(diningTables);
             await m.createTable(customers);
             await m.createTable(loyaltyEntries);
-            await m.addColumn(products, products.buttonPosition);
-            await m.addColumn(products, products.buttonColor);
+            await _addColumnIfMissing(m, products, products.buttonPosition);
+            await _addColumnIfMissing(m, products, products.buttonColor);
             // Raw SQL because `printer_route` is no longer a column the Dart
             // schema declares — step 11 folds it into `printer_routes`. A
             // migration step is a historical record of what the database looked
@@ -427,14 +461,14 @@ class AppDatabase extends _$AppDatabase {
             await m.database.customStatement(
               'ALTER TABLE products ADD COLUMN printer_route TEXT NULL',
             );
-            await m.addColumn(orders, orders.sessionId);
-            await m.addColumn(orders, orders.customerId);
-            await m.addColumn(orders, orders.splitFromOrderId);
+            await _addColumnIfMissing(m, orders, orders.sessionId);
+            await _addColumnIfMissing(m, orders, orders.customerId);
+            await _addColumnIfMissing(m, orders, orders.splitFromOrderId);
           }
           if (from < 4) {
             await m.createTable(mixMatchDeals);
             await m.createTable(mixMatchProducts);
-            await m.addColumn(orders, orders.manualDiscountMinor);
+            await _addColumnIfMissing(m, orders, orders.manualDiscountMinor);
             // Anything already discounted was keyed in by hand, so carry it
             // across rather than silently zeroing open bills.
             await m.database.customStatement(
@@ -442,29 +476,29 @@ class AppDatabase extends _$AppDatabase {
             );
           }
           if (from < 5) {
-            await m.addColumn(orderLines, orderLines.lineDiscountMinor);
+            await _addColumnIfMissing(m, orderLines, orderLines.lineDiscountMinor);
           }
           if (from < 6) {
-            await m.addColumn(orders, orders.customerDiscountType);
-            await m.addColumn(orders, orders.customerDiscountValue);
+            await _addColumnIfMissing(m, orders, orders.customerDiscountType);
+            await _addColumnIfMissing(m, orders, orders.customerDiscountValue);
           }
           if (from < 7) {
-            await m.addColumn(products, products.emoji);
-            await m.addColumn(products, products.imageUrl);
+            await _addColumnIfMissing(m, products, products.emoji);
+            await _addColumnIfMissing(m, products, products.imageUrl);
           }
           if (from < 8) {
             await m.createTable(departments);
           }
           if (from < 9) {
             await m.createTable(cashDenominations);
-            await m.addColumn(payments, payments.cashBreakdown);
+            await _addColumnIfMissing(m, payments, payments.cashBreakdown);
           }
           if (from < 10) {
             await m.createTable(staff);
-            await m.addColumn(orderLines, orderLines.addedBy);
-            await m.addColumn(orderLines, orderLines.addedAt);
-            await m.addColumn(orders, orders.staffId);
-            await m.addColumn(orders, orders.staffName);
+            await _addColumnIfMissing(m, orderLines, orderLines.addedBy);
+            await _addColumnIfMissing(m, orderLines, orderLines.addedAt);
+            await _addColumnIfMissing(m, orders, orders.staffId);
+            await _addColumnIfMissing(m, orders, orders.staffName);
           }
           if (from < 11) {
             // One station per product became a set of them. The old value is
@@ -486,16 +520,16 @@ class AppDatabase extends _$AppDatabase {
                 },
               ),
             );
-            await m.addColumn(orderLines, orderLines.kitchenPrintedAt);
+            await _addColumnIfMissing(m, orderLines, orderLines.kitchenPrintedAt);
           }
           if (from < 12) {
             // Card payments gain the acquirer's own id, the tip inside the
             // amount, and how the card was captured. Nullable and defaulted, so
             // every sale already on the till stays valid — they simply carry no
             // acquirer reference, which is true: nothing ever recorded one.
-            await m.addColumn(payments, payments.reference);
-            await m.addColumn(payments, payments.gratuityMinor);
-            await m.addColumn(payments, payments.entryMode);
+            await _addColumnIfMissing(m, payments, payments.reference);
+            await _addColumnIfMissing(m, payments, payments.gratuityMinor);
+            await _addColumnIfMissing(m, payments, payments.entryMode);
           }
         },
       );

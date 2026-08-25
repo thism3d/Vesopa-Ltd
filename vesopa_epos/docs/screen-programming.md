@@ -195,7 +195,7 @@ on Windows".
 | Drag across the grid | Selects the box — with a mouse, a pen **or a finger** |
 | Shift+drag / Shift+click | Extends the box from the last press |
 | Ctrl+click | Adds or removes one key |
-| Drag a programmed key | Moves it. Hold Alt to copy it instead |
+| Drag a key that is selected | Moves it. Hold Alt to copy it instead |
 | Arrow keys | Walk the grid. Shift extends, **Alt nudges what is selected** |
 | Ctrl+Z / Ctrl+Y | Undo, redo — sixty steps, held in the browser |
 | Ctrl+C / V / X / D | Copy, paste, cut, duplicate the selection |
@@ -217,6 +217,12 @@ drag. Nothing is rebuilt during a drag now; only a class is toggled.
 the browser, so a resize, a screen change, a socket push from another machine,
 leaving the view and closing the tab all check `spDirty()` first. Changing the
 row count used to `PUT` and reload, taking every unsaved button with it.
+
+**A drag is always a box; a move is picking up what is already selected.**
+Treating a drag that begins on a programmed key as a move seems natural until
+you meet a finished layout, which has no empty cells left in it — and then a box
+can never be drawn, and every bulk edit in the panel is unreachable on exactly
+the screens somebody has worked hardest on. Select, then drag.
 
 **A press inside a 2x2 belongs to the 2x2.** Cells swallowed by a span are not
 cells you can programme; selecting one used to create a button underneath the
@@ -247,3 +253,68 @@ app, which reads as "screen programming does not work" rather than as two
 missing lines.
 
 Guarded by `vesopa_epos/test/screen_push_test.dart`.
+
+---
+
+## 8. A till that will not start
+
+Not screen programming, but found while testing it, and it is the failure an
+operator meets first — so it is written down where somebody will look.
+
+A terminal loses power mid-write. That is not an edge case; it is what a till at
+a counter does, nightly, for years. Two files in
+`%APPDATA%\Vesopa EPOS Limited\Vesopa EPOS` can be left unreadable by it, and
+each produced a different endless spinner:
+
+| File | What it looked like | What it actually was |
+| --- | --- | --- |
+| `shared_preferences.json` | A lime spinner on black, for ever | Every read threw, so the session never resolved — and `AsyncError` fell into the same branch as `AsyncLoading`, which drew a spinner |
+| `vesopa_epos.sqlite` | Chrome at the top, "Online", a spinner where the buttons go | Preferences were fine, so it got past sign-on; the first query into the till never answered |
+| `vesopa_epos.sqlite`, **sound** | The same screen, on a perfectly good file | The migration below — not corruption at all |
+
+In a window the till deliberately will not let anybody close. The only cure was
+somebody who knew to delete a folder in AppData by hand.
+
+Both are now checked before `runApp`, in `data/startup_repair.dart`, and both
+repair themselves. What is left is a rule that is not negotiable:
+
+**Preferences may be thrown away. Sales may not.** Preferences are a cache of
+things the back office can send again, and losing them costs a sign-in. The
+sales file holds the outbox — sales rung up but not yet pushed — and for those
+it is the only copy of the money.
+
+The one exception proves it rather than weakening it: a database SQLite
+**cannot open** holds no sale the till could ever have sent, so those are
+already gone before the check runs. It is moved aside rather than deleted,
+because a corrupt database is often still partly salvageable and those rows are
+a venue's takings — and the till says so, on screen, with the path, rather than
+starting empty and quiet.
+
+Anything that still hangs meets `ui/recovery_page.dart` after twelve seconds
+instead of a spinner: one silent repair attempt, then a screen that offers a
+repair which keeps every sale, and — behind a confirmation that says what it
+costs — a full reset that does not.
+
+### The one that was not corruption
+
+The terminal this was found on had a database `PRAGMA quick_check` calls
+perfectly sound, holding sales that had never reached the back office — and
+it would not open, on every launch, for ever.
+
+Drift decides which migration steps to run from the stored `user_version`,
+and writes the new number *after* the steps finish. A till killed between the
+two — a power cut, a Windows update, somebody switching a kiosk machine off
+at the wall — comes back with the new columns already in the table and the
+version still on the old number. The migration runs again, SQLite refuses
+with `duplicate column name`, the open fails, the version is never written,
+and so it happens again on the next launch. And the next.
+
+What the operator saw was a spinner where the sale buttons go. What fixed it
+was deleting the file — which threw those unsent sales away.
+
+Every column step in `AppDatabase.migration` now asks the table what it
+already has (`_addColumnIfMissing`), which makes them all safe to re-run. The
+terminal's sales are untouched and nothing needs clearing. `tool/inspect_db.dart`
+is what told the two apart in the first place.
+
+Guarded by `test/startup_repair_test.dart` and `test/migration_rerun_test.dart`.

@@ -1093,13 +1093,21 @@ function spDragStart(e) {
     spSelectRect(spAnchorCell, anchor);
     spDrag.anchor = spAnchorCell;
   } else if (spAt(anchor.row, anchor.col) && spSelection.has(key)) {
-    // A press inside the selection is the start of a move, not a new selection
-    // — otherwise dragging six chosen keys somewhere else is impossible.
+    // A press inside the selection picks it up. Anywhere else — including on a
+    // programmed key that is not selected — draws a box.
+    //
+    // That distinction is the whole gesture, and getting it wrong made the
+    // editor unusable on exactly the screens that matter. Treating a press on
+    // any filled key as the start of a move meant that on a screen with no
+    // empty cells left — which is what a finished layout is — a drag could
+    // never select anything, and the panel's bulk edits were unreachable. So
+    // moving is "click it, then drag it", which is what every editor a manager
+    // has ever used does, and dragging is always a box.
     spDrag.mode = 'maybe-move';
   } else {
     spSelection = new Set([key]);
     spDrag.base = new Set();
-    spDrag.mode = spAt(anchor.row, anchor.col) ? 'maybe-move' : 'select';
+    spDrag.mode = 'select';
   }
 
   spFocusCell = anchor;

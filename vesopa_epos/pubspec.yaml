@@ -36,6 +36,10 @@ dependencies:
   cupertino_icons: ^1.0.8
   drift: ^2.34.2
   sqlite3_flutter_libs: ^0.6.0+eol
+  # Named directly, not just pulled in by drift: the start-up check opens the
+  # sales file and runs a quick_check on it before anything else touches it.
+  # See data/startup_repair.dart.
+  sqlite3: ^3.4.0
   path_provider: ^2.1.6
   path: ^1.9.1
   riverpod: ^3.3.2
@@ -87,6 +91,13 @@ dev_dependencies:
   build_runner: ^2.15.1
   flutter_launcher_icons: ^0.14.4
   msix: ^3.18.0
+
+  # Faking the AppData directory, so startup_repair_test.dart can hand the
+  # repair a folder it is allowed to break. Both are already in the tree as
+  # transitive dependencies of path_provider; they are named here because a
+  # test that imports them directly must say so.
+  path_provider_platform_interface: ^2.1.2
+  plugin_platform_interface: ^2.1.8
 
 # Microsoft Store packaging.
 #

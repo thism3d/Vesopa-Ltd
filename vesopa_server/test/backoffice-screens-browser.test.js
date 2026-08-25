@@ -546,10 +546,15 @@ check('a press inside a 2x2 selects the button, not the hole under it', async (c
   assert.strictEqual(selected, '0:0');
 });
 
-check('a programmed key is dragged to a new cell, and undo puts it back', async (cdp) => {
+// Select it, then drag it. A plain drag is always a box — see the check below
+// for why: on a finished layout there is no empty cell to start a box from, so
+// "drag a filled key moves it" made bulk selection unreachable exactly where a
+// venue needs it.
+check('a selected key is dragged to a new cell, and undo puts it back', async (cdp) => {
   await reset(cdp);
   const from = await cdp.cell(0, 3);
   const to = await cdp.cell(2, 4);
+  await cdp.click(from.x, from.y);
   await cdp.mouseDrag(from, to);
 
   const moved = await cdp.eval(
@@ -569,6 +574,33 @@ check('a programmed key is dragged to a new cell, and undo puts it back', async 
 // Changing the row count used to PUT immediately and reload, which threw away
 // every unsaved button on the screen — twenty minutes of work for one keystroke
 // in a number box.
+// The failure this pair guards is the one a finished screen meets first. A
+// venue's real layout has no empty cells left in it, so if a drag beginning on
+// a programmed key were a move, a box could never be drawn at all and every
+// bulk edit in the panel — colour these six, clear this row — would be
+// unreachable on precisely the screens that have been worked on most.
+check('a drag across programmed keys draws a box rather than moving them', async (cdp) => {
+  await reset(cdp);
+  await cdp.eval(`
+    // Fill the grid, so there is nowhere empty to start a drag from.
+    spSelection = new Set();
+    for (let r = 0; r < spCurrent.rows; r++) {
+      for (let c = 0; c < spCurrent.cols; c++) spSelection.add(r + ':' + c);
+    }
+    spApplyToSelection((b) => { spSetKind(b, 'product'); b.pluId = 100; });
+    spSelection = new Set();
+    spPaintSelection();
+    return spCurrent.buttons.length;`);
+
+  // Clear of the 2x2 in the corner, whose cells are not keys of their own.
+  const from = await cdp.cell(2, 1);
+  const to = await cdp.cell(3, 2);
+  await cdp.mouseDrag(from, to);
+
+  const selected = await cdp.eval(`return [...spSelection].sort().join(',');`);
+  assert.strictEqual(selected, '2:1,2:2,3:1,3:2', 'the drag moved a key instead of selecting');
+});
+
 check('growing the grid keeps the unsaved layout', async (cdp) => {
   await reset(cdp);
   const before = await cdp.eval(`

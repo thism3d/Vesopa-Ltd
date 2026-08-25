@@ -20,6 +20,7 @@ import 'data/session_controller.dart';
 import 'data/order_repository.dart';
 import 'data/session_repository.dart';
 import 'data/staff_repository.dart';
+import 'data/startup_repair.dart';
 import 'data/staff_session.dart';
 import 'data/sync_service.dart';
 import 'data/table_repository.dart';
@@ -33,6 +34,7 @@ import 'payments/payment_provider.dart';
 import 'ui/idle_screen.dart';
 import 'ui/shell.dart';
 import 'ui/sign_in_page.dart';
+import 'ui/recovery_page.dart';
 import 'ui/splash_page.dart';
 import 'ui/theme.dart';
 import 'ui/theme_controller.dart';
@@ -673,10 +675,35 @@ Future<void> _lockWindowToKiosk() async {
   );
 }
 
+/// What the repair on the way up found, so the UI can say so.
+///
+/// Overridden in [main] before anything reads it. The default is "nothing was
+/// wrong", which is what a test that does not care about start-up gets.
+final startupRepairProvider = Provider<StartupRepair>((ref) => StartupRepair.ok);
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // BEFORE anything reads local storage, and before the window is even shown.
+  //
+  // A till that lost power mid-write is left with a truncated preferences file,
+  // and every read of it throws from then on. That used to leave the app
+  // spinning on black for ever, in a window it will not let anybody close, with
+  // no cure but deleting a folder in AppData by hand. Repairing it here fixes
+  // it for every provider at once, because they all reach for the same
+  // SharedPreferences singleton.
+  //
+  // It never touches the sales database. See startup_repair.dart for why that
+  // rule is not negotiable.
+  final repair = await repairStorageIfNeeded();
+
   await _lockWindowToKiosk();
-  runApp(const ProviderScope(child: VesopaEposApp()));
+  runApp(
+    ProviderScope(
+      overrides: [startupRepairProvider.overrideWithValue(repair)],
+      child: const VesopaEposApp(),
+    ),
+  );
 }
 
 class VesopaEposApp extends ConsumerStatefulWidget {
@@ -686,8 +713,14 @@ class VesopaEposApp extends ConsumerStatefulWidget {
   ConsumerState<VesopaEposApp> createState() => _VesopaEposAppState();
 }
 
+/// So a start-up notice has somewhere to be shown from.
+final _rootNavigator = GlobalKey<NavigatorState>();
+
 class _VesopaEposAppState extends ConsumerState<VesopaEposApp> {
   bool _splashDone = false;
+
+  /// The database notice is shown once, not on every rebuild.
+  bool _announcedRepair = false;
 
   /// So the recovery below runs once, not on every rebuild.
   bool _recommissioning = false;
@@ -714,8 +747,63 @@ class _VesopaEposAppState extends ConsumerState<VesopaEposApp> {
     });
   }
 
+  /// Tell the venue when the till started with an empty sales file.
+  ///
+  /// Never silent. The terminal repaired itself and is selling again, which is
+  /// the right outcome — but a sale that was waiting to be sent and could not
+  /// be read is money the venue has to know about, and the file is kept so
+  /// somebody can try to get it back. Saying nothing here would be choosing to
+  /// let a shortfall be discovered at a month end instead.
+  void _announceRepairOnce() {
+    if (_announcedRepair || !_splashDone) return;
+    final moved = ref.read(startupRepairProvider).databaseMovedTo;
+    if (moved == null) return;
+
+    _announcedRepair = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final context = _rootNavigator.currentContext;
+      if (context == null) return;
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          title: const Text('This till started with an empty sales file'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Its own copy of recent sales could not be read, so the till has '
+                  'started a new one and is ready to sell.\n\n'
+                  'Any sale on this terminal that had not yet reached the back office '
+                  'may have been in the old file. Sales the back office already has '
+                  'are safe. The old file has been kept, not deleted — send this path '
+                  'to support before anybody clears it:',
+                ),
+                const SizedBox(height: 10),
+                SelectableText(
+                  moved,
+                  style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('I have noted this'),
+            ),
+          ],
+        ),
+      );
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    _announceRepairOnce();
+
     // Dark until the stored preference loads, so the app never flashes white
     // on startup before settling into the operator's actual choice.
     final mode = ref.watch(themeControllerProvider).value ?? ThemeMode.dark;
@@ -740,6 +828,7 @@ class _VesopaEposAppState extends ConsumerState<VesopaEposApp> {
 
     return MaterialApp(
       title: 'VesopaEPOS',
+      navigatorKey: _rootNavigator,
       debugShowCheckedModeBanner: false,
       theme: buildPosTheme(Brightness.light),
       darkTheme: buildPosTheme(Brightness.dark),
@@ -753,6 +842,7 @@ class _VesopaEposAppState extends ConsumerState<VesopaEposApp> {
               onDone: () async {
                 await refreshStaffBeforeOpening(ref);
                 if (mounted) setState(() => _splashDone = true);
+                _announceRepairOnce();
               },
             )
           : switch (session) {
@@ -765,11 +855,95 @@ class _VesopaEposAppState extends ConsumerState<VesopaEposApp> {
               AsyncData(value: final s) when !s.commissioned =>
                 const SignInPage(),
               AsyncData() => const _LockedTill(child: PosShell()),
-              _ => const Scaffold(
-                body: Center(child: CircularProgressIndicator()),
-              ),
+              // Loading *and* error used to land here together, on a bare
+              // spinner — so a session that could not be read showed exactly
+              // what a session still loading shows, for ever. They are told
+              // apart now, and even the loading case is given a deadline.
+              _ => _StartingUp(session: session),
             },
     );
+  }
+}
+
+/// The wait before the till opens, with a way out of it.
+///
+/// A start-up that takes longer than [_patience] is not slow, it is stuck:
+/// everything on this path is local. So the till tries the repair itself, once,
+/// and shows [RecoveryPage] if that does not free it. The old behaviour — spin
+/// for ever and say nothing — is the bug this exists to remove.
+class _StartingUp extends ConsumerStatefulWidget {
+  const _StartingUp({required this.session});
+
+  final AsyncValue<Session> session;
+
+  @override
+  ConsumerState<_StartingUp> createState() => _StartingUpState();
+}
+
+class _StartingUpState extends ConsumerState<_StartingUp> {
+  /// Generous, because a cold Windows till on a spinning disk is genuinely slow
+  /// on the first launch after an update — and mean enough that nobody stands
+  /// in front of a dead screen wondering.
+  static const _patience = Duration(seconds: 12);
+
+  Timer? _deadline;
+  bool _stuck = false;
+  bool _triedRepair = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _deadline = Timer(_patience, _giveUpWaiting);
+  }
+
+  @override
+  void dispose() {
+    _deadline?.cancel();
+    super.dispose();
+  }
+
+  /// One silent repair, then ask. The operator is only involved if the till
+  /// could not sort itself out — which is the whole request.
+  Future<void> _giveUpWaiting() async {
+    if (!mounted || _triedRepair) return;
+    _triedRepair = true;
+
+    await repairStorageIfNeeded();
+    if (!mounted) return;
+
+    ref.invalidate(sessionControllerProvider);
+    // A second, shorter grace period: if the repair worked, the session
+    // rebuilds in milliseconds and this widget is gone before it fires.
+    _deadline = Timer(const Duration(seconds: 5), () {
+      if (mounted) setState(() => _stuck = true);
+    });
+  }
+
+  Future<void> _retry() async {
+    ref.invalidate(sessionControllerProvider);
+    if (!mounted) return;
+    setState(() {
+      _stuck = false;
+      _triedRepair = false;
+    });
+    _deadline?.cancel();
+    _deadline = Timer(_patience, _giveUpWaiting);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final failure = widget.session.error ?? ref.watch(startupRepairProvider).failure;
+
+    // An error is not a wait. Shown at once rather than after the deadline:
+    // there is nothing left to wait for.
+    if (failure != null || _stuck) {
+      return RecoveryPage(
+        onRetry: _retry,
+        failure: failure,
+        stuck: failure == null,
+      );
+    }
+    return const Scaffold(body: Center(child: CircularProgressIndicator()));
   }
 }
 

@@ -14,6 +14,7 @@ import 'placeholder_page.dart';
 import 'products_page.dart';
 import 'settings_page.dart';
 import 'receipts_page.dart';
+import 'recovery_page.dart';
 import 'reports_page.dart';
 import 'sale_page.dart';
 import 'tables_page.dart';
@@ -33,6 +34,15 @@ class _PosShellState extends ConsumerState<PosShell> {
   int _index = 0;
   String? _orderId;
 
+  /// Why the till could not open a bill, when it could not.
+  ///
+  /// This used to be nowhere: [_newOrder] awaited a database write and, if that
+  /// threw, simply never set [_orderId] — leaving the shell drawn, the tab bar
+  /// drawn, "Online" drawn, and a spinner where the sale buttons go. For ever,
+  /// with the exception swallowed. That is the screen a broken migration put in
+  /// front of an operator, and there was nothing on it to act on.
+  Object? _openFailure;
+
   /// Lets the desktop title bar's Settings button open the nav drawer, which is
   /// otherwise only reachable from an AppBar's automatic hamburger.
   final _scaffold = GlobalKey<ScaffoldState>();
@@ -47,8 +57,18 @@ class _PosShellState extends ConsumerState<PosShell> {
   }
 
   Future<void> _newOrder() async {
-    final id = await ref.read(orderRepositoryProvider).openOrder();
-    if (mounted) setState(() => _orderId = id);
+    try {
+      final id = await ref.read(orderRepositoryProvider).openOrder();
+      if (!mounted) return;
+      setState(() {
+        _orderId = id;
+        _openFailure = null;
+      });
+    } catch (e) {
+      // The local database would not answer. Nothing else on this screen can
+      // work without it, so say so and offer the repair rather than spin.
+      if (mounted) setState(() => _openFailure = e);
+    }
   }
 
   /// Sign out. The dialog verifies the password against the live server and
@@ -83,6 +103,18 @@ class _PosShellState extends ConsumerState<PosShell> {
     // on the network.
     ref.watch(brandingRefreshProvider);
     ref.watch(commerceRefreshProvider);
+
+    // Shown instead of the shell, not inside it: a till that cannot open a bill
+    // cannot do anything the tabs offer either.
+    if (_openFailure case final failure?) {
+      return RecoveryPage(
+        failure: failure,
+        onRetry: () async {
+          setState(() => _openFailure = null);
+          await _newOrder();
+        },
+      );
+    }
 
     final orderId = _orderId;
     final body = orderId == null
