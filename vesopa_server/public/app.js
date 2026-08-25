@@ -106,7 +106,10 @@ function connectSocket() {
   socket.onmessage = (e) => {
     const msg = JSON.parse(e.data);
     if (msg.type === 'order.created') onNewSale(msg);
-    if (msg.type === 'catalogue.updated' && ['products', 'stock'].includes(currentView)) render();
+    // The screen editor names its keys from the catalogue, so a product renamed
+    // on another machine should relabel them here. Safe to reload now that
+    // loadScreens keeps an unsaved layout rather than replacing it.
+    if (msg.type === 'catalogue.updated' && ['products', 'stock', 'screens'].includes(currentView)) render();
     if (msg.type === 'staff.updated' && currentView === 'staff') render();
     if (msg.type === 'users.updated' && currentView === 'users') render();
     if (msg.type === 'customers.updated' && currentView === 'customers') render();
@@ -247,6 +250,22 @@ const viewForPath = (path) =>
 
 function show(view, { push = true } = {}) {
   if (!$(`view-${view}`)) view = 'dashboard';
+
+  // The screen editor holds a whole layout in the browser, and leaving the view
+  // is the one way out of it that used to throw the layout away without a word.
+  // Asked here rather than in screens.js because this is the function that
+  // actually leaves — including via the back button, which is why a refusal has
+  // to put the address bar back where it was.
+  if (
+    currentView === 'screens' &&
+    view !== 'screens' &&
+    typeof spDirty === 'function' &&
+    spDirty() &&
+    !confirm('This screen has changes that have not been saved. Leave them behind?')
+  ) {
+    if (!push) history.pushState({ view: 'screens' }, '', ROUTES.screens);
+    return;
+  }
 
   currentView = view;
   document.querySelectorAll('.view').forEach((v) => (v.hidden = true));
@@ -743,13 +762,137 @@ async function ensurePrinterNames() {
   }
 }
 
+// ---- The catalogue --------------------------------------------------------
+//
+// The list as it came from the server, plus how the manager is looking at it.
+// Held here rather than re-fetched, so a search, a sort or a socket push does
+// not cost a round trip — and so a push does not throw away the filter somebody
+// is halfway through typing.
+let productRows = [];
+let productQuery = '';
+let productDept = '';
+let productSort = { key: null, dir: 1 };
+let productsBound = false;
+
 async function loadProducts() {
   await ensurePrinterNames();
-  const rows = await api('/products');
+  productRows = await api('/products');
+  bindProducts();
+  renderProducts();
+}
+
+function bindProducts() {
+  if (productsBound) return;
+  productsBound = true;
+
+  $('prod-q').addEventListener('input', (e) => {
+    productQuery = e.target.value.trim().toLowerCase();
+    renderProducts();
+  });
+  $('prod-dept').addEventListener('change', (e) => {
+    productDept = e.target.value;
+    renderProducts();
+  });
+  $('prod-clear').addEventListener('click', () => {
+    productQuery = '';
+    productDept = '';
+    productSort = { key: null, dir: 1 };
+    $('prod-q').value = '';
+    renderProducts();
+  });
+
+  // Sorting by column, because "which of these has no button position" and
+  // "what is dearest" are both questions a manager asks of this table and
+  // neither could be asked of it before.
+  document
+    .querySelectorAll('#view-products th[data-sort]')
+    .forEach((th) =>
+      th.addEventListener('click', () => {
+        const key = th.dataset.sort;
+        productSort =
+          productSort.key === key
+            ? { key, dir: -productSort.dir }
+            : { key, dir: 1 };
+        renderProducts();
+      })
+    );
+}
+
+/**
+ * The rows to draw: filtered, then sorted.
+ *
+ * The server's own order — department, then button position, then name — is
+ * what a manager sees until they ask for something else, because it is the
+ * order the till lays the products out in.
+ */
+function visibleProducts() {
+  const rows = productRows.filter((p) => {
+    if (productDept && (p.department_name || '') !== productDept) return false;
+    if (!productQuery) return true;
+    return (
+      String(p.product_name || '').toLowerCase().includes(productQuery) ||
+      String(p.department_name || '').toLowerCase().includes(productQuery) ||
+      String(p.pluid).includes(productQuery)
+    );
+  });
+
+  const { key, dir } = productSort;
+  if (!key) return rows;
+  const numeric = ['pluid', 'price', 'tax_percentage', 'button_position'];
+  return rows.sort((a, b) => {
+    if (numeric.includes(key)) {
+      // A product with no button position sorts last either way round: it is
+      // the absence that is being looked for, and it belongs together.
+      const x = a[key] == null ? Infinity : Number(a[key]);
+      const y = b[key] == null ? Infinity : Number(b[key]);
+      return (x - y) * dir;
+    }
+    return String(a[key] ?? '').localeCompare(String(b[key] ?? '')) * dir;
+  });
+}
+
+function renderProducts() {
+  const rows = visibleProducts();
+
+  // Two products sharing a PLU is a real fault, not a curiosity: a screen
+  // button carries a PLU, and the till indexes the catalogue by it — so one of
+  // the two is unreachable and nobody finds out until a clerk rings up the
+  // wrong thing. Flagged where the catalogue is edited.
+  const plus = new Map();
+  for (const p of productRows) {
+    plus.set(String(p.pluid), (plus.get(String(p.pluid)) || 0) + 1);
+  }
+
+  const departments = [
+    ...new Set(productRows.map((p) => p.department_name).filter(Boolean)),
+  ].sort();
+  $('prod-dept').innerHTML =
+    '<option value="">All departments</option>' +
+    departments
+      .map(
+        (d) =>
+          `<option value="${esc(d)}"${d === productDept ? ' selected' : ''}>${esc(d)}</option>`
+      )
+      .join('');
+
+  $('prod-count').textContent =
+    rows.length === productRows.length
+      ? `${productRows.length} product${productRows.length === 1 ? '' : 's'}`
+      : `${rows.length} of ${productRows.length} products`;
+
+  document.querySelectorAll('#view-products th[data-sort]').forEach((th) => {
+    th.classList.toggle('sorted', th.dataset.sort === productSort.key);
+    th.dataset.dir = th.dataset.sort === productSort.key
+      ? productSort.dir > 0 ? 'up' : 'down'
+      : '';
+  });
+
   $('products').innerHTML = rows
     .map(
       (p) => `<tr>
-        <td>${p.pluid}</td>
+        <td>${p.pluid}${plus.get(String(p.pluid)) > 1
+          ? ' <span class="badge archived" title="Another product in this catalogue has the same PLU. The till can only reach one of them.">duplicate</span>'
+          : ''}</td>
         <td>${p.image_url
           ? `<img class="thumb" src="${esc(p.image_url)}" alt="" />`
           : p.emoji
@@ -765,11 +908,15 @@ async function loadProducts() {
         <td>${routeChips(p)}</td>
         <td class="right">
           <button class="btn small ghost" data-edit-product="${p.id}">Edit</button>
+          <button class="btn small ghost" data-dup-product="${p.id}">Duplicate</button>
           <button class="btn small danger" data-del-product="${p.id}">Delete</button>
         </td>
       </tr>`
     )
-    .join('') || '<tr><td colspan="9" class="empty">No products.</td></tr>';
+    .join('') ||
+    `<tr><td colspan="9" class="empty">${
+      productRows.length ? 'No products match that search.' : 'No products.'
+    }</td></tr>`;
 }
 
 async function loadUsers() {
@@ -1796,6 +1943,21 @@ document.addEventListener('click', async (e) => {
     const p = await api(`/products/${t.dataset.editProduct}`);
     return modal('Edit product', productFields(p), (d) =>
       api(`/products/${p.id}`, { method: 'PUT', body: JSON.stringify(d) })
+    );
+  }
+  // Half a catalogue is a variant of the other half — the same burger with
+  // cheese, the same wine by the glass. This opens the add form with everything
+  // already filled in, including a PLU that is free, because "which numbers am I
+  // not using" is not a question this form should send somebody away to answer.
+  if (t.dataset.dupProduct) {
+    const p = await api(`/products/${t.dataset.dupProduct}`);
+    const taken = new Set(productRows.map((r) => Number(r.pluid)));
+    let pluid = Number(p.pluid) + 1;
+    while (taken.has(pluid)) pluid++;
+    return modal(
+      'Duplicate product',
+      productFields({ ...p, pluid, product_name: `${p.product_name} (copy)` }),
+      (d) => api('/products', { method: 'POST', body: JSON.stringify(d) })
     );
   }
 

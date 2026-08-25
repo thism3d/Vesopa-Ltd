@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:drift/drift.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
 
@@ -65,6 +66,7 @@ class SyncService {
     required this.apiBase,
     required this.wsUrl,
     required this.office,
+    this.connector,
   });
 
   final AppDatabase _db;
@@ -75,6 +77,12 @@ class SyncService {
   /// the sales by it, so without it a till would be handed every business's
   /// products.
   final String office;
+
+  /// How the socket is opened. Null everywhere but in a test, which hands in a
+  /// channel it can read the sent frames off — there is no other way to prove
+  /// the terminal announces which venue it belongs to, and that announcement is
+  /// what decides whether office-scoped pushes reach it at all.
+  final WebSocketChannel Function(Uri url)? connector;
 
   WebSocketChannel? _channel;
   StreamSubscription<void>? _connectivitySub;
@@ -345,7 +353,8 @@ class SyncService {
   void _connectWebSocket() {
     if (_disposed || _channel != null) return;
     try {
-      final channel = WebSocketChannel.connect(Uri.parse(wsUrl));
+      final open = connector ?? WebSocketChannel.connect;
+      final channel = open(Uri.parse(wsUrl));
       _channel = channel;
       _socketLive = false;
 
@@ -365,6 +374,7 @@ class SyncService {
             if (_disposed || _channel != channel) return;
             _socketLive = true;
             _reconnectAttempts = 0;
+            _subscribe(channel);
             if (!_online) {
               _online = true;
               _emit();
@@ -376,6 +386,41 @@ class SyncService {
     } catch (_) {
       _resetSocket();
     }
+  }
+
+  /// Tell the server which venue this terminal belongs to.
+  ///
+  /// Without it the till hears only the pushes that go to everybody, and the
+  /// server deliberately sends nothing office-scoped to a socket that has never
+  /// said which office it is — the default is silence, because the failure mode
+  /// of the other default is one venue's orders appearing on another's screen.
+  ///
+  /// That default is what made screen programming look broken: a layout saved
+  /// in the back office broadcasts `screens` scoped to the venue, and every
+  /// till in it was skipped. A manager rearranged a page, the back office said
+  /// it had saved, and the counter carried on showing the old one until
+  /// somebody restarted the app.
+  ///
+  /// Sent on every completed handshake, including reconnections — the server
+  /// holds this per socket, so a dropped connection forgets it.
+  void _subscribe(WebSocketChannel channel) {
+    if (office.isEmpty) return;
+    try {
+      channel.sink.add(jsonEncode({'type': 'subscribe', 'office': office}));
+    } catch (_) {
+      // A socket that died between `ready` and here. The reconnect path will
+      // subscribe the next one; there is nothing to report to a clerk.
+    }
+  }
+
+  /// Open the socket, for a test that must not start timers or listen to the
+  /// platform's connectivity channel in order to do it.
+  @visibleForTesting
+  Future<void> connectForTest() async {
+    _connectWebSocket();
+    await _channel?.ready;
+    // The handshake completing schedules the subscribe on a microtask.
+    await Future<void>.delayed(Duration.zero);
   }
 
   void _resetSocket() {

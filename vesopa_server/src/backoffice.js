@@ -165,6 +165,27 @@ function backofficeRoutes({ pool, broadcast, secret }) {
   router.post('/products', auth, async (req, res, next) => {
     const p = req.body;
     try {
+      // A PLU is the catalogue's key everywhere it matters: a screen button
+      // carries one, the till indexes its products by one, and a kitchen route
+      // is looked up through one. Two rows sharing it means one of the two is
+      // unreachable — and nobody finds out until a clerk presses a key and the
+      // wrong thing goes on the bill.
+      //
+      // Refused on create only. Rows that already share a PLU are left alone
+      // rather than made uneditable, and the products list flags them so a
+      // venue can see what it has; PUT never changes a pluid.
+      const [[clash]] = await pool.query(
+        'SELECT id, product_name FROM bo_products WHERE email = ? AND pluid = ?',
+        [await tenantEmail(req), p.pluid]
+      );
+      if (clash) {
+        return res.status(409).json({
+          error:
+            `PLU ${p.pluid} is already used by "${clash.product_name}". ` +
+            'Give this one a number of its own.',
+        });
+      }
+
       const [result] = await pool.execute(
         `INSERT INTO bo_products
            (email, pluid, product_name, department_name, group_name,

@@ -1683,3 +1683,106 @@ table.plain th { color: var(--muted, #7a828c); font-weight: 600; font-size: 11px
 
 .sp-spans { display: flex; gap: 10px; margin-top: 12px; }
 .sp-spans label { flex: 1; font-size: 12.5px; }
+
+/* The screen editor, part two: the states the grid gained when it learned to
+   be dragged around rather than only clicked on.
+
+   `caret` is where the keyboard is, which is not the same as what is selected —
+   arrow keys walk it, Shift extends from it. `drop` is where a dragged block
+   would land, drawn before the drop rather than after it, because a move that
+   cannot be previewed is a move that gets undone. */
+.sp-cell.caret { box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .55); }
+.sp-cell.drop {
+  outline: 2px dashed var(--brand, #a5c715);
+  outline-offset: -2px;
+  opacity: .85;
+}
+.sp-grid.moving { cursor: grabbing; }
+.sp-grid.moving .sp-cell { cursor: grabbing; }
+
+/* Preview: the grid as a clerk meets it, without the editor's empty keys. The
+   layout does not move — only the scaffolding stops being drawn — so what is
+   being checked is what a till will show. */
+.sp-grid.preview .sp-cell:not(.filled) {
+  border-color: transparent;
+  background: transparent;
+}
+.sp-grid.preview .sp-cell.selected { outline-color: transparent; }
+.sp-grid.preview .sp-cell.caret { box-shadow: none; }
+
+.sp-order { display: flex; gap: 4px; }
+
+/* The line under the grid: what the layout holds, and whether it is saved. */
+.sp-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  font-size: 12.5px;
+  color: var(--muted, #6b7280);
+}
+.sp-flag {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 11.5px;
+}
+.sp-flag.ok { background: rgba(33, 167, 62, .14); color: #21a73e; }
+.sp-flag.warn { background: rgba(206, 122, 10, .16); color: #b56a08; }
+.sp-flag.bad { background: rgba(208, 50, 39, .14); color: #d03227; }
+
+/* The check list. Each row selects the key it names, which is the only reason
+   the list is worth having — "row 3, column 5" is not a thing anybody counts
+   across a grid by eye. */
+.sp-issues { display: flex; flex-direction: column; gap: 6px; }
+.sp-issue {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--line, #d7dbe2);
+  border-left: 3px solid #d03227;
+  border-radius: 8px;
+  background: var(--panel, #fff);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.sp-issue:hover { border-color: #d03227; }
+
+/* The product picker is a list box now, not a one-line select: a search above
+   it and eight rows visible is the difference between choosing a product and
+   scrolling past nine hundred of them. */
+#sp-product { width: 100%; margin-top: 6px; }
+#sp-product-q { width: 100%; }
+
+/* A filter bar above a table. Same furniture as the screen editor's bar, which
+   is why it borrows .sp-pick and .sp-spacer rather than growing a second set of
+   names for a label above a control. */
+.tbl-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border: 1px solid var(--line, #d7dbe2);
+  border-radius: 10px;
+  background: var(--panel, #fff);
+}
+.tbl-bar input[type="search"] { min-width: 240px; }
+
+/* Sortable headings. The arrow only appears on the column actually in use —
+   three greyed arrows across a header row is decoration, not information. */
+table.sortable th[data-sort] {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+table.sortable th[data-sort]:hover { color: var(--ink, #10131a); }
+table.sortable th.sorted::after {
+  content: ' ▲';
+  font-size: 10px;
+}
+table.sortable th.sorted[data-dir="down"]::after { content: ' ▼'; }

@@ -271,8 +271,25 @@ final screensRepositoryProvider = Provider<ScreensRepository>(
   (ref) => ScreensRepository(apiBase: ref.watch(apiBaseProvider)),
 );
 
-/// The venue's screens, refreshed when the office changes.
+/// The venue's screens, refreshed when the office changes — and when the back
+/// office says a layout has.
+///
+/// The push half is not an optimisation. Without it these were fetched once, at
+/// sign-on, and never again: a manager could lay out a page, watch the back
+/// office confirm the save, and find every till in the building still showing
+/// the old one until somebody restarted the app. That is the whole point of
+/// programming a screen from an office, and it did not work.
+///
+/// `screens` is the layout itself. `till-settings` is which screen a till opens
+/// on, and it is listened for here too — changing the home screen changes what
+/// this venue's tills draw just as much as moving a key does, and the settings
+/// row is fetched by a different provider that cannot invalidate this one.
 final screensProvider = FutureProvider<ScreenSet>((ref) async {
+  ref.listen(syncEventsProvider, (_, next) {
+    final type = next.value?.type;
+    if (type == 'screens' || type == 'till-settings') ref.invalidateSelf();
+  });
+
   final office = ref.watch(officeProvider);
   if (office.isEmpty) return ScreenSet.empty;
   return ref.watch(screensRepositoryProvider).load(office);

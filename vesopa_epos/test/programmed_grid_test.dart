@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:vesopa_epos/data/commerce.dart';
 import 'package:vesopa_epos/data/local/database.dart';
+import 'package:vesopa_epos/data/pricing_engine.dart';
 import 'package:vesopa_epos/data/screens.dart';
 import 'package:vesopa_epos/ui/theme.dart';
 import 'package:vesopa_epos/ui/widgets/programmed_grid.dart';
@@ -18,15 +20,22 @@ import 'package:vesopa_epos/ui/widgets/programmed_grid.dart';
 /// one a clerk presses twice before asking anybody; an exception is a till that
 /// has stopped taking money in front of a queue.
 void main() {
-  Product product({int pluId = 1, String name = 'Carling', int price = 450}) =>
-      Product(
-        pluId: pluId,
-        name: name,
-        priceMinor: price,
-        taxPercentage: 20,
-        stockQuantity: 0,
-        printToReceipt: true,
-      );
+  Product product({
+    int pluId = 1,
+    String name = 'Carling',
+    int price = 450,
+    String? emoji,
+    String? department,
+  }) => Product(
+    pluId: pluId,
+    name: name,
+    priceMinor: price,
+    taxPercentage: 20,
+    stockQuantity: 0,
+    printToReceipt: true,
+    emoji: emoji,
+    departmentName: department,
+  );
 
   ScreenButton button({
     int row = 0,
@@ -57,6 +66,7 @@ void main() {
     required List<ScreenButton> buttons,
     List<TillScreen> others = const [],
     List<Product> catalogue = const [],
+    List<Promotion> promotions = const [],
     int rows = 3,
     int cols = 3,
     bool showPrices = true,
@@ -82,6 +92,7 @@ void main() {
             screen: screen,
             screens: ScreenSet([screen, ...others]),
             products: {for (final p in catalogue) p.pluId: p},
+            promotions: PricingEngine(promotions: promotions),
             showPrices: showPrices,
             onProduct: onProduct ?? (_) {},
             onPage: onPage ?? (_) {},
@@ -392,5 +403,81 @@ void main() {
         },
       );
     }
+  });
+
+  // The catalogue grid has always drawn a product's picture or emoji, and its
+  // offer flash. A programmed screen drew neither — so a venue that
+  // photographed its menu lost every picture the moment it laid out its own
+  // screen, and a promotion showed on one screen and not the other. Which of
+  // the two a clerk is standing in front of must not change what a product
+  // costs or looks like.
+  group('a key carries what the catalogue grid carries', () {
+    testWidgets('a product’s emoji is drawn on its key', (tester) async {
+      await tester.pumpWidget(
+        host(
+          buttons: [button()],
+          catalogue: [product(emoji: '🍺')],
+          rows: 2,
+          cols: 2,
+        ),
+      );
+
+      expect(find.text('🍺'), findsOneWidget);
+      expect(find.text('Carling'), findsOneWidget, reason: 'the name went');
+    });
+
+    // A key on a 10x12 grid is smaller than a postage stamp on a handheld. The
+    // picture gives way there rather than squeezing the name out — the name is
+    // the part a clerk reads.
+    testWidgets('a key too small for a picture keeps its name and price', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        host(
+          buttons: [button()],
+          catalogue: [product(emoji: '🍺')],
+          rows: 10,
+          cols: 12,
+        ),
+      );
+
+      expect(find.text('🍺'), findsNothing);
+      expect(find.text('Carling'), findsOneWidget);
+    });
+
+    testWidgets('an offer running on the product flashes on the key', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        host(
+          buttons: [button()],
+          catalogue: [product(department: 'Beers')],
+          promotions: const [
+            Promotion(
+              id: 1,
+              name: 'Happy hour',
+              kind: 'percent',
+              value: 500,
+              scope: 'product',
+              scopeValue: '1',
+              badgeText: 'HALF PRICE',
+              products: [1],
+            ),
+          ],
+          rows: 2,
+          cols: 2,
+        ),
+      );
+
+      expect(find.text('HALF PRICE'), findsOneWidget);
+    });
+
+    testWidgets('a key with no offer has no flash', (tester) async {
+      await tester.pumpWidget(
+        host(buttons: [button()], catalogue: [product()], rows: 2, cols: 2),
+      );
+
+      expect(find.text('HALF PRICE'), findsNothing);
+    });
   });
 }

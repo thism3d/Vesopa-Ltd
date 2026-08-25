@@ -19,6 +19,7 @@ import 'theme.dart';
 import 'till_actions.dart';
 import 'void_dialog.dart';
 import 'widgets/action_bar.dart';
+import 'widgets/offer_chip.dart';
 import '../data/commerce.dart';
 import '../data/pricing_engine.dart';
 import 'widgets/basket_panel.dart';
@@ -305,6 +306,12 @@ class SalePage extends ConsumerWidget {
                           screens: screenSet,
                           products: byPlu,
                           showPrices: settings.buttonsShowPrices,
+                          // The same offers the catalogue grid flashes. A
+                          // promotion that only shows on one of the two screens
+                          // is a clerk quoting the wrong price on the other.
+                          promotions: PricingEngine(
+                            promotions: ref.watch(promotionsProvider),
+                          ),
                           onProduct: addProduct,
                           onPage: (target) =>
                               ref.read(openScreenProvider.notifier).open(target.id),
@@ -1406,7 +1413,7 @@ class _ProductTile extends StatelessWidget {
                         const Spacer(),
                       if (_badgeText case final text?) ...[
                         const SizedBox(width: 6),
-                        _OfferChip(text: text, colour: _badgeColour),
+                        OfferChip(text: text, colour: _badgeColour),
                       ],
                     ],
                   ),
@@ -1455,35 +1462,6 @@ class _ProductTile extends StatelessWidget {
       Pos.parseColor(promotion?.badgeColour) ?? const Color(0xFFD81B60);
 }
 
-/// The offer flash on a product button.
-class _OfferChip extends StatelessWidget {
-  const _OfferChip({required this.text, required this.colour});
-
-  final String text;
-  final Color colour;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-      decoration: BoxDecoration(
-        color: colour,
-        borderRadius: BorderRadius.circular(5),
-      ),
-      child: Text(
-        text,
-        // The badge colour is set per-promotion in the back office, so a
-        // yellow "HALF PRICE" flash would otherwise be white-on-yellow.
-        style: TextStyle(
-          color: Pos.inkOn(colour),
-          fontSize: 10,
-          fontWeight: FontWeight.w800,
-          letterSpacing: 0.3,
-        ),
-      ),
-    );
-  }
-}
 
 /// Dips and lifts its child while pressed.
 ///

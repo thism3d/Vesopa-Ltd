@@ -333,11 +333,33 @@
             </div>
             <button class="btn primary" id="add-product">Add product</button>
           </div>
-          <div class="card"><table>
+
+          <!-- A catalogue is the one table here that grows without limit, and a
+               venue with nine hundred products was being handed all of them in
+               one unsorted list. Search and department are held in the browser
+               rather than sent to the server: the whole list is already in hand,
+               and a round trip per keystroke would be slower than the filter. -->
+          <div class="tbl-bar">
+            <label class="sp-pick">Search
+              <input id="prod-q" type="search" placeholder="Name, PLU or department" autocomplete="off">
+            </label>
+            <label class="sp-pick">Department
+              <select id="prod-dept"></select>
+            </label>
+            <button type="button" class="btn ghost small" id="prod-clear">Clear</button>
+            <span class="sp-spacer"></span>
+            <span class="muted small" id="prod-count"></span>
+          </div>
+
+          <div class="card"><table class="sortable">
             <thead><tr>
-              <th>PLU</th><th>Name</th><th>Department</th>
-              <th class="right">Price</th><th class="right">VAT</th>
-              <th class="right">Button</th><th>Colour</th><th>Printing</th><th></th>
+              <th data-sort="pluid">PLU</th>
+              <th data-sort="product_name">Name</th>
+              <th data-sort="department_name">Department</th>
+              <th class="right" data-sort="price">Price</th>
+              <th class="right" data-sort="tax_percentage">VAT</th>
+              <th class="right" data-sort="button_position">Button</th>
+              <th>Colour</th><th>Printing</th><th></th>
             </tr></thead>
             <tbody id="products"></tbody>
           </table></div>
@@ -760,6 +782,8 @@
               </p>
             </div>
             <div class="denom-actions">
+              <button type="button" class="btn ghost small" id="sp-undo" title="Undo (Ctrl+Z)">↶ Undo</button>
+              <button type="button" class="btn ghost small" id="sp-redo" title="Redo (Ctrl+Y)">↷ Redo</button>
               <button type="button" class="btn ghost" id="sp-revert">Revert</button>
               <button type="button" class="btn primary" id="sp-save">Save layout</button>
             </div>
@@ -771,7 +795,12 @@
             </label>
             <button type="button" class="btn ghost small" id="sp-new">New…</button>
             <button type="button" class="btn ghost small" id="sp-rename">Rename</button>
+            <button type="button" class="btn ghost small" id="sp-duplicate" title="Copy this screen, buttons and all">Duplicate</button>
             <button type="button" class="btn danger-ghost small" id="sp-delete">Delete</button>
+            <span class="sp-order">
+              <button type="button" class="btn ghost small" id="sp-up" title="Move this screen earlier in the list">↑</button>
+              <button type="button" class="btn ghost small" id="sp-down" title="Move this screen later in the list">↓</button>
+            </span>
             <span class="sp-spacer"></span>
             <label class="sp-pick">Rows
               <input type="number" id="sp-rows" min="1" max="10" step="1">
@@ -780,6 +809,9 @@
               <input type="number" id="sp-cols" min="1" max="12" step="1">
             </label>
             <span class="sp-spacer"></span>
+            <label class="check" title="Hide the editor's empty cells and see the grid as a clerk does.">
+              <input type="checkbox" id="sp-preview"> Preview
+            </label>
             <label class="check" title="The screen a till opens on. Off means the built-in Default, which is drawn from your product list.">
               <input type="checkbox" id="sp-home"> Tills open on this screen
             </label>
@@ -790,9 +822,18 @@
               <!-- The grid, drawn at the till's own proportions so what is
                    arranged here is what a clerk sees. -->
               <div id="sp-grid" class="sp-grid" tabindex="0"></div>
+              <!-- What the layout holds, and whether it is saved. Under the
+                   grid rather than in the panel: it is about the screen, not
+                   about the selection. -->
+              <div id="sp-status" class="sp-status"></div>
               <p class="muted small" id="sp-hint" style="margin:8px 0 0">
-                Click a button to select it. Drag across several, or hold Shift, to select more.
-                Then use the panel on the right. Backspace clears the selection.
+                Click a key to select it, or drag a box across several. <strong>Shift</strong> extends
+                the box, <strong>Ctrl</strong> adds one at a time. Drag a programmed key to move it —
+                hold <strong>Alt</strong> to copy it instead. Arrow keys walk the grid,
+                <strong>Alt+arrows</strong> nudge what is selected, and
+                <strong>Ctrl+Z</strong>, <strong>Ctrl+C</strong>, <strong>Ctrl+V</strong>,
+                <strong>Ctrl+D</strong> and <strong>Ctrl+S</strong> do what they do everywhere else.
+                Backspace clears the selection.
               </p>
             </div>
 
@@ -818,9 +859,15 @@
                     </select>
                   </label>
 
-                  <label class="sp-field" data-for="product" hidden>Product
-                    <select id="sp-product"></select>
-                  </label>
+                  <!-- A search, because a select holding every product in a
+                       venue is a list nobody scrolls twice. -->
+                  <div class="sp-field" data-for="product" hidden>
+                    <label>Product
+                      <input id="sp-product-q" placeholder="Search by name, department or PLU">
+                    </label>
+                    <select id="sp-product" size="8"></select>
+                    <p class="muted small" id="sp-product-count" style="margin:4px 0 0"></p>
+                  </div>
 
                   <label class="sp-field" data-for="page" hidden>Screen
                     <select id="sp-target"></select>
@@ -835,9 +882,22 @@
                   </label>
 
                   <div class="sp-swatches" id="sp-fills"></div>
+                  <label style="margin-top:10px">Lettering
+                    <select id="sp-ink">
+                      <option value="auto">The till decides</option>
+                      <option value="light">Light</option>
+                      <option value="dark">Dark</option>
+                    </select>
+                  </label>
                   <div class="denom-actions" style="margin-top:8px">
                     <button type="button" class="btn ghost small" id="sp-clear-style">Use the till’s colours</button>
                   </div>
+                  <!-- An empty cell is not stored, so a colour on one goes
+                       nowhere. Said here rather than discovered on a save. -->
+                  <p class="muted small" id="sp-style-note" style="margin:8px 0 0" hidden>
+                    Choose what these buttons do first — a colour or a label on an empty cell is
+                    not kept.
+                  </p>
 
                   <div class="sp-spans">
                     <label>Width
@@ -849,9 +909,23 @@
                   </div>
 
                   <div class="denom-actions" style="margin-top:10px">
+                    <button type="button" class="btn ghost small" id="sp-copy" title="Ctrl+C">Copy</button>
+                    <button type="button" class="btn ghost small" id="sp-paste" title="Ctrl+V">Paste</button>
                     <button type="button" class="btn danger-ghost small" id="sp-clear">Clear these buttons</button>
                   </div>
                 </div>
+              </div>
+
+              <!-- What is wrong with this layout, if anything. Hidden when the
+                   screen is sound, because a panel that is always empty is one
+                   nobody reads on the day it fills up. -->
+              <div class="card rd-card" id="sp-issues-card" hidden>
+                <h3>Needs attention</h3>
+                <p class="muted small" style="margin:0 0 10px">
+                  These keys point at something that no longer exists. A clerk meets them as a
+                  key that refuses the press.
+                </p>
+                <div id="sp-issues" class="sp-issues"></div>
               </div>
 
               <!-- Bulk fill. The reference's best idea, and the one thing that
@@ -1186,11 +1260,19 @@
 
     <div id="modal-root"></div>
     <div id="cropper-root"></div>
+    <!-- app.js LAST, and that is load-bearing rather than tidiness.
+         It signs in and opens a view as it parses, so its navigation table has
+         to be able to resolve `loadScreens` there and then. With screens.js
+         loaded after it, a refresh — or a bookmark — straight onto
+         /screen-programming threw a ReferenceError out of render() and left
+         the whole page blank, taking the nav folding with it. Every other view
+         was fine, which is what made it look like the screen editor's fault.
+
+         The two files below use app.js's `$`, `api`, `esc` and `modal`, and
+         may go on doing so: they only reach for them when something is
+         rendered, which is always after everything has parsed. -->
     <script src="/charts.js"></script>
-    <script src="/app.js"></script>
-    <!-- Screen programming. After app.js, whose `$`, `api`, `esc` and `modal`
-         it uses; the navigation table there resolves loadScreens when the view
-         is opened, by which time this has parsed. -->
     <script src="/screens.js"></script>
+    <script src="/app.js"></script>
   </body>
 </html>

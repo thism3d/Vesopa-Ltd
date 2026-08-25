@@ -53,19 +53,34 @@ const ctx = lift([
   'SP_FUNCTIONS',
   'spSetKind',
   'spCovered',
+  'spOrigin',
+  'spTidy',
+  'spShape',
+  'spCellFromPoint',
   'spProductName',
   'spLabelFor',
   'spMissing',
 ]);
 
 /** The module-level state those functions read. */
-function withState({ current = null, products = [], screens = [] } = {}) {
+function withState({
+  current = null,
+  products = [],
+  screens = [],
+  selection = [],
+} = {}) {
   ctx.spCurrent = current;
   ctx.spProducts = products;
   ctx.spScreens = screens;
+  ctx.spSelection = new Set(selection);
   // spCovered uses spKey, which is an arrow const the lifter does not take.
   ctx.spKey = (row, col) => `${row}:${col}`;
 }
+
+/** A cell as "row:col". An object made inside the vm carries that realm's
+    prototype, so deepStrictEqual refuses it however alike the two look —
+    anything coming back from lifted code is reduced to a string first. */
+const cell = (c) => `${c.row}:${c.col}`;
 
 let passed = 0;
 function check(name, fn) {
@@ -237,6 +252,182 @@ check('a button that resolves is not flagged', () => {
 // would have explained is suppressed by the same tick box. The kitchen editors
 // were rewritten out of exactly this. A single confirm() before a destructive
 // act is fine and is used elsewhere; a chain is not.
+// ---- The cell a press belongs to -----------------------------------------
+
+// A cell swallowed by a 2x2 is not a cell you can programme: it is part of the
+// button above it. The editor used to let a drag select those holes and then
+// created buttons in them — invisible on the grid, saved to the server, drawn
+// by nothing at all. Every press and every drag goes through this now.
+check('a cell under a span answers as the button covering it', () => {
+  withState({
+    current: {
+      rows: 3,
+      cols: 3,
+      buttons: [{ row: 0, col: 0, rowSpan: 2, colSpan: 2, kind: 'product', pluId: 1 }],
+    },
+  });
+
+  assert.strictEqual(cell(ctx.spOrigin(1, 1)), '0:0');
+  assert.strictEqual(cell(ctx.spOrigin(0, 1)), '0:0');
+  assert.strictEqual(cell(ctx.spOrigin(2, 2)), '2:2');
+});
+
+// ---- Making a layout legal again -----------------------------------------
+
+check('a blank is not a row, here or on the server', () => {
+  withState({
+    current: {
+      rows: 2,
+      cols: 2,
+      buttons: [
+        { row: 0, col: 0, kind: 'blank' },
+        { row: 1, col: 1, kind: 'product', pluId: 4 },
+      ],
+    },
+  });
+  ctx.spTidy();
+  assert.strictEqual(ctx.spCurrent.buttons.length, 1);
+  assert.strictEqual(ctx.spCurrent.buttons[0].kind, 'product');
+});
+
+// Shrinking a grid, and the same rule the server holds: a button outside it is
+// dropped, never clamped. Clamping does not lose a button, it moves it on top
+// of another one and calls the result a save.
+check('a button outside the grid is dropped rather than moved', () => {
+  withState({
+    current: {
+      rows: 2,
+      cols: 2,
+      buttons: [
+        { row: 0, col: 0, kind: 'product', pluId: 1 },
+        { row: 4, col: 0, kind: 'product', pluId: 2 },
+        { row: 0, col: 7, kind: 'product', pluId: 3 },
+      ],
+    },
+  });
+  ctx.spTidy();
+  assert.strictEqual(ctx.spCurrent.buttons.map((b) => b.pluId).join(','), '1');
+});
+
+check('a span is clamped to the edge of the grid', () => {
+  withState({
+    current: {
+      rows: 3,
+      cols: 3,
+      buttons: [{ row: 2, col: 2, rowSpan: 4, colSpan: 9, kind: 'product', pluId: 1 }],
+    },
+  });
+  ctx.spTidy();
+  assert.strictEqual(ctx.spCurrent.buttons[0].rowSpan, 1);
+  assert.strictEqual(ctx.spCurrent.buttons[0].colSpan, 1);
+});
+
+// Growing a button over its neighbours is a thing a manager does on purpose,
+// and the neighbours cannot simply be left underneath: they are unreachable,
+// they still save, and they reappear the day the span shrinks again.
+check('a button stranded under another’s span is dropped', () => {
+  withState({
+    current: {
+      rows: 2,
+      cols: 2,
+      buttons: [
+        { row: 0, col: 0, rowSpan: 2, colSpan: 2, kind: 'product', pluId: 1 },
+        { row: 1, col: 1, kind: 'product', pluId: 2 },
+      ],
+    },
+  });
+  ctx.spTidy();
+  assert.strictEqual(
+    ctx.spCurrent.buttons.map((b) => b.pluId).join(','),
+    '1',
+    'the buried button survived where nobody can press it'
+  );
+});
+
+check('a selection pointing at nothing does not survive a resize', () => {
+  withState({
+    current: { rows: 2, cols: 2, buttons: [] },
+    selection: ['0:0', '5:5', '0:9'],
+  });
+  ctx.spTidy();
+  assert.strictEqual([...ctx.spSelection].join(','), '0:0');
+});
+
+// ---- Unsaved work --------------------------------------------------------
+
+// The warning has to be true or it is worse than nothing: a manager who is
+// asked "leave these behind?" after changing nothing learns to click through
+// the question on the day it matters.
+check('the same layout in a different order is not a change', () => {
+  const a = {
+    rows: 2,
+    cols: 2,
+    buttons: [
+      { row: 0, col: 0, kind: 'product', pluId: 1 },
+      { row: 1, col: 1, kind: 'product', pluId: 2 },
+    ],
+  };
+  const b = {
+    rows: 2,
+    cols: 2,
+    buttons: [
+      { row: 1, col: 1, kind: 'product', pluId: 2 },
+      { row: 0, col: 0, kind: 'product', pluId: 1 },
+    ],
+  };
+  assert.strictEqual(ctx.spShape(a), ctx.spShape(b));
+});
+
+check('a resized grid is a change even with the same buttons', () => {
+  const before = { rows: 5, cols: 6, buttons: [] };
+  const after = { rows: 6, cols: 6, buttons: [] };
+  assert.notStrictEqual(ctx.spShape(before), ctx.spShape(after));
+});
+
+// ---- The hit test --------------------------------------------------------
+
+// The editor works out which key is under a finger from the grid's own
+// geometry rather than by asking the browser what node is there. That is what
+// makes drag-select work with a touchscreen — a touch pointer is captured by
+// the element it went down on, so the pointerover events the old editor waited
+// for never arrived at all.
+check('a point lands in the cell it is drawn in', () => {
+  // A 300x200 grid, 10px padding, 10px gaps, 3 columns and 2 rows: cells are
+  // 20px shy of a third and a half respectively.
+  const g = {
+    box: { left: 0, top: 0, width: 300, height: 200 },
+    padL: 10,
+    padT: 10,
+    gapX: 10,
+    gapY: 10,
+    rows: 2,
+    cols: 3,
+    cellW: (300 - 20 - 20) / 3,
+    cellH: (200 - 20 - 10) / 2,
+  };
+
+  assert.strictEqual(cell(ctx.spCellFromPoint(g, 15, 15)), '0:0');
+  assert.strictEqual(cell(ctx.spCellFromPoint(g, 150, 15)), '0:1');
+  assert.strictEqual(cell(ctx.spCellFromPoint(g, 285, 190)), '1:2');
+});
+
+check('a drag past the edge keeps selecting to the edge', () => {
+  const g = {
+    box: { left: 0, top: 0, width: 300, height: 200 },
+    padL: 10,
+    padT: 10,
+    gapX: 10,
+    gapY: 10,
+    rows: 2,
+    cols: 3,
+    cellW: (300 - 20 - 20) / 3,
+    cellH: (200 - 20 - 10) / 2,
+  };
+
+  assert.strictEqual(cell(ctx.spCellFromPoint(g, -400, -400)), '0:0');
+  assert.strictEqual(cell(ctx.spCellFromPoint(g, 4000, 4000)), '1:2');
+});
+
 check('no editor calls prompt', () => {
   const live = source
     .split('\n')

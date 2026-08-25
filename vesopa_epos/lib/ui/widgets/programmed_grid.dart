@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 
+import '../../data/commerce.dart';
 import '../../data/local/database.dart';
+import '../../data/pricing_engine.dart';
 import '../../data/screens.dart';
 import '../layout.dart';
 import '../theme.dart';
 import 'basket_panel.dart' show money;
+import 'offer_chip.dart';
 
 /// A venue's own sale screen, drawn.
 ///
@@ -30,6 +33,7 @@ class ProgrammedGrid extends StatelessWidget {
     required this.onPage,
     required this.onFunction,
     this.showPrices = true,
+    this.promotions,
   });
 
   final TillScreen screen;
@@ -47,6 +51,15 @@ class ProgrammedGrid extends StatelessWidget {
   final void Function(String functionKey) onFunction;
 
   final bool showPrices;
+
+  /// The offers running now, so a programmed key can flash one.
+  ///
+  /// Null on a venue with no promotions, and optional so the grid can be drawn
+  /// without one. A product on a programmed screen is the same product as on
+  /// the catalogue grid, and an offer that shows on one screen and not the
+  /// other is a clerk quoting the wrong price on whichever they are standing
+  /// in front of.
+  final PricingEngine? promotions;
 
   @override
   Widget build(BuildContext context) {
@@ -86,6 +99,7 @@ class ProgrammedGrid extends StatelessWidget {
                     product: button.pluId == null
                         ? null
                         : products[button.pluId],
+                    promotion: _offerFor(button),
                     pal: pal,
                     showPrices: showPrices,
                     onProduct: onProduct,
@@ -102,6 +116,19 @@ class ProgrammedGrid extends StatelessWidget {
       ),
     );
   }
+
+  /// The offer covering a key's product, if it has one and there is an offer.
+  Promotion? _offerFor(ScreenButton button) {
+    final engine = promotions;
+    if (engine == null || button.kind != ScreenButtonKind.product) return null;
+    final product = button.pluId == null ? null : products[button.pluId];
+    if (product == null) return null;
+    return engine.badgeFor(
+      pluid: product.pluId,
+      department: product.departmentName,
+      group: product.groupName,
+    );
+  }
 }
 
 class _Key extends StatelessWidget {
@@ -109,6 +136,7 @@ class _Key extends StatelessWidget {
     required this.button,
     required this.screens,
     required this.product,
+    required this.promotion,
     required this.pal,
     required this.showPrices,
     required this.onProduct,
@@ -119,6 +147,10 @@ class _Key extends StatelessWidget {
   final ScreenButton button;
   final ScreenSet screens;
   final Product? product;
+
+  /// The offer running on this key's product right now, if any.
+  final Promotion? promotion;
+
   final PayPalette pal;
   final bool showPrices;
 
@@ -229,41 +261,103 @@ class _Key extends StatelessWidget {
               ),
             ),
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Flexible(
-                  child: Text(
-                    r.label,
-                    textAlign: TextAlign.center,
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: ink,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      height: 1.15,
+            // Sized from the key rather than from the screen: the same layout
+            // is drawn on a 15-inch counter panel and on a handheld, so
+            // "is there room for the picture" is a question only the key can
+            // answer. Below the threshold it draws exactly as it always did.
+            child: LayoutBuilder(
+              builder: (context, box) {
+                final media = _media();
+                final roomForMedia =
+                    media != null && box.maxHeight >= 84 && box.maxWidth >= 84;
+
+                return Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        r.label,
+                        textAlign: TextAlign.center,
+                        maxLines: roomForMedia ? 2 : 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: ink,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          height: 1.15,
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-                if (r.note != null) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    r.note!,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: ink.withValues(alpha: 0.75),
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ],
+                    // The product's own picture or emoji, which the catalogue
+                    // grid has always shown and this one did not: a venue that
+                    // photographed its menu lost every picture the moment it
+                    // programmed a screen, and had no way to tell why.
+                    if (roomForMedia) ...[
+                      const SizedBox(height: 4),
+                      Flexible(fit: FlexFit.tight, child: media),
+                    ],
+                    if (r.note != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        r.note!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: ink.withValues(alpha: 0.75),
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                    if (OfferChip.forPromotion(promotion) case final chip?) ...[
+                      const SizedBox(height: 4),
+                      FittedBox(fit: BoxFit.scaleDown, child: chip),
+                    ],
+                  ],
+                );
+              },
             ),
           ),
         ),
       ),
     );
+  }
+
+  /// The product's picture, or its emoji, or nothing.
+  ///
+  /// Nothing is the common case and has to cost nothing: most keys on most
+  /// screens are a word on a colour, and that is the layout the venue arranged.
+  Widget? _media() {
+    final p = product;
+    if (p == null || button.kind != ScreenButtonKind.product) return null;
+
+    final image = p.imageUrl;
+    if (image != null && image.isNotEmpty) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: Image.network(
+          image,
+          fit: BoxFit.cover,
+          width: double.infinity,
+          // A picture that will not load leaves the key exactly as a product
+          // with no picture. A broken-image frame on a sale screen is worse
+          // than no picture at all.
+          errorBuilder: (_, _, _) => const SizedBox.shrink(),
+          loadingBuilder: (context, child, progress) =>
+              progress == null ? child : const SizedBox.shrink(),
+        ),
+      );
+    }
+
+    final emoji = p.emoji;
+    if (emoji != null && emoji.isNotEmpty) {
+      return Center(
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(emoji, style: const TextStyle(fontSize: 34)),
+        ),
+      );
+    }
+    return null;
   }
 }

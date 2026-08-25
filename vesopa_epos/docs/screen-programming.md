@@ -180,3 +180,70 @@ vesopa_server/
 vesopa_server/public/           back office: the editor
 vesopa_epos/lib/                till: rendering a screen, falling back to Default
 ```
+
+---
+
+## 6. The editor's gestures
+
+Written down because they are the part a manager learns by trying, and because
+two of them were wrong for long enough to be reported as "the editor is buggy
+on Windows".
+
+| Gesture | What it does |
+| --- | --- |
+| Click a key | Selects it |
+| Drag across the grid | Selects the box — with a mouse, a pen **or a finger** |
+| Shift+drag / Shift+click | Extends the box from the last press |
+| Ctrl+click | Adds or removes one key |
+| Drag a programmed key | Moves it. Hold Alt to copy it instead |
+| Arrow keys | Walk the grid. Shift extends, **Alt nudges what is selected** |
+| Ctrl+Z / Ctrl+Y | Undo, redo — sixty steps, held in the browser |
+| Ctrl+C / V / X / D | Copy, paste, cut, duplicate the selection |
+| Ctrl+A, Backspace, Esc | Select everything, clear, deselect |
+| Ctrl+S | Save the layout |
+
+Three things about the implementation are load-bearing rather than incidental:
+
+**The grid captures the pointer and works the cell out from its own geometry.**
+Selection used to be `pointerover` on each cell plus a full re-render of the
+grid on every event. A touch or pen pointer is implicitly captured by the
+element it went down on, so those events never arrived and drag-select did
+nothing at all under a finger — on a Windows 11 laptop, which is very often a
+touchscreen. Re-rendering mid-drag also destroyed the node the pointer was over
+and rebuilt every product in the venue into a `<select>` on each pixel of the
+drag. Nothing is rebuilt during a drag now; only a class is toggled.
+
+**Nothing throws the layout away without asking.** The whole screen is held in
+the browser, so a resize, a screen change, a socket push from another machine,
+leaving the view and closing the tab all check `spDirty()` first. Changing the
+row count used to `PUT` and reload, taking every unsaved button with it.
+
+**A press inside a 2x2 belongs to the 2x2.** Cells swallowed by a span are not
+cells you can programme; selecting one used to create a button underneath the
+span — invisible in the editor, saved to the server, drawn by nothing.
+
+`vesopa_server/test/backoffice-screens-browser.test.js` drives all of this in a
+real Chromium, including the touch drag, and skips itself where there is none.
+
+---
+
+## 7. How a change reaches the counter
+
+```
+back office saves  ──►  broadcast({type:'screens'}, {office})
+                             │
+                             ▼
+                     the till's socket ── subscribed to that office ──►
+                        screensProvider invalidates ──► GET /api/till/screens
+```
+
+**Every arrow in that diagram is required, and two of them were missing.** The
+server deliberately sends nothing office-scoped to a socket that has never said
+which office it is — the default is silence, because the other default puts one
+venue's orders on another venue's screen — and the till never sent the
+`subscribe` frame. Even had it arrived, `screensProvider` had no listener for
+it. So a layout saved in an office reached no till until somebody restarted the
+app, which reads as "screen programming does not work" rather than as two
+missing lines.
+
+Guarded by `vesopa_epos/test/screen_push_test.dart`.
