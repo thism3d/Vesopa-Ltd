@@ -13,8 +13,8 @@ at 1.4.5.0, and a venue running kitchen screens needs no kitchen update
 alongside this one.
 
 **Server: changes required, and already applied to live.** Deployed with
-`.\deploy.ps1 -Schema`. Three new migration files, all guarded and safe to
-re-run:
+`.\deploy.ps1 -Schema` on 26/08/2026. Three new migration files, all guarded
+and safe to re-run:
 
 * `schema_fonts.sql` — `epos_fonts`, the typefaces a venue has uploaded for its
   own tills.
@@ -22,6 +22,13 @@ re-run:
   `epos_screen_buttons`.
 * `schema_till_fonts.sql` — `font_family` on `epos_till_settings`, the one every
   key without a font of its own inherits.
+
+Verified on live afterwards rather than inferred from a clean deploy log:
+`epos_screen_buttons.font_family` (varchar 64) and `.font_size` (tinyint
+unsigned), `epos_till_settings.font_family` (varchar 64), and the `epos_fonts`
+table are all present. `GET /api/till/fonts?office=…` answers with the sixteen
+built-ins, refuses a request with no office, and
+`/assets/fonts/inter/inter-400.ttf` serves 324,820 bytes as `font/ttf`.
 
 **This one is order-independent, unlike 1.4.5.** Every new field is null on
 everything that exists, and null means what it has always meant: the till
