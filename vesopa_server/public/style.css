@@ -2127,3 +2127,142 @@ table.sortable th.sorted[data-dir="down"]::after { content: ' ▼'; }
 .mod-keys { margin-left: auto; display: flex; gap: 4px; }
 .mod-add { display: flex; gap: 8px; align-items: center; }
 .mod-add select { flex: 1; }
+
+/* ---------------------------------------------------------------------------
+   Picking several products at once, and editing a cell where it sits.
+   --------------------------------------------------------------------------- */
+.pick-col { width: 34px; }
+.bulk-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 12px;
+  padding: 4px 4px 4px 10px;
+  border-radius: 999px;
+  background: var(--brand-soft, rgba(94, 53, 177, 0.08));
+}
+.bulk-count { font-size: 13px; font-weight: 600; }
+
+/* An inline cell reads as text until it is being changed, so a table of two
+   hundred products does not look like a form. */
+.cell-edit {
+  width: 100%;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 6px;
+  padding: 3px 6px;
+  font: inherit;
+  color: inherit;
+}
+.cell-edit:hover { border-color: var(--line); }
+.cell-edit:focus {
+  border-color: var(--brand-deep);
+  background: var(--card, #fff);
+  outline: none;
+}
+.cell-edit.saving { opacity: 0.5; }
+.cell-edit.saved { border-color: #2e7d32; }
+select.cell-edit { cursor: pointer; }
+
+/* ---------------------------------------------------------------------------
+   The screen editor's search palette — double-click a key.
+   --------------------------------------------------------------------------- */
+.sp-palette-back {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(15, 15, 20, 0.45);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 10vh;
+}
+.sp-palette {
+  width: min(620px, 92vw);
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--card, #fff);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+  overflow: hidden;
+}
+.sp-palette-q {
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  padding: 14px 16px;
+  font-size: 16px;
+  outline: none;
+  background: transparent;
+  color: inherit;
+}
+.sp-palette-list {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  overflow-y: auto;
+  flex: 1;
+}
+.sp-palette-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.sp-palette-row.on { background: var(--brand-soft, rgba(94, 53, 177, 0.1)); }
+.sp-palette-kind {
+  flex: 0 0 82px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  opacity: 0.65;
+}
+.sp-palette-label { font-weight: 600; }
+.sp-palette-note { margin-left: auto; }
+.sp-palette-empty { padding: 14px; }
+.sp-palette-hint { margin: 0; padding: 8px 14px; border-top: 1px solid var(--line); }
+
+/* ---------------------------------------------------------------------------
+   The editor in a window of its own (?popup=1).
+
+   Same page, same editor, without the furniture: no sidebar, no page heading,
+   no explanation. The point is that the grid, the inspector and the till
+   preview all fit at once — the manager was scrolling up to change a key and
+   down to see what it did.
+   --------------------------------------------------------------------------- */
+body.sp-popup .rail,
+body.sp-popup .topbar,
+body.sp-popup #view-screens .page-head > div:first-child { display: none !important; }
+
+body.sp-popup main { padding: 0; }
+
+body.sp-popup #view-screens {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px;
+  gap: 8px;
+  overflow: hidden;
+}
+
+/* The action row keeps its natural height; everything below shares what is
+   left and scrolls inside itself rather than pushing the page taller. */
+body.sp-popup #view-screens .page-head {
+  flex: 0 0 auto;
+  margin: 0;
+  justify-content: flex-end;
+}
+
+/* The defaults card is a setup step, not part of laying a screen out - it is
+   the first thing to give up its height in a window sized for the grid. */
+body.sp-popup .sp-defaults { display: none; }
+
+body.sp-popup .sp-layout {
+  flex: 1 1 auto;
+  min-height: 0;
+  align-items: stretch;
+}
+body.sp-popup .sp-layout > * { min-height: 0; overflow-y: auto; }

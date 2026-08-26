@@ -9,7 +9,14 @@ import 'widgets/pos_message.dart';
 import 'widgets/basket_panel.dart' show money;
 
 final xReportProvider = FutureProvider<TillReport>(
-  (ref) => ref.watch(sessionRepositoryProvider).xReport(),
+  // Who is signed on goes on the report, as it does on the reference one this
+  // was matched against: a Z is a handover document, and "who took it" is half
+  // of what makes it one. There is no terminal name to put beside it — Vesopa
+  // has no per-till name to read — so that line is simply not printed rather
+  // than filled with something invented.
+  (ref) => ref.watch(sessionRepositoryProvider).xReport(
+        staffName: ref.watch(servedByProvider),
+      ),
 );
 
 /// X and Z reports. X reads the open trading period; Z closes it.
@@ -118,7 +125,9 @@ class ReportsPage extends ConsumerWidget {
 
     if (ok != true || !context.mounted) return;
 
-    final z = await ref.read(sessionRepositoryProvider).zReport();
+    final z = await ref.read(sessionRepositoryProvider).zReport(
+      staffName: ref.read(servedByProvider),
+    );
     ref.invalidate(xReportProvider);
 
     if (!context.mounted) return;
@@ -142,16 +151,41 @@ class _ReportBody extends StatelessWidget {
         _Stat(label: 'Gross takings', value: money(report.grossMinor)),
         _Stat(label: 'Discounts', value: '-${money(report.discountMinor)}'),
         _Stat(label: 'VAT', value: money(report.taxMinor)),
+        _Stat(label: 'Covers', value: '${report.covers}'),
+        _Stat(
+          label: 'Average spend',
+          value: money(report.averageSpendMinor),
+        ),
+        // The count beside the money, as on the printed report: an average
+        // that has moved is the thing worth asking about, and it cannot be seen
+        // from the total alone.
         if (report.byMethod.isNotEmpty) ...[
           const _Heading('By tender'),
           for (final e in report.byMethod.entries)
-            _Stat(label: e.key, value: money(e.value)),
+            _Stat(
+              label: '${e.key}  [${e.value.count}]',
+              value: money(e.value.amountMinor),
+            ),
         ],
         if (report.byDepartment.isNotEmpty) ...[
           const _Heading('By department'),
           for (final e in report.byDepartment.entries)
-            _Stat(label: e.key, value: money(e.value)),
+            _Stat(
+              label: '${e.key}  [${e.value.count}]',
+              value: money(e.value.amountMinor),
+            ),
         ],
+        const _Heading('Voids & no sales'),
+        _Stat(
+          label: 'Voids  [${report.voids.count}]',
+          value: money(report.voids.amountMinor),
+        ),
+        _Stat(label: 'No sales', value: '${report.noSales.count}'),
+        if (report.gratuityMinor > 0)
+          _Stat(
+            label: 'Gratuity (owed to staff)',
+            value: money(report.gratuityMinor),
+          ),
         const _Heading('Cash drawer'),
         _Stat(label: 'Opening float', value: money(report.openingFloatMinor)),
         _Stat(

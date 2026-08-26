@@ -172,6 +172,37 @@ class OrderRepository {
     };
   }
 
+  /// Note that the drawer was opened without a sale — the No Sale key.
+  ///
+  /// Counted rather than valued: the amount is always zero, and the number of
+  /// times it happened is the whole point. Beside the void count on the Z
+  /// report because they are read together and for the same reason.
+  Future<void> logNoSale({required String sessionId, String? staffName}) =>
+      _logEvent(kind: 'no_sale', sessionId: sessionId, staffName: staffName);
+
+  /// Record something that is not a sale but belongs on the Z report.
+  ///
+  /// Kept locally and never deleted by the sync, unlike the outbox entry beside
+  /// it — see TillEvents for why that mattered.
+  Future<void> _logEvent({
+    required String kind,
+    required String sessionId,
+    int amountMinor = 0,
+    String? note,
+    String? staffName,
+  }) async {
+    await _db.into(_db.tillEvents).insert(
+          TillEventsCompanion.insert(
+            id: _uuid.v4(),
+            sessionId: sessionId,
+            kind: kind,
+            amountMinor: Value(amountMinor),
+            note: Value(note),
+            staffName: Value(staffName),
+          ),
+        );
+  }
+
   /// Void selected lines off an open check, leaving the rest of the sale alone.
   ///
   /// This is the everyday correction — a mis-rung item — as distinct from
@@ -235,6 +266,17 @@ class OrderRepository {
             ),
           );
 
+      // Counted on the Z report. The outbox row beside this one is deleted the
+      // moment the server takes it, so it cannot be the thing a manager's
+      // end-of-day void figure is read from.
+      await _logEvent(
+        kind: 'void',
+        sessionId: order.sessionId ?? '',
+        amountMinor: amount,
+        note: '$reason — $summary',
+        staffName: order.staffName,
+      );
+
       await (_db.delete(_db.orderLines)..where((l) => l.id.isIn(doomed))).go();
       await recalculate(orderId);
       return amount;
@@ -276,6 +318,16 @@ class OrderRepository {
                 }),
               ),
             );
+
+        // And durably, for the Z report — the outbox entry above does not
+        // survive its own delivery.
+        await _logEvent(
+          kind: 'void',
+          sessionId: order.sessionId ?? '',
+          amountMinor: order.totalMinor,
+          note: '$reason — whole bill',
+          staffName: order.staffName,
+        );
       }
 
       await (_db.delete(_db.orderLines)..where((l) => l.orderId.equals(orderId)))

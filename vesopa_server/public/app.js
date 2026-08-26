@@ -830,6 +830,11 @@ let productDept = '';
 let productSort = { key: null, dir: 1 };
 let productsBound = false;
 
+/// Which products are picked for a bulk edit, by id. Held across a re-render
+/// (a socket push, a sort) so a manager part-way through choosing ten drinks
+/// does not lose them because somebody else saved a price.
+let productPicks = new Set();
+
 // What the product form's list boxes are built from: the departments, sub
 // departments and VAT rates this venue has already set up. Fetched beside the
 // catalogue rather than when the form opens, so picking a department is a
@@ -858,6 +863,101 @@ async function loadProducts() {
 function bindProducts() {
   if (productsBound) return;
   productsBound = true;
+
+  const table = $('products');
+
+  /**
+   * Save one cell, the moment it is left.
+   *
+   * On `change` rather than on every keystroke: a manager typing a name should
+   * not send eleven requests, and `change` fires on blur and on Enter, which is
+   * exactly when they have finished. The row is re-read from `productRows`
+   * rather than from the other cells, so an edit sends the product as it is
+   * plus the one field that moved.
+   */
+  const saveCell = async (input) => {
+    const tr = input.closest('tr');
+    const id = tr?.dataset.product;
+    const field = input.dataset.cell;
+    if (!id || !field) return;
+
+    const row = productRows.find((r) => String(r.id) === String(id));
+    if (!row) return;
+
+    const value = field === 'price' ? Number(input.value) : input.value.trim();
+    if (field === 'price' && (!Number.isFinite(value) || value < 0)) {
+      input.value = Number(row.price || 0).toFixed(2);
+      return;
+    }
+    // Nothing actually moved — a click into a cell and back out again.
+    if (String(row[field] ?? '') === String(value ?? '')) return;
+
+    input.classList.add('saving');
+    try {
+      // The whole product, with the one field changed. PUT replaces the row, so
+      // sending the field alone would blank everything it did not mention.
+      const full = await api(`/products/${id}`);
+      await api(`/products/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ ...full, [field]: value }),
+      });
+      row[field] = value;
+      input.classList.remove('saving');
+      input.classList.add('saved');
+      setTimeout(() => input.classList.remove('saved'), 900);
+    } catch (err) {
+      input.classList.remove('saving');
+      alert(err.message);
+      // Put back what is actually stored, rather than leaving a value on screen
+      // that the catalogue does not have.
+      input.value = field === 'price'
+        ? Number(row.price || 0).toFixed(2)
+        : row[field] ?? '';
+    }
+  };
+
+  table.addEventListener('change', (e) => {
+    const cell = e.target.closest('.cell-edit');
+    if (cell) return void saveCell(cell);
+
+    const pick = e.target.closest('[data-pick]');
+    if (pick) {
+      const id = String(pick.dataset.pick);
+      if (pick.checked) productPicks.add(id);
+      else productPicks.delete(id);
+      renderBulkBar();
+    }
+  });
+
+  // Enter commits and moves on rather than submitting anything — there is no
+  // form here, and a manager working down a column of prices should not have to
+  // reach for the mouse between them.
+  table.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target.closest('.cell-edit')) {
+      e.preventDefault();
+      e.target.blur();
+    }
+  });
+
+  $('prod-pick-all').addEventListener('change', (e) => {
+    // Every product *shown*, not every product: a manager who has filtered to
+    // "gin" and ticks the header means those, and a select-all that quietly
+    // included the other four hundred would be found out later.
+    for (const row of visibleProducts()) {
+      if (e.target.checked) productPicks.add(String(row.id));
+      else productPicks.delete(String(row.id));
+    }
+    renderProducts();
+    renderBulkBar();
+  });
+
+  $('prod-bulk-clear').addEventListener('click', () => {
+    productPicks.clear();
+    renderProducts();
+    renderBulkBar();
+  });
+
+  $('prod-bulk-edit').addEventListener('click', bulkEditProducts);
 
   $('prod-q').addEventListener('input', (e) => {
     productQuery = e.target.value.trim().toLowerCase();
@@ -925,6 +1025,167 @@ function visibleProducts() {
   });
 }
 
+/**
+ * A dropdown that edits its cell where it sits.
+ *
+ * The list is what the venue has already set up, plus whatever this product
+ * currently holds — a department since renamed still shows, rather than the row
+ * silently re-filing itself under the first option the moment anyone touches it.
+ */
+/**
+ * The till's six kitchen slots, plus the receipt printer at the end.
+ *
+ * Six kitchen stations and no more: offering a seventh would let a manager
+ * route food to a station no terminal can print to, and the failure would show
+ * up in a kitchen at service rather than in the form.
+ *
+ * The receipt printer is a routing target too, because a counter often wants
+ * its own ticket for an item — a coffee the barista behind the till makes —
+ * and the alternative was a kitchen printer pointed at the counter.
+ *
+ * Top level because both the product form and the bulk editor offer it, and a
+ * second copy of "which stations exist" is how the two drift apart.
+ */
+const printerStations = () => [
+  ...[1, 2, 3, 4, 5, 6].map((n) => ({
+    value: `kp${n}`,
+    label: printerSlotName(`kp${n}`) || `KP ${n}`,
+  })),
+  {
+    value: 'receipt',
+    label: printerSlotName('receipt') || 'Receipt printer',
+  },
+];
+
+/** The "3 selected" bar, shown only when there is a selection to act on. */
+function renderBulkBar() {
+  const bar = $('prod-bulk');
+  if (!bar) return;
+  const n = productPicks.size;
+  bar.hidden = n === 0;
+  $('prod-bulk-count').textContent = `${n} selected`;
+}
+
+/**
+ * Change one thing about every picked product.
+ *
+ * Every field starts blank and blank means "leave alone", which is the only
+ * safe default for a form that writes to ten rows at once: a manager who opens
+ * this to set a printer route must not have to notice that the price box was
+ * pre-filled with something.
+ *
+ * The one exception is spelled out on screen — clearing a department is said
+ * with the explicit "— clear it —" option rather than by leaving a box empty,
+ * because those two intentions cannot both be the empty string.
+ */
+async function bulkEditProducts() {
+  const ids = [...productPicks];
+  if (!ids.length) return;
+
+  // A value no department could ever be called, so it cannot collide with a
+  // real name. Says "clear this field" as distinct from "leave it alone",
+  // which is what the empty string already means here.
+  const CLEAR = '__clear__';
+  const optional = (values) => [
+    { value: '', label: 'Leave as they are' },
+    { value: CLEAR, label: '— clear it —' },
+    ...[...new Set(values.filter(Boolean))].map((v) => ({ value: v, label: v })),
+  ];
+
+  return modal(
+    `Edit ${ids.length} product${ids.length === 1 ? '' : 's'}`,
+    [
+      {
+        label: 'Department',
+        name: 'department_name',
+        type: 'select',
+        options: optional(productRefs.departments.map((d) => d.department_name)),
+        value: '',
+      },
+      {
+        label: 'Sub Department',
+        name: 'group_name',
+        type: 'select',
+        options: optional(productRefs.groups.map((g) => g.group_name)),
+        value: '',
+      },
+      {
+        label: 'VAT rate',
+        name: 'tax_percentage',
+        type: 'select',
+        options: [
+          { value: '', label: 'Leave as they are' },
+          ...productRefs.tax.map((t) => ({
+            value: String(Number(t.percentage)),
+            label: t.name
+              ? `${Number(t.percentage)}% ${t.name}`
+              : `${Number(t.percentage)}%`,
+          })),
+        ],
+        value: '',
+      },
+      { label: 'Price (£) — blank leaves them alone', name: 'price', type: 'money', value: '' },
+      {
+        label: 'Printers — ticking any replaces what these products had',
+        name: 'printer_routes',
+        type: 'stations',
+        options: printerStations(),
+        value: '',
+      },
+      {
+        label: 'Change the printers',
+        name: 'routes_touched',
+        type: 'checkbox',
+        value: 0,
+      },
+    ],
+    async (d) => {
+      const fields = {};
+      for (const key of ['department_name', 'group_name']) {
+        if (d[key] === CLEAR) fields[key] = '';
+        else if (d[key]) fields[key] = d[key];
+      }
+      if (d.tax_percentage) fields.tax_percentage = d.tax_percentage;
+      if (d.price !== '' && d.price !== undefined) fields.price = d.price;
+
+      // Routing is opt-in through its own tick, because "no stations ticked" is
+      // a real instruction — route these nowhere — and is indistinguishable
+      // from "I did not touch this section" otherwise.
+      if (ticked(d.routes_touched)) {
+        fields.printer_routes = [].concat(d.printer_routes ?? []).filter(Boolean);
+      }
+
+      if (!Object.keys(fields).length) {
+        throw new Error('Nothing was chosen to change.');
+      }
+
+      const res = await api('/products/bulk', {
+        method: 'PATCH',
+        body: JSON.stringify({ ids, fields }),
+      });
+      productPicks.clear();
+      renderBulkBar();
+      alert(`Updated ${res.updated} product${res.updated === 1 ? '' : 's'}.`);
+    }
+  );
+}
+
+function cellSelect(field, values, current) {
+  const options = ['<option value="">—</option>'];
+  const seen = new Set();
+  for (const v of values) {
+    if (!v || seen.has(v)) continue;
+    seen.add(v);
+    options.push(
+      `<option value="${esc(v)}"${v === current ? ' selected' : ''}>${esc(v)}</option>`
+    );
+  }
+  if (current && !seen.has(current)) {
+    options.push(`<option value="${esc(current)}" selected>${esc(current)}</option>`);
+  }
+  return `<select class="cell-edit" data-cell="${field}">${options.join('')}</select>`;
+}
+
 function renderProducts() {
   const rows = visibleProducts();
 
@@ -949,6 +1210,14 @@ function renderProducts() {
       )
       .join('');
 
+  // Picks for products that have since been deleted are dropped, so the bar
+  // cannot offer to edit rows that are not there.
+  const live = new Set(productRows.map((r) => String(r.id)));
+  for (const id of [...productPicks]) {
+    if (!live.has(id)) productPicks.delete(id);
+  }
+  renderBulkBar();
+
   $('prod-count').textContent =
     rows.length === productRows.length
       ? `${productRows.length} product${productRows.length === 1 ? '' : 's'}`
@@ -963,17 +1232,21 @@ function renderProducts() {
 
   $('products').innerHTML = rows
     .map(
-      (p) => `<tr>
+      (p) => `<tr data-product="${p.id}">
+        <td class="pick-col"><input type="checkbox" data-pick="${p.id}"${
+          productPicks.has(String(p.id)) ? ' checked' : ''
+        }></td>
         <td>${p.image_url
           ? `<img class="thumb" src="${esc(p.image_url)}" alt="" />`
           : p.emoji
           ? `<span class="emoji">${esc(p.emoji)}</span>`
-          : ''} ${esc(p.product_name)}${plus.get(String(p.pluid)) > 1
+          : ''}<input class="cell-edit" data-cell="product_name" value="${esc(p.product_name)}" />${
+          plus.get(String(p.pluid)) > 1
           ? ' <span class="badge archived" title="Another product in this catalogue has the same PLU. The till can only reach one of them.">duplicate PLU</span>'
           : ''}</td>
-        <td>${esc(p.department_name || '—')}</td>
-        <td>${esc(p.group_name || '—')}</td>
-        <td class="right">${money(Math.round((p.price || 0) * 100))}</td>
+        <td>${cellSelect('department_name', productRefs.departments.map((d) => d.department_name), p.department_name)}</td>
+        <td>${cellSelect('group_name', productRefs.groups.map((g) => g.group_name), p.group_name)}</td>
+        <td class="right"><input class="cell-edit right" data-cell="price" type="number" step="0.01" min="0" value="${Number(p.price || 0).toFixed(2)}" /></td>
         <td class="right">${p.tax_percentage || 0}%</td>
         <td class="right">${p.button_position ?? '—'}</td>
         <td>${routeChips(p)}</td>
@@ -2076,16 +2349,6 @@ document.addEventListener('click', async (e) => {
   // The receipt printer is a routing target too, because a counter often wants
   // its own ticket for an item — a coffee the barista behind the till makes —
   // and the alternative was a kitchen printer pointed at the counter.
-  const printerStations = () => [
-    ...[1, 2, 3, 4, 5, 6].map((n) => ({
-      value: `kp${n}`,
-      label: printerSlotName(`kp${n}`) || `KP ${n}`,
-    })),
-    {
-      value: 'receipt',
-      label: printerSlotName('receipt') || 'Receipt printer',
-    },
-  ];
 
   /** The pre-numbering routing names, as the station they now mean. */
   const legacyStation = (route) => {

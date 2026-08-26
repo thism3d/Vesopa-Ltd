@@ -292,6 +292,83 @@ function backofficeRoutes({ pool, broadcast, secret }) {
     }
   });
 
+  /**
+   * Change one thing about many products at once.
+   *
+   * "Select ten drinks, click KP2, and all ten route there" — the job a manager
+   * currently does ten times through a modal. Only the fields actually present
+   * in the body are written, so a bulk edit that sets a printer route cannot
+   * quietly blank ten prices it never mentioned. That is the whole safety
+   * property of this route, and the reason it builds its SET clause rather than
+   * taking a fixed one.
+   *
+   * Everything is scoped to the office in a single UPDATE ... WHERE id IN,
+   * which is also what makes it atomic: ten products change or none do.
+   */
+  router.patch('/products/bulk', auth, async (req, res, next) => {
+    try {
+      const email = await tenantEmail(req);
+      const ids = [...new Set((req.body?.ids || []).map((n) => Number(n)))]
+        .filter(Number.isFinite);
+      if (!ids.length) {
+        return res.status(400).json({ error: 'Choose some products first.' });
+      }
+
+      const p = req.body?.fields || {};
+      const sets = [];
+      const params = [];
+
+      // Each of these is opt-in by presence. `undefined` means "not part of
+      // this edit"; an empty string is a real instruction to clear the field,
+      // which is how a manager takes a sub department off a batch of products.
+      const text = (key, column) => {
+        if (p[key] === undefined) return;
+        sets.push(`${column} = ?`);
+        params.push(p[key] === '' ? null : String(p[key]).slice(0, 255));
+      };
+      text('department_name', 'department_name');
+      text('group_name', 'group_name');
+
+      if (p.price !== undefined && p.price !== '') {
+        const price = Number(p.price);
+        if (!Number.isFinite(price) || price < 0) {
+          return res.status(400).json({ error: 'That price is not a number.' });
+        }
+        sets.push('price = ?');
+        params.push(price);
+      }
+
+      if (p.tax_percentage !== undefined && p.tax_percentage !== '') {
+        const rate = Number(p.tax_percentage);
+        if (!Number.isFinite(rate) || rate < 0) {
+          return res.status(400).json({ error: 'That VAT rate is not a number.' });
+        }
+        sets.push('tax_percentage = ?');
+        params.push(rate);
+      }
+
+      if (p.printer_routes !== undefined) {
+        sets.push('printer_routes = ?', 'printer_route = ?');
+        params.push(normaliseRoutes(p.printer_routes), legacyRoute(p));
+      }
+
+      if (!sets.length) {
+        return res.status(400).json({ error: 'Nothing to change.' });
+      }
+
+      const [r] = await pool.execute(
+        `UPDATE bo_products SET ${sets.join(', ')}
+          WHERE email = ? AND id IN (${ids.map(() => '?').join(',')})`,
+        [...params, email, ...ids]
+      );
+
+      broadcast({ type: 'catalogue.updated' });
+      res.json({ ok: true, updated: r.affectedRows });
+    } catch (e) {
+      next(e);
+    }
+  });
+
   router.delete('/products/:id', auth, async (req, res, next) => {
     try {
       const [r] = await pool.execute(

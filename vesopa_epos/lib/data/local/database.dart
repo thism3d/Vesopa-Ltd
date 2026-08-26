@@ -99,6 +99,49 @@ class MixMatchProducts extends Table {
 /// reads the open one without touching it. Totals are always derived from the
 /// orders inside the session rather than from a running counter, so a crash
 /// cannot corrupt the day's takings.
+/// Things that happen on a till which are not sales, but which a Z report has
+/// to account for.
+///
+/// A void, a no-sale, a refund. Each is a line on the end-of-day report and
+/// each is a line a manager reads *looking for something* — voids and no-sales
+/// are where till fraud shows up, which is why every Z report in the trade puts
+/// them next to each other with a count beside the amount.
+///
+/// They could not be counted before. Voids were written to the outbox and the
+/// outbox row is deleted the moment the server acknowledges it, so a till that
+/// was online reported no voids at all — the one condition under which the
+/// number matters least being the only one that worked.
+///
+/// One table with a `kind` rather than one per kind: they are all "something
+/// happened, this much money was involved, during this session", and the report
+/// groups them the same way. A kind the reader does not recognise is counted
+/// under its own name rather than dropped, so an older build reading a newer
+/// till's database still adds up.
+class TillEvents extends Table {
+  TextColumn get id => text()();
+
+  /// The trading period this belongs to, so a Z can total its own and no more.
+  TextColumn get sessionId => text()();
+
+  /// void | no_sale | refund
+  TextColumn get kind => text()();
+
+  /// What it was worth, in pence. Zero for a no-sale, which has a count and no
+  /// value — and that is exactly what the report shows.
+  IntColumn get amountMinor => integer().withDefault(const Constant(0))();
+
+  /// Why, where the clerk was asked. The void reason, typically.
+  TextColumn get note => text().nullable()();
+
+  /// Who did it. The other half of what makes these lines worth reading.
+  TextColumn get staffName => text().nullable()();
+
+  DateTimeColumn get at => dateTime().withDefault(currentDateAndTime)();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
 class TillSessions extends Table {
   TextColumn get id => text()();
   DateTimeColumn get openedAt => dateTime().withDefault(currentDateAndTime)();
@@ -416,6 +459,7 @@ class Staff extends Table {
     Payments,
     OutboxEntries,
     TillSessions,
+    TillEvents,
     DiningTables,
     Customers,
     LoyaltyEntries,
@@ -432,7 +476,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 14;
+  int get schemaVersion => 15;
 
 
   /// Add a column only if the table has not already got it.
@@ -573,6 +617,14 @@ class AppDatabase extends _$AppDatabase {
             // behave exactly as they did, which is right: a venue with one room
             // never had the ambiguity this resolves.
             await _addColumnIfMissing(m, orders, orders.roomId);
+          }
+          if (from < 15) {
+            // Voids, no-sales and refunds, kept so the Z report can count them.
+            // Nothing is backfilled: the events before this table existed were
+            // never recorded anywhere that survived a sync, so the first Z
+            // after an update reports on the period since the update, which is
+            // the only honest number available.
+            await m.createTable(tillEvents);
           }
         },
       );

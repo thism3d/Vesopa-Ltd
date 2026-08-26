@@ -350,10 +350,16 @@
             <button type="button" class="btn ghost small" id="prod-clear">Clear</button>
             <span class="sp-spacer"></span>
             <span class="muted small" id="prod-count"></span>
+            <span class="bulk-bar" id="prod-bulk" hidden>
+              <span class="bulk-count" id="prod-bulk-count"></span>
+              <button class="btn small primary" id="prod-bulk-edit">Edit selected</button>
+              <button class="btn small ghost" id="prod-bulk-clear">Clear</button>
+            </span>
           </div>
 
           <div class="card"><table class="sortable">
             <thead><tr>
+              <th class="pick-col"><input type="checkbox" id="prod-pick-all" title="Select every product shown"></th>
               <th data-sort="product_name">Name</th>
               <th data-sort="department_name">Department</th>
               <th data-sort="group_name">Sub Department</th>
@@ -800,6 +806,7 @@
             <div class="denom-actions">
               <button type="button" class="btn ghost small" id="sp-undo" title="Undo (Ctrl+Z)">↶ Undo</button>
               <button type="button" class="btn ghost small" id="sp-redo" title="Redo (Ctrl+Y)">↷ Redo</button>
+              <button type="button" class="btn ghost" id="sp-popout" title="Open the editor in a window of its own">⤢ Own window</button>
               <button type="button" class="btn ghost" id="sp-revert">Revert</button>
               <button type="button" class="btn primary" id="sp-save">Save layout</button>
             </div>

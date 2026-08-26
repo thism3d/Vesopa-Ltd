@@ -214,6 +214,233 @@ let spSurface = 'sale';
  */
 let spPendingOpen = null;
 
+/* ---------------------------------------------------------------------------
+   Double-click a key: search everything it could be
+   ---------------------------------------------------------------------------
+   The inspector has three separate pickers — a product list, a page list and a
+   function list — and using them means knowing which of the three the thing you
+   want lives in before you can start looking for it. That is fine when you are
+   laying out a screen from scratch and terrible when you are changing one key
+   on a screen somebody else made.
+
+   So: double-click the key, type what you want, press Enter. One list, drawn
+   from all three sources, filtered as you type. The inspector stays exactly as
+   it is — this is a faster road to the same place, not a replacement.
+   --------------------------------------------------------------------------- */
+
+/** Everything a key on this surface could be bound to, as one searchable list. */
+function spPaletteEntries() {
+  const surface = spCurrentSurface();
+  const entries = [];
+
+  for (const p of spProducts) {
+    entries.push({
+      group: 'Product',
+      label: p.product_name,
+      // Searchable on the things a manager actually knows about a product.
+      hay: `${p.product_name} ${p.department_name || ''} ${p.group_name || ''} ${p.pluid}`,
+      note: [p.department_name, p.group_name].filter(Boolean).join(' · '),
+      apply: (b) => {
+        spSetKind(b, 'product');
+        b.pluId = Number(p.pluid);
+      },
+    });
+  }
+
+  // Only pages on the same surface. A sale screen cannot jump to a bar, and
+  // offering it would place a key that silently does nothing.
+  for (const screen of spOnSurface(surface)) {
+    if (spCurrent && screen.id === spCurrent.id) continue;
+    entries.push({
+      group: 'Navigation',
+      label: screen.name,
+      hay: `${screen.name} page screen navigation`,
+      note: 'Go to this screen',
+      apply: (b) => {
+        spSetKind(b, 'page');
+        b.targetScreenId = screen.id;
+      },
+    });
+  }
+
+  for (const [, keys] of spFunctionsFor(surface)) {
+    for (const [key, label] of keys) {
+      entries.push({
+        group: 'Function',
+        label,
+        hay: `${label} ${key} function`,
+        note: key,
+        apply: (b) => {
+          spSetKind(b, 'function');
+          b.functionKey = key;
+        },
+      });
+    }
+  }
+
+  entries.push({
+    group: 'Function',
+    label: 'Clear this key',
+    hay: 'clear blank empty remove',
+    note: 'Leaves an empty cell',
+    apply: (b) => spSetKind(b, 'blank'),
+  });
+
+  return entries;
+}
+
+
+/**
+ * Open the editor in a window of its own.
+ *
+ * The editor is the one page in the back office that wants the whole screen: a
+ * grid, an inspector beside it and a till preview under it, on a page that also
+ * carries a sidebar, a page heading and three paragraphs of explanation. On a
+ * laptop that means scrolling up to change a screen and down to see the result.
+ *
+ * The same page, opened with `?popup=1`, which hides the chrome and lets the
+ * editor have the height. Not a second copy of the editor — one editor, drawn
+ * without the furniture — because a second copy is a second thing to fix.
+ *
+ * Falls back to the tab it was clicked in when the browser blocks the window,
+ * which is the sane failure: the manager still gets the roomy editor.
+ */
+function spPopOut() {
+  const url = `${location.origin}/screen-programming?popup=1`;
+  // Sized to the screen it is opening on, less the browser's own chrome.
+  const w = Math.min(1600, Math.max(1100, screen.availWidth - 80));
+  const h = Math.min(1100, Math.max(700, screen.availHeight - 80));
+  const win = window.open(
+    url,
+    'vesopa-screen-editor',
+    `popup=1,width=${w},height=${h},left=${Math.max(0, (screen.availWidth - w) / 2)},top=${Math.max(0, (screen.availHeight - h) / 2)}`
+  );
+  if (win) win.focus();
+  else location.href = url;
+}
+
+/**
+ * Strip the page back to the editor when opened with `?popup=1`.
+ *
+ * Done by a class on <body> rather than by a different template, so there is
+ * one page to maintain and the editor cannot behave differently in the window
+ * a manager actually uses.
+ */
+function spApplyPopupMode() {
+  const popup = new URLSearchParams(location.search).get('popup') === '1';
+  document.body.classList.toggle('sp-popup', popup);
+  return popup;
+}
+
+let spPaletteOpen = false;
+
+/** Open the search palette against whatever is selected. */
+function spOpenPalette() {
+  if (!spCurrent || !spSelection.size || spPaletteOpen) return;
+  spPaletteOpen = true;
+
+  const entries = spPaletteEntries();
+  const root = document.createElement('div');
+  root.className = 'sp-palette-back';
+  root.innerHTML = `
+    <div class="sp-palette" role="dialog" aria-label="Search for what this key should do">
+      <input class="sp-palette-q" type="search" autocomplete="off"
+             placeholder="Search products, screens and functions…" />
+      <ul class="sp-palette-list"></ul>
+      <p class="sp-palette-hint muted small">
+        ↑ ↓ to move, Enter to place it, Esc to close
+      </p>
+    </div>`;
+  document.body.appendChild(root);
+
+  const query = root.querySelector('.sp-palette-q');
+  const list = root.querySelector('.sp-palette-list');
+  let shown = [];
+  let cursor = 0;
+
+  const close = () => {
+    spPaletteOpen = false;
+    root.remove();
+    // Back to the grid, so the arrow keys keep walking the layout.
+    $('sp-grid')?.focus();
+  };
+
+  const draw = () => {
+    const q = query.value.trim().toLowerCase();
+    shown = (q
+      ? entries.filter((e) => e.hay.toLowerCase().includes(q))
+      : entries
+    ).slice(0, 60);
+    if (cursor >= shown.length) cursor = Math.max(0, shown.length - 1);
+
+    list.innerHTML = shown.length
+      ? shown
+          .map(
+            (e, i) => `<li class="sp-palette-row${i === cursor ? ' on' : ''}" data-i="${i}">
+              <span class="sp-palette-kind">${spEsc(e.group)}</span>
+              <span class="sp-palette-label">${spEsc(e.label)}</span>
+              <span class="sp-palette-note muted small">${spEsc(e.note || '')}</span>
+            </li>`
+          )
+          .join('')
+      : '<li class="sp-palette-empty muted">Nothing matches that.</li>';
+
+    list.querySelector('.sp-palette-row.on')?.scrollIntoView({ block: 'nearest' });
+  };
+
+  const choose = (i) => {
+    const entry = shown[i];
+    if (!entry) return;
+    spApplyToSelection((b) => entry.apply(b));
+    spRenderGrid();
+    spRenderInspector();
+    close();
+  };
+
+  query.addEventListener('input', () => {
+    cursor = 0;
+    draw();
+  });
+  query.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      cursor = Math.min(cursor + 1, shown.length - 1);
+      draw();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      cursor = Math.max(cursor - 1, 0);
+      draw();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      choose(cursor);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      close();
+    }
+  });
+  list.addEventListener('click', (e) => {
+    const row = e.target.closest('.sp-palette-row');
+    if (row) choose(Number(row.dataset.i));
+  });
+  // A click on the backdrop, but not one inside the box.
+  root.addEventListener('pointerdown', (e) => {
+    if (e.target === root) close();
+  });
+
+  draw();
+  query.focus();
+}
+
+/** Escaping for the palette's own markup. */
+function spEsc(value) {
+  return String(value ?? '').replace(
+    /[&<>"']/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])
+  );
+}
+
+
+
 /** Open this screen next time the editor loads. */
 function spOpenScreen(id) {
   spPendingOpen = Number(id);
@@ -1929,6 +2156,7 @@ function spBind() {
   $('sp-rename').addEventListener('click', spRenameScreen);
   $('sp-duplicate').addEventListener('click', spDuplicateScreen);
   $('sp-delete').addEventListener('click', spDeleteScreen);
+  $('sp-popout')?.addEventListener('click', spPopOut);
   $('sp-save').addEventListener('click', spSaveLayout);
   $('sp-undo').addEventListener('click', spUndo);
   $('sp-redo').addEventListener('click', spRedo);
@@ -1970,6 +2198,15 @@ function spBind() {
   grid.addEventListener('contextmenu', (e) => {
     if (spDrag) e.preventDefault();
   });
+  // Double-click a key to search for what it should be. The cell is selected
+  // by the pointerdown that precedes the double-click, so by the time this
+  // fires the selection is already the key that was hit.
+  grid.addEventListener('dblclick', (e) => {
+    if (!e.target.closest('.sp-cell')) return;
+    e.preventDefault();
+    spOpenPalette();
+  });
+
   grid.addEventListener('keydown', spGridKeys);
 
   $('sp-issues').addEventListener('click', (e) => {
@@ -2602,4 +2839,13 @@ function spFillFromDepartment() {
       b.label = null;
     });
   });
+}
+
+// Applied before anything draws, so the editor never flashes the full page
+// chrome on its way to being a window of its own. Self-contained here rather
+// than in app.js's boot, because it is entirely the editor's business.
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', spApplyPopupMode);
+} else {
+  spApplyPopupMode();
 }

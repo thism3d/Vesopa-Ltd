@@ -4434,6 +4434,466 @@ class TillSessionsCompanion extends UpdateCompanion<TillSession> {
   }
 }
 
+class $TillEventsTable extends TillEvents
+    with TableInfo<$TillEventsTable, TillEvent> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $TillEventsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sessionIdMeta = const VerificationMeta(
+    'sessionId',
+  );
+  @override
+  late final GeneratedColumn<String> sessionId = GeneratedColumn<String>(
+    'session_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _kindMeta = const VerificationMeta('kind');
+  @override
+  late final GeneratedColumn<String> kind = GeneratedColumn<String>(
+    'kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _amountMinorMeta = const VerificationMeta(
+    'amountMinor',
+  );
+  @override
+  late final GeneratedColumn<int> amountMinor = GeneratedColumn<int>(
+    'amount_minor',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _noteMeta = const VerificationMeta('note');
+  @override
+  late final GeneratedColumn<String> note = GeneratedColumn<String>(
+    'note',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _staffNameMeta = const VerificationMeta(
+    'staffName',
+  );
+  @override
+  late final GeneratedColumn<String> staffName = GeneratedColumn<String>(
+    'staff_name',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _atMeta = const VerificationMeta('at');
+  @override
+  late final GeneratedColumn<DateTime> at = GeneratedColumn<DateTime>(
+    'at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    sessionId,
+    kind,
+    amountMinor,
+    note,
+    staffName,
+    at,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'till_events';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<TillEvent> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('session_id')) {
+      context.handle(
+        _sessionIdMeta,
+        sessionId.isAcceptableOrUnknown(data['session_id']!, _sessionIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sessionIdMeta);
+    }
+    if (data.containsKey('kind')) {
+      context.handle(
+        _kindMeta,
+        kind.isAcceptableOrUnknown(data['kind']!, _kindMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_kindMeta);
+    }
+    if (data.containsKey('amount_minor')) {
+      context.handle(
+        _amountMinorMeta,
+        amountMinor.isAcceptableOrUnknown(
+          data['amount_minor']!,
+          _amountMinorMeta,
+        ),
+      );
+    }
+    if (data.containsKey('note')) {
+      context.handle(
+        _noteMeta,
+        note.isAcceptableOrUnknown(data['note']!, _noteMeta),
+      );
+    }
+    if (data.containsKey('staff_name')) {
+      context.handle(
+        _staffNameMeta,
+        staffName.isAcceptableOrUnknown(data['staff_name']!, _staffNameMeta),
+      );
+    }
+    if (data.containsKey('at')) {
+      context.handle(_atMeta, at.isAcceptableOrUnknown(data['at']!, _atMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  TillEvent map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return TillEvent(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      sessionId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}session_id'],
+      )!,
+      kind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}kind'],
+      )!,
+      amountMinor: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}amount_minor'],
+      )!,
+      note: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}note'],
+      ),
+      staffName: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}staff_name'],
+      ),
+      at: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}at'],
+      )!,
+    );
+  }
+
+  @override
+  $TillEventsTable createAlias(String alias) {
+    return $TillEventsTable(attachedDatabase, alias);
+  }
+}
+
+class TillEvent extends DataClass implements Insertable<TillEvent> {
+  final String id;
+
+  /// The trading period this belongs to, so a Z can total its own and no more.
+  final String sessionId;
+
+  /// void | no_sale | refund
+  final String kind;
+
+  /// What it was worth, in pence. Zero for a no-sale, which has a count and no
+  /// value — and that is exactly what the report shows.
+  final int amountMinor;
+
+  /// Why, where the clerk was asked. The void reason, typically.
+  final String? note;
+
+  /// Who did it. The other half of what makes these lines worth reading.
+  final String? staffName;
+  final DateTime at;
+  const TillEvent({
+    required this.id,
+    required this.sessionId,
+    required this.kind,
+    required this.amountMinor,
+    this.note,
+    this.staffName,
+    required this.at,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['session_id'] = Variable<String>(sessionId);
+    map['kind'] = Variable<String>(kind);
+    map['amount_minor'] = Variable<int>(amountMinor);
+    if (!nullToAbsent || note != null) {
+      map['note'] = Variable<String>(note);
+    }
+    if (!nullToAbsent || staffName != null) {
+      map['staff_name'] = Variable<String>(staffName);
+    }
+    map['at'] = Variable<DateTime>(at);
+    return map;
+  }
+
+  TillEventsCompanion toCompanion(bool nullToAbsent) {
+    return TillEventsCompanion(
+      id: Value(id),
+      sessionId: Value(sessionId),
+      kind: Value(kind),
+      amountMinor: Value(amountMinor),
+      note: note == null && nullToAbsent ? const Value.absent() : Value(note),
+      staffName: staffName == null && nullToAbsent
+          ? const Value.absent()
+          : Value(staffName),
+      at: Value(at),
+    );
+  }
+
+  factory TillEvent.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return TillEvent(
+      id: serializer.fromJson<String>(json['id']),
+      sessionId: serializer.fromJson<String>(json['sessionId']),
+      kind: serializer.fromJson<String>(json['kind']),
+      amountMinor: serializer.fromJson<int>(json['amountMinor']),
+      note: serializer.fromJson<String?>(json['note']),
+      staffName: serializer.fromJson<String?>(json['staffName']),
+      at: serializer.fromJson<DateTime>(json['at']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'sessionId': serializer.toJson<String>(sessionId),
+      'kind': serializer.toJson<String>(kind),
+      'amountMinor': serializer.toJson<int>(amountMinor),
+      'note': serializer.toJson<String?>(note),
+      'staffName': serializer.toJson<String?>(staffName),
+      'at': serializer.toJson<DateTime>(at),
+    };
+  }
+
+  TillEvent copyWith({
+    String? id,
+    String? sessionId,
+    String? kind,
+    int? amountMinor,
+    Value<String?> note = const Value.absent(),
+    Value<String?> staffName = const Value.absent(),
+    DateTime? at,
+  }) => TillEvent(
+    id: id ?? this.id,
+    sessionId: sessionId ?? this.sessionId,
+    kind: kind ?? this.kind,
+    amountMinor: amountMinor ?? this.amountMinor,
+    note: note.present ? note.value : this.note,
+    staffName: staffName.present ? staffName.value : this.staffName,
+    at: at ?? this.at,
+  );
+  TillEvent copyWithCompanion(TillEventsCompanion data) {
+    return TillEvent(
+      id: data.id.present ? data.id.value : this.id,
+      sessionId: data.sessionId.present ? data.sessionId.value : this.sessionId,
+      kind: data.kind.present ? data.kind.value : this.kind,
+      amountMinor: data.amountMinor.present
+          ? data.amountMinor.value
+          : this.amountMinor,
+      note: data.note.present ? data.note.value : this.note,
+      staffName: data.staffName.present ? data.staffName.value : this.staffName,
+      at: data.at.present ? data.at.value : this.at,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('TillEvent(')
+          ..write('id: $id, ')
+          ..write('sessionId: $sessionId, ')
+          ..write('kind: $kind, ')
+          ..write('amountMinor: $amountMinor, ')
+          ..write('note: $note, ')
+          ..write('staffName: $staffName, ')
+          ..write('at: $at')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(id, sessionId, kind, amountMinor, note, staffName, at);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is TillEvent &&
+          other.id == this.id &&
+          other.sessionId == this.sessionId &&
+          other.kind == this.kind &&
+          other.amountMinor == this.amountMinor &&
+          other.note == this.note &&
+          other.staffName == this.staffName &&
+          other.at == this.at);
+}
+
+class TillEventsCompanion extends UpdateCompanion<TillEvent> {
+  final Value<String> id;
+  final Value<String> sessionId;
+  final Value<String> kind;
+  final Value<int> amountMinor;
+  final Value<String?> note;
+  final Value<String?> staffName;
+  final Value<DateTime> at;
+  final Value<int> rowid;
+  const TillEventsCompanion({
+    this.id = const Value.absent(),
+    this.sessionId = const Value.absent(),
+    this.kind = const Value.absent(),
+    this.amountMinor = const Value.absent(),
+    this.note = const Value.absent(),
+    this.staffName = const Value.absent(),
+    this.at = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  TillEventsCompanion.insert({
+    required String id,
+    required String sessionId,
+    required String kind,
+    this.amountMinor = const Value.absent(),
+    this.note = const Value.absent(),
+    this.staffName = const Value.absent(),
+    this.at = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       sessionId = Value(sessionId),
+       kind = Value(kind);
+  static Insertable<TillEvent> custom({
+    Expression<String>? id,
+    Expression<String>? sessionId,
+    Expression<String>? kind,
+    Expression<int>? amountMinor,
+    Expression<String>? note,
+    Expression<String>? staffName,
+    Expression<DateTime>? at,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (sessionId != null) 'session_id': sessionId,
+      if (kind != null) 'kind': kind,
+      if (amountMinor != null) 'amount_minor': amountMinor,
+      if (note != null) 'note': note,
+      if (staffName != null) 'staff_name': staffName,
+      if (at != null) 'at': at,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  TillEventsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? sessionId,
+    Value<String>? kind,
+    Value<int>? amountMinor,
+    Value<String?>? note,
+    Value<String?>? staffName,
+    Value<DateTime>? at,
+    Value<int>? rowid,
+  }) {
+    return TillEventsCompanion(
+      id: id ?? this.id,
+      sessionId: sessionId ?? this.sessionId,
+      kind: kind ?? this.kind,
+      amountMinor: amountMinor ?? this.amountMinor,
+      note: note ?? this.note,
+      staffName: staffName ?? this.staffName,
+      at: at ?? this.at,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (sessionId.present) {
+      map['session_id'] = Variable<String>(sessionId.value);
+    }
+    if (kind.present) {
+      map['kind'] = Variable<String>(kind.value);
+    }
+    if (amountMinor.present) {
+      map['amount_minor'] = Variable<int>(amountMinor.value);
+    }
+    if (note.present) {
+      map['note'] = Variable<String>(note.value);
+    }
+    if (staffName.present) {
+      map['staff_name'] = Variable<String>(staffName.value);
+    }
+    if (at.present) {
+      map['at'] = Variable<DateTime>(at.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('TillEventsCompanion(')
+          ..write('id: $id, ')
+          ..write('sessionId: $sessionId, ')
+          ..write('kind: $kind, ')
+          ..write('amountMinor: $amountMinor, ')
+          ..write('note: $note, ')
+          ..write('staffName: $staffName, ')
+          ..write('at: $at, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $DiningTablesTable extends DiningTables
     with TableInfo<$DiningTablesTable, DiningTable> {
   @override
@@ -7120,6 +7580,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $PaymentsTable payments = $PaymentsTable(this);
   late final $OutboxEntriesTable outboxEntries = $OutboxEntriesTable(this);
   late final $TillSessionsTable tillSessions = $TillSessionsTable(this);
+  late final $TillEventsTable tillEvents = $TillEventsTable(this);
   late final $DiningTablesTable diningTables = $DiningTablesTable(this);
   late final $CustomersTable customers = $CustomersTable(this);
   late final $LoyaltyEntriesTable loyaltyEntries = $LoyaltyEntriesTable(this);
@@ -7142,6 +7603,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     payments,
     outboxEntries,
     tillSessions,
+    tillEvents,
     diningTables,
     customers,
     loyaltyEntries,
@@ -9601,6 +10063,243 @@ typedef $$TillSessionsTableProcessedTableManager =
       TillSession,
       PrefetchHooks Function()
     >;
+typedef $$TillEventsTableCreateCompanionBuilder =
+    TillEventsCompanion Function({
+      required String id,
+      required String sessionId,
+      required String kind,
+      Value<int> amountMinor,
+      Value<String?> note,
+      Value<String?> staffName,
+      Value<DateTime> at,
+      Value<int> rowid,
+    });
+typedef $$TillEventsTableUpdateCompanionBuilder =
+    TillEventsCompanion Function({
+      Value<String> id,
+      Value<String> sessionId,
+      Value<String> kind,
+      Value<int> amountMinor,
+      Value<String?> note,
+      Value<String?> staffName,
+      Value<DateTime> at,
+      Value<int> rowid,
+    });
+
+class $$TillEventsTableFilterComposer
+    extends Composer<_$AppDatabase, $TillEventsTable> {
+  $$TillEventsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sessionId => $composableBuilder(
+    column: $table.sessionId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get kind => $composableBuilder(
+    column: $table.kind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get amountMinor => $composableBuilder(
+    column: $table.amountMinor,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get note => $composableBuilder(
+    column: $table.note,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get staffName => $composableBuilder(
+    column: $table.staffName,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get at => $composableBuilder(
+    column: $table.at,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$TillEventsTableOrderingComposer
+    extends Composer<_$AppDatabase, $TillEventsTable> {
+  $$TillEventsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sessionId => $composableBuilder(
+    column: $table.sessionId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get kind => $composableBuilder(
+    column: $table.kind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get amountMinor => $composableBuilder(
+    column: $table.amountMinor,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get note => $composableBuilder(
+    column: $table.note,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get staffName => $composableBuilder(
+    column: $table.staffName,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get at => $composableBuilder(
+    column: $table.at,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$TillEventsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $TillEventsTable> {
+  $$TillEventsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get sessionId =>
+      $composableBuilder(column: $table.sessionId, builder: (column) => column);
+
+  GeneratedColumn<String> get kind =>
+      $composableBuilder(column: $table.kind, builder: (column) => column);
+
+  GeneratedColumn<int> get amountMinor => $composableBuilder(
+    column: $table.amountMinor,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get note =>
+      $composableBuilder(column: $table.note, builder: (column) => column);
+
+  GeneratedColumn<String> get staffName =>
+      $composableBuilder(column: $table.staffName, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get at =>
+      $composableBuilder(column: $table.at, builder: (column) => column);
+}
+
+class $$TillEventsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $TillEventsTable,
+          TillEvent,
+          $$TillEventsTableFilterComposer,
+          $$TillEventsTableOrderingComposer,
+          $$TillEventsTableAnnotationComposer,
+          $$TillEventsTableCreateCompanionBuilder,
+          $$TillEventsTableUpdateCompanionBuilder,
+          (
+            TillEvent,
+            BaseReferences<_$AppDatabase, $TillEventsTable, TillEvent>,
+          ),
+          TillEvent,
+          PrefetchHooks Function()
+        > {
+  $$TillEventsTableTableManager(_$AppDatabase db, $TillEventsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$TillEventsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$TillEventsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$TillEventsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> sessionId = const Value.absent(),
+                Value<String> kind = const Value.absent(),
+                Value<int> amountMinor = const Value.absent(),
+                Value<String?> note = const Value.absent(),
+                Value<String?> staffName = const Value.absent(),
+                Value<DateTime> at = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => TillEventsCompanion(
+                id: id,
+                sessionId: sessionId,
+                kind: kind,
+                amountMinor: amountMinor,
+                note: note,
+                staffName: staffName,
+                at: at,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String sessionId,
+                required String kind,
+                Value<int> amountMinor = const Value.absent(),
+                Value<String?> note = const Value.absent(),
+                Value<String?> staffName = const Value.absent(),
+                Value<DateTime> at = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => TillEventsCompanion.insert(
+                id: id,
+                sessionId: sessionId,
+                kind: kind,
+                amountMinor: amountMinor,
+                note: note,
+                staffName: staffName,
+                at: at,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$TillEventsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $TillEventsTable,
+      TillEvent,
+      $$TillEventsTableFilterComposer,
+      $$TillEventsTableOrderingComposer,
+      $$TillEventsTableAnnotationComposer,
+      $$TillEventsTableCreateCompanionBuilder,
+      $$TillEventsTableUpdateCompanionBuilder,
+      (TillEvent, BaseReferences<_$AppDatabase, $TillEventsTable, TillEvent>),
+      TillEvent,
+      PrefetchHooks Function()
+    >;
 typedef $$DiningTablesTableCreateCompanionBuilder =
     DiningTablesCompanion Function({Value<int> number, Value<String?> label});
 typedef $$DiningTablesTableUpdateCompanionBuilder =
@@ -11353,6 +12052,8 @@ class $AppDatabaseManager {
       $$OutboxEntriesTableTableManager(_db, _db.outboxEntries);
   $$TillSessionsTableTableManager get tillSessions =>
       $$TillSessionsTableTableManager(_db, _db.tillSessions);
+  $$TillEventsTableTableManager get tillEvents =>
+      $$TillEventsTableTableManager(_db, _db.tillEvents);
   $$DiningTablesTableTableManager get diningTables =>
       $$DiningTablesTableTableManager(_db, _db.diningTables);
   $$CustomersTableTableManager get customers =>

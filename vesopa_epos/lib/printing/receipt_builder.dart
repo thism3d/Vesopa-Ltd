@@ -628,40 +628,98 @@ class ReceiptBuilder {
       ),
     );
 
-    bytes.addAll(_generator.hr());
-    bytes.addAll(_row('Opened', _time.format(report.openedAt)));
-    bytes.addAll(
-      _row('Printed', _time.format(report.closedAt ?? DateTime.now())),
-    );
-    bytes.addAll(_generator.hr());
+    // A count beside every amount, and a section per kind of thing — the shape
+    // every Z report in the trade uses, because it is read by a manager
+    // checking one figure against another rather than start to finish.
+    //
+    // `[n]` before the money is that trade convention: "Drink [55] 204.40".
+    String tally(ReportTally t) =>
+        '[${t.count}] ${_money(t.amountMinor)}';
 
-    bytes.addAll(_row('Orders', '${report.orderCount}'));
-    bytes.addAll(_row('Gross', _money(report.grossMinor)));
-    bytes.addAll(_row('Discounts', '-${_money(report.discountMinor)}'));
-    bytes.addAll(_row('VAT', _money(report.taxMinor)));
-
-    if (report.byMethod.isNotEmpty) {
+    void section(String title) {
       bytes.addAll(_generator.hr());
-      bytes.addAll(
-        _text('BY TENDER', styles: const PosStyles(bold: true)),
-      );
-      for (final entry in report.byMethod.entries) {
-        bytes.addAll(_row(entry.key.toUpperCase(), _money(entry.value)));
-      }
+      bytes.addAll(_text(title, styles: const PosStyles(bold: true)));
     }
 
-    if (report.byDepartment.isNotEmpty) {
-      bytes.addAll(_generator.hr());
+    void totalRow(ReportTally t) {
       bytes.addAll(
-        _text('BY DEPARTMENT', styles: const PosStyles(bold: true)),
+        _generator.row([
+          _col(text: 'TOTAL', width: 7, styles: const PosStyles(bold: true)),
+          _col(
+            text: tally(t),
+            width: 5,
+            styles: const PosStyles(align: PosAlign.right, bold: true),
+          ),
+        ]),
       );
-      for (final entry in report.byDepartment.entries) {
-        bytes.addAll(_row(entry.key, _money(entry.value)));
-      }
     }
 
-    // What should be in the drawer, so the manager can count against it.
     bytes.addAll(_generator.hr());
+    if (report.terminalName != null && report.terminalName!.isNotEmpty) {
+      bytes.addAll(_row('Terminal', report.terminalName!));
+    }
+    if (report.staffName != null && report.staffName!.isNotEmpty) {
+      bytes.addAll(_row('Employee', report.staffName!));
+    }
+    bytes.addAll(_row('Transactions', '${report.orderCount}'));
+    bytes.addAll(_row('Covers', '${report.covers}'));
+    bytes.addAll(_row('Average spend', _money(report.averageSpendMinor)));
+    if (report.covers > 0) {
+      bytes.addAll(_row('Average cover', _money(report.averageCoverMinor)));
+    }
+
+    // The window this report covers, stated as two timestamps rather than as a
+    // date. A manager checking it against the back office has to be able to
+    // type the same period in, and "24/08/2026" is not a period.
+    section('PERIOD');
+    bytes.addAll(_row('From', _time.format(report.openedAt)));
+    bytes.addAll(_row('To', _time.format(report.closedAt ?? DateTime.now())));
+
+    section('DEPARTMENT SALES');
+    for (final entry in report.byDepartment.entries) {
+      bytes.addAll(_row(entry.key, tally(entry.value)));
+    }
+    totalRow(totalOf(report.byDepartment.values));
+
+    section('PAYMENT METHODS');
+    for (final entry in report.byMethod.entries) {
+      bytes.addAll(_row(entry.key.toUpperCase(), tally(entry.value)));
+    }
+    totalRow(totalOf(report.byMethod.values));
+
+    section('DISCOUNTS');
+    totalRow(report.discounts);
+
+    section('REFUNDS');
+    totalRow(report.refunds);
+
+    // The two lines a manager is actually looking for. Together, and with their
+    // counts, because that is what makes them worth printing: a no-sale count
+    // that has climbed is a question whatever the money says.
+    section('VOIDS & NO SALES');
+    bytes.addAll(_row('Voids', tally(report.voids)));
+    bytes.addAll(_row('No sales', '[${report.noSales.count}]'));
+    totalRow(report.voids);
+
+    if (report.gratuityMinor > 0) {
+      section('GRATUITY');
+      bytes.addAll(_row('Tips taken on card', _money(report.gratuityMinor)));
+      bytes.addAll(
+        _text(
+          'Not takings — owed to staff',
+          styles: const PosStyles(fontType: PosFontType.fontB),
+        ),
+      );
+    }
+
+    section('VAT');
+    bytes.addAll(_row('VAT in takings', _money(report.taxMinor)));
+
+    // What should be in the drawer, so the manager can count against it. The
+    // reference report this was matched against has no such line; counting the
+    // drawer against a figure the till worked out is the entire reason a Z is
+    // taken at a counter, so it stays.
+    section('CASH DRAWER');
     bytes.addAll(_row('Float', _money(report.openingFloatMinor)));
     bytes.addAll(
       _generator.row([
@@ -682,7 +740,7 @@ class ReceiptBuilder {
       bytes.addAll(_generator.feed(1));
       bytes.addAll(
         _text(
-          '*** TOTALS RESET ***',
+          '*** ALL TOTALS HAVE BEEN RESET ***',
           styles: const PosStyles(align: PosAlign.center, bold: true),
         ),
       );

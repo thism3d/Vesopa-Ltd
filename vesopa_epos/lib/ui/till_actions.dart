@@ -48,6 +48,16 @@ abstract final class TillActions {
     try {
       final builder = await ReceiptBuilder.create();
       await PrinterTransport.of(printer).send(builder.openDrawer());
+
+      // Counted on the Z report. A drawer opened outside a sale is the other
+      // half of the void figure a manager reads at the end of the day, and it
+      // is only worth anything if every one of them is recorded.
+      final session = await ref.read(sessionRepositoryProvider).current();
+      await ref.read(orderRepositoryProvider).logNoSale(
+            sessionId: session.id,
+            staffName: ref.read(servedByProvider),
+          );
+
       if (context.mounted) _toast(context, 'Drawer opened.');
     } catch (e) {
       if (context.mounted) {
