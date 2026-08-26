@@ -1,12 +1,18 @@
-# Vesopa EPOS 1.4.4 — release notes
+# Vesopa EPOS 1.4.5 — release notes
 
-Store submission: `msix_version: 1.4.4.0` (previous submission was 1.4.2.0).
-Flutter `version: 1.4.4+16`.
+Store submission: `msix_version: 1.4.5.0` (previous submission was 1.4.2.0).
+Flutter `version: 1.4.5+17`.
 
-`1.4.3.0` and `1.4.3.1` were built here and never submitted — the first
-superseded by the Windows icon rebuild described below, the second by this
-renumbering. Neither went to Partner Center, so neither is spent; they are
-simply not what shipped.
+**The fourth part of a Store version must be 0.** Microsoft reserves the
+revision field and rejects a package that sets it — which is why the numbering
+here walks the third part and never the fourth. Both pubspecs have said so in a
+comment beside `msix_version` all along.
+
+`1.4.3.0`, `1.4.3.1` and `1.4.4.0` were built on this machine and never
+submitted. `1.4.3.1` should never have existed: it was built to carry the
+Windows icon rebuild and set the revision field to do it, which the Store would
+have refused. Nothing went to Partner Center, so no version is spent — this is
+simply the first one that is correct.
 
 **Server: changes required, and already applied to live.** Deployed with
 `.\deploy.ps1 -Schema` on 26/08/2026. Two new migration files:
@@ -29,7 +35,7 @@ An older till meets the new server harmlessly — it sends none of those fields
 and every one of them defaults to what was true before it existed: a line is an
 item in its own right, and a bill is on no particular floor.
 
-Vesopa Kitchen moves to 1.4.4.0 with this release and must be updated alongside
+Vesopa Kitchen moves to 1.4.5.0 with this release and must be updated alongside
 it if the venue runs kitchen screens; see its own notes.
 
 ---
@@ -41,7 +47,7 @@ version. 1,350 of the 1,500 characters Partner Center allows — count it again 
 you edit it; there is about a line and a half of room.
 
 ```
-Version 1.4.4.0 – Ask The Right Question
+Version 1.4.5.0 – Ask The Right Question
 
 Modifiers, a Z report you can act on, and the till asking before it rings.
 
@@ -151,9 +157,11 @@ the entire reason a Z is taken at a counter.
 2. Build with the Dojo key defined if this build is to take live card payments;
    it is never in source:
    `flutter build windows --dart-define=DOJO_LIVE_API_KEY=…`
-   **The package built for 1.4.4.0 was built without it**, so it carries the
+   **The package built for 1.4.5.0 was built without it**, so it carries the
    bundled sandbox key. Rebuild before submitting if live card payments are
    wanted from the Store build.
 3. `dart run msix:create --store`
-4. `msix_version` can never be reused. If certification fails, bump to 1.4.4.1
-   (or 1.4.5.0) before resubmitting — a resubmission at 1.4.4.0 is rejected.
+4. `msix_version` can never be reused, and its fourth part must stay 0 — the
+   Store reserves the revision field and rejects a package that sets it. So a
+   resubmission after a failed certification bumps the *third* part: 1.4.6.0,
+   never 1.4.5.1.
