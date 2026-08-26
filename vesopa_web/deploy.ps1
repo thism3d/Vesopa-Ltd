@@ -88,14 +88,36 @@ if ($env:VESOPA_SSH_PASSWORD) {
   $env:DISPLAY = 'vesopa'
 }
 
+<#
+  Run a shell script on the server, base64-encoded.
+
+  Not for secrecy — base64 is not encryption and there is nothing secret in
+  these scripts. It is because PowerShell builds the command line it hands to a
+  native executable by its own quoting rules, and a multi-line script carrying
+  both kinds of quote does not always survive the trip. It did not here: the
+  line
+
+      echo "OK Backup -> backup/code_pre_deploy_....tar.gz"
+
+  arrived at bash with its double quotes gone, so the `>` in the arrow was read
+  as a redirection and bash tried to create a file called
+  `backup/code_pre_deploy_....tar.gz` relative to the home directory. The error
+  it produced named a path the script never used, which is exactly as
+  confusing as it sounds.
+
+  One argument, one alphabet, nothing for either shell to reinterpret.
+#>
 function Invoke-Remote([string]$Script) {
-  & ssh @SshOpts $Server $Script
+  $b64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($Script))
+  & ssh @SshOpts $Server "echo $b64 | base64 -d | bash -s"
   if ($LASTEXITCODE -ne 0) { Die "Remote command failed (exit $LASTEXITCODE)." }
 }
 
 try {
   if ($Logs) {
-    Invoke-Remote "pm2 logs $Pm2App --lines 120"
+    # Straight through, not base64'd: this one is a single simple command and
+    # it streams.
+    & ssh @SshOpts $Server "pm2 logs $Pm2App --lines 120"
     exit 0
   }
 
