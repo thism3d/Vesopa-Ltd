@@ -1,13 +1,26 @@
 <%- include('partials/header') %>
 
 <%#
-  The hero ground is drawn in CSS rather than played from a file. The MP4 it
-  replaced (/assets/logo/file.mp4) animated the retired logo, so it contradicted
-  the identity it was introducing — and it cost a multi-megabyte download on the
-  first paint of the busiest page. The .vh-* layers are in library/brand.css.
+  The hero ground: footage of a real counter, under the CSS brand layers.
+
+  The MP4 that used to be here (/assets/logo/file.mp4) animated the RETIRED
+  logo, so it contradicted the identity it was introducing — which is why it was
+  taken out and the ground drawn in CSS instead. This is not that file. It is a
+  silent, wordless, logo-free shot of a till being used, and the .vh-* layers it
+  had before are still on top of it: the grid, the lime pool and the veil, so
+  the type stays legible and the frame still reads as Vesopa rather than as
+  stock footage.
+
+  The still behind it is the same shot's stand-in, and it is what actually shows
+  on a phone, on a metered connection and for anyone who has asked for less
+  motion — see .vh-video in library/brand.css. Nobody on mobile data pays for
+  four megabytes of background.
 %>
 <div class="container_1">
     <div class="vh-stage" aria-hidden="true">
+        <video class="vh-video" autoplay muted loop playsinline preload="metadata">
+            <source src="/assets/brand/hero_counter.mp4" type="video/mp4">
+        </video>
         <div class="vh-grid"></div>
         <div class="vh-glow"></div>
         <div class="vh-veil"></div>
@@ -111,6 +124,88 @@
 </div>
 
     
+<%#
+  One system, every station.
+
+  The page had icons and screenshots and no photography, so it read as a
+  brochure for software rather than for something used in a room full of people.
+  These are art-directed to the brand book — dark ground, one saturated colour,
+  the screen as the light source — and none of them carries a word of text,
+  because the only lettering on a Vesopa page should be Vesopa's own.
+%>
+<section class="vs-floor" id="the-floor" aria-labelledby="vs-floor-title">
+    <div class="vs-floor-head">
+        <p class="vh-eyebrow">One system, every station</p>
+        <h2 id="vs-floor-title" class="vs-floor-title">
+            From the counter to the pass <span>to the back office.</span>
+        </h2>
+        <p class="vs-floor-lede">
+            The same till, the same catalogue and the same numbers — wherever in the
+            building the work is happening.
+        </p>
+    </div>
+
+    <div class="vs-floor-grid">
+        <figure class="vs-shot vs-shot-tall">
+            <img src="/assets/brand/counter_service.jpg" width="1264" height="848"
+                 loading="lazy" decoding="async"
+                 alt="A card being tapped on a payment terminal beside a till at a café counter">
+            <figcaption>
+                <b>At the counter</b>
+                <span>Ring it up, take the card, print or skip the receipt.</span>
+            </figcaption>
+        </figure>
+
+        <figure class="vs-shot">
+            <img src="/assets/brand/kitchen_pass.jpg" width="1264" height="848"
+                 loading="lazy" decoding="async"
+                 alt="A chef plating a dish beneath a kitchen order screen">
+            <figcaption>
+                <b>On the pass</b>
+                <span>Orders arrive on screen or on paper — the kitchen chooses.</span>
+            </figcaption>
+        </figure>
+
+        <figure class="vs-shot">
+            <img src="/assets/brand/table_service.jpg" width="1264" height="848"
+                 loading="lazy" decoding="async"
+                 alt="A waiter taking an order on a handheld tablet in a restaurant">
+            <figcaption>
+                <b>On the floor</b>
+                <span>Take the order at the table and it is already on the bill.</span>
+            </figcaption>
+        </figure>
+
+        <figure class="vs-shot vs-shot-tall">
+            <img src="/assets/brand/back_office.jpg" width="1264" height="848"
+                 loading="lazy" decoding="async"
+                 alt="An owner reviewing sales charts on a laptop after service">
+            <figcaption>
+                <b>In the back office</b>
+                <span>Prices, staff, stock and the day's takings, from anywhere.</span>
+            </figcaption>
+        </figure>
+    </div>
+
+    <%# The claim the page makes hardest, given a picture of its own. %>
+    <div class="vs-offline">
+        <img class="vs-offline-img" src="/assets/brand/offline_trading.jpg"
+             width="1264" height="848" loading="lazy" decoding="async"
+             alt="A till still lit and working in an otherwise dark, empty room">
+        <div class="vs-offline-copy">
+            <p class="vh-eyebrow">When the line goes down</p>
+            <h3>It keeps taking money.</h3>
+            <p>
+                Vesopa holds the catalogue, the prices and the open bills on the terminal
+                itself. Lose the broadband mid-service and the till carries on selling —
+                then syncs everything the moment it is back, with nothing lost and
+                nothing typed in twice.
+            </p>
+            <a href="#try-vesopa" class="menu_get_button">Request a demo</a>
+        </div>
+    </div>
+</section>
+
 <div class="free_offer_container">
     <div class="free_offer_left">
         <img class="free_offer_img" src="/assets/icons/gift_icon.png" alt="Vesopa EPOS Free Offer">

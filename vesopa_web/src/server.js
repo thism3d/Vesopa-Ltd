@@ -6,6 +6,7 @@ const compression = require('compression');
 const cookieParser = require('cookie-parser');
 
 const config = require('./config');
+const { assetVersions, staticCache } = require('./assets');
 const { pagesRouter } = require('./routes/pages');
 const { formsRouter } = require('./routes/forms');
 const { checkoutApiRouter } = require('./routes/checkout-api');
@@ -96,6 +97,49 @@ const CONFIGURED_ORIGIN = (() => {
 function originFor(req) {
   return CONFIGURED_ORIGIN || `${req.protocol}://${req.get('host')}`;
 }
+
+/**
+ * Every local asset URL carries a hash of its own contents.
+ *
+ * Computed once at boot over public/, which is exactly when a deploy has
+ * finished replacing the files and pm2 has restarted. See src/assets.js for why
+ * a content hash and not a version number — and for why this site is the
+ * cautionary tale: `?v=<%= APP_VERSION %>` was pasted onto some assets and not
+ * others, and the constant behind it had not moved in a very long time.
+ */
+const assets = assetVersions(path.join(__dirname, '..', 'public'));
+
+/**
+ * Version every asset in every page, by filtering what the templates render.
+ *
+ * One place, rather than one `?v=` per `<link>` across twenty EJS files plus
+ * every partial plus whatever gets added next year. A template author cannot
+ * forget to do this, because there is nothing for them to do.
+ *
+ * Wrapping `res.render` rather than `res.send`: `render` is how every page here
+ * is produced, and taking the callback form means Express hands back the HTML
+ * instead of sending it — so the status code a route already set (a 401 on the
+ * admin login, a 404 on the error page) is still the one that goes out.
+ */
+app.use((req, res, next) => {
+  const render = res.render.bind(res);
+  res.render = (view, options, callback) => {
+    if (typeof options === 'function') {
+      callback = options;
+      options = {};
+    }
+    render(view, options || {}, (err, html) => {
+      if (err) return callback ? callback(err) : next(err);
+      const out = assets.rewrite(html);
+      if (callback) return callback(null, out);
+      // A page names every other URL on itself, so it must never be the stale
+      // one. It is cheap and it is regenerated per request anyway.
+      res.setHeader('Cache-Control', 'no-cache');
+      res.send(out);
+    });
+  };
+  next();
+});
 
 // Values every template can reach without each route passing them along.
 app.use((req, res, next) => {
@@ -200,8 +244,12 @@ app.use(
 // year to reach anyone), so: a day, revalidated.
 app.use(
   express.static(path.join(__dirname, '..', 'public'), {
+    // A day for anything asked for without a version — a logo swapped under the
+    // same name still reaches people by tomorrow. A request carrying ?v= is a
+    // URL that cannot change its contents, so `staticCache` gives it a year.
     maxAge: '1d',
     etag: true,
+    setHeaders: staticCache,
     // /pricing must never be shadowed by a stray pricing.html.
     extensions: false,
     index: false,

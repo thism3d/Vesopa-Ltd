@@ -1,5 +1,6 @@
 require('dotenv').config();
 
+const fs = require('fs');
 const path = require('path');
 const express = require('express');
 const mysql = require('mysql2/promise');
@@ -32,6 +33,7 @@ const {
 } = require('./kitchen');
 const { screensRoutes, tillScreenRoutes } = require('./screens');
 const { fontsRoutes, tillFontRoutes } = require('./fonts');
+const { assetVersions, staticCache } = require('./assets');
 const { modifierRoutes, tillModifierRoutes } = require('./modifiers');
 const { dojoWebhookRoutes, webhookStatus } = require('./dojo');
 
@@ -509,8 +511,41 @@ app.get(['/till/floor', '/floor.json'], async (req, res, next) => {
   }
 });
 
-// The back-office single-page app.
-app.use(express.static(path.join(__dirname, '..', 'public')));
+// ---------------------------------------------------------------------------
+// The back-office single-page app
+// ---------------------------------------------------------------------------
+
+const PUBLIC_DIR = path.join(__dirname, '..', 'public');
+
+/**
+ * Every asset URL carries a hash of its own contents, and the page that points
+ * at them is never cached.
+ *
+ * The fault this fixes was reported from an iPad and is not a subtle one: a
+ * layout fix deployed on one day was still not visible on that iPad days later,
+ * because Safari was serving a `/style.css` it already had and there is no
+ * gesture on iOS that reliably clears it. See src/assets.js.
+ */
+const assets = assetVersions(PUBLIC_DIR);
+
+/** The app shell, with a version on every asset it references. */
+const shell = assets.rewrite(
+  fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8')
+);
+
+function sendShell(_req, res) {
+  // `no-store`, not `no-cache`. This document is a few kilobytes and it is the
+  // thing that names every other URL — a stale copy of it points at the old
+  // stylesheet by name, and versioning the stylesheet achieves nothing.
+  res.setHeader('Cache-Control', 'no-store, must-revalidate');
+  res.type('html').send(shell);
+}
+
+// Before the static middleware, or `express.static` answers /index.html with
+// the file on disk and the rewrite never runs.
+app.get(['/', '/index.html'], sendShell);
+
+app.use(express.static(PUBLIC_DIR, { setHeaders: staticCache }));
 
 /**
  * Deep links. The back office routes client-side (/products, /tables, …), so a
@@ -519,9 +554,7 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
  *
  * Declared after the API routes so it can never swallow them.
  */
-app.get(/^\/(?!api|till|orders|health|assets|.*\.[a-z]+$)[a-z0-9-]*$/, (_req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
-});
+app.get(/^\/(?!api|till|orders|health|assets|.*\.[a-z]+$)[a-z0-9-]*$/, sendShell);
 
 /**
  * Catalogue pull. The till caches this locally so it can sell while offline.

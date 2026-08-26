@@ -436,13 +436,40 @@ input:focus, select:focus {
 .dot.online { background: #35d07f; box-shadow: 0 0 0 3px rgba(53, 208, 127, .18); }
 .dot.offline { background: #6b6478; }
 
-main { flex: 1; padding: 30px 36px 60px; overflow: auto; }
+/* `min-width: 0` is the whole reason the back office used to slide under its
+   own sidebar on an iPad.
+
+   A flex item defaults to `min-width: auto`, which means it refuses to become
+   narrower than its content. One wide table therefore made <main> wider than
+   its share, which made #app wider than the viewport, which gave the *page* a
+   horizontal scrollbar — and the rail is `position: sticky`, which only sticks
+   vertically. Scroll right to reach a Delete button and the rail stays put
+   while the content slides underneath it, cutting the heading in half. That is
+   exactly the screenshot: "epartments", "ag rows to set the order".
+   
+   Nothing may make this column wider than the space it has. Anything too wide
+   scrolls inside its own box — see the table rule below. */
+main { flex: 1; min-width: 0; padding: 30px 36px 60px; overflow: auto; }
 
 .page-head {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
   margin-bottom: 24px;
+}
+/* The heading and its paragraph take what is left; the buttons keep their own
+   width and drop to a line of their own when there is not enough for both.
+   Without this the buttons were the half that gave way, and a page head with
+   five of them (screen programming) came out as a ragged vertical stack down
+   the right-hand edge with the description text running underneath it. */
+.page-head > div:first-child { flex: 1 1 min(100%, 380px); min-width: 0; }
+.page-head > .denom-actions,
+.page-head > div:last-child:not(:first-child) {
+  flex: 0 0 auto;
+  margin-top: 0;
+  justify-content: flex-end;
 }
 
 /* Vertical rhythm down a view.
@@ -502,7 +529,38 @@ th {
 tbody tr:last-child td { border-bottom: 0; }
 tbody tr:hover { background: #fbfafc; }
 td.right, th.right { text-align: right; }
-.card > table { border-radius: var(--radius); overflow: hidden; }
+/* A table wider than its card scrolls inside the card. At EVERY width.
+
+   This rule existed already and was inside `@media (max-width: 960px)`, which
+   is the one thing wrong with it: an iPad in landscape is 1024–1366 CSS pixels,
+   so the device this was reported from was the device the fix excluded. A wide
+   table can overflow a 1440px desktop too — the width it needs depends on the
+   catalogue, not on the screen.
+
+   `overflow: hidden` used to sit on the table itself, to keep its corners
+   inside the rounded card. What it actually did was clip: a product called
+   Carlsberg came out as "Carli", a price as "3.0(", and the Edit / Duplicate /
+   Delete buttons were painted outside the card where nothing could reach them.
+   The card clips now, and it scrolls. */
+.card:has(> table) { overflow-x: auto; }
+.card > table {
+  border-radius: var(--radius);
+  /* At least fill the card; wider if the content needs it. The standard
+     responsive-table pairing with the scroll container above — and it is what
+     stops every cell being squeezed until "Store Manager", a gift-card code and
+     "Catering, 20 covers" each wrap onto three lines. */
+  min-width: 100%;
+  width: max-content;
+}
+/* …with a ceiling, so one long note cannot make a table two thousand pixels
+   wide. Anything past this wraps; everything else stays on one line. */
+.card > table td { max-width: 42ch; }
+
+/* A row's buttons are one line, never a stack. With the table at its natural
+   width they already fit; this is the belt to that braces, because a stack of
+   buttons overlapping a card's rounded corner is the thing that looks broken. */
+td .btn { white-space: nowrap; }
+td .btn + .btn { margin-left: 6px; }
 
 /* A row that just arrived over the socket. */
 @keyframes flash { from { background: #fff4d6; } to { background: transparent; } }
@@ -596,30 +654,73 @@ tr.new { animation: flash 1.6s ease-out; }
 
 .designer {
   display: grid;
-  grid-template-columns: 1fr 250px;
+  grid-template-columns: minmax(0, 1fr) 250px;
   gap: 20px;
   align-items: start;
 }
+/* An iPad in landscape has about 700px left after the rail and the inspector,
+   which is not a floor plan — it is a third of one. The inspector goes under
+   the canvas well before the layout gets that tight.
+
+   `minmax(0, 1fr)` above rather than `1fr` for the same reason <main> needs
+   `min-width: 0`: a grid track sized `1fr` still refuses to go below its
+   content's minimum, so the canvas pushed the whole page sideways. */
+@media (max-width: 1200px) {
+  .designer { grid-template-columns: minmax(0, 1fr); }
+}
 
 /* The canvas is a grid so tables land on whole units — a free-pixel drag looks
-   tidy to whoever drew it and ragged to everyone else. */
+   tidy to whoever drew it and ragged to everyone else.
+
+   IT SCROLLS, AND THE ROOM HAS A FIXED SIZE. Both halves of that were wrong,
+   and together they are the fault reported from an iPad: "the Table Designer is
+   cut off and I cannot go to the right side, so I cannot set anything there".
+
+   `overflow: hidden` meant a table beyond the visible width was painted and
+   then clipped — there, on the till, and unreachable here. And the room had no
+   size of its own: it was as wide as the browser happened to be, so a plan
+   arranged on a desktop had tables outside the room on a tablet. A floor plan
+   has to mean the same thing on every screen, because it describes a floor.
+
+   So the room is a fixed number of grid units (see ROOM_COLS in app.js, which
+   also stretches it to hold whatever a venue has already saved), and the box
+   around it scrolls. `background-attachment: local` keeps the grid lines under
+   the tables as it scrolls rather than painting them on the window. */
 #canvas {
   position: relative;
   height: 620px;
+  max-height: 70vh;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
   background-color: #fbfafc;
   background-image:
     linear-gradient(to right, var(--line) 1px, transparent 1px),
     linear-gradient(to bottom, var(--line) 1px, transparent 1px);
   background-size: 40px 40px;
+  background-attachment: local;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  overflow: hidden;
+}
+/* The room itself. Sized by app.js so it is never smaller than the plan it has
+   to hold — a spacer rather than a wrapper element, so the tables keep their
+   existing absolute coordinates and nothing about the saved data changes. */
+#canvas::after {
+  content: '';
+  display: block;
+  width: var(--room-w, 960px);
+  height: var(--room-h, 600px);
 }
 
+/* `touch-action: none` so a finger on a table drags the table. Without it the
+   browser claims the gesture and scrolls the canvas instead — which is the
+   right thing to do on the empty grid between tables, and exactly the wrong
+   thing on a table. Both work now: drag a table to move it, drag the floor to
+   look around it. */
 .tbl {
   position: absolute;
   display: grid;
   place-items: center;
+  touch-action: none;
   background: #fff;
   border: 2px solid var(--brand);
   color: var(--text);
@@ -2436,3 +2537,68 @@ body.sp-popup .sp-status { flex: 0 0 auto; }
   font-size: 17px;
 }
 .sp-font-row .btn { flex: 0 0 auto; }
+
+/* ---------------------------------------------------------------------------
+   Touch
+
+   Not "mobile". `pointer: coarse` is the question actually being asked — is the
+   thing pressing this a finger — and it is true of an iPad in landscape at
+   1366px, which every width-based breakpoint in this file treats as a desktop.
+   That is why the back office felt wrong on a tablet while measuring fine on a
+   laptop at the same width.
+   --------------------------------------------------------------------------- */
+@media (pointer: coarse) {
+  /* Apple's own floor is 44pt. A `.btn.small` was 29px tall, and a row with
+     Edit / Duplicate / Delete in it was three 29px targets 6px apart — which is
+     a mis-tap waiting to happen, and one of them deletes a product. */
+  .btn { min-height: 42px; }
+  .btn.small { min-height: 38px; padding: 8px 14px; font-size: 13.5px; }
+  .nav { min-height: 44px; }
+  .nav-group { min-height: 38px; }
+
+  /* THE ONE THAT MAKES A TABLET FEEL BROKEN.
+
+     iOS Safari zooms the whole page in when a form control smaller than 16px
+     takes focus, and it does not zoom back out. Tap the product search, and the
+     back office is suddenly 1.2x too big with the rail off the left edge — and
+     nothing on screen explains why. Every control in here was 14px.
+
+     16px is not a design choice here, it is the threshold. */
+  input, select, textarea, .cell-edit {
+    font-size: 16px;
+    min-height: 42px;
+  }
+  /* Inline table editing keeps its own smaller frame, but not its own font
+     size — see above. */
+  .cell-edit { min-height: 36px; }
+
+  /* A checkbox at 13px is not something a thumb can hit, and the pick column of
+     the products table is nothing but checkboxes. */
+  input[type="checkbox"], input[type="radio"] {
+    width: 22px;
+    height: 22px;
+  }
+
+  /* Momentum scrolling inside the boxes that now scroll rather than the page. */
+  .card, #canvas, .sp-panel { -webkit-overflow-scrolling: touch; }
+}
+
+/* ---------------------------------------------------------------------------
+   Tablets: the gap between the phone drawer and the desktop rail
+
+   The off-canvas drawer stops at 960px and the desktop layout starts at 961px
+   with a 236px rail — so an iPad in portrait (1024px) keeps the full rail and
+   gets 788px of page, and in landscape (1366px) it gets 1130px. Neither is
+   wrong, but both are tighter than the desktop this was laid out on, and the
+   two places that assumed otherwise are here.
+   --------------------------------------------------------------------------- */
+@media (min-width: 961px) and (max-width: 1400px) {
+  /* The rail gives back 32px. It is a list of one-line labels and none of them
+     needs 236px. */
+  .rail { width: 204px; }
+  main { padding: 26px 22px 56px; }
+
+  /* Two-up panels are a desktop idea. At this width each half is ~450px and a
+     chart in one of them is unreadable. */
+  .grid-2 { grid-template-columns: 1fr; }
+}

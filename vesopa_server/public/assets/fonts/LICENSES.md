@@ -27,6 +27,23 @@ name. Vesopa does neither — the files are byte-for-byte as fetched.
 
 Roboto, Open Sans.
 
+## The Vesopa brand faces
+
+Orbitron, Michroma and Blinker come from `brand_assets/Fonts`, the Vesopa brand
+book's own package, and are offered to every venue alongside the Google set —
+Orbitron and Michroma are the brand's display faces (headlines, the logo,
+product names) and Blinker is one of its two body faces. Montserrat, the other,
+was already here.
+
+All three are SIL Open Font License 1.1 in their upstream form, which is the
+licence they were fetched under. They are added by
+`tool/add_brand_fonts.js`, which copies them out of the brand package and
+extends catalogue.json — so a brand-book update is re-run rather than re-typed.
+
+A venue that wants its tills lettered exactly as the brand book letters
+everything else now picks Orbitron and gets it. That is the whole reason these
+are built in rather than left as an upload.
+
 ## Fonts a venue uploads
 
 Not covered by any of the above. A venue that uploads its brand font is stating

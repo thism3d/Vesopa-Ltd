@@ -1427,6 +1427,41 @@ async function loadBilling() {
 // ---- Floor designer -------------------------------------------------------
 
 const GRID = 40; // px per grid unit — tables snap to this
+
+/**
+ * How big a room is, in grid units.
+ *
+ * A floor plan describes a floor. It cannot mean one thing on the laptop it was
+ * drawn on and another on the tablet it is opened on, which is what happened
+ * while the room was "however wide the browser is": a plan arranged on a
+ * desktop had tables sitting outside the room on an iPad, painted and then
+ * clipped, unreachable — and the drag clamp below, which measured
+ * `canvas.clientWidth`, would not let anything be dragged back into view.
+ *
+ * 24 x 15 at 40px is 960 x 600, which is a generous dining room and fits a
+ * laptop without scrolling. A venue that has already saved something wider
+ * keeps it: `roomSize` stretches to hold whatever is there.
+ */
+const ROOM_COLS = 24;
+const ROOM_ROWS = 15;
+
+/**
+ * The room this plan needs, never smaller than the plan already in it.
+ *
+ * The stretch is not a nicety. Without it, opening a plan drawn on a wide
+ * screen would clamp every table outside 24 columns back into the room the
+ * moment somebody dragged one — silently rearranging a layout a venue had
+ * already agreed with its staff.
+ */
+function roomSize(room) {
+  let cols = ROOM_COLS;
+  let rows = ROOM_ROWS;
+  for (const t of (room && room.tables) || []) {
+    cols = Math.max(cols, (t.pos_x || 0) + (t.width || 1));
+    rows = Math.max(rows, (t.pos_y || 0) + (t.height || 1));
+  }
+  return { cols, rows };
+}
 let floor = [];
 let activeRoom = null;
 let selected = null;
@@ -1463,6 +1498,13 @@ function drawRoom() {
   const room = floor.find((r) => r.id === activeRoom);
   const canvas = $('canvas');
   if (!room) return;
+
+  // The room's own size, handed to the CSS spacer that gives #canvas something
+  // to scroll to. Set before the tables are drawn so the box is the right shape
+  // on the first paint rather than a frame later.
+  const { cols, rows } = roomSize(room);
+  canvas.style.setProperty('--room-w', `${cols * GRID}px`);
+  canvas.style.setProperty('--room-h', `${rows * GRID}px`);
 
   canvas.innerHTML = room.tables
     .map(
@@ -1502,6 +1544,9 @@ function makeDraggable(el) {
     const startY = e.clientY;
     const originX = table.pos_x;
     const originY = table.pos_y;
+    // Measured once. The room cannot change mid-drag, and walking every table
+    // on every pointermove is work done while a finger is moving.
+    const size = roomSize(room);
 
     el.classList.add('dragging');
     el.setPointerCapture(e.pointerId);
@@ -1510,10 +1555,16 @@ function makeDraggable(el) {
       const dx = Math.round((ev.clientX - startX) / GRID);
       const dy = Math.round((ev.clientY - startY) / GRID);
 
-      // Keep the table on the canvas: a table dragged off the edge would be
-      // invisible on the till and unreachable.
-      const maxX = Math.floor($('canvas').clientWidth / GRID) - table.width;
-      const maxY = Math.floor($('canvas').clientHeight / GRID) - table.height;
+      // Keep the table in the room: one dragged past the edge would be
+      // invisible on the till and unreachable here.
+      //
+      // Measured against the ROOM, not against `canvas.clientWidth`. The
+      // element is as wide as the browser window happens to be, so clamping to
+      // it meant the same drag stopped in a different place on a laptop and on
+      // a tablet — and on the tablet it stopped a third of the way across a
+      // plan the venue had already arranged.
+      const maxX = size.cols - table.width;
+      const maxY = size.rows - table.height;
 
       table.pos_x = Math.max(0, Math.min(originX + dx, maxX));
       table.pos_y = Math.max(0, Math.min(originY + dy, maxY));

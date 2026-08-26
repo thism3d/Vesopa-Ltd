@@ -249,5 +249,48 @@
         "bytes": 123536
       }
     ]
+  },
+  {
+    "slug": "orbitron",
+    "family": "Orbitron",
+    "faces": [
+      {
+        "weight": 400,
+        "file": "orbitron-400.ttf",
+        "bytes": 24716
+      },
+      {
+        "weight": 700,
+        "file": "orbitron-700.ttf",
+        "bytes": 24668
+      }
+    ]
+  },
+  {
+    "slug": "michroma",
+    "family": "Michroma",
+    "faces": [
+      {
+        "weight": 400,
+        "file": "michroma-400.ttf",
+        "bytes": 62972
+      }
+    ]
+  },
+  {
+    "slug": "blinker",
+    "family": "Blinker",
+    "faces": [
+      {
+        "weight": 400,
+        "file": "blinker-400.ttf",
+        "bytes": 73000
+      },
+      {
+        "weight": 700,
+        "file": "blinker-700.ttf",
+        "bytes": 74312
+      }
+    ]
   }
 ]
