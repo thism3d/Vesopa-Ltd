@@ -236,18 +236,11 @@ class _TicketCardState extends State<TicketCard>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  for (final line in lines)
-                    _LineRow(
-                      line: line,
-                      // Only when this board watches more than one station.
-                      // On a single-station screen every chip would say the
-                      // same thing, which is noise on the one surface that
-                      // cannot afford any.
-                      station: _stationChipFor(line),
-                      onMade: widget.onLineMade == null
-                          ? null
-                          : () => widget.onLineMade!(line, !line.made),
-                    ),
+                  ..._lineRowsFor(
+                    lines,
+                    _stationChipFor,
+                    widget.onLineMade,
+                  ),
 
                   if (ticket.note != null) ...[
                     const Divider(height: 12, indent: 12, endIndent: 12),
@@ -439,16 +432,85 @@ class _Pill extends StatelessWidget {
 /// The modifier rules through with its line. A struck item whose "no bacon"
 /// still reads at full strength looks like an instruction that has been missed
 /// rather than one that has been followed.
+
+/// The body of a ticket: every line, with each answer under the dish it belongs
+/// to.
+///
+/// A loop rather than a collection-for because a modifier has to be told what
+/// its dish is doing. It carries its own `madeAt` — it is a line like any other
+/// on the server — but nobody ticks "Rare" off separately from the steak, so it
+/// is not offered as a target and it strikes through when the steak does.
+List<Widget> _lineRowsFor(
+  List<TicketLine> lines,
+  String? Function(TicketLine) stationChipFor,
+  void Function(TicketLine line, bool made)? onLineMade,
+) {
+  final rows = <Widget>[];
+  var dishMade = false;
+  for (final line in lines) {
+    // The lines arrive in the order the clerk rang them, so the dish is always
+    // the most recent non-modifier above.
+    if (!line.isModifier) dishMade = line.made;
+    rows.add(
+      _LineRow(
+        line: line,
+        dishMade: line.isModifier ? dishMade : null,
+        // Only when this board watches more than one station. On a
+        // single-station screen every chip would say the same thing, which is
+        // noise on the one surface that cannot afford any. Never on a modifier:
+        // it goes wherever its dish goes, so the chip would only ever repeat
+        // the line above.
+        station: line.isModifier ? null : stationChipFor(line),
+        onMade: line.isModifier || onLineMade == null
+            ? null
+            : () => onLineMade(line, !line.made),
+      ),
+    );
+  }
+  return rows;
+}
+
 class _LineRow extends StatelessWidget {
-  const _LineRow({required this.line, this.station, this.onMade});
+  const _LineRow({
+    required this.line,
+    this.station,
+    this.onMade,
+    this.dishMade,
+  });
 
   final TicketLine line;
   final String? station;
   final VoidCallback? onMade;
 
+  /// For a modifier: whether the dish it belongs to has been made. Null on a
+  /// dish. See _lineRowsFor.
+  final bool? dishMade;
+
   @override
   Widget build(BuildContext context) {
-    final made = line.made;
+    final made = line.isModifier ? (dishMade ?? line.made) : line.made;
+
+    if (line.isModifier) {
+      // Drawn exactly as a typed note is — red, indented under its line, the
+      // only colour in the body of the card. The kitchen does not care that one
+      // was typed at the till and the other chosen from a list: both are things
+      // said about the dish above, and both are read the same way.
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(48, 1, 12, 2),
+        child: Text(
+          line.name,
+          style: TextStyle(
+            fontSize: 15.5,
+            fontWeight: FontWeight.w600,
+            color: made ? Kds.modifierMuted : Kds.modifier,
+            height: 1.25,
+            decoration: made ? TextDecoration.lineThrough : TextDecoration.none,
+            decorationColor: made ? Kds.modifierMuted : Kds.modifier,
+            decorationThickness: 2,
+          ),
+        ),
+      );
+    }
 
     // Faded, not hidden. A crossed-off item is still part of the order — the
     // chef needs to be able to read back what has been done, and the pass needs

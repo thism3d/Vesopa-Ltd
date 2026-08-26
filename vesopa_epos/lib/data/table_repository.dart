@@ -14,7 +14,7 @@ class TableRepository {
 
   /// Park the sale against a table so the clerk can start a new one. The order
   /// stays open — it is not takings until it is settled.
-  Future<void> park(String orderId, int tableNumber) async {
+  Future<void> park(String orderId, int tableNumber, {int? roomId}) async {
     await _db.transaction(() async {
       await _db
           .into(_db.diningTables)
@@ -25,6 +25,7 @@ class TableRepository {
         OrdersCompanion(
           status: const Value('parked'),
           tableNumber: Value(tableNumber),
+          roomId: Value(roomId),
         ),
       );
     });
@@ -40,10 +41,18 @@ class TableRepository {
   /// The live bill sitting on a table, if any. Only orders with items count, so
   /// a brand-new empty order that happens to carry a table number is not
   /// mistaken for a booked table.
-  Future<Order?> orderOn(int tableNumber) async {
+  /// [roomId] narrows it to one room's table. A null matches a bill parked
+  /// before rooms were recorded, so an existing bill is still found after an
+  /// update rather than appearing to vanish mid-service.
+  Future<Order?> orderOn(int tableNumber, {int? roomId}) async {
     final rows =
         await (_db.select(_db.orders)
-              ..where((o) => o.tableNumber.equals(tableNumber) & _occupies(o))
+              ..where((o) =>
+                  o.tableNumber.equals(tableNumber) &
+                  _occupies(o) &
+                  (roomId == null
+                      ? const Constant(true)
+                      : o.roomId.equals(roomId) | o.roomId.isNull()))
               ..orderBy([(o) => OrderingTerm(expression: o.createdAt)])
               ..limit(1))
             .get();

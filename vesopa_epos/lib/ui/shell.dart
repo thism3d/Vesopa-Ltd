@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/screens.dart';
 import '../data/session_controller.dart';
 import '../data/staff_session.dart';
 import '../data/sync_service.dart';
@@ -128,6 +129,33 @@ class _PosShellState extends ConsumerState<PosShell> {
         ref.watch(navPanelControllerProvider).value ?? NavPanelMode.auto;
     final pinned = navMode.isPinnedOn(context.layout);
 
+    // Two bars, one above the other, both saying who is signed on and whether
+    // the till is online — the venue asked for the top one to go.
+    //
+    // It goes only where the venue has actually put something in its place: the
+    // Sale screen, where the programmed top bar draws. Everywhere else — Tables,
+    // Reports, Settings — nothing else draws chrome, so removing it outright
+    // would leave those screens with no shift name, no online state and, when
+    // the rail is not fixed, no way back to the menu.
+    //
+    // The rail has to be fixed too, for that last reason: the bar's menu key is
+    // the only way to open the drawer, and a programmed bar cannot be relied on
+    // to carry a navigation key the venue may not have placed.
+    final saleScreen = navDestinations[_index].label == 'Sale';
+    final hasProgrammedTopBar = () {
+      final screens = ref.watch(screensProvider).value;
+      if (screens == null) return false;
+      final settings = ref.watch(tillSettingsProvider);
+      final home = screens.byId(settings.homeScreenId);
+      return screens.barFor(
+            home,
+            ScreenSurface.topBar,
+            settings.topBarScreenId,
+          ) !=
+          null;
+    }();
+    final ownBarWouldBeSecond = saleScreen && pinned && hasProgrammedTopBar;
+
     // The drawer, for when the rail is not fixed. A fixed rail costs ~208px of
     // width permanently, on the screen where the product grid and the bill are
     // already competing for room; behind a menu key it costs nothing until it
@@ -227,16 +255,17 @@ class _PosShellState extends ConsumerState<PosShell> {
       drawer: drawer,
       body: Column(
         children: [
-          _TitleBar(
-            section: navDestinations[_index],
-            // No menu key when the rail is already on screen: a button that
-            // opens a copy of what is visible beside it is noise.
-            onOpenMenu: pinned
-                ? null
-                : () => _scaffold.currentState?.openDrawer(),
-            onSignOn: onSignOn,
-            onSignOff: onSignOff,
-          ),
+          if (!ownBarWouldBeSecond)
+            _TitleBar(
+              section: navDestinations[_index],
+              // No menu key when the rail is already on screen: a button that
+              // opens a copy of what is visible beside it is noise.
+              onOpenMenu: pinned
+                  ? null
+                  : () => _scaffold.currentState?.openDrawer(),
+              onSignOn: onSignOn,
+              onSignOff: onSignOff,
+            ),
           Expanded(
             child: pinned
                 ? Row(

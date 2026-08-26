@@ -332,6 +332,26 @@ class _DetailLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colour = dimmed ? Kds.inkMuted : Kds.ink;
+
+    // An answer about the dish above it, drawn as a typed note is. Same
+    // treatment as the board card, so the detail view and the ticket a chef is
+    // looking at do not describe the same order two different ways.
+    if (line.isModifier) {
+      return Padding(
+        padding: const EdgeInsets.only(left: 38, top: 1, bottom: 4),
+        child: Text(
+          line.name,
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+            color: dimmed
+                ? Kds.modifier.withValues(alpha: 0.6)
+                : Kds.modifier,
+          ),
+        ),
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Column(

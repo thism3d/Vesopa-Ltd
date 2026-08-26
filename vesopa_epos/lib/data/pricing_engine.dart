@@ -17,6 +17,7 @@ class PricedLine {
     this.promotionId,
     this.addedBy,
     this.addedAt,
+    this.parentLineId,
   });
 
   final String id;
@@ -28,6 +29,14 @@ class PricedLine {
   final String? department;
   final String? group;
   final String? note;
+
+  /// The line this one modifies, or null when it is an item in its own right.
+  ///
+  /// Carried through from the order line so the check can show a modifier under
+  /// the item it belongs to. The pricing engine itself does not care: a
+  /// modifier is priced, discounted and taxed exactly like anything else, which
+  /// is the whole reason it is a line rather than a note.
+  final String? parentLineId;
 
   /// What the promotion took off this line. Always positive.
   final int discountMinor;
@@ -68,6 +77,7 @@ class PricedLine {
         promotionId: promotionId,
         addedBy: addedBy,
         addedAt: addedAt,
+        parentLineId: parentLineId,
       );
 }
 

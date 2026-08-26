@@ -255,6 +255,9 @@ class FunctionsPage extends ConsumerWidget {
     final number = await _askTableNumber(context);
     if (number == null || !context.mounted) return;
 
+    // No room: this path asks for a bare number rather than showing the plan,
+    // so there is nothing to place it in. Honest as a null — the kitchen card
+    // falls back to finding the number on the plan, as it always did.
     await ref.read(tableRepositoryProvider).park(orderId, number);
     if (!context.mounted) return;
     _toast(context, 'Saved to table $number.');

@@ -20,11 +20,13 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'local/database.dart';
+import 'modifier_layout.dart';
 
 
 /// One item on a kitchen ticket.
 class KitchenTicketLine {
   const KitchenTicketLine({
+    this.isModifier = false,
     required this.id,
     required this.quantity,
     required this.name,
@@ -47,11 +49,17 @@ class KitchenTicketLine {
   /// forever, waiting to be bumped by nobody.
   final Set<String> stations;
 
+  /// Whether this line is an answer about the line above it — "Rare", "Dash
+  /// Coke" — rather than a dish of its own. Drawn under its item on the board,
+  /// the way a note already is.
+  final bool isModifier;
+
   Map<String, dynamic> toJson() => {
     'id': id,
     'quantity': quantity,
     'name': name,
     if (note != null && note!.isNotEmpty) 'note': note,
+    if (isModifier) 'is_modifier': true,
     'stations': stations.join(','),
   };
 
@@ -61,6 +69,7 @@ class KitchenTicketLine {
         quantity: (j['quantity'] as num).toDouble(),
         name: j['name'] as String,
         note: j['note'] as String?,
+        isModifier: j['is_modifier'] == true || j['is_modifier'] == 1,
         stations: {
           for (final s in '${j['stations'] ?? ''}'.split(','))
             if (s.trim().isNotEmpty) s.trim(),
@@ -380,7 +389,7 @@ KitchenTicket buildKitchenTicket({
   required String office,
   required Order order,
   required List<OrderLine> lines,
-  required Map<int, Set<String>> routesByPlu,
+  required Map<String, Set<String>> routesByLine,
   required Set<String> screenStations,
   required String kind,
   String? roomName,
@@ -388,8 +397,14 @@ KitchenTicket buildKitchenTicket({
 }) {
   final ticketLines = <KitchenTicketLine>[];
 
-  for (final line in lines) {
-    final routed = routesByPlu[line.pluId] ?? const <String>{};
+  // In reading order, so `seq` on the server puts each answer straight after
+  // the dish it belongs to. A kitchen reads a ticket top to bottom.
+  for (final line in orderWithModifiers(
+    lines,
+    idOf: (l) => l.id,
+    parentOf: (l) => l.parentLineId,
+  )) {
+    final routed = routesByLine[line.id] ?? const <String>{};
     final onScreens = routed.intersection(screenStations);
     // Nothing on a screen watches this item. It still prints, if it is routed
     // to a printer — that is the other half of the fire — but it does not
@@ -402,6 +417,7 @@ KitchenTicket buildKitchenTicket({
         quantity: line.quantity,
         name: line.name,
         note: line.notes,
+        isModifier: line.parentLineId != null,
         stations: onScreens,
       ),
     );

@@ -212,4 +212,49 @@ void main() {
       expect(a.hashCode, equals(c.hashCode));
     });
   });
+
+  group('a key with a picture on it', () {
+    // The back office stores on-site paths and refuses anything else, so what
+    // reaches the till is never a URL. Image.network cannot load a bare path,
+    // and the key's error builder draws nothing rather than a broken frame - so
+    // the picture simply never appeared and looked like it had not saved.
+    test('a stored path becomes an address the till can load', () {
+      final button = ScreenButton.fromJson({
+        'row': 0,
+        'col': 0,
+        'kind': 'product',
+        'pluId': 1,
+        'imageUrl': '/uploads/burger.png',
+      });
+      expect(button.imageUrl, isNotNull);
+      expect(button.imageUrl, startsWith('http'));
+      expect(button.imageUrl, endsWith('/uploads/burger.png'));
+    });
+
+    test('an address that is already one is left alone', () {
+      final button = ScreenButton.fromJson({
+        'row': 0,
+        'col': 0,
+        'kind': 'product',
+        'imageUrl': 'https://cdn.example.com/x.png',
+      });
+      expect(button.imageUrl, 'https://cdn.example.com/x.png');
+    });
+
+    test('resolving twice does not stack a second host on the front', () {
+      // The cache round trip re-parses what fromJson already resolved.
+      final once = ScreenButton.fromJson({
+        'row': 0, 'col': 0, 'kind': 'product', 'imageUrl': '/uploads/a.png',
+      });
+      final twice = ScreenButton.fromJson(once.toJson());
+      expect(twice.imageUrl, once.imageUrl);
+    });
+
+    test('no picture stays no picture', () {
+      final button = ScreenButton.fromJson({
+        'row': 0, 'col': 0, 'kind': 'blank',
+      });
+      expect(button.imageUrl, isNull);
+    });
+  });
 }

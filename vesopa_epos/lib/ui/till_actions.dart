@@ -60,6 +60,32 @@ abstract final class TillActions {
     }
   }
 
+  /// Open the cash drawer for a sale that was paid, in whole or in part, with
+  /// cash — the other half of [openCashDrawer].
+  ///
+  /// Same pulse down the same wire, but silent. The No Sale key is a clerk
+  /// asking for the drawer and waiting to see it open, so that one reports what
+  /// happened. This one fires while a sale is settling: the money is already
+  /// taken, the customer is standing there waiting for change, and the next
+  /// thing on screen is the one number the clerk needs. A dialog about a
+  /// printer in front of that would cover the change and could not be acted on
+  /// anyway — and a drawer that failed to open is not news to somebody standing
+  /// in front of it.
+  ///
+  /// Never throws. A sale is not undone by a drawer, and by this point it
+  /// cannot be undone at all.
+  static Future<void> openCashDrawerQuietly(WidgetRef ref) async {
+    try {
+      final settings = await ref.read(printerSettingsProvider.future);
+      final printer = settings.receiptPrinter;
+      if (printer == null) return;
+      final builder = await ReceiptBuilder.create();
+      await PrinterTransport.of(printer).send(builder.openDrawer());
+    } catch (_) {
+      // Deliberately swallowed — see above.
+    }
+  }
+
   /// Send the kitchen whatever on this bill it has not been sent yet.
   ///
   /// Called from the two moments the venue asked for — an item is sold, or the
@@ -149,6 +175,22 @@ abstract final class TillActions {
 
       final rooms = ref.read(floorPlanProvider).value;
       if (rooms == null) return null;
+
+      // The room the bill was actually saved to, when it recorded one. This
+      // used to be the first room containing a table with that number, which is
+      // only right in a venue where numbers do not repeat — and the floor plan
+      // has allowed them to repeat across rooms since schema_fix_table_uq.sql.
+      // A Terrace bill printed "Main Floor" and the plate went upstairs.
+      final roomId = order.roomId;
+      if (roomId != null) {
+        for (final room in rooms) {
+          if (room.id == roomId) return room.name;
+        }
+      }
+
+      // No room recorded: a bill parked before this was stored, or a venue with
+      // no floor plan. Falling back to the old guess is still better than
+      // printing nothing, and in a one-room venue it is exactly right.
       for (final room in rooms) {
         if (room.tables.any((t) => t.number == number)) return room.name;
       }

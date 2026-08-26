@@ -119,7 +119,8 @@ async function loadTickets(pool, ids) {
   );
 
   const [lines] = await pool.query(
-    `SELECT id, ticket_id, seq, quantity, name, note, stations, made_at, made_by
+    `SELECT id, ticket_id, seq, quantity, name, note, stations, made_at,
+            made_by, is_modifier
        FROM epos_kitchen_ticket_lines
       WHERE ticket_id IN (${holes})
       ORDER BY ticket_id, seq`,
@@ -142,6 +143,9 @@ async function loadTickets(pool, ids) {
       quantity: Number(line.quantity),
       name: line.name,
       note: line.note,
+      // An answer about the line above it — "Rare", "Dash Coke" — rather than a
+      // dish of its own. `seq` already puts it directly under its item.
+      isModifier: line.is_modifier === 1,
       stations: parseStations(line.stations),
       // When this item was crossed off as made, and by whom. Null until it is.
       madeAt: line.made_at,
@@ -1332,8 +1336,8 @@ function tillKitchenRoutes({ pool, broadcast, secret }) {
       for (const line of lines) {
         await conn.execute(
           `INSERT INTO epos_kitchen_ticket_lines
-             (id, ticket_id, seq, quantity, name, note, stations)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+             (id, ticket_id, seq, quantity, name, note, stations, is_modifier)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             line.id || crypto.randomUUID(),
             ticket.id,
@@ -1342,6 +1346,9 @@ function tillKitchenRoutes({ pool, broadcast, secret }) {
             String(line.name || '').slice(0, 255),
             line.note ? String(line.note).slice(0, 500) : null,
             formatStations(line.stations),
+            // A till on the previous version sends nothing here, and every one
+            // of its lines is a dish in its own right — which is the default.
+            line.is_modifier ? 1 : 0,
           ]
         );
       }

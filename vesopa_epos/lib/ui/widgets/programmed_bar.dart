@@ -11,6 +11,7 @@ import '../shell.dart' show SyncStatusBadge;
 import '../theme.dart';
 import 'basket_panel.dart' show money;
 import 'open_bills_strip.dart';
+import 'print_status.dart';
 
 /// What the bar needs to know about the sale it is sitting on.
 ///
@@ -212,6 +213,7 @@ class _BarKey extends ConsumerWidget {
     'venue_name',
     'staff_name',
     'sync_status',
+    'print_status',
     'screen_name',
     'spacer',
   };
@@ -335,6 +337,12 @@ class _BarKey extends ConsumerWidget {
         icon: Icons.person,
       ),
       'sync_status' => const Center(child: SyncStatusBadge()),
+      // Whether the last kitchen ticket landed. On the bar because the till's
+      // own top bar can be turned off in favour of a programmed one, and this
+      // was the only thing on it a venue could not otherwise place. Draws
+      // nothing at all when there is nothing to report, exactly as it does in
+      // the built-in bar.
+      'print_status' => const Center(child: PrintStatusBadge()),
       'screen_name' => _oneLine(button.label ?? live.screenName, ink),
       _ => const SizedBox.shrink(),
     };

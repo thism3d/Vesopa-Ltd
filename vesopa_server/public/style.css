@@ -2097,3 +2097,33 @@ table.sortable th.sorted::after {
   font-size: 10px;
 }
 table.sortable th.sorted[data-dir="down"]::after { content: ' ▼'; }
+
+/* ---------------------------------------------------------------------------
+   The ordered modifier picker on the product form.
+
+   A numbered list, deliberately: the order is the meaning — "single or double"
+   is asked before "which mixer" — so the numbers are the field's own label for
+   what it does, not decoration.
+   --------------------------------------------------------------------------- */
+.mod-field { margin-top: 6px; }
+.mod-list {
+  margin: 0 0 8px;
+  padding-left: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.mod-list:empty { display: none; }
+.mod-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.mod-name { font-weight: 500; }
+/* Pushes the keys to the right whatever the name's length. */
+.mod-keys { margin-left: auto; display: flex; gap: 4px; }
+.mod-add { display: flex; gap: 8px; align-items: center; }
+.mod-add select { flex: 1; }

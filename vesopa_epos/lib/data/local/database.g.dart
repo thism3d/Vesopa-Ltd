@@ -900,6 +900,15 @@ class $OrdersTable extends Orders with TableInfo<$OrdersTable, Order> {
     type: DriftSqlType.int,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _roomIdMeta = const VerificationMeta('roomId');
+  @override
+  late final GeneratedColumn<int> roomId = GeneratedColumn<int>(
+    'room_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _clerkPinMeta = const VerificationMeta(
     'clerkPin',
   );
@@ -1116,6 +1125,7 @@ class $OrdersTable extends Orders with TableInfo<$OrdersTable, Order> {
     id,
     status,
     tableNumber,
+    roomId,
     clerkPin,
     staffId,
     staffName,
@@ -1166,6 +1176,12 @@ class $OrdersTable extends Orders with TableInfo<$OrdersTable, Order> {
           data['table_number']!,
           _tableNumberMeta,
         ),
+      );
+    }
+    if (data.containsKey('room_id')) {
+      context.handle(
+        _roomIdMeta,
+        roomId.isAcceptableOrUnknown(data['room_id']!, _roomIdMeta),
       );
     }
     if (data.containsKey('clerk_pin')) {
@@ -1324,6 +1340,10 @@ class $OrdersTable extends Orders with TableInfo<$OrdersTable, Order> {
         DriftSqlType.int,
         data['${effectivePrefix}table_number'],
       ),
+      roomId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}room_id'],
+      ),
       clerkPin: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}clerk_pin'],
@@ -1417,6 +1437,19 @@ class Order extends DataClass implements Insertable<Order> {
   /// open | closed | void | parked (saved to a table)
   final String status;
   final int? tableNumber;
+
+  /// Which room that table is in, from the back office's floor plan.
+  ///
+  /// A table number is only unique *within* a room — the floor plan has said so
+  /// since schema_fix_table_uq.sql, whose whole point was letting a venue have a
+  /// Table 1 on the Main Floor and a Table 1 on the Terrace. The order did not
+  /// know about rooms, so both of those tables shared one bill: sitting a party
+  /// at the second one recalled the first one's food.
+  ///
+  /// Null for a counter sale, for a bill on no table, and for every order taken
+  /// before this column existed — a venue with one room is unaffected either
+  /// way, which is why it is nullable rather than backfilled.
+  final int? roomId;
   final String? clerkPin;
 
   /// Who settled the sale. Stamped at settlement rather than at open, for the
@@ -1468,6 +1501,7 @@ class Order extends DataClass implements Insertable<Order> {
     required this.id,
     required this.status,
     this.tableNumber,
+    this.roomId,
     this.clerkPin,
     this.staffId,
     this.staffName,
@@ -1495,6 +1529,9 @@ class Order extends DataClass implements Insertable<Order> {
     map['status'] = Variable<String>(status);
     if (!nullToAbsent || tableNumber != null) {
       map['table_number'] = Variable<int>(tableNumber);
+    }
+    if (!nullToAbsent || roomId != null) {
+      map['room_id'] = Variable<int>(roomId);
     }
     if (!nullToAbsent || clerkPin != null) {
       map['clerk_pin'] = Variable<String>(clerkPin);
@@ -1547,6 +1584,9 @@ class Order extends DataClass implements Insertable<Order> {
       tableNumber: tableNumber == null && nullToAbsent
           ? const Value.absent()
           : Value(tableNumber),
+      roomId: roomId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(roomId),
       clerkPin: clerkPin == null && nullToAbsent
           ? const Value.absent()
           : Value(clerkPin),
@@ -1600,6 +1640,7 @@ class Order extends DataClass implements Insertable<Order> {
       id: serializer.fromJson<String>(json['id']),
       status: serializer.fromJson<String>(json['status']),
       tableNumber: serializer.fromJson<int?>(json['tableNumber']),
+      roomId: serializer.fromJson<int?>(json['roomId']),
       clerkPin: serializer.fromJson<String?>(json['clerkPin']),
       staffId: serializer.fromJson<int?>(json['staffId']),
       staffName: serializer.fromJson<String?>(json['staffName']),
@@ -1634,6 +1675,7 @@ class Order extends DataClass implements Insertable<Order> {
       'id': serializer.toJson<String>(id),
       'status': serializer.toJson<String>(status),
       'tableNumber': serializer.toJson<int?>(tableNumber),
+      'roomId': serializer.toJson<int?>(roomId),
       'clerkPin': serializer.toJson<String?>(clerkPin),
       'staffId': serializer.toJson<int?>(staffId),
       'staffName': serializer.toJson<String?>(staffName),
@@ -1660,6 +1702,7 @@ class Order extends DataClass implements Insertable<Order> {
     String? id,
     String? status,
     Value<int?> tableNumber = const Value.absent(),
+    Value<int?> roomId = const Value.absent(),
     Value<String?> clerkPin = const Value.absent(),
     Value<int?> staffId = const Value.absent(),
     Value<String?> staffName = const Value.absent(),
@@ -1683,6 +1726,7 @@ class Order extends DataClass implements Insertable<Order> {
     id: id ?? this.id,
     status: status ?? this.status,
     tableNumber: tableNumber.present ? tableNumber.value : this.tableNumber,
+    roomId: roomId.present ? roomId.value : this.roomId,
     clerkPin: clerkPin.present ? clerkPin.value : this.clerkPin,
     staffId: staffId.present ? staffId.value : this.staffId,
     staffName: staffName.present ? staffName.value : this.staffName,
@@ -1712,6 +1756,7 @@ class Order extends DataClass implements Insertable<Order> {
       tableNumber: data.tableNumber.present
           ? data.tableNumber.value
           : this.tableNumber,
+      roomId: data.roomId.present ? data.roomId.value : this.roomId,
       clerkPin: data.clerkPin.present ? data.clerkPin.value : this.clerkPin,
       staffId: data.staffId.present ? data.staffId.value : this.staffId,
       staffName: data.staffName.present ? data.staffName.value : this.staffName,
@@ -1758,6 +1803,7 @@ class Order extends DataClass implements Insertable<Order> {
           ..write('id: $id, ')
           ..write('status: $status, ')
           ..write('tableNumber: $tableNumber, ')
+          ..write('roomId: $roomId, ')
           ..write('clerkPin: $clerkPin, ')
           ..write('staffId: $staffId, ')
           ..write('staffName: $staffName, ')
@@ -1786,6 +1832,7 @@ class Order extends DataClass implements Insertable<Order> {
     id,
     status,
     tableNumber,
+    roomId,
     clerkPin,
     staffId,
     staffName,
@@ -1813,6 +1860,7 @@ class Order extends DataClass implements Insertable<Order> {
           other.id == this.id &&
           other.status == this.status &&
           other.tableNumber == this.tableNumber &&
+          other.roomId == this.roomId &&
           other.clerkPin == this.clerkPin &&
           other.staffId == this.staffId &&
           other.staffName == this.staffName &&
@@ -1838,6 +1886,7 @@ class OrdersCompanion extends UpdateCompanion<Order> {
   final Value<String> id;
   final Value<String> status;
   final Value<int?> tableNumber;
+  final Value<int?> roomId;
   final Value<String?> clerkPin;
   final Value<int?> staffId;
   final Value<String?> staffName;
@@ -1862,6 +1911,7 @@ class OrdersCompanion extends UpdateCompanion<Order> {
     this.id = const Value.absent(),
     this.status = const Value.absent(),
     this.tableNumber = const Value.absent(),
+    this.roomId = const Value.absent(),
     this.clerkPin = const Value.absent(),
     this.staffId = const Value.absent(),
     this.staffName = const Value.absent(),
@@ -1887,6 +1937,7 @@ class OrdersCompanion extends UpdateCompanion<Order> {
     required String id,
     this.status = const Value.absent(),
     this.tableNumber = const Value.absent(),
+    this.roomId = const Value.absent(),
     this.clerkPin = const Value.absent(),
     this.staffId = const Value.absent(),
     this.staffName = const Value.absent(),
@@ -1912,6 +1963,7 @@ class OrdersCompanion extends UpdateCompanion<Order> {
     Expression<String>? id,
     Expression<String>? status,
     Expression<int>? tableNumber,
+    Expression<int>? roomId,
     Expression<String>? clerkPin,
     Expression<int>? staffId,
     Expression<String>? staffName,
@@ -1937,6 +1989,7 @@ class OrdersCompanion extends UpdateCompanion<Order> {
       if (id != null) 'id': id,
       if (status != null) 'status': status,
       if (tableNumber != null) 'table_number': tableNumber,
+      if (roomId != null) 'room_id': roomId,
       if (clerkPin != null) 'clerk_pin': clerkPin,
       if (staffId != null) 'staff_id': staffId,
       if (staffName != null) 'staff_name': staffName,
@@ -1967,6 +2020,7 @@ class OrdersCompanion extends UpdateCompanion<Order> {
     Value<String>? id,
     Value<String>? status,
     Value<int?>? tableNumber,
+    Value<int?>? roomId,
     Value<String?>? clerkPin,
     Value<int?>? staffId,
     Value<String?>? staffName,
@@ -1992,6 +2046,7 @@ class OrdersCompanion extends UpdateCompanion<Order> {
       id: id ?? this.id,
       status: status ?? this.status,
       tableNumber: tableNumber ?? this.tableNumber,
+      roomId: roomId ?? this.roomId,
       clerkPin: clerkPin ?? this.clerkPin,
       staffId: staffId ?? this.staffId,
       staffName: staffName ?? this.staffName,
@@ -2027,6 +2082,9 @@ class OrdersCompanion extends UpdateCompanion<Order> {
     }
     if (tableNumber.present) {
       map['table_number'] = Variable<int>(tableNumber.value);
+    }
+    if (roomId.present) {
+      map['room_id'] = Variable<int>(roomId.value);
     }
     if (clerkPin.present) {
       map['clerk_pin'] = Variable<String>(clerkPin.value);
@@ -2101,6 +2159,7 @@ class OrdersCompanion extends UpdateCompanion<Order> {
           ..write('id: $id, ')
           ..write('status: $status, ')
           ..write('tableNumber: $tableNumber, ')
+          ..write('roomId: $roomId, ')
           ..write('clerkPin: $clerkPin, ')
           ..write('staffId: $staffId, ')
           ..write('staffName: $staffName, ')
@@ -2251,6 +2310,17 @@ class $OrderLinesTable extends OrderLines
     type: DriftSqlType.dateTime,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _parentLineIdMeta = const VerificationMeta(
+    'parentLineId',
+  );
+  @override
+  late final GeneratedColumn<String> parentLineId = GeneratedColumn<String>(
+    'parent_line_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _kitchenPrintedAtMeta = const VerificationMeta(
     'kitchenPrintedAt',
   );
@@ -2276,6 +2346,7 @@ class $OrderLinesTable extends OrderLines
     lineDiscountMinor,
     addedBy,
     addedAt,
+    parentLineId,
     kitchenPrintedAt,
   ];
   @override
@@ -2372,6 +2443,15 @@ class $OrderLinesTable extends OrderLines
         addedAt.isAcceptableOrUnknown(data['added_at']!, _addedAtMeta),
       );
     }
+    if (data.containsKey('parent_line_id')) {
+      context.handle(
+        _parentLineIdMeta,
+        parentLineId.isAcceptableOrUnknown(
+          data['parent_line_id']!,
+          _parentLineIdMeta,
+        ),
+      );
+    }
     if (data.containsKey('kitchen_printed_at')) {
       context.handle(
         _kitchenPrintedAtMeta,
@@ -2434,6 +2514,10 @@ class $OrderLinesTable extends OrderLines
         DriftSqlType.dateTime,
         data['${effectivePrefix}added_at'],
       ),
+      parentLineId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}parent_line_id'],
+      ),
       kitchenPrintedAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}kitchen_printed_at'],
@@ -2474,6 +2558,24 @@ class OrderLine extends DataClass implements Insertable<OrderLine> {
   final String? addedBy;
   final DateTime? addedAt;
 
+  /// The line this one modifies, or null when it is an item in its own right.
+  ///
+  /// A modifier chosen on the till — "Dash Coke" under a double gin — is a real
+  /// order line with this set, not a note on the parent. That is deliberate,
+  /// and it is what makes the rest of the till work unchanged: a modifier that
+  /// costs 50p prices itself, carries its own VAT, routes to its own printer if
+  /// the venue wants it to, and lands in the Z report as what was actually
+  /// sold. Storing the choices as text on the parent would have meant
+  /// re-implementing every one of those.
+  ///
+  /// Nesting is therefore a display concern — the check, the receipt and the
+  /// kitchen ticket indent these under their parent — and nothing else has to
+  /// know they are different.
+  ///
+  /// Voiding or removing a parent takes its children with it; see
+  /// OrderRepository.
+  final String? parentLineId;
+
   /// When this line was last sent to a kitchen printer, or null if it never
   /// has been.
   ///
@@ -2494,6 +2596,7 @@ class OrderLine extends DataClass implements Insertable<OrderLine> {
     required this.lineDiscountMinor,
     this.addedBy,
     this.addedAt,
+    this.parentLineId,
     this.kitchenPrintedAt,
   });
   @override
@@ -2515,6 +2618,9 @@ class OrderLine extends DataClass implements Insertable<OrderLine> {
     }
     if (!nullToAbsent || addedAt != null) {
       map['added_at'] = Variable<DateTime>(addedAt);
+    }
+    if (!nullToAbsent || parentLineId != null) {
+      map['parent_line_id'] = Variable<String>(parentLineId);
     }
     if (!nullToAbsent || kitchenPrintedAt != null) {
       map['kitchen_printed_at'] = Variable<DateTime>(kitchenPrintedAt);
@@ -2541,6 +2647,9 @@ class OrderLine extends DataClass implements Insertable<OrderLine> {
       addedAt: addedAt == null && nullToAbsent
           ? const Value.absent()
           : Value(addedAt),
+      parentLineId: parentLineId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(parentLineId),
       kitchenPrintedAt: kitchenPrintedAt == null && nullToAbsent
           ? const Value.absent()
           : Value(kitchenPrintedAt),
@@ -2564,6 +2673,7 @@ class OrderLine extends DataClass implements Insertable<OrderLine> {
       lineDiscountMinor: serializer.fromJson<int>(json['lineDiscountMinor']),
       addedBy: serializer.fromJson<String?>(json['addedBy']),
       addedAt: serializer.fromJson<DateTime?>(json['addedAt']),
+      parentLineId: serializer.fromJson<String?>(json['parentLineId']),
       kitchenPrintedAt: serializer.fromJson<DateTime?>(
         json['kitchenPrintedAt'],
       ),
@@ -2584,6 +2694,7 @@ class OrderLine extends DataClass implements Insertable<OrderLine> {
       'lineDiscountMinor': serializer.toJson<int>(lineDiscountMinor),
       'addedBy': serializer.toJson<String?>(addedBy),
       'addedAt': serializer.toJson<DateTime?>(addedAt),
+      'parentLineId': serializer.toJson<String?>(parentLineId),
       'kitchenPrintedAt': serializer.toJson<DateTime?>(kitchenPrintedAt),
     };
   }
@@ -2600,6 +2711,7 @@ class OrderLine extends DataClass implements Insertable<OrderLine> {
     int? lineDiscountMinor,
     Value<String?> addedBy = const Value.absent(),
     Value<DateTime?> addedAt = const Value.absent(),
+    Value<String?> parentLineId = const Value.absent(),
     Value<DateTime?> kitchenPrintedAt = const Value.absent(),
   }) => OrderLine(
     id: id ?? this.id,
@@ -2613,6 +2725,7 @@ class OrderLine extends DataClass implements Insertable<OrderLine> {
     lineDiscountMinor: lineDiscountMinor ?? this.lineDiscountMinor,
     addedBy: addedBy.present ? addedBy.value : this.addedBy,
     addedAt: addedAt.present ? addedAt.value : this.addedAt,
+    parentLineId: parentLineId.present ? parentLineId.value : this.parentLineId,
     kitchenPrintedAt: kitchenPrintedAt.present
         ? kitchenPrintedAt.value
         : this.kitchenPrintedAt,
@@ -2636,6 +2749,9 @@ class OrderLine extends DataClass implements Insertable<OrderLine> {
           : this.lineDiscountMinor,
       addedBy: data.addedBy.present ? data.addedBy.value : this.addedBy,
       addedAt: data.addedAt.present ? data.addedAt.value : this.addedAt,
+      parentLineId: data.parentLineId.present
+          ? data.parentLineId.value
+          : this.parentLineId,
       kitchenPrintedAt: data.kitchenPrintedAt.present
           ? data.kitchenPrintedAt.value
           : this.kitchenPrintedAt,
@@ -2656,6 +2772,7 @@ class OrderLine extends DataClass implements Insertable<OrderLine> {
           ..write('lineDiscountMinor: $lineDiscountMinor, ')
           ..write('addedBy: $addedBy, ')
           ..write('addedAt: $addedAt, ')
+          ..write('parentLineId: $parentLineId, ')
           ..write('kitchenPrintedAt: $kitchenPrintedAt')
           ..write(')'))
         .toString();
@@ -2674,6 +2791,7 @@ class OrderLine extends DataClass implements Insertable<OrderLine> {
     lineDiscountMinor,
     addedBy,
     addedAt,
+    parentLineId,
     kitchenPrintedAt,
   );
   @override
@@ -2691,6 +2809,7 @@ class OrderLine extends DataClass implements Insertable<OrderLine> {
           other.lineDiscountMinor == this.lineDiscountMinor &&
           other.addedBy == this.addedBy &&
           other.addedAt == this.addedAt &&
+          other.parentLineId == this.parentLineId &&
           other.kitchenPrintedAt == this.kitchenPrintedAt);
 }
 
@@ -2706,6 +2825,7 @@ class OrderLinesCompanion extends UpdateCompanion<OrderLine> {
   final Value<int> lineDiscountMinor;
   final Value<String?> addedBy;
   final Value<DateTime?> addedAt;
+  final Value<String?> parentLineId;
   final Value<DateTime?> kitchenPrintedAt;
   final Value<int> rowid;
   const OrderLinesCompanion({
@@ -2720,6 +2840,7 @@ class OrderLinesCompanion extends UpdateCompanion<OrderLine> {
     this.lineDiscountMinor = const Value.absent(),
     this.addedBy = const Value.absent(),
     this.addedAt = const Value.absent(),
+    this.parentLineId = const Value.absent(),
     this.kitchenPrintedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
@@ -2735,6 +2856,7 @@ class OrderLinesCompanion extends UpdateCompanion<OrderLine> {
     this.lineDiscountMinor = const Value.absent(),
     this.addedBy = const Value.absent(),
     this.addedAt = const Value.absent(),
+    this.parentLineId = const Value.absent(),
     this.kitchenPrintedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
@@ -2754,6 +2876,7 @@ class OrderLinesCompanion extends UpdateCompanion<OrderLine> {
     Expression<int>? lineDiscountMinor,
     Expression<String>? addedBy,
     Expression<DateTime>? addedAt,
+    Expression<String>? parentLineId,
     Expression<DateTime>? kitchenPrintedAt,
     Expression<int>? rowid,
   }) {
@@ -2769,6 +2892,7 @@ class OrderLinesCompanion extends UpdateCompanion<OrderLine> {
       if (lineDiscountMinor != null) 'line_discount_minor': lineDiscountMinor,
       if (addedBy != null) 'added_by': addedBy,
       if (addedAt != null) 'added_at': addedAt,
+      if (parentLineId != null) 'parent_line_id': parentLineId,
       if (kitchenPrintedAt != null) 'kitchen_printed_at': kitchenPrintedAt,
       if (rowid != null) 'rowid': rowid,
     });
@@ -2786,6 +2910,7 @@ class OrderLinesCompanion extends UpdateCompanion<OrderLine> {
     Value<int>? lineDiscountMinor,
     Value<String?>? addedBy,
     Value<DateTime?>? addedAt,
+    Value<String?>? parentLineId,
     Value<DateTime?>? kitchenPrintedAt,
     Value<int>? rowid,
   }) {
@@ -2801,6 +2926,7 @@ class OrderLinesCompanion extends UpdateCompanion<OrderLine> {
       lineDiscountMinor: lineDiscountMinor ?? this.lineDiscountMinor,
       addedBy: addedBy ?? this.addedBy,
       addedAt: addedAt ?? this.addedAt,
+      parentLineId: parentLineId ?? this.parentLineId,
       kitchenPrintedAt: kitchenPrintedAt ?? this.kitchenPrintedAt,
       rowid: rowid ?? this.rowid,
     );
@@ -2842,6 +2968,9 @@ class OrderLinesCompanion extends UpdateCompanion<OrderLine> {
     if (addedAt.present) {
       map['added_at'] = Variable<DateTime>(addedAt.value);
     }
+    if (parentLineId.present) {
+      map['parent_line_id'] = Variable<String>(parentLineId.value);
+    }
     if (kitchenPrintedAt.present) {
       map['kitchen_printed_at'] = Variable<DateTime>(kitchenPrintedAt.value);
     }
@@ -2865,6 +2994,7 @@ class OrderLinesCompanion extends UpdateCompanion<OrderLine> {
           ..write('lineDiscountMinor: $lineDiscountMinor, ')
           ..write('addedBy: $addedBy, ')
           ..write('addedAt: $addedAt, ')
+          ..write('parentLineId: $parentLineId, ')
           ..write('kitchenPrintedAt: $kitchenPrintedAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
@@ -7405,6 +7535,7 @@ typedef $$OrdersTableCreateCompanionBuilder =
       required String id,
       Value<String> status,
       Value<int?> tableNumber,
+      Value<int?> roomId,
       Value<String?> clerkPin,
       Value<int?> staffId,
       Value<String?> staffName,
@@ -7431,6 +7562,7 @@ typedef $$OrdersTableUpdateCompanionBuilder =
       Value<String> id,
       Value<String> status,
       Value<int?> tableNumber,
+      Value<int?> roomId,
       Value<String?> clerkPin,
       Value<int?> staffId,
       Value<String?> staffName,
@@ -7516,6 +7648,11 @@ class $$OrdersTableFilterComposer
 
   ColumnFilters<int> get tableNumber => $composableBuilder(
     column: $table.tableNumber,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get roomId => $composableBuilder(
+    column: $table.roomId,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -7689,6 +7826,11 @@ class $$OrdersTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get roomId => $composableBuilder(
+    column: $table.roomId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get clerkPin => $composableBuilder(
     column: $table.clerkPin,
     builder: (column) => ColumnOrderings(column),
@@ -7804,6 +7946,9 @@ class $$OrdersTableAnnotationComposer
     column: $table.tableNumber,
     builder: (column) => column,
   );
+
+  GeneratedColumn<int> get roomId =>
+      $composableBuilder(column: $table.roomId, builder: (column) => column);
 
   GeneratedColumn<String> get clerkPin =>
       $composableBuilder(column: $table.clerkPin, builder: (column) => column);
@@ -7962,6 +8107,7 @@ class $$OrdersTableTableManager
                 Value<String> id = const Value.absent(),
                 Value<String> status = const Value.absent(),
                 Value<int?> tableNumber = const Value.absent(),
+                Value<int?> roomId = const Value.absent(),
                 Value<String?> clerkPin = const Value.absent(),
                 Value<int?> staffId = const Value.absent(),
                 Value<String?> staffName = const Value.absent(),
@@ -7986,6 +8132,7 @@ class $$OrdersTableTableManager
                 id: id,
                 status: status,
                 tableNumber: tableNumber,
+                roomId: roomId,
                 clerkPin: clerkPin,
                 staffId: staffId,
                 staffName: staffName,
@@ -8012,6 +8159,7 @@ class $$OrdersTableTableManager
                 required String id,
                 Value<String> status = const Value.absent(),
                 Value<int?> tableNumber = const Value.absent(),
+                Value<int?> roomId = const Value.absent(),
                 Value<String?> clerkPin = const Value.absent(),
                 Value<int?> staffId = const Value.absent(),
                 Value<String?> staffName = const Value.absent(),
@@ -8036,6 +8184,7 @@ class $$OrdersTableTableManager
                 id: id,
                 status: status,
                 tableNumber: tableNumber,
+                roomId: roomId,
                 clerkPin: clerkPin,
                 staffId: staffId,
                 staffName: staffName,
@@ -8147,6 +8296,7 @@ typedef $$OrderLinesTableCreateCompanionBuilder =
       Value<int> lineDiscountMinor,
       Value<String?> addedBy,
       Value<DateTime?> addedAt,
+      Value<String?> parentLineId,
       Value<DateTime?> kitchenPrintedAt,
       Value<int> rowid,
     });
@@ -8163,6 +8313,7 @@ typedef $$OrderLinesTableUpdateCompanionBuilder =
       Value<int> lineDiscountMinor,
       Value<String?> addedBy,
       Value<DateTime?> addedAt,
+      Value<String?> parentLineId,
       Value<DateTime?> kitchenPrintedAt,
       Value<int> rowid,
     });
@@ -8245,6 +8396,11 @@ class $$OrderLinesTableFilterComposer
 
   ColumnFilters<DateTime> get addedAt => $composableBuilder(
     column: $table.addedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get parentLineId => $composableBuilder(
+    column: $table.parentLineId,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -8336,6 +8492,11 @@ class $$OrderLinesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get parentLineId => $composableBuilder(
+    column: $table.parentLineId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get kitchenPrintedAt => $composableBuilder(
     column: $table.kitchenPrintedAt,
     builder: (column) => ColumnOrderings(column),
@@ -8410,6 +8571,11 @@ class $$OrderLinesTableAnnotationComposer
   GeneratedColumn<DateTime> get addedAt =>
       $composableBuilder(column: $table.addedAt, builder: (column) => column);
 
+  GeneratedColumn<String> get parentLineId => $composableBuilder(
+    column: $table.parentLineId,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<DateTime> get kitchenPrintedAt => $composableBuilder(
     column: $table.kitchenPrintedAt,
     builder: (column) => column,
@@ -8478,6 +8644,7 @@ class $$OrderLinesTableTableManager
                 Value<int> lineDiscountMinor = const Value.absent(),
                 Value<String?> addedBy = const Value.absent(),
                 Value<DateTime?> addedAt = const Value.absent(),
+                Value<String?> parentLineId = const Value.absent(),
                 Value<DateTime?> kitchenPrintedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => OrderLinesCompanion(
@@ -8492,6 +8659,7 @@ class $$OrderLinesTableTableManager
                 lineDiscountMinor: lineDiscountMinor,
                 addedBy: addedBy,
                 addedAt: addedAt,
+                parentLineId: parentLineId,
                 kitchenPrintedAt: kitchenPrintedAt,
                 rowid: rowid,
               ),
@@ -8508,6 +8676,7 @@ class $$OrderLinesTableTableManager
                 Value<int> lineDiscountMinor = const Value.absent(),
                 Value<String?> addedBy = const Value.absent(),
                 Value<DateTime?> addedAt = const Value.absent(),
+                Value<String?> parentLineId = const Value.absent(),
                 Value<DateTime?> kitchenPrintedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => OrderLinesCompanion.insert(
@@ -8522,6 +8691,7 @@ class $$OrderLinesTableTableManager
                 lineDiscountMinor: lineDiscountMinor,
                 addedBy: addedBy,
                 addedAt: addedAt,
+                parentLineId: parentLineId,
                 kitchenPrintedAt: kitchenPrintedAt,
                 rowid: rowid,
               ),

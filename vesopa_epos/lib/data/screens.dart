@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../config/constants.dart';
 import '../main.dart';
 
 /// The venue's own sale-screen layouts, as the till reads them.
@@ -111,7 +112,7 @@ class ScreenButton {
     fill: _colour(j['fill']),
     ink: _colour(j['ink']),
     emoji: (j['emoji'] as String?)?.trim(),
-    imageUrl: (j['imageUrl'] as String?)?.trim(),
+    imageUrl: _absoluteImage((j['imageUrl'] as String?)?.trim()),
   );
 
   Map<String, dynamic> toJson() => {
@@ -129,6 +130,24 @@ class ScreenButton {
     if (emoji != null) 'emoji': emoji,
     if (imageUrl != null) 'imageUrl': imageUrl,
   };
+
+  /// A key's picture, as something the till can actually load.
+  ///
+  /// The back office stores these as on-site paths — `/uploads/...` — and
+  /// refuses anything off-site, so what arrives here is never a URL. Handing
+  /// that straight to `Image.network` fails, and it fails *quietly*: the key's
+  /// error builder draws nothing rather than a broken frame, which is right for
+  /// a sale screen and is why "adding an image does nothing on the till" looked
+  /// like the picture had never been saved.
+  ///
+  /// Resolved here, at the edge, so every place that draws a key — the sale
+  /// grid, the bars, a modifier prompt — gets a loadable address without each
+  /// having to know where the server is.
+  static String? _absoluteImage(String? path) {
+    if (path == null || path.isEmpty) return null;
+    if (path.startsWith('http')) return path;
+    return '${Api.resolvedBase}$path';
+  }
 
   /// `#RRGGBB` to a colour, and null for anything else.
   ///
@@ -166,12 +185,21 @@ enum ScreenSurface {
   sale,
   topBar,
   bottomBar,
+
+  /// The answers to one modifier question — which mixer, how the steak is
+  /// cooked. Drawn over the sale screen when a product that asks is pressed,
+  /// never opened on its own, and never offered as a home screen.
+  ///
+  /// A screen like any other otherwise, which is the point: it arrives in the
+  /// same fetch, caches in the same blob and draws with the same button code.
+  modifier,
   unknown;
 
   static ScreenSurface fromKey(String? key) => switch (key) {
     'sale' => sale,
     'topbar' => topBar,
     'bottombar' => bottomBar,
+    'modifier' => modifier,
     _ => unknown,
   };
 
@@ -252,6 +280,7 @@ class TillScreen {
       ScreenSurface.sale => 'sale',
       ScreenSurface.topBar => 'topbar',
       ScreenSurface.bottomBar => 'bottombar',
+      ScreenSurface.modifier => 'modifier',
       ScreenSurface.unknown => 'unknown',
     },
     'rows': rows,

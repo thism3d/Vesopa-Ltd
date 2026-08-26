@@ -18,6 +18,7 @@ class TicketLine {
     this.note,
     this.madeAt,
     this.madeBy,
+    this.isModifier = false,
   });
 
   final String id;
@@ -44,6 +45,17 @@ class TicketLine {
   final DateTime? madeAt;
   final String? madeBy;
 
+  /// Whether this line is an answer about the line above it — "Rare", "Dash
+  /// Coke" — rather than a dish of its own.
+  ///
+  /// It arrives directly under its item, because `seq` is the order the clerk
+  /// rang them in and the till sends a modifier straight after what it
+  /// modifies. Drawn the way [note] is: indented, quiet, plainly attached to
+  /// the line above. The difference between the two is only where they came
+  /// from — a note is typed at the till, this was chosen from a list — and the
+  /// kitchen does not care which.
+  final bool isModifier;
+
   /// Whether this item has been cooked.
   bool get made => madeAt != null;
 
@@ -55,6 +67,7 @@ class TicketLine {
     name: name,
     note: note,
     stations: stations,
+    isModifier: isModifier,
     madeAt: value ? (at ?? DateTime.now()) : null,
     madeBy: value ? by : null,
   );
@@ -81,6 +94,7 @@ class TicketLine {
         ? null
         : (j['note'] as String).trim(),
     stations: _stations(j['stations']),
+    isModifier: j['isModifier'] == true || j['isModifier'] == 1,
     madeAt: _time(j['madeAt']),
     madeBy: j['madeBy'] as String?,
   );
@@ -91,6 +105,7 @@ class TicketLine {
     'quantity': quantity,
     'name': name,
     if (note != null) 'note': note,
+    if (isModifier) 'isModifier': true,
     'stations': stations.toList(),
     if (madeAt != null) 'madeAt': madeAt!.toUtc().toIso8601String(),
     if (madeBy != null) 'madeBy': madeBy,

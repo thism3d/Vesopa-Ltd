@@ -214,7 +214,12 @@ pw.Widget _ticketBlock(
               ),
               pw.SizedBox(width: 8),
               pw.Expanded(
-                child: pw.Text(line.name, style: const pw.TextStyle(fontSize: 12)),
+                child: pw.Text(
+                  // Indented under its dish, as on the board and on the
+                  // till's own kitchen ticket.
+                  line.isModifier ? '   + ${line.name}' : line.name,
+                  style: const pw.TextStyle(fontSize: 12),
+                ),
               ),
               pw.Text(
                 line.stations.map(labelFor).join(', '),

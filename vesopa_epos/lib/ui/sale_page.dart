@@ -7,10 +7,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/kitchen_printing.dart';
 import '../data/local/database.dart';
 import '../data/mix_match_engine.dart';
+import '../data/modifiers.dart';
 import '../data/order_repository.dart';
 import '../data/staff_session.dart';
 import '../main.dart';
 import 'layout.dart';
+import 'modifier_prompt.dart';
 import 'customer_picker.dart';
 import 'payment_page.dart';
 import 'table_picker.dart';
@@ -187,6 +189,44 @@ class SalePage extends ConsumerWidget {
     final repo = ref.watch(orderRepositoryProvider);
     final products = ref.watch(productsProvider).value ?? const <Product>[];
 
+    /// Ring an item — the one way onto the bill, whichever grid the key was
+    /// pressed on.
+    ///
+    /// A product may have questions to ask first: which mixer, how the steak is
+    /// cooked. The answers come back as lines hanging off it. The catalogue
+    /// grid and every programmed screen come through here, so a venue cannot
+    /// find modifiers working on one and not the other — which is exactly the
+    /// class of bug that made "No Sale works in one place and not the other"
+    /// worth fixing in TillActions.
+    Future<void> ring(Product p) async {
+      // Attributed to whoever is signed on. Falls back to the terminal's own
+      // account so a venue that does not use staff sign-on still records a name
+      // against its sales, as it always has.
+      final addedBy = ref.read(staffSessionProvider).name ??
+          ref.read(sessionProvider).name;
+
+      final groups = (ref.read(modifiersProvider).value ??
+              ModifierSet.empty)
+          .forPlu(p.pluId);
+      if (groups.isEmpty) {
+        await repo.addLine(orderId, p, addedBy: addedBy);
+        return;
+      }
+
+      final answers = await askModifiers(
+        context,
+        groups: groups,
+        screens: ref.read(screensProvider).value ?? ScreenSet.empty,
+        products: {for (final q in products) q.pluId: q},
+        itemName: p.name,
+      );
+      // Null is the operator abandoning the item, not skipping the question —
+      // so nothing reaches the bill. See askModifiers.
+      if (answers == null) return;
+
+      await repo.addLine(orderId, p, addedBy: addedBy, modifiers: answers);
+    }
+
     // Departments drive the right-hand rail: whatever the back office defines
     // is what the clerk sees, no hardcoded menu.
     final categories = {
@@ -248,16 +288,7 @@ class SalePage extends ConsumerWidget {
               // clerk moving between two terminals in the same shop must not
               // find the buttons reading differently on each.
               showPrices: ref.watch(tillSettingsProvider).buttonsShowPrices,
-              // Attributed to whoever is signed on. Falls back to the terminal's
-              // own account so a venue that does not use staff sign-on still
-              // records a name against its sales, as it always has.
-              onTap: (p) => repo.addLine(
-                orderId,
-                p,
-                addedBy:
-                    ref.read(staffSessionProvider).name ??
-                    ref.read(sessionProvider).name,
-              ),
+              onTap: ring,
               promotions: PricingEngine(
                 promotions: ref.watch(promotionsProvider),
               ),
@@ -309,13 +340,6 @@ class SalePage extends ConsumerWidget {
             // up to 120 buttons and a catalogue is thousands of rows.
             final byPlu = {for (final p in products) p.pluId: p};
 
-            void addProduct(Product p) => repo.addLine(
-              orderId,
-              p,
-              addedBy:
-                  ref.read(staffSessionProvider).name ??
-                  ref.read(sessionProvider).name,
-            );
 
             final Widget surface = programmed == null
                 ? grid
@@ -345,7 +369,7 @@ class SalePage extends ConsumerWidget {
                           promotions: PricingEngine(
                             promotions: ref.watch(promotionsProvider),
                           ),
-                          onProduct: addProduct,
+                          onProduct: ring,
                           onPage: (target) =>
                               ref.read(openScreenProvider.notifier).open(target.id),
                           onFunction: (key) => _runScreenFunction(
@@ -401,7 +425,7 @@ class SalePage extends ConsumerWidget {
                         screenName: programmed?.name ?? 'Sale',
                         onSwitchOrder: onSwitchOrder,
                       ),
-                      onProduct: addProduct,
+                      onProduct: ring,
                       onPage: (target) =>
                           ref.read(openScreenProvider.notifier).open(target.id),
                       onFunction: (key) => _runScreenFunction(
@@ -488,6 +512,7 @@ class SalePage extends ConsumerWidget {
                                                 // rang them and when.
                                                 addedBy: l.addedBy,
                                                 addedAt: l.addedAt,
+                                                parentLineId: l.parentLineId,
                                               ),
                                           ],
                                           manualDiscountMinor:
@@ -596,7 +621,7 @@ class SalePage extends ConsumerWidget {
                         screenName: programmed?.name ?? 'Sale',
                         onSwitchOrder: onSwitchOrder,
                       ),
-                      onProduct: addProduct,
+                      onProduct: ring,
                       onPage: (target) =>
                           ref.read(openScreenProvider.notifier).open(target.id),
                       onFunction: (key) => _runScreenFunction(
@@ -725,13 +750,17 @@ class SalePage extends ConsumerWidget {
   Future<void> _saveTable(BuildContext context, WidgetRef ref, Order? order) {
     final table = order?.tableNumber;
     if (table == null) return _promptTable(context, ref);
-    return _saveToTable(context, ref, table);
+    return _saveToTable(context, ref, table, order?.roomId);
   }
 
   Future<void> _promptTable(BuildContext context, WidgetRef ref) async {
     // Visual picker off the real floor plan, instead of typing a number blind.
-    final number = await showTablePicker(context, ref);
-    if (number == null) return;
+    final picked = await showTablePicker(context, ref);
+    if (picked == null) return;
+    // A table number is only unique inside its room, so both travel together
+    // from here down. See Orders.roomId.
+    final number = picked.number;
+    final roomId = picked.roomId;
 
     final tables = ref.read(tableRepositoryProvider);
     final lines = await ref
@@ -742,7 +771,7 @@ class SalePage extends ConsumerWidget {
     // Read occupancy now rather than trusting what the picker was showing: on a
     // floor with several terminals another waiter may have taken the table
     // between the dialog opening and this tap.
-    final existing = await tables.orderOn(number);
+    final existing = await tables.orderOn(number, roomId: roomId);
 
     // A round already running on that table. The new items join it instead of
     // being refused — "another green tea for table 5" is the same bill, and
@@ -761,7 +790,7 @@ class SalePage extends ConsumerWidget {
       // merge() moves the lines across and voids the emptied source, so the
       // till needs a fresh order afterwards.
       await tables.merge(orderId, existing.id);
-      await tables.park(existing.id, number);
+      await tables.park(existing.id, number, roomId: roomId);
 
       // Fired against the surviving bill, and only its unsent lines go — so
       // the round just added prints and the courses already sent do not.
@@ -786,7 +815,7 @@ class SalePage extends ConsumerWidget {
     }
 
     if (!context.mounted) return;
-    await _saveToTable(context, ref, number);
+    await _saveToTable(context, ref, number, roomId);
   }
 
   /// Park this bill on [number], fire the kitchen, and clear the till.
@@ -800,6 +829,7 @@ class SalePage extends ConsumerWidget {
     BuildContext context,
     WidgetRef ref,
     int number,
+    int? roomId,
   ) async {
     final repo = ref.read(orderRepositoryProvider);
     final lines = await repo.watchLines(orderId).first;
@@ -820,7 +850,7 @@ class SalePage extends ConsumerWidget {
     // frees the sale screen so several tables can run at once. The clerk hops
     // back to any of them from the open-orders bar or the tables plan.
     final tables = ref.read(tableRepositoryProvider);
-    await tables.park(orderId, number);
+    await tables.park(orderId, number, roomId: roomId);
 
     // The kitchen gets the order the moment the table is saved, which is the
     // point of saving it. Parked first, so a printer that hangs cannot cost the

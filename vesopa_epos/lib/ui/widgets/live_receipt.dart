@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../data/branding.dart';
+import '../../data/modifier_layout.dart';
 import '../../data/pricing_engine.dart';
 import '../../data/tender_engine.dart';
 import '../theme.dart';
@@ -35,7 +36,12 @@ class LiveReceipt extends StatelessWidget {
     this.onTapLine,
     this.onEditLine,
     this.selectedLineIds = const {},
-    this.showHeader = true,
+    // Off by default now. The venue name and address are the top of a printed
+    // receipt, not of the check a clerk is ringing into: the person holding the
+    // till knows which venue they are standing in, and those two lines were
+    // costing the item list about an eighth of its height. The printed receipt
+    // and the PDF still carry them, which is where a customer needs them.
+    this.showHeader = false,
     this.emptyMessage = 'No items yet',
     this.aboveTotals,
   });
@@ -171,7 +177,13 @@ class LiveReceipt extends StatelessWidget {
                             style: small,
                           ),
                           const SizedBox(height: 4),
-                          for (final entry in _blocks(totals.lines)) ...[
+                          for (final entry in _blocks(
+                            orderWithModifiers(
+                              totals.lines,
+                              idOf: (l) => l.id,
+                              parentOf: (l) => l.parentLineId,
+                            ),
+                          )) ...[
                             if (entry.header != null)
                               _StaffHeading(
                                 label: entry.header!,
@@ -359,7 +371,10 @@ class _Context extends StatelessWidget {
       if (tableNumber != null) 'Table $tableNumber',
       if (covers != null && covers! > 0) '$covers covers',
       if (clerkName?.isNotEmpty ?? false) clerkName!,
-      DateFormat('HH:mm').format(DateTime.now()),
+      // No clock. It was rebuilt on every frame to say something the clerk can
+      // read off the till's own bar, and it cost a line of the check to do it.
+      // The time that matters — when each run of items was rung — is already on
+      // the staff heading above them.
     ];
 
     return Column(
@@ -431,7 +446,12 @@ class _LineRow extends StatelessWidget {
         // asserts `margin.isNonNegative`, so selecting any line threw in a
         // debug build — invisible in release, where assertions are stripped,
         // which is why it survived this long.
-        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+        padding: EdgeInsets.only(
+          left: line.parentLineId == null ? 5 : 19,
+          right: 5,
+          top: 3,
+          bottom: 3,
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [

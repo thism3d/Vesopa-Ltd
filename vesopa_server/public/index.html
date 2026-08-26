@@ -185,7 +185,8 @@
           <button class="nav-group" data-group="programming">Programming<span class="caret">▼</span></button>
           <button class="nav" data-view="screens">Screen programming</button>
           <button class="nav" data-view="program_departments">Departments</button>
-          <button class="nav" data-view="program_groups">Groups</button>
+          <button class="nav" data-view="program_groups">Sub Departments</button>
+          <button class="nav" data-view="modifiers">Modifiers</button>
           <button class="nav" data-view="mix_match">Mix &amp; Match</button>
           <button class="nav" data-view="finalise_keys">Finalise Keys</button>
           <button class="nav" data-view="error_reasons">Error Reasons</button>
@@ -353,13 +354,13 @@
 
           <div class="card"><table class="sortable">
             <thead><tr>
-              <th data-sort="pluid">PLU</th>
               <th data-sort="product_name">Name</th>
               <th data-sort="department_name">Department</th>
+              <th data-sort="group_name">Sub Department</th>
               <th class="right" data-sort="price">Price</th>
               <th class="right" data-sort="tax_percentage">VAT</th>
               <th class="right" data-sort="button_position">Button</th>
-              <th>Colour</th><th>Printing</th><th></th>
+              <th>Printing</th><th></th>
             </tr></thead>
             <tbody id="products"></tbody>
           </table></div>
@@ -378,12 +379,26 @@
              handle column; rows drag to reorder and the order pushes to tills. -->
         <section id="view-program_departments" class="view" hidden>
           <div class="page-head"><div><h2>Departments</h2><p class="muted small">Drag rows to set the order they appear on the till. A button image or emoji shows on the till’s category rail.</p></div><button class="btn primary" data-add="departments">Add department</button></div>
-          <div class="card"><table><thead><tr><th class="drag-col"></th><th>Department</th><th>Group</th><th>Accounting code</th><th>Button image</th><th>Emoji</th><th>Colour</th><th></th></tr></thead><tbody id="departments"></tbody></table></div>
+          <div class="card"><table><thead><tr><th class="drag-col"></th><th>Department</th><th>Sub Department</th><th>Accounting code</th><th>Button image</th><th>Emoji</th><th>Colour</th><th></th></tr></thead><tbody id="departments"></tbody></table></div>
         </section>
 
         <section id="view-program_groups" class="view" hidden>
-          <div class="page-head"><div><h2>Groups</h2><p class="muted small">Drag rows to set the order.</p></div><button class="btn primary" data-add="groups">Add group</button></div>
-          <div class="card"><table><thead><tr><th class="drag-col"></th><th>Group</th><th>Accounting code</th><th></th></tr></thead><tbody id="groups"></tbody></table></div>
+          <div class="page-head"><div><h2>Sub Departments</h2><p class="muted small">Drag rows to set the order.</p></div><button class="btn primary" data-add="groups">Add sub department</button></div>
+          <div class="card"><table><thead><tr><th class="drag-col"></th><th>Sub Department</th><th>Accounting code</th><th></th></tr></thead><tbody id="groups"></tbody></table></div>
+        </section>
+
+        <!-- Modifiers -->
+        <section id="view-modifiers" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Modifiers</h2>
+              <p class="muted small">The question a product asks before it goes on the bill — which mixer, how the steak is cooked. Lay out the answers with <strong>Edit answers</strong>, then attach the question to a product on the Products page.</p>
+            </div>
+            <button class="btn primary" data-add="modifiers">Add modifier group</button>
+          </div>
+          <div class="card"><table><thead><tr>
+            <th>Question</th><th>Fewest</th><th>Most</th><th>Answers</th><th>Used by</th><th></th>
+          </tr></thead><tbody id="modifiers"></tbody></table></div>
         </section>
 
         <section id="view-mix_match" class="view" hidden>

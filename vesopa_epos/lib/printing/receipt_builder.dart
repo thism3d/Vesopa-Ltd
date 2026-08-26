@@ -5,6 +5,7 @@ import 'package:image/image.dart' as img;
 import 'package:intl/intl.dart';
 
 import '../data/local/database.dart';
+import '../data/modifier_layout.dart';
 import '../data/session_repository.dart';
 import '../data/cash_tally.dart';
 import '../data/receipt_repository.dart';
@@ -224,16 +225,26 @@ class ReceiptBuilder {
     }
     bytes.addAll(_generator.hr());
 
-    for (final line in lines) {
+    // Modifiers print under the item they were chosen for. See nestModifiers.
+    for (final entry in nestModifiers(lines)) {
+      final line = entry.line;
       final lineTotal = (line.unitPriceMinor * line.quantity).round();
+      // A modifier that costs nothing prints as a bare instruction rather than
+      // as "£0.00", which reads on a bill like something went wrong. One that
+      // costs money prints its price like any other line, because that is what
+      // the customer is being charged for.
+      final indent = entry.isModifier ? '  + ' : '';
+      final qty = entry.isModifier && line.quantity == 1
+          ? ''
+          : '${line.quantity.toStringAsFixed(0)}x ';
       bytes.addAll(
         _generator.row([
           _col(
-            text: '${line.quantity.toStringAsFixed(0)}x ${line.name}',
+            text: '$indent$qty${line.name}',
             width: 8,
           ),
           _col(
-            text: _money(lineTotal),
+            text: entry.isModifier && lineTotal == 0 ? '' : _money(lineTotal),
             width: 4,
             styles: const PosStyles(align: PosAlign.right),
           ),
@@ -552,16 +563,24 @@ class ReceiptBuilder {
     );
     bytes.addAll(_generator.hr());
 
-    for (final line in lines) {
-      bytes.addAll(
-        _text(
-          '${line.quantity.toStringAsFixed(0)}x  ${line.name}',
-          styles: const PosStyles(
-            height: PosTextSize.size2,
-            bold: true,
+    for (final entry in nestModifiers(lines)) {
+      final line = entry.line;
+      if (entry.isModifier) {
+        // Under the dish, indented, and at normal height. Double-height for
+        // "Rare" beside a double-height "Steak" is two things competing to be
+        // read first on a ticket somebody is glancing at over a pass.
+        bytes.addAll(_text('   > ${line.name}', styles: const PosStyles(bold: true)));
+      } else {
+        bytes.addAll(
+          _text(
+            '${line.quantity.toStringAsFixed(0)}x  ${line.name}',
+            styles: const PosStyles(
+              height: PosTextSize.size2,
+              bold: true,
+            ),
           ),
-        ),
-      );
+        );
+      }
       if (line.notes != null && line.notes!.isNotEmpty) {
         bytes.addAll(_text('   * ${line.notes}'));
       }

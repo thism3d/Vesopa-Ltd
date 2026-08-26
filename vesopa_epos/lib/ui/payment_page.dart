@@ -509,6 +509,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
             // carries the same attribution.
             addedBy: l.addedBy,
             addedAt: l.addedAt,
+            parentLineId: l.parentLineId,
           ),
       ];
 
@@ -1147,6 +1148,20 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     }
 
     if (!mounted) return;
+
+    // The drawer, if any part of this bill was paid in cash. It is wired into
+    // the receipt printer's kick port, so opening it is a printer command —
+    // the same one the No Sale key sends.
+    //
+    // Fired here, as soon as the sale is recorded and before anything is
+    // printed or shown: the clerk's next move is to take notes out of a drawer
+    // that has to be open for them to make it. A split bill counts — cash in
+    // the drawer is cash in the drawer, whatever settled the rest of it.
+    if (_tender.tenders.any((t) => t.kind == TenderKind.cash)) {
+      await TillActions.openCashDrawerQuietly(ref);
+      if (!mounted) return;
+    }
+
     unawaited(_publishReceipt());
 
     // The kitchen's copy, before anything can take the screen away. Only the

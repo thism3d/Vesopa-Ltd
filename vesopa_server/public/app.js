@@ -221,6 +221,7 @@ const ROUTES = {
   screens: '/screen-programming',
   program_departments: '/program-departments',
   program_groups: '/program-groups',
+  modifiers: '/modifiers',
   mix_match: '/mix-match',
   finalise_keys: '/finalise-keys',
   error_reasons: '/error-reasons',
@@ -351,7 +352,7 @@ const CRUD = {
     path: 'departments', title: 'department', sortable: true,
     fields: [
       { name: 'department_name', label: 'Department', required: true },
-      { name: 'group_name', label: 'Group' },
+      { name: 'group_name', label: 'Sub Department' },
       { name: 'accounting_code', label: 'Accounting code' },
       // The category button on the till, rendered square there — so unlike a
       // product's picture this one keeps the cropper's default square crop.
@@ -361,11 +362,59 @@ const CRUD = {
     ],
   },
   groups: {
-    path: 'groups', title: 'group', sortable: true,
+    path: 'groups', title: 'sub department', sortable: true,
     fields: [
-      { name: 'group_name', label: 'Group', required: true },
+      { name: 'group_name', label: 'Sub Department', required: true },
       { name: 'accounting_code', label: 'Accounting code' },
     ],
+  },
+  /**
+   * Modifier groups: the questions a product asks before it goes on the bill.
+   *
+   * The two numbers are the whole behaviour of the prompt on the till, so they
+   * are labelled as what they *do* rather than as min_select and max_select —
+   * a manager setting up a steak should not have to work out that "most they
+   * may pick: 1" is what closes the box on the first tap.
+   *
+   * The answers themselves are not edited here. They are a grid of buttons, so
+   * they are laid out in the screen editor like every other grid of buttons —
+   * which is what the "Edit answers" key opens. See schema_screens_modifiers.sql.
+   */
+  modifiers: {
+    path: 'modifier-groups', title: 'modifier group',
+    fields: [
+      { name: 'name', label: 'Question (e.g. Mixers, How is it cooked?)', required: true },
+      {
+        name: 'min_select',
+        label: 'Fewest they may pick (0 lets the operator skip)',
+        type: 'number',
+      },
+      {
+        name: 'max_select',
+        label: 'Most they may pick (1 closes the box on the first tap, 0 = no limit)',
+        type: 'number',
+      },
+    ],
+    extraColumns: [
+      {
+        // The number worth spotting is 0: a group nobody laid out asks nothing,
+        // and the till skips it rather than opening an empty box.
+        cell: (r) =>
+          Number(r.option_count)
+            ? `${r.option_count} answer${Number(r.option_count) === 1 ? '' : 's'}`
+            : '<span class="badge archived" title="No answers laid out yet, so the till skips this question.">empty</span>',
+      },
+      {
+        cell: (r) =>
+          Number(r.product_count)
+            ? `${r.product_count} product${Number(r.product_count) === 1 ? '' : 's'}`
+            : '<span class="muted">unused</span>',
+      },
+    ],
+    rowActions: (r) =>
+      r.screen_id
+        ? `<button class="btn small ghost" data-edit-answers="${r.screen_id}">Edit answers</button>`
+        : '',
   },
   'mix-match': {
     path: 'mix-match', title: 'deal', sortable: true,
@@ -453,13 +502,19 @@ async function loadCrud(key) {
   // Some fields exist only to be edited (the voucher button styling, say) and
   // would make the table unreadable if every one got a column.
   const columns = cfg.fields.filter((f) => !f.hideInTable);
-  const span = columns.length + 1 + (cfg.sortable ? 1 : 0);
+  // Columns the server computes and the form never edits — how many answers a
+  // modifier group holds, how many products ask it. Read-only by construction:
+  // they are not fields, so nothing tries to save them back.
+  const extras = cfg.extraColumns || [];
+  const span = columns.length + extras.length + 1 + (cfg.sortable ? 1 : 0);
   body.innerHTML = rows
     .map(
       (r) => `<tr data-row-id="${r.id}">
         ${cfg.sortable ? '<td class="drag-cell"><span class="drag-handle" title="Drag to reorder">⋮⋮</span></td>' : ''}
         ${columns.map((f) => `<td>${cellText(f, r[f.name])}</td>`).join('')}
+        ${extras.map((c) => `<td>${c.cell(r)}</td>`).join('')}
         <td class="right nowrap">
+          ${cfg.rowActions ? cfg.rowActions(r) : ''}
           <button class="btn small ghost" data-edit="${key}" data-id="${r.id}">Edit</button>
           <button class="btn small danger" data-del="${cfg.path}" data-id="${r.id}">Delete</button>
         </td>
@@ -582,6 +637,7 @@ function render() {
     tables: loadFloor,
     program_departments: () => loadCrud('departments'),
     program_groups: () => loadCrud('groups'),
+    modifiers: () => loadCrud('modifiers'),
     mix_match: () => loadCrud('mix-match'),
     finalise_keys: () => loadCrud('finalise-keys'),
     error_reasons: () => loadCrud('error-reasons'),
@@ -774,9 +830,27 @@ let productDept = '';
 let productSort = { key: null, dir: 1 };
 let productsBound = false;
 
+// What the product form's list boxes are built from: the departments, sub
+// departments and VAT rates this venue has already set up. Fetched beside the
+// catalogue rather than when the form opens, so picking a department is a
+// choice from a list instead of a spelling test — and so the list is on screen
+// the instant the modal is.
+let productRefs = { departments: [], groups: [], tax: [], modifierGroups: [] };
+
 async function loadProducts() {
   await ensurePrinterNames();
-  productRows = await api('/products');
+  // One round of requests, not four in series. The reference lists are small
+  // and a failure in any of them must not leave the catalogue unreachable, so
+  // each falls back to empty rather than rejecting the lot.
+  const [rows, departments, groups, tax, modifierGroups] = await Promise.all([
+    api('/products'),
+    api('/departments').catch(() => []),
+    api('/groups').catch(() => []),
+    api('/tax').catch(() => []),
+    api('/modifier-groups').catch(() => []),
+  ]);
+  productRows = rows;
+  productRefs = { departments, groups, tax, modifierGroups };
   bindProducts();
   renderProducts();
 }
@@ -890,21 +964,18 @@ function renderProducts() {
   $('products').innerHTML = rows
     .map(
       (p) => `<tr>
-        <td>${p.pluid}${plus.get(String(p.pluid)) > 1
-          ? ' <span class="badge archived" title="Another product in this catalogue has the same PLU. The till can only reach one of them.">duplicate</span>'
-          : ''}</td>
         <td>${p.image_url
           ? `<img class="thumb" src="${esc(p.image_url)}" alt="" />`
           : p.emoji
           ? `<span class="emoji">${esc(p.emoji)}</span>`
-          : ''} ${esc(p.product_name)}</td>
+          : ''} ${esc(p.product_name)}${plus.get(String(p.pluid)) > 1
+          ? ' <span class="badge archived" title="Another product in this catalogue has the same PLU. The till can only reach one of them.">duplicate PLU</span>'
+          : ''}</td>
         <td>${esc(p.department_name || '—')}</td>
+        <td>${esc(p.group_name || '—')}</td>
         <td class="right">${money(Math.round((p.price || 0) * 100))}</td>
         <td class="right">${p.tax_percentage || 0}%</td>
         <td class="right">${p.button_position ?? '—'}</td>
-        <td>${p.button_color
-          ? `<span class="swatch" style="background:${esc(p.button_color)}"></span>${esc(p.button_color)}`
-          : '<span class="muted">default</span>'}</td>
         <td>${routeChips(p)}</td>
         <td class="right">
           <button class="btn small ghost" data-edit-product="${p.id}">Edit</button>
@@ -1260,6 +1331,21 @@ async function saveFloor() {
 
 // ---- Modal ----------------------------------------------------------------
 
+/**
+ * Whether a checkbox in a `modal()` form was ticked.
+ *
+ * Not `!!value`, and this is not a nicety. The checkbox field submits a hidden
+ * input carrying the *string* "0" when it is clear (see fieldHtml), and "0" is
+ * truthy in JavaScript — so `!!data.whatever` is true whether the box was
+ * ticked or not, and every one of these was reading as ticked.
+ *
+ * It was found through "creating a new page still copies the page", which is
+ * the harmless end of it. The dangerous end was "Replace the existing catalogue
+ * first" on the starter-template dialog, which wiped a venue's catalogue
+ * whether or not anybody asked it to.
+ */
+const ticked = (value) => Number(value) === 1;
+
 function fieldHtml(f) {
   if (f.type === 'color') {
     // Paired with a text box: a colour picker alone hides the hex value, and
@@ -1302,6 +1388,53 @@ function fieldHtml(f) {
         ${f.value ? `<img class="img-preview" src="${esc(f.value)}" alt="" />` : ''}
         <input type="file" accept="image/*" data-upload-for="${f.name}" data-crop-shape="${f.crop || 'square'}" />
       </div>`;
+  }
+  if (f.type === 'modifiers') {
+    // An ordered list, not a set of tick boxes, because the order is the
+    // meaning: a bar asks "single or double" before it asks "which mixer", and
+    // a product that asks them the other way round is wrong in a way no amount
+    // of correct membership fixes.
+    //
+    // The chosen list carries one hidden input per group, written in list
+    // order. That is what the form submits, so the order on screen and the
+    // order stored are the same thing rather than two things kept in step.
+    const chosen = Array.isArray(f.value) ? f.value : [];
+    const byId = new Map(f.options.map((o) => [String(o.id), o]));
+    const rowFor = (id) => {
+      const g = byId.get(String(id));
+      if (!g) return '';
+      const rule = Number(g.max_select) === 1
+        ? 'pick one'
+        : Number(g.max_select) === 0
+        ? `pick ${g.min_select || 0}+`
+        : `pick ${g.min_select || 0}–${g.max_select}`;
+      return `<li class="mod-row" data-mod-id="${g.id}">
+        <input type="hidden" name="${f.name}" value="${g.id}" />
+        <span class="mod-name">${esc(g.name)}</span>
+        <span class="muted small">${esc(rule)}${Number(g.min_select) ? '' : ', skippable'}</span>
+        <span class="mod-keys">
+          <button type="button" class="btn small ghost" data-mod-up>↑</button>
+          <button type="button" class="btn small ghost" data-mod-down>↓</button>
+          <button type="button" class="btn small danger" data-mod-remove>✕</button>
+        </span>
+      </li>`;
+    };
+    return `<div class="mod-field" data-mod-field>
+      <ol class="mod-list">${chosen.map(rowFor).join('')}</ol>
+      <div class="mod-add">
+        <select data-mod-pick>
+          <option value="">Add a question…</option>
+          ${f.options
+            .map((o) => `<option value="${o.id}">${esc(o.name)}</option>`)
+            .join('')}
+        </select>
+        <button type="button" class="btn small" data-mod-add>Add</button>
+      </div>
+      ${f.options.length
+        ? ''
+        : '<p class="muted small">No modifier groups yet — make one under Programming › Modifiers.</p>'}
+      <template data-mod-template>${f.options.map((o) => rowFor(o.id)).join('')}</template>
+    </div>`;
   }
   if (f.type === 'stations') {
     // Every station gets a box, including the ones this venue has not set up:
@@ -1597,6 +1730,55 @@ function modal(title, fields, onSubmit) {
     });
   });
 
+  // The ordered modifier picker: add, reorder, remove. Everything it does is a
+  // move of one <li>, because the list *is* the value — each row carries the
+  // hidden input that gets submitted, so re-ordering the rows re-orders what is
+  // saved without anything having to be kept in step.
+  root.querySelectorAll('[data-mod-field]').forEach((field) => {
+    const list = field.querySelector('.mod-list');
+    const template = field.querySelector('[data-mod-template]');
+
+    const has = (id) => !!list.querySelector(`[data-mod-id="${CSS.escape(String(id))}"]`);
+
+    field.querySelector('[data-mod-add]')?.addEventListener('click', () => {
+      const pick = field.querySelector('[data-mod-pick]');
+      const id = pick.value;
+      // Asking the same question twice about one product is always a mistake,
+      // and the database refuses it anyway — so it is refused here quietly
+      // rather than saved and rejected.
+      if (!id || has(id)) return;
+      const row = template.content
+        ? template.content.querySelector(`[data-mod-id="${CSS.escape(id)}"]`)
+        : null;
+      // The template is inert markup in some browsers and parsed content in
+      // others; fall back to re-parsing rather than depending on which.
+      if (row) {
+        list.appendChild(row.cloneNode(true));
+      } else {
+        const holder = document.createElement('div');
+        holder.innerHTML = template.innerHTML;
+        const found = holder.querySelector(`[data-mod-id="${CSS.escape(id)}"]`);
+        if (found) list.appendChild(found);
+      }
+      pick.value = '';
+    });
+
+    list.addEventListener('click', (e) => {
+      const row = e.target.closest('.mod-row');
+      if (!row) return;
+      if (e.target.closest('[data-mod-remove]')) row.remove();
+      else if (e.target.closest('[data-mod-up]')) {
+        if (row.previousElementSibling) {
+          list.insertBefore(row, row.previousElementSibling);
+        }
+      } else if (e.target.closest('[data-mod-down]')) {
+        if (row.nextElementSibling) {
+          list.insertBefore(row.nextElementSibling, row);
+        }
+      }
+    });
+  });
+
   $('modal-cancel').onclick = () => (root.innerHTML = '');
   $('modal-form').onsubmit = async (e) => {
     e.preventDefault();
@@ -1772,6 +1954,16 @@ document.addEventListener('click', async (e) => {
       })
     );
   }
+  // A modifier group's answers are a grid of buttons, so they are laid out in
+  // the screen editor rather than in a form of their own. The editor cannot be
+  // pointed at a screen until it has loaded, so the id is left for it to pick
+  // up — see spOpenScreen in screens.js.
+  if (t.dataset.editAnswers) {
+    spOpenScreen(t.dataset.editAnswers);
+    show('screens');
+    return;
+  }
+
   if (t.dataset.edit && CRUD[t.dataset.edit]) {
     const cfg = CRUD[t.dataset.edit];
     // Re-fetch the list and pick the row rather than adding a per-row GET the
@@ -1901,15 +2093,85 @@ document.addEventListener('click', async (e) => {
     return key === 'kitchen' ? 'kp1' : key === 'bar' ? 'kp2' : key;
   };
 
+  /**
+   * The choices for a list box, as {value,label} pairs, with a blank first
+   * entry so "not set yet" stays sayable. Anything the product already holds
+   * that is no longer in the list is added back on the end: a department that
+   * was renamed or deleted must not silently re-file every product under it
+   * the next time somebody opens the form to change a price.
+   */
+  const pickList = (values, current, blank = 'Please select…') => {
+    const options = [{ value: '', label: blank }];
+    const seen = new Set();
+    for (const v of values) {
+      if (v === undefined || v === null || v === '' || seen.has(String(v))) continue;
+      seen.add(String(v));
+      options.push({ value: v, label: v });
+    }
+    if (current && !seen.has(String(current))) {
+      options.push({ value: current, label: `${current} (no longer listed)` });
+    }
+    return options;
+  };
+
   const productFields = (p = {}) => [
-    { label: 'PLU number', name: 'pluid', type: 'number', required: true, value: p.pluid ?? '' },
+    // No PLU field. The number still exists and still matters — the till
+    // indexes by it and order lines reference it — but it is the server's job
+    // to allocate, not a question to ask somebody adding a bottle of coke.
+    // See POST /products, which fills in the next free one.
     { label: 'Name', name: 'product_name', required: true, value: p.product_name ?? '' },
-    { label: 'Department', name: 'department_name', value: p.department_name ?? '' },
-    { label: 'Price (£)', name: 'price', type: 'number', value: p.price ?? 0 },
-    { label: 'VAT %', name: 'tax_percentage', type: 'number', value: p.tax_percentage ?? 20 },
+    {
+      label: 'Department',
+      name: 'department_name',
+      type: 'select',
+      options: pickList(
+        productRefs.departments.map((d) => d.department_name),
+        p.department_name
+      ),
+      value: p.department_name ?? '',
+    },
+    {
+      label: 'Sub Department',
+      name: 'group_name',
+      type: 'select',
+      options: pickList(
+        productRefs.groups.map((g) => g.group_name),
+        p.group_name
+      ),
+      value: p.group_name ?? '',
+    },
+    // `money`, not `number`: a bare number input steps in whole units, so the
+    // browser rejected £2.05 and offered the two "nearest valid values", 2 and
+    // 3. Every price with pence in it was unenterable.
+    { label: 'Price (£)', name: 'price', type: 'money', value: p.price ?? 0 },
+    {
+      label: 'VAT rate',
+      name: 'tax_percentage',
+      type: 'select',
+      // Built from the rates set up under Programming › Tax, so a venue picks
+      // "20% Standard Rate" rather than typing a number that has to match one.
+      options: (() => {
+        const rates = productRefs.tax.map((t) => ({
+          value: String(Number(t.percentage)),
+          label: t.name ? `${Number(t.percentage)}% ${t.name}` : `${Number(t.percentage)}%`,
+        }));
+        const current = p.tax_percentage ?? '';
+        if (!rates.length) return pickList(['0', '5', '20'], String(Number(current || 0)));
+        if (current !== '' && !rates.some((r) => r.value === String(Number(current)))) {
+          rates.push({
+            value: String(Number(current)),
+            label: `${Number(current)}% (no longer listed)`,
+          });
+        }
+        return rates;
+      })(),
+      value: String(Number(p.tax_percentage ?? 20)),
+    },
     { label: 'Stock', name: 'stock_quantity', type: 'number', value: p.stock_quantity ?? 0 },
     { label: 'Button position (blank = unassigned)', name: 'button_position', type: 'number', value: p.button_position ?? '' },
-    { label: 'Button colour (e.g. #4BA3F5)', name: 'button_color', value: p.button_color ?? '' },
+    // No button colour. Button styling belongs to the screen editor now, which
+    // is where the layout, the colour and the face of every key are set — two
+    // places to colour one button meant the one you did not use won.
     { label: 'Emoji (e.g. 🍔)', name: 'emoji', value: p.emoji ?? '' },
     // The sale-grid button gives a product picture a wide band under the name
     // (see _image() in vesopa_epos/lib/ui/sale_page.dart), unlike a department's
@@ -1925,6 +2187,13 @@ document.addEventListener('click', async (e) => {
       value: p.printer_routes ?? legacyStation(p.printer_route),
     },
     {
+      label: 'Modifiers — the questions this product asks, in order',
+      name: 'modifier_group_ids',
+      type: 'modifiers',
+      options: productRefs.modifierGroups,
+      value: p.modifier_group_ids || [],
+    },
+    {
       label: 'Show on the customer receipt',
       name: 'print_to_receipt',
       type: 'checkbox',
@@ -1934,16 +2203,44 @@ document.addEventListener('click', async (e) => {
     },
   ];
 
+  /**
+   * The questions, saved after the product itself.
+   *
+   * A separate call because it is a separate table with its own ordering, and
+   * because a product must be saved before it can be keyed off — a new one has
+   * no PLU until the server allocates it.
+   *
+   * A failure here is reported rather than swallowed: silently keeping the
+   * price change and dropping the modifier wiring is exactly the false success
+   * the reference back office shows, where "updated successfully" appears over
+   * a modifier that was never attached.
+   */
+  const saveModifiers = async (plu, data) => {
+    if (!plu || data.modifier_group_ids === undefined) return;
+    const ids = []
+      .concat(data.modifier_group_ids)
+      .map((n) => Number(n))
+      .filter(Number.isFinite);
+    await api(`/products/${plu}/modifiers`, {
+      method: 'PUT',
+      body: JSON.stringify({ group_ids: ids }),
+    });
+  };
+
   if (t.id === 'add-product') {
-    return modal('Add product', productFields(), (d) =>
-      api('/products', { method: 'POST', body: JSON.stringify(d) })
-    );
+    return modal('Add product', productFields(), async (d) => {
+      const made = await api('/products', { method: 'POST', body: JSON.stringify(d) });
+      await saveModifiers(made.pluid, d);
+    });
   }
   if (t.dataset.editProduct) {
     const p = await api(`/products/${t.dataset.editProduct}`);
-    return modal('Edit product', productFields(p), (d) =>
-      api(`/products/${p.id}`, { method: 'PUT', body: JSON.stringify(d) })
-    );
+    const attached = await api(`/products/${p.pluid}/modifiers`).catch(() => []);
+    p.modifier_group_ids = attached.map((g) => g.id);
+    return modal('Edit product', productFields(p), async (d) => {
+      await api(`/products/${p.id}`, { method: 'PUT', body: JSON.stringify(d) });
+      await saveModifiers(p.pluid, d);
+    });
   }
   // Half a catalogue is a variant of the other half — the same burger with
   // cheese, the same wine by the glass. This opens the add form with everything
@@ -1951,13 +2248,18 @@ document.addEventListener('click', async (e) => {
   // not using" is not a question this form should send somebody away to answer.
   if (t.dataset.dupProduct) {
     const p = await api(`/products/${t.dataset.dupProduct}`);
-    const taken = new Set(productRows.map((r) => Number(r.pluid)));
-    let pluid = Number(p.pluid) + 1;
-    while (taken.has(pluid)) pluid++;
+    const attached = await api(`/products/${p.pluid}/modifiers`).catch(() => []);
+    p.modifier_group_ids = attached.map((g) => g.id);
+    // No longer hunts for a free PLU before opening the form — the server
+    // allocates one on save, which is the only place that can do it without
+    // racing another manager doing the same thing.
     return modal(
       'Duplicate product',
-      productFields({ ...p, pluid, product_name: `${p.product_name} (copy)` }),
-      (d) => api('/products', { method: 'POST', body: JSON.stringify(d) })
+      productFields({ ...p, product_name: `${p.product_name} (copy)` }),
+      async (d) => {
+        const made = await api('/products', { method: 'POST', body: JSON.stringify(d) });
+        await saveModifiers(made.pluid, d);
+      }
     );
   }
 
@@ -2819,8 +3121,8 @@ function promoPayload(data) {
     deal_price_minor: Number(data.deal_price_minor) || 0,
     min_spend_minor: Number(data.min_spend_minor) || 0,
     priority: Number(data.priority) || 0,
-    stackable: !!data.stackable,
-    active: !!data.active,
+    stackable: ticked(data.stackable),
+    active: ticked(data.active),
     // The PLU list is typed as text; anything non-numeric is dropped rather
     // than sent as NaN.
     products: String(data.products || '')
@@ -3550,7 +3852,7 @@ function rulePayload(data) {
     conditions: { value: data.condition_value },
     actions: { kind: data.action_kind, value: data.action_value },
     priority: Number(data.priority) || 0,
-    active: !!data.active,
+    active: ticked(data.active),
   };
 }
 
@@ -3633,7 +3935,7 @@ document.addEventListener('click', async (e) => {
           method: 'POST',
           body: JSON.stringify({
             name: data.name, description: data.description, kind: data.kind,
-            is_default: !!data.is_default, payload: {},
+            is_default: ticked(data.is_default), payload: {},
           }),
         });
       }
@@ -3701,7 +4003,7 @@ document.addEventListener('click', async (e) => {
           billing_day: Number(data.billing_day) || 1,
           next_due_on: data.next_due_on || null,
           plan: data.plan || null,
-          is_demo: !!data.is_demo,
+          is_demo: ticked(data.is_demo),
           trial_ends_on: data.trial_ends_on || null,
         }),
       });
@@ -3722,7 +4024,7 @@ document.addEventListener('click', async (e) => {
         method: 'POST',
         body: JSON.stringify({
           template_id: Number(data.template_id),
-          replace: !!data.replace,
+          replace: ticked(data.replace),
         }),
       });
       alert(`Applied: ${Object.entries(res.applied || {})

@@ -23,11 +23,18 @@ import 'widgets/basket_panel.dart' show money;
 /// can be a frame stale, and on a floor with several terminals the answer must
 /// come from the same place the merge is about to act on.
 ///
-/// Returns the chosen table number, or null if cancelled. Falls back to a plain
-/// number entry when no floor plan has been drawn, so a venue that never laid
-/// out its rooms can still save to a table.
-Future<int?> showTablePicker(BuildContext context, WidgetRef ref) {
-  return showDialog<int>(
+/// Returns the chosen table and the room it is in, or null if cancelled. Falls
+/// back to a plain number entry when no floor plan has been drawn, so a venue
+/// that never laid out its rooms can still save to a table — that path returns
+/// a null room, which is the truth: there is no plan to place it on.
+///
+/// The room matters because a table number is only unique within one. Two rooms
+/// may each have a Table 1, and without the room the second one recalls the
+/// first one's bill.
+typedef PickedTable = ({int number, int? roomId});
+
+Future<PickedTable?> showTablePicker(BuildContext context, WidgetRef ref) {
+  return showDialog<PickedTable>(
     context: context,
     builder: (_) => const _TablePickerDialog(),
   );
@@ -43,10 +50,21 @@ class _TablePickerDialog extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final parked = ref.watch(parkedOrdersProvider).value ?? const <Order>[];
-    final byTable = {
+    // Room *and* number, for the reason given on the tables page: two rooms
+    // may each have a Table 1, and keying on the number alone drew both of them
+    // as occupied by one bill.
+    final byRoomTable = <(int, int), Order>{
       for (final o in parked)
-        if (o.tableNumber != null) o.tableNumber!: o,
+        if (o.tableNumber != null && o.roomId != null)
+          (o.roomId!, o.tableNumber!): o,
     };
+    final byNumberOnly = <int, Order>{
+      for (final o in parked)
+        if (o.tableNumber != null && o.roomId == null) o.tableNumber!: o,
+    };
+    Order? orderFor(int? roomId, int number) =>
+        (roomId == null ? null : byRoomTable[(roomId, number)]) ??
+        byNumberOnly[number];
     final plan = ref.watch(floorPlanProvider);
 
     return Dialog(
@@ -106,8 +124,11 @@ class _TablePickerDialog extends ConsumerWidget {
                         for (final room in withTables)
                           _PickerRoomPlan(
                             room: room,
-                            byTable: byTable,
-                            onPick: (number) => Navigator.pop(context, number),
+                            orderFor: (n) => orderFor(room.id, n),
+                            onPick: (number) => Navigator.pop(
+                              context,
+                              (number: number, roomId: room.id),
+                            ),
                           ),
                       ],
                     ),
@@ -196,7 +217,10 @@ class _NoPlanFallback extends StatelessWidget {
               hintText: 'Table number',
               border: OutlineInputBorder(),
             ),
-            onSubmitted: (v) => Navigator.pop(context, int.tryParse(v.trim())),
+            onSubmitted: (v) {
+              final n = int.tryParse(v.trim());
+              Navigator.pop(context, n == null ? null : (number: n, roomId: null));
+            },
           ),
           const SizedBox(height: 16),
           Row(
@@ -208,10 +232,13 @@ class _NoPlanFallback extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               FilledButton(
-                onPressed: () => Navigator.pop(
-                  context,
-                  int.tryParse(controller.text.trim()),
-                ),
+                onPressed: () {
+                  final n = int.tryParse(controller.text.trim());
+                  Navigator.pop(
+                    context,
+                    n == null ? null : (number: n, roomId: null),
+                  );
+                },
                 child: const Text('Save'),
               ),
             ],
@@ -227,12 +254,13 @@ class _NoPlanFallback extends StatelessWidget {
 class _PickerRoomPlan extends StatelessWidget {
   const _PickerRoomPlan({
     required this.room,
-    required this.byTable,
+    required this.orderFor,
     required this.onPick,
   });
 
   final FloorRoom room;
-  final Map<int, Order> byTable;
+  /// The bill on one of this room's tables, if any.
+  final Order? Function(int number) orderFor;
   final void Function(int number) onPick;
 
   @override
@@ -287,7 +315,7 @@ class _PickerRoomPlan extends StatelessWidget {
                         height: table.height * unit - 6,
                         child: _PickableTable(
                           table: table,
-                          order: byTable[table.number],
+                          order: orderFor(table.number),
                           onPick: () => onPick(table.number),
                         ),
                       ),

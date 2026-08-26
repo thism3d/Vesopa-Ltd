@@ -51,12 +51,23 @@ class FloorTable {
 }
 
 class FloorRoom {
-  const FloorRoom({required this.name, required this.tables});
+  const FloorRoom({required this.name, required this.tables, this.id});
+
+  /// The back office's id for this room.
+  ///
+  /// Kept because a table number is only unique within a room, so a bill has to
+  /// record which room it is sitting in — the name would do it too, until
+  /// somebody renames "Terrace" to "Garden" mid-service and every parked bill
+  /// on it stops resolving.
+  ///
+  /// Nullable for a plan cached by an older release, which stored no ids.
+  final int? id;
 
   final String name;
   final List<FloorTable> tables;
 
   factory FloorRoom.fromJson(Map<String, dynamic> json) => FloorRoom(
+        id: (json['id'] as num?)?.toInt(),
         name: json['name'] as String? ?? 'Room',
         tables: (json['tables'] as List<dynamic>? ?? [])
             .cast<Map<String, dynamic>>()
@@ -65,6 +76,7 @@ class FloorRoom {
       );
 
   Map<String, dynamic> toJson() => {
+        if (id != null) 'id': id,
         'name': name,
         'tables': [for (final t in tables) t.toJson()],
       };

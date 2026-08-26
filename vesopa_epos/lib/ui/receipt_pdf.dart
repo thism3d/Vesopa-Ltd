@@ -204,12 +204,22 @@ Future<Uint8List> buildReceiptPdf(
 
           // ---- Items ----------------------------------------------------
           for (final line in r.lines) ...[
+            // A modifier reads as belonging to the item above it: indented, and
+            // without a price when it is free, because "£0.00" on a bill looks
+            // like something went wrong. One that costs money shows what the
+            // customer is being charged, like any other line.
             row(
-              t('${_qty(line.quantity)}  ${line.name}'),
-              money(line.lineTotalMinor),
+              t(line.isModifier
+                  ? '     + ${line.name}'
+                  : '${_qty(line.quantity)}  ${line.name}'),
+              line.isModifier && line.lineTotalMinor == 0
+                  ? t('')
+                  : money(line.lineTotalMinor),
             ),
-            // Unit price only when it is not obvious from a single item.
-            if (line.quantity != 1)
+            // Unit price only when it is not obvious from a single item, and
+            // never for a modifier: its quantity is its parent's, so restating
+            // it under every one says nothing the line above did not.
+            if (line.quantity != 1 && !line.isModifier)
               pw.Padding(
                 padding: const pw.EdgeInsets.only(left: 10, bottom: 1),
                 child: pw.Text(

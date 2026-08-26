@@ -165,25 +165,41 @@ function backofficeRoutes({ pool, broadcast, secret }) {
   router.post('/products', auth, async (req, res, next) => {
     const p = req.body;
     try {
+      const email = await tenantEmail(req);
+
       // A PLU is the catalogue's key everywhere it matters: a screen button
       // carries one, the till indexes its products by one, and a kitchen route
       // is looked up through one. Two rows sharing it means one of the two is
       // unreachable — and nobody finds out until a clerk presses a key and the
       // wrong thing goes on the bill.
       //
-      // Refused on create only. Rows that already share a PLU are left alone
-      // rather than made uneditable, and the products list flags them so a
-      // venue can see what it has; PUT never changes a pluid.
-      const [[clash]] = await pool.query(
-        'SELECT id, product_name FROM bo_products WHERE email = ? AND pluid = ?',
-        [await tenantEmail(req), p.pluid]
-      );
-      if (clash) {
-        return res.status(409).json({
-          error:
-            `PLU ${p.pluid} is already used by "${clash.product_name}". ` +
-            'Give this one a number of its own.',
-        });
+      // So it is still required, and still unique — but it is no longer asked
+      // for. The form stopped offering the field: "which numbers am I not
+      // using" is a question about this table, and this is the only place that
+      // can answer it without racing a second manager adding a product at the
+      // same moment. An explicit pluid is still honoured, so an import or an
+      // older client that sends one keeps working.
+      if (p.pluid === undefined || p.pluid === null || p.pluid === '') {
+        const [[row]] = await pool.query(
+          'SELECT COALESCE(MAX(pluid), 0) + 1 AS next FROM bo_products WHERE email = ?',
+          [email]
+        );
+        p.pluid = row.next;
+      } else {
+        // Refused on create only. Rows that already share a PLU are left alone
+        // rather than made uneditable, and the products list flags them so a
+        // venue can see what it has; PUT never changes a pluid.
+        const [[clash]] = await pool.query(
+          'SELECT id, product_name FROM bo_products WHERE email = ? AND pluid = ?',
+          [email, p.pluid]
+        );
+        if (clash) {
+          return res.status(409).json({
+            error:
+              `PLU ${p.pluid} is already used by "${clash.product_name}". ` +
+              'Give this one a number of its own.',
+          });
+        }
       }
 
       const [result] = await pool.execute(
@@ -220,7 +236,12 @@ function backofficeRoutes({ pool, broadcast, secret }) {
 
       // Tills hold a local copy of the catalogue; tell them to refresh it.
       broadcast({ type: 'catalogue.updated' });
-      res.status(201).json({ id: result.insertId });
+      // The PLU goes back with the id because the client no longer knows it —
+      // this route allocated it. Anything that has to key off a product the
+      // moment it is created needs it: attaching modifier groups to a new
+      // product is one round trip, not a re-fetch of the catalogue to find out
+      // what number it was given.
+      res.status(201).json({ id: result.insertId, pluid: p.pluid });
     } catch (e) {
       next(e);
     }
@@ -229,11 +250,17 @@ function backofficeRoutes({ pool, broadcast, secret }) {
   router.put('/products/:id', auth, async (req, res, next) => {
     const p = req.body;
     try {
+      // Button colour is no longer on the product form — the screen editor owns
+      // how a key looks. The column stays, and a save that does not mention it
+      // leaves it exactly as it was: dropping the field from the form must not
+      // quietly strip the colour off every product somebody edits the price of.
+      // An explicit value (from an import, or an older client) still applies.
+      const colourSql = p.button_color === undefined ? 'button_color' : '?';
       await pool.execute(
         `UPDATE bo_products
          SET product_name = ?, department_name = ?, group_name = ?,
              accounting_code = ?, price = ?, tax_percentage = ?,
-             stock_quantity = ?, button_position = ?, button_color = ?,
+             stock_quantity = ?, button_position = ?, button_color = ${colourSql},
              printer_route = ?, printer_routes = ?, print_to_receipt = ?,
              emoji = ?, image_url = ?
          WHERE id = ? AND email = ?`,
@@ -246,7 +273,7 @@ function backofficeRoutes({ pool, broadcast, secret }) {
           p.tax_percentage ?? 0,
           p.stock_quantity ?? 0,
           p.button_position || null,
-          p.button_color || null,
+          ...(p.button_color === undefined ? [] : [p.button_color || null]),
           legacyRoute(p),
           normaliseRoutes(p.printer_routes ?? p.printer_route),
           flag(p.print_to_receipt),
@@ -1133,8 +1160,9 @@ function backofficeRoutes({ pool, broadcast, secret }) {
       if (!order) return res.status(404).json({ error: 'No such receipt' });
 
       const [lines] = await pool.query(
-        `SELECT name, quantity, unit_price_minor, tax_percentage, note
-         FROM epos_order_lines WHERE order_id = ?`,
+        `SELECT name, quantity, unit_price_minor, tax_percentage, note,
+                is_modifier
+         FROM epos_order_lines WHERE order_id = ? ORDER BY line_no`,
         [req.params.id]
       );
       const [payments] = await pool.query(

@@ -82,6 +82,7 @@ class ReceiptLine {
     required this.unitPriceMinor,
     this.note,
     this.taxPercentage = 0,
+    this.isModifier = false,
   });
 
   final String name;
@@ -96,6 +97,14 @@ class ReceiptLine {
   /// what a VAT-registered venue's receipt has to do.
   final double taxPercentage;
 
+  /// Whether this line is a modifier hanging off the one above it — the mixer
+  /// with the gin, how the steak is cooked. Printed indented under its item.
+  ///
+  /// Position, not identity: lines arrive in the order they were rung and a
+  /// modifier always follows what it modifies. See
+  /// vesopa_server/schema_screens_modifiers_lines.sql.
+  final bool isModifier;
+
   int get lineTotalMinor => (unitPriceMinor * quantity).round();
 
   factory ReceiptLine.fromJson(Map<String, dynamic> j) => ReceiptLine(
@@ -106,6 +115,9 @@ class ReceiptLine {
             ? null
             : j['note'] as String,
         taxPercentage: (j['tax_percentage'] as num? ?? 0).toDouble(),
+        // Absent on a sale recorded before modifiers existed, which was an
+        // item in its own right — so the default is the truth, not a guess.
+        isModifier: (j['is_modifier'] as num?) == 1 || j['is_modifier'] == true,
       );
 }
 

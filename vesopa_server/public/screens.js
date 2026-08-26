@@ -114,6 +114,7 @@ const SP_BAR_GROUPS = [
     ['venue_name', 'Venue name'],
     ['staff_name', 'Who is signed on'],
     ['sync_status', 'Online / offline'],
+    ['print_status', 'Did the kitchen ticket land'],
     ['screen_name', 'Name of the open screen'],
     ['spacer', 'Blank space'],
   ]],
@@ -138,6 +139,7 @@ const SP_WIDGET_KEYS = new Set([
   'venue_name',
   'staff_name',
   'sync_status',
+  'print_status',
   'screen_name',
   'spacer',
 ]);
@@ -202,6 +204,20 @@ let spDefaults = { home: null, top: null, bottom: null };
 
 /** Which kind of layout is being edited: the tab across the top. */
 let spSurface = 'sale';
+
+/**
+ * A screen the editor should open as soon as it has loaded, or null.
+ *
+ * Set by `spOpenScreen` from outside the editor — today by the Modifiers page,
+ * whose "Edit answers" key has a screen id and no editor to put it in yet.
+ * Cleared the moment it is used; see loadScreens.
+ */
+let spPendingOpen = null;
+
+/** Open this screen next time the editor loads. */
+function spOpenScreen(id) {
+  spPendingOpen = Number(id);
+}
 
 /** Every picture this venue already has to hand, for the key-face gallery. */
 let spGallery = [];
@@ -285,6 +301,24 @@ async function loadScreens() {
       ...spScreens.flatMap((s) => (s.buttons || []).map((b) => b.imageUrl)).filter(Boolean),
     ]),
   ].slice(0, 40);
+
+  // Sent here by a modifier group's "Edit answers" key, which knows the screen
+  // it wants but cannot select it until the editor has loaded.
+  //
+  // Honoured once and cleared: without that, every later reload — a save, a
+  // push from another manager — would drag the editor back to the modifier
+  // screen somebody opened twenty minutes ago.
+  if (spPendingOpen != null) {
+    const wanted = spScreens.find((s) => s.id === spPendingOpen);
+    spPendingOpen = null;
+    if (wanted) {
+      spSurface = wanted.surface || 'sale';
+      spSelect(wanted.id);
+      spBind();
+      spRenderChrome();
+      return;
+    }
+  }
 
   // A screen deleted, or the tab moved: keep the editor pointing at something
   // that exists on the surface being shown.
@@ -1103,6 +1137,11 @@ function spWidgetSketch(key) {
       return '<i>👤 Muzahid</i>';
     case 'sync_status':
       return '<i>● Online</i>';
+    case 'print_status':
+      // Draws nothing on the till when there is nothing to report, which is
+      // most of the time — the preview says what it is rather than showing a
+      // blank cell the manager would take for a broken key.
+      return '<i>🖨 Kitchen</i>';
     case 'screen_name':
       return '<i>Drinks</i>';
     case 'spacer':
@@ -2166,8 +2205,14 @@ function spNewScreen() {
           // refuses a cross-surface copy outright — a Pay key has nowhere to go
           // on a page of lagers — and the tab this was opened from is the
           // surface being made.
+          //
+          // `Number(...)`, not the value itself. A checkbox in this form submits
+          // the *string* "0" when it is clear, and "0" is truthy in JavaScript —
+          // so every new screen was made as a copy of whichever one was open,
+          // however carefully the box was left unticked. That is the whole of
+          // "creating a new page still copies the page".
           copyFromId:
-            data.copy && spCurrent && spCurrentSurface() === surface
+            Number(data.copy) && spCurrent && spCurrentSurface() === surface
               ? spCurrent.id
               : null,
         }),

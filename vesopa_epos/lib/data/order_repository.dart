@@ -5,6 +5,7 @@ import 'package:uuid/uuid.dart';
 
 import 'local/database.dart';
 import 'mix_match_engine.dart';
+import 'modifier_layout.dart';
 
 /// Owns the sale lifecycle. Every write lands in the local database first and
 /// is queued for the server second, both inside one transaction: the till is
@@ -15,12 +16,17 @@ class OrderRepository {
   final AppDatabase _db;
   static const _uuid = Uuid();
 
-  Future<String> openOrder({int? tableNumber, String? clerkPin}) async {
+  Future<String> openOrder({
+    int? tableNumber,
+    int? roomId,
+    String? clerkPin,
+  }) async {
     final id = _uuid.v4();
     await _db.into(_db.orders).insert(
           OrdersCompanion.insert(
             id: id,
             tableNumber: Value(tableNumber),
+            roomId: Value(roomId),
             clerkPin: Value(clerkPin),
           ),
         );
@@ -38,42 +44,132 @@ class OrderRepository {
   /// Where that matters — a table two people served — the second round lands on
   /// its own line anyway, because the merge only fires within one visit to the
   /// screen.
+  ///
+  /// [modifiers] are the answers the operator gave to the questions this
+  /// product asks — the mixer with the gin, how the steak is cooked. Each one
+  /// goes in as its own order line pointing back at this one, so it prices,
+  /// taxes, prints and reports as what it is. A product carrying answers is
+  /// never merged into an existing line; see below.
+  /// See OrderLines.parentLineId.
   Future<void> addLine(
     String orderId,
     Product product, {
     double qty = 1,
     String? addedBy,
+    List<Product> modifiers = const [],
   }) async {
     await _db.transaction(() async {
-      final existing = await (_db.select(_db.orderLines)
-            ..where((l) => l.orderId.equals(orderId) & l.pluId.equals(product.pluId)))
-          .get();
+      final now = DateTime.now();
 
-      if (existing.isNotEmpty) {
-        final line = existing.first;
+      // A product with answers on it is never merged into an existing line.
+      // Two gins are one line at quantity 2; a gin with coke and a gin with
+      // tonic are two different things that happen to share a PLU, and adding
+      // the second to the first would quietly change what the first customer
+      // ordered.
+      final line = modifiers.isEmpty
+          ? await _mergeableLine(orderId, product.pluId)
+          : null;
+
+      if (line != null) {
         await (_db.update(_db.orderLines)..where((l) => l.id.equals(line.id)))
             .write(OrderLinesCompanion(quantity: Value(line.quantity + qty)));
-      } else {
+        await recalculate(orderId);
+        return;
+      }
+
+      final parentId = _uuid.v4();
+      await _db.into(_db.orderLines).insert(
+            OrderLinesCompanion.insert(
+              id: parentId,
+              orderId: orderId,
+              pluId: product.pluId,
+              name: product.name,
+              quantity: Value(qty),
+              // Snapshot the price: a later back-office edit must not restate
+              // takings that have already been rung up.
+              unitPriceMinor: product.priceMinor,
+              taxPercentage: Value(product.taxPercentage),
+              // Who rang it and when. Null on a venue that does not use staff
+              // sign-on, and the check view simply shows no header for it.
+              addedBy: Value(addedBy),
+              addedAt: Value(now),
+            ),
+          );
+
+      for (final choice in modifiers) {
         await _db.into(_db.orderLines).insert(
               OrderLinesCompanion.insert(
                 id: _uuid.v4(),
                 orderId: orderId,
-                pluId: product.pluId,
-                name: product.name,
+                pluId: choice.pluId,
+                name: choice.name,
+                // One per parent unit: two double gins want two dashes of coke,
+                // and a kitchen reading "2 Steak / 1 Rare" cannot tell which
+                // steak is which.
                 quantity: Value(qty),
-                // Snapshot the price: a later back-office edit must not restate
-                // takings that have already been rung up.
-                unitPriceMinor: product.priceMinor,
-                taxPercentage: Value(product.taxPercentage),
-                // Who rang it and when. Null on a venue that does not use staff
-                // sign-on, and the check view simply shows no header for it.
+                unitPriceMinor: choice.priceMinor,
+                taxPercentage: Value(choice.taxPercentage),
+                parentLineId: Value(parentId),
                 addedBy: Value(addedBy),
-                addedAt: Value(DateTime.now()),
+                addedAt: Value(now),
               ),
             );
       }
+
       await recalculate(orderId);
     });
+  }
+
+  /// The line this product could be added to, or null if it must start a new
+  /// one.
+  ///
+  /// Only ever a line of its own — never a modifier — and never one that
+  /// already carries answers, for the reason given in [addLine].
+  Future<OrderLine?> _mergeableLine(String orderId, int pluId) async {
+    final candidates = await (_db.select(_db.orderLines)
+          ..where((l) =>
+              l.orderId.equals(orderId) &
+              l.pluId.equals(pluId) &
+              l.parentLineId.isNull()))
+        .get();
+    if (candidates.isEmpty) return null;
+
+    final parents = await _linesWithChildren(orderId);
+    for (final line in candidates) {
+      if (!parents.contains(line.id)) return line;
+    }
+    return null;
+  }
+
+  /// The ids of lines on this order that have modifiers hanging off them.
+  Future<Set<String>> _linesWithChildren(String orderId) async {
+    final rows = await (_db.select(_db.orderLines)
+          ..where((l) => l.orderId.equals(orderId) & l.parentLineId.isNotNull()))
+        .get();
+    final ids = <String>{};
+    for (final row in rows) {
+      final id = row.parentLineId;
+      if (id != null) ids.add(id);
+    }
+    return ids;
+  }
+
+  /// Every line id that must go when [lineIds] go: the lines themselves, plus
+  /// the modifiers hanging off them.
+  ///
+  /// A modifier without its parent is a line reading "Dash Coke £0.50" that
+  /// nobody can account for, and — worse — one the kitchen would still be told
+  /// about. Anything that removes a line goes through here.
+  Future<Set<String>> _withModifiers(String orderId, Set<String> lineIds) async {
+    if (lineIds.isEmpty) return lineIds;
+    final rows = await (_db.select(_db.orderLines)
+          ..where((l) => l.orderId.equals(orderId) & l.parentLineId.isNotNull()))
+        .get();
+    return {
+      ...lineIds,
+      for (final row in rows)
+        if (lineIds.contains(row.parentLineId)) row.id,
+    };
   }
 
   /// Void selected lines off an open check, leaving the rest of the sale alone.
@@ -95,8 +191,13 @@ class OrderRepository {
       final order =
           await (_db.select(_db.orders)..where((o) => o.id.equals(orderId)))
               .getSingle();
+      // A modifier cannot survive the item it modifies: "Dash Coke" left on a
+      // bill whose gin was voided is a line nobody can account for, and one the
+      // kitchen would still be told about. Valued with the rest, so the void
+      // log shows what the bill actually lost.
+      final doomed = await _withModifiers(orderId, lineIds);
       final lines = await (_db.select(_db.orderLines)
-            ..where((l) => l.orderId.equals(orderId) & l.id.isIn(lineIds)))
+            ..where((l) => l.orderId.equals(orderId) & l.id.isIn(doomed)))
           .get();
       if (lines.isEmpty) return 0;
 
@@ -134,7 +235,7 @@ class OrderRepository {
             ),
           );
 
-      await (_db.delete(_db.orderLines)..where((l) => l.id.isIn(lineIds))).go();
+      await (_db.delete(_db.orderLines)..where((l) => l.id.isIn(doomed))).go();
       await recalculate(orderId);
       return amount;
     });
@@ -270,13 +371,19 @@ class OrderRepository {
     });
   }
 
-  Future<void> setTable(String orderId, int tableNumber) =>
+  /// Move a bill onto a table. [roomId] is which room that table is in — see
+  /// Orders.roomId, without which two rooms' Table 1 share one bill.
+  Future<void> setTable(String orderId, int tableNumber, {int? roomId}) =>
       (_db.update(_db.orders)..where((o) => o.id.equals(orderId)))
-          .write(OrdersCompanion(tableNumber: Value(tableNumber)));
+          .write(OrdersCompanion(
+            tableNumber: Value(tableNumber),
+            roomId: Value(roomId),
+          ));
 
   Future<void> removeLine(String orderId, String lineId) async {
     await _db.transaction(() async {
-      await (_db.delete(_db.orderLines)..where((l) => l.id.equals(lineId))).go();
+      final doomed = await _withModifiers(orderId, {lineId});
+      await (_db.delete(_db.orderLines)..where((l) => l.id.isIn(doomed))).go();
       await recalculate(orderId);
     });
   }
@@ -290,10 +397,14 @@ class OrderRepository {
   ) async {
     await _db.transaction(() async {
       if (quantity <= 0) {
-        await (_db.delete(_db.orderLines)..where((l) => l.id.equals(lineId)))
-            .go();
+        final doomed = await _withModifiers(orderId, {lineId});
+        await (_db.delete(_db.orderLines)..where((l) => l.id.isIn(doomed))).go();
       } else {
-        await (_db.update(_db.orderLines)..where((l) => l.id.equals(lineId)))
+        // The parent and everything hanging off it. A modifier is one per unit
+        // of what it modifies, so three steaks are three "rare" — a kitchen
+        // reading "3 Steak / 1 Rare" cannot tell which steak is which.
+        final family = await _withModifiers(orderId, {lineId});
+        await (_db.update(_db.orderLines)..where((l) => l.id.isIn(family)))
             .write(OrderLinesCompanion(quantity: Value(quantity)));
       }
       await recalculate(orderId);
@@ -489,6 +600,9 @@ class OrderRepository {
     final payload = jsonEncode({
       'id': order.id,
       'table_number': order.tableNumber,
+      // Which room that table is in: a number alone is ambiguous in any
+      // venue with two floors.
+      'room_id': order.roomId,
       'clerk_pin': order.clerkPin,
       'subtotal_minor': order.subtotalMinor,
       // Without these the back office reports the gross as if nothing had been
@@ -507,10 +621,21 @@ class OrderRepository {
       // attributed to nobody. staff_id is the stable key a report groups by.
       'clerk_name': order.staffName,
       'staff_id': order.staffId,
+      // In reading order, each modifier straight after the item it belongs to.
+      // The server stores the position and reads it back that way, so a receipt
+      // reprinted from history says what the printed one said.
       'lines': [
-        for (final l in lines)
+        for (final l in orderWithModifiers(
+          lines,
+          idOf: (l) => l.id,
+          parentOf: (l) => l.parentLineId,
+        ))
           {
             'plu_id': l.pluId,
+            // Whether this line hangs off the one above it, which is all a
+            // reprint needs in order to indent it. The parent's identity is a
+            // till-local uuid and would mean nothing on the server.
+            'is_modifier': l.parentLineId != null,
             'name': l.name,
             'quantity': l.quantity,
             'unit_price_minor': l.unitPriceMinor,

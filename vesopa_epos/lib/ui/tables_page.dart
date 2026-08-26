@@ -35,10 +35,27 @@ class TablesPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final parked = ref.watch(parkedOrdersProvider).value ?? const <Order>[];
-    final byTable = {
+    // Keyed by room *and* number, because a number alone is not a table: the
+    // floor plan lets a venue have a Table 1 on the Main Floor and a Table 1 on
+    // the Terrace, and keying by number put one bill on both of them.
+    final byRoomTable = <(int, int), Order>{
       for (final o in parked)
-        if (o.tableNumber != null) o.tableNumber!: o,
+        if (o.tableNumber != null && o.roomId != null)
+          (o.roomId!, o.tableNumber!): o,
     };
+
+    // Bills parked before the room was recorded, and bills from the plain
+    // number entry that has no plan to place them on. They fall back to
+    // matching on number alone — the old behaviour, which is right for the
+    // one-room venue that is the only place it can still be ambiguous.
+    final byNumberOnly = <int, Order>{
+      for (final o in parked)
+        if (o.tableNumber != null && o.roomId == null) o.tableNumber!: o,
+    };
+
+    Order? orderFor(int? roomId, int number) =>
+        (roomId == null ? null : byRoomTable[(roomId, number)]) ??
+        byNumberOnly[number];
     final plan = ref.watch(floorPlanProvider);
 
     return Padding(
@@ -101,9 +118,12 @@ class TablesPage extends ConsumerWidget {
                       for (final room in withTables)
                         _RoomPlan(
                           room: room,
-                          byTable: byTable,
+                          orderFor: (number) => orderFor(room.id, number),
+                          // The room comes from the plan the table was
+                          // tapped on: a number alone is ambiguous once two
+                          // rooms each have a Table 1.
                           onTap: (number, order) =>
-                              _onTap(context, ref, number, order),
+                              _onTap(context, ref, number, order, room.id),
                         ),
                     ],
                   ),
@@ -121,6 +141,7 @@ class TablesPage extends ConsumerWidget {
     WidgetRef ref,
     int number,
     Order? order,
+    int? roomId,
   ) async {
     final tables = ref.read(tableRepositoryProvider);
 
@@ -135,7 +156,7 @@ class TablesPage extends ConsumerWidget {
         PosMessenger.error(context, 'Ring up some items first.');
         return;
       }
-      await tables.park(currentOrderId, number);
+      await tables.park(currentOrderId, number, roomId: roomId);
       if (!context.mounted) return;
       PosMessenger.success(context, 'Saved to table $number.');
       return;
@@ -266,12 +287,14 @@ class TablesPage extends ConsumerWidget {
 class _RoomPlan extends StatelessWidget {
   const _RoomPlan({
     required this.room,
-    required this.byTable,
+    required this.orderFor,
     required this.onTap,
   });
 
   final FloorRoom room;
-  final Map<int, Order> byTable;
+  /// The bill sitting on one of this room's tables, if any. A function rather
+  /// than a map because the answer depends on the room as well as the number.
+  final Order? Function(int number) orderFor;
   final void Function(int number, Order? order) onTap;
 
   @override
@@ -321,8 +344,8 @@ class _RoomPlan extends StatelessWidget {
                       height: table.height * unit - 6,
                       child: _TableShape(
                         table: table,
-                        order: byTable[table.number],
-                        onTap: () => onTap(table.number, byTable[table.number]),
+                        order: orderFor(table.number),
+                        onTap: () => onTap(table.number, orderFor(table.number)),
                       ),
                     ),
                 ],

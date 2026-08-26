@@ -6,6 +6,7 @@ import '../printing/printer_transport.dart';
 import '../printing/receipt_builder.dart';
 import 'kitchen_screens.dart';
 import 'local/database.dart';
+import 'modifier_layout.dart';
 import 'printer_settings.dart';
 
 /// Why a kitchen ticket is being fired.
@@ -252,11 +253,16 @@ class KitchenPrinting {
         product.pluId: KitchenRouting.parse(product.printerRoutes),
     };
 
+    // Resolved per line rather than per product, so a modifier goes wherever
+    // the item it modifies goes. Nobody routes "Rare" to the grill; without
+    // this the steak prints and its temperature does not. See routesByLine.
+    final lineRoutes = routesByLine(lines, routesByPlu);
+
     // Nothing on this bill goes anywhere. Returned before building anything:
     // this is the ordinary case on a counter till with no kitchen, it happens
     // on every sale, and loading the ESC/POS capability profile to discover
     // there is nothing to print is work worth not doing.
-    if (routesByPlu.values.every((r) => r.isEmpty)) {
+    if (lineRoutes.values.every((r) => r.isEmpty)) {
       return KitchenFireResult(
         orderId: order.id,
         lineIds: lines.map((l) => l.id).toList(),
@@ -266,7 +272,7 @@ class KitchenPrinting {
     // Which of the stations this bill actually touches go where. Computed from
     // the routing rather than from the whole six, so a venue that put a screen
     // on the fryer does not build a screen ticket for a round of drinks.
-    final routed = {for (final set in routesByPlu.values) ...set};
+    final routed = {for (final set in lineRoutes.values) ...set};
     final toPrinter = {
       for (final station in routed)
         if ((delivery[station] ?? KitchenDelivery.printer).toPrinter) station,
@@ -288,7 +294,7 @@ class KitchenPrinting {
               office: office,
               order: order,
               lines: lines,
-              routesByPlu: routesByPlu,
+              routesByLine: lineRoutes,
               screenStations: toScreen,
               kind: reason.ticketKind,
               roomName: roomName,
@@ -304,7 +310,7 @@ class KitchenPrinting {
             reason: reason,
             printers: printers,
             stationNames: stationNames,
-            routesByPlu: routesByPlu,
+            routesByLine: lineRoutes,
             staffName: staffName,
             roomName: roomName,
             // The intersection, so a retry aimed at one failed station cannot
@@ -330,7 +336,7 @@ class KitchenPrinting {
     required KitchenFire reason,
     required PrinterSettings printers,
     required Map<String, String> stationNames,
-    required Map<int, Set<String>> routesByPlu,
+    required Map<String, Set<String>> routesByLine,
     required Set<String> onlyStations,
     String? staffName,
     String? roomName,
@@ -346,7 +352,7 @@ class KitchenPrinting {
       return await service.printKitchenTickets(
         order: order,
         lines: lines,
-        routesByPlu: routesByPlu,
+        routesByLine: routesByLine,
         headline: reason.headline,
         staffName: staffName,
         // The screens have carried this since kitchen screens landed; paper had

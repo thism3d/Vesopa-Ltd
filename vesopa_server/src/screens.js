@@ -40,9 +40,24 @@ const BUTTON_KINDS = ['product', 'page', 'function', 'blank'];
  * What a screen lays out. `epos_screens.surface` has held this since the first
  * migration; 'sale' was the only value until the bars arrived.
  */
-const SURFACES = ['sale', 'topbar', 'bottombar'];
+const SURFACES = ['sale', 'topbar', 'bottombar', 'modifier'];
 
 const isBar = (surface) => surface === 'topbar' || surface === 'bottombar';
+
+/**
+ * A modifier group's grid of answers — "which mixer?", "how is it cooked?".
+ *
+ * A screen like any other, and that is the point: it is created, laid out,
+ * copied, styled, pushed and tenanted by the code already here. See
+ * schema_screens_modifiers.sql for why a modifier group owns a screen instead
+ * of having its own table of options.
+ *
+ * It never appears in the sale-screen picker. A modifier screen is reached
+ * through the group that owns it, and a venue that found one in the list of
+ * pages a till can open on could set their terminal to boot into a box asking
+ * about mixers.
+ */
+const isModifier = (surface) => surface === 'modifier';
 
 /**
  * The till actions a button on a *sale screen* may be bound to.
@@ -137,6 +152,10 @@ const BAR_KEYS = [
   'venue_name',
   'staff_name',
   'sync_status',
+  // Whether the last kitchen ticket actually landed. Offered on the bar because
+  // the till's own top bar can now be turned off in favour of a programmed one,
+  // and this was the one thing on it a venue could not otherwise place.
+  'print_status',
   'screen_name',
   'spacer',
 ];
@@ -169,9 +188,18 @@ const MAX_BAR_COLS = 16;
 
 /** The ceilings for one surface, as one thing, so nothing has to remember. */
 function limitsFor(surface) {
-  return isBar(surface)
-    ? { rows: MAX_BAR_ROWS, cols: MAX_BAR_COLS, defRows: 1, defCols: 10 }
-    : { rows: MAX_ROWS, cols: MAX_COLS, defRows: 5, defCols: 6 };
+  if (isBar(surface)) {
+    return { rows: MAX_BAR_ROWS, cols: MAX_BAR_COLS, defRows: 1, defCols: 10 };
+  }
+  // A modifier prompt opens over the sale screen rather than replacing it, and
+  // the answers are a handful of keys, not a menu — four mixers, three cooking
+  // temperatures. It gets the same ceiling as a sale screen so nothing is
+  // impossible, but starts small: a 5x6 grid holding four buttons is mostly
+  // empty box, and the venue would have to shrink it every time.
+  if (isModifier(surface)) {
+    return { rows: MAX_ROWS, cols: MAX_COLS, defRows: 2, defCols: 4 };
+  }
+  return { rows: MAX_ROWS, cols: MAX_COLS, defRows: 5, defCols: 6 };
 }
 
 /** `#RRGGBB`, or null. Never anything else — the till parses this. */

@@ -31,6 +31,7 @@ const {
   tillKitchenRoutes,
 } = require('./kitchen');
 const { screensRoutes, tillScreenRoutes } = require('./screens');
+const { modifierRoutes, tillModifierRoutes } = require('./modifiers');
 const { dojoWebhookRoutes, webhookStatus } = require('./dojo');
 
 const PORT = process.env.PORT || 4000;
@@ -201,6 +202,11 @@ app.use('/api', kitchenAppRoutes({ pool, broadcast, secret: JWT_SECRET }));
 // deliberate — see the note at the top of src/screens.js.
 app.use('/api', screensRoutes({ pool, broadcast, secret: JWT_SECRET }));
 app.use('/api', tillScreenRoutes({ pool }));
+// Beside the screens, and split the same way: the authed half for the back
+// office, the /till/ half for terminals. A modifier group's buttons arrive
+// with the screens above, not from these routes.
+app.use('/api', modifierRoutes({ pool, broadcast, secret: JWT_SECRET }));
+app.use('/api', tillModifierRoutes({ pool }));
 app.use(tillKitchenRoutes({ pool, broadcast, secret: JWT_SECRET }));
 
 /**
@@ -254,8 +260,8 @@ app.get('/till/receipts/:id', async (req, res, next) => {
 
     const [lines] = await pool.query(
       `SELECT name, quantity, unit_price_minor, tax_percentage, note,
-              discount_minor, promotion_name
-       FROM epos_order_lines WHERE order_id = ?`,
+              discount_minor, promotion_name, is_modifier
+       FROM epos_order_lines WHERE order_id = ? ORDER BY line_no`,
       [req.params.id]
     );
     const [payments] = await pool.query(
@@ -587,9 +593,10 @@ app.post(['/till/orders', '/orders'], async (req, res, next) => {
           points_balance, clerk_name, order_note, gratuity_minor, gratuity_bp,
           gift_card_minor, gift_card_code, deposit_minor, deposit_reference,
           points_redeemed, points_value_minor, promo_minor, customer_id,
-          customer_phone, split_group, split_index, split_count, staff_id)
+          customer_phone, split_group, split_index, split_count, staff_id,
+          room_id)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-               ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+               ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         order.id,
         order.email || 'default',
@@ -634,6 +641,10 @@ app.post(['/till/orders', '/orders'], async (req, res, next) => {
         // Which member of staff was signed on. Grouped by id in reports rather
         // than by clerk_name, which can be edited or duplicated.
         order.staff_id ?? null,
+        // Which room the table is in. A table number is only unique within one,
+        // so without this two rooms' Table 1 are the same table in every report
+        // that groups by it.
+        order.room_id ?? null,
       ]
     );
 
@@ -644,13 +655,16 @@ app.post(['/till/orders', '/orders'], async (req, res, next) => {
       return res.status(409).json({ status: 'duplicate', id: order.id });
     }
 
-    for (const line of order.lines || []) {
+    // Indexed, so the bill keeps the order it was rung in. The id is a UUID
+    // primary key and there is nothing else to sort by — see
+    // schema_screens_modifiers_lines.sql.
+    for (const [lineNo, line] of (order.lines || []).entries()) {
       await conn.execute(
         `INSERT INTO epos_order_lines
            (id, order_id, plu_id, name, quantity, unit_price_minor,
             tax_percentage, note, discount_minor, promotion_id, promotion_name,
-            added_by, added_at)
-         VALUES (UUID(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            added_by, added_at, is_modifier, line_no)
+         VALUES (UUID(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           order.id,
           line.plu_id,
@@ -669,6 +683,11 @@ app.post(['/till/orders', '/orders'], async (req, res, next) => {
           // was switched on at that venue.
           line.added_by ?? null,
           line.added_at ? new Date(line.added_at) : null,
+          // Whether this line hangs off the one above it. A till on the
+          // previous version sends neither field, and every one of its lines is
+          // an item in its own right — which is what the defaults say.
+          line.is_modifier ? 1 : 0,
+          lineNo,
         ]
       );
     }

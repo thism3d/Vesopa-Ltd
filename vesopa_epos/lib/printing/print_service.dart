@@ -136,7 +136,7 @@ class PrintService {
   Future<List<StationPrintResult>> printKitchenTickets({
     required Order order,
     required List<OrderLine> lines,
-    required Map<int, Set<String>> routesByPlu,
+    required Map<String, Set<String>> routesByLine,
     String? headline,
     String? staffName,
     String? roomName,
@@ -144,7 +144,7 @@ class PrintService {
   }) async {
     final byStation = <String, List<OrderLine>>{};
     for (final line in lines) {
-      for (final station in routesByPlu[line.pluId] ?? const <String>{}) {
+      for (final station in routesByLine[line.id] ?? const <String>{}) {
         if (station.isEmpty) continue;
         if (onlyStations != null && !onlyStations.contains(station)) continue;
         byStation.putIfAbsent(station, () => []).add(line);

@@ -168,6 +168,19 @@ class Orders extends Table {
   /// open | closed | void | parked (saved to a table)
   TextColumn get status => text().withDefault(const Constant('open'))();
   IntColumn get tableNumber => integer().nullable()();
+
+  /// Which room that table is in, from the back office's floor plan.
+  ///
+  /// A table number is only unique *within* a room — the floor plan has said so
+  /// since schema_fix_table_uq.sql, whose whole point was letting a venue have a
+  /// Table 1 on the Main Floor and a Table 1 on the Terrace. The order did not
+  /// know about rooms, so both of those tables shared one bill: sitting a party
+  /// at the second one recalled the first one's food.
+  ///
+  /// Null for a counter sale, for a bill on no table, and for every order taken
+  /// before this column existed — a venue with one room is unaffected either
+  /// way, which is why it is nullable rather than backfilled.
+  IntColumn get roomId => integer().nullable()();
   TextColumn get clerkPin => text().nullable()();
 
   /// Who settled the sale. Stamped at settlement rather than at open, for the
@@ -255,6 +268,24 @@ class OrderLines extends Table {
   /// shown without a header.
   TextColumn get addedBy => text().nullable()();
   DateTimeColumn get addedAt => dateTime().nullable()();
+
+  /// The line this one modifies, or null when it is an item in its own right.
+  ///
+  /// A modifier chosen on the till — "Dash Coke" under a double gin — is a real
+  /// order line with this set, not a note on the parent. That is deliberate,
+  /// and it is what makes the rest of the till work unchanged: a modifier that
+  /// costs 50p prices itself, carries its own VAT, routes to its own printer if
+  /// the venue wants it to, and lands in the Z report as what was actually
+  /// sold. Storing the choices as text on the parent would have meant
+  /// re-implementing every one of those.
+  ///
+  /// Nesting is therefore a display concern — the check, the receipt and the
+  /// kitchen ticket indent these under their parent — and nothing else has to
+  /// know they are different.
+  ///
+  /// Voiding or removing a parent takes its children with it; see
+  /// OrderRepository.
+  TextColumn get parentLineId => text().nullable()();
 
   /// When this line was last sent to a kitchen printer, or null if it never
   /// has been.
@@ -401,7 +432,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 12;
+  int get schemaVersion => 14;
 
 
   /// Add a column only if the table has not already got it.
@@ -530,6 +561,18 @@ class AppDatabase extends _$AppDatabase {
             await _addColumnIfMissing(m, payments, payments.reference);
             await _addColumnIfMissing(m, payments, payments.gratuityMinor);
             await _addColumnIfMissing(m, payments, payments.entryMode);
+          }
+          if (from < 13) {
+            // Modifiers. Nullable, so every line already on the till stays
+            // valid — they are all items in their own right, which is exactly
+            // what a null here means.
+            await _addColumnIfMissing(m, orderLines, orderLines.parentLineId);
+          }
+          if (from < 14) {
+            // Which room a bill's table is in. Existing bills keep a null and
+            // behave exactly as they did, which is right: a venue with one room
+            // never had the ambiguity this resolves.
+            await _addColumnIfMissing(m, orders, orders.roomId);
           }
         },
       );
