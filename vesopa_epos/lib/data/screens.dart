@@ -55,6 +55,8 @@ class ScreenButton {
     this.ink,
     this.emoji,
     this.imageUrl,
+    this.fontFamily,
+    this.fontSize,
   });
 
   final int row;
@@ -97,6 +99,23 @@ class ScreenButton {
   /// across its sale screen.
   final String? imageUrl;
 
+  /// The slug of the font this key is lettered in — `inter`, `bebas-neue`, or
+  /// one the venue uploaded. Null means the venue's font, and if the venue has
+  /// not chosen one either, the app's own.
+  ///
+  /// Not resolved to a family here. A font the till has not finished
+  /// downloading, or one the venue deleted after this layout was cached, has to
+  /// come out as plain lettering on a key that still works — see
+  /// [FontLibrary.familyFor], which is the one place that decides.
+  final String? fontFamily;
+
+  /// Points, or null for the key's own default.
+  ///
+  /// A wish rather than a promise. The same layout is drawn on a 10-inch
+  /// terminal and a 24-inch one, so the key caps this against its own height
+  /// before using it — see `programmed_grid.dart`, where that is settled.
+  final int? fontSize;
+
   factory ScreenButton.fromJson(Map<String, dynamic> j) => ScreenButton(
     row: (j['row'] as num?)?.toInt() ?? 0,
     col: (j['col'] as num?)?.toInt() ?? 0,
@@ -113,6 +132,8 @@ class ScreenButton {
     ink: _colour(j['ink']),
     emoji: (j['emoji'] as String?)?.trim(),
     imageUrl: _absoluteImage((j['imageUrl'] as String?)?.trim()),
+    fontFamily: _slug(j['fontFamily']),
+    fontSize: (j['fontSize'] as num?)?.toInt().clamp(8, 72),
   );
 
   Map<String, dynamic> toJson() => {
@@ -129,6 +150,8 @@ class ScreenButton {
     if (ink != null) 'ink': _hex(ink!),
     if (emoji != null) 'emoji': emoji,
     if (imageUrl != null) 'imageUrl': imageUrl,
+    if (fontFamily != null) 'fontFamily': fontFamily,
+    if (fontSize != null) 'fontSize': fontSize,
   };
 
   /// A key's picture, as something the till can actually load.
@@ -147,6 +170,20 @@ class ScreenButton {
     if (path == null || path.isEmpty) return null;
     if (path.startsWith('http')) return path;
     return '${Api.resolvedBase}$path';
+  }
+
+  /// A font slug, or null.
+  ///
+  /// Sanitised here rather than trusted, for the same reason the colour below
+  /// is: this string ends up naming a font family, and the till should meet a
+  /// value it does not like by lettering the key plainly rather than by
+  /// refusing to draw the screen.
+  static String? _slug(Object? raw) {
+    final text = '${raw ?? ''}'.trim().toLowerCase().replaceAll(
+      RegExp(r'[^a-z0-9-]'),
+      '',
+    );
+    return text.isEmpty ? null : text;
   }
 
   /// `#RRGGBB` to a colour, and null for anything else.

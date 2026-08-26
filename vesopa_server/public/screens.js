@@ -161,17 +161,41 @@ const SP_EMOJI = [
 ];
 
 /**
- * Swatches, not a colour wheel.
+ * Swatches first, and a wheel beside them.
  *
- * The same argument as the kitchen's branding editor: a wheel on a screen picks
- * a colour nobody meant, and the failure it produces — a key that cannot be
- * read across a counter — is only discovered in service. Every one of these
- * works with the ink the till picks for it.
+ * This list used to be the whole story, and the comment here used to argue
+ * that a wheel was a mistake: it picks a colour nobody meant, and the failure —
+ * a key that cannot be read across a counter — is only found in service. That
+ * argument was half right. It is a good reason for these twelve to be the ones
+ * a hurried manager reaches for, and every one of them works with the ink the
+ * till picks for it. It is not a reason to make a venue's brand colour
+ * unreachable, which is what having only these did.
+ *
+ * So: twelve safe colours, one press each, and a wheel underneath for the
+ * venue that has a hex from a brand book. The thing that made the wheel safe
+ * is the lettering control next to it — a custom fill and a custom ink
+ * together can always be made readable, and the till's automatic ink is still
+ * what happens if neither is touched.
  */
 const SP_FILLS = [
   '#111111', '#1e2430', '#3a1e1e', '#14312b', '#2b1e3a', '#a5c715',
   '#4b57e8', '#21a73e', '#ce7a0a', '#d03227', '#00a6a6', '#f4f6fa',
 ];
+
+/**
+ * The two named lettering colours, and the key colour a till uses when a
+ * button has none of its own.
+ *
+ * Named because they are compared against as well as written: the inspector
+ * works out which of "Light", "Dark" and "a colour of my own" is showing by
+ * looking at the stored ink, and two string literals in two places is how that
+ * check quietly stops matching.
+ */
+const SP_INK_LIGHT = '#f4f6fa';
+const SP_INK_DARK = '#111111';
+
+/** Mirrors the till's own default key colour, and .sp-cell.filled in style.css. */
+const SP_DEFAULT_FILL = '#2b313d';
 
 /** The ceilings the server holds, repeated so the editor cannot offer more. */
 const SP_MAX_ROWS = 10;
@@ -446,6 +470,407 @@ function spOpenScreen(id) {
   spPendingOpen = Number(id);
 }
 
+// ---------------------------------------------------------------------------
+// Lettering
+// ---------------------------------------------------------------------------
+
+/**
+ * Every font this venue may letter a till in — the sixteen built-ins and
+ * anything it has uploaded. Fetched with the screens; see src/fonts.js for why
+ * the files are served from this back office rather than from Google.
+ */
+let spFonts = [];
+
+/** The venue's font. Every key without one of its own inherits it. */
+let spTillFont = null;
+
+/**
+ * The height, in the till's own logical pixels, of the space a sale grid gets.
+ *
+ * Only here so the editor can draw a font size that means something. A key's
+ * size is stored in points and the editor's grid is a few hundred pixels tall,
+ * so putting `font-size: 24px` on a preview cell would show a manager lettering
+ * twice the size of what the till will actually draw — and they would set 12 to
+ * compensate and find the counter unreadable.
+ *
+ * Taken from a 1280x800 terminal, which is the common cheap one, less the two
+ * bars and the bill panel. It is an assumption and it is allowed to be: the
+ * preview only has to be in proportion, and every till is in proportion to
+ * itself because the grid is laid out into whatever space it has.
+ */
+const SP_TILL_GRID_HEIGHT = 620;
+
+/**
+ * The CSS font stack for a slug.
+ *
+ * Single quotes, not double, because this string is also written into a
+ * `style="…"` attribute in the fonts list, and a double quote there ends the
+ * attribute and puts the rest of the family name into the markup.
+ *
+ * An unknown slug is left in the stack rather than stripped. It resolves to
+ * nothing and the browser falls through to system-ui — which is exactly what
+ * the till does with a font it cannot find, so a key whose font a venue has
+ * since deleted looks the same in both places.
+ */
+function spFontCss(slug) {
+  if (!slug) return '';
+  return `'vf-${String(slug).replace(/[^a-z0-9-]/gi, '')}', system-ui, sans-serif`;
+}
+
+/**
+ * Teach the browser the venue's fonts, once per load of the list.
+ *
+ * A <style> built here rather than a stylesheet fetched from the server: the
+ * list is already in hand, it is a dozen lines of CSS, and a second request
+ * would need the office in a query string on a page that authenticates with a
+ * bearer token.
+ */
+function spRenderFontFaces() {
+  let tag = document.getElementById('sp-font-faces');
+  if (!tag) {
+    tag = document.createElement('style');
+    tag.id = 'sp-font-faces';
+    document.head.append(tag);
+  }
+  tag.textContent = spFonts
+    .flatMap((font) =>
+      font.faces.map(
+        (face) =>
+          `@font-face{font-family:'vf-${font.slug}';font-style:normal;` +
+          `font-weight:${face.weight};font-display:swap;` +
+          `src:url("${face.url}") format("${
+            String(face.url).endsWith('.otf') ? 'opentype' : 'truetype'
+          }")}`
+      )
+    )
+    .join('\n');
+}
+
+/**
+ * The options for a font picker.
+ *
+ * A venue's own fonts come first. They are the reason this feature exists — a
+ * manager opening this list is usually looking for their brand font, not for
+ * the eleventh sans-serif — and putting sixteen built-ins above them means
+ * scrolling past the answer.
+ */
+function spFontOptions(selected, noneLabel) {
+  const own = spFonts.filter((f) => !f.builtIn);
+  const builtIn = spFonts.filter((f) => f.builtIn);
+  const opt = (f) =>
+    `<option value="${spEsc(f.slug)}"${
+      f.slug === selected ? ' selected' : ''
+    }>${spEsc(f.family)}</option>`;
+  return (
+    `<option value=""${selected ? '' : ' selected'}>${spEsc(noneLabel)}</option>` +
+    (own.length
+      ? `<optgroup label="Your fonts">${own.map(opt).join('')}</optgroup>`
+      : '') +
+    (builtIn.length
+      ? `<optgroup label="Built in">${builtIn.map(opt).join('')}</optgroup>`
+      : '')
+  );
+}
+
+/** The venue's font, and the list of what it has uploaded. */
+function spRenderFontsCard() {
+  $('sp-till-font').innerHTML = spFontOptions(
+    spTillFont,
+    'The app’s own lettering'
+  );
+
+  const own = spFonts.filter((f) => !f.builtIn);
+  $('sp-font-list').innerHTML = own.length
+    ? own
+        .map(
+          (f) => `<div class="sp-font-row">
+            <span class="sp-font-name" style="font-family:${spFontCss(f.slug)}"
+                  title="${spEsc(f.family)}">${spEsc(f.family)}</span>
+            <span class="muted small">${f.faces
+              .map((x) => (Number(x.weight) === 700 ? 'Bold' : 'Regular'))
+              .join(' · ')}</span>
+            <button type="button" class="btn danger-ghost small"
+                    data-font-remove="${spEsc(f.slug)}">Remove</button>
+          </div>`
+        )
+        .join('')
+    : '<p class="muted small" style="margin:6px 0 0">No fonts of your own yet.</p>';
+}
+
+/**
+ * Upload a font file.
+ *
+ * The name and the weight are asked for rather than guessed. A foundry ships
+ * `BrandSans-Bd_v2_FINAL.ttf`, and a guess that "Bd" means bold is the kind of
+ * cleverness that letters half a venue's screen in the wrong weight — so the
+ * filename only seeds the box, and the manager confirms it.
+ */
+function spAddFont(e) {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+
+  const stem = file.name.replace(/\.[^.]+$/, '');
+  const guess = stem
+    .replace(/[-_]+/g, ' ')
+    .replace(/\b(regular|bold|black|light|medium|italic|v\d+|final)\b/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  modal(
+    'Add a font',
+    [
+      { label: 'What to call it', name: 'family', value: guess, required: true },
+      {
+        label: 'Which weight this file is',
+        name: 'weight',
+        type: 'select',
+        options: [
+          { value: '400', label: 'Regular' },
+          { value: '700', label: 'Bold' },
+        ],
+        value: /bold|black|heavy|semibold|[-_]700/i.test(stem) ? '700' : '400',
+      },
+    ],
+    async (data) => {
+      const form = new FormData();
+      form.append('font', file);
+      form.append('family', data.family || guess);
+      form.append('weight', data.weight || '400');
+      const res = await fetch('/api/fonts', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      });
+      const body = await res.json().catch(() => ({}));
+      // The server's message is the useful one — it is the only thing that can
+      // say "a .woff2 works in a browser but not on a till".
+      if (!res.ok) throw new Error(body.error || 'That font would not upload.');
+      await spLoadFonts();
+      spRenderFontsCard();
+      spRenderInspector();
+      spRenderGrid();
+    }
+  );
+}
+
+/** Remove one of the venue's own fonts. */
+async function spRemoveFont(slug) {
+  const font = spFonts.find((f) => f.slug === slug);
+  if (!font) return;
+  if (
+    !confirm(
+      `Remove ${font.family}? Any key lettered in it goes back to your tills’ ` +
+        'font. Nothing else changes.'
+    )
+  ) {
+    return;
+  }
+  try {
+    await api(`/fonts/${encodeURIComponent(slug)}`, { method: 'DELETE' });
+  } catch (err) {
+    alert(err.message);
+    return;
+  }
+  if (spTillFont === slug) spTillFont = null;
+  await spLoadFonts();
+  spRenderFontsCard();
+  spRenderGrid();
+  spRenderInspector();
+}
+
+/** Fetch the font list and teach the browser the faces in it. */
+async function spLoadFonts() {
+  try {
+    const body = await api('/fonts');
+    spFonts = Array.isArray(body.fonts) ? body.fonts : [];
+  } catch {
+    // A back office that has not had schema_fonts.sql applied yet, or a network
+    // blip. No fonts is a working editor with plain lettering, which beats a
+    // screen-programming page that will not open.
+    spFonts = [];
+  }
+  spRenderFontFaces();
+}
+
+/**
+ * The venue's font, saved as soon as it is chosen.
+ *
+ * Straight through to /till-settings rather than waiting for Save layout: this
+ * is not part of the layout, it belongs to the venue, and a manager who picks a
+ * font and then reverts a screen should not lose it.
+ */
+async function spSetTillFont(slug) {
+  const was = spTillFont;
+  spTillFont = slug || null;
+  spRenderGrid();
+  spRenderInspector();
+  try {
+    await api('/till-settings', {
+      method: 'PUT',
+      // Stringified. `api()` spreads its options into fetch, so an object here
+      // arrives at the server as the literal text "[object Object]" — which
+      // parses as nothing, 400s, and looks exactly like the font not sticking.
+      body: JSON.stringify({ font_family: spTillFont || '' }),
+    });
+  } catch (err) {
+    spTillFont = was;
+    spRenderFontsCard();
+    spRenderGrid();
+    alert(err.message);
+  }
+}
+
+/**
+ * Draw every preview label at the size the till will draw it.
+ *
+ * Split out from spRenderGrid and run again whenever the grid changes size,
+ * because the grid's height is what a point is measured against and on the
+ * first paint of the page that height is zero. Without the observer, opening
+ * the editor showed every sized key at its floor until something else redrew it.
+ */
+function spApplyTypeScale() {
+  const box = $('sp-grid');
+  const height = box.clientHeight;
+  if (!height) return;
+  const scale = height / SP_TILL_GRID_HEIGHT;
+  for (const cell of spCells.values()) {
+    const pt = Number(cell.dataset.pt);
+    cell.style.fontSize = pt ? `${Math.max(6, pt * scale).toFixed(1)}px` : '';
+  }
+}
+
+let spTypeObserver = null;
+
+function spWatchTypeScale() {
+  if (spTypeObserver || typeof ResizeObserver === 'undefined') return;
+  spTypeObserver = new ResizeObserver(() => spApplyTypeScale());
+  spTypeObserver.observe($('sp-grid'));
+}
+
+/**
+ * Wire a colour wheel and the hex box beside it to one field on a button.
+ *
+ * The pair exists because neither half is enough on its own. A wheel hides the
+ * value, so a venue matching a brand colour cannot read back what it landed on
+ * or paste in what the brand book says; a hex box alone is unusable for
+ * anybody choosing rather than copying. Same reasoning as the `color` field in
+ * app.js's fieldHtml, which pairs them for the same reason.
+ *
+ * Both commit on `change`, never on `input`. A colour input fires `input` for
+ * every pixel the pointer crosses inside the picker, and each of those would be
+ * an undo step — two hundred presses of Ctrl+Z to take back one colour.
+ */
+function spBindColour(wheelId, hexId, field) {
+  const wheel = $(wheelId);
+  const hex = $(hexId);
+
+  const apply = (value) => {
+    const colour = /^#[0-9a-f]{6}$/i.test(value) ? value.toLowerCase() : null;
+    if (!colour) return;
+    spSet(wheel, colour);
+    spSet(hex, colour);
+    spApplyToSelection(
+      (b) => {
+        b[field] = colour;
+      },
+      { create: false }
+    );
+  };
+
+  wheel.addEventListener('change', () => apply(wheel.value));
+  hex.addEventListener('change', () => {
+    const typed = hex.value.trim();
+    if (!typed) {
+      // Cleared, which means "put it back to the till's". Only reachable from
+      // the box: a colour input has no empty.
+      spApplyToSelection(
+        (b) => {
+          b[field] = null;
+        },
+        { create: false }
+      );
+      spRenderInspector();
+      return;
+    }
+    // A brand book writes `#A5C715` and a person types `a5c715`. Both are the
+    // same colour and refusing one of them helps nobody.
+    apply(typed.startsWith('#') ? typed : `#${typed}`);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// The corner handle
+// ---------------------------------------------------------------------------
+
+/**
+ * How big this key may grow before it hits something.
+ *
+ * A resize refuses to swallow its neighbours, which is a deliberate difference
+ * from what spTidy() would do if simply handed overlapping spans: it drops the
+ * covered button. Dragging a corner is a gesture where the pointer routinely
+ * overshoots by a cell, and a gesture that silently deletes the key next to it
+ * on an overshoot is one that costs a venue a layout. The handle stops instead,
+ * visibly, and clearing the neighbour first is one extra press.
+ *
+ * Rows are settled before columns rather than searching for the largest
+ * rectangle that fits. A best-fit search can answer a 3x1 to a pointer asking
+ * for 2x2, which reads as the handle jumping sideways out from under the
+ * finger. Settling one axis and then the other always moves toward the pointer.
+ */
+function spSpanRoom(button, wantRows, wantCols) {
+  const grid = spCurrent;
+  const blocked = new Set();
+  for (const other of grid.buttons) {
+    if (other === button) continue;
+    for (let r = other.row; r < other.row + (other.rowSpan || 1); r++) {
+      for (let c = other.col; c < other.col + (other.colSpan || 1); c++) {
+        blocked.add(spKey(r, c));
+      }
+    }
+  }
+
+  const free = (rs, cs) => {
+    for (let r = button.row; r < button.row + rs; r++) {
+      for (let c = button.col; c < button.col + cs; c++) {
+        if (blocked.has(spKey(r, c))) return false;
+      }
+    }
+    return true;
+  };
+
+  let rowSpan = Math.max(1, Math.min(wantRows, grid.rows - button.row));
+  while (rowSpan > 1 && !free(rowSpan, 1)) rowSpan--;
+  let colSpan = Math.max(1, Math.min(wantCols, grid.cols - button.col));
+  while (colSpan > 1 && !free(rowSpan, colSpan)) colSpan--;
+  return { rowSpan, colSpan };
+}
+
+/**
+ * Put the drag handle on the one selected key, and nowhere else.
+ *
+ * One key only. A handle on each of six selected keys asks "which one am I
+ * resizing?", and the honest answer — all of them, into each other — is not a
+ * gesture anybody wants. Hidden in Preview, which is the mode for looking at
+ * the screen as a clerk does.
+ */
+function spPaintHandle() {
+  for (const cell of spCells.values()) {
+    cell.querySelector('.sp-handle')?.remove();
+  }
+  if (spPreview || spSelection.size !== 1) return;
+
+  const button = spSelectedButtons()[0];
+  if (!button) return;
+  const cell = spCells.get(spKey(button.row, button.col));
+  if (!cell) return;
+
+  const handle = document.createElement('span');
+  handle.className = 'sp-handle';
+  handle.title = 'Drag to make this key bigger or smaller';
+  cell.append(handle);
+}
+
 /** Every picture this venue already has to hand, for the key-face gallery. */
 let spGallery = [];
 
@@ -474,6 +899,18 @@ let spCells = new Map();
 
 let spBound = false;
 let spPreview = false;
+
+/**
+ * The last press on the grid, so a second one on the same key can be told from
+ * two presses on two keys.
+ *
+ * `{ key, at }` — which cell, and when. See spDragStart for why a `dblclick`
+ * listener cannot do this job.
+ */
+let spLastPress = null;
+
+/** How close together two presses have to be to be one double-press. */
+const SP_DOUBLE_MS = 450;
 
 /** The product list as it was last rendered into the picker, so a redraw of
     the inspector does not rebuild a thousand options for nothing. */
@@ -507,6 +944,10 @@ async function loadScreens() {
     api('/screens'),
     api('/products'),
     api('/till-settings'),
+    // Its own call rather than a fourth entry destructured above, because it
+    // swallows its own failure: a back office that has not had the font
+    // migration applied yet still opens the editor, lettered plainly.
+    spLoadFonts(),
   ]);
 
   spScreens = screens;
@@ -516,6 +957,7 @@ async function loadScreens() {
     top: settings.top_bar_screen_id ?? null,
     bottom: settings.bottom_bar_screen_id ?? null,
   };
+  spTillFont = settings.font_family ?? null;
   spProductOptionsSig = '';
 
   // Pictures this venue already has, offered as a strip to click rather than a
@@ -724,6 +1166,15 @@ function spShape(screen) {
         b.ink ?? '',
         b.emoji ?? '',
         b.imageUrl ?? '',
+        // Every field a key carries has to be in here, and forgetting one is
+        // quiet in a way that is worth spelling out: this string is what
+        // `spDirty()` compares and what `spEdit()` uses to decide whether
+        // anything happened. A field left out means changing it is not a change
+        // — no undo step, no unsaved-work warning, and the edit thrown away
+        // without a word by the next screen switch. Adding a property to a
+        // button? Add it here in the same breath.
+        b.fontFamily ?? '',
+        b.fontSize ?? '',
       ].join('|')
     )
     .sort();
@@ -1110,6 +1561,7 @@ function spRenderChrome() {
 
   spRenderDefaults();
   spRenderPerScreenBars();
+  spRenderFontsCard();
   spRenderGrid();
   spRenderInspector();
   spRenderStatus();
@@ -1282,6 +1734,20 @@ function spRenderGrid() {
       if (b && b.fill) {
         cell.style.background = b.fill;
         cell.style.color = b.ink || kdsInkOn(b.fill);
+      } else if (b && b.ink) {
+        // Lettering colour on a key that kept the till's own background. Was
+        // simply not drawn before this, because ink was only ever read
+        // alongside a fill — so a manager who set light lettering on a default
+        // key saw no change here and a changed key on the till.
+        cell.style.color = b.ink;
+      }
+      // Its font, or the venue's, or nothing — and `pt` rather than a size,
+      // because a point is measured against the grid's height and the grid has
+      // not been laid out yet. See spApplyTypeScale.
+      if (b) {
+        const font = spFontCss(b.fontFamily || spTillFont);
+        if (font) cell.style.fontFamily = font;
+        if (b.fontSize) cell.dataset.pt = String(b.fontSize);
       }
       if (b) {
         cell.classList.add('filled');
@@ -1337,6 +1803,7 @@ function spRenderGrid() {
   }
   box.append(fragment);
   spPaintSelection();
+  spApplyTypeScale();
 }
 
 /**
@@ -1406,6 +1873,7 @@ function spPaintSelection() {
       !!spFocusCell && key === spKey(spFocusCell.row, spFocusCell.col)
     );
   }
+  spPaintHandle();
 }
 
 function spPaintDrop(target, anchor) {
@@ -1627,6 +2095,15 @@ function spRenderInspector() {
   // What a live display will actually put there, said in words next to the
   // dropdown — the grid draws a sketch of it, but the sketch cannot say that
   // this key is the only way staff reach a bill sitting on a table.
+  // Only when there is somewhere to go. A page key pointing at a deleted
+  // screen already says so on the grid; offering to open it would be a button
+  // that does nothing.
+  $('sp-open-target').disabled = !(
+    kind === 'page' &&
+    first.targetScreenId != null &&
+    spScreens.some((s) => s.id === first.targetScreenId)
+  );
+
   const note = $('sp-function-note');
   note.textContent =
     first.functionKey === 'open_bills'
@@ -1650,13 +2127,31 @@ function spRenderInspector() {
   $('sp-label').disabled = !styleable;
   $('sp-clear-style').disabled = !styleable;
   $('sp-ink').disabled = !styleable;
+  $('sp-font').disabled = !styleable;
+  $('sp-font-size').disabled = !styleable;
+  $('sp-fill-wheel').disabled = !styleable;
+  $('sp-fill-hex').disabled = !styleable;
+  $('sp-ink-wheel').disabled = !styleable;
+  $('sp-ink-hex').disabled = !styleable;
   $('sp-style-note').hidden = styleable;
 
-  spSet($('sp-ink'), first.ink ? 'dark' : 'auto');
-  if (first.ink) {
-    // Only two overrides are offered, and which one this is comes from the ink
-    // itself rather than a third stored field.
-    spSet($('sp-ink'), first.ink === '#f4f6fa' ? 'light' : 'dark');
+  // Three named answers and a wheel, and which one is showing is worked out
+  // from the ink itself rather than from a fourth stored field. Anything that
+  // is not one of the two presets is a colour the manager picked, so the wheel
+  // is what should be open — otherwise typing a brand colour into the box
+  // snapped the dropdown back to "Dark" and the row closed under the cursor.
+  const inkMode = !first.ink
+    ? 'auto'
+    : first.ink === SP_INK_LIGHT
+      ? 'light'
+      : first.ink === SP_INK_DARK
+        ? 'dark'
+        : 'custom';
+  spSet($('sp-ink'), inkMode);
+  $('sp-ink-wheel-row').hidden = inkMode !== 'custom';
+  if (inkMode === 'custom') {
+    spSet($('sp-ink-wheel'), first.ink);
+    spSet($('sp-ink-hex'), first.ink);
   }
 
   $('sp-fills').innerHTML = SP_FILLS.map(
@@ -1665,6 +2160,23 @@ function spRenderInspector() {
         first.fill === fill ? ' on' : ''
       }" style="background:${fill}" data-fill="${fill}" title="${fill}"></button>`
   ).join('');
+
+  // The wheel shows the key's colour when it has one, and the till's default
+  // key colour when it does not — so opening the wheel starts from what is on
+  // the screen rather than from black.
+  spSet($('sp-fill-wheel'), first.fill || SP_DEFAULT_FILL);
+  spSet($('sp-fill-hex'), first.fill || '');
+
+  // "The till's font" rather than a blank first option: blank reads as "no
+  // font", and a key with no font is not unlettered, it is lettered in the
+  // venue's.
+  const tillFontName =
+    spFonts.find((f) => f.slug === spTillFont)?.family || 'the app’s own';
+  $('sp-font').innerHTML = spFontOptions(
+    first.fontFamily || null,
+    `Your tills’ font (${tillFontName})`
+  );
+  spSet($('sp-font-size'), first.fontSize == null ? '' : String(first.fontSize));
 
   spRenderFace(first, styleable);
 }
@@ -1892,10 +2404,62 @@ function spDragStart(e) {
   grid.focus({ preventScroll: true });
 
   const g = spGridGeometry();
+
+  // The corner handle, checked before anything works out which cell is under
+  // the pointer — the handle sits on the *edge* of its key, and the cell the
+  // geometry answers for a press on it is as often the next one along.
+  if (e.target.closest && e.target.closest('.sp-handle')) {
+    const button = spSelectedButtons()[0];
+    if (button) {
+      try {
+        grid.setPointerCapture(e.pointerId);
+      } catch {
+        // As below: uncapturable pointers still resize, they just stop at the
+        // edge of the grid.
+      }
+      spDrag = {
+        pointerId: e.pointerId,
+        g,
+        mode: 'resize',
+        button,
+        // One undo step for the whole gesture. The spans are mutated directly
+        // as the pointer moves — going through spEdit would push a step per
+        // cell crossed — so the state to go back to is taken once, here, and
+        // pushed once at the end if anything actually changed.
+        before: spSnapshot(),
+      };
+      grid.classList.add('resizing');
+      return;
+    }
+  }
+
   const under = spCellFromPoint(g, e.clientX, e.clientY);
   const anchor = spOrigin(under.row, under.col);
   const key = spKey(anchor.row, anchor.col);
   const toggle = e.ctrlKey || e.metaKey;
+
+  // Is this the second press on the same key?
+  //
+  // Counted here rather than listened for as `dblclick`, because the
+  // preventDefault above suppresses the entire compatibility mouse sequence —
+  // see the note where that listener used to be. Counting the pointer stream
+  // also means this works with a pen and a finger, which is what a manager
+  // laying out a screen on a Windows tablet is using.
+  //
+  // NOTED HERE AND ACTED ON AT THE RELEASE, which is the part that took a
+  // failing test to find. Moving a key is "click it, then drag it" — two
+  // presses on the same key, and the second one is the drag. Opening the search
+  // on that second press made every move gesture in the editor open a search
+  // box instead, because the two presses are naturally well inside any
+  // double-click window. So the search opens only if the second press turns out
+  // not to have been a drag; see spDragEnd.
+  const doublePressed =
+    !toggle &&
+    !e.shiftKey &&
+    spLastPress != null &&
+    spLastPress.key === key &&
+    e.timeStamp - spLastPress.at < SP_DOUBLE_MS;
+  spLastPress = { key, at: e.timeStamp };
 
   // Capture on the grid, not on the cell. This is the whole fix: every
   // subsequent pointermove arrives here whatever the finger is over, including
@@ -1914,6 +2478,8 @@ function spDragStart(e) {
     base: new Set(spSelection),
     mode: 'select',
     copy: e.altKey,
+    doublePressed,
+    key,
   };
 
   if (toggle) {
@@ -1954,6 +2520,27 @@ function spDragMove(e) {
   if (!spDrag || e.pointerId !== spDrag.pointerId || !spCurrent) return;
   if (spDrag.mode === 'toggle') return;
 
+  if (spDrag.mode === 'resize') {
+    const b = spDrag.button;
+    const to = spCellFromPoint(spDrag.g, e.clientX, e.clientY);
+    const want = spSpanRoom(b, to.row - b.row + 1, to.col - b.col + 1);
+    // Only when it actually changes. The grid is rebuilt to reflow the key,
+    // and rebuilding it on every pixel is what the pointer model at the top of
+    // this file exists to avoid.
+    if (want.rowSpan === (b.rowSpan || 1) && want.colSpan === (b.colSpan || 1)) {
+      return;
+    }
+    b.rowSpan = want.rowSpan;
+    b.colSpan = want.colSpan;
+    // The key keeps the selection as it grows, so the handle stays under the
+    // finger and the inspector keeps showing the key being resized.
+    spSelection = new Set([spKey(b.row, b.col)]);
+    spFocusCell = { row: b.row, col: b.col };
+    spRenderGrid();
+    spRenderStatus();
+    return;
+  }
+
   const cell = spCellFromPoint(spDrag.g, e.clientX, e.clientY);
   const over = spOrigin(cell.row, cell.col);
 
@@ -1988,7 +2575,26 @@ function spDragEnd(e) {
     // Already released — the pointer left the window, or was cancelled.
   }
   $('sp-grid').classList.remove('moving');
+  $('sp-grid').classList.remove('resizing');
   spClearDrop();
+
+  if (drag.mode === 'resize') {
+    spTidy();
+    if (spShape(spCurrent) === spShape(drag.before)) {
+      // Picked the handle up and put it down again. No undo step, for the same
+      // reason spEdit refuses one: a no-op that costs a Ctrl+Z is how undo
+      // stops being trustworthy.
+      spRenderGrid();
+    } else {
+      spUndoStack.push(drag.before);
+      if (spUndoStack.length > SP_UNDO_LIMIT) spUndoStack.shift();
+      spRedoStack = [];
+      spAfterChange();
+    }
+    spRenderInspector();
+    spRenderStatus();
+    return;
+  }
 
   if (drag.mode === 'move' && drag.target) {
     const copy = drag.copy || (e && e.altKey);
@@ -1997,6 +2603,31 @@ function spDragEnd(e) {
       drag.target.col - drag.anchor.col,
       { copy }
     );
+  }
+
+  // The second press on a key, released without having moved: open the search.
+  //
+  // `mode !== 'move'` is the whole of the distinction — a second press that
+  // travelled is somebody moving the key, and interrupting that with a dialog
+  // is how this feature broke every move in the editor the first time it was
+  // written. See spDragStart.
+  //
+  // Narrowed to the one key rather than left on whatever was selected: a
+  // double-press is a manager pointing at a button and asking what it should
+  // be, and answering for six of them is not what was asked.
+  if (drag.doublePressed && drag.mode !== 'move') {
+    const [row, col] = drag.key.split(':').map(Number);
+    spSelection = new Set([drag.key]);
+    spFocusCell = { row, col };
+    spAnchorCell = { row, col };
+    // The next press starts a fresh count. Without this, a third press on the
+    // same key — closing the search and pressing again — reopens it.
+    spLastPress = null;
+    spPaintSelection();
+    spRenderInspector();
+    spRenderStatus();
+    spOpenPalette();
+    return;
   }
 
   spRenderInspector();
@@ -2181,6 +2812,10 @@ function spBind() {
 
   // ---- The grid itself ----
   const grid = $('sp-grid');
+  // A point is measured against the grid's height, so the grid changing size —
+  // a window resized, the pop-out opening, a row added — has to redraw the
+  // sized labels. See spApplyTypeScale.
+  spWatchTypeScale();
   grid.addEventListener('pointerdown', spDragStart);
   grid.addEventListener('pointermove', spDragMove);
   grid.addEventListener('pointerup', spDragEnd);
@@ -2198,14 +2833,18 @@ function spBind() {
   grid.addEventListener('contextmenu', (e) => {
     if (spDrag) e.preventDefault();
   });
-  // Double-click a key to search for what it should be. The cell is selected
-  // by the pointerdown that precedes the double-click, so by the time this
-  // fires the selection is already the key that was hit.
-  grid.addEventListener('dblclick', (e) => {
-    if (!e.target.closest('.sp-cell')) return;
-    e.preventDefault();
-    spOpenPalette();
-  });
+  // Double-click to search is handled in spDragStart, not here.
+  //
+  // There used to be a `dblclick` listener on this element and it never fired
+  // once. spDragStart calls preventDefault() on pointerdown — it has to, or the
+  // browser starts a text selection the moment the pointer moves across the
+  // grid — and a prevented pointerdown suppresses the whole compatibility mouse
+  // sequence that follows it: mousedown, mouseup, click and dblclick. So the
+  // feature was written, shipped, and was unreachable with a mouse, a pen or a
+  // finger.
+  //
+  // Counting the presses in the pointer stream is the only thing that works
+  // here, and it works the same for all three.
 
   grid.addEventListener('keydown', spGridKeys);
 
@@ -2287,18 +2926,73 @@ function spBind() {
       { create: false }
     );
   });
-  // Light or dark lettering, rather than a second colour picker. The till works
-  // one out from the fill and gets it right nearly always; this is for the
-  // nearly, and neither choice can produce a key that cannot be read.
+  // Light, dark, or a colour of the venue's own. The till works one out from
+  // the fill and gets it right nearly always; the two named answers are for the
+  // nearly, and neither of them can produce a key that cannot be read.
   $('sp-ink').addEventListener('change', (e) => {
-    const ink =
-      e.target.value === 'light' ? '#f4f6fa' : e.target.value === 'dark' ? '#111111' : null;
+    const mode = e.target.value;
+    $('sp-ink-wheel-row').hidden = mode !== 'custom';
+    if (mode === 'custom') {
+      // Nothing is applied yet. Choosing "a colour of my own" and having the
+      // key immediately turn some arbitrary colour would be the editor
+      // answering a question the manager has not finished asking — so the row
+      // opens seeded with what the key letters in now, and the wheel commits.
+      const first = spSelectedButtons()[0];
+      const seed = (first && first.ink) || SP_INK_LIGHT;
+      spSet($('sp-ink-wheel'), seed);
+      spSet($('sp-ink-hex'), seed);
+      $('sp-ink-wheel').focus();
+      return;
+    }
+    const ink = mode === 'light' ? SP_INK_LIGHT : mode === 'dark' ? SP_INK_DARK : null;
     spApplyToSelection(
       (b) => {
         b.ink = ink;
       },
       { create: false }
     );
+  });
+
+  // The wheels.
+  //
+  // `change`, not `input`. A colour input fires `input` for every pixel the
+  // pointer crosses inside the picker, and routing that through spApplyToSelection
+  // would put two hundred steps on the undo stack for one colour — which is the
+  // same fault the label box had before it was moved to `change`, and the reason
+  // undo stopped being trustworthy.
+  spBindColour('sp-fill-wheel', 'sp-fill-hex', 'fill');
+  spBindColour('sp-ink-wheel', 'sp-ink-hex', 'ink');
+
+  // ---- Lettering ----
+  $('sp-font').addEventListener('change', (e) => {
+    const slug = e.target.value || null;
+    spApplyToSelection(
+      (b) => {
+        b.fontFamily = slug;
+      },
+      { create: false }
+    );
+  });
+  $('sp-font-size').addEventListener('change', (e) => {
+    const raw = e.target.value.trim();
+    // Empty is not zero. Empty means "the till decides", which is what most
+    // keys should say and what every key said before this box existed.
+    const size = raw === '' ? null : Math.min(72, Math.max(8, Number(raw) || 0));
+    spSet(e.target, size == null ? '' : String(size));
+    spApplyToSelection(
+      (b) => {
+        b.fontSize = size;
+      },
+      { create: false }
+    );
+  });
+
+  $('sp-till-font').addEventListener('change', (e) => spSetTillFont(e.target.value));
+  $('sp-font-add').addEventListener('click', () => $('sp-font-file').click());
+  $('sp-font-file').addEventListener('change', spAddFont);
+  $('sp-font-list').addEventListener('click', (e) => {
+    const button = e.target.closest('[data-font-remove]');
+    if (button) spRemoveFont(button.dataset.fontRemove);
   });
   $('sp-clear-style').addEventListener('click', () =>
     spApplyToSelection(
@@ -2360,18 +3054,48 @@ function spBind() {
   $('sp-image-upload').addEventListener('click', () => $('sp-image-file').click());
   $('sp-image-file').addEventListener('change', spUploadKeyImage);
 
+  // Follow a category key to the page it opens.
+  //
+  // Guarded by spGuardUnsaved for the same reason every other screen change is:
+  // the working copy is the manager's, and walking down a menu must not be the
+  // thing that throws away twenty minutes of arranging.
+  $('sp-open-target').addEventListener('click', () => {
+    const first = spSelectedButtons()[0];
+    const target = first && spScreens.find((s) => s.id === first.targetScreenId);
+    if (!target) return;
+    if (!spGuardUnsaved()) return;
+    spSurface = target.surface || 'sale';
+    spSelect(target.id);
+    spRenderChrome();
+  });
+
   $('sp-copy').addEventListener('click', () => spCopySelection());
   $('sp-paste').addEventListener('click', () => spPasteClipboard());
 
+  // The typed spans, clamped exactly as the corner handle is.
+  //
+  // They used to be applied raw, which meant spTidy() dropped whatever the key
+  // now covered: typing 4 into Width where there was room for 2 deleted the key
+  // next to it, with no warning and nothing on screen to say what had gone. The
+  // handle refuses to swallow a neighbour and so, now, does this — and the box
+  // snapping back to 2 is the editor saying why.
   for (const [id, key] of [['sp-rowspan', 'rowSpan'], ['sp-colspan', 'colSpan']]) {
     $(id).addEventListener('change', (e) => {
-      const span = Math.max(1, Number(e.target.value) || 1);
+      const want = Math.max(1, Number(e.target.value) || 1);
+      const button = spSelectedButtons()[0];
+      if (!button) return;
+      const room = spSpanRoom(
+        button,
+        key === 'rowSpan' ? want : button.rowSpan || 1,
+        key === 'colSpan' ? want : button.colSpan || 1
+      );
       spApplyToSelection(
         (b) => {
-          b[key] = span;
+          b[key] = room[key];
         },
         { create: false }
       );
+      spRenderInspector();
     });
   }
 

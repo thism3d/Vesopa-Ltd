@@ -31,6 +31,7 @@ const {
   tillKitchenRoutes,
 } = require('./kitchen');
 const { screensRoutes, tillScreenRoutes } = require('./screens');
+const { fontsRoutes, tillFontRoutes } = require('./fonts');
 const { modifierRoutes, tillModifierRoutes } = require('./modifiers');
 const { dojoWebhookRoutes, webhookStatus } = require('./dojo');
 
@@ -207,6 +208,12 @@ app.use('/api', tillScreenRoutes({ pool }));
 // with the screens above, not from these routes.
 app.use('/api', modifierRoutes({ pool, broadcast, secret: JWT_SECRET }));
 app.use('/api', tillModifierRoutes({ pool }));
+// And the lettering those buttons wear. Split the same way again, with one
+// difference worth knowing about: the till's *upload* takes a terminal token
+// rather than an office query, because it writes a file to our disk. See the
+// note at the top of src/fonts.js.
+app.use('/api', fontsRoutes({ pool, broadcast, secret: JWT_SECRET }));
+app.use('/api', tillFontRoutes({ pool, broadcast, secret: JWT_SECRET }));
 app.use(tillKitchenRoutes({ pool, broadcast, secret: JWT_SECRET }));
 
 /**

@@ -269,6 +269,45 @@ async function check(name, fn) {
     assert.strictEqual(b.col_span, 2, 'cols: 4 + 2 == 6');
   });
 
+  await check('a key’s lettering is bounded, and null means “the till decides”', async () => {
+    const plain = normaliseButton({ row: 0, col: 0, kind: 'blank' }, grid);
+    // The normal case, and it has to cost nothing: most keys are a word on a
+    // colour, and a key that has never been given a font must not arrive at a
+    // till carrying one.
+    assert.strictEqual(plain.font_family, null);
+    assert.strictEqual(plain.font_size, null);
+
+    const styled = normaliseButton(
+      { row: 0, col: 0, kind: 'blank', fontFamily: '  Bebas Neue!! ', fontSize: '22' },
+      grid
+    );
+    // A slug, not a family name. Anything that is not one is cut out rather
+    // than refused: this ends up naming a font family on a counter, and the
+    // till's answer to a name it does not know is to letter the key plainly.
+    assert.strictEqual(styled.font_family, 'bebasneue');
+    assert.strictEqual(styled.font_size, 22);
+
+    // The column is a TINYINT. A number past 255 would be *stored as something
+    // else* rather than refused, which is how a key ends up at 4pt.
+    assert.strictEqual(
+      normaliseButton({ row: 0, col: 0, kind: 'blank', fontSize: 900 }, grid).font_size,
+      72
+    );
+    assert.strictEqual(
+      normaliseButton({ row: 0, col: 0, kind: 'blank', fontSize: 2 }, grid).font_size,
+      8
+    );
+    // Empty is not nought. It is "no answer", which is what most keys say.
+    assert.strictEqual(
+      normaliseButton({ row: 0, col: 0, kind: 'blank', fontSize: '' }, grid).font_size,
+      null
+    );
+    assert.strictEqual(
+      normaliseButton({ row: 0, col: 0, kind: 'blank', fontSize: 'large' }, grid).font_size,
+      null
+    );
+  });
+
   // The one that would put two things on a till button. A button changed from a
   // product to a page must not keep its plu_id, or the renderer has two
   // references to dispatch on and picks whichever it happens to check first.

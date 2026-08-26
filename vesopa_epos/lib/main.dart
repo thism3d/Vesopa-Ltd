@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'config/constants.dart';
+import 'data/fonts.dart';
 import 'data/auth_service.dart';
 import 'data/branding.dart';
 import 'data/commerce.dart';
@@ -826,12 +827,18 @@ class _VesopaEposAppState extends ConsumerState<VesopaEposApp> {
     final current = session.value;
     if (current != null) _recommissionIfNeeded(current);
 
+    final venueFont = ref.watch(venueFontFamilyProvider);
+
     return MaterialApp(
       title: 'VesopaEPOS',
       navigatorKey: _rootNavigator,
       debugShowCheckedModeBanner: false,
-      theme: buildPosTheme(Brightness.light),
-      darkTheme: buildPosTheme(Brightness.dark),
+      // The venue's font, if it has chosen one and this terminal has it on
+      // disk. Null until the list has loaded, which is the honest answer: the
+      // alternative is lettering the whole till in the app's own typeface and
+      // then swapping the lot a second later, in front of a customer.
+      theme: buildPosTheme(Brightness.light, fontFamily: venueFont),
+      darkTheme: buildPosTheme(Brightness.dark, fontFamily: venueFont),
       themeMode: mode,
       home: !_splashDone
           // The splash is held until the staff list has had its chance to

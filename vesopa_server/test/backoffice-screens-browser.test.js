@@ -117,6 +117,29 @@ function startStub() {
     products: catalogue(),
     saved: null,
     resized: null,
+    venueFont: null,
+    fonts: [
+      {
+        slug: 'inter',
+        family: 'Inter',
+        builtIn: true,
+        faces: [{ weight: 400, url: '/assets/fonts/inter/inter-400.ttf', bytes: 1 }],
+      },
+      {
+        slug: 'bebas-neue',
+        family: 'Bebas Neue',
+        builtIn: true,
+        faces: [
+          { weight: 400, url: '/assets/fonts/bebas-neue/bebas-neue-400.ttf', bytes: 1 },
+        ],
+      },
+      {
+        slug: 'brand-sans',
+        family: 'Brand Sans',
+        builtIn: false,
+        faces: [{ weight: 400, url: '/uploads/fonts/brand-sans-400-abc.ttf', bytes: 1 }],
+      },
+    ],
   };
 
   const types = {
@@ -161,12 +184,25 @@ function startStub() {
           return send(200, state.screens);
         }
         if (url.pathname === '/api/products') return send(200, state.products);
-        if (url.pathname === '/api/till-settings') {
+        if (url.pathname === '/api/till-settings' && req.method === 'GET') {
           return send(200, {
             home_screen_id: 1,
             top_bar_screen_id: null,
             bottom_bar_screen_id: 7,
+            font_family: state.venueFont,
           });
+        }
+        if (url.pathname === '/api/till-settings' && req.method === 'PUT') {
+          if (json.font_family !== undefined) {
+            state.venueFont = json.font_family || null;
+          }
+          return send(200, { ok: true });
+        }
+        // Two built-ins and one the venue uploaded, which is enough shape for
+        // the picker: a group heading for each, and a slug that is not a
+        // built-in so "your fonts come first" can be checked.
+        if (url.pathname === '/api/fonts' && req.method === 'GET') {
+          return send(200, { fonts: state.fonts });
         }
         if (url.pathname === '/api/screens/defaults') {
           state.defaults = json;
@@ -366,6 +402,34 @@ class Cdp {
       type: 'mouseReleased', x, y, button: 'left', buttons: 0, clickCount: 1,
     });
   }
+
+  /**
+   * Two presses at the same point, the second carrying clickCount 2.
+   *
+   * The whole gesture, not a shortcut to the `dblclick` event: the editor
+   * relies on the *first* press having already selected the key, so a
+   * synthesised dblclick with no presses behind it would pass a check that a
+   * manager's mouse would fail.
+   */
+  async doubleClick(x, y) {
+    await this.click(x, y);
+    await this.send('Input.dispatchMouseEvent', {
+      type: 'mousePressed', x, y, button: 'left', buttons: 1, clickCount: 2,
+    });
+    await this.send('Input.dispatchMouseEvent', {
+      type: 'mouseReleased', x, y, button: 'left', buttons: 0, clickCount: 2,
+    });
+  }
+
+  /** The middle of the resize handle, wherever it currently is. */
+  handle() {
+    return this.eval(
+      `const el = document.querySelector('#sp-grid .sp-handle');
+       if (!el) return null;
+       const r = el.getBoundingClientRect();
+       return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };`
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -382,7 +446,7 @@ async function main() {
     return;
   }
 
-  const { server, wss } = await startStub();
+  const { server, wss, state } = await startStub();
   const port = server.address().port;
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'vesopa-e2e-'));
 
@@ -468,7 +532,9 @@ async function main() {
 
     for (const { name, fn } of checks) {
       try {
-        await fn(cdp);
+        // `state` and `port` for the checks that have to look at what the
+        // server was actually sent, or drive the page to a second URL.
+        await fn(cdp, state, port);
         passed++;
         console.log(`  ok  ${name}`);
       } catch (e) {
@@ -497,6 +563,26 @@ async function main() {
         fs.writeFileSync(file, Buffer.from(shot.data, 'base64'));
         console.log(`  -- wrote ${file}`);
       }
+
+      // And the panel with a key selected, which is where everything that
+      // styles a key lives — the swatches, the wheel, the font, the size — and
+      // where a card that has grown too tall for the column shows up. The
+      // three shots above all have nothing selected, so the inspector is empty
+      // in every one of them.
+      await cdp.eval(
+        `document.querySelector('.sp-surface[data-surface="sale"]').click();
+         spSelection = new Set(['0:0']);
+         spFocusCell = { row: 0, col: 0 };
+         spPaintSelection();
+         spRenderInspector();
+         document.getElementById('sp-inspector').scrollIntoView({ block: 'center' });
+         return true;`
+      );
+      await sleep(250);
+      const inspector = await cdp.send('Page.captureScreenshot', { format: 'png' });
+      const file = path.join(process.env.SHOT, 'editor-inspector.png');
+      fs.writeFileSync(file, Buffer.from(inspector.data, 'base64'));
+      console.log(`  -- wrote ${file}`);
     }
   } finally {
     if (cdp) cdp.socket.close();
@@ -537,6 +623,11 @@ async function reset(cdp) {
     // looking at them — so a check that leaves it on the bars would hand the
     // next one a bar to drag across.
     spSurface = 'sale';
+    // The press counter, which is what turns a second press on the same key
+    // into "open the search". Two checks in a row that both press 3:4 are two
+    // checks, not a double-click — a person would have had a page reload in
+    // between, and this is that reload.
+    spLastPress = null;
     return loadScreens().then(() => true);`);
   // Scrolled to where a person would have it before touching the grid. Nothing
   // here scrolls on its own any more (see spDragStart), so this is the only
@@ -919,6 +1010,437 @@ check('a press lands on the key under it even when the page must scroll', async 
     'the press scrolled the page, which is what moved the grid under it'
   );
   assert.strictEqual(after.sel, '3:0', 'the press selected the wrong key');
+});
+
+// ---------------------------------------------------------------------------
+// Double-click to search
+// ---------------------------------------------------------------------------
+
+check('double-clicking a key opens the search on that key', async (cdp) => {
+  await reset(cdp);
+  const at = await cdp.cell(3, 4);
+  await cdp.doubleClick(at.x, at.y);
+
+  const open = await cdp.eval(
+    `return {
+       box: !!document.querySelector('.sp-palette'),
+       focused: document.activeElement === document.querySelector('.sp-palette-q'),
+       sel: [...spSelection].join(','),
+     };`
+  );
+  assert.ok(open.box, 'the search never opened');
+  assert.ok(open.focused, 'the search opened without the caret in it');
+  // The press that precedes the double-click is what selects, so by the time
+  // the palette opens it is already pointed at the key that was hit. That is
+  // the whole gesture: if this drifts, a manager double-clicks one key and
+  // programmes another.
+  assert.strictEqual(open.sel, '3:4', 'the search opened on the wrong key');
+
+  await cdp.eval(
+    `document.querySelector('.sp-palette-q')
+       .dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+     return true;`
+  );
+});
+
+check('searching and pressing Enter puts that product on the key', async (cdp) => {
+  await reset(cdp);
+  const at = await cdp.cell(3, 4);
+  await cdp.doubleClick(at.x, at.y);
+
+  // "Product 42" is in the stub catalogue at PLU 141.
+  const result = await cdp.eval(
+    `const q = document.querySelector('.sp-palette-q');
+     q.value = 'Product 42';
+     q.dispatchEvent(new Event('input'));
+     q.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+     const b = spAt(3, 4);
+     return { kind: b && b.kind, plu: b && b.pluId, closed: !document.querySelector('.sp-palette') };`
+  );
+  assert.strictEqual(result.kind, 'product');
+  assert.strictEqual(result.plu, 141, 'the wrong product was placed');
+  assert.ok(result.closed, 'the search stayed open after placing');
+});
+
+check('the search offers screens and functions, not only products', async (cdp) => {
+  await reset(cdp);
+  const groups = await cdp.eval(
+    `return [...new Set(spPaletteEntries().map((e) => e.group))].sort().join(',');`
+  );
+  assert.strictEqual(groups, 'Function,Navigation,Product');
+});
+
+// ---------------------------------------------------------------------------
+// The corner handle
+// ---------------------------------------------------------------------------
+
+check('the handle appears on one selected key and on no others', async (cdp) => {
+  await reset(cdp);
+  const at = await cdp.cell(3, 4);
+  await cdp.click(at.x, at.y);
+  assert.strictEqual(
+    await cdp.eval(`return document.querySelectorAll('#sp-grid .sp-handle').length;`),
+    1
+  );
+
+  // Two keys selected is a bulk edit, and "resize all of them into each other"
+  // is not a gesture anybody wants — so there is nothing to grab.
+  const from = await cdp.cell(0, 3);
+  const to = await cdp.cell(3, 4);
+  await cdp.mouseDrag(from, to);
+  assert.strictEqual(
+    await cdp.eval(`return document.querySelectorAll('#sp-grid .sp-handle').length;`),
+    0,
+    'a multi-selection offered a handle'
+  );
+});
+
+check('dragging the handle grows the key, snapped to the grid', async (cdp) => {
+  await reset(cdp);
+  // 2:2 and everything around it is empty — the 2x2 in the corner covers
+  // 0:0–1:1, and the only other keys are at 0:3 and 3:4 — so there is room to
+  // grow into without meeting anything.
+  const at = await cdp.cell(2, 2);
+  await cdp.click(at.x, at.y);
+  await cdp.eval(
+    `spApplyToSelection((b) => { spSetKind(b, 'function'); b.functionKey = 'note'; });
+     spRenderGrid();
+     return true;`
+  );
+
+  const handle = await cdp.handle();
+  assert.ok(handle, 'no handle to drag');
+  const target = await cdp.cell(3, 3);
+  await cdp.mouseDrag(handle, target);
+
+  const grown = await cdp.eval(
+    `const b = spAt(2, 2);
+     return { r: b.rowSpan, c: b.colSpan };`
+  );
+  assert.deepStrictEqual(
+    grown,
+    { r: 2, c: 2 },
+    'the handle did not grow the key to the cell it was dropped on'
+  );
+});
+
+check('the handle stops rather than swallowing the key next to it', async (cdp) => {
+  await reset(cdp);
+  // 0:3 has a key. 0:2 is empty and sits directly to its left, so a key put at
+  // 0:2 and dragged right has one cell of room and then a neighbour.
+  await cdp.eval(
+    `spSelection = new Set(['0:2']);
+     spApplyToSelection((b) => { spSetKind(b, 'function'); b.functionKey = 'note'; });
+     spRenderGrid();
+     return true;`
+  );
+  const handle = await cdp.handle();
+  const target = await cdp.cell(0, 4);
+  await cdp.mouseDrag(handle, target);
+
+  const after = await cdp.eval(
+    `return {
+       span: spAt(0, 2).colSpan,
+       neighbour: !!spAt(0, 3),
+     };`
+  );
+  assert.strictEqual(after.span, 1, 'the key grew over its neighbour');
+  // The important half. spTidy() drops a button whose own cell is covered, so
+  // a resize that did not refuse would have deleted this one — silently, on an
+  // overshoot of one cell, with nothing on screen to say what had gone.
+  assert.ok(after.neighbour, 'the neighbouring key was swallowed');
+});
+
+check('one drag of the handle is one press of undo', async (cdp) => {
+  await reset(cdp);
+  await cdp.eval(
+    `spSelection = new Set(['2:2']);
+     spApplyToSelection((b) => { spSetKind(b, 'function'); b.functionKey = 'note'; });
+     spRenderGrid();
+     spUndoStack = [];
+     return true;`
+  );
+  const handle = await cdp.handle();
+  const target = await cdp.cell(3, 3);
+  await cdp.mouseDrag(handle, target);
+
+  const steps = await cdp.eval(`return spUndoStack.length;`);
+  assert.strictEqual(steps, 1, `a drag left ${steps} undo steps behind`);
+
+  const back = await cdp.eval(
+    `spUndo();
+     const b = spAt(2, 2);
+     return b.rowSpan + 'x' + b.colSpan;`
+  );
+  assert.strictEqual(back, '1x1', 'undo did not put the key back');
+});
+
+check('the typed width stops where the handle stops', async (cdp) => {
+  await reset(cdp);
+  const after = await cdp.eval(
+    `spSelection = new Set(['0:2']);
+     spApplyToSelection((b) => { spSetKind(b, 'function'); b.functionKey = 'note'; });
+     const box = document.getElementById('sp-colspan');
+     box.value = '3';
+     box.dispatchEvent(new Event('change'));
+     return { span: spAt(0, 2).colSpan, neighbour: !!spAt(0, 3), box: box.value };`
+  );
+  assert.strictEqual(after.span, 1, 'the typed width grew over a neighbour');
+  assert.ok(after.neighbour, 'the typed width swallowed the key beside it');
+  assert.strictEqual(after.box, '1', 'the box did not snap back to what was applied');
+});
+
+// ---------------------------------------------------------------------------
+// Colour and lettering
+// ---------------------------------------------------------------------------
+
+check('the wheel puts an arbitrary colour on the key', async (cdp) => {
+  await reset(cdp);
+  const at = await cdp.cell(3, 4);
+  await cdp.click(at.x, at.y);
+  const fill = await cdp.eval(
+    `const wheel = document.getElementById('sp-fill-wheel');
+     wheel.value = '#7f3ac1';
+     wheel.dispatchEvent(new Event('change'));
+     return spAt(3, 4).fill;`
+  );
+  assert.strictEqual(fill, '#7f3ac1');
+});
+
+check('a hex typed without its hash is still a colour', async (cdp) => {
+  await reset(cdp);
+  const at = await cdp.cell(3, 4);
+  await cdp.click(at.x, at.y);
+  const fill = await cdp.eval(
+    `const box = document.getElementById('sp-fill-hex');
+     box.value = 'A5C715';
+     box.dispatchEvent(new Event('change'));
+     return spAt(3, 4).fill;`
+  );
+  assert.strictEqual(fill, '#a5c715', 'a brand book hex was refused');
+});
+
+check('one sweep of the wheel is one undo step', async (cdp) => {
+  await reset(cdp);
+  const at = await cdp.cell(3, 4);
+  await cdp.click(at.x, at.y);
+  const steps = await cdp.eval(
+    `spUndoStack = [];
+     const wheel = document.getElementById('sp-fill-wheel');
+     // What a colour input does while a pointer moves inside the picker. None
+     // of it may reach the undo stack, or taking one colour back costs two
+     // hundred presses of Ctrl+Z.
+     for (const c of ['#111111', '#222222', '#333333', '#444444']) {
+       wheel.value = c;
+       wheel.dispatchEvent(new Event('input'));
+     }
+     wheel.dispatchEvent(new Event('change'));
+     return spUndoStack.length;`
+  );
+  assert.strictEqual(steps, 1, `a colour sweep left ${steps} undo steps`);
+});
+
+check('the venue’s own fonts are offered above the built-in ones', async (cdp) => {
+  await reset(cdp);
+  const picker = await cdp.eval(
+    `return [...document.getElementById('sp-till-font').children]
+       .map((el) => el.tagName === 'OPTGROUP' ? el.label : 'none').join('|');`
+  );
+  assert.strictEqual(picker, 'none|Your fonts|Built in');
+});
+
+check('a key can be lettered in a font and a size of its own', async (cdp) => {
+  await reset(cdp);
+  const at = await cdp.cell(3, 4);
+  await cdp.click(at.x, at.y);
+  const set = await cdp.eval(
+    `const font = document.getElementById('sp-font');
+     font.value = 'bebas-neue';
+     font.dispatchEvent(new Event('change'));
+     const size = document.getElementById('sp-font-size');
+     size.value = '26';
+     size.dispatchEvent(new Event('change'));
+     const b = spAt(3, 4);
+     return { family: b.fontFamily, size: b.fontSize };`
+  );
+  assert.deepStrictEqual(set, { family: 'bebas-neue', size: 26 });
+});
+
+check('lettering a key is a change the editor knows it has', async (cdp) => {
+  await reset(cdp);
+  const at = await cdp.cell(3, 4);
+  await cdp.click(at.x, at.y);
+  const state = await cdp.eval(
+    `spUndoStack = [];
+     const font = document.getElementById('sp-font');
+     font.value = 'inter';
+     font.dispatchEvent(new Event('change'));
+     const afterFont = { dirty: spDirty(), steps: spUndoStack.length };
+     const size = document.getElementById('sp-font-size');
+     size.value = '20';
+     size.dispatchEvent(new Event('change'));
+     return { afterFont, steps: spUndoStack.length };`
+  );
+  // spShape() is what spDirty() compares and what spEdit() uses to decide
+  // whether anything happened. A field missing from it means changing that
+  // field is not a change: no undo step, no warning before leaving, and the
+  // edit dropped without a word by the next screen switch.
+  assert.ok(state.afterFont.dirty, 'a font change did not mark the layout unsaved');
+  assert.strictEqual(state.afterFont.steps, 1, 'a font change left no undo step');
+  assert.strictEqual(state.steps, 2, 'a size change left no undo step');
+
+  const back = await cdp.eval(
+    `spUndo(); spUndo();
+     const b = spAt(3, 4);
+     return { family: b.fontFamily ?? null, size: b.fontSize ?? null };`
+  );
+  assert.deepStrictEqual(back, { family: null, size: null }, 'undo did not take it back');
+});
+
+check('an empty size means the till decides, not nought', async (cdp) => {
+  await reset(cdp);
+  const at = await cdp.cell(3, 4);
+  await cdp.click(at.x, at.y);
+  const cleared = await cdp.eval(
+    `const size = document.getElementById('sp-font-size');
+     size.value = '26';
+     size.dispatchEvent(new Event('change'));
+     size.value = '';
+     size.dispatchEvent(new Event('change'));
+     return spAt(3, 4).fontSize;`
+  );
+  assert.strictEqual(cleared, null, 'clearing the box set a size of nought');
+});
+
+check('the font and the size travel to the server on save', async (cdp, state) => {
+  await reset(cdp);
+  const at = await cdp.cell(3, 4);
+  await cdp.click(at.x, at.y);
+  await cdp.eval(
+    `const font = document.getElementById('sp-font');
+     font.value = 'brand-sans';
+     font.dispatchEvent(new Event('change'));
+     const size = document.getElementById('sp-font-size');
+     size.value = '18';
+     size.dispatchEvent(new Event('change'));
+     return spSaveLayout({ quiet: true });`
+  );
+  const sent = (state.saved || []).find((b) => b.row === 3 && b.col === 4);
+  assert.ok(sent, 'the key was not in what was saved');
+  assert.strictEqual(sent.fontFamily, 'brand-sans');
+  assert.strictEqual(sent.fontSize, 18);
+});
+
+check('choosing the venue font saves it on its own, not with the layout', async (cdp, state) => {
+  await reset(cdp);
+  await cdp.eval(
+    `const el = document.getElementById('sp-till-font');
+     el.value = 'inter';
+     el.dispatchEvent(new Event('change'));
+     return new Promise((go) => setTimeout(() => go(true), 250));`
+  );
+  assert.strictEqual(
+    state.venueFont,
+    'inter',
+    'the venue font never reached the settings row'
+  );
+});
+
+// ---------------------------------------------------------------------------
+// The window of its own
+// ---------------------------------------------------------------------------
+
+check('the pop-out fits the grid without the page scrolling', async (cdp, state, port) => {
+  await cdp.send('Page.navigate', {
+    url: `http://127.0.0.1:${port}/screen-programming?popup=1`,
+  });
+  // Loaded, laid out, and the layout fetched.
+  for (let i = 0; i < 60; i++) {
+    await sleep(200);
+    const ready = await cdp.eval(
+      `return !!(document.body.classList.contains('sp-popup') &&
+                 document.querySelector('#sp-grid .sp-cell'));`
+    );
+    if (ready) break;
+  }
+
+  const fit = await cdp.eval(
+    `const doc = document.documentElement;
+     const grid = document.getElementById('sp-grid');
+     const box = grid.getBoundingClientRect();
+     return {
+       popup: document.body.classList.contains('sp-popup'),
+       overflowY: doc.scrollHeight - doc.clientHeight,
+       overflowX: doc.scrollWidth - doc.clientWidth,
+       bottom: Math.round(box.bottom),
+       viewport: doc.clientHeight,
+       ratio: box.width / box.height,
+     };`
+  );
+
+  assert.ok(fit.popup, 'the popup chrome never applied');
+  // The whole reason this window exists. A grid whose bottom row is under the
+  // fold is one a manager scrolls to reach — in the window that was opened to
+  // stop them scrolling.
+  assert.ok(
+    fit.overflowY <= 1,
+    `the page still scrolls by ${fit.overflowY}px in the pop-out`
+  );
+  assert.ok(
+    fit.overflowX <= 1,
+    `the page scrolls sideways by ${fit.overflowX}px in the pop-out`
+  );
+  assert.ok(
+    fit.bottom <= fit.viewport + 1,
+    `the bottom of the grid is ${Math.round(fit.bottom - fit.viewport)}px past the window`
+  );
+  // And it is still the shape of a till, which is the point of arranging keys
+  // on it at all. Generous tolerance: the grid rounds to whole pixels.
+  assert.ok(
+    Math.abs(fit.ratio - 16 / 9) < 0.06,
+    `the grid came out at ${fit.ratio.toFixed(3)}, not 16:9`
+  );
+
+  // And a bar, which is the surface that fits differently: a bar's rows are a
+  // fixed height, so the leftover has to go to the ghosts of the sale screen
+  // rather than into the keys. At 120px fixed those ghosts were what pushed an
+  // eleven-key bar off the bottom of a short window.
+  await cdp.eval(
+    `document.querySelector('.sp-surface[data-surface="bottombar"]').click();
+     return true;`
+  );
+  await sleep(300);
+  const bar = await cdp.eval(
+    `const doc = document.documentElement;
+     const stage = document.getElementById('sp-stage');
+     return {
+       framed: stage.classList.contains('framed'),
+       overflowY: doc.scrollHeight - doc.clientHeight,
+       bottom: Math.round(stage.getBoundingClientRect().bottom),
+       viewport: doc.clientHeight,
+     };`
+  );
+  assert.ok(bar.framed, 'the bar surface did not draw its frame');
+  assert.ok(
+    bar.overflowY <= 1,
+    `a bar in the pop-out still scrolls by ${bar.overflowY}px`
+  );
+  assert.ok(
+    bar.bottom <= bar.viewport + 1,
+    `the bar's stage runs ${Math.round(bar.bottom - bar.viewport)}px past the window`
+  );
+
+  // Back to the ordinary page for anything that runs after this.
+  await cdp.send('Page.navigate', {
+    url: `http://127.0.0.1:${port}/screen-programming`,
+  });
+  for (let i = 0; i < 60; i++) {
+    await sleep(200);
+    const ready = await cdp.eval(
+      `return !!document.querySelector('#sp-grid .sp-cell');`
+    );
+    if (ready) break;
+  }
 });
 
 check('nothing on the page threw while all that happened', async (cdp) => {

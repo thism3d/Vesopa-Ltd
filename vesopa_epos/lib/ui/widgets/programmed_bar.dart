@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/fonts.dart';
 import '../../data/local/database.dart';
 import '../../data/screens.dart';
 import '../../data/staff_session.dart';
@@ -279,7 +280,10 @@ class _BarKey extends ConsumerWidget {
         _widgets.contains(key)) {
       return _display(context, ref, key);
     }
-    return _key(context);
+    // Only a key with a font of its own. The venue's font is on the theme, so
+    // everything else on this bar inherits it the way the rest of the app does.
+    final library = ref.watch(fontsProvider).value ?? FontLibrary.empty;
+    return _key(context, library.familyFor(button.fontFamily));
   }
 
   // -------------------------------------------------------------------------
@@ -487,7 +491,7 @@ class _BarKey extends ConsumerWidget {
     }
   }
 
-  Widget _key(BuildContext context) {
+  Widget _key(BuildContext context, String? fontFamily) {
     final r = _resolved;
     final enabled = r.onTap != null;
     final fill = button.fill ?? pal.keyFill;
@@ -551,7 +555,16 @@ class _BarKey extends ConsumerWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: ink,
-                      fontSize: 12,
+                      fontFamily: fontFamily,
+                      // Capped harder than a sale key, and against a fixed
+                      // ceiling rather than the key's height: a bar is one or
+                      // two rows tall whatever the terminal is, and a 40pt
+                      // label on it does not overflow so much as push Pay off
+                      // the end of the strip.
+                      fontSize: (button.fontSize?.toDouble() ?? 12).clamp(
+                        8.0,
+                        20.0,
+                      ),
                       fontWeight: FontWeight.w700,
                       height: 1.1,
                     ),
@@ -564,6 +577,7 @@ class _BarKey extends ConsumerWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: ink.withValues(alpha: 0.85),
+                      fontFamily: fontFamily,
                       fontSize: 12,
                       fontWeight: FontWeight.w800,
                     ),

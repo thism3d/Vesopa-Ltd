@@ -342,7 +342,20 @@ class PayPalette {
       Theme.of(context).brightness == Brightness.dark ? dark : light;
 }
 
-ThemeData buildPosTheme(Brightness brightness) {
+/// The till's look.
+///
+/// [fontFamily] is the venue's own typeface, already resolved to something the
+/// engine has been given — see `FontLibrary.familyFor`. Null is the normal
+/// case and means the platform's own, which is what every till wore before a
+/// venue could choose.
+///
+/// Set here rather than on each widget deliberately: a venue that picks a font
+/// means the till, not the sale grid. Bills, the numbers on the pay page, the
+/// tables plan and every dialog follow, because they all read the theme. The
+/// only things that override are a programmed key with a font of its own and
+/// the places that must not change shape whatever a venue picks — a receipt
+/// preview is drawn as the printer will print it, not as the screen letters it.
+ThemeData buildPosTheme(Brightness brightness, {String? fontFamily}) {
   final dark = brightness == Brightness.dark;
 
   // Seeded for the incidental roles, then the brand-carrying ones are pinned.
@@ -366,6 +379,7 @@ ThemeData buildPosTheme(Brightness brightness) {
   return ThemeData(
     useMaterial3: true,
     brightness: brightness,
+    fontFamily: fontFamily,
     colorScheme: scheme,
     scaffoldBackgroundColor: dark ? const Color(0xFF121211) : Colors.white,
     // Pinned rather than left to Material 3, which tints an untinted AppBar

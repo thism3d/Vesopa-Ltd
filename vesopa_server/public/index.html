@@ -365,7 +365,6 @@
               <th data-sort="group_name">Sub Department</th>
               <th class="right" data-sort="price">Price</th>
               <th class="right" data-sort="tax_percentage">VAT</th>
-              <th class="right" data-sort="button_position">Button</th>
               <th>Printing</th><th></th>
             </tr></thead>
             <tbody id="products"></tbody>
@@ -937,6 +936,9 @@
                    about the selection. -->
               <div id="sp-status" class="sp-status"></div>
               <p class="muted small" id="sp-hint" style="margin:8px 0 0">
+                <strong>Double-click a key</strong> to search for what it should be — any product,
+                page or till function, by name. Drag the <strong>handle in its corner</strong> to make
+                it bigger or smaller.
                 Click a key to select it, or drag a box across several. <strong>Shift</strong> extends
                 the box, <strong>Ctrl</strong> adds one at a time. To move keys, select them and then
                 drag the selection — hold <strong>Alt</strong> to copy instead. Arrow keys walk the grid,
@@ -979,9 +981,21 @@
                     <p class="muted small" id="sp-product-count" style="margin:4px 0 0"></p>
                   </div>
 
-                  <label class="sp-field" data-for="page" hidden>Screen
-                    <select id="sp-target"></select>
-                  </label>
+                  <div class="sp-field" data-for="page" hidden>
+                    <label>Screen
+                      <select id="sp-target"></select>
+                    </label>
+                    <!-- The way to the page this key leads to.
+                         Without it, following a venue's own menu means reading
+                         the name off this dropdown and then finding it again in
+                         the picker at the top — twice per level, on a menu that
+                         is often three deep. -->
+                    <div class="denom-actions" style="margin-top:8px">
+                      <button type="button" class="btn ghost small" id="sp-open-target">
+                        Edit that screen →
+                      </button>
+                    </div>
+                  </div>
 
                   <div class="sp-field" data-for="function" hidden>
                     <label>Function
@@ -1021,13 +1035,54 @@
                   </div>
 
                   <div class="sp-swatches" id="sp-fills"></div>
+                  <!-- The wheel, beside the swatches rather than instead of
+                       them. Eight named colours are what a venue that wants a
+                       tidy screen should use and are one press each; a brand
+                       is a hex nobody can pick off a row of eight. Both, and
+                       the swatch row lights up when the wheel lands on one. -->
+                  <div class="sp-wheel-row">
+                    <label class="sp-wheel" title="Any colour at all.">
+                      <input type="color" id="sp-fill-wheel" value="#2b313d">
+                      <span>Custom…</span>
+                    </label>
+                    <input id="sp-fill-hex" class="sp-hex" maxlength="7" spellcheck="false"
+                           autocomplete="off" placeholder="#2b313d"
+                           title="Type a colour from your brand book.">
+                  </div>
+
                   <label style="margin-top:10px">Lettering
                     <select id="sp-ink">
                       <option value="auto">The till decides</option>
                       <option value="light">Light</option>
                       <option value="dark">Dark</option>
+                      <option value="custom">A colour of my own…</option>
                     </select>
                   </label>
+                  <div class="sp-wheel-row" id="sp-ink-wheel-row" hidden>
+                    <label class="sp-wheel">
+                      <input type="color" id="sp-ink-wheel" value="#ffffff">
+                      <span>Lettering colour</span>
+                    </label>
+                    <input id="sp-ink-hex" class="sp-hex" maxlength="7" spellcheck="false"
+                           autocomplete="off" placeholder="#ffffff">
+                  </div>
+
+                  <!-- The typeface. Both boxes are “leave it alone” by default,
+                       which is the right answer for most keys: the till already
+                       fits a label to the key it is on, and a size set on a
+                       desktop monitor is a size nobody checked on a 10-inch
+                       terminal. -->
+                  <div class="sp-type">
+                    <label>Font
+                      <select id="sp-font"></select>
+                    </label>
+                    <label>Size
+                      <input type="number" id="sp-font-size" min="8" max="72" step="1"
+                             placeholder="Auto"
+                             title="Points. Leave it empty for the key’s own size. The till caps whatever you set against the height of the key, so the same layout still reads on a small terminal.">
+                    </label>
+                  </div>
+
                   <div class="denom-actions" style="margin-top:8px">
                     <button type="button" class="btn ghost small" id="sp-clear-style">Use the till’s colours</button>
                   </div>
@@ -1065,6 +1120,31 @@
                   longer there refuses the press.
                 </p>
                 <div id="sp-issues" class="sp-issues"></div>
+              </div>
+
+              <!-- Lettering, for the venue rather than for one key.
+                   Here rather than under Settings because this is where a
+                   manager is when they decide the buttons look wrong, and a
+                   font picked two screens away is a font picked blind. -->
+              <div class="card rd-card" id="sp-fonts-card">
+                <h3>Fonts</h3>
+                <p class="muted small" style="margin:0 0 10px">
+                  What your tills letter everything in. A button can be given a font of its own;
+                  the rest follow this one.
+                </p>
+                <label>Your tills’ font
+                  <select id="sp-till-font"></select>
+                </label>
+                <div class="sp-font-list" id="sp-font-list"></div>
+                <div class="denom-actions" style="margin-top:10px">
+                  <button type="button" class="btn ghost small" id="sp-font-add">Upload a font…</button>
+                  <input type="file" id="sp-font-file" accept=".ttf,.otf,font/ttf,font/otf,application/font-sfnt" hidden>
+                </div>
+                <p class="muted small" style="margin:8px 0 0">
+                  TrueType (.ttf) or OpenType (.otf). A .woff2 works in a browser but not on a
+                  till, so it is refused rather than quietly ignored. Uploading a font is you
+                  saying you hold a licence to install it on your tills.
+                </p>
               </div>
 
               <!-- Bulk fill. The reference's best idea, and the one thing that

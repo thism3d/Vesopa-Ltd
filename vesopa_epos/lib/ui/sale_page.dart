@@ -22,6 +22,7 @@ import 'void_dialog.dart';
 import 'widgets/action_bar.dart';
 import 'widgets/offer_chip.dart';
 import '../data/commerce.dart';
+import '../data/fonts.dart';
 import '../data/pricing_engine.dart';
 import 'widgets/basket_panel.dart';
 import 'widgets/live_receipt.dart';
@@ -219,6 +220,7 @@ class SalePage extends ConsumerWidget {
         screens: ref.read(screensProvider).value ?? ScreenSet.empty,
         products: {for (final q in products) q.pluId: q},
         itemName: p.name,
+        fonts: ref.read(fontsProvider).value ?? FontLibrary.empty,
       );
       // Null is the operator abandoning the item, not skipping the question —
       // so nothing reaches the bill. See askModifiers.
@@ -363,6 +365,12 @@ class SalePage extends ConsumerWidget {
                           screens: screenSet,
                           products: byPlu,
                           showPrices: settings.buttonsShowPrices,
+                          // Only for keys given a font of their own. The
+                          // venue's font is on the theme, so a key that asks
+                          // for nothing inherits it like everything else.
+                          fonts:
+                              ref.watch(fontsProvider).value ??
+                              FontLibrary.empty,
                           // The same offers the catalogue grid flashes. A
                           // promotion that only shows on one of the two screens
                           // is a clerk quoting the wrong price on the other.

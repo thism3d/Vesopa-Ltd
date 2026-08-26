@@ -237,6 +237,42 @@ function cleanEmoji(raw) {
   return String(raw ?? '').trim().replace(/\s+/g, ' ').slice(0, 16) || null;
 }
 
+/**
+ * Which font letters this key.
+ *
+ * A slug — `inter`, `bebas-neue`, a venue's `brand-sans` — and not the display
+ * name, because the display name is renameable and the slug is what a button
+ * has to keep pointing at. Not checked against the font catalogue on purpose:
+ * that would mean a database read per button on every save, and the answer can
+ * change afterwards anyway when a venue deletes a font. The till resolves it at
+ * draw time and falls back to its own lettering when it cannot, which is the
+ * same contract `home_screen_id` has with a deleted screen.
+ */
+function cleanFontFamily(raw) {
+  const slug = String(raw ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, '')
+    .slice(0, 64);
+  return slug || null;
+}
+
+/**
+ * How big, in points, or null for "the till decides".
+ *
+ * Floored at 8 and capped at 72. Below 8 is unreadable across a counter and
+ * above 72 is taller than most keys are — and the column is a TINYINT, so a
+ * number past 255 would be stored as something else entirely rather than
+ * refused. The till still shrinks a label that will not fit; see
+ * schema_screens_fonts.sql for why this is a wish and not a promise.
+ */
+function cleanFontSize(raw) {
+  if (raw === null || raw === undefined || raw === '') return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return null;
+  return Math.min(72, Math.max(8, Math.round(n)));
+}
+
 function clampInt(value, min, max, fallback) {
   const n = Number(value);
   if (!Number.isFinite(n)) return fallback;
@@ -306,6 +342,10 @@ function normaliseButton(raw, { rows, cols, surface = 'sale' }) {
     // feature un-decorating every screen a venue has already programmed.
     emoji: cleanEmoji(raw.emoji),
     image_url: cleanImage(raw.imageUrl),
+    // The lettering. Both null on most keys, and null means the till decides —
+    // which is the right answer for a key whose label already fits.
+    font_family: cleanFontFamily(raw.fontFamily),
+    font_size: cleanFontSize(raw.fontSize),
   };
 }
 
@@ -326,6 +366,8 @@ function buttonToJson(row) {
     ink: row.ink,
     emoji: row.emoji ?? null,
     imageUrl: row.image_url ?? null,
+    fontFamily: row.font_family ?? null,
+    fontSize: row.font_size ?? null,
   };
 }
 
@@ -630,10 +672,10 @@ function screensRoutes({ pool, broadcast, secret }) {
           `INSERT INTO epos_screen_buttons
              (screen_id, office, grid_row, grid_col, row_span, col_span,
               kind, plu_id, target_screen_id, function_key, label, fill, ink,
-              emoji, image_url)
+              emoji, image_url, font_family, font_size)
            SELECT ?, office, grid_row, grid_col, row_span, col_span,
                   kind, plu_id, target_screen_id, function_key, label, fill, ink,
-                  emoji, image_url
+                  emoji, image_url, font_family, font_size
              FROM epos_screen_buttons WHERE screen_id = ?`,
           [created.insertId, source.id]
         );
@@ -843,8 +885,8 @@ function screensRoutes({ pool, broadcast, secret }) {
             `INSERT INTO epos_screen_buttons
                (screen_id, office, grid_row, grid_col, row_span, col_span,
                 kind, plu_id, target_screen_id, function_key, label, fill, ink,
-                emoji, image_url)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                emoji, image_url, font_family, font_size)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               screen.id,
               office,
@@ -861,6 +903,8 @@ function screensRoutes({ pool, broadcast, secret }) {
               b.ink,
               b.emoji,
               b.image_url,
+              b.font_family,
+              b.font_size,
             ]
           );
         }

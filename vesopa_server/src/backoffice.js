@@ -250,19 +250,34 @@ function backofficeRoutes({ pool, broadcast, secret }) {
   router.put('/products/:id', auth, async (req, res, next) => {
     const p = req.body;
     try {
-      // Button colour is no longer on the product form — the screen editor owns
-      // how a key looks. The column stays, and a save that does not mention it
-      // leaves it exactly as it was: dropping the field from the form must not
-      // quietly strip the colour off every product somebody edits the price of.
-      // An explicit value (from an import, or an older client) still applies.
-      const colourSql = p.button_color === undefined ? 'button_color' : '?';
+      // Three columns the product form no longer carries — the screen editor
+      // owns how a key looks, where it sits and what picture is on it. Each
+      // column stays, and a save that does not mention one leaves it exactly as
+      // it was. Dropping a field from a form must never quietly strip its value
+      // off every product somebody edits the price of, and two of these would
+      // do real damage if they did:
+      //
+      //   button_position  orders the built-in Default sale screen (see the
+      //                    ORDER BY in the till's /till/products). Nulling it
+      //                    on edit would reshuffle the grid of every venue that
+      //                    has not programmed a screen of its own — silently,
+      //                    one product at a time, as prices were updated.
+      //   emoji            is still the face a product key falls back to when
+      //                    the key has none of its own and there is no picture.
+      //
+      // An explicit value — from an import, from a template, from an older
+      // client that still sends the field — applies as it always did.
+      const keep = (field) => (p[field] === undefined ? field : '?');
+      const kept = (field, value) => (p[field] === undefined ? [] : [value]);
       await pool.execute(
         `UPDATE bo_products
          SET product_name = ?, department_name = ?, group_name = ?,
              accounting_code = ?, price = ?, tax_percentage = ?,
-             stock_quantity = ?, button_position = ?, button_color = ${colourSql},
+             stock_quantity = ?,
+             button_position = ${keep('button_position')},
+             button_color = ${keep('button_color')},
              printer_route = ?, printer_routes = ?, print_to_receipt = ?,
-             emoji = ?, image_url = ?
+             emoji = ${keep('emoji')}, image_url = ?
          WHERE id = ? AND email = ?`,
         [
           p.product_name,
@@ -272,12 +287,12 @@ function backofficeRoutes({ pool, broadcast, secret }) {
           p.price ?? 0,
           p.tax_percentage ?? 0,
           p.stock_quantity ?? 0,
-          p.button_position || null,
-          ...(p.button_color === undefined ? [] : [p.button_color || null]),
+          ...kept('button_position', p.button_position || null),
+          ...kept('button_color', p.button_color || null),
           legacyRoute(p),
           normaliseRoutes(p.printer_routes ?? p.printer_route),
           flag(p.print_to_receipt),
-          p.emoji || null,
+          ...kept('emoji', p.emoji || null),
           p.image_url || null,
           req.params.id,
           // Scoped: editing another office's product must be impossible even if
@@ -532,7 +547,7 @@ function backofficeRoutes({ pool, broadcast, secret }) {
   const TILL_FIELDS = [
     'idle_enabled', 'idle_image_url', 'idle_after_sale', 'idle_require_pin',
     'idle_message', 'signoff_seconds', 'change_window_seconds',
-    'receipt_auto_print', 'buttons_show_prices',
+    'receipt_auto_print', 'buttons_show_prices', 'font_family',
     ...PRINTER_NAME_FIELDS,
     ...KITCHEN_MODE_FIELDS,
   ];
@@ -551,6 +566,9 @@ function backofficeRoutes({ pool, broadcast, secret }) {
     // A venue that wants one every time switches it on once.
     receipt_auto_print: 0,
     buttons_show_prices: 1,
+    // Null means the app's own typeface, which is what every till wears today.
+    // A venue picks one once and every terminal follows; see src/fonts.js.
+    font_family: null,
     // Null, not "KP 1". An empty name means "use the built-in label", so a
     // venue that never opens this screen sees exactly what it always saw —
     // and a venue that later clears a name gets the default back rather than
@@ -644,6 +662,17 @@ function backofficeRoutes({ pool, broadcast, secret }) {
         }
         if (f === 'receipt_auto_print' || f === 'buttons_show_prices') {
           return v ? 1 : 0;
+        }
+        // A font slug, or null for the app's own. Not checked against the
+        // catalogue here for the same reason a button's is not — see
+        // cleanFontFamily in src/screens.js. Blank clears it.
+        if (f === 'font_family') {
+          const slug = String(v ?? '')
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9-]/g, '')
+            .slice(0, 64);
+          return slug || null;
         }
         // A printer name is free text, trimmed, and blank means "no name" —
         // stored as NULL so the till falls back to the built-in label rather

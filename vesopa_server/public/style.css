@@ -2265,4 +2265,174 @@ body.sp-popup .sp-layout {
   min-height: 0;
   align-items: stretch;
 }
-body.sp-popup .sp-layout > * { min-height: 0; overflow-y: auto; }
+body.sp-popup .sp-layout > * { min-height: 0; }
+
+/* The inspector is a list of controls and is allowed to scroll — it is read
+   top to bottom and the manager knows there is more of it. */
+body.sp-popup .sp-panel { overflow-y: auto; }
+
+/* The grid is not, and making it fit is most of why this window exists.
+
+   In the page, the grid is width-driven: it takes the column it is in and its
+   16:9 shape decides how tall it comes out. In a window sized for it that is
+   backwards — a wide window makes a tall grid, the bottom row goes under the
+   fold, and the manager is scrolling again in the window that existed to stop
+   them scrolling.
+
+   So in the pop-out the stage takes whatever height is left over and the grid
+   is height-driven instead: `height: 100%` with the aspect ratio deciding the
+   width, capped at the column so a short wide window gives back height rather
+   than overflowing sideways. The shape is the same either way, which is the
+   whole point — what is arranged here is the shape a clerk meets. */
+body.sp-popup .sp-layout > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+}
+body.sp-popup .sp-stage {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+body.sp-popup .sp-stage:not(.framed) .sp-grid {
+  max-height: none;
+  height: 100%;
+  width: auto;
+  max-width: 100%;
+  margin-inline: auto;
+}
+/* A bar has a fixed row height, so it cannot be stretched to fill — it keeps
+   its own size and the leftover height goes to the ghost of the sale screen
+   above or below it, which is what that ghost is for.
+
+   Which means the ghost has to be able to *take* it, and to give it back: at
+   120px fixed it is the thing that pushes an eleven-key bar off the bottom of a
+   short window. It shrinks to 60 and grows to whatever is left. */
+body.sp-popup .sp-stage.framed { justify-content: center; }
+body.sp-popup .sp-ghost {
+  flex: 1 1 auto;
+  min-height: 60px;
+}
+body.sp-popup .sp-status { flex: 0 0 auto; }
+
+
+/* ---------------------------------------------------------------------------
+   The corner handle
+
+   Bottom-right, on the selected key only, and drawn half outside its own
+   corner so there is something to grab on a key one cell wide. It is a real
+   element rather than a `resize` CSS property because the grid is cells and
+   not pixels: what is being dragged is a span, and it snaps.
+
+   The touch target is deliberately larger than the mark. A manager laying out
+   a screen on a Windows tablet is doing this with a thumb, and a 10px square
+   is not a thing a thumb can hit.
+   --------------------------------------------------------------------------- */
+.sp-handle {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  border: 2px solid #12151b;
+  background: var(--brand, #a5c715);
+  cursor: nwse-resize;
+  z-index: 3;
+}
+/* The hit area, not the mark. Invisible, and twice the size. */
+.sp-handle::after {
+  content: '';
+  position: absolute;
+  inset: -10px;
+}
+/* The cell has to be a containing block for the handle to sit in its corner.
+   `position: relative` on every cell rather than only on the selected one, so
+   selecting a key does not reflow it.
+
+   And the selected one gives up `overflow: hidden`, which is load-bearing
+   rather than tidy: the handle and the invisible square around it both sit
+   *outside* the key's corner so a one-cell-wide key still has something to
+   grab, and a clipped handle is one that cannot be pressed at all. The label
+   inside does its own clipping (see `.sp-cell span`), so nothing else escapes. */
+.sp-cell { position: relative; }
+.sp-cell.selected { overflow: visible; }
+.sp-grid.resizing,
+.sp-grid.resizing .sp-cell { cursor: nwse-resize; }
+
+/* ---------------------------------------------------------------------------
+   The colour wheel, and the box beside it
+
+   Neither half is enough alone: the wheel hides the value a venue needs to
+   read back, and the box is unusable for anybody choosing rather than pasting.
+   --------------------------------------------------------------------------- */
+.sp-wheel-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+/* Its own width, not a share of the row: the hex box beside it is the half
+   that should give, and a wheel narrower than its own swatch is not usable. */
+.sp-wheel {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted, #7a8394);
+  white-space: nowrap;
+}
+.sp-wheel input[type='color'] {
+  width: 34px;
+  height: 30px;
+  padding: 2px;
+  border: 1px solid var(--line, rgba(0, 0, 0, .16));
+  border-radius: 8px;
+  background: none;
+  cursor: pointer;
+}
+.sp-hex {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-transform: lowercase;
+}
+
+/* ---------------------------------------------------------------------------
+   The type controls, and the venue's fonts
+   --------------------------------------------------------------------------- */
+.sp-type {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 88px;
+  gap: 8px;
+  margin-top: 10px;
+}
+.sp-type label { margin: 0; }
+
+.sp-font-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.sp-font-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--line, rgba(0, 0, 0, .16));
+  border-radius: 8px;
+}
+/* The name, lettered in the font it names. A list of font names all set in the
+   same face is a list that cannot answer the only question being asked of it. */
+.sp-font-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 17px;
+}
+.sp-font-row .btn { flex: 0 0 auto; }

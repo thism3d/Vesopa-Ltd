@@ -205,6 +205,8 @@ on Windows".
 | Gesture | What it does |
 | --- | --- |
 | Click a key | Selects it |
+| **Double-click a key** | **Opens the search: any product, page or function, by name** |
+| **Drag the corner handle** | **Makes the key bigger or smaller, snapped to the grid** |
 | Drag across the grid | Selects the box — with a mouse, a pen **or a finger** |
 | Shift+drag / Shift+click | Extends the box from the last press |
 | Ctrl+click | Adds or removes one key |
@@ -241,8 +243,48 @@ the screens somebody has worked hardest on. Select, then drag.
 cells you can programme; selecting one used to create a button underneath the
 span — invisible in the editor, saved to the server, drawn by nothing.
 
+**The double-press is counted in the pointer stream and acted on at the
+release.** Both halves of that were bugs. There was a `dblclick` listener on the
+grid and it never fired once: `spDragStart` calls `preventDefault()` on
+pointerdown — it has to, or the browser starts a text selection the moment the
+pointer moves across the grid — and a prevented pointerdown suppresses the whole
+compatibility mouse sequence behind it, `dblclick` included. So the feature was
+written, shipped, and unreachable with a mouse, a pen or a finger. Counting
+presses in the pointer stream fixes that and works the same for all three. But
+acting on the second *press* then broke every move in the editor, because moving
+a key is "click it, then drag it" — two presses on the same key, well inside any
+double-click window. The search opens only if that second press turns out not to
+have travelled.
+
+**A resize refuses to swallow its neighbours.** `spTidy()` drops a button whose
+own cell has been covered, which is the right answer for a drop on top of
+something and the wrong one for a corner drag: the pointer routinely overshoots
+by a cell, and a gesture that silently deletes the key next to it on an
+overshoot costs a venue a layout. The handle stops, visibly. The typed Width and
+Height boxes were applied raw and did swallow — they are clamped to the same
+room now, and the box snapping back is the editor saying why.
+
+### The window of its own
+
+The editor is the one page in the back office that wants the whole screen: a
+grid, an inspector beside it and a till preview under it, on a page that also
+carries a sidebar, a heading and three paragraphs of explanation. **Own window**
+opens the same page with `?popup=1`, which hides the furniture with a class on
+`<body>` — one editor drawn two ways, not two editors.
+
+The part worth knowing is that the grid changes which way round it is sized. In
+the page it is width-driven: it takes the column it is in, and its 16:9 shape
+decides how tall it comes out. In a window sized for it that is backwards — a
+wide window makes a tall grid, the bottom row goes under the fold, and the
+manager is scrolling in the window that existed to stop them scrolling. So in
+the pop-out the stage takes the leftover height and the grid is height-driven,
+capped at the column's width. The shape is 16:9 either way, which is the point:
+what is arranged here is the shape a clerk meets.
+
 `vesopa_server/test/backoffice-screens-browser.test.js` drives all of this in a
-real Chromium, including the touch drag, and skips itself where there is none.
+real Chromium — the touch drag, the double-press, the corner handle, and a
+measurement that the pop-out does not scroll in either direction — and skips
+itself where there is no Chromium.
 
 ---
 
@@ -505,3 +547,111 @@ the failure in `vesopa_epos_kitchen/docs/architecture.md` under "The migration
 rename", which cost a venue its printer names, and this is the second time this
 feature has had to be split in two to avoid it. Adding another column to that
 row? Put it in a file named `schema_till_*.sql` and it is safe by construction.
+
+---
+
+## 10. Lettering
+
+A key can be given a colour, and now a typeface and a size. A venue can give
+every till one typeface, which every key without one of its own inherits.
+
+### Where the files come from, and why not Google
+
+Sixteen families ship with the back office: fetched once by
+`vesopa_server/tool/fetch_fonts.js`, committed under `public/assets/fonts`, and
+served from the venue's own back office. Regular and bold only — a till button
+is a word on a colour, and the eleven intermediate weights of a variable family
+are eleven files nobody presses. Licences travel with them in
+`public/assets/fonts/LICENSES.md`; all sixteen are OFL 1.1 or Apache 2.0.
+
+The obvious build is a `<link>` to `fonts.googleapis.com` in the back office and
+a Google Fonts URL on the till. It is wrong for the till twice over:
+
+* **A till is offline-first.** It takes money through a broadband outage, which
+  is most of the reason it exists. A button whose lettering arrives over the
+  internet is a button that changes shape when the line drops.
+* **Flutter's `FontLoader` reads ttf and otf.** Google serves woff2 to anything
+  modern, so the till would have to lie about its user agent to get a file it
+  could use.
+
+So the till downloads fonts from the back office, over the same connection it
+already fetches products and screens on, writes them to *application support*
+(not a cache directory — an operating system may empty a cache, and a till that
+loses its lettering offline mid-service is not fixable at a counter), and
+registers them from disk on every start after that. First run needs the network.
+Nothing after it does.
+
+The same reasoning is why a `.woff2` upload is **refused loudly** rather than
+stored. It would render in the browser the manager is looking at it in and do
+nothing at all on the terminal it was for, and the error names the formats that
+work.
+
+### What a venue uploads
+
+Its own font, from the back office **or from a till**. The till's upload is on a
+terminal token, not on an `office` query like every other `/till/` route — those
+are reads, and an unauthenticated *write* that puts a file on our disk is not the
+same trade. The file goes to the office, the office tells every terminal, and the
+till it came from downloads it back through the ordinary path rather than through
+a special case only that one terminal exercises.
+
+Font-picking from a counter is deliberate, not a convenience. The question a
+typeface has to answer is "can a clerk read that across a bar at half past ten",
+and that cannot be answered from an office. A manager who has to walk to a desk,
+change it, and walk back to look will pick a font once and never revisit it.
+
+### Resolution, and the three ways it says no
+
+A button stores a **slug** (`inter`, `bebas-neue`, a venue's `brand-sans`), never
+a display name — so renaming a font does not un-letter every key using it. One
+function turns a slug into something the engine can be handed,
+`FontLibrary.familyFor`, and it answers null in three cases that look identical
+to a clerk and are worth keeping apart in the code:
+
+* nothing was asked for — most keys, most of the time;
+* a font was asked for that this venue no longer has, deleted after the layout
+  was cached;
+* a font was asked for that is not on this terminal's disk yet.
+
+The last is why it is a lookup rather than a string concatenation. Handing the
+engine a family it has never been given resolves to *something* — usually the
+platform default, sometimes a fallback with different metrics — and a key that
+silently changes shape and then changes back is harder to explain than one that
+has not changed at all.
+
+### A size is a wish
+
+`font_size` is points, and the key caps it against its own height before using
+it. The same layout is drawn on a 15-inch counter panel and on a handheld: 28pt
+is handsome on one and taller than the whole key on the other, and a label pushed
+out of sight is worse than one lettered smaller than asked. A label still too
+long for the width ellipsises exactly as it did before the column existed. Null
+— which is what every key says until somebody types a number — means the key's
+own size.
+
+### Where it lives
+
+```
+vesopa_server/
+  tool/fetch_fonts.js            fetches the sixteen, once, into the tree
+  public/assets/fonts/           the files, and LICENSES.md
+  src/fonts.js                   the catalogue, uploads, the till's read
+  schema_fonts.sql               epos_fonts — a venue's own
+  schema_screens_fonts.sql       font_family, font_size on a button
+  schema_till_fonts.sql          font_family on the settings row
+  public/screens.js              the picker, the wheel, the fonts card
+vesopa_epos/
+  lib/data/fonts.dart            download, cache, register, upload
+  lib/ui/theme.dart              buildPosTheme(..., fontFamily:)
+  lib/ui/settings_page.dart      _FontsCard — pick, add, check
+```
+
+Guarded by `vesopa_server/test/fonts.test.js`, `test/fonts_test.dart`, and the
+lettering checks in `backoffice-screens-browser.test.js`.
+
+**Three schema files, for the reason §9 gives.** `epos_fonts` creates its own
+table and is safe anywhere. `schema_screens_fonts.sql` alters
+`epos_screen_buttons` and sorts after `schema_screens.sql` (`.` < `_`), which
+creates it. The column on `epos_till_settings` is in a `schema_till_*.sql` file,
+because that row is created in `schema_staff_idle.sql` and anything alphabetically
+earlier would fail on a fresh database and pass on every existing one.

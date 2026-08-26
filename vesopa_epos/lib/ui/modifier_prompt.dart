@@ -34,6 +34,7 @@ library;
 
 import 'package:flutter/material.dart';
 
+import '../data/fonts.dart';
 import '../data/local/database.dart';
 import '../data/modifiers.dart';
 import '../data/screens.dart';
@@ -50,6 +51,12 @@ Future<List<Product>?> askModifiers(
   required ScreenSet screens,
   required Map<int, Product> products,
   required String itemName,
+  // A modifier screen is a screen, and its answers are keys like any other —
+  // so a key lettered in the venue's brand font on the sale grid must not turn
+  // plain the moment it is asked "which mixer?". Defaulted rather than
+  // required: this dialog is reachable from more than one place, and an empty
+  // library means "letter it as the app does", which is what it did before.
+  FontLibrary fonts = FontLibrary.empty,
 }) async {
   final chosen = <Product>[];
 
@@ -78,6 +85,7 @@ Future<List<Product>?> askModifiers(
         screens: screens,
         products: products,
         itemName: itemName,
+        fonts: fonts,
       ),
     );
 
@@ -109,6 +117,7 @@ class _ModifierDialog extends StatefulWidget {
     required this.screens,
     required this.products,
     required this.itemName,
+    required this.fonts,
   });
 
   final ModifierGroup group;
@@ -116,6 +125,7 @@ class _ModifierDialog extends StatefulWidget {
   final ScreenSet screens;
   final Map<int, Product> products;
   final String itemName;
+  final FontLibrary fonts;
 
   @override
   State<_ModifierDialog> createState() => _ModifierDialogState();
@@ -194,6 +204,7 @@ class _ModifierDialogState extends State<_ModifierDialog> {
                 screen: widget.screen,
                 screens: widget.screens,
                 products: widget.products,
+                fonts: widget.fonts,
                 onProduct: _pick,
                 // A modifier screen has no page or function keys — the back
                 // office does not offer them on this surface. Ignored rather

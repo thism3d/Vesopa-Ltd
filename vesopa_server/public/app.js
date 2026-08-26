@@ -1012,7 +1012,7 @@ function visibleProducts() {
 
   const { key, dir } = productSort;
   if (!key) return rows;
-  const numeric = ['pluid', 'price', 'tax_percentage', 'button_position'];
+  const numeric = ['pluid', 'price', 'tax_percentage'];
   return rows.sort((a, b) => {
     if (numeric.includes(key)) {
       // A product with no button position sorts last either way round: it is
@@ -1248,7 +1248,6 @@ function renderProducts() {
         <td>${cellSelect('group_name', productRefs.groups.map((g) => g.group_name), p.group_name)}</td>
         <td class="right"><input class="cell-edit right" data-cell="price" type="number" step="0.01" min="0" value="${Number(p.price || 0).toFixed(2)}" /></td>
         <td class="right">${p.tax_percentage || 0}%</td>
-        <td class="right">${p.button_position ?? '—'}</td>
         <td>${routeChips(p)}</td>
         <td class="right">
           <button class="btn small ghost" data-edit-product="${p.id}">Edit</button>
@@ -1258,7 +1257,7 @@ function renderProducts() {
       </tr>`
     )
     .join('') ||
-    `<tr><td colspan="9" class="empty">${
+    `<tr><td colspan="8" class="empty">${
       productRows.length ? 'No products match that search.' : 'No products.'
     }</td></tr>`;
 }
@@ -2431,11 +2430,17 @@ document.addEventListener('click', async (e) => {
       value: String(Number(p.tax_percentage ?? 20)),
     },
     { label: 'Stock', name: 'stock_quantity', type: 'number', value: p.stock_quantity ?? 0 },
-    { label: 'Button position (blank = unassigned)', name: 'button_position', type: 'number', value: p.button_position ?? '' },
-    // No button colour. Button styling belongs to the screen editor now, which
-    // is where the layout, the colour and the face of every key are set — two
-    // places to colour one button meant the one you did not use won.
-    { label: 'Emoji (e.g. 🍔)', name: 'emoji', value: p.emoji ?? '' },
+    // No button colour, no button position, no emoji. All three belong to the
+    // screen editor now — that is where the layout, the colour, the size, the
+    // lettering and the face of every key are set. Two places to style one
+    // button meant the one you did not use won, and "button position" was a
+    // number a manager had to hold in their head to arrange a grid they could
+    // not see.
+    //
+    // The columns are not gone and are not cleared: a save that does not
+    // mention a field leaves it alone (see PUT /products/:id). button_position
+    // still orders the built-in Default screen for venues that have programmed
+    // nothing, and a product's emoji is still the face a key falls back to.
     // The sale-grid button gives a product picture a wide band under the name
     // (see _image() in vesopa_epos/lib/ui/sale_page.dart), unlike a department's
     // square category button — so this one crops to 16:9, not square.

@@ -27,6 +27,7 @@ class TillSettings {
     this.homeScreenId,
     this.topBarScreenId,
     this.bottomBarScreenId,
+    this.fontFamily,
   });
 
   /// The programmed screen this venue's tills open on, or null.
@@ -47,6 +48,16 @@ class TillSettings {
   /// a venue gets back the moment it deletes the bar it made.
   final int? topBarScreenId;
   final int? bottomBarScreenId;
+
+  /// The slug of the font this venue's tills letter everything in, or null for
+  /// the app's own typeface.
+  ///
+  /// A slug, not a family name, and not resolved here: a font the venue has
+  /// chosen may not have finished downloading to this terminal, or may have
+  /// been deleted in the back office since. `FontLibrary.familyFor` in
+  /// data/fonts.dart is the one place that turns this into something the engine
+  /// can be handed.
+  final String? fontFamily;
 
   final bool idleEnabled;
 
@@ -153,6 +164,7 @@ class TillSettings {
           other.homeScreenId == homeScreenId &&
           other.topBarScreenId == topBarScreenId &&
           other.bottomBarScreenId == bottomBarScreenId &&
+          other.fontFamily == fontFamily &&
           other.idleEnabled == idleEnabled &&
           other.idleImageUrl == idleImageUrl &&
           other.idleAfterSale == idleAfterSale &&
@@ -197,6 +209,7 @@ class TillSettings {
         idleImageUrl,
         idleAfterSale,
         idleRequirePin,
+        fontFamily,
         idleMessage,
         signoffSeconds,
         changeWindowSeconds,
@@ -221,6 +234,14 @@ class TillSettings {
     final url = (j['idle_image_url'] as String?)?.trim();
     return TillSettings(
       homeScreenId: (j['home_screen_id'] as num?)?.toInt(),
+      // Absent — a server that has not run schema_till_fonts.sql — reads as
+      // null, which is "the app's own lettering". Which is what every till
+      // wore before this existed.
+      fontFamily: switch ((j['font_family'] as String?)?.trim()) {
+        null => null,
+        '' => null,
+        final slug => slug,
+      },
       topBarScreenId: (j['top_bar_screen_id'] as num?)?.toInt(),
       bottomBarScreenId: (j['bottom_bar_screen_id'] as num?)?.toInt(),
       idleEnabled: _flag(j['idle_enabled']),

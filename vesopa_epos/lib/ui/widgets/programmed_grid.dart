@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../data/commerce.dart';
+import '../../data/fonts.dart';
 import '../../data/local/database.dart';
 import '../../data/pricing_engine.dart';
 import '../../data/screens.dart';
@@ -34,6 +35,7 @@ class ProgrammedGrid extends StatelessWidget {
     required this.onFunction,
     this.showPrices = true,
     this.promotions,
+    this.fonts = FontLibrary.empty,
   });
 
   final TillScreen screen;
@@ -60,6 +62,16 @@ class ProgrammedGrid extends StatelessWidget {
   /// other is a clerk quoting the wrong price on whichever they are standing
   /// in front of.
   final PricingEngine? promotions;
+
+  /// The venue's fonts, for keys that have been given one of their own.
+  ///
+  /// Passed in rather than watched here, like the catalogue and the screen set,
+  /// so this widget stays something a test can build with a literal.
+  ///
+  /// The *venue's* font is not in here and does not need to be: it is on the
+  /// theme, so a key that asks for nothing inherits it the way every other
+  /// piece of text in the app does. Only a key with a font of its own overrides.
+  final FontLibrary fonts;
 
   @override
   Widget build(BuildContext context) {
@@ -101,6 +113,7 @@ class ProgrammedGrid extends StatelessWidget {
                         : products[button.pluId],
                     promotion: _offerFor(button),
                     pal: pal,
+                    fontFamily: fonts.familyFor(button.fontFamily),
                     showPrices: showPrices,
                     onProduct: onProduct,
                     onPage: onPage,
@@ -138,6 +151,7 @@ class _Key extends StatelessWidget {
     required this.product,
     required this.promotion,
     required this.pal,
+    required this.fontFamily,
     required this.showPrices,
     required this.onProduct,
     required this.onPage,
@@ -152,6 +166,13 @@ class _Key extends StatelessWidget {
   final Promotion? promotion;
 
   final PayPalette pal;
+
+  /// The engine family this key is lettered in, or null to inherit the theme —
+  /// which carries the venue's font, or the app's own if the venue has not
+  /// chosen one. Already resolved: a font the venue deleted, or one this
+  /// terminal has not finished downloading, arrives here as null. See
+  /// [FontLibrary.familyFor].
+  final String? fontFamily;
   final bool showPrices;
 
   final void Function(Product) onProduct;
@@ -271,6 +292,32 @@ class _Key extends StatelessWidget {
                 final roomForMedia =
                     media != null && box.maxHeight >= 84 && box.maxWidth >= 84;
 
+                // A size set in the back office is a wish, not a promise, and
+                // this is where the difference is settled. The same layout is
+                // drawn on a 15-inch counter panel and on a handheld: 28pt is
+                // handsome on one and taller than the whole key on the other,
+                // and a key whose label has been pushed out of sight is worse
+                // than one lettered smaller than asked. So the key's own height
+                // caps it. A label still too long for the *width* ellipsises
+                // exactly as it always has — this caps the lettering, it does
+                // not reflow the words.
+                //
+                // A key with no size of its own takes the numbers this widget
+                // has always used, untouched and uncapped. That is deliberate
+                // and it is checked by a golden: every key on every screen a
+                // venue has already programmed has no size, and a new control
+                // that quietly re-letters all of them is not a new control, it
+                // is a regression with a settings box attached.
+                final asked = button.fontSize?.toDouble();
+                final ceiling = (box.maxHeight / (roomForMedia ? 4.2 : 2.8))
+                    .clamp(9.0, 48.0);
+                final size = asked == null
+                    ? 14.0
+                    : (asked > ceiling ? ceiling : asked);
+                final noteSize = asked == null
+                    ? 11.5
+                    : (size * 0.82).clamp(9.0, 20.0);
+
                 return Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -282,7 +329,8 @@ class _Key extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: ink,
-                          fontSize: 14,
+                          fontFamily: fontFamily,
+                          fontSize: size,
                           fontWeight: FontWeight.w700,
                           height: 1.15,
                         ),
@@ -304,7 +352,11 @@ class _Key extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: ink.withValues(alpha: 0.75),
-                          fontSize: 11.5,
+                          fontFamily: fontFamily,
+                          // The note follows the label rather than being set
+                          // outright: a price under a 24pt name should not be
+                          // the same 11.5pt as one under a 12pt name.
+                          fontSize: noteSize,
                           fontWeight: FontWeight.w600,
                         ),
                       ),

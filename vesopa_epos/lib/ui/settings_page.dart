@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../config/constants.dart';
+import '../data/fonts.dart';
 import '../main.dart';
 import '../payments/connect_pac.dart';
 import '../payments/dojo_config.dart';
@@ -90,6 +91,9 @@ class SettingsPage extends ConsumerWidget {
         ),
 
         const SizedBox(height: 28),
+        const SizedBox(height: 24),
+        const _FontsCard(),
+
         const _SectionTitle('Side menu'),
         Card(
           margin: EdgeInsets.zero,
@@ -1029,6 +1033,376 @@ class _IdleImageCard extends ConsumerWidget {
                     icon: const Icon(Icons.undo, size: 18),
                     label: const Text('Use the venue picture'),
                   ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The lettering this venue's tills wear, changed from the counter.
+///
+/// Venue-wide, not per terminal, and that is worth being clear about because
+/// every other card on this page under "This terminal" is not. It is on this
+/// page anyway for a reason that only makes sense standing at a counter: the
+/// question a font has to answer is "can a clerk read that across a bar at
+/// half past ten", and that question cannot be answered from an office. A
+/// manager who has to walk to a desk, change it, and walk back to look will
+/// pick a font once and never revisit it.
+///
+/// So the picker writes straight through to the back office on a terminal
+/// token, and every till in the venue is told. See `PUT /api/till/font`.
+class _FontsCard extends ConsumerStatefulWidget {
+  const _FontsCard();
+
+  @override
+  ConsumerState<_FontsCard> createState() => _FontsCardState();
+}
+
+class _FontsCardState extends ConsumerState<_FontsCard> {
+  bool _busy = false;
+
+  /// Send a font file from this terminal's disk to the back office.
+  ///
+  /// Uploaded rather than installed locally, and that is the whole design: a
+  /// font installed on one till is a venue lettered two ways. It goes to the
+  /// office, the office tells every terminal, and each one downloads it — so
+  /// the till it was uploaded from gets it back the same way the others do,
+  /// through the ordinary path, rather than through a special case that only
+  /// this terminal exercises.
+  Future<void> _upload() async {
+    const fonts = XTypeGroup(
+      label: 'Fonts',
+      extensions: <String>['ttf', 'otf'],
+    );
+
+    final XFile? file;
+    try {
+      file = await openFile(acceptedTypeGroups: const [fonts]);
+    } catch (e) {
+      if (mounted) {
+        PosMessenger.error(context, 'Could not open the file browser.\n\n$e');
+      }
+      return;
+    }
+    if (file == null || !mounted) return;
+
+    final token = ref.read(sessionProvider).terminalToken;
+    if (token == null) {
+      PosMessenger.error(
+        context,
+        'This terminal is not commissioned, so it cannot add a font.',
+      );
+      return;
+    }
+
+    final asked = await _askAboutFile(file.name);
+    if (asked == null || !mounted) return;
+
+    setState(() => _busy = true);
+    try {
+      await ref
+          .read(fontsRepositoryProvider)
+          .upload(
+            terminalToken: token,
+            file: File(file.path),
+            family: asked.family,
+            weight: asked.weight,
+          );
+      // Not a local refresh: the office pushes to every till including this
+      // one, and letting that arrive the ordinary way is what proves it works.
+      ref.invalidate(fontsProvider);
+      if (mounted) {
+        PosMessenger.success(
+          context,
+          '${asked.family} is now available on every till in this venue.',
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        // The server's own words. It is the only thing that can say "a .woff2
+        // works in a browser but not on a till".
+        PosMessenger.error(context, '$e'.replaceFirst('Exception: ', ''));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// What to call it, and which weight this file is.
+  ///
+  /// Asked rather than guessed. A foundry ships `BrandSans-Bd_v2_FINAL.ttf`,
+  /// and deciding that "Bd" means bold is the kind of cleverness that letters
+  /// half a venue's screen in the wrong weight. The filename seeds the box; the
+  /// person confirms it.
+  Future<({String family, int weight})?> _askAboutFile(String fileName) {
+    final stem = fileName.replaceAll(RegExp(r'\.[^.]+$'), '');
+    final name = TextEditingController(
+      text: stem
+          .replaceAll(RegExp(r'[-_]+'), ' ')
+          .replaceAll(
+            RegExp(
+              r'\b(regular|bold|black|light|medium|italic|final|v\d+)\b',
+              caseSensitive: false,
+            ),
+            '',
+          )
+          .replaceAll(RegExp(r'\s+'), ' ')
+          .trim(),
+    );
+    var weight = RegExp(
+      r'bold|black|heavy|semibold',
+      caseSensitive: false,
+    ).hasMatch(stem)
+        ? 700
+        : 400;
+
+    return showDialog<({String family, int weight})>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setLocal) => AlertDialog(
+          title: const Text('Add a font'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TextField(
+                controller: name,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  labelText: 'What to call it',
+                  helperText: 'How it will read in the back office',
+                ),
+              ),
+              const SizedBox(height: 16),
+              SegmentedButton<int>(
+                segments: const [
+                  ButtonSegment(value: 400, label: Text('Regular')),
+                  ButtonSegment(value: 700, label: Text('Bold')),
+                ],
+                selected: {weight},
+                onSelectionChanged: (s) => setLocal(() => weight = s.first),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Upload the regular and the bold separately, under the same '
+                'name — the till uses both.',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(context).hintColor,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Uploading a font is you saying this venue holds a licence to '
+                'install it on its tills.',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(context).hintColor,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final family = name.text.trim();
+                if (family.isEmpty) return;
+                Navigator.pop(context, (family: family, weight: weight));
+              },
+              child: const Text('Add'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _choose(String? slug) async {
+    final token = ref.read(sessionProvider).terminalToken;
+    if (token == null) {
+      PosMessenger.error(
+        context,
+        'This terminal is not commissioned, so it cannot change the font.',
+      );
+      return;
+    }
+
+    setState(() => _busy = true);
+    try {
+      await ref
+          .read(fontsRepositoryProvider)
+          .setVenueFont(terminalToken: token, slug: slug);
+      ref.invalidate(tillSettingsRefreshProvider);
+      if (mounted) PosMessenger.success(context, 'Every till will use it.');
+    } catch (e) {
+      if (mounted) {
+        PosMessenger.error(
+          context,
+          'That font could not be set. The till is still lettered as it was.'
+          '\n\n${'$e'.replaceFirst('Exception: ', '')}',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final library = ref.watch(fontsProvider);
+    final chosen = ref.watch(tillSettingsProvider).fontFamily;
+
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          switch (library) {
+            AsyncData(value: final fonts) => Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                ListTile(
+                  leading: const Icon(
+                    Icons.text_fields,
+                    color: Pos.brandDeep,
+                  ),
+                  title: const Text('Lettering'),
+                  subtitle: Text(
+                    switch (chosen) {
+                      null => 'Every till in this venue is lettered in the '
+                          'app’s own typeface.',
+                      final slug when fonts.familyFor(slug) == null =>
+                        // Chosen, but not usable here. Said plainly rather than
+                        // shown as "none": a manager looking at a till that is
+                        // not wearing the font they picked needs to know it is
+                        // this terminal and not their choice.
+                        'This venue is set to '
+                            '“${fonts.bySlug(slug)?.family ?? slug}”, '
+                            'which this terminal has not downloaded yet. It '
+                            'will appear once the till can reach the office.',
+                      final slug =>
+                        'Every till in this venue is lettered in '
+                            '“${fonts.bySlug(slug)?.family ?? slug}”.',
+                    },
+                    style: const TextStyle(fontSize: 12.5),
+                  ),
+                  isThreeLine: chosen != null,
+                ),
+                const Divider(height: 1),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                  child: DropdownButtonFormField<String>(
+                    initialValue: fonts.bySlug(chosen) == null ? '' : chosen,
+                    decoration: const InputDecoration(
+                      labelText: 'Font',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: [
+                      const DropdownMenuItem(
+                        value: '',
+                        child: Text('The app’s own lettering'),
+                      ),
+                      for (final font in fonts.fonts)
+                        DropdownMenuItem(
+                          value: font.slug,
+                          child: Text(
+                            font.family,
+                            // In its own face where the till has it, and
+                            // plainly where it does not — which is most of
+                            // them, because a till downloads the fonts it is
+                            // using and not the eighteen it is offered.
+                            //
+                            // Choosing is the preview: the choice reaches the
+                            // office, comes back as a push, and the till
+                            // re-letters itself a second later in the real
+                            // thing. Which is a better answer than a dropdown
+                            // anyway — a font is chosen by whether a clerk can
+                            // read a key across a bar, not by whether the name
+                            // looks nice in a list.
+                            style: TextStyle(
+                              fontFamily: fonts.familyFor(font.slug),
+                              fontSize: 16,
+                            ),
+                          ),
+                        ),
+                    ],
+                    onChanged: _busy
+                        ? null
+                        : (value) =>
+                              _choose(value == null || value.isEmpty ? null : value),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                  child: Text(
+                    'Pick one and the till letters itself in it a moment later, '
+                    'once it has fetched the font. Every other till in the '
+                    'venue follows.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).hintColor,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            AsyncError() => const ListTile(
+              leading: Icon(Icons.text_fields, color: Pos.brandDeep),
+              title: Text('Lettering'),
+              subtitle: Text(
+                'The font list could not be read. The till letters everything '
+                'in its own typeface until it can.',
+                style: TextStyle(fontSize: 12.5),
+              ),
+              isThreeLine: true,
+            ),
+            _ => const ListTile(
+              leading: SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              title: Text('Lettering'),
+              subtitle: Text('Reading the font list…'),
+            ),
+          },
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                FilledButton.icon(
+                  onPressed: _busy ? null : _upload,
+                  icon: const Icon(Icons.upload_file, size: 18),
+                  label: const Text('Add a font from this terminal'),
+                ),
+                OutlinedButton.icon(
+                  // The manual way out of the one failure this feature has:
+                  // the till was offline when the venue picked a font, so the
+                  // file never arrived. Nothing is broken and nothing says so —
+                  // the keys are simply lettered plainly — so there has to be
+                  // something to press.
+                  onPressed: _busy
+                      ? null
+                      : () {
+                          ref.invalidate(fontsProvider);
+                          PosMessenger.info(
+                            context,
+                            'Fetching anything this terminal is missing…',
+                          );
+                        },
+                  icon: const Icon(Icons.refresh, size: 18),
+                  label: const Text('Check for fonts'),
+                ),
               ],
             ),
           ),

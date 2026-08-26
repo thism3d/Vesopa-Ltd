@@ -1,0 +1,253 @@
+[
+  {
+    "slug": "inter",
+    "family": "Inter",
+    "faces": [
+      {
+        "weight": 400,
+        "file": "inter-400.ttf",
+        "bytes": 324820
+      },
+      {
+        "weight": 700,
+        "file": "inter-700.ttf",
+        "bytes": 326468
+      }
+    ]
+  },
+  {
+    "slug": "roboto",
+    "family": "Roboto",
+    "faces": [
+      {
+        "weight": 400,
+        "file": "roboto-400.ttf",
+        "bytes": 123720
+      },
+      {
+        "weight": 700,
+        "file": "roboto-700.ttf",
+        "bytes": 124292
+      }
+    ]
+  },
+  {
+    "slug": "open-sans",
+    "family": "Open Sans",
+    "faces": [
+      {
+        "weight": 400,
+        "file": "open-sans-400.ttf",
+        "bytes": 122116
+      },
+      {
+        "weight": 700,
+        "file": "open-sans-700.ttf",
+        "bytes": 122132
+      }
+    ]
+  },
+  {
+    "slug": "lato",
+    "family": "Lato",
+    "faces": [
+      {
+        "weight": 400,
+        "file": "lato-400.ttf",
+        "bytes": 72312
+      },
+      {
+        "weight": 700,
+        "file": "lato-700.ttf",
+        "bytes": 70576
+      }
+    ]
+  },
+  {
+    "slug": "montserrat",
+    "family": "Montserrat",
+    "faces": [
+      {
+        "weight": 400,
+        "file": "montserrat-400.ttf",
+        "bytes": 180068
+      },
+      {
+        "weight": 700,
+        "file": "montserrat-700.ttf",
+        "bytes": 181028
+      }
+    ]
+  },
+  {
+    "slug": "poppins",
+    "family": "Poppins",
+    "faces": [
+      {
+        "weight": 400,
+        "file": "poppins-400.ttf",
+        "bytes": 154628
+      },
+      {
+        "weight": 700,
+        "file": "poppins-700.ttf",
+        "bytes": 150292
+      }
+    ]
+  },
+  {
+    "slug": "nunito",
+    "family": "Nunito",
+    "faces": [
+      {
+        "weight": 400,
+        "file": "nunito-400.ttf",
+        "bytes": 125528
+      },
+      {
+        "weight": 700,
+        "file": "nunito-700.ttf",
+        "bytes": 125464
+      }
+    ]
+  },
+  {
+    "slug": "source-sans-3",
+    "family": "Source Sans 3",
+    "faces": [
+      {
+        "weight": 400,
+        "file": "source-sans-3-400.ttf",
+        "bytes": 234708
+      },
+      {
+        "weight": 700,
+        "file": "source-sans-3-700.ttf",
+        "bytes": 234640
+      }
+    ]
+  },
+  {
+    "slug": "work-sans",
+    "family": "Work Sans",
+    "faces": [
+      {
+        "weight": 400,
+        "file": "work-sans-400.ttf",
+        "bytes": 114144
+      },
+      {
+        "weight": 700,
+        "file": "work-sans-700.ttf",
+        "bytes": 115632
+      }
+    ]
+  },
+  {
+    "slug": "rubik",
+    "family": "Rubik",
+    "faces": [
+      {
+        "weight": 400,
+        "file": "rubik-400.ttf",
+        "bytes": 174992
+      },
+      {
+        "weight": 700,
+        "file": "rubik-700.ttf",
+        "bytes": 175628
+      }
+    ]
+  },
+  {
+    "slug": "manrope",
+    "family": "Manrope",
+    "faces": [
+      {
+        "weight": 400,
+        "file": "manrope-400.ttf",
+        "bytes": 94972
+      },
+      {
+        "weight": 700,
+        "file": "manrope-700.ttf",
+        "bytes": 94928
+      }
+    ]
+  },
+  {
+    "slug": "raleway",
+    "family": "Raleway",
+    "faces": [
+      {
+        "weight": 400,
+        "file": "raleway-400.ttf",
+        "bytes": 138808
+      },
+      {
+        "weight": 700,
+        "file": "raleway-700.ttf",
+        "bytes": 138748
+      }
+    ]
+  },
+  {
+    "slug": "fira-sans",
+    "family": "Fira Sans",
+    "faces": [
+      {
+        "weight": 400,
+        "file": "fira-sans-400.ttf",
+        "bytes": 304540
+      },
+      {
+        "weight": 700,
+        "file": "fira-sans-700.ttf",
+        "bytes": 335196
+      }
+    ]
+  },
+  {
+    "slug": "oswald",
+    "family": "Oswald",
+    "faces": [
+      {
+        "weight": 400,
+        "file": "oswald-400.ttf",
+        "bytes": 86068
+      },
+      {
+        "weight": 700,
+        "file": "oswald-700.ttf",
+        "bytes": 86416
+      }
+    ]
+  },
+  {
+    "slug": "bebas-neue",
+    "family": "Bebas Neue",
+    "faces": [
+      {
+        "weight": 400,
+        "file": "bebas-neue-400.ttf",
+        "bytes": 56136
+      }
+    ]
+  },
+  {
+    "slug": "playfair-display",
+    "family": "Playfair Display",
+    "faces": [
+      {
+        "weight": 400,
+        "file": "playfair-display-400.ttf",
+        "bytes": 123240
+      },
+      {
+        "weight": 700,
+        "file": "playfair-display-700.ttf",
+        "bytes": 123536
+      }
+    ]
+  }
+]
