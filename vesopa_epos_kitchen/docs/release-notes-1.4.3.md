@@ -1,7 +1,7 @@
 # Vesopa Kitchen 1.4.3 — release notes
 
-Store submission: `msix_version: 1.4.3.0` (previous submission was 1.4.0.0).
-Flutter `version: 1.4.3+3`.
+Store submission: `msix_version: 1.4.3.1` (previous submission was 1.4.0.0).
+Flutter `version: 1.4.3+4`.
 
 Jumped from 1.4.0 to 1.4.3 to sit level with Vesopa EPOS, which is what this
 release is about: the two now have to agree about what is on a ticket.
@@ -27,7 +27,7 @@ Paste the block below into Partner Center → Store listings → What's new in t
 version. 650 of the 1,500 characters Partner Center allows.
 
 ```
-Version 1.4.3.0 – Modifiers On The Board
+Version 1.4.3.1 – Modifiers On The Board
 
 Works with Vesopa EPOS 1.4.3.
 
@@ -64,10 +64,34 @@ till through `epos_kitchen_ticket_lines` to here.
   ticket a chef is looking at and the one that comes off the printer do not
   describe the same order two different ways.
 
+### The icon it was actually shipping
+
+Worth writing down, because it had been wrong since the app existed and nobody
+had a reason to look.
+
+`assets/brand/kitchen_mark.ico` has held a proper seven-frame icon all along.
+It was never what shipped. `flutter_launcher_icons` is configured here with
+`icon_size: 256`, and that package writes the runner's `app_icon.ico` with a
+*single* image at that size — so it overwrote the good one, and what went out
+was one 256x256 frame.
+
+Windows then rescaled that frame for every context it uses. The two that matter
+on a kitchen screen are the title bar and the taskbar, both 16px: a 256px mark
+squeezed by sixteen at draw time, which is what made it look soft next to the
+till sitting beside it.
+
+`tool/make_windows_icon.dart` now builds all ten frames the shell asks for,
+resampled once each from the 1024px master. It is the till's tool, which has
+existed for exactly this reason — the kitchen simply never got a copy. Run it
+after any `flutter_launcher_icons`, which will undo it again.
+
 ---
 
 ## Before submitting
 
-1. `dart run msix:create --store`
-2. `msix_version` can never be reused. If certification fails, bump to 1.4.3.1
-   (or 1.4.4.0) before resubmitting — a resubmission at 1.4.3.0 is rejected.
+1. `dart run tool/make_windows_icon.dart` if `flutter_launcher_icons` has been
+   re-run since the last build — it overwrites the multi-frame icon with one
+   256px frame.
+2. `dart run msix:create --store`
+3. `msix_version` can never be reused. If certification fails, bump to 1.4.3.2
+   (or 1.4.4.0) before resubmitting — a resubmission at 1.4.3.1 is rejected.

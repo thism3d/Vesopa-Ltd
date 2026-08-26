@@ -1,7 +1,12 @@
 # Vesopa EPOS 1.4.3 — release notes
 
-Store submission: `msix_version: 1.4.3.0` (previous submission was 1.4.2.0).
-Flutter `version: 1.4.3+14`.
+Store submission: `msix_version: 1.4.3.1` (previous submission was 1.4.2.0).
+Flutter `version: 1.4.3+15`.
+
+`.0` was built and then superseded before submission: the Windows icon was
+rebuilt (see below) and a package that has been uploaded cannot be replaced at
+the same version, so the rebuild took the next one rather than gambling on
+whether `.0` had already gone up.
 
 **Server: changes required, and already applied to live.** Deployed with
 `.\deploy.ps1 -Schema` on 26/08/2026. Two new migration files:
@@ -36,7 +41,7 @@ version. 1,350 of the 1,500 characters Partner Center allows — count it again 
 you edit it; there is about a line and a half of room.
 
 ```
-Version 1.4.3.0 – Ask The Right Question
+Version 1.4.3.1 – Ask The Right Question
 
 Modifiers, a Z report you can act on, and the till asking before it rings.
 
@@ -132,6 +137,10 @@ the entire reason a Z is taken at a counter.
   not — whether the kitchen ticket landed — is now a key you can place.
 * **The check** drops the venue name, address and clock, leaving the item list
   the height. The printed receipt still carries all three.
+* **The Windows icon** was regenerated from the 1024px master into all ten
+  frames the shell asks for. The till's was already correct; Vesopa Kitchen's
+  was not — see its notes, and the shared reason in
+  `tool/make_windows_icon.dart`.
 
 ---
 
@@ -142,9 +151,9 @@ the entire reason a Z is taken at a counter.
 2. Build with the Dojo key defined if this build is to take live card payments;
    it is never in source:
    `flutter build windows --dart-define=DOJO_LIVE_API_KEY=…`
-   **The package built for 1.4.3.0 was built without it**, so it carries the
+   **The package built for 1.4.3.1 was built without it**, so it carries the
    bundled sandbox key. Rebuild before submitting if live card payments are
    wanted from the Store build.
 3. `dart run msix:create --store`
-4. `msix_version` can never be reused. If certification fails, bump to 1.4.3.1
-   (or 1.4.4.0) before resubmitting — a resubmission at 1.4.3.0 is rejected.
+4. `msix_version` can never be reused. If certification fails, bump to 1.4.3.2
+   (or 1.4.4.0) before resubmitting — a resubmission at 1.4.3.1 is rejected.

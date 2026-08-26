@@ -10,7 +10,7 @@ publish_to: 'none'
 # ship together: a kitchen screen and a till on different major versions is a
 # support question nobody can answer over the phone. The build number is this
 # app's own.
-version: 1.4.3+3
+version: 1.4.3+4
 
 environment:
   sdk: ^3.11.3
@@ -59,6 +59,9 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  # Used only by tool/make_windows_icon.dart, which repairs the single-frame
+  # icon flutter_launcher_icons leaves behind.
+  image: ^4.8.0
   flutter_launcher_icons: ^0.14.4
   msix: ^3.18.0
 
@@ -118,7 +121,7 @@ msix_config:
 
   # Four parts, and the last must be 0 — the Store reserves the revision field
   # and rejects anything else. Tracks `version:` at the top of this file.
-  msix_version: 1.4.3.0
+  msix_version: 1.4.3.1
 
   logo_path: assets/brand/kitchen_mark.png
 
