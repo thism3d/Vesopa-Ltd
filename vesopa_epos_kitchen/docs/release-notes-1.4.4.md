@@ -1,9 +1,9 @@
-# Vesopa Kitchen 1.4.3 — release notes
+# Vesopa Kitchen 1.4.4 — release notes
 
-Store submission: `msix_version: 1.4.3.1` (previous submission was 1.4.0.0).
-Flutter `version: 1.4.3+4`.
+Store submission: `msix_version: 1.4.4.0` (previous submission was 1.4.0.0).
+Flutter `version: 1.4.4+5`.
 
-Jumped from 1.4.0 to 1.4.3 to sit level with Vesopa EPOS, which is what this
+Jumped from 1.4.0 to 1.4.4 to sit level with Vesopa EPOS, which is what this
 release is about: the two now have to agree about what is on a ticket.
 
 **Server: changes required, and already applied to live.** Deployed with
@@ -11,7 +11,7 @@ release is about: the two now have to agree about what is on a ticket.
 `is_modifier` to `epos_kitchen_ticket_lines`. Guarded and safe to re-run;
 verified present on live.
 
-**Update this alongside the till.** A till on 1.4.3 sends modifier lines to the
+**Update this alongside the till.** A till on 1.4.4 sends modifier lines to the
 kitchen; a board on 1.4.0 receives them, but draws each one as a dish of its own
 sitting beside the thing it belongs to — "Dash Coke" as a separate item next to
 the gin. It is not wrong, but it reads as two orders rather than one.
@@ -27,9 +27,9 @@ Paste the block below into Partner Center → Store listings → What's new in t
 version. 650 of the 1,500 characters Partner Center allows.
 
 ```
-Version 1.4.3.1 – Modifiers On The Board
+Version 1.4.4.0 – Modifiers On The Board
 
-Works with Vesopa EPOS 1.4.3.
+Works with Vesopa EPOS 1.4.4.
 
 Modifiers Under Their Dish: When a till asks how the steak is cooked or which mixer goes in the gin, the answer now appears on the board underneath the dish it belongs to — indented and in red, exactly as a typed note already did. No more reading "Rare" as a separate order sitting next to a steak.
 
@@ -93,5 +93,5 @@ after any `flutter_launcher_icons`, which will undo it again.
    re-run since the last build — it overwrites the multi-frame icon with one
    256px frame.
 2. `dart run msix:create --store`
-3. `msix_version` can never be reused. If certification fails, bump to 1.4.3.2
-   (or 1.4.4.0) before resubmitting — a resubmission at 1.4.3.1 is rejected.
+3. `msix_version` can never be reused. If certification fails, bump to 1.4.4.1
+   (or 1.4.5.0) before resubmitting — a resubmission at 1.4.4.0 is rejected.

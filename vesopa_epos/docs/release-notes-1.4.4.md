@@ -1,12 +1,12 @@
-# Vesopa EPOS 1.4.3 — release notes
+# Vesopa EPOS 1.4.4 — release notes
 
-Store submission: `msix_version: 1.4.3.1` (previous submission was 1.4.2.0).
-Flutter `version: 1.4.3+15`.
+Store submission: `msix_version: 1.4.4.0` (previous submission was 1.4.2.0).
+Flutter `version: 1.4.4+16`.
 
-`.0` was built and then superseded before submission: the Windows icon was
-rebuilt (see below) and a package that has been uploaded cannot be replaced at
-the same version, so the rebuild took the next one rather than gambling on
-whether `.0` had already gone up.
+`1.4.3.0` and `1.4.3.1` were built here and never submitted — the first
+superseded by the Windows icon rebuild described below, the second by this
+renumbering. Neither went to Partner Center, so neither is spent; they are
+simply not what shipped.
 
 **Server: changes required, and already applied to live.** Deployed with
 `.\deploy.ps1 -Schema` on 26/08/2026. Two new migration files:
@@ -29,7 +29,7 @@ An older till meets the new server harmlessly — it sends none of those fields
 and every one of them defaults to what was true before it existed: a line is an
 item in its own right, and a bill is on no particular floor.
 
-Vesopa Kitchen moves to 1.4.3.0 with this release and must be updated alongside
+Vesopa Kitchen moves to 1.4.4.0 with this release and must be updated alongside
 it if the venue runs kitchen screens; see its own notes.
 
 ---
@@ -41,7 +41,7 @@ version. 1,350 of the 1,500 characters Partner Center allows — count it again 
 you edit it; there is about a line and a half of room.
 
 ```
-Version 1.4.3.1 – Ask The Right Question
+Version 1.4.4.0 – Ask The Right Question
 
 Modifiers, a Z report you can act on, and the till asking before it rings.
 
@@ -151,9 +151,9 @@ the entire reason a Z is taken at a counter.
 2. Build with the Dojo key defined if this build is to take live card payments;
    it is never in source:
    `flutter build windows --dart-define=DOJO_LIVE_API_KEY=…`
-   **The package built for 1.4.3.1 was built without it**, so it carries the
+   **The package built for 1.4.4.0 was built without it**, so it carries the
    bundled sandbox key. Rebuild before submitting if live card payments are
    wanted from the Store build.
 3. `dart run msix:create --store`
-4. `msix_version` can never be reused. If certification fails, bump to 1.4.3.2
-   (or 1.4.4.0) before resubmitting — a resubmission at 1.4.3.1 is rejected.
+4. `msix_version` can never be reused. If certification fails, bump to 1.4.4.1
+   (or 1.4.5.0) before resubmitting — a resubmission at 1.4.4.0 is rejected.
