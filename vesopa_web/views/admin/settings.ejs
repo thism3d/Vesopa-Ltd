@@ -100,31 +100,19 @@
       </div>
 <% } %>
     </div>
-<% } else { %>
-    <div class="ap-card">
-      <div class="ap-card-head"><h3>Panel admins</h3></div>
-      <p class="ap-muted">
-        Only a full Admin can add or remove panel logins. Ask one of them if you
-        need access changed.
-      </p>
-    </div>
 <% } %>
-
-    <div class="ap-card">
-      <div class="ap-card-head"><h3>System</h3></div>
-      <dl class="ap-dl">
-        <dt>Site</dt><dd><a href="<%= SITE_URL %>" target="_blank" rel="noopener"><%= SITE_URL %></a></dd>
-        <dt>Back office</dt><dd><a href="<%= BACKOFFICE_URL %>" target="_blank" rel="noopener"><%= BACKOFFICE_URL %></a></dd>
-        <dt>Version</dt><dd><%= APP_VERSION %></dd>
-        <dt>Support inbox</dt><dd><%= CONTACT.email %></dd>
-      </dl>
-    </div>
+<%# Nothing here for anyone else. The card that used to sit in this branch said
+    only "ask a full Admin if you need access changed", which is an instruction
+    rather than a screen — and the System card that followed it repeated the two
+    URLs already in the sidebar footer, a version number that was reading stale,
+    and a support address nobody works from here. Both removed rather than
+    hidden per role: an empty column is better than a column of nothing. %>
   </div>
 </div>
 
 <template id="tplNewAdmin">
   <h3>Add a panel admin</h3>
-  <p class="ap-card-sub">New logins start as Subadmin. Promote them from the list afterwards.</p>
+  <p class="ap-card-sub">Pick the role below. Promote to Admin from the list afterwards.</p>
 
   <form method="post" action="/admin/settings/admins/new">
     <div class="ap-field">

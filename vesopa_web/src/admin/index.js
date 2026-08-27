@@ -158,8 +158,8 @@ router.get('/settings', async (req, res, next) => {
     }
 
     res.render('admin/settings', {
-      title: 'Admins & Profile | Vesopa Admin',
-      heading: 'Admins & Profile',
+      title: 'Profile | Vesopa Admin',
+      heading: 'Profile',
       nav: 'settings',
       counts: await navCounts(),
       flash: readFlash(req),
