@@ -38,6 +38,7 @@
     </div>
 
     <nav class="ap-nav">
+      <% if (!isContributor) { %>
       <a href="/admin/dashboard" class="<%= nav === 'dashboard' ? 'is-active' : '' %>">
         <span class="material-icons">insights</span> Dashboard
       </a>
@@ -62,6 +63,7 @@
         <span class="material-icons">payments</span> Collection
       </a>
 
+      <% } %>
       <p class="ap-nav-group">Content</p>
       <a href="/admin/blog" class="<%= nav === 'blog' ? 'is-active' : '' %>">
         <span class="material-icons">article</span> Blog &amp; Updates
@@ -71,6 +73,7 @@
         <span class="material-icons">folder</span> File Manager
       </a>
 
+      <% if (!isContributor) { %>
       <p class="ap-nav-group">Enquiries</p>
       <a href="/admin/requests/demo" class="<%= nav === 'demo' ? 'is-active' : '' %>">
         <span class="material-icons">how_to_reg</span> Demo Requests
@@ -85,6 +88,8 @@
       <a href="/admin/requests/job" class="<%= nav === 'job' ? 'is-active' : '' %>">
         <span class="material-icons">work</span> Job Applications
       </a>
+
+      <% } %>
 
       <p class="ap-nav-group">Account</p>
       <a href="/admin/settings" class="<%= nav === 'settings' ? 'is-active' : '' %>">

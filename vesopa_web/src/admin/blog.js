@@ -13,6 +13,7 @@
 
 const express = require('express');
 const { pool } = require('../db');
+const { ownScope } = require('../admin-auth');
 const { sanitiseHtml, stripTags } = require('./sanitise');
 const { LAYOUTS, resolveLayout } = require('../blog-layouts');
 const {
@@ -56,6 +57,10 @@ router.get('/blog', async (req, res, next) => {
       where.push('(title LIKE ? OR slug LIKE ? OR tags LIKE ?)');
       params.push(`%${q}%`, `%${q}%`, `%${q}%`);
     }
+
+    // A contributor sees the posts they wrote and no others.
+    const mine = ownScope(req.admin);
+    if (mine.sql) { where.push('owner_admin_id = ?'); params.push(...mine.params); }
 
     const [rows] = await pool.query(
       `SELECT id, slug, title, kind, version, status, published_at, views,
@@ -134,9 +139,14 @@ router.get('/blog/new', async (req, res, next) => {
 
 router.get('/blog/:id/edit', async (req, res, next) => {
   try {
-    const [[post]] = await pool.query('SELECT * FROM blog_posts WHERE id = ?', [
-      int(req.params.id, 0),
-    ]);
+    const mine = ownScope(req.admin);
+    const [[post]] = await pool.query(
+      `SELECT * FROM blog_posts WHERE id = ?${mine.sql}`,
+      [int(req.params.id, 0), ...mine.params]
+    );
+    // "No longer exists" is also what somebody else's post looks like to a
+    // contributor, deliberately: a different message would confirm the id is
+    // real and tell them there is something there they cannot have.
     if (!post) return back(res, '/admin/blog', { err: 'That post no longer exists.' });
 
     post.layout = resolveLayout(post.layout);
@@ -211,8 +221,9 @@ router.post('/blog/new', async (req, res, next) => {
     const [result] = await pool.query(
       `INSERT INTO blog_posts
          (slug, title, kind, version, excerpt, body, cover_url, author, tags,
-          seo_title, seo_description, layout, is_featured, status, published_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          seo_title, seo_description, layout, is_featured, status, published_at,
+          owner_admin_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         post.slug, post.title, post.kind, post.version, post.excerpt, post.body,
         post.cover_url, post.author, post.tags, post.seo_title, post.seo_description,
@@ -221,6 +232,11 @@ router.post('/blog/new', async (req, res, next) => {
         // a post gets back-dated or scheduled. Otherwise: now if it is going
         // live, nothing at all if it is a draft.
         post.published_at || (post.status === 'published' ? new Date() : null),
+        // Who may edit it later. Not the same thing as `author`, which is a
+        // byline the editor lets anyone type anything into — scoping access on
+        // that would let a contributor reach somebody else's post by changing
+        // a form field.
+        req.admin.id,
       ]
     );
 
@@ -242,10 +258,11 @@ router.post('/blog/:id', async (req, res, next) => {
   const post = readPost(req.body, req.admin);
   if (!post.title) return back(res, `/admin/blog/${id}/edit`, { err: 'A post needs a title.' });
 
+  const mine = ownScope(req.admin);
   try {
     const [[before]] = await pool.query(
-      'SELECT status, published_at FROM blog_posts WHERE id = ?',
-      [id]
+      `SELECT status, published_at FROM blog_posts WHERE id = ?${mine.sql}`,
+      [id, ...mine.params]
     );
     if (!before) return back(res, '/admin/blog', { err: 'That post no longer exists.' });
 
@@ -262,11 +279,12 @@ router.post('/blog/:id', async (req, res, next) => {
          slug = ?, title = ?, kind = ?, version = ?, excerpt = ?, body = ?,
          cover_url = ?, author = ?, tags = ?, seo_title = ?, seo_description = ?,
          layout = ?, is_featured = ?, status = ?, published_at = ?
-       WHERE id = ?`,
+       WHERE id = ?${mine.sql}`,
       [
         post.slug, post.title, post.kind, post.version, post.excerpt, post.body,
         post.cover_url, post.author, post.tags, post.seo_title, post.seo_description,
         post.layout, post.is_featured, post.status, publishedAt, id,
+        ...mine.params,
       ]
     );
 
@@ -284,8 +302,11 @@ router.post('/blog/:id', async (req, res, next) => {
 });
 
 router.post('/blog/:id/delete', async (req, res, next) => {
+  const mine = ownScope(req.admin);
   try {
-    await pool.query('DELETE FROM blog_posts WHERE id = ?', [int(req.params.id, 0)]);
+    await pool.query(`DELETE FROM blog_posts WHERE id = ?${mine.sql}`, [
+      int(req.params.id, 0), ...mine.params,
+    ]);
     back(res, '/admin/blog', { ok: 'Post deleted.' });
   } catch (e) {
     next(e);
@@ -295,18 +316,20 @@ router.post('/blog/:id/delete', async (req, res, next) => {
 /** Publish / unpublish from the list, without opening the editor. */
 router.post('/blog/:id/status', async (req, res, next) => {
   const id = int(req.params.id, 0);
+  const mine = ownScope(req.admin);
   try {
     const [[post]] = await pool.query(
-      'SELECT status, title, published_at FROM blog_posts WHERE id = ?',
-      [id]
+      `SELECT status, title, published_at FROM blog_posts WHERE id = ?${mine.sql}`,
+      [id, ...mine.params]
     );
     if (!post) return back(res, '/admin/blog', { err: 'That post no longer exists.' });
 
     const status = post.status === 'published' ? 'draft' : 'published';
-    await pool.query('UPDATE blog_posts SET status = ?, published_at = ? WHERE id = ?', [
+    await pool.query(`UPDATE blog_posts SET status = ?, published_at = ? WHERE id = ?${mine.sql}`, [
       status,
       status === 'published' ? post.published_at || new Date() : post.published_at,
       id,
+      ...mine.params,
     ]);
 
     back(res, '/admin/blog', {

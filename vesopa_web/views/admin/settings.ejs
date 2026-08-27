@@ -78,8 +78,9 @@
                 <%# Posts JSON and reloads, which is what the endpoint answers with. %>
                 <select class="ap-select js-role" data-id="<%= a.id %>"
                         style="padding:4px 26px 4px 8px; font-size:12.5px">
-                  <option value="Subadmin" <%= a.status === 'Subadmin' ? 'selected' : '' %>>Subadmin</option>
-                  <option value="Admin"    <%= a.status === 'Admin'    ? 'selected' : '' %>>Admin</option>
+                  <option value="Subadmin"    <%= a.status === 'Subadmin'    ? 'selected' : '' %>>Subadmin</option>
+                  <option value="Contributor" <%= a.status === 'Contributor' ? 'selected' : '' %>>Contributor</option>
+                  <option value="Admin"       <%= a.status === 'Admin'       ? 'selected' : '' %>>Admin</option>
                 </select>
               </td>
               <td class="ap-nowrap ap-small ap-muted"><%= formatDate(a.dateadded) %></td>
@@ -135,8 +136,19 @@
       <input class="ap-input" name="admin_username" required minlength="8" maxlength="20">
     </div>
     <div class="ap-field">
+      <label>Email <span class="ap-hint">optional — they can sign in with this instead of the username</span></label>
+      <input class="ap-input" type="email" name="admin_email" maxlength="255">
+    </div>
+    <div class="ap-field">
       <label>Password</label>
       <input class="ap-input" name="admin_password" required minlength="8" maxlength="72">
+    </div>
+    <div class="ap-field">
+      <label>Role</label>
+      <select class="ap-input" name="admin_status">
+        <option value="Subadmin">Subadmin — everything except managing admins</option>
+        <option value="Contributor">Contributor — Blog and File Manager only, and only their own</option>
+      </select>
     </div>
     <div class="ap-btn-row" style="justify-content:flex-end">
       <button class="ap-btn ghost" type="button" data-modal-close>Cancel</button>

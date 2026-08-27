@@ -25,6 +25,7 @@ const { pool } = require('../db');
 const config = require('../config');
 const {
   issue, clear, read, authenticate, requireAdmin, requireFullAdmin,
+  isContributor, blockContributor,
 } = require('../admin-auth');
 const { formatDate, back, readFlash, navCounts, str } = require('./util');
 
@@ -61,7 +62,10 @@ router.post('/', async (req, res, next) => {
     if (!admin) return fail('Those details were not recognised.');
 
     issue(res, admin);
-    res.redirect(303, '/admin/dashboard');
+    // A contributor has no dashboard — it is one of the screens the role is
+    // defined by not having — so they land on the File Manager instead of being
+    // bounced off a redirect on the way in.
+    res.redirect(303, admin.status === 'Contributor' ? '/admin/files' : '/admin/dashboard');
   } catch (e) {
     next(e);
   }
@@ -100,21 +104,43 @@ router.use((req, res, next) => {
   res.locals.CONTACT = config.CONTACT;
   res.locals.APP_VERSION = config.APP_VERSION;
   res.locals.counts = { demos: 0, drafts: 0, expiring: 0 };
+  // The sidebar draws two shapes of panel from this: the full console, and the
+  // Blog-and-Files one a contributor gets.
+  res.locals.isContributor = isContributor(req.admin);
   res.locals.flash = readFlash(req);
   res.locals.nav = '';
   next();
 });
 
 // Bare /admin/home from an old bookmark or an email link.
-router.get('/home', (_req, res) => res.redirect(302, '/admin/dashboard'));
+router.get('/home', (req, res) =>
+  res.redirect(302, isContributor(req.admin) ? '/admin/files' : '/admin/dashboard')
+);
+
+// What a contributor may reach, refused here rather than hidden in the sidebar.
+//
+// The sidebar hides the rest too, but that is a layout decision and this is the
+// access rule. The PHP panel this replaced hid admin management from Subadmins
+// and left the routes open, which made the role a suggestion: anyone who typed
+// the URL had it.
+//
+// One guard in front of everything, checking the path against an allow-list —
+// see blockContributor. Not one guard per router: `router.use(guard, sub)` runs
+// the guard on every request that reaches that line, not only the ones `sub`
+// handles, so wrapping each router blocked Blog and File Manager as well and
+// sent the panel into a redirect loop.
+router.use(blockContributor);
 
 router.use(dashboardRouter);
 router.use(officesRouter);
 router.use(plansRouter);
 router.use(usersRouter);
+router.use(requestsRouter);
+
+// The two the role exists for. Each scopes its own rows to the signed-in
+// contributor; see ownScope in admin-auth.js.
 router.use(blogRouter);
 router.use(filesRouter);
-router.use(requestsRouter);
 
 // ---- Settings -------------------------------------------------------------
 
@@ -208,22 +234,32 @@ router.post('/settings/password', async (req, res, next) => {
 router.post('/settings/admins/new', requireFullAdmin, async (req, res, next) => {
   const fullname = str(req.body.admin_fullname, 255);
   const username = str(req.body.admin_username, 20);
+  const email = str(req.body.admin_email, 255).toLowerCase() || null;
   const password = String(req.body.admin_password || '');
+  // Never 'Admin' from this form. A new account that can create more accounts
+  // is a decision to make deliberately on an existing one, not a value in a
+  // dropdown on the way in.
+  const status = req.body.admin_status === 'Contributor' ? 'Contributor' : 'Subadmin';
 
   if (fullname.length < 5 || username.length < 8 || password.length < 8) {
     return back(res, '/admin/settings', { err: 'Check the name, username and password lengths.' });
   }
+  if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    return back(res, '/admin/settings', { err: 'That email address does not look right.' });
+  }
 
   try {
     await pool.query(
-      `INSERT INTO admin_table (fullname, username, status, password, enabled)
-       VALUES (?, ?, 'Subadmin', ?, 'Y')`,
-      [fullname, username, await bcrypt.hash(password, 12)]
+      `INSERT INTO admin_table (fullname, username, email, status, password, enabled)
+       VALUES (?, ?, ?, ?, ?, 'Y')`,
+      [fullname, username, email, status, await bcrypt.hash(password, 12)]
     );
-    back(res, '/admin/settings', { ok: `${fullname} added as a Subadmin.` });
+    back(res, '/admin/settings', { ok: `${fullname} added as a ${status}.` });
   } catch (e) {
     if (e.code === 'ER_DUP_ENTRY') {
-      return back(res, '/admin/settings', { err: 'That username is taken.' });
+      return back(res, '/admin/settings', {
+        err: 'That username or email address is already in use.',
+      });
     }
     next(e);
   }
@@ -248,7 +284,11 @@ router.post('/settings/admins/status', requireFullAdmin, async (req, res, next) 
   const id = Number.parseInt(req.body.my_id, 10);
   const status = String(req.body.new_status || '');
 
-  if (!Number.isInteger(id) || !['Admin', 'Subadmin'].includes(status) || id === req.admin.id) {
+  if (
+    !Number.isInteger(id) ||
+    !['Admin', 'Subadmin', 'Contributor'].includes(status) ||
+    id === req.admin.id
+  ) {
     return res.json({ status: 'FAILED' });
   }
 

@@ -114,9 +114,16 @@ async function verifyPassword(admin, submitted) {
  * saying which half was wrong.
  */
 async function authenticate(username, password) {
+  // Either the username or the email address. A contributor is created with an
+  // address because that is what they are given, and the profile form caps a
+  // username at 20 characters — shorter than most addresses, so storing one
+  // there would truncate it into an account nobody could sign in to. An empty
+  // parameter can never match a NULL email; see schema_admin_contributor.sql.
   const [rows] = await pool.query(
-    'SELECT id, fullname, username, password, status FROM admin_table WHERE username = ? AND enabled = ?',
-    [username, 'Y']
+    `SELECT id, fullname, username, email, password, status
+       FROM admin_table
+      WHERE (username = ? OR email = ?) AND enabled = ?`,
+    [username, username, 'Y']
   );
   if (!rows.length) {
     // Spend roughly the time a real check would, so a missing username is not
@@ -140,7 +147,7 @@ async function requireAdmin(req, res, next) {
 
   try {
     const [rows] = await pool.query(
-      'SELECT id, fullname, username, status, enabled FROM admin_table WHERE id = ?',
+      'SELECT id, fullname, username, email, status, enabled FROM admin_table WHERE id = ?',
       [session.id]
     );
     if (!rows.length || rows[0].enabled !== 'Y') {
@@ -166,4 +173,77 @@ function requireFullAdmin(req, res, next) {
   next();
 }
 
-module.exports = { issue, clear, read, authenticate, requireAdmin, requireFullAdmin, COOKIE };
+/**
+ * Someone who may add files and write blog posts, and nothing else.
+ *
+ * The panel had two roles and neither fits. 'Subadmin' was only ever "Admin,
+ * minus the admin list" — it still reaches Offices & Billing, the Collection
+ * ledger, every demo request and every customer's phone number. There was no
+ * way to let somebody write a blog post without also handing them the billing
+ * screens, which is what this role exists for.
+ *
+ * Defined by subtraction, and checked on the *routes* rather than on the
+ * buttons. Hiding a link is a layout decision; a role is not enforced until the
+ * endpoint behind the link refuses. That distinction is the one the PHP panel
+ * got wrong — it hid admin management from Subadmins and left the routes wide
+ * open — and it is worth not getting wrong twice.
+ */
+function isContributor(admin) {
+  return !!admin && admin.status === 'Contributor';
+}
+
+/**
+ * The only paths a contributor may reach. Everything else is refused.
+ *
+ * An allow-list, not a deny-list, and that is the whole design. A deny-list has
+ * to be revisited every time a screen is added to the panel, and the failure
+ * mode when somebody forgets is that the new screen is open to a role that was
+ * never meant to see it. This way a screen nobody has thought about is denied,
+ * which is the right default for a role defined by subtraction.
+ *
+ * `/settings` is on the list and is not a fourth feature: the admin list on
+ * that page is already behind requireFullAdmin, so what a contributor gets
+ * there is their own name and their own password. Locking somebody out of
+ * changing their own password is not a permission, it is a trap.
+ */
+const CONTRIBUTOR_PATHS = /^\/(blog|blog-preview|files|settings|logout)(\/|$)/;
+
+/**
+ * Refuse a contributor anything outside that list.
+ *
+ * Mounted once, in front of the feature routers, rather than wrapped around
+ * each of them — `router.use(guard, subRouter)` runs the guard on *every*
+ * request that reaches it, not only the ones the sub-router handles, so
+ * per-router mounts blocked the two screens the role exists for. That was
+ * caught by driving the live panel rather than by reading the code, which is
+ * the only way this class of Express mistake ever shows up.
+ *
+ * A redirect rather than a 403 on a GET: somebody following an old bookmark to
+ * the dashboard should land where they can work, not on an error page about a
+ * screen they will never be allowed to see. A POST gets the flat refusal,
+ * because something has gone wrong if one is being submitted at all.
+ */
+function blockContributor(req, res, next) {
+  if (!isContributor(req.admin)) return next();
+  if (CONTRIBUTOR_PATHS.test(req.path)) return next();
+  if (req.method === 'GET') return res.redirect('/admin/files');
+  return res.status(403).send('You do not have permission to do that.');
+}
+
+/**
+ * The `WHERE` a listing needs so a contributor sees only their own rows.
+ *
+ * Returns a fragment and its parameters rather than a string to interpolate:
+ * `owner_admin_id` is a number off the session and would be safe either way,
+ * but a helper that hands back SQL to paste together is one somebody later
+ * passes a request parameter to.
+ */
+function ownScope(admin, column = 'owner_admin_id') {
+  if (!isContributor(admin)) return { sql: '', params: [] };
+  return { sql: ` AND ${column} = ?`, params: [admin.id] };
+}
+
+module.exports = {
+  issue, clear, read, authenticate, requireAdmin, requireFullAdmin,
+  isContributor, blockContributor, ownScope, COOKIE,
+};

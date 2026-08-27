@@ -22,6 +22,7 @@ const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
 const { pool } = require('../db');
+const { ownScope } = require('../admin-auth');
 const { safeUrl } = require('./sanitise');
 const {
   formatDate, formatDateTime, bytes, back, readFlash, navCounts, slugify, str, int,
@@ -125,6 +126,12 @@ router.get('/files', async (req, res, next) => {
     if (category) { where.push('category = ?'); params.push(category); }
     if (q) { where.push('(title LIKE ? OR original_name LIKE ? OR url LIKE ?)'); params.push(`%${q}%`, `%${q}%`, `%${q}%`); }
 
+    // A contributor sees the files they uploaded and no others — including in
+    // the totals across the top, which would otherwise report the whole
+    // library's size to somebody who can see three rows of it.
+    const mine = ownScope(req.admin);
+    if (mine.sql) { where.push('owner_admin_id = ?'); params.push(...mine.params); }
+
     const [rows] = await pool.query(
       `SELECT * FROM media_files
        ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
@@ -135,7 +142,9 @@ router.get('/files', async (req, res, next) => {
     const [[stats]] = await pool.query(
       `SELECT COUNT(*) AS n, COALESCE(SUM(size_bytes), 0) AS total_bytes,
               COALESCE(SUM(download_count), 0) AS downloads
-       FROM media_files`
+       FROM media_files
+       WHERE 1 = 1${mine.sql}`,
+      mine.params
     );
 
     res.render('admin/files', {
@@ -178,8 +187,9 @@ router.post('/files/upload', (req, res, next) => {
       await pool.query(
         `INSERT INTO media_files
            (kind, category, title, original_name, stored_name, url, mime, size_bytes,
-            attach_to, label, version, is_public, sort_order, uploaded_by)
-         VALUES ('file', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            attach_to, label, version, is_public, sort_order, uploaded_by,
+            owner_admin_id)
+         VALUES ('file', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           category,
           str(req.body.title, 255) || req.file.originalname,
@@ -194,6 +204,9 @@ router.post('/files/upload', (req, res, next) => {
           req.body.is_public === '0' ? 0 : 1,
           int(req.body.sort_order, 0),
           req.admin.fullname || req.admin.username,
+          // Who may edit it later, which is a different question from the
+          // `uploaded_by` byline beside it — that one is free text.
+          req.admin.id,
         ]
       );
 
@@ -225,8 +238,9 @@ router.post('/files/link', async (req, res, next) => {
   try {
     await pool.query(
       `INSERT INTO media_files
-         (kind, category, title, url, attach_to, label, version, is_public, sort_order, uploaded_by)
-       VALUES ('link', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (kind, category, title, url, attach_to, label, version, is_public, sort_order,
+          uploaded_by, owner_admin_id)
+       VALUES ('link', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         ['app', 'image', 'document', 'other'].includes(req.body.category)
           ? req.body.category
@@ -239,6 +253,7 @@ router.post('/files/link', async (req, res, next) => {
         req.body.is_public === '0' ? 0 : 1,
         int(req.body.sort_order, 0),
         req.admin.fullname || req.admin.username,
+        req.admin.id,
       ]
     );
     back(res, '/admin/files', { ok: 'Link saved.' });
@@ -251,11 +266,15 @@ router.post('/files/link', async (req, res, next) => {
 
 router.post('/files/:id', async (req, res, next) => {
   const id = int(req.params.id, 0);
+  // In the WHERE, not in a check before it. A read-then-write leaves a window
+  // between the two, and there is nothing here that a single statement cannot
+  // express: a contributor's UPDATE simply matches no row unless it is theirs.
+  const mine = ownScope(req.admin);
   try {
     await pool.query(
       `UPDATE media_files SET title = ?, attach_to = ?, label = ?, version = ?,
                               is_public = ?, sort_order = ?, category = ?
-       WHERE id = ?`,
+       WHERE id = ?${mine.sql}`,
       [
         str(req.body.title, 255),
         str(req.body.attach_to, 64) || null,
@@ -267,6 +286,7 @@ router.post('/files/:id', async (req, res, next) => {
           ? req.body.category
           : 'other',
         id,
+        ...mine.params,
       ]
     );
     back(res, '/admin/files', { ok: 'Saved.' });
@@ -277,12 +297,19 @@ router.post('/files/:id', async (req, res, next) => {
 
 router.post('/files/:id/delete', async (req, res, next) => {
   const id = int(req.params.id, 0);
+  const mine = ownScope(req.admin);
 
   try {
-    const [[file]] = await pool.query('SELECT kind, stored_name, url, title FROM media_files WHERE id = ?', [id]);
+    // Scoped on the way in as well as on the way out. Without it on the SELECT,
+    // a contributor could not delete somebody else's file but could still learn
+    // its name and stored path from the message this hands back.
+    const [[file]] = await pool.query(
+      `SELECT kind, stored_name, url, title FROM media_files WHERE id = ?${mine.sql}`,
+      [id, ...mine.params]
+    );
     if (!file) return back(res, '/admin/files', { err: 'That file is already gone.' });
 
-    await pool.query('DELETE FROM media_files WHERE id = ?', [id]);
+    await pool.query(`DELETE FROM media_files WHERE id = ?${mine.sql}`, [id, ...mine.params]);
 
     if (file.kind === 'file' && file.stored_name) {
       // Rebuilt from the base directory and the stored basename rather than
