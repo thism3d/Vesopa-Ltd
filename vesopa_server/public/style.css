@@ -1751,6 +1751,31 @@ table.plain th { color: var(--muted, #7a828c); font-weight: 600; font-size: 11px
   background: #2b313d;
   color: #fff;
 }
+/* A space set aside: sized by the manager, not yet given anything to do.
+   Deliberately not `.filled` — it is an empty cell that happens to be bigger,
+   and drawing it as a key would have a manager hunting for the product on it.
+   It draws nothing at all on the till and nothing in Preview, which the
+   `:not(.filled)` rule further down already takes care of. */
+.sp-cell.reserved {
+  border-style: dashed;
+  border-color: rgba(165, 199, 21, .5);
+  background:
+    repeating-linear-gradient(
+      135deg,
+      rgba(165, 199, 21, .07),
+      rgba(165, 199, 21, .07) 7px,
+      transparent 7px,
+      transparent 14px
+    ),
+    rgba(255, 255, 255, .03);
+  color: rgba(255, 255, 255, .5);
+}
+.sp-reserved-size {
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  letter-spacing: .04em;
+  opacity: .8;
+}
 .sp-cell.selected {
   outline: 3px solid var(--brand, #a5c715);
   outline-offset: -3px;
@@ -2010,6 +2035,57 @@ table.plain th { color: var(--muted, #7a828c); font-weight: 600; font-size: 11px
 .sp-stage { display: flex; flex-direction: column; gap: 6px; }
 .sp-stage.framed .sp-grid { aspect-ratio: auto; }
 
+/* The till's own fixed key, beside the top bar being laid out.
+   `display: contents` everywhere else, so on a sale screen and a bottom bar
+   the grid is still a direct flex child of the stage and every rule about how
+   it is sized — including the pop-out's — applies exactly as it did. */
+.sp-bar-row { display: contents; }
+.sp-stage.with-nav .sp-bar-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  min-height: 0;
+}
+.sp-stage.with-nav .sp-bar-row > .sp-grid {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-inline: 0;
+}
+.sp-fixed-nav {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px dashed rgba(255, 255, 255, .22);
+  background: rgba(255, 255, 255, .05);
+  cursor: not-allowed;
+}
+.sp-fixed-nav[hidden] { display: none; }
+.sp-fixed-nav-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 9px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .1);
+  color: rgba(255, 255, 255, .9);
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.sp-fixed-nav-icon { color: var(--brand, #a5c715); }
+.sp-fixed-nav-caret { opacity: .6; font-size: 10px; }
+.sp-fixed-nav-note {
+  font-size: 10px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, .4);
+}
+
 /* A grid taller than the window is one whose bottom row a manager cannot see
    without scrolling the toolbar off — and the toolbar is where Save lives. The
    16:9 shape is kept by giving back width rather than by stretching, so what is
@@ -2052,17 +2128,134 @@ table.plain th { color: var(--muted, #7a828c); font-weight: 600; font-size: 11px
   line-height: 1;
   max-width: 100%;
 }
-.sp-face-art.img {
-  width: 34px;
-  height: 22px;
-  border-radius: 4px;
-  background-size: cover;
-  background-position: center;
+/* A picture *is* the key, not a stamp above its name.
+   Absolutely positioned behind everything else in the cell, so the label —
+   when the venue has asked for one — letters over it rather than beside it.
+   This is the till's own stacking; see `_media` in programmed_grid.dart. */
+.sp-face-fill {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+}
+.sp-face-fill img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* object-fit and transform are set per key from spFrameStyle(). The
+     transform is `translate(x%, y%) scale(s)`, which CSS applies right to
+     left — scaled first, then shifted by a percentage of the *key's* size.
+     The till composes the same two steps in the same order, and if the two
+     ever disagree the editor's preview is lying about what a clerk will see. */
+  transform-origin: center;
+}
+/* Lettering over a photograph, when the venue has asked for the name as well.
+   The scrim is the whole reason this is readable: a white label on a picture
+   that happens to be pale is a key nobody can read, and which keys those are
+   depends on the photograph rather than on anything the editor knows. */
+.sp-over-art {
+  position: relative;
+  z-index: 1;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: rgba(12, 15, 20, .62);
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .6);
 }
 /* Borrowed from the product rather than given to the key. Faded so that "this
    key has a picture" and "this key was given one" stay apart — otherwise
    clearing a key's own emoji looks like it did nothing. */
 .sp-face-art.inherited { opacity: .5; }
+/* Faded a little rather than halved: a photograph at 50% on a dark grid is
+   barely a picture at all, and the point of drawing the borrowed one is that a
+   manager can see what the key will actually look like. */
+.sp-face-fill.inherited { opacity: .72; }
+
+/* ---------------------------------------------------------------------------
+   Framing a picture on a key
+
+   Drawn at the key's own proportions — a 2x2 stage is square, a 1x3 is a strip
+   — because "does this picture work here" is a question only the real shape
+   answers. `aspect-ratio` is set from the grid by spRenderFrame().
+   --------------------------------------------------------------------------- */
+.sp-frame {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line, rgba(0, 0, 0, .12));
+}
+.sp-frame-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.sp-frame-stage {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 10px;
+  border: 1px solid var(--line, rgba(0, 0, 0, .16));
+  /* The chequerboard shows through wherever the picture does not reach, which
+     is what "Whole picture" looks like on a key whose shape does not match it.
+     A flat colour here would read as part of the photograph. */
+  background:
+    repeating-conic-gradient(rgba(128, 128, 128, .18) 0% 25%, transparent 0% 50%)
+      50% / 16px 16px;
+  cursor: grab;
+  touch-action: none;
+}
+.sp-frame-stage.dragging { cursor: grabbing; }
+.sp-frame-stage img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform-origin: center;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.sp-frame-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 6px;
+  transform: translateX(-50%);
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(12, 15, 20, .6);
+  color: #fff;
+  font-size: 10.5px;
+  letter-spacing: .02em;
+  pointer-events: none;
+  opacity: .85;
+  transition: opacity .15s;
+}
+.sp-frame-stage.dragging .sp-frame-hint,
+.sp-frame-stage:hover .sp-frame-hint { opacity: 0; }
+.sp-frame-zoom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--muted, #7a8394);
+}
+.sp-frame-zoom input[type='range'] { flex: 1 1 auto; min-width: 0; }
+.sp-frame-zoom output {
+  flex: 0 0 auto;
+  min-width: 44px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.sp-frame-presets { display: flex; gap: 6px; margin-top: 8px; }
+.sp-frame-presets .btn { flex: 1 1 0; }
+.sp-frame-presets .btn.on {
+  outline: 2px solid var(--brand, #a5c715);
+  outline-offset: -2px;
+}
+#sp-show-label-wrap { margin-top: 10px; }
 
 /* A live display is not a key. Drawn as a sketch of what the till will put
    there, so a manager sizes the open-tables strip like a strip. */

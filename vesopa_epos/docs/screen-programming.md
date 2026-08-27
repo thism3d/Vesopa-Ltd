@@ -207,6 +207,9 @@ on Windows".
 | Click a key | Selects it |
 | **Double-click a key** | **Opens the search: any product, page or function, by name** |
 | **Drag the corner handle** | **Makes the key bigger or smaller, snapped to the grid** |
+| **Drag the handle on an *empty* cell** | **Sets a space aside at that size — see §11** |
+| **Drag the framing stage** | **Moves the picture on the selected key** |
+| **Scroll the framing stage** | **Zooms it** |
 | Drag across the grid | Selects the box — with a mouse, a pen **or a finger** |
 | Shift+drag / Shift+click | Extends the box from the last press |
 | Ctrl+click | Adds or removes one key |
@@ -655,3 +658,243 @@ table and is safe anywhere. `schema_screens_fonts.sql` alters
 creates it. The column on `epos_till_settings` is in a `schema_till_*.sql` file,
 because that row is created in `schema_staff_idle.sql` and anything alphabetically
 earlier would fail on a fresh database and pass on every existing one.
+
+---
+
+## 11. Shapes first, products second
+
+A venue does not lay a screen out the way the editor originally assumed. They do
+not pick a product and then decide how big its key should be; they arrange the
+*shapes* — a 2x2 here for the house burger, a 1x3 strip there for the wine list
+— and then say what each one rings up. That is the order the work actually
+happens in, and until now the editor made it impossible: the corner handle only
+appeared on a key that already had something on it, so there was nothing to
+resize until after the decision the sizing was supposed to come before.
+
+### A blank that holds ground
+
+The handle is on every selected cell now, empty or not. Dragging it on an empty
+cell brings a **reservation** into being: a button of `kind: 'blank'` whose only
+property is its span.
+
+The rule for whether a blank is stored is one line, and it is written in three
+places that have to agree:
+
+```
+a blank is a row  ⟺  rowSpan > 1 || colSpan > 1
+```
+
+* `spHoldsSpace()` in `public/screens.js` — the editor's `spTidy()`
+* the save loop in `src/screens.js` — what reaches the database
+* `ScreenButtonKind.blank` in `lib/data/screens.dart` — what the till draws
+
+A blank of one cell is stored by nobody: an empty cell already means empty, and
+keeping them would double the size of every screen to say nothing. A blank that
+spans is stored, because the manager has said something with it.
+
+Three consequences worth spelling out:
+
+**A reservation carries nothing but its ground.** The server nulls the label,
+the colours, the face and the lettering on any blank it stores, and the
+inspector disables those controls. A coloured, labelled key that a clerk can see
+and cannot press is worse than an obviously unfinished one.
+
+**The till draws it as nothing.** Not as a key, and not as four separate empty
+cells — the cells under its span are already skipped as covered, so a 2x2
+reservation is a 2x2 hole. The layout stays arranged.
+
+**Backspace still empties a cell, span and all.** `spClearButton()` takes the
+span back to 1 as well as the kind, so Clear means what it has always meant. A
+space that is meant to stay set aside is made by a deliberate drag of the
+handle; Backspace is not deliberate in that way.
+
+### A picture is the key
+
+Two changes, and the second only makes sense because of the first.
+
+**A key with a picture no longer letters its name over it.** A photograph of a
+burger is a better burger key than the word BURGER over a sliver of one. The
+price goes with the name — "just the image" means just the image — and both come
+back per key on the **Show the name as well** tick, which letters them over the
+picture on a scrim so they stay readable whatever the photograph happens to be.
+A key with no picture always says its name; there would be nothing on it
+otherwise. The offer chip is drawn either way: an offer that is running and not
+shown is a clerk quoting the wrong price.
+
+**And the picture can be framed.** A venue arranges keys in whatever sizes suit
+them, and one photograph has to look right in all of them. Before this a picture
+was drawn one way only, so a tall bottle shot on a wide key was a label of glass
+with the bottle cropped out of frame, and there was nothing anybody could do
+about it.
+
+Four numbers say how to *look* at the file. Nothing is uploaded, nothing is
+cropped, and the product catalogue is untouched — so the same photograph frames
+one way on the FOOD key and another on the burger it leads to.
+
+| | |
+| --- | --- |
+| `imageFit` | `cover` fills the key and crops the overflow; `contain` fits the whole picture inside it |
+| `imageScale` | percent, 20–400. 100 is the fit exactly |
+| `imageX`, `imageY` | percent of the **key's** own width and height, signed. 0 is centred |
+
+Composed in that order, and **the order is the contract**:
+
+1. lay the picture in with the fit;
+2. scale it about the centre;
+3. shift it, as a fraction of the key.
+
+In the browser that is `object-fit` plus `transform: translate(x%, y%) scale(s)`
+— CSS reads a transform list right to left, so `translate` written first is
+applied second. On the till it is `BoxFit` inside
+`Transform.translate(Transform.scale(…))`, where the inner transform runs first.
+Same two steps, same order. Get it backwards and the shift scales with the zoom:
+the editor's preview and the counter show different pictures, and the manager is
+aiming at something a clerk will never see.
+
+The floor on the zoom is **20, not 100**, and that matters. A floor at "exactly
+the fit" means a picture can only ever be cropped and never pulled back to show
+more of itself — which is the fault the product cropper had to be fixed for.
+"The images are too zoomed in" was a floor in the wrong place, not a zoom.
+
+### The framing stage
+
+In the inspector, under the gallery, and **drawn at the selected key's own
+proportions** — measured off the grid, so a 2x2 stage is the shape of a 2x2 and
+a 1x3 is a strip. That is the whole idea: "does this picture work *here*" is a
+question only the real shape answers, and a fixed square preview cannot answer
+it for a venue whose keys are all different sizes.
+
+Drag it to pan, scroll or pinch to zoom; **Fill the key** / **Whole picture**
+are the two answers worth one press each, and **Reset** puts everything back to
+untouched. Panning and zooming are continuous, so they follow the corner
+handle's rule rather than the colour wheel's old one: the buttons are mutated
+directly while the gesture runs and **one undo step is pushed when it settles**.
+A drag is a hundred pointer events, and a hundred undo steps is an undo stack
+nobody can use.
+
+### Where it lives
+
+```
+vesopa_server/
+  schema_screens_key_images.sql  image_fit, image_scale, image_x, image_y, show_label
+  src/screens.js                 cleanImageFit/Scale/Offset, and the blank rule
+  public/screens.js              spFrameOf, spFrameStyle, spDrawsLabel,
+                                 spRenderFrame, spFrameChange, spResizeTarget,
+                                 spHoldsSpace
+  public/index.html              #sp-frame — the stage, the zoom, the tick
+vesopa_epos/
+  lib/data/screens.dart          ScreenImageFit, the four fields, ...Kind.blank
+  lib/ui/widgets/programmed_grid.dart  _picture(), _OverPicture
+  lib/ui/widgets/programmed_bar.dart   the same, on a bar key
+```
+
+Guarded by the reserved-space and framing checks in
+`backoffice-screens-browser.test.js`, the `normaliseButton` checks in
+`screens.test.js`, `spTidy`'s in `backoffice-screens-ui.test.js`, and
+`test/programmed_key_face_test.dart` — which is the one that checks the two
+transforms are composed in the order written above.
+
+**Add a field to a button? Add it to `spShape()` in the same breath.** That
+string is what `spDirty()` compares and what `spEdit()` uses to decide whether
+anything happened. A field left out is quiet in exactly the wrong way: changing
+it is not a change, so there is no undo step, no unsaved-work warning, and the
+edit is thrown away without a word by the next screen switch.
+
+---
+
+## 12. One bar, everywhere
+
+The till used to wear a fixed strip above everything — a gear, the section name,
+the shift chip and the online badge — and then, on the sale screen, the venue's
+programmed top bar underneath it. Two bars, one above the other, both saying who
+was signed on and whether the till was online. The venue asked for the top one
+to go.
+
+It could only ever go on the sale screen, because that was the only place a
+programmed bar drew. Everywhere else — Tables, Reports, Settings — the fixed
+strip was the only chrome there was, and removing it would have left those
+screens with no shift name, no online state, and no way back to the menu on a
+terminal with the side rail tucked away.
+
+So the programmed bar became the till's only bar, and it is drawn on **every**
+section. `TillTopBar` is the chrome around it, and everything the fixed strip
+was carrying found a home:
+
+**The way between sections is `PageSelector`, pinned at the left of every top
+bar.** It is not a key, it is not on the grid, and no layout can remove it. That
+is deliberate, and it is the one thing a bar must never be able to lose: a venue
+that programmed a top bar without a `go_settings` key on it, on a terminal with
+the rail tucked away, would have arranged a till nobody can navigate — and would
+find out at a counter. It takes width from the bar rather than one of its
+columns, so **a bar laid out before this existed still has every key it had**;
+they are drawn a little narrower. The editor shows it beside the grid whenever a
+top bar is being laid out, so a manager arranges against the width it takes.
+
+**Who is on shift, and whether the till is live, are keys the venue can place** —
+`staff_name`, `sign_off`, `sync_status`, `print_status`, all of which the bar has
+offered since the bars landed. Until a venue lays a top bar out at all,
+`TillTopBar` draws them itself at the right; once they have one, it does not,
+because at that point they have said what goes on their bar.
+
+**Off the sale screen, the keys that act on a bill are drawn and dimmed.** There
+is no bill in front of the clerk on Reports, so Pay, Void, Save Table and every
+product key resolve to no action — visibly, rather than by vanishing. A key that
+disappears on one section and comes back on another is a bar that appears to be
+broken; one that still fired would take a payment from a screen the clerk cannot
+see the bill on. What stays live is what still means something anywhere: the
+`go_*` keys, Sign off, and every widget — the open-bills strip included, so a
+clerk can pick a table up from the Reports page and be taken to it.
+
+The sale screen draws its own bar rather than the shell drawing it, because it
+is the only section with a bill on it and the venue's bar is allowed to say what
+that bill comes to. Both go through the same `TillTopBar`, so the page selector
+is in the same place on every screen whichever of the two put it there.
+
+### Where it lives
+
+```
+vesopa_epos/
+  lib/ui/widgets/till_top_bar.dart     TillTopBar, PageSelector, VenueTopBarBody
+  lib/ui/shell.dart                    draws it for every section but Sale
+  lib/ui/sale_page.dart                topBarChrome — the shell's, around its own bar
+  lib/ui/widgets/programmed_bar.dart   onSaleScreen, and _anywhere
+vesopa_server/
+  public/index.html                    #sp-fixed-nav — the key beside a top bar
+  public/screens.js                    shown for the topbar surface only
+```
+
+---
+
+## 13. The Z report comes off the printer
+
+Not screen programming, but it lives in the same release and it is the same
+shape of fault, so it is written down here rather than nowhere: **the Z report
+was never printed.**
+
+Everything for it existed. `ReceiptBuilder.tillReport()` had built the document
+for months, `PrintTarget.tillReport` had a printer assignment and a fallback to
+the receipt printer, and `PrintService.printTillReport()` was written and
+correct. Nothing called it. Running a Z closed the period, reset the totals and
+showed a toast, and the manager who had set a printer up watched nothing come
+out and had no way to tell which of the four things in that chain had failed.
+
+Three things now:
+
+* **A Z prints as soon as it has run.** The dialog says so before it is run.
+* **The last Z is kept, so it can be printed again.** A Z closes the period, so
+  the moment it runs the screen goes back to showing an empty X — and the
+  document the manager actually needs on paper is no longer anywhere they can
+  reach it. `lastZReportProvider` holds it and a **Reprint Z #n** key appears
+  beside the totals. In memory, not on disk: this is the way back from a printer
+  that was switched off, and a Z from last Tuesday is a back-office question.
+* **A print that fails says the period is closed anyway.** A manager who reads
+  only "could not print" runs the Z again looking for paper, and the second one
+  totals nothing.
+
+There is a **Print X** key too, which needs none of that: nothing is closed and
+nothing is reset, so a failure costs one more press.
+
+`printTillReport()` in `lib/ui/reports_page.dart` resolves the printer through
+the target's fallback chain — an unset "X / Z report" uses the receipt printer,
+which is what a till with one printer has always meant — and names
+Settings › Printers › X / Z report when there is no printer at either end.

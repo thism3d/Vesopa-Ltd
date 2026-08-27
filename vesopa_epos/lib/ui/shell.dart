@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../data/screens.dart';
 import '../data/session_controller.dart';
 import '../data/staff_session.dart';
 import '../data/sync_service.dart';
@@ -21,7 +20,7 @@ import 'sale_page.dart';
 import 'tables_page.dart';
 import 'theme.dart';
 import 'widgets/nav_rail.dart';
-import 'widgets/print_status.dart';
+import 'widgets/till_top_bar.dart';
 
 /// The till frame: fixed nav rail on the left, the selected page beside it.
 class PosShell extends ConsumerStatefulWidget {
@@ -118,9 +117,6 @@ class _PosShellState extends ConsumerState<PosShell> {
     }
 
     final orderId = _orderId;
-    final body = orderId == null
-        ? const Center(child: CircularProgressIndicator())
-        : _page(orderId);
 
     // Whether the side menu is fixed on screen or opens from the menu key is
     // the operator's choice now — see NavPanelMode. Default (auto) is fixed on
@@ -129,32 +125,18 @@ class _PosShellState extends ConsumerState<PosShell> {
         ref.watch(navPanelControllerProvider).value ?? NavPanelMode.auto;
     final pinned = navMode.isPinnedOn(context.layout);
 
-    // Two bars, one above the other, both saying who is signed on and whether
-    // the till is online — the venue asked for the top one to go.
+    // There used to be two bars here, one above the other, both saying who was
+    // signed on and whether the till was online — and the venue asked for the
+    // top one to go. It could only ever go on the Sale screen, because that is
+    // the only place a programmed bar drew, and everywhere else it was the only
+    // chrome there was: no shift name, no online state, and no way back to the
+    // menu when the rail was tucked away.
     //
-    // It goes only where the venue has actually put something in its place: the
-    // Sale screen, where the programmed top bar draws. Everywhere else — Tables,
-    // Reports, Settings — nothing else draws chrome, so removing it outright
-    // would leave those screens with no shift name, no online state and, when
-    // the rail is not fixed, no way back to the menu.
-    //
-    // The rail has to be fixed too, for that last reason: the bar's menu key is
-    // the only way to open the drawer, and a programmed bar cannot be relied on
-    // to carry a navigation key the venue may not have placed.
+    // Now there is one bar. [TillTopBar] draws it on every section, with the
+    // page selector pinned at its left where no layout can delete it, and the
+    // Sale screen fills the middle of it with the venue's own top bar. See that
+    // widget for what happened to everything the fixed strip was carrying.
     final saleScreen = navDestinations[_index].label == 'Sale';
-    final hasProgrammedTopBar = () {
-      final screens = ref.watch(screensProvider).value;
-      if (screens == null) return false;
-      final settings = ref.watch(tillSettingsProvider);
-      final home = screens.byId(settings.homeScreenId);
-      return screens.barFor(
-            home,
-            ScreenSurface.topBar,
-            settings.topBarScreenId,
-          ) !=
-          null;
-    }();
-    final ownBarWouldBeSecond = saleScreen && pinned && hasProgrammedTopBar;
 
     // The drawer, for when the rail is not fixed. A fixed rail costs ~208px of
     // width permanently, on the screen where the product grid and the bill are
@@ -209,44 +191,68 @@ class _PosShellState extends ConsumerState<PosShell> {
       onLogout: _logout,
     );
 
+    // The one bar the till wears, around whatever is put in it.
+    //
+    // A closure built here rather than a method, because everything it needs —
+    // whether the rail is pinned, which of the sign-on pair applies — is state
+    // this build has already worked out, and a method would have to watch those
+    // providers again from inside another widget's build.
+    Widget topBarChrome({Widget? body, bool trailing = true}) => TillTopBar(
+      section: navDestinations[_index],
+      onSelectSection: (i) => setState(() => _index = i),
+      // No menu key when the rail is already on screen: a button that opens a
+      // copy of what is visible beside it is noise.
+      onOpenMenu: pinned ? null : () => _scaffold.currentState?.openDrawer(),
+      onSignOn: onSignOn,
+      onSignOff: onSignOff,
+      body: body,
+      trailing: trailing,
+    );
+
+    final body = orderId == null
+        ? const Center(child: CircularProgressIndicator())
+        : _page(orderId, topBarChrome);
+
+    // Drawn by the shell for every section except Sale, which draws its own —
+    // it is the only section with a bill on it, and the venue's top bar is
+    // allowed to say what that bill comes to. Both go through the same chrome,
+    // so the page selector is in the same place on every screen.
+    //
+    // A phone is a till too. The AppBar this replaces carried a gear, a section
+    // name and the same three badges — the same bar in Material's clothing —
+    // and having two of those to keep in step is how the dark-bar-on-a-white-
+    // page bug got in.
+    //
+    // Off the Sale screen the venue's own bar is drawn too, with the keys that
+    // act on a bill dimmed — see [VenueTopBarBody]. A venue that has arranged
+    // their chrome should meet it on Reports and Settings as well, which is the
+    // whole of "one bar, everywhere".
+    final venueBar = saleScreen ? null : VenueTopBarBody.of(ref);
+    final topBar = saleScreen
+        ? null
+        : topBarChrome(
+            trailing: venueBar == null,
+            body: venueBar == null || orderId == null
+                ? null
+                : VenueTopBarBody(
+                    bar: venueBar,
+                    orderId: orderId,
+                    sectionName: navDestinations[_index].label,
+                    onSwitchOrder: _switchToOrder,
+                    onNavigate: _goTo,
+                  ),
+          );
+
     if (context.useCompactNav && !pinned) {
       return Scaffold(
         key: _scaffold,
-        appBar: AppBar(
-          // Colours come from appBarTheme, which now follows the theme. They
-          // were hardcoded to the dark chrome here, which is why picking Day
-          // left a black bar over a white screen.
-          leading: IconButton(
-            icon: const Icon(Icons.settings),
-            tooltip: 'Settings & menu',
-            onPressed: () => _scaffold.currentState?.openDrawer(),
-          ),
-          title: Row(
-            children: [
-              Icon(
-                navDestinations[_index].icon,
-                size: 20,
-                color: Theme.of(context).posBrandOnChrome,
-              ),
-              const SizedBox(width: 10),
-              Text(navDestinations[_index].label),
-            ],
-          ),
-          actions: [
-            // The same pair as the desktop bar. A tablet till is still a till,
-            // and "hand it to the next person" is a mid-service action there
-            // too — burying it in the drawer means it does not get used.
-            StaffChip(onSignOn: onSignOn, onSignOff: onSignOff, compact: true),
-            const Center(child: PrintStatusBadge(compact: true)),
-            const Padding(
-              padding: EdgeInsets.only(right: 12),
-              child: Center(child: SyncStatusBadge()),
-            ),
-          ],
-          elevation: 0,
-        ),
         drawer: drawer,
-        body: body,
+        body: Column(
+          children: [
+            ?topBar,
+            Expanded(child: body),
+          ],
+        ),
       );
     }
 
@@ -255,17 +261,7 @@ class _PosShellState extends ConsumerState<PosShell> {
       drawer: drawer,
       body: Column(
         children: [
-          if (!ownBarWouldBeSecond)
-            _TitleBar(
-              section: navDestinations[_index],
-              // No menu key when the rail is already on screen: a button that
-              // opens a copy of what is visible beside it is noise.
-              onOpenMenu: pinned
-                  ? null
-                  : () => _scaffold.currentState?.openDrawer(),
-              onSignOn: onSignOn,
-              onSignOff: onSignOff,
-            ),
+          ?topBar,
           Expanded(
             child: pinned
                 ? Row(
@@ -298,7 +294,10 @@ class _PosShellState extends ConsumerState<PosShell> {
     });
   }
 
-  Widget _page(String orderId) {
+  Widget _page(
+    String orderId,
+    Widget Function({Widget? body, bool trailing}) topBarChrome,
+  ) {
     // Routed by label rather than index, so adding a nav item cannot silently
     // shift what each screen points to.
     switch (navDestinations[_index].label) {
@@ -307,6 +306,12 @@ class _PosShellState extends ConsumerState<PosShell> {
           orderId: orderId,
           onNewOrder: _newOrder,
           onSwitchOrder: _switchToOrder,
+          // The Sale screen is the only section that draws its own top bar,
+          // because it is the only one with a bill on it and the venue's bar is
+          // allowed to say what that bill comes to. It draws it in the shell's
+          // chrome, so the page selector is in the same place on every screen
+          // whichever of the two put it there.
+          topBarChrome: topBarChrome,
           // So a programmed bar's `go_*` keys can leave the sale screen. The
           // shell owns which section is showing; the bar only names one.
           onNavigate: _goTo,
@@ -379,93 +384,6 @@ class _PosShellState extends ConsumerState<PosShell> {
           description: 'Managed from the Vesopa Back Office.',
         );
     }
-  }
-}
-
-/// The desktop title bar: the Settings key that opens the nav, the section the
-/// clerk is in, and the sync badge.
-///
-/// Taller than the 22px strip it replaces, because it now carries a real touch
-/// target — but it buys back the ~210px the fixed nav rail used to take off the
-/// width of every screen, which is the trade Meirion asked for.
-class _TitleBar extends StatelessWidget {
-  const _TitleBar({
-    required this.section,
-    required this.onOpenMenu,
-    required this.onSignOn,
-    required this.onSignOff,
-  });
-
-  final NavDestination section;
-
-  /// Null when the nav rail is fixed on screen and there is no drawer to open.
-  final VoidCallback? onOpenMenu;
-
-  /// Whichever of the shift pair currently applies — see [StaffChip].
-  final VoidCallback? onSignOn;
-  final VoidCallback? onSignOff;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    // Follows the theme rather than being hardcoded to the dark chrome — the
-    // reason the bar stayed black with Day selected. See PosColors.posChrome.
-    final ink = theme.posOnChrome;
-
-    return Material(
-      color: theme.posChrome,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          // The light bar sits on a white page and needs a hairline to read as
-          // a bar at all; the dark one separates by contrast on its own.
-          border: theme.isDark
-              ? null
-              : Border(bottom: BorderSide(color: theme.posLine)),
-        ),
-        child: SizedBox(
-          height: 46,
-          child: Row(
-            children: [
-              const SizedBox(width: 4),
-              if (onOpenMenu != null)
-                IconButton(
-                  icon: Icon(Icons.settings, color: ink, size: 22),
-                  tooltip: 'Settings & menu',
-                  onPressed: onOpenMenu,
-                )
-              else
-                const SizedBox(width: 12),
-              const SizedBox(width: 2),
-              Icon(section.icon, color: theme.posBrandOnChrome, size: 18),
-              const SizedBox(width: 9),
-              Text(
-                section.label,
-                style: TextStyle(
-                  color: ink,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const Spacer(),
-              // Whose shift this is, and the key that ends it. It settles the
-              // question the moment it is asked — "am I about to ring this
-              // onto my own name or the last person's?" — which matters once
-              // the check shows attribution.
-              StaffChip(onSignOn: onSignOn, onSignOff: onSignOff),
-              // Whether the kitchen actually got the last ticket. Beside the
-              // sync badge because it answers the same shape of question —
-              // "did what I just did land?" — and draws nothing at all when
-              // there is nothing to report.
-              const PrintStatusBadge(),
-              // The clerk needs to know at a glance whether the till is live with
-              // the back office or working offline with a backlog to send.
-              const SyncStatusBadge(),
-              const SizedBox(width: 14),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 }
 

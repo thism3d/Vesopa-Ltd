@@ -66,6 +66,7 @@ const ctx = lift([
   'spSetKind',
   'spCovered',
   'spOrigin',
+  'spHoldsSpace',
   'spTidy',
   'spShape',
   'spCellFromPoint',
@@ -316,6 +317,34 @@ check('a blank is not a row, here or on the server', () => {
 // Shrinking a grid, and the same rule the server holds: a button outside it is
 // dropped, never clamped. Clamping does not lose a button, it moves it on top
 // of another one and calls the result a save.
+// The other half of that rule, and the reason the editor learned to resize a
+// key that is not a key yet: a blank that *spans* is a space the manager set
+// aside, and it has to survive being saved or the whole gesture is pointless.
+check('a blank that holds ground is a row, and stops being one at 1x1', () => {
+  withState({
+    current: {
+      rows: 3,
+      cols: 3,
+      buttons: [
+        { row: 0, col: 0, kind: 'blank', rowSpan: 2, colSpan: 2 },
+        { row: 2, col: 2, kind: 'blank', rowSpan: 1, colSpan: 1 },
+      ],
+    },
+  });
+  ctx.spTidy();
+  assert.strictEqual(ctx.spCurrent.buttons.length, 1);
+  assert.strictEqual(ctx.spCurrent.buttons[0].kind, 'blank');
+  assert.strictEqual(ctx.spCurrent.buttons[0].rowSpan, 2);
+
+  // And it stops being a row the moment it stops holding anything — including
+  // when the grid is cut down around it, which is the case the second pass in
+  // spTidy exists for: the clamp above it takes the span back to 1x1.
+  ctx.spCurrent.rows = 1;
+  ctx.spCurrent.cols = 1;
+  ctx.spTidy();
+  assert.strictEqual(ctx.spCurrent.buttons.length, 0);
+});
+
 check('a button outside the grid is dropped rather than moved', () => {
   withState({
     current: {

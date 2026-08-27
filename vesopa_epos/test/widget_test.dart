@@ -52,6 +52,11 @@ void main() {
               orderId: orderId,
               onNewOrder: () {},
               onSwitchOrder: (_) {},
+              // The shell owns the till's one top bar, and the page selector
+              // in it — see TillTopBar. This test is about the sale grid, so
+              // it stands in with just the body.
+              topBarChrome: ({Widget? body, bool trailing = true}) =>
+                  body ?? const SizedBox.shrink(),
             ),
           ),
         ),

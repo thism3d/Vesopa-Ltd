@@ -270,17 +270,22 @@ async function check(name, fn) {
   });
 
   await check('a key’s lettering is bounded, and null means “the till decides”', async () => {
-    const plain = normaliseButton({ row: 0, col: 0, kind: 'blank' }, grid);
+    // A real kind, not a blank. A blank carries nothing but its ground now —
+    // see "a reserved space carries nothing but its ground" below — so it is no
+    // longer a neutral vehicle for checking what the cleaners do.
+    const key = (extra) =>
+      normaliseButton(
+        { row: 0, col: 0, kind: 'function', functionKey: 'note', ...extra },
+        grid
+      );
+    const plain = key({});
     // The normal case, and it has to cost nothing: most keys are a word on a
     // colour, and a key that has never been given a font must not arrive at a
     // till carrying one.
     assert.strictEqual(plain.font_family, null);
     assert.strictEqual(plain.font_size, null);
 
-    const styled = normaliseButton(
-      { row: 0, col: 0, kind: 'blank', fontFamily: '  Bebas Neue!! ', fontSize: '22' },
-      grid
-    );
+    const styled = key({ fontFamily: '  Bebas Neue!! ', fontSize: '22' });
     // A slug, not a family name. Anything that is not one is cut out rather
     // than refused: this ends up naming a font family on a counter, and the
     // till's answer to a name it does not know is to letter the key plainly.
@@ -290,20 +295,20 @@ async function check(name, fn) {
     // The column is a TINYINT. A number past 255 would be *stored as something
     // else* rather than refused, which is how a key ends up at 4pt.
     assert.strictEqual(
-      normaliseButton({ row: 0, col: 0, kind: 'blank', fontSize: 900 }, grid).font_size,
+      key({ fontSize: 900 }).font_size,
       72
     );
     assert.strictEqual(
-      normaliseButton({ row: 0, col: 0, kind: 'blank', fontSize: 2 }, grid).font_size,
+      key({ fontSize: 2 }).font_size,
       8
     );
     // Empty is not nought. It is "no answer", which is what most keys say.
     assert.strictEqual(
-      normaliseButton({ row: 0, col: 0, kind: 'blank', fontSize: '' }, grid).font_size,
+      key({ fontSize: '' }).font_size,
       null
     );
     assert.strictEqual(
-      normaliseButton({ row: 0, col: 0, kind: 'blank', fontSize: 'large' }, grid).font_size,
+      key({ fontSize: 'large' }).font_size,
       null
     );
   });
@@ -363,13 +368,23 @@ async function check(name, fn) {
   });
 
   await check('a label is trimmed, capped, and empty becomes null', async () => {
+    // A real kind, for the reason given on the lettering check above.
     const b = normaliseButton(
-      { row: 0, col: 0, kind: 'blank', label: '  ' + 'x'.repeat(80) + '  ' },
+      {
+        row: 0,
+        col: 0,
+        kind: 'function',
+        functionKey: 'note',
+        label: '  ' + 'x'.repeat(80) + '  ',
+      },
       grid
     );
     assert.strictEqual(b.label.length, 40);
     assert.strictEqual(
-      normaliseButton({ row: 0, col: 0, label: '   ' }, grid).label,
+      normaliseButton(
+        { row: 0, col: 0, kind: 'function', functionKey: 'note', label: '   ' },
+        grid
+      ).label,
       null
     );
   });
@@ -781,6 +796,136 @@ async function check(name, fn) {
       grid
     );
     assert.strictEqual(b.image_url, null);
+  });
+
+  // -------------------------------------------------------------------------
+  // Reserved space: a blank that holds ground
+  // -------------------------------------------------------------------------
+  //
+  // A manager lays a screen out shapes first and products second — "we usually
+  // resize the buttons and then add products and functionality later". That
+  // only works if a sized-but-empty key survives a save, which it did not:
+  // every blank was dropped on the way to the database.
+
+  await check('a reserved space carries nothing but its ground', async () => {
+    const b = normaliseButton(
+      {
+        row: 1,
+        col: 2,
+        rowSpan: 2,
+        colSpan: 2,
+        kind: 'blank',
+        // All of this is refused. A colour and a label on a key that draws
+        // nothing and cannot be pressed is a key a clerk would try to press.
+        label: 'Coming soon',
+        fill: '#a5c715',
+        ink: '#131a04',
+        emoji: 'X',
+        imageUrl: '/uploads/x.png',
+        fontFamily: 'inter',
+        fontSize: 20,
+        pluId: 55,
+      },
+      grid
+    );
+    assert.strictEqual(b.kind, 'blank');
+    assert.strictEqual(b.row_span, 2);
+    assert.strictEqual(b.col_span, 2);
+    assert.strictEqual(b.label, null);
+    assert.strictEqual(b.fill, null);
+    assert.strictEqual(b.ink, null);
+    assert.strictEqual(b.emoji, null);
+    assert.strictEqual(b.image_url, null);
+    assert.strictEqual(b.font_family, null);
+    assert.strictEqual(b.font_size, null);
+    assert.strictEqual(b.plu_id, null);
+  });
+
+  await check('a spanning blank is stored and a 1x1 one is not', async () => {
+    // The rule the save loop applies, stated here as the thing it is: ground
+    // held, or nothing at all. public/screens.js spHoldsSpace() must agree.
+    const held = (raw) => {
+      const b = normaliseButton(raw, grid);
+      return !(b.kind === 'blank' && b.row_span < 2 && b.col_span < 2);
+    };
+    assert.ok(held({ row: 0, col: 0, rowSpan: 2, colSpan: 1, kind: 'blank' }));
+    assert.ok(held({ row: 0, col: 0, rowSpan: 1, colSpan: 3, kind: 'blank' }));
+    assert.ok(!held({ row: 0, col: 0, rowSpan: 1, colSpan: 1, kind: 'blank' }));
+    // And a real key is stored whatever its size, which is the case this must
+    // not have broken.
+    assert.ok(held({ row: 0, col: 0, kind: 'product', pluId: 1 }));
+  });
+
+  await check('a reserved space is clamped to the grid like any key', async () => {
+    const b = normaliseButton(
+      { row: 3, col: 4, rowSpan: 9, colSpan: 9, kind: 'blank' },
+      grid
+    );
+    assert.ok(b.grid_row + b.row_span <= grid.rows);
+    assert.ok(b.grid_col + b.col_span <= grid.cols);
+  });
+
+  // -------------------------------------------------------------------------
+  // Framing a picture on a key
+  // -------------------------------------------------------------------------
+
+  await check('a key says how its picture sits on it', async () => {
+    const b = normaliseButton(
+      {
+        row: 0,
+        col: 0,
+        kind: 'product',
+        pluId: 4,
+        imageUrl: '/uploads/burger.png',
+        imageFit: 'contain',
+        imageScale: 250,
+        imageX: -40,
+        imageY: 15,
+        showLabel: true,
+      },
+      grid
+    );
+    assert.strictEqual(b.image_fit, 'contain');
+    assert.strictEqual(b.image_scale, 250);
+    assert.strictEqual(b.image_x, -40);
+    assert.strictEqual(b.image_y, 15);
+    assert.strictEqual(b.show_label, 1);
+  });
+
+  await check('an untouched picture says nothing, which is the plain answer', async () => {
+    // Null everywhere it has never been set, and null is what every key drew
+    // before these columns existed — fill the key, no zoom, centred. A venue
+    // that never opens the control must see no change.
+    const b = normaliseButton(
+      { row: 0, col: 0, kind: 'product', pluId: 4, imageUrl: '/uploads/x.png' },
+      grid
+    );
+    assert.strictEqual(b.image_scale, null);
+    assert.strictEqual(b.image_x, null);
+    assert.strictEqual(b.image_y, null);
+    assert.strictEqual(b.show_label, 0);
+    // Except the fit, which has a real default rather than a null one: there
+    // are only two answers, and `cover` is the one every key already drew.
+    assert.strictEqual(b.image_fit, 'cover');
+  });
+
+  await check('the framing is bounded, and the zoom goes below the fit', async () => {
+    const framed = (extra) =>
+      normaliseButton(
+        { row: 0, col: 0, kind: 'product', pluId: 4, ...extra },
+        grid
+      );
+    assert.strictEqual(framed({ imageScale: 9999 }).image_scale, 400);
+    // Twenty, not a hundred. A floor at "exactly the fit" means a picture can
+    // only ever be cropped and never pulled back to show more of itself, which
+    // is the fault the product cropper had to be fixed for: "the images are too
+    // zoomed in" was a floor in the wrong place, not a zoom.
+    assert.strictEqual(framed({ imageScale: 1 }).image_scale, 20);
+    assert.strictEqual(framed({ imageX: -999 }).image_x, -100);
+    assert.strictEqual(framed({ imageY: 999 }).image_y, 100);
+    // A fit nobody has heard of draws as cover rather than as nothing. A back
+    // office one release ahead of a till must leave it drawing a key.
+    assert.strictEqual(framed({ imageFit: 'tile' }).image_fit, 'cover');
   });
 
   console.log(`\n${passed} checks passed`);

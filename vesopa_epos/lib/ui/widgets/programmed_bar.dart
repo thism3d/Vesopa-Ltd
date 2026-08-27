@@ -72,6 +72,7 @@ class ProgrammedBar extends ConsumerWidget {
     required this.onPage,
     required this.onFunction,
     this.showPrices = true,
+    this.onSaleScreen = true,
   });
 
   final TillScreen bar;
@@ -84,6 +85,37 @@ class ProgrammedBar extends ConsumerWidget {
   final void Function(String functionKey) onFunction;
 
   final bool showPrices;
+
+  /// Whether this bar is sitting on the sale screen.
+  ///
+  /// The top bar is drawn on every section now — Tables, Reports, Settings and
+  /// the rest — because it is the till's only bar and the page selector at its
+  /// left is how staff move between them. Off the sale screen there is no bill
+  /// in front of the clerk, so the keys that act on one are drawn and dimmed
+  /// rather than hidden: a Pay key that vanishes on Reports and comes back on
+  /// Sale is a bar that appears to be broken, and one that still fires would
+  /// take a payment from a screen the clerk cannot see the bill on.
+  ///
+  /// What stays live is what still means something anywhere: the navigation
+  /// keys, ending a shift, and every widget — the open-bills strip included, so
+  /// a clerk can pick a table up from the Reports page and be taken to it.
+  final bool onSaleScreen;
+
+  /// The keys that mean the same thing on every section.
+  ///
+  /// Navigation and the end of a shift. Everything else on a bar either acts on
+  /// the bill in front of the clerk or rings something onto it, and neither is
+  /// a thing to do from a screen that is not showing it.
+  static const _anywhere = <String>{
+    'go_sale',
+    'go_tables',
+    'go_receipts',
+    'go_reports',
+    'go_products',
+    'go_functions',
+    'go_settings',
+    'sign_off',
+  };
 
   /// One row of bar. Matches the built-in action bar's key height closely
   /// enough that switching a venue over does not move the sale grid under a
@@ -130,14 +162,21 @@ class ProgrammedBar extends ConsumerWidget {
                     if (covered.contains('$r:$c')) continue;
                     final button = bar.at(r, c);
                     if (button == null) continue;
+                    // A space the venue set aside and has not filled in yet.
+                    // It holds its ground — the cells under its span are already
+                    // skipped as covered — and draws nothing. A key a clerk can
+                    // see and cannot press is worse than a gap.
+                    if (button.kind == ScreenButtonKind.blank) continue;
 
                     keys.add(
                       Positioned(
                         left: c * (cellW + _gap),
                         top: r * (rowHeight + _gap),
-                        width: cellW * button.colSpan +
+                        width:
+                            cellW * button.colSpan +
                             _gap * (button.colSpan - 1),
-                        height: rowHeight * button.rowSpan +
+                        height:
+                            rowHeight * button.rowSpan +
                             _gap * (button.rowSpan - 1),
                         child: _BarKey(
                           button: button,
@@ -148,6 +187,7 @@ class ProgrammedBar extends ConsumerWidget {
                           live: live,
                           pal: pal,
                           showPrices: showPrices,
+                          onSaleScreen: onSaleScreen,
                           onProduct: onProduct,
                           onPage: onPage,
                           onFunction: onFunction,
@@ -157,7 +197,10 @@ class ProgrammedBar extends ConsumerWidget {
                   }
                 }
 
-                final stack = SizedBox(width: width, child: Stack(children: keys));
+                final stack = SizedBox(
+                  width: width,
+                  child: Stack(children: keys),
+                );
                 // Only scrollable when it has to be. A bar that fits is an
                 // ordinary bar, and wrapping every one of them in a scroll view
                 // would let a clerk drag the whole strip sideways by accident
@@ -186,6 +229,7 @@ class _BarKey extends ConsumerWidget {
     required this.live,
     required this.pal,
     required this.showPrices,
+    required this.onSaleScreen,
     required this.onProduct,
     required this.onPage,
     required this.onFunction,
@@ -197,6 +241,9 @@ class _BarKey extends ConsumerWidget {
   final BarLive live;
   final PayPalette pal;
   final bool showPrices;
+
+  /// See [ProgrammedBar.onSaleScreen].
+  final bool onSaleScreen;
 
   final void Function(Product) onProduct;
   final void Function(TillScreen) onPage;
@@ -438,7 +485,8 @@ class _BarKey extends ConsumerWidget {
           label: button.label ?? p.name,
           note: showPrices ? money(p.priceMinor) : null,
           icon: null,
-          onTap: () => onProduct(p),
+          // Nothing to ring it onto from a screen that is not the sale screen.
+          onTap: onSaleScreen ? () => onProduct(p) : null,
         );
 
       case ScreenButtonKind.page:
@@ -455,7 +503,9 @@ class _BarKey extends ConsumerWidget {
           label: button.label ?? target.name,
           note: null,
           icon: Icons.chevron_right,
-          onTap: () => onPage(target),
+          // A page key opens a sale screen. Pressed from Reports it would open
+          // one nobody is looking at.
+          onTap: onSaleScreen ? () => onPage(target) : null,
         );
 
       case ScreenButtonKind.function:
@@ -472,15 +522,24 @@ class _BarKey extends ConsumerWidget {
         // the one thing the built-in bar does that a plain label cannot, and
         // the reason a venue would otherwise have to keep the built-in bar.
         final payable = key != 'pay' || live.totalMinor != 0;
+        // Off the sale screen there is no bill in front of the clerk, so a key
+        // that acts on one is drawn and dimmed rather than fired. See
+        // [ProgrammedBar.onSaleScreen].
+        final here = onSaleScreen || ProgrammedBar._anywhere.contains(key);
         return (
           label: button.label ?? _names[key] ?? key,
           note: key == 'pay' && live.totalMinor != 0
               ? money(live.totalMinor)
               : null,
           icon: _icons[key],
-          onTap: payable ? () => onFunction(key) : null,
+          onTap: payable && here ? () => onFunction(key) : null,
         );
 
+      // Never reached: a reserved space is skipped before a key is built for
+      // it. Answered anyway rather than left to a default, so adding a kind
+      // stays a compile error everywhere it has to be handled.
+      case ScreenButtonKind.blank:
+        return (label: '', note: null, icon: null, onTap: null);
       case ScreenButtonKind.unknown:
         return (
           label: button.label ?? 'Not supported',
@@ -507,6 +566,43 @@ class _BarKey extends ConsumerWidget {
         ? button.imageUrl
         : (button.kind == ScreenButtonKind.product ? product?.imageUrl : null);
 
+    // A picture fills a bar key exactly as it fills a sale key, framed by the
+    // same three numbers — so a key does not change its face when it is moved
+    // onto a bar, which is the whole reason the fallback chain above is shared.
+    // See `_picture` in programmed_grid.dart for the model.
+    final picture = image == null || image.isEmpty
+        ? null
+        : LayoutBuilder(
+            builder: (context, box) => ClipRect(
+              child: Transform.translate(
+                offset: Offset(
+                  box.maxWidth * button.imageX / 100,
+                  box.maxHeight * button.imageY / 100,
+                ),
+                child: Transform.scale(
+                  scale: button.imageScale / 100,
+                  child: Image.network(
+                    image,
+                    fit: button.imageFit.boxFit,
+                    width: box.maxWidth,
+                    height: box.maxHeight,
+                    // A picture that will not load leaves the key exactly as a
+                    // key with no picture. A broken-image frame on a bar is
+                    // worse than no picture at all.
+                    errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                    loadingBuilder: (context, child, progress) =>
+                        progress == null ? child : const SizedBox.shrink(),
+                  ),
+                ),
+              ),
+            ),
+          );
+
+    // Picture only, unless the venue asked for the name as well — the same rule
+    // the sale grid follows, and on a bar it matters more: a bar key is a
+    // sliver, and a word crammed under a photograph in it is neither.
+    final words = picture == null || button.showLabel;
+
     return Opacity(
       opacity: enabled ? 1 : 0.55,
       child: Material(
@@ -515,75 +611,72 @@ class _BarKey extends ConsumerWidget {
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: r.onTap,
-          child: Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: enabled ? pal.keyLine : Pos.red.withValues(alpha: 0.6),
-              ),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                if (image != null && image.isNotEmpty)
-                  Flexible(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(5),
-                      child: Image.network(
-                        image,
-                        height: 20,
-                        fit: BoxFit.cover,
-                        // A picture that will not load leaves the key exactly
-                        // as a key with no picture. A broken-image frame on a
-                        // bar is worse than no picture at all.
-                        errorBuilder: (_, _, _) => const SizedBox.shrink(),
-                        loadingBuilder: (context, child, progress) =>
-                            progress == null ? child : const SizedBox.shrink(),
-                      ),
-                    ),
-                  )
-                else if (emoji != null && emoji.isNotEmpty)
-                  Text(emoji, style: const TextStyle(fontSize: 17))
-                else if (r.icon != null)
-                  Icon(r.icon, size: 18, color: ink),
-                Flexible(
-                  child: Text(
-                    r.label,
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: ink,
-                      fontFamily: fontFamily,
-                      // Capped harder than a sale key, and against a fixed
-                      // ceiling rather than the key's height: a bar is one or
-                      // two rows tall whatever the terminal is, and a 40pt
-                      // label on it does not overflow so much as push Pay off
-                      // the end of the strip.
-                      fontSize: (button.fontSize?.toDouble() ?? 12).clamp(
-                        8.0,
-                        20.0,
-                      ),
-                      fontWeight: FontWeight.w700,
-                      height: 1.1,
-                    ),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // Behind everything and outside the padding: a photograph that
+              // stops short of the key's edge reads as a mistake.
+              ?picture,
+              Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: enabled
+                        ? pal.keyLine
+                        : Pos.red.withValues(alpha: 0.6),
                   ),
                 ),
-                if (r.note != null)
-                  Text(
-                    r.note!,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: ink.withValues(alpha: 0.85),
-                      fontFamily: fontFamily,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-              ],
-            ),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    if (picture == null)
+                      if (emoji != null && emoji.isNotEmpty)
+                        Text(emoji, style: const TextStyle(fontSize: 17))
+                      else if (r.icon != null)
+                        Icon(r.icon, size: 18, color: ink),
+                    if (words)
+                      Flexible(
+                        child: Text(
+                          r.label,
+                          textAlign: TextAlign.center,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: picture != null ? Colors.white : ink,
+                            fontFamily: fontFamily,
+                            // Capped harder than a sale key, and against a fixed
+                            // ceiling rather than the key's height: a bar is one or
+                            // two rows tall whatever the terminal is, and a 40pt
+                            // label on it does not overflow so much as push Pay off
+                            // the end of the strip.
+                            fontSize: (button.fontSize?.toDouble() ?? 12).clamp(
+                              8.0,
+                              20.0,
+                            ),
+                            fontWeight: FontWeight.w700,
+                            height: 1.1,
+                          ),
+                        ),
+                      ),
+                    if (words && r.note != null)
+                      Text(
+                        r.note!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: picture != null
+                              ? Colors.white
+                              : ink.withValues(alpha: 0.85),
+                          fontFamily: fontFamily,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
       ),

@@ -166,6 +166,7 @@ class SalePage extends ConsumerWidget {
     required this.orderId,
     required this.onNewOrder,
     required this.onSwitchOrder,
+    required this.topBarChrome,
     this.onNavigate,
   });
 
@@ -175,6 +176,19 @@ class SalePage extends ConsumerWidget {
   /// Jump to another open bill — a parked table the clerk wants to add to or
   /// settle. Runs several tables at once without losing any of them.
   final void Function(String orderId) onSwitchOrder;
+
+  /// Draws the till's one top bar around whatever this page puts in it.
+  ///
+  /// Passed in rather than built here because the page selector that sits at
+  /// the left of every top bar belongs to the shell — the shell is what owns
+  /// which section is showing — and a second copy of that on the one page that
+  /// draws its own bar is how the two end up disagreeing about where the till
+  /// is. See [TillTopBar].
+  ///
+  /// `trailing` is false when the body is a bar the venue laid out themselves:
+  /// at that point they have said what goes on their top bar, and the shift
+  /// chip and the badges are all keys they can place.
+  final Widget Function({Widget? body, bool trailing}) topBarChrome;
 
   /// Leave the sale screen for another section, by its nav label.
   ///
@@ -414,14 +428,24 @@ class SalePage extends ConsumerWidget {
                   // carry this same strip as a key — see `open_bills` — which
                   // is what stops programming a top bar costing a venue the
                   // ability to serve two parties at once.
+                  // Both go through the shell's chrome, so the fixed page
+                  // selector is in the same place on every screen whichever of
+                  // the two drew the bar. See TillTopBar.
                   if (topBar == null)
-                    _OpenOrdersBar(
-                      currentOrderId: orderId,
-                      currentOrder: order,
-                      onSwitch: onSwitchOrder,
+                    topBarChrome(
+                      body: _OpenOrdersBar(
+                        currentOrderId: orderId,
+                        currentOrder: order,
+                        onSwitch: onSwitchOrder,
+                      ),
                     )
                   else
-                    ProgrammedBar(
+                    // A bar the venue laid out says what goes on it, so the
+                    // shift chip and the badges are not drawn beside it — they
+                    // are keys they can place.
+                    topBarChrome(
+                      trailing: false,
+                      body: ProgrammedBar(
                       bar: topBar,
                       screens: screenSet,
                       products: byPlu,
@@ -443,6 +467,7 @@ class SalePage extends ConsumerWidget {
                         lines: lines,
                         selected: selectedLines,
                         order: order,
+                      ),
                       ),
                     ),
                   Expanded(

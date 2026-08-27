@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:flutter/material.dart' show Color;
+import 'package:flutter/material.dart' show BoxFit, Color;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -25,6 +25,19 @@ enum ScreenButtonKind {
   page,
   function,
 
+  /// A space the venue set aside and has not filled in.
+  ///
+  /// Only ever stored when it spans more than one cell — a blank of one cell is
+  /// what an empty cell already is, and the back office does not send those. It
+  /// exists because a screen gets laid out shapes first and products second:
+  /// the manager arranges a 2x2 here and a 1x3 there, saves, and comes back to
+  /// say what each one rings up.
+  ///
+  /// Drawn as nothing at all, holding its ground. Not as a key — a key a clerk
+  /// can see and cannot press is worse than a gap — and not as four separate
+  /// empty cells, which would be the layout un-arranging itself.
+  blank,
+
   /// Anything this build does not recognise.
   ///
   /// Not an error: the server stores `kind` as a string precisely so a till
@@ -36,7 +49,35 @@ enum ScreenButtonKind {
     'product' => product,
     'page' => page,
     'function' => function,
+    'blank' => blank,
     _ => unknown,
+  };
+}
+
+/// How a picture is laid into the key it decorates.
+///
+/// [cover] fills the key and crops whatever will not fit — right for a
+/// photograph, and what every key drew before there was a choice. [contain]
+/// fits the whole picture inside the key and leaves the rest of the key
+/// showing, which is what a logo, or a tall bottle shot on a wide key, wants.
+///
+/// An unrecognised value reads as [cover] rather than failing, for the same
+/// reason [ScreenButtonKind.unknown] exists: a till one release behind its back
+/// office must keep drawing keys.
+enum ScreenImageFit {
+  cover('cover'),
+  contain('contain');
+
+  const ScreenImageFit(this.key);
+
+  final String key;
+
+  static ScreenImageFit fromKey(String? key) =>
+      key == 'contain' ? contain : cover;
+
+  BoxFit get boxFit => switch (this) {
+    ScreenImageFit.cover => BoxFit.cover,
+    ScreenImageFit.contain => BoxFit.contain,
   };
 }
 
@@ -55,6 +96,11 @@ class ScreenButton {
     this.ink,
     this.emoji,
     this.imageUrl,
+    this.imageFit = ScreenImageFit.cover,
+    this.imageScale = 100,
+    this.imageX = 0,
+    this.imageY = 0,
+    this.showLabel = false,
     this.fontFamily,
     this.fontSize,
   });
@@ -99,6 +145,49 @@ class ScreenButton {
   /// across its sale screen.
   final String? imageUrl;
 
+  /// How that picture is laid into the key, and how far it is zoomed and
+  /// shifted inside it.
+  ///
+  /// The problem these solve: a venue lays its screen out in whatever sizes
+  /// suit it — a 2x2 for the house burger, a 1x3 strip for the wine list — and
+  /// one photograph has to look right in all of them. Before these, a picture
+  /// was drawn one way only, so a tall bottle shot on a wide key was a label of
+  /// glass with the bottle cropped out of frame.
+  ///
+  /// Non-destructive: the file is untouched and these four numbers say how to
+  /// *look* at it, so the same picture frames differently on two keys without a
+  /// second upload. The defaults are what every key drew before they existed —
+  /// fill the key, no zoom, centred — so a venue that never opens the control
+  /// sees no change.
+  ///
+  /// Composed in this order, and the order is the contract with the back
+  /// office's preview: lay the picture in with [imageFit], scale it by
+  /// [imageScale] about the centre, then shift it by [imageX] / [imageY] as a
+  /// percentage of the *key's* own width and height. See
+  /// vesopa_server/schema_screens_key_images.sql.
+  final ScreenImageFit imageFit;
+
+  /// Percent. 100 is the picture laid in exactly as [imageFit] says.
+  ///
+  /// The floor is 20, not 100, and that matters: a floor at "exactly the fit"
+  /// means a picture can only ever be cropped and never pulled back to show
+  /// more of itself, which is the fault the product cropper had to be fixed
+  /// for. "The images are too zoomed in" was a floor in the wrong place.
+  final int imageScale;
+
+  /// Percent of the key's own width and height, signed. Zero is centred.
+  final int imageX;
+  final int imageY;
+
+  /// Whether the key's name is lettered as well as its picture.
+  ///
+  /// False is the default and is deliberately the default for keys that already
+  /// exist: a photograph of a burger is a better burger key than the word
+  /// BURGER over a sliver of one. A venue that wants the name back ticks it on,
+  /// per key. A key with no picture always says its name — there would be
+  /// nothing on it otherwise — so this is only ever read alongside one.
+  final bool showLabel;
+
   /// The slug of the font this key is lettered in — `inter`, `bebas-neue`, or
   /// one the venue uploaded. Null means the venue's font, and if the venue has
   /// not chosen one either, the app's own.
@@ -132,6 +221,15 @@ class ScreenButton {
     ink: _colour(j['ink']),
     emoji: (j['emoji'] as String?)?.trim(),
     imageUrl: _absoluteImage((j['imageUrl'] as String?)?.trim()),
+    imageFit: ScreenImageFit.fromKey(j['imageFit'] as String?),
+    // Clamped rather than trusted, and to the same bounds the server clamps to.
+    // A till drawing a layout out of its own cache is drawing whatever was
+    // stored the day it was fetched, which may be from a release with different
+    // limits.
+    imageScale: ((j['imageScale'] as num?)?.toInt() ?? 100).clamp(20, 400),
+    imageX: ((j['imageX'] as num?)?.toInt() ?? 0).clamp(-100, 100),
+    imageY: ((j['imageY'] as num?)?.toInt() ?? 0).clamp(-100, 100),
+    showLabel: j['showLabel'] == true,
     fontFamily: _slug(j['fontFamily']),
     fontSize: (j['fontSize'] as num?)?.toInt().clamp(8, 72),
   );
@@ -150,6 +248,17 @@ class ScreenButton {
     if (ink != null) 'ink': _hex(ink!),
     if (emoji != null) 'emoji': emoji,
     if (imageUrl != null) 'imageUrl': imageUrl,
+    // Written unconditionally rather than "if not the default": this map is
+    // what the till caches and reads back, and a framing set to the default on
+    // purpose has to survive a restart the same way one that was never touched
+    // does. They cost five short fields on a key that has a picture.
+    if (imageUrl != null) ...{
+      'imageFit': imageFit.key,
+      'imageScale': imageScale,
+      'imageX': imageX,
+      'imageY': imageY,
+      'showLabel': showLabel,
+    },
     if (fontFamily != null) 'fontFamily': fontFamily,
     if (fontSize != null) 'fontSize': fontSize,
   };
@@ -365,7 +474,11 @@ class ScreenSet {
 
   /// The bar a screen wears: its own if it asked for one, otherwise the
   /// venue's, otherwise none — which means the till's built-in bar.
-  TillScreen? barFor(TillScreen? screen, ScreenSurface surface, int? venueDefault) {
+  TillScreen? barFor(
+    TillScreen? screen,
+    ScreenSurface surface,
+    int? venueDefault,
+  ) {
     final own = surface == ScreenSurface.topBar
         ? screen?.topBarId
         : screen?.bottomBarId;

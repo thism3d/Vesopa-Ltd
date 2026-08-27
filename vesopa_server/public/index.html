@@ -926,7 +926,35 @@
                 <div class="sp-ghost sp-ghost-top" id="sp-ghost-top" hidden>
                   <span>the sale screen sits here</span>
                 </div>
-                <div id="sp-grid" class="sp-grid" tabindex="0"></div>
+                <!-- The grid, with the till's own fixed key beside it when a
+                     top bar is being laid out.
+
+                     `display: contents` on the wrapper everywhere else, so on
+                     a sale screen and a bottom bar the grid is still a direct
+                     child of the stage and every rule about how it is sized
+                     applies exactly as it did. -->
+                <div class="sp-bar-row" id="sp-bar-row">
+                  <!-- Not a key, and not yours.
+                       Every top bar wears this, at its left, and no layout can
+                       remove it: it is how staff move between Sale, Tables,
+                       Reports and the rest, and how they reach the menu on a
+                       terminal with the side rail tucked away. A venue that
+                       could delete it could arrange a till nobody can
+                       navigate — and would find out at a counter.
+                       It takes width from the bar rather than a column, so the
+                       keys laid out here are all still here; they are drawn a
+                       little narrower. -->
+                  <div class="sp-fixed-nav" id="sp-fixed-nav" hidden
+                       title="Fixed on every top bar. Staff use it to move between sections and to reach the menu.">
+                    <span class="sp-fixed-nav-key">
+                      <span class="sp-fixed-nav-icon">☰</span>
+                      <span class="sp-fixed-nav-label">Sale</span>
+                      <span class="sp-fixed-nav-caret">▾</span>
+                    </span>
+                    <span class="sp-fixed-nav-note">always here</span>
+                  </div>
+                  <div id="sp-grid" class="sp-grid" tabindex="0"></div>
+                </div>
                 <div class="sp-ghost sp-ghost-bottom" id="sp-ghost-bottom" hidden>
                   <span>the sale screen sits here</span>
                 </div>
@@ -1031,6 +1059,46 @@
                       </div>
                     </div>
                     <div class="sp-gallery" id="sp-gallery"></div>
+
+                    <!-- Framing the picture on this key.
+                         The reason this exists: a venue lays its screen out in
+                         whatever sizes suit it, and one photograph has to look
+                         right in all of them. A tall bottle shot on a wide key
+                         was a label of glass with the bottle cropped out of
+                         frame, and there was nothing anybody could do about it.
+
+                         The stage is drawn at the key's *own* shape — a 2x2
+                         preview is square, a 1x3 is a strip — because "does
+                         this picture work here" is a question only the real
+                         proportions answer. Drag it to pan, scroll or pinch to
+                         zoom; nothing is uploaded and nothing is cropped, so
+                         the same picture frames differently on two keys. -->
+                    <div class="sp-frame" id="sp-frame" hidden>
+                      <div class="sp-frame-head">
+                        <span>How it sits on the key</span>
+                        <button type="button" class="btn ghost small" id="sp-frame-reset">Reset</button>
+                      </div>
+                      <div class="sp-frame-stage" id="sp-frame-stage"
+                           title="Drag to move the picture. Scroll or pinch to zoom.">
+                        <img id="sp-frame-img" alt="" draggable="false">
+                        <span class="sp-frame-hint" id="sp-frame-hint">drag to move · scroll to zoom</span>
+                      </div>
+                      <label class="sp-frame-zoom">Zoom
+                        <input type="range" id="sp-frame-zoom" min="20" max="400" step="1" value="100">
+                        <output id="sp-frame-zoom-out">100%</output>
+                      </label>
+                      <div class="sp-frame-presets">
+                        <button type="button" class="btn ghost small" id="sp-frame-fill"
+                                title="Fill the key and crop whatever will not fit. Right for a photograph.">Fill the key</button>
+                        <button type="button" class="btn ghost small" id="sp-frame-whole"
+                                title="Fit the whole picture inside the key. Right for a logo or a bottle shot.">Whole picture</button>
+                      </div>
+                      <label class="check" id="sp-show-label-wrap"
+                             title="Off means the picture speaks for itself, which is what a photographed menu wants. On letters the key's name over it.">
+                        <input type="checkbox" id="sp-show-label"> Show the name as well
+                      </label>
+                    </div>
+
                     <p class="muted small" id="sp-face-note" style="margin:6px 0 0"></p>
                   </div>
 

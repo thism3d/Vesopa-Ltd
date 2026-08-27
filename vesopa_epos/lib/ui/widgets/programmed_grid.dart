@@ -87,10 +87,8 @@ class ProgrammedGrid extends StatelessWidget {
           // reason a button is a grid cell rather than a pixel rectangle — see
           // the design doc, §2.
           const gap = 8.0;
-          final cellW =
-              (box.maxWidth - gap * (screen.cols - 1)) / screen.cols;
-          final cellH =
-              (box.maxHeight - gap * (screen.rows - 1)) / screen.rows;
+          final cellW = (box.maxWidth - gap * (screen.cols - 1)) / screen.cols;
+          final cellH = (box.maxHeight - gap * (screen.rows - 1)) / screen.rows;
 
           final keys = <Widget>[];
           for (var r = 0; r < screen.rows; r++) {
@@ -98,6 +96,11 @@ class ProgrammedGrid extends StatelessWidget {
               if (covered.contains('$r:$c')) continue;
               final button = screen.at(r, c);
               if (button == null) continue;
+              // A space the venue set aside and has not filled in yet.
+              // It holds its ground — the cells under its span are already
+              // skipped as covered — and draws nothing. A key a clerk can
+              // see and cannot press is worse than a gap.
+              if (button.kind == ScreenButtonKind.blank) continue;
 
               keys.add(
                 Positioned(
@@ -230,6 +233,11 @@ class _Key extends StatelessWidget {
       // A button from a newer release. Drawn as inert rather than dropped, so
       // the layout keeps its shape and the gap is explained — a key that simply
       // vanished would have somebody looking for it.
+      // Never reached: a reserved space is skipped before a key is built for
+      // it. Answered anyway rather than left to a default, so adding a kind
+      // stays a compile error everywhere it has to be handled.
+      case ScreenButtonKind.blank:
+        return (label: '', note: null, onTap: null);
       case ScreenButtonKind.unknown:
         return (
           label: button.label ?? 'Not supported',
@@ -264,6 +272,12 @@ class _Key extends StatelessWidget {
     final fill = button.fill ?? pal.keyFill;
     final ink = button.ink ?? (button.fill == null ? pal.ink : Pos.inkOn(fill));
 
+    // The picture, if this key has one. It *fills* the key rather than sitting
+    // above the words — which is the change a venue that photographed its menu
+    // asked for, and the reason the framing controls exist at all. See
+    // [_picture] for the arithmetic and [ScreenButton.imageFit] for the model.
+    final picture = _picture();
+
     return Opacity(
       // Dimmed rather than hidden. It still holds its place in the layout, and
       // it is still obviously a key — just one that cannot be pressed.
@@ -271,116 +285,161 @@ class _Key extends StatelessWidget {
       child: Material(
         color: fill,
         borderRadius: BorderRadius.circular(10),
+        // Which is also what clips the picture to the key's rounded corners.
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: r.onTap,
-          child: Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: enabled ? pal.keyLine : Pos.red.withValues(alpha: 0.6),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // Behind everything, and outside the padding: a photograph that
+              // stops 6px short of the key's edge reads as a mistake.
+              ?picture,
+              Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: enabled
+                        ? pal.keyLine
+                        : Pos.red.withValues(alpha: 0.6),
+                  ),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                // Sized from the key rather than from the screen: the same
+                // layout is drawn on a 15-inch counter panel and on a handheld,
+                // so "is there room for the picture" is a question only the key
+                // can answer. Below the threshold it draws exactly as it always
+                // did.
+                child: LayoutBuilder(
+                  builder: (context, box) {
+                    // An emoji still stacks above the words the way it always
+                    // has. Only a *picture* takes the whole key, because only a
+                    // picture is spoiled by being shrunk to a stamp.
+                    final emoji = picture == null ? _emojiFace() : null;
+                    final roomForMedia =
+                        emoji != null &&
+                        box.maxHeight >= 84 &&
+                        box.maxWidth >= 84;
+
+                    // Picture only, unless the venue asked for the name as
+                    // well. A photograph of a burger is a better burger key
+                    // than the word BURGER over a sliver of one — and the price
+                    // goes with the name, because "just the image" means just
+                    // the image. The tick in the back office brings both back.
+                    final words = picture == null || button.showLabel;
+
+                    // A size set in the back office is a wish, not a promise,
+                    // and this is where the difference is settled. The same
+                    // layout is drawn on a 15-inch counter panel and on a
+                    // handheld: 28pt is handsome on one and taller than the
+                    // whole key on the other, and a key whose label has been
+                    // pushed out of sight is worse than one lettered smaller
+                    // than asked. So the key's own height caps it. A label
+                    // still too long for the *width* ellipsises exactly as it
+                    // always has — this caps the lettering, it does not reflow
+                    // the words.
+                    //
+                    // A key with no size of its own takes the numbers this
+                    // widget has always used, untouched and uncapped. That is
+                    // deliberate and it is checked by a golden: every key on
+                    // every screen a venue has already programmed has no size,
+                    // and a new control that quietly re-letters all of them is
+                    // not a new control, it is a regression with a settings box
+                    // attached.
+                    final asked = button.fontSize?.toDouble();
+                    final ceiling = (box.maxHeight / (roomForMedia ? 4.2 : 2.8))
+                        .clamp(9.0, 48.0);
+                    final size = asked == null
+                        ? 14.0
+                        : (asked > ceiling ? ceiling : asked);
+                    final noteSize = asked == null
+                        ? 11.5
+                        : (size * 0.82).clamp(9.0, 20.0);
+
+                    return Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        if (words)
+                          Flexible(
+                            child: _OverPicture(
+                              on: picture != null,
+                              child: Text(
+                                r.label,
+                                textAlign: TextAlign.center,
+                                maxLines: roomForMedia ? 2 : 3,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  // White on a photograph, whatever the key's
+                                  // own colour is: the ink was chosen to read
+                                  // against the fill, and the fill is no longer
+                                  // what is behind the words.
+                                  color: picture != null ? Colors.white : ink,
+                                  fontFamily: fontFamily,
+                                  fontSize: size,
+                                  fontWeight: FontWeight.w700,
+                                  height: 1.15,
+                                ),
+                              ),
+                            ),
+                          ),
+                        // The product's own emoji, which the catalogue grid has
+                        // always shown and this one did not: a venue that
+                        // decorated its menu lost every face the moment it
+                        // programmed a screen, and had no way to tell why.
+                        if (roomForMedia) ...[
+                          const SizedBox(height: 4),
+                          Flexible(fit: FlexFit.tight, child: emoji),
+                        ],
+                        if (words && r.note != null) ...[
+                          const SizedBox(height: 2),
+                          _OverPicture(
+                            on: picture != null,
+                            child: Text(
+                              r.note!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: picture != null
+                                    ? Colors.white
+                                    : ink.withValues(alpha: 0.75),
+                                fontFamily: fontFamily,
+                                // The note follows the label rather than being
+                                // set outright: a price under a 24pt name
+                                // should not be the same 11.5pt as one under a
+                                // 12pt name.
+                                fontSize: noteSize,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                        // Drawn even on a picture-only key, and deliberately.
+                        // An offer that is running and not shown is a clerk
+                        // quoting the wrong price, which is a different order
+                        // of problem from a key that looks busy.
+                        if (OfferChip.forPromotion(promotion)
+                            case final chip?) ...[
+                          const SizedBox(height: 4),
+                          FittedBox(fit: BoxFit.scaleDown, child: chip),
+                        ],
+                      ],
+                    );
+                  },
+                ),
               ),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-            // Sized from the key rather than from the screen: the same layout
-            // is drawn on a 15-inch counter panel and on a handheld, so
-            // "is there room for the picture" is a question only the key can
-            // answer. Below the threshold it draws exactly as it always did.
-            child: LayoutBuilder(
-              builder: (context, box) {
-                final media = _media();
-                final roomForMedia =
-                    media != null && box.maxHeight >= 84 && box.maxWidth >= 84;
-
-                // A size set in the back office is a wish, not a promise, and
-                // this is where the difference is settled. The same layout is
-                // drawn on a 15-inch counter panel and on a handheld: 28pt is
-                // handsome on one and taller than the whole key on the other,
-                // and a key whose label has been pushed out of sight is worse
-                // than one lettered smaller than asked. So the key's own height
-                // caps it. A label still too long for the *width* ellipsises
-                // exactly as it always has — this caps the lettering, it does
-                // not reflow the words.
-                //
-                // A key with no size of its own takes the numbers this widget
-                // has always used, untouched and uncapped. That is deliberate
-                // and it is checked by a golden: every key on every screen a
-                // venue has already programmed has no size, and a new control
-                // that quietly re-letters all of them is not a new control, it
-                // is a regression with a settings box attached.
-                final asked = button.fontSize?.toDouble();
-                final ceiling = (box.maxHeight / (roomForMedia ? 4.2 : 2.8))
-                    .clamp(9.0, 48.0);
-                final size = asked == null
-                    ? 14.0
-                    : (asked > ceiling ? ceiling : asked);
-                final noteSize = asked == null
-                    ? 11.5
-                    : (size * 0.82).clamp(9.0, 20.0);
-
-                return Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Flexible(
-                      child: Text(
-                        r.label,
-                        textAlign: TextAlign.center,
-                        maxLines: roomForMedia ? 2 : 3,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: ink,
-                          fontFamily: fontFamily,
-                          fontSize: size,
-                          fontWeight: FontWeight.w700,
-                          height: 1.15,
-                        ),
-                      ),
-                    ),
-                    // The product's own picture or emoji, which the catalogue
-                    // grid has always shown and this one did not: a venue that
-                    // photographed its menu lost every picture the moment it
-                    // programmed a screen, and had no way to tell why.
-                    if (roomForMedia) ...[
-                      const SizedBox(height: 4),
-                      Flexible(fit: FlexFit.tight, child: media),
-                    ],
-                    if (r.note != null) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        r.note!,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: ink.withValues(alpha: 0.75),
-                          fontFamily: fontFamily,
-                          // The note follows the label rather than being set
-                          // outright: a price under a 24pt name should not be
-                          // the same 11.5pt as one under a 12pt name.
-                          fontSize: noteSize,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                    if (OfferChip.forPromotion(promotion) case final chip?) ...[
-                      const SizedBox(height: 4),
-                      FittedBox(fit: BoxFit.scaleDown, child: chip),
-                    ],
-                  ],
-                );
-              },
-            ),
+            ],
           ),
         ),
       ),
     );
   }
 
-  /// The key's picture, or its emoji, or nothing.
+  /// The key's picture, framed as the back office set it — or null.
   ///
-  /// Nothing is the common case and has to cost nothing: most keys on most
-  /// screens are a word on a colour, and that is the layout the venue arranged.
+  /// Null is the common case and has to cost nothing: most keys on most screens
+  /// are a word on a colour, and that is the layout the venue arranged.
   ///
-  /// The chain is the key's own face, then the product's. Two things follow
+  /// The chain is the key's own picture, then the product's. Two things follow
   /// from that order and both were asked for:
   ///
   ///   * a page key can carry a picture at all — until the back office could
@@ -391,43 +450,103 @@ class _Key extends StatelessWidget {
   ///     changing the product everywhere else.
   ///
   /// And the fallback is what stops the feature un-decorating every screen a
-  /// venue had already programmed before it existed.
-  Widget? _media() {
+  /// venue had already programmed.
+  ///
+  /// The framing is three steps in this order, and the order is the contract
+  /// with the back office's preview — get it wrong and the editor shows a
+  /// manager something a clerk will never see:
+  ///
+  ///   1. lay the picture in with [ScreenButton.imageFit];
+  ///   2. scale it about the centre by [ScreenButton.imageScale];
+  ///   3. shift it by [ScreenButton.imageX] / [ScreenButton.imageY], as a
+  ///      fraction of the *key's* own width and height.
+  ///
+  /// `Transform.translate` outside `Transform.scale` is what puts them in that
+  /// order: the inner transform runs first. It matches CSS's
+  /// `transform: translate(x%, y%) scale(s)`, which the editor uses, because
+  /// CSS reads a transform list right to left.
+  Widget? _picture() {
     final p = product;
     final isProduct = button.kind == ScreenButtonKind.product;
-
     final image = button.imageUrl?.isNotEmpty == true
         ? button.imageUrl
         : (isProduct ? p?.imageUrl : null);
+    if (image == null || image.isEmpty) return null;
+
+    return LayoutBuilder(
+      builder: (context, box) => ClipRect(
+        child: Transform.translate(
+          offset: Offset(
+            box.maxWidth * button.imageX / 100,
+            box.maxHeight * button.imageY / 100,
+          ),
+          child: Transform.scale(
+            scale: button.imageScale / 100,
+            child: Image.network(
+              image,
+              fit: button.imageFit.boxFit,
+              width: box.maxWidth,
+              height: box.maxHeight,
+              // A picture that will not load leaves the key exactly as a
+              // product with no picture. A broken-image frame on a sale screen
+              // is worse than no picture at all.
+              errorBuilder: (_, _, _) => const SizedBox.shrink(),
+              loadingBuilder: (context, child, progress) =>
+                  progress == null ? child : const SizedBox.shrink(),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The key's emoji, or the product's — for keys that have no picture.
+  Widget? _emojiFace() {
+    final p = product;
+    final isProduct = button.kind == ScreenButtonKind.product;
     final ownEmoji = button.emoji?.isNotEmpty == true
         ? button.emoji
         : (isProduct ? p?.emoji : null);
+    if (ownEmoji == null || ownEmoji.isEmpty) return null;
 
-    if (image != null && image.isNotEmpty) {
-      return ClipRRect(
+    return Center(
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Text(ownEmoji, style: const TextStyle(fontSize: 34)),
+      ),
+    );
+  }
+}
+
+/// Lettering that has to stay readable over a photograph.
+///
+/// The scrim is the whole point. Which keys need one depends on the picture
+/// rather than on anything the layout knows — a white label is unreadable on a
+/// pale plate and perfect on a dark one, and the same key can be both as the
+/// venue changes the photograph. So every label drawn over a picture gets the
+/// same quiet pill behind it, and none of them can be unreadable.
+///
+/// Passes the child straight through when there is no picture, so a key that
+/// has always been a word on a colour is drawn by exactly the widgets it always
+/// was — see the golden test.
+class _OverPicture extends StatelessWidget {
+  const _OverPicture({required this.on, required this.child});
+
+  final bool on;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!on) return child;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.55),
         borderRadius: BorderRadius.circular(6),
-        child: Image.network(
-          image,
-          fit: BoxFit.cover,
-          width: double.infinity,
-          // A picture that will not load leaves the key exactly as a product
-          // with no picture. A broken-image frame on a sale screen is worse
-          // than no picture at all.
-          errorBuilder: (_, _, _) => const SizedBox.shrink(),
-          loadingBuilder: (context, child, progress) =>
-              progress == null ? child : const SizedBox.shrink(),
-        ),
-      );
-    }
-
-    if (ownEmoji != null && ownEmoji.isNotEmpty) {
-      return Center(
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Text(ownEmoji, style: const TextStyle(fontSize: 34)),
-        ),
-      );
-    }
-    return null;
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        child: child,
+      ),
+    );
   }
 }

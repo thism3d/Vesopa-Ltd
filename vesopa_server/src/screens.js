@@ -273,6 +273,44 @@ function cleanFontSize(raw) {
   return Math.min(72, Math.max(8, Math.round(n)));
 }
 
+/**
+ * How a picture is laid into the key it decorates.
+ *
+ * Two answers today. `cover` fills the key and crops whatever will not fit —
+ * right for a photograph, and what every key drew before there was a choice.
+ * `contain` fits the whole picture inside the key and leaves the rest of the
+ * key showing, which is what a logo or a bottle shot on a wide key wants.
+ *
+ * Anything else is read as `cover` rather than refused. A back office one
+ * release ahead of a till must leave that till drawing a key, not a hole.
+ */
+function cleanImageFit(raw) {
+  return raw === 'contain' ? 'contain' : 'cover';
+}
+
+/**
+ * The framing numbers: zoom, and the shift across the key.
+ *
+ * All three are percentages and all three are integers — see
+ * schema_screens_key_images.sql for why a float here is a picture that drifts
+ * by a pixel on every save.
+ *
+ * The floor on the zoom is 20 rather than 100. That matters: a floor at
+ * "exactly the fit" means a picture can only ever be cropped and never pulled
+ * back to show more of itself, which is the fault the product cropper had and
+ * had to be fixed for — "the images are too zoomed in" was a floor in the wrong
+ * place, not a zoom.
+ */
+function cleanImageScale(raw) {
+  if (raw === null || raw === undefined || raw === '') return null;
+  return clampInt(raw, 20, 400, null);
+}
+
+function cleanImageOffset(raw) {
+  if (raw === null || raw === undefined || raw === '') return null;
+  return clampInt(raw, -100, 100, null);
+}
+
 function clampInt(value, min, max, fallback) {
   const n = Number(value);
   if (!Number.isFinite(n)) return fallback;
@@ -314,6 +352,17 @@ function normaliseButton(raw, { rows, cols, surface = 'sale' }) {
 
   const label = String(raw.label ?? '').trim().slice(0, 40) || null;
 
+  // A blank that spans more than one cell is a *reservation* — a space the
+  // manager has sized and not yet said anything about — and it is stored, so
+  // the shape survives being saved and comes back to be filled in. A blank of
+  // one cell is stored by nobody: an empty cell already means empty.
+  //
+  // It carries nothing but its ground. A colour or a label on a key that draws
+  // nothing and cannot be pressed is a key a clerk would try to press, so the
+  // decorating fields are nulled here rather than being trusted to be absent —
+  // the back office disables them, and a hand-rolled request is not obliged to.
+  const blank = kind === 'blank';
+
   return {
     grid_row: row,
     grid_col: col,
@@ -334,18 +383,30 @@ function normaliseButton(raw, { rows, cols, surface = 'sale' }) {
       kind === 'function' && functionKeysFor(surface).includes(raw.functionKey)
         ? raw.functionKey
         : null,
-    label,
-    fill: cleanHex(raw.fill),
-    ink: cleanHex(raw.ink),
+    label: blank ? null : label,
+    fill: blank ? null : cleanHex(raw.fill),
+    ink: blank ? null : cleanHex(raw.ink),
     // The key's own face. Independent of the product's: a key with neither
     // still falls back to the product's picture, which is what stops this
     // feature un-decorating every screen a venue has already programmed.
-    emoji: cleanEmoji(raw.emoji),
-    image_url: cleanImage(raw.imageUrl),
+    emoji: blank ? null : cleanEmoji(raw.emoji),
+    image_url: blank ? null : cleanImage(raw.imageUrl),
+    // How that picture sits on this key. Null everywhere it has never been
+    // touched, and null means the plain answer: fill the key, no zoom, centred.
+    // Held per key rather than per product on purpose — the same photograph
+    // frames differently on a 2x2 and on a 1x3 strip, and a venue should not
+    // need two uploads to say so.
+    image_fit: blank ? null : cleanImageFit(raw.imageFit),
+    image_scale: blank ? null : cleanImageScale(raw.imageScale),
+    image_x: blank ? null : cleanImageOffset(raw.imageX),
+    image_y: blank ? null : cleanImageOffset(raw.imageY),
+    // Whether the name is drawn as well as the picture. Off is the default —
+    // see the column's own note.
+    show_label: blank ? 0 : raw.showLabel ? 1 : 0,
     // The lettering. Both null on most keys, and null means the till decides —
     // which is the right answer for a key whose label already fits.
-    font_family: cleanFontFamily(raw.fontFamily),
-    font_size: cleanFontSize(raw.fontSize),
+    font_family: blank ? null : cleanFontFamily(raw.fontFamily),
+    font_size: blank ? null : cleanFontSize(raw.fontSize),
   };
 }
 
@@ -366,6 +427,11 @@ function buttonToJson(row) {
     ink: row.ink,
     emoji: row.emoji ?? null,
     imageUrl: row.image_url ?? null,
+    imageFit: row.image_fit ?? null,
+    imageScale: row.image_scale ?? null,
+    imageX: row.image_x ?? null,
+    imageY: row.image_y ?? null,
+    showLabel: !!row.show_label,
     fontFamily: row.font_family ?? null,
     fontSize: row.font_size ?? null,
   };
@@ -672,10 +738,12 @@ function screensRoutes({ pool, broadcast, secret }) {
           `INSERT INTO epos_screen_buttons
              (screen_id, office, grid_row, grid_col, row_span, col_span,
               kind, plu_id, target_screen_id, function_key, label, fill, ink,
-              emoji, image_url, font_family, font_size)
+              emoji, image_url, image_fit, image_scale, image_x, image_y,
+              show_label, font_family, font_size)
            SELECT ?, office, grid_row, grid_col, row_span, col_span,
                   kind, plu_id, target_screen_id, function_key, label, fill, ink,
-                  emoji, image_url, font_family, font_size
+                  emoji, image_url, image_fit, image_scale, image_x, image_y,
+                  show_label, font_family, font_size
              FROM epos_screen_buttons WHERE screen_id = ?`,
           [created.insertId, source.id]
         );
@@ -789,9 +857,25 @@ function screensRoutes({ pool, broadcast, secret }) {
       //     with a key that goes nowhere;
       //   * the venue's home screen, if it was this one, falls back to NULL,
       //     which the till reads as the built-in Default.
+      //
+      // A key that spanned keeps its ground as a reservation — the space the
+      // manager arranged is still arranged, and it is waiting to be told what
+      // it does now. A 1x1 is deleted outright: a stored blank of one cell is a
+      // row that means nothing, blocks the cell it sits on and draws no key to
+      // say why. The decorating fields go either way; a colour and a label on a
+      // key that no longer does anything is a key a clerk would try to press.
       await pool.execute(
         `UPDATE epos_screen_buttons
-            SET kind = 'blank', target_screen_id = NULL
+            SET kind = 'blank', target_screen_id = NULL,
+                label = NULL, fill = NULL, ink = NULL,
+                emoji = NULL, image_url = NULL,
+                font_family = NULL, font_size = NULL
+          WHERE office = ? AND target_screen_id = ?
+            AND (row_span > 1 OR col_span > 1)`,
+        [office, screen.id]
+      );
+      await pool.execute(
+        `DELETE FROM epos_screen_buttons
           WHERE office = ? AND target_screen_id = ?`,
         [office, screen.id]
       );
@@ -855,10 +939,19 @@ function screensRoutes({ pool, broadcast, secret }) {
       for (const raw of Array.isArray(req.body?.buttons) ? req.body.buttons : []) {
         const button = normaliseButton(raw, grid);
         if (!button) continue;
-        // A blank carries nothing and holds no cell: storing them would double
-        // the size of every screen for no gain, and an empty cell is already
-        // what "no row here" means.
-        if (button.kind === 'blank') continue;
+        // A blank of one cell carries nothing and holds no ground: storing
+        // them would double the size of every screen for no gain, and an empty
+        // cell is already what "no row here" means.
+        //
+        // A blank that *spans* is different — it is a space the manager sized
+        // before deciding what goes in it, which is the order a screen actually
+        // gets laid out in. That one is stored, and the till draws a hole of
+        // exactly that shape. The same test lives in public/screens.js as
+        // spHoldsSpace(); the two must agree, or a manager sizes a space, saves,
+        // and watches it come back 1x1.
+        if (button.kind === 'blank' && button.row_span < 2 && button.col_span < 2) {
+          continue;
+        }
 
         // Last one wins on a duplicated cell rather than the insert failing on
         // the unique key. The editor cannot produce this; a hand-rolled request
@@ -885,8 +978,9 @@ function screensRoutes({ pool, broadcast, secret }) {
             `INSERT INTO epos_screen_buttons
                (screen_id, office, grid_row, grid_col, row_span, col_span,
                 kind, plu_id, target_screen_id, function_key, label, fill, ink,
-                emoji, image_url, font_family, font_size)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                emoji, image_url, image_fit, image_scale, image_x, image_y,
+                show_label, font_family, font_size)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               screen.id,
               office,
@@ -903,6 +997,11 @@ function screensRoutes({ pool, broadcast, secret }) {
               b.ink,
               b.emoji,
               b.image_url,
+              b.image_fit,
+              b.image_scale,
+              b.image_x,
+              b.image_y,
+              b.show_label,
               b.font_family,
               b.font_size,
             ]

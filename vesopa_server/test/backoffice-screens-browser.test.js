@@ -1095,6 +1095,126 @@ check('the handle appears on one selected key and on no others', async (cdp) => 
   );
 });
 
+// ---------------------------------------------------------------------------
+// Resizing a key that is not a key yet
+// ---------------------------------------------------------------------------
+//
+// "The resizing of buttons is great — can we have this on the empty buttons
+// too? We usually resize the buttons and then add products and functionality
+// later." A handle that appears only once a key already has a product on it
+// makes that order of work impossible, and that order is how a screen actually
+// gets laid out.
+
+check('an empty cell offers a handle too', async (cdp) => {
+  await reset(cdp);
+  const at = await cdp.cell(2, 2);
+  await cdp.click(at.x, at.y);
+  const state = await cdp.eval(
+    `return {
+       handles: document.querySelectorAll('#sp-grid .sp-handle').length,
+       button: !!spAt(2, 2),
+     };`
+  );
+  assert.strictEqual(state.button, false, '2:2 was not empty to begin with');
+  assert.strictEqual(state.handles, 1, 'an empty cell offered no handle');
+});
+
+check('dragging an empty cell sets a space aside', async (cdp) => {
+  await reset(cdp);
+  const at = await cdp.cell(2, 2);
+  await cdp.click(at.x, at.y);
+
+  const handle = await cdp.handle();
+  assert.ok(handle, 'no handle on the empty cell');
+  await cdp.mouseDrag(handle, await cdp.cell(3, 3));
+
+  const held = await cdp.eval(
+    `const b = spAt(2, 2);
+     const cell = document.querySelector('#sp-grid .sp-cell[data-row="2"][data-col="2"]');
+     return {
+       kind: b && b.kind,
+       r: b && b.rowSpan,
+       c: b && b.colSpan,
+       // Drawn as a reservation, not as a programmed key: a manager must be
+       // able to see at a glance which spaces are still to be filled in.
+       reserved: !!cell && cell.classList.contains('reserved'),
+       filled: !!cell && cell.classList.contains('filled'),
+       dirty: spDirty(),
+     };`
+  );
+  assert.deepStrictEqual(
+    { kind: held.kind, r: held.r, c: held.c },
+    { kind: 'blank', r: 2, c: 2 },
+    'the empty cell did not take the size it was dragged to'
+  );
+  assert.ok(held.reserved, 'the space was not drawn as a reservation');
+  assert.ok(!held.filled, 'the space was drawn as a programmed key');
+  assert.ok(held.dirty, 'setting a space aside was not counted as a change');
+});
+
+check('a space set aside keeps its size when it is given a product', async (cdp) => {
+  await reset(cdp);
+  await cdp.click(...Object.values(await cdp.cell(2, 2)));
+  await cdp.mouseDrag(await cdp.handle(), await cdp.cell(3, 3));
+
+  // The whole point of the feature: size first, product second.
+  const filled = await cdp.eval(
+    `spApplyToSelection((b) => { spSetKind(b, 'product'); b.pluId = 100; });
+     spRenderGrid();
+     const b = spAt(2, 2);
+     return { kind: b.kind, plu: b.pluId, r: b.rowSpan, c: b.colSpan };`
+  );
+  assert.deepStrictEqual(filled, { kind: 'product', plu: 100, r: 2, c: 2 });
+});
+
+check('a space dragged back to one cell stops existing', async (cdp) => {
+  await reset(cdp);
+  await cdp.click(...Object.values(await cdp.cell(2, 2)));
+  await cdp.mouseDrag(await cdp.handle(), await cdp.cell(3, 3));
+  await cdp.mouseDrag(await cdp.handle(), await cdp.cell(2, 2));
+
+  // A 1x1 blank is what an empty cell already is. Storing one would be a row
+  // that draws nothing and blocks the cell it sits on.
+  assert.strictEqual(
+    await cdp.eval(`return !!spAt(2, 2);`),
+    false,
+    'a 1x1 reservation was left behind'
+  );
+});
+
+check('one drag of an empty cell is one press of undo', async (cdp) => {
+  await reset(cdp);
+  await cdp.click(...Object.values(await cdp.cell(2, 2)));
+  await cdp.mouseDrag(await cdp.handle(), await cdp.cell(3, 3));
+
+  const back = await cdp.eval(
+    `const held = !!spAt(2, 2);
+     spUndo();
+     return { held, afterOneUndo: !!spAt(2, 2), dirty: spDirty() };`
+  );
+  assert.ok(back.held, 'nothing was set aside to undo');
+  assert.strictEqual(
+    back.afterOneUndo,
+    false,
+    'one drag cost more than one press of undo'
+  );
+  assert.ok(!back.dirty, 'the undo did not put the layout back as it was');
+});
+
+check('clearing a key takes its space with it', async (cdp) => {
+  await reset(cdp);
+  // The 2x2 in the corner. Backspace has always meant "this cell is empty
+  // again", and it still does — a reservation is made by a deliberate drag of
+  // the handle, not by pressing Backspace on a key that happened to be big.
+  const at = await cdp.cell(0, 0);
+  await cdp.click(at.x, at.y);
+  const gone = await cdp.eval(
+    `spApplyToSelection(spClearButton, { create: false });
+     return { left: !!spAt(0, 0), at01: !!spAt(0, 1) };`
+  );
+  assert.strictEqual(gone.left, false, 'a reservation was left where the key was');
+});
+
 check('dragging the handle grows the key, snapped to the grid', async (cdp) => {
   await reset(cdp);
   // 2:2 and everything around it is empty — the 2x2 in the corner covers
@@ -1441,6 +1561,313 @@ check('the pop-out fits the grid without the page scrolling', async (cdp, state,
     );
     if (ready) break;
   }
+});
+
+// ---------------------------------------------------------------------------
+// The picture on a key, and how it is framed
+// ---------------------------------------------------------------------------
+//
+// "Is there any way to zoom in and out on images to make them fit tidy? … As we
+// can set the buttons dynamically we are placing however we want … different
+// size buttons might be, so think of a creative way to add that image to the
+// buttons to look better."
+//
+// The answer is four numbers that say how to *look* at the file rather than a
+// second upload: fit, zoom, and a shift in each direction. Everything below is
+// about those four agreeing between the editor's preview and the till.
+
+check('a key with a picture is a picture, not a picture and a word', async (cdp) => {
+  await reset(cdp);
+  const shown = await cdp.eval(
+    `spSelection = new Set(['2:2']);
+     spApplyToSelection((b) => {
+       spSetKind(b, 'product');
+       b.pluId = 100;
+       b.imageUrl = '/uploads/burger.png';
+     });
+     spRenderGrid();
+     const cell = document.querySelector('#sp-grid .sp-cell[data-row="2"][data-col="2"]');
+     return {
+       // The picture fills the key rather than sitting above the words.
+       fills: !!cell.querySelector('.sp-face-fill img'),
+       words: [...cell.querySelectorAll('span')]
+         .map((s) => s.textContent)
+         .join('')
+         .trim(),
+     };`
+  );
+  assert.ok(shown.fills, 'the picture was not drawn as the key');
+  assert.strictEqual(
+    shown.words,
+    '',
+    `the name was lettered over the picture anyway: "${shown.words}"`
+  );
+});
+
+check('and the tick puts the name back on that one key', async (cdp) => {
+  const shown = await cdp.eval(
+    `spApplyToSelection((b) => { b.showLabel = true; }, { create: false });
+     spRenderGrid();
+     const cell = document.querySelector('#sp-grid .sp-cell[data-row="2"][data-col="2"]');
+     const over = cell.querySelector('.sp-over-art');
+     return {
+       words: over && over.textContent.trim(),
+       // Over the picture, with something behind it: white lettering on a
+       // photograph that happens to be pale is a key nobody can read.
+       scrimmed: !!over,
+       stillFills: !!cell.querySelector('.sp-face-fill img'),
+     };`
+  );
+  assert.strictEqual(shown.words, 'Product 1');
+  assert.ok(shown.scrimmed, 'the name was lettered straight onto the picture');
+  assert.ok(shown.stillFills, 'the picture stopped filling the key');
+});
+
+check('the framing stage is drawn at the key’s own shape', async (cdp) => {
+  await reset(cdp);
+  // A 1x1 against a 1x3 strip. Not a 1x1 against a 2x2: the grid's cells are
+  // all one shape, so a 2x2 is the same shape as a 1x1 and comparing them
+  // would pass whatever the stage did.
+  //
+  // If the stage were a fixed square, "does this picture work *here*" could not
+  // be answered from it — and that question, on a venue that arranges keys in
+  // whatever sizes suit it, is the whole reason it exists.
+  const shapes = await cdp.eval(
+    `spSelection = new Set(['2:0']);
+     spApplyToSelection((b) => {
+       spSetKind(b, 'product');
+       b.pluId = 100;
+       b.colSpan = 3;
+     });
+     const ratios = {};
+     for (const [name, key] of [['wide', '2:0'], ['small', '0:3']]) {
+       spSelection = new Set([key]);
+       spApplyToSelection((b) => { b.imageUrl = '/uploads/burger.png'; });
+       spRenderGrid();
+       spRenderInspector();
+       const stage = document.getElementById('sp-frame-stage');
+       ratios[name] = {
+         shown: !document.getElementById('sp-frame').hidden,
+         raw: stage.style.aspectRatio,
+         width: Math.round(stage.getBoundingClientRect().width),
+         height: Math.round(stage.getBoundingClientRect().height),
+       };
+     }
+     return ratios;`
+  );
+  assert.ok(shapes.wide.shown, 'the stage was not offered on a key with a picture');
+  assert.ok(shapes.small.shown, 'the stage was not offered on the small key');
+  // Chrome normalises `aspect-ratio: 1.42` to the string "1.42 / 1", so this
+  // is parseFloat rather than Number — which answers NaN for it.
+  const ratio = (r) => parseFloat(r.raw);
+  assert.ok(
+    ratio(shapes.wide) > ratio(shapes.small) * 2,
+    `the 1x3 strip and the 1x1 got the same stage shape (${JSON.stringify(shapes)})`
+  );
+});
+
+check('the stage is not offered on a key with no picture', async (cdp) => {
+  await reset(cdp);
+  const hidden = await cdp.eval(
+    `spSelection = new Set(['3:4']);
+     spRenderInspector();
+     return document.getElementById('sp-frame').hidden;`
+  );
+  assert.strictEqual(hidden, true);
+});
+
+check('dragging the stage moves the picture by what the pointer moved', async (cdp) => {
+  await reset(cdp);
+  await cdp.eval(
+    `spSelection = new Set(['0:0']);
+     spApplyToSelection((b) => { b.imageUrl = '/uploads/burger.png'; }, { create: false });
+     spRenderGrid();
+     spRenderInspector();
+     return true;`
+  );
+
+  const stage = await cdp.eval(
+    `const el = document.getElementById('sp-frame-stage');
+     el.scrollIntoView({ block: 'center' });
+     const r = el.getBoundingClientRect();
+     return {
+       x: Math.round(r.left + r.width / 2),
+       y: Math.round(r.top + r.height / 2),
+       w: Math.round(r.width),
+       h: Math.round(r.height),
+     };`
+  );
+  assert.ok(stage.w > 20, 'the stage has no size to drag across');
+
+  // A quarter of the stage to the right. The offsets are a percentage of the
+  // key, so that is +25 — the picture travels exactly as far as the pointer.
+  await cdp.mouseDrag(
+    { x: stage.x, y: stage.y },
+    { x: stage.x + Math.round(stage.w / 4), y: stage.y }
+  );
+
+  const moved = await cdp.eval(`const b = spAt(0, 0); return { x: b.imageX, y: b.imageY };`);
+  assert.ok(
+    Math.abs(moved.x - 25) <= 6,
+    `the picture moved by ${moved.x}% for a pointer that moved 25%`
+  );
+  assert.ok(Math.abs(moved.y) <= 3, `it drifted ${moved.y}% vertically`);
+});
+
+check('one drag of the stage is one press of undo', async (cdp) => {
+  const back = await cdp.eval(
+    `// The settle timer is what turns a hundred pointer events into one step.
+     spFrameSettleNow();
+     const moved = spAt(0, 0).imageX;
+     spUndo();
+     return { moved, afterOneUndo: spAt(0, 0).imageX };`
+  );
+  assert.ok(back.moved !== 0, 'nothing was moved to undo');
+  assert.ok(
+    back.afterOneUndo == null,
+    `one drag cost more than one press of undo (left ${back.afterOneUndo})`
+  );
+});
+
+check('zoom and fit reach the grid, and Reset takes them off', async (cdp) => {
+  await reset(cdp);
+  const framed = await cdp.eval(
+    `spSelection = new Set(['0:0']);
+     spApplyToSelection((b) => { b.imageUrl = '/uploads/burger.png'; }, { create: false });
+     spRenderGrid();
+     spRenderInspector();
+
+     const zoom = document.getElementById('sp-frame-zoom');
+     zoom.value = '220';
+     zoom.dispatchEvent(new Event('input', { bubbles: true }));
+     document.getElementById('sp-frame-whole').click();
+     spFrameSettleNow();
+
+     const img = document
+       .querySelector('#sp-grid .sp-cell[data-row="0"][data-col="0"] .sp-face-fill img');
+     return {
+       scale: spAt(0, 0).imageScale,
+       fit: spAt(0, 0).imageFit,
+       // The preview has to move with it, or the manager is setting numbers
+       // blind and the editor is lying about what a clerk will see.
+       drawnFit: img.style.objectFit,
+       drawnTransform: img.style.transform,
+     };`
+  );
+  assert.strictEqual(framed.scale, 220);
+  assert.strictEqual(framed.fit, 'contain');
+  assert.strictEqual(framed.drawnFit, 'contain');
+  assert.ok(
+    framed.drawnTransform.includes('scale(2.2)'),
+    `the preview drew "${framed.drawnTransform}"`
+  );
+
+  const reset2 = await cdp.eval(
+    `document.getElementById('sp-frame-reset').click();
+     spFrameSettleNow();
+     const b = spAt(0, 0);
+     return { scale: b.imageScale, fit: b.imageFit, x: b.imageX, y: b.imageY };`
+  );
+  assert.deepStrictEqual(reset2, { scale: null, fit: null, x: null, y: null });
+});
+
+check('the framing travels to the server on save', async (cdp, state) => {
+  await reset(cdp);
+  await cdp.eval(
+    `spSelection = new Set(['0:3']);
+     spApplyToSelection((b) => {
+       b.imageUrl = '/uploads/burger.png';
+       b.imageFit = 'contain';
+       b.imageScale = 175;
+       b.imageX = -20;
+       b.imageY = 12;
+       b.showLabel = true;
+     }, { create: false });
+     return spSaveLayout({ quiet: true });`
+  );
+  const sent = (state.saved || []).find((b) => b.row === 0 && b.col === 3);
+  assert.ok(sent, 'the key was not in what was saved');
+  assert.strictEqual(sent.imageFit, 'contain');
+  assert.strictEqual(sent.imageScale, 175);
+  assert.strictEqual(sent.imageX, -20);
+  assert.strictEqual(sent.imageY, 12);
+  assert.strictEqual(sent.showLabel, true);
+});
+
+check('framing a key is a change the editor knows it has', async (cdp) => {
+  await reset(cdp);
+  // The trap this is for: spShape() is what decides whether there is unsaved
+  // work, and a field left out of it means changing that field is not a
+  // change — no undo step, no warning, and the edit thrown away without a word
+  // by the next screen switch.
+  const noticed = await cdp.eval(
+    `spSelection = new Set(['0:0']);
+     spApplyToSelection((b) => { b.imageUrl = '/uploads/burger.png'; }, { create: false });
+     spSavedShape = spShape(spCurrent);
+     const before = spDirty();
+     spApplyToSelection((b) => { b.imageScale = 180; }, { create: false });
+     const afterZoom = spDirty();
+     spSavedShape = spShape(spCurrent);
+     spApplyToSelection((b) => { b.showLabel = true; }, { create: false });
+     return { before, afterZoom, afterTick: spDirty() };`
+  );
+  assert.strictEqual(noticed.before, false);
+  assert.ok(noticed.afterZoom, 'zooming a picture was not counted as a change');
+  assert.ok(noticed.afterTick, 'showing the name was not counted as a change');
+});
+
+// ---------------------------------------------------------------------------
+// The key no layout can delete
+// ---------------------------------------------------------------------------
+
+check('a top bar is laid out beside the till’s own fixed key', async (cdp) => {
+  await reset(cdp);
+  const onSale = await cdp.eval(
+    `return {
+       nav: !document.getElementById('sp-fixed-nav').hidden,
+       stage: document.getElementById('sp-stage').classList.contains('with-nav'),
+     };`
+  );
+  assert.strictEqual(onSale.nav, false, 'a sale screen was given the fixed key');
+
+  await cdp.eval(
+    `document.querySelector('.sp-surface[data-surface="topbar"]').click();
+     return true;`
+  );
+  await sleep(300);
+  const onTop = await cdp.eval(
+    `const nav = document.getElementById('sp-fixed-nav');
+     const grid = document.getElementById('sp-grid');
+     return {
+       shown: !nav.hidden,
+       // Beside the grid, not over it: it takes width from the bar rather than
+       // one of its columns, so a bar laid out before it existed still has
+       // every key it had.
+       leftOfGrid:
+         nav.getBoundingClientRect().right <= grid.getBoundingClientRect().left + 1,
+     };`
+  );
+  assert.ok(onTop.shown, 'the top bar was not shown the fixed key');
+  assert.ok(onTop.leftOfGrid, 'the fixed key was not drawn to the left of the bar');
+
+  // And a bottom bar is not: the page selector lives on the one strip that is
+  // on every screen, which is the top one.
+  await cdp.eval(
+    `document.querySelector('.sp-surface[data-surface="bottombar"]').click();
+     return true;`
+  );
+  await sleep(300);
+  assert.strictEqual(
+    await cdp.eval(`return document.getElementById('sp-fixed-nav').hidden;`),
+    true,
+    'a bottom bar was given the page selector'
+  );
+
+  await cdp.eval(
+    `document.querySelector('.sp-surface[data-surface="sale"]').click();
+     return true;`
+  );
+  await sleep(300);
 });
 
 check('nothing on the page threw while all that happened', async (cdp) => {

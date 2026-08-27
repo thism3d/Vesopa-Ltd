@@ -847,12 +847,19 @@ function spSpanRoom(button, wantRows, wantCols) {
 }
 
 /**
- * Put the drag handle on the one selected key, and nowhere else.
+ * Put the drag handle on the one selected cell, and nowhere else.
  *
- * One key only. A handle on each of six selected keys asks "which one am I
+ * One cell only. A handle on each of six selected keys asks "which one am I
  * resizing?", and the honest answer — all of them, into each other — is not a
  * gesture anybody wants. Hidden in Preview, which is the mode for looking at
  * the screen as a clerk does.
+ *
+ * On an *empty* cell as much as on a programmed one, which is what this
+ * originally would not do. A manager lays a screen out by arranging the shapes
+ * first and saying what each one does afterwards — that is the order the work
+ * actually happens in — and a handle that appears only once a key already has a
+ * product on it makes that order impossible. See spResizeTarget for what the
+ * drag then creates.
  */
 function spPaintHandle() {
   for (const cell of spCells.values()) {
@@ -860,15 +867,39 @@ function spPaintHandle() {
   }
   if (spPreview || spSelection.size !== 1) return;
 
-  const button = spSelectedButtons()[0];
-  if (!button) return;
-  const cell = spCells.get(spKey(button.row, button.col));
+  const key = [...spSelection][0];
+  const cell = spCells.get(key);
   if (!cell) return;
 
   const handle = document.createElement('span');
   handle.className = 'sp-handle';
-  handle.title = 'Drag to make this key bigger or smaller';
+  handle.title = spAt(...key.split(':').map(Number))
+    ? 'Drag to make this key bigger or smaller'
+    : 'Drag to set aside a bigger space — give it a product afterwards';
   cell.append(handle);
+}
+
+/**
+ * The button a corner drag is about to resize, brought into being if need be.
+ *
+ * An empty cell has no button behind it, so there is nothing to put a span on.
+ * Rather than refuse the gesture, the reservation is created at the moment the
+ * handle is picked up — a blank that holds ground, in spHoldsSpace's sense. If
+ * the drag ends back at 1x1 the blank is dropped again by spTidy and no undo
+ * step is pushed, so picking the handle up and putting it down costs nothing.
+ *
+ * Returns null when there is nothing sensible to resize.
+ */
+function spResizeTarget() {
+  const chosen = spSelectedButtons();
+  if (chosen.length) return chosen[0];
+  if (spSelection.size !== 1) return null;
+
+  const [row, col] = [...spSelection][0].split(':').map(Number);
+  if (row >= spCurrent.rows || col >= spCurrent.cols) return null;
+  const button = { row, col, rowSpan: 1, colSpan: 1, kind: 'blank' };
+  spCurrent.buttons.push(button);
+  return button;
 }
 
 /** Every picture this venue already has to hand, for the key-face gallery. */
@@ -1119,6 +1150,63 @@ function spFaceFor(b) {
   return { emoji: p.emoji || '', image: p.image_url || '', own: false };
 }
 
+/**
+ * How a picture sits on a key: the fit, the zoom, and the shift.
+ *
+ * One place for the arithmetic, because three things have to agree about it —
+ * the grid preview, the framing stage in the inspector, and the till. See
+ * schema_screens_key_images.sql for the model itself, and for why the numbers
+ * are integer percentages rather than floats.
+ *
+ * Every field is allowed to be absent, and absent means the plain answer: fill
+ * the key, no zoom, centred. That is what every key drew before there was
+ * anything to set, so a venue that never opens this control sees no change.
+ */
+function spFrameOf(b) {
+  const num = (v, lo, hi, fallback) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? Math.min(hi, Math.max(lo, Math.round(n))) : fallback;
+  };
+  return {
+    fit: b && b.imageFit === 'contain' ? 'contain' : 'cover',
+    scale: num(b && b.imageScale, 20, 400, 100),
+    x: num(b && b.imageX, -100, 100, 0),
+    y: num(b && b.imageY, -100, 100, 0),
+  };
+}
+
+/**
+ * The two CSS properties that frame is.
+ *
+ * `translate()` before `scale()` in the string, which CSS reads right to left —
+ * so the picture is scaled first and then shifted, and the shift is a
+ * percentage of the key's own size rather than of the zoomed picture. That
+ * order is what makes a drag across the stage move the picture by the distance
+ * the pointer moved, at any zoom. The till composes the same two steps in the
+ * same order: see `_picture` in programmed_grid.dart.
+ */
+function spFrameStyle(frame) {
+  return {
+    objectFit: frame.fit,
+    transform: `translate(${frame.x}%, ${frame.y}%) scale(${frame.scale / 100})`,
+  };
+}
+
+/**
+ * Whether this key draws its name as well as its picture.
+ *
+ * A picture on a key answers "what is this?" better than the word does — a
+ * photograph of a burger is a better burger key than BURGER over a sliver of
+ * one — so a key with a picture is a picture, and the name is off unless the
+ * venue asks for it. A key with no picture always says its name; there would be
+ * nothing on it otherwise.
+ */
+function spDrawsLabel(b) {
+  const face = spFaceFor(b);
+  if (!face || !face.image) return true;
+  return !!b.showLabel;
+}
+
 function spMissing(b) {
   if (!b) return false;
   if (b.kind === 'product') return !spProductName(b.pluId);
@@ -1138,6 +1226,22 @@ function spSetKind(button, kind) {
   if (kind !== 'product') button.pluId = null;
   if (kind !== 'page') button.targetScreenId = null;
   if (kind !== 'function') button.functionKey = null;
+}
+
+/**
+ * Clear a key back to an empty cell — its span with it.
+ *
+ * The span matters now that a spanning blank is a thing that survives. Without
+ * this, Clear on a 2x2 would leave a 2x2 *reservation* behind: the key gone,
+ * the ground still held, and the four cells under it unreachable with no key
+ * drawn to explain why. Clear has always meant "this cell is empty again", and
+ * it still does. A space that is meant to stay set aside is made by dragging
+ * the corner handle, which is a deliberate gesture; Backspace is not.
+ */
+function spClearButton(button) {
+  spSetKind(button, 'blank');
+  button.rowSpan = 1;
+  button.colSpan = 1;
 }
 
 /**
@@ -1166,6 +1270,11 @@ function spShape(screen) {
         b.ink ?? '',
         b.emoji ?? '',
         b.imageUrl ?? '',
+        b.imageFit ?? '',
+        b.imageScale ?? '',
+        b.imageX ?? '',
+        b.imageY ?? '',
+        b.showLabel ? '1' : '',
         // Every field a key carries has to be in here, and forgetting one is
         // quiet in a way that is worth spelling out: this string is what
         // `spDirty()` compares and what `spEdit()` uses to decide whether
@@ -1213,16 +1322,35 @@ function spRestore(snapshot) {
  * here rather than at each call site, and in the same order the server does it
  * — so what the editor shows after an edit is what comes back from a save.
  */
+/**
+ * Whether a blank is holding ground rather than being nothing.
+ *
+ * A key that spans more than one cell is a *reservation*: the manager has said
+ * "this space is one key, two wide and two tall", and means to say what it does
+ * afterwards. That is how a screen actually gets laid out — the shapes first,
+ * because the shapes are what the venue is arranging, and the products second.
+ * So a spanning blank is stored, and a 1x1 blank is not: a single empty cell is
+ * already what an empty cell means, and storing millions of them would double
+ * the size of every screen to say nothing.
+ *
+ * The same test is applied by the server, in src/screens.js. If it changes
+ * here, it changes there in the same breath — the two disagreeing means a
+ * manager sizes a space, saves, and watches it come back 1x1.
+ */
+function spHoldsSpace(b) {
+  return (Number(b.rowSpan) || 1) > 1 || (Number(b.colSpan) || 1) > 1;
+}
+
 function spTidy() {
   const grid = spCurrent;
 
-  // Blanks are not stored — an empty cell already means empty — and anything
-  // off the grid is gone rather than clamped, because clamping moves a button
-  // on top of another one and calls that a save.
+  // A blank is kept only while it holds ground — see spHoldsSpace. Anything off
+  // the grid is gone rather than clamped, because clamping moves a button on
+  // top of another one and calls that a save.
   let buttons = grid.buttons.filter(
     (b) =>
       b &&
-      b.kind !== 'blank' &&
+      (b.kind !== 'blank' || spHoldsSpace(b)) &&
       Number.isFinite(b.row) &&
       Number.isFinite(b.col) &&
       b.row >= 0 &&
@@ -1237,6 +1365,12 @@ function spTidy() {
     b.rowSpan = Math.max(1, Math.min(grid.rows - b.row, Number(b.rowSpan) || 1));
     b.colSpan = Math.max(1, Math.min(grid.cols - b.col, Number(b.colSpan) || 1));
   }
+
+  // Again, after the clamp. A reserved space three rows tall on a grid the
+  // manager has just cut to two rows is clamped back to 1x1 by the loop above,
+  // and a 1x1 blank is nothing — it must not survive as a stored row that draws
+  // no key and blocks the cell it sits on.
+  buttons = buttons.filter((b) => b.kind !== 'blank' || spHoldsSpace(b));
 
   // One button per cell. The last one placed wins, which is what a drop on top
   // of something means.
@@ -1691,6 +1825,17 @@ function spRenderGrid() {
   $('sp-ghost-bottom').hidden = surface !== 'topbar';
   $('sp-stage').classList.toggle('framed', bar);
 
+  // The till's own fixed key, drawn beside a top bar so the manager lays out
+  // against the width it actually takes. Top bars only: it is the way between
+  // sections and it lives at the left of the one strip that is on every screen.
+  //
+  // It takes width from the bar rather than one of its columns, so a bar laid
+  // out before this existed still has every key it had — drawn a little
+  // narrower. Nothing here changes the grid's own geometry; see the note on
+  // `.sp-bar-row` in the stylesheet for how that is kept true.
+  $('sp-fixed-nav').hidden = surface !== 'topbar';
+  $('sp-stage').classList.toggle('with-nav', surface === 'topbar');
+
   if (!spCurrent) {
     box.removeAttribute('style');
     box.classList.remove('preview');
@@ -1750,30 +1895,66 @@ function spRenderGrid() {
         if (b.fontSize) cell.dataset.pt = String(b.fontSize);
       }
       if (b) {
-        cell.classList.add('filled');
+        // A reservation is not a programmed key and must not be drawn as one:
+        // it is a space the manager has set aside and not yet said anything
+        // about. Drawn as an empty cell that happens to be bigger, with a
+        // dashed edge, so "I have not finished this one" stays readable across
+        // a screen that is half laid out.
+        cell.classList.add(b.kind === 'blank' ? 'reserved' : 'filled');
         if (spMissing(b)) cell.classList.add('missing');
         cell.title = spCellTitle(b);
       }
 
-      // The key's face, above its words, exactly as the till stacks them. A
-      // picture the key has borrowed from its product is drawn faded, so
-      // "this key has a picture" and "this key was given one" stay apart —
-      // otherwise clearing a key's own emoji looks like it did nothing.
+      // The key's face, exactly as the till draws it — because this grid is the
+      // only place a manager can see whether the framing they set actually
+      // works on a key of this shape, and a preview that stacks things
+      // differently from the till is a preview that lies.
+      //
+      // A picture *fills* the key and the name is not drawn over it unless the
+      // venue asked for that; an emoji sits above the words as it always has.
+      // A face the key has borrowed from its product is drawn faded, so "this
+      // key has a picture" and "this key was given one" stay apart — otherwise
+      // clearing a key's own emoji looks like it did nothing.
       const face = b && spFaceFor(b);
-      if (face) {
+      if (face && face.image) {
+        const art = document.createElement('span');
+        art.className = 'sp-face-fill' + (face.own ? '' : ' inherited');
+        const img = document.createElement('img');
+        img.src = face.image;
+        img.alt = '';
+        // Never a broken-image frame on a key. A picture that will not load
+        // leaves the key looking like one that never had a picture, which is
+        // what the till does with a dead URL.
+        img.addEventListener('error', () => art.remove());
+        const style = spFrameStyle(spFrameOf(b));
+        img.style.objectFit = style.objectFit;
+        img.style.transform = style.transform;
+        art.append(img);
+        cell.append(art);
+      } else if (face) {
         const art = document.createElement('span');
         art.className = 'sp-face-art' + (face.own ? '' : ' inherited');
-        if (face.image) {
-          art.style.backgroundImage = `url("${face.image.replace(/"/g, '%22')}")`;
-          art.classList.add('img');
-        } else {
-          art.textContent = face.emoji;
-        }
+        art.textContent = face.emoji;
         cell.append(art);
       }
 
       const text = document.createElement('span');
-      text.textContent = b ? spLabelFor(b) : '';
+      // A reservation says its size rather than nothing. A 2x3 hole in a grid
+      // is otherwise indistinguishable from a 2x3 gap the manager left on
+      // purpose, and the difference is the whole point of the thing.
+      if (b && b.kind === 'blank') {
+        text.className = 'sp-reserved-size';
+        text.textContent = `${b.rowSpan || 1} × ${b.colSpan || 1}`;
+      } else if (b && !spDrawsLabel(b)) {
+        // Picture only. The span is still appended, empty, so the cell keeps
+        // the same flex layout whether the name is drawn or not.
+        text.textContent = '';
+      } else {
+        text.textContent = b ? spLabelFor(b) : '';
+        // Lettering over a photograph needs something behind it, or it is
+        // unreadable on whatever the picture happens to be light on.
+        if (b && face && face.image) text.className = 'sp-over-art';
+      }
       cell.append(text);
 
       // A live display is not a key, and drawing it as one is how a manager
@@ -1847,6 +2028,10 @@ function spWidgetSketch(key) {
 
 /** What hovering a key says. Worth having: the grid shows a name, not a PLU. */
 function spCellTitle(b) {
+  if (b.kind === 'blank') {
+    return `A ${b.rowSpan || 1} × ${b.colSpan || 1} space set aside — ` +
+      'double-click to say what it does';
+  }
   if (b.kind === 'product') {
     const name = spProductName(b.pluId);
     return name
@@ -2115,15 +2300,23 @@ function spRenderInspector() {
   spSet($('sp-label'), first.label || '');
   spSet($('sp-rowspan'), String(first.rowSpan || 1));
   spSet($('sp-colspan'), String(first.colSpan || 1));
-  // A span is a single-button idea. Applied to a multi-selection, buttons grow
+  // A span is a single-cell idea. Applied to a multi-selection, buttons grow
   // over each other.
-  $('sp-rowspan').disabled = count !== 1 || !chosen.length;
-  $('sp-colspan').disabled = count !== 1 || !chosen.length;
+  //
+  // Live on an empty cell as well as a programmed one — the same reservation
+  // the corner handle makes. Sizing the space and saying what it does are two
+  // steps and they happen in that order.
+  $('sp-rowspan').disabled = count !== 1;
+  $('sp-colspan').disabled = count !== 1;
 
   // Styling and labelling a cell that does nothing is styling something that is
   // never stored — the server drops blanks, and so does this editor. Saying so
   // beats letting a manager colour six empty cells and wonder where it went.
-  const styleable = chosen.length > 0;
+  //
+  // A *reserved* blank is stored, but it is still a cell that does nothing, and
+  // a coloured key a clerk cannot press is worse than an obviously unfinished
+  // one. Colour it once it has a product.
+  const styleable = chosen.some((b) => b.kind !== 'blank');
   $('sp-label').disabled = !styleable;
   $('sp-clear-style').disabled = !styleable;
   $('sp-ink').disabled = !styleable;
@@ -2234,11 +2427,188 @@ function spRenderFace(first, styleable) {
     )
     .join('');
 
+  spRenderFrame(first, styleable);
+
   $('sp-face-note').textContent = !styleable
     ? ''
     : face && !face.own
       ? 'Showing this product’s own picture. Set one here to override it just on this key.'
       : '';
+}
+
+/**
+ * The framing stage: this picture, on this key, at this key's real shape.
+ *
+ * Drawn at the proportions of the actual cell rather than in a fixed square,
+ * and that is the whole idea. "Does this picture work here" is a question only
+ * the real shape answers, and a venue that arranges 2x2 keys and 1x3 strips
+ * gets a different answer for each of them from the same photograph. The
+ * measurement comes off the grid itself, so it is right whatever the screen's
+ * rows and columns are.
+ *
+ * Nothing here uploads or crops anything. Four numbers say how to *look* at the
+ * file, so the same picture can be framed one way on the FOOD key and another
+ * way on the burger it leads to, without a second copy of it and without the
+ * product catalogue changing under either.
+ */
+function spRenderFrame(first, styleable) {
+  const wrap = $('sp-frame');
+  const face = first && spFaceFor(first);
+  const show = !!(styleable && face && face.image);
+  wrap.hidden = !show;
+  if (!show) return;
+
+  const frame = spFrameOf(first);
+  const img = $('sp-frame-img');
+  if (img.getAttribute('src') !== face.image) img.src = face.image;
+  const style = spFrameStyle(frame);
+  img.style.objectFit = style.objectFit;
+  img.style.transform = style.transform;
+
+  // The key's own proportions, measured off the grid. Falls back to 4:3 only
+  // when the cell is not on screen — a bar being edited while the panel is
+  // scrolled, say — because a stage with no aspect ratio collapses to nothing.
+  const cell = spCells.get(spKey(first.row, first.col));
+  const box = cell && cell.getBoundingClientRect();
+  const ratio = box && box.height > 0 ? box.width / box.height : 4 / 3;
+  $('sp-frame-stage').style.aspectRatio = String(ratio);
+
+  spSet($('sp-frame-zoom'), String(frame.scale));
+  $('sp-frame-zoom-out').textContent = `${frame.scale}%`;
+  $('sp-frame-fill').classList.toggle('on', frame.fit === 'cover');
+  $('sp-frame-whole').classList.toggle('on', frame.fit === 'contain');
+  $('sp-show-label').checked = !!first.showLabel;
+}
+
+/**
+ * One gesture, one undo step.
+ *
+ * Panning and zooming are continuous: a drag across the stage is a hundred
+ * pointer events and a scroll is twenty, and putting each of them through
+ * spEdit would bury the undo stack — the same fault the colour wheel had before
+ * it was moved off `input`, and the reason the corner handle takes its snapshot
+ * once at the start of the drag. So the buttons are mutated directly while the
+ * gesture runs and the step is pushed when it settles.
+ *
+ * The wheel has no "up" event to settle on, so it settles on a pause. Long
+ * enough that a burst of scrolling is one step, short enough that a manager who
+ * zooms and then reaches for Ctrl+Z gets what they expect.
+ */
+let spFrameGesture = null;
+let spFrameSettle = null;
+const SP_FRAME_SETTLE_MS = 450;
+
+function spFrameChange(mutate) {
+  if (!spCurrent) return;
+  const targets = spSelectedButtons().filter((b) => {
+    const face = spFaceFor(b);
+    return face && face.image;
+  });
+  if (!targets.length) return;
+
+  if (!spFrameGesture) spFrameGesture = spSnapshot();
+  for (const b of targets) mutate(b, spFrameOf(b));
+
+  // Redrawn rather than re-rendered: the grid is rebuilt on every settle, not
+  // on every pixel. See the pointer model at the top of this file.
+  spPaintFrameLive(targets);
+  spRenderFrame(targets[0], true);
+
+  clearTimeout(spFrameSettle);
+  spFrameSettle = setTimeout(spFrameSettleNow, SP_FRAME_SETTLE_MS);
+}
+
+/** Push the gesture's one undo step, if it changed anything. */
+function spFrameSettleNow() {
+  clearTimeout(spFrameSettle);
+  spFrameSettle = null;
+  const before = spFrameGesture;
+  spFrameGesture = null;
+  if (!before || !spCurrent) return;
+
+  if (spShape(spCurrent) === spShape(before)) {
+    spRenderStatus();
+    return;
+  }
+  spUndoStack.push(before);
+  if (spUndoStack.length > SP_UNDO_LIMIT) spUndoStack.shift();
+  spRedoStack = [];
+  spAfterChange();
+}
+
+/** Move the pictures already on the grid, without rebuilding it. */
+function spPaintFrameLive(buttons) {
+  for (const b of buttons) {
+    const cell = spCells.get(spKey(b.row, b.col));
+    const img = cell && cell.querySelector('.sp-face-fill img');
+    if (!img) continue;
+    const style = spFrameStyle(spFrameOf(b));
+    img.style.objectFit = style.objectFit;
+    img.style.transform = style.transform;
+  }
+}
+
+/** Drag to pan, scroll to zoom, on the stage. */
+function spBindFrameStage() {
+  const stage = $('sp-frame-stage');
+  let drag = null;
+
+  stage.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    e.preventDefault();
+    const box = stage.getBoundingClientRect();
+    drag = { id: e.pointerId, x: e.clientX, y: e.clientY, w: box.width, h: box.height };
+    try {
+      stage.setPointerCapture(e.pointerId);
+    } catch {
+      // Uncapturable pointers still pan; they just stop at the edge of the
+      // stage, exactly as the grid's drag does.
+    }
+    stage.classList.add('dragging');
+  });
+
+  stage.addEventListener('pointermove', (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    // Pixels moved, as a percentage of the key — which is the unit the offsets
+    // are stored in, so the picture travels exactly as far as the pointer does.
+    const dx = ((e.clientX - drag.x) / drag.w) * 100;
+    const dy = ((e.clientY - drag.y) / drag.h) * 100;
+    drag.x = e.clientX;
+    drag.y = e.clientY;
+    spFrameChange((b, frame) => {
+      b.imageX = Math.min(100, Math.max(-100, Math.round(frame.x + dx)));
+      b.imageY = Math.min(100, Math.max(-100, Math.round(frame.y + dy)));
+    });
+  });
+
+  const end = (e) => {
+    if (!drag || (e && e.pointerId !== drag.id)) return;
+    try {
+      stage.releasePointerCapture(drag.id);
+    } catch {
+      // Already released.
+    }
+    drag = null;
+    stage.classList.remove('dragging');
+    spFrameSettleNow();
+  };
+  stage.addEventListener('pointerup', end);
+  stage.addEventListener('pointercancel', end);
+
+  // Zoom about the centre. `passive: false` because the page must not scroll
+  // underneath the gesture — a manager zooming a picture and watching the
+  // inspector scroll away is the control failing.
+  stage.addEventListener(
+    'wheel',
+    (e) => {
+      e.preventDefault();
+      const step = e.deltaY < 0 ? 1.08 : 1 / 1.08;
+      spFrameChange((b, frame) => {
+        b.imageScale = Math.min(400, Math.max(20, Math.round(frame.scale * step)));
+      });
+    },
+    { passive: false }
+  );
 }
 
 /**
@@ -2409,7 +2779,16 @@ function spDragStart(e) {
   // the pointer — the handle sits on the *edge* of its key, and the cell the
   // geometry answers for a press on it is as often the next one along.
   if (e.target.closest && e.target.closest('.sp-handle')) {
-    const button = spSelectedButtons()[0];
+    // One undo step for the whole gesture. The spans are mutated directly as
+    // the pointer moves — going through spEdit would push a step per cell
+    // crossed — so the state to go back to is taken once, here, and pushed once
+    // at the end if anything actually changed.
+    //
+    // Taken *before* spResizeTarget, which on an empty cell creates the blank
+    // it is about to size: an undo has to put back the grid as it was, not the
+    // grid with a reservation already on it.
+    const before = spSnapshot();
+    const button = spResizeTarget();
     if (button) {
       try {
         grid.setPointerCapture(e.pointerId);
@@ -2422,11 +2801,7 @@ function spDragStart(e) {
         g,
         mode: 'resize',
         button,
-        // One undo step for the whole gesture. The spans are mutated directly
-        // as the pointer moves — going through spEdit would push a step per
-        // cell crossed — so the state to go back to is taken once, here, and
-        // pushed once at the end if anything actually changed.
-        before: spSnapshot(),
+        before,
       };
       grid.classList.add('resizing');
       return;
@@ -2679,7 +3054,7 @@ function spGridKeys(e) {
 
   if (e.key === 'Backspace' || e.key === 'Delete') {
     e.preventDefault();
-    return void spApplyToSelection((b) => spSetKind(b, 'blank'), { create: false });
+    return void spApplyToSelection(spClearButton, { create: false });
   }
   if (e.key === 'Escape') {
     e.preventDefault();
@@ -2731,20 +3106,31 @@ function spBind() {
   if (spBound) return;
   spBound = true;
 
-  $('sp-screen').addEventListener('change', (e) => {
-    if (!spGuardUnsaved()) {
+  // Changing page.
+  //
+  // The `<select>` has already moved by the time this runs and the guard is now
+  // asynchronous, so the box is put back to the screen actually open *first* —
+  // otherwise the picker sits there naming a page the grid is not showing for as
+  // long as the question is on screen, which is its own version of the bug this
+  // is fixing.
+  $('sp-screen').addEventListener('change', async (e) => {
+    const wanted = Number(e.target.value);
+    if (!wanted || (spCurrent && wanted === spCurrent.id)) return;
+    if (spCurrent) e.target.value = String(spCurrent.id);
+
+    if (!(await spGuardUnsaved())) {
       spRenderChrome();
       return;
     }
-    spSelect(Number(e.target.value));
+    spSelect(wanted);
     spRenderChrome();
   });
 
   // ---- Which kind of layout ----
   for (const tab of document.querySelectorAll('.sp-surface')) {
-    tab.addEventListener('click', () => {
+    tab.addEventListener('click', async () => {
       if (tab.dataset.surface === spSurface) return;
-      if (!spGuardUnsaved()) return;
+      if (!(await spGuardUnsaved())) return;
       spSurface = tab.dataset.surface;
       const first = spOnSurface()[0];
       spSelect(first ? first.id : null);
@@ -2866,11 +3252,14 @@ function spBind() {
   // ---- The inspector ----
   $('sp-kind').addEventListener('change', (e) => {
     spPendingKind = e.target.value;
-    // Only cells that already hold a button change here. On empty cells this
-    // reveals the picker and nothing else — the buttons are made when a product,
-    // a screen or a function is actually chosen, so a change of mind leaves the
-    // grid as it was rather than strewn with keys that point at nothing.
-    if (spSelectedButtons().length) {
+    // Only cells that already do something change here. On empty cells — and on
+    // reserved spaces, which are empty cells that happen to be bigger — this
+    // reveals the picker and nothing else: the key is made when a product, a
+    // screen or a function is actually chosen, so a change of mind leaves the
+    // grid as it was rather than strewn with keys that point at nothing. The
+    // reservation's size is kept, because spApplyToSelection edits the blank
+    // that is already there rather than making a new one.
+    if (spSelectedButtons().some((b) => b.kind !== 'blank')) {
       spApplyToSelection((b) => spSetKind(b, e.target.value), { create: false });
     }
     spRenderInspector();
@@ -3004,7 +3393,7 @@ function spBind() {
     )
   );
   $('sp-clear').addEventListener('click', () =>
-    spApplyToSelection((b) => spSetKind(b, 'blank'), { create: false })
+    spApplyToSelection(spClearButton, { create: false })
   );
   // A face is committed on change, not on every keystroke, so the undo stack
   // holds "put an emoji on this key" once rather than once per character —
@@ -3054,16 +3443,65 @@ function spBind() {
   $('sp-image-upload').addEventListener('click', () => $('sp-image-file').click());
   $('sp-image-file').addEventListener('change', spUploadKeyImage);
 
+  // ---- Framing the picture ----
+  spBindFrameStage();
+
+  // `input`, not `change`, so the picture moves under the slider as it is
+  // dragged — a zoom control that only answers when you let go is one nobody
+  // can aim. The undo step is still one per gesture; see spFrameChange.
+  $('sp-frame-zoom').addEventListener('input', (e) => {
+    const scale = Math.min(400, Math.max(20, Number(e.target.value) || 100));
+    spFrameChange((b) => {
+      b.imageScale = scale;
+    });
+  });
+
+  // The two answers worth having as one press each. "Fill the key" is what a
+  // photograph wants and what every key did before there was a choice; "Whole
+  // picture" is what a logo or a tall bottle shot on a wide key wants, and it
+  // is the one that was impossible.
+  $('sp-frame-fill').addEventListener('click', () =>
+    spFrameChange((b) => {
+      b.imageFit = 'cover';
+    })
+  );
+  $('sp-frame-whole').addEventListener('click', () =>
+    spFrameChange((b) => {
+      b.imageFit = 'contain';
+    })
+  );
+  $('sp-frame-reset').addEventListener('click', () =>
+    spFrameChange((b) => {
+      b.imageFit = null;
+      b.imageScale = null;
+      b.imageX = null;
+      b.imageY = null;
+    })
+  );
+
+  // Whether the name is lettered over the picture. Its own edit rather than a
+  // framing gesture — it is one press with one outcome, and it belongs on the
+  // undo stack as itself.
+  $('sp-show-label').addEventListener('change', (e) => {
+    const on = e.target.checked;
+    spApplyToSelection(
+      (b) => {
+        b.showLabel = on;
+      },
+      { create: false }
+    );
+  });
+
   // Follow a category key to the page it opens.
   //
   // Guarded by spGuardUnsaved for the same reason every other screen change is:
   // the working copy is the manager's, and walking down a menu must not be the
   // thing that throws away twenty minutes of arranging.
-  $('sp-open-target').addEventListener('click', () => {
+  $('sp-open-target').addEventListener('click', async () => {
     const first = spSelectedButtons()[0];
     const target = first && spScreens.find((s) => s.id === first.targetScreenId);
     if (!target) return;
-    if (!spGuardUnsaved()) return;
+    if (!(await spGuardUnsaved())) return;
     spSurface = target.surface || 'sale';
     spSelect(target.id);
     spRenderChrome();
@@ -3082,19 +3520,19 @@ function spBind() {
   for (const [id, key] of [['sp-rowspan', 'rowSpan'], ['sp-colspan', 'colSpan']]) {
     $(id).addEventListener('change', (e) => {
       const want = Math.max(1, Number(e.target.value) || 1);
-      const button = spSelectedButtons()[0];
-      if (!button) return;
-      const room = spSpanRoom(
-        button,
-        key === 'rowSpan' ? want : button.rowSpan || 1,
-        key === 'colSpan' ? want : button.colSpan || 1
-      );
-      spApplyToSelection(
-        (b) => {
-          b[key] = room[key];
-        },
-        { create: false }
-      );
+      // The same reservation the corner handle makes, for the manager who
+      // types the size rather than dragging it. Without this, Width and Height
+      // were dead on exactly the cells the handle now works on.
+      spEdit(() => {
+        const button = spResizeTarget();
+        if (!button) return false;
+        const room = spSpanRoom(
+          button,
+          key === 'rowSpan' ? want : button.rowSpan || 1,
+          key === 'colSpan' ? want : button.colSpan || 1
+        );
+        button[key] = room[key];
+      });
       spRenderInspector();
     });
   }
@@ -3112,11 +3550,103 @@ function spBind() {
 }
 
 /** Warn once before throwing away an unsaved layout. */
-function spGuardUnsaved() {
+/**
+ * A question with named answers, drawn rather than asked of the browser.
+ *
+ * Resolves to the `value` of whichever key was pressed, or to `cancel` for Esc
+ * and a press on the backdrop. Uses the same `#modal-root` and the same classes
+ * as `modal()` in app.js, so it inherits the back office's styling and its
+ * stacking rather than inventing either.
+ */
+function spAsk(title, message, choices) {
+  return new Promise((resolve) => {
+    const root = $('modal-root');
+    root.innerHTML = `
+      <div class="modal-back">
+        <div class="modal" role="dialog" aria-modal="true" aria-label="${spEsc(title)}">
+          <h3>${spEsc(title)}</h3>
+          <p class="muted small" style="margin:0 0 16px">${spEsc(message)}</p>
+          <div class="modal-actions">
+            ${choices
+              .map(
+                (c) =>
+                  `<button type="button" class="btn ${c.style || 'ghost'}"
+                           data-choice="${spEsc(c.value)}">${spEsc(c.label)}</button>`
+              )
+              .join('')}
+          </div>
+        </div>
+      </div>`;
+
+    // Both listeners are taken off again in `done`, and that is not tidiness:
+    // `#modal-root` outlives the dialog, so a listener left on it would still be
+    // there for the *next* question — and its first act is to empty the root,
+    // which would close a dialog it has nothing to do with.
+    const done = (value) => {
+      document.removeEventListener('keydown', onKey, true);
+      root.removeEventListener('click', onClick);
+      root.innerHTML = '';
+      resolve(value);
+    };
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      e.stopPropagation();
+      done('cancel');
+    };
+    const onClick = (e) => {
+      const key = e.target.closest('[data-choice]');
+      if (key) return done(key.dataset.choice);
+      if (e.target.classList.contains('modal-back')) done('cancel');
+    };
+
+    root.addEventListener('click', onClick);
+    document.addEventListener('keydown', onKey, true);
+    root.querySelector('[data-choice]')?.focus();
+  });
+}
+
+/**
+ * Ask before unsaved work is left behind. Resolves true to go ahead.
+ *
+ * A drawn modal, not `confirm()`, and that is the whole of a reported bug:
+ * Chrome offers "prevent this page from creating additional dialogs" on the
+ * second native dialog in a row, and once it is ticked every `confirm()` on the
+ * page returns **false** without drawing anything. This guard reads that as
+ * "stay put", the picker is re-rendered back to the screen already open, and
+ * the editor silently refuses to change page — which is exactly what "swapping
+ * to another page doesn't change to the page, it just shows the page I am
+ * currently on" is. The same trap the kitchen editors and spNewScreen were
+ * already rewritten out of; this was the last native dialog on the path a
+ * manager walks every few minutes.
+ *
+ * Three answers rather than two, because two was never the real question. A
+ * manager who has arranged twenty minutes of keys and reaches for the next page
+ * does not want "leave them behind?" — they want the work kept. Saving is the
+ * default and the primary key; discarding is available and named as the loss it
+ * is; staying is what Esc and the backdrop do.
+ */
+async function spGuardUnsaved() {
   if (!spDirty()) return true;
-  return confirm(
-    'This screen has changes that have not been saved. Leave them behind?'
+
+  const answer = await spAsk(
+    'Save this screen first?',
+    `"${spCurrent.name}" has changes that have not been saved.`,
+    [
+      { value: 'stay', label: 'Stay here', style: 'ghost' },
+      { value: 'discard', label: 'Discard changes', style: 'danger-ghost' },
+      { value: 'save', label: 'Save and carry on', style: 'primary' },
+    ]
   );
+
+  if (answer === 'save') {
+    await spSaveLayout({ quiet: true });
+    // A save that failed left the work in hand and said so through its own
+    // alert. Going on regardless would throw away the very thing the manager
+    // just asked to keep.
+    return !spDirty();
+  }
+  return answer === 'discard';
 }
 
 // ---------------------------------------------------------------------------
@@ -3132,8 +3662,8 @@ function spGuardUnsaved() {
  * at its first null check and does nothing, and the alert() that would have
  * explained is suppressed by the same tick box. One form, one submit.
  */
-function spNewScreen() {
-  if (!spGuardUnsaved()) return;
+async function spNewScreen() {
+  if (!(await spGuardUnsaved())) return;
   const surface = spSurface;
   const max = spLimits(surface);
   const noun =
