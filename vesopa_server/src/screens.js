@@ -33,8 +33,15 @@ const express = require('express');
 
 const { requireAuth } = require('./auth');
 
-/** What a button can be. Anything else is refused rather than stored. */
-const BUTTON_KINDS = ['product', 'page', 'function', 'blank'];
+/**
+ * What a button can be. Anything else is refused rather than stored.
+ *
+ * `modifier` asks one of the venue's modifier questions against whatever is on
+ * the bill. It costs nothing to carry: a group already owns a screen of
+ * answers (schema_screens_modifiers.sql), so the till opens the prompt it
+ * already knows how to open. See schema_screens_button_modifier.sql.
+ */
+const BUTTON_KINDS = ['product', 'page', 'function', 'modifier', 'blank'];
 
 /**
  * What a screen lays out. `epos_screens.surface` has held this since the first
@@ -86,6 +93,13 @@ const FUNCTION_KEYS = [
   'customer',
   'open_drawer',
   'print_bill',
+  // Handing the till to somebody else, and the time clock. Both are offered on
+  // the sale grid as well as on the bars, and that is deliberate: a venue that
+  // runs one screen with no bars at all still has to be able to change who is
+  // on the till, and a member of staff arriving for a shift should not have to
+  // be shown where Settings is first.
+  'sign_on',
+  'clock_in_out',
 ];
 
 /**
@@ -144,6 +158,11 @@ const BAR_KEYS = [
   'go_functions',
   'go_settings',
   'sign_off',
+  // The other half of sign_off, and the reason it is here rather than only in
+  // the list above: a bar is where a venue puts the thing a clerk presses
+  // twenty times a shift, and handing the till over is that thing.
+  'sign_on',
+  'clock_in_out',
 
   // Widgets — the parts of the bar that draw rather than wait.
   'open_bills',
@@ -328,7 +347,12 @@ function clampInt(value, min, max, fallback) {
 function normaliseButton(raw, { rows, cols, surface = 'sale' }) {
   if (!raw || typeof raw !== 'object') return null;
 
-  const kind = BUTTON_KINDS.includes(raw.kind) ? raw.kind : 'blank';
+  let kind = BUTTON_KINDS.includes(raw.kind) ? raw.kind : 'blank';
+  // A modifier key on a screen of modifier answers would be a prompt opened on
+  // top of a prompt, with no way back to the bill underneath. Refused here
+  // rather than guarded on the till, because the till is the wrong place to
+  // discover it.
+  if (kind === 'modifier' && isModifier(surface)) kind = 'blank';
 
   // Dropped rather than clamped, and checked *before* any clamping runs —
   // which is the whole point. Clamping a button at row 9 of a 5-row screen into
@@ -376,6 +400,14 @@ function normaliseButton(raw, { rows, cols, surface = 'sale' }) {
     plu_id: kind === 'product' ? clampInt(raw.pluId, 0, 2147483647, null) : null,
     target_screen_id:
       kind === 'page' ? clampInt(raw.targetScreenId, 1, 2147483647, null) : null,
+    // kind = modifier. Which question the key asks. Deliberately not checked
+    // against the group list here: a group deleted after the layout was saved
+    // must leave a key that reports itself broken, not a save that silently
+    // blanks a key a manager placed on purpose.
+    modifier_group_id:
+      kind === 'modifier'
+        ? clampInt(raw.modifierGroupId, 1, 2147483647, null)
+        : null,
     // Checked against the list for THIS surface, so a Pay key cannot be posted
     // onto a page of lagers by hand-rolling the request, and a widget cannot be
     // posted onto the sale grid where nothing would draw it.
@@ -422,6 +454,7 @@ function buttonToJson(row) {
     pluId: row.plu_id,
     targetScreenId: row.target_screen_id,
     functionKey: row.function_key,
+    modifierGroupId: row.modifier_group_id ?? null,
     label: row.label,
     fill: row.fill,
     ink: row.ink,
@@ -737,11 +770,13 @@ function screensRoutes({ pool, broadcast, secret }) {
         await pool.execute(
           `INSERT INTO epos_screen_buttons
              (screen_id, office, grid_row, grid_col, row_span, col_span,
-              kind, plu_id, target_screen_id, function_key, label, fill, ink,
+              kind, plu_id, target_screen_id, function_key, modifier_group_id,
+              label, fill, ink,
               emoji, image_url, image_fit, image_scale, image_x, image_y,
               show_label, font_family, font_size)
            SELECT ?, office, grid_row, grid_col, row_span, col_span,
-                  kind, plu_id, target_screen_id, function_key, label, fill, ink,
+                  kind, plu_id, target_screen_id, function_key, modifier_group_id,
+                  label, fill, ink,
                   emoji, image_url, image_fit, image_scale, image_x, image_y,
                   show_label, font_family, font_size
              FROM epos_screen_buttons WHERE screen_id = ?`,
@@ -977,10 +1012,11 @@ function screensRoutes({ pool, broadcast, secret }) {
           await connection.execute(
             `INSERT INTO epos_screen_buttons
                (screen_id, office, grid_row, grid_col, row_span, col_span,
-                kind, plu_id, target_screen_id, function_key, label, fill, ink,
+                kind, plu_id, target_screen_id, function_key, modifier_group_id,
+                label, fill, ink,
                 emoji, image_url, image_fit, image_scale, image_x, image_y,
                 show_label, font_family, font_size)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               screen.id,
               office,
@@ -992,6 +1028,7 @@ function screensRoutes({ pool, broadcast, secret }) {
               b.plu_id,
               b.target_screen_id,
               b.function_key,
+              b.modifier_group_id,
               b.label,
               b.fill,
               b.ink,

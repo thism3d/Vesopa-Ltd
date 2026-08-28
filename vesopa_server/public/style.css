@@ -23,6 +23,26 @@
   --red: #e5484d;
   --green: #30a46c;
 
+  /* Surfaces the cards sit on and inside. `--panel` and `--surface-2` were
+     already being referenced with literal fallbacks in a dozen places before
+     they existed; naming them here is what makes the dark theme below a list
+     of colours rather than a rewrite. */
+  --panel: #ffffff;
+  --surface-2: #f7f8fa;
+  --input-bg: #ffffff;
+  --hover: #fbfafc;
+  --ink: var(--text);
+  --flash: #fff4d6;
+  --track: #eeecf1;
+
+  /* Status washes. Held as tokens because a badge that reads as a pale tint on
+     white has to become a dark tint on near-black, and the ink on it moves the
+     other way. */
+  --ok-wash: #e3f6ec;
+  --warn-wash: #fff3e0;
+  --warn-ink: #b06d00;
+  --bad-wash: #fdeceb;
+
   --radius: 12px;
   --shadow: 0 1px 2px rgba(20, 18, 26, .04), 0 4px 16px rgba(20, 18, 26, .04);
 
@@ -77,7 +97,7 @@ h3 { font-size: 16px; }
   /* Never narrower than the form plus its gutters, never so wide that the
      form drifts away from the fold. */
   grid-template-columns: clamp(400px, 42vw, 620px) 1fr;
-  background: #fff;
+  background: var(--card);
 }
 
 .login-side {
@@ -343,7 +363,7 @@ input, select {
   border: 1px solid var(--line);
   border-radius: 9px;
   font-size: 15px;
-  background: #fff;
+  background: var(--input-bg);
   color: var(--text);
 }
 input:focus, select:focus {
@@ -524,10 +544,10 @@ th {
   letter-spacing: .06em;
   color: var(--muted);
   font-weight: 650;
-  background: #fbfafc;
+  background: var(--hover);
 }
 tbody tr:last-child td { border-bottom: 0; }
-tbody tr:hover { background: #fbfafc; }
+tbody tr:hover { background: var(--hover); }
 td.right, th.right { text-align: right; }
 /* A table wider than its card scrolls inside the card. At EVERY width.
 
@@ -563,14 +583,14 @@ td .btn { white-space: nowrap; }
 td .btn + .btn { margin-left: 6px; }
 
 /* A row that just arrived over the socket. */
-@keyframes flash { from { background: #fff4d6; } to { background: transparent; } }
+@keyframes flash { from { background: var(--flash); } to { background: transparent; } }
 tr.new { animation: flash 1.6s ease-out; }
 
 /* ---------- Bars (a chart without a chart library) ---------- */
 
 .bars { display: flex; flex-direction: column; gap: 12px; }
 .bar-row { display: grid; grid-template-columns: 120px 1fr 76px; align-items: center; gap: 12px; }
-.bar-track { height: 9px; background: #eeecf1; border-radius: 5px; overflow: hidden; }
+.bar-track { height: 9px; background: var(--track); border-radius: 5px; overflow: hidden; }
 .bar-fill { height: 100%; border-radius: 5px; background: var(--brand); }
 .bar-row .amount { text-align: right; font-variant-numeric: tabular-nums; font-size: 13.5px; }
 
@@ -583,12 +603,12 @@ tr.new { animation: flash 1.6s ease-out; }
   font-size: 12px;
   font-weight: 600;
 }
-.badge.active { background: #e3f6ec; color: var(--green); }
-.badge.paused { background: #fdeceb; color: var(--red); }
-.badge.archived { background: #eeecf1; color: var(--muted); }
-.badge.due { background: #fff3e0; color: #b06d00; }
-.badge.paid { background: #e3f6ec; color: var(--green); }
-.badge.overdue { background: #fdeceb; color: var(--red); }
+.badge.active { background: var(--ok-wash); color: var(--green); }
+.badge.paused { background: var(--bad-wash); color: var(--red); }
+.badge.archived { background: var(--track); color: var(--muted); }
+.badge.due { background: var(--warn-wash); color: var(--warn-ink); }
+.badge.paid { background: var(--ok-wash); color: var(--green); }
+.badge.overdue { background: var(--bad-wash); color: var(--red); }
 
 /* ---------- Modal ---------- */
 
@@ -692,7 +712,7 @@ tr.new { animation: flash 1.6s ease-out; }
   max-height: 70vh;
   overflow: auto;
   -webkit-overflow-scrolling: touch;
-  background-color: #fbfafc;
+  background-color: var(--hover);
   background-image:
     linear-gradient(to right, var(--line) 1px, transparent 1px),
     linear-gradient(to bottom, var(--line) 1px, transparent 1px);
@@ -721,7 +741,7 @@ tr.new { animation: flash 1.6s ease-out; }
   display: grid;
   place-items: center;
   touch-action: none;
-  background: #fff;
+  background: var(--card);
   border: 2px solid var(--brand);
   color: var(--text);
   border-radius: 8px;
@@ -741,7 +761,7 @@ tr.new { animation: flash 1.6s ease-out; }
 .room-tab {
   padding: 7px 14px;
   border: 1px solid var(--line);
-  background: #fff;
+  background: var(--card);
   border-radius: 20px;
   cursor: pointer;
   font-size: 13.5px;
@@ -1095,7 +1115,7 @@ tr.clickable:hover { background: var(--brand-soft); }
   aspect-ratio: 2 / 1;
   border-radius: 6px;
   border: 1px dashed var(--line);
-  background: #fff center/cover no-repeat;
+  background: var(--card) center/cover no-repeat;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1458,7 +1478,7 @@ table.plain th { color: var(--muted, #7a828c); font-weight: 600; font-size: 11px
   white-space: nowrap;
 }
 /* The unusual setting, so it must not read the same as a routing chip. */
-.chip.warn { background: #fdeceb; color: #9c2417; }
+.chip.warn { background: var(--bad-wash); color: var(--red); }
 
 /* ---- Kitchen screens ------------------------------------------------------
    Vesopa EPOS Kitchen: where each station's tickets come out, the logins, the
@@ -1596,7 +1616,7 @@ table.plain th { color: var(--muted, #7a828c); font-weight: 600; font-size: 11px
   padding: 2px;
   border: 1px solid var(--line, #d7dbe2);
   border-radius: 6px;
-  background: #fff;
+  background: var(--card);
   cursor: pointer;
 }
 
@@ -2795,3 +2815,146 @@ body.sp-popup .sp-status { flex: 0 0 auto; }
      chart in one of them is unreadable. */
   .grid-2 { grid-template-columns: 1fr; }
 }
+
+/* ---------- The editor, handed to a window of its own ----------
+
+   Screen programming opens in its own window by default, and the tab it was
+   opened from draws a card saying so. Everything the editor is made of is
+   hidden rather than removed: coming back to the tab is a class change, not a
+   reload, so a layout part-way through is still where it was left. */
+body.sp-handed-over #view-screens .sp-defaults,
+body.sp-handed-over #view-screens .sp-layout,
+body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
+  display: none;
+}
+
+.sp-handover {
+  max-width: 640px;
+  padding: var(--card-pad);
+}
+.sp-handover h3 { margin: 0 0 8px; }
+
+/* ---------------------------------------------------------------------------
+   Night
+   ---------------------------------------------------------------------------
+   The whole theme is a list of colours because everything above it goes
+   through the tokens. Two rules govern what is *not* in here:
+
+     * A picture of a thing keeps its own colours. The receipt preview is a
+       photograph of paper and stays white in both themes; the till preview and
+       the screen editor's grid are pictures of a till, which was always dark.
+       Inverting either would show a manager something no customer will ever
+       see, which is the one job those panels have.
+
+     * The rail does not move. It was already near-black, and it is the one
+       part of the page that is the same in both themes -- which is what stops
+       a switch reading as a different application.
+
+   Applied by `data-theme` on <html> rather than by `prefers-color-scheme`
+   alone, because a venue's office and its bar are not the same room and the
+   manager gets the choice. The default follows the system; see the media query
+   below it, which is guarded so an explicit "light" always wins.
+*/
+:root[data-theme="dark"] {
+  --bg: #0d1014;
+  --card: #151a20;
+  --panel: #151a20;
+  --surface-2: #1b222a;
+  --input-bg: #10151a;
+  --hover: #1b222a;
+  --track: #262f39;
+  --line: #262f39;
+  --text: #e8edf1;
+  --muted: #94a2ae;
+
+  /* Lime on near-black reads well as a fill and badly as small text, so the
+     deep variant moves the other way in the dark: it has to be *lighter* than
+     the brand here, not darker. */
+  --brand-soft: #26310a;
+  --brand-deep: #b7db2a;
+
+  --blue: #6ba4ff;
+  --amber: #ffb648;
+  --red: #ff6b6f;
+  --green: #46c78c;
+
+  --ok-wash: #10281c;
+  --warn-wash: #2e2110;
+  --warn-ink: #ffb648;
+  --bad-wash: #2e1517;
+  --flash: #2f2712;
+
+  /* A shadow the colour of the page beneath it. The light theme's near-black
+     shadow is invisible on a dark canvas, so cards would lose their edges
+     entirely; this is deeper and relies on the border to do most of the work. */
+  --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 6px 20px rgba(0, 0, 0, .3);
+}
+
+/* The default, for anybody who has never touched the switch. Guarded on
+   `:not([data-theme="light"])` so an explicit choice of Day survives a laptop
+   set to dark. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d1014;
+    --card: #151a20;
+    --panel: #151a20;
+    --surface-2: #1b222a;
+    --input-bg: #10151a;
+    --hover: #1b222a;
+    --track: #262f39;
+    --line: #262f39;
+    --text: #e8edf1;
+    --muted: #94a2ae;
+    --brand-soft: #26310a;
+    --brand-deep: #b7db2a;
+    --blue: #6ba4ff;
+    --amber: #ffb648;
+    --red: #ff6b6f;
+    --green: #46c78c;
+    --ok-wash: #10281c;
+    --warn-wash: #2e2110;
+    --warn-ink: #ffb648;
+    --bad-wash: #2e1517;
+    --flash: #2f2712;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 6px 20px rgba(0, 0, 0, .3);
+  }
+}
+
+/* The receipt designer's paper. A preview of something printed on white paper
+   in black ink, so it is stated rather than inherited -- in either theme. */
+:root[data-theme="dark"] .rd-paper,
+:root[data-theme="dark"] .rd-paper * {
+  color: #000;
+}
+
+/* Two controls the browser draws itself. Without this the dark theme gets a
+   white scrollbar down the side of every table and a light date picker. */
+:root[data-theme="dark"] { color-scheme: dark; }
+:root[data-theme="light"] { color-scheme: light; }
+
+/* The switch itself: a two-key segmented control in the rail's footer, beside
+   the online dot. Small, because it is set once and then never touched. */
+.theme-switch {
+  display: inline-flex;
+  border: 1px solid rgba(255, 255, 255, .14);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.theme-switch button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--rail-text);
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.theme-switch button + button { border-left: 1px solid rgba(255, 255, 255, .14); }
+.theme-switch button:hover { color: var(--rail-active); }
+.theme-switch button[aria-pressed="true"] {
+  background: var(--brand);
+  color: var(--on-brand);
+}
+
+.rail-theme { padding: 12px 22px 20px; }

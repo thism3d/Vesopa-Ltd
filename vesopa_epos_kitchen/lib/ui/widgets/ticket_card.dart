@@ -138,6 +138,7 @@ class _TicketCardState extends State<TicketCard>
 
   @override
   Widget build(BuildContext context) {
+    final skin = Kds.of(context);
     final ticket = widget.ticket;
     final lines = ticket.linesFor(widget.profile.stations);
     final ink = Kds.inkOn(_headline);
@@ -210,11 +211,7 @@ class _TicketCardState extends State<TicketCard>
                       Row(
                         children: [
                           if (ticket.rushed)
-                            _Pill(
-                              icon: Icons.bolt,
-                              label: 'RUSH',
-                              color: ink,
-                            ),
+                            _Pill(icon: Icons.bolt, label: 'RUSH', color: ink),
                           if (ticket.covers != null)
                             _Pill(
                               icon: Icons.people_outline,
@@ -231,16 +228,12 @@ class _TicketCardState extends State<TicketCard>
 
             // ---- Body ------------------------------------------------------
             Container(
-              color: Kds.card,
+              color: skin.card,
               padding: const EdgeInsets.symmetric(vertical: 8),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  ..._lineRowsFor(
-                    lines,
-                    _stationChipFor,
-                    widget.onLineMade,
-                  ),
+                  ..._lineRowsFor(lines, _stationChipFor, widget.onLineMade),
 
                   if (ticket.note != null) ...[
                     const Divider(height: 12, indent: 12, endIndent: 12),
@@ -279,9 +272,9 @@ class _TicketCardState extends State<TicketCard>
                       padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
                       child: Text(
                         'Still with ${ticket.outstanding.map(widget.labelFor).join(', ')}',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 13,
-                          color: Kds.inkMuted,
+                          color: skin.inkMuted,
                           fontStyle: FontStyle.italic,
                         ),
                       ),
@@ -291,7 +284,7 @@ class _TicketCardState extends State<TicketCard>
             ),
 
             // ---- Footer ----------------------------------------------------
-            if (_isOpen) _openFooter() else _completedFooter(),
+            if (_isOpen) _openFooter(skin) else _completedFooter(skin),
           ],
         ),
       ),
@@ -319,8 +312,8 @@ class _TicketCardState extends State<TicketCard>
   /// happens to every card eventually and the left key is what happens to
   /// almost none of them. Putting the rare one under the thumb that reaches for
   /// the common one is how a board gets bumped by accident.
-  Widget _openFooter() => Container(
-    color: Kds.surface,
+  Widget _openFooter(KdsSkin skin) => Container(
+    color: skin.surface,
     child: Row(
       children: [
         Expanded(
@@ -347,8 +340,8 @@ class _TicketCardState extends State<TicketCard>
 
   /// One full-width key, and the reference's wording: a completed card exists
   /// for exactly one reason, which is that somebody wants it back.
-  Widget _completedFooter() => Container(
-    color: Kds.surface,
+  Widget _completedFooter(KdsSkin skin) => Container(
+    color: skin.surface,
     child: _FooterButton(
       icon: Icons.undo,
       label: 'Recall Order',
@@ -382,7 +375,9 @@ class _HeaderRow extends StatelessWidget {
     );
     return Row(
       children: [
-        Expanded(child: Text(left, style: style, overflow: TextOverflow.fade)),
+        Expanded(
+          child: Text(left, style: style, overflow: TextOverflow.fade),
+        ),
         if (right.isNotEmpty)
           Text(right, style: style, textAlign: TextAlign.right),
       ],
@@ -488,6 +483,7 @@ class _LineRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final skin = Kds.of(context);
     final made = line.isModifier ? (dishMade ?? line.made) : line.made;
 
     if (line.isModifier) {
@@ -515,7 +511,7 @@ class _LineRow extends StatelessWidget {
     // Faded, not hidden. A crossed-off item is still part of the order — the
     // chef needs to be able to read back what has been done, and the pass needs
     // to see the whole ticket when it lands.
-    final nameColour = made ? Kds.inkMuted : Kds.ink;
+    final nameColour = made ? skin.inkMuted : skin.ink;
     final decoration = made ? TextDecoration.lineThrough : TextDecoration.none;
 
     final row = Padding(
@@ -562,20 +558,17 @@ class _LineRow extends StatelessWidget {
               if (station != null)
                 Container(
                   margin: const EdgeInsets.only(left: 6, top: 2),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 1,
-                  ),
+                  padding: EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                   decoration: BoxDecoration(
-                    color: Kds.surface,
+                    color: skin.surface,
                     borderRadius: BorderRadius.circular(5),
                   ),
                   child: Text(
                     station!,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11.5,
                       fontWeight: FontWeight.w700,
-                      color: Kds.inkMuted,
+                      color: skin.inkMuted,
                     ),
                   ),
                 ),
@@ -586,7 +579,7 @@ class _LineRow extends StatelessWidget {
               SizedBox(
                 width: 26,
                 child: made
-                    ? const Icon(Icons.check, size: 19, color: Kds.inkMuted)
+                    ? Icon(Icons.check, size: 19, color: skin.inkMuted)
                     : null,
               ),
             ],
@@ -651,7 +644,8 @@ class _FooterButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = emphasis ? Kds.done : Kds.inkMuted;
+    final skin = Kds.of(context);
+    final color = emphasis ? Kds.done : skin.inkMuted;
     return Material(
       color: emphasis ? Kds.done.withValues(alpha: 0.10) : Colors.transparent,
       child: InkWell(

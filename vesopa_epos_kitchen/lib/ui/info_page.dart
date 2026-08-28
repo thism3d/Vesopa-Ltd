@@ -27,6 +27,7 @@ class _InfoSheet extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final skin = Kds.of(context);
     final session = ref.watch(kitchenSessionProvider).value;
     final board = ref.watch(ticketBoardProvider);
     if (session == null) return const SizedBox.shrink();
@@ -79,10 +80,10 @@ class _InfoSheet extends ConsumerWidget {
                             style: Theme.of(context).textTheme.titleMedium
                                 ?.copyWith(fontWeight: FontWeight.w700),
                           ),
-                          const Text(
+                          Text(
                             VesopaBrand.slogan,
                             style: TextStyle(
-                              color: Kds.inkMuted,
+                              color: skin.inkMuted,
                               fontSize: 12.5,
                             ),
                           ),
@@ -95,7 +96,7 @@ class _InfoSheet extends ConsumerWidget {
 
                 for (final entry in facts.entries)
                   Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    padding: EdgeInsets.symmetric(vertical: 3),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -103,7 +104,7 @@ class _InfoSheet extends ConsumerWidget {
                           width: 190,
                           child: Text(
                             entry.key,
-                            style: const TextStyle(color: Kds.inkMuted),
+                            style: TextStyle(color: skin.inkMuted),
                           ),
                         ),
                         Expanded(

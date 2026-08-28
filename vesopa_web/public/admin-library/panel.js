@@ -16,6 +16,47 @@
     });
   };
 
+  // ---- Appearance ----------------------------------------------------------
+  //
+  // The attribute is already on <html> by the time this runs -- shell-top.ejs
+  // sets it inline, before the first paint. All this does is keep the three
+  // keys in step with it and write the choice down.
+
+  var THEME_KEY = 'vesopa.admin.theme';
+
+  function currentTheme() {
+    var set = document.documentElement.getAttribute('data-theme');
+    return set === 'light' || set === 'dark' ? set : 'system';
+  }
+
+  function paintThemeKeys() {
+    var now = currentTheme();
+    var keys = document.querySelectorAll('[data-theme-set]');
+    for (var i = 0; i < keys.length; i++) {
+      keys[i].setAttribute(
+        'aria-pressed',
+        String(keys[i].getAttribute('data-theme-set') === now)
+      );
+    }
+  }
+
+  document.addEventListener('click', function (e) {
+    var key = e.target.closest && e.target.closest('[data-theme-set]');
+    if (!key) return;
+    var want = key.getAttribute('data-theme-set');
+    if (want === 'system') document.documentElement.removeAttribute('data-theme');
+    else document.documentElement.setAttribute('data-theme', want);
+    try {
+      if (want === 'system') localStorage.removeItem(THEME_KEY);
+      else localStorage.setItem(THEME_KEY, want);
+    } catch (err) {
+      /* Not remembered, but applied for this session. */
+    }
+    paintThemeKeys();
+  });
+
+  paintThemeKeys();
+
   // ---- Sidebar drawer ------------------------------------------------------
 
   var side = document.getElementById('apSide');

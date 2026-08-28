@@ -100,6 +100,7 @@ class PrinterConfig {
     this.usbDevicePath,
     this.usbLabel,
     this.paperWidthMm = 80,
+    this.codePage = 'CP1252',
   });
 
   final String id;
@@ -129,6 +130,24 @@ class PrinterConfig {
   /// take different rolls, and printing an 80mm layout on a 58mm roll silently
   /// crops the right-hand column where the prices are.
   final int paperWidthMm;
+
+  /// Which character table this printer is told to draw in.
+  ///
+  /// This exists because of the pound sign, and because a thermal printer is
+  /// not obliged to do as it is told. The till selects a page with `ESC t n`
+  /// and encodes Latin-1 underneath it, which is correct and works on most
+  /// hardware — but plenty of cheap printers ignore `ESC t` entirely and draw
+  /// whatever their DIP switches say, and on the factory default (CP437) the
+  /// byte behind "£" is "ú". A Z report that reads "ú1,204.40" is not a
+  /// cosmetic fault; it is a document a manager has to hand to an accountant.
+  ///
+  /// Per printer rather than per venue, because the two printers on one counter
+  /// are routinely different models. CP1252 is the default and is right almost
+  /// everywhere; the alternatives are here for the printer that is not. See
+  /// [ReceiptBuilder] for what each one does to the pound sign, and Settings ›
+  /// Printing, where a test slip prints one so it can be checked on paper
+  /// rather than guessed at.
+  final String codePage;
 
   /// Characters per line for ESC/POS at Font A, which is what the receipt
   /// builder lays columns out against.
@@ -164,6 +183,7 @@ class PrinterConfig {
     String? usbDevicePath,
     String? usbLabel,
     int? paperWidthMm,
+    String? codePage,
   }) => PrinterConfig(
     id: id,
     name: name ?? this.name,
@@ -176,6 +196,7 @@ class PrinterConfig {
     usbDevicePath: usbDevicePath ?? this.usbDevicePath,
     usbLabel: usbLabel ?? this.usbLabel,
     paperWidthMm: paperWidthMm ?? this.paperWidthMm,
+    codePage: codePage ?? this.codePage,
   );
 
   Map<String, dynamic> toJson() => {
@@ -190,6 +211,7 @@ class PrinterConfig {
     'usb_device_path': usbDevicePath,
     'usb_label': usbLabel,
     'paper_width_mm': paperWidthMm,
+    'code_page': codePage,
   };
 
   factory PrinterConfig.fromJson(Map<String, dynamic> j) => PrinterConfig(
@@ -204,6 +226,11 @@ class PrinterConfig {
     usbDevicePath: j['usb_device_path'] as String?,
     usbLabel: j['usb_label'] as String?,
     paperWidthMm: (j['paper_width_mm'] as num?)?.toInt() == 58 ? 58 : 80,
+    // Absent on every printer set up before this existed, and absent means
+    // CP1252 -- which is exactly what those printers were already being sent.
+    codePage: (j['code_page'] as String?)?.trim().isNotEmpty ?? false
+        ? j['code_page'] as String
+        : 'CP1252',
   );
 }
 

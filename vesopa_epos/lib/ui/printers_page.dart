@@ -231,9 +231,7 @@ class PrintersPage extends ConsumerWidget {
     try {
       // The slip's own ruler line only means anything if it is laid out for the
       // width this printer was set up with.
-      final builder = await ReceiptBuilder.create(
-        paperWidthMm: printer.paperWidthMm,
-      );
+      final builder = await ReceiptBuilder.forPrinter(printer);
       await PrinterTransport.of(printer).send(builder.testSlip(printer));
       if (context.mounted) {
         PosMessenger.success(context, 'Test sent to ${printer.name}.');
@@ -559,6 +557,7 @@ class _PrinterDialogState extends State<_PrinterDialog> {
 
   late PrinterKind _kind = widget.existing?.kind ?? _defaultKind;
   late int _width = widget.existing?.paperWidthMm ?? 80;
+  late String _codePage = widget.existing?.codePage ?? 'CP1252';
   late String? _usbPath = widget.existing?.usbDevicePath;
   late String? _usbLabel = widget.existing?.usbLabel;
   late String? _queue = widget.existing?.windowsQueueName;
@@ -664,6 +663,39 @@ class _PrinterDialogState extends State<_PrinterDialog> {
                 _width == 80
                     ? 'Standard receipt roll — 48 characters per line.'
                     : 'Narrow roll — 32 characters per line.',
+                style: theme.textTheme.bodySmall,
+              ),
+              const SizedBox(height: 18),
+
+              // Only ever touched by a venue whose printer draws the pound sign
+              // wrong, which is why it is a dropdown with the right answer
+              // already in it rather than a decision anybody has to make.
+              Text('Character set', style: theme.textTheme.labelLarge),
+              const SizedBox(height: 6),
+              DropdownButtonFormField<String>(
+                initialValue: _codePage,
+                isExpanded: true,
+                items: [
+                  for (final entry in escPosCodePages.entries)
+                    DropdownMenuItem(
+                      value: entry.key,
+                      child: Text(
+                        entry.value,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
+                onChanged: (v) =>
+                    setState(() => _codePage = v ?? 'CP1252'),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                _codePage == escPosGbp
+                    ? 'Sends the pound as the byte this printer draws as £ '
+                          'whatever its settings say. A real # prints as "No." '
+                          'Use this only if the test slip shows the wrong sign.'
+                    : 'Leave this alone unless the test slip below prints '
+                          'something other than £ against the amount.',
                 style: theme.textTheme.bodySmall,
               ),
               const SizedBox(height: 18),
@@ -859,6 +891,7 @@ class _PrinterDialogState extends State<_PrinterDialog> {
         usbDevicePath: _usbPath,
         usbLabel: _usbLabel,
         paperWidthMm: _width,
+        codePage: _codePage,
       ),
     );
   }

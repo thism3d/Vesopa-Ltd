@@ -8,6 +8,7 @@ import '../data/providers.dart';
 import '../data/screen_profile.dart';
 import 'branding_page.dart';
 import 'theme.dart';
+import 'theme_controller.dart';
 
 /// What *this* machine is, as against what the venue has set up.
 ///
@@ -31,6 +32,7 @@ class _SettingsSheet extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final skin = Kds.of(context);
     final session = ref.watch(kitchenSessionProvider).value;
     final board = ref.watch(ticketBoardProvider);
     if (session == null) return const SizedBox.shrink();
@@ -62,9 +64,9 @@ class _SettingsSheet extends ConsumerWidget {
                   'Set once, when the screen is put on the wall. It decides '
                   'which stations’ orders appear here — and nothing else on '
                   'this panel changes it.',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Kds.inkMuted,
-                  ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: skin.inkMuted),
                 ),
                 const SizedBox(height: 10),
 
@@ -73,18 +75,15 @@ class _SettingsSheet extends ConsumerWidget {
                 // reports `null` rather than its own id when chosen.
                 RadioGroup<int>(
                   groupValue: current.id,
-                  onChanged: (id) => notifier.chooseScreen(
-                    id == null || id < 0 ? null : id,
-                  ),
+                  onChanged: (id) =>
+                      notifier.chooseScreen(id == null || id < 0 ? null : id),
                   child: Column(
                     children: [
                       for (final profile in session.choices)
                         RadioListTile<int>(
                           value: profile.id,
                           title: Text(profile.name),
-                          subtitle: Text(
-                            _describe(profile, session.labelFor),
-                          ),
+                          subtitle: Text(_describe(profile, session.labelFor)),
                         ),
                     ],
                   ),
@@ -125,20 +124,44 @@ class _SettingsSheet extends ConsumerWidget {
                     ),
                   ),
 
+                const SizedBox(height: 14),
+                // On this machine and not in the back office, deliberately: two
+                // screens in one venue can be in two different rooms, and the
+                // one in the dim service corridor wants a different answer from
+                // the one over the bright pass.
+                Text(
+                  'Board colours',
+                  style: Theme.of(context).textTheme.labelLarge,
+                ),
+                const SizedBox(height: 6),
+                const _ThemeChoice(),
+                const SizedBox(height: 4),
+                Text(
+                  'Day is right for a bright kitchen. Night is for a dim pass '
+                  'or a late shift — a wall panel at full white in a dark room '
+                  'is a light fitting. The status colours do not change.',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: skin.inkMuted),
+                ),
+
                 const Divider(height: 30),
                 const _SectionTitle('Set in the back office'),
                 Text(
                   'These belong to the venue, so every screen agrees. Change '
                   'them under Kitchen screens.',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Kds.inkMuted,
-                  ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: skin.inkMuted),
                 ),
                 const SizedBox(height: 8),
                 _Fact('Stations', _describe(current, session.labelFor)),
                 _Fact('Turns amber after', _minutes(current.warn)),
                 _Fact('Turns red after', _minutes(current.late)),
-                _Fact('Orders stay recallable for', _minutes(current.recallWindow)),
+                _Fact(
+                  'Orders stay recallable for',
+                  _minutes(current.recallWindow),
+                ),
                 _Fact(
                   'Columns',
                   current.columns == 0
@@ -190,9 +213,9 @@ class _SettingsSheet extends ConsumerWidget {
                       ? 'These screens carry this venue’s own branding.'
                       : 'These screens carry the standard Vesopa Kitchen '
                             'branding.',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Kds.inkMuted,
-                  ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: skin.inkMuted),
                 ),
                 const SizedBox(height: 8),
                 ListTile(
@@ -267,11 +290,7 @@ class _SettingsSheet extends ConsumerWidget {
     final quit = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        icon: const Icon(
-          Icons.power_settings_new,
-          size: 30,
-          color: Kds.late,
-        ),
+        icon: const Icon(Icons.power_settings_new, size: 30, color: Kds.late),
         title: const Text('Exit Vesopa Kitchen?'),
         content: const Text(
           'This screen will close and stop showing orders. Nothing is lost — '
@@ -327,6 +346,39 @@ class _SettingsSheet extends ConsumerWidget {
   }
 }
 
+/// Day, Night, or whatever the panel itself is set to.
+class _ThemeChoice extends ConsumerWidget {
+  const _ThemeChoice();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final mode = ref.watch(kdsThemeProvider).value ?? ThemeMode.light;
+    return SegmentedButton<ThemeMode>(
+      segments: const [
+        ButtonSegment(
+          value: ThemeMode.light,
+          icon: Icon(Icons.light_mode),
+          label: Text('Day'),
+        ),
+        ButtonSegment(
+          value: ThemeMode.dark,
+          icon: Icon(Icons.dark_mode),
+          label: Text('Night'),
+        ),
+        ButtonSegment(
+          value: ThemeMode.system,
+          icon: Icon(Icons.brightness_auto),
+          label: Text('Auto'),
+        ),
+      ],
+      selected: {mode},
+      showSelectedIcon: false,
+      onSelectionChanged: (chosen) =>
+          ref.read(kdsThemeProvider.notifier).set(chosen.first),
+    );
+  }
+}
+
 class _SectionTitle extends StatelessWidget {
   const _SectionTitle(this.text);
   final String text;
@@ -349,22 +401,25 @@ class _Fact extends StatelessWidget {
   final String value;
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 3),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 220,
-          child: Text(label, style: const TextStyle(color: Kds.inkMuted)),
-        ),
-        Expanded(
-          child: Text(
-            value,
-            style: const TextStyle(fontWeight: FontWeight.w600),
+  Widget build(BuildContext context) {
+    final skin = Kds.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 220,
+            child: Text(label, style: TextStyle(color: skin.inkMuted)),
           ),
-        ),
-      ],
-    ),
-  );
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

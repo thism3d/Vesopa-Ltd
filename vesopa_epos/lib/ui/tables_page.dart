@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/floor_repository.dart';
 import '../data/local/database.dart';
+import '../data/terminal_service.dart';
 import '../main.dart';
 import 'payment_page.dart';
 import 'placeholder_page.dart';
@@ -99,6 +100,13 @@ class TablesPage extends ConsumerWidget {
                       ),
                     ),
                     const Spacer(),
+                    // Whether the room on screen is the whole venue's or just
+                    // this terminal's. Stated rather than left to be inferred:
+                    // a plan that has silently stopped hearing from the other
+                    // till looks exactly like a quiet night, and a clerk who
+                    // reads it as one will seat a party on an occupied table.
+                    const _SharedPlanChip(),
+                    const SizedBox(width: 8),
                     IconButton(
                       tooltip: 'Refresh plan',
                       icon: const Icon(Icons.refresh),
@@ -163,6 +171,11 @@ class TablesPage extends ConsumerWidget {
     }
 
     if (!context.mounted) return;
+    // Somebody else's, mirrored here so the room draws whole. Named on the
+    // sheet rather than refused silently -- a clerk who can see the table and
+    // cannot open it needs to be told which terminal to go to, or that they can
+    // take it.
+    final held = order.heldBy;
     final action = await showModalBottomSheet<String>(
       context: context,
       builder: (context) => SafeArea(
@@ -174,6 +187,7 @@ class TablesPage extends ConsumerWidget {
                 'Table $number — ${money(order.totalMinor)}',
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
+              subtitle: held == null ? null : Text('Open on $held'),
             ),
             const Divider(height: 1),
             ListTile(
@@ -197,6 +211,20 @@ class TablesPage extends ConsumerWidget {
     );
 
     if (action == null || !context.mounted) return;
+
+    // A bill another terminal is holding has to be taken over before anything
+    // here can act on it. Two tills editing one check is the one state neither
+    // of them could reconcile, and two tills *settling* one check is money
+    // taken twice.
+    if (held != null) {
+      try {
+        await ref.read(billSyncProvider).claim(order.id);
+      } on TerminalUnavailable catch (e) {
+        if (context.mounted) PosMessenger.error(context, e.message);
+        return;
+      }
+      if (!context.mounted) return;
+    }
 
     switch (action) {
       case 'recall':
@@ -422,6 +450,58 @@ class _TableShape extends StatelessWidget {
                 ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+
+/// Says whether the table plan is the venue's or only this terminal's.
+///
+/// Draws nothing at all on a till that is not sharing -- a venue with one
+/// terminal has never had another till's tables to miss, and a chip explaining
+/// that would be chrome answering a question nobody asked.
+class _SharedPlanChip extends ConsumerWidget {
+  const _SharedPlanChip();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final status = ref.watch(billSyncStatusProvider).value;
+    if (status == null || !status.sharing) return const SizedBox.shrink();
+
+    final scheme = Theme.of(context).colorScheme;
+    final stale = status.stale;
+    return Tooltip(
+      message: stale
+          ? 'This till cannot reach the others right now. Tables opened or '
+                'settled elsewhere since will not be shown.'
+          : 'Every terminal in this venue is showing the same tables.',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: stale ? scheme.errorContainer : scheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              stale ? Icons.cloud_off : Icons.devices,
+              size: 15,
+              color: stale ? scheme.onErrorContainer : scheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              stale ? 'Not in step' : 'All tills',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color:
+                    stale ? scheme.onErrorContainer : scheme.onSurfaceVariant,
+              ),
+            ),
+          ],
         ),
       ),
     );

@@ -7,7 +7,9 @@ import '../../data/staff_session.dart';
 import '../../main.dart';
 import '../sale_page.dart' show productsProvider;
 
+import '../clock_sheet.dart';
 import '../shell.dart' show StaffChip, SyncStatusBadge;
+import '../sign_on_sheet.dart';
 import '../theme.dart';
 import 'nav_rail.dart';
 import 'programmed_bar.dart';
@@ -366,9 +368,24 @@ class VenueTopBarBody extends ConsumerWidget {
       // callbacks are still required, and are still the honest no-ops.
       onProduct: (_) {},
       onPage: (_) {},
-      onFunction: (key) {
+      // A modifier acts on the bill, and there is no bill in front of the clerk
+      // on Reports or Settings — the key is drawn and dimmed by the bar itself
+      // for the same reason Pay and Void are, so this is never reached here.
+      onModifier: (_) {},
+      onFunction: (key) async {
         if (key == 'sign_off') {
           return ref.read(staffSessionProvider.notifier).signOff();
+        }
+        // Handing the till over and the time clock both work from any section,
+        // which is why the bar lists them among the keys it keeps live off the
+        // sale screen. Neither touches the bill.
+        if (key == 'sign_on') {
+          await showSignOnSheet(context, ref);
+          return;
+        }
+        if (key == 'clock_in_out') {
+          if (!context.mounted) return;
+          return showClockSheet(context, ref);
         }
         const sections = <String, String>{
           'go_sale': 'Sale',

@@ -25,6 +25,7 @@ class CountsBoard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final skin = Kds.of(context);
     final board = ref.watch(ticketBoardProvider);
     final session = ref.watch(kitchenSessionProvider).value;
     final profile = session?.screen;
@@ -61,7 +62,7 @@ class CountsBoard extends ConsumerWidget {
             Text(
               '${_number(total)} items across '
               '${board.open(profile).length} orders',
-              style: const TextStyle(color: Kds.inkMuted, fontSize: 14),
+              style: TextStyle(color: skin.inkMuted, fontSize: 14),
             ),
           ],
         ),
@@ -91,6 +92,7 @@ class _CountRowTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final skin = Kds.of(context);
     // The age of the *oldest* order this total is spread across, not an
     // average: a batch is as late as its latest customer, and averaging would
     // hide the one table that has been waiting twenty minutes behind four that
@@ -105,7 +107,7 @@ class _CountRowTile extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
-        color: Kds.card,
+        color: skin.card,
         borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
@@ -165,7 +167,7 @@ class _CountRowTile extends StatelessWidget {
               children: [
                 Text(
                   row.tickets == 1 ? '1 order' : '${row.tickets} orders',
-                  style: const TextStyle(color: Kds.inkMuted, fontSize: 13.5),
+                  style: TextStyle(color: skin.inkMuted, fontSize: 13.5),
                 ),
                 Text(
                   'oldest ${_since(age)}',

@@ -180,6 +180,7 @@ void main() {
             onProduct: (_) {},
             onPage: (_) {},
             onFunction: (_) {},
+            onModifier: (_) {},
           ),
         ),
       ),

@@ -91,6 +91,7 @@ class _KitchenShellState extends ConsumerState<KitchenShell> {
 
   @override
   Widget build(BuildContext context) {
+    final skin = Kds.of(context);
     final board = ref.watch(ticketBoardProvider);
     final session = ref.watch(kitchenSessionProvider).value;
     final profile = session?.screen;
@@ -138,7 +139,7 @@ class _KitchenShellState extends ConsumerState<KitchenShell> {
             Expanded(
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 220),
-                color: _flash ? Kds.selectedTrack : Kds.canvas,
+                color: _flash ? skin.selectedTrack : skin.canvas,
                 child: switch (_tab) {
                   _Tab.open => const OpenBoard(),
                   _Tab.counts => const CountsBoard(),
@@ -208,9 +209,10 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final skin = Kds.of(context);
     return Container(
       height: 58,
-      color: Kds.card,
+      color: skin.card,
       padding: const EdgeInsets.symmetric(horizontal: 8),
       child: Row(
         children: [
@@ -281,9 +283,10 @@ class _Segments extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final skin = Kds.of(context);
     return Container(
       decoration: BoxDecoration(
-        color: Kds.selectedTrack,
+        color: skin.selectedTrack,
         borderRadius: BorderRadius.circular(9),
       ),
       padding: const EdgeInsets.all(3),
@@ -324,6 +327,7 @@ class _Segment extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final skin = Kds.of(context);
     return Material(
       color: selected ? Kds.selected : Colors.transparent,
       borderRadius: BorderRadius.circular(7),
@@ -337,7 +341,7 @@ class _Segment extends StatelessWidget {
             style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w700,
-              color: selected ? Colors.white : Kds.inkMuted,
+              color: selected ? Colors.white : skin.inkMuted,
             ),
           ),
         ),

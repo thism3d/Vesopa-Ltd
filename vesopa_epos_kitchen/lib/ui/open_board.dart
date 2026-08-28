@@ -94,18 +94,19 @@ class _EmptyBoard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final skin = Kds.of(context);
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 460),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 56, color: Kds.inkMuted.withValues(alpha: 0.5)),
+            Icon(icon, size: 56, color: skin.inkMuted.withValues(alpha: 0.5)),
             const SizedBox(height: 14),
             Text(
               title,
               style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                color: Kds.inkMuted,
+                color: skin.inkMuted,
               ),
             ),
             const SizedBox(height: 6),
@@ -113,7 +114,7 @@ class _EmptyBoard extends StatelessWidget {
               message,
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Kds.inkMuted,
+                color: skin.inkMuted,
               ),
             ),
           ],

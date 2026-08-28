@@ -173,12 +173,20 @@ try {
     $remoteName = Split-Path $Tarball -Leaf
     $schemaBlock = ''
     if ($Schema) {
+      # `mariadb` first, and the deprecation warning swallowed, for a reason
+      # that cost a deploy: this whole script runs under
+      # $ErrorActionPreference = 'Stop', and PowerShell 5.1 turns *any* stderr
+      # from a native exe into a terminating error. MariaDB prints
+      # "mysql: Deprecated program name" on stderr and exits 0 -- a warning, not
+      # a failure -- and that one line aborted the deploy half way through the
+      # migrations, with the code already extracted and pm2 not yet restarted.
       $schemaBlock = @"
 echo '> Applying schema_*.sql to the live database...'
 cd "`$APP"
+DB=`$(command -v mariadb || command -v mysql)
 for f in schema.sql `$(ls schema_*.sql | sort); do
   echo "   -> `$f"
-  mysql '$DbName' < "`$f" || echo '      (skipped: already applied or not needed)'
+  "`$DB" '$DbName' < "`$f" 2>&1 | grep -v 'Deprecated program name' || true
 done
 echo 'OK Schema applied'
 "@

@@ -85,9 +85,29 @@ class PrintService {
   final ReceiptBuilder _builder;
   PrinterSetup setup;
 
+  /// A builder laid out for one specific printer.
+  ///
+  /// [_builder] is built once for the receipt printer and is what most
+  /// documents go through. That is wrong for any document sent somewhere else:
+  /// a Z report on a 58mm printer laid out at 48 columns prints the money off
+  /// the edge of the paper, and — since the code page became a per-printer
+  /// setting — a printer that needs the pound-sign workaround would not get it
+  /// unless it happened to be the receipt printer too.
+  ///
+  /// Built per document rather than cached per printer: it parses no files (the
+  /// capability profile is loaded once by the package) and a venue prints a Z
+  /// twice a day.
+  Future<ReceiptBuilder> _for(PrinterConfig printer) =>
+      ReceiptBuilder.forPrinter(printer);
+
   static Future<PrintService> create(PrinterSetup setup) async {
+    final receipt = setup.printers.receiptPrinter;
     return PrintService(
-      await ReceiptBuilder.create(paperWidthMm: setup.printers.receiptWidthMm),
+      receipt == null
+          ? await ReceiptBuilder.create(
+              paperWidthMm: setup.printers.receiptWidthMm,
+            )
+          : await ReceiptBuilder.forPrinter(receipt),
       setup,
     );
   }
@@ -105,8 +125,9 @@ class PrintService {
       throw StateError('No printer set up for ${target.label.toLowerCase()}.');
     }
 
+    final builder = await _for(printer);
     await PrinterTransport.of(printer).send(
-      _builder.receipt(
+      builder.receipt(
         order: order,
         lines: lines,
         payments: payments,
@@ -170,8 +191,9 @@ class PrintService {
         continue;
       }
       try {
+        final builder = await _for(printer);
         await PrinterTransport.of(printer).send(
-          _builder.kitchenTicket(
+          builder.kitchenTicket(
             order: order,
             lines: byStation[station]!,
             station: label,
@@ -198,9 +220,14 @@ class PrintService {
   Future<void> printTillReport(TillReport report) async {
     final printer = setup.deviceFor(PrintTarget.tillReport);
     if (printer == null) throw StateError('No printer set up for reports.');
+    // The report's own printer, not the receipt printer's builder. A venue
+    // that sends its Z to the office printer on a 58mm roll was getting an
+    // 80mm layout, and one whose report printer needs the pound-sign
+    // workaround was not getting it.
+    final builder = await _for(printer);
     await PrinterTransport.of(
       printer,
-    ).send(_builder.tillReport(report, shopName: setup.shopName));
+    ).send(builder.tillReport(report, shopName: setup.shopName));
   }
 
   Future<void> openCashDrawer() async {

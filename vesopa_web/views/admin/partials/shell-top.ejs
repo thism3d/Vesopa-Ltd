@@ -23,6 +23,21 @@
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
 <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
 <link rel="stylesheet" href="/admin-library/panel.css">
+<%# Inline and blocking on purpose. Deferred to panel.js this would run after
+    the first paint, and a manager who has chosen Day would see a black page
+    flash before it. Four lines is a cheaper answer than that flash. %>
+<script>
+  (function () {
+    try {
+      var t = localStorage.getItem('vesopa.admin.theme');
+      if (t === 'light' || t === 'dark') {
+        document.documentElement.setAttribute('data-theme', t);
+      }
+    } catch (e) {
+      /* Site data switched off: the system's own preference still applies. */
+    }
+  })();
+</script>
 </head>
 <body>
 
@@ -100,6 +115,14 @@
     <div class="ap-side-foot">
       <a href="/" target="_blank" rel="noopener">View site ↗</a><br>
       <a href="<%= BACKOFFICE_URL %>" target="_blank" rel="noopener">Back office ↗</a>
+      <%# Day or Night. The console was built dark and stays that way by
+          default on a dark machine; this is the choice for anybody working
+          in a lit office. Remembered per browser. %>
+      <div class="ap-theme" role="group" aria-label="Appearance">
+        <button type="button" data-theme-set="light" aria-pressed="false">Day</button>
+        <button type="button" data-theme-set="dark" aria-pressed="false">Night</button>
+        <button type="button" data-theme-set="system" aria-pressed="false">Auto</button>
+      </div>
     </div>
   </aside>
 

@@ -13,8 +13,10 @@ import '../data/staff_session.dart';
 import '../main.dart';
 import 'layout.dart';
 import 'modifier_prompt.dart';
+import 'clock_sheet.dart';
 import 'customer_picker.dart';
 import 'payment_page.dart';
+import 'sign_on_sheet.dart';
 import 'table_picker.dart';
 import 'theme.dart';
 import 'till_actions.dart';
@@ -204,6 +206,15 @@ class SalePage extends ConsumerWidget {
     final repo = ref.watch(orderRepositoryProvider);
     final products = ref.watch(productsProvider).value ?? const <Product>[];
 
+    // The questions this venue asks, by id, so a modifier key can name the one
+    // it asks — and so a key pointing at a group that has since been deleted
+    // draws as unavailable rather than blank.
+    final modifierGroupsById = {
+      for (final g
+          in (ref.watch(modifiersProvider).value ?? ModifierSet.empty).groups)
+        g.id: g,
+    };
+
     /// Ring an item — the one way onto the bill, whichever grid the key was
     /// pressed on.
     ///
@@ -241,6 +252,65 @@ class SalePage extends ConsumerWidget {
       if (answers == null) return;
 
       await repo.addLine(orderId, p, addedBy: addedBy, modifiers: answers);
+    }
+
+    /// Ask one of the venue's questions about a line already on the bill.
+    ///
+    /// This is the other direction from [ring]. A product's own questions are
+    /// asked on the way in, which covers the gin that always wants a mixer; a
+    /// MIXERS key on the screen or the bar is pressed *after* the round has
+    /// been rung, because the customer has changed their mind or the question
+    /// belongs to the line rather than to the product.
+    ///
+    /// Which line: the one the clerk has picked, or the last item on the bill
+    /// if they have picked nothing — because "gin, then mixers" is the order
+    /// somebody actually presses the two keys in, and making them select the
+    /// gin first would be a step for the common case in order to disambiguate
+    /// the rare one.
+    Future<void> askAbout(ModifierGroup group) async {
+      final lines = await repo.linesOnce(orderId);
+      final items = lines.where((l) => l.parentLineId == null).toList();
+      if (items.isEmpty) {
+        if (context.mounted) {
+          PosMessenger.info(context, 'Ring something up first.');
+        }
+        return;
+      }
+
+      // Only a selection made against *this* bill counts. The provider carries
+      // the order it belongs to for exactly this reason: ids left over from the
+      // bill before would otherwise pick a line that is not on screen.
+      final picked = ref.read(selectedLinesProvider);
+      final ids = picked.orderId == orderId ? picked.ids : const <String>{};
+      final target = items.lastWhere(
+        (l) => ids.contains(l.id),
+        orElse: () => items.last,
+      );
+
+      if (!context.mounted) return;
+      final answers = await askModifiers(
+        context,
+        groups: [group],
+        screens: ref.read(screensProvider).value ?? ScreenSet.empty,
+        products: {for (final q in products) q.pluId: q},
+        itemName: target.name,
+        fonts: ref.read(fontsProvider).value ?? FontLibrary.empty,
+      );
+      // Cancel means the clerk pressed the key by mistake. Nothing is added,
+      // and — unlike ringing a product up — nothing is taken away either: the
+      // item was already on the bill before this key was touched.
+      if (answers == null || answers.isEmpty) return;
+
+      final ok = await repo.addModifiersTo(
+        orderId,
+        target.id,
+        answers,
+        addedBy: ref.read(staffSessionProvider).name ??
+            ref.read(sessionProvider).name,
+      );
+      if (!ok && context.mounted) {
+        PosMessenger.error(context, 'That line is no longer on the bill.');
+      }
     }
 
     // Departments drive the right-hand rail: whatever the back office defines
@@ -394,6 +464,8 @@ class SalePage extends ConsumerWidget {
                           onProduct: ring,
                           onPage: (target) =>
                               ref.read(openScreenProvider.notifier).open(target.id),
+                          onModifier: askAbout,
+                          modifiers: modifierGroupsById,
                           onFunction: (key) => _runScreenFunction(
                             context,
                             ref,
@@ -460,6 +532,8 @@ class SalePage extends ConsumerWidget {
                       onProduct: ring,
                       onPage: (target) =>
                           ref.read(openScreenProvider.notifier).open(target.id),
+                      onModifier: askAbout,
+                      modifiers: modifierGroupsById,
                       onFunction: (key) => _runScreenFunction(
                         context,
                         ref,
@@ -657,6 +731,8 @@ class SalePage extends ConsumerWidget {
                       onProduct: ring,
                       onPage: (target) =>
                           ref.read(openScreenProvider.notifier).open(target.id),
+                      onModifier: askAbout,
+                      modifiers: modifierGroupsById,
                       onFunction: (key) => _runScreenFunction(
                         context,
                         ref,
@@ -992,6 +1068,26 @@ class SalePage extends ConsumerWidget {
       // worse failure.
       case 'sign_off':
         ref.read(staffSessionProvider.notifier).signOff();
+        return;
+
+      // The other half of Sign off, and the common case in the middle of a
+      // service: a colleague steps in for one sale. The bill on screen is left
+      // exactly as it is — a handover changes who is responsible, not what the
+      // customer has ordered.
+      //
+      // Where the venue runs two tills, this is also where the new clerk's own
+      // bill catches up with them; the sheet returns its id and the till
+      // switches to it.
+      case 'sign_on':
+        await showSignOnSheet(context, ref);
+        return;
+
+      // The shift, not the till. Deliberately a different key from the two
+      // above: signing on happens twenty times a service and ends every time
+      // somebody walks away, and a wage is not paid against either of those.
+      case 'clock_in_out':
+        if (!context.mounted) return;
+        await showClockSheet(context, ref);
         return;
 
       case 'covers':

@@ -4,7 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/staff_session.dart';
 import '../main.dart';
 import 'card_machine_page.dart';
+import 'clock_sheet.dart';
 import 'layout.dart';
+import 'sign_on_sheet.dart';
 import 'theme.dart';
 import 'till_actions.dart';
 import 'widgets/pos_message.dart';
@@ -148,6 +150,21 @@ class FunctionsPage extends ConsumerWidget {
     if (usesSignOn) {
       groups.add(
         _Group('Shift', [
+          // Offered whether or not somebody is on, and that is the change: the
+          // common case mid-service is a colleague stepping in for one sale,
+          // and making them lock the till, wait for the screensaver and type
+          // into it was three steps for something that should be one.
+          _Function(
+            'Sign On',
+            Icons.login,
+            Pos.brandDeep,
+            staffSession.signedOn
+                ? 'Hand the till to somebody else. The bill on screen is left '
+                      'exactly as it is.'
+                : 'Enter your PIN to start a shift. Everything you ring up is '
+                      'recorded against your name.',
+            () => showSignOnSheet(context, ref),
+          ),
           if (staffSession.signedOn)
             _Function(
               'Sign Off',
@@ -156,16 +173,19 @@ class FunctionsPage extends ConsumerWidget {
               'Lock the till and hand it to the next member of staff. '
                   'The bill on screen is left exactly as it is.',
               () => ref.read(staffSessionProvider.notifier).signOff(),
-            )
-          else
-            _Function(
-              'Sign On',
-              Icons.login,
-              Pos.brandDeep,
-              'Enter your PIN to start a shift. Everything you ring up is '
-                  'recorded against your name.',
-              () => ref.read(staffSessionProvider.notifier).promptSignOn(),
             ),
+          // The shift itself. A different question from the two above, and the
+          // reason it is its own key: signing on says "I am about to ring
+          // something up on this machine" and happens twenty times a service;
+          // this is what a wage is paid against.
+          _Function(
+            'Clock In / Out',
+            Icons.schedule,
+            Pos.graphite,
+            'Start or end your shift. Nothing to do with signing on to the '
+                'till — a manager reads these in the back office.',
+            () => showClockSheet(context, ref),
+          ),
         ]),
       );
     }

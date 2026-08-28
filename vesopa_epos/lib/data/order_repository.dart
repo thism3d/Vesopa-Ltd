@@ -120,6 +120,57 @@ class OrderRepository {
     });
   }
 
+  /// Hang answers off a line that is already on the bill.
+  ///
+  /// [addLine] asks a product's own questions on the way in, which covers the
+  /// gin that always asks for a mixer. This is the other direction: a MIXERS
+  /// key on the screen or the bar, pressed against whatever the clerk has
+  /// picked — the round has been rung, the customer has changed their mind, and
+  /// the question belongs to the line rather than to the product.
+  ///
+  /// The parent must be a line in its own right. Hanging an answer off an
+  /// answer would give the bill a depth nothing that reads it — the check, the
+  /// receipt, the kitchen ticket — is built to draw, so a modifier line is
+  /// refused here rather than producing one.
+  ///
+  /// Quantity follows the parent's, exactly as it does in [addLine]: two double
+  /// gins want two dashes of coke, and a kitchen reading "2 Steak / 1 Rare"
+  /// cannot tell which steak is which.
+  Future<bool> addModifiersTo(
+    String orderId,
+    String lineId,
+    List<Product> answers, {
+    String? addedBy,
+  }) async {
+    if (answers.isEmpty) return true;
+    return _db.transaction(() async {
+      final parent = await (_db.select(_db.orderLines)
+            ..where((l) => l.id.equals(lineId) & l.orderId.equals(orderId)))
+          .getSingleOrNull();
+      if (parent == null || parent.parentLineId != null) return false;
+
+      final now = DateTime.now();
+      for (final choice in answers) {
+        await _db.into(_db.orderLines).insert(
+              OrderLinesCompanion.insert(
+                id: _uuid.v4(),
+                orderId: orderId,
+                pluId: choice.pluId,
+                name: choice.name,
+                quantity: Value(parent.quantity),
+                unitPriceMinor: choice.priceMinor,
+                taxPercentage: Value(choice.taxPercentage),
+                parentLineId: Value(lineId),
+                addedBy: Value(addedBy),
+                addedAt: Value(now),
+              ),
+            );
+      }
+      await recalculate(orderId);
+      return true;
+    });
+  }
+
   /// The line this product could be added to, or null if it must start a new
   /// one.
   ///
@@ -730,9 +781,29 @@ class OrderRepository {
         );
   }
 
+  /// The lines as they stand right now.
+  ///
+  /// The bill is normally read through [watchLines], which is what keeps the
+  /// check live. This is for the caller who needs the current answer once and
+  /// is about to write against it — a modifier key deciding which line it is
+  /// asking about, chiefly — where subscribing to a stream to read one value
+  /// would be a listener to remember to cancel.
+  Future<List<OrderLine>> linesOnce(String orderId) =>
+      (_db.select(_db.orderLines)..where((l) => l.orderId.equals(orderId)))
+          .get();
+
   Stream<List<OrderLine>> watchLines(String orderId) =>
       (_db.select(_db.orderLines)..where((l) => l.orderId.equals(orderId)))
           .watch();
+
+  /// One order as it stands right now, or null if there is no such row.
+  ///
+  /// The single-shot twin of [watchOrder], for a caller about to decide
+  /// something on the strength of it -- whether a bill is this terminal's to
+  /// open, chiefly.
+  Future<Order?> orderOnce(String orderId) =>
+      (_db.select(_db.orders)..where((o) => o.id.equals(orderId)))
+          .getSingleOrNull();
 
   Stream<Order> watchOrder(String orderId) =>
       (_db.select(_db.orders)..where((o) => o.id.equals(orderId)))

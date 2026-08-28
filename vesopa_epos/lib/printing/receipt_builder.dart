@@ -29,6 +29,32 @@ final _time = DateFormat('dd/MM/yyyy HH:mm');
 /// same way.
 const _codePage = 'CP1252';
 
+/// The pages a venue may choose between, and what each is for.
+///
+/// Every one of these draws "£" at byte 0xA3, which is the only reason any of
+/// them is offered: the till encodes Latin-1 and the printer has to agree about
+/// that one byte. They differ in what they do with the rest of the upper range,
+/// which matters for accented names on a receipt and not much else.
+///
+/// [escPosGbp] is the exception and the answer for a printer that ignores
+/// `ESC t` altogether. It is not a code page at all -- it selects the UK
+/// *international character set*, where the ASCII byte 0x23 draws as "£"
+/// instead of "#", and sends that byte for the pound. Every printer made
+/// supports `ESC R`; it is the oldest command in the standard. The cost is that
+/// a genuine "#" cannot be printed, which is why it is the last resort rather
+/// than the default.
+const escPosCodePages = <String, String>{
+  'CP1252': 'Windows Latin-1 — the right answer for almost every printer',
+  'CP858': 'CP858 — Latin-1 with the euro sign',
+  'CP1250': 'Windows Central European',
+  'ISO_8859-1': 'ISO Latin-1',
+  escPosGbp: 'Last resort — for a printer that draws £ as ú or ?',
+};
+
+/// The pseudo-page that swaps the international character set instead.
+/// See [escPosCodePages].
+const escPosGbp = 'UK_ASCII';
+
 /// Characters no CP1252 printer can render, mapped to what a receipt should
 /// show instead.
 ///
@@ -78,10 +104,24 @@ const _substitutions = {
 /// be. Control characters become spaces, because a stray newline or carriage
 /// return in a product name silently derails the column layout for the rest of
 /// the line.
-String escPosSafe(String text) {
+String escPosSafe(String text, {bool ukAscii = false}) {
   final out = StringBuffer();
   for (final rune in text.runes) {
     final ch = String.fromCharCode(rune);
+    // The last-resort path. In the UK international set the printer draws 0x23
+    // as "£", so the pound is sent as "#" -- and a real "#" cannot be printed,
+    // which is why this is a setting a venue turns on for a printer that needs
+    // it and not the way every till prints.
+    if (ukAscii) {
+      if (ch == '£') {
+        out.write('#');
+        continue;
+      }
+      if (ch == '#') {
+        out.write('No.');
+        continue;
+      }
+    }
     final swap = _substitutions[ch];
     if (swap != null) {
       out.write(swap);
@@ -100,15 +140,30 @@ String escPosSafe(String text) {
 
 /// Renders EPOS documents as ESC/POS byte streams for a thermal printer.
 class ReceiptBuilder {
-  ReceiptBuilder(this._generator, {this.columns = 48}) {
+  ReceiptBuilder(
+    this._generator, {
+    this.columns = 48,
+    this.codePage = _codePage,
+  }) {
     // Recorded on the generator rather than emitted, so that every later
     // `reset()` re-selects it: `reset()` sends ESC @, which drops the printer
     // back to its factory code page, and then re-applies whatever was set here.
     // [_begin] is what actually puts the selection on the wire.
-    _generator.setGlobalCodeTable(_codePage);
+    //
+    // The last-resort page is not a page and must not be handed to the
+    // generator, which would refuse a name its profile has never heard of.
+    if (!usesUkAscii) _generator.setGlobalCodeTable(codePage);
   }
 
   final Generator _generator;
+
+  /// Which character table this printer is told to draw in. See
+  /// [escPosCodePages].
+  final String codePage;
+
+  /// Whether this printer is being driven through the UK international
+  /// character set rather than a code page.
+  bool get usesUkAscii => codePage == escPosGbp;
 
   /// Characters per line at Font A on the roll this builder is laying out for.
   final int columns;
@@ -119,22 +174,45 @@ class ReceiptBuilder {
   /// document is going to. It drives the column arithmetic, so an 80mm layout
   /// sent to a 58mm roll does not wrap — it prints off the edge of the paper,
   /// taking the right-hand price column with it.
-  static Future<ReceiptBuilder> create({int paperWidthMm = 80}) async {
+  static Future<ReceiptBuilder> create({
+    int paperWidthMm = 80,
+    String codePage = _codePage,
+  }) async {
     final profile = await CapabilityProfile.load();
     final narrow = paperWidthMm == 58;
     return ReceiptBuilder(
       Generator(narrow ? PaperSize.mm58 : PaperSize.mm80, profile),
       columns: narrow ? 32 : 48,
+      codePage: codePage,
     );
   }
 
+  /// Build for a printer, taking its roll width and its code page from it.
+  static Future<ReceiptBuilder> forPrinter(PrinterConfig printer) =>
+      create(paperWidthMm: printer.paperWidthMm, codePage: printer.codePage);
+
   /// Opens a document: clears whatever the last job left behind and selects the
   /// code page. Every builder below starts with this.
-  List<int> _begin() => _generator.reset();
+  /// Start a document.
+  ///
+  /// `reset()` sends ESC @, which drops the printer back to its factory state,
+  /// and then re-applies the code page recorded above. On the last-resort path
+  /// there is no code page to re-apply and this sends `ESC R 3` instead --
+  /// selecting the UK international character set, in which the byte 0x23 draws
+  /// as "£". Sent per document rather than once at startup for exactly the
+  /// reason the code page is: ESC @ forgets it.
+  List<int> _begin() {
+    final bytes = _generator.reset();
+    if (usesUkAscii) bytes.addAll(const [0x1B, 0x52, 3]);
+    return bytes;
+  }
 
   /// Text, with anything the printer cannot render dealt with first.
   List<int> _text(String text, {PosStyles styles = const PosStyles()}) =>
-      _generator.text(escPosSafe(text), styles: styles);
+      _generator.text(_safe(text), styles: styles);
+
+  /// [escPosSafe], told which path this printer is on.
+  String _safe(String text) => escPosSafe(text, ukAscii: usesUkAscii);
 
   /// A column, sanitised the same way. Named exactly like [PosColumn] so the
   /// two are not confusable at a call site.
@@ -142,7 +220,7 @@ class ReceiptBuilder {
     String text = '',
     int width = 2,
     PosStyles styles = const PosStyles(),
-  }) => PosColumn(text: escPosSafe(text), width: width, styles: styles);
+  }) => PosColumn(text: _safe(text), width: width, styles: styles);
 
   /// The venue's name, sized to the roll.
   ///
@@ -154,7 +232,7 @@ class ReceiptBuilder {
   List<int> _shopName(String name) {
     final trimmed = name.trim();
     if (trimmed.isEmpty) return const [];
-    final wide = escPosSafe(trimmed).length <= _wideColumns;
+    final wide = _safe(trimmed).length <= _wideColumns;
     return _text(
       trimmed,
       styles: PosStyles(
@@ -791,11 +869,26 @@ class ReceiptBuilder {
     // The pound sign, checked on paper rather than on screen. It depends on the
     // printer being on the right code page, which is a property of the printer
     // and not of the till — so it is only ever really answered by printing one.
+    //
+    // The page in use is named beside it, because the slip is now the
+    // instruction for fixing it: if the amount does not show a £, the venue
+    // changes this setting and prints another one.
+    bytes.addAll(_row('Character set', codePage));
     bytes.addAll(_row('Currency', _money(123456)));
     bytes.addAll(
       _text(
         'The amount above must show a £ sign.',
         styles: const PosStyles(align: PosAlign.center),
+      ),
+    );
+    bytes.addAll(
+      _text(
+        'If it does not, change Character set in this '
+        "printer's settings and print this again.",
+        styles: const PosStyles(
+          align: PosAlign.center,
+          fontType: PosFontType.fontB,
+        ),
       ),
     );
 

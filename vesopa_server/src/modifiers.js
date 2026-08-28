@@ -256,6 +256,28 @@ function modifierRoutes({ pool, broadcast, secret }) {
           [group.screen_id, office]
         );
       }
+
+      // Keys that asked this question. The same rule a deleted screen follows:
+      // a key that spanned keeps its ground, because the space the manager
+      // arranged is still arranged and is waiting to be told what it does now;
+      // a single cell is cleared outright. Without this a venue is left with a
+      // key that reports itself broken and no way to see why.
+      await pool.execute(
+        `UPDATE epos_screen_buttons
+            SET kind = 'blank', modifier_group_id = NULL,
+                label = NULL, fill = NULL, ink = NULL,
+                emoji = NULL, image_url = NULL,
+                font_family = NULL, font_size = NULL
+          WHERE office = ? AND modifier_group_id = ?
+            AND (row_span > 1 OR col_span > 1)`,
+        [office, req.params.id]
+      );
+      await pool.execute(
+        `DELETE FROM epos_screen_buttons
+          WHERE office = ? AND modifier_group_id = ?`,
+        [office, req.params.id]
+      );
+
       pushed(office);
       res.json({ ok: true });
     } catch (e) {

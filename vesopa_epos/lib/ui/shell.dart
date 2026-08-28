@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/session_controller.dart';
 import '../data/staff_session.dart';
 import '../data/sync_service.dart';
+import '../data/terminal_service.dart';
 import '../main.dart';
 import 'layout.dart';
 import 'about_page.dart';
@@ -19,6 +22,7 @@ import 'reports_page.dart';
 import 'sale_page.dart';
 import 'tables_page.dart';
 import 'theme.dart';
+import 'widgets/pos_message.dart';
 import 'widgets/nav_rail.dart';
 import 'widgets/till_top_bar.dart';
 
@@ -53,6 +57,10 @@ class _PosShellState extends ConsumerState<PosShell> {
     // Start syncing only once the terminal knows which venue it belongs to —
     // before sign-in there is no catalogue to pull.
     ref.read(syncServiceProvider).start();
+    // And the venue's shared open bills, for the same reason and at the same
+    // moment: before sign-in there is no venue whose tables this terminal
+    // could be showing. A no-op on a till that is not commissioned for it.
+    ref.read(billSyncRunnerProvider);
     _newOrder();
   }
 
@@ -115,6 +123,18 @@ class _PosShellState extends ConsumerState<PosShell> {
         },
       );
     }
+
+    // A bill a clerk has just brought with them from another terminal. The
+    // shell is the only thing that can change which bill is on screen, and
+    // sign-on happens in three places -- see broughtBasketProvider.
+    //
+    // Cleared before the switch, not after, so a rebuild mid-switch cannot fire
+    // it twice.
+    ref.listen<String?>(broughtBasketProvider, (_, next) {
+      if (next == null) return;
+      ref.read(broughtBasketProvider.notifier).taken();
+      unawaited(_switchToOrder(next));
+    });
 
     final orderId = _orderId;
 
@@ -286,6 +306,21 @@ class _PosShellState extends ConsumerState<PosShell> {
   /// it (flips it back to open) so it is no longer counted as a separate booked
   /// table while it is the active bill.
   Future<void> _switchToOrder(String id) async {
+    // A bill another terminal is holding is taken over first. This is the one
+    // funnel every route to a parked bill goes through -- the table plan, the
+    // picker, the open-bills strip and a clerk bringing their own basket with
+    // them -- so the check is here rather than in four places that could
+    // disagree.
+    final order = await ref.read(orderRepositoryProvider).orderOnce(id);
+    if (order?.heldBy != null) {
+      try {
+        await ref.read(billSyncProvider).claim(id);
+      } on TerminalUnavailable catch (e) {
+        if (mounted) PosMessenger.error(context, e.message);
+        return;
+      }
+    }
+
     await ref.read(tableRepositoryProvider).recall(id);
     if (!mounted) return;
     setState(() {

@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'config/constants.dart';
+import 'data/bill_sync.dart';
 import 'data/fonts.dart';
 import 'data/auth_service.dart';
 import 'data/branding.dart';
@@ -24,6 +25,8 @@ import 'data/staff_repository.dart';
 import 'data/startup_repair.dart';
 import 'data/staff_session.dart';
 import 'data/sync_service.dart';
+import 'data/terminal_identity.dart';
+import 'data/terminal_service.dart';
 import 'data/table_repository.dart';
 import 'data/till_settings.dart';
 import 'payments/connect_pac.dart';
@@ -613,6 +616,93 @@ final commerceRefreshProvider = FutureProvider<void>((ref) async {
   // Publish the freshly cached copies to anything about to price a basket.
   ref.invalidate(tenderSettingsProvider);
   ref.invalidate(promotionsProvider);
+});
+
+// ---------------------------------------------------------------------------
+// Terminals that know about each other
+// ---------------------------------------------------------------------------
+
+/// The till's half of the shared-terminal routes: open bills, clerk sessions
+/// and the time clock.
+///
+/// Authorised with the terminal token, so a venue's tables and its shift list
+/// are not reachable by guessing a contact email. A till commissioned before
+/// that token existed gets a service with `canShare` false, works exactly as it
+/// always did, and says so where it matters.
+final terminalServiceProvider = Provider<TerminalService>(
+  (ref) => TerminalService(
+    apiBase: ref.watch(apiBaseProvider),
+    terminalToken: ref.watch(sessionProvider).terminalToken,
+    terminalName: ref.watch(terminalNameProvider),
+  ),
+);
+
+/// Shares this terminal's open bills with the venue, and mirrors the venue's
+/// back into this terminal's own tables.
+///
+/// Started by [billSyncRunnerProvider] rather than here, because a Provider
+/// that starts timers when it is first *read* is one that behaves differently
+/// depending on which screen the till happens to open on.
+final billSyncProvider = Provider<BillSync>((ref) {
+  final sync = BillSync(
+    ref.watch(databaseProvider),
+    ref.watch(terminalServiceProvider),
+  );
+  ref.onDispose(sync.dispose);
+  return sync;
+});
+
+/// Runs the bill sync for the life of the app, and pulls the moment the server
+/// says something has changed.
+///
+/// The socket is the mechanism; the ten-second poll inside [BillSync] is only
+/// the backstop for a terminal whose socket has quietly died.
+final billSyncRunnerProvider = Provider<void>((ref) {
+  final sync = ref.watch(billSyncProvider);
+  ref.listen(syncEventsProvider, (_, next) {
+    if (next.value?.type == 'open-bills.updated') unawaited(sync.pull());
+  });
+  sync.start();
+});
+
+/// Whether the table plan on screen is the whole venue's, and whether it is
+/// current. Drawn on the Tables page: a plan that has gone stale must say so
+/// rather than let a clerk conclude a party has left.
+final billSyncStatusProvider = StreamProvider<BillSyncStatus>((ref) {
+  final sync = ref.watch(billSyncProvider);
+  return sync.status;
+});
+
+/// A bill a clerk has just brought with them from another terminal.
+///
+/// Set by [signOnHere] and consumed by the shell, which is the only thing that
+/// can actually change which bill is on screen. A provider rather than a
+/// callback because sign-on happens in three places — the idle screen's PIN
+/// pad, the Sign On sheet, and the Functions page — and threading one callback
+/// through all three would be three chances to forget it.
+///
+/// Cleared by the shell the moment it acts on it, so a bill is never brought
+/// twice.
+class BroughtBasket extends Notifier<String?> {
+  @override
+  String? build() => null;
+
+  void offer(String orderId) => state = orderId;
+
+  void taken() => state = null;
+}
+
+final broughtBasketProvider = NotifierProvider<BroughtBasket, String?>(
+  BroughtBasket.new,
+);
+
+/// Who is on the clock, refreshed when any terminal punches in or out.
+final clockStateProvider = FutureProvider<ClockState>((ref) async {
+  ref.listen(syncEventsProvider, (_, next) {
+    if (next.value?.type == 'clock.changed') ref.invalidateSelf();
+  });
+  return await ref.watch(terminalServiceProvider).pullClock() ??
+      ClockState.empty;
 });
 
 final syncServiceProvider = Provider<SyncService>((ref) {

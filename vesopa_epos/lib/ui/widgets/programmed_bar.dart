@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/fonts.dart';
 import '../../data/local/database.dart';
+import '../../data/modifiers.dart';
 import '../../data/screens.dart';
 import '../../data/staff_session.dart';
 import '../../main.dart';
@@ -71,6 +72,8 @@ class ProgrammedBar extends ConsumerWidget {
     required this.onProduct,
     required this.onPage,
     required this.onFunction,
+    required this.onModifier,
+    this.modifiers = const {},
     this.showPrices = true,
     this.onSaleScreen = true,
   });
@@ -83,6 +86,12 @@ class ProgrammedBar extends ConsumerWidget {
   final void Function(Product) onProduct;
   final void Function(TillScreen) onPage;
   final void Function(String functionKey) onFunction;
+
+  /// A key that asks one of the venue's modifier questions against the bill.
+  final void Function(ModifierGroup) onModifier;
+
+  /// The questions this venue asks, by id. See [ProgrammedGrid.modifiers].
+  final Map<int, ModifierGroup> modifiers;
 
   final bool showPrices;
 
@@ -115,6 +124,11 @@ class ProgrammedBar extends ConsumerWidget {
     'go_functions',
     'go_settings',
     'sign_off',
+    // Handing the till over, and the time clock. Neither touches the bill, and
+    // both are things a member of staff arriving mid-service needs from
+    // whichever screen the till happens to be showing.
+    'sign_on',
+    'clock_in_out',
   };
 
   /// One row of bar. Matches the built-in action bar's key height closely
@@ -191,6 +205,10 @@ class ProgrammedBar extends ConsumerWidget {
                           onProduct: onProduct,
                           onPage: onPage,
                           onFunction: onFunction,
+                          onModifier: onModifier,
+                          group: button.modifierGroupId == null
+                              ? null
+                              : modifiers[button.modifierGroupId],
                         ),
                       ),
                     );
@@ -233,11 +251,17 @@ class _BarKey extends ConsumerWidget {
     required this.onProduct,
     required this.onPage,
     required this.onFunction,
+    required this.onModifier,
+    required this.group,
   });
 
   final ScreenButton button;
   final ScreenSet screens;
   final Product? product;
+
+  /// The question this key asks, when it is that kind of key.
+  final ModifierGroup? group;
+
   final BarLive live;
   final PayPalette pal;
   final bool showPrices;
@@ -248,6 +272,7 @@ class _BarKey extends ConsumerWidget {
   final void Function(Product) onProduct;
   final void Function(TillScreen) onPage;
   final void Function(String) onFunction;
+  final void Function(ModifierGroup) onModifier;
 
   /// The keys that draw something live instead of waiting to be pressed.
   ///
@@ -291,6 +316,8 @@ class _BarKey extends ConsumerWidget {
     'go_functions': Icons.exit_to_app,
     'go_settings': Icons.settings,
     'sign_off': Icons.logout,
+    'sign_on': Icons.login,
+    'clock_in_out': Icons.schedule,
   };
 
   /// Mirrors the labels the back office offers. A key not in here still draws —
@@ -317,6 +344,8 @@ class _BarKey extends ConsumerWidget {
     'go_functions': 'Functions',
     'go_settings': 'Settings',
     'sign_off': 'Sign off',
+    'sign_on': 'Sign on',
+    'clock_in_out': 'Clock in / out',
   };
 
   @override
@@ -533,6 +562,25 @@ class _BarKey extends ConsumerWidget {
               : null,
           icon: _icons[key],
           onTap: payable && here ? () => onFunction(key) : null,
+        );
+
+      case ScreenButtonKind.modifier:
+        final g = group;
+        if (g == null) {
+          return (
+            label: button.label ?? 'Unavailable',
+            note: 'Question removed',
+            icon: null,
+            onTap: null,
+          );
+        }
+        return (
+          label: button.label ?? g.name,
+          note: null,
+          icon: Icons.help_outline,
+          // It acts on the bill, so it is dimmed off the sale screen for the
+          // same reason Void and Pay are.
+          onTap: onSaleScreen ? () => onModifier(g) : null,
         );
 
       // Never reached: a reserved space is skipped before a key is built for

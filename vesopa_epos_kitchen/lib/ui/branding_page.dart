@@ -140,6 +140,7 @@ class _BrandingSheetState extends ConsumerState<_BrandingSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final skin = Kds.of(context);
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 900, maxHeight: 780),
       child: Column(
@@ -157,7 +158,7 @@ class _BrandingSheetState extends ConsumerState<_BrandingSheet> {
           ),
           Flexible(
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
+              padding: EdgeInsets.fromLTRB(18, 12, 18, 18),
               children: [
                 Text(
                   'This is the venue’s, not this machine’s — every kitchen '
@@ -165,7 +166,7 @@ class _BrandingSheetState extends ConsumerState<_BrandingSheet> {
                   'screen falls back: to the venue’s receipt logo, then to the '
                   'built-in Vesopa mark.',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Kds.inkMuted,
+                    color: skin.inkMuted,
                   ),
                 ),
                 const SizedBox(height: 14),
@@ -243,11 +244,11 @@ class _BrandingSheetState extends ConsumerState<_BrandingSheet> {
                   title: const Text('Show “Powered by Vesopa” on it'),
                 ),
                 if (_draft.splashEnabled) ...[
-                  const SizedBox(height: 6),
+                  SizedBox(height: 6),
                   Text(
                     'Hold it on screen for ${_draft.splashHold.inMilliseconds}ms '
                     'once the animation has finished.',
-                    style: const TextStyle(color: Kds.inkMuted, fontSize: 12.5),
+                    style: TextStyle(color: skin.inkMuted, fontSize: 12.5),
                   ),
                   Slider(
                     value: _draft.splashHold.inMilliseconds
@@ -265,7 +266,7 @@ class _BrandingSheetState extends ConsumerState<_BrandingSheet> {
                   ),
                 ],
 
-                const Divider(height: 26),
+                Divider(height: 26),
                 const _SectionTitle('The logo'),
                 Text(
                   _draft.logoUrl == null
@@ -274,7 +275,7 @@ class _BrandingSheetState extends ConsumerState<_BrandingSheet> {
                             'in the back office, under Kitchen screens.'
                       : 'Set in the back office. Change or remove it there, '
                             'under Kitchen screens.',
-                  style: const TextStyle(color: Kds.inkMuted, fontSize: 12.5),
+                  style: TextStyle(color: skin.inkMuted, fontSize: 12.5),
                 ),
 
                 if (_error != null) ...[
@@ -344,6 +345,7 @@ class _Preview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final skin = Kds.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -371,13 +373,13 @@ class _Preview extends StatelessWidget {
                     ),
                   )
                 : Container(
-                    color: Kds.surface,
+                    color: skin.surface,
                     alignment: Alignment.center,
-                    child: const Text(
+                    child: Text(
                       'The start screen is switched off — screens go straight '
                       'to the board.',
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: Kds.inkMuted),
+                      style: TextStyle(color: skin.inkMuted),
                     ),
                   ),
           ),
@@ -426,14 +428,15 @@ class _ColourRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final skin = Kds.of(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: EdgeInsets.symmetric(vertical: 6),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
             width: 110,
-            child: Text(label, style: const TextStyle(color: Kds.inkMuted)),
+            child: Text(label, style: TextStyle(color: skin.inkMuted)),
           ),
           Expanded(
             child: Wrap(
@@ -474,6 +477,7 @@ class _Swatch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final skin = Kds.of(context);
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
@@ -484,7 +488,7 @@ class _Swatch extends StatelessWidget {
           color: colour,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-            color: selected ? Kds.selected : Kds.surface,
+            color: selected ? Kds.selected : skin.surface,
             width: selected ? 3 : 1,
           ),
         ),

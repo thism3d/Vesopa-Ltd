@@ -21,10 +21,11 @@ Future<void> showTicketDetail(
   WidgetRef ref,
   Ticket ticket,
 ) {
+  final skin = Kds.of(context);
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
-    backgroundColor: Kds.canvas,
+    backgroundColor: skin.canvas,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
     ),
@@ -47,6 +48,7 @@ class _TicketDetailSheet extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final skin = Kds.of(context);
     final board = ref.watch(ticketBoardProvider);
     final session = ref.watch(kitchenSessionProvider).value;
     final profile = session?.screen;
@@ -76,12 +78,12 @@ class _TicketDetailSheet extends ConsumerWidget {
       minChildSize: 0.4,
       builder: (context, scrollController) => Column(
         children: [
-          const SizedBox(height: 10),
+          SizedBox(height: 10),
           Container(
             width: 44,
             height: 4,
             decoration: BoxDecoration(
-              color: Kds.inkMuted.withValues(alpha: 0.35),
+              color: skin.inkMuted.withValues(alpha: 0.35),
               borderRadius: BorderRadius.circular(2),
             ),
           ),
@@ -96,7 +98,7 @@ class _TicketDetailSheet extends ConsumerWidget {
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                const SizedBox(height: 2),
+                SizedBox(height: 2),
                 Text(
                   [
                     if (ticket.roomName != null) ticket.roomName!,
@@ -105,7 +107,7 @@ class _TicketDetailSheet extends ConsumerWidget {
                     if (ticket.staffName != null) ticket.staffName!,
                     if (ticket.covers != null) '${ticket.covers} covers',
                   ].join(' · '),
-                  style: const TextStyle(color: Kds.inkMuted, fontSize: 14.5),
+                  style: TextStyle(color: skin.inkMuted, fontSize: 14.5),
                 ),
 
                 const SizedBox(height: 16),
@@ -166,7 +168,7 @@ class _TicketDetailSheet extends ConsumerWidget {
                     children: [
                       for (final station in ticket.stations)
                         Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 3),
+                          padding: EdgeInsets.symmetric(vertical: 3),
                           child: Row(
                             children: [
                               Icon(
@@ -174,7 +176,7 @@ class _TicketDetailSheet extends ConsumerWidget {
                                     ? Icons.check_circle
                                     : Icons.radio_button_unchecked,
                                 size: 19,
-                                color: station.done ? Kds.done : Kds.inkMuted,
+                                color: station.done ? Kds.done : skin.inkMuted,
                               ),
                               const SizedBox(width: 8),
                               Expanded(
@@ -188,8 +190,8 @@ class _TicketDetailSheet extends ConsumerWidget {
                                     ? '${_clock.format(station.doneAt!)}'
                                           '${station.doneBy == null ? '' : ' · ${station.doneBy}'}'
                                     : 'Waiting',
-                                style: const TextStyle(
-                                  color: Kds.inkMuted,
+                                style: TextStyle(
+                                  color: skin.inkMuted,
                                   fontSize: 13.5,
                                 ),
                               ),
@@ -199,10 +201,10 @@ class _TicketDetailSheet extends ConsumerWidget {
                       const Divider(height: 18),
                       Row(
                         children: [
-                          const Expanded(child: Text('Placed')),
+                          Expanded(child: Text('Placed')),
                           Text(
                             _clock.format(ticket.placedAt),
-                            style: const TextStyle(color: Kds.inkMuted),
+                            style: TextStyle(color: skin.inkMuted),
                           ),
                         ],
                       ),
@@ -288,11 +290,12 @@ class _Panel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final skin = Kds.of(context);
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+      padding: EdgeInsets.fromLTRB(14, 12, 14, 14),
       decoration: BoxDecoration(
-        color: Kds.card,
+        color: skin.card,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -300,11 +303,11 @@ class _Panel extends StatelessWidget {
         children: [
           Text(
             title.toUpperCase(),
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 11.5,
               fontWeight: FontWeight.w700,
               letterSpacing: 0.8,
-              color: Kds.inkMuted,
+              color: skin.inkMuted,
             ),
           ),
           const SizedBox(height: 8),
@@ -331,7 +334,8 @@ class _DetailLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colour = dimmed ? Kds.inkMuted : Kds.ink;
+    final skin = Kds.of(context);
+    final colour = dimmed ? skin.inkMuted : skin.ink;
 
     // An answer about the dish above it, drawn as a typed note is. Same
     // treatment as the board card, so the detail view and the ticket a chef is
@@ -372,7 +376,7 @@ class _DetailLine extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(width: 10),
+              SizedBox(width: 10),
               Expanded(
                 child: Text(
                   line.name,
@@ -381,7 +385,7 @@ class _DetailLine extends StatelessWidget {
               ),
               Text(
                 line.stations.map(labelFor).join(', '),
-                style: const TextStyle(fontSize: 12.5, color: Kds.inkMuted),
+                style: TextStyle(fontSize: 12.5, color: skin.inkMuted),
               ),
             ],
           ),

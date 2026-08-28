@@ -73,6 +73,7 @@ const ctx = lift([
   'spProductName',
   'spLabelFor',
   'spMissing',
+  'spFillProducts',
 ]);
 
 /** The module-level state those functions read. */
@@ -91,6 +92,17 @@ function withState({
   ctx.spIsBar = (surface) => surface === 'topbar' || surface === 'bottombar';
   ctx.spCurrentSurface = () => (current && current.surface) || 'sale';
   ctx.spCellTitle = () => '';
+}
+
+/**
+ * The two fill pickers, as the DOM would answer for them.
+ *
+ * spFillProducts reads $('sp-dept') and $('sp-subdept') and nothing else, so a
+ * two-entry lookup is the whole of the DOM this needs.
+ */
+function withFillPickers({ department = '', sub = '' } = {}) {
+  ctx.$ = (id) =>
+    ({ 'sp-dept': { value: department }, 'sp-subdept': { value: sub } }[id]);
 }
 
 // Scalars the lifter cannot take — it works on `function name(` and
@@ -635,6 +647,119 @@ check('a page key may carry a picture, which it never could before', () => {
 check('a key with nothing on it has no face at all', () => {
   withState({ products: [{ pluid: 7, product_name: 'Tea', emoji: null, image_url: null }] });
   assert.strictEqual(vm.runInContext('spFaceFor', ctx)({ kind: 'product', pluId: 7 }), null);
+});
+
+// ---- A key that asks a question -----------------------------------------
+
+// The fifth kind, and the same rule as the other four: one reference per
+// button. A key changed away from a modifier that kept its group id gives the
+// till two things to dispatch on.
+check('a modifier key carries its group, and only its group', () => {
+  const button = {
+    kind: 'modifier',
+    modifierGroupId: 7,
+    pluId: 42,
+    targetScreenId: 3,
+    functionKey: 'qty',
+  };
+  ctx.spSetKind(button, 'modifier');
+  assert.strictEqual(button.modifierGroupId, 7, 'it kept the one it needs');
+  assert.strictEqual(button.pluId, null);
+  assert.strictEqual(button.targetScreenId, null);
+  assert.strictEqual(button.functionKey, null);
+
+  ctx.spSetKind(button, 'product');
+  assert.strictEqual(button.modifierGroupId, null);
+});
+
+check('a modifier key is named after the question it asks', () => {
+  withState({});
+  ctx.spModifierGroups = [{ id: 7, name: 'Mixers', screen_id: 42 }];
+  assert.strictEqual(
+    ctx.spLabelFor({ kind: 'modifier', modifierGroupId: 7 }),
+    'Mixers'
+  );
+  assert.strictEqual(
+    ctx.spLabelFor({ kind: 'modifier', modifierGroupId: 7, label: 'WITH?' }),
+    'WITH?',
+    'the venue’s own wording wins'
+  );
+});
+
+// A group deleted after the layout was saved. Flagged rather than drawn blank,
+// for the same reason a deleted product is: a key that says nothing is a key a
+// clerk presses twice before asking anybody about it.
+check('a modifier key whose question has gone is flagged', () => {
+  withState({});
+  ctx.spModifierGroups = [];
+  assert.strictEqual(ctx.spMissing({ kind: 'modifier', modifierGroupId: 7 }), true);
+  assert.strictEqual(
+    ctx.spLabelFor({ kind: 'modifier', modifierGroupId: 7 }),
+    'Missing question'
+  );
+
+  ctx.spModifierGroups = [{ id: 7, name: 'Mixers' }];
+  assert.strictEqual(ctx.spMissing({ kind: 'modifier', modifierGroupId: 7 }), false);
+});
+
+check('every kind the editor offers is one the server stores', () => {
+  const { BUTTON_KINDS } = require('../src/screens');
+  for (const kind of ['blank', 'product', 'page', 'function', 'modifier']) {
+    assert.ok(BUTTON_KINDS.includes(kind), `${kind} is not a server kind`);
+  }
+  assert.strictEqual(BUTTON_KINDS.length, 5, 'the server knows a kind the editor does not offer');
+});
+
+// ---- Filling from a department, and from one shelf inside it -------------
+
+const CATALOGUE = [
+  { pluid: 1, product_name: 'Stella', department_name: 'Drinks', group_name: 'Lagers' },
+  { pluid: 2, product_name: 'Peroni', department_name: 'Drinks', group_name: 'Lagers' },
+  { pluid: 3, product_name: 'Guinness', department_name: 'Drinks', group_name: 'Stouts' },
+  { pluid: 4, product_name: 'Loose', department_name: 'Drinks', group_name: null },
+  { pluid: 5, product_name: 'Burger', department_name: 'Food', group_name: 'Mains' },
+];
+
+check('a whole department fills, exactly as it always did', () => {
+  withState({ products: CATALOGUE });
+  withFillPickers({ department: 'Drinks' });
+  assert.deepStrictEqual(
+    ctx.spFillProducts().map((p) => p.product_name),
+    ['Stella', 'Peroni', 'Guinness', 'Loose']
+  );
+});
+
+check('and one sub department narrows it to that shelf', () => {
+  withState({ products: CATALOGUE });
+  withFillPickers({ department: 'Drinks', sub: 'Lagers' });
+  assert.deepStrictEqual(
+    ctx.spFillProducts().map((p) => p.product_name),
+    ['Stella', 'Peroni']
+  );
+});
+
+// Two departments can both have a "Bottles". The sub department is only ever
+// read against the department showing, so a shelf name shared between two
+// cannot pull the wrong one in.
+check('a sub department never reaches outside its own department', () => {
+  withState({
+    products: [
+      ...CATALOGUE,
+      { pluid: 6, product_name: 'Wine', department_name: 'Food', group_name: 'Lagers' },
+    ],
+  });
+  withFillPickers({ department: 'Drinks', sub: 'Lagers' });
+  assert.deepStrictEqual(
+    ctx.spFillProducts().map((p) => p.product_name),
+    ['Stella', 'Peroni']
+  );
+});
+
+check('the order is the product list’s own, not a shuffle', () => {
+  withState({ products: CATALOGUE });
+  withFillPickers({ department: 'Drinks' });
+  const filled = ctx.spFillProducts().map((p) => p.pluid);
+  assert.deepStrictEqual(filled, [...filled].sort((a, b) => a - b));
 });
 
 check('no editor calls prompt', () => {

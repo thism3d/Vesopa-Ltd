@@ -920,6 +920,15 @@ class $OrdersTable extends Orders with TableInfo<$OrdersTable, Order> {
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _heldByMeta = const VerificationMeta('heldBy');
+  @override
+  late final GeneratedColumn<String> heldBy = GeneratedColumn<String>(
+    'held_by',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _staffIdMeta = const VerificationMeta(
     'staffId',
   );
@@ -1127,6 +1136,7 @@ class $OrdersTable extends Orders with TableInfo<$OrdersTable, Order> {
     tableNumber,
     roomId,
     clerkPin,
+    heldBy,
     staffId,
     staffName,
     sessionId,
@@ -1188,6 +1198,12 @@ class $OrdersTable extends Orders with TableInfo<$OrdersTable, Order> {
       context.handle(
         _clerkPinMeta,
         clerkPin.isAcceptableOrUnknown(data['clerk_pin']!, _clerkPinMeta),
+      );
+    }
+    if (data.containsKey('held_by')) {
+      context.handle(
+        _heldByMeta,
+        heldBy.isAcceptableOrUnknown(data['held_by']!, _heldByMeta),
       );
     }
     if (data.containsKey('staff_id')) {
@@ -1348,6 +1364,10 @@ class $OrdersTable extends Orders with TableInfo<$OrdersTable, Order> {
         DriftSqlType.string,
         data['${effectivePrefix}clerk_pin'],
       ),
+      heldBy: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}held_by'],
+      ),
       staffId: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}staff_id'],
@@ -1452,6 +1472,26 @@ class Order extends DataClass implements Insertable<Order> {
   final int? roomId;
   final String? clerkPin;
 
+  /// The other terminal holding this bill, or null when it is this one's.
+  ///
+  /// A venue with two tills shares its open bills through the back office, and
+  /// every terminal mirrors the others' into this table so the table plan, the
+  /// picker and the open-bills strip all draw the whole room without any of
+  /// them being taught about a second source of bills.
+  ///
+  /// This column is what keeps the mirror honest. A row with it set is somebody
+  /// else's bill: it is drawn, and it cannot be rung up on or settled here
+  /// until it has been claimed — at which point the server moves it and this
+  /// goes null. Without it, two clerks could take payment for one table.
+  ///
+  /// It also stops the push loop. The sync pushes bills where this is null and
+  /// nothing else, so a mirrored bill is never sent back to the server as
+  /// though this terminal had authored it.
+  ///
+  /// Null on every bill taken before shared tables existed, which is exactly
+  /// right: they were all this terminal's.
+  final String? heldBy;
+
   /// Who settled the sale. Stamped at settlement rather than at open, for the
   /// same reason [sessionId] is: a bill parked across a shift change belongs to
   /// whoever actually took the money for it.
@@ -1503,6 +1543,7 @@ class Order extends DataClass implements Insertable<Order> {
     this.tableNumber,
     this.roomId,
     this.clerkPin,
+    this.heldBy,
     this.staffId,
     this.staffName,
     this.sessionId,
@@ -1535,6 +1576,9 @@ class Order extends DataClass implements Insertable<Order> {
     }
     if (!nullToAbsent || clerkPin != null) {
       map['clerk_pin'] = Variable<String>(clerkPin);
+    }
+    if (!nullToAbsent || heldBy != null) {
+      map['held_by'] = Variable<String>(heldBy);
     }
     if (!nullToAbsent || staffId != null) {
       map['staff_id'] = Variable<int>(staffId);
@@ -1590,6 +1634,9 @@ class Order extends DataClass implements Insertable<Order> {
       clerkPin: clerkPin == null && nullToAbsent
           ? const Value.absent()
           : Value(clerkPin),
+      heldBy: heldBy == null && nullToAbsent
+          ? const Value.absent()
+          : Value(heldBy),
       staffId: staffId == null && nullToAbsent
           ? const Value.absent()
           : Value(staffId),
@@ -1642,6 +1689,7 @@ class Order extends DataClass implements Insertable<Order> {
       tableNumber: serializer.fromJson<int?>(json['tableNumber']),
       roomId: serializer.fromJson<int?>(json['roomId']),
       clerkPin: serializer.fromJson<String?>(json['clerkPin']),
+      heldBy: serializer.fromJson<String?>(json['heldBy']),
       staffId: serializer.fromJson<int?>(json['staffId']),
       staffName: serializer.fromJson<String?>(json['staffName']),
       sessionId: serializer.fromJson<String?>(json['sessionId']),
@@ -1677,6 +1725,7 @@ class Order extends DataClass implements Insertable<Order> {
       'tableNumber': serializer.toJson<int?>(tableNumber),
       'roomId': serializer.toJson<int?>(roomId),
       'clerkPin': serializer.toJson<String?>(clerkPin),
+      'heldBy': serializer.toJson<String?>(heldBy),
       'staffId': serializer.toJson<int?>(staffId),
       'staffName': serializer.toJson<String?>(staffName),
       'sessionId': serializer.toJson<String?>(sessionId),
@@ -1704,6 +1753,7 @@ class Order extends DataClass implements Insertable<Order> {
     Value<int?> tableNumber = const Value.absent(),
     Value<int?> roomId = const Value.absent(),
     Value<String?> clerkPin = const Value.absent(),
+    Value<String?> heldBy = const Value.absent(),
     Value<int?> staffId = const Value.absent(),
     Value<String?> staffName = const Value.absent(),
     Value<String?> sessionId = const Value.absent(),
@@ -1728,6 +1778,7 @@ class Order extends DataClass implements Insertable<Order> {
     tableNumber: tableNumber.present ? tableNumber.value : this.tableNumber,
     roomId: roomId.present ? roomId.value : this.roomId,
     clerkPin: clerkPin.present ? clerkPin.value : this.clerkPin,
+    heldBy: heldBy.present ? heldBy.value : this.heldBy,
     staffId: staffId.present ? staffId.value : this.staffId,
     staffName: staffName.present ? staffName.value : this.staffName,
     sessionId: sessionId.present ? sessionId.value : this.sessionId,
@@ -1758,6 +1809,7 @@ class Order extends DataClass implements Insertable<Order> {
           : this.tableNumber,
       roomId: data.roomId.present ? data.roomId.value : this.roomId,
       clerkPin: data.clerkPin.present ? data.clerkPin.value : this.clerkPin,
+      heldBy: data.heldBy.present ? data.heldBy.value : this.heldBy,
       staffId: data.staffId.present ? data.staffId.value : this.staffId,
       staffName: data.staffName.present ? data.staffName.value : this.staffName,
       sessionId: data.sessionId.present ? data.sessionId.value : this.sessionId,
@@ -1805,6 +1857,7 @@ class Order extends DataClass implements Insertable<Order> {
           ..write('tableNumber: $tableNumber, ')
           ..write('roomId: $roomId, ')
           ..write('clerkPin: $clerkPin, ')
+          ..write('heldBy: $heldBy, ')
           ..write('staffId: $staffId, ')
           ..write('staffName: $staffName, ')
           ..write('sessionId: $sessionId, ')
@@ -1834,6 +1887,7 @@ class Order extends DataClass implements Insertable<Order> {
     tableNumber,
     roomId,
     clerkPin,
+    heldBy,
     staffId,
     staffName,
     sessionId,
@@ -1862,6 +1916,7 @@ class Order extends DataClass implements Insertable<Order> {
           other.tableNumber == this.tableNumber &&
           other.roomId == this.roomId &&
           other.clerkPin == this.clerkPin &&
+          other.heldBy == this.heldBy &&
           other.staffId == this.staffId &&
           other.staffName == this.staffName &&
           other.sessionId == this.sessionId &&
@@ -1888,6 +1943,7 @@ class OrdersCompanion extends UpdateCompanion<Order> {
   final Value<int?> tableNumber;
   final Value<int?> roomId;
   final Value<String?> clerkPin;
+  final Value<String?> heldBy;
   final Value<int?> staffId;
   final Value<String?> staffName;
   final Value<String?> sessionId;
@@ -1913,6 +1969,7 @@ class OrdersCompanion extends UpdateCompanion<Order> {
     this.tableNumber = const Value.absent(),
     this.roomId = const Value.absent(),
     this.clerkPin = const Value.absent(),
+    this.heldBy = const Value.absent(),
     this.staffId = const Value.absent(),
     this.staffName = const Value.absent(),
     this.sessionId = const Value.absent(),
@@ -1939,6 +1996,7 @@ class OrdersCompanion extends UpdateCompanion<Order> {
     this.tableNumber = const Value.absent(),
     this.roomId = const Value.absent(),
     this.clerkPin = const Value.absent(),
+    this.heldBy = const Value.absent(),
     this.staffId = const Value.absent(),
     this.staffName = const Value.absent(),
     this.sessionId = const Value.absent(),
@@ -1965,6 +2023,7 @@ class OrdersCompanion extends UpdateCompanion<Order> {
     Expression<int>? tableNumber,
     Expression<int>? roomId,
     Expression<String>? clerkPin,
+    Expression<String>? heldBy,
     Expression<int>? staffId,
     Expression<String>? staffName,
     Expression<String>? sessionId,
@@ -1991,6 +2050,7 @@ class OrdersCompanion extends UpdateCompanion<Order> {
       if (tableNumber != null) 'table_number': tableNumber,
       if (roomId != null) 'room_id': roomId,
       if (clerkPin != null) 'clerk_pin': clerkPin,
+      if (heldBy != null) 'held_by': heldBy,
       if (staffId != null) 'staff_id': staffId,
       if (staffName != null) 'staff_name': staffName,
       if (sessionId != null) 'session_id': sessionId,
@@ -2022,6 +2082,7 @@ class OrdersCompanion extends UpdateCompanion<Order> {
     Value<int?>? tableNumber,
     Value<int?>? roomId,
     Value<String?>? clerkPin,
+    Value<String?>? heldBy,
     Value<int?>? staffId,
     Value<String?>? staffName,
     Value<String?>? sessionId,
@@ -2048,6 +2109,7 @@ class OrdersCompanion extends UpdateCompanion<Order> {
       tableNumber: tableNumber ?? this.tableNumber,
       roomId: roomId ?? this.roomId,
       clerkPin: clerkPin ?? this.clerkPin,
+      heldBy: heldBy ?? this.heldBy,
       staffId: staffId ?? this.staffId,
       staffName: staffName ?? this.staffName,
       sessionId: sessionId ?? this.sessionId,
@@ -2088,6 +2150,9 @@ class OrdersCompanion extends UpdateCompanion<Order> {
     }
     if (clerkPin.present) {
       map['clerk_pin'] = Variable<String>(clerkPin.value);
+    }
+    if (heldBy.present) {
+      map['held_by'] = Variable<String>(heldBy.value);
     }
     if (staffId.present) {
       map['staff_id'] = Variable<int>(staffId.value);
@@ -2161,6 +2226,7 @@ class OrdersCompanion extends UpdateCompanion<Order> {
           ..write('tableNumber: $tableNumber, ')
           ..write('roomId: $roomId, ')
           ..write('clerkPin: $clerkPin, ')
+          ..write('heldBy: $heldBy, ')
           ..write('staffId: $staffId, ')
           ..write('staffName: $staffName, ')
           ..write('sessionId: $sessionId, ')
@@ -7999,6 +8065,7 @@ typedef $$OrdersTableCreateCompanionBuilder =
       Value<int?> tableNumber,
       Value<int?> roomId,
       Value<String?> clerkPin,
+      Value<String?> heldBy,
       Value<int?> staffId,
       Value<String?> staffName,
       Value<String?> sessionId,
@@ -8026,6 +8093,7 @@ typedef $$OrdersTableUpdateCompanionBuilder =
       Value<int?> tableNumber,
       Value<int?> roomId,
       Value<String?> clerkPin,
+      Value<String?> heldBy,
       Value<int?> staffId,
       Value<String?> staffName,
       Value<String?> sessionId,
@@ -8120,6 +8188,11 @@ class $$OrdersTableFilterComposer
 
   ColumnFilters<String> get clerkPin => $composableBuilder(
     column: $table.clerkPin,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get heldBy => $composableBuilder(
+    column: $table.heldBy,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -8298,6 +8371,11 @@ class $$OrdersTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get heldBy => $composableBuilder(
+    column: $table.heldBy,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get staffId => $composableBuilder(
     column: $table.staffId,
     builder: (column) => ColumnOrderings(column),
@@ -8414,6 +8492,9 @@ class $$OrdersTableAnnotationComposer
 
   GeneratedColumn<String> get clerkPin =>
       $composableBuilder(column: $table.clerkPin, builder: (column) => column);
+
+  GeneratedColumn<String> get heldBy =>
+      $composableBuilder(column: $table.heldBy, builder: (column) => column);
 
   GeneratedColumn<int> get staffId =>
       $composableBuilder(column: $table.staffId, builder: (column) => column);
@@ -8571,6 +8652,7 @@ class $$OrdersTableTableManager
                 Value<int?> tableNumber = const Value.absent(),
                 Value<int?> roomId = const Value.absent(),
                 Value<String?> clerkPin = const Value.absent(),
+                Value<String?> heldBy = const Value.absent(),
                 Value<int?> staffId = const Value.absent(),
                 Value<String?> staffName = const Value.absent(),
                 Value<String?> sessionId = const Value.absent(),
@@ -8596,6 +8678,7 @@ class $$OrdersTableTableManager
                 tableNumber: tableNumber,
                 roomId: roomId,
                 clerkPin: clerkPin,
+                heldBy: heldBy,
                 staffId: staffId,
                 staffName: staffName,
                 sessionId: sessionId,
@@ -8623,6 +8706,7 @@ class $$OrdersTableTableManager
                 Value<int?> tableNumber = const Value.absent(),
                 Value<int?> roomId = const Value.absent(),
                 Value<String?> clerkPin = const Value.absent(),
+                Value<String?> heldBy = const Value.absent(),
                 Value<int?> staffId = const Value.absent(),
                 Value<String?> staffName = const Value.absent(),
                 Value<String?> sessionId = const Value.absent(),
@@ -8648,6 +8732,7 @@ class $$OrdersTableTableManager
                 tableNumber: tableNumber,
                 roomId: roomId,
                 clerkPin: clerkPin,
+                heldBy: heldBy,
                 staffId: staffId,
                 staffName: staffName,
                 sessionId: sessionId,

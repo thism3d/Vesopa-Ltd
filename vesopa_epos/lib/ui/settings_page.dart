@@ -7,6 +7,7 @@ import 'package:window_manager/window_manager.dart';
 
 import '../config/constants.dart';
 import '../data/fonts.dart';
+import '../data/terminal_identity.dart';
 import '../main.dart';
 import '../payments/connect_pac.dart';
 import '../payments/dojo_config.dart';
@@ -149,6 +150,13 @@ class SettingsPage extends ConsumerWidget {
           child: Column(
             children: [
               _Row(icon: Icons.storefront, label: 'Office', value: office),
+              const Divider(height: 1),
+              // What this machine calls itself, which matters the moment a
+              // venue has two of them: it names the terminal a bill is open
+              // on, the one a clerk is signed on to, and the one a shift was
+              // clocked in at. Defaults to the computer's own host name,
+              // because that is already different on the two machines.
+              const _TerminalNameRow(),
               const Divider(height: 1),
               // Names the environment as well as the URL: on a live till this
               // is the fastest way to confirm the sale you just took went to
@@ -1409,6 +1417,72 @@ class _FontsCardState extends ConsumerState<_FontsCard> {
         ],
       ),
     );
+  }
+}
+
+/// The terminal's own name, shown and edited.
+class _TerminalNameRow extends ConsumerWidget {
+  const _TerminalNameRow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final name = ref.watch(terminalNameProvider);
+    return _Row(
+      icon: Icons.point_of_sale,
+      label: 'This till is called',
+      value: name,
+      trailing: TextButton(
+        onPressed: () => _rename(context, ref, name),
+        child: const Text('Rename'),
+      ),
+    );
+  }
+
+  Future<void> _rename(
+    BuildContext context,
+    WidgetRef ref,
+    String current,
+  ) async {
+    final controller = TextEditingController(text: current);
+    final typed = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('What is this till called?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Staff see this name when a bill is open on another terminal, '
+              'and a manager sees it against the shifts clocked in here. '
+              '"Bar", "Door", "Kitchen pass".',
+              style: TextStyle(fontSize: 12.5),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              maxLength: 40,
+              decoration: const InputDecoration(labelText: 'Name'),
+              onSubmitted: (v) => Navigator.of(dialogContext).pop(v),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.of(dialogContext).pop(controller.text),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (typed == null) return;
+    await ref.read(terminalIdentityProvider.notifier).set(typed);
   }
 }
 

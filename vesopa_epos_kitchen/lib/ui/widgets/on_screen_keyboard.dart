@@ -151,6 +151,7 @@ class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
 
   @override
   Widget build(BuildContext context) {
+    final skin = Kds.of(context);
     final rows = _symbols
         ? const [_sym1, _sym2, _sym3]
         : const [_row1, _row2, _row3];
@@ -189,7 +190,7 @@ class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
         return Container(
           padding: const EdgeInsets.all(_padding),
           decoration: BoxDecoration(
-            color: Kds.surface,
+            color: skin.surface,
             borderRadius: BorderRadius.circular(14),
           ),
           child: Column(
@@ -321,13 +322,14 @@ class _Key extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final skin = Kds.of(context);
     final enabled = onTap != null;
     final background = filled
         ? Kds.selected
         : active
-        ? Kds.selectedTrack
-        : Kds.card;
-    final foreground = filled ? Colors.white : Kds.ink;
+        ? skin.selectedTrack
+        : skin.card;
+    final foreground = filled ? Colors.white : skin.ink;
 
     return Padding(
       padding: const EdgeInsets.symmetric(

@@ -98,6 +98,7 @@ class _SignInPageState extends ConsumerState<SignInPage> {
 
   @override
   Widget build(BuildContext context) {
+    final skin = Kds.of(context);
     return Scaffold(
       body: SafeArea(
         child: Center(
@@ -120,13 +121,13 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                       fontWeight: FontWeight.w700,
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  SizedBox(height: 4),
                   Text(
                     'Sign this screen in with the kitchen login created in the '
                     'back office, under Kitchen screens.',
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Kds.inkMuted,
+                      color: skin.inkMuted,
                     ),
                   ),
                   const SizedBox(height: 22),
@@ -211,13 +212,13 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                         : 'Next',
                   ),
 
-                  const SizedBox(height: 14),
+                  SizedBox(height: 14),
                   Text(
                     Api.isLive
                         ? 'Connecting to ${Uri.parse(Api.resolvedBase).host}'
                         : '${Api.environmentName} · ${Api.resolvedBase}',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Kds.inkMuted,
+                      color: skin.inkMuted,
                     ),
                   ),
                 ],
@@ -251,13 +252,14 @@ class _FieldBox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final skin = Kds.of(context);
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 120),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: Kds.card,
+          color: skin.card,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: active ? Kds.selected : const Color(0x22000000),
@@ -270,8 +272,8 @@ class _FieldBox extends StatelessWidget {
               width: 130,
               child: Text(
                 label,
-                style: const TextStyle(
-                  color: Kds.inkMuted,
+                style: TextStyle(
+                  color: skin.inkMuted,
                   fontWeight: FontWeight.w600,
                 ),
               ),

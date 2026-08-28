@@ -86,6 +86,7 @@ void main() {
               onProduct: (_) {},
               onPage: (_) {},
               onFunction: onFunction ?? (_) {},
+              onModifier: (_) {},
             ),
           ),
         ),
@@ -324,18 +325,50 @@ void main() {
       expect(back.buttons.single.functionKey, 'pay');
     });
 
+    // Two halves of one contract, and they pull in opposite directions.
+    //
+    // In memory an image URL is *absolute*, because that is what Image.network
+    // has to be handed. On the wire it is *relative*, because that is what the
+    // server stores and the only thing it will accept back - cleanImage in
+    // src/screens.js refuses an absolute one outright. So the round trip is not
+    // "the same string comes back"; it is "each side gets the form it needs",
+    // and a test that asserted only the first half is what let a layout go out
+    // and come back with its pictures stripped.
     test('a key’s own face survives it too', () {
-      const original = ScreenButton(
+      final loaded = ScreenButton.fromJson(const {
+        'row': 0,
+        'col': 0,
+        'kind': 'page',
+        'targetScreenId': 4,
+        'emoji': 'BURGER',
+        'imageUrl': '/uploads/food.png',
+      });
+      expect(loaded.emoji, 'BURGER');
+      expect(
+        loaded.imageUrl,
+        endsWith('/uploads/food.png'),
+        reason: 'resolved against the server so it can actually be fetched',
+      );
+
+      expect(
+        loaded.toJson()['imageUrl'],
+        '/uploads/food.png',
+        reason: 'the server refuses an absolute URL on the way back in',
+      );
+
+      // And a picture hosted somewhere else is left exactly as it is: it is not
+      // ours to shorten, and shortening it would break it.
+      const elsewhere = ScreenButton(
         row: 0,
         col: 0,
         kind: ScreenButtonKind.page,
         targetScreenId: 4,
-        emoji: '🍔',
-        imageUrl: '/uploads/food.png',
+        imageUrl: 'https://cdn.example.com/food.png',
       );
-      final back = ScreenButton.fromJson(original.toJson());
-      expect(back.emoji, '🍔');
-      expect(back.imageUrl, '/uploads/food.png');
+      expect(
+        elsewhere.toJson()['imageUrl'],
+        'https://cdn.example.com/food.png',
+      );
     });
 
     test('a screen remembers which bars it asked for', () {

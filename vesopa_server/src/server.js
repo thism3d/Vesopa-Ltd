@@ -36,6 +36,7 @@ const { fontsRoutes, tillFontRoutes } = require('./fonts');
 const { assetVersions, staticCache } = require('./assets');
 const { modifierRoutes, tillModifierRoutes } = require('./modifiers');
 const { dojoWebhookRoutes, webhookStatus } = require('./dojo');
+const { terminalRoutes, timesheetRoutes } = require('./terminals');
 
 const PORT = process.env.PORT || 4000;
 
@@ -217,6 +218,14 @@ app.use('/api', tillModifierRoutes({ pool }));
 app.use('/api', fontsRoutes({ pool, broadcast, secret: JWT_SECRET }));
 app.use('/api', tillFontRoutes({ pool, broadcast, secret: JWT_SECRET }));
 app.use(tillKitchenRoutes({ pool, broadcast, secret: JWT_SECRET }));
+
+// Terminals that know about each other: the shared open bills behind a table
+// plan two tills can both see, one clerk in one place at a time, and the time
+// clock. Split the usual way -- the tills' half at the root, authorised by the
+// terminal token rather than by an office query, because unlike a price list
+// these routes carry what customers have ordered and who is on shift.
+app.use(terminalRoutes({ pool, broadcast, secret: JWT_SECRET }));
+app.use('/api', timesheetRoutes({ pool, broadcast, secret: JWT_SECRET }));
 
 /**
  * The floor plan, as the till sees it. Unauthenticated like /products: a

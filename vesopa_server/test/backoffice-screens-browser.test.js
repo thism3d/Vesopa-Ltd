@@ -1295,19 +1295,23 @@ check('one drag of the handle is one press of undo', async (cdp) => {
   assert.strictEqual(back, '1x1', 'undo did not put the key back');
 });
 
-check('the typed width stops where the handle stops', async (cdp) => {
+// A key had one size and two places to set it: the corner handle and a pair of
+// number boxes in the inspector. They disagreed the moment either was touched,
+// and the typed one had to re-implement every rule the drag already enforced --
+// clamping to the grid, refusing to swallow a neighbour, holding a reservation
+// on an empty cell. The boxes are gone; the handle is the answer.
+check('there is one way to size a key, and it is the handle', async (cdp) => {
   await reset(cdp);
-  const after = await cdp.eval(
-    `spSelection = new Set(['0:2']);
-     spApplyToSelection((b) => { spSetKind(b, 'function'); b.functionKey = 'note'; });
-     const box = document.getElementById('sp-colspan');
-     box.value = '3';
-     box.dispatchEvent(new Event('change'));
-     return { span: spAt(0, 2).colSpan, neighbour: !!spAt(0, 3), box: box.value };`
+  const boxes = await cdp.eval(
+    `return {
+       width: !!document.getElementById('sp-colspan'),
+       height: !!document.getElementById('sp-rowspan'),
+       handle: !!document.querySelector('#sp-grid'),
+     };`
   );
-  assert.strictEqual(after.span, 1, 'the typed width grew over a neighbour');
-  assert.ok(after.neighbour, 'the typed width swallowed the key beside it');
-  assert.strictEqual(after.box, '1', 'the box did not snap back to what was applied');
+  assert.strictEqual(boxes.width, false, 'the Width box came back');
+  assert.strictEqual(boxes.height, false, 'the Height box came back');
+  assert.ok(boxes.handle, 'the grid itself is still there');
 });
 
 // ---------------------------------------------------------------------------

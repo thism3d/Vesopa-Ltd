@@ -36,6 +36,12 @@
   --info: #4aa8ff;
   --info-dim: rgba(74, 168, 255, 0.14);
 
+  /* The hover ground for a plain key, and the brighter lime a link goes on
+     hover. Both were literals in one place each until the light theme needed
+     them to move. */
+  --raised-2: #26333d;
+  --lime-hover: #c2e33a;
+
   --radius: 12px;
   --radius-sm: 8px;
   --sidebar-w: 244px;
@@ -58,7 +64,7 @@ html, body {
 }
 
 a { color: var(--lime); text-decoration: none; }
-a:hover { color: #c2e33a; }
+a:hover { color: var(--lime-hover); }
 
 h1, h2, h3, h4 { margin: 0 0 .4em; line-height: 1.25; font-weight: 700; }
 h1 { font-size: 26px; }
@@ -338,7 +344,7 @@ p:last-child { margin-bottom: 0; }
   transition: background .15s, border-color .15s, color .15s;
   white-space: nowrap;
 }
-.ap-btn:hover { background: #26333d; color: var(--ink); }
+.ap-btn:hover { background: var(--raised-2); color: var(--ink); }
 .ap-btn .material-icons { font-size: 17px; }
 
 .ap-btn.primary {
@@ -412,7 +418,7 @@ p:last-child { margin-bottom: 0; }
   background-position: right 12px center;
   padding-right: 32px;
 }
-.ap-input::placeholder, .ap-textarea::placeholder { color: #5c6a74; }
+.ap-input::placeholder, .ap-textarea::placeholder { color: var(--ink-3); }
 
 .ap-check { display: flex; align-items: center; gap: 9px; margin-bottom: 11px; }
 .ap-check input { width: 16px; height: 16px; accent-color: var(--lime); }
@@ -1136,3 +1142,112 @@ p:last-child { margin-bottom: 0; }
 }
 .bp-body th, .bp-body td { border: 1px solid rgba(255, 255, 255, .11); padding: 9px 12px; text-align: left; }
 .bp-body th { background: rgba(255, 255, 255, .05); color: #fff; font-weight: 600; }
+
+
+/* ---------------------------------------------------------------------------
+   Day
+   ---------------------------------------------------------------------------
+   The console was built dark, and it is the look a senior developer signed off
+   on -- so this is an alternative and not a replacement. Everything above goes
+   through the tokens, which is what makes a second theme a list of colours.
+
+   Two things deliberately do not invert:
+
+     * `.bp-body`, the blog preview. It is a picture of the public site, which
+       is dark. A preview that showed an editor something no reader will ever
+       see would have exactly one job and would be failing at it.
+     * The lime. It is the brand, it is the same lime in both, and the ink that
+       sits on it is near-black either way -- lime is a light colour, and white
+       on it lands near 1.9:1 whatever the page behind it is doing.
+
+   Applied by `data-theme` on <html>, defaulting to the system's own preference
+   through the media query below -- guarded on `:not([data-theme="dark"])` so an
+   explicit choice of Night survives a laptop set to light.
+*/
+:root[data-theme="light"] {
+  --bg: #f4f6f2;
+  --panel: #ffffff;
+  --panel-2: #f7f9f4;
+  --raised: #eef1ea;
+  --raised-2: #e4e9dd;
+  --line: #dbe1d5;
+  --line-soft: #e7ebe1;
+
+  --ink: #1c2226;
+  --ink-2: #4c5860;
+  --ink-3: #78868f;
+
+  /* Each status colour is darkened until it reads as text on white; the washes
+     go the other way and become pale tints. Reusing the dark theme's values
+     here would give a yellow on white that nobody over forty can read. */
+  --danger: #c62839;
+  --danger-dim: rgba(198, 40, 57, 0.10);
+  --warn: #8a5b00;
+  --warn-dim: rgba(138, 91, 0, 0.12);
+  --ok: #0f7a44;
+  --ok-dim: rgba(15, 122, 68, 0.12);
+  --info: #1665c1;
+  --info-dim: rgba(22, 101, 193, 0.12);
+
+  --lime-dim: #6f8a0d;
+  --lime-hover: #6f8a0d;
+  --lime-glow: rgba(165, 199, 21, 0.28);
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f4f6f2;
+    --panel: #ffffff;
+    --panel-2: #f7f9f4;
+    --raised: #eef1ea;
+    --raised-2: #e4e9dd;
+    --line: #dbe1d5;
+    --line-soft: #e7ebe1;
+    --ink: #1c2226;
+    --ink-2: #4c5860;
+    --ink-3: #78868f;
+    --danger: #c62839;
+    --danger-dim: rgba(198, 40, 57, 0.10);
+    --warn: #8a5b00;
+    --warn-dim: rgba(138, 91, 0, 0.12);
+    --ok: #0f7a44;
+    --ok-dim: rgba(15, 122, 68, 0.12);
+    --info: #1665c1;
+    --info-dim: rgba(22, 101, 193, 0.12);
+    --lime-dim: #6f8a0d;
+    --lime-hover: #6f8a0d;
+    --lime-glow: rgba(165, 199, 21, 0.28);
+    color-scheme: light;
+  }
+}
+
+:root[data-theme="dark"] { color-scheme: dark; }
+
+/* The switch, in the sidebar footer where View site and Back office already
+   are. Set once and then never touched, so it is small. */
+.ap-theme {
+  display: inline-flex;
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.ap-theme button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--ink-3);
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.ap-theme button + button { border-left: 1px solid var(--line); }
+.ap-theme button:hover { color: var(--ink); }
+.ap-theme button[aria-pressed="true"] {
+  background: var(--lime);
+  color: #101401;
+  font-weight: 700;
+}

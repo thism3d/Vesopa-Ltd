@@ -68,6 +68,8 @@ const SP_FUNCTIONS = [
   ['customer', 'Customer'],
   ['open_drawer', 'No sale (open drawer)'],
   ['print_bill', 'Print bill'],
+  ['sign_on', 'Sign on — hand the till to somebody else'],
+  ['clock_in_out', 'Clock in / out'],
 ];
 
 /**
@@ -106,6 +108,10 @@ const SP_BAR_GROUPS = [
     ['go_functions', 'Functions'],
     ['go_settings', 'Settings'],
     ['sign_off', 'Sign off'],
+  ]],
+  ['Who is on', [
+    ['sign_on', 'Sign on — hand the till to somebody else'],
+    ['clock_in_out', 'Clock in / out'],
   ]],
   ['Live displays', [
     ['open_bills', 'Open bills — the table strip'],
@@ -226,6 +232,15 @@ let spProducts = [];
  */
 let spDefaults = { home: null, top: null, bottom: null };
 
+/**
+ * The venue's modifier questions, for the keys that ask one.
+ *
+ * Held here rather than fetched per render: the picker is redrawn on every
+ * selection change, and a network call behind a dropdown that opens twenty
+ * times a minute is a dropdown that flickers.
+ */
+let spModifierGroups = [];
+
 /** Which kind of layout is being edited: the tab across the top. */
 let spSurface = 'sale';
 
@@ -329,8 +344,10 @@ function spPaletteEntries() {
  * Falls back to the tab it was clicked in when the browser blocks the window,
  * which is the sane failure: the manager still gets the roomy editor.
  */
-function spPopOut() {
-  const url = `${location.origin}/screen-programming?popup=1`;
+function spPopOut(screenId = null, { redirectIfBlocked = true } = {}) {
+  const url =
+    `${location.origin}/screen-programming?popup=1` +
+    (screenId ? `&screen=${encodeURIComponent(screenId)}` : '');
   // Sized to the screen it is opening on, less the browser's own chrome.
   const w = Math.min(1600, Math.max(1100, screen.availWidth - 80));
   const h = Math.min(1100, Math.max(700, screen.availHeight - 80));
@@ -339,9 +356,137 @@ function spPopOut() {
     'vesopa-screen-editor',
     `popup=1,width=${w},height=${h},left=${Math.max(0, (screen.availWidth - w) / 2)},top=${Math.max(0, (screen.availHeight - h) / 2)}`
   );
-  if (win) win.focus();
-  else location.href = url;
+  if (win) {
+    spEditorWindow = win;
+    win.focus();
+    // The same window is reused by name, so a second Edit answers press lands
+    // in the editor that is already open rather than opening a third one. That
+    // window has already booted and will not re-read its address bar, so it is
+    // told directly which screen to go to.
+    try {
+      win.postMessage({ vesopa: 'open-screen', screenId }, location.origin);
+    } catch {
+      // A window still loading has no listener yet; it reads the id off its own
+      // query string instead, which is why the id is in the URL as well.
+    }
+    return true;
+  }
+  // Blocked. The manual key means "I want the window", so falling back to the
+  // roomy editor in this tab is the sane failure and is what this page did
+  // before any of it existed. An *automatic* pop-out must not: navigating a tab
+  // somebody did not ask to navigate is worse than simply staying put, and the
+  // editor draws here perfectly well.
+  if (redirectIfBlocked) location.href = url;
+  return false;
 }
+
+/** Whether this manager wants the editor in a window of its own. */
+const SP_OWN_WINDOW_KEY = 'vesopa.screens.ownWindow';
+
+function spWantsOwnWindow() {
+  try {
+    return localStorage.getItem(SP_OWN_WINDOW_KEY) !== 'no';
+  } catch {
+    // A browser with site data switched off. Default to the window, which is
+    // the behaviour being asked for; it simply will not be remembered.
+    return true;
+  }
+}
+
+function spSetWantsOwnWindow(want) {
+  try {
+    localStorage.setItem(SP_OWN_WINDOW_KEY, want ? 'yes' : 'no');
+  } catch {
+    // Nothing to do. The preference lasts for this page rather than for ever.
+  }
+}
+
+/**
+ * Hand the editor to a window of its own the moment somebody opens it.
+ *
+ * The editor is the one page in the back office that wants the whole screen,
+ * and every manager who used it pressed "Own window" as their first act. Doing
+ * it for them is the difference between a tool that fits and a tool you have
+ * to know a trick about.
+ *
+ * Three things make it safe to do automatically:
+ *
+ *   * it never happens inside the window itself, which would be a loop;
+ *   * a blocked popup falls back to the tab, which is exactly what the page
+ *     did before this existed, so the worst case is the old behaviour;
+ *   * it is remembered per browser, and the tab it left behind carries the way
+ *     back — a manager who would rather work in the tab says so once.
+ *
+ * Returns true when the editor has gone elsewhere and this tab should draw the
+ * handover card instead of the grid.
+ */
+function spAutoPopOut() {
+  if (spInPopup || !spWantsOwnWindow()) return false;
+  // Unsaved work is never abandoned to a second window: two editors on one
+  // layout is the one state neither of them can reconcile.
+  if (spDirty()) return false;
+  return spPopOut(spCurrent ? spCurrent.id : null, { redirectIfBlocked: false });
+}
+
+/**
+ * Draw the tab as a handover card, or as the editor.
+ *
+ * Everything between the page heading and the bottom of the view is hidden
+ * rather than removed, so coming back to the tab is a class change and not a
+ * reload — and the layout the manager may have been part-way through is still
+ * where they left it.
+ */
+function spSetHandedOver(handed) {
+  spHandedOver = handed;
+  document.body.classList.toggle('sp-handed-over', handed);
+  const card = $('sp-handover');
+  if (card) card.hidden = !handed;
+}
+
+/**
+ * Called when the Screen programming view is opened. Returns true when the
+ * editor has gone to its own window and this tab is showing the card.
+ */
+function spEnterView({ userInitiated = false } = {}) {
+  if (spInPopup) return false;
+
+  // Only ever off a press.
+  //
+  // `window.open` outside a user gesture is what every browser's pop-up blocker
+  // exists to stop, and it is right to: a page that opens a window while it is
+  // still loading is a page nobody asked anything of. So the editor moves when
+  // a manager presses Screen programming, and a deep link, a refresh or the
+  // back button leave the editor where it is — in the tab, drawn as it always
+  // was, with the ⤢ key there for anybody who wants the window.
+  if (!userInitiated) return false;
+
+  // A window opened earlier and still open is the answer: focus it rather than
+  // opening a second editor on the same layout.
+  if (spEditorWindow && !spEditorWindow.closed) {
+    spEditorWindow.focus();
+    spSetHandedOver(true);
+    return true;
+  }
+
+  const went = spAutoPopOut();
+  spSetHandedOver(went);
+  return went;
+}
+
+/** True when this page *is* the editor window. Set once, at boot. */
+let spInPopup = false;
+
+/**
+ * The editor window this tab opened, while it is still open.
+ *
+ * Held so "bring that window forward" can focus the one that exists rather
+ * than opening a second, and so the tab can notice it has been closed and put
+ * the editor back where it was.
+ */
+let spEditorWindow = null;
+
+/** Whether this tab has handed the editor off and is drawing the card instead. */
+let spHandedOver = false;
 
 /**
  * Strip the page back to the editor when opened with `?popup=1`.
@@ -351,9 +496,31 @@ function spPopOut() {
  * a manager actually uses.
  */
 function spApplyPopupMode() {
-  const popup = new URLSearchParams(location.search).get('popup') === '1';
-  document.body.classList.toggle('sp-popup', popup);
-  return popup;
+  const params = new URLSearchParams(location.search);
+  spInPopup = params.get('popup') === '1';
+  document.body.classList.toggle('sp-popup', spInPopup);
+
+  // `?screen=` is how the back office says which layout to open — a modifier
+  // group's answers, or the screen the tab was already on. Picked up by
+  // loadScreens once the list has arrived, which is the only point at which
+  // there is anything to select.
+  const wanted = Number(params.get('screen'));
+  if (spInPopup && wanted) spPendingOpen = wanted;
+
+  // And how it says so to a window that is already open. Same-origin checked
+  // rather than assumed: this listener is on a page that holds a venue's
+  // catalogue, and a message from anywhere else is not one of ours.
+  if (spInPopup) {
+    window.addEventListener('message', (e) => {
+      if (e.origin !== location.origin) return;
+      const data = e.data;
+      if (!data || data.vesopa !== 'open-screen') return;
+      spOpenScreen(data.screenId);
+      window.focus();
+    });
+  }
+
+  return spInPopup;
 }
 
 let spPaletteOpen = false;
@@ -465,9 +632,32 @@ function spEsc(value) {
 
 
 
-/** Open this screen next time the editor loads. */
+/**
+ * Point the editor at a screen.
+ *
+ * Two callers, two situations. The Modifiers page has a screen id and no
+ * editor to put it in yet, so it leaves the id behind for `loadScreens` to
+ * honour. The editor window, sent the same id by the tab that opened it, is
+ * already loaded and must move now — a window that acknowledged the message
+ * and carried on showing the previous screen would look broken.
+ */
 function spOpenScreen(id) {
-  spPendingOpen = Number(id);
+  const wanted = Number(id);
+  spPendingOpen = wanted;
+  if (!wanted) return;
+
+  const screen = spScreens.find((s) => s.id === wanted);
+  // Not loaded yet, or a screen this browser has not been told about. Either
+  // way the pending id above is the answer; loadScreens will pick it up.
+  if (!screen) return;
+  // Never over the top of unsaved work. The manager gets the screen they asked
+  // for after they have decided what to do with the one in hand.
+  if (spDirty()) return;
+
+  spPendingOpen = null;
+  spSurface = screen.surface || 'sale';
+  spSelect(screen.id);
+  spRenderChrome();
 }
 
 // ---------------------------------------------------------------------------
@@ -971,10 +1161,15 @@ let spSelectionSig = '';
  * manager's only clue was that the grid blinked.
  */
 async function loadScreens() {
-  const [screens, products, settings] = await Promise.all([
+  const [screens, products, settings, groups] = await Promise.all([
     api('/screens'),
     api('/products'),
     api('/till-settings'),
+    // The questions a key can ask. Swallows its own failure for the same
+    // reason the fonts call does: a back office without the modifier migration
+    // still opens the editor, with the question picker empty rather than a
+    // page that will not load.
+    api('/modifier-groups').catch(() => []),
     // Its own call rather than a fourth entry destructured above, because it
     // swallows its own failure: a back office that has not had the font
     // migration applied yet still opens the editor, lettered plainly.
@@ -983,6 +1178,7 @@ async function loadScreens() {
 
   spScreens = screens;
   spProducts = products;
+  spModifierGroups = Array.isArray(groups) ? groups : [];
   spDefaults = {
     home: settings.home_screen_id ?? null,
     top: settings.top_bar_screen_id ?? null,
@@ -1128,6 +1324,10 @@ function spLabelFor(b) {
   if (b.kind === 'function') {
     return SP_FUNCTION_LABEL.get(b.functionKey) || 'Unset function';
   }
+  if (b.kind === 'modifier') {
+    const group = spModifierGroups.find((g) => g.id === b.modifierGroupId);
+    return group ? group.name : 'Missing question';
+  }
   return '';
 }
 
@@ -1214,6 +1414,9 @@ function spMissing(b) {
     return !spScreens.some((s) => s.id === b.targetScreenId);
   }
   if (b.kind === 'function') return !b.functionKey;
+  if (b.kind === 'modifier') {
+    return !spModifierGroups.some((g) => g.id === b.modifierGroupId);
+  }
   return false;
 }
 
@@ -1226,6 +1429,7 @@ function spSetKind(button, kind) {
   if (kind !== 'product') button.pluId = null;
   if (kind !== 'page') button.targetScreenId = null;
   if (kind !== 'function') button.functionKey = null;
+  if (kind !== 'modifier') button.modifierGroupId = null;
 }
 
 /**
@@ -1686,12 +1890,20 @@ function spRenderChrome() {
         : 'Lay out the built-in bottom bar';
   }
 
-  $('sp-dept').innerHTML = [
+  // The department picker keeps whatever was chosen across a re-render, so
+  // saving a layout does not silently drop the manager back to the first
+  // department in the list halfway through filling a page.
+  const wantedDept = $('sp-dept').value;
+  const departments = [
     ...new Set(spProducts.map((p) => p.department_name).filter(Boolean)),
-  ]
-    .sort()
-    .map((d) => `<option value="${esc(d)}">${esc(d)}</option>`)
+  ].sort();
+  $('sp-dept').innerHTML = departments
+    .map(
+      (d) =>
+        `<option value="${esc(d)}"${d === wantedDept ? ' selected' : ''}>${esc(d)}</option>`
+    )
     .join('');
+  spRenderSubDepartments();
 
   spRenderDefaults();
   spRenderPerScreenBars();
@@ -1699,6 +1911,81 @@ function spRenderChrome() {
   spRenderGrid();
   spRenderInspector();
   spRenderStatus();
+}
+
+/**
+ * The sub departments inside whichever department is chosen.
+ *
+ * "All of {department}" is first and is the default, because that is what this
+ * card did before there was a second picker and it must keep doing it for a
+ * venue that never touches the new one.
+ *
+ * Redrawn whenever the department changes rather than being one long list of
+ * every sub department in the venue: two departments can both have a "Bottles",
+ * and a picker that offered both with no way to tell them apart would fill a
+ * screen with the wrong shelf.
+ */
+function spRenderSubDepartments() {
+  const department = $('sp-dept').value;
+  const wanted = $('sp-subdept').value;
+  const subs = [
+    ...new Set(
+      spProducts
+        .filter((p) => p.department_name === department)
+        .map((p) => p.group_name)
+        .filter(Boolean)
+    ),
+  ].sort();
+
+  $('sp-subdept').innerHTML =
+    `<option value="">All of ${esc(department || 'this department')}</option>` +
+    subs
+      .map(
+        (g) =>
+          `<option value="${esc(g)}"${g === wanted ? ' selected' : ''}>${esc(g)}</option>`
+      )
+      .join('');
+  // A department with no sub departments still shows the picker, disabled and
+  // saying so. Hiding it would make the control appear and disappear as the
+  // department changes, which reads as a fault rather than as an answer.
+  $('sp-subdept').disabled = subs.length === 0;
+  spRenderFillCount();
+}
+
+/**
+ * How many products the fill would actually drop in.
+ *
+ * Said before the press rather than in an alert afterwards. "Lagers has 14
+ * products" is the number that decides how big a selection to drag, and a
+ * manager who reads it first does not have to undo a fill to find it out.
+ */
+function spRenderFillCount() {
+  const note = $('sp-fill-count');
+  if (!note) return;
+  const products = spFillProducts();
+  const where = $('sp-subdept').value || $('sp-dept').value;
+  note.textContent = !where
+    ? ''
+    : products.length === 0
+      ? `Nothing in ${where}.`
+      : `${products.length} product${products.length === 1 ? '' : 's'} in ${where}` +
+        `, in the order they appear on your product list.`;
+}
+
+/**
+ * The products a fill would use: a department, or one shelf inside it.
+ *
+ * Order is the product list's own — which is `department_name`, then
+ * `button_position`, then name, as the server sorts it — because a manager
+ * laying out a screen is matching what they can already see rather than
+ * receiving a shuffle.
+ */
+function spFillProducts() {
+  const department = $('sp-dept').value;
+  const sub = $('sp-subdept').value;
+  return spProducts.filter(
+    (p) => p.department_name === department && (!sub || p.group_name === sub)
+  );
 }
 
 /** Which screen this venue's tills wear on a given surface. */
@@ -2260,6 +2547,33 @@ function spRenderInspector() {
       )
       .join('');
 
+  // The questions this venue asks. A key whose group has since been deleted
+  // keeps its id in the list as a disabled option, so the inspector says which
+  // question has gone rather than silently selecting a different one.
+  const askable = spModifierGroups.slice().sort((a, b) => a.name.localeCompare(b.name));
+  $('sp-modifier').innerHTML =
+    (askable.length
+      ? '<option value="">Choose a question…</option>'
+      : '<option value="">No questions yet — make one under Programming › Modifiers</option>') +
+    askable
+      .map(
+        (g) =>
+          `<option value="${g.id}"${g.id === first.modifierGroupId ? ' selected' : ''}>` +
+          esc(g.name) +
+          '</option>'
+      )
+      .join('');
+
+  const askedGroup = askable.find((g) => g.id === first.modifierGroupId);
+  $('sp-open-modifier').disabled = !(askedGroup && askedGroup.screen_id);
+  $('sp-modifier-note').textContent = !askedGroup
+    ? ''
+    : Number(askedGroup.button_count) > 0
+      ? `${askedGroup.button_count} answer${
+          Number(askedGroup.button_count) === 1 ? '' : 's'
+        } laid out.`
+      : 'No answers laid out yet, so the till would skip this question.';
+
   const groups = spFunctionsFor(spCurrentSurface());
   $('sp-function').innerHTML =
     '<option value="">Choose a function…</option>' +
@@ -2298,16 +2612,6 @@ function spRenderInspector() {
         : '';
 
   spSet($('sp-label'), first.label || '');
-  spSet($('sp-rowspan'), String(first.rowSpan || 1));
-  spSet($('sp-colspan'), String(first.colSpan || 1));
-  // A span is a single-cell idea. Applied to a multi-selection, buttons grow
-  // over each other.
-  //
-  // Live on an empty cell as well as a programmed one — the same reservation
-  // the corner handle makes. Sizing the space and saying what it does are two
-  // steps and they happen in that order.
-  $('sp-rowspan').disabled = count !== 1;
-  $('sp-colspan').disabled = count !== 1;
 
   // Styling and labelling a cell that does nothing is styling something that is
   // never stored — the server drops blanks, and so does this editor. Saying so
@@ -3173,7 +3477,33 @@ function spBind() {
   $('sp-rename').addEventListener('click', spRenameScreen);
   $('sp-duplicate').addEventListener('click', spDuplicateScreen);
   $('sp-delete').addEventListener('click', spDeleteScreen);
-  $('sp-popout')?.addEventListener('click', spPopOut);
+  // The manual key. Also the way back for anybody who chose the tab: pressing
+  // it says they want the window after all, so the preference goes with it.
+  $('sp-popout')?.addEventListener('click', () => {
+    spSetWantsOwnWindow(true);
+    spSetHandedOver(spPopOut(spCurrent ? spCurrent.id : null));
+  });
+
+  $('sp-handover-focus')?.addEventListener('click', () => {
+    if (spEditorWindow && !spEditorWindow.closed) {
+      spEditorWindow.focus();
+      return;
+    }
+    // It was closed while this tab was not looking. Open it again rather than
+    // leaving a key that does nothing.
+    spSetHandedOver(spPopOut(spCurrent ? spCurrent.id : null));
+  });
+
+  $('sp-handover-here')?.addEventListener('click', () => {
+    spSetWantsOwnWindow(false);
+    spSetHandedOver(false);
+    // The window that was open is left alone deliberately: closing somebody's
+    // editor from another tab is the sort of thing that loses twenty minutes
+    // of work. Two editors on one layout is guarded where it matters — the
+    // save is the whole layout, so the last save wins and the manager can see
+    // both windows.
+    loadScreens().catch((e) => console.error(e));
+  });
   $('sp-save').addEventListener('click', spSaveLayout);
   $('sp-undo').addEventListener('click', spUndo);
   $('sp-redo').addEventListener('click', spRedo);
@@ -3291,6 +3621,27 @@ function spBind() {
       spSetKind(b, 'function');
       b.functionKey = e.target.value;
     });
+  });
+  $('sp-modifier').addEventListener('change', (e) => {
+    const id = Number(e.target.value);
+    if (!id) return;
+    spApplyToSelection((b) => {
+      spSetKind(b, 'modifier');
+      b.modifierGroupId = id;
+    });
+  });
+  // The way to the answers, for the same reason "Edit that screen" exists on a
+  // page key: a manager who has just put MIXERS on the bar wants to lay the
+  // mixers out, and finding the group again under Programming › Modifiers is
+  // two navigations away from where they already are.
+  $('sp-open-modifier').addEventListener('click', async () => {
+    const first = spSelectedButtons()[0];
+    const group = first && spModifierGroups.find((g) => g.id === first.modifierGroupId);
+    if (!group || !group.screen_id) return;
+    if (!(await spGuardUnsaved())) return;
+    spSurface = 'modifier';
+    spSelect(group.screen_id);
+    spRenderChrome();
   });
   // On change rather than on input: a label is committed when the manager
   // leaves the field, so the undo stack holds "renamed this key" once instead
@@ -3510,33 +3861,25 @@ function spBind() {
   $('sp-copy').addEventListener('click', () => spCopySelection());
   $('sp-paste').addEventListener('click', () => spPasteClipboard());
 
-  // The typed spans, clamped exactly as the corner handle is.
+  // Width and Height used to sit here as two number boxes. They are gone, and
+  // the corner handle is the only way to size a key.
   //
-  // They used to be applied raw, which meant spTidy() dropped whatever the key
-  // now covered: typing 4 into Width where there was room for 2 deleted the key
-  // next to it, with no warning and nothing on screen to say what had gone. The
-  // handle refuses to swallow a neighbour and so, now, does this — and the box
-  // snapping back to 2 is the editor saying why.
-  for (const [id, key] of [['sp-rowspan', 'rowSpan'], ['sp-colspan', 'colSpan']]) {
-    $(id).addEventListener('change', (e) => {
-      const want = Math.max(1, Number(e.target.value) || 1);
-      // The same reservation the corner handle makes, for the manager who
-      // types the size rather than dragging it. Without this, Width and Height
-      // were dead on exactly the cells the handle now works on.
-      spEdit(() => {
-        const button = spResizeTarget();
-        if (!button) return false;
-        const room = spSpanRoom(
-          button,
-          key === 'rowSpan' ? want : button.rowSpan || 1,
-          key === 'colSpan' ? want : button.colSpan || 1
-        );
-        button[key] = room[key];
-      });
-      spRenderInspector();
-    });
-  }
+  // They were not removed for tidiness. A key has one size and there were two
+  // places to set it, they disagreed the moment either was touched, and the
+  // typed one had to re-implement every rule the drag already enforced —
+  // clamping to the grid, refusing to swallow a neighbour, holding a
+  // reservation on an empty cell. One of those is now the answer, it is the one
+  // a manager reaches for, and it works on empty cells as well as programmed
+  // ones. Arrow keys and Alt+arrows still nudge; nothing else was lost.
 
+  $('sp-dept').addEventListener('change', () => {
+    // The sub department belonged to the department that was showing. Cleared
+    // rather than carried, or picking Food after Drinks would leave "Lagers"
+    // selected against a department that has never heard of it.
+    $('sp-subdept').value = '';
+    spRenderSubDepartments();
+  });
+  $('sp-subdept').addEventListener('change', spRenderFillCount);
   $('sp-fill').addEventListener('click', spFillFromDepartment);
   $('sp-preset').addEventListener('click', spLayOutBuiltInBar);
 
@@ -3681,8 +4024,15 @@ async function spNewScreen() {
         type: 'checkbox',
         value: 0,
       },
-      { name: 'rows', label: 'Rows', type: 'number', value: max.defRows },
-      { name: 'cols', label: 'Columns', type: 'number', value: max.defCols },
+      // Rows and Columns used to be asked here as well. They are not any more.
+      //
+      // The same size was settable in two places — this form and the two boxes
+      // on the toolbar — and a manager who typed one shape here and then
+      // resized on the toolbar had no way to tell which had won. It is asked
+      // once, on the toolbar, where the grid it changes is on screen next to
+      // it and a wrong answer is one drag to fix. A new screen starts at the
+      // sensible default for its surface and is resized in the place a screen
+      // is always resized.
     ],
     async (data) => {
       const created = await api('/screens', {
@@ -3690,8 +4040,8 @@ async function spNewScreen() {
         body: JSON.stringify({
           name: data.name,
           surface,
-          rows: Number(data.rows) || max.defRows,
-          cols: Number(data.cols) || max.defCols,
+          rows: max.defRows,
+          cols: max.defCols,
           // Only ever a copy of something on the same surface. The server
           // refuses a cross-surface copy outright — a Pay key has nowhere to go
           // on a page of lagers — and the tab this was opened from is the
@@ -4039,16 +4389,16 @@ async function spSaveLayout({ quiet = false } = {}) {
  * products already appear on the product list, so the result matches what a
  * manager sees there rather than arriving shuffled.
  */
-function spFillFromDepartment() {
+async function spFillFromDepartment() {
   if (!spCurrent || !spSelection.size) {
     alert('Select some buttons on the left first.');
     return;
   }
 
-  const department = $('sp-dept').value;
-  const products = spProducts.filter((p) => p.department_name === department);
+  const where = $('sp-subdept').value || $('sp-dept').value;
+  const products = spFillProducts();
   if (!products.length) {
-    alert(`There are no products in ${department}.`);
+    alert(`There are no products in ${where}.`);
     return;
   }
 
@@ -4056,26 +4406,39 @@ function spFillFromDepartment() {
     .map((k) => k.split(':').map(Number))
     .sort((a, b) => a[0] - b[0] || a[1] - b[1]);
 
+  // One question, not two, and drawn rather than asked of the browser.
+  //
+  // This used to be a pair of confirm() calls back to back — replacing
+  // programmed keys, then not enough room — which is exactly the chain Chrome
+  // offers "prevent this page from creating additional dialogs" on. Once
+  // ticked, the second returned false without drawing anything and the fill
+  // silently did nothing. Both facts now go in one modal, which is also the
+  // more useful shape: they are two halves of the same decision.
   const occupied = cells.filter(([row, col]) => spAt(row, col)).length;
-  if (
-    occupied &&
-    !confirm(
-      `${occupied} of the selected buttons are already programmed and will be ` +
-        'replaced. Continue?'
-    )
-  ) {
-    return;
-  }
-
-  if (products.length > cells.length) {
-    if (
-      !confirm(
-        `${department} has ${products.length} products and you have selected ` +
-          `${cells.length} buttons. Fill the ${cells.length} and leave the rest?`
-      )
-    ) {
-      return;
+  const short = products.length > cells.length;
+  if (occupied || short) {
+    const lines = [];
+    if (occupied) {
+      lines.push(
+        `${occupied} of the ${cells.length} buttons you have selected are already ` +
+          'programmed, and will be replaced.'
+      );
     }
+    if (short) {
+      lines.push(
+        `${where} has ${products.length} products and there is room for ` +
+          `${cells.length}. The first ${cells.length} go in; the rest are left.`
+      );
+    }
+    const answer = await spAsk(
+      `Fill ${cells.length} buttons from ${where}?`,
+      lines.join(' '),
+      [
+        { value: 'cancel', label: 'Cancel' },
+        { value: 'fill', label: 'Fill them', style: 'primary' },
+      ]
+    );
+    if (answer !== 'fill') return;
   }
 
   spEdit(() => {

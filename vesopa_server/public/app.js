@@ -15,6 +15,56 @@ const esc = (s) => {
   return d.innerHTML;
 };
 
+
+// ---- Appearance -----------------------------------------------------------
+//
+// Day, Night, or whatever the machine is set to. Applied to <html> as a
+// `data-theme` attribute, which every colour in style.css is expressed
+// against — so this is three lines of JavaScript and not a second stylesheet.
+//
+// Written before anything else runs, and read straight out of localStorage
+// rather than waiting for a session, because a manager who has chosen Night
+// must not be shown a white page for the length of a sign-in.
+const THEME_KEY = 'vesopa.theme';
+
+function readTheme() {
+  try {
+    const stored = localStorage.getItem(THEME_KEY);
+    return stored === 'light' || stored === 'dark' ? stored : 'system';
+  } catch {
+    // Site data switched off. The system's own preference still applies,
+    // through the media query in style.css; it just cannot be overridden.
+    return 'system';
+  }
+}
+
+function applyTheme(choice) {
+  const root = document.documentElement;
+  if (choice === 'system') root.removeAttribute('data-theme');
+  else root.setAttribute('data-theme', choice);
+
+  document.querySelectorAll('[data-theme-set]').forEach((b) => {
+    b.setAttribute('aria-pressed', String(b.dataset.themeSet === choice));
+  });
+}
+
+function setTheme(choice) {
+  try {
+    if (choice === 'system') localStorage.removeItem(THEME_KEY);
+    else localStorage.setItem(THEME_KEY, choice);
+  } catch {
+    // Not remembered, but still applied for this session.
+  }
+  applyTheme(choice);
+}
+
+applyTheme(readTheme());
+
+document.addEventListener('click', (e) => {
+  const key = e.target.closest?.('[data-theme-set]');
+  if (key) setTheme(key.dataset.themeSet);
+});
+
 // ---- Session --------------------------------------------------------------
 //
 // "Keep me signed in" decides which store the session lives in. sessionStorage
@@ -216,6 +266,7 @@ const ROUTES = {
   sales_explorer: '/sales-explorer',
   till_report: '/till-report',
   bill_report: '/bill-report',
+  timesheets: '/timesheets',
   products: '/products',
   stock: '/stock',
   screens: '/screen-programming',
@@ -249,7 +300,7 @@ const ROUTES = {
 const viewForPath = (path) =>
   Object.keys(ROUTES).find((v) => ROUTES[v] === path) || 'dashboard';
 
-function show(view, { push = true } = {}) {
+function show(view, { push = true, userInitiated = false } = {}) {
   if (!$(`view-${view}`)) view = 'dashboard';
 
   // The screen editor holds a whole layout in the browser, and leaving the view
@@ -280,6 +331,15 @@ function show(view, { push = true } = {}) {
     history.pushState({ view }, '', path);
   }
   document.title = `Vesopa EPOS — ${view.replace(/_/g, ' ')}`;
+
+  // The screen editor opens in a window of its own, and this tab draws a card
+  // saying where it went. Asked here rather than inside loadScreens because it
+  // has to happen on *entering* the view — loadScreens also runs on every save
+  // and on every push from the server, and a window that reopened itself on
+  // each of those would be unusable.
+  if (view === 'screens' && typeof spEnterView === 'function') {
+    spEnterView({ userInitiated });
+  }
 
   render();
 }
@@ -627,6 +687,7 @@ function render() {
     sales_explorer: loadExplorer,
     till_report: loadTillReport,
     bill_report: loadBillReport,
+    timesheets: loadTimesheets,
     products: loadProducts,
     stock: loadStock,
     users: loadUsers,
@@ -680,6 +741,98 @@ async function loadExplorer() {
       </tr>`
     )
     .join('') || '<tr><td colspan="5" class="empty">No matching sales.</td></tr>';
+}
+
+/**
+ * Shifts, newest first, with the hours already worked out.
+ *
+ * The minutes come from the server rather than being computed here, so an
+ * export and the screen can never disagree -- and so an open shift counts to
+ * the *server's* now rather than to whatever this browser's clock says, which
+ * on a back-office machine nobody has restarted for a month is a real
+ * difference.
+ */
+async function loadTimesheets() {
+  const from = $('ts-from').value;
+  const to = $('ts-to').value;
+  const query = new URLSearchParams();
+  if (from) query.set('from', from);
+  if (to) query.set('to', to);
+
+  const rows = await api('/timesheets' + (query.toString() ? '?' + query : ''));
+
+  // Totalled per person, because "how many hours did Sam do" is the question
+  // this page is opened for, and adding a column of shifts up by eye is how it
+  // gets answered wrong.
+  const byPerson = new Map();
+  for (const r of rows) {
+    const held = byPerson.get(r.staff_id) || {
+      name: r.staff_name || '#' + r.staff_id,
+      minutes: 0,
+      shifts: 0,
+      open: 0,
+    };
+    held.minutes += Number(r.minutes) || 0;
+    held.shifts += 1;
+    if (!r.clocked_out_at) held.open += 1;
+    byPerson.set(r.staff_id, held);
+  }
+
+  $('ts-summary').innerHTML = byPerson.size
+    ? [...byPerson.values()]
+        .sort((a, b) => b.minutes - a.minutes)
+        .map(
+          (p) =>
+            '<div class="card stat"><span class="label">' +
+            esc(p.name) +
+            (p.open ? ' <span class="badge active">on now</span>' : '') +
+            '</span><strong>' +
+            hours(p.minutes) +
+            '</strong><span class="muted small">' +
+            p.shifts +
+            (p.shifts === 1 ? ' shift' : ' shifts') +
+            '</span></div>'
+        )
+        .join('')
+    : '';
+
+  $('timesheets').innerHTML = rows.length
+    ? rows
+        .map(
+          (r) =>
+            '<tr>' +
+            '<td>' + esc(r.staff_name || '#' + r.staff_id) + '</td>' +
+            '<td>' + date(r.clocked_in_at) + ' ' + time(r.clocked_in_at) + '</td>' +
+            '<td>' +
+            (r.clocked_out_at
+              ? date(r.clocked_out_at) + ' ' + time(r.clocked_out_at)
+              : '<span class="badge active">still on</span>') +
+            '</td>' +
+            '<td class="right">' + hours(r.minutes) + '</td>' +
+            '<td class="muted small">' +
+            esc([r.in_terminal, r.out_terminal].filter(Boolean).join(' \u2192 ') || '\u2014') +
+            '</td>' +
+            '<td class="muted small">' +
+            esc(r.note || '') +
+            (r.adjusted_by
+              ? ' <span class="badge archived" title="Edited by ' +
+                esc(r.adjusted_by) +
+                '">edited</span>'
+              : '') +
+            '</td>' +
+            '<td class="right">' +
+            '<button class="btn small ghost" data-edit-shift="' + r.id + '">Correct</button> ' +
+            '<button class="btn small danger-ghost" data-del-shift="' + r.id + '">Delete</button>' +
+            '</td></tr>'
+        )
+        .join('')
+    : '<tr><td colspan="7" class="muted">No shifts in that period. Staff clock in from the till &mdash; Functions &rsaquo; Clock In / Out.</td></tr>';
+}
+
+/** Minutes as a manager reads them off a rota. */
+function hours(minutes) {
+  const m = Math.max(0, Number(minutes) || 0);
+  return Math.floor(m / 60) + 'h ' + String(m % 60).padStart(2, '0') + 'm';
 }
 
 async function loadTillReport() {
@@ -2226,7 +2379,9 @@ document.addEventListener('click', async (e) => {
   if (t.dataset.view) {
     // Picking a view is the end of the errand the drawer was opened for.
     setRailOpen(false);
-    return show(t.dataset.view);
+    // This is a press, which is what lets the screen editor open a window of
+    // its own — see spEnterView. A deep link or the back button is not.
+    return show(t.dataset.view, { userInitiated: true });
   }
 
   // ---- Floor designer ----
@@ -2282,6 +2437,14 @@ document.addEventListener('click', async (e) => {
   // pointed at a screen until it has loaded, so the id is left for it to pick
   // up — see spOpenScreen in screens.js.
   if (t.dataset.editAnswers) {
+    // Straight into the editor window, rather than into the tab and then out
+    // to the window: a manager who presses "Edit answers" wants the grid, and
+    // the two-step version put the Modifiers page behind them for no reason.
+    // `spPopOut` returns false when the browser blocked it, and then the
+    // ordinary in-tab route is exactly what it always was.
+    if (typeof spPopOut === 'function' && spWantsOwnWindow()) {
+      if (spPopOut(t.dataset.editAnswers)) return;
+    }
     spOpenScreen(t.dataset.editAnswers);
     show('screens');
     return;
@@ -2302,6 +2465,59 @@ document.addEventListener('click', async (e) => {
     );
   }
   if (t.id === 'ex-run') return loadExplorer();
+
+  if (t.id === 'ts-run') return loadTimesheets();
+
+  // Somebody forgets to clock out and goes home; without this the row runs for
+  // ever and the week's total is nonsense. Every edit is stamped by the server,
+  // and an edited row says so on the page.
+  if (t.dataset.editShift) {
+    const rows = await api('/timesheets');
+    const row = rows.find((r) => String(r.id) === String(t.dataset.editShift));
+    if (!row) return;
+    // <input type="datetime-local"> wants local wall-clock time with no zone.
+    const local = (iso) => {
+      if (!iso) return '';
+      const d = new Date(iso);
+      const pad = (n) => String(n).padStart(2, '0');
+      return (
+        d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
+        'T' + pad(d.getHours()) + ':' + pad(d.getMinutes())
+      );
+    };
+    return modal(
+      'Correct ' + (row.staff_name || 'this shift'),
+      [
+        {
+          name: 'clocked_in_at',
+          label: 'Clocked in',
+          type: 'datetime-local',
+          value: local(row.clocked_in_at),
+        },
+        {
+          name: 'clocked_out_at',
+          label: 'Clocked out \u2014 leave empty to reopen the shift',
+          type: 'datetime-local',
+          value: local(row.clocked_out_at),
+        },
+        { name: 'note', label: 'Why it was corrected', value: row.note || '' },
+      ],
+      (d) =>
+        api('/timesheets/' + row.id, {
+          method: 'PUT',
+          body: JSON.stringify({
+            clocked_in_at: d.clocked_in_at ? d.clocked_in_at.replace('T', ' ') : null,
+            clocked_out_at: d.clocked_out_at ? d.clocked_out_at.replace('T', ' ') : null,
+            note: d.note || null,
+          }),
+        })
+    );
+  }
+
+  if (t.dataset.delShift && confirm('Delete this shift? The hours go with it.')) {
+    await api('/timesheets/' + t.dataset.delShift, { method: 'DELETE' });
+    return loadTimesheets();
+  }
 
   if (t.dataset.delProduct && confirm('Delete this product?')) {
     await api(`/products/${t.dataset.delProduct}`, { method: 'DELETE' });

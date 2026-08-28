@@ -38,6 +38,13 @@ enum ScreenButtonKind {
   /// empty cells, which would be the layout un-arranging itself.
   blank,
 
+  /// Asks one of the venue's modifier questions against the bill in hand.
+  ///
+  /// The same prompt a product opens when it carries a group, reached from a
+  /// key instead — which is what a bar wants when the question is "which
+  /// mixer?" and the answer belongs to the round rather than to one gin.
+  modifier,
+
   /// Anything this build does not recognise.
   ///
   /// Not an error: the server stores `kind` as a string precisely so a till
@@ -49,6 +56,7 @@ enum ScreenButtonKind {
     'product' => product,
     'page' => page,
     'function' => function,
+    'modifier' => modifier,
     'blank' => blank,
     _ => unknown,
   };
@@ -91,6 +99,7 @@ class ScreenButton {
     this.pluId,
     this.targetScreenId,
     this.functionKey,
+    this.modifierGroupId,
     this.label,
     this.fill,
     this.ink,
@@ -120,6 +129,9 @@ class ScreenButton {
 
   /// Set when [kind] is `function`.
   final String? functionKey;
+
+  /// Set when [kind] is `modifier`. Which of the venue's questions this asks.
+  final int? modifierGroupId;
 
   /// The venue's own wording. Null means "use the product's or screen's name",
   /// which is what makes renaming a product in the back office rename its key.
@@ -216,6 +228,7 @@ class ScreenButton {
     pluId: (j['pluId'] as num?)?.toInt(),
     targetScreenId: (j['targetScreenId'] as num?)?.toInt(),
     functionKey: (j['functionKey'] as String?)?.trim(),
+    modifierGroupId: (j['modifierGroupId'] as num?)?.toInt(),
     label: (j['label'] as String?)?.trim(),
     fill: _colour(j['fill']),
     ink: _colour(j['ink']),
@@ -243,11 +256,12 @@ class ScreenButton {
     if (pluId != null) 'pluId': pluId,
     if (targetScreenId != null) 'targetScreenId': targetScreenId,
     if (functionKey != null) 'functionKey': functionKey,
+    if (modifierGroupId != null) 'modifierGroupId': modifierGroupId,
     if (label != null) 'label': label,
     if (fill != null) 'fill': _hex(fill!),
     if (ink != null) 'ink': _hex(ink!),
     if (emoji != null) 'emoji': emoji,
-    if (imageUrl != null) 'imageUrl': imageUrl,
+    if (imageUrl != null) 'imageUrl': _relativeImage(imageUrl!),
     // Written unconditionally rather than "if not the default": this map is
     // what the till caches and reads back, and a framing set to the default on
     // purpose has to survive a restart the same way one that was never touched
@@ -275,6 +289,25 @@ class ScreenButton {
   /// Resolved here, at the edge, so every place that draws a key — the sale
   /// grid, the bars, a modifier prompt — gets a loadable address without each
   /// having to know where the server is.
+  /// The other direction, and the reason it exists.
+  ///
+  /// [_absoluteImage] turns what the server sent into something Image.network
+  /// can fetch, by putting the server in front of it. [toJson] is what the till
+  /// *caches* and what it would send back, so writing the absolute form there
+  /// meant a round trip changed the value -- and the server refuses an absolute
+  /// URL on the way in (see cleanImage in src/screens.js), so a layout that
+  /// went out and came back would arrive with its pictures stripped.
+  ///
+  /// A path that was already absolute when the server sent it stays absolute:
+  /// that is a picture hosted somewhere else, and shortening it would break it.
+  static String _relativeImage(String path) {
+    final base = Api.resolvedBase;
+    if (base.isNotEmpty && path.startsWith(base)) {
+      return path.substring(base.length);
+    }
+    return path;
+  }
+
   static String? _absoluteImage(String? path) {
     if (path == null || path.isEmpty) return null;
     if (path.startsWith('http')) return path;

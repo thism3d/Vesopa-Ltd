@@ -212,6 +212,10 @@ class _ModifierDialogState extends State<_ModifierDialog> {
                 // that rule existed still opens.
                 onPage: (_) {},
                 onFunction: (_) {},
+                // Nor a question inside a question: the back office refuses to
+                // save one, and a prompt on top of a prompt would have no way
+                // back to the bill underneath either of them.
+                onModifier: (_) {},
               ),
             ),
 

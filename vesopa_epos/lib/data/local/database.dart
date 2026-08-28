@@ -226,6 +226,26 @@ class Orders extends Table {
   IntColumn get roomId => integer().nullable()();
   TextColumn get clerkPin => text().nullable()();
 
+  /// The other terminal holding this bill, or null when it is this one's.
+  ///
+  /// A venue with two tills shares its open bills through the back office, and
+  /// every terminal mirrors the others' into this table so the table plan, the
+  /// picker and the open-bills strip all draw the whole room without any of
+  /// them being taught about a second source of bills.
+  ///
+  /// This column is what keeps the mirror honest. A row with it set is somebody
+  /// else's bill: it is drawn, and it cannot be rung up on or settled here
+  /// until it has been claimed — at which point the server moves it and this
+  /// goes null. Without it, two clerks could take payment for one table.
+  ///
+  /// It also stops the push loop. The sync pushes bills where this is null and
+  /// nothing else, so a mirrored bill is never sent back to the server as
+  /// though this terminal had authored it.
+  ///
+  /// Null on every bill taken before shared tables existed, which is exactly
+  /// right: they were all this terminal's.
+  TextColumn get heldBy => text().nullable()();
+
   /// Who settled the sale. Stamped at settlement rather than at open, for the
   /// same reason [sessionId] is: a bill parked across a shift change belongs to
   /// whoever actually took the money for it.
@@ -476,7 +496,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 15;
+  int get schemaVersion => 16;
 
 
   /// Add a column only if the table has not already got it.
@@ -625,6 +645,12 @@ class AppDatabase extends _$AppDatabase {
             // after an update reports on the period since the update, which is
             // the only honest number available.
             await m.createTable(tillEvents);
+          }
+          if (from < 16) {
+            // Shared tables. Null means "this terminal's own bill", which is
+            // what every bill already on the till is — so nothing is
+            // backfilled and nothing changes for a venue with one terminal.
+            await _addColumnIfMissing(m, orders, orders.heldBy);
           }
         },
       );

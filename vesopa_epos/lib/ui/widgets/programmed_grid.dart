@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../data/commerce.dart';
 import '../../data/fonts.dart';
 import '../../data/local/database.dart';
+import '../../data/modifiers.dart';
 import '../../data/pricing_engine.dart';
 import '../../data/screens.dart';
 import '../layout.dart';
@@ -33,6 +34,8 @@ class ProgrammedGrid extends StatelessWidget {
     required this.onProduct,
     required this.onPage,
     required this.onFunction,
+    required this.onModifier,
+    this.modifiers = const {},
     this.showPrices = true,
     this.promotions,
     this.fonts = FontLibrary.empty,
@@ -51,6 +54,14 @@ class ProgrammedGrid extends StatelessWidget {
   final void Function(Product) onProduct;
   final void Function(TillScreen) onPage;
   final void Function(String functionKey) onFunction;
+
+  /// A key that asks one of the venue's modifier questions against the bill.
+  final void Function(ModifierGroup) onModifier;
+
+  /// The questions this venue asks, by id, so a modifier key can name the one
+  /// it asks — and so a key pointing at a group that has since been deleted can
+  /// say so rather than drawing a blank.
+  final Map<int, ModifierGroup> modifiers;
 
   final bool showPrices;
 
@@ -114,6 +125,9 @@ class ProgrammedGrid extends StatelessWidget {
                     product: button.pluId == null
                         ? null
                         : products[button.pluId],
+                    group: button.modifierGroupId == null
+                        ? null
+                        : modifiers[button.modifierGroupId],
                     promotion: _offerFor(button),
                     pal: pal,
                     fontFamily: fonts.familyFor(button.fontFamily),
@@ -121,6 +135,7 @@ class ProgrammedGrid extends StatelessWidget {
                     onProduct: onProduct,
                     onPage: onPage,
                     onFunction: onFunction,
+                    onModifier: onModifier,
                   ),
                 ),
               );
@@ -152,6 +167,7 @@ class _Key extends StatelessWidget {
     required this.button,
     required this.screens,
     required this.product,
+    required this.group,
     required this.promotion,
     required this.pal,
     required this.fontFamily,
@@ -159,11 +175,15 @@ class _Key extends StatelessWidget {
     required this.onProduct,
     required this.onPage,
     required this.onFunction,
+    required this.onModifier,
   });
 
   final ScreenButton button;
   final ScreenSet screens;
   final Product? product;
+
+  /// The question this key asks, when it is that kind of key.
+  final ModifierGroup? group;
 
   /// The offer running on this key's product right now, if any.
   final Promotion? promotion;
@@ -181,6 +201,7 @@ class _Key extends StatelessWidget {
   final void Function(Product) onProduct;
   final void Function(TillScreen) onPage;
   final void Function(String) onFunction;
+  final void Function(ModifierGroup) onModifier;
 
   /// What the key says, and what happens when it is pressed.
   ///
@@ -230,6 +251,21 @@ class _Key extends StatelessWidget {
           onTap: () => onFunction(key),
         );
 
+      case ScreenButtonKind.modifier:
+        final g = group;
+        if (g == null) {
+          return (
+            label: button.label ?? 'Unavailable',
+            note: 'Question removed',
+            onTap: null,
+          );
+        }
+        return (
+          label: button.label ?? g.name,
+          note: '?',
+          onTap: () => onModifier(g),
+        );
+
       // A button from a newer release. Drawn as inert rather than dropped, so
       // the layout keeps its shape and the gap is explained — a key that simply
       // vanished would have somebody looking for it.
@@ -259,6 +295,8 @@ class _Key extends StatelessWidget {
     'customer': 'Customer',
     'open_drawer': 'No sale',
     'print_bill': 'Print bill',
+    'sign_on': 'Sign on',
+    'clock_in_out': 'Clock in / out',
   };
 
   @override

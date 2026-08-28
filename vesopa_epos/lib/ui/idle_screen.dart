@@ -10,6 +10,7 @@ import '../data/local/database.dart';
 import '../data/staff_session.dart';
 import '../data/till_settings.dart';
 import '../main.dart';
+import 'staff_handover.dart';
 import 'theme.dart';
 
 /// The screen saver, and the way back in.
@@ -120,7 +121,11 @@ class _IdleScreenState extends ConsumerState<IdleScreen> {
     if (!mounted) return;
 
     if (who != null) {
-      ref.read(staffSessionProvider.notifier).signOn(who);
+      // Not `signOn` directly. Where a venue runs more than one till this also
+      // moves the clerk's session off whichever terminal they were on and
+      // offers to bring the bill they left there — and on a venue with one
+      // till it does nothing beyond what signOn always did.
+      await signOnHere(context, ref, who);
       return;
     }
 

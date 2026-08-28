@@ -177,6 +177,7 @@
           <button class="nav" data-view="sales_explorer">Sales Explorer</button>
           <button class="nav" data-view="till_report">Till Report</button>
           <button class="nav" data-view="bill_report">Bill Report</button>
+          <button class="nav" data-view="timesheets">Timesheets</button>
 
           <button class="nav-group" data-group="catalogue">Catalogue<span class="caret">▼</span></button>
           <button class="nav" data-view="products">Products</button>
@@ -225,6 +226,17 @@
           <span id="live-dot" class="dot offline" title="Realtime connection"></span>
           <span id="live-text" class="small">connecting…</span>
           <button id="logout" class="link">Sign out</button>
+        </div>
+
+        <!-- Day or Night. An office and a bar are not the same room, so the
+             choice is the manager's and it is remembered on this computer;
+             leaving it alone follows whatever the machine is set to. -->
+        <div class="rail-theme">
+          <div class="theme-switch" role="group" aria-label="Appearance">
+            <button type="button" data-theme-set="light" aria-pressed="false">Day</button>
+            <button type="button" data-theme-set="dark" aria-pressed="false">Night</button>
+            <button type="button" data-theme-set="system" aria-pressed="false">Auto</button>
+          </div>
         </div>
       </aside>
 
@@ -304,6 +316,39 @@
           <div class="card"><table>
             <thead><tr><th>When</th><th>Item</th><th>Department</th><th class="right">Qty</th><th class="right">Line total</th></tr></thead>
             <tbody id="explorer"></tbody>
+          </table></div>
+        </section>
+
+        <!-- Timesheets.
+             The other side of the till's Clock in / out key. Under Reports
+             rather than People because it is something a manager reads weekly
+             against a wage, not something they edit day to day. -->
+        <section id="view-timesheets" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Timesheets</h2>
+              <p class="muted small">
+                Shifts clocked in and out on your tills. A shift still running counts up to
+                now. This is not the same as signing on to a till &mdash; that happens twenty
+                times a service and is not what a wage is paid against.
+              </p>
+            </div>
+            <div class="denom-actions">
+              <label class="small">From <input type="date" id="ts-from"></label>
+              <label class="small">To <input type="date" id="ts-to"></label>
+              <button class="btn" id="ts-run">Show</button>
+              <button class="btn ghost" data-print-report>Export PDF</button>
+            </div>
+          </div>
+
+          <div class="cards" id="ts-summary"></div>
+
+          <div class="card"><table>
+            <thead><tr>
+              <th>Who</th><th>In</th><th>Out</th><th class="right">Hours</th>
+              <th>Where</th><th>Note</th><th></th>
+            </tr></thead>
+            <tbody id="timesheets"></tbody>
           </table></div>
         </section>
 
@@ -811,6 +856,28 @@
             </div>
           </div>
 
+          <!-- Where the editor went.
+               Shown in place of everything below it once the editor has been
+               handed to a window of its own, which is what happens by default.
+               A tab that simply went blank would read as a page that failed to
+               load; this one says what happened and carries both ways out. -->
+          <div class="card sp-handover" id="sp-handover" hidden>
+            <h3>The editor is open in its own window</h3>
+            <p class="muted small">
+              Screen programming wants the whole screen — a grid, an inspector beside it and a
+              till preview under it — so it opens in a window of its own. Look for the
+              <strong>Vesopa screen editor</strong> window behind this one.
+            </p>
+            <div class="denom-actions">
+              <button type="button" class="btn primary" id="sp-handover-focus">Bring that window forward</button>
+              <button type="button" class="btn ghost" id="sp-handover-here">Edit in this tab instead</button>
+            </div>
+            <p class="muted small" style="margin:10px 0 0">
+              “Edit in this tab instead” is remembered on this computer. The <strong>⤢ Own
+              window</strong> key above puts it back.
+            </p>
+          </div>
+
           <!-- What the tills wear.
                First on the page and its own card, because "how do I choose the
                screen my tills open on?" was being asked by people looking
@@ -996,6 +1063,7 @@
                       <option value="product">Ring up a product</option>
                       <option value="page">Go to another screen</option>
                       <option value="function">Till function</option>
+                      <option value="modifier">Ask a modifier question</option>
                     </select>
                   </label>
 
@@ -1023,6 +1091,22 @@
                         Edit that screen →
                       </button>
                     </div>
+                  </div>
+
+                  <!-- A modifier key asks one of the venue's questions against
+                       whatever is on the bill. The answers are already a screen
+                       of their own, so the only thing to choose here is which
+                       question — and the way to go and lay its answers out. -->
+                  <div class="sp-field" data-for="modifier" hidden>
+                    <label>Question
+                      <select id="sp-modifier"></select>
+                    </label>
+                    <div class="denom-actions" style="margin-top:8px">
+                      <button type="button" class="btn ghost small" id="sp-open-modifier">
+                        Edit its answers &rarr;
+                      </button>
+                    </div>
+                    <p class="muted small" id="sp-modifier-note" style="margin:6px 0 0"></p>
                   </div>
 
                   <div class="sp-field" data-for="function" hidden>
@@ -1161,15 +1245,6 @@
                     not kept.
                   </p>
 
-                  <div class="sp-spans">
-                    <label>Width
-                      <input type="number" id="sp-colspan" min="1" max="16" step="1">
-                    </label>
-                    <label>Height
-                      <input type="number" id="sp-rowspan" min="1" max="10" step="1">
-                    </label>
-                  </div>
-
                   <div class="denom-actions" style="margin-top:10px">
                     <button type="button" class="btn ghost small" id="sp-copy" title="Ctrl+C">Copy</button>
                     <button type="button" class="btn ghost small" id="sp-paste" title="Ctrl+V">Paste</button>
@@ -1221,11 +1296,16 @@
                 <h3>Fill from a department</h3>
                 <p class="muted small" style="margin:0 0 10px">
                   Select some empty buttons, choose a department, and its products drop in — in
-                  the order they appear on your product list.
+                  the order they appear on your product list. Narrow it to one sub department to
+                  lay out a single shelf — lagers, not the whole bar.
                 </p>
                 <label>Department
                   <select id="sp-dept"></select>
                 </label>
+                <label>Sub department
+                  <select id="sp-subdept"></select>
+                </label>
+                <p class="muted small" id="sp-fill-count" style="margin:6px 0 0"></p>
                 <div class="denom-actions" style="margin-top:10px">
                   <button type="button" class="btn ghost small" id="sp-fill">Fill the selection</button>
                 </div>

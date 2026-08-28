@@ -26,6 +26,12 @@ abstract class Kds {
   /// The board's ground. Not white: a wall-mounted panel at full brightness
   /// showing pure white is a light fitting, and the cards have to sit *on*
   /// something for their edges to mean anything.
+  ///
+  /// This and the five that follow it are the **Day** values. Each has a Night
+  /// answer too, and a widget reads them through [KdsSkin] rather than from
+  /// here -- see that class for what moves between the two themes and what
+  /// deliberately does not. They stay as constants because [KdsSkin.day] is
+  /// built out of them.
   static const canvas = Color(0xFFEEF0F4);
 
   /// A card body.
@@ -113,32 +119,58 @@ abstract class Kds {
     return (hi + 0.05) / (lo + 0.05);
   }
 
-  /// The app's one theme.
+  /// The grounds for whichever theme is showing.
   ///
-  /// Light only, and on purpose. A kitchen is a bright room and the screen is
-  /// usually under a downlight; a dark board loses its contrast to the glare
-  /// rather than gaining any. There is no toggle because there is no second
-  /// answer worth offering.
-  static ThemeData theme() {
+  /// Read this rather than the constants above wherever a colour is a *ground*
+  /// or *ink on a ground*.
+  static KdsSkin of(BuildContext context) =>
+      Theme.of(context).extension<KdsSkin>() ?? KdsSkin.day;
+
+  /// The board, Day or Night.
+  ///
+  /// Day was the only answer for a long time, and the argument for it was a
+  /// good one: a kitchen is a bright room, the screen is usually under a
+  /// downlight, and a dark board loses contrast to the glare rather than
+  /// gaining any.
+  ///
+  /// It turns out not to be the only room this gets mounted in. A pass in a dim
+  /// service corridor, a late kitchen with the main lights off, and a screen a
+  /// chef stands two feet from all want the other answer -- and a wall panel at
+  /// full white in a dark room is a light fitting. So there are two, the venue
+  /// chooses, and the choice survives a restart.
+  ///
+  /// **What does not move: every colour that means something.** Fresh, warn,
+  /// late, done, rush and the modifier red are the board's whole vocabulary,
+  /// each is saturated enough to carry either ground, and a chef who has
+  /// learned that red means "read this bit" must not have to learn it twice.
+  /// Only the grounds and the ink on them swap.
+  static ThemeData theme({Brightness brightness = Brightness.light}) {
+    final night = brightness == Brightness.dark;
+    final skin = night ? KdsSkin.night : KdsSkin.day;
+
     final base = ThemeData(
       useMaterial3: true,
-      brightness: Brightness.light,
+      brightness: brightness,
       fontFamily: 'OpenSans',
       colorScheme: ColorScheme.fromSeed(
         seedColor: selected,
-        primary: selected,
-        surface: canvas,
+        brightness: brightness,
+        // Indigo at full strength disappears into a dark ground. Lifted rather
+        // than changed: it is still the same hue doing the same job.
+        primary: night ? const Color(0xFF8B95FF) : selected,
+        surface: skin.canvas,
       ),
-      scaffoldBackgroundColor: canvas,
+      scaffoldBackgroundColor: skin.canvas,
+      extensions: [skin],
     );
 
     return base.copyWith(
       textTheme: base.textTheme.apply(
-        bodyColor: ink,
-        displayColor: ink,
+        bodyColor: skin.ink,
+        displayColor: skin.ink,
       ),
-      dividerTheme: const DividerThemeData(
-        color: Color(0x14000000),
+      dividerTheme: DividerThemeData(
+        color: skin.divider,
         space: 1,
         thickness: 1,
       ),
@@ -157,6 +189,107 @@ abstract class Kds {
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(minimumSize: const Size(0, 48)),
       ),
+    );
+  }
+}
+
+/// The grounds, and the ink that sits on them.
+///
+/// A ThemeExtension rather than a second set of constants, because every widget
+/// that draws the board already has a BuildContext -- and because a global
+/// "current brightness" read from static getters is the kind of thing that goes
+/// wrong exactly once, in a golden test, six months later.
+@immutable
+class KdsSkin extends ThemeExtension<KdsSkin> {
+  const KdsSkin({
+    required this.canvas,
+    required this.card,
+    required this.ink,
+    required this.inkMuted,
+    required this.surface,
+    required this.selectedTrack,
+    required this.divider,
+  });
+
+  /// The board's ground.
+  final Color canvas;
+
+  /// A card body.
+  final Color card;
+
+  /// Body text on a card, and the secondary text beside it.
+  final Color ink;
+  final Color inkMuted;
+
+  /// The card footer, and the segmented control's track.
+  final Color surface;
+
+  /// The ground behind the selected segment.
+  final Color selectedTrack;
+
+  final Color divider;
+
+  /// The bright room. The board exactly as it has always been.
+  static const day = KdsSkin(
+    canvas: Kds.canvas,
+    card: Kds.card,
+    ink: Kds.ink,
+    inkMuted: Kds.inkMuted,
+    surface: Kds.surface,
+    selectedTrack: Kds.selectedTrack,
+    divider: Color(0x14000000),
+  );
+
+  /// The dim one.
+  ///
+  /// The relationships are inverted, not the colours. On Day a card is lighter
+  /// than the board it sits on, so on Night it is lighter too -- a card that
+  /// went darker than its ground would read as a hole, and the edge of a card
+  /// is how a chef finds the ticket at two metres.
+  static const night = KdsSkin(
+    canvas: Color(0xFF0E1116),
+    card: Color(0xFF1A1F27),
+    ink: Color(0xFFECEFF3),
+    inkMuted: Color(0xFF97A1AF),
+    surface: Color(0xFF232A34),
+    selectedTrack: Color(0xFF272C55),
+    divider: Color(0x1FFFFFFF),
+  );
+
+  @override
+  KdsSkin copyWith({
+    Color? canvas,
+    Color? card,
+    Color? ink,
+    Color? inkMuted,
+    Color? surface,
+    Color? selectedTrack,
+    Color? divider,
+  }) => KdsSkin(
+    canvas: canvas ?? this.canvas,
+    card: card ?? this.card,
+    ink: ink ?? this.ink,
+    inkMuted: inkMuted ?? this.inkMuted,
+    surface: surface ?? this.surface,
+    selectedTrack: selectedTrack ?? this.selectedTrack,
+    divider: divider ?? this.divider,
+  );
+
+  /// Never actually interpolated -- the board switches outright rather than
+  /// animating, because a kitchen screen crossfading its ground mid-service is
+  /// motion nobody asked for. Implemented correctly all the same: "the base
+  /// class requires it" is not a reason to return something wrong.
+  @override
+  KdsSkin lerp(ThemeExtension<KdsSkin>? other, double t) {
+    if (other is! KdsSkin) return this;
+    return KdsSkin(
+      canvas: Color.lerp(canvas, other.canvas, t)!,
+      card: Color.lerp(card, other.card, t)!,
+      ink: Color.lerp(ink, other.ink, t)!,
+      inkMuted: Color.lerp(inkMuted, other.inkMuted, t)!,
+      surface: Color.lerp(surface, other.surface, t)!,
+      selectedTrack: Color.lerp(selectedTrack, other.selectedTrack, t)!,
+      divider: Color.lerp(divider, other.divider, t)!,
     );
   }
 }

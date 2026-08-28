@@ -122,6 +122,7 @@ class _PasswordPromptState extends ConsumerState<_PasswordPrompt> {
 
   @override
   Widget build(BuildContext context) {
+    final skin = Kds.of(context);
     final tone = widget.tone ?? Kds.selected;
 
     return AlertDialog(
@@ -139,7 +140,7 @@ class _PasswordPromptState extends ConsumerState<_PasswordPrompt> {
             children: [
               Text(
                 widget.explanation,
-                style: const TextStyle(color: Kds.inkMuted, height: 1.35),
+                style: TextStyle(color: skin.inkMuted, height: 1.35),
               ),
               const SizedBox(height: 16),
               TextField(

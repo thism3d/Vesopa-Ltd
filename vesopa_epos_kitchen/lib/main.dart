@@ -11,6 +11,7 @@ import 'ui/kitchen_shell.dart';
 import 'ui/sign_in_page.dart';
 import 'ui/splash_screen.dart';
 import 'ui/theme.dart';
+import 'ui/theme_controller.dart';
 
 /// A kitchen screen runs as a kiosk: full screen, and with no way to close or
 /// minimise it from the title bar.
@@ -86,7 +87,11 @@ class _VesopaKitchenAppState extends ConsumerState<VesopaKitchenApp> {
     return MaterialApp(
       title: VesopaBrand.appName,
       debugShowCheckedModeBanner: false,
+      // Both themes are handed over and `themeMode` picks; Flutter then follows
+      // the panel's own setting on System without this having to listen for it.
       theme: Kds.theme(),
+      darkTheme: Kds.theme(brightness: Brightness.dark),
+      themeMode: ref.watch(kdsThemeProvider).value ?? ThemeMode.light,
       builder: (context, child) => MediaQuery.withNoTextScaling(
         // The board's type sizes are chosen for a specific reading distance —
         // see `ui/theme.dart` — and a Windows display scale set for somebody's
@@ -134,6 +139,7 @@ class _Booting extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final skin = Kds.of(context);
     return Scaffold(
       body: Center(
         child: Column(
@@ -142,7 +148,7 @@ class _Booting extends StatelessWidget {
             const CircularProgressIndicator(),
             if (message != null) ...[
               const SizedBox(height: 16),
-              Text(message!, style: const TextStyle(color: Kds.inkMuted)),
+              Text(message!, style: TextStyle(color: skin.inkMuted)),
             ],
           ],
         ),
