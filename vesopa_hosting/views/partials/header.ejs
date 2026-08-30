@@ -86,6 +86,12 @@ const over = typeof navOver !== 'undefined' && navOver;
         <a class="btn btn-sm" href="/panel/services">Dashboard</a>
       <% } else { %>
         <a class="btn btn-ghost btn-sm" href="/login">Sign in</a>
+        <%#
+          Registration was reachable but linked from nowhere, so the only way to
+          an account was to buy something first. Anyone may open one — that is
+          how somebody moving a live site looks at the panel before committing.
+        %>
+        <a class="btn btn-ghost btn-sm" href="/register">Create account</a>
         <a class="btn btn-sm" href="/hosting">Get started</a>
       <% } %>
     </div>
@@ -148,6 +154,7 @@ const over = typeof navOver !== 'undefined' && navOver;
           <a class="btn btn-lg btn-block" href="/panel/services">Dashboard</a>
         <% } else { %>
           <a class="btn btn-ghost btn-lg btn-block" href="/login">Sign in</a>
+          <a class="btn btn-ghost btn-lg btn-block" href="/register">Create account</a>
           <a class="btn btn-lg btn-block" href="/hosting">Get started</a>
         <% } %>
       </div>

@@ -83,7 +83,10 @@ router.get('/register', (req, res) => {
   if (req.customer) return res.redirect('/panel');
   res.render('auth/register', {
     title: 'Create your account',
-    robots: 'noindex',
+    // Indexable. A sign-up page nobody can find is a sign-up page nobody uses,
+    // and there is nothing private on it. The POST handler's own re-renders
+    // keep `noindex` — those carry back what somebody typed into the form.
+    robots: '',
     values: {},
     errors: {},
     next: safeNext(req.query.next),
@@ -122,7 +125,94 @@ router.post('/register', async (req, res, next) => {
       });
     }
 
-    const existing = await db.one('SELECT id FROM customers WHERE email = ? LIMIT 1', [values.email]);
+    /*
+     * A VERIFIED address is taken. An unverified one is not.
+     *
+     * Only a verified address is evidence that somebody actually holds that
+     * mailbox. An unverified row is just a string somebody typed into a form —
+     * and letting it reserve the address forever means anyone can lock a real
+     * person out of their own email by signing up with it first, then never
+     * clicking the link.
+     *
+     * AND THE ROW HAS TO BE EMPTY. `email_verified` gates nothing else in this
+     * app today: checkout does not check it, so an unverified customer can pay
+     * for hosting and own domains. Handing their row to whoever types the same
+     * address would be handing over a paid account. So takeover is allowed only
+     * where there is genuinely nothing behind it — no service, no domain, no
+     * order. An abandoned sign-up is released; anything with history is not,
+     * whether it was verified or not.
+     *
+     * The two paths are deliberately indistinguishable from outside. Both end
+     * on /register/check-email with the same message, so the form cannot be
+     * used to ask "does this address have an account here" — which is the
+     * question the enumeration-resistant handling below exists to refuse.
+     */
+    const existing = await db.one(
+      `SELECT c.id, c.email_verified,
+              (SELECT COUNT(*) FROM services s WHERE s.customer_id = c.id)  AS services,
+              (SELECT COUNT(*) FROM domains  d WHERE d.customer_id = c.id)  AS domains,
+              (SELECT COUNT(*) FROM orders   o WHERE o.customer_id = c.id)  AS orders
+         FROM customers c
+        WHERE c.email = ? LIMIT 1`,
+      [values.email],
+    );
+
+    const abandoned = existing
+      && !existing.email_verified
+      && !Number(existing.services)
+      && !Number(existing.domains)
+      && !Number(existing.orders);
+
+    if (abandoned) {
+      const hash = await auth.hashPassword(password);
+      /*
+       * The row is REUSED rather than deleted and re-inserted: the id may
+       * already be referenced by an abandoned order or an activity entry, and a
+       * delete would either fail on the foreign key or orphan the history. Every
+       * field the previous attempt set is overwritten, so nothing of theirs
+       * survives into the new account.
+       *
+       * Writing a new password_hash is also what kills any session the previous
+       * attempt left behind: a session cookie carries `pwv`, a digest of the
+       * hash it was issued against (auth.passwordVersion), so every cookie
+       * minted for the old owner stops validating the moment this row changes.
+       * There is no separate version column to bump.
+       *
+       * The `email_verified = 0` in the WHERE clause is the race guard. Between
+       * the SELECT above and this UPDATE the real owner may have clicked their
+       * verification link, and taking the account over at that point would hand
+       * a stranger a verified account. If that happened, this matches no rows.
+       */
+      const took = await db.query(
+        `UPDATE customers
+            SET password_hash = ?, first_name = ?, last_name = ?, company = ?, phone = ?,
+                email_verified = 0, status = 'active'
+          WHERE id = ? AND email_verified = 0`,
+        [hash, values.first_name, values.last_name, values.company, values.phone, existing.id],
+      );
+
+      // Lost the race — the real owner verified in the meantime, so this is now
+      // an ordinary "that address already has an account" and takes that path.
+      if (!took.affectedRows) {
+        flash(res, 'Check your inbox to continue.');
+        return res.redirect('/register/check-email');
+      }
+
+      const taken = await db.one('SELECT * FROM customers WHERE id = ? LIMIT 1', [existing.id]);
+      await sendVerifyEmail(taken, req);
+      await db.logActivity({
+        actorType: 'customer',
+        actorId: taken.id,
+        action: 'account.created',
+        target: taken.email,
+        detail: 'Took over an unverified sign-up for the same address.',
+        ip: req.ip,
+      });
+      auth.issueCustomerSession(res, taken);
+      flash(res, 'Check your inbox to continue.');
+      return res.redirect('/register/check-email');
+    }
+
     if (existing) {
       // Do not say "that address is taken" — that answers the question an
       // attacker is asking. Send the *existing* owner a note instead, which is
