@@ -555,7 +555,11 @@ CREATE TABLE IF NOT EXISTS domains (
   tld               VARCHAR(32)  CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
   status            ENUM('pending','awaiting_ns','active','expired','transferred_away','cancelled','removed')
                       NOT NULL DEFAULT 'pending',
-  source            ENUM('registered','transfer','external') NOT NULL DEFAULT 'registered',
+  -- `subdomain` is a name under a domain already on this account. It is never
+  -- nameserver-checked and never swept: the parent is the thing that has to
+  -- point at us, and a subdomain is reachable either through the parent's zone
+  -- here or through an A record the customer adds at their own DNS provider.
+  source            ENUM('registered','transfer','external','subdomain') NOT NULL DEFAULT 'registered',
   years             TINYINT UNSIGNED NOT NULL DEFAULT 1,
   auto_renew        TINYINT(1) NOT NULL DEFAULT 1,
   privacy           TINYINT(1) NOT NULL DEFAULT 1,
@@ -572,6 +576,14 @@ CREATE TABLE IF NOT EXISTS domains (
   ns_observed       VARCHAR(400) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
   -- When the zone and the web/mail domain were actually created on the node.
   pointed_at        DATETIME NULL,
+  -- Which of the three a name actually got. A full domain gets all of them, so
+  -- these default to on and describe it correctly. A SUBDOMAIN is the reason
+  -- they exist: the website is compulsory, and DNS and mail are the customer's
+  -- choice at the point they add it — a zone for `shop.example.com` is wrong
+  -- unless the parent delegates to it, and a mail domain nobody asked for
+  -- quietly starts accepting mail for a name.
+  dns_enabled       TINYINT(1) NOT NULL DEFAULT 1,
+  mail_enabled      TINYINT(1) NOT NULL DEFAULT 1,
   -- The registrar's own id for this domain, so a reconcile can match rows up.
   registrar_ref     VARCHAR(120) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
   ns1               VARCHAR(190) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',

@@ -50,10 +50,11 @@ function controlPanelLinks(username) {
      * the terminal only works if that port is reachable from the customer's
      * browser as well as this one being.
      *
-     * Hestia hides this entry when the account's shell is `nologin`, and every
-     * plan package we ship sets exactly that — so for a hosting customer this
-     * link leads to a page that cannot connect. It is listed here for staff
-     * accounts, which do have a shell; see the note on the view.
+     * Hestia hides this entry when the account's shell is `nologin`. Every plan
+     * package grants bash (see scripts/create-hestia-packages.sh), so it is
+     * there for customers — but the websocket port has to be reachable from
+     * their browser too, and that is a firewall rule rather than anything this
+     * app controls.
      */
     terminal: `${CONTROL_PANEL_URL}/list/terminal/`,
     profile: username
@@ -612,10 +613,21 @@ router.get('/domains/add', async (req, res, next) => {
         WHERE s.customer_id = ? AND s.status = 'active'`,
       [req.customer.id],
     );
+    // The subdomain form can only offer names the account already holds, and
+    // it is worth showing that list rather than letting somebody type a parent
+    // we will only reject.
+    const parents = await db.query(
+      `SELECT domain FROM domains
+        WHERE customer_id = ? AND status <> 'removed' AND source <> 'subdomain'
+        ORDER BY domain`,
+      [req.customer.id],
+    );
+
     res.render('panel/domain-add', {
       title: 'Add a domain',
       robots: 'noindex',
       services,
+      parents,
       nameservers: NAMESERVERS,
       graceDays: DOMAIN_NS_GRACE_DAYS,
       values: {},
@@ -652,6 +664,10 @@ router.post('/domains/add', async (req, res, next) => {
       customer: req.customer,
       domain: wanted,
       serviceId: attachTo,
+      // Checkbox absent means unticked. DNS arrives ticked on the form, so an
+      // absent value here is a deliberate opt-out rather than a default.
+      wantDns: Boolean(req.body.want_dns),
+      wantMail: Boolean(req.body.want_mail),
     });
 
     if (!added.ok) {
@@ -665,10 +681,17 @@ router.post('/domains/add', async (req, res, next) => {
           WHERE s.customer_id = ? AND s.status = 'active'`,
         [req.customer.id],
       );
+      const parents = await db.query(
+        `SELECT domain FROM domains
+          WHERE customer_id = ? AND status <> 'removed' AND source <> 'subdomain'
+          ORDER BY domain`,
+        [req.customer.id],
+      );
       return res.status(400).render('panel/domain-add', {
         title: 'Add a domain',
         robots: 'noindex',
         services,
+        parents,
         nameservers: NAMESERVERS,
         graceDays: DOMAIN_NS_GRACE_DAYS,
         values: { domain: wanted, service_id: serviceId },
@@ -692,6 +715,78 @@ router.post('/domains/add', async (req, res, next) => {
           + `we check every few minutes and will email you when it is live.`,
       verdict.matched ? 'ok' : 'warn',
     );
+    res.redirect(`/panel/domains/${added.id}`);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Add a subdomain.
+ *
+ * Separate from /domains/add because it is a different transaction: no
+ * nameserver change to make, no grace period to explain, nothing to wait for.
+ * It is built on the node before the response is written, so the customer is
+ * told whether their site exists rather than that we will get to it.
+ */
+router.post('/domains/add-subdomain', async (req, res, next) => {
+  try {
+    if (!auth.checkCsrf(req)) return res.redirect('/panel/domains/add');
+
+    if (rateLimited(req.customer.id, 'subdomain-add', { max: 20, windowMs: 3600_000 })) {
+      flash(res, 'That is a lot of subdomains in one go. Try again in a little while.', 'warn');
+      return res.redirect('/panel/domains');
+    }
+
+    const added = await linking.addSubdomain({
+      customer: req.customer,
+      subdomain: field(req.body.subdomain, 190),
+      serviceId: Number(req.body.service_id) || null,
+      // Checkboxes: absent means off, which is the default either way.
+      wantDns: Boolean(req.body.want_dns),
+      wantMail: Boolean(req.body.want_mail),
+    });
+
+    if (!added.ok) {
+      flash(res, added.error, 'warn');
+      return res.redirect(added.id ? `/panel/domains/${added.id}` : '/panel/domains/add');
+    }
+
+    /*
+     * The website is the mandatory half, so its result is the headline. DNS and
+     * mail failing is worth saying but is not the same as the subdomain not
+     * existing — and neither is a reason to hide that the site is up.
+     */
+    if (!added.built.pointed) {
+      flash(
+        res,
+        `${added.domain} was added to your account, but the website could not be created on the server. Open a ticket and we will sort it.`,
+        'warn',
+      );
+      return res.redirect(`/panel/domains/${added.id}`);
+    }
+
+    /*
+     * The site exists. Whether anyone can REACH it depends on DNS, and that is
+     * the thing worth saying — a "done" message for a name that resolves
+     * nowhere is the most annoying kind of wrong.
+     *
+     * Note what is not in this message: an IP address. A customer keeping DNS
+     * elsewhere is given a hostname to point at, never the node's address —
+     * see POINT_HOSTNAME in config.js for why.
+     */
+    if (added.dnsRecord && added.dnsRecord.ok) {
+      flash(res, `${added.domain} is set up and serving.`, 'ok');
+    } else {
+      flash(
+        res,
+        `${added.domain} is set up. One thing left: at whoever runs DNS for `
+        + `${added.parent}, add a CNAME for ${added.domain} pointing to `
+        + `${added.dnsRecord.pointAt}. We could not add it for you because `
+        + `${added.dnsRecord.reason}.`,
+        'warn',
+      );
+    }
     res.redirect(`/panel/domains/${added.id}`);
   } catch (err) {
     next(err);

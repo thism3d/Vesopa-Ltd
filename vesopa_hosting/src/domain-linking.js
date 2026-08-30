@@ -34,7 +34,9 @@ const hestia = require('./integrations/hestia');
 const registrar = require('./integrations/domainnameapi');
 const nameservers = require('./nameservers');
 const { sendMail, shell, detailTable, escapeHtml } = require('./mailer');
-const { SITE_URL, NAMESERVERS, DOMAIN_NS_GRACE_DAYS } = require('./config');
+const {
+  SITE_URL, NAMESERVERS, DOMAIN_NS_GRACE_DAYS, POINT_HOSTNAME,
+} = require('./config');
 
 /** The deadline written onto a new external domain, as a DATETIME string. */
 function graceDeadline(days = DOMAIN_NS_GRACE_DAYS) {
@@ -52,6 +54,15 @@ function graceDeadline(days = DOMAIN_NS_GRACE_DAYS) {
 function mayPoint(domainRow) {
   if (!domainRow) return false;
   if (domainRow.source === 'external') return Boolean(domainRow.ns_verified_at);
+  /*
+   * A subdomain is served on sight. The delegation check asks "has whoever
+   * controls this name pointed it at us", and for `shop.example.com` that
+   * question was already answered by example.com being on this account — you
+   * cannot create a name under a domain you do not control. Re-asking it of the
+   * subdomain itself is worse than redundant: a subdomain usually has no NS
+   * records of its own at all, so the check would fail forever on a name that
+   * is perfectly serveable.
+   */
   return true;
 }
 
@@ -77,9 +88,25 @@ async function ignoringExists(fn) {
  * without saying whose it is. A domain the same customer previously let lapse
  * out of the account is theirs to add again.
  *
+ * The domain goes on the account IMMEDIATELY, whatever its nameservers say.
+ * Verification is a separate step that runs straight afterwards and again from
+ * the sweep — being told "added, now point it at us" is a working state a
+ * customer can act on, whereas refusing the row until DNS agrees means the
+ * panel cannot show them the nameservers they are supposed to be copying.
+ *
+ * `wantDns` and `wantMail` decide what gets built when it does verify.
+ * DNS defaults ON because a domain delegated to our nameservers and given no
+ * zone here resolves to nothing at all — that is not a preference, it is the
+ * thing that makes the delegation work. Mail defaults OFF: creating a mail
+ * domain starts accepting mail for the name and sets an expectation about MX
+ * records, and a customer whose mail is at Google or Microsoft must not have
+ * that done to them by a checkbox they never saw.
+ *
  * @returns {Promise<{ok: true, id, domain, deadline} | {ok: false, error}>}
  */
-async function addExternal({ customer, domain: input, serviceId = null }) {
+async function addExternal({
+  customer, domain: input, serviceId = null, wantDns = true, wantMail = false,
+}) {
   const { domain, sld, tld } = registrar.splitDomain(input);
   const invalid = registrar.validateLabel(sld);
   if (invalid) return { ok: false, error: invalid };
@@ -100,19 +127,21 @@ async function addExternal({ customer, domain: input, serviceId = null }) {
     await db.query(
       `UPDATE domains
           SET status = 'awaiting_ns', source = 'external', service_id = ?,
+              dns_enabled = ?, mail_enabled = ?,
               ns_grace_until = ?, ns_verified_at = NULL, ns_checked_at = NULL,
               ns_observed = '', pointed_at = NULL
         WHERE id = ?`,
-      [serviceId, deadline, existing.id],
+      [serviceId, wantDns ? 1 : 0, wantMail ? 1 : 0, deadline, existing.id],
     );
   } else {
     await db.query(
       `INSERT INTO domains
-         (customer_id, service_id, domain, tld, status, source, auto_renew, ns_grace_until)
-       VALUES (?, ?, ?, ?, 'awaiting_ns', 'external', 0, ?)`,
+         (customer_id, service_id, domain, tld, status, source, auto_renew,
+          dns_enabled, mail_enabled, ns_grace_until)
+       VALUES (?, ?, ?, ?, 'awaiting_ns', 'external', 0, ?, ?, ?)`,
       // auto_renew is off and stays off: we do not hold this registration and
       // cannot renew it, so a flag promising we will would be a lie.
-      [customer.id, serviceId, domain, tld, deadline],
+      [customer.id, serviceId, domain, tld, wantDns ? 1 : 0, wantMail ? 1 : 0, deadline],
     );
   }
 
@@ -124,6 +153,186 @@ async function addExternal({ customer, domain: input, serviceId = null }) {
   });
 
   return { ok: true, id: row.id, domain, deadline, row };
+}
+
+/**
+ * Add a subdomain of a domain already on this account.
+ *
+ * No nameserver check, and no grace clock. `shop.example.com` cannot exist
+ * unless somebody controls `example.com`, and that control was already
+ * established when the parent was added — so the delegation question has been
+ * answered and asking it again of a name that has no NS records of its own
+ * would fail forever on a perfectly serveable site.
+ *
+ * THE PARENT HAS TO BE ON THIS ACCOUNT. That is the whole authorisation check,
+ * and without it this route would let anyone create a vhost for
+ * `login.somebodyelse.com` on our node — unreachable without their DNS, but
+ * enough to squat the name so the real owner cannot add it, since Hestia allows
+ * a given domain on exactly one account. The parent does NOT have to be
+ * verified: a customer whose nameservers are still propagating, or who is
+ * keeping DNS at their old provider for now, can still build the subdomain and
+ * point an A record at us by hand.
+ *
+ * WHAT GETS CREATED. The website always — that is the point of the exercise and
+ * there is nothing to decide. DNS and mail are asked for explicitly:
+ *
+ *   dns   a zone for the subdomain is only meaningful if the parent delegates
+ *         to it, which is rare. Where the parent's zone is already here, the
+ *         subdomain resolves from that zone and a second zone for it does
+ *         nothing but shadow records the customer can already edit.
+ *   mail  creating one silently starts accepting mail for the name and puts MX
+ *         expectations on it. Nobody should get that by accident.
+ */
+async function addSubdomain({
+  customer, subdomain: input, serviceId = null, wantDns = false, wantMail = false,
+}) {
+  const name = nameservers.normalise(input);
+
+  if (!name || !/^[a-z0-9.-]+$/.test(name) || name.includes('..')) {
+    return { ok: false, error: 'That is not a valid subdomain name.' };
+  }
+  const labels = name.split('.');
+  if (labels.length < 3 || labels.some((l) => !l.length)) {
+    return { ok: false, error: 'A subdomain looks like shop.example.com — it needs a name in front of your domain.' };
+  }
+  if (labels.some((l) => l.length > 63 || l.startsWith('-') || l.endsWith('-'))) {
+    return { ok: false, error: 'Each part of the name must be 1–63 characters and cannot start or end with a hyphen.' };
+  }
+
+  /*
+   * Find the parent by walking up the labels rather than assuming it is
+   * everything after the first dot. `shop.example.co.uk` has a three-label
+   * parent, and `a.b.example.com` is a legitimate second-level subdomain of a
+   * domain on the account.
+   */
+  let parent = null;
+  for (let i = 1; i < labels.length - 1 && !parent; i++) {
+    const candidate = labels.slice(i).join('.');
+    parent = await db.one(
+      `SELECT * FROM domains
+        WHERE domain = ? AND customer_id = ? AND status <> 'removed'
+        LIMIT 1`,
+      [candidate, customer.id],
+    );
+  }
+  if (!parent) {
+    return {
+      ok: false,
+      error: 'Add the main domain to your account first — a subdomain has to sit under a domain you already have here.',
+    };
+  }
+
+  const existing = await db.one('SELECT * FROM domains WHERE domain = ? LIMIT 1', [name]);
+  if (existing && existing.customer_id !== customer.id) {
+    return { ok: false, error: 'That name is already in use here.' };
+  }
+  if (existing && existing.status !== 'removed') {
+    return { ok: false, error: 'That subdomain is already on your account.', id: existing.id };
+  }
+
+  // Inherit the parent's service unless the caller named one, so a subdomain
+  // lands on the same hosting account as the site it belongs to.
+  const service = serviceId || parent.service_id || null;
+
+  if (existing) {
+    await db.query(
+      `UPDATE domains
+          SET status = 'active', source = 'subdomain', service_id = ?,
+              dns_enabled = ?, mail_enabled = ?,
+              ns_grace_until = NULL, ns_verified_at = NULL, ns_checked_at = NULL,
+              ns_observed = '', pointed_at = NULL
+        WHERE id = ?`,
+      [service, wantDns ? 1 : 0, wantMail ? 1 : 0, existing.id],
+    );
+  } else {
+    await db.query(
+      `INSERT INTO domains
+         (customer_id, service_id, domain, tld, status, source, auto_renew,
+          dns_enabled, mail_enabled)
+       VALUES (?, ?, ?, ?, 'active', 'subdomain', 0, ?, ?)`,
+      // No tld and no auto_renew: a subdomain is not a registration, there is
+      // no registry behind it and nothing to renew.
+      [customer.id, service, name, '', wantDns ? 1 : 0, wantMail ? 1 : 0],
+    );
+  }
+
+  const row = await db.one('SELECT * FROM domains WHERE domain = ? LIMIT 1', [name]);
+  const built = await pointAtNode(row, customer);
+
+  /*
+   * Make it resolve.
+   *
+   * A vhost is not a website until something answers the name, and Hestia does
+   * NOT add a record to the parent zone when you add a subdomain — the first
+   * version of this shipped `shop.heat6.com` with a working vhost, no DNS
+   * anywhere, and a certificate request that failed because Let's Encrypt could
+   * not reach a name that did not exist.
+   *
+   * Where the parent's zone is here, one A record fixes that and it is the
+   * right place for it: the subdomain lives IN the parent zone, which is
+   * exactly why it does not need a zone of its own. The address is copied from
+   * the parent's own A record rather than read from config, so the subdomain
+   * lands wherever the parent already points, on any node.
+   *
+   * Where the parent's zone is elsewhere, there is nothing we can write and the
+   * customer adds the record at their provider — `dnsRecord` says which.
+   */
+  let dnsRecord = { ok: false, pointAt: POINT_HOSTNAME, reason: 'the main domain is not pointed at us' };
+  if (!wantDns) {
+    try {
+      /*
+       * BOTH conditions, and the delegation is the one that decides it.
+       *
+       * A zone can exist on this node for a domain whose nameservers are still
+       * at the old provider — that is the normal state for the first few hours
+       * after a customer adds a domain. Writing a record into a zone nobody is
+       * asking is not wrong, but it resolves nothing, and telling the customer
+       * their subdomain is live on the strength of it would be a lie. So the
+       * record is only treated as the answer when the parent is verified;
+       * otherwise the customer is told to point it themselves.
+       */
+      const parentVerified = Boolean(parent.ns_verified_at);
+      const parentZone = parentVerified
+        && await hestia.dnsDomainExists({ username: customer.hestia_user, domain: parent.domain });
+      if (parentZone) {
+        const records = await hestia.listDnsRecords({ username: customer.hestia_user, domain: parent.domain });
+        const apex = records.find((r) => r.type === 'A' && (r.name === '@' || r.name === ''));
+        const label = name.slice(0, -(parent.domain.length + 1));
+        const already = records.some((r) => r.name === label && ['A', 'CNAME'].includes(r.type));
+
+        if (already) {
+          dnsRecord = { ok: true, existed: true, name: label };
+        } else if (apex) {
+          await hestia.addDnsRecord({
+            username: customer.hestia_user,
+            domain: parent.domain,
+            name: label,
+            type: 'A',
+            value: apex.value,
+          });
+          dnsRecord = { ok: true, name: label, value: apex.value };
+        } else {
+          dnsRecord = { ok: false, pointAt: POINT_HOSTNAME, reason: 'the main domain has no A record to copy' };
+        }
+      }
+    } catch (err) {
+      // Never fatal. The site exists; it just is not reachable yet, and that is
+      // a thing the customer can be told and can fix at their own provider.
+      dnsRecord = { ok: false, pointAt: POINT_HOSTNAME, reason: err.message };
+    }
+  }
+
+  await db.logActivity({
+    actorType: 'customer', actorId: customer.id, action: 'domain.added_subdomain',
+    target: name,
+    detail: `Under ${parent.domain}. web${wantDns ? ' + dns' : ''}${wantMail ? ' + mail' : ''}`
+      + (dnsRecord.ok ? `; A record ${dnsRecord.name} added to the parent zone` : `; no A record (${dnsRecord.reason})`),
+    ok: built.pointed,
+  });
+
+  return {
+    ok: true, id: row.id, domain: name, parent: parent.domain, row, built, dnsRecord,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -216,11 +425,39 @@ async function pointAtNode(domainRow, customer) {
   const domain = domainRow.domain;
   const steps = [];
 
+  /*
+   * A full domain gets all three; a subdomain gets what it asked for, and the
+   * website either way.
+   *
+   * `dns_enabled` and `mail_enabled` default to 1 in the schema, so a domain
+   * row written before those columns existed still behaves exactly as it did.
+   * Only the subdomain flow writes zeroes.
+   */
+  const wantsDns = domainRow.dns_enabled === undefined || Number(domainRow.dns_enabled) === 1;
+  const wantsMail = domainRow.mail_enabled === undefined || Number(domainRow.mail_enabled) === 1;
+
   // The zone first: our nameservers answer for this name now, and without a
   // zone on the node they answer with nothing at all.
-  steps.push({ step: 'dns', ...(await ignoringExists(() => hestia.addDnsDomain({ username, domain }))) });
-  steps.push({ step: 'web', ...(await ignoringExists(() => hestia.addWebDomain({ username, domain }))) });
-  steps.push({ step: 'mail', ...(await ignoringExists(() => hestia.addMailDomain({ username, domain }))) });
+  if (wantsDns) {
+    steps.push({ step: 'dns', ...(await ignoringExists(() => hestia.addDnsDomain({ username, domain }))) });
+  }
+
+  /*
+   * `addWebDomain` is v-add-domain, which creates the zone and the mail domain
+   * as well — harmless when both were wanted, and exactly wrong when they were
+   * not. A name that opted out of either gets the narrow v-add-web-domain.
+   */
+  const webOnly = !wantsDns || !wantsMail;
+  steps.push({
+    step: 'web',
+    ...(await ignoringExists(() => (webOnly
+      ? hestia.addWebsite({ username, domain })
+      : hestia.addWebDomain({ username, domain })))),
+  });
+
+  if (wantsMail) {
+    steps.push({ step: 'mail', ...(await ignoringExists(() => hestia.addMailDomain({ username, domain }))) });
+  }
 
   const web = steps.find((s) => s.step === 'web');
   let ssl = { ok: false, error: 'Website not created.' };
@@ -435,6 +672,7 @@ module.exports = {
   mayEditDns,
   validateRecord,
   addExternal,
+  addSubdomain,
   verify,
   pointAtNode,
   unpointFromNode,

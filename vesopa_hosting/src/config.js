@@ -73,6 +73,21 @@ const NAMESERVERS = [
 ];
 
 /**
+ * The name a customer points a record at when they keep DNS elsewhere.
+ *
+ * THE NODE'S IP ADDRESS IS NEVER SHOWN. Not on a customer page, not on an admin
+ * page, not in an email. A raw address in the panel is a permanent commitment:
+ * every customer who copies it into a zone somewhere we cannot see pins us to
+ * that number, and moving a site to another box — or the box to another
+ * address — silently breaks every one of them, with no list of who to warn.
+ *
+ * A hostname is the same instruction with the indirection kept. `A record ->
+ * point.vesopa.com` becomes our problem to keep true rather than theirs, and
+ * changing where it points moves everybody at once.
+ */
+const POINT_HOSTNAME = process.env.POINT_HOSTNAME || 'point.vesopa.com';
+
+/**
  * How long a domain somebody already owns has to point at us.
  *
  * Anyone can open an account and add a domain they own — that is how a customer
@@ -235,6 +250,7 @@ module.exports = {
   CONTACT,
   BRAND,
   NAMESERVERS,
+  POINT_HOSTNAME,
   DOMAIN_NS_GRACE_DAYS,
   PAYMENT_SESSION_MINUTES,
   JOB_INTERVAL_MINUTES,

@@ -33,9 +33,92 @@
           </div>
         <% } %>
 
+        <%#
+          What to build for it. DNS arrives ticked because a domain delegated
+          to our nameservers with no zone here resolves to nothing; mail arrives
+          unticked because creating one starts accepting mail for the name, and
+          most people moving a site keep their mail where it is.
+        %>
+        <fieldset class="field" style="border:0;padding:0;margin:0 0 18px">
+          <legend class="label" style="padding:0">What should we set up for it?</legend>
+
+          <label class="check">
+            <input type="checkbox" name="want_dns" value="1"
+                   <%= values.want_dns === undefined || values.want_dns ? 'checked' : '' %>>
+            <span>
+              <span class="strong">DNS</span>
+              <span class="tiny muted" style="display:block">Host the domain's DNS here. Leave this on unless you are keeping DNS at your current provider.</span>
+            </span>
+          </label>
+
+          <label class="check">
+            <input type="checkbox" name="want_mail" value="1" <%= values.want_mail ? 'checked' : '' %>>
+            <span>
+              <span class="strong">Email</span>
+              <span class="tiny muted" style="display:block">Accept mail for this domain and let you create mailboxes. Leave off if your email is with Google, Microsoft or anyone else.</span>
+            </span>
+          </label>
+
+          <p class="hint">The website is always set up. You can change your mind later.</p>
+        </fieldset>
+
         <button class="btn btn-lg" type="submit" data-busy="Adding…">Add this domain</button>
       </form>
     </div>
+
+    <%#
+      Subdomains. Deliberately a separate form: there is no registrar step, no
+      nameserver change and no waiting — it is built on the node as the form is
+      submitted. Only shown when the account has a domain to put one under,
+      because the parent is the authorisation.
+    %>
+    <% if (parents && parents.length) { %>
+      <div class="p-card">
+        <h2 class="h3 mb-2">Or add a subdomain</h2>
+        <p class="small muted mb-2">
+          Something like <span class="mono">shop.<%= parents[0].domain %></span> — set up straight away,
+          with no nameserver change to make and nothing to wait for.
+        </p>
+
+        <form method="post" action="/panel/domains/add-subdomain" data-guard>
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+
+          <div class="field">
+            <label class="label" for="subdomain">Subdomain</label>
+            <input class="input mono" id="subdomain" name="subdomain" required
+                   placeholder="shop.<%= parents[0].domain %>" autocomplete="off" spellcheck="false">
+            <p class="hint">
+              The whole name, including your domain. It has to sit under one of:
+              <%= parents.map(function (p) { return p.domain; }).join(', ') %>.
+            </p>
+          </div>
+
+          <fieldset class="field" style="border:0;padding:0;margin:0 0 18px">
+            <legend class="label" style="padding:0">Anything else with it?</legend>
+
+            <label class="check">
+              <input type="checkbox" name="want_dns" value="1">
+              <span>
+                <span class="strong">Its own DNS zone</span>
+                <span class="tiny muted" style="display:block">Rarely needed. If your main domain's DNS is already here, the subdomain works without this.</span>
+              </span>
+            </label>
+
+            <label class="check">
+              <input type="checkbox" name="want_mail" value="1">
+              <span>
+                <span class="strong">Email at this subdomain</span>
+                <span class="tiny muted" style="display:block">Lets you create mailboxes like you@shop.<%= parents[0].domain %>.</span>
+              </span>
+            </label>
+
+            <p class="hint">The website is always set up — that is the point of a subdomain.</p>
+          </fieldset>
+
+          <button class="btn btn-lg" type="submit" data-busy="Setting up…">Add subdomain</button>
+        </form>
+      </div>
+    <% } %>
 
     <div class="p-card">
       <h2 class="h3 mb-2">What happens next</h2>

@@ -432,11 +432,36 @@ async function userStats(username) {
 // Websites
 // ---------------------------------------------------------------------------
 
+/**
+ * `v-add-domain` — website, DNS zone AND mail domain, in one call.
+ *
+ * The name undersells it and has caused a bug already. Use `addWebsite` below
+ * when you want only the vhost.
+ */
 async function addWebDomain({ username, domain }) {
   await run('v-add-domain', [username, domain]);
   return { ok: true, domain };
 }
 
+/**
+ * The vhost and nothing else.
+ *
+ * `v-add-web-domain` is the narrow one: no zone, no mail domain. It exists for
+ * subdomains, where DNS and mail are the customer's choice rather than an
+ * automatic consequence of adding a name — and where a DNS zone is usually the
+ * WRONG default, because a zone for `shop.example.com` only means anything if
+ * the parent delegates to it, and otherwise just shadows a record the customer
+ * already has at their own provider.
+ */
+async function addWebsite({ username, domain }) {
+  await run('v-add-web-domain', [username, domain]);
+  return { ok: true, domain };
+}
+
+/**
+ * `v-delete-domain` — the mirror of addWebDomain: website, DNS and mail
+ * together. Deleting the web domain alone would leave the zone answering.
+ */
 async function deleteWebDomain({ username, domain }) {
   await run('v-delete-domain', [username, domain]);
   return { ok: true };
@@ -512,9 +537,54 @@ async function deleteDatabase({ username, name }) {
 /** The record types a customer is offered. Anything else is refused. */
 const DNS_TYPES = ['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'SRV', 'NS', 'CAA'];
 
+/**
+ * The address this node's websites answer on, as the outside world sees it.
+ *
+ * Hestia's system IP is the address on the interface, which on a cloud box is
+ * very often a private one — 10.128.0.14 here, behind GCP's NAT. `NAT` on the
+ * IP record is the public address, and it is the one that belongs in a DNS
+ * zone: an A record pointing at 10.128.0.14 sends the whole internet nowhere.
+ *
+ * Cached for the life of the process. A node's address changes about as often
+ * as the node does, and this is on the path of every domain that verifies.
+ */
+let cachedPublicIp = null;
+
+async function publicIp() {
+  if (cachedPublicIp) return cachedPublicIp;
+  if (!isLive()) return '';
+  const data = await run('v-list-sys-ips', [], { json: true });
+  const entries = Object.entries(data || {});
+  if (!entries.length) return '';
+  const [ip, meta] = entries[0];
+  cachedPublicIp = (meta && meta.NAT) || ip;
+  return cachedPublicIp;
+}
+
+/**
+ * Create a DNS zone.
+ *
+ * THE IP IS NOT OPTIONAL, whatever the old default here implied. Hestia's
+ * `v-add-dns-domain` takes it as `$3` and substitutes it straight into the zone
+ * template as `%ip%` — there is no fallback to the user's own address. Passing
+ * an empty string, which this function used to do by default, produced a zone
+ * whose apex A record, mail A record and SPF were all blank: the domain
+ * resolved to nothing at all, and it did so silently, because Hestia reports
+ * the zone as created and every list command shows it as present.
+ *
+ * That is why a customer could point their nameservers at us, see the domain
+ * verify, see the site created, and still have nothing answer.
+ */
 async function addDnsDomain({ username, domain, ip = '' }) {
-  await run('v-add-dns-domain', [username, domain, ip]);
-  return { ok: true, domain };
+  const address = ip || await publicIp();
+  if (!address && isLive()) {
+    throw new HestiaError(
+      'Refusing to create a DNS zone with no IP — every record in it would be empty.',
+      { code: 'no_ip', cmd: 'v-add-dns-domain' },
+    );
+  }
+  await run('v-add-dns-domain', [username, domain, address]);
+  return { ok: true, domain, ip: address };
 }
 
 async function dnsDomainExists({ username, domain }) {
@@ -726,6 +796,7 @@ module.exports = {
   deleteUser,
   userStats,
   addWebDomain,
+  addWebsite,
   deleteWebDomain,
   listWebDomains,
   enableSSL,
@@ -734,6 +805,7 @@ module.exports = {
   listDatabases,
   deleteDatabase,
   DNS_TYPES,
+  publicIp,
   addDnsDomain,
   dnsDomainExists,
   listDnsRecords,
