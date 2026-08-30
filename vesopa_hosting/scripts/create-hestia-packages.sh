@@ -38,7 +38,7 @@ DRY_RUN=0
 # The nameservers customers are handed. Same two the app hands to the registrar
 # — see NS1/NS2 in .env. A package carrying the node's own default would put
 # somebody else's nameservers on our customers' zones.
-NS_PAIR=${NS_PAIR:-ns1.vesopaepos.com,ns2.vesopaepos.com}
+NS_PAIR=${NS_PAIR:-ns1.vesopa.com,ns2.vesopa.com}
 
 [ -x "$HESTIA_BIN/v-add-user-package" ] || {
   echo "This has to run on the Hestia node — $HESTIA_BIN/v-add-user-package is not here." >&2
@@ -62,6 +62,24 @@ mysql "$DB" -sN -e "$SQL" | while IFS=$'\t' read -r pkg web storage_gb bw_gb dbs
   [ "$DRY_RUN" = "1" ] && continue
 
   tmp=$(mktemp /tmp/hestia-pkg.XXXXXX)
+
+  # SHELL='bash' below is what grants shell access on every plan. Hestia hides
+  # the web terminal, and refuses SSH/SFTP-with-shell, for any account whose
+  # shell is nologin — so that one field decides whether the Terminal and File
+  # Manager entries in the panel do anything for a customer.
+  #
+  # It is a real widening of the blast radius: a shell can read anything its own
+  # user can, run arbitrary binaries, and spend CPU. The account is still
+  # confined to its own home by ownership, and v-add-user-ssh-jail can bwrap it
+  # further if that becomes necessary. Chosen deliberately, not defaulted into.
+  #
+  # This comment lives out here rather than inside the heredoc on purpose. The
+  # heredoc is UNQUOTED — it has to be, it interpolates $web, $disk and the rest
+  # — so backticks inside it are command substitution, not punctuation. An
+  # earlier version wrote this note in there with `nologin` and
+  # `v-add-user-ssh-jail` in backticks, and the shell duly tried to run both,
+  # printing "command not found" and standing ready to splice any real command's
+  # output straight into a package definition.
   cat > "$tmp" <<EOF
 WEB_TEMPLATE='default'
 PROXY_TEMPLATE='default'
@@ -83,15 +101,6 @@ MEMORY_LIMIT='unlimited'
 SWAP_LIMIT='unlimited'
 BANDWIDTH='$bandwidth'
 NS='$NS_PAIR'
-# Shell access is ON for every plan. Hestia hides the web terminal, and refuses
-# SSH/SFTP-with-shell, for any account whose shell is `nologin` — so this is the
-# single setting that decides whether the Terminal and File Manager entries in
-# the panel do anything for a customer.
-#
-# It is a real widening of the blast radius: a shell can read anything its own
-# user can, run arbitrary binaries, and spend CPU. The account is still confined
-# to its own home by ownership, and `v-add-user-ssh-jail` can bwrap it further
-# if that becomes necessary. Chosen deliberately, not defaulted into.
 SHELL='bash'
 BACKUPS='$keep'
 BACKUPS_INCREMENTAL='no'

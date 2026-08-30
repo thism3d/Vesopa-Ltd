@@ -68,8 +68,8 @@ const BRAND = {
 };
 
 const NAMESERVERS = [
-  process.env.NS1 || 'ns1.vesopaepos.com',
-  process.env.NS2 || 'ns2.vesopaepos.com',
+  process.env.NS1 || 'ns1.vesopa.com',
+  process.env.NS2 || 'ns2.vesopa.com',
 ];
 
 /**

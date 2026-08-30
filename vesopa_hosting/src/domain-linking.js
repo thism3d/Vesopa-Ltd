@@ -236,6 +236,51 @@ async function pointAtNode(domainRow, customer) {
   return { pointed: web.ok, ssl: ssl.ok, steps };
 }
 
+/**
+ * Undo pointAtNode: take the domain off the hosting node entirely.
+ *
+ * THE MISSING HALF. `pointAtNode` creates a DNS zone, a website and a mail
+ * domain, and until this existed nothing ever removed them. Both removal paths
+ * — the customer's "remove from account" button and the sweep that drops a
+ * domain which never verified — only set `status = 'removed'` in our database.
+ * The node kept the zone, the vhost and the mail domain forever.
+ *
+ * That is not merely untidy. The zone keeps answering, so the domain still
+ * resolves to us after the customer believes they have taken it away; the mail
+ * domain keeps accepting mail for a name we no longer list; the vhost keeps
+ * consuming the account's web-domain allowance, so a customer who removes a
+ * site and adds another can be told they are at their plan limit when the panel
+ * shows fewer domains than they are paying for. And the name stays claimed on
+ * the node, so re-adding it later — which `addExternal` explicitly allows —
+ * hits "already exists".
+ *
+ * `v-delete-domain` is one call that removes web, DNS and mail together, which
+ * is the exact mirror of `v-add-domain`. Not-exist is success here: this runs on
+ * domains that were never pointed at us in the first place, and on ones already
+ * cleaned up by a previous attempt.
+ *
+ * MAIL IS DESTROYED WITH IT, mailboxes and their contents included. That is
+ * what removing a domain from a hosting account means, and it is why the caller
+ * has to have established that the customer meant this domain.
+ */
+async function unpointFromNode(domainRow, customer) {
+  const username = customer?.hestia_user;
+  if (!username || !domainRow?.domain) {
+    return { ok: true, skipped: 'no hosting account' };
+  }
+  if (!hestia.isLive()) return { ok: true, skipped: 'node not live' };
+
+  try {
+    await hestia.deleteWebDomain({ username, domain: domainRow.domain });
+    return { ok: true, removed: true };
+  } catch (err) {
+    // 3 is E_NOTEXIST — there was nothing on the node to remove, which is the
+    // state we were trying to reach.
+    if (err.code === 3) return { ok: true, absent: true };
+    return { ok: false, error: err.message };
+  }
+}
+
 // ---------------------------------------------------------------------------
 // DNS records
 // ---------------------------------------------------------------------------
@@ -341,13 +386,23 @@ async function dropUnverified(domainRow) {
   );
   if (!res.affectedRows) return { ok: false, already: true };
 
+  const customer = await db.one('SELECT * FROM customers WHERE id = ? LIMIT 1', [domainRow.customer_id]);
+
+  /*
+   * Usually a no-op — a domain that never verified was never pointed at the
+   * node, so there is nothing to remove. It matters for the one that verified,
+   * was built, and then had its nameservers moved away again: without this the
+   * zone and mail domain outlive the account they belonged to.
+   */
+  const unpointed = await unpointFromNode(domainRow, customer);
+
   await db.logActivity({
     actorType: 'system', action: 'domain.removed_unverified', target: domainRow.domain,
-    detail: `Nameservers were never changed. Last seen: ${domainRow.ns_observed || 'nothing'}`,
+    detail: `Nameservers were never changed. Last seen: ${domainRow.ns_observed || 'nothing'}`
+      + (unpointed.ok ? '' : ` Node cleanup failed: ${unpointed.error}`),
     ok: false,
   });
 
-  const customer = await db.one('SELECT * FROM customers WHERE id = ? LIMIT 1', [domainRow.customer_id]);
   if (customer) {
     await sendMail({
       to: customer.email,
@@ -382,5 +437,6 @@ module.exports = {
   addExternal,
   verify,
   pointAtNode,
+  unpointFromNode,
   dropUnverified,
 };

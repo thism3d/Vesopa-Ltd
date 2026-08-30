@@ -786,12 +786,32 @@ router.post('/domains/:id/remove', async (req, res, next) => {
       return res.redirect(`/panel/domains/${domain.id}`);
     }
 
+    /*
+     * Take it off the node BEFORE the row is marked removed. In that order a
+     * failure leaves the domain visibly still on the account, which is a state
+     * the customer can retry from; the other way round loses the only record of
+     * which account the leftover zone belonged to.
+     */
+    const unpointed = await linking.unpointFromNode(domain, req.customer);
+
     await db.query("UPDATE domains SET status = 'removed', service_id = NULL WHERE id = ?", [domain.id]);
     await db.logActivity({
       actorType: 'customer', actorId: req.customer.id, action: 'domain.removed',
       target: domain.domain, ip: req.ip,
+      detail: unpointed.ok ? 'Website, DNS zone and mail removed from the node.' : `Node cleanup failed: ${unpointed.error}`,
+      ok: unpointed.ok,
     });
-    flash(res, `${domain.domain} has been removed from your account. The domain itself is untouched.`);
+
+    flash(
+      res,
+      unpointed.ok
+        ? `${domain.domain} has been removed from your account, along with its website, DNS and mail here. The domain itself is untouched.`
+        // Said plainly rather than swallowed: the row is gone from their list
+        // either way, and a zone still answering for a domain they believe they
+        // have removed is exactly the thing they need to be able to tell us.
+        : `${domain.domain} has been removed from your account, but its files, DNS or mail could not be cleared from the server. We have logged it — open a ticket if the domain still resolves here.`,
+      unpointed.ok ? 'info' : 'warn',
+    );
     res.redirect('/panel/domains');
   } catch (err) {
     next(err);

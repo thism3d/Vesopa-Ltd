@@ -274,19 +274,36 @@ function post(body) {
 // ---------------------------------------------------------------------------
 
 /**
- * Hestia usernames are lowercase, alphanumeric, and short. Derived from the
- * email's local part with a numeric suffix for collisions, because a username
- * a human can read makes every support conversation faster than a UUID would.
+ * The account name on the node: `u` and a serial, e.g. `u265966`.
+ *
+ * NOBODY SIGNS IN WITH THIS. Customers authenticate to this site with their
+ * email address and password, and to Hestia's own panel with this name and the
+ * password from their welcome email. It is an internal handle, so it is chosen
+ * to be stable and unambiguous rather than memorable.
+ *
+ * It used to be derived from the email's local part — `info@` became `info`,
+ * `info2`, `info3` as they collided. Three problems with that, and the third is
+ * the one that decided it:
+ *
+ *   - It leaks. The Hestia username shows up in paths, in mail headers and in
+ *     SFTP; deriving it from the address publishes part of the customer's email
+ *     to anyone who sees a path.
+ *   - It collides constantly. `info@`, `admin@` and `sales@` are the normal
+ *     case, so the readable name is usually `info7` anyway, which is no more
+ *     meaningful than a serial and is now ALSO wrong-looking.
+ *   - It is not stable. A customer who changes their email address has a
+ *     username that no longer matches it, which is worse than one that never
+ *     claimed to.
+ *
+ * Hestia's own constraints: lowercase, alphanumeric, must not begin with a
+ * digit, and short. The `u` prefix satisfies the digit rule.
+ *
+ * Sequential rather than random, which does mean the number reveals roughly how
+ * many accounts came before it. Starting the run high is what takes the sting
+ * out of that — `u265966` says nothing useful about the size of the business.
  */
-function suggestUsername(email, suffix = '') {
-  const base = String(email || '')
-    .split('@')[0]
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, '')
-    .slice(0, 12) || 'user';
-  // Must not start with a digit: Hestia rejects it.
-  const safe = /^[0-9]/.test(base) ? `u${base}` : base;
-  return `${safe}${suffix}`.slice(0, 16);
+function serialUsername(n) {
+  return `u${Math.trunc(Number(n))}`;
 }
 
 /**
@@ -696,7 +713,7 @@ module.exports = {
   HestiaError,
   isLive,
   run,
-  suggestUsername,
+  serialUsername,
   exists,
   userExists,
   addUser,

@@ -53,18 +53,42 @@ function normalise(host) {
 const OURS = NAMESERVERS.map(normalise).filter(Boolean);
 
 /**
- * Is this set of nameservers ours?
+ * Is this domain delegated to us?
  *
- * EVERY nameserver has to be one of ours, not merely one of them. A domain
- * delegated to ns1.vesopaepos.com and a competitor's box is served by both, at
- * random, and half its traffic never reaches the site we host — treating that
- * as "pointed at us" is how a customer ends up with an intermittent site and a
- * padlock that works one refresh in two.
+ * BOTH of ours have to be present. Extra nameservers alongside them do not
+ * block it.
+ *
+ * This used to be the other way round — every nameserver found had to be one of
+ * ours — and the reasoning was sound as far as it went: a domain delegated to
+ * us *and* a competitor is served by both at random, so half its traffic never
+ * reaches the site we host, and calling that "pointed at us" earns a customer
+ * an intermittent site and a padlock that works one refresh in two.
+ *
+ * What it got wrong is that a third NS record is very often not a competitor.
+ * Registrars publish verification pseudo-nameservers during a transfer or a
+ * domain-control check — `verification-xxxx.ns101.verify.hn` and its like —
+ * which sit in the delegation for a few days and serve nothing. A real case:
+ * heat6.com was delegated to ns1 and ns2.vesopa.com plus one of those, and was
+ * reported as "still points at somebody else" and put on the four-day clock to
+ * be dropped from the account, while being correctly and completely pointed at
+ * us. Refusing to host a domain that is delegated to us is the worse failure of
+ * the two, and it is the one that fires on a perfectly normal setup.
+ *
+ * Requiring BOTH of ours rather than either is what keeps the original concern
+ * addressed. A domain with only ns1 sends half its queries somewhere else, and
+ * that is a genuine half-broken delegation rather than a stray marker.
+ *
+ * Callers that want to warn about the extras can have them from `check()`.
  */
 function matchesOurs(list) {
   const found = (list || []).map(normalise).filter(Boolean);
   if (!found.length) return false;
-  return found.every((ns) => OURS.includes(ns));
+  return OURS.length > 0 && OURS.every((ns) => found.includes(ns));
+}
+
+/** The nameservers in a delegation that are not ours. Never blocks; informs. */
+function extrasIn(list) {
+  return (list || []).map(normalise).filter((ns) => ns && !OURS.includes(ns));
 }
 
 /**
@@ -75,12 +99,12 @@ function matchesOurs(list) {
  * why", because every caller of this treats an error the same way it treats a
  * mismatch: wait, and ask again later.
  *
- * @returns {Promise<{matched: boolean, nameservers: string[], error: string}>}
+ * @returns {Promise<{matched: boolean, nameservers: string[], extras: string[], error: string}>}
  */
 async function check(domain) {
   const name = normalise(domain);
   if (!name || !name.includes('.')) {
-    return { matched: false, nameservers: [], error: 'Not a domain name.' };
+    return { matched: false, nameservers: [], extras: [], error: 'Not a domain name.' };
   }
 
   try {
@@ -88,6 +112,9 @@ async function check(domain) {
     return {
       matched: matchesOurs(found),
       nameservers: found.map(normalise).sort(),
+      // Present but not blocking — a registrar's verification record, or a
+      // leftover delegation the customer has not cleaned up yet.
+      extras: extrasIn(found).sort(),
       error: '',
     };
   } catch (err) {
@@ -100,7 +127,7 @@ async function check(domain) {
     const message = err.code === 'ENOTFOUND' || err.code === 'ENODATA'
       ? 'That domain does not resolve yet.'
       : `Could not read the nameservers (${err.code || err.message}).`;
-    return { matched: false, nameservers: [], error: message };
+    return { matched: false, nameservers: [], extras: [], error: message };
   }
 }
 
@@ -145,4 +172,6 @@ async function ourNameserversResolve({ fresh = false } = {}) {
   return result;
 }
 
-module.exports = { check, matchesOurs, normalise, ourNameserversResolve, OURS, RESOLVERS };
+module.exports = {
+  check, matchesOurs, extrasIn, normalise, ourNameserversResolve, OURS, RESOLVERS,
+};
