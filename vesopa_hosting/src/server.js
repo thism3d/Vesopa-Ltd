@@ -1,6 +1,7 @@
 require('dotenv').config();
 
 const path = require('path');
+const http = require('node:http');
 const express = require('express');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
@@ -359,7 +360,16 @@ app.use((err, req, res, _next) => {
    * HOST is overridable for the rare case of a proxy on another machine; the
    * default is the safe one.
    */
-  app.listen(PORT, HOST, () => {
+  /*
+   * An explicit http.Server rather than app.listen(), because the web terminal
+   * needs the `upgrade` event and Express does not expose it — an upgrade
+   * request never reaches a route. app.listen() creates this same object and
+   * hides it; this only makes it reachable.
+   */
+  const server = http.createServer(app);
+  require('./terminal').attach(server);
+
+  server.listen(PORT, HOST, () => {
     console.log(`\n  Vesopa Cloud running on http://${HOST}:${PORT}`);
     console.log(`  Admin panel:               http://${HOST}:${PORT}/admin\n`);
   });

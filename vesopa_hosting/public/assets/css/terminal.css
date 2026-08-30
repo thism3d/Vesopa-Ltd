@@ -1,0 +1,143 @@
+/*
+ * Web terminal.
+ *
+ * Two audiences, one layout: a desktop where the terminal is a panel on a page,
+ * and a phone where it needs most of the screen and a row of keys the on-screen
+ * keyboard does not have.
+ */
+
+.term-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.term-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.term-who {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .82rem;
+  color: #5a6154;
+  overflow-wrap: anywhere;
+}
+
+.term-status {
+  font-size: .78rem;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: #eef0ea;
+  color: #5a6154;
+  white-space: nowrap;
+}
+.term-status.is-ok   { background: #eaf3d2; color: #4a6109; }
+.term-status.is-warn { background: #fdf0d8; color: #7a5510; }
+.term-status.is-busy { background: #e8eef7; color: #3a5170; }
+
+/*
+ * The terminal itself.
+ *
+ * A fixed height on desktop; on a phone the height is overwritten from
+ * JavaScript with whatever visualViewport says is actually visible, because the
+ * on-screen keyboard overlays the page instead of resizing it.
+ */
+.term-shell {
+  background: #10130A;
+  border-radius: 12px;
+  padding: 10px 6px 10px 12px;
+  height: 60vh;
+  min-height: 260px;
+  overflow: hidden;
+}
+
+.term-shell .xterm {
+  height: 100%;
+}
+
+/* xterm measures its own scrollbar; letting the page scroll as well means two
+   scrollbars fighting over the same gesture on a touch screen. */
+.term-shell .xterm-viewport {
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+/* ---- the key bar -------------------------------------------------------- */
+
+/*
+ * Everything a shell needs that a phone keyboard does not have. Horizontally
+ * scrollable rather than wrapped, so it stays one predictable row instead of
+ * reflowing into two and moving the keys under the user's thumb.
+ */
+.term-keys {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.term-keys::-webkit-scrollbar { display: none; }
+
+.term-keys button {
+  flex: 0 0 auto;
+  min-width: 44px;      /* a real touch target, not a 28px desktop button */
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid #d9ddd2;
+  border-radius: 9px;
+  background: #fff;
+  color: #2c3128;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .84rem;
+  cursor: pointer;
+  /* Stops the double-tap-to-zoom delay and the grey tap flash on iOS. */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.term-keys button:active { background: #eef0ea; }
+
+/* Ctrl is a sticky modifier, so it has to look latched when it is armed. */
+.term-keys button.is-on {
+  background: #A5C715;
+  border-color: #8fae10;
+  color: #10130A;
+  font-weight: 600;
+}
+
+.term-note {
+  font-size: .8rem;
+  color: #5a6154;
+}
+
+/* ---- phones ------------------------------------------------------------- */
+
+@media (max-width: 700px) {
+  .term-shell {
+    /* Height comes from JS on mobile; this is the pre-script fallback. */
+    height: 55vh;
+    padding: 8px 4px 8px 8px;
+    border-radius: 10px;
+  }
+
+  .term-head { gap: 6px; }
+  .term-who  { font-size: .74rem; }
+
+  /*
+   * The key bar sticks to the bottom of the viewport so it stays above the
+   * on-screen keyboard rather than scrolling away with the page.
+   */
+  .term-keys {
+    position: sticky;
+    bottom: 0;
+    background: #f7f8f4;
+    padding: 8px 0 calc(8px + env(safe-area-inset-bottom));
+    margin: 0 -4px;
+    z-index: 5;
+  }
+}

@@ -21,7 +21,9 @@ const linking = require('../domain-linking');
 const mailboxes = require('../mailboxes');
 const { sendMail, shell, detailTable, escapeHtml, DEFAULT_TO } = require('../mailer');
 const { flash, field, rateLimited } = require('../http-utils');
-const { NAMESERVERS, DOMAIN_NS_GRACE_DAYS, CONTROL_PANEL_URL } = require('../config');
+const {
+  NAMESERVERS, DOMAIN_NS_GRACE_DAYS, CONTROL_PANEL_URL, SITE_URL,
+} = require('../config');
 
 const router = express.Router();
 
@@ -578,6 +580,42 @@ router.post('/services/:id/backups', async (req, res, next) => {
 // ---------------------------------------------------------------------------
 // Domains
 // ---------------------------------------------------------------------------
+/**
+ * The terminal page.
+ *
+ * The page itself is trivial; everything real happens over the websocket at
+ * /panel/terminal/ws, which does its own authentication (src/terminal.js). The
+ * checks here are only so that somebody without hosting gets an explanation
+ * rather than a black rectangle that fails to connect.
+ */
+router.get('/terminal', async (req, res, next) => {
+  try {
+    if (!req.customer.hestia_user) {
+      flash(res, 'There is no hosting on this account yet, so there is nothing to open a terminal on.', 'warn');
+      return res.redirect('/panel');
+    }
+    const service = await db.one(
+      "SELECT id FROM services WHERE customer_id = ? AND status = 'active' LIMIT 1",
+      [req.customer.id],
+    );
+    if (!service) {
+      flash(res, 'Your hosting is not active yet — the terminal opens once it is set up.', 'warn');
+      return res.redirect('/panel');
+    }
+
+    res.render('panel/terminal', {
+      title: 'Terminal',
+      robots: 'noindex',
+      username: req.customer.hestia_user,
+      // A label, not the node's address — the IP is shown nowhere, and the
+      // hostname is what a customer would put in an SSH client anyway.
+      hostLabel: new URL(SITE_URL).hostname,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/domains', async (req, res, next) => {
   try {
     // A removed domain is history, not a holding. It stays in the table so the

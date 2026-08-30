@@ -1,0 +1,63 @@
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
+<link rel="stylesheet" href="/assets/vendor/xterm/xterm.css">
+<link rel="stylesheet" href="/assets/css/terminal.css">
+<%- include('../partials/panel-shell', {
+  pageTitle: 'Terminal',
+  pageSub: 'A shell on your hosting account, in the browser.',
+}) %>
+
+<div class="p-card term-wrap">
+  <div class="term-head">
+    <span class="term-who"><%= username %>@<%= hostLabel %></span>
+    <span class="term-status is-busy" id="term-status">Starting…</span>
+  </div>
+
+  <div class="term-shell">
+    <div id="terminal"></div>
+  </div>
+
+  <%#
+    The keys a phone keyboard does not have, which is most of what a shell
+    needs. Sequences are written as escapes and unescaped in JS so this stays
+    readable; Ctrl is a sticky modifier because you cannot hold two soft keys.
+  %>
+  <div class="term-keys" id="term-keys">
+    <button type="button" data-ctrl>Ctrl</button>
+    <button type="button" data-send="\x1b">Esc</button>
+    <button type="button" data-send="\t">Tab</button>
+    <button type="button" data-send="\x1b[A">↑</button>
+    <button type="button" data-send="\x1b[B">↓</button>
+    <button type="button" data-send="\x1b[D">←</button>
+    <button type="button" data-send="\x1b[C">→</button>
+    <button type="button" data-send="\x03">^C</button>
+    <button type="button" data-send="\x04">^D</button>
+    <button type="button" data-send="\x1a">^Z</button>
+    <button type="button" data-send="/">/</button>
+    <button type="button" data-send="-">-</button>
+    <button type="button" data-send="~">~</button>
+    <button type="button" data-send="|">|</button>
+    <button type="button" data-zoom="out">A−</button>
+    <button type="button" data-zoom="in">A+</button>
+  </div>
+
+  <p class="term-note">
+    You are signed in as <span class="strong"><%= username %></span>. Your files are in
+    <span class="mono">/home/<%= username %></span> — websites live in
+    <span class="mono">web/&lt;domain&gt;/public_html</span>.
+    Sessions close after 15 minutes with nothing typed.
+  </p>
+
+  <p><a class="btn btn-ghost btn-sm" href="#" id="term-reconnect" hidden>Reconnect</a></p>
+</div>
+
+<%#
+  Vendored, not from a CDN: the site's CSP is `script-src 'self'`. `defer` keeps
+  them in document order, so xterm and the addon are both defined before
+  terminal.js runs.
+%>
+<script src="/assets/vendor/xterm/xterm.js" defer></script>
+<script src="/assets/vendor/xterm/addon-fit.js" defer></script>
+<script src="/assets/js/terminal.js" defer></script>
+
+<%- include('../partials/panel-shell-end') %>
+<%- include('../partials/footer') %>
