@@ -146,6 +146,29 @@
       </table></div>
       <a class="btn btn-ghost btn-sm btn-block mt-2" href="/hosting">Change plan</a>
     </div>
+
+    <%#
+      The tools this panel does not reimplement. Rendered only when a control
+      panel URL is configured, and only for a live account — a file manager for
+      a site that has not been provisioned yet has nothing to show.
+
+      These ask for a separate sign-in. The username below is the one to use;
+      the password was in the welcome email.
+    %>
+    <% if (typeof controlPanel !== 'undefined' && controlPanel && service.status === 'active') { %>
+      <div class="p-card">
+        <h2 class="h3 mb-2">Advanced tools</h2>
+        <p class="tiny muted mb-2">
+          Files, a terminal and your full account settings live in the control
+          panel. It asks you to sign in separately — your username is
+          <span class="strong"><%= controlPanel.username %></span>, and the
+          password is the one in your welcome email.
+        </p>
+        <a class="btn btn-ghost btn-sm btn-block" href="<%= controlPanel.files %>" target="_blank" rel="noopener">File manager</a>
+        <a class="btn btn-ghost btn-sm btn-block mt-2" href="<%= controlPanel.terminal %>" target="_blank" rel="noopener">Terminal</a>
+        <a class="btn btn-ghost btn-sm btn-block mt-2" href="<%= controlPanel.profile %>" target="_blank" rel="noopener">Account settings</a>
+      </div>
+    <% } %>
   </aside>
 </div>
 

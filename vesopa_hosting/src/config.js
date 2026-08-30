@@ -12,6 +12,25 @@ const SITE_URL = process.env.SITE_URL || 'http://localhost:5075';
 const MAIN_SITE_URL = process.env.MAIN_SITE_URL || 'https://vesopaepos.com';
 
 /**
+ * HestiaCP's own web interface, e.g. https://panel.vesopa.com:2083 — where the
+ * things this panel deliberately does not reimplement actually live.
+ *
+ * This site covers what a customer needs weekly: databases, mailboxes, DNS,
+ * backups, SSL. It does NOT cover the file manager, the web terminal, cron, or
+ * editing the account profile, and it should not — those are a control panel's
+ * job, they change with every Hestia release, and a half-copy of them here
+ * would be a worse version that silently drifts out of date.
+ *
+ * So the customer is sent to the real one instead. They can sign in: the
+ * account and password provisioning generated for them are in their welcome
+ * email (see provisioning.js), and they are the same credentials this link
+ * lands on. Blank this and every link to it disappears from the panel rather
+ * than rendering a dead button — which is the right behaviour on a node whose
+ * panel is not published on a name customers can reach.
+ */
+const CONTROL_PANEL_URL = (process.env.HESTIA_PANEL_URL || '').replace(/\/+$/, '');
+
+/**
  * The currency the CATALOGUE IS PRICED IN — not the currency a given visitor
  * sees. Every `*_pence` column in the database is this one; USD and CAD are
  * derived from it at request time by src/currency.js, and which one a visitor
@@ -211,6 +230,7 @@ function savingPercent(monthlyPence, termTotalPence, months) {
 module.exports = {
   SITE_URL,
   MAIN_SITE_URL,
+  CONTROL_PANEL_URL,
   BASE_CURRENCY,
   CONTACT,
   BRAND,

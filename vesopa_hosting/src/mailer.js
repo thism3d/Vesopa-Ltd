@@ -21,16 +21,41 @@ let transport = null;
 
 function getTransport() {
   if (transport) return transport;
-  if (!process.env.SMTP_HOST || !process.env.SMTP_PASSWORD) return null;
+  if (!process.env.SMTP_HOST) return null;
+
+  /*
+   * A password is NOT what makes SMTP usable, and requiring one here used to
+   * disable mail entirely on the machine best placed to send it.
+   *
+   * There are two shapes of relay. A remote provider authenticates us, so it
+   * needs a user and a password. The node's own MTA — exim on 127.0.0.1:25,
+   * which every Hestia box runs — relays for localhost precisely because the
+   * connection is local, and offers no credentials to send. Passing an `auth`
+   * block with an undefined password to that server makes nodemailer attempt a
+   * login the server never asked for, which it then rejects.
+   *
+   * So auth is included only when there is something to authenticate with.
+   * Without this the site boots, serves every page, reports itself healthy —
+   * and silently sends no verification, no password reset, and no welcome mail
+   * carrying the control-panel password a customer cannot get any other way.
+   */
+  const user = process.env.SMTP_USER;
+  const pass = process.env.SMTP_PASSWORD;
+  const port = Number(process.env.SMTP_PORT) || 465;
 
   transport = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT) || 465,
-    secure: String(process.env.SMTP_SECURE || 'true') === 'true',
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASSWORD,
-    },
+    port,
+    // Implicit TLS is right for 465 and wrong for 25 and 587, where the session
+    // starts in the clear and upgrades with STARTTLS instead.
+    secure: String(process.env.SMTP_SECURE || (port === 465 ? 'true' : 'false')) === 'true',
+    ...(user && pass ? { auth: { user, pass } } : {}),
+    // A local relay presents a self-signed certificate for its own hostname.
+    // Refusing it would reject the one relay we control; a remote provider is
+    // still verified normally.
+    ...(/^(127\.0\.0\.1|::1|localhost)$/i.test(process.env.SMTP_HOST)
+      ? { tls: { rejectUnauthorized: false } }
+      : {}),
   });
   return transport;
 }

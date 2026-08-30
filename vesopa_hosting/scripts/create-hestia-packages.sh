@@ -83,7 +83,16 @@ MEMORY_LIMIT='unlimited'
 SWAP_LIMIT='unlimited'
 BANDWIDTH='$bandwidth'
 NS='$NS_PAIR'
-SHELL='nologin'
+# Shell access is ON for every plan. Hestia hides the web terminal, and refuses
+# SSH/SFTP-with-shell, for any account whose shell is `nologin` — so this is the
+# single setting that decides whether the Terminal and File Manager entries in
+# the panel do anything for a customer.
+#
+# It is a real widening of the blast radius: a shell can read anything its own
+# user can, run arbitrary binaries, and spend CPU. The account is still confined
+# to its own home by ownership, and `v-add-user-ssh-jail` can bwrap it further
+# if that becomes necessary. Chosen deliberately, not defaulted into.
+SHELL='bash'
 BACKUPS='$keep'
 BACKUPS_INCREMENTAL='no'
 TIME='$(date +%H:%M:%S)'

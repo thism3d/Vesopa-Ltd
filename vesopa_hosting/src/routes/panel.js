@@ -21,9 +21,46 @@ const linking = require('../domain-linking');
 const mailboxes = require('../mailboxes');
 const { sendMail, shell, detailTable, escapeHtml, DEFAULT_TO } = require('../mailer');
 const { flash, field, rateLimited } = require('../http-utils');
-const { NAMESERVERS, DOMAIN_NS_GRACE_DAYS } = require('../config');
+const { NAMESERVERS, DOMAIN_NS_GRACE_DAYS, CONTROL_PANEL_URL } = require('../config');
 
 const router = express.Router();
+
+/**
+ * Deep links into HestiaCP for the tools this site does not reimplement.
+ *
+ * Returns null when no panel URL is configured, so a view can ask for it and
+ * get "there is nothing to show" rather than a set of dead buttons.
+ *
+ * These land on Hestia's own login, not signed in — there is no SSO for the
+ * panel itself, only for phpMyAdmin (hestia-sso.php). That is deliberate on
+ * Hestia's part: the file manager and the terminal are shell access, and a
+ * one-click handoff to a shell from a session on a different site is a much
+ * bigger thing to get wrong than a handoff to one database. The customer signs
+ * in once with the credentials from their welcome email.
+ */
+function controlPanelLinks(username) {
+  if (!CONTROL_PANEL_URL) return null;
+  return {
+    base: CONTROL_PANEL_URL,
+    username: username || '',
+    files: `${CONTROL_PANEL_URL}/fm/`,
+    /*
+     * `/list/terminal/` — the page, served by the panel. The shell itself is a
+     * websocket to WEB_TERMINAL_PORT (8085) that the page opens separately, so
+     * the terminal only works if that port is reachable from the customer's
+     * browser as well as this one being.
+     *
+     * Hestia hides this entry when the account's shell is `nologin`, and every
+     * plan package we ship sets exactly that — so for a hosting customer this
+     * link leads to a page that cannot connect. It is listed here for staff
+     * accounts, which do have a shell; see the note on the view.
+     */
+    terminal: `${CONTROL_PANEL_URL}/list/terminal/`,
+    profile: username
+      ? `${CONTROL_PANEL_URL}/edit/user/?user=${encodeURIComponent(username)}`
+      : `${CONTROL_PANEL_URL}/edit/user/`,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Guard
@@ -176,6 +213,7 @@ router.get('/services/:id', async (req, res, next) => {
       primaryDomain,
       nameservers: NAMESERVERS,
       hestiaLive: hestia.isLive(),
+      controlPanel: controlPanelLinks(req.customer.hestia_user),
     });
   } catch (err) {
     next(err);
