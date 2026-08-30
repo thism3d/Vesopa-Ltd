@@ -1521,8 +1521,23 @@ own site — upload the files in the panel's file manager, or push them over SFT
 """
 
 
+#: The page every new website already gets, installed by
+#: site-defaults/install-site-defaults.sh. Preferred over the string below so
+#: there is ONE holding page on this machine rather than two that drift.
+SKEL_INDEX = "/usr/local/hestia/data/templates/web/skel/public_html/index.html"
+
+
 def recipe_static(ctx, job, progress, build):
     progress.step("Writing the holding page", 50)
+    try:
+        with open(SKEL_INDEX, "r", encoding="utf-8") as fh:
+            write_file(build, "index.html", fh.read())
+        progress.say("Using the standard Vesopa start page")
+        return
+    except OSError:
+        # A node without the defaults installed still gets a page, just the
+        # plainer one compiled in here.
+        pass
     write_file(build, "index.html", STATIC_INDEX % {"domain": job["domain"]})
 
 

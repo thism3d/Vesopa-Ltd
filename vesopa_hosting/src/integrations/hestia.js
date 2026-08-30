@@ -656,11 +656,39 @@ async function setRedirect({
   username, domain, target, code = 301,
 }) {
   await run('v-add-web-domain-redirect', [username, domain, target, String(code)]);
+  await rebuildWebDomain({ username, domain });
   return { ok: true };
 }
 
 async function clearRedirect({ username, domain }) {
   await run('v-delete-web-domain-redirect', [username, domain]);
+  await rebuildWebDomain({ username, domain });
+  return { ok: true };
+}
+
+/**
+ * Regenerate one website's server config and reload the web server.
+ *
+ * ---------------------------------------------------------------------------
+ * WITHOUT THIS, SETTING A REDIRECT DOES NOTHING VISIBLE
+ * ---------------------------------------------------------------------------
+ * `v-add-web-domain-redirect` writes REDIRECT and REDIRECT_CODE into the
+ * account's web.conf and stops. It does NOT rebuild the domain's nginx config,
+ * and the directive lives in a generated include — `nginx.conf_redirect` —
+ * that only a rebuild produces. So the command succeeded, Hestia's own records
+ * showed the redirect, the panel reported it set, and the site carried on
+ * serving its old content: every layer agreed except the one doing the work.
+ *
+ * It was found on a domain a customer had pointed at another of their sites
+ * and then watched not redirect. `v-delete-web-domain-redirect` has the same
+ * gap in reverse — the include has to be removed, and only a rebuild removes
+ * it — so turning one OFF needs this just as much as turning one on.
+ *
+ * `yes` for the restart argument because a config nginx has not reloaded is
+ * the same problem one step further along.
+ */
+async function rebuildWebDomain({ username, domain }) {
+  await run('v-rebuild-web-domain', [username, domain, 'yes']);
   return { ok: true };
 }
 
@@ -1214,6 +1242,7 @@ module.exports = {
   enableSSL,
   setRedirect,
   clearRedirect,
+  rebuildWebDomain,
   webDomainSsl,
   forceHttps,
   addDatabase,
