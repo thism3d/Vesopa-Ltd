@@ -16,6 +16,7 @@
   const wrong = !pointed && observed.length;
 %>
 <%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
+<link rel="stylesheet" href="<%= asset('/assets/css/apps.css') %>">
 <%- include('../partials/panel-shell', {
   pageTitle: domain.domain,
   pageSub: parent ? 'A subdomain of ' + parent : 'A subdomain',
@@ -151,6 +152,8 @@
       the DNS tab they have on their main domain, does not find it, and assumes
       something is broken.
     %>
+    <%- include('../partials/redirect-card', { site, domain, hasHosting }) %>
+
     <div class="p-card">
       <h2 class="h3 mb-2">DNS and email</h2>
       <p class="small muted mb-2">

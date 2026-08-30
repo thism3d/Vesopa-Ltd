@@ -511,6 +511,47 @@ async function deleteWebDomain({ username, domain }) {
  * The names are obviously invented, and they match the domains the seed data
  * puts in the panel so the two halves agree with each other.
  */
+/**
+ * ONE website, with the fields the listing leaves out.
+ *
+ * `v-list-web-domains` (plural) and `v-list-web-domain` (singular) do not
+ * return the same record, and the difference is not documented anywhere you
+ * would look. The plural one omits REDIRECT, REDIRECT_CODE, CUSTOM_DOCROOT,
+ * SSL_FORCE and SSL_HSTS entirely.
+ *
+ * That cost a shipped bug: the domain page read `redirect` off the listing,
+ * got undefined every time, and therefore always drew "set up a redirect" —
+ * so a customer could turn one on and then had no way in the panel to turn it
+ * off again. Anything that needs a per-domain setting has to ask for that
+ * domain by name.
+ */
+async function webDomain({ username, domain }) {
+  if (!isLive()) {
+    const all = await listWebDomains(username);
+    return all.find((w) => w.domain === domain) || null;
+  }
+  let data;
+  try {
+    data = await run('v-list-web-domain', [username, domain], { json: true });
+  } catch (err) {
+    if (err.code === E_NOT_EXIST) return null;
+    throw err;
+  }
+  const record = data[domain];
+  if (!record) return null;
+  return {
+    domain,
+    ip: record.IP,
+    ssl: String(record.SSL || 'no') === 'yes',
+    letsencrypt: String(record.LETSENCRYPT || 'no') === 'yes',
+    suspended: String(record.SUSPENDED || 'no') === 'yes',
+    disk_mb: Number(record.U_DISK || 0),
+    docroot: record.CUSTOM_DOCROOT || '',
+    redirect: record.REDIRECT || '',
+    redirect_code: Number(record.REDIRECT_CODE || 0) || null,
+  };
+}
+
 async function listWebDomains(username) {
   if (!isLive()) {
     return [
@@ -521,6 +562,19 @@ async function listWebDomains(username) {
         letsencrypt: true,
         suspended: false,
         disk_mb: 148,
+        redirect: '',
+        redirect_code: null,
+      },
+      {
+        // A subdomain, because to Hestia that is just another website — and
+        // without one here the subdomain page renders its "no website yet"
+        // branch on a laptop and the redirect card cannot be looked at.
+        domain: 'shop.janesbakery.co.uk',
+        ip: '203.0.113.10',
+        ssl: true,
+        letsencrypt: true,
+        suspended: false,
+        disk_mb: 12,
         redirect: '',
         redirect_code: null,
       },
@@ -546,8 +600,7 @@ async function listWebDomains(username) {
     letsencrypt: String(d.LETSENCRYPT || 'no') === 'yes',
     suspended: String(d.SUSPENDED || 'no') === 'yes',
     disk_mb: Number(d.U_DISK || 0),
-    redirect: d.REDIRECT || '',
-    redirect_code: Number(d.REDIRECT_CODE || 0) || null,
+    // NOT redirect: v-list-web-domains does not return it. Ask webDomain().
   }));
 }
 
@@ -1157,6 +1210,7 @@ module.exports = {
   addWebsite,
   deleteWebDomain,
   listWebDomains,
+  webDomain,
   enableSSL,
   setRedirect,
   clearRedirect,

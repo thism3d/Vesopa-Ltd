@@ -1158,6 +1158,19 @@ router.get('/domains/:id', async (req, res, next) => {
      * it leaves a page that is mostly absence — and it is how the panel came to
      * tell customers a working subdomain was "waiting for your nameservers".
      */
+    /*
+     * The website record behind this name, for the redirect card — which both
+     * this page and the subdomain page draw. `webDomain` and not
+     * `listWebDomains`: the plural command does not return REDIRECT, which is
+     * how a customer could switch a redirect on and then find no way to switch
+     * it off. See the note on webDomain in integrations/hestia.js.
+     */
+    const site = req.customer.hestia_user
+      ? await hestia.webDomain({ username: req.customer.hestia_user, domain: domain.domain })
+        .catch(() => null)
+      : null;
+    const hasHosting = Boolean(req.customer.hestia_user);
+
     const [ssl, addresses] = await Promise.all([
       linking.refreshSsl(domain, req.customer),
       nameservers.ourAddresses(POINT_HOSTNAME),
@@ -1185,6 +1198,8 @@ router.get('/domains/:id', async (req, res, next) => {
         addresses,
         observed: await foreignAddresses(domain),
         canRemove: true,
+        site,
+        hasHosting,
       });
     }
 
@@ -1192,20 +1207,9 @@ router.get('/domains/:id', async (req, res, next) => {
     // charged yet, so this is a shop price like any other.
     const price = await pricing.priceForTld(domain.tld, req.currency);
 
-    /*
-     * The website behind this domain, only for the two things this page shows
-     * about it: whether it exists on the node at all, and where it currently
-     * redirects. A failure here must not take the page down — a domain page
-     * that 500s because the node is busy is worse than one missing a card.
-     */
-    const site = req.customer.hestia_user
-      ? (await hestia.listWebDomains(req.customer.hestia_user).catch(() => []))
-        .find((w) => w.domain === domain.domain) || null
-      : null;
-
     res.render('panel/domain', {
       site,
-      hasHosting: Boolean(req.customer.hestia_user),
+      hasHosting,
       title: domain.domain,
       robots: 'noindex',
       domain,
