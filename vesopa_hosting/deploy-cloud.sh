@@ -40,7 +40,6 @@ DOMAIN="cloud.vesopa.com"
 APP_USER="vesopasoftware"
 REMOTE_APP="/home/$APP_USER/web/$DOMAIN/private/nodeapp"
 PM2_APP="$DOMAIN"
-DB_NAME="vesopa_hostingdb"
 LOCAL_APP="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HEALTH_URL="https://$DOMAIN/robots.txt"
 
@@ -64,9 +63,26 @@ done
 
 # One multiplexed SSH connection for the whole run, so the password is typed
 # once. The socket is removed on exit however the script ends.
-CTL="/tmp/vc-deploy-$$.sock"
+#
+# VC_SSH_CONTROL points the script at a master somebody else already opened —
+# which is how this runs unattended, with the password supplied out of band:
+#
+#     SSHPASS='…' sshpass -e ssh -o ControlMaster=auto \
+#       -o ControlPath=~/.ssh/cm-vesopa-cloud.sock -o ControlPersist=30m \
+#       root@34.63.118.67 true
+#     VC_SSH_CONTROL=~/.ssh/cm-vesopa-cloud.sock ./deploy-cloud.sh
+#
+# A borrowed master is NOT torn down at the end. Closing a connection this
+# script did not open would kill whatever else is using it, and the next
+# command would sit at a password prompt nothing can answer.
+CTL="${VC_SSH_CONTROL:-/tmp/vc-deploy-$$.sock}"
+BORROWED=0; [ -n "${VC_SSH_CONTROL:-}" ] && BORROWED=1
 SSH_OPTS=(-o ControlMaster=auto -o "ControlPath=$CTL" -o ControlPersist=300)
-cleanup() { ssh "${SSH_OPTS[@]}" -O exit "$SERVER" 2>/dev/null || true; rm -f "$CTL"; }
+cleanup() {
+  [ "$BORROWED" = 1 ] && return 0
+  ssh "${SSH_OPTS[@]}" -O exit "$SERVER" 2>/dev/null || true
+  rm -f "$CTL"
+}
 trap cleanup EXIT
 remote() { ssh "${SSH_OPTS[@]}" "$SERVER" "$@"; }
 
@@ -131,7 +147,14 @@ if [ "$DO_BROKERS" = 1 ]; then
       && python3 -m py_compile /opt/vesopa-$b/broker.py" \
       || die "Could not install the $b broker."
   done
-  remote "systemctl daemon-reload && systemctl enable --now vesopa-terminal vesopa-files vesopa-apps"
+  # ENABLE THEN RESTART, and both are needed. `enable --now` starts a unit that
+  # is stopped and does NOTHING to one that is already running — so on every
+  # deploy after the first it copied the new broker.py into place and left the
+  # old code serving, with a cheerful "active" in the check below. The socket's
+  # timestamp was the only clue.
+  remote "systemctl daemon-reload \
+    && systemctl enable vesopa-terminal vesopa-files vesopa-apps >/dev/null \
+    && systemctl restart vesopa-terminal vesopa-files vesopa-apps"
   # Prove it, rather than assuming: a unit that enabled and then died leaves the
   # panel silently in mock mode, which looks like everything working.
   step "Checking the brokers"
@@ -143,9 +166,17 @@ fi
 
 if [ "$DO_SCHEMA" = 1 ]; then
   step "Applying schema.sql"
-  # Credentials come out of the server's own .env rather than being typed here,
-  # so this script never contains a database password.
-  remote "cd $REMOTE_APP && DBU=\$(grep -E '^DB_USER=' .env | cut -d= -f2-) && DBP=\$(grep -E '^DB_PASSWORD=' .env | cut -d= -f2-) && mysql -u\"\$DBU\" -p\"\$DBP\" $DB_NAME < schema.sql"
+  # EVERY connection detail comes out of the server's own .env, the database
+  # NAME included. It used to be a constant up top, and the constant was the
+  # name on the old box — so this step died with "access denied ... to database
+  # vesopa_hostingdb" on a server whose database is vesopasoftware_hostingdb,
+  # which reads like a permissions problem and is not one. The server is the
+  # only thing that knows what it is called; ask it.
+  remote "cd $REMOTE_APP \
+    && DBU=\$(grep -E '^DB_USER=' .env | cut -d= -f2-) \
+    && DBP=\$(grep -E '^DB_PASSWORD=' .env | cut -d= -f2-) \
+    && DBN=\$(grep -E '^DB_NAME=' .env | cut -d= -f2-) \
+    && mysql -u\"\$DBU\" -p\"\$DBP\" \"\$DBN\" < schema.sql"
   ok "Schema applied"
 fi
 

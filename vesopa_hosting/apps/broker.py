@@ -168,6 +168,41 @@ def hestia_web_domains(username):
     return sites
 
 
+PHP_ROOT = "/etc/php"
+
+
+def php_pools():
+    """
+    Which PHP version each website is ACTUALLY served by.
+
+    Read from `/etc/php/<version>/fpm/pool.d/<domain>.conf`, not from the
+    template name in Hestia's web.conf, because on this node every site's
+    BACKEND is the string `default` — the stock template, whose `listen` line
+    is `php%backend_version%-fpm-%domain%.sock`. Parsing the template name gave
+    None for every site, so the panel showed "we could not read which PHP this
+    site is on" for a whole account that was plainly running 8.3.
+
+    The pool file is where the answer really lives: one exists per site, under
+    the directory of the version serving it. A site switched with
+    v-change-web-domain-backend-tpl moves between those directories, so this
+    stays right afterwards too.
+    """
+    out = {}
+    try:
+        versions = os.listdir(PHP_ROOT)
+    except OSError:
+        return out
+    for version in versions:
+        pool = os.path.join(PHP_ROOT, version, "fpm", "pool.d")
+        try:
+            for name in os.listdir(pool):
+                if name.endswith(".conf") and name != "www.conf":
+                    out[name[:-5]] = version
+        except OSError:
+            continue
+    return out
+
+
 def resolve_user(username):
     """
     Turn a requested account name into a passwd entry it is safe to become.
@@ -241,7 +276,14 @@ def node_lines():
     """
     out = []
     try:
-        majors = sorted(os.listdir(NODE_ROOT), key=lambda s: int(s) if s.isdigit() else 0)
+        # NUMERIC DIRECTORY NAMES ONLY. The node also has /opt/nodejs/default,
+        # a symlink to whichever line is current — a real directory with a real
+        # bin/node in it, which without this filter is offered to customers as
+        # a Node version called "default" and stored as one.
+        majors = sorted(
+            (n for n in os.listdir(NODE_ROOT) if n.isdigit()),
+            key=int,
+        )
     except OSError:
         return out
     for major in majors:
@@ -255,8 +297,8 @@ def node_lines():
             ).stdout.strip().lstrip("v")
         except (OSError, subprocess.SubprocessError):
             pass
-        out.append({"major": int(major) if major.isdigit() else major,
-                    "version": version, "bin": os.path.dirname(binary)})
+        out.append({"major": int(major), "version": version,
+                    "bin": os.path.dirname(binary)})
     return out
 
 
@@ -265,7 +307,7 @@ def default_node():
     if not lines:
         return None
     # The newest LTS is the sane default, and even majors are the LTS line.
-    even = [n for n in lines if isinstance(n["major"], int) and n["major"] % 2 == 0]
+    even = [n for n in lines if n["major"] % 2 == 0]
     return (even or lines)[-1]
 
 
@@ -494,7 +536,7 @@ def op_runtimes(ctx, req, sock):
     default = default_node()
     for n in nodes:
         n["recommended"] = bool(default and n["major"] == default["major"])
-        n["lts"] = isinstance(n["major"], int) and n["major"] % 2 == 0
+        n["lts"] = n["major"] % 2 == 0
     send(sock, {
         "ok": True,
         "php": php,
@@ -785,13 +827,18 @@ def op_plugin(ctx, req, sock):
 
 
 def php_binary_for(ctx, domain):
-    fields = ctx["sites"].get(domain) or {}
-    tpl = fields.get("BACKEND") or ""
-    m = re.fullmatch(r"PHP-(\d+)_(\d+)", tpl)
-    if m:
-        candidate = f"/usr/bin/php{m.group(1)}.{m.group(2)}"
-        if os.path.isfile(candidate):
-            return candidate
+    """
+    The interpreter this site is served by — wp-cli and composer must match it.
+
+    Running composer on 8.3 for a site served by 7.4 installs a dependency tree
+    the site then cannot load, and the error names a class rather than a PHP
+    version. So the same two sources as sites_summary, in the same order.
+    """
+    for site in ctx.get("sites_summary") or []:
+        if site["domain"] == domain and site.get("php"):
+            candidate = f"/usr/bin/php{site['php']}"
+            if os.path.isfile(candidate):
+                return candidate
     return shutil.which("php") or "/usr/bin/php"
 
 
@@ -1881,6 +1928,7 @@ def run_request(conn):
     # facts it never looks at.
     try:
         sites = hestia_web_domains(entry.pw_name) if op in NEEDS_SITES else {}
+        pools = php_pools() if op in NEEDS_SITES else {}
         templates = php_templates() if op in NEEDS_TEMPLATES else []
         lines = node_lines() if op in NEEDS_NODE else []
         extra = ROOT_PHASE[op](entry, conf, req) if op in ROOT_PHASE else {}
@@ -1916,8 +1964,12 @@ def run_request(conn):
             {
                 "domain": name,
                 "backend": fields.get("BACKEND") or "",
+                # The template name first, because a site explicitly pinned to a
+                # version says so there; the pool directory second, which is
+                # where a site on the `default` template gives itself away.
                 "php": (lambda m: f"{m.group(1)}.{m.group(2)}" if m else None)(
-                    re.fullmatch(r"PHP-(\d+)_(\d+)", fields.get("BACKEND") or "")),
+                    re.fullmatch(r"PHP-(\d+)_(\d+)", fields.get("BACKEND") or "")
+                ) or pools.get(name),
                 "ssl": (fields.get("SSL") or "no").lower() == "yes",
                 "suspended": (fields.get("SUSPENDED") or "no").lower() == "yes",
             }
