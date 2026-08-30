@@ -729,9 +729,21 @@ router.get('/services/:id/backups/:name/download', async (req, res, next) => {
     res.set('Content-Type', 'application/x-tar');
     res.set('Content-Disposition', `attachment; filename="${name}"`);
     if (file.size) res.set('Content-Length', String(file.size));
-    // A backup is the customer's whole account. It must not sit in a shared
-    // cache anywhere between here and them.
-    res.set('Cache-Control', 'no-store');
+    /*
+     * `no-transform` alongside `no-store`, and it is doing real work.
+     *
+     * no-store because a backup is the customer's whole account and must not
+     * sit in a shared cache anywhere between here and them.
+     *
+     * no-transform because the compression middleware in server.js otherwise
+     * takes the response, and a compressed response has NO Content-Length —
+     * so a browser downloading a four-gigabyte archive showed no size, no
+     * progress and no estimate, just a number climbing. (`compression` honours
+     * no-transform explicitly, which is why this works rather than needing a
+     * filter.) Gzipping a tar of already-compressed site data buys nothing
+     * anyway; it is CPU spent to make the file marginally larger.
+     */
+    res.set('Cache-Control', 'no-store, no-transform');
 
     file.stream.pipe(res);
     // A dropped download must not leave a broker child streaming into nothing.
