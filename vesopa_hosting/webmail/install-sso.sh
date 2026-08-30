@@ -91,7 +91,16 @@ install -m 0644 "$SRC/vesopa_sso/vesopa_sso.php" "$RC_DIR/plugins/vesopa_sso/ves
 
 # The config holds two secrets that between them open every mailbox, so it is
 # readable by the web server and by nobody else.
-WEB_GROUP="$(stat -c '%G' "$RC_CONF" 2>/dev/null || echo www-data)"
+#
+# OWNER AND GROUP ARE BOTH COPIED FROM ROUNDCUBE'S OWN CONFIG, and taking only
+# the group is the bug this comment exists to stop coming back. On this node
+# Roundcube runs as `hestiamail` and its config is `hestiamail:www-data 640` —
+# so it is the OWNER that grants the read, and a plugin config left as
+# `root:www-data 640` was unreadable. Roundcube's failure there is quiet in
+# exactly the wrong way: it logs "not readable" to errors.log, skips the plugin,
+# and serves an ordinary login page, so the symptom is "the button does nothing"
+# with nothing on the plugin's own log to explain it.
+RC_OWNER="$(stat -c '%U:%G' "$RC_CONF" 2>/dev/null || echo root:www-data)"
 cat > "$RC_DIR/plugins/vesopa_sso/config.inc.php" <<EOF
 <?php
 // Written by webmail/install-sso.sh on $(date -Is). Re-run it to rotate.
@@ -100,11 +109,19 @@ cat > "$RC_DIR/plugins/vesopa_sso/config.inc.php" <<EOF
 \$config['vesopa_sso_master_pass'] = '$MASTER_PASS';
 \$config['vesopa_sso_host'] = 'localhost:143';
 EOF
-chown "root:$WEB_GROUP" "$RC_DIR/plugins/vesopa_sso/config.inc.php"
+chown "$RC_OWNER" "$RC_DIR/plugins/vesopa_sso/config.inc.php"
 chmod 640 "$RC_DIR/plugins/vesopa_sso/config.inc.php"
 ok "$RC_DIR/plugins/vesopa_sso/"
 
 php -l "$RC_DIR/plugins/vesopa_sso/vesopa_sso.php" >/dev/null || die "The plugin does not parse."
+
+# Read it back as the user Roundcube runs as. An unreadable config is the one
+# failure that produces no plugin log at all, so it is checked here instead.
+RC_USER="${RC_OWNER%%:*}"
+if ! su -s /bin/sh "$RC_USER" -c "head -c 1 '$RC_DIR/plugins/vesopa_sso/config.inc.php' >/dev/null" 2>/dev/null; then
+  die "$RC_USER cannot read the plugin config. Roundcube would silently skip the plugin and serve a login page."
+fi
+ok "$RC_USER can read the plugin config"
 
 step "Roundcube: enabling it"
 cp -a "$RC_CONF" "$RC_CONF.bak-$STAMP"

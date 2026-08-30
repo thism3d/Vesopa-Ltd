@@ -60,11 +60,18 @@ which is where things stood before any of this existed. Nothing half-works.
 
     systemctl status dovecot
     doveadm auth test -x service=imap -M vesopasso muzahid@vesopa.com '<master password>'
-    tail -f /var/log/roundcube/vesopa_sso   # the plugin logs every refusal, with a reason
+    tail -f /var/log/roundcube/vesopa_sso.log   # every sign-in and every refusal, with a reason
 
 `refused: bad signature` means the panel and the plugin disagree about the key.
 `refused: link already used` on a first click means something is prefetching the
 link — a browser preview or a security scanner opening it before the customer.
+
+**An EMPTY `vesopa_sso.log` while links still land on the login page is the
+one failure that does not announce itself here.** It means Roundcube never
+loaded the plugin at all, and the reason will be in `errors.log` instead —
+almost always that the plugin's `config.inc.php` is not readable by the user
+Roundcube runs as (`hestiamail` on this node, not `www-data`). The installer
+checks for that now.
 
 ## Rotating
 
