@@ -174,6 +174,86 @@ function call(user, payload, { timeoutMs = 30_000 } = {}) {
   });
 }
 
+/**
+ * A request whose answer is a FILE, not JSON.
+ *
+ * Resolves once the header has arrived, with the socket still open and the
+ * body unread, so the caller can pipe it straight to the response. `readable`
+ * rather than `data` events throughout, because anything that arrived in the
+ * same packet as the header has to be `unshift()`ed back before piping — and
+ * that is only possible on a stream that has not been put into flowing mode.
+ *
+ * A backup is measured in gigabytes. Nothing here buffers it.
+ */
+function openStream(user, payload, { timeoutMs = 60_000 } = {}) {
+  return new Promise((resolve, reject) => {
+    const socket = net.createConnection(SOCKET_PATH);
+    let done = false;
+    let want = -1;
+
+    const finish = (err, value) => {
+      if (done) return;
+      done = true;
+      socket.removeListener('readable', onReadable);
+      if (err) {
+        try { socket.destroy(); } catch { /* already gone */ }
+        reject(err);
+      } else {
+        resolve(value);
+      }
+    };
+
+    socket.setTimeout(timeoutMs, () => {
+      finish(new AppError('That took too long and was stopped.', 'timeout', 504));
+    });
+    socket.on('error', (err) => {
+      if (['ENOENT', 'ECONNREFUSED', 'EACCES'].includes(err.code)) {
+        finish(new AppError(NO_BROKER, 'nobroker', 503));
+        return;
+      }
+      finish(new AppError('The application service could not be reached.', 'nobroker', 503));
+    });
+    socket.on('close', () => {
+      finish(new AppError('The application service closed the connection.', 'nobroker', 503));
+    });
+
+    function onReadable() {
+      for (;;) {
+        if (want < 0) {
+          const head = socket.read(4);
+          if (!head) return;
+          want = head.readUInt32BE(0);
+          if (want > 4 << 20) {
+            finish(new AppError('The application service sent something unreadable.', 'protocol', 502));
+            return;
+          }
+        }
+        const json = socket.read(want);
+        if (!json) return;
+        let header;
+        try {
+          header = JSON.parse(json.toString('utf8'));
+        } catch {
+          finish(new AppError('The application service sent something unreadable.', 'protocol', 502));
+          return;
+        }
+        if (!header.ok) {
+          const status = { forbidden: 403, refused: 400, denied: 403, missing: 404 };
+          finish(new AppError(header.error || 'That did not work.', header.code || 'error', status[header.code] || 400));
+          return;
+        }
+        // A long download must not be cut off by the header's own timeout.
+        socket.setTimeout(0);
+        finish(null, { header, socket });
+        return;
+      }
+    }
+
+    socket.on('readable', onReadable);
+    socket.on('connect', () => socket.write(frame({ ...payload, user })));
+  });
+}
+
 // ---------------------------------------------------------------------------
 // What "working" means
 // ---------------------------------------------------------------------------
@@ -571,8 +651,25 @@ async function pluginAction(user, { target, name, pkg, action }) {
   }, { timeoutMs: 20_000 });
 }
 
+/**
+ * One of this account's backups, as a readable stream.
+ *
+ * The caller gets `{ name, size, stream }` and is expected to pipe it. In mock
+ * mode there is nothing to stream, so this refuses rather than inventing a
+ * file — a download that produces a plausible but empty archive is worse than
+ * one that says it cannot.
+ */
+async function downloadBackup(user, name) {
+  if (!isLive()) {
+    throw new AppError('Backup downloads need a live hosting node.', 'nobroker', 503);
+  }
+  const { header, socket } = await openStream(user, { op: 'backupfile', name });
+  return { name: header.name, size: Number(header.size || 0), stream: socket };
+}
+
 module.exports = {
   AppError,
+  downloadBackup,
   MODE,
   isLive,
   accountFor,

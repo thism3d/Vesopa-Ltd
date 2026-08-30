@@ -214,7 +214,17 @@
           <% } %>
         </div>
 
-        <% if (view.accounts.length && vaultReady) { %>
+        <% if (view.accounts.length && ssoReady) { %>
+          <div class="tip mb-3">
+            <span class="tip-ic"></span>
+            <span>
+              <b>Open inbox</b> takes you straight in — you are already signed in here,
+              so there is nothing more to type. We do not hold your mailbox password to
+              do it, and signing in from a phone or another device still asks for it,
+              as it should.
+            </span>
+          </div>
+        <% } else if (view.accounts.length && vaultReady) { %>
           <div class="tip mb-3">
             <span class="tip-ic"></span>
             <span>
@@ -313,7 +323,11 @@
                 <p class="hint">In MB. 0 for no limit.</p>
               </div>
 
-              <% if (vaultReady) { %>
+              <%# Only where the node has no SSO. With it, one-click already
+                  works for every mailbox without anybody holding a password —
+                  so offering to keep one would be asking for a permission we
+                  no longer need and would not use. %>
+              <% if (vaultReady && !ssoReady) { %>
                 <%# Opt-in, and honest about what it means. Defaulting this on
                     would be deciding on somebody's behalf that we may hold
                     their mail password. %>

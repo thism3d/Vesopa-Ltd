@@ -14,6 +14,7 @@ const express = require('express');
 const db = require('../db');
 const auth = require('../auth');
 const hestia = require('../integrations/hestia');
+const apps = require('../apps');
 const sso = require('../integrations/hestia-sso');
 const registrar = require('../integrations/domainnameapi');
 const pricing = require('../pricing');
@@ -687,6 +688,145 @@ router.post('/services/:id/backups', async (req, res, next) => {
  * account as every other panel page, which the middleware above has already
  * established.
  */
+/**
+ * Backups: download one, put one back, throw one away.
+ *
+ * ---------------------------------------------------------------------------
+ * WHAT WAS MISSING
+ * ---------------------------------------------------------------------------
+ * The page listed backups and could take a new one, and that was all. A backup
+ * you cannot download is not a backup — it is a promise about a file on a
+ * machine you do not control — and a backup you cannot restore is a list.
+ * Between them those two gaps meant the nightly job was, from the customer's
+ * side, decoration.
+ *
+ * ---------------------------------------------------------------------------
+ * THE DOWNLOAD GOES THROUGH THE BROKER, AND HAS TO
+ * ---------------------------------------------------------------------------
+ * Every customer's archive lives in one flat /backup directory, each one mode
+ * 0640 owned `hestiaweb:<that customer>`. This process runs as the website's
+ * own account and can read exactly one customer's — its own. So the file is
+ * streamed by apps/broker.py, which drops to the asking customer first and
+ * lets the filesystem decide. Nothing is buffered: a backup is measured in
+ * gigabytes.
+ */
+const BACKUP_NAME_RE = /^[A-Za-z0-9._-]{1,120}\.tar(\.(gz|zst|bz2|xz))?$/;
+
+router.get('/services/:id/backups/:name/download', async (req, res, next) => {
+  const back = `/panel/services/${req.params.id}/backups`;
+  try {
+    const service = await ownedService(req);
+    if (!service) return next();
+    const name = String(req.params.name || '');
+    if (!BACKUP_NAME_RE.test(name)) {
+      flash(res, 'That is not a backup we know about.', 'error');
+      return res.redirect(back);
+    }
+
+    const user = await apps.accountFor(req.customer);
+    const file = await apps.downloadBackup(user, name);
+
+    res.set('Content-Type', 'application/x-tar');
+    res.set('Content-Disposition', `attachment; filename="${name}"`);
+    if (file.size) res.set('Content-Length', String(file.size));
+    // A backup is the customer's whole account. It must not sit in a shared
+    // cache anywhere between here and them.
+    res.set('Cache-Control', 'no-store');
+
+    file.stream.pipe(res);
+    // A dropped download must not leave a broker child streaming into nothing.
+    res.on('close', () => { try { file.stream.destroy(); } catch { /* gone */ } });
+    return undefined;
+  } catch (err) {
+    if (err instanceof apps.AppError) {
+      flash(res, err.message, 'error');
+      return res.redirect(back);
+    }
+    return next(err);
+  }
+});
+
+router.post('/services/:id/backups/:name/restore', async (req, res, next) => {
+  const back = `/panel/services/${req.params.id}/backups`;
+  try {
+    if (!auth.checkCsrf(req)) return res.redirect(back);
+    const service = await ownedService(req);
+    if (!service) return next();
+    const name = String(req.params.name || '');
+    if (!BACKUP_NAME_RE.test(name)) {
+      flash(res, 'That is not a backup we know about.', 'error');
+      return res.redirect(back);
+    }
+
+    /*
+     * Typing the date is not theatre. A restore OVERWRITES — the website in the
+     * web root now, the contents of the database now — and it cannot be undone
+     * from inside the panel, because the thing that would undo it is the state
+     * being replaced. A checkbox is too easy to click by accident on a page
+     * whose other buttons are all harmless.
+     */
+    if (String(req.body.confirm || '').trim() !== name) {
+      flash(res, 'Type the backup name exactly to confirm the restore.', 'error');
+      return res.redirect(back);
+    }
+
+    const sections = {
+      web: req.body.web === 'on',
+      dns: req.body.dns === 'on',
+      mail: req.body.mail === 'on',
+      db: req.body.db === 'on',
+      cron: req.body.cron === 'on',
+      udir: req.body.udir === 'on',
+    };
+    if (!Object.values(sections).some(Boolean)) {
+      flash(res, 'Choose at least one thing to restore.', 'error');
+      return res.redirect(back);
+    }
+
+    if (rateLimited(req.customer.id, 'restore', { max: 3, windowMs: 86_400_000 })) {
+      flash(res, 'That is three restores today. Open a ticket if something is going wrong.', 'warn');
+      return res.redirect(back);
+    }
+
+    try {
+      await hestia.restoreBackup({ username: req.customer.hestia_user, backup: name, ...sections });
+      await db.logActivity({
+        actorType: 'customer', actorId: req.customer.id,
+        action: 'backup.restored', target: name, ip: req.ip,
+      }).catch(() => {});
+      flash(res, 'Restore started. It runs on the server and takes a few minutes — your site may be inconsistent until it finishes.');
+    } catch (err) {
+      flash(res, `Could not start the restore: ${err.message}`, 'error');
+    }
+    return res.redirect(back);
+  } catch (err) {
+    return next(err);
+  }
+});
+
+router.post('/services/:id/backups/:name/delete', async (req, res, next) => {
+  const back = `/panel/services/${req.params.id}/backups`;
+  try {
+    if (!auth.checkCsrf(req)) return res.redirect(back);
+    const service = await ownedService(req);
+    if (!service) return next();
+    const name = String(req.params.name || '');
+    if (!BACKUP_NAME_RE.test(name)) {
+      flash(res, 'That is not a backup we know about.', 'error');
+      return res.redirect(back);
+    }
+    try {
+      await hestia.deleteBackup({ username: req.customer.hestia_user, backup: name });
+      flash(res, 'Backup deleted.');
+    } catch (err) {
+      flash(res, `Could not delete it: ${err.message}`, 'error');
+    }
+    return res.redirect(back);
+  } catch (err) {
+    return next(err);
+  }
+});
+
 router.use('/apps', require('./panel-apps'));
 
 router.use('/databases', require('./panel-databases'));
@@ -1039,7 +1179,21 @@ router.get('/domains/:id', async (req, res, next) => {
     // The renewal quote is in the visitor's own currency: nothing has been
     // charged yet, so this is a shop price like any other.
     const price = await pricing.priceForTld(domain.tld, req.currency);
+
+    /*
+     * The website behind this domain, only for the two things this page shows
+     * about it: whether it exists on the node at all, and where it currently
+     * redirects. A failure here must not take the page down — a domain page
+     * that 500s because the node is busy is worse than one missing a card.
+     */
+    const site = req.customer.hestia_user
+      ? (await hestia.listWebDomains(req.customer.hestia_user).catch(() => []))
+        .find((w) => w.domain === domain.domain) || null
+      : null;
+
     res.render('panel/domain', {
+      site,
+      hasHosting: Boolean(req.customer.hestia_user),
       title: domain.domain,
       robots: 'noindex',
       domain,
@@ -1446,6 +1600,103 @@ router.post('/domains/:id/nameservers', async (req, res, next) => {
     res.redirect(domainPath(domain));
   } catch (err) {
     next(err);
+  }
+});
+
+/**
+ * Send visitors somewhere else.
+ *
+ * ---------------------------------------------------------------------------
+ * WHY THIS WAS THE MISSING PAGE
+ * ---------------------------------------------------------------------------
+ * People buy a second domain for one of three reasons: they want the .co.uk as
+ * well as the .com, they are moving to a new name, or they bought a misspelling
+ * before somebody else did. All three end in the same request — "point it at
+ * the main site" — and there was no way to do it. The answer was a support
+ * ticket, or a one-line index.php somebody had to be told how to write.
+ *
+ * ---------------------------------------------------------------------------
+ * THE CODE IS THE PART PEOPLE GET WRONG, SO THE FORM DOES NOT SAY "301"
+ * ---------------------------------------------------------------------------
+ * 301 is cached hard — some browsers keep one until their cache is cleared, so
+ * a redirect set by mistake follows that visitor around long after the server
+ * has been fixed, and there is nothing we can do about it from here. 302 is not
+ * cached and is the right answer for anything temporary or unfinished.
+ *
+ * The form therefore offers "moved for good" and "just for now", explains what
+ * each does to somebody's browser, and defaults to neither — see
+ * views/panel/domain.ejs. The numbers are shown, because somebody who knows
+ * what they want is looking for them, but they are not the label.
+ */
+router.post('/domains/:id/redirect', async (req, res, next) => {
+  try {
+    if (!auth.checkCsrf(req)) return res.redirect('/panel/domains');
+    const domain = await ownedDomain(req);
+    if (!domain) return next();
+    const back = domainPath(domain);
+
+    if (!req.customer.hestia_user) {
+      flash(res, 'There is no hosting on this account yet, so there is no website to redirect.', 'error');
+      return res.redirect(back);
+    }
+
+    // Clearing is its own submit, and it is the easy half.
+    if (req.body.action === 'clear') {
+      try {
+        await hestia.clearRedirect({ username: req.customer.hestia_user, domain: domain.domain });
+        flash(res, `${domain.domain} serves its own website again.`);
+      } catch (err) {
+        flash(res, `Could not remove the redirect: ${err.message}`, 'error');
+      }
+      return res.redirect(back);
+    }
+
+    const raw = String(req.body.target || '').trim();
+    const code = req.body.code === '302' ? 302 : 301;
+
+    /*
+     * Accept what people actually type. "example.com", "https://example.com"
+     * and "example.com/shop" are all the same intent, and refusing two of the
+     * three teaches nothing. The scheme is stripped for the bare-host case
+     * because that is the form Hestia's own examples use, and kept when there
+     * is a path, because then it matters.
+     */
+    let target = raw.replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+    if (!target) {
+      flash(res, 'Type where visitors should go.', 'error');
+      return res.redirect(back);
+    }
+    if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+(\/[^\s?#]*)?$/i.test(target)) {
+      flash(res, 'That does not look like a web address. Try something like example.com, or example.com/page.', 'error');
+      return res.redirect(back);
+    }
+    if (target.toLowerCase() === domain.domain.toLowerCase()) {
+      /*
+       * A domain redirecting to itself is an infinite loop, and the browser
+       * reports it as "too many redirects" on a site that was working a minute
+       * ago. Cheaper to refuse than to explain afterwards.
+       */
+      flash(res, `${domain.domain} cannot redirect to itself — visitors would go round in a loop.`, 'error');
+      return res.redirect(back);
+    }
+
+    try {
+      await hestia.setRedirect({
+        username: req.customer.hestia_user, domain: domain.domain, target, code,
+      });
+      await db.logActivity({
+        actorType: 'customer', actorId: req.customer.id,
+        action: 'domain.redirect', target: `${domain.domain} -> ${target} (${code})`, ip: req.ip,
+      }).catch(() => {});
+      flash(res, code === 301
+        ? `${domain.domain} now sends visitors to ${target}, permanently. Browsers remember a permanent redirect, so test it in a private window.`
+        : `${domain.domain} now sends visitors to ${target}, temporarily. Nothing caches this one, so you can change it freely.`);
+    } catch (err) {
+      flash(res, `Could not set the redirect: ${err.message}`, 'error');
+    }
+    return res.redirect(back);
+  } catch (err) {
+    return next(err);
   }
 });
 

@@ -1,5 +1,23 @@
+<%#
+  Backups.
+
+  THE PAGE USED TO BE A LIST AND NOTHING ELSE. You could see that backups
+  existed and take another one, and that was the whole feature — no way to
+  download one, no way to put one back. A backup you cannot download is a
+  promise about a file on a machine you do not control, and a backup you cannot
+  restore is a list. Between them, the nightly job was decoration from the
+  customer's side.
+
+  WHAT IS IN EACH ARCHIVE IS ON THE CARD, because a restore is per section —
+  websites, DNS, mail, databases, cron, home directory — and choosing sections
+  blind is not a choice. The restore control is deliberately the heaviest thing
+  on the page: it OVERWRITES, it cannot be undone from in here, and it is
+  folded away behind a summary with the name typed to confirm. Download is one
+  click, because that one is safe.
+%>
 <% const pageIcon = 'backup'; %>
 <%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
+<link rel="stylesheet" href="<%= asset('/assets/css/apps.css') %>">
 <%- include('../partials/panel-shell', {
   pageTitle: service.primary_domain || service.plan_name,
   pageSub: 'Backups',
@@ -16,50 +34,166 @@
 <% if (!hestiaLive) { %>
   <div class="alert alert-info">
     <%- icon('info', 19) %>
-    <div><b>Demonstration mode.</b> This terminal is not connected to a live hosting node yet, so nothing is listed here.</div>
+    <div><b>Demonstration mode.</b> This panel is not connected to a live hosting node, so no backups are listed.</div>
   </div>
 <% } %>
 
-<div class="p-card p-card-flush">
-  <div class="p-card-head">
-    <h2>Backups</h2>
-    <form method="post" action="/panel/services/<%= service.id %>/backups" data-guard>
-      <input type="hidden" name="_csrf" value="<%= csrf %>">
-      <button class="btn btn-sm" type="submit" data-busy="Starting…">Back up now</button>
-    </form>
+<div class="row-between mb-3" style="align-items:flex-end;gap:12px;flex-wrap:wrap">
+  <div>
+    <h2 class="h3 mb-1">Backups</h2>
+    <p class="small muted mb-0">
+      Taken automatically every night and kept for 30 days. Take one yourself before
+      any change you would not want to undo by hand.
+    </p>
   </div>
-  <div class="p-card-body">
-    <p class="small muted mb-0">Restore points taken automatically. You can also take one yourself before making a big change.</p>
+  <form method="post" action="/panel/services/<%= service.id %>/backups" data-guard>
+    <input type="hidden" name="_csrf" value="<%= csrf %>">
+    <button class="btn btn-sm" type="submit" data-busy="Starting…"><%- icon('backup', 15) %> Back up now</button>
+  </form>
+</div>
+
+<% if (!items.length) { %>
+  <div class="empty">
+    <%- icon(pageIcon, 46) %>
+    <h3>Nothing here yet</h3>
+    <p>
+      <% if (service.status !== 'active') { %>
+        This account is not live yet, so there is nothing to back up.
+      <% } else { %>
+        The first nightly backup has not run yet. You can take one now with the button above —
+        it takes a few minutes and appears here when it finishes.
+      <% } %>
+    </p>
   </div>
-  <% if (!items.length) { %>
-    <div class="empty">
-      <%- icon(pageIcon, 46) %>
-      <h3>Nothing here yet</h3>
-      <p>
-        <% if (service.status !== 'active') { %>
-          This account is not live yet.
-        <% } else { %>
-          Once you create one it will be listed here with everything you need to connect to it.
-        <% } %>
-      </p>
-    </div>
-  <% } else { %>
-    <% items.forEach(function (it) { %>
-      <div class="item">
-        <span class="item-icon"><%- icon(pageIcon, 19) %></span>
-        <span class="item-main">
-          <span class="item-title"><%= it.name || it.address || it.account %></span>
-          <span class="item-sub">
-            <% if (it.user) { %>User <%= it.user %> · <% } %>
-            <% if (it.type) { %><%= it.type %> · <% } %>
-            <% if (it.size_mb !== undefined) { %><%= it.size_mb %> MB<% } %>
-            <% if (it.used_mb !== undefined) { %><%= it.used_mb %> MB used<% } %>
-            <% if (it.created_at) { %><%= when(it.created_at) %><% } %>
+<% } else { %>
+
+  <div class="applist">
+    <% items.forEach(function (it) {
+         const sections = [
+           { key: 'web',  label: 'Websites',   items: it.web  || [] },
+           { key: 'db',   label: 'Databases',  items: it.db   || [] },
+           { key: 'mail', label: 'Mailboxes',  items: it.mail || [] },
+           { key: 'dns',  label: 'DNS zones',  items: it.dns  || [] },
+           { key: 'cron', label: 'Cron jobs',  items: it.cron || [] },
+           { key: 'udir', label: 'Home files', items: it.udir || [] },
+         ];
+         const has = sections.filter((s) => s.items.length);
+         const size = it.size_mb >= 1024
+           ? (it.size_mb / 1024).toFixed(1) + ' GB'
+           : it.size_mb + ' MB';
+    %>
+      <div class="appcard">
+        <div class="appcard-top">
+          <span class="approw-ic"><%- icon('backup', 19) %></span>
+          <span class="approw-b">
+            <span class="approw-n"><%= when(it.created_at) %></span>
+            <span class="approw-s mono"><%= it.name %></span>
           </span>
-        </span>
+          <span class="state state-grey"><i></i><%= size %></span>
+        </div>
+
+        <% if (has.length) { %>
+          <div class="appcard-stats">
+            <% has.forEach(function (sec) { %>
+              <span>
+                <span class="stat-k"><%= sec.label %></span>
+                <span class="stat-v"><%= sec.items.length %></span>
+              </span>
+            <% }); %>
+          </div>
+        <% } %>
+
+        <div class="appcard-acts">
+          <a class="btn btn-sm" href="/panel/services/<%= service.id %>/backups/<%= encodeURIComponent(it.name) %>/download">
+            <%- icon('download', 15) %> Download
+          </a>
+
+          <%# ---- Restore: folded, sectioned, and typed to confirm ---- %>
+          <details class="fold" style="flex:1 1 100%;margin:8px 0 0">
+            <summary style="padding:11px 14px">
+              <span style="color:var(--red);display:grid;place-items:center"><%- icon('refresh', 16) %></span>
+              <span class="strong">Restore from this backup</span>
+              <span class="fold-sub">Overwrites what is there now</span>
+            </summary>
+            <div class="fold-body">
+              <div class="tip tip-warn mb-3">
+                <span class="tip-ic"></span>
+                <div>
+                  <b>A restore replaces, it does not merge.</b> Each section you tick is put
+                  back exactly as it was on
+                  <%= when(it.created_at, { dateOnly: true }) %>, and anything created since
+                  in that section is gone. There is no undo from in here — take a fresh
+                  backup first if you are not certain.
+                </div>
+              </div>
+
+              <form method="post" action="/panel/services/<%= service.id %>/backups/<%= encodeURIComponent(it.name) %>/restore">
+                <input type="hidden" name="_csrf" value="<%= csrf %>">
+
+                <p class="label mb-2">What to put back</p>
+                <div class="mb-3">
+                  <% has.forEach(function (sec) { %>
+                    <label class="check mb-2">
+                      <input type="checkbox" name="<%= sec.key %>" checked>
+                      <span>
+                        <b><%= sec.label %></b>
+                        <span class="tiny muted" style="display:block">
+                          <%= sec.items.slice(0, 4).join(', ') %><%= sec.items.length > 4 ? ' and ' + (sec.items.length - 4) + ' more' : '' %>
+                        </span>
+                      </span>
+                    </label>
+                  <% }); %>
+                </div>
+
+                <div class="field mb-3">
+                  <label class="label" for="confirm-<%= it.name %>">
+                    Type <span class="mono"><%= it.name %></span> to confirm
+                  </label>
+                  <input class="input mono" id="confirm-<%= it.name %>" name="confirm"
+                         autocomplete="off" spellcheck="false" placeholder="<%= it.name %>" required>
+                  <p class="hint">
+                    Typed rather than ticked, because every other button on this page is
+                    harmless and this one is not.
+                  </p>
+                </div>
+
+                <button class="btn btn-sm" type="submit" style="background:var(--red);color:#fff">
+                  <%- icon('refresh', 15) %> Restore
+                </button>
+                <p class="tiny muted mt-2 mb-0">
+                  Runs on the server and takes a few minutes. Your site may be inconsistent
+                  while it does.
+                </p>
+              </form>
+
+              <hr style="border:0;border-top:1px solid var(--rule-soft);margin:18px 0">
+
+              <details class="inline-danger">
+                <summary class="btn btn-ghost btn-sm" style="color:var(--red)"><%- icon('trash', 14) %> Delete this backup</summary>
+                <form method="post" action="/panel/services/<%= service.id %>/backups/<%= encodeURIComponent(it.name) %>/delete" class="inline-danger-body">
+                  <input type="hidden" name="_csrf" value="<%= csrf %>">
+                  <p class="small mb-2">
+                    Removes the archive from the server. Download it first if you want to
+                    keep it — this cannot be undone.
+                  </p>
+                  <button class="btn btn-sm" type="submit" style="background:var(--red);color:#fff">Delete permanently</button>
+                </form>
+              </details>
+            </div>
+          </details>
+        </div>
       </div>
     <% }); %>
-  <% } %>
-</div>
+  </div>
+
+  <div class="tip mt-3">
+    <span class="tip-ic"></span>
+    <div>
+      <b>Downloads are the whole account</b> — every website, database and mailbox in one
+      <code>.tar</code>. Keep one somewhere that is not this server; a backup that only
+      exists on the machine it is backing up is not a backup.
+    </div>
+  </div>
+<% } %>
 
 <%- include('../partials/panel-shell-end') %>

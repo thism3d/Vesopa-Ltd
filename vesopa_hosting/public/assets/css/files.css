@@ -89,18 +89,36 @@
 .fm-find input:focus { outline: none; border-color: var(--lime); box-shadow: var(--glow); background: #fff; }
 .fm-find-icon { position: absolute; left: 11px; display: grid; place-items: center; color: var(--ink-3); pointer-events: none; }
 .fm-find-clear {
-  position: absolute; right: 7px; border: 0; background: none; cursor: pointer;
-  color: var(--ink-3); display: grid; place-items: center; padding: 3px; border-radius: 50%;
+  position: absolute; right: 7px; border: 0; cursor: pointer;
+  color: var(--ink-2); display: grid; place-items: center; padding: 3px; border-radius: 50%;
+  /* Visible at rest for the same reason as .fm-icon-btn — it sits inside a
+     filled field, so a tint rather than a border is what separates it. */
+  background: var(--rule-soft);
 }
 .fm-find-clear:hover { background: var(--bg-3); color: var(--ink); }
 
+/*
+ * An icon button that is visible while nobody is pointing at it.
+ *
+ * This used to be `border: transparent; background: none`, so its only
+ * affordance was :hover — and A TOUCH SCREEN HAS NO HOVER. On an iPad the
+ * editor's wrap toggle and its close button were two 36px targets sitting
+ * invisibly on a white sheet: reachable by anybody who happened to tap the
+ * right empty space, and invisible to everybody else. Reported from an iPad,
+ * where the toolbar read as "Save, and then nothing".
+ *
+ * A button looks like a button at rest. Hover and press are now the second and
+ * third states rather than the only two that exist.
+ */
 .fm-icon-btn {
   display: grid; place-items: center; flex: none;
   width: 36px; height: 36px; border-radius: 9px;
-  border: 1.5px solid transparent; background: none; cursor: pointer; color: var(--ink-2);
+  border: 1.5px solid var(--rule); background: var(--bg-2); cursor: pointer; color: var(--ink-2);
   transition: background .16s var(--ease), color .16s var(--ease), border-color .16s var(--ease);
 }
-.fm-icon-btn:hover { background: var(--bg-3); color: var(--ink); }
+.fm-icon-btn:hover { background: var(--bg-3); border-color: #cfd5bd; color: var(--ink); }
+.fm-icon-btn:active { background: var(--rule-soft); }
+.fm-icon-btn:focus-visible { outline: 2px solid var(--lime-ink); outline-offset: 2px; }
 .fm-icon-btn.is-on { background: var(--lime-soft); border-color: var(--lime); color: var(--lime-deep); }
 .fm-icon-btn.is-spinning svg { animation: fm-spin .7s linear infinite; }
 

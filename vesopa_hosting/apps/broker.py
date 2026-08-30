@@ -942,6 +942,63 @@ class Progress:
         self.flush()
 
 
+#: What a Hestia backup archive is called. Anchored, and it must begin with
+#: this account's own name — every backup on the box lives in one flat
+#: directory, so the filename is the only thing separating one customer's
+#: archive from another's.
+BACKUP_RE = re.compile(r"^[A-Za-z0-9._-]{1,120}\.tar(\.(gz|zst|bz2|xz))?$")
+BACKUP_DIR = "/backup"
+
+
+def op_backupfile(ctx, req, sock):
+    """
+    Stream one of this account's backups to the browser.
+
+    THE PERMISSION CHECK IS THE FILESYSTEM'S, not this function's. /backup is a
+    flat directory holding every customer's archives, each one mode 0640 owned
+    `hestiaweb:<that customer>`. This process has already dropped to the
+    customer asking, so the open() below succeeds for their own archive and
+    fails with EACCES for anybody else's — which is a guarantee no amount of
+    string comparison on filenames can give you.
+
+    The name check is still here, and it is doing a different job: it stops a
+    path with a slash or a `..` in it from being interpreted at all, and it
+    refuses a name that is not this account's before touching the disk, so the
+    common mistake produces a clear refusal rather than a permission error.
+    """
+    name = str(req.get("name") or "")
+    if not BACKUP_RE.fullmatch(name):
+        raise Refused("That is not a backup file name.")
+    if not name.startswith(ctx["user"] + "."):
+        raise Refused("That backup does not belong to this account.")
+
+    path = os.path.join(BACKUP_DIR, name)
+    if os.path.realpath(path) != path or not os.path.isfile(path):
+        raise Refused("That backup is no longer on the server.")
+
+    try:
+        fh = open(path, "rb")
+    except PermissionError:
+        raise Refused("That backup does not belong to this account.")
+
+    with fh:
+        size = os.fstat(fh.fileno()).st_size
+        send(sock, {"ok": True, "name": name, "size": size, "body": size})
+        # sendfile where the kernel will do it, and a plain copy where it will
+        # not. A backup is measured in gigabytes; reading one into this
+        # process to write it out again would be a gigabyte of resident memory
+        # per download.
+        try:
+            sock.sendfile(fh)
+        except (AttributeError, OSError):
+            fh.seek(0)
+            while True:
+                chunk = fh.read(CHUNK)
+                if not chunk:
+                    break
+                sock.sendall(chunk)
+
+
 def op_job(ctx, req, sock):
     path = job_path(ctx["home"], req.get("id"))
     try:
@@ -1846,6 +1903,7 @@ HANDLERS = {
     "install": op_install,
     "job": op_job,
     "jobs": op_jobs,
+    "backupfile": op_backupfile,
 }
 
 

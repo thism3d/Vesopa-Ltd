@@ -498,8 +498,46 @@ async function deleteWebDomain({ username, domain }) {
   return { ok: true };
 }
 
+/**
+ * The websites on an account.
+ *
+ * MOCK MODE ANSWERS WITH SOMETHING, not with nothing. An empty list is a
+ * different shape from any real answer, and every page that reads this then
+ * renders its "you have no websites yet" branch on a laptop — so the redirect
+ * form, the app installer's target picker and the runtime page could not be
+ * looked at during development at all. Two bugs have already come out of a
+ * mock that differed from the live answer; this is the same trap.
+ *
+ * The names are obviously invented, and they match the domains the seed data
+ * puts in the panel so the two halves agree with each other.
+ */
 async function listWebDomains(username) {
-  if (!isLive()) return [];
+  if (!isLive()) {
+    return [
+      {
+        domain: 'janesbakery.co.uk',
+        ip: '203.0.113.10',
+        ssl: true,
+        letsencrypt: true,
+        suspended: false,
+        disk_mb: 148,
+        redirect: '',
+        redirect_code: null,
+      },
+      {
+        domain: 'oldshop.co.uk',
+        ip: '203.0.113.10',
+        ssl: true,
+        letsencrypt: true,
+        suspended: false,
+        disk_mb: 2,
+        // One of them redirects, so the "already on" branch of the panel's
+        // redirect card is reachable without a live node.
+        redirect: 'janesbakery.co.uk',
+        redirect_code: 301,
+      },
+    ];
+  }
   const data = await run('v-list-web-domains', [username], { json: true });
   return Object.entries(data).map(([domain, d]) => ({
     domain,
@@ -508,6 +546,8 @@ async function listWebDomains(username) {
     letsencrypt: String(d.LETSENCRYPT || 'no') === 'yes',
     suspended: String(d.SUSPENDED || 'no') === 'yes',
     disk_mb: Number(d.U_DISK || 0),
+    redirect: d.REDIRECT || '',
+    redirect_code: Number(d.REDIRECT_CODE || 0) || null,
   }));
 }
 
@@ -543,6 +583,34 @@ async function listWebDomains(username) {
  * challenge doing its job, not a bug, and the panel says so in those words
  * rather than showing an exit code.
  */
+/**
+ * Send every visitor somewhere else.
+ *
+ * `v-add-web-domain-redirect USER DOMAIN TARGET [CODE]`. The target may be a
+ * bare hostname — which is how Hestia's own examples write it — or a full URL
+ * when a path is wanted; it is passed through as given, having been validated
+ * by the caller.
+ *
+ * THE CODE IS THE WHOLE DECISION and it is the one customers get wrong. 301
+ * says "permanently", and browsers and search engines cache it hard — some
+ * browsers keep a 301 until their cache is cleared, so a mistake follows a
+ * visitor around long after the server has been fixed. 302 says "for now" and
+ * is not cached, which makes it the right answer for anything temporary and
+ * the safe answer while testing. The panel says this in those words rather
+ * than offering two numbers.
+ */
+async function setRedirect({
+  username, domain, target, code = 301,
+}) {
+  await run('v-add-web-domain-redirect', [username, domain, target, String(code)]);
+  return { ok: true };
+}
+
+async function clearRedirect({ username, domain }) {
+  await run('v-delete-web-domain-redirect', [username, domain]);
+  return { ok: true };
+}
+
 async function enableSSL({ username, domain, aliases = '', mail = false }) {
   await run(
     'v-add-letsencrypt-domain',
@@ -943,11 +1011,26 @@ async function removeWebmailAlias({ username, domain }) {
 async function listBackups(username) {
   if (!isLive()) return [];
   const data = await run('v-list-user-backups', [username], { json: true });
+  const list = (value) => String(value || '').split(',').map((v) => v.trim()).filter(Boolean);
   return Object.entries(data).map(([name, b]) => ({
     name,
     type: b.TYPE,
     size_mb: Number(b.SIZE || 0),
     created_at: b.DATE ? `${b.DATE} ${b.TIME || ''}`.trim() : '',
+    /*
+     * What is actually inside it. Carried through rather than dropped because
+     * a restore is per section — websites, DNS, mail, databases, cron, home
+     * directory — and a customer choosing which sections to put back needs to
+     * see what each one contains. "Restore" with no idea what is in the archive
+     * is a button nobody should press.
+     */
+    web: list(b.WEB),
+    dns: list(b.DNS),
+    mail: list(b.MAIL),
+    db: list(b.DB),
+    cron: list(b.CRON),
+    udir: list(b.UDIR),
+    runtime_min: Number(b.RUNTIME || 0),
   }));
 }
 
@@ -955,6 +1038,37 @@ async function listBackups(username) {
 async function createBackup(username) {
   await run('v-backup-user', [username]);
   return { ok: true, queued: true };
+}
+
+/**
+ * Put a backup back.
+ *
+ * `v-restore-user USER BACKUP [WEB] [DNS] [MAIL] [DB] [CRON] [UDIR]`, where
+ * each section is either left empty — meaning restore all of it — or the
+ * literal string `no`, meaning skip it. There is no "restore just this one
+ * domain" through this command; it is per section.
+ *
+ * THIS OVERWRITES. A restored website replaces whatever is in the web root
+ * now, and a restored database replaces its current contents. The panel asks
+ * before calling this, per section, and says so in those words — "restore"
+ * sounds additive to most people and it is not.
+ *
+ * It also takes minutes and Hestia runs it in the background, so a success
+ * here means "accepted", not "done".
+ */
+async function restoreBackup({
+  username, backup, web = true, dns = true, mail = true, db = true, cron = true, udir = true,
+}) {
+  const on = (flag) => (flag ? '' : 'no');
+  await run('v-restore-user', [
+    username, backup, on(web), on(dns), on(mail), on(db), on(cron), on(udir),
+  ]);
+  return { ok: true, queued: true };
+}
+
+async function deleteBackup({ username, backup }) {
+  await run('v-delete-user-backup', [username, backup]);
+  return { ok: true };
 }
 
 // ---------------------------------------------------------------------------
@@ -1044,6 +1158,8 @@ module.exports = {
   deleteWebDomain,
   listWebDomains,
   enableSSL,
+  setRedirect,
+  clearRedirect,
   webDomainSsl,
   forceHttps,
   addDatabase,
@@ -1075,6 +1191,8 @@ module.exports = {
   deleteMailAccount,
   listBackups,
   createBackup,
+  restoreBackup,
+  deleteBackup,
   provision,
   status,
 };

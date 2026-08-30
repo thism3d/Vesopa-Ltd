@@ -33,6 +33,7 @@ const db = require('../db');
 const hestia = require('../integrations/hestia');
 const mailboxes = require('../mailboxes');
 const vault = require('../mailbox-vault');
+const webmailSso = require('../webmail-sso');
 const { flash, field, rateLimited } = require('../http-utils');
 const {
   sendMail, shell, detailTable, escapeHtml,
@@ -129,13 +130,18 @@ router.get('/', async (req, res, next) => {
     }));
 
     /*
-     * Which mailboxes the panel can open in one click — i.e. the ones whose
-     * password the customer asked us to keep. Anything not in here gets a link
-     * to webmail and types their password, exactly as before.
+     * Which mailboxes open in one click.
+     *
+     * With the node's SSO installed that is ALL of them, and the set is built
+     * from the list rather than looked up — there is nothing per-mailbox to
+     * know, because nothing per-mailbox is stored. The vault lookup is only
+     * still here for a node where SSO has not been installed yet, where the
+     * handful of mailboxes somebody once opted into still work.
      */
-    const openable = view
-      ? await vault.knownFor(req.customer.id, view.accounts.map((a) => a.address))
-      : new Set();
+    const addresses = view ? view.accounts.map((a) => a.address) : [];
+    const openable = webmailSso.enabled()
+      ? new Set(addresses)
+      : (view ? await vault.knownFor(req.customer.id, addresses) : new Set());
 
     res.render('panel/mail', {
       title: 'Email',
@@ -147,6 +153,7 @@ router.get('/', async (req, res, next) => {
       quota,
       openable,
       vaultReady: vault.enabled(),
+      ssoReady: webmailSso.enabled(),
       webmail: WEBMAIL_URL,
       mailHost: MAIL_HOSTNAME,
       ports: MAIL_PORTS,
@@ -626,35 +633,66 @@ router.post('/:domain/check', async (req, res, next) => {
 /**
  * Open the inbox, already signed in.
  *
- * Roundcube has no token login and Dovecot will not take one, so this posts the
- * mailbox's own credentials from the CUSTOMER'S browser — an auto-submitting
- * form, straight to webmail's login endpoint. The password is in the body of
- * one POST the customer's own browser makes to a host they already trust with
- * it; it never reaches a URL, a log line or a referrer.
+ * ---------------------------------------------------------------------------
+ * THREE WAYS IN, AND IT TRIES THEM IN THIS ORDER
+ * ---------------------------------------------------------------------------
+ * 1. A SIGNED LINK. The node runs a Dovecot master user and a small Roundcube
+ *    plugin (see webmail/), so the mailbox opens with nobody's password
+ *    anywhere. This is the one that should always win.
+ * 2. THE SEALED PASSWORD, where an older mailbox has one and the key is set.
+ *    Kept only so that nothing regressed for the handful of customers who had
+ *    opted into it; nothing new is ever written there.
+ * 3. PLAIN WEBMAIL, where neither is available — they type it, exactly as
+ *    before any of this existed.
  *
- * It only works where the customer asked us to remember the password. Where
- * they did not — or where MAILBOX_KEY is unset, or the password was changed on
- * the node — this falls through to plain webmail and they type it, which is
- * exactly what happened before this route existed. Nothing half-works.
+ * ---------------------------------------------------------------------------
+ * IT NEVER 404s ANY MORE, AND THAT WAS THE ACTUAL BUG
+ * ---------------------------------------------------------------------------
+ * Every guard below used to `next()`, which is a 404 page with no explanation
+ * on a URL the panel itself generated. A customer whose mailbox lives under a
+ * different hosting account from the one they are signed into — which is the
+ * ordinary case when one person holds several accounts — clicked their own
+ * inbox and got "not found", with nothing to do about it and nothing to tell
+ * support. Each refusal now says which check failed and where to go instead.
  */
 router.get('/:domain/:account/open', async (req, res, next) => {
+  const back = '/panel/mail';
   try {
-    const row = await ownedMailDomain(req, req.params.domain);
-    if (!row) return next();
-
     const account = String(req.params.account || '').toLowerCase();
-    if (!ACCOUNT_RE.test(account)) return next();
-    const address = `${account}@${row.domain}`;
+    const wanted = String(req.params.domain || '').toLowerCase();
+    const address = `${account}@${wanted}`;
+
+    if (!ACCOUNT_RE.test(account)) {
+      flash(res, `${address} is not a mailbox address we recognise.`, 'error');
+      return res.redirect(back);
+    }
+
+    const row = await ownedMailDomain(req, wanted);
+    if (!row) {
+      /*
+       * The most common real cause, said plainly: the mailbox exists, and it
+       * belongs to a different hosting account from the one this session is
+       * signed into. "Not found" sent those people to support; this sends them
+       * to the right sign-in.
+       */
+      flash(res, `${wanted} is not on this account. If you hold more than one account with us, sign in with the one that has it.`, 'error');
+      return res.redirect(back);
+    }
 
     // The node is the authority on whether this mailbox exists. Ownership of
     // the DOMAIN is not ownership of an address inside it that we invented.
     const accounts = await hestia.listMailAccounts({
       username: req.customer.hestia_user, domain: row.domain,
-    }).catch(() => []);
-    if (!accounts.some((a) => a.account === account)) return next();
+    }).catch(() => null);
 
-    const password = await vault.recall({ customerId: req.customer.id, address });
-    if (!password) return res.redirect(WEBMAIL_URL);
+    if (accounts === null) {
+      flash(res, 'We could not reach the mail server just now. Try again in a moment.', 'error');
+      return res.redirect(`/panel/mail/${encodeURIComponent(row.domain)}`);
+    }
+    if (!accounts.some((a) => a.account === account)) {
+      flash(res, `There is no mailbox called ${address}.`, 'error');
+      return res.redirect(`/panel/mail/${encodeURIComponent(row.domain)}`);
+    }
 
     await db.logActivity({
       actorType: 'customer', actorId: req.customer.id,
@@ -662,13 +700,37 @@ router.get('/:domain/:account/open', async (req, res, next) => {
     }).catch(() => {});
 
     /*
-     * `noindex` and `no-store` are not decoration. This response body contains a
-     * live password for as long as it is in the browser's memory, and a cached
-     * copy on disk would outlive the session that asked for it.
+     * A signed link is a redirect and nothing else — no page, no form, no
+     * credential in a response body. It is single-use and dead in sixty
+     * seconds, so `no-store` matters less than it does below, but a cached
+     * redirect would send the next click to a spent nonce and a login page.
+     */
+    const signed = webmailSso.linkFor(address);
+    if (signed) {
+      res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+      res.set('Referrer-Policy', 'no-referrer');
+      return res.redirect(signed);
+    }
+
+    const password = await vault.recall({ customerId: req.customer.id, address });
+    if (!password) {
+      /*
+       * Not an error. Webmail works; it just asks. Saying so beats a silent
+       * redirect that leaves somebody wondering whether the button did
+       * anything at all.
+       */
+      flash(res, `Opening webmail — sign in as ${address}. One-click sign-in is not set up on this server yet.`, 'warn');
+      return res.redirect(WEBMAIL_URL);
+    }
+
+    /*
+     * `no-store` is not decoration. This response body contains a live password
+     * for as long as it is in the browser's memory, and a cached copy on disk
+     * would outlive the session that asked for it.
      */
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
     res.set('Referrer-Policy', 'no-referrer');
-    res.type('html').send(`<!doctype html>
+    return res.type('html').send(`<!doctype html>
 <html lang="en-GB"><head><meta charset="utf-8">
 <meta name="robots" content="noindex,nofollow">
 <title>Opening ${escapeHtml(address)}…</title>
@@ -698,7 +760,7 @@ router.get('/:domain/:account/open', async (req, res, next) => {
 <script>document.getElementById('f').submit();</script>
 </body></html>`);
   } catch (err) {
-    next(err);
+    return next(err);
   }
 });
 

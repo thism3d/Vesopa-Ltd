@@ -110,6 +110,7 @@ if [ "$RESTART_ONLY" = 0 ]; then
     -e "ssh ${SSH_OPTS[*]}" \
     "$LOCAL_APP/src" "$LOCAL_APP/views" "$LOCAL_APP/public" \
     "$LOCAL_APP/scripts" "$LOCAL_APP/terminal" "$LOCAL_APP/files" "$LOCAL_APP/apps" \
+    "$LOCAL_APP/webmail" \
     "$LOCAL_APP/package.json" "$LOCAL_APP/package-lock.json" \
     "$LOCAL_APP/schema.sql" "$LOCAL_APP/seed.sql" \
     "$SERVER:$REMOTE_APP/"
@@ -118,7 +119,7 @@ if [ "$RESTART_ONLY" = 0 ]; then
   step "Restoring ownership"
   # rsync as root leaves root-owned files in a directory the app user has to
   # read, and the app then fails on a file it can see but cannot open.
-  remote "chown -R $APP_USER:$APP_USER $REMOTE_APP/src $REMOTE_APP/views $REMOTE_APP/public $REMOTE_APP/files $REMOTE_APP/apps $REMOTE_APP/scripts $REMOTE_APP/terminal $REMOTE_APP/package.json $REMOTE_APP/package-lock.json $REMOTE_APP/schema.sql $REMOTE_APP/seed.sql"
+  remote "chown -R $APP_USER:$APP_USER $REMOTE_APP/src $REMOTE_APP/views $REMOTE_APP/public $REMOTE_APP/files $REMOTE_APP/apps $REMOTE_APP/webmail $REMOTE_APP/scripts $REMOTE_APP/terminal $REMOTE_APP/package.json $REMOTE_APP/package-lock.json $REMOTE_APP/schema.sql $REMOTE_APP/seed.sql"
   ok "Ownership restored"
 
   step "Installing dependencies"
@@ -163,6 +164,15 @@ if [ "$DO_BROKERS" = 1 ]; then
           done"
   ok "Brokers installed"
 fi
+
+# One-click webmail is NOT installed by a deploy. It edits Dovecot's
+# authentication config and restarts the mail server, which is not something a
+# routine deploy should do behind your back — and it only needs doing once.
+# The files are synced above; run it yourself:
+#
+#     ssh $SERVER "bash $REMOTE_APP/webmail/install-sso.sh"
+#
+# It prints the WEBMAIL_SSO_KEY line to add to the server's .env.
 
 if [ "$DO_SCHEMA" = 1 ]; then
   step "Applying schema.sql"
