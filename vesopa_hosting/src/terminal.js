@@ -131,22 +131,33 @@ function frame(type, payload) {
  * every path. Here the path is checked first and anything else is refused, so a
  * stray upgrade to `/` is a 400 rather than a terminal.
  */
+/**
+ * @returns {(req, socket, head) => boolean}  true if this upgrade was ours.
+ *
+ * IT NO LONGER LISTENS ON THE SERVER ITSELF, and that is a bug fix rather than
+ * tidying. This used to register its own `upgrade` listener which answered 404
+ * and destroyed the socket for every path that was not the terminal's. Node
+ * calls every `upgrade` listener, so the moment a second websocket server
+ * existed on this process — the panel's live channel — the terminal's handler
+ * killed its connections before its own listener ever ran. The symptom was a
+ * live channel that reconnected forever with "Unexpected server response: 404"
+ * and no error anywhere in the log, because from this file's point of view it
+ * was behaving exactly as designed.
+ *
+ * One router in src/server.js owns the event and decides who gets it. A handler
+ * that does not recognise a path now declines it and touches nothing.
+ */
 function attach(server) {
   const wss = new WebSocketServer({ noServer: true, maxPayload: 1 << 20 });
 
-  server.on('upgrade', (req, socket, head) => {
+  const onUpgrade = (req, socket, head) => {
     let pathname;
     try {
       pathname = new URL(req.url, 'http://localhost').pathname;
     } catch {
-      socket.destroy();
-      return;
+      return false;
     }
-    if (pathname !== PATHNAME) {
-      socket.write('HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n');
-      socket.destroy();
-      return;
-    }
+    if (pathname !== PATHNAME) return false;
 
     /*
      * Same-origin only. A websocket is not covered by the same-origin policy the
@@ -160,13 +171,14 @@ function attach(server) {
     if (!origin || !host || new URL(origin).host !== host) {
       socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
       socket.destroy();
-      return;
+      return true;
     }
 
     wss.handleUpgrade(req, socket, head, (ws) => {
       wss.emit('connection', ws, req);
     });
-  });
+    return true;
+  };
 
   wss.on('connection', async (ws, req) => {
     let verdict;
@@ -276,7 +288,7 @@ function attach(server) {
     ws.on('error', () => finish('client-error'));
   });
 
-  return wss;
+  return onUpgrade;
 }
 
 module.exports = { attach, PATHNAME, SOCKET_PATH };

@@ -1,134 +1,256 @@
-<%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
+<%#
+  The overview.
+
+  ONE PAGE, ONE QUESTION: is anything wrong, and if so what do I do about it.
+
+  What it used to be was three counters, two lists and a sidebar of three
+  unrelated adverts — every piece the same weight, so a domain about to expire
+  and a link to the migration form competed for the same attention. The rule
+  now is that anything needing the customer comes first and says what the job
+  is; everything else is calm, and there is exactly one tip.
+%>
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css', sections: false }) %>
 <%- include('../partials/panel-shell', {
   pageTitle: 'Hello, ' + (customer.first_name || 'there'),
-  pageSub: 'Everything you have with us, at a glance.',
+  pageSub: todo.length || unpaid.length
+    ? 'A couple of things are waiting on you.'
+    : 'Everything is running. Nothing needs you today.',
 }) %>
 
-<% if (unpaid.length) { %>
-  <div class="alert alert-warn">
-    <%- icon('warning', 19) %>
-    <div>
-      <b>You have <%= unpaid.length %> order<%= unpaid.length > 1 ? 's' : '' %> awaiting payment.</b>
-      Services go live as soon as payment clears.
-      <a href="/panel/billing">View billing</a>
+<%
+  const liveSites = services.filter((s) => s.status === 'active');
+  const settingUp = services.filter((s) => s.status === 'pending');
+  const diskPct = stats && stats.disk_quota_mb
+    ? Math.min(100, Math.round((stats.disk_used_mb / stats.disk_quota_mb) * 100))
+    : null;
+  const gb = (mb) => (mb >= 1024 ? (mb / 1024).toFixed(mb >= 10240 ? 0 : 1) + ' GB' : Math.round(mb) + ' MB');
+%>
+
+<%# ---- Anything the customer has to do, at the top, phrased as a job ---- %>
+<% if (unpaid.length || todo.length) { %>
+  <div class="p-card p-card-flush mb-3" style="border-color:#f0dcae;background:#fffdf5">
+    <div class="p-card-head" style="border-color:#f4e7c4">
+      <h2 style="display:flex;align-items:center;gap:9px">
+        <span style="color:#7a5510;display:grid;place-items:center"><%- icon('alert-circle', 19) %></span>
+        Waiting on you
+      </h2>
     </div>
+
+    <% unpaid.forEach(function (o) { %>
+      <a class="item" href="/panel/orders/<%= o.id %>">
+        <span class="item-icon" style="background:#fdf0d8;color:#7a5510"><%- icon('card', 19) %></span>
+        <span class="item-main">
+          <span class="item-title">Order #<%= o.id %> is not paid</span>
+          <span class="item-sub">Nothing goes live until payment clears — it takes a minute.</span>
+        </span>
+        <span class="item-end"><span class="btn btn-sm">Pay now</span></span>
+      </a>
+    <% }); %>
+
+    <% todo.forEach(function (d) { %>
+      <a class="item" href="/panel/domains/<%= d.domain %>" data-live="domain:<%= d.id %>">
+        <span class="item-icon" style="background:#fdf0d8;color:#7a5510"><%- icon(d.state.icon, 19) %></span>
+        <span class="item-main">
+          <span class="item-title"><%= d.domain %></span>
+          <span class="item-sub" data-live-line><%= d.state.line %></span>
+        </span>
+        <span class="item-end">
+          <span class="state state-<%= d.state.tone %>" data-live-chip><i></i><%= d.state.label %></span>
+        </span>
+      </a>
+    <% }); %>
   </div>
 <% } %>
 
-<% if (expiringSoon.length) { %>
-  <div class="alert alert-error">
-    <%- icon('clock', 19) %>
-    <div>
-      <b><%= expiringSoon.length %> domain<%= expiringSoon.length > 1 ? 's expire' : ' expires' %> soon.</b>
-      <% expiringSoon.slice(0, 3).forEach(function (d) { %>
-        <a href="/panel/domains/<%= d.id %>"><%= d.domain %></a> (<%= d.expires_at %>)<%= ' ' %>
-      <% }); %>
+<%# ---- Usage, only once there is hosting to measure --------------------- %>
+<% if (stats) { %>
+  <div class="p-card mb-3">
+    <div class="rings">
+      <div class="ring" data-ring="<%= diskPct === null ? 0 : diskPct %>">
+        <svg class="ring-svg" width="62" height="62" viewBox="0 0 62 62">
+          <circle class="ring-track" cx="31" cy="31" r="26" fill="none" stroke-width="7"></circle>
+          <circle class="ring-fill" cx="31" cy="31" r="26" fill="none" stroke-width="7"></circle>
+        </svg>
+        <span>
+          <span class="ring-lab">Disk</span>
+          <span class="ring-num"><%= gb(stats.disk_used_mb) %></span>
+          <span class="ring-sub">
+            <% if (stats.disk_quota_mb) { %>of <%= gb(stats.disk_quota_mb) %> used<% } else { %>no limit<% } %>
+          </span>
+        </span>
+      </div>
+
+      <%# Traffic and the object counts have no quota to be a fraction OF, so
+          they are numbers rather than rings. A ring at 0% is a broken ring. %>
+      <div class="ring" style="align-items:flex-start">
+        <span style="display:flex;gap:26px;flex-wrap:wrap">
+          <span>
+            <span class="ring-lab">Traffic</span>
+            <span class="ring-num"><%= gb(stats.bandwidth_used_mb) %></span>
+            <span class="ring-sub">this month</span>
+          </span>
+          <span>
+            <span class="ring-lab">Websites</span>
+            <span class="ring-num"><%= stats.web_domains %></span>
+            <span class="ring-sub">on this account</span>
+          </span>
+          <span>
+            <span class="ring-lab">Mailboxes</span>
+            <span class="ring-num"><%= stats.mail_accounts %></span>
+            <span class="ring-sub"><a href="/panel/mail">manage</a></span>
+          </span>
+          <span>
+            <span class="ring-lab">Databases</span>
+            <span class="ring-num"><%= stats.databases %></span>
+            <span class="ring-sub"><a href="/panel/databases">manage</a></span>
+          </span>
+        </span>
+      </div>
     </div>
   </div>
 <% } %>
-
-<div class="p-grid p-grid-3 mb-3">
-  <a class="tile" href="/panel/services">
-    <div class="tile-label">Websites</div>
-    <div class="tile-value"><%= services.filter(function (s) { return s.status === 'active'; }).length %></div>
-    <div class="tile-note"><%= services.length %> hosting <%= services.length === 1 ? 'account' : 'accounts' %></div>
-  </a>
-  <a class="tile" href="/panel/domains">
-    <div class="tile-label">Domains</div>
-    <div class="tile-value"><%= domains.length %></div>
-    <div class="tile-note"><%= domains.filter(function (d) { return d.status === 'active'; }).length %> active</div>
-  </a>
-  <a class="tile" href="/panel/tickets">
-    <div class="tile-label">Open tickets</div>
-    <div class="tile-value"><%= openTickets.length %></div>
-    <div class="tile-note"><%= openTickets.length ? 'Awaiting a reply' : 'Nothing outstanding' %></div>
-  </a>
-</div>
 
 <div class="p-grid p-grid-side">
   <div>
+    <%# ---- Websites ---------------------------------------------------- %>
     <div class="p-card p-card-flush">
       <div class="p-card-head">
         <h2>Your websites</h2>
         <a class="btn btn-ghost btn-sm" href="/hosting"><%- icon('plus', 15) %> Add hosting</a>
       </div>
+
       <% if (!services.length) { %>
         <div class="empty">
           <%- icon('server', 46) %>
           <h3>No hosting yet</h3>
-          <p>Pick a plan and you can be online this afternoon.</p>
-          <a class="btn mt-2" href="/hosting">See plans</a>
+          <p>Pick a plan and you can be online this afternoon. Moving an existing site across is free — we do it for you.</p>
+          <div class="row mt-2" style="gap:10px;justify-content:center;flex-wrap:wrap">
+            <a class="btn" href="/hosting">See plans</a>
+            <a class="btn btn-ghost" href="/panel/tickets/new?subject=Migration">Move a site to us</a>
+          </div>
         </div>
       <% } else { %>
         <% services.forEach(function (s) { %>
-          <a class="item" href="/panel/services/<%= s.id %>">
+          <%# `data-live-reload-on` is the honest way to handle provisioning
+              finishing: the page's whole shape changes when a site goes live,
+              and patching that in the browser means keeping a second copy of
+              this template's logic in JavaScript. One reload, once. %>
+          <a class="item" href="/panel/services/<%= s.id %>"
+             data-live="service:<%= s.id %>"
+             <% if (s.status === 'pending') { %>data-live-reload-on="active"<% } %>>
             <span class="item-icon"><%- icon('globe', 19) %></span>
             <span class="item-main">
-              <span class="item-title"><%= s.primary_domain || 'No domain set' %></span>
-              <span class="item-sub"><%= s.plan_name %><% if (s.next_due_at) { %> · renews <%= s.next_due_at %><% } %></span>
+              <span class="item-title"><%= s.primary_domain || 'No domain set yet' %></span>
+              <span class="item-sub" data-live-line>
+                <%= s.plan_name %><% if (s.next_due_at) { %> · renews <%= when(s.next_due_at, { dateOnly: true }) %><% } %>
+              </span>
             </span>
             <span class="item-end">
-              <% if (s.status === 'active') { %><span class="badge badge-green"><span class="dot dot-live"></span> Live</span>
-              <% } else if (s.status === 'pending') { %><span class="badge badge-amber">Setting up</span>
-              <% } else if (s.status === 'suspended') { %><span class="badge badge-red">Suspended</span>
-              <% } else { %><span class="badge badge-grey"><%= s.status %></span><% } %>
+              <% if (s.status === 'active') { %>
+                <span class="state state-green" data-live-chip><i></i>Live</span>
+              <% } else if (s.status === 'pending') { %>
+                <span class="state state-blue" data-live-chip><i></i>Setting up</span>
+              <% } else if (s.status === 'suspended') { %>
+                <span class="state state-red" data-live-chip><i></i>Suspended</span>
+              <% } else { %>
+                <span class="state state-grey" data-live-chip><i></i><%= s.status %></span>
+              <% } %>
             </span>
+            <span class="item-go"><%- icon('chevron-right', 17) %></span>
           </a>
         <% }); %>
       <% } %>
     </div>
 
+    <%# ---- Domains, with the ones that are fine kept quiet -------------- %>
     <div class="p-card p-card-flush">
       <div class="p-card-head">
         <h2>Your domains</h2>
         <a class="btn btn-ghost btn-sm" href="/panel/domains/add"><%- icon('plus', 15) %> Add a domain</a>
       </div>
+
       <% if (!domains.length) { %>
         <div class="empty">
           <%- icon('globe', 46) %>
           <h3>No domains yet</h3>
-          <p>Register one here, or point one you already own at your hosting.</p>
-          <a class="btn mt-2" href="/domains">Search a domain</a>
-          <a class="btn btn-ghost mt-2" href="/panel/domains/add">Add one I own</a>
+          <p>Register one here and it is pointed at your hosting automatically — or bring one you already own.</p>
+          <div class="row mt-2" style="gap:10px;justify-content:center;flex-wrap:wrap">
+            <a class="btn" href="/domains">Search a domain</a>
+            <a class="btn btn-ghost" href="/panel/domains/add">Add one I own</a>
+          </div>
         </div>
       <% } else { %>
-        <% domains.slice(0, 8).forEach(function (d) { %>
-          <a class="item" href="/panel/domains/<%= d.id %>">
-            <span class="item-icon"><%- icon('globe', 19) %></span>
+        <% const shown = [...domainGroups.inFlight, ...domainGroups.fine].slice(0, 7); %>
+        <% shown.forEach(function (d) { %>
+          <a class="item" href="/panel/domains/<%= d.domain %>"
+             data-live="domain:<%= d.id %>"
+             <% if (d.state.key === 'registering') { %>data-live-reload-on="live"<% } %>>
+            <span class="item-icon"><%- icon(d.state.isSub ? 'layers' : 'globe', 19) %></span>
             <span class="item-main">
               <span class="item-title"><%= d.domain %></span>
-              <span class="item-sub">
-                <% if (d.status === 'awaiting_ns') { %>Waiting for your nameservers
-                <% } else if (d.expires_at) { %>Expires <%= d.expires_at %><% } else { %>Registering…<% } %>
-                <% if (d.auto_renew) { %> · auto-renew on<% } %>
-              </span>
+              <span class="item-sub" data-live-line><%= d.state.line %></span>
             </span>
             <span class="item-end">
-              <% if (d.status === 'active') { %><span class="badge badge-green">Active</span>
-              <% } else if (d.status === 'awaiting_ns') { %><span class="badge badge-amber">Not pointing here</span>
-              <% } else if (d.status === 'pending') { %><span class="badge badge-amber">Pending</span>
-              <% } else { %><span class="badge badge-grey"><%= d.status %></span><% } %>
+              <span class="state state-<%= d.state.tone %>" data-live-chip><i></i><%= d.state.label %></span>
             </span>
+            <span class="item-go"><%- icon('chevron-right', 17) %></span>
           </a>
         <% }); %>
+        <% if (domains.length > shown.length + todo.length) { %>
+          <a class="item" href="/panel/domains" style="justify-content:center;color:var(--lime-ink);font-weight:700">
+            See all <%= domains.length %> domains
+          </a>
+        <% } %>
       <% } %>
     </div>
   </div>
 
+  <%# ---- The side column: one tip, then the two things people copy ---- %>
   <aside>
-    <div class="p-card">
-      <div class="f-icon"><%- icon('rocket', 22) %></div>
-      <h2 class="h3 mb-2">Moving a site to us?</h2>
-      <p class="small muted mb-2">
-        Send us your current hosting login and we will copy everything across,
-        free. You check it on a preview address before anything switches.
-      </p>
-      <a class="btn btn-sm btn-block" href="/panel/tickets/new?subject=Migration">Request a migration</a>
-    </div>
+    <% if (settingUp.length) { %>
+      <div class="tip mb-3">
+        <span class="tip-ic"></span>
+        <span>
+          <b>Your hosting is being set up.</b> It takes about a minute. This page
+          updates itself the moment it is ready — you do not need to refresh.
+        </span>
+      </div>
+    <% } else if (todo.length) { %>
+      <div class="tip mb-3">
+        <span class="tip-ic"></span>
+        <span>
+          <b>Changing nameservers is the slow bit.</b> Your registrar applies it
+          within minutes, but the rest of the internet can take a few hours to
+          notice. Nothing breaks in the meantime — the old site keeps serving
+          until the new one takes over.
+        </span>
+      </div>
+    <% } else if (!services.length) { %>
+      <div class="tip mb-3">
+        <span class="tip-ic"></span>
+        <span>
+          <b>Already have a site somewhere else?</b> Send us the login and we
+          move it across for free, on a preview address, so you can check it
+          before anything switches.
+        </span>
+      </div>
+    <% } else { %>
+      <div class="tip mb-3">
+        <span class="tip-ic"></span>
+        <span>
+          <b>Everything on this account is healthy.</b> Certificates renew
+          themselves, backups run nightly, and we email you before anything is
+          due — there is nothing you need to watch.
+        </span>
+      </div>
+    <% } %>
 
     <div class="p-card">
-      <h2 class="h3 mb-2">Your nameservers</h2>
-      <p class="small muted mb-2">Point a domain here to host it with us.</p>
+      <h2 class="h3 mb-2" style="display:flex;align-items:center;gap:8px">
+        <span style="color:var(--lime-ink);display:grid;place-items:center"><%- icon('layers', 18) %></span>
+        Your nameservers
+      </h2>
+      <p class="small muted mb-2">Set these two at your registrar to host a domain with us.</p>
       <% nameservers.forEach(function (ns) { %>
         <div class="copyable">
           <span><%= ns %></span>
@@ -138,12 +260,22 @@
     </div>
 
     <div class="p-card">
-      <h2 class="h3 mb-2">Need a hand?</h2>
-      <p class="small muted mb-2">A ticket from here arrives with your account attached, which is faster than email.</p>
+      <h2 class="h3 mb-2" style="display:flex;align-items:center;gap:8px">
+        <span style="color:var(--lime-ink);display:grid;place-items:center"><%- icon('headset', 18) %></span>
+        Need a hand?
+      </h2>
+      <p class="small muted mb-2">
+        A ticket from here arrives with your account attached, so nobody has to
+        ask you which domain you mean.
+      </p>
       <a class="btn btn-ghost btn-sm btn-block" href="/panel/tickets/new">Open a ticket</a>
+      <% if (openTickets.length) { %>
+        <p class="small mt-2" style="margin-bottom:0">
+          <a href="/panel/tickets"><%= openTickets.length %> open ticket<%= openTickets.length > 1 ? 's' : '' %></a>
+        </p>
+      <% } %>
     </div>
   </aside>
 </div>
 
 <%- include('../partials/panel-shell-end') %>
-<%- include('../partials/footer') %>

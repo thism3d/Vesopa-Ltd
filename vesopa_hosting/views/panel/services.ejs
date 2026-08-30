@@ -1,39 +1,159 @@
-<%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
+<%#
+  Hosting.
+
+  This page was one line per account with the whole row as its only affordance
+  — no visible way in, nothing to do from here, and no sign that a website was
+  even reachable. "Where is the enter button?" was asked of exactly this screen,
+  and it was a fair question: there wasn't one.
+
+  A site is now a CARD with the two things somebody came for at the top — open
+  the site, or manage it — and the tools underneath as targets rather than as
+  links hidden in a sidebar three clicks away.
+%>
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css', sections: false }) %>
 <%- include('../partials/panel-shell', {
   pageTitle: 'Your hosting',
-  pageSub: 'Every hosting account on your profile.',
+  pageSub: services.length === 1 ? 'One website, and everything that runs it.' : 'Every website on your account.',
   topAction: { href: '/hosting', label: 'Add hosting', icon: 'plus' },
 }) %>
 
-<div class="p-card p-card-flush">
-  <% if (!services.length) { %>
+<% if (!services.length) { %>
+  <div class="p-card">
     <div class="empty">
       <%- icon('server', 46) %>
-      <h3>No hosting accounts yet</h3>
-      <p>Choose a plan and we will have you online in minutes.</p>
-      <a class="btn mt-2" href="/hosting">See plans</a>
+      <h3>No hosting yet</h3>
+      <p>
+        A hosting account is where your website's files, databases and mailboxes
+        live. Pick a plan and you can be online this afternoon — or send us a
+        login and we will move an existing site across for you, free.
+      </p>
+      <div class="row mt-2" style="gap:10px;justify-content:center;flex-wrap:wrap">
+        <a class="btn" href="/hosting">See plans</a>
+        <a class="btn btn-ghost" href="/panel/tickets/new?subject=Migration">Move a site to us</a>
+      </div>
     </div>
-  <% } else { %>
-    <% services.forEach(function (s) { %>
-      <a class="item" href="/panel/services/<%= s.id %>">
-        <span class="item-icon"><%- icon('server', 19) %></span>
-        <span class="item-main">
-          <span class="item-title"><%= s.primary_domain || 'No domain set yet' %></span>
-          <span class="item-sub">
-            <%= s.plan_name %> · <%= s.term_months %> month term
-            <% if (s.next_due_at) { %> · renews <%= s.next_due_at %><% } %>
+  </div>
+<% } %>
+
+<% services.forEach(function (s) {
+     const live = s.status === 'active';
+     const url = s.primary_domain ? 'https://' + s.primary_domain : null;
+     const docRoot = s.primary_domain ? `web/${s.primary_domain}/public_html` : 'web';
+     const st = s.stats || null;
+     const diskPct = st && st.disk_quota_mb
+       ? Math.min(100, Math.round((st.disk_used_mb / st.disk_quota_mb) * 100))
+       : null;
+     const gb = (mb) => (mb >= 1024 ? (mb / 1024).toFixed(mb >= 10240 ? 0 : 1) + ' GB' : Math.round(mb) + ' MB');
+%>
+  <div class="p-card p-card-flush mb-3" data-live="service:<%= s.id %>"
+       <% if (s.status === 'pending') { %>data-live-reload-on="active"<% } %>>
+
+    <%# ---- The head: what it is, and the two ways in ---- %>
+    <div class="obj" style="border:0;border-radius:0;margin:0;border-bottom:1px solid var(--rule-soft)">
+      <div class="obj-top">
+        <span class="obj-mark"><%- icon('globe', 22) %></span>
+        <span class="obj-id">
+          <span class="obj-name"><%= s.primary_domain || 'No domain attached yet' %></span>
+          <span class="obj-meta">
+            <span class="state state-<%= live ? 'green' : s.status === 'pending' ? 'blue' : s.status === 'suspended' ? 'red' : 'grey' %>" data-live-chip><i></i><%
+              %><%= live ? 'Live' : s.status === 'pending' ? 'Setting up' : s.status === 'suspended' ? 'Suspended' : s.status %></span>
+            &nbsp;<%= s.plan_name %>
+            <% if (s.next_due_at) { %> · renews <%= when(s.next_due_at, { dateOnly: true }) %><% } %>
           </span>
         </span>
-        <span class="item-end">
-          <% if (s.status === 'active') { %><span class="badge badge-green"><span class="dot dot-live"></span> Live</span>
-          <% } else if (s.status === 'pending') { %><span class="badge badge-amber">Setting up</span>
-          <% } else if (s.status === 'suspended') { %><span class="badge badge-red">Suspended</span>
-          <% } else { %><span class="badge badge-grey"><%= s.status %></span><% } %>
+        <span class="obj-acts">
+          <% if (url && live) { %>
+            <a class="btn btn-sm" href="<%= url %>" target="_blank" rel="noopener">
+              <%- icon('external', 16) %> Open site
+            </a>
+          <% } %>
+          <a class="btn btn-ghost btn-sm" href="/panel/services/<%= s.id %>">
+            <%- icon('sliders', 16) %> Manage
+          </a>
         </span>
-      </a>
-    <% }); %>
-  <% } %>
-</div>
+      </div>
+    </div>
+
+    <%# ---- Usage, when the node answered ---- %>
+    <% if (st) { %>
+      <div style="padding:16px 22px;border-bottom:1px solid var(--rule-soft);background:var(--bg-2)">
+        <div class="rings">
+          <% if (diskPct !== null) { %>
+            <div class="ring" data-ring="<%= diskPct %>">
+              <svg class="ring-svg" width="52" height="52" viewBox="0 0 52 52">
+                <circle class="ring-track" cx="26" cy="26" r="21" fill="none" stroke-width="6"></circle>
+                <circle class="ring-fill" cx="26" cy="26" r="21" fill="none" stroke-width="6"></circle>
+              </svg>
+              <span>
+                <span class="ring-lab">Disk</span>
+                <span class="ring-num"><%= gb(st.disk_used_mb) %></span>
+                <span class="ring-sub">of <%= gb(st.disk_quota_mb) %></span>
+              </span>
+            </div>
+          <% } %>
+          <div class="ring" style="align-items:flex-start">
+            <span style="display:flex;gap:24px;flex-wrap:wrap">
+              <span>
+                <span class="ring-lab">Traffic</span>
+                <span class="ring-num"><%= gb(st.bandwidth_used_mb) %></span>
+                <span class="ring-sub">this month</span>
+              </span>
+              <span>
+                <span class="ring-lab">Mailboxes</span>
+                <span class="ring-num"><%= st.mail_accounts %><% if (s.plan_mailboxes) { %><span class="ring-sub" style="display:inline"> / <%= s.plan_mailboxes %></span><% } %></span>
+              </span>
+              <span>
+                <span class="ring-lab">Databases</span>
+                <span class="ring-num"><%= st.databases %><% if (s.plan_databases) { %><span class="ring-sub" style="display:inline"> / <%= s.plan_databases %></span><% } %></span>
+              </span>
+            </span>
+          </div>
+        </div>
+      </div>
+    <% } %>
+
+    <%# ---- The tools. Targets with names and pictures, not a sidebar. ---- %>
+    <div style="padding:16px 22px">
+      <div class="tools">
+        <a class="tool <%= live ? '' : 'is-off' %>" href="/panel/files?path=<%= encodeURIComponent(docRoot) %>">
+          <span class="tool-ic"><%- icon('folder', 18) %></span>
+          <span class="tool-name">Files</span>
+          <span class="tool-note">Upload, edit, unzip</span>
+        </a>
+        <a class="tool <%= live ? '' : 'is-off' %>" href="/panel/databases">
+          <span class="tool-ic"><%- icon('database', 18) %></span>
+          <span class="tool-name">Databases</span>
+          <span class="tool-note">MySQL and PostgreSQL</span>
+        </a>
+        <a class="tool <%= live ? '' : 'is-off' %>" href="/panel/mail<%= s.primary_domain ? '?domain=' + encodeURIComponent(s.primary_domain) : '' %>">
+          <span class="tool-ic"><%- icon('mail', 18) %></span>
+          <span class="tool-name">Mailboxes</span>
+          <span class="tool-note">Email at your domain</span>
+        </a>
+        <a class="tool <%= live ? '' : 'is-off' %>" href="/panel/terminal">
+          <span class="tool-ic"><%- icon('code', 18) %></span>
+          <span class="tool-name">Terminal</span>
+          <span class="tool-note">A real shell</span>
+        </a>
+        <a class="tool <%= live ? '' : 'is-off' %>" href="/panel/services/<%= s.id %>/backups">
+          <span class="tool-ic"><%- icon('backup', 18) %></span>
+          <span class="tool-name">Backups</span>
+          <span class="tool-note">Nightly, kept 30 days</span>
+        </a>
+      </div>
+    </div>
+  </div>
+<% }); %>
+
+<% if (services.length) { %>
+  <div class="tip">
+    <span class="tip-ic"></span>
+    <span>
+      <b>Everything here is signed in already.</b> Files, the terminal and the
+      database manager all use the session you are in now — there is no second
+      password and no separate control panel to learn.
+    </span>
+  </div>
+<% } %>
 
 <%- include('../partials/panel-shell-end') %>
-<%- include('../partials/footer') %>

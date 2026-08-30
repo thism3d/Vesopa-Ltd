@@ -11,8 +11,13 @@
   <meta name="theme-color" content="#111111">
   <meta name="robots" content="<%= typeof robots !== 'undefined' ? robots : 'index, follow' %>">
 
-  <link rel="icon" href="/favicon.png" type="image/png">
-  <link rel="apple-touch-icon" href="/assets/img/brand/512x512.png">
+  <link rel="icon" href="<%= asset('/favicon.png') %>" type="image/png">
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <%# 180 square, which is the size Apple actually asks for. This used to point
+      at the 512 app icon: iOS accepted it and downscaled it on every launch,
+      and Safari's "Add to Home Screen" preview showed it soft. %>
+  <link rel="apple-touch-icon" href="<%= asset('/assets/img/brand/apple-touch-icon.png') %>">
+  <link rel="mask-icon" href="/assets/img/brand/mark.svg" color="#a5c715">
 
   <%# og:image is an absolute URL against the *public* origin. A relative path,
       or localhost, is fetched by Facebook and WhatsApp from their own servers,
@@ -22,8 +27,20 @@
   <meta property="og:title" content="<%= typeof title !== 'undefined' && title ? title : 'Vesopa Cloud' %>">
   <meta property="og:description" content="<%= typeof description !== 'undefined' && description ? description : 'Fast UK web hosting, domain names and free SSL from Vesopa.' %>">
   <meta property="og:url" content="<%= siteUrl %><%= currentPath || '/' %>">
-  <meta property="og:image" content="<%= siteUrl %>/assets/img/brand/512x512.png">
+  <%# 1200x630, because that is what `summary_large_image` means. It used to be
+      the 512 square app icon, which every scraper either letterboxes into a
+      grey slab or rejects outright for being under the minimum width — so a
+      link to this site pasted into WhatsApp, Slack or LinkedIn came out as
+      plain text with no card at all. The explicit width and height matter too:
+      several scrapers will not render a card until they have fetched the image,
+      and these let them lay it out on the first pass. %>
+  <meta property="og:image" content="<%= siteUrl %>/assets/img/brand/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Vesopa Cloud — UK hosting, domains and email">
+  <meta property="og:locale" content="en_GB">
   <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="<%= siteUrl %>/assets/img/brand/og.png">
 
   <link rel="preload" href="<%= asset('/assets/css/app.css') %>" as="style">
   <link rel="stylesheet" href="<%= asset('/assets/css/app.css') %>">

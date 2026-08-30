@@ -1,3 +1,68 @@
     </main>
   </div>
 </div>
+
+<%# The phone's More sheet. The destinations the bottom bar could not fit, at
+    full size with their descriptions, rather than crushed into 38px tabs.
+    Inert on a desktop, where every one of them is already in the rail. %>
+<% if (currentPath.indexOf('/admin') !== 0) { %>
+<div class="sheet" id="sheet-more" hidden>
+  <div class="sheet-scrim" data-sheet-close></div>
+  <div class="sheet-card" role="dialog" aria-modal="true" aria-label="More">
+    <div class="sheet-grab"></div>
+    <a class="sheet-row" href="/panel/apps/node">
+      <span class="sheet-ic"><%- icon('activity', 19) %></span>
+      <span><b>Node apps</b><small>Whether each one is actually answering</small></span>
+      <%- icon('chevron-right', 16) %>
+    </a>
+    <a class="sheet-row" href="/panel/apps/runtime">
+      <span class="sheet-ic"><%- icon('sliders', 19) %></span>
+      <span><b>Languages &amp; settings</b><small>PHP and Node versions, limits, plugins</small></span>
+      <%- icon('chevron-right', 16) %>
+    </a>
+    <a class="sheet-row" href="/panel/files">
+      <span class="sheet-ic"><%- icon('folder', 19) %></span>
+      <span><b>Files</b><small>Upload, edit and manage your website's files</small></span>
+      <%- icon('chevron-right', 16) %>
+    </a>
+    <a class="sheet-row" href="/panel/terminal">
+      <span class="sheet-ic"><%- icon('code', 19) %></span>
+      <span><b>Terminal</b><small>A real shell on your account</small></span>
+      <%- icon('chevron-right', 16) %>
+    </a>
+    <a class="sheet-row" href="/panel/billing">
+      <span class="sheet-ic"><%- icon('card', 19) %></span>
+      <span><b>Billing</b><small>Invoices, payments and renewals</small></span>
+      <%- icon('chevron-right', 16) %>
+    </a>
+    <a class="sheet-row" href="/panel/tickets">
+      <span class="sheet-ic"><%- icon('ticket', 19) %></span>
+      <span><b>Support</b><small>Ask us anything — we answer</small></span>
+      <%- icon('chevron-right', 16) %>
+    </a>
+    <a class="sheet-row" href="/panel/settings">
+      <span class="sheet-ic"><%- icon('user', 19) %></span>
+      <span><b>Account &amp; settings</b><small>Your details and your password</small></span>
+      <%- icon('chevron-right', 16) %>
+    </a>
+    <form method="post" action="/logout" class="sheet-row-form">
+      <input type="hidden" name="_csrf" value="<%= csrf %>">
+      <button class="sheet-row" type="submit">
+        <span class="sheet-ic"><%- icon('logout', 19) %></span>
+        <span><b>Sign out</b></span>
+      </button>
+    </form>
+    <button class="btn btn-ghost btn-block sheet-cancel" type="button" data-sheet-close>Close</button>
+  </div>
+</div>
+<% } %>
+
+<% if (typeof flash !== 'undefined' && flash && flash.message) { %>
+  <span data-flash="<%= flash.message %>" data-flash-kind="<%= flash.kind || 'ok' %>" hidden></span>
+<% } %>
+
+<script src="<%= asset('/assets/js/app.js') %>" defer></script>
+<script src="<%= asset('/assets/js/panel.js') %>" defer></script>
+<% if (typeof extraJs !== 'undefined') { %><script src="<%= asset(extraJs) %>" defer></script><% } %>
+</body>
+</html>

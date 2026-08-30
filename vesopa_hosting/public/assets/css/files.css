@@ -320,9 +320,30 @@
 
 .fm-editor-wrap { flex: 1; display: flex; min-height: 0; background: #fbfcf7; }
 
+/*
+ * THE LINE HEIGHT IS AN INTEGER, IN PIXELS, AND ALL THREE LAYERS SHARE IT.
+ *
+ * This was `line-height: 1.55` on a 13px font — 20.15px. A <textarea> and a
+ * <pre> are laid out by two different code paths in every browser, and they
+ * round a fractional line box differently. The error is invisible on line one
+ * and accumulates: a sixth of a pixel per line is a third of a line by line 40
+ * and a whole line by line 130.
+ *
+ * That is the "cursor is in the right place but the editing happens at the
+ * bottom" bug. The <pre> is what you READ and the <textarea> is what you TYPE
+ * into, so once they disagree about where line 60 is, clicking on the text you
+ * can see puts the caret somewhere else — and the discrepancy is largest at the
+ * end of the file, which is exactly where it was reported.
+ *
+ * Whole pixels cannot drift. Everything below reads from this variable so the
+ * three layers cannot be changed apart.
+ */
+.fm-editor-wrap { --fm-line: 20px; --fm-size: 13px; }
+@media (max-width: 760px) { .fm-editor-wrap { --fm-line: 19px; --fm-size: 12px; } }
+
 .fm-gutter {
   flex: none; padding: 12px 9px 12px 13px; overflow: hidden;
-  font-family: var(--mono); font-size: 13px; line-height: 1.55;
+  font-family: var(--mono); font-size: var(--fm-size); line-height: var(--fm-line);
   color: #b3b6a7; text-align: right; background: var(--bg-2);
   border-right: 1px solid var(--rule-soft); user-select: none;
   white-space: pre;
@@ -346,11 +367,20 @@
 .fm-hl, .fm-code textarea {
   position: absolute; inset: 0;
   margin: 0; padding: 12px 14px;
-  font-family: var(--mono); font-size: 13px; line-height: 1.55;
-  tab-size: 2; border: 0;
+  font-family: var(--mono); font-size: var(--fm-size); line-height: var(--fm-line);
+  /* Both layers must agree on the width of a tab as well as the height of a
+     line, or an indented file drifts sideways for the same reason. */
+  tab-size: 2; -moz-tab-size: 2; border: 0;
   white-space: pre; overflow-wrap: normal; word-break: normal;
   overflow: auto;
 }
+/*
+ * A trailing newline is a real, empty last line in a <textarea> and is
+ * collapsed by a <pre>. Nearly every text file ends with one, so without this
+ * the two layers differ by a line at the bottom — the one place the caret bug
+ * showed. `pre-wrap`-style preservation is not enough; the padding is.
+ */
+.fm-hl { padding-bottom: calc(12px + var(--fm-line)); }
 .fm.is-wrap .fm-hl, .fm.is-wrap .fm-code textarea { white-space: pre-wrap; overflow-wrap: anywhere; }
 
 .fm-hl { pointer-events: none; background: transparent; color: var(--ink); z-index: 1; }
@@ -489,8 +519,9 @@
      sits behind the browser's own bottom bar on iOS. */
   .fm-editor-sheet { height: 100dvh; max-height: 100dvh; border-radius: 0; }
   .fm-editor-path { display: none; }
-  .fm-gutter { padding-left: 8px; padding-right: 6px; font-size: 12px; }
-  .fm-hl, .fm-code textarea { font-size: 12px; padding: 10px; }
+  .fm-gutter { padding-left: 8px; padding-right: 6px; }
+  .fm-hl, .fm-code textarea { padding: 10px; }
+  .fm-hl { padding-bottom: calc(10px + var(--fm-line)); }
 
   .fm-menu { min-width: 210px; }
 }
@@ -513,4 +544,58 @@
 @media (prefers-reduced-motion: reduce) {
   .fm-icon-btn.is-spinning svg, .fm-spin { animation: none; }
   .fm-up-fill { transition: none; }
+}
+
+/*
+ * The editor toolbar on a small screen.
+ *
+ * Seven controls do not fit across a 360px header beside the filename, and the
+ * previous behaviour was to squeeze them until Save was 28px wide. The title
+ * takes the first row and the controls take the second, at full tap size —
+ * which is what "on a small phone show the options interactively" was asking
+ * for. Indent and outdent matter most here: a phone keyboard has no Tab.
+ */
+@media (max-width: 760px) {
+  .fm-editor-sheet .fm-modal-head {
+    flex-wrap: wrap; row-gap: 10px; padding: 11px 12px;
+  }
+  .fm-editor-title { flex: 1 1 100%; order: 1; }
+  .fm-editor-tools { flex: 1 1 100%; order: 2; justify-content: flex-end; gap: 6px; }
+  .fm-editor-state { margin-right: auto; }
+  .fm-editor-tools .fm-icon-btn,
+  .fm-editor-tools .btn { min-width: 42px; min-height: 42px; }
+}
+
+/* On a roomy screen the X is enough; Cancel is for the phone, where a 17px
+   glyph in the corner is neither easy to hit nor obviously safe. */
+.fm-editor-cancel { display: none; }
+@media (max-width: 760px) {
+  .fm-editor-cancel { display: inline-flex; }
+  #fm-editor-close { display: none; }
+}
+
+/* Disk usage in the shortcut bar.
+   Pushed to the right so it reads as a status rather than as another shortcut,
+   and it drops to its own line before the shortcuts start scrolling. */
+.fm-disk {
+  display: inline-flex; align-items: center; gap: 8px;
+  margin-left: auto; flex: none;
+  padding: 6px 12px; border-radius: 999px;
+  background: var(--bg-2); border: 1px solid var(--rule);
+  font-size: .79rem; color: var(--ink-2); white-space: nowrap;
+}
+.fm-disk svg { color: var(--ink-3); flex: none; }
+.fm-disk b { font-weight: 750; }
+.fm-disk-bar {
+  width: 54px; height: 5px; border-radius: 3px;
+  background: var(--bg-3); overflow: hidden; flex: none;
+}
+.fm-disk-bar i { display: block; height: 100%; border-radius: 3px; background: var(--lime); }
+.fm-disk.is-high { border-color: #f0dcae; background: #fffdf5; color: #7a5510; }
+.fm-disk.is-high .fm-disk-bar i { background: var(--amber); }
+.fm-disk.is-full { border-color: #f3c9c1; background: #fdf5f3; color: #a32a18; }
+.fm-disk.is-full .fm-disk-bar i { background: var(--red); }
+@media (max-width: 700px) {
+  .fm-disk { margin-left: 0; order: -1; width: 100%; justify-content: flex-start; }
+  .fm-disk-bar { margin-left: auto; width: 80px; }
 }

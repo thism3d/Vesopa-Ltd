@@ -48,8 +48,10 @@
           </div>
           <div class="field">
             <label class="label" for="country">Country</label>
-            <input class="input" id="country" name="country" maxlength="2"
-                   value="<%= values.country !== undefined ? values.country : customer.country %>">
+            <%- include('../partials/country-select', {
+              selected: values.country !== undefined ? values.country : country,
+              geo: geoCountry,
+            }) %>
           </div>
         </div>
         <p class="hint mb-2">These details are the registrant of record on any domain you hold with us, so keep them accurate.</p>
@@ -110,4 +112,3 @@
 </div>
 
 <%- include('../partials/panel-shell-end') %>
-<%- include('../partials/footer') %>

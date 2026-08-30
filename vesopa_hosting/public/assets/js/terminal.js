@@ -80,16 +80,45 @@
   }
 
   /**
-   * On a phone the keyboard overlays the page rather than resizing it, so
-   * `window.innerHeight` still reports the full screen and the prompt ends up
-   * behind the keyboard. visualViewport reports what can actually be seen.
+   * Size the terminal to what is actually visible.
+   *
+   * ---------------------------------------------------------------------------
+   * THE BUG THIS FIXES: "terminal scrolling on the iPad goes infinity scroll"
+   * ---------------------------------------------------------------------------
+   * The old version was `vv.height - shell.getBoundingClientRect().top - 8`,
+   * and that is a feedback loop. `top` is measured RELATIVE TO THE VIEWPORT, so
+   * scrolling down makes it negative; a negative `top` makes `available` bigger
+   * than the screen; the shell grows; the page grows; there is now more to
+   * scroll, so `top` goes further negative — and this ran on every
+   * visualViewport `scroll` event. On a desktop you never scroll far enough to
+   * notice. On an iPad, where the address bar collapsing fires the same event,
+   * it runs away and the page grows without limit.
+   *
+   * Two changes stop it dead:
+   *
+   *   `top` is CLAMPED AT ZERO. An element scrolled above the viewport
+   *   contributes nothing, rather than contributing negative height.
+   *
+   *   the result can never exceed the viewport. Whatever the arithmetic says,
+   *   the terminal is at most one screen tall, so growing it can never create
+   *   more page to scroll. The loop has no way to feed itself.
+   *
+   * It also returns early when the height has not actually changed, because
+   * writing an identical `style.height` still invalidates layout, and this runs
+   * on every scroll event.
    */
+  var lastHeight = 0;
+
   function applyViewport() {
     if (!shell || !window.visualViewport) return;
     var vv = window.visualViewport;
-    var top = shell.getBoundingClientRect().top;
-    var available = vv.height - top - 8;
-    if (available > 140) shell.style.height = available + 'px';
+    var top = Math.max(0, shell.getBoundingClientRect().top);
+    var available = Math.min(vv.height - 8, vv.height - top - 8);
+    if (available < 140) return;
+    var next = Math.round(available);
+    if (next === lastHeight) return;
+    lastHeight = next;
+    shell.style.height = next + 'px';
     resize();
   }
 
@@ -192,12 +221,105 @@
         return;
       }
 
+      /*
+       * Scrolling the buffer is a CLIENT-side act: it moves the view over
+       * output the shell has already produced, and the shell must never see it.
+       * Sending PageUp as an escape sequence instead — which is the obvious
+       * thing to try — types into whatever program is running, so in `less` it
+       * pages the file and at a prompt it inserts junk.
+       */
+      var scroll = btn.getAttribute('data-scroll');
+      if (scroll) {
+        if (scroll === 'end') term.scrollToBottom();
+        else term.scrollPages(scroll === 'up' ? -1 : 1);
+        updateJump();
+        term.focus();
+        return;
+      }
+
       var zoom = btn.getAttribute('data-zoom');
       if (zoom) {
         var next = term.options.fontSize + (zoom === 'in' ? 1 : -1);
         term.options.fontSize = Math.max(9, Math.min(24, next));
+        // The row height changed, so the gesture's own measurement is stale.
+        touch.carried = 0;
         resize();
       }
+    });
+  }
+
+  // ---- scrolling the buffer, on a touch screen -----------------------------
+  //
+  // A shell's history is the thing you most need on a phone and the thing a
+  // touch screen is worst at reaching. xterm's own touch handling scrolls the
+  // PAGE, not the buffer, so `less` and a long build log were both unreadable:
+  // you swiped and the panel moved instead of the output.
+  //
+  // TWO FINGERS SCROLL THE BUFFER. One finger is left alone deliberately —
+  // that is how you place the cursor and how you select text, and stealing it
+  // would break both. Two fingers is unambiguous, it is the gesture a trackpad
+  // already uses for exactly this, and nothing else on the page wants it.
+
+  var touch = { active: false, y: 0, carried: 0 };
+
+  // The height of one row, so a drag moves the text under the finger rather
+  // than by some arbitrary multiple. Measured from the real DOM: xterm's
+  // rendered row height is the font size times its line-height, and hard-coding
+  // either makes the gesture wrong at every zoom level but one.
+  function rowHeight() {
+    var row = mount.querySelector('.xterm-rows > div');
+    var h = row ? row.getBoundingClientRect().height : 0;
+    return h > 4 ? h : Math.max(10, term.options.fontSize * 1.2);
+  }
+
+  mount.addEventListener('touchstart', function (ev) {
+    if (ev.touches.length !== 2) { touch.active = false; return; }
+    touch.active = true;
+    touch.carried = 0;
+    touch.y = (ev.touches[0].clientY + ev.touches[1].clientY) / 2;
+  }, { passive: true });
+
+  mount.addEventListener('touchmove', function (ev) {
+    if (!touch.active || ev.touches.length !== 2) return;
+    // Not passive: the whole point is to stop the page scrolling underneath.
+    ev.preventDefault();
+    var y = (ev.touches[0].clientY + ev.touches[1].clientY) / 2;
+    // Fractions are CARRIED rather than dropped. Rounding each event
+    // independently loses a little every frame, and a slow drag then moves
+    // nothing at all while the finger travels half the screen.
+    var moved = (touch.y - y) / rowHeight() + touch.carried;
+    var lines = moved > 0 ? Math.floor(moved) : Math.ceil(moved);
+    touch.carried = moved - lines;
+    touch.y = y;
+    if (lines) term.scrollLines(lines);
+  }, { passive: false });
+
+  mount.addEventListener('touchend', function () { touch.active = false; }, { passive: true });
+
+  /**
+   * "Jump to latest", shown only while the view is scrolled away from the end.
+   *
+   * Scrolling up in a shell and then losing the prompt is the moment people
+   * assume the terminal has hung. A button that is only there when it is needed
+   * answers that without adding permanent furniture.
+   */
+  var jumpEl = document.getElementById('term-jump');
+
+  function updateJump() {
+    if (!jumpEl) return;
+    var buf = term.buffer.active;
+    var atEnd = buf.viewportY >= buf.baseY;
+    jumpEl.hidden = atEnd;
+  }
+
+  term.onScroll(updateJump);
+  term.onLineFeed(updateJump);
+  if (jumpEl) {
+    jumpEl.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      term.scrollToBottom();
+      updateJump();
+      term.focus();
     });
   }
 

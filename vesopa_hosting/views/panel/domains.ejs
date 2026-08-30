@@ -1,119 +1,172 @@
 <%#
-  Domains, with their subdomains nested underneath them.
+  Domains.
 
-  A flat alphabetical list put `example.com` and `shop.example.com` in different
-  places and made them look like two unrelated purchases — which is a large part
-  of why people went looking for a renewal date and a DNS tab on a subdomain
-  that has neither. The shape of the list says what each thing is before any
-  label has to.
+  THE FIX THIS PAGE EXISTS FOR: "your domains always registering? Very confusing
+  to the end users."
+
+  It was. The subtitle fell through to "Being registered…" for anything without
+  an expiry date, which is every adopted domain, every subdomain and every
+  external one — sitting next to an ACTIVE badge saying the opposite. Six live
+  websites, all described as mid-purchase, forever.
+
+  Every judgement now comes from src/domain-state, once, so this page cannot
+  disagree with the overview or the domain page. Each state is named for what it
+  means to the person who owns the domain, and the list is ordered by whether
+  anything is waiting on them rather than by expiry date — because sorting by
+  date puts the one domain that needs a nameserver change somewhere in the
+  middle of nine that do not.
+
+  Subdomains stay nested under their parent. A flat list put `example.com` and
+  `shop.example.com` in different places and made them look like two unrelated
+  purchases.
 %>
-<%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css', sections: false }) %>
 <%- include('../partials/panel-shell', {
   pageTitle: 'Your domains',
-  pageSub: 'Registered with us, or pointed here from elsewhere.',
+  pageSub: groups.needsYou.length
+    ? (groups.needsYou.length === 1 ? 'One needs something from you.' : groups.needsYou.length + ' need something from you.')
+    : 'Registered with us, or pointed here from elsewhere.',
   topAction: { href: '/panel/domains/add', label: 'Add a domain', icon: 'plus' },
 }) %>
 
 <%
-  /* One row, for a domain or a subdomain. Declared once so the two cannot
-     drift apart in wording or in what they show. */
-  function statusBadge(d) {
-    if (d.source === 'subdomain') {
-      return d.ns_verified_at
-        ? '<span class="badge badge-green">Live</span>'
-        : '<span class="badge badge-amber">Not pointing here</span>';
-    }
-    if (d.status === 'awaiting_ns') return '<span class="badge badge-amber">Not pointing here</span>';
-    const days = d.expires_at ? Math.round((new Date(d.expires_at) - Date.now()) / 864e5) : null;
-    if (days !== null && days <= 30 && days > 0) return `<span class="badge badge-amber">${days} days left</span>`;
-    if (d.status === 'active') return '<span class="badge badge-green">Active</span>';
-    if (d.status === 'pending') return '<span class="badge badge-amber">Pending</span>';
-    if (d.status === 'expired') return '<span class="badge badge-red">Expired</span>';
-    return `<span class="badge badge-grey">${d.status}</span>`;
-  }
-
-  function subtitle(d, graceDays) {
-    if (d.source === 'subdomain') {
-      const bits = ['Subdomain'];
-      if (d.ssl_status === 'active') bits.push('secured');
-      else if (d.ns_verified_at) bits.push('no certificate yet');
-      return bits.join(' · ');
-    }
-    const deadline = d.ns_grace_until ? new Date(d.ns_grace_until) : null;
-    const graceLeft = deadline ? Math.max(0, Math.ceil((deadline - Date.now()) / 864e5)) : null;
-
-    if (d.status === 'awaiting_ns') {
-      return 'Waiting to be pointed at us'
-        + (graceLeft !== null ? ` · ${graceLeft === 0 ? 'last day' : graceLeft + ' day' + (graceLeft === 1 ? '' : 's') + ' left'}` : '');
-    }
-    const bits = [];
-    if (d.source === 'external') {
-      bits.push('Registered elsewhere');
-      if (d.ns_verified_at) bits.push(d.verify_method === 'a' ? 'pointed here by A record' : 'hosted here');
-    } else if (d.expires_at) {
-      bits.push(`Expires ${d.expires_at}`);
-      bits.push(d.auto_renew ? 'auto-renew on' : 'auto-renew off');
-    } else {
-      bits.push('Being registered…');
-    }
-    if (d.ssl_status === 'active') bits.push('secured');
-    return bits.join(' · ');
-  }
+  /* One row, for a domain or a subdomain. Declared once so the two cannot drift
+     apart in wording or in what they show. */
+  function row(d, child) {
+    const s = d.state;
 %>
+  <a class="item <%= child ? 'item-child' : '' %>" href="/panel/domains/<%= d.domain %>"
+     data-live="domain:<%= d.id %>"
+     <% if (s.key === 'registering') { %>data-live-reload-on="live"<% } %>>
+    <span class="item-icon"
+          <% if (s.needsYou) { %>style="background:#fdf0d8;color:#7a5510"<% } %>>
+      <%- icon(s.isSub ? 'layers' : 'globe', child ? 17 : 19) %>
+    </span>
+    <span class="item-main">
+      <span class="item-title"><%= d.domain %></span>
+      <span class="item-sub" data-live-line><%= s.line %></span>
+    </span>
+    <span class="item-end">
+      <span class="state state-<%= s.tone %>" data-live-chip><i></i><%= s.label %></span>
+    </span>
+    <span class="item-go"><%- icon('chevron-right', 17) %></span>
+  </a>
+<% } %>
 
-<div class="p-card p-card-flush">
-  <% if (!total) { %>
+<% if (!total) { %>
+  <div class="p-card">
     <div class="empty">
       <%- icon('globe', 46) %>
       <h3>No domains yet</h3>
-      <p>Register one here and it is pointed at your hosting automatically — or add one you already own.</p>
-      <a class="btn mt-2" href="/domains">Search a domain</a>
-      <a class="btn btn-ghost mt-2" href="/panel/domains/add">Add one I own</a>
+      <p>
+        Register one here and it is pointed at your hosting automatically — or
+        bring one you already own and point it at us.
+      </p>
+      <div class="row mt-2" style="gap:10px;justify-content:center;flex-wrap:wrap">
+        <a class="btn" href="/domains">Search a domain</a>
+        <a class="btn btn-ghost" href="/panel/domains/add">Add one I own</a>
+      </div>
     </div>
-  <% } else { %>
-    <% groups.forEach(function (d) { %>
-      <a class="item" href="/panel/domains/<%= d.id %>">
-        <span class="item-icon"><%- icon('globe', 19) %></span>
-        <span class="item-main">
-          <span class="item-title"><%= d.domain %></span>
-          <span class="item-sub"><%= subtitle(d, graceDays) %></span>
-        </span>
-        <span class="item-end"><%- statusBadge(d) %></span>
-      </a>
+  </div>
+<% } else { %>
 
-      <% d.children.forEach(function (sub) { %>
-        <a class="item item-child" href="/panel/domains/<%= sub.id %>">
-          <span class="item-icon"><%- icon('folder', 17) %></span>
-          <span class="item-main">
-            <span class="item-title"><%= sub.domain %></span>
-            <span class="item-sub"><%= subtitle(sub, graceDays) %></span>
-          </span>
-          <span class="item-end"><%- statusBadge(sub) %></span>
-        </a>
+  <%# ---- Anything waiting on the customer, first and on its own ---- %>
+  <% if (groups.needsYou.length) { %>
+    <div class="p-card p-card-flush mb-3" style="border-color:#f0dcae;background:#fffdf5">
+      <div class="p-card-head" style="border-color:#f4e7c4">
+        <h2 style="display:flex;align-items:center;gap:9px">
+          <span style="color:#7a5510;display:grid;place-items:center"><%- icon('alert-circle', 19) %></span>
+          Waiting on you
+        </h2>
+        <span class="small" style="color:#7a5510">Nothing else on this page needs anything</span>
+      </div>
+      <% groups.needsYou.forEach(function (d) { row(d, false); }); %>
+    </div>
+  <% } %>
+
+  <%# ---- Everything else, parents with their subdomains under them ---- %>
+  <div class="p-card p-card-flush">
+    <% if (groups.inFlight.length) { %>
+      <div class="group-lab">
+        <%- icon('clock', 14) %> In progress — nothing for you to do
+      </div>
+      <% groups.inFlight.forEach(function (d) { row(d, false); }); %>
+    <% } %>
+
+    <% if (tree.length) { %>
+      <% if (groups.inFlight.length || groups.needsYou.length) { %>
+        <div class="group-lab"><%- icon('check-circle', 14) %> Working</div>
+      <% } %>
+      <% tree.forEach(function (d) { %>
+        <% row(d, false); %>
+        <% d.children.forEach(function (sub) { row(sub, true); }); %>
       <% }); %>
-    <% }); %>
+    <% } %>
 
     <%# A subdomain whose parent has left the account. Its site is still on the
         server, so hiding it would be the panel disagreeing with the node. %>
     <% orphans.forEach(function (sub) { %>
-      <a class="item" href="/panel/domains/<%= sub.id %>">
-        <span class="item-icon"><%- icon('folder', 19) %></span>
+      <a class="item" href="/panel/domains/<%= sub.domain %>">
+        <span class="item-icon"><%- icon('layers', 19) %></span>
         <span class="item-main">
           <span class="item-title"><%= sub.domain %></span>
           <span class="item-sub">Subdomain · its main domain is no longer on this account</span>
         </span>
-        <span class="item-end"><%- statusBadge(sub) %></span>
+        <span class="item-end"><span class="state state-grey"><i></i>Orphaned</span></span>
+        <span class="item-go"><%- icon('chevron-right', 17) %></span>
       </a>
     <% }); %>
-  <% } %>
-</div>
+  </div>
 
-<p class="small muted mt-2">
-  A domain you own elsewhere is hosted here as soon as it points at us — either by using our
-  nameservers, or by aiming an A record here. If neither has happened within <%= graceDays %> days
-  we take it off this list; we would not be hosting it, and the domain itself is never touched.
-  Subdomains are part of the domain above them: nothing to renew and nothing to pay.
-</p>
+  <%#
+    The legend.
+
+    Four words that mean four different things, said once, at the bottom, where
+    somebody confused by a badge can find out what it means without a support
+    ticket — and where somebody who is not confused can ignore it entirely.
+  %>
+  <details class="fold mt-3">
+    <summary>
+      <span style="color:var(--ink-3);display:grid;place-items:center"><%- icon('info', 18) %></span>
+      <span>What these labels mean</span>
+      <span class="fold-chev"><%- icon('chevron', 17) %></span>
+    </summary>
+    <div class="fold-body">
+      <div class="legend">
+        <div class="legend-row">
+          <span class="state state-green"><i></i>Live</span>
+          <span>Working. It is serving from our machines and there is nothing to do.</span>
+        </div>
+        <div class="legend-row">
+          <span class="state state-amber"><i></i>Waiting for you</span>
+          <span>
+            We are waiting on a change only you can make — usually the
+            nameservers at your registrar. Open it and the page says exactly what
+            to set, and how long you have.
+          </span>
+        </div>
+        <div class="legend-row">
+          <span class="state state-blue"><i></i>Registering</span>
+          <span>
+            We are buying it from the registry right now. Minutes, usually.
+            Nothing for you to do, and this page updates itself when it lands.
+          </span>
+        </div>
+        <div class="legend-row">
+          <span class="state state-grey"><i></i>Parked</span>
+          <span>Registered to you and not pointed at a website. That is a choice, not a fault.</span>
+        </div>
+      </div>
+      <p class="small muted mt-3 mb-0">
+        A domain you own elsewhere is hosted here as soon as it points at us —
+        either by using our nameservers, or by aiming an A record here. If
+        neither has happened within <%= graceDays %> days we take it off this
+        list; we would not be hosting it, and the domain itself is never touched.
+        Subdomains are part of the domain above them: nothing to renew and
+        nothing to pay.
+      </p>
+    </div>
+  </details>
+<% } %>
 
 <%- include('../partials/panel-shell-end') %>
-<%- include('../partials/footer') %>

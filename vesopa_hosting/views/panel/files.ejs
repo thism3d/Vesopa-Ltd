@@ -32,6 +32,27 @@
         <%- icon('globe', 15) %> <%= site %>
       </button>
     <% }); %>
+
+    <%#
+      Disk usage, here, because this is the page where somebody is about to
+      spend it. Without it the first sign of a full account is an upload that
+      fails with whatever message the node happened to produce.
+    %>
+    <% if (disk) { %>
+      <%
+        const gb = (mb) => (mb >= 1024 ? (mb / 1024).toFixed(mb >= 10240 ? 0 : 1) + ' GB' : Math.round(mb) + ' MB');
+        const tone = disk.pct >= 90 ? 'is-full' : disk.pct >= 75 ? 'is-high' : '';
+      %>
+      <div class="fm-disk <%= tone %>" title="<%= disk.quotaMb ? disk.pct + '% of your storage used' : 'Storage used' %>">
+        <%- icon('gauge', 15) %>
+        <span class="fm-disk-text">
+          <b><%= gb(disk.usedMb) %></b><% if (disk.quotaMb) { %> of <%= gb(disk.quotaMb) %><% } else { %> used<% } %>
+        </span>
+        <% if (disk.quotaMb) { %>
+          <span class="fm-disk-bar" aria-hidden="true"><i style="width:<%= Math.max(2, disk.pct) %>%"></i></span>
+        <% } %>
+      </div>
+    <% } %>
   </div>
 
   <div class="p-card p-card-flush fm-card">
@@ -153,9 +174,26 @@
         </div>
         <div class="fm-editor-tools">
           <span class="fm-editor-state" id="fm-editor-state"></span>
+          <%#
+            Indent and outdent as BUTTONS, not only as Tab.
+
+            A phone keyboard has no Tab key, so on the device where this editor
+            is most useful there was previously no way to indent anything at
+            all. They sit next to the wrap toggle because all three are "how the
+            text is laid out" rather than "what happens to the file".
+          %>
+          <button type="button" class="fm-icon-btn" id="fm-outdent" title="Outdent (Shift+Tab)" aria-label="Outdent">
+            <%- icon('chevron-left', 16) %>
+          </button>
+          <button type="button" class="fm-icon-btn" id="fm-indent" title="Indent (Tab)" aria-label="Indent">
+            <%- icon('chevron-right', 16) %>
+          </button>
           <button type="button" class="fm-icon-btn" id="fm-editor-wrap" title="Wrap long lines" aria-pressed="true">
             <%- icon('list', 16) %>
           </button>
+          <%# A named Cancel, not only an X. On a phone the X is a 17px glyph in
+              the corner and people do not trust it to discard safely. %>
+          <button type="button" class="btn btn-ghost btn-sm fm-editor-cancel" id="fm-editor-cancel">Cancel</button>
           <button type="button" class="btn btn-sm" id="fm-editor-save"><%- icon('save', 15) %> Save</button>
           <button type="button" class="fm-icon-btn" id="fm-editor-close" aria-label="Close editor"><%- icon('x', 17) %></button>
         </div>
@@ -267,4 +305,3 @@
 <script src="<%= asset('/assets/js/files.js') %>" defer></script>
 
 <%- include('../partials/panel-shell-end') %>
-<%- include('../partials/footer') %>

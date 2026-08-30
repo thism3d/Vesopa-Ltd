@@ -54,7 +54,7 @@
             <% if (it.type) { %><%= it.type %> · <% } %>
             <% if (it.size_mb !== undefined) { %><%= it.size_mb %> MB<% } %>
             <% if (it.used_mb !== undefined) { %><%= it.used_mb %> MB used<% } %>
-            <% if (it.created_at) { %><%= it.created_at %><% } %>
+            <% if (it.created_at) { %><%= when(it.created_at) %><% } %>
           </span>
         </span>
       </div>
@@ -63,4 +63,3 @@
 </div>
 
 <%- include('../partials/panel-shell-end') %>
-<%- include('../partials/footer') %>

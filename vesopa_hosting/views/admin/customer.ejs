@@ -13,7 +13,7 @@
         <div class="item">
           <span class="item-main">
             <span class="item-title"><%= s.primary_domain || '(no domain)' %></span>
-            <span class="item-sub"><%= s.plan_name %> · <%= money(s.price_pence, s.currency) %> / <%= s.term_months %>m<% if (s.next_due_at) { %> · due <%= s.next_due_at %><% } %></span>
+            <span class="item-sub"><%= s.plan_name %> · <%= money(s.price_pence, s.currency) %> / <%= s.term_months %>m<% if (s.next_due_at) { %> · due <%= when(s.next_due_at, { dateOnly: true }) %><% } %></span>
           </span>
           <span class="item-end row" style="gap:8px;justify-content:flex-end">
             <% if (s.status === 'active') { %><span class="badge badge-green">Live</span>
@@ -39,7 +39,7 @@
         <div class="item">
           <span class="item-main">
             <span class="item-title"><%= d.domain %></span>
-            <span class="item-sub"><%= d.status %><% if (d.expires_at) { %> · expires <%= d.expires_at %><% } %><%= d.auto_renew ? ' · auto-renew' : '' %></span>
+            <span class="item-sub"><%= d.status %><% if (d.expires_at) { %> · expires <%= when(d.expires_at, { dateOnly: true }) %><% } %><%= d.auto_renew ? ' · auto-renew' : '' %></span>
           </span>
         </div>
       <% }); %>
@@ -113,4 +113,3 @@
 </div>
 
 <%- include('../partials/panel-shell-end') %>
-<%- include('../partials/footer') %>

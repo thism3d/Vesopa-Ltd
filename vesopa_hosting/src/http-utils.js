@@ -9,8 +9,21 @@
  * standing one up so "your password was changed" can cross a 302 would be a
  * database table and a cleanup job for a 30-second string.
  */
-function flash(res, message, kind = 'ok') {
-  res.cookie('vh_flash', Buffer.from(JSON.stringify({ message, kind })).toString('base64url'), {
+/**
+ * @param {object} [data]  a small payload the NEXT page needs and nothing else
+ *                         should ever see — currently a freshly generated
+ *                         database password.
+ *
+ * It rides in the same httpOnly cookie as the message and is gone after one
+ * request. That is deliberately the shortest-lived channel available: the
+ * alternatives are a query string (which lands in browser history and in every
+ * proxy log between here and the customer) or a row in the database (which
+ * means keeping plaintext credentials we have no reason to hold). Read it as
+ * `res.locals.flashData`, and keep it small — it is a cookie, so it goes back
+ * up on the next request too.
+ */
+function flash(res, message, kind = 'ok', data = null) {
+  res.cookie('vh_flash', Buffer.from(JSON.stringify({ message, kind, ...(data ? { data } : {}) })).toString('base64url'), {
     httpOnly: true,
     sameSite: 'lax',
     secure: process.env.NODE_ENV === 'production',

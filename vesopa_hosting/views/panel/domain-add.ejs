@@ -131,12 +131,9 @@
       <% }); %>
 
       <p class="label mb-1 mt-3">2 &nbsp;An A record, DNS stays with you</p>
-      <% if (addresses.length) { %>
-        <div class="copyable">
-          <span class="mono"><%= addresses[0] %></span>
-          <button type="button" class="btn btn-ghost btn-sm copy-btn" data-copy="<%= addresses[0] %>">Copy</button>
-        </div>
-      <% } %>
+      <%# The node's address is never printed in the panel — see the note in
+          views/panel/domain.ejs. The hostname is the same instruction with the
+          indirection kept, so moving the node does not break anybody's zone. %>
       <div class="copyable">
         <span class="mono"><%= pointHostname %></span>
         <button type="button" class="btn btn-ghost btn-sm copy-btn" data-copy="<%= pointHostname %>">Copy</button>
@@ -172,4 +169,3 @@
 <script src="<%= asset('/assets/js/domain-add.js') %>" defer></script>
 
 <%- include('../partials/panel-shell-end') %>
-<%- include('../partials/footer') %>

@@ -77,7 +77,7 @@
           <span class="item-icon"><%- icon('globe', 18) %></span>
           <span class="item-main">
             <span class="item-title"><%= d.domain %></span>
-            <span class="item-sub"><% if (d.registrar_ref) { %>ref <%= d.registrar_ref %><% } %><% if (d.expires_at) { %> · expires <%= d.expires_at %><% } %></span>
+            <span class="item-sub"><% if (d.registrar_ref) { %>ref <%= d.registrar_ref %><% } %><% if (d.expires_at) { %> · expires <%= when(d.expires_at, { dateOnly: true }) %><% } %></span>
           </span>
           <span class="item-end"><span class="badge <%= d.status === 'active' ? 'badge-green' : 'badge-amber' %>"><%= d.status %></span></span>
         </div>
@@ -195,4 +195,3 @@
 </div>
 
 <%- include('../partials/panel-shell-end') %>
-<%- include('../partials/footer') %>

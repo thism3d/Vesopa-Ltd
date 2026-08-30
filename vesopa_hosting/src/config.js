@@ -9,7 +9,7 @@
  */
 
 const SITE_URL = process.env.SITE_URL || 'http://localhost:5075';
-const MAIN_SITE_URL = process.env.MAIN_SITE_URL || 'https://vesopaepos.com';
+const MAIN_SITE_URL = process.env.MAIN_SITE_URL || 'https://vesopa.com';
 
 /**
  * HestiaCP's own web interface, e.g. https://panel.vesopa.com:2083.
@@ -48,15 +48,44 @@ const CONTROL_PANEL_URL = (process.env.HESTIA_PANEL_URL || '').replace(/\/+$/, '
  */
 const BASE_CURRENCY = process.env.BASE_CURRENCY || process.env.CURRENCY || 'GBP';
 
+/**
+ * The trading entity behind this panel, and the addresses on every email.
+ *
+ * IT IS NOT THE EPOS COMPANY. Vesopa runs an EPOS business at vesopaepos.com
+ * and a hosting business here, and they are separate limited companies at
+ * separate addresses. Every one of these values used to be the EPOS one,
+ * because this app was forked from that site — which meant a customer buying
+ * hosting was told, in the footer of the receipt, that they had bought it from
+ * a till company in Swansea. Registrar contact records, invoices and the
+ * consumer-rights notices all read from here, so getting it wrong is a legal
+ * problem as well as a confusing one.
+ *
+ * `email` and `support_email` are the addresses a HUMAN reads. The address the
+ * server SENDS from is MAIL_FROM in the environment (no-reply@vesopa.com) and
+ * is deliberately not one of these: replying to a no-reply mailbox should never
+ * be the route to support.
+ */
 const CONTACT = {
-  company: 'VESOPA EPOS LTD',
-  address_line1: '1 High Street, Pontardawe',
-  address_line2: 'Swansea, SA8 4HU',
+  company: 'VESOPA SOFTWARE LTD',
+  address_line1: 'Baglan, Port Talbot',
+  address_line2: 'Wales, SA12 7AX',
   phone: '+44 7501 928043',
   phone_e164: '+447501928043',
-  email: 'hosting@vesopaepos.com',
-  support_email: 'hosting@vesopaepos.com',
+  email: 'support@vesopa.com',
+  support_email: 'support@vesopa.com',
 };
+
+/**
+ * The panel's own hostname, shown as the link in every email footer.
+ *
+ * Derived from SITE_URL rather than written down, so a deploy that moves the
+ * panel moves the footer with it. The footer used to be the literal string
+ * `hosting.vesopaepos.com` while SITE_URL pointed at cloud.vesopa.com, and
+ * nothing anywhere flagged the disagreement.
+ */
+const SITE_HOSTNAME = (() => {
+  try { return new URL(SITE_URL).host; } catch { return 'cloud.vesopa.com'; }
+})();
 
 /** The 2026 mark: black wordmark, one lime slash. */
 const BRAND = {
@@ -288,6 +317,7 @@ module.exports = {
   CONTROL_PANEL_URL,
   BASE_CURRENCY,
   CONTACT,
+  SITE_HOSTNAME,
   BRAND,
   NAMESERVERS,
   POINT_HOSTNAME,

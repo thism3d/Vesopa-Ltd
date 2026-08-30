@@ -11,10 +11,17 @@
  */
 
 const nodemailer = require('nodemailer');
-const { SITE_URL, BRAND, CONTACT } = require('./config');
+const { SITE_URL, SITE_HOSTNAME, BRAND, CONTACT } = require('./config');
 
 const FROM_NAME = process.env.MAIL_FROM_NAME || 'Vesopa Cloud';
-const FROM = process.env.MAIL_FROM || 'hosting@vesopaepos.com';
+/*
+ * The envelope sender. A REAL mailbox on the node (no-reply@vesopa.com), not a
+ * made-up address: SPF and DMARC are published for vesopa.com, so a From that
+ * does not exist there is either rejected outright or filed as spam. It is a
+ * no-reply because these are machine-generated; the address a customer should
+ * write to is CONTACT.support_email, and every template says so.
+ */
+const FROM = process.env.MAIL_FROM || 'no-reply@vesopa.com';
 const DEFAULT_TO = process.env.MAIL_TO || FROM;
 
 let transport = null;
@@ -128,7 +135,7 @@ function shell({ title, intro, bodyHtml, ctaText, ctaUrl, footNote }) {
               ${escapeHtml(CONTACT.company)} · ${escapeHtml(CONTACT.address_line1)}, ${escapeHtml(CONTACT.address_line2)}
             </p>
             <p style="margin:0;font-size:12px;line-height:1.6;color:#787a6e;">
-              <a href="${SITE_URL}" style="color:${BRAND.lime_ink};text-decoration:none;">hosting.vesopaepos.com</a>
+              <a href="${SITE_URL}" style="color:${BRAND.lime_ink};text-decoration:none;">${escapeHtml(SITE_HOSTNAME)}</a>
               &nbsp;·&nbsp; <a href="mailto:${CONTACT.support_email}" style="color:${BRAND.lime_ink};text-decoration:none;">${CONTACT.support_email}</a>
             </p>
           </div>

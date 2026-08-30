@@ -14,3 +14,7 @@ logs/
 # to be stated here rather than at the root.
 !.env.production.example
 !.env.*.example
+
+# Python bytecode from the brokers.
+__pycache__/
+*.pyc

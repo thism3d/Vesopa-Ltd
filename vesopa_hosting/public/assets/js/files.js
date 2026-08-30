@@ -1208,6 +1208,8 @@
   }
 
   ed.close.addEventListener('click', function () { closeEditor(false); });
+  var edCancel = document.getElementById('fm-editor-cancel');
+  if (edCancel) edCancel.addEventListener('click', function () { closeEditor(false); });
 
   ed.save.addEventListener('click', function () {
     if (!editing.path) return;
@@ -1251,24 +1253,115 @@
   });
 
   ed.ta.addEventListener('scroll', function () {
+    /*
+     * All THREE layers, not two.
+     *
+     * Setting innerHTML resets a scrolled element to the top, and this restored
+     * the highlight layer but not the gutter — so after every keystroke the
+     * line numbers snapped to 1 while the text stayed where it was, and the
+     * numbers beside your cursor were whatever line happened to be at the top
+     * of the file.
+     */
     ed.hlBox.scrollTop = ed.ta.scrollTop;
     ed.hlBox.scrollLeft = ed.ta.scrollLeft;
     ed.gutter.scrollTop = ed.ta.scrollTop;
+    ed.gutter.scrollTop = ed.ta.scrollTop;
   });
 
-  /* Tab inserts a tab instead of leaving the editor. Escape is how you get out. */
+  /**
+   * Indent or outdent.
+   *
+   * The old Tab handler inserted one character at the caret and nothing else,
+   * which is wrong the moment more than one line is selected: it DELETED the
+   * selection and replaced the lot with a single tab. Indenting a block — the
+   * thing anybody actually wants Tab for in an editor — silently destroyed it.
+   *
+   * With a selection this shifts every line it touches and keeps the selection
+   * over the same text afterwards, so Tab, Tab, Tab indents by three rather
+   * than indenting once and then losing your place.
+   *
+   * `document.execCommand('insertText')` is used for the single-caret case
+   * rather than rewriting `.value`: it goes through the browser's own edit
+   * pipeline, so the native undo stack still works. Assigning `.value` wipes
+   * undo for the whole file, which is its own kind of data loss.
+   */
+  function indent(out) {
+    var value = ed.ta.value;
+    var start = ed.ta.selectionStart;
+    var end = ed.ta.selectionEnd;
+
+    if (start === end && !out) {
+      if (document.execCommand) {
+        ed.ta.focus();
+        document.execCommand('insertText', false, '\t');
+      } else {
+        ed.ta.value = value.slice(0, start) + '\t' + value.slice(end);
+        ed.ta.selectionStart = ed.ta.selectionEnd = start + 1;
+      }
+      afterEdit();
+      return;
+    }
+
+    // Widen to whole lines: you cannot indent half of one.
+    var from = value.lastIndexOf('\n', start - 1) + 1;
+    var to = value.indexOf('\n', end);
+    if (to === -1) to = value.length;
+
+    var lines = value.slice(from, to).split('\n');
+    var firstDelta = 0;
+    var total = 0;
+    var shifted = lines.map(function (line, i) {
+      if (out) {
+        // One tab, or up to two spaces — matching the tab-size the editor
+        // renders with, so an outdent undoes exactly what an indent did.
+        var m = /^(\t| {1,2})/.exec(line);
+        var cut = m ? m[1].length : 0;
+        if (i === 0) firstDelta = -cut;
+        total -= cut;
+        return line.slice(cut);
+      }
+      if (i === 0) firstDelta = 1;
+      total += 1;
+      return '\t' + line;
+    });
+
+    ed.ta.value = value.slice(0, from) + shifted.join('\n') + value.slice(to);
+    // Keep the selection over the same text, so Tab can be pressed again.
+    ed.ta.selectionStart = Math.max(from, start + firstDelta);
+    ed.ta.selectionEnd = Math.max(ed.ta.selectionStart, end + total);
+    afterEdit();
+  }
+
+  function afterEdit() {
+    setEditorState('Unsaved changes', 'dirty');
+    paint();
+    ed.ta.focus();
+  }
+
   ed.ta.addEventListener('keydown', function (ev) {
     if (ev.key === 'Tab') {
       ev.preventDefault();
-      var start = ed.ta.selectionStart, end = ed.ta.selectionEnd;
-      ed.ta.value = ed.ta.value.slice(0, start) + '\t' + ed.ta.value.slice(end);
-      ed.ta.selectionStart = ed.ta.selectionEnd = start + 1;
-      setEditorState('Unsaved changes', 'dirty');
-      paint();
+      indent(ev.shiftKey);
+      return;
     }
     if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === 's') {
       ev.preventDefault();
       ed.save.click();
+    }
+  });
+
+  /*
+   * The same two actions as buttons, because a phone keyboard has no Tab key
+   * at all — which is what "the indentation button is not working" meant: there
+   * was no button, and the only way in was a key the device does not have.
+   */
+  ['fm-indent', 'fm-outdent'].forEach(function (id) {
+    var btn = document.getElementById(id);
+    if (btn) {
+      btn.addEventListener('click', function (ev) {
+        ev.preventDefault();
+        indent(id === 'fm-outdent');
+      });
     }
   });
 

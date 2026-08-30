@@ -241,6 +241,39 @@ async function check(label, fn) {
   });
 
   // -------------------------------------------------------------------------
+  /*
+   * The three brokers, and the one that lies when it is down.
+   *
+   * apps/broker.py is checked hardest because its failure mode is the worst in
+   * the codebase: with no socket, src/apps.js falls back to mock data, and the
+   * Node apps page then shows invented processes all reporting "Working" for a
+   * customer whose real site is down. Every other broker going missing shows an
+   * error; this one shows good news that is not true. APPS_MODE=live turns that
+   * into an honest "the service is down", which is why it is a FAIL here and
+   * not a warning.
+   */
+  head('Brokers');
+  await check('brokers', async () => {
+    const fs = require('node:fs');
+    const sockets = [
+      ['terminal', process.env.TERMINAL_SOCKET || '/run/vesopa-terminal/broker.sock'],
+      ['files', process.env.FILES_SOCKET || '/run/vesopa-files/broker.sock'],
+      ['apps', process.env.APPS_SOCKET || '/run/vesopa-apps/broker.sock'],
+    ];
+    sockets.forEach(([name, path]) => {
+      if (fs.existsSync(path)) PASS(`the ${name} broker is listening`, path);
+      else FAIL(`the ${name} broker socket is missing`, `${path} — systemctl status vesopa-${name}`);
+    });
+
+    if ((process.env.APPS_MODE || '').toLowerCase() !== 'live') {
+      FAIL('APPS_MODE is not "live"',
+        'the panel will invent a process list if the broker stops, and report a dead site as Working');
+    } else {
+      PASS('APPS_MODE=live', 'a broker outage will be reported rather than mocked');
+    }
+  });
+
+  // -------------------------------------------------------------------------
   head('Site configuration');
   await check('site', async () => {
     if (/localhost|127\.0\.0\.1/.test(SITE_URL)) {

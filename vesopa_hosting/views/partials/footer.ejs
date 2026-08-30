@@ -6,10 +6,10 @@
   <div class="wrap">
     <div class="footer-grid">
       <div class="footer-brand">
-        <img src="/assets/img/brand/vesopa_logo_on_dark.png" alt="Vesopa" width="170" height="25">
+        <%- include('./brand', { on: 'dark', size: 26 }) %>
         <p class="small" style="max-width:30ch">
-          UK web hosting, domain names and SSL from the team behind Vesopa EPOS.
-          One panel, no jargon, and a person on the other end of the ticket.
+          UK web hosting, domain names and business email. One panel, no jargon,
+          and a person on the other end of the ticket.
         </p>
         <p class="small" style="margin-bottom:0">
           <span class="row" style="gap:7px">
@@ -49,7 +49,7 @@
           <li><a href="/about">About Vesopa</a></li>
           <li><a href="/support">Support</a></li>
           <li><a href="/contact">Contact us</a></li>
-          <li><a href="<%= mainSiteUrl %>" target="_blank" rel="noopener">Vesopa EPOS</a></li>
+          <li><a href="<%= mainSiteUrl %>" target="_blank" rel="noopener">Vesopa Software</a></li>
         </ul>
       </div>
     </div>

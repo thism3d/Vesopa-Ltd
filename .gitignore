@@ -162,3 +162,4 @@ desktop.ini
 # source artwork belongs in asset storage, not in every clone of the repo.
 brandAssets/
 brandAssets.zip
+p.md

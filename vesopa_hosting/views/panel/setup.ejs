@@ -10,7 +10,7 @@
 
   <header class="setup-top">
     <a class="brand" href="/panel" aria-label="Vesopa Cloud">
-      <img src="/assets/img/brand/vesopa_logo_on_dark.png" alt="Vesopa" width="140" height="20">
+      <%- include('../partials/brand', { on: 'dark', size: 22 }) %>
       <span class="brand-sub" style="color:#7d8570;border-color:#2a2e22">Setup</span>
     </a>
     <span class="tiny" style="color:#7d8570">Order <b class="mono" style="color:#cfd4c4"><%= order.reference %></b></span>

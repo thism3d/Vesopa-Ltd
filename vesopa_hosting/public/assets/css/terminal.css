@@ -141,3 +141,68 @@
     z-index: 5;
   }
 }
+
+/* ---- Scrolling the buffer -----------------------------------------------
+   Added when the terminal was made usable on a tablet. Two things: a pill that
+   appears only while the view is away from the end, and the separators that
+   group the key bar into "keys the keyboard lacks" / "move the view" / "zoom",
+   so seventeen buttons read as three sets rather than one wall. */
+
+.term-shell { position: relative; }
+
+.term-jump {
+  position: absolute; right: 14px; bottom: 12px; z-index: 5;
+  display: inline-flex; align-items: center; gap: 6px;
+  min-height: 36px; padding: 0 14px;
+  border: 1px solid #3a4326; border-radius: 999px;
+  background: rgba(24, 29, 14, .94); color: #dfe8c6;
+  font: inherit; font-size: .8rem; font-weight: 700; cursor: pointer;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .35);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+}
+.term-jump:hover { background: rgba(34, 41, 20, .97); color: #fff; }
+.term-jump[hidden] { display: none; }
+
+.term-keys-sep {
+  flex: none; width: 1px; align-self: stretch; margin: 4px 2px;
+  background: var(--rule);
+}
+
+/* The gesture is not discoverable, so it is written down once, quietly, and
+   only where a touch screen might see it. */
+.term-gesture {
+  display: none;
+  align-items: flex-start; gap: 7px;
+  margin: 0; font-size: .79rem; line-height: 1.5; color: var(--ink-3);
+}
+.term-gesture svg { flex: none; margin-top: 2px; }
+@media (pointer: coarse) { .term-gesture { display: flex; } }
+
+/*
+ * A key bar you can actually hit.
+ *
+ * 44px is the smallest target a thumb reaches reliably, and the bar scrolls
+ * sideways rather than wrapping into three rows that eat the terminal.
+ */
+@media (max-width: 860px) {
+  .term-keys { overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .term-keys::-webkit-scrollbar { display: none; }
+  .term-keys button { min-width: 44px; min-height: 44px; flex: 0 0 auto; }
+  .term-jump { right: 10px; bottom: 10px; }
+}
+
+/*
+ * The terminal must not be part of the page's own scrolling.
+ *
+ * `overscroll-behavior: contain` stops a swipe that reaches the top of the
+ * buffer from continuing into the page — the "rubber band" that made the
+ * whole panel move when somebody was trying to read output. `touch-action`
+ * hands vertical dragging to our own two-finger handler rather than to the
+ * browser's scroller.
+ */
+.term-shell, .term-shell .xterm-viewport {
+  overscroll-behavior: contain;
+}
+@media (pointer: coarse) {
+  .term-shell .xterm-screen { touch-action: pan-y pinch-zoom; }
+}

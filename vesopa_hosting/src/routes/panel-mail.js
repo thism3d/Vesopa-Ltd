@@ -32,6 +32,7 @@ const auth = require('../auth');
 const db = require('../db');
 const hestia = require('../integrations/hestia');
 const mailboxes = require('../mailboxes');
+const vault = require('../mailbox-vault');
 const { flash, field, rateLimited } = require('../http-utils');
 const {
   sendMail, shell, detailTable, escapeHtml,
@@ -104,13 +105,48 @@ router.get('/', async (req, res, next) => {
       ? await domainView(req, chosen)
       : null;
 
+    /*
+     * The switcher shows EVERY mail domain with its mailbox count, which is
+     * what "show all the mail domains there" asked for. Two round trips to the
+     * node would be one per domain, so the counts come from a single
+     * `v-list-mail-domains` and are matched up here.
+     *
+     * A domain with no mailboxes still appears, deliberately: a switcher that
+     * hides the empty ones is a switcher that hides the one you were about to
+     * put your first mailbox on.
+     */
+    const counts = new Map();
+    if (req.customer.hestia_user && usable.length) {
+      try {
+        (await hestia.listMailDomains(req.customer.hestia_user))
+          .forEach((d) => counts.set(d.domain, Number(d.accounts || 0)));
+      } catch { /* the switcher renders without counts */ }
+    }
+    const switcher = usable.map((d) => ({
+      domain: d.domain,
+      accounts: counts.has(d.domain) ? counts.get(d.domain) : null,
+      ownDns: d.verify_method === 'ns',
+    }));
+
+    /*
+     * Which mailboxes the panel can open in one click — i.e. the ones whose
+     * password the customer asked us to keep. Anything not in here gets a link
+     * to webmail and types their password, exactly as before.
+     */
+    const openable = view
+      ? await vault.knownFor(req.customer.id, view.accounts.map((a) => a.address))
+      : new Set();
+
     res.render('panel/mail', {
       title: 'Email',
       robots: 'noindex',
       usable,
+      switcher,
       chosen: chosen ? chosen.domain : '',
       view,
       quota,
+      openable,
+      vaultReady: vault.enabled(),
       webmail: WEBMAIL_URL,
       mailHost: MAIL_HOSTNAME,
       ports: MAIL_PORTS,
@@ -261,6 +297,22 @@ router.post('/:domain/create', async (req, res, next) => {
       return res.redirect(back);
     }
 
+    /*
+     * Keep the password, if they asked us to, at the ONE moment we have it
+     * legitimately — the customer typed it into our own form a second ago.
+     * Sealed under a key that lives in the environment and not in the database;
+     * src/mailbox-vault.js carries the whole argument, including where it stops
+     * being defensible.
+     *
+     * Never fatal. A mailbox that works but cannot be opened in one click is a
+     * working mailbox, and failing the creation over a convenience is absurd.
+     */
+    if (req.body.remember === 'on' && vault.enabled()) {
+      await vault.remember({ customerId: req.customer.id, address, password }).catch((err) => {
+        console.error('[mail] could not store the mailbox secret:', err.message);
+      });
+    }
+
     const settings = mailboxes.connectionSettings(address);
 
     // Both, and neither blocks the redirect on failure — see deliverWelcome.
@@ -335,6 +387,20 @@ const ACTIONS = {
     const problem = auth.passwordProblem(password);
     if (problem) throw new Error(problem);
     await hestia.changeMailPassword({ username, domain, account, password });
+
+    /*
+     * The stored copy has to move with it or be thrown away — a stale one means
+     * "Open inbox" fails with a password error that looks like the mailbox is
+     * broken. Which of the two depends on what they ticked, and the default is
+     * to FORGET: a password change is exactly the moment somebody might be
+     * withdrawing consent for us to hold one.
+     */
+    const address = `${account}@${domain}`;
+    if (req.body.remember === 'on' && vault.enabled()) {
+      await vault.remember({ customerId: req.customer.id, address, password }).catch(() => {});
+    } else {
+      await vault.forget({ customerId: req.customer.id, address }).catch(() => {});
+    }
     return 'Password changed. Every device signed in as this mailbox will ask for it again.';
   },
 
@@ -489,18 +555,51 @@ router.post('/:domain/catchall', async (req, res, next) => {
   }
 });
 
-/** Re-check the customer's own DNS for the records mail needs. */
+/**
+ * Re-check the customer's own DNS for the records mail needs.
+ *
+ * ANSWERS JSON WHEN ASKED TO, and that is the whole "why is the DNS check so
+ * slow" repair. It used to be a form post only: the browser threw the page
+ * away, waited on four DNS lookups with nothing on screen, and rebuilt the
+ * whole page — and if the records had not propagated yet you did it all again.
+ * Five seconds of blank page, several times over.
+ *
+ * The lookups take exactly as long as they always did. What changed is that the
+ * page stays up, the button says it is working, and the answer lands in place.
+ * The form post still works untouched for anybody without JavaScript.
+ */
 router.post('/:domain/check', async (req, res, next) => {
   const domain = String(req.params.domain || '').toLowerCase();
   const back = `/panel/mail?domain=${encodeURIComponent(domain)}`;
+  // `fetch` from panel.js sends JSON and expects it back. A <form> sends neither.
+  const wantsJson = req.is('application/json') || (req.get('accept') || '').includes('application/json');
+  const answer = (ok, message, status = 200) => {
+    if (wantsJson) return res.status(status).json({ ok, message });
+    flash(res, message, ok ? 'ok' : 'warn');
+    return res.redirect(back);
+  };
+
   try {
-    if (!auth.checkCsrf(req)) return res.redirect(back);
+    if (!auth.checkCsrf(req)) return answer(false, 'Your session expired. Reload the page.', 403);
     const row = await ownedMailDomain(req, domain);
     if (!row) return next();
 
     if (rateLimited(req.customer.id, 'mail-dns-check', { max: 15, windowMs: 600_000 })) {
-      flash(res, 'We have just checked a few times. Give DNS a couple of minutes.', 'warn');
-      return res.redirect(back);
+      return answer(false, 'We have just checked a few times. Give DNS a couple of minutes.');
+    }
+
+    if (wantsJson) {
+      const check = await mailboxes.checkMailRecords(row.domain);
+      if (check.mxOk && check.spfOk) {
+        return answer(true, `${row.domain} is set up correctly — mail will reach your mailboxes.`);
+      }
+      if (check.mxOk) {
+        return answer(false, 'The MX record is right. The SPF record is still missing or does not '
+          + `mention ${MAIL_HOSTNAME}, so some of your mail may be treated as spam.`);
+      }
+      return answer(false, check.mxSeen.length
+        ? `Not yet — mail for ${row.domain} is still going to ${check.mxSeen.join(', ')}.`
+        : `Not yet — ${row.domain} has no MX record we can see. DNS changes can take a few hours.`);
     }
 
     const check = await mailboxes.checkMailRecords(row.domain);
@@ -515,6 +614,173 @@ router.post('/:domain/check', async (req, res, next) => {
         : `Not yet — ${row.domain} has no MX record that we can see.`, 'warn');
     }
     res.redirect(back);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Opening a mailbox, and setting one up on a device
+// ---------------------------------------------------------------------------
+
+/**
+ * Open the inbox, already signed in.
+ *
+ * Roundcube has no token login and Dovecot will not take one, so this posts the
+ * mailbox's own credentials from the CUSTOMER'S browser — an auto-submitting
+ * form, straight to webmail's login endpoint. The password is in the body of
+ * one POST the customer's own browser makes to a host they already trust with
+ * it; it never reaches a URL, a log line or a referrer.
+ *
+ * It only works where the customer asked us to remember the password. Where
+ * they did not — or where MAILBOX_KEY is unset, or the password was changed on
+ * the node — this falls through to plain webmail and they type it, which is
+ * exactly what happened before this route existed. Nothing half-works.
+ */
+router.get('/:domain/:account/open', async (req, res, next) => {
+  try {
+    const row = await ownedMailDomain(req, req.params.domain);
+    if (!row) return next();
+
+    const account = String(req.params.account || '').toLowerCase();
+    if (!ACCOUNT_RE.test(account)) return next();
+    const address = `${account}@${row.domain}`;
+
+    // The node is the authority on whether this mailbox exists. Ownership of
+    // the DOMAIN is not ownership of an address inside it that we invented.
+    const accounts = await hestia.listMailAccounts({
+      username: req.customer.hestia_user, domain: row.domain,
+    }).catch(() => []);
+    if (!accounts.some((a) => a.account === account)) return next();
+
+    const password = await vault.recall({ customerId: req.customer.id, address });
+    if (!password) return res.redirect(WEBMAIL_URL);
+
+    await db.logActivity({
+      actorType: 'customer', actorId: req.customer.id,
+      action: 'mailbox.opened', target: address, ip: req.ip,
+    }).catch(() => {});
+
+    /*
+     * `noindex` and `no-store` are not decoration. This response body contains a
+     * live password for as long as it is in the browser's memory, and a cached
+     * copy on disk would outlive the session that asked for it.
+     */
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.set('Referrer-Policy', 'no-referrer');
+    res.type('html').send(`<!doctype html>
+<html lang="en-GB"><head><meta charset="utf-8">
+<meta name="robots" content="noindex,nofollow">
+<title>Opening ${escapeHtml(address)}…</title>
+<style>
+  body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f8f9f4;
+       font:16px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',Inter,Roboto,Helvetica,Arial,sans-serif;color:#111}
+  .b{text-align:center;padding:28px}
+  .s{width:26px;height:26px;margin:0 auto 14px;border-radius:50%;
+     border:3px solid #e1e3da;border-top-color:#a5c715;animation:s .8s linear infinite}
+  @keyframes s{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){.s{animation:none}}
+  p{margin:0;color:#787a6e;font-size:.92rem}
+  button{margin-top:16px;padding:11px 20px;border:1px solid #e1e3da;border-radius:11px;
+         background:#fff;font:inherit;font-weight:700;cursor:pointer}
+</style></head><body>
+<div class="b">
+  <div class="s"></div>
+  <p>Opening ${escapeHtml(address)}…</p>
+  <form id="f" method="post" action="${escapeHtml(WEBMAIL_URL)}/?_task=login">
+    <input type="hidden" name="_task" value="login">
+    <input type="hidden" name="_action" value="login">
+    <input type="hidden" name="_user" value="${escapeHtml(address)}">
+    <input type="hidden" name="_pass" value="${escapeHtml(password)}">
+    <noscript><button type="submit">Continue to webmail</button></noscript>
+  </form>
+</div>
+<script>document.getElementById('f').submit();</script>
+</body></html>`);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * An Apple mail profile: one tap, and the mailbox is set up.
+ *
+ * `.mobileconfig` is the only format on any platform that genuinely installs
+ * mail settings from a file — iOS, iPadOS and macOS all accept it. Android has
+ * no equivalent a website may hand over (Exchange-style provisioning needs
+ * device admin), and Outlook configures itself from Autodiscover rather than a
+ * file. So this is the one real download, and the page says plainly what the
+ * other platforms get instead rather than offering three buttons where only
+ * one works.
+ *
+ * The password is deliberately NOT included. A profile carrying one would be a
+ * credential sitting in the Downloads folder and in whatever the customer
+ * forwards it to; iOS prompts for the password on install, which is one extra
+ * step and a far better trade.
+ */
+router.get('/:domain/:account/apple.mobileconfig', async (req, res, next) => {
+  try {
+    const row = await ownedMailDomain(req, req.params.domain);
+    if (!row) return next();
+    const account = String(req.params.account || '').toLowerCase();
+    if (!ACCOUNT_RE.test(account)) return next();
+    const address = `${account}@${row.domain}`;
+
+    const accounts = await hestia.listMailAccounts({
+      username: req.customer.hestia_user, domain: row.domain,
+    }).catch(() => []);
+    if (!accounts.some((a) => a.account === account)) return next();
+
+    const s = mailboxes.connectionSettings(address);
+    // Stable per address, so re-installing REPLACES the account rather than
+    // adding a second copy of the same mailbox — which is what a random UUID
+    // does, and it is a support call every time.
+    const uuid = (seed) => {
+      const h = require('node:crypto').createHash('sha1').update(seed).digest('hex');
+      return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`.toUpperCase();
+    };
+    const esc = (v) => escapeHtml(String(v));
+
+    const plist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>PayloadType</key><string>Configuration</string>
+  <key>PayloadVersion</key><integer>1</integer>
+  <key>PayloadIdentifier</key><string>com.vesopa.mail.${esc(address)}</string>
+  <key>PayloadUUID</key><string>${uuid(`cfg:${address}`)}</string>
+  <key>PayloadDisplayName</key><string>${esc(address)}</string>
+  <key>PayloadOrganization</key><string>${esc(CONTACT.company)}</string>
+  <key>PayloadDescription</key><string>Sets up ${esc(address)} on this device.</string>
+  <key>PayloadRemovalDisallowed</key><false/>
+  <key>PayloadContent</key><array><dict>
+    <key>PayloadType</key><string>com.apple.mail.managed</string>
+    <key>PayloadVersion</key><integer>1</integer>
+    <key>PayloadIdentifier</key><string>com.vesopa.mail.${esc(address)}.account</string>
+    <key>PayloadUUID</key><string>${uuid(`acct:${address}`)}</string>
+    <key>PayloadDisplayName</key><string>${esc(address)}</string>
+    <key>EmailAccountType</key><string>EmailTypeIMAP</string>
+    <key>EmailAccountName</key><string>${esc(address)}</string>
+    <key>EmailAccountDescription</key><string>${esc(row.domain)}</string>
+    <key>EmailAddress</key><string>${esc(address)}</string>
+    <key>IncomingMailServerHostName</key><string>${esc(s.imap.host)}</string>
+    <key>IncomingMailServerPortNumber</key><integer>${Number(s.imap.port)}</integer>
+    <key>IncomingMailServerUseSSL</key><true/>
+    <key>IncomingMailServerUsername</key><string>${esc(address)}</string>
+    <key>IncomingMailServerAuthentication</key><string>EmailAuthPassword</string>
+    <key>OutgoingMailServerHostName</key><string>${esc(s.smtp.host)}</string>
+    <key>OutgoingMailServerPortNumber</key><integer>${Number(s.smtp.port)}</integer>
+    <key>OutgoingMailServerUseSSL</key><true/>
+    <key>OutgoingMailServerUsername</key><string>${esc(address)}</string>
+    <key>OutgoingMailServerAuthentication</key><string>EmailAuthPassword</string>
+    <key>OutgoingPasswordSameAsIncomingPassword</key><true/>
+  </dict></array>
+</dict></plist>`;
+
+    res.set('Content-Type', 'application/x-apple-aspen-config');
+    res.set('Content-Disposition',
+      `attachment; filename="${account}-${row.domain}.mobileconfig"`);
+    res.set('Cache-Control', 'no-store');
+    res.send(plist);
   } catch (err) {
     next(err);
   }

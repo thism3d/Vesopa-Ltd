@@ -95,7 +95,10 @@
             </div>
             <div class="field">
               <label class="label" for="country">Country</label>
-              <input class="input" id="country" name="country" maxlength="2" value="<%= values.country || 'GB' %>">
+              <%- include('../partials/country-select', {
+                selected: countries.pick(values.country, typeof geoCountry !== 'undefined' ? geoCountry : ''),
+                geo: typeof geoCountry !== 'undefined' ? geoCountry : '',
+              }) %>
             </div>
           </div>
         </div>

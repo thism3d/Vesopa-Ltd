@@ -1,0 +1,253 @@
+<%#
+  Languages and settings.
+
+  Three questions about one site, in the order they get asked:
+
+    LANGUAGE   which PHP or Node version runs it
+    CONFIG     the handful of PHP numbers people actually need to change
+    PLUGINS    what is installed inside the application itself
+
+  ONE SITE AT A TIME, chosen at the top. A page per site would mean six
+  bookmarks for an account with six domains, and a page showing all of them at
+  once would mean a form with thirty fields where twenty-five are irrelevant.
+
+  WHAT IS DELIBERATELY NOT HERE: a toggle for PHP extensions. They are compiled
+  and enabled per PHP version for the whole machine — there is no honest
+  per-site switch, and a switch that silently did nothing would be worse than
+  none. So the extensions are listed as fact, per version, and the way to get
+  one you are missing is to move to a version that has it. That is a real
+  answer; a dead toggle is not.
+%>
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css', sections: false }) %>
+<link rel="stylesheet" href="<%= asset('/assets/css/apps.css') %>">
+<%- include('../partials/panel-shell', {
+  pageTitle: 'Languages & settings',
+  pageSub: 'The runtime behind each site, and what it is allowed to do.',
+}) %>
+
+<% if (mock) { %>
+  <div class="alert alert-info">
+    <%- icon('info', 19) %>
+    <div><b>Demonstration mode.</b> These versions and settings are examples — this panel is not connected to a live node.</div>
+  </div>
+<% } %>
+
+<% if (!hasHosting || !sites.length) { %>
+  <div class="empty">
+    <p class="mb-2"><b>Nothing to configure yet.</b></p>
+    <p class="mb-3">Add a website and its runtime settings appear here.</p>
+    <a class="btn" href="/panel/domains/add">Add a domain</a>
+  </div>
+<% } else { %>
+
+  <%# ---- Which site --------------------------------------------------------- %>
+  <form method="get" action="/panel/apps/runtime" class="p-card mb-3">
+    <label class="label" for="site">Website</label>
+    <div class="row" style="gap:8px">
+      <select class="input" id="site" name="site" style="flex:1">
+        <% sites.forEach(function (s) { %>
+          <option value="<%= s.domain %>" <%= s.domain === selected ? 'selected' : '' %>><%= s.domain %></option>
+        <% }); %>
+      </select>
+      <button class="btn btn-ghost btn-sm" type="submit">Show</button>
+    </div>
+  </form>
+
+  <div class="p-grid p-grid-side">
+    <div>
+      <%# ---- Language ------------------------------------------------------ %>
+      <div class="p-card mb-3">
+        <div class="row mb-1" style="gap:10px;align-items:center">
+          <span class="card-app-logo" style="width:34px;height:34px">
+            <img src="<%= asset('/assets/img/apps/php.svg') %>" alt="" width="20" height="20">
+          </span>
+          <h2 class="h3 mb-0">PHP version</h2>
+        </div>
+        <%
+          /*
+           * Which one is ticked. The node's own answer when we have it, and the
+           * recommended version when we do not — a radio group with nothing
+           * selected is a form that fails on submit for a reason nobody can see.
+           */
+          const currentPhp = nodeSite && nodeSite.php ? nodeSite.php : null;
+          const fallbackPhp = ((runtimes.php || []).find(function (p) { return p.recommended; })
+            || (runtimes.php || [])[0] || {}).version;
+          const tickedPhp = currentPhp || fallbackPhp;
+        %>
+        <p class="small muted mb-3">
+          <% if (currentPhp) { %>
+            <b><%= selected %></b> runs <b>PHP <%= currentPhp %></b> right now. Changing it takes
+            effect immediately.
+          <% } else { %>
+            We could not read which PHP <b><%= selected %></b> is on — the node did not answer.
+            Choosing one below sets it regardless.
+          <% } %>
+        </p>
+
+        <form method="post" action="/panel/apps/runtime/php">
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <input type="hidden" name="site" value="<%= selected %>">
+          <div class="vers mb-3">
+            <% (runtimes.php || []).forEach(function (p) { %>
+              <label class="ver <%= tickedPhp === p.version ? 'is-on' : '' %>">
+                <input type="radio" name="php" value="<%= p.version %>"
+                       <%= tickedPhp === p.version ? 'checked' : '' %> required>
+                <span class="ver-n">PHP <%= p.version %></span>
+                <span class="ver-t">
+                  <% if (p.recommended) { %>Recommended<% } else if (p.eol) { %>No longer patched upstream<% } else { %><%= (p.extensions || []).length %> extensions<% } %>
+                </span>
+              </label>
+            <% }); %>
+          </div>
+          <div class="tip tip-warn mb-3">
+            <span class="tip-ic"></span>
+            <div>
+              <b>Test the site afterwards.</b> A version jump can break an old plugin or theme
+              the moment it lands. If it does, come back and put it on the version it was on —
+              nothing else changes.
+            </div>
+          </div>
+          <button class="btn btn-sm" type="submit"><%- icon('save', 15) %> Use this version</button>
+        </form>
+      </div>
+
+      <%# ---- Config -------------------------------------------------------- %>
+      <div class="p-card mb-3">
+        <h2 class="h3 mb-1">PHP settings</h2>
+        <p class="small muted mb-3">
+          The five people actually change. Written to
+          <code>.user.ini</code> in your web root, so you can also edit them in the file
+          manager — and so a bad value breaks this one site rather than the server.
+        </p>
+        <form method="post" action="/panel/apps/runtime/config">
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <input type="hidden" name="site" value="<%= selected %>">
+          <% Object.entries(settings).forEach(function (pair) {
+               const key = pair[0]; const spec = pair[1];
+               const value = phpConfig.values[key] !== undefined ? phpConfig.values[key] : spec.def; %>
+            <div class="field mb-3">
+              <label class="label" for="<%= key %>"><%= spec.label %></label>
+              <div class="input-affix">
+                <input class="input" type="number" id="<%= key %>" name="<%= key %>"
+                       value="<%= value %>" min="<%= spec.min %>" max="<%= spec.max %>">
+                <% if (spec.unit) { %>
+                  <span class="input-suffix"><%= spec.unit === 'M' ? 'MB' : 'seconds' %></span>
+                <% } %>
+              </div>
+              <p class="hint"><%= spec.note %></p>
+            </div>
+          <% }); %>
+          <button class="btn btn-sm" type="submit"><%- icon('save', 15) %> Save settings</button>
+          <p class="tiny muted mt-2 mb-0">
+            PHP re-reads this file every five minutes, so a change is not instant. If a test
+            still shows the old number, wait rather than saving again.
+          </p>
+        </form>
+      </div>
+
+      <%# ---- Plugins ------------------------------------------------------- %>
+      <div class="p-card">
+        <div class="row mb-1" style="gap:10px;align-items:center">
+          <span class="card-app-logo" style="width:34px;height:34px">
+            <img src="<%= asset('/assets/img/apps/wordpress.svg') %>" alt="" width="20" height="20">
+          </span>
+          <h2 class="h3 mb-0">WordPress plugins</h2>
+        </div>
+
+        <% if (wpPlugins === null) { %>
+          <p class="small muted mb-0">
+            <b><%= selected %></b> is not a WordPress site, so there is nothing to install here.
+            Node applications have their own package list on the
+            <a href="/panel/apps/node">Node apps</a> page.
+          </p>
+        <% } else { %>
+          <p class="small muted mb-3">
+            Installed on <b><%= selected %></b>. Adding one here installs it from the WordPress
+            directory and turns it on — the same as doing it inside wp-admin, without the
+            FTP prompt.
+          </p>
+          <% if (!wpPlugins.length) { %>
+            <p class="small muted mb-3">No plugins installed.</p>
+          <% } else { %>
+            <div class="pkgs mb-3">
+              <% wpPlugins.forEach(function (p) { %>
+                <div class="pkg">
+                  <span class="pkg-n"><%= p.title || p.name %></span>
+                  <span class="pkg-v mono"><%= p.version || '' %></span>
+                  <form method="post" action="/panel/apps/runtime/plugins">
+                    <input type="hidden" name="_csrf" value="<%= csrf %>">
+                    <input type="hidden" name="site" value="<%= selected %>">
+                    <input type="hidden" name="plugin" value="<%= p.name %>">
+                    <button class="btn btn-ghost btn-sm" name="action" value="remove" type="submit"
+                            aria-label="Remove <%= p.title || p.name %>"><%- icon('trash', 14) %></button>
+                  </form>
+                </div>
+              <% }); %>
+            </div>
+          <% } %>
+          <form method="post" action="/panel/apps/runtime/plugins">
+            <input type="hidden" name="_csrf" value="<%= csrf %>">
+            <input type="hidden" name="site" value="<%= selected %>">
+            <label class="label" for="plugin">Install a plugin</label>
+            <div class="row" style="gap:8px">
+              <input class="input mono" id="plugin" name="plugin" placeholder="wordpress-seo"
+                     pattern="[a-z0-9][a-z0-9._-]*" required style="flex:1">
+              <button class="btn btn-sm" name="action" value="add" type="submit">Install</button>
+            </div>
+            <p class="hint">
+              The plugin's slug — the last part of its wordpress.org address. For
+              <code>wordpress.org/plugins/wordpress-seo/</code> that is <code>wordpress-seo</code>.
+            </p>
+          </form>
+        <% } %>
+      </div>
+    </div>
+
+    <%# ---- What each version has ------------------------------------------ %>
+    <aside>
+      <div class="p-card mb-3">
+        <h3 class="h3 mb-2">Node.js</h3>
+        <p class="small muted mb-3">
+          Installed on this server, side by side. A Node app picks its version when it is
+          created, and each app can be on a different one.
+        </p>
+        <div class="kv mb-3">
+          <% (runtimes.node || []).forEach(function (n) { %>
+            <div class="kv-row">
+              <span class="kv-k">Node <%= n.major %><%= n.lts ? ' · LTS' : '' %></span>
+              <span class="kv-v mono"><%= n.version || 'installed' %><%= n.recommended ? ' — default' : '' %></span>
+            </div>
+          <% }); %>
+        </div>
+        <a class="btn btn-ghost btn-sm btn-block" href="/panel/apps/node">
+          <%- icon('activity', 15) %> Your Node apps<%= nodeApps.length ? ' (' + nodeApps.length + ')' : '' %>
+        </a>
+      </div>
+
+      <div class="p-card">
+        <h3 class="h3 mb-2">What each PHP has</h3>
+        <p class="small muted mb-3">
+          Extensions are built per version for the whole server, so this is the honest list:
+          if something you need is missing, the fix is a version that has it, not a switch.
+        </p>
+        <% (runtimes.php || []).forEach(function (p) { %>
+          <details class="fold" style="margin-bottom:10px">
+            <summary style="padding:11px 14px">
+              <span class="strong">PHP <%= p.version %></span>
+              <span class="fold-sub"><%= (p.extensions || (runtimes.extensions || {})[p.version] || []).length %> extensions</span>
+            </summary>
+            <div class="fold-body" style="padding:12px 14px 14px">
+              <div class="exts">
+                <% (p.extensions || (runtimes.extensions || {})[p.version] || []).forEach(function (e) { %>
+                  <span class="ext mono"><%= e %></span>
+                <% }); %>
+              </div>
+            </div>
+          </details>
+        <% }); %>
+      </div>
+    </aside>
+  </div>
+<% } %>
+
+<%- include('../partials/panel-shell-end') %>

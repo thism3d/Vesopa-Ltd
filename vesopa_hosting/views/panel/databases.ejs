@@ -1,0 +1,232 @@
+<%#
+  Databases.
+
+  The page is in two halves and the order matters: what you HAVE on the left,
+  because that is what somebody arrives looking for, and how to make another on
+  the right, because that is the one action. The old version had only the left
+  half and no way to make anything at all.
+%>
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css', sections: false }) %>
+<%- include('../partials/panel-shell', {
+  pageTitle: 'Databases',
+  pageSub: 'For WordPress, your app, or anything that stores data.',
+}) %>
+
+<%# ---- Just created, or just reset: the only time this password exists ---- %>
+<% if (created) { %>
+  <div class="p-card mb-3" style="border-color:var(--lime);box-shadow:var(--glow)">
+    <div class="row-between mb-2" style="align-items:flex-start;gap:12px;flex-wrap:wrap">
+      <h2 class="h3" style="display:flex;align-items:center;gap:9px">
+        <span style="color:var(--lime-ink);display:grid;place-items:center"><%- icon('check-circle', 20) %></span>
+        <%= created.reset ? 'New password' : 'Your database is ready' %>
+      </h2>
+      <span class="state state-amber"><i></i>Shown once</span>
+    </div>
+
+    <p class="small muted mb-3">
+      Copy these into your application's configuration now. We do not keep a copy
+      of the password — not in the panel and not in our database — so this box is
+      the only place it exists. If you lose it, reset it below; nothing else breaks.
+    </p>
+
+    <div class="p-grid p-grid-2">
+      <div class="kv">
+        <div class="kv-row">
+          <span class="kv-k">Database name</span>
+          <span class="kv-v mono"><%= created.name %></span>
+        </div>
+        <div class="kv-row">
+          <span class="kv-k">Username</span>
+          <span class="kv-v mono"><%= created.user %></span>
+        </div>
+      </div>
+      <div class="kv">
+        <div class="kv-row">
+          <span class="kv-k">Host</span>
+          <span class="kv-v mono"><%= created.host %> <span class="tiny muted">port <%= created.port %></span></span>
+        </div>
+        <div class="kv-row">
+          <span class="kv-k">Password</span>
+          <span class="kv-v mono"><%= created.password %></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="row mt-3" style="gap:8px;flex-wrap:wrap">
+      <button class="btn btn-sm copy-btn" type="button"
+              data-copy="<%= created.password %>">Copy password</button>
+      <button class="btn btn-ghost btn-sm copy-btn" type="button"
+              data-copy="<%= created.type === 'pgsql' ? 'postgresql' : 'mysql' %>://<%= created.user %>:<%= created.password %>@<%= created.host %>:<%= created.port %>/<%= created.name %>">Copy connection URL</button>
+      <% if (created.type !== 'pgsql') { %>
+        <button class="btn btn-ghost btn-sm copy-btn" type="button"
+                data-copy="define('DB_NAME', '<%= created.name %>');&#10;define('DB_USER', '<%= created.user %>');&#10;define('DB_PASSWORD', '<%= created.password %>');&#10;define('DB_HOST', '<%= created.host %>');">Copy for wp-config.php</button>
+      <% } %>
+    </div>
+  </div>
+<% } %>
+
+<% if (error) { %>
+  <div class="alert alert-warn">
+    <%- icon('warning', 19) %>
+    <div>
+      <b>We could not reach the hosting node.</b> Your databases are unaffected —
+      only this list is unavailable. <span class="muted">(<%= error %>)</span>
+    </div>
+  </div>
+<% } %>
+
+<% if (!service) { %>
+  <div class="p-card">
+    <div class="empty">
+      <%- icon('database', 46) %>
+      <h3>No live hosting on this account</h3>
+      <p>Databases live on a hosting account. Once you have one, you can create as many as your plan includes, right here.</p>
+      <a class="btn mt-2" href="/hosting">See plans</a>
+    </div>
+  </div>
+<% } else { %>
+
+<%
+  const limit = Number(service.plan_databases || 0);
+  const atLimit = limit > 0 && items.length >= limit;
+  const prefix = customer.hestia_user ? customer.hestia_user + '_' : '';
+%>
+
+<div class="p-grid p-grid-side">
+  <div>
+    <div class="p-card p-card-flush">
+      <div class="p-card-head">
+        <h2>Your databases</h2>
+        <span class="small muted">
+          <%= items.length %><% if (limit) { %> of <%= limit %><% } %> used
+        </span>
+      </div>
+
+      <% if (!items.length) { %>
+        <div class="empty">
+          <%- icon('database', 46) %>
+          <h3>No databases yet</h3>
+          <p>Create one on the right. It takes a second, and you get the connection details straight away.</p>
+        </div>
+      <% } else { %>
+        <% items.forEach(function (it) { %>
+          <div class="item" style="flex-wrap:wrap">
+            <span class="item-icon"><%- icon('database', 19) %></span>
+            <span class="item-main">
+              <span class="item-title mono" style="font-size:.92rem"><%= it.name %></span>
+              <span class="item-sub">
+                <%= it.type === 'pgsql' ? 'PostgreSQL' : 'MySQL' %>
+                <% if (it.user) { %> · user <%= it.user %><% } %>
+                <% if (it.size_mb !== undefined) { %> · <%= it.size_mb %> MB<% } %>
+              </span>
+            </span>
+            <span class="item-end row" style="gap:7px;flex-wrap:wrap;justify-content:flex-end">
+              <% if (ssoReady) { %>
+                <a class="btn btn-sm" href="/panel/databases/<%= encodeURIComponent(it.name) %>/open" rel="noopener">
+                  <%- icon('external', 15) %> Open
+                </a>
+              <% } %>
+              <form method="post" action="/panel/databases/reset" style="display:inline">
+                <input type="hidden" name="_csrf" value="<%= csrf %>">
+                <input type="hidden" name="name" value="<%= it.name %>">
+                <button class="btn btn-ghost btn-sm" type="submit">New password</button>
+              </form>
+              <details class="inline-danger">
+                <summary class="btn btn-ghost btn-sm" style="color:var(--red)">Delete</summary>
+                <form method="post" action="/panel/databases/delete" class="inline-danger-body">
+                  <input type="hidden" name="_csrf" value="<%= csrf %>">
+                  <input type="hidden" name="name" value="<%= it.name %>">
+                  <p class="small mb-2">
+                    Deleting <b class="mono"><%= it.name %></b> destroys everything in it and
+                    cannot be undone. Type the name to confirm.
+                  </p>
+                  <input class="input mb-2" name="confirm" placeholder="<%= it.name %>"
+                         autocomplete="off" spellcheck="false" required>
+                  <button class="btn btn-sm" type="submit"
+                          style="background:var(--red);color:#fff">Delete permanently</button>
+                </form>
+              </details>
+            </span>
+          </div>
+        <% }); %>
+      <% } %>
+    </div>
+
+    <% if (items.length && ssoReady) { %>
+      <div class="tip">
+        <span class="tip-ic"></span>
+        <span>
+          <b>Open</b> signs you into the database manager as yourself — no second
+          password. The link is valid for one minute, which is why it is a button
+          and not something you can bookmark.
+        </span>
+      </div>
+    <% } %>
+  </div>
+
+  <%# ---- Create ------------------------------------------------------- %>
+  <aside>
+    <div class="p-card">
+      <h2 class="h3 mb-2">Create a database</h2>
+
+      <% if (atLimit) { %>
+        <p class="small muted mb-2">
+          Your <b><%= service.plan_name %></b> plan includes <%= limit %>
+          database<%= limit === 1 ? '' : 's' %> and you are using all of them.
+          Delete one you no longer need, or move up a plan.
+        </p>
+        <a class="btn btn-ghost btn-sm btn-block" href="/hosting">See plans</a>
+      <% } else { %>
+        <form method="post" action="/panel/databases/create">
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+
+          <label class="label" for="db-name">
+            Name
+            <span class="qmark">
+              <button type="button" aria-expanded="false"
+                      data-hint="Your account name is added to the front automatically, because that is how the server keeps every customer's databases apart. Use the full name in your config file.">?</button>
+            </span>
+          </label>
+          <div class="input-affix mb-3">
+            <span class="input-prefix mono"><%= prefix %></span>
+            <input class="input" id="db-name" name="name" required
+                   placeholder="shop" maxlength="24" pattern="[a-z][a-z0-9_]{2,23}"
+                   autocomplete="off" spellcheck="false"
+                   title="Letters, numbers and underscores. Start with a letter.">
+          </div>
+
+          <label class="label" for="db-type">Type</label>
+          <select class="input mb-2" id="db-type" name="type">
+            <% Object.keys(engines).forEach(function (key) { %>
+              <option value="<%= key %>"><%= engines[key].label %></option>
+            <% }); %>
+          </select>
+          <p class="tiny muted mb-3"><%= engines.mysql.note %></p>
+
+          <button class="btn btn-block" type="submit">
+            <%- icon('plus', 16) %> Create database
+          </button>
+          <p class="tiny muted mt-2" style="margin-bottom:0">
+            The password is generated for you and shown once, at the top of this
+            page. We never store it.
+          </p>
+        </form>
+      <% } %>
+    </div>
+
+    <div class="p-card">
+      <h2 class="h3 mb-2" style="display:flex;align-items:center;gap:8px">
+        <span style="color:var(--lime-ink);display:grid;place-items:center"><%- icon('info', 18) %></span>
+        Connecting from your site
+      </h2>
+      <p class="small muted mb-0">
+        Use <b class="mono">localhost</b> as the host. Your website and its
+        database are on the same machine, so the connection never leaves it —
+        which is both faster and one less thing exposed to the internet.
+      </p>
+    </div>
+  </aside>
+</div>
+<% } %>
+
+<%- include('../partials/panel-shell-end') %>

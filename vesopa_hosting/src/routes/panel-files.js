@@ -27,6 +27,7 @@ const express = require('express');
 const auth = require('../auth');
 const db = require('../db');
 const files = require('../files');
+const hestia = require('../integrations/hestia');
 const { SITE_URL } = require('../config');
 
 const router = express.Router();
@@ -97,11 +98,40 @@ router.get('/', async (req, res, next) => {
       /* No ~/web yet, or the broker is down. The page says so on its own. */
     }
 
+    /*
+     * Disk usage, in the one place somebody is about to spend it.
+     *
+     * A file manager without a quota read-out is a file manager that lets you
+     * upload happily until the node refuses a write, and the error a customer
+     * gets at that point is whatever their FTP client or PHP script chose to
+     * say. Showing it here turns "why did my upload fail" into something they
+     * can see coming.
+     *
+     * Off the node, and never fatal: the file manager's job is files, and a
+     * usage figure that could not be fetched must not take the page down.
+     */
+    let disk = null;
+    try {
+      const stats = await hestia.userStats(username);
+      if (stats && stats.disk_quota_mb) {
+        disk = {
+          usedMb: Number(stats.disk_used_mb || 0),
+          quotaMb: Number(stats.disk_quota_mb),
+          pct: Math.min(100, Math.round((stats.disk_used_mb / stats.disk_quota_mb) * 100)),
+        };
+      } else if (stats) {
+        disk = { usedMb: Number(stats.disk_used_mb || 0), quotaMb: 0, pct: 0 };
+      }
+    } catch {
+      disk = null;
+    }
+
     res.render('panel/files', {
       title: 'Files',
       robots: 'noindex',
       username,
       sites,
+      disk,
       startPath: typeof req.query.path === 'string' ? req.query.path : DEFAULT_PATH,
       maxEdit: files.MAX_EDIT,
       maxUpload: files.MAX_UPLOAD,

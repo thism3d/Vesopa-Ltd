@@ -26,8 +26,8 @@
 }) %>
 
 <nav class="tabs">
-  <a class="tab is-active" href="/panel/domains/<%= domain.id %>">Overview</a>
-  <a class="tab" href="/panel/domains/<%= domain.id %>/dns">DNS</a>
+  <a class="tab is-active" href="/panel/domains/<%= domain.domain %>">Overview</a>
+  <a class="tab" href="/panel/domains/<%= domain.domain %>/dns">DNS</a>
 </nav>
 
 <% if (!registrarLive && !external) { %>
@@ -59,13 +59,36 @@
 
 <div class="p-grid p-grid-side">
   <div>
-    <div class="p-card">
-      <div class="row-between mb-2">
-        <h2 class="h3">Where this domain points</h2>
-        <span class="badge <%= verified ? 'badge-green' : 'badge-amber' %>">
-          <%= verified ? 'Pointing at us' : 'Not pointing here yet' %>
-        </span>
-      </div>
+    <%#
+      Where it points.
+
+      COLLAPSED ONCE VERIFIED. This card is essential for about ten minutes and
+      is clutter for the rest of the domain's life — a working domain that keeps
+      showing its own setup instructions reads as a domain that is not finished.
+      Verified, it is one line with the proof in it; unverified, it is open and
+      leading, because it is the only thing on the page that matters.
+    %>
+    <details class="fold" <%= verified ? '' : 'open' %>>
+      <summary>
+        <% if (verified) { %>
+          <span class="fold-ok"><%- icon('check-circle', 19) %></span>
+          <span>
+            Pointing at us
+            <span class="fold-sub">
+              — <%= method === 'ns' ? 'through our nameservers' : 'by A record' %><%
+              if (domain.ns_checked_at) { %>, checked <%= when(domain.ns_checked_at) %><% } %>
+            </span>
+          </span>
+        <% } else { %>
+          <span style="color:#7a5510;display:grid;place-items:center"><%- icon('alert-circle', 19) %></span>
+          <span>
+            Not pointing at us yet
+            <span class="fold-sub">— either method on the right is enough</span>
+          </span>
+        <% } %>
+        <span class="fold-chev"><%- icon('chevron', 17) %></span>
+      </summary>
+      <div class="fold-body">
 
       <p class="small muted mb-2">
         <% if (method === 'ns') { %>
@@ -80,7 +103,7 @@
           We look this up on the public internet rather than taking anyone's word for it,
           because it is what decides whether we can serve the site and issue a certificate.
         <% } %>
-        <% if (domain.ns_checked_at) { %>Last checked <%= domain.ns_checked_at %>.<% } %>
+        <% if (domain.ns_checked_at) { %>Last checked <%= when(domain.ns_checked_at) %>.<% } %>
       </p>
 
       <% if (observedNs.length || observedIp.length) { %>
@@ -94,13 +117,20 @@
         </tbody></table></div>
       <% } %>
 
-      <form method="post" action="/panel/domains/<%= domain.id %>/verify" class="mt-2">
+      <div id="ns-check-result" class="tip mb-2" hidden></div>
+
+      <%# A real form, so it works without JavaScript. panel.js intercepts the
+          click and answers in place instead of throwing the page away. %>
+      <form method="post" action="/panel/domains/<%= domain.domain %>/verify" class="mt-2">
         <input type="hidden" name="_csrf" value="<%= csrf %>">
-        <button class="btn btn-sm <%= verified ? 'btn-ghost' : '' %>" type="submit" data-busy="Checking…">
-          <%- icon('search', 15) %> Check now
+        <button class="btn btn-sm <%= verified ? 'btn-ghost' : '' %>" type="submit"
+                data-check="/panel/domains/<%= domain.domain %>/verify"
+                data-check-out="ns-check-result" data-csrf="<%= csrf %>">
+          <%- icon('refresh', 15) %> Check now
         </button>
       </form>
-    </div>
+      </div>
+    </details>
 
     <%# The certificate — the thing customers actually come looking for. %>
     <div class="p-card">
@@ -116,7 +146,7 @@
           <span class="mono">https://<%= domain.domain %></span> is secured, and it renews itself
           for as long as you host here. Nothing to do.
         </p>
-        <form method="post" action="/panel/domains/<%= domain.id %>/ssl">
+        <form method="post" action="/panel/domains/<%= domain.domain %>/ssl">
           <input type="hidden" name="_csrf" value="<%= csrf %>">
           <button class="btn btn-ghost btn-sm" type="submit" data-busy="Reissuing…">Reissue it</button>
         </form>
@@ -129,7 +159,7 @@
         <p class="small muted mb-2">
           <%= ssl.error || 'This domain points at us, so a certificate can be issued now. It covers www. as well.' %>
         </p>
-        <form method="post" action="/panel/domains/<%= domain.id %>/ssl">
+        <form method="post" action="/panel/domains/<%= domain.domain %>/ssl">
           <input type="hidden" name="_csrf" value="<%= csrf %>">
           <button class="btn btn-sm" type="submit" data-busy="Requesting…">
             <%- icon('lock', 15) %> Issue the certificate
@@ -174,7 +204,7 @@
           change them to point the domain somewhere else. Changes take a few hours
           to reach everyone.
         </p>
-        <form method="post" action="/panel/domains/<%= domain.id %>/nameservers" data-guard>
+        <form method="post" action="/panel/domains/<%= domain.domain %>/nameservers" data-guard>
           <input type="hidden" name="_csrf" value="<%= csrf %>">
           <div class="p-grid p-grid-2">
             <% [1,2,3,4].forEach(function (n) { %>
@@ -202,7 +232,7 @@
             register it. Once a name lapses we cannot get it back for you.
           <% } %>
         </p>
-        <form method="post" action="/panel/domains/<%= domain.id %>/auto-renew"
+        <form method="post" action="/panel/domains/<%= domain.domain %>/auto-renew"
               <% if (domain.auto_renew) { %>data-confirm="Turn off automatic renewal? If you forget to renew manually, you will lose this domain."<% } %>>
           <input type="hidden" name="_csrf" value="<%= csrf %>">
           <input type="hidden" name="auto_renew" value="<%= domain.auto_renew ? '0' : '1' %>">
@@ -240,7 +270,7 @@
           The domain itself is registered elsewhere and is not affected in any way —
           you can add it back at any time.
         </p>
-        <form method="post" action="/panel/domains/<%= domain.id %>/remove"
+        <form method="post" action="/panel/domains/<%= domain.domain %>/remove"
               data-confirm="Remove <%= domain.domain %> from your account? Any site, mailboxes and certificate we host for it stop working.">
           <input type="hidden" name="_csrf" value="<%= csrf %>">
           <button class="btn btn-ghost btn-sm" type="submit">Remove this domain</button>
@@ -277,19 +307,26 @@
         <span class="mono">www</span>) at us instead. The site and the certificate work
         the same; DNS and email stay with your provider.
       </p>
-      <% if (addresses.length) { %>
-        <div class="copyable">
-          <span class="mono"><%= addresses[0] %></span>
-          <button type="button" class="btn btn-ghost btn-sm copy-btn" data-copy="<%= addresses[0] %>">Copy</button>
-        </div>
-      <% } %>
+      <%#
+        THE ADDRESS IS NEVER PRINTED HERE. Only the hostname.
+
+        This card used to show the node's IP next to `point.vesopa.com`,
+        because a fair number of DNS panels refuse a name in an A record and
+        want four numbers. That is a real problem and this is not the way to
+        solve it: every customer who copies the raw address pins us to that
+        number in a zone we cannot see, and moving the node then breaks all of
+        them silently, with no list of who to warn. The hostname is the same
+        instruction with the indirection kept, and it is what support gives out
+        by hand for the handful of panels that cannot take one.
+      %>
       <div class="copyable">
         <span class="mono"><%= pointHostname %></span>
         <button type="button" class="btn btn-ghost btn-sm copy-btn" data-copy="<%= pointHostname %>">Copy</button>
       </div>
       <p class="tiny muted mt-2 mb-0">
-        Prefer <span class="mono"><%= pointHostname %></span> if your DNS panel accepts a name —
-        it follows this server wherever it goes.
+        If your DNS panel will not accept a name in an A record, open a ticket
+        and we will give you the address to use — we keep it out of the panel so
+        that moving your site to a faster machine never silently breaks it.
       </p>
     </div>
 
@@ -325,10 +362,9 @@
           <%= canEditDns.reason %>
         <% } %>
       </p>
-      <a class="btn btn-ghost btn-sm btn-block" href="/panel/domains/<%= domain.id %>/dns">Open DNS records</a>
+      <a class="btn btn-ghost btn-sm btn-block" href="/panel/domains/<%= domain.domain %>/dns">Open DNS records</a>
     </div>
   </aside>
 </div>
 
 <%- include('../partials/panel-shell-end') %>
-<%- include('../partials/footer') %>

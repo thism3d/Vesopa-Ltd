@@ -60,10 +60,24 @@ async function consumeToken(token, purpose) {
   return db.one('SELECT * FROM customers WHERE id = ? LIMIT 1', [row.customer_id]);
 }
 
+/**
+ * @returns {Promise<boolean>} whether SMTP accepted it.
+ *
+ * THE RETURN VALUE IS THE POINT. `sendMail` swallows its own failures on
+ * purpose — a bounced notification must never fail an action the customer has
+ * already completed — but every caller here then told the customer to go and
+ * check their inbox regardless. With SMTP misconfigured that produced the worst
+ * possible outcome: an account created, a confident "we have sent you a link",
+ * and no link, ever, with nothing on the page to suggest anything had gone
+ * wrong. "Account created — verification mail where?" is that bug.
+ *
+ * So the boolean comes back and the pages branch on it. A customer who is told
+ * the truth can open a ticket; a customer who is told a comforting lie waits.
+ */
 async function sendVerifyEmail(customer, req) {
   const token = await issueToken(customer.id, 'verify', VERIFY_TTL_HOURS * 3600_000);
   const url = `${SITE_URL}/verify/${token}`;
-  await sendMail({
+  return sendMail({
     to: customer.email,
     subject: 'Confirm your email — Vesopa Cloud',
     html: shell({
@@ -199,7 +213,7 @@ router.post('/register', async (req, res, next) => {
       }
 
       const taken = await db.one('SELECT * FROM customers WHERE id = ? LIMIT 1', [existing.id]);
-      await sendVerifyEmail(taken, req);
+      const sent = await sendVerifyEmail(taken, req);
       await db.logActivity({
         actorType: 'customer',
         actorId: taken.id,
@@ -210,7 +224,7 @@ router.post('/register', async (req, res, next) => {
       });
       auth.issueCustomerSession(res, taken);
       flash(res, 'Check your inbox to continue.');
-      return res.redirect('/register/check-email');
+      return res.redirect(`/register/check-email${sent ? '' : '?undelivered=1'}`);
     }
 
     if (existing) {
@@ -241,14 +255,14 @@ router.post('/register', async (req, res, next) => {
     );
 
     const customer = await db.one('SELECT * FROM customers WHERE id = ? LIMIT 1', [result.insertId]);
-    await sendVerifyEmail(customer, req);
+    const mailed = await sendVerifyEmail(customer, req);
     await db.logActivity({ actorType: 'customer', actorId: customer.id, action: 'account.created', target: customer.email, ip: req.ip });
 
     // Signed in straight away. Waiting for verification before letting someone
     // into their own empty panel is friction for no security benefit — the
     // things that matter are gated on `email_verified`, not on the session.
     auth.issueCustomerSession(res, customer);
-    res.redirect('/register/check-email');
+    res.redirect(`/register/check-email${mailed ? '' : '?undelivered=1'}`);
   } catch (err) {
     next(err);
   }
@@ -259,6 +273,9 @@ router.get('/register/check-email', (req, res) => {
     title: 'Check your email',
     robots: 'noindex',
     email: req.customer ? req.customer.email : '',
+    // Set when SMTP refused the message. The page then says so rather than
+    // telling somebody to watch an inbox nothing is coming to.
+    undelivered: req.query.undelivered === '1',
   });
 });
 
@@ -270,9 +287,14 @@ router.post('/register/resend', async (req, res, next) => {
       flash(res, 'We have sent several already — check your spam folder.', 'warn');
       return res.redirect('/register/check-email');
     }
-    await sendVerifyEmail(req.customer, req);
-    flash(res, 'Sent. It should arrive within a minute.');
-    res.redirect('/register/check-email');
+    const sent = await sendVerifyEmail(req.customer, req);
+    if (sent) {
+      flash(res, 'Sent. It should arrive within a minute.');
+      res.redirect('/register/check-email');
+    } else {
+      flash(res, 'Our mail server would not take it. That is our fault, not yours — please open a ticket and we will confirm the address by hand.', 'error');
+      res.redirect('/register/check-email?undelivered=1');
+    }
   } catch (err) {
     next(err);
   }
@@ -403,7 +425,7 @@ router.post('/forgot', async (req, res, next) => {
     const customer = await db.one('SELECT * FROM customers WHERE email = ? AND status = ? LIMIT 1', [email, 'active']);
     if (customer) {
       const token = await issueToken(customer.id, 'reset', RESET_TTL_MINUTES * 60_000);
-      await sendMail({
+      const delivered = await sendMail({
         to: customer.email,
         subject: 'Reset your password — Vesopa Cloud',
         html: shell({
@@ -415,9 +437,18 @@ router.post('/forgot', async (req, res, next) => {
         }),
       });
       await db.logActivity({ actorType: 'customer', actorId: customer.id, action: 'password.reset_requested', target: email, ip: req.ip });
+      /*
+       * Logged loudly, and NOT shown. Whether the address exists must not leak,
+       * so the page says the same thing either way — but an SMTP refusal is our
+       * failure and somebody has to be able to find out about it afterwards
+       * without the customer having to report it twice.
+       */
+      if (!delivered) {
+        console.error(`[auth] reset email REFUSED by SMTP for customer ${customer.id}. Check the mail configuration.`);
+      }
     }
 
-    // Identical response either way.
+    // Identical response either way — see the note at the top of this file.
     res.render('auth/forgot', { title: 'Reset your password', robots: 'noindex', sent: true, error: null });
   } catch (err) {
     next(err);
