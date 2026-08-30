@@ -320,6 +320,26 @@ async function addSubdomain({
       // a thing the customer can be told and can fix at their own provider.
       dnsRecord = { ok: false, pointAt: POINT_HOSTNAME, reason: err.message };
     }
+
+    /*
+     * Last word goes to the public DNS.
+     *
+     * Whether we managed to write a record is OUR bookkeeping; whether the name
+     * resolves to this node is the thing the customer actually cares about, and
+     * the two come apart in both directions. A subdomain can already be pointed
+     * here — the customer set it up at their provider before adding it, or it
+     * was live on this node all along — in which case telling them to go and
+     * point something is nonsense: there is nothing for them to do, and asking
+     * makes the panel look like it cannot see its own state.
+     *
+     * So if it resolves to us, it is pointed, whatever we did or did not write.
+     */
+    if (!dnsRecord.ok) {
+      const live = await nameservers.pointsAtUs(name, POINT_HOSTNAME);
+      if (live.pointed) {
+        dnsRecord = { ok: true, alreadyPointed: true, addresses: live.addresses };
+      }
+    }
   }
 
   await db.logActivity({

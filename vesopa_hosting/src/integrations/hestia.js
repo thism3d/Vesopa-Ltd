@@ -340,6 +340,19 @@ async function addUser({ username, password, email, package: pkg = DEFAULT_PACKA
   return { ok: true, username };
 }
 
+/**
+ * Every account on the node, keyed by username.
+ *
+ * Returns Hestia's own record verbatim — CONTACT, NAME, PACKAGE, SUSPENDED and
+ * the usage counters — because the one caller that wants this
+ * (scripts/adopt-hestia-users.js) is reconciling our database against the node
+ * and needs the node's version of the truth, not a tidied subset of it.
+ */
+async function listUsers() {
+  if (!isLive()) return {};
+  return run('v-list-users', [], { json: true });
+}
+
 async function changeUserPassword({ username, password }) {
   await run('v-change-user-password', [username, password]);
   return { ok: true };
@@ -787,6 +800,7 @@ module.exports = {
   exists,
   userExists,
   addUser,
+  listUsers,
   changeUserPassword,
   changeUserPackage,
   listPackages,

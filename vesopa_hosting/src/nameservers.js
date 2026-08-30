@@ -132,6 +132,46 @@ async function check(domain) {
 }
 
 /**
+ * Does this name already resolve to us?
+ *
+ * A different question from `check()`, and the right one for a SUBDOMAIN.
+ * Delegation is about a whole zone, so asking whether `shop.example.com` is
+ * delegated to us is meaningless — a subdomain normally has no NS records at
+ * all. What matters is simply whether it lands on our node.
+ *
+ * Compared against whatever POINT_HOSTNAME resolves to rather than a hardcoded
+ * address, so this stays true when the node moves and no IP is written down in
+ * the code. A CNAME is followed by the resolver before we see it, so a customer
+ * who pointed a CNAME at POINT_HOSTNAME and one who copied the address into an
+ * A record both come back the same.
+ *
+ * Never throws. "We could not tell" is reported as not-pointing, because the
+ * only thing that hangs on it is whether to show the customer instructions —
+ * and showing them to somebody already set up is a much smaller harm than
+ * telling somebody who is not that everything is fine.
+ */
+async function pointsAtUs(name, target) {
+  const wanted = normalise(target);
+  const host = normalise(name);
+  if (!wanted || !host) return { pointed: false, addresses: [] };
+
+  const resolver = makeResolver();
+  const [ours, theirs] = await Promise.all([
+    resolver.resolve4(wanted).catch(() => []),
+    resolver.resolve4(host).catch(() => []),
+  ]);
+  if (!ours.length || !theirs.length) return { pointed: false, addresses: theirs };
+
+  const set = new Set(ours);
+  return {
+    // Every address it answers with has to be one of ours. A name that also
+    // answers with somebody else's box is served by both, at random.
+    pointed: theirs.every((ip) => set.has(ip)),
+    addresses: theirs,
+  };
+}
+
+/**
  * Do OUR OWN nameservers exist?
  *
  * Asked before anything is decided on the strength of a customer's delegation,
@@ -173,5 +213,5 @@ async function ourNameserversResolve({ fresh = false } = {}) {
 }
 
 module.exports = {
-  check, matchesOurs, extrasIn, normalise, ourNameserversResolve, OURS, RESOLVERS,
+  check, matchesOurs, extrasIn, pointsAtUs, normalise, ourNameserversResolve, OURS, RESOLVERS,
 };
