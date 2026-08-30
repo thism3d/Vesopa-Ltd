@@ -212,6 +212,38 @@ async function ourNameserversResolve({ fresh = false } = {}) {
   return result;
 }
 
+/**
+ * The address(es) POINT_HOSTNAME answers with.
+ *
+ * Shown to customers alongside the hostname, because a fair number of DNS
+ * control panels will not accept a hostname in an A record at all — they want
+ * four numbers, and a customer staring at a form that rejects
+ * `point.vesopa.com` has no way to proceed without asking us.
+ *
+ * RESOLVED, NEVER HARDCODED. config.js is emphatic that the node's address must
+ * not be written down in the app, and that reasoning still holds: a literal in
+ * the code is a number that goes stale silently the day the node moves. Reading
+ * it from the hostname keeps one source of truth — change where
+ * point.vesopa.com points and every instruction in the panel follows.
+ *
+ * Cached, because it is the same answer for every page that shows it.
+ */
+let addressCache = { at: 0, list: [] };
+const ADDRESS_TTL_MS = 10 * 60_000;
+
+async function ourAddresses(target, { fresh = false } = {}) {
+  if (!fresh && addressCache.list.length && Date.now() - addressCache.at < ADDRESS_TTL_MS) {
+    return addressCache.list;
+  }
+  const list = await makeResolver().resolve4(normalise(target)).catch(() => []);
+  // A failed lookup keeps the last good answer rather than replacing it with
+  // nothing: the panel showing one stale-but-plausible address beats it showing
+  // a blank where the instruction should be.
+  if (list.length) addressCache = { at: Date.now(), list };
+  return addressCache.list;
+}
+
 module.exports = {
+  ourAddresses,
   check, matchesOurs, extrasIn, pointsAtUs, normalise, ourNameserversResolve, OURS, RESOLVERS,
 };

@@ -156,6 +156,40 @@ async function addExternal({
 }
 
 /**
+ * The domain on this account that `name` is a subdomain of, or null.
+ *
+ * THIS IS THE ONLY RELIABLE TEST for "is this a subdomain", and counting labels
+ * is not it. `shop.heat6.com` and `vesopa.co.uk` both have three labels; one is
+ * a subdomain and one is a registrable domain, and no amount of dot-counting
+ * separates them without a public suffix list. What DOES separate them is
+ * whether the customer already holds something this name sits under — which is
+ * also the authorisation check, since you cannot create a name under a domain
+ * you do not control.
+ *
+ * Walks up the labels rather than assuming the parent is everything after the
+ * first dot: `shop.example.co.uk` has a three-label parent, and
+ * `a.b.example.com` is a legitimate second-level subdomain.
+ */
+async function findParent(customer, name) {
+  const labels = nameservers.normalise(name).split('.');
+  for (let i = 1; i < labels.length - 1; i++) {
+    const candidate = labels.slice(i).join('.');
+    // eslint-disable-next-line no-await-in-loop -- at most a handful of labels
+    const row = await db.one(
+      // No filter on `source`: a name may legitimately sit under a subdomain
+      // the account already holds (a.b.example.com under b.example.com), and
+      // the closest ancestor wins because the loop walks outward from the left.
+      `SELECT * FROM domains
+        WHERE domain = ? AND customer_id = ? AND status <> 'removed'
+        LIMIT 1`,
+      [candidate, customer.id],
+    );
+    if (row) return row;
+  }
+  return null;
+}
+
+/**
  * Add a subdomain of a domain already on this account.
  *
  * No nameserver check, and no grace clock. `shop.example.com` cannot exist
@@ -199,22 +233,7 @@ async function addSubdomain({
     return { ok: false, error: 'Each part of the name must be 1–63 characters and cannot start or end with a hyphen.' };
   }
 
-  /*
-   * Find the parent by walking up the labels rather than assuming it is
-   * everything after the first dot. `shop.example.co.uk` has a three-label
-   * parent, and `a.b.example.com` is a legitimate second-level subdomain of a
-   * domain on the account.
-   */
-  let parent = null;
-  for (let i = 1; i < labels.length - 1 && !parent; i++) {
-    const candidate = labels.slice(i).join('.');
-    parent = await db.one(
-      `SELECT * FROM domains
-        WHERE domain = ? AND customer_id = ? AND status <> 'removed'
-        LIMIT 1`,
-      [candidate, customer.id],
-    );
-  }
+  const parent = await findParent(customer, name);
   if (!parent) {
     return {
       ok: false,
@@ -362,41 +381,110 @@ async function addSubdomain({
 /**
  * Ask the public DNS where this domain points, record the answer, and act on it.
  *
- * Called from the sweep, from the customer's own "check now" button, and after
- * a registration. Writing the observed nameservers down even on a failure is
- * what lets the panel say "we can see ns1.somebodyelse.com" instead of a bare
- * "not verified", which is the difference between a customer fixing it in two
- * minutes and opening a ticket.
+ * TWO WAYS TO POINT AT US, and which one applies is not a preference — it is a
+ * property of the name.
  *
- * @returns {Promise<{matched: boolean, nameservers: string[], error: string, pointed?: object}>}
+ *   ns   The domain is delegated to our nameservers. We answer for the whole
+ *        zone, so DNS is ours to edit and MX is ours to set. This is the full
+ *        arrangement and the one a domain registered here always has.
+ *
+ *   a    An A record aims the name at this node while DNS stays wherever it
+ *        already was. The website and the certificate work identically; the
+ *        zone is not ours, so the DNS editor is off and mail needs records the
+ *        customer adds at their own provider.
+ *
+ * A SUBDOMAIN IS ONLY EVER 'a', AND THAT IS THE BUG THIS FIXES. Delegation is a
+ * property of a zone. Asking whether `shop.example.com` is delegated to us is
+ * asking a question a subdomain has no way to answer — it normally has no NS
+ * records at all — so `resolveNs` fails, and the old code read that failure as
+ * "not pointing at us". A subdomain that was resolving to this node perfectly
+ * was shown "Waiting for your nameservers", with a nameserver form underneath
+ * it that could never have helped. Subdomains are checked by address, full
+ * stop, and never by delegation.
+ *
+ * For a full domain the delegation is tried FIRST, because it is the better
+ * arrangement and the answer decides whether we may offer DNS and mail. Only if
+ * that fails do we ask whether an A record has been pointed here anyway.
+ *
+ * Both observations are written down even on a failure. "We can see
+ * ns1.theirhost.com" and "we can see 3.72.113.21" are each the difference
+ * between a customer fixing it in two minutes and opening a ticket.
+ *
+ * @returns {Promise<{matched: boolean, method: string, nameservers: string[],
+ *                    addresses: string[], error: string, pointed?: object}>}
  */
 async function verify(domainRow, { customer = null } = {}) {
-  const result = await nameservers.check(domainRow.domain);
+  const isSubdomain = domainRow.source === 'subdomain';
+
+  let ns = { matched: false, nameservers: [], extras: [], error: '' };
+
+  if (!isSubdomain) {
+    ns = await nameservers.check(domainRow.domain);
+  }
 
   /*
-   * `ns_observed` is only overwritten when the lookup actually answered.
+   * THE ADDRESS IS CHECKED EVERY TIME, including when the delegation already
+   * matched, and that is not belt-and-braces — the NS check alone produces
+   * false positives.
+   *
+   * `resolveNs` returns the NS records held by whichever server actually
+   * answers for the name, which is NOT the same as the delegation recorded at
+   * the registry. A zone on somebody else's box can list our nameservers quite
+   * happily. That is not hypothetical: heat6.com was delegated to
+   * ns1.onzep.uk, whose copy of the zone named ns1/ns2.vesopa.com — so the
+   * delegation check passed while every visitor was being served by the old
+   * server. Verified, and pointing somewhere else.
+   *
+   * So delegation decides whether DNS is ours to run; the ADDRESS decides
+   * whether we are actually serving the site, and a certificate can only be
+   * issued on the strength of the second one.
+   *
+   * Never throws: "we could not tell" comes back as not-pointing.
+   */
+  const ip = await nameservers.pointsAtUs(domainRow.domain, POINT_HOSTNAME);
+
+  const method = ns.matched ? 'ns' : (ip.pointed ? 'a' : '');
+  const matched = Boolean(method);
+  const resolvesHere = ip.pointed;
+
+  /*
+   * `ns_observed` and `ip_observed` are only overwritten when that lookup
+   * actually answered.
    *
    * A resolver timeout, or a domain that has stopped resolving entirely, is not
    * evidence that it points nowhere — and blanking the field on those turns the
-   * one useful thing we can tell a customer ("we can see ns1.theirhost.com")
-   * into "nothing", in both the panel and the removal email. The last answer we
-   * genuinely got is better information than no answer at all.
+   * one useful thing we can tell a customer into "nothing", in both the panel
+   * and the removal email. The last answer we genuinely got beats no answer.
    */
   await db.query(
     `UPDATE domains
         SET ns_checked_at = NOW(),
             ns_observed = CASE WHEN ? = 1 THEN ? ELSE ns_observed END,
+            ip_observed = CASE WHEN ? = 1 THEN ? ELSE ip_observed END,
+            verify_method = ?,
             ns_verified_at = CASE WHEN ? = 1 THEN COALESCE(ns_verified_at, NOW()) ELSE NULL END
       WHERE id = ?`,
     [
-      result.nameservers.length ? 1 : 0,
-      result.nameservers.join(' ').slice(0, 400),
-      result.matched ? 1 : 0,
+      ns.nameservers.length ? 1 : 0,
+      ns.nameservers.join(' ').slice(0, 400),
+      ip.addresses.length ? 1 : 0,
+      ip.addresses.join(' ').slice(0, 200),
+      method,
+      matched ? 1 : 0,
       domainRow.id,
     ],
   );
 
-  if (!result.matched) return result;
+  const result = {
+    matched,
+    method,
+    resolvesHere,
+    nameservers: ns.nameservers,
+    addresses: ip.addresses,
+    error: ns.error || '',
+  };
+
+  if (!matched) return result;
 
   /*
    * A verified domain leaves the waiting room. `pending` is left alone: that
@@ -409,11 +497,19 @@ async function verify(domainRow, { customer = null } = {}) {
   const owner = customer
     || await db.one('SELECT * FROM customers WHERE id = ? LIMIT 1', [domainRow.customer_id]);
 
-  const pointed = await pointAtNode({ ...domainRow, ns_verified_at: new Date() }, owner);
+  const pointed = await pointAtNode(
+    { ...domainRow, ns_verified_at: new Date(), verify_method: method },
+    owner,
+    // Do not spend a slow Let's Encrypt call, or a slice of its rate limit, on
+    // a name that demonstrably does not resolve here yet. The challenge would
+    // fail by definition.
+    { resolvesHere },
+  );
 
   await db.logActivity({
-    actorType: 'system', action: 'domain.ns_verified', target: domainRow.domain,
-    detail: pointed.pointed ? 'Serving from the node' : pointed.reason || '',
+    actorType: 'system', action: 'domain.verified', target: domainRow.domain,
+    detail: `by ${method === 'ns' ? 'nameservers' : 'A record'}; `
+      + (pointed.pointed ? 'serving from the node' : pointed.reason || 'not served'),
   });
 
   return { ...result, pointed };
@@ -427,7 +523,7 @@ async function verify(domainRow, { customer = null } = {}) {
  * failure for being set up. SSL is best-effort and last: a certificate that
  * cannot be issued yet is a retry button in the panel, not a broken site.
  */
-async function pointAtNode(domainRow, customer) {
+async function pointAtNode(domainRow, customer, { resolvesHere = null } = {}) {
   if (!mayPoint(domainRow)) {
     return { pointed: false, reason: 'Not verified as pointing at us yet.' };
   }
@@ -480,17 +576,190 @@ async function pointAtNode(domainRow, customer) {
   }
 
   const web = steps.find((s) => s.step === 'web');
-  let ssl = { ok: false, error: 'Website not created.' };
-  if (web.ok) {
-    ssl = await ignoringExists(() => hestia.enableSSL({ username, domain }));
+  let ssl = { ok: false, error: 'The website was not created, so there was nothing to certify.' };
+
+  /*
+   * A certificate is only worth asking for if the name actually resolves here.
+   *
+   * Let's Encrypt validates by fetching the name over the public internet, so
+   * for anything that does not point at this node the request cannot succeed —
+   * it just takes ninety seconds to fail, and spends one of the handful of
+   * attempts the rate limit allows per domain per hour. The caller usually
+   * knows the answer already (verify has just looked it up); when it does not,
+   * this looks it up rather than guessing.
+   */
+  const reachable = resolvesHere === null
+    ? (await nameservers.pointsAtUs(domain, POINT_HOSTNAME)).pointed
+    : resolvesHere;
+
+  if (web.ok && !reachable) {
+    ssl = {
+      ok: false,
+      error: 'The name does not resolve to this server yet, so a certificate cannot be issued. '
+        + 'It is requested automatically once it does.',
+    };
+  } else if (web.ok) {
+    /*
+     * NO `www.` FOR A SUBDOMAIN. `www.shop.example.com` is a name nobody
+     * publishes, and a certificate request fails as a whole if any name in it
+     * fails validation — so asking for it would take the subdomain's own
+     * certificate down with it, every time.
+     *
+     * `mail: false` always. See hestia.enableSSL: that flag does not add the
+     * mail name, it REPLACES the target with it. Mail is served under one
+     * hostname for every customer and needs no certificate per domain.
+     */
+    ssl = await ignoringExists(() => hestia.enableSSL({
+      username,
+      domain,
+      aliases: isSubdomain(domainRow) ? '' : `www.${domain}`,
+      mail: false,
+    }));
   }
   steps.push({ step: 'ssl', ...ssl });
+  await recordSsl(domainRow.id, ssl);
 
   if (web.ok) {
     await db.query('UPDATE domains SET pointed_at = COALESCE(pointed_at, NOW()) WHERE id = ?', [domainRow.id]);
   }
 
-  return { pointed: web.ok, ssl: ssl.ok, steps };
+  return { pointed: web.ok, ssl: ssl.ok, sslError: ssl.ok ? '' : explainSslError(ssl.error), steps };
+}
+
+/**
+ * Turn a Let's Encrypt failure into a sentence a customer can act on.
+ *
+ * Hestia surfaces these as an exit code and one line of ACME prose. Left raw
+ * they read as our software breaking, when nearly all of them are one of three
+ * ordinary situations with an obvious next step.
+ */
+function explainSslError(raw) {
+  const text = String(raw || '').toLowerCase();
+  if (!text) return '';
+  if (text.includes('rate limit') || text.includes('too many certificates')) {
+    return 'Let\'s Encrypt is rate-limiting this domain after too many attempts. '
+      + 'It clears by itself — try again in an hour.';
+  }
+  if (text.includes('dns problem') || text.includes('nxdomain') || text.includes("doesn't exist")) {
+    return 'The name does not resolve to this server yet. DNS changes can take a few hours; '
+      + 'once it points here, press the button again.';
+  }
+  if (text.includes('challenge') || text.includes('unauthorized') || text.includes('timeout')) {
+    return 'Let\'s Encrypt could not reach this site to prove you own it. '
+      + 'That is nearly always DNS still propagating — try again shortly.';
+  }
+  return raw;
+}
+
+/**
+ * Write down what happened to the certificate.
+ *
+ * This is the half that was missing. pointAtNode has always ASKED for a
+ * certificate; it threw the answer away, so nothing knew whether one existed,
+ * nothing ever retried a failure, and the panel could not show a padlock or
+ * explain its absence. A customer's only signal was the browser's.
+ */
+async function recordSsl(domainId, ssl) {
+  const status = ssl.ok ? 'active' : 'failed';
+  await db.query(
+    `UPDATE domains
+        SET ssl_status = ?,
+            ssl_checked_at = NOW(),
+            ssl_issued_at = CASE WHEN ? = 'active' THEN COALESCE(ssl_issued_at, NOW()) ELSE ssl_issued_at END,
+            ssl_error = ?
+      WHERE id = ?`,
+    [status, status, ssl.ok ? '' : explainSslError(ssl.error).slice(0, 300), domainId],
+  );
+}
+
+/**
+ * Ask for a certificate now, for one domain.
+ *
+ * Separate from pointAtNode because retrying is its own act with its own
+ * button. The overwhelmingly common case is "DNS had not propagated when we
+ * first tried", and making that self-service removes an entire category of
+ * ticket — the same reasoning as the service page's SSL retry, except that
+ * this one reaches domains that are not attached to a service at all, which
+ * the old button could not.
+ */
+async function issueSsl(domainRow, customer) {
+  if (!customer?.hestia_user) {
+    return { ok: false, error: 'There is no hosting account to install a certificate on.' };
+  }
+  if (!mayPoint(domainRow)) {
+    return { ok: false, error: 'This domain is not pointing at us yet, so a certificate cannot be issued for it.' };
+  }
+
+  /*
+   * Asked again here rather than trusted from the row. The button is pressed by
+   * somebody who has just changed their DNS, so the stored answer is precisely
+   * the one most likely to be out of date — in both directions.
+   */
+  const live = await nameservers.pointsAtUs(domainRow.domain, POINT_HOSTNAME);
+  if (!live.pointed) {
+    const seen = live.addresses.length ? ` It currently answers with ${live.addresses.join(', ')}.` : '';
+    await recordSsl(domainRow.id, {
+      ok: false,
+      error: `${domainRow.domain} does not resolve to this server yet.${seen}`,
+    });
+    return {
+      ok: false,
+      error: `${domainRow.domain} does not resolve to this server yet, and Let's Encrypt has to `
+        + `reach it to prove you own it.${seen} Point it here first, then try again.`,
+    };
+  }
+
+  const result = await ignoringExists(() => hestia.enableSSL({
+    username: customer.hestia_user,
+    domain: domainRow.domain,
+    aliases: isSubdomain(domainRow) ? '' : `www.${domainRow.domain}`,
+    mail: false,
+  }));
+
+  await recordSsl(domainRow.id, result);
+  return { ...result, message: result.ok ? '' : explainSslError(result.error) };
+}
+
+/**
+ * What certificate does this domain have RIGHT NOW?
+ *
+ * Read from the node, then written down. The stored value is what the domain
+ * list renders — one query rather than one Hestia call per row — and this
+ * refreshes it whenever somebody is actually looking at that domain's page.
+ *
+ * A node we cannot reach returns the last thing we knew rather than "none":
+ * claiming a live site has no certificate because our own API call timed out
+ * would send customers to reissue certificates they already have, straight
+ * into a Let's Encrypt rate limit.
+ */
+async function refreshSsl(domainRow, customer) {
+  const stored = {
+    status: domainRow.ssl_status || 'none',
+    error: domainRow.ssl_error || '',
+    issued_at: domainRow.ssl_issued_at || null,
+  };
+  if (!customer?.hestia_user || !hestia.isLive()) return stored;
+
+  try {
+    const live = await hestia.webDomainSsl({
+      username: customer.hestia_user,
+      domain: domainRow.domain,
+    });
+    // A certificate that is present wins outright. Absent means "failed" only
+    // if we have a recorded reason; otherwise it has simply never been asked
+    // for, and "none" is the honest word for that.
+    const status = live.ssl ? 'active' : (domainRow.ssl_error ? 'failed' : 'none');
+    await db.query(
+      `UPDATE domains
+          SET ssl_status = ?, ssl_checked_at = NOW(),
+              ssl_issued_at = CASE WHEN ? = 'active' THEN COALESCE(ssl_issued_at, NOW()) ELSE ssl_issued_at END
+        WHERE id = ?`,
+      [status, status, domainRow.id],
+    );
+    return { status, error: status === 'failed' ? stored.error : '', issued_at: stored.issued_at, live: true };
+  } catch {
+    return stored;
+  }
 }
 
 /**
@@ -605,6 +874,11 @@ function validateRecord({ name, type, value, priority, ttl }) {
   return { ok: true, record: out };
 }
 
+/** A name under a domain already on the account. Not a registration. */
+function isSubdomain(domainRow) {
+  return domainRow?.source === 'subdomain';
+}
+
 /**
  * May this customer edit this domain's DNS with us?
  *
@@ -613,15 +887,88 @@ function validateRecord({ name, type, value, priority, ttl }) {
  * accepted records into a zone nobody queries would be a form that does
  * nothing — worse than no form at all, because the customer would believe the
  * change had been made.
+ *
+ * A SUBDOMAIN NEVER GETS ONE, and not merely because it rarely needs it. A
+ * subdomain lives inside its parent's zone; that is the whole reason it does
+ * not need a zone of its own. Giving it a second zone here would shadow the
+ * records the customer can already edit on the parent — two places to change
+ * one name, disagreeing with each other, with no indication of which is
+ * winning. The parent's DNS page is the one true place.
  */
 function mayEditDns(domainRow, customer) {
-  if (!domainRow || !mayPoint(domainRow)) {
-    return { ok: false, reason: 'This domain is not pointing at our nameservers yet, so its DNS is not ours to edit.' };
+  if (!domainRow) return { ok: false, reason: 'Unknown domain.' };
+
+  if (isSubdomain(domainRow)) {
+    const parent = parentNameOf(domainRow.domain);
+    return {
+      ok: false,
+      subdomain: true,
+      reason: `DNS for a subdomain lives in ${parent ? `${parent}'s` : "its parent domain's"} zone. `
+        + 'Edit it there and this name follows.',
+    };
+  }
+  if (!mayPoint(domainRow)) {
+    return { ok: false, reason: 'This domain is not pointing at us yet, so its DNS is not ours to edit.' };
+  }
+  /*
+   * Verified by an A record, not by delegation. The site is served here and the
+   * certificate is real, but the zone is still at their provider — so this
+   * form would write into a zone nobody queries.
+   */
+  if (domainRow.verify_method === 'a') {
+    return {
+      ok: false,
+      elsewhere: true,
+      reason: 'This domain points here with an A record while its DNS stays at your own provider, '
+        + 'so its records are changed there. Switch its nameservers to ours and the editor turns on.',
+    };
   }
   if (!customer?.hestia_user) {
     return { ok: false, reason: 'DNS hosting comes with a hosting or email plan. There is not one on this account yet.' };
   }
   return { ok: true };
+}
+
+/**
+ * May this domain have mailboxes, and does the customer have to do anything?
+ *
+ * SUBDOMAINS ARE REFUSED OUTRIGHT. A mail domain silently starts accepting mail
+ * for a name and puts MX expectations on it; nobody should get that on a name
+ * they added to host a shop on. Mail belongs on the main domain, and
+ * `you@shop.example.com` is not an address anybody wants.
+ *
+ * `needsRecords` is the difference between the two ways of pointing at us. With
+ * our nameservers we write the MX ourselves and mail simply works. With an A
+ * record, the zone is theirs and mail cannot arrive until they add the records
+ * — so the panel offers the mailbox AND shows exactly what to paste, rather
+ * than refusing something that is perfectly possible.
+ */
+function mayHaveMail(domainRow) {
+  if (!domainRow) return { ok: false, reason: 'Unknown domain.' };
+
+  if (isSubdomain(domainRow)) {
+    const parent = parentNameOf(domainRow.domain);
+    return {
+      ok: false,
+      subdomain: true,
+      reason: `Email is set up on ${parent || 'your main domain'}, not on a subdomain. `
+        + 'Addresses look better that way, and a subdomain accepting mail is almost never what anyone wants.',
+    };
+  }
+  if (!mayPoint(domainRow)) {
+    return { ok: false, reason: 'This domain is not pointing at us yet, so we cannot accept mail for it.' };
+  }
+  return { ok: true, needsRecords: domainRow.verify_method === 'a' };
+}
+
+/**
+ * The registrable name a subdomain sits under, worked out from the label count
+ * rather than looked up — this is for a sentence in the panel, not a decision.
+ * The authoritative parent is the row found by addSubdomain().
+ */
+function parentNameOf(name) {
+  const labels = String(name || '').split('.');
+  return labels.length > 2 ? labels.slice(1).join('.') : '';
 }
 
 // ---------------------------------------------------------------------------
@@ -687,6 +1034,14 @@ async function dropUnverified(domainRow) {
 }
 
 module.exports = {
+  isSubdomain,
+  findParent,
+  issueSsl,
+  refreshSsl,
+  recordSsl,
+  explainSslError,
+  mayHaveMail,
+  parentNameOf,
   graceDeadline,
   mayPoint,
   mayEditDns,

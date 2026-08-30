@@ -57,6 +57,24 @@ const DEFAULT_PACKAGE = process.env.HESTIA_DEFAULT_PACKAGE || 'default';
 const TIMEOUT_MS = 20_000;
 
 /**
+ * Issuing a certificate is not like the other calls.
+ *
+ * Everything else here is a config edit that returns in under a second, and
+ * twenty seconds is a generous ceiling for those. A Let's Encrypt issuance is a
+ * conversation with an external service — register, request, answer the
+ * challenge, wait for validation, collect — and thirty to ninety seconds is
+ * ordinary, not slow.
+ *
+ * At the shared timeout it therefore failed almost every time, and failed in
+ * the worst possible way: the request kept running on the node and often
+ * SUCCEEDED after we had already given up and written the attempt down as a
+ * failure. The panel then showed "not issued" for a site that had a working
+ * certificate, and the retry button spent Let's Encrypt rate limit reissuing
+ * one that already existed.
+ */
+const SSL_TIMEOUT_MS = 150_000;
+
+/**
  * Hestia's exit codes, as messages a support agent can act on.
  *
  * TAKEN FROM `/usr/local/hestia/func/main.sh` ON THE NODE, not from memory.
@@ -118,7 +136,7 @@ const mockCalls = [];
  * @param {string[]} args positional, in Hestia's documented order
  * @param {object} opts  `json: true` to parse a data response instead of a code
  */
-async function run(cmd, args = [], { json = false } = {}) {
+async function run(cmd, args = [], { json = false, timeoutMs = TIMEOUT_MS } = {}) {
   if (!isLive()) {
     mockCalls.push({ cmd, args, at: new Date().toISOString() });
     if (mockCalls.length > 200) mockCalls.shift();
@@ -143,7 +161,7 @@ async function run(cmd, args = [], { json = false } = {}) {
 
   let res;
   try {
-    res = await post(body);
+    res = await post(body, timeoutMs);
   } catch (err) {
     if (err.code === 'timeout') {
       throw new HestiaError('The hosting node did not respond in time.', { code: 'timeout', cmd });
@@ -228,7 +246,7 @@ async function run(cmd, args = [], { json = false } = {}) {
  * https.request takes `rejectUnauthorized` per request, so the exception stays
  * on the one connection it is meant for.
  */
-function post(body) {
+function post(body, timeoutMs = TIMEOUT_MS) {
   return new Promise((resolve, reject) => {
     const payload = body.toString();
     const req = https.request(
@@ -247,7 +265,7 @@ function post(body) {
           'Content-Type': 'application/x-www-form-urlencoded',
           'Content-Length': Buffer.byteLength(payload),
         },
-        timeout: TIMEOUT_MS,
+        timeout: timeoutMs,
       },
       (res) => {
         const chunks = [];
@@ -494,15 +512,60 @@ async function listWebDomains(username) {
 }
 
 /**
- * Issue and install a Let's Encrypt certificate.
+ * Issue and install a Let's Encrypt certificate for a WEBSITE.
  *
- * Fails until the domain's A record actually points at the node — that is the
- * ACME challenge doing its job, not a bug, and the panel says so in those words
- * rather than showing the raw exit code.
+ * THE FOURTH ARGUMENT IS NOT "ALSO DO MAIL". It is "do mail INSTEAD".
+ *
+ * `v-add-letsencrypt-domain USER DOMAIN [ALIASES] [MAIL]`, and inside it:
+ *
+ *     if [ -n "$mail" ]; then
+ *         root_domain=$domain
+ *         domain="mail.$root_domain"      # <- the target is REPLACED
+ *
+ * This used to pass a hardcoded 'yes' there, which meant no website on this
+ * node has ever been issued a certificate. Every call did one of two things:
+ * on a domain with mail it quietly issued a cert for `mail.<domain>` and left
+ * the actual site on plain HTTP; on a domain WITHOUT mail — which is every
+ * subdomain, by design — it aborted with "mail domain <name> doesn't exist"
+ * and issued nothing at all. Either way the padlock never appeared and nothing
+ * recorded why.
+ *
+ * So `mail` defaults to false and the website is the target. Mail is served
+ * under one hostname for everybody (see MAIL_HOSTNAME in config.js), so there
+ * is no per-customer mail certificate to issue here at all.
+ *
+ * ALIASES ARE THE CALLER'S DECISION, not a `www.` bolted on unconditionally.
+ * A cert request fails as a whole if any name in it fails validation, so
+ * asking for `www.shop.example.com` — which almost never resolves — would take
+ * the subdomain's own certificate down with it.
+ *
+ * Fails until the domain actually resolves to this node: that is the ACME
+ * challenge doing its job, not a bug, and the panel says so in those words
+ * rather than showing an exit code.
  */
-async function enableSSL({ username, domain, withWww = true }) {
-  await run('v-add-letsencrypt-domain', [username, domain, withWww ? `www.${domain}` : '', 'yes']);
+async function enableSSL({ username, domain, aliases = '', mail = false }) {
+  await run(
+    'v-add-letsencrypt-domain',
+    [username, domain, aliases, mail ? 'yes' : 'no'],
+    { timeoutMs: SSL_TIMEOUT_MS },
+  );
   return { ok: true, domain };
+}
+
+/**
+ * What certificate does this website actually have?
+ *
+ * Read from the node rather than from anything we wrote down, for the same
+ * reason mailbox counts are: support can issue or remove a certificate by hand,
+ * and a database that disagrees with the box is worse than no record at all.
+ */
+async function webDomainSsl({ username, domain }) {
+  if (!isLive()) return { ssl: false, letsencrypt: false };
+  const all = await listWebDomains(username);
+  const found = all.find((d) => d.domain === domain);
+  return found
+    ? { ssl: found.ssl, letsencrypt: found.letsencrypt }
+    : { ssl: false, letsencrypt: false, missing: true };
 }
 
 async function forceHttps({ username, domain }) {
@@ -671,7 +734,16 @@ async function listMailDomains(username) {
   const data = await run('v-list-mail-domains', [username], { json: true });
   return Object.entries(data).map(([domain, d]) => ({
     domain,
-    accounts: Number(d.U_MAIL_ACCOUNTS || 0),
+    // Hestia reports the count as ACCOUNTS here; U_MAIL_ACCOUNTS is the user
+    // level total. Reading the wrong one made every domain report zero, which
+    // is what the allowance is enforced against.
+    accounts: Number(d.ACCOUNTS ?? d.U_MAIL_ACCOUNTS ?? 0),
+    catchall: d.CATCHALL || '',
+    dkim: String(d.DKIM || 'no') === 'yes',
+    ssl: String(d.SSL || 'no') === 'yes',
+    // Present means Hestia is publishing `mail.<domain>` as a webmail vhost.
+    // We take that off — see removeWebmailAlias.
+    webmailAlias: d.WEBMAIL_ALIAS || '',
     suspended: String(d.SUSPENDED || 'no') === 'yes',
   }));
 }
@@ -690,19 +762,177 @@ async function countMailAccounts(username) {
   return domains.reduce((sum, d) => sum + d.accounts, 0);
 }
 
+/**
+ * Every mailbox on a domain, with what it forwards and answers.
+ *
+ * `FWD` and `ALIAS` are comma-separated in Hestia, and `FWD_ONLY` decides
+ * whether a forwarded message is also kept — the difference between "send me a
+ * copy at gmail" and "this address is only a redirect", which are entirely
+ * different intentions and must not be shown as one.
+ */
 async function listMailAccounts({ username, domain }) {
   if (!isLive()) return [];
   const data = await run('v-list-mail-accounts', [username, domain], { json: true });
   return Object.entries(data).map(([account, d]) => ({
     account,
     address: `${account}@${domain}`,
+    domain,
     quota_mb: d.QUOTA === 'unlimited' ? 0 : Number(d.QUOTA || 0),
     used_mb: Number(d.U_DISK || 0),
+    aliases: String(d.ALIAS || '').split(',').map((a) => a.trim()).filter(Boolean),
+    forwards: String(d.FWD || '').split(',').map((a) => a.trim()).filter(Boolean),
+    forwardOnly: String(d.FWD_ONLY || '') === 'yes',
+    autoreply: String(d.AUTOREPLY || 'no') === 'yes',
+    suspended: String(d.SUSPENDED || 'no') === 'yes',
   }));
+}
+
+/** One mailbox, or null. Used by every page that acts on a single address. */
+async function mailAccount({ username, domain, account }) {
+  const all = await listMailAccounts({ username, domain });
+  return all.find((a) => a.account === account) || null;
 }
 
 async function deleteMailAccount({ username, domain, account }) {
   await run('v-delete-mail-account', [username, domain, account]);
+  return { ok: true };
+}
+
+async function changeMailPassword({ username, domain, account, password }) {
+  await run('v-change-mail-account-password', [username, domain, account, password]);
+  return { ok: true };
+}
+
+/** Quota in MB. 0 means unlimited, which is what Hestia calls it too. */
+async function changeMailQuota({ username, domain, account, quotaMb }) {
+  await run('v-change-mail-account-quota', [
+    username, domain, account, Number(quotaMb) > 0 ? String(quotaMb) : 'unlimited',
+  ]);
+  return { ok: true };
+}
+
+// ---- Forwarding ------------------------------------------------------------
+//
+// Hestia replaces the whole forward list on each call rather than appending, so
+// the caller sends the complete set every time and there is no add/remove pair
+// to keep in step.
+
+async function setMailForwards({ username, domain, account, forwards = [], forwardOnly = false }) {
+  const list = forwards.map((f) => String(f).trim()).filter(Boolean).join(',');
+  if (list) {
+    await run('v-add-mail-account-forward', [username, domain, account, list]);
+  } else {
+    // Clearing is its own command; passing an empty string is rejected.
+    await run('v-delete-mail-account-forward', [username, domain, account]).catch((err) => {
+      if (err.code !== 3 && err.code !== 5) throw err;   // already had none
+    });
+  }
+
+  /*
+   * "Forward only" is a separate flag, and getting it wrong loses mail.
+   *
+   * With it set, nothing is kept in the mailbox here — the message goes to the
+   * forward address and only there. It must never be left on when the customer
+   * has removed their forwards, or every message would be delivered nowhere at
+   * all.
+   */
+  const wantOnly = forwardOnly && Boolean(list);
+  await run(wantOnly ? 'v-add-mail-account-fwd-only' : 'v-delete-mail-account-fwd-only',
+    [username, domain, account]).catch((err) => {
+    if (err.code !== 3 && err.code !== 5) throw err;
+  });
+  return { ok: true };
+}
+
+// ---- Aliases (extra addresses that land in the same mailbox) ---------------
+
+async function setMailAliases({ username, domain, account, aliases = [] }) {
+  const list = aliases.map((a) => String(a).trim().toLowerCase()).filter(Boolean).join(',');
+  if (list) {
+    await run('v-add-mail-account-alias', [username, domain, account, list]);
+  } else {
+    await run('v-delete-mail-account-alias', [username, domain, account]).catch((err) => {
+      if (err.code !== 3 && err.code !== 5) throw err;
+    });
+  }
+  return { ok: true };
+}
+
+// ---- Auto-reply ------------------------------------------------------------
+
+async function setAutoreply({ username, domain, account, message }) {
+  if (message && String(message).trim()) {
+    await run('v-add-mail-account-autoreply', [username, domain, account, String(message)]);
+  } else {
+    await run('v-delete-mail-account-autoreply', [username, domain, account]).catch((err) => {
+      if (err.code !== 3 && err.code !== 5) throw err;
+    });
+  }
+  return { ok: true };
+}
+
+async function getAutoreply({ username, domain, account }) {
+  if (!isLive()) return '';
+  try {
+    const data = await run('v-list-mail-account-autoreply', [username, domain, account], { json: true });
+    // Hestia answers either a bare string or an object keyed by the account.
+    if (typeof data === 'string') return data;
+    const first = Object.values(data || {})[0];
+    return typeof first === 'string' ? first : (first?.MESSAGE || '');
+  } catch {
+    return '';
+  }
+}
+
+// ---- Whole-domain settings -------------------------------------------------
+
+async function setCatchall({ username, domain, address }) {
+  if (address) {
+    await run('v-add-mail-domain-catchall', [username, domain, address]);
+  } else {
+    await run('v-delete-mail-domain-catchall', [username, domain]).catch((err) => {
+      if (err.code !== 3 && err.code !== 5) throw err;
+    });
+  }
+  return { ok: true };
+}
+
+/**
+ * The DKIM record this domain needs published.
+ *
+ * Only actionable for a customer whose DNS is elsewhere — where we run the
+ * zone, Hestia has already written it. Returned as name/value so the panel can
+ * render a copyable row rather than a wall of BIND syntax.
+ */
+async function dkimRecord({ username, domain }) {
+  if (!isLive()) return null;
+  try {
+    const text = await run('v-list-mail-domain-dkim-dns', [username, domain]);
+    const raw = typeof text === 'string' ? text : String(text?.body || '');
+    const match = raw.match(/(\S*_domainkey\S*)[\s\S]*?"([^"]+)"/);
+    if (!match) return null;
+    return {
+      name: match[1].replace(new RegExp(`\\.?${domain}\\.?$`), '') || '_domainkey',
+      value: match[2].replace(/"\s+"/g, ''),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Remove the `mail.<domain>` webmail alias.
+ *
+ * Hestia adds one to every mail domain (WEBMAIL_ALIAS defaults to `mail`),
+ * which publishes `mail.customerdomain.com` as a webmail vhost on this node.
+ * That name has no certificate of its own and is not where we want anybody
+ * sent: webmail, IMAP and SMTP are all one hostname for every customer, so the
+ * per-domain alias is a broken door with our name on it.
+ */
+async function removeWebmailAlias({ username, domain }) {
+  await run('v-delete-mail-domain-webmail', [username, domain]).catch((err) => {
+    if (err.code !== 3 && err.code !== 5) throw err;   // not there is the goal
+  });
   return { ok: true };
 }
 
@@ -814,6 +1044,7 @@ module.exports = {
   deleteWebDomain,
   listWebDomains,
   enableSSL,
+  webDomainSsl,
   forceHttps,
   addDatabase,
   listDatabases,
@@ -831,6 +1062,16 @@ module.exports = {
   listMailDomains,
   countMailAccounts,
   listMailAccounts,
+  mailAccount,
+  changeMailPassword,
+  changeMailQuota,
+  setMailForwards,
+  setMailAliases,
+  setAutoreply,
+  getAutoreply,
+  setCatchall,
+  dkimRecord,
+  removeWebmailAlias,
   deleteMailAccount,
   listBackups,
   createBackup,

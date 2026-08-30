@@ -1,0 +1,248 @@
+<%#
+  A subdomain.
+
+  DELIBERATELY NOT views/panel/domain.ejs WITH THINGS HIDDEN. Almost nothing on
+  the domain page applies here: a subdomain has no nameservers, no registrar, no
+  expiry, no auto-renew, no transfer and no DNS zone of its own. Rendering that
+  template and hiding two thirds of it leaves a page that is mostly absence —
+  and it is exactly how the panel came to show "Waiting for your nameservers"
+  above a nameserver form, for a name that was already working.
+
+  One question is asked here instead, because it is the only one that decides
+  anything: does this name resolve to our server?
+%>
+<%
+  const pointed = Boolean(domain.ns_verified_at);
+  const wrong = !pointed && observed.length;
+%>
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
+<%- include('../partials/panel-shell', {
+  pageTitle: domain.domain,
+  pageSub: parent ? 'A subdomain of ' + parent : 'A subdomain',
+}) %>
+
+<% if (pointed) { %>
+  <div class="alert alert-ok">
+    <%- icon('check', 19) %>
+    <div>
+      <b>This subdomain is live.</b>
+      It points at our server and we are serving it.
+      <% if (ssl.status !== 'active') { %>
+        The certificate is the one thing still outstanding — see below.
+      <% } %>
+    </div>
+  </div>
+<% } else { %>
+  <div class="alert alert-warn">
+    <%- icon('clock', 19) %>
+    <div>
+      <b>Not pointing here yet.</b>
+      <% if (wrong) { %>
+        <span class="mono"><%= domain.domain %></span> currently answers with
+        <span class="mono"><%= observed.join(', ') %></span>, which is not this server.
+      <% } else { %>
+        <span class="mono"><%= domain.domain %></span> does not resolve anywhere yet.
+      <% } %>
+      Add the record below and press Check.
+      <b>There are no nameservers to change</b> — a subdomain follows
+      <%= parent || 'its parent domain' %>.
+    </div>
+  </div>
+<% } %>
+
+<div class="p-grid p-grid-side">
+  <div>
+    <div class="p-card">
+      <div class="row-between mb-2">
+        <h2 class="h3">Where it points</h2>
+        <span class="badge <%= pointed ? 'badge-green' : 'badge-amber' %>">
+          <%= pointed ? 'Pointing here' : 'Not pointing here yet' %>
+        </span>
+      </div>
+
+      <p class="small muted mb-2">
+        A subdomain is proved by its <b>address</b>, not by nameservers — it has none of
+        its own, and never will. We look it up on the public internet rather than taking
+        anyone's word for it.
+        <% if (domain.ns_checked_at) { %>Last checked <%= domain.ns_checked_at %>.<% } %>
+      </p>
+
+      <% if (observed.length) { %>
+        <div class="table-wrap"><table class="table" style="font-size:.86rem"><tbody>
+          <tr>
+            <td class="muted">It answers with</td>
+            <td class="strong mono"><%= observed.join(', ') %></td>
+          </tr>
+          <tr>
+            <td class="muted">It should answer with</td>
+            <td class="strong mono"><%= addresses.length ? addresses.join(', ') : pointHostname %></td>
+          </tr>
+        </tbody></table></div>
+      <% } %>
+
+      <form method="post" action="/panel/domains/<%= domain.id %>/verify" class="mt-2">
+        <input type="hidden" name="_csrf" value="<%= csrf %>">
+        <button class="btn btn-sm <%= pointed ? 'btn-ghost' : '' %>" type="submit" data-busy="Checking…">
+          <%- icon('search', 15) %> Check now
+        </button>
+      </form>
+    </div>
+
+    <%# The certificate. Its own card because it is the thing people come looking for. %>
+    <div class="p-card">
+      <div class="row-between mb-2">
+        <h2 class="h3">Certificate</h2>
+        <span class="badge <%= ssl.status === 'active' ? 'badge-green' : ssl.status === 'failed' ? 'badge-red' : 'badge-grey' %>">
+          <%= ssl.status === 'active' ? 'Installed' : ssl.status === 'failed' ? 'Not issued' : 'None yet' %>
+        </span>
+      </div>
+
+      <% if (ssl.status === 'active') { %>
+        <p class="small muted mb-2">
+          <span class="mono">https://<%= domain.domain %></span> is secured, and the certificate
+          renews itself for as long as you host here. Nothing to do.
+        </p>
+      <% } else if (!pointed) { %>
+        <p class="small muted mb-2">
+          A certificate can only be issued for a name that already resolves to this server —
+          that is Let's Encrypt's rule, not ours. Add the record on the right first.
+        </p>
+      <% } else { %>
+        <p class="small muted mb-2">
+          <% if (ssl.error) { %>
+            <%= ssl.error %>
+          <% } else { %>
+            This subdomain points here, so a certificate can be issued now.
+          <% } %>
+        </p>
+      <% } %>
+
+      <% if (pointed && ssl.status !== 'active') { %>
+        <form method="post" action="/panel/domains/<%= domain.id %>/ssl">
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <button class="btn btn-sm" type="submit" data-busy="Requesting…">
+            <%- icon('lock', 15) %> Issue the certificate
+          </button>
+        </form>
+      <% } else if (ssl.status === 'active') { %>
+        <form method="post" action="/panel/domains/<%= domain.id %>/ssl">
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <button class="btn btn-ghost btn-sm" type="submit" data-busy="Reissuing…">Reissue it</button>
+        </form>
+      <% } %>
+    </div>
+
+    <div class="p-card">
+      <h2 class="h3 mb-2">Its files</h2>
+      <p class="small muted mb-2">
+        This subdomain has its own folder, separate from
+        <%= parent || 'your main site' %>. Put the site in
+        <span class="mono">public_html</span>.
+      </p>
+      <a class="btn btn-ghost btn-sm btn-block"
+         href="/panel/files?path=<%= encodeURIComponent('web/' + domain.domain + '/public_html') %>">
+        <%- icon('folder', 16) %> Open its files
+      </a>
+    </div>
+
+    <%#
+      What a subdomain deliberately does NOT have, said once and plainly.
+      Leaving it unexplained is what generates the ticket — somebody looks for
+      the DNS tab they have on their main domain, does not find it, and assumes
+      something is broken.
+    %>
+    <div class="p-card">
+      <h2 class="h3 mb-2">DNS and email</h2>
+      <p class="small muted mb-2">
+        A subdomain has no DNS zone and no mailboxes of its own, on purpose.
+        Its records live in <b><%= parent || 'your main domain' %></b>'s zone — change them
+        there and this name follows. Email belongs on the main domain too:
+        <span class="mono">you@<%= parent || 'yourdomain.com' %></span> reads better than
+        <span class="mono">you@<%= domain.domain %></span>, and a subdomain quietly
+        accepting mail is almost never what anyone wants.
+      </p>
+      <% if (parentId) { %>
+        <a class="btn btn-ghost btn-sm" href="/panel/domains/<%= parentId %>/dns">
+          Open <%= parent %>'s DNS
+        </a>
+      <% } %>
+    </div>
+
+    <% if (canRemove) { %>
+      <div class="p-card">
+        <h2 class="h3 mb-2">Remove this subdomain</h2>
+        <p class="small muted mb-2">
+          Deletes the site, its files and its certificate from our server.
+          <b><%= parent || 'The main domain' %> is not affected.</b>
+          You can add the subdomain again at any time.
+        </p>
+        <form method="post" action="/panel/domains/<%= domain.id %>/remove"
+              data-confirm="Remove <%= domain.domain %>? Its website and files are deleted from the server and cannot be recovered.">
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <button class="btn btn-ghost btn-sm" type="submit">Remove <%= domain.domain %></button>
+        </form>
+      </div>
+    <% } %>
+  </div>
+
+  <aside>
+    <%#
+      The instruction. Hostname first because it keeps the indirection — see
+      POINT_HOSTNAME in config.js — with the literal address underneath it,
+      because a good number of DNS panels refuse a hostname in an A record and
+      want four numbers.
+    %>
+    <div class="p-card">
+      <h2 class="h3 mb-2"><%= pointed ? 'The record it uses' : 'Add this one record' %></h2>
+      <p class="small muted mb-2">
+        At whoever runs DNS for <b><%= parent || 'your domain' %></b>.
+        Just this one record — nothing else changes.
+      </p>
+
+      <div class="table-wrap"><table class="table" style="font-size:.85rem"><tbody>
+        <tr><td class="muted">Type</td><td class="strong mono">A</td></tr>
+        <tr><td class="muted">Name</td>
+            <td class="strong mono"><%= parent ? domain.domain.slice(0, -(parent.length + 1)) : domain.domain %></td></tr>
+        <tr><td class="muted">Value</td>
+            <td class="strong mono"><%= addresses.length ? addresses[0] : pointHostname %></td></tr>
+      </tbody></table></div>
+
+      <p class="tiny muted mt-2 mb-1">Copy whichever your DNS panel accepts:</p>
+      <% if (addresses.length) { %>
+        <div class="copyable">
+          <span class="mono"><%= addresses[0] %></span>
+          <button type="button" class="btn btn-ghost btn-sm copy-btn" data-copy="<%= addresses[0] %>">Copy</button>
+        </div>
+      <% } %>
+      <div class="copyable">
+        <span class="mono"><%= pointHostname %></span>
+        <button type="button" class="btn btn-ghost btn-sm copy-btn" data-copy="<%= pointHostname %>">Copy</button>
+      </div>
+      <p class="tiny muted mt-2 mb-0">
+        The address is this server; <span class="mono"><%= pointHostname %></span> is a name that
+        always follows it. Prefer the name if your DNS panel takes one — then a move on our side
+        never breaks your site.
+      </p>
+    </div>
+
+    <div class="p-card">
+      <h2 class="h3 mb-2">Details</h2>
+      <div class="table-wrap"><table class="table" style="font-size:.86rem"><tbody>
+        <tr><td class="muted">Type</td><td class="strong">Subdomain</td></tr>
+        <tr><td class="muted">Under</td><td class="strong"><%= parent || '—' %></td></tr>
+        <tr><td class="muted">Points here</td><td class="strong"><%= pointed ? 'Yes' : 'Not yet' %></td></tr>
+        <tr><td class="muted">Certificate</td>
+            <td class="strong"><%= ssl.status === 'active' ? 'Installed' : ssl.status === 'failed' ? 'Not issued' : 'None yet' %></td></tr>
+        <tr><td class="muted">Last checked</td><td class="strong"><%= domain.ns_checked_at || 'Not yet' %></td></tr>
+        <tr><td class="muted">Set up</td><td class="strong"><%= domain.pointed_at || '—' %></td></tr>
+      </tbody></table></div>
+      <p class="tiny muted mt-2 mb-0">
+        Nothing to renew and nothing to pay — a subdomain is part of
+        <%= parent || 'your domain' %>, not a registration of its own.
+      </p>
+    </div>
+  </aside>
+</div>
+
+<%- include('../partials/panel-shell-end') %>
+<%- include('../partials/footer') %>

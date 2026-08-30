@@ -1102,5 +1102,48 @@ BEGIN
   CLOSE cur;
 END //
 DELIMITER ;
+-- ---------------------------------------------------------------------------
+-- Columns added after the first release.
+--
+-- Guarded, so this file stays runnable against a database at any age. They live
+-- here rather than in the CREATE TABLE above so that the table definitions keep
+-- reading as the shape of the thing, and every later addition is in one place
+-- with the reason it was needed.
+-- ---------------------------------------------------------------------------
+
+-- HOW a domain was proved to point at us, which is not a detail — it decides
+-- what the panel may offer.
+--
+--   ns   delegated to our nameservers. We answer for the whole zone, so DNS is
+--        ours to edit and MX is ours to set.
+--   a    an A record aimed at this node while DNS stays at their provider. The
+--        website and the certificate work exactly the same; the zone is not
+--        ours, so the DNS editor is off and mail needs records THEY add.
+--   ''   not proved yet.
+--
+-- A SUBDOMAIN can only ever be 'a'. Asking whether `shop.example.com` is
+-- delegated to us is meaningless — a subdomain normally has no NS records at
+-- all, so the nameserver check fails forever on a name that is working
+-- perfectly. That mismatch is why the panel used to tell customers a live
+-- subdomain was "waiting for your nameservers".
+CALL vesopa_add_column('domains', 'verify_method', "ENUM('','ns','a') NOT NULL DEFAULT '' AFTER ns_observed");
+
+-- What the A lookup actually answered, for the same reason ns_observed exists:
+-- "we can see 3.72.113.21" lets a customer fix it in two minutes, where a bare
+-- "not pointing here" sends them to support.
+CALL vesopa_add_column('domains', 'ip_observed', "VARCHAR(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '' AFTER verify_method");
+
+-- The certificate.
+--
+-- This was computed and then thrown away: pointAtNode() asked for a certificate
+-- and discarded the answer, so nothing recorded whether one existed, nothing
+-- retried a failure, and the panel could not show a padlock or explain its
+-- absence. `ssl_error` is kept verbatim because "the DNS challenge failed" and
+-- "rate limited by Let's Encrypt" need completely different answers from us.
+CALL vesopa_add_column('domains', 'ssl_status', "ENUM('none','active','failed') NOT NULL DEFAULT 'none'");
+CALL vesopa_add_column('domains', 'ssl_issued_at', 'DATETIME NULL');
+CALL vesopa_add_column('domains', 'ssl_checked_at', 'DATETIME NULL');
+CALL vesopa_add_column('domains', 'ssl_error', "VARCHAR(300) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT ''");
+
 CALL vesopa_fix_collations();
 DROP PROCEDURE IF EXISTS vesopa_fix_collations;

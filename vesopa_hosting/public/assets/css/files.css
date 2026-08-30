@@ -495,11 +495,19 @@
   .fm-menu { min-width: 210px; }
 }
 
-/* Very narrow: the rail has eight destinations and they have to fit across the
-   bottom without scrolling, so the labels shrink rather than the row. */
-@media (max-width: 430px) {
-  .rail-link { font-size: .6rem; padding-left: 2px; padding-right: 2px; }
-  .rail-label { white-space: nowrap; }
+/*
+ * The bottom bar has nine destinations on a phone and they all have to fit.
+ *
+ * Shrinking the labels rather than scrolling the bar, deliberately: a
+ * horizontally scrolling nav hides its last items behind a gesture nobody is
+ * told about, and "Settings" being off-screen is worse than "Settings" being
+ * small. At 360px this leaves 40px per item, which is above the 36px the labels
+ * need and still a comfortable tap target vertically.
+ */
+@media (max-width: 560px) {
+  .rail-link { font-size: .58rem; padding-left: 1px; padding-right: 1px; gap: 2px; }
+  .rail-label { white-space: nowrap; letter-spacing: -.01em; }
+  .rail-icon svg { width: 17px; height: 17px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

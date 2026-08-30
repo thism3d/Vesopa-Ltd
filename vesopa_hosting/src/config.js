@@ -76,17 +76,56 @@ const NAMESERVERS = [
 /**
  * The name a customer points a record at when they keep DNS elsewhere.
  *
- * THE NODE'S IP ADDRESS IS NEVER SHOWN. Not on a customer page, not on an admin
- * page, not in an email. A raw address in the panel is a permanent commitment:
- * every customer who copies it into a zone somewhere we cannot see pins us to
- * that number, and moving a site to another box — or the box to another
- * address — silently breaks every one of them, with no list of who to warn.
+ * THE HOSTNAME IS THE INSTRUCTION; the address is the footnote.
  *
- * A hostname is the same instruction with the indirection kept. `A record ->
- * point.vesopa.com` becomes our problem to keep true rather than theirs, and
- * changing where it points moves everybody at once.
+ * A raw address in the panel is a commitment: every customer who copies it into
+ * a zone we cannot see pins us to that number, and moving the node silently
+ * breaks all of them with no list of who to warn. `A record -> point.vesopa.com`
+ * is the same instruction with the indirection kept, and changing where it
+ * points moves everybody at once.
+ *
+ * The address IS now shown next to it, because a fair number of DNS control
+ * panels refuse a hostname in an A record and want four numbers — a customer
+ * staring at a form that rejects `point.vesopa.com` cannot proceed without
+ * asking us. It is always RESOLVED from this hostname at request time
+ * (nameservers.ourAddresses), never written down here, so there is still one
+ * source of truth and it cannot go stale.
  */
 const POINT_HOSTNAME = process.env.POINT_HOSTNAME || 'point.vesopa.com';
+
+/**
+ * The one hostname every mailbox connects to, for IMAP, SMTP and webmail.
+ *
+ * NOT `mail.<customer's domain>`, which is what a control panel does by default
+ * and what this used to tell people to type into Outlook. That name has no
+ * certificate — issuing one per customer domain means a certificate per domain,
+ * and it fails outright for any customer whose DNS lives elsewhere — so the
+ * instruction was for a server that could not actually be reached. A mail
+ * client meeting a certificate for the wrong name either refuses to connect or
+ * teaches its owner to click through a security warning, and the second is
+ * worse than the first.
+ *
+ * One hostname, one certificate, correct for everybody: the customer's own
+ * domain is their ADDRESS, and this is the SERVER they collect it from. Those
+ * are different things and only the first has to be theirs.
+ *
+ * MX for every domain we run DNS for points here too, so mail arrives at the
+ * same place it is read from.
+ */
+const MAIL_HOSTNAME = process.env.MAIL_HOSTNAME || 'mail.vesopa.com';
+
+/** Where webmail lives. The same host — one name is one thing to remember. */
+const WEBMAIL_URL = process.env.WEBMAIL_URL || `https://${MAIL_HOSTNAME}`;
+
+/**
+ * The mail ports we tell customers to use, and only the secure ones.
+ *
+ * No 143 and no 587-without-TLS anywhere in the panel. Every one of these is
+ * implicit TLS from the first byte, so there is no version of these
+ * instructions that sends a password in the clear because a client did not
+ * negotiate STARTTLS.
+ */
+const MAIL_PORTS = { imap: 993, smtp: 465, pop3: 995 };
 
 /**
  * How long a domain somebody already owns has to point at us.
@@ -252,6 +291,9 @@ module.exports = {
   BRAND,
   NAMESERVERS,
   POINT_HOSTNAME,
+  MAIL_HOSTNAME,
+  WEBMAIL_URL,
+  MAIL_PORTS,
   DOMAIN_NS_GRACE_DAYS,
   PAYMENT_SESSION_MINUTES,
   JOB_INTERVAL_MINUTES,

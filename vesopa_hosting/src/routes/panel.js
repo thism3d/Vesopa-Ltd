@@ -18,11 +18,12 @@ const sso = require('../integrations/hestia-sso');
 const registrar = require('../integrations/domainnameapi');
 const pricing = require('../pricing');
 const linking = require('../domain-linking');
+const nameservers = require('../nameservers');
 const mailboxes = require('../mailboxes');
 const { sendMail, shell, detailTable, escapeHtml, DEFAULT_TO } = require('../mailer');
 const { flash, field, rateLimited } = require('../http-utils');
 const {
-  NAMESERVERS, DOMAIN_NS_GRACE_DAYS, SITE_URL,
+  NAMESERVERS, DOMAIN_NS_GRACE_DAYS, SITE_URL, POINT_HOSTNAME,
 } = require('../config');
 
 const router = express.Router();
@@ -573,6 +574,13 @@ router.post('/services/:id/backups', async (req, res, next) => {
  */
 router.use('/files', require('./panel-files'));
 
+/*
+ * Email. Its own router for the same reason as the file manager: a dozen routes
+ * with their own validation, and mounting it here means it inherits the
+ * signed-in guard at the top of this file.
+ */
+router.use('/mail', require('./panel-mail'));
+
 /**
  * The terminal page.
  *
@@ -619,10 +627,47 @@ router.get('/domains', async (req, res, next) => {
         ORDER BY expires_at IS NULL, expires_at ASC`,
       [req.customer.id],
     );
+
+    /*
+     * Subdomains are listed UNDER the domain they belong to, not scattered
+     * through an alphabetical list of everything.
+     *
+     * A flat list puts `shop.example.com` and `example.com` in different places
+     * and makes them look like two unrelated purchases — which is also why
+     * people go looking for a renewal date and a DNS tab on a subdomain that
+     * has neither. Nesting says what the thing is before any label has to.
+     *
+     * Built here rather than in the template: it is a decision about the data,
+     * and EJS is a poor place to keep one.
+     */
+    const parents = domains.filter((d) => d.source !== 'subdomain');
+    const subs = domains.filter((d) => d.source === 'subdomain');
+    const byName = new Map(parents.map((d) => [d.domain, { ...d, children: [] }]));
+
+    const orphans = [];
+    subs.forEach((sub) => {
+      // Walk up the labels: shop.example.co.uk sits under a three-label parent,
+      // and a.b.example.com is a legitimate second-level subdomain.
+      const labels = sub.domain.split('.');
+      let placed = false;
+      for (let i = 1; i < labels.length - 1 && !placed; i++) {
+        const owner = byName.get(labels.slice(i).join('.'));
+        if (owner) {
+          owner.children.push(sub);
+          placed = true;
+        }
+      }
+      // A subdomain whose parent was removed from the account still has a site
+      // on the node. Hiding it would be the panel disagreeing with the server.
+      if (!placed) orphans.push(sub);
+    });
+
     res.render('panel/domains', {
       title: 'Your domains',
       robots: 'noindex',
-      domains,
+      groups: [...byName.values()],
+      orphans,
+      total: domains.length,
       graceDays: DOMAIN_NS_GRACE_DAYS,
     });
   } catch (err) {
@@ -636,31 +681,38 @@ router.get('/domains', async (req, res, next) => {
  * Registered ABOVE `/domains/:id` on purpose — Express matches in order, and a
  * parameter route declared first would swallow `/domains/add` and answer 404.
  */
-router.get('/domains/add', async (req, res, next) => {
-  try {
-    const services = await db.query(
+/** Everything the add form needs, in one place so the GET and the re-render agree. */
+async function addFormData(req) {
+  const [services, parents] = await Promise.all([
+    db.query(
       `SELECT s.id, s.primary_domain, p.name AS plan_name FROM services s
          JOIN plans p ON p.id = s.plan_id
         WHERE s.customer_id = ? AND s.status = 'active'`,
       [req.customer.id],
-    );
-    // The subdomain form can only offer names the account already holds, and
-    // it is worth showing that list rather than letting somebody type a parent
-    // we will only reject.
-    const parents = await db.query(
+    ),
+    db.query(
       `SELECT domain FROM domains
         WHERE customer_id = ? AND status <> 'removed' AND source <> 'subdomain'
         ORDER BY domain`,
       [req.customer.id],
-    );
+    ),
+  ]);
+  return {
+    services,
+    parents,
+    defaultNameservers: NAMESERVERS,
+    pointHostname: POINT_HOSTNAME,
+    addresses: await nameservers.ourAddresses(POINT_HOSTNAME),
+    graceDays: DOMAIN_NS_GRACE_DAYS,
+  };
+}
 
+router.get('/domains/add', async (req, res, next) => {
+  try {
     res.render('panel/domain-add', {
       title: 'Add a domain',
       robots: 'noindex',
-      services,
-      parents,
-      nameservers: NAMESERVERS,
-      graceDays: DOMAIN_NS_GRACE_DAYS,
+      ...(await addFormData(req)),
       values: {},
       errors: {},
     });
@@ -669,16 +721,36 @@ router.get('/domains/add', async (req, res, next) => {
   }
 });
 
+/**
+ * Add a domain OR a subdomain — one form, one route, told apart by the name.
+ *
+ * There used to be two forms on the page and two routes behind them, and the
+ * customer had to know which of the two things they had before they could
+ * start. They do not: "add heat6.com" and "add shop.heat6.com" are the same
+ * intention, and which one it is, is a fact about the name that we can work out
+ * ourselves.
+ *
+ * The test is NOT the number of dots. `shop.heat6.com` and `vesopa.co.uk` both
+ * have three labels; one is a subdomain and one is a registrable domain, and no
+ * amount of counting separates them. What separates them is whether the account
+ * already holds something this name sits under — which is also exactly the
+ * authorisation check for creating it. See linking.findParent.
+ */
 router.post('/domains/add', async (req, res, next) => {
   try {
     if (!auth.checkCsrf(req)) return res.redirect('/panel/domains/add');
 
-    if (rateLimited(req.customer.id, 'domain-add', { max: 10, windowMs: 3600_000 })) {
-      flash(res, 'That is a lot of domains in one go. Try again in a little while.', 'warn');
+    if (rateLimited(req.customer.id, 'domain-add', { max: 20, windowMs: 3600_000 })) {
+      flash(res, 'That is a lot of names in one go. Try again in a little while.', 'warn');
       return res.redirect('/panel/domains');
     }
 
-    const wanted = field(req.body.domain, 190);
+    const wanted = field(req.body.domain, 190).trim().toLowerCase()
+      // People paste URLs. Taking the domain out of one is a kindness that
+      // costs three characters of code and saves a confusing error.
+      .replace(/^https?:\/\//, '')
+      .replace(/^www\./, '')
+      .replace(/[/?#].*$/, '');
     const serviceId = Number(req.body.service_id) || null;
 
     // The service, if one was chosen, has to be this customer's own.
@@ -691,6 +763,49 @@ router.post('/domains/add', async (req, res, next) => {
       attachTo = owned ? owned.id : null;
     }
 
+    const parent = wanted ? await linking.findParent(req.customer, wanted) : null;
+
+    // ---- A subdomain of something they already have ------------------------
+    if (parent) {
+      /*
+       * DNS and mail are not asked about and not accepted. A subdomain lives in
+       * its parent's zone and email belongs on the main domain — the form does
+       * not offer either, and ignoring anything posted here means a crafted
+       * request cannot turn them on behind the UI's back.
+       */
+      const added = await linking.addSubdomain({
+        customer: req.customer,
+        subdomain: wanted,
+        serviceId: attachTo,
+        wantDns: false,
+        wantMail: false,
+      });
+
+      if (!added.ok) {
+        flash(res, added.error, 'warn');
+        return res.redirect(added.id ? `/panel/domains/${added.id}` : '/panel/domains/add');
+      }
+      if (!added.built.pointed) {
+        flash(res, `${added.domain} was added, but the website could not be created on the server. `
+          + 'Open a ticket and we will sort it.', 'warn');
+        return res.redirect(`/panel/domains/${added.id}`);
+      }
+
+      // Whether it RESOLVES is the thing worth saying. A "done" message for a
+      // name that answers nowhere is the most annoying kind of wrong.
+      const live = await linking.verify(added.row, { customer: req.customer });
+      flash(
+        res,
+        live.matched
+          ? `${added.domain} is set up and serving.`
+          : `${added.domain} is set up. One thing left: add an A record for it at whoever runs `
+            + `DNS for ${added.parent} — this page shows exactly what.`,
+        live.matched ? 'ok' : 'warn',
+      );
+      return res.redirect(`/panel/domains/${added.id}`);
+    }
+
+    // ---- A domain in its own right ----------------------------------------
     const added = await linking.addExternal({
       customer: req.customer,
       domain: wanted,
@@ -706,117 +821,38 @@ router.post('/domains/add', async (req, res, next) => {
         flash(res, added.error, 'warn');
         return res.redirect(`/panel/domains/${added.id}`);
       }
-      const services = await db.query(
-        `SELECT s.id, s.primary_domain, p.name AS plan_name FROM services s
-           JOIN plans p ON p.id = s.plan_id
-          WHERE s.customer_id = ? AND s.status = 'active'`,
-        [req.customer.id],
-      );
-      const parents = await db.query(
-        `SELECT domain FROM domains
-          WHERE customer_id = ? AND status <> 'removed' AND source <> 'subdomain'
-          ORDER BY domain`,
-        [req.customer.id],
-      );
       return res.status(400).render('panel/domain-add', {
         title: 'Add a domain',
         robots: 'noindex',
-        services,
-        parents,
-        nameservers: NAMESERVERS,
-        graceDays: DOMAIN_NS_GRACE_DAYS,
+        ...(await addFormData(req)),
         values: { domain: wanted, service_id: serviceId },
         errors: { domain: added.error },
       });
     }
 
     /*
-     * Checked once, immediately. Most people add a domain AFTER changing the
-     * nameservers, so this is usually the moment it goes live — and being told
-     * "you are all set" on the same screen is worth far more than the same
-     * message arriving from a sweep fifteen minutes later.
+     * Checked once, immediately. Most people add a domain AFTER pointing it, so
+     * this is usually the moment it goes live — and being told "you are all
+     * set" on the same screen is worth far more than the same message arriving
+     * from a sweep fifteen minutes later.
      */
     const verdict = await linking.verify(added.row, { customer: req.customer });
 
-    flash(
-      res,
-      verdict.matched
-        ? `${added.domain} is pointing at us — we are setting it up now.`
-        : `${added.domain} has been added. Set the nameservers below at your registrar; `
-          + `we check every few minutes and will email you when it is live.`,
-      verdict.matched ? 'ok' : 'warn',
-    );
-    res.redirect(`/panel/domains/${added.id}`);
-  } catch (err) {
-    next(err);
-  }
-});
-
-/**
- * Add a subdomain.
- *
- * Separate from /domains/add because it is a different transaction: no
- * nameserver change to make, no grace period to explain, nothing to wait for.
- * It is built on the node before the response is written, so the customer is
- * told whether their site exists rather than that we will get to it.
- */
-router.post('/domains/add-subdomain', async (req, res, next) => {
-  try {
-    if (!auth.checkCsrf(req)) return res.redirect('/panel/domains/add');
-
-    if (rateLimited(req.customer.id, 'subdomain-add', { max: 20, windowMs: 3600_000 })) {
-      flash(res, 'That is a lot of subdomains in one go. Try again in a little while.', 'warn');
-      return res.redirect('/panel/domains');
-    }
-
-    const added = await linking.addSubdomain({
-      customer: req.customer,
-      subdomain: field(req.body.subdomain, 190),
-      serviceId: Number(req.body.service_id) || null,
-      // Checkboxes: absent means off, which is the default either way.
-      wantDns: Boolean(req.body.want_dns),
-      wantMail: Boolean(req.body.want_mail),
-    });
-
-    if (!added.ok) {
-      flash(res, added.error, 'warn');
-      return res.redirect(added.id ? `/panel/domains/${added.id}` : '/panel/domains/add');
-    }
-
-    /*
-     * The website is the mandatory half, so its result is the headline. DNS and
-     * mail failing is worth saying but is not the same as the subdomain not
-     * existing — and neither is a reason to hide that the site is up.
-     */
-    if (!added.built.pointed) {
-      flash(
-        res,
-        `${added.domain} was added to your account, but the website could not be created on the server. Open a ticket and we will sort it.`,
-        'warn',
-      );
-      return res.redirect(`/panel/domains/${added.id}`);
-    }
-
-    /*
-     * The site exists. Whether anyone can REACH it depends on DNS, and that is
-     * the thing worth saying — a "done" message for a name that resolves
-     * nowhere is the most annoying kind of wrong.
-     *
-     * Note what is not in this message: an IP address. A customer keeping DNS
-     * elsewhere is given a hostname to point at, never the node's address —
-     * see POINT_HOSTNAME in config.js for why.
-     */
-    if (added.dnsRecord && added.dnsRecord.ok) {
-      flash(res, `${added.domain} is set up and serving.`, 'ok');
+    if (verdict.matched) {
+      flash(res, `${added.domain} is pointing at us — we are setting it up now.`);
+    } else if (wanted.split('.').length > 2) {
+      /*
+       * Looks like a subdomain, but of a domain this account does not hold. It
+       * is still perfectly addable — an A record aimed here is enough, and the
+       * new verification will pick that up — so it is added rather than
+       * refused. Saying why avoids the "it did not offer me the subdomain
+       * options" confusion.
+       */
+      flash(res, `${added.domain} has been added. We do not have its main domain on this account, `
+        + 'so point it here with an A record — this page shows the value to use.', 'warn');
     } else {
-      flash(
-        res,
-        `${added.domain} is set up. One thing left: at whoever runs DNS for `
-        + `${added.parent}, add a CNAME for ${added.domain} pointing to `
-        + `${added.dnsRecord.pointAt}. We could not add it for you because `
-        + `${added.dnsRecord.reason}.`,
-        'warn',
-      );
+      flash(res, `${added.domain} has been added. Point it at us using either method shown on `
+        + 'this page; we check every few minutes and will email you when it is live.', 'warn');
     }
     res.redirect(`/panel/domains/${added.id}`);
   } catch (err) {
@@ -828,6 +864,48 @@ router.get('/domains/:id', async (req, res, next) => {
   try {
     const domain = await ownedDomain(req);
     if (!domain) return next();
+
+    const subdomain = linking.isSubdomain(domain);
+
+    /*
+     * A SUBDOMAIN GETS A DIFFERENT PAGE, not the same page with things hidden.
+     *
+     * Nearly nothing on the domain overview applies to one: it has no
+     * nameservers to set, no registrar, no expiry, no auto-renew, no transfer
+     * and no zone of its own. Rendering that template and hiding two thirds of
+     * it leaves a page that is mostly absence — and it is how the panel came to
+     * tell customers a working subdomain was "waiting for your nameservers".
+     */
+    const [ssl, addresses] = await Promise.all([
+      linking.refreshSsl(domain, req.customer),
+      nameservers.ourAddresses(POINT_HOSTNAME),
+    ]);
+
+    if (subdomain) {
+      const parentName = linking.parentNameOf(domain.domain);
+      // The parent's own row, so the page can link straight to its DNS rather
+      // than telling the customer to go and find it.
+      const parentRow = parentName
+        ? await db.one(
+          "SELECT id FROM domains WHERE domain = ? AND customer_id = ? AND status <> 'removed' LIMIT 1",
+          [parentName, req.customer.id],
+        )
+        : null;
+
+      return res.render('panel/domain-sub', {
+        title: domain.domain,
+        robots: 'noindex',
+        domain,
+        ssl,
+        parent: parentName,
+        parentId: parentRow ? parentRow.id : null,
+        pointHostname: POINT_HOSTNAME,
+        addresses,
+        observed: (domain.ip_observed || '').split(' ').filter(Boolean),
+        canRemove: true,
+      });
+    }
+
     // The renewal quote is in the visitor's own currency: nothing has been
     // charged yet, so this is a shop price like any other.
     const price = await pricing.priceForTld(domain.tld, req.currency);
@@ -836,17 +914,57 @@ router.get('/domains/:id', async (req, res, next) => {
       robots: 'noindex',
       domain,
       price,
+      ssl,
       defaultNameservers: NAMESERVERS,
+      pointHostname: POINT_HOSTNAME,
+      addresses,
+      observedNs: (domain.ns_observed || '').split(' ').filter(Boolean),
+      observedIp: (domain.ip_observed || '').split(' ').filter(Boolean),
       registrarLive: registrar.isLive(),
       graceDays: DOMAIN_NS_GRACE_DAYS,
       // What the customer may do with it, decided by the server. The template
       // asks these rather than re-deriving the rules in EJS, where they would
       // be a second copy that drifts.
       canEditDns: linking.mayEditDns(domain, req.customer),
+      canHaveMail: linking.mayHaveMail(domain),
       // Only an external domain can be taken off the account — one registered
       // here is the customer's property and leaves by transfer, not by button.
       canRemove: domain.source === 'external',
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Issue or retry the certificate for one domain.
+ *
+ * The single most-used button in the panel, and until now it existed only on
+ * the SERVICE page — so a domain not attached to a service had no way to ask
+ * for a certificate at all, which is most of them on this node.
+ */
+router.post('/domains/:id/ssl', async (req, res, next) => {
+  try {
+    if (!auth.checkCsrf(req)) return res.redirect(`/panel/domains/${req.params.id}`);
+    const domain = await ownedDomain(req);
+    if (!domain) return next();
+    const back = `/panel/domains/${domain.id}`;
+
+    // Let's Encrypt rate-limits per domain and the limit is not generous. A
+    // customer holding down the button would spend it and then be locked out
+    // for an hour at the exact moment they need a certificate.
+    if (rateLimited(req.customer.id, 'domain-ssl', { max: 5, windowMs: 3600_000 })) {
+      flash(res, 'We have tried a few times just now. Give it an hour — Let\'s Encrypt limits how often a domain may be asked for.', 'warn');
+      return res.redirect(back);
+    }
+
+    const result = await linking.issueSsl(domain, req.customer);
+    if (result.ok) {
+      flash(res, `The certificate for ${domain.domain} is installed. It renews itself from here on.`);
+    } else {
+      flash(res, result.message || result.error || 'That certificate could not be issued.', 'error');
+    }
+    res.redirect(back);
   } catch (err) {
     next(err);
   }
@@ -873,19 +991,38 @@ router.post('/domains/:id/verify', async (req, res, next) => {
     }
 
     const verdict = await linking.verify(domain, { customer: req.customer });
+    const sub = linking.isSubdomain(domain);
 
     if (verdict.matched) {
+      const how = verdict.method === 'ns'
+        ? 'through our nameservers'
+        : 'with an A record';
       flash(
         res,
         verdict.pointed?.pointed
-          ? `${domain.domain} points at us and the site is set up.`
-          : `${domain.domain} points at us. ${verdict.pointed?.reason || ''}`.trim(),
+          ? `${domain.domain} points here ${how} and the site is set up.`
+          : `${domain.domain} points here ${how}. ${verdict.pointed?.reason || ''}`.trim(),
+      );
+    } else if (sub) {
+      /*
+       * A subdomain is never about nameservers, so its failure must never
+       * mention them. Saying what it DOES answer with is the whole value of the
+       * message: "we can see 3.72.113.21" is a customer fixing it in two
+       * minutes, where "not pointing here" is a support ticket.
+       */
+      flash(
+        res,
+        verdict.addresses.length
+          ? `Not yet — ${domain.domain} answers with ${verdict.addresses.join(', ')}, which is not this server.`
+          : `Not yet — ${domain.domain} does not resolve anywhere yet. Add the A record shown on this page.`,
+        'warn',
       );
     } else {
       flash(
         res,
         verdict.nameservers.length
-          ? `Not yet — ${domain.domain} still points at ${verdict.nameservers.join(' and ')}.`
+          ? `Not yet — ${domain.domain} still points at ${verdict.nameservers.join(' and ')}. `
+            + 'Either switch its nameservers to ours, or point an A record here.'
           : `Not yet — ${verdict.error || 'we could not read its nameservers.'}`,
         'warn',
       );
@@ -957,6 +1094,25 @@ router.get('/domains/:id/dns', async (req, res, next) => {
     const domain = await ownedDomain(req);
     if (!domain) return next();
 
+    /*
+     * A SUBDOMAIN HAS NO DNS PAGE. Sent to the parent's instead, which is the
+     * page that can actually change it.
+     *
+     * Enforced here and not only in the template: a link removed from a page is
+     * not a rule, it is a tidier page, and the URL is still typed, bookmarked
+     * and followed. The redirect is also the more useful answer — somebody who
+     * got here wanted to change where this name points, and the parent's zone
+     * is where that record lives.
+     */
+    if (linking.isSubdomain(domain)) {
+      const parent = await db.one(
+        "SELECT id FROM domains WHERE domain = ? AND customer_id = ? AND status <> 'removed' LIMIT 1",
+        [linking.parentNameOf(domain.domain), req.customer.id],
+      );
+      flash(res, `${domain.domain} is a subdomain — its DNS lives in ${linking.parentNameOf(domain.domain)}'s zone.`, 'warn');
+      return res.redirect(parent ? `/panel/domains/${parent.id}/dns` : `/panel/domains/${domain.id}`);
+    }
+
     const allowed = linking.mayEditDns(domain, req.customer);
     let records = [];
     let error = '';
@@ -993,6 +1149,14 @@ router.post('/domains/:id/dns', async (req, res, next) => {
   try {
     const back = `/panel/domains/${req.params.id}/dns`;
     if (!auth.checkCsrf(req)) return res.redirect(back);
+    // Same rule as the GET, restated because a POST is a separate door.
+    {
+      const target = await ownedDomain(req);
+      if (target && linking.isSubdomain(target)) {
+        flash(res, 'A subdomain has no DNS zone of its own — change the record on its parent domain.', 'warn');
+        return res.redirect(`/panel/domains/${target.id}`);
+      }
+    }
     const domain = await ownedDomain(req);
     if (!domain) return next();
 
@@ -1089,6 +1253,13 @@ router.post('/domains/:id/nameservers', async (req, res, next) => {
      * a form here would send a change to a registrar that has never heard of
      * the name, and the customer would believe they had done what we asked.
      */
+    if (linking.isSubdomain(domain)) {
+      // A subdomain has no delegation of its own. `source` is checked before
+      // 'external' below because a subdomain is neither registered here nor
+      // there, and would otherwise fall through to the registrar call.
+      flash(res, 'A subdomain has no nameservers of its own — it follows whatever its parent domain does.', 'warn');
+      return res.redirect(`/panel/domains/${domain.id}`);
+    }
     if (domain.source === 'external') {
       flash(
         res,

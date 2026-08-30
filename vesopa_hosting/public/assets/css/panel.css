@@ -162,6 +162,41 @@ a.item:hover { background: var(--bg-2); text-decoration: none; }
 .msg-meta { font-size: .8rem; color: var(--ink-3); margin-bottom: 5px; }
 .msg-text { white-space: pre-wrap; font-size: .94rem; line-height: 1.6; word-wrap: break-word; }
 
+/* A subdomain listed under the domain it belongs to. Indented and lighter, so
+   the hierarchy is readable without a second list or a heading. */
+.item-child {
+  padding-left: 40px;
+  background: var(--bg-2);
+}
+.item-child .item-title { font-size: .93rem; font-weight: 650; }
+.item-child .item-icon { color: var(--ink-3); }
+@media (max-width: 560px) { .item-child { padding-left: 24px; } }
+
+/* The add form saying what it worked out from what you typed. */
+.detect {
+  display: flex; align-items: flex-start; gap: 9px;
+  padding: 11px 14px; border-radius: var(--radius-sm);
+  font-size: .87rem; line-height: 1.5; margin: -6px 0 18px;
+}
+.detect[hidden] { display: none; }
+.detect-icon { display: grid; place-items: center; flex: none; margin-top: 1px; }
+.detect.is-sub { background: var(--lime-soft); color: var(--lime-deep); }
+.detect.is-dom { background: #eef4fb; color: #244d75; }
+
+/* The two-kinds explainer under the form. */
+.how-row { display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid var(--rule-soft); }
+.how-row:last-child { border-bottom: 0; }
+.how-tag {
+  flex: none; min-width: 78px; text-align: center;
+  padding: 3px 9px; border-radius: 999px;
+  background: #eef4fb; color: #244d75;
+  font-size: .72rem; font-weight: 800; letter-spacing: .02em;
+}
+.how-tag-sub { background: var(--lime-soft); color: var(--lime-deep); }
+@media (max-width: 520px) { .how-row { flex-direction: column; gap: 6px; } }
+
+.plain-list { margin: 0; padding-left: 18px; font-size: .87rem; line-height: 1.9; }
+
 /* ---- Phone ------------------------------------------------------------- */
 @media (max-width: 860px) {
   .shell { flex-direction: column; }

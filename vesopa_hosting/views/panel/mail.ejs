@@ -1,0 +1,271 @@
+<%#
+  Email: mailboxes at the customer's own domain.
+
+  The page has two shapes, decided by `view.ownDns`:
+
+    ours    we run the zone, the records are already written, mailboxes work
+            the moment they are made.
+    theirs  DNS is at their provider. The mailbox is just as real, but nothing
+            reaches it until they publish the records — so those come FIRST,
+            with a checker, and everything else follows.
+%>
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
+<%- include('../partials/panel-shell', {
+  pageTitle: 'Email',
+  pageSub: 'Mailboxes at your own domain.',
+}) %>
+
+<% if (!hestiaLive) { %>
+  <div class="alert alert-info">
+    <%- icon('info', 19) %>
+    <div><b>Demonstration mode.</b> This is not connected to a live mail server, so nothing is listed here.</div>
+  </div>
+<% } %>
+
+<% if (!usable.length) { %>
+  <div class="p-card">
+    <div class="empty">
+      <%- icon('mail', 46) %>
+      <h3>No domain ready for email yet</h3>
+      <p>
+        A mailbox lives at a domain, and that domain has to be pointing at us before
+        we can accept mail for it. Subdomains do not get mailboxes — email belongs on
+        your main domain.
+      </p>
+      <a class="btn mt-2" href="/panel/domains">Your domains</a>
+    </div>
+  </div>
+<% } else { %>
+
+  <%# Which domain, when there is more than one. %>
+  <% if (usable.length > 1) { %>
+    <div class="fm-jump" role="navigation" aria-label="Domains">
+      <% usable.forEach(function (d) { %>
+        <a class="fm-chip <%= d.domain === chosen ? 'is-active' : '' %>"
+           href="/panel/mail?domain=<%= encodeURIComponent(d.domain) %>">
+          <%- icon('globe', 15) %> <%= d.domain %>
+        </a>
+      <% }); %>
+    </div>
+  <% } %>
+
+  <% if (view) { %>
+
+    <%#
+      Records first when the customer runs their own DNS. Putting the mailbox
+      form above them would be inviting somebody to create an address that
+      cannot receive anything and has no indication of why.
+    %>
+    <% if (!view.ownDns) {
+         const ok = view.dnsCheck && view.dnsCheck.mxOk && view.dnsCheck.spfOk; %>
+      <div class="alert <%= ok ? 'alert-ok' : 'alert-warn' %>">
+        <%- icon(ok ? 'check' : 'warning', 19) %>
+        <div>
+          <% if (ok) { %>
+            <b><%= view.domain %> is set up for email.</b>
+            Its MX and SPF records point at us, so mail reaches your mailboxes.
+          <% } else { %>
+            <b>Add these records before email will work.</b>
+            <%= view.domain %>'s DNS is at your own provider, so we cannot add them for you.
+            <% if (view.dnsCheck && view.dnsCheck.mxSeen.length) { %>
+              Mail for it is currently going to
+              <span class="mono"><%= view.dnsCheck.mxSeen.join(', ') %></span>.
+            <% } %>
+          <% } %>
+        </div>
+      </div>
+
+      <div class="p-card">
+        <div class="row-between mb-2">
+          <h2 class="h3">DNS records for email</h2>
+          <form method="post" action="/panel/mail/<%= encodeURIComponent(view.domain) %>/check">
+            <input type="hidden" name="_csrf" value="<%= csrf %>">
+            <button class="btn btn-ghost btn-sm" type="submit" data-busy="Checking…">
+              <%- icon('search', 15) %> Check now
+            </button>
+          </form>
+        </div>
+        <p class="small muted mb-2">
+          Add these at whoever runs DNS for <b><%= view.domain %></b>. Add them all —
+          the first makes mail arrive, the rest are what stop your outgoing mail
+          being treated as spam.
+        </p>
+
+        <div class="table-wrap">
+          <table class="table" style="font-size:.84rem">
+            <thead><tr><th>Type</th><th>Name</th><th>Value</th><th></th></tr></thead>
+            <tbody>
+              <% view.records.forEach(function (r) { %>
+                <tr>
+                  <td class="strong mono"><%= r.type %><% if (r.priority) { %> <span class="muted">(<%= r.priority %>)</span><% } %></td>
+                  <td class="mono"><%= r.name %></td>
+                  <td class="mono" style="word-break:break-all"><%= r.value %></td>
+                  <td><button type="button" class="btn btn-ghost btn-sm copy-btn" data-copy="<%= r.value %>">Copy</button></td>
+                </tr>
+                <tr><td colspan="4" class="tiny muted" style="padding-top:0"><%= r.why %></td></tr>
+              <% }); %>
+            </tbody>
+          </table>
+        </div>
+        <p class="tiny muted mt-2 mb-0">
+          Changes take anywhere from a few minutes to a few hours to spread. You can create
+          mailboxes now — they will simply start receiving once the records are visible.
+        </p>
+      </div>
+    <% } %>
+
+    <div class="p-grid p-grid-side">
+      <div>
+        <div class="p-card p-card-flush">
+          <div class="p-card-head">
+            <h2>Mailboxes at <%= view.domain %></h2>
+            <% if (quota && quota.used !== null) { %>
+              <span class="small muted"><%= quota.used %> of <%= quota.total %> used</span>
+            <% } %>
+          </div>
+
+          <% if (!view.accounts.length) { %>
+            <div class="empty">
+              <%- icon('mail', 46) %>
+              <h3>No mailboxes yet</h3>
+              <p>Create one on the right — <span class="mono">you@<%= view.domain %></span> takes about ten seconds.</p>
+            </div>
+          <% } else { %>
+            <% view.accounts.forEach(function (a) { %>
+              <a class="item" href="/panel/mail/<%= encodeURIComponent(view.domain) %>/<%= encodeURIComponent(a.account) %>">
+                <span class="item-icon"><%- icon('mail', 19) %></span>
+                <span class="item-main">
+                  <span class="item-title"><%= a.address %></span>
+                  <span class="item-sub">
+                    <%= a.used_mb %> MB used<% if (a.quota_mb) { %> of <%= a.quota_mb %> MB<% } else { %> · no limit<% } %>
+                    <% if (a.forwards.length) { %> · forwards to <%= a.forwards.join(', ') %><% } %>
+                    <% if (a.forwardOnly) { %> <b>(no copy kept)</b><% } %>
+                    <% if (a.aliases.length) { %> · <%= a.aliases.length %> extra address<%= a.aliases.length === 1 ? '' : 'es' %><% } %>
+                    <% if (a.autoreply) { %> · auto-reply on<% } %>
+                  </span>
+                </span>
+                <span class="item-end"><%- icon('arrow', 16) %></span>
+              </a>
+            <% }); %>
+          <% } %>
+        </div>
+
+        <%# Catch-all. Off by default, and the card says why that is right. %>
+        <div class="p-card">
+          <h2 class="h3 mb-2">Unknown addresses</h2>
+          <p class="small muted mb-2">
+            What happens to mail sent to an address at <%= view.domain %> that does not exist —
+            <span class="mono">saels@</span> instead of <span class="mono">sales@</span>, say.
+            Leaving this off makes those bounce, which tells the sender they got it wrong.
+            A catch-all also collects every address a spammer ever guesses, and the volume
+            surprises people.
+          </p>
+          <form method="post" action="/panel/mail/<%= encodeURIComponent(view.domain) %>/catchall" data-guard>
+            <input type="hidden" name="_csrf" value="<%= csrf %>">
+            <div class="field">
+              <label class="label" for="catchall">Send them to</label>
+              <input class="input mono" id="catchall" name="address" type="email"
+                     placeholder="leave empty to bounce them"
+                     value="<%= view.catchall || '' %>" autocomplete="off">
+            </div>
+            <button class="btn btn-ghost btn-sm" type="submit" data-busy="Saving…">Save</button>
+          </form>
+        </div>
+      </div>
+
+      <aside>
+        <div class="p-card">
+          <h2 class="h3 mb-2">Create a mailbox</h2>
+          <% if (!quota || !quota.total) { %>
+            <p class="small muted mb-2">
+              Mailboxes come with a hosting plan, or with a business email plan. Neither is
+              active on this account yet.
+            </p>
+            <a class="btn btn-sm btn-block" href="/email">See email plans</a>
+          <% } else if (quota.full) { %>
+            <p class="small muted mb-2">
+              You are using all <%= quota.total %> mailbox<%= quota.total === 1 ? '' : 'es' %> on this account.
+              Add a business email plan for more, or free one up by deleting one you no longer need.
+            </p>
+            <a class="btn btn-sm btn-block" href="/email">Add mailboxes</a>
+          <% } else { %>
+            <form method="post" action="/panel/mail/<%= encodeURIComponent(view.domain) %>/create" data-guard>
+              <input type="hidden" name="_csrf" value="<%= csrf %>">
+              <div class="field">
+                <label class="label" for="account">Address</label>
+                <div class="row" style="gap:6px;flex-wrap:nowrap;align-items:center">
+                  <input class="input mono" id="account" name="account" required placeholder="hello"
+                         autocomplete="off" spellcheck="false">
+                  <span class="muted mono">@<%= view.domain %></span>
+                </div>
+              </div>
+              <div class="field">
+                <label class="label" for="password">Password</label>
+                <input class="input" id="password" name="password" type="password" required
+                       autocomplete="new-password">
+                <p class="hint">
+                  The password for this mailbox — what goes into Outlook or webmail.
+                  It is not your Vesopa password and does not have to match it.
+                </p>
+              </div>
+              <div class="field">
+                <label class="label" for="quota_mb">Size limit</label>
+                <input class="input" id="quota_mb" name="quota_mb" type="number" min="0" step="256"
+                       value="1024">
+                <p class="hint">In MB. 0 for no limit.</p>
+              </div>
+              <button class="btn btn-block" type="submit" data-busy="Creating…">Create mailbox</button>
+            </form>
+            <p class="tiny muted mt-2 mb-0">
+              Setup instructions are emailed to you and left waiting in the new mailbox itself.
+            </p>
+          <% } %>
+        </div>
+
+        <%#
+          The settings. ONE HOSTNAME for everybody — not mail.<their domain>,
+          which has no certificate. See MAIL_HOSTNAME in config.js.
+        %>
+        <div class="p-card">
+          <h2 class="h3 mb-2">Connect a mail app</h2>
+          <div class="table-wrap"><table class="table" style="font-size:.82rem"><tbody>
+            <tr><td class="muted">Incoming (IMAP)</td><td class="strong mono"><%= mailHost %> · <%= ports.imap %> · SSL</td></tr>
+            <tr><td class="muted">Outgoing (SMTP)</td><td class="strong mono"><%= mailHost %> · <%= ports.smtp %> · SSL</td></tr>
+            <tr><td class="muted">Username</td><td class="strong">Your full email address</td></tr>
+          </tbody></table></div>
+          <div class="copyable mt-2">
+            <span class="mono"><%= mailHost %></span>
+            <button type="button" class="btn btn-ghost btn-sm copy-btn" data-copy="<%= mailHost %>">Copy</button>
+          </div>
+          <p class="tiny muted mt-2 mb-2">
+            The server is <span class="mono"><%= mailHost %></span> for every customer —
+            <b>not</b> your own domain. Your domain is the address; this is the server
+            it is collected from.
+          </p>
+          <a class="btn btn-ghost btn-sm btn-block" href="<%= webmail %>" target="_blank" rel="noopener">
+            <%- icon('external', 15) %> Open webmail
+          </a>
+        </div>
+
+        <% if (quota && quota.total) { %>
+          <div class="p-card">
+            <h2 class="h3 mb-2">Your allowance</h2>
+            <div class="table-wrap"><table class="table" style="font-size:.86rem"><tbody>
+              <% quota.sources.forEach(function (s) { %>
+                <tr><td class="muted"><%= s.label %></td><td class="strong"><%= s.count %></td></tr>
+              <% }); %>
+              <tr><td class="muted">Total</td><td class="strong"><%= quota.total %></td></tr>
+              <% if (quota.used !== null) { %>
+                <tr><td class="muted">In use</td><td class="strong"><%= quota.used %></td></tr>
+                <tr><td class="muted">Left</td><td class="strong"><%= quota.remaining %></td></tr>
+              <% } %>
+            </tbody></table></div>
+          </div>
+        <% } %>
+      </aside>
+    </div>
+  <% } %>
+<% } %>
+
+<%- include('../partials/panel-shell-end') %>
+<%- include('../partials/footer') %>

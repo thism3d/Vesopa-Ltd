@@ -1,22 +1,48 @@
+<%#
+  Add a domain or a subdomain. ONE FORM.
+
+  There used to be two, and the customer had to know which of the two things
+  they had before they could begin. They do not — "add heat6.com" and "add
+  shop.heat6.com" are the same intention. Which one it is, is a fact about the
+  name, and the server works it out (linking.findParent). The script below does
+  the same test in the browser purely so the form can explain itself as you
+  type; the server never trusts it.
+%>
 <%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
 <%- include('../partials/panel-shell', {
-  pageTitle: 'Add a domain you already own',
-  pageSub: 'Registered somewhere else? Point it here and we will host it.',
+  pageTitle: 'Add a domain',
+  pageSub: 'A domain you own, or a subdomain of one you already have here.',
 }) %>
 
 <div class="p-grid p-grid-side">
   <div>
     <div class="p-card">
-      <form method="post" action="/panel/domains/add" data-guard>
+      <form method="post" action="/panel/domains/add" data-guard
+            id="add-form"
+            data-parents="<%= parents.map(function (p) { return p.domain; }).join(',') %>">
         <input type="hidden" name="_csrf" value="<%= csrf %>">
 
         <div class="field <%= errors.domain ? 'field-error' : '' %>">
-          <label class="label" for="domain">Your domain</label>
+          <label class="label" for="domain">Domain or subdomain</label>
           <input class="input mono" id="domain" name="domain" required autofocus
                  placeholder="yourbusiness.co.uk" autocomplete="off" spellcheck="false"
                  value="<%= values.domain || '' %>">
           <% if (errors.domain) { %><p class="error-text"><%= errors.domain %></p><% } %>
-          <p class="hint">Just the domain — no https:// and no www.</p>
+          <p class="hint" id="add-hint">
+            Type the whole name. We work out whether it is a domain or a subdomain —
+            you do not have to tell us.
+          </p>
+        </div>
+
+        <%#
+          What we worked out, said back to them. Filled in by the script; the
+          server does the real decision either way, so a customer with
+          JavaScript off simply sees the form without this line and everything
+          still works.
+        %>
+        <div class="detect" id="detect" hidden>
+          <span class="detect-icon" id="detect-icon"></span>
+          <span id="detect-text"></span>
         </div>
 
         <% if (services.length) { %>
@@ -34,12 +60,12 @@
         <% } %>
 
         <%#
-          What to build for it. DNS arrives ticked because a domain delegated
-          to our nameservers with no zone here resolves to nothing; mail arrives
-          unticked because creating one starts accepting mail for the name, and
-          most people moving a site keep their mail where it is.
+          Only meaningful for a real domain. Hidden by the script the moment the
+          name is recognised as a subdomain, and IGNORED BY THE SERVER in that
+          case regardless of what is posted — a subdomain never gets its own DNS
+          zone or a mail domain, and hiding a checkbox is not a rule.
         %>
-        <fieldset class="field" style="border:0;padding:0;margin:0 0 18px">
+        <fieldset class="field" id="domain-only" style="border:0;padding:0;margin:0 0 18px">
           <legend class="label" style="padding:0">What should we set up for it?</legend>
 
           <label class="check">
@@ -55,103 +81,85 @@
             <input type="checkbox" name="want_mail" value="1" <%= values.want_mail ? 'checked' : '' %>>
             <span>
               <span class="strong">Email</span>
-              <span class="tiny muted" style="display:block">Accept mail for this domain and let you create mailboxes. Leave off if your email is with Google, Microsoft or anyone else.</span>
+              <span class="tiny muted" style="display:block">Accept mail for this domain so you can create mailboxes. Leave off if your email is with Google, Microsoft or anyone else.</span>
             </span>
           </label>
 
           <p class="hint">The website is always set up. You can change your mind later.</p>
         </fieldset>
 
-        <button class="btn btn-lg" type="submit" data-busy="Adding…">Add this domain</button>
+        <button class="btn btn-lg" type="submit" data-busy="Adding…" id="add-submit">Add it</button>
       </form>
     </div>
 
-    <%#
-      Subdomains. Deliberately a separate form: there is no registrar step, no
-      nameserver change and no waiting — it is built on the node as the form is
-      submitted. Only shown when the account has a domain to put one under,
-      because the parent is the authorisation.
-    %>
-    <% if (parents && parents.length) { %>
-      <div class="p-card">
-        <h2 class="h3 mb-2">Or add a subdomain</h2>
-        <p class="small muted mb-2">
-          Something like <span class="mono">shop.<%= parents[0].domain %></span> — set up straight away,
-          with no nameserver change to make and nothing to wait for.
-        </p>
-
-        <form method="post" action="/panel/domains/add-subdomain" data-guard>
-          <input type="hidden" name="_csrf" value="<%= csrf %>">
-
-          <div class="field">
-            <label class="label" for="subdomain">Subdomain</label>
-            <input class="input mono" id="subdomain" name="subdomain" required
-                   placeholder="shop.<%= parents[0].domain %>" autocomplete="off" spellcheck="false">
-            <p class="hint">
-              The whole name, including your domain. It has to sit under one of:
-              <%= parents.map(function (p) { return p.domain; }).join(', ') %>.
-            </p>
-          </div>
-
-          <fieldset class="field" style="border:0;padding:0;margin:0 0 18px">
-            <legend class="label" style="padding:0">Anything else with it?</legend>
-
-            <label class="check">
-              <input type="checkbox" name="want_dns" value="1">
-              <span>
-                <span class="strong">Its own DNS zone</span>
-                <span class="tiny muted" style="display:block">Rarely needed. If your main domain's DNS is already here, the subdomain works without this.</span>
-              </span>
-            </label>
-
-            <label class="check">
-              <input type="checkbox" name="want_mail" value="1">
-              <span>
-                <span class="strong">Email at this subdomain</span>
-                <span class="tiny muted" style="display:block">Lets you create mailboxes like you@shop.<%= parents[0].domain %>.</span>
-              </span>
-            </label>
-
-            <p class="hint">The website is always set up — that is the point of a subdomain.</p>
-          </fieldset>
-
-          <button class="btn btn-lg" type="submit" data-busy="Setting up…">Add subdomain</button>
-        </form>
-      </div>
-    <% } %>
-
     <div class="p-card">
-      <h2 class="h3 mb-2">What happens next</h2>
-      <ol class="small muted" style="margin:0;padding-left:18px;line-height:1.75">
-        <li>Sign in wherever the domain is registered and set its nameservers to the two on the right.</li>
-        <li>We check every few minutes. The moment the change is visible, we build the site, the mailboxes and the certificate for you.</li>
-        <li>Nothing to do here in the meantime — you can close this page and we will email you.</li>
-      </ol>
+      <h2 class="h3 mb-2">How it works</h2>
+      <div class="how">
+        <div class="how-row">
+          <span class="how-tag">Domain</span>
+          <p class="small muted mb-0">
+            Point it at us one of two ways — use our nameservers, or aim an
+            <span class="mono">A</span> record here and keep DNS where it is. Either is enough.
+            We check every few minutes and set up the site and its certificate the moment it lands.
+            You have <%= graceDays %> days.
+          </p>
+        </div>
+        <div class="how-row">
+          <span class="how-tag how-tag-sub">Subdomain</span>
+          <p class="small muted mb-0">
+            Built immediately — there is nothing to wait for and no nameserver change to make.
+            It gets its own folder and its own certificate. It has
+            <b>no DNS zone and no mailboxes</b> of its own: its records live in the main
+            domain's zone, and email belongs on the main domain.
+          </p>
+        </div>
+      </div>
     </div>
   </div>
 
   <aside>
-    <div class="p-card">
-      <h2 class="h3 mb-2">Set these nameservers</h2>
-      <p class="small muted mb-2">At your current registrar, replace whatever is there with these two.</p>
-      <% nameservers.forEach(function (ns) { %>
+    <div class="p-card" id="aside-domain">
+      <h2 class="h3 mb-2">Point a domain at us</h2>
+      <p class="small muted mb-2">Either one works. You do not need both.</p>
+
+      <p class="label mb-1">1 &nbsp;Our nameservers <span class="badge badge-green" style="font-size:.62rem">recommended</span></p>
+      <% defaultNameservers.forEach(function (ns) { %>
         <div class="copyable">
-          <span><%= ns %></span>
+          <span class="mono"><%= ns %></span>
           <button type="button" class="btn btn-ghost btn-sm copy-btn" data-copy="<%= ns %>">Copy</button>
         </div>
       <% }); %>
-    </div>
 
-    <div class="p-card">
-      <div class="f-icon"><%- icon('clock', 22) %></div>
-      <h2 class="h3 mb-2">You have <%= graceDays %> days</h2>
-      <p class="small muted mb-0">
-        A domain that has not been pointed at us within <%= graceDays %> days is taken off your
-        account again — we would not be hosting it, so listing it would be telling you
-        something untrue. Nothing is charged either way, the domain itself is
-        untouched, and you can add it again whenever you are ready.
+      <p class="label mb-1 mt-3">2 &nbsp;An A record, DNS stays with you</p>
+      <% if (addresses.length) { %>
+        <div class="copyable">
+          <span class="mono"><%= addresses[0] %></span>
+          <button type="button" class="btn btn-ghost btn-sm copy-btn" data-copy="<%= addresses[0] %>">Copy</button>
+        </div>
+      <% } %>
+      <div class="copyable">
+        <span class="mono"><%= pointHostname %></span>
+        <button type="button" class="btn btn-ghost btn-sm copy-btn" data-copy="<%= pointHostname %>">Copy</button>
+      </div>
+      <p class="tiny muted mt-2 mb-0">
+        Prefer <span class="mono"><%= pointHostname %></span> if your DNS panel accepts a name —
+        it follows this server wherever it goes.
       </p>
     </div>
+
+    <% if (parents.length) { %>
+      <div class="p-card">
+        <h2 class="h3 mb-2">Your domains</h2>
+        <p class="small muted mb-2">
+          Anything typed under one of these is treated as a subdomain and set up straight away:
+        </p>
+        <ul class="plain-list">
+          <% parents.forEach(function (p) { %>
+            <li><span class="mono"><%= p.domain %></span></li>
+          <% }); %>
+        </ul>
+      </div>
+    <% } %>
 
     <div class="p-card">
       <h2 class="h3 mb-2">Would rather we held it?</h2>
@@ -160,6 +168,8 @@
     </div>
   </aside>
 </div>
+
+<script src="<%= asset('/assets/js/domain-add.js') %>" defer></script>
 
 <%- include('../partials/panel-shell-end') %>
 <%- include('../partials/footer') %>

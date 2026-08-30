@@ -1,3 +1,12 @@
+<%#
+  Domains, with their subdomains nested underneath them.
+
+  A flat alphabetical list put `example.com` and `shop.example.com` in different
+  places and made them look like two unrelated purchases — which is a large part
+  of why people went looking for a renewal date and a DNS tab on a subdomain
+  that has neither. The shape of the list says what each thing is before any
+  label has to.
+%>
 <%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
 <%- include('../partials/panel-shell', {
   pageTitle: 'Your domains',
@@ -5,8 +14,55 @@
   topAction: { href: '/panel/domains/add', label: 'Add a domain', icon: 'plus' },
 }) %>
 
+<%
+  /* One row, for a domain or a subdomain. Declared once so the two cannot
+     drift apart in wording or in what they show. */
+  function statusBadge(d) {
+    if (d.source === 'subdomain') {
+      return d.ns_verified_at
+        ? '<span class="badge badge-green">Live</span>'
+        : '<span class="badge badge-amber">Not pointing here</span>';
+    }
+    if (d.status === 'awaiting_ns') return '<span class="badge badge-amber">Not pointing here</span>';
+    const days = d.expires_at ? Math.round((new Date(d.expires_at) - Date.now()) / 864e5) : null;
+    if (days !== null && days <= 30 && days > 0) return `<span class="badge badge-amber">${days} days left</span>`;
+    if (d.status === 'active') return '<span class="badge badge-green">Active</span>';
+    if (d.status === 'pending') return '<span class="badge badge-amber">Pending</span>';
+    if (d.status === 'expired') return '<span class="badge badge-red">Expired</span>';
+    return `<span class="badge badge-grey">${d.status}</span>`;
+  }
+
+  function subtitle(d, graceDays) {
+    if (d.source === 'subdomain') {
+      const bits = ['Subdomain'];
+      if (d.ssl_status === 'active') bits.push('secured');
+      else if (d.ns_verified_at) bits.push('no certificate yet');
+      return bits.join(' · ');
+    }
+    const deadline = d.ns_grace_until ? new Date(d.ns_grace_until) : null;
+    const graceLeft = deadline ? Math.max(0, Math.ceil((deadline - Date.now()) / 864e5)) : null;
+
+    if (d.status === 'awaiting_ns') {
+      return 'Waiting to be pointed at us'
+        + (graceLeft !== null ? ` · ${graceLeft === 0 ? 'last day' : graceLeft + ' day' + (graceLeft === 1 ? '' : 's') + ' left'}` : '');
+    }
+    const bits = [];
+    if (d.source === 'external') {
+      bits.push('Registered elsewhere');
+      if (d.ns_verified_at) bits.push(d.verify_method === 'a' ? 'pointed here by A record' : 'hosted here');
+    } else if (d.expires_at) {
+      bits.push(`Expires ${d.expires_at}`);
+      bits.push(d.auto_renew ? 'auto-renew on' : 'auto-renew off');
+    } else {
+      bits.push('Being registered…');
+    }
+    if (d.ssl_status === 'active') bits.push('secured');
+    return bits.join(' · ');
+  }
+%>
+
 <div class="p-card p-card-flush">
-  <% if (!domains.length) { %>
+  <% if (!total) { %>
     <div class="empty">
       <%- icon('globe', 46) %>
       <h3>No domains yet</h3>
@@ -15,45 +71,48 @@
       <a class="btn btn-ghost mt-2" href="/panel/domains/add">Add one I own</a>
     </div>
   <% } else { %>
-    <% domains.forEach(function (d) {
-         const days = d.expires_at ? Math.round((new Date(d.expires_at) - Date.now()) / 864e5) : null;
-         const external = d.source === 'external';
-         const deadline = d.ns_grace_until ? new Date(d.ns_grace_until) : null;
-         const graceLeft = deadline ? Math.max(0, Math.ceil((deadline - Date.now()) / 864e5)) : null; %>
+    <% groups.forEach(function (d) { %>
       <a class="item" href="/panel/domains/<%= d.id %>">
         <span class="item-icon"><%- icon('globe', 19) %></span>
         <span class="item-main">
           <span class="item-title"><%= d.domain %></span>
-          <span class="item-sub">
-            <% if (d.status === 'awaiting_ns') { %>
-              Waiting for your nameservers<% if (graceLeft !== null) { %> · <%= graceLeft === 0 ? 'last day' : graceLeft + ' day' + (graceLeft === 1 ? '' : 's') + ' left' %><% } %>
-            <% } else if (external) { %>
-              Registered elsewhere<% if (d.ns_verified_at) { %> · hosted here<% } %>
-            <% } else if (d.expires_at) { %>
-              Expires <%= d.expires_at %> · <%= d.auto_renew ? 'Auto-renew on' : 'Auto-renew off' %>
-            <% } else { %>
-              Being registered…
-            <% } %>
+          <span class="item-sub"><%= subtitle(d, graceDays) %></span>
+        </span>
+        <span class="item-end"><%- statusBadge(d) %></span>
+      </a>
+
+      <% d.children.forEach(function (sub) { %>
+        <a class="item item-child" href="/panel/domains/<%= sub.id %>">
+          <span class="item-icon"><%- icon('folder', 17) %></span>
+          <span class="item-main">
+            <span class="item-title"><%= sub.domain %></span>
+            <span class="item-sub"><%= subtitle(sub, graceDays) %></span>
           </span>
+          <span class="item-end"><%- statusBadge(sub) %></span>
+        </a>
+      <% }); %>
+    <% }); %>
+
+    <%# A subdomain whose parent has left the account. Its site is still on the
+        server, so hiding it would be the panel disagreeing with the node. %>
+    <% orphans.forEach(function (sub) { %>
+      <a class="item" href="/panel/domains/<%= sub.id %>">
+        <span class="item-icon"><%- icon('folder', 19) %></span>
+        <span class="item-main">
+          <span class="item-title"><%= sub.domain %></span>
+          <span class="item-sub">Subdomain · its main domain is no longer on this account</span>
         </span>
-        <span class="item-end">
-          <% if (d.status === 'awaiting_ns') { %><span class="badge badge-amber">Not pointing here</span>
-          <% } else if (days !== null && days <= 30 && days > 0) { %>
-            <span class="badge badge-amber"><%= days %> days left</span>
-          <% } else if (d.status === 'active') { %><span class="badge badge-green">Active</span>
-          <% } else if (d.status === 'pending') { %><span class="badge badge-amber">Pending</span>
-          <% } else if (d.status === 'expired') { %><span class="badge badge-red">Expired</span>
-          <% } else { %><span class="badge badge-grey"><%= d.status %></span><% } %>
-        </span>
+        <span class="item-end"><%- statusBadge(sub) %></span>
       </a>
     <% }); %>
   <% } %>
 </div>
 
 <p class="small muted mt-2">
-  A domain you own elsewhere is hosted here as soon as its nameservers point at us. If that has
-  not happened within <%= graceDays %> days we take it off this list — we would not be hosting it,
-  and the domain itself is never touched.
+  A domain you own elsewhere is hosted here as soon as it points at us — either by using our
+  nameservers, or by aiming an A record here. If neither has happened within <%= graceDays %> days
+  we take it off this list; we would not be hosting it, and the domain itself is never touched.
+  Subdomains are part of the domain above them: nothing to renew and nothing to pay.
 </p>
 
 <%- include('../partials/panel-shell-end') %>
