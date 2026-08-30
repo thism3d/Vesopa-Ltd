@@ -25,12 +25,12 @@
   <meta property="og:image" content="<%= siteUrl %>/assets/img/brand/512x512.png">
   <meta name="twitter:card" content="summary_large_image">
 
-  <link rel="preload" href="/assets/css/app.css" as="style">
-  <link rel="stylesheet" href="/assets/css/app.css">
+  <link rel="preload" href="<%= asset('/assets/css/app.css') %>" as="style">
+  <link rel="stylesheet" href="<%= asset('/assets/css/app.css') %>">
   <%# The marketing sections. Only the public pages use it, so the panel and the
       admin opt out with `sections: false` rather than pay for it on every screen. %>
-  <% if (typeof sections === 'undefined' || sections) { %><link rel="stylesheet" href="/assets/css/sections.css"><% } %>
-  <% if (typeof extraCss !== 'undefined') { %><link rel="stylesheet" href="<%= extraCss %>"><% } %>
+  <% if (typeof sections === 'undefined' || sections) { %><link rel="stylesheet" href="<%= asset('/assets/css/sections.css') %>"><% } %>
+  <% if (typeof extraCss !== 'undefined') { %><link rel="stylesheet" href="<%= asset(extraCss) %>"><% } %>
 </head>
 <%# The active currency, for the handful of places a running total is worked
     out in the browser (the mailbox counter on the email pricing grid).

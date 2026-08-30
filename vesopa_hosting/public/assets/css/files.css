@@ -1,0 +1,508 @@
+/* ===========================================================================
+   Vesopa Cloud — file manager
+   ---------------------------------------------------------------------------
+   Loaded on top of app.css and panel.css, which supply the tokens, buttons and
+   card. Only what is specific to browsing files lives here.
+
+   THE LAYOUT IS ONE GRID, DECLARED ONCE.
+
+   The header row and every file row share `--fm-cols`, so a column cannot drift
+   out of alignment with its heading — the usual failure of a table rebuilt as
+   divs. On a phone the same rows become two lines of text and the grid is
+   redeclared rather than patched, because a five-column table on a 360px screen
+   is not a table anyone can read.
+   =========================================================================== */
+
+.fm {
+  --fm-cols: 34px minmax(0, 1fr) 92px 150px 74px 40px;
+  --fm-row: 46px;
+}
+
+/*
+ * `hidden` HAS TO WIN, and without this rule it does not.
+ *
+ * The user-agent stylesheet's `[hidden] { display: none }` is an attribute
+ * selector with specificity 0-1-0, so ANY class rule below that sets `display`
+ * beats it — and most of the layout here sets display. The symptom is that
+ * `element.hidden = true` in the script appears to do nothing: the loading
+ * spinner never goes away and the selection bar sits there saying "0 selected".
+ * Every toggle in files.js goes through the `hidden` property, so this one rule
+ * is what makes all of them work.
+ */
+.fm [hidden], .fm[hidden] { display: none !important; }
+
+/* ---- Shortcut chips ------------------------------------------------------
+   Scrolls sideways rather than wrapping to four lines on an account with a
+   dozen domains. min-width:0 is what actually lets it scroll — see the note on
+   .is-admin .rail-nav in panel.css for the same trap. */
+.fm-jump {
+  display: flex; gap: 8px; margin-bottom: 14px;
+  overflow-x: auto; min-width: 0; padding-bottom: 2px;
+  scrollbar-width: none; -webkit-overflow-scrolling: touch;
+}
+.fm-jump::-webkit-scrollbar { display: none; }
+
+.fm-chip {
+  display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto;
+  padding: 7px 13px; border-radius: 999px;
+  border: 1.5px solid var(--rule); background: #fff;
+  color: var(--ink-2); font-size: .84rem; font-weight: 650;
+  cursor: pointer; white-space: nowrap;
+  transition: border-color .18s var(--ease), color .18s var(--ease), background .18s var(--ease);
+}
+.fm-chip:hover { border-color: var(--ink-3); color: var(--ink); }
+.fm-chip.is-active { background: var(--lime-soft); border-color: var(--lime); color: var(--lime-deep); }
+.fm-chip svg { flex: none; opacity: .75; }
+
+.fm-card { margin-bottom: 0; }
+
+/* ---- Toolbar ------------------------------------------------------------ */
+.fm-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap;
+  padding: 12px 16px; border-bottom: 1px solid var(--rule-soft);
+}
+
+.fm-crumbs {
+  display: flex; align-items: center; gap: 2px; flex-wrap: wrap;
+  min-width: 0; font-size: .9rem;
+}
+.fm-crumb {
+  border: 0; background: none; cursor: pointer; padding: 4px 6px;
+  border-radius: 7px; color: var(--ink-3); font-weight: 650; font-size: .9rem;
+  max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.fm-crumb:hover { background: var(--bg-3); color: var(--ink); }
+.fm-crumb.is-last { color: var(--ink); cursor: default; }
+.fm-crumb.is-last:hover { background: none; }
+.fm-crumb-sep { color: #c7c9bd; flex: none; }
+
+.fm-bar-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.fm-find { position: relative; display: flex; align-items: center; }
+.fm-find input {
+  width: 210px; padding: 8px 30px 8px 32px;
+  border: 1.5px solid var(--rule); border-radius: 999px;
+  background: var(--bg-2); font-size: .87rem; color: var(--ink);
+  transition: border-color .18s var(--ease), box-shadow .18s var(--ease), width .18s var(--ease);
+}
+.fm-find input:focus { outline: none; border-color: var(--lime); box-shadow: var(--glow); background: #fff; }
+.fm-find-icon { position: absolute; left: 11px; display: grid; place-items: center; color: var(--ink-3); pointer-events: none; }
+.fm-find-clear {
+  position: absolute; right: 7px; border: 0; background: none; cursor: pointer;
+  color: var(--ink-3); display: grid; place-items: center; padding: 3px; border-radius: 50%;
+}
+.fm-find-clear:hover { background: var(--bg-3); color: var(--ink); }
+
+.fm-icon-btn {
+  display: grid; place-items: center; flex: none;
+  width: 36px; height: 36px; border-radius: 9px;
+  border: 1.5px solid transparent; background: none; cursor: pointer; color: var(--ink-2);
+  transition: background .16s var(--ease), color .16s var(--ease), border-color .16s var(--ease);
+}
+.fm-icon-btn:hover { background: var(--bg-3); color: var(--ink); }
+.fm-icon-btn.is-on { background: var(--lime-soft); border-color: var(--lime); color: var(--lime-deep); }
+.fm-icon-btn.is-spinning svg { animation: fm-spin .7s linear infinite; }
+
+@keyframes fm-spin { to { transform: rotate(360deg); } }
+
+/* ---- Selection bar ------------------------------------------------------ */
+.fm-selbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 9px 16px; background: var(--lime-soft);
+  border-bottom: 1px solid #dce7b8;
+}
+.fm-selcount { font-size: .86rem; font-weight: 750; color: var(--lime-deep); white-space: nowrap; }
+.fm-selactions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.fm-selactions .btn { background: #fff; }
+.fm-danger { color: var(--red); }
+.fm-danger:hover { border-color: var(--red); }
+
+/* ---- The listing -------------------------------------------------------- */
+.fm-body { position: relative; min-height: 260px; }
+
+.fm-head {
+  display: grid; grid-template-columns: var(--fm-cols); align-items: center;
+  gap: 10px; padding: 0 16px; height: 38px;
+  border-bottom: 1px solid var(--rule-soft);
+  font-size: .76rem; font-weight: 750; text-transform: uppercase;
+  letter-spacing: .04em; color: var(--ink-3); background: var(--bg-2);
+  position: sticky; top: 0; z-index: 2;
+}
+.fm-col-size, .fm-col-mode { text-align: right; }
+
+.fm-row {
+  display: grid; grid-template-columns: var(--fm-cols); align-items: center;
+  gap: 10px; padding: 0 16px; min-height: var(--fm-row);
+  border-bottom: 1px solid var(--rule-soft);
+  cursor: default; font-size: .9rem;
+  transition: background .12s var(--ease);
+}
+.fm-row:last-child { border-bottom: 0; }
+.fm-row:hover { background: var(--bg-2); }
+.fm-row.is-selected { background: var(--lime-soft); }
+.fm-row.is-cut { opacity: .5; }
+
+.fm-check { display: grid; place-items: center; }
+.fm-check input { width: 16px; height: 16px; accent-color: var(--lime); cursor: pointer; }
+
+.fm-name {
+  display: flex; align-items: center; gap: 10px; min-width: 0;
+  border: 0; background: none; padding: 0; text-align: left; font: inherit;
+  color: var(--ink); cursor: pointer; width: 100%;
+}
+.fm-name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.fm-name:hover .fm-name-text { text-decoration: underline; }
+.fm-ico { display: grid; place-items: center; flex: none; color: var(--ink-3); }
+.fm-row[data-type='dir'] .fm-ico { color: #c9a227; }
+.fm-row[data-class='image'] .fm-ico { color: var(--teal); }
+.fm-row[data-class='archive'] .fm-ico { color: #b07a2e; }
+.fm-row[data-class='text'] .fm-ico { color: var(--blue); }
+
+/* A symlink says so, because deleting one deletes the link and not the file. */
+.fm-link-tag {
+  flex: none; font-size: .66rem; font-weight: 800; letter-spacing: .04em;
+  padding: 2px 6px; border-radius: 5px; background: var(--bg-3); color: var(--ink-3);
+}
+.fm-row.is-broken .fm-name-text { color: var(--red); text-decoration: line-through; }
+
+/* The phone's one-line summary of size, date and permissions. Present in every
+   row so one markup shape serves both layouts; shown only where the columns
+   are not. */
+.fm-meta { display: none; }
+
+.fm-size, .fm-mode { text-align: right; font-size: .84rem; color: var(--ink-3); }
+.fm-mode { font-family: var(--mono); }
+.fm-time { font-size: .84rem; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.fm-empty, .fm-loading {
+  padding: 54px 20px; text-align: center; color: var(--ink-3); font-size: .93rem;
+}
+.fm-empty b { display: block; color: var(--ink-2); font-size: 1rem; margin-bottom: 5px; }
+.fm-loading { display: flex; align-items: center; justify-content: center; gap: 10px; }
+.fm-spin {
+  width: 15px; height: 15px; border-radius: 50%;
+  border: 2px solid var(--rule); border-top-color: var(--lime);
+  animation: fm-spin .7s linear infinite;
+}
+
+.fm-readonly { color: #7a5510; }
+.fm .btn:disabled { opacity: .45; cursor: not-allowed; transform: none; box-shadow: none; }
+
+.fm-foot {
+  padding: 10px 16px; border-top: 1px solid var(--rule-soft);
+  font-size: .8rem; color: var(--ink-3); background: var(--bg-2);
+  display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+}
+
+/* ---- Grid view ----------------------------------------------------------
+   The same rows, laid out as tiles. Only the row's internals change, so
+   selection, the menu and every action keep working untouched. */
+.fm.is-grid .fm-head { display: none; }
+.fm.is-grid .fm-list {
+  display: grid; gap: 10px; padding: 14px 16px;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+}
+.fm.is-grid .fm-row {
+  display: flex; flex-direction: column; align-items: center; gap: 7px;
+  text-align: center; padding: 14px 8px; border: 1.5px solid var(--rule);
+  border-radius: var(--radius-sm); min-height: 0; position: relative;
+}
+.fm.is-grid .fm-row.is-selected { border-color: var(--lime); }
+.fm.is-grid .fm-check { position: absolute; top: 6px; left: 7px; }
+.fm.is-grid .fm-col-menu { position: absolute; top: 4px; right: 3px; }
+.fm.is-grid .fm-name { flex-direction: column; gap: 8px; }
+.fm.is-grid .fm-ico svg { width: 34px; height: 34px; }
+.fm.is-grid .fm-name-text { white-space: normal; overflow-wrap: anywhere; font-size: .82rem; max-height: 2.6em; overflow: hidden; }
+.fm.is-grid .fm-size { font-size: .74rem; }
+.fm.is-grid .fm-time, .fm.is-grid .fm-mode, .fm.is-grid .fm-link-tag { display: none; }
+
+/* ---- Drag and drop ------------------------------------------------------ */
+.fm-dropnote {
+  position: absolute; inset: 0; z-index: 5;
+  display: none; flex-direction: column; align-items: center; justify-content: center; gap: 7px;
+  background: rgba(239, 246, 216, .95); border: 2.5px dashed var(--lime);
+  border-radius: var(--radius); color: var(--lime-deep); text-align: center; padding: 20px;
+}
+.fm-dropnote b { font-size: 1.06rem; }
+.fm-dropnote span { font-size: .86rem; color: #5f7314; }
+.fm.is-dropping .fm-dropnote { display: flex; }
+
+/* ---- Upload progress ---------------------------------------------------- */
+.fm-uploads {
+  position: fixed; right: 18px; bottom: 18px; z-index: 60; width: min(330px, calc(100vw - 36px));
+  background: #fff; border: 1px solid var(--rule); border-radius: var(--radius);
+  box-shadow: var(--shadow-2); overflow: hidden;
+}
+.fm-uploads-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 10px 10px 15px; border-bottom: 1px solid var(--rule-soft);
+  font-size: .87rem; font-weight: 750;
+}
+.fm-uploads-list { max-height: 244px; overflow-y: auto; }
+.fm-up { padding: 9px 15px; border-bottom: 1px solid var(--rule-soft); font-size: .82rem; }
+.fm-up:last-child { border-bottom: 0; }
+.fm-up-name { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 5px; }
+.fm-up-name span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fm-up-pct { color: var(--ink-3); flex: none; }
+.fm-up-track { height: 4px; border-radius: 999px; background: var(--bg-3); overflow: hidden; }
+.fm-up-fill { height: 100%; width: 0; background: var(--lime); transition: width .2s var(--ease); }
+.fm-up.is-done .fm-up-fill { background: var(--green); }
+.fm-up.is-failed .fm-up-fill { background: var(--red); width: 100% !important; }
+.fm-up.is-failed .fm-up-pct { color: var(--red); }
+
+/* ---- Modals -------------------------------------------------------------
+   One backdrop style, three sheets. `dvh` rather than `vh` because on a phone
+   `vh` includes the browser chrome that is not actually there, so a full-height
+   sheet sits with its footer underneath the address bar. */
+.fm-modal {
+  position: fixed; inset: 0; z-index: 80;
+  display: flex; align-items: center; justify-content: center; padding: 18px;
+  background: rgba(17, 17, 17, .45);
+  -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
+}
+.fm-modal-sheet {
+  background: #fff; border-radius: var(--radius); box-shadow: var(--shadow-3);
+  display: flex; flex-direction: column; overflow: hidden;
+  width: 100%; max-height: calc(100dvh - 36px);
+}
+.fm-modal-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 13px 12px 13px 18px; border-bottom: 1px solid var(--rule-soft); flex: none;
+}
+
+.fm-ask-sheet { max-width: 440px; }
+.fm-ask-body { padding: 18px; overflow-y: auto; }
+.fm-ask-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 18px; }
+.fm-ask-error {
+  margin: 12px 0 0; padding: 9px 12px; border-radius: var(--radius-sm);
+  background: #fdecea; color: #a3261a; font-size: .85rem;
+}
+
+.fm-modegrid {
+  display: grid; grid-template-columns: 1fr repeat(3, 54px);
+  gap: 7px; align-items: center; margin-bottom: 14px;
+  font-size: .8rem; color: var(--ink-3); text-align: center;
+}
+.fm-modelabel { text-align: left; font-weight: 700; color: var(--ink-2); }
+.fm-modegrid label { display: grid; place-items: center; padding: 5px 0; border-radius: 7px; background: var(--bg-2); cursor: pointer; }
+.fm-modegrid input { width: 16px; height: 16px; accent-color: var(--lime); cursor: pointer; }
+.fm-inline-check { display: flex; align-items: center; gap: 9px; font-size: .87rem; margin-bottom: 10px; cursor: pointer; }
+.fm-inline-check input { width: 16px; height: 16px; accent-color: var(--lime); }
+
+.fm-picker-crumbs { display: flex; flex-wrap: wrap; gap: 2px; margin-bottom: 9px; font-size: .84rem; }
+.fm-picker-list {
+  border: 1.5px solid var(--rule); border-radius: var(--radius-sm);
+  max-height: 232px; overflow-y: auto;
+}
+.fm-picker-row {
+  display: flex; align-items: center; gap: 9px; width: 100%;
+  padding: 9px 12px; border: 0; border-bottom: 1px solid var(--rule-soft);
+  background: none; cursor: pointer; font: inherit; font-size: .87rem; text-align: left;
+}
+.fm-picker-row:last-child { border-bottom: 0; }
+.fm-picker-row:hover { background: var(--bg-2); }
+.fm-picker-row svg { flex: none; color: #c9a227; }
+.fm-picker-empty { padding: 18px; text-align: center; color: var(--ink-3); font-size: .86rem; }
+
+/* ---- Editor -------------------------------------------------------------
+   Full-bleed on purpose: editing a stylesheet through a 400px porthole is the
+   reason people give up on a web file manager and reach for FTP. */
+.fm-editor-sheet { max-width: 1080px; height: calc(100dvh - 36px); }
+.fm-editor-title { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.fm-editor-name { font-weight: 750; font-size: .97rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fm-editor-path { color: var(--ink-3); font-size: .76rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fm-editor-tools { display: flex; align-items: center; gap: 7px; flex: none; }
+.fm-editor-state { font-size: .78rem; color: var(--ink-3); white-space: nowrap; }
+.fm-editor-state.is-dirty { color: #7a5510; }
+.fm-editor-state.is-saved { color: var(--green); }
+.fm-editor-state.is-error { color: var(--red); }
+
+.fm-editor-wrap { flex: 1; display: flex; min-height: 0; background: #fbfcf7; }
+
+.fm-gutter {
+  flex: none; padding: 12px 9px 12px 13px; overflow: hidden;
+  font-family: var(--mono); font-size: 13px; line-height: 1.55;
+  color: #b3b6a7; text-align: right; background: var(--bg-2);
+  border-right: 1px solid var(--rule-soft); user-select: none;
+  white-space: pre;
+}
+
+/*
+ * The stack that makes highlighting work.
+ *
+ * <pre> and <textarea> are laid over each other at the same size, with
+ * identical font, padding, line-height and wrapping. The textarea's own glyphs
+ * are transparent and its caret is not, so the text you see is the highlighted
+ * <pre> and the text you edit is the real control underneath your finger —
+ * which keeps native selection handles, autocorrect settings and the on-screen
+ * keyboard's arrow keys, all of which a custom-drawn editor loses.
+ *
+ * EVERY METRIC BELOW HAS TO MATCH IN BOTH RULES. A different padding or
+ * line-height in one of them and the highlight slides out of register with the
+ * characters, which looks like a rendering bug and is a stylesheet edit.
+ */
+.fm-code { position: relative; flex: 1; min-width: 0; overflow: hidden; }
+.fm-hl, .fm-code textarea {
+  position: absolute; inset: 0;
+  margin: 0; padding: 12px 14px;
+  font-family: var(--mono); font-size: 13px; line-height: 1.55;
+  tab-size: 2; border: 0;
+  white-space: pre; overflow-wrap: normal; word-break: normal;
+  overflow: auto;
+}
+.fm.is-wrap .fm-hl, .fm.is-wrap .fm-code textarea { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.fm-hl { pointer-events: none; background: transparent; color: var(--ink); z-index: 1; }
+.fm-hl code { font: inherit; }
+.fm-code textarea {
+  z-index: 2; resize: none; background: transparent;
+  color: transparent; caret-color: var(--ink);
+  -webkit-text-fill-color: transparent;
+}
+.fm-code textarea:focus { outline: none; }
+.fm-code textarea::selection { background: rgba(165, 199, 21, .34); }
+
+/* Syntax colours. Deliberately few: six roles, all of which pass 4.5:1 on the
+   editor's near-white ground. A rainbow reads as noise at 13px. */
+.tk-com { color: #7b8271; font-style: italic; }
+.tk-str { color: #1e7a4f; }
+.tk-num { color: #9a5b00; }
+.tk-key { color: #8a2fb0; font-weight: 650; }
+.tk-tag { color: #b3341f; }
+.tk-att { color: #7a6a00; }
+.tk-fn  { color: #1f5fa8; }
+
+/* ---- Image preview ------------------------------------------------------ */
+.fm-preview-sheet { max-width: 900px; }
+.fm-preview-body {
+  padding: 18px; overflow: auto; display: grid; place-items: center;
+  background: repeating-conic-gradient(var(--bg-3) 0 25%, #fff 0 50%) 50%/18px 18px;
+}
+.fm-preview-body img { max-width: 100%; max-height: calc(100dvh - 180px); display: block; }
+
+/* ---- Row menu ----------------------------------------------------------- */
+.fm-menu {
+  position: absolute; z-index: 90; min-width: 194px; padding: 6px;
+  background: #fff; border: 1px solid var(--rule); border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-2);
+}
+.fm-menu[hidden] { display: none; }
+.fm-menu button {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 9px 11px; border: 0; border-radius: 8px; background: none;
+  cursor: pointer; font: inherit; font-size: .88rem; color: var(--ink-2); text-align: left;
+}
+.fm-menu button:hover { background: var(--bg-2); color: var(--ink); }
+.fm-menu button.fm-danger:hover { background: #fdecea; color: var(--red); }
+.fm-menu hr { border: 0; border-top: 1px solid var(--rule-soft); margin: 5px 4px; }
+.fm-menu svg { flex: none; opacity: .7; }
+
+/* ---- Toast -------------------------------------------------------------- */
+.fm-toast {
+  position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%);
+  z-index: 100; max-width: min(460px, calc(100vw - 32px));
+  padding: 11px 17px; border-radius: 999px;
+  background: var(--chrome); color: #fff; font-size: .88rem; font-weight: 600;
+  box-shadow: var(--shadow-2); text-align: center;
+}
+.fm-toast.is-bad { background: var(--red); }
+
+/* ===========================================================================
+   Phone
+   ---------------------------------------------------------------------------
+   A five-column table does not survive 360px, so the row becomes a name with a
+   meta line under it and the columns that were separate cells are folded into
+   that one line. Nothing is removed — size, date and permissions are all still
+   there, they are just read as a sentence rather than as columns.
+   =========================================================================== */
+@media (max-width: 760px) {
+  .fm { --fm-cols: 32px minmax(0, 1fr) 38px; --fm-row: 56px; }
+
+  .fm-head { display: none; }
+
+  .fm-row { padding: 7px 12px; align-items: center; }
+  .fm-name { flex-wrap: wrap; }
+  .fm-name-text { font-size: .93rem; }
+
+  /* Size, time and mode move under the name as one line. They are laid out by
+     the script into .fm-meta; the desktop cells stay in the DOM and are hidden,
+     so one markup shape serves both. */
+  .fm-size, .fm-time, .fm-mode { display: none; }
+  .fm-meta {
+    display: block; width: 100%; margin-top: 2px;
+    font-size: .76rem; color: var(--ink-3);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+
+  .fm-bar { padding: 10px 12px; gap: 9px; }
+  .fm-crumbs { width: 100%; overflow-x: auto; flex-wrap: nowrap; min-width: 0; scrollbar-width: none; }
+  .fm-crumbs::-webkit-scrollbar { display: none; }
+  .fm-crumb { flex: 0 0 auto; max-width: 120px; }
+
+  .fm-bar-actions { width: 100%; }
+  .fm-find { order: -1; width: 100%; }
+  .fm-find input { width: 100%; }
+  /* The three "new thing" buttons keep their icons and drop their words, so the
+     toolbar stays one row instead of wrapping to three. */
+  .fm-btn-text { display: none; }
+  .fm-bar-actions .btn { padding: 9px 12px; }
+
+  /*
+   * The selection bar pins to the bottom above the nav rail.
+   *
+   * A selection made at the bottom of a long list would otherwise put its
+   * actions off-screen at the top, and the fix people reach for — scrolling
+   * back up — loses the selection on a mistap.
+   */
+  .fm-selbar {
+    position: fixed; left: 0; right: 0; bottom: 62px; z-index: 45;
+    padding: 9px 12px calc(9px + env(safe-area-inset-bottom) / 2);
+    flex-direction: column; align-items: stretch; gap: 7px;
+    border-top: 1px solid #dce7b8; box-shadow: 0 -6px 20px rgba(17, 17, 17, .1);
+  }
+  /*
+   * The actions WRAP; they do not share one row.
+   *
+   * `flex: 1` across seven buttons on a 360px screen gives each about 45px,
+   * which is narrower than the word "Download" — so every label was clipped to
+   * "ownloa", "Renam", "rmissi". A button whose text you cannot read is not a
+   * button. Sized to their content and wrapped onto a second line instead:
+   * two rows of legible actions beats one row of guesses, and nothing is
+   * hidden behind a swipe the way a sideways-scrolling bar would hide it.
+   */
+  .fm-selactions { justify-content: flex-start; flex-wrap: wrap; gap: 6px; }
+  .fm-selactions .btn {
+    flex: 0 0 auto; justify-content: center;
+    padding: 8px 11px; font-size: .78rem; white-space: nowrap;
+  }
+  .fm-selactions .btn svg { display: none; }
+
+  .fm-uploads { right: 10px; left: 10px; bottom: 72px; width: auto; }
+  .fm-toast { bottom: 78px; }
+
+  .fm-modal { padding: 0; align-items: flex-end; }
+  .fm-modal-sheet { border-radius: var(--radius) var(--radius) 0 0; max-height: 92dvh; }
+  .fm-ask-sheet { max-width: none; }
+
+  /* The editor takes the whole screen. `dvh` again: with `vh` the Save button
+     sits behind the browser's own bottom bar on iOS. */
+  .fm-editor-sheet { height: 100dvh; max-height: 100dvh; border-radius: 0; }
+  .fm-editor-path { display: none; }
+  .fm-gutter { padding-left: 8px; padding-right: 6px; font-size: 12px; }
+  .fm-hl, .fm-code textarea { font-size: 12px; padding: 10px; }
+
+  .fm-menu { min-width: 210px; }
+}
+
+/* Very narrow: the rail has eight destinations and they have to fit across the
+   bottom without scrolling, so the labels shrink rather than the row. */
+@media (max-width: 430px) {
+  .rail-link { font-size: .6rem; padding-left: 2px; padding-right: 2px; }
+  .rail-label { white-space: nowrap; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fm-icon-btn.is-spinning svg, .fm-spin { animation: none; }
+  .fm-up-fill { transition: none; }
+}

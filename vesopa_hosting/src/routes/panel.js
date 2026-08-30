@@ -22,46 +22,32 @@ const mailboxes = require('../mailboxes');
 const { sendMail, shell, detailTable, escapeHtml, DEFAULT_TO } = require('../mailer');
 const { flash, field, rateLimited } = require('../http-utils');
 const {
-  NAMESERVERS, DOMAIN_NS_GRACE_DAYS, CONTROL_PANEL_URL, SITE_URL,
+  NAMESERVERS, DOMAIN_NS_GRACE_DAYS, SITE_URL,
 } = require('../config');
 
 const router = express.Router();
 
 /**
- * Deep links into HestiaCP for the tools this site does not reimplement.
+ * The tools on a service page, all of which now live on this site.
  *
- * Returns null when no panel URL is configured, so a view can ask for it and
- * get "there is nothing to show" rather than a set of dead buttons.
+ * These used to be deep links into HestiaCP on :2083 — a second sign-in, a
+ * second password out of the welcome email, and a control panel that looks
+ * nothing like this one. The file manager and the terminal are both served
+ * here now, signed in with the session the customer already has, so nothing
+ * sends a customer to the panel and nothing asks them to log in twice.
  *
- * These land on Hestia's own login, not signed in — there is no SSO for the
- * panel itself, only for phpMyAdmin (hestia-sso.php). That is deliberate on
- * Hestia's part: the file manager and the terminal are shell access, and a
- * one-click handoff to a shell from a session on a different site is a much
- * bigger thing to get wrong than a handoff to one database. The customer signs
- * in once with the credentials from their welcome email.
+ * `files` deep-links to the site's own document root rather than the top of the
+ * home directory: somebody who clicks "Files" from a website is looking for
+ * that website's files, and public_html is where they are.
  */
-function controlPanelLinks(username) {
-  if (!CONTROL_PANEL_URL) return null;
+function siteTools(service) {
+  const domain = (service && service.primary_domain) || '';
+  const docRoot = domain ? `web/${domain}/public_html` : 'web';
   return {
-    base: CONTROL_PANEL_URL,
-    username: username || '',
-    files: `${CONTROL_PANEL_URL}/fm/`,
-    /*
-     * `/list/terminal/` — the page, served by the panel. The shell itself is a
-     * websocket to WEB_TERMINAL_PORT (8085) that the page opens separately, so
-     * the terminal only works if that port is reachable from the customer's
-     * browser as well as this one being.
-     *
-     * Hestia hides this entry when the account's shell is `nologin`. Every plan
-     * package grants bash (see scripts/create-hestia-packages.sh), so it is
-     * there for customers — but the websocket port has to be reachable from
-     * their browser too, and that is a firewall rule rather than anything this
-     * app controls.
-     */
-    terminal: `${CONTROL_PANEL_URL}/list/terminal/`,
-    profile: username
-      ? `${CONTROL_PANEL_URL}/edit/user/?user=${encodeURIComponent(username)}`
-      : `${CONTROL_PANEL_URL}/edit/user/`,
+    files: `/panel/files?path=${encodeURIComponent(docRoot)}`,
+    filesHome: '/panel/files',
+    terminal: '/panel/terminal',
+    profile: '/panel/settings',
   };
 }
 
@@ -216,7 +202,7 @@ router.get('/services/:id', async (req, res, next) => {
       primaryDomain,
       nameservers: NAMESERVERS,
       hestiaLive: hestia.isLive(),
-      controlPanel: controlPanelLinks(req.customer.hestia_user),
+      tools: siteTools(service),
     });
   } catch (err) {
     next(err);
@@ -580,6 +566,13 @@ router.post('/services/:id/backups', async (req, res, next) => {
 // ---------------------------------------------------------------------------
 // Domains
 // ---------------------------------------------------------------------------
+/*
+ * The file manager. Its own router because it is a dozen routes and two of them
+ * do not take a JSON body — see src/routes/panel-files.js. Mounted here so it
+ * inherits the signed-in guard at the top of this file.
+ */
+router.use('/files', require('./panel-files'));
+
 /**
  * The terminal page.
  *

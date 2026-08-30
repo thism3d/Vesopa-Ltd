@@ -148,27 +148,24 @@
     </div>
 
     <%#
-      The tools this panel does not reimplement. Rendered only when a control
-      panel URL is configured, and only for a live account — a file manager for
-      a site that has not been provisioned yet has nothing to show.
-
-      These ask for a separate sign-in. The username below is the one to use;
-      the password was in the welcome email.
+      The tools for this site. All of them are pages on cloud.vesopa.com, signed
+      in with the session the customer already has — there is no second login and
+      no trip to the control panel on :2083. "Files" opens this site's own
+      public_html rather than the top of the account, because that is what
+      somebody clicking it from a website is looking for.
     %>
-    <% if (typeof controlPanel !== 'undefined' && controlPanel && service.status === 'active') { %>
+    <% if (typeof tools !== 'undefined' && tools && service.status === 'active') { %>
       <div class="p-card">
-        <h2 class="h3 mb-2">Advanced tools</h2>
+        <h2 class="h3 mb-2">Manage this site</h2>
         <p class="tiny muted mb-2">
-          Files, a terminal and your full account settings live in the control
-          panel. It asks you to sign in separately — your username is
-          <span class="strong"><%= controlPanel.username %></span>, and the
-          password is the one in your welcome email.
+          Your files and a terminal, here — no extra password.
         </p>
-        <a class="btn btn-ghost btn-sm btn-block" href="<%= controlPanel.files %>" target="_blank" rel="noopener">File manager</a>
-        <a class="btn btn-ghost btn-sm btn-block mt-2" href="<%= controlPanel.terminal %>" target="_blank" rel="noopener">Terminal</a>
-        <a class="btn btn-ghost btn-sm btn-block mt-2" href="<%= controlPanel.profile %>" target="_blank" rel="noopener">Account settings</a>
+        <a class="btn btn-ghost btn-sm btn-block" href="<%= tools.files %>"><%- icon('folder', 16) %> File manager</a>
+        <a class="btn btn-ghost btn-sm btn-block mt-2" href="<%= tools.terminal %>"><%- icon('code', 16) %> Terminal</a>
+        <a class="btn btn-ghost btn-sm btn-block mt-2" href="<%= tools.profile %>"><%- icon('settings', 16) %> Account settings</a>
       </div>
     <% } %>
+
   </aside>
 </div>
 

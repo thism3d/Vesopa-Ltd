@@ -74,7 +74,7 @@
   <span data-flash="<%= flash.message %>" data-flash-kind="<%= flash.kind || 'ok' %>" hidden></span>
 <% } %>
 
-<script src="/assets/js/app.js" defer></script>
-<% if (typeof extraJs !== 'undefined') { %><script src="<%= extraJs %>" defer></script><% } %>
+<script src="<%= asset('/assets/js/app.js') %>" defer></script>
+<% if (typeof extraJs !== 'undefined') { %><script src="<%= asset(extraJs) %>" defer></script><% } %>
 </body>
 </html>

@@ -11,6 +11,7 @@ const db = require('./db');
 const { verifyMail } = require('./mailer');
 const auth = require('./auth');
 const { icon } = require('./icons');
+const { asset } = require('./assets');
 const currencyContext = require('./currency-context');
 const geo = require('./geo');
 const registrar = require('./integrations/domainnameapi');
@@ -121,6 +122,9 @@ app.use(async (req, res, next) => {
   // rather than passing it through from every route.
   res.locals.query = req.query || {};
   res.locals.icon = icon;
+  // Appends a deploy stamp to every asset URL. Without it the 7-day max-age
+  // below serves old CSS and JS alongside new HTML — see src/assets.js.
+  res.locals.asset = asset;
   // money(), moneyParts(), currency, vatPercent and showVat are set by the
   // currency middleware immediately below — they cannot be constants any more,
   // because what they mean depends on who is asking.

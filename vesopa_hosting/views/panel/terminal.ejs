@@ -1,6 +1,6 @@
 <%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
-<link rel="stylesheet" href="/assets/vendor/xterm/xterm.css">
-<link rel="stylesheet" href="/assets/css/terminal.css">
+<link rel="stylesheet" href="<%= asset('/assets/vendor/xterm/xterm.css') %>">
+<link rel="stylesheet" href="<%= asset('/assets/css/terminal.css') %>">
 <%- include('../partials/panel-shell', {
   pageTitle: 'Terminal',
   pageSub: 'A shell on your hosting account, in the browser.',
@@ -55,9 +55,9 @@
   them in document order, so xterm and the addon are both defined before
   terminal.js runs.
 %>
-<script src="/assets/vendor/xterm/xterm.js" defer></script>
-<script src="/assets/vendor/xterm/addon-fit.js" defer></script>
-<script src="/assets/js/terminal.js" defer></script>
+<script src="<%= asset('/assets/vendor/xterm/xterm.js') %>" defer></script>
+<script src="<%= asset('/assets/vendor/xterm/addon-fit.js') %>" defer></script>
+<script src="<%= asset('/assets/js/terminal.js') %>" defer></script>
 
 <%- include('../partials/panel-shell-end') %>
 <%- include('../partials/footer') %>

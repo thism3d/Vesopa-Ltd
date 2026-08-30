@@ -12,21 +12,22 @@ const SITE_URL = process.env.SITE_URL || 'http://localhost:5075';
 const MAIN_SITE_URL = process.env.MAIN_SITE_URL || 'https://vesopaepos.com';
 
 /**
- * HestiaCP's own web interface, e.g. https://panel.vesopa.com:2083 — where the
- * things this panel deliberately does not reimplement actually live.
+ * HestiaCP's own web interface, e.g. https://panel.vesopa.com:2083.
  *
- * This site covers what a customer needs weekly: databases, mailboxes, DNS,
- * backups, SSL. It does NOT cover the file manager, the web terminal, cron, or
- * editing the account profile, and it should not — those are a control panel's
- * job, they change with every Hestia release, and a half-copy of them here
- * would be a worse version that silently drifts out of date.
+ * NOTHING IN THE CUSTOMER PANEL LINKS HERE ANY MORE, and that is the point.
  *
- * So the customer is sent to the real one instead. They can sign in: the
- * account and password provisioning generated for them are in their welcome
- * email (see provisioning.js), and they are the same credentials this link
- * lands on. Blank this and every link to it disappears from the panel rather
- * than rendering a dead button — which is the right behaviour on a node whose
- * panel is not published on a name customers can reach.
+ * It used to: the file manager, the web terminal and the account profile were
+ * all deep links onto :2083, which meant a second sign-in with a password out
+ * of a welcome email and a control panel that looks nothing like this one. Both
+ * of the tools that mattered are served by this app now — /panel/files
+ * (src/routes/panel-files.js) and /panel/terminal (src/terminal.js) — each
+ * signed in with the session the customer already has.
+ *
+ * The value is kept because it is still the right address for staff, and
+ * because blanking it should not be load-bearing. If something new ever needs
+ * to hand a customer to Hestia, read this rather than hard-coding a host — and
+ * think hard first, because "log in again over there" is the experience this
+ * whole panel exists to avoid.
  */
 const CONTROL_PANEL_URL = (process.env.HESTIA_PANEL_URL || '').replace(/\/+$/, '');
 
