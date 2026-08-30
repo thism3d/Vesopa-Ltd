@@ -355,7 +355,7 @@ async function dropUnverified(domainRow) {
       html: shell({
         title: `${escapeHtml(domainRow.domain)} was not pointed at us`,
         intro:
-          `You added <b>${escapeHtml(domainRow.domain)}</b> to your Vesopa Hosting account, but its `
+          `You added <b>${escapeHtml(domainRow.domain)}</b> to your Vesopa Cloud account, but its `
           + `nameservers were never changed to ours, so we were never able to host it. `
           + `It has been removed from your account — nothing has been charged, and your domain itself is untouched.`,
         bodyHtml: detailTable([

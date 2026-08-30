@@ -374,7 +374,7 @@ async function begin(order, customer, gatewayId, urls) {
     amount: charge.minor / currency.MINOR,
     currency: charge.currency,
     orderRef,
-    description: `Order ${order.reference} — Vesopa Hosting`,
+    description: `Order ${order.reference} — Vesopa Cloud`,
     cusName: `${customer.first_name || ''} ${customer.last_name || ''}`.trim(),
     cusEmail: customer.email,
     cusPhone: customer.phone,

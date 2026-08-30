@@ -148,7 +148,7 @@ router.get('/support', (req, res) => {
 router.get('/about', (req, res) => {
   res.render('public/about', {
     title: 'About',
-    description: 'Vesopa Hosting is run by Vesopa EPOS Ltd, a Welsh software company that has hosted its own systems since 2018.',
+    description: 'Vesopa Cloud is run by Vesopa EPOS Ltd, a Welsh software company that has hosted its own systems since 2018.',
   });
 });
 
@@ -158,7 +158,7 @@ router.get('/about', (req, res) => {
 router.get('/contact', (req, res) => {
   res.render('public/contact', {
     title: 'Contact us',
-    description: 'Talk to Vesopa Hosting about a plan, a migration or anything that is not working.',
+    description: 'Talk to Vesopa Cloud about a plan, a migration or anything that is not working.',
     values: {},
     errors: {},
   });
@@ -218,7 +218,7 @@ router.post('/contact', async (req, res, next) => {
 
     sendMail({
       to: values.email,
-      subject: 'We have your message — Vesopa Hosting',
+      subject: 'We have your message — Vesopa Cloud',
       html: shell({
         title: `Thanks, ${escapeHtml(values.name.split(' ')[0])}`,
         intro: 'We have your message and someone will reply shortly — usually within one working day.',

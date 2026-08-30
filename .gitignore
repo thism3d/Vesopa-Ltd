@@ -157,3 +157,8 @@ desktop.ini
 *.swo
 *~
 .history/
+
+# 125MB of layered brand masters, same reasoning as "logo and assets/":
+# source artwork belongs in asset storage, not in every clone of the repo.
+brandAssets/
+brandAssets.zip

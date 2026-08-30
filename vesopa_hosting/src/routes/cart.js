@@ -999,7 +999,7 @@ router.post('/checkout', async (req, res, next) => {
 
     sendMail({
       to: customer.email,
-      subject: `Order ${reference} received — Vesopa Hosting`,
+      subject: `Order ${reference} received — Vesopa Cloud`,
       html: shell({
         title: 'Thanks for your order',
         intro:

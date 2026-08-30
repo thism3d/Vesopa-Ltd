@@ -65,7 +65,7 @@ async function sendVerifyEmail(customer, req) {
   const url = `${SITE_URL}/verify/${token}`;
   await sendMail({
     to: customer.email,
-    subject: 'Confirm your email — Vesopa Hosting',
+    subject: 'Confirm your email — Vesopa Cloud',
     html: shell({
       title: 'Confirm your email address',
       intro: `Hello ${escapeHtml(customer.first_name || 'there')} — click below to confirm this address and finish setting up your account.`,
@@ -129,11 +129,11 @@ router.post('/register', async (req, res, next) => {
       // useful to them and reveals nothing to whoever submitted the form.
       sendMail({
         to: values.email,
-        subject: 'Someone tried to sign up with your email — Vesopa Hosting',
+        subject: 'Someone tried to sign up with your email — Vesopa Cloud',
         html: shell({
           title: 'You already have an account',
           intro:
-            'Someone just tried to create a Vesopa Hosting account with this address. If that was you, you already have one — sign in instead.',
+            'Someone just tried to create a Vesopa Cloud account with this address. If that was you, you already have one — sign in instead.',
           ctaText: 'Sign in',
           ctaUrl: `${SITE_URL}/login`,
           footNote: 'If it was not you, you can safely ignore this. Your account has not changed and nobody has gained access to it.',
@@ -315,7 +315,7 @@ router.post('/forgot', async (req, res, next) => {
       const token = await issueToken(customer.id, 'reset', RESET_TTL_MINUTES * 60_000);
       await sendMail({
         to: customer.email,
-        subject: 'Reset your password — Vesopa Hosting',
+        subject: 'Reset your password — Vesopa Cloud',
         html: shell({
           title: 'Reset your password',
           intro: 'Click below to choose a new password. If you did not ask for this, ignore this email — your password has not changed.',
@@ -382,10 +382,10 @@ router.post('/reset/:token', async (req, res, next) => {
 
     sendMail({
       to: customer.email,
-      subject: 'Your password was changed — Vesopa Hosting',
+      subject: 'Your password was changed — Vesopa Cloud',
       html: shell({
         title: 'Your password was changed',
-        intro: 'This is a confirmation that the password on your Vesopa Hosting account has just been changed, and every other device has been signed out.',
+        intro: 'This is a confirmation that the password on your Vesopa Cloud account has just been changed, and every other device has been signed out.',
         footNote: '<b>If this was not you</b>, reply to this email immediately — someone else has access to your inbox.',
       }),
     });

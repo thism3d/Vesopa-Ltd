@@ -50,7 +50,7 @@ async function check(label, fn) {
 }
 
 (async () => {
-  console.log(`\nVesopa Hosting preflight — ${SITE_URL}\n${'='.repeat(60)}`);
+  console.log(`\nVesopa Cloud preflight — ${SITE_URL}\n${'='.repeat(60)}`);
 
   // -------------------------------------------------------------------------
   head('Database');

@@ -13,7 +13,7 @@
 const nodemailer = require('nodemailer');
 const { SITE_URL, BRAND, CONTACT } = require('./config');
 
-const FROM_NAME = process.env.MAIL_FROM_NAME || 'Vesopa Hosting';
+const FROM_NAME = process.env.MAIL_FROM_NAME || 'Vesopa Cloud';
 const FROM = process.env.MAIL_FROM || 'hosting@vesopaepos.com';
 const DEFAULT_TO = process.env.MAIL_TO || FROM;
 

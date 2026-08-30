@@ -10,7 +10,7 @@
       <span class="msg-avatar"><%= (m.author_name || (m.author === 'staff' ? 'Vesopa' : '?')).charAt(0).toUpperCase() %></span>
       <div class="msg-body">
         <div class="msg-meta">
-          <b><%= m.author === 'staff' ? (m.author_name || 'Vesopa Hosting') : m.author_name %></b>
+          <b><%= m.author === 'staff' ? (m.author_name || 'Vesopa Cloud') : m.author_name %></b>
           · <%= new Date(m.created_at).toLocaleString('en-GB') %>
         </div>
         <div class="msg-text"><%= m.body %></div>

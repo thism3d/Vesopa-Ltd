@@ -737,7 +737,7 @@ async function sendWelcome(order, customer, outcome) {
 
   await sendMail({
     to: customer.email,
-    subject: 'Your hosting is live — Vesopa Hosting',
+    subject: 'Your hosting is live — Vesopa Cloud',
     html: shell({
       title: `You are live, ${escapeHtml(customer.first_name || 'there')}`,
       intro: 'Your hosting account is set up and ready. Everything below is also in your control panel.',

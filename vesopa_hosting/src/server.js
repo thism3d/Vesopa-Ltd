@@ -360,7 +360,7 @@ app.use((err, req, res, _next) => {
    * default is the safe one.
    */
   app.listen(PORT, HOST, () => {
-    console.log(`\n  Vesopa Hosting running on http://${HOST}:${PORT}`);
+    console.log(`\n  Vesopa Cloud running on http://${HOST}:${PORT}`);
     console.log(`  Admin panel:               http://${HOST}:${PORT}/admin\n`);
   });
 })();

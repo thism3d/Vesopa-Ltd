@@ -1524,7 +1524,7 @@ router.post('/tickets/:id/reply', async (req, res, next) => {
     if (body.length >= 2) {
       await db.query(
         'INSERT INTO ticket_messages (ticket_id, author, author_name, body) VALUES (?, ?, ?, ?)',
-        [ticket.id, 'staff', req.admin.name || 'Vesopa Hosting', body],
+        [ticket.id, 'staff', req.admin.name || 'Vesopa Cloud', body],
       );
       sendMail({
         to: ticket.email,

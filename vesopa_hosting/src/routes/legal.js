@@ -203,7 +203,7 @@ Object.entries(DOCS).forEach(([slug, doc]) => {
   router.get(`/${slug}`, (req, res) => {
     res.render('partials/legal-shell', {
       title: doc.title,
-      description: `${doc.title} for Vesopa Hosting, part of ${CONTACT.company}.`,
+      description: `${doc.title} for Vesopa Cloud, part of ${CONTACT.company}.`,
       body: doc.body,
       updated: UPDATED,
     });

@@ -125,7 +125,7 @@ async function initiate({
           },
         ],
         application_context: {
-          brand_name: 'Vesopa Hosting',
+          brand_name: 'Vesopa Cloud',
           // The customer never sees a shipping form for a domain or a hosting
           // account, and PAY_NOW skips PayPal's own "Continue" interstitial.
           shipping_preference: 'NO_SHIPPING',

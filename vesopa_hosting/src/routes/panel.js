@@ -1245,10 +1245,10 @@ router.post('/settings/password', async (req, res, next) => {
 
     sendMail({
       to: req.customer.email,
-      subject: 'Your password was changed — Vesopa Hosting',
+      subject: 'Your password was changed — Vesopa Cloud',
       html: shell({
         title: 'Your password was changed',
-        intro: 'The password on your Vesopa Hosting account has just been changed, and every other device has been signed out.',
+        intro: 'The password on your Vesopa Cloud account has just been changed, and every other device has been signed out.',
         footNote: '<b>If this was not you</b>, reply to this email immediately.',
       }),
     });
