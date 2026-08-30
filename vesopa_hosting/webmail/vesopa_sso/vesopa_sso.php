@@ -110,14 +110,31 @@ class vesopa_sso extends rcube_plugin
         return $args;
     }
 
+    /**
+     * A signed link arriving at any URL.
+     *
+     * ---------------------------------------------------------------------
+     * IT HAS TO BE ABLE TO SWITCH MAILBOXES, and the first version could not.
+     * ---------------------------------------------------------------------
+     * It returned early whenever a session already existed, on the reasoning
+     * that an SSO link should not be a way to hop between mailboxes mid-session.
+     * That is the right instinct about a link from a stranger and the wrong
+     * answer for this product: a customer with four mailboxes clicks "Open
+     * inbox" on the second one and the panel hands over a link for it. The old
+     * code saw a live session, did nothing, and Roundcube showed them the FIRST
+     * mailbox again — with no error, because as far as everything involved was
+     * concerned nothing had gone wrong. Signing out and clicking again worked,
+     * which is exactly the workaround somebody reports as a bug.
+     *
+     * So a verified link for a different mailbox now replaces the session. The
+     * ORDER MATTERS AND IS THE SECURITY-RELEVANT PART: the signature, the
+     * expiry and the nonce are all checked BEFORE anything touches the session.
+     * A forged or replayed link must not be able to sign somebody out — that
+     * would turn an unauthenticated request into a denial of service against a
+     * live session.
+     */
     public function on_startup($args)
     {
-        // Already signed in: an SSO link is not a way to switch mailboxes
-        // inside a live session.
-        if (!empty($_SESSION['user_id'])) {
-            return $args;
-        }
-
         $sig = rcube_utils::get_input_string('vs', rcube_utils::INPUT_GET);
         if (!$sig) {
             return $args;
@@ -159,9 +176,39 @@ class vesopa_sso extends rcube_plugin
             return $args;
         }
 
+        // ---- verified from here on; only now may the session be touched ----
+
+        /*
+         * Already in the mailbox being asked for. Spend the nonce anyway — the
+         * link has been used — and send them to the inbox rather than leaving
+         * them on whatever URL the link happened to land on.
+         */
+        if (!empty($_SESSION['user_id']) && !empty($_SESSION['username'])
+            && strcasecmp($_SESSION['username'], $address) === 0
+        ) {
+            $this->spend_nonce($nonce);
+            rcube::write_log('vesopa_sso', 'already in ' . $address);
+            $rcmail->output->redirect(['_task' => 'mail'], 0, true);
+            return $args;
+        }
+
         if (!$this->spend_nonce($nonce)) {
             $this->refuse('link already used');
             return $args;
+        }
+
+        /*
+         * A different mailbox: end the old session before starting the new one.
+         *
+         * kill_session() rather than logout_actions() — the latter runs the
+         * user's "empty trash on logout" and "expunge on logout" preferences,
+         * and silently deleting somebody's mail because they clicked a link for
+         * a different inbox would be an appalling thing to do.
+         */
+        if (!empty($_SESSION['user_id'])) {
+            rcube::write_log('vesopa_sso', 'switching from '
+                . (isset($_SESSION['username']) ? $_SESSION['username'] : '?') . ' to ' . $address);
+            $rcmail->kill_session();
         }
 
         /*

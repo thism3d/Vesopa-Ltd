@@ -19,6 +19,26 @@ const hestia = require('./integrations/hestia');
 
 const PORT = Number(process.env.PORT) || 5075;
 const HOST = process.env.HOST || '127.0.0.1';
+/**
+ * The site's own WebSocket origin, for the Content-Security-Policy below.
+ *
+ * Derived from SITE_URL rather than written down, so a deploy to a different
+ * hostname cannot leave the terminal working everywhere except Safari with
+ * nothing in any log to say why.
+ */
+const WSS_ORIGIN = (() => {
+  try {
+    const url = new URL(config.SITE_URL);
+    return `${url.protocol === 'http:' ? 'ws' : 'wss'}://${url.host}`;
+  } catch {
+    // Should not happen — config.js validates SITE_URL — but a bare `wss:` is
+    // the safe wrong answer: the feature works and the policy is one notch
+    // broader, rather than the feature silently dying on Safari.
+    console.warn('[csp] could not derive a websocket origin from SITE_URL; allowing wss:');
+    return 'wss:';
+  }
+})();
+
 const app = express();
 
 // Behind nginx on the live server, so req.ip is the visitor and not the proxy.
@@ -65,7 +85,24 @@ app.use((req, res, next) => {
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data:",
       "font-src 'self'",
-      "connect-src 'self'",
+      /*
+       * `'self'` AND the site's own wss:// origin, and the second one is not
+       * redundant.
+       *
+       * The spec says `'self'` covers a same-origin WebSocket. WebKit disagrees
+       * — Safari has long refused `wss://` under a bare `connect-src 'self'`,
+       * and it refuses it silently: the socket never opens, the console shows a
+       * CSP violation the customer never sees, and the page just sits there.
+       * The panel's terminal and its live status channel are both websockets,
+       * so on an iPad the terminal opened, drew its cursor, and did nothing
+       * for ever, while working perfectly from a desktop and perfectly against
+       * the server when driven directly.
+       *
+       * Naming the origin costs nothing — it is the same origin the page came
+       * from — and it is the difference between the feature existing on an iPad
+       * and not.
+       */
+      `connect-src 'self' ${WSS_ORIGIN}`,
       /*
        * Checkout POSTs to /checkout (self) and the server 303s the browser on
        * to whichever gateway was chosen. Chromium and WebKit apply form-action
