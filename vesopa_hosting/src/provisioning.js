@@ -916,8 +916,20 @@ async function sendWelcome(order, customer, outcome) {
   });
 }
 
+/**
+ * Does a gTLD registration on this extension start ICANN's 15-day registrant
+ * verification clock? Exported so the reconciler can set the same deadline the
+ * normal registration path does — a domain adopted after a failed provision is
+ * under exactly the same obligation as one registered cleanly.
+ */
+function needsRegistrantVerification(tld) {
+  return !CCTLDS_WITHOUT_RAA.has(String(tld || '').toLowerCase());
+}
+
 module.exports = {
   PAID_STATES,
+  RAA_VERIFY_DAYS,
+  needsRegistrantVerification,
   materialiseOrder,
   activateOrder,
   provisionOrder,

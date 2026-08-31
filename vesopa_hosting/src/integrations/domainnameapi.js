@@ -787,6 +787,9 @@ async function getDomain(domain) {
     domain: name,
     status: data?.status || 'unknown',
     expires_at: (data?.expirationDate || '').slice(0, 10) || null,
+    // When the registry says the registration began. The RAA verification clock
+    // runs from this, not from when we happen to notice the domain exists.
+    started_at: data?.startDate || null,
     /*
      * `objectId` is what this gateway calls the registration's own handle —
      * there is no top-level `id` on an info response, only on the one register

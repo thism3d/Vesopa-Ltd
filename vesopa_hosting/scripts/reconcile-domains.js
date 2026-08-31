@@ -39,6 +39,8 @@ require('dotenv').config({ quiet: true });
 
 const db = require('../src/db');
 const registrar = require('../src/integrations/domainnameapi');
+const provisioning = require('../src/provisioning');
+const notify = require('../src/notifications');
 const { NAMESERVERS } = require('../src/config');
 
 const args = process.argv.slice(2);
@@ -114,21 +116,66 @@ async function main() {
      * would put a wrong renewal date in front of the customer and, worse, drive
      * the expiry warnings off a date the registry does not agree with.
      */
+    /*
+     * THE VERIFICATION CLOCK IS SET HERE TOO.
+     *
+     * A gTLD registration starts ICANN's 15-day registrant-email verification,
+     * and the registry SUSPENDS the domain if it is not confirmed. The normal
+     * path records that in provisionDomain(); a domain adopted here skipped
+     * that path entirely, so it arrived active with no deadline recorded and
+     * nothing in the panel warning about it.
+     *
+     * Which is exactly how arpi.site came to sit unusable for nine hours — the
+     * obligation existed and nothing on our side knew. Adopting a registration
+     * without adopting its deadline would rebuild that same hole.
+     *
+     * The deadline is measured from the REGISTRATION date the registry reports,
+     * not from now: a domain adopted a week late has a week less to run, and
+     * showing 15 days would be a countdown to the wrong day.
+     */
+    const { tld } = registrar.splitDomain(row.domain);
+    const needsVerify = provisioning.needsRegistrantVerification(tld);
+    const startedAt = info.started_at ? new Date(info.started_at) : new Date();
+    const deadline = needsVerify
+      ? new Date(startedAt.getTime() + provisioning.RAA_VERIFY_DAYS * 864e5)
+        .toISOString().slice(0, 19).replace('T', ' ')
+      : null;
+
     await db.query(
       `UPDATE domains
           SET status = 'active',
               registrar_ref = ?,
               registered_at = COALESCE(registered_at, CURDATE()),
               expires_at = COALESCE(?, expires_at),
-              ns1 = ?, ns2 = ?
+              ns1 = ?, ns2 = ?,
+              registrant_email = IF(registrant_email = '', ?, registrant_email),
+              verification_deadline = COALESCE(verification_deadline, ?)
         WHERE id = ?`,
       [
         String(info.registrar_ref || info.domain || ''),
         expires,
         NAMESERVERS[0] || '', NAMESERVERS[1] || '',
+        row.email || '',
+        deadline,
         row.id,
       ],
     );
+
+    if (needsVerify) {
+      await notify.raise({
+        customerId: row.customer_id,
+        level: 'warn',
+        area: 'domain',
+        title: `Verify your email to keep ${row.domain}`,
+        body: `The registry requires you to confirm ${row.email} within `
+          + `${provisioning.RAA_VERIFY_DAYS} days of registration or ${row.domain} will be `
+          + 'suspended. The confirmation email comes from the registrar, not from us, and is '
+          + 'easy to mistake for spam — check your junk folder if it is not in your inbox.',
+        fixUrl: `/panel/domains/${row.id}#verification`,
+        fixLabel: 'What do I need to do?',
+        dedupeKey: `domain:${row.id}:registrant_verification`,
+      }).catch(() => {});
+    }
 
     await db.logActivity({
       actorType: 'system',
