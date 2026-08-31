@@ -135,7 +135,23 @@ async function forOrder(orderId, { conn = null } = {}) {
        VALUES (?, ?, ?, 'paid', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         order.customer_id, orderId, number, order.currency || 'GBP',
-        pence(order.subtotal_pence), pence(order.discount_pence),
+        /*
+         * THE SUBTOTAL IS THE SUM OF THE PRINTED LINES, not `orders.subtotal_pence`.
+         *
+         * That column holds the NET — after the discount and excluding VAT —
+         * which is the right number for the books and the wrong one for a
+         * document that prints its lines above it. On a fully-discounted order
+         * it produced: lines totalling $10.08, "Subtotal $0.00", "Discount
+         * -$10.08", "Total $0.00". Every figure individually correct and the
+         * column visibly not adding up, on the one page a customer checks
+         * against their bank statement.
+         *
+         * Summing the lines makes the arithmetic on the page true:
+         * subtotal - discount = total, with VAT reported separately because it
+         * is inside the total rather than added to it.
+         */
+        pence(lineItems.reduce((n, it) => n + Number(it.total_pence || 0), 0)),
+        pence(order.discount_pence),
         pence(order.vat_pence), pence(order.total_pence),
         bill.name, bill.company, bill.email, bill.address1, bill.address2,
         bill.city, bill.postcode, bill.country,

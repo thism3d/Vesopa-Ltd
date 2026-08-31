@@ -104,9 +104,29 @@ if [ "$RESTART_ONLY" = 0 ]; then
   # `--delete` inside the synced directories only. `.env`, `logs/` and
   # `node_modules/` are excluded: the first is the server's own configuration,
   # the second is its history, and the third is built there against its Node.
+  #
+  # `files/invoices` IS EXCLUDED, AND THIS IS NOT TIDINESS.
+  #
+  # Those PDFs are customer documents generated at runtime — a name, a postal
+  # address and what somebody spent, one file per purchase. They exist on the
+  # developer's laptop too, from local testing, and rsync happily shipped those
+  # to production where they landed on the same predictable filenames
+  # (VES-2026-00001.pdf) that real invoices use.
+  #
+  # The result was measured, not theorised: a live customer opened their invoice
+  # and was served a PDF belonging to a test account — a different person's
+  # name, address, email and order reference, with "localhost:5075" in the
+  # footer. `ensurePdf()` regenerates only a MISSING file, so a file that is
+  # present and wrong is served forever.
+  #
+  # `--delete` combined with an exclude leaves the remote copy alone, which is
+  # exactly right: production's invoices are the real ones and must survive
+  # every deploy.
+  #
   rsync -az --delete \
     --exclude '.git' --exclude 'node_modules' --exclude 'logs' --exclude '.env' \
     --exclude '.DS_Store' --exclude 'TasksImages' \
+    --exclude 'files/invoices/*' \
     -e "ssh ${SSH_OPTS[*]}" \
     "$LOCAL_APP/src" "$LOCAL_APP/views" "$LOCAL_APP/public" \
     "$LOCAL_APP/scripts" "$LOCAL_APP/terminal" "$LOCAL_APP/files" "$LOCAL_APP/apps" \
