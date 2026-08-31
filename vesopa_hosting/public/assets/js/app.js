@@ -399,27 +399,47 @@
   /* ---- Double-submit guard ---------------------------------------------- */
   // A slow provision or a slow SMTP send is exactly when an impatient customer
   // clicks twice, and two clicks is two orders.
+  /*
+   * ONE BUSY TREATMENT, SHARED WITH panel.js.
+   *
+   * This used to replace the button's innerHTML with `<span class="spinner">`
+   * plus the busy label, while panel.js independently added `.is-working` to
+   * the same button. Both fired, and the result was a button nobody could read:
+   * `.is-working` sets `color: transparent !important`, which hid the label AND
+   * blanked this spinner's `border-top-color: currentColor`, leaving an
+   * invisible 17px box shoving a second, centred `::after` spinner off centre.
+   * That is the "the button is broken by design" report, and it affected every
+   * data-guard form in the product.
+   *
+   * So both now do the same thing: fix the width, add the class, let CSS draw
+   * one spinner. panel.js bails out if the class is already present, so the two
+   * listeners cannot double up.
+   *
+   * The label is NOT replaced — `data-busy` is read by CSS via a content
+   * attribute below, so the DOM is left alone and there is nothing to restore.
+   */
   $$('form[data-guard]').forEach((form) => {
     form.addEventListener('submit', () => {
       const btn = $('[type=submit]', form);
-      if (!btn || btn.disabled) return;
+      if (!btn || btn.disabled || btn.classList.contains('is-working')) return;
+      // Fixed width first, or the button collapses once its label is hidden.
+      btn.style.minWidth = btn.offsetWidth + 'px';
+      btn.classList.add('is-working');
       btn.disabled = true;
-      btn.dataset.label = btn.innerHTML;
-      btn.innerHTML = '<span class="spinner"></span> ' + (btn.dataset.busy || 'Working…');
-      // If the browser restores the page from bfcache the button must not stay
-      // dead.
+      // A form that fails validation never navigates, so the button has to come
+      // back or the page is stuck. Also covers a bfcache restore.
       setTimeout(() => {
+        btn.classList.remove('is-working');
         btn.disabled = false;
-        btn.innerHTML = btn.dataset.label;
       }, 25_000);
     });
   });
 
   window.addEventListener('pageshow', (e) => {
     if (!e.persisted) return;
-    $$('form[data-guard] [type=submit][disabled]').forEach((btn) => {
+    $$('.is-working').forEach((btn) => {
+      btn.classList.remove('is-working');
       btn.disabled = false;
-      if (btn.dataset.label) btn.innerHTML = btn.dataset.label;
     });
   });
 

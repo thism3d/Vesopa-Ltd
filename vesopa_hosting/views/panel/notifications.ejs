@@ -25,7 +25,20 @@
 <div class="p-card p-card-flush">
   <div class="p-card-head">
     <h2>Earlier</h2>
-    <span class="muted small">The last 30 days</span>
+    <div class="row" style="gap:12px;align-items:center">
+      <span class="muted small">The last 30 days</span>
+      <%# Only offered when there is something to do. A permanently-present
+          "mark all read" on an already-empty badge is a control that does
+          nothing, which teaches people the buttons here are decorative. %>
+      <% if (unread > 0) { %>
+        <form method="post" action="/panel/notifications/read" style="margin:0">
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <button class="btn btn-ghost btn-sm" type="submit" data-busy="Marking…">
+            <%- icon('check', 15) %> Mark all as read<%= unread > 1 ? ` (${unread})` : '' %>
+          </button>
+        </form>
+      <% } %>
+    </div>
   </div>
 
   <% if (!history.length) { %>

@@ -198,6 +198,105 @@ async function foreignAddresses(domain) {
 }
 
 /**
+ * File a domain under a hosting plan and build it on the node.
+ *
+ * ---------------------------------------------------------------------------
+ * SHARED BY TWO ROUTES ON PURPOSE
+ * ---------------------------------------------------------------------------
+ * The "Host it on" picker on a domain's own page, and the plan picker on the
+ * Add-a-domain form, are the same act described two ways — and until this
+ * existed only the first one could do it. Somebody who went to Add a domain,
+ * chose their Starter plan and typed a name already on their account was told
+ * "That domain is already on your account." and left there: a true statement,
+ * a dead end, and no mention of the thing they were actually trying to do.
+ *
+ * Attaching does three things and the third is the one that matters: files the
+ * domain under the service, adopts it as the plan's primary domain if the plan
+ * has none, and BUILDS IT ON THE NODE. A domain filed against a plan the server
+ * does not serve is a database row pretending to be hosting.
+ *
+ * @returns {Promise<{ok: boolean, adopted: boolean, message: string, kind: string}>}
+ */
+async function attachToService({ domain, service, customer, ip }) {
+  /*
+   * The plan's own main domain does not move. The name is the document root,
+   * the certificate and the mail domain on the node; changing the column
+   * renames none of them. Checked here rather than in the caller so both
+   * routes are bound by it.
+   */
+  if (domain.service_id && domain.service_id !== service.id) {
+    const owner = await db.one(
+      'SELECT id, primary_domain FROM services WHERE id = ? AND customer_id = ? LIMIT 1',
+      [domain.service_id, customer.id],
+    );
+    if (owner && owner.primary_domain === domain.domain) {
+      return {
+        ok: false,
+        adopted: false,
+        kind: 'warn',
+        message: `${domain.domain} is the main domain of another hosting plan, so it cannot be moved. `
+          + 'Open a ticket and we will migrate the files, certificate and mailboxes together.',
+      };
+    }
+  }
+
+  await db.query('UPDATE domains SET service_id = ? WHERE id = ?', [service.id, domain.id]);
+
+  const adopted = !service.primary_domain;
+  if (adopted) {
+    await db.query(
+      'UPDATE services SET primary_domain = ?, primary_domain_locked_at = NOW() WHERE id = ?',
+      [domain.domain, service.id],
+    );
+  }
+
+  const result = await linking.rebuild({ ...domain, service_id: service.id }, customer);
+
+  await db.logActivity({
+    actorType: 'customer', actorId: customer.id, action: 'domain.attached',
+    target: domain.domain, ip,
+    detail: `${service.plan_name || 'plan'}${adopted ? ' (adopted as the plan\u2019s domain)' : ''}; `
+      + (result.ok ? 'built on the node' : `not built: ${result.error || result.built?.reason || 'unknown'}`),
+    ok: Boolean(result.ok),
+  }).catch(() => {});
+
+  live.publish(customer.id, `domain:${domain.id}`);
+
+  if (!result.ok) {
+    const why = result.error || result.built?.reason || 'unknown error';
+    await notify.raise({
+      customerId: customer.id,
+      level: 'error',
+      area: 'hosting',
+      title: `${domain.domain} is attached but not serving yet`,
+      body: `It is filed under your ${service.plan_name || 'hosting'} plan, but the website could not be `
+        + `created on the server: ${why}`,
+      fixUrl: `/panel/domains/${domain.id}#hosting`,
+      fixLabel: 'Set it up on the server',
+      dedupeKey: `domain:${domain.id}:not_built`,
+    }).catch(() => {});
+    return {
+      ok: false,
+      adopted,
+      kind: 'warn',
+      message: `${domain.domain} is now on your ${service.plan_name || 'hosting'} plan, but the website `
+        + `could not be created on the server (${why}). Try "Set it up on the server" on this page.`,
+    };
+  }
+
+  await notify.resolve(customer.id, `domain:${domain.id}:not_built`).catch(() => {});
+  await notify.resolve(customer.id, `domain:${domain.id}:unattached`).catch(() => {});
+  await notify.resolve(customer.id, `service:${service.id}:no_domain`).catch(() => {});
+
+  return {
+    ok: true,
+    adopted,
+    kind: result.verdict?.matched ? 'ok' : 'info',
+    message: buildOutcome(domain.domain, result),
+  };
+}
+
+/**
  * The canonical path for a domain. Used everywhere so the links cannot drift.
  *
  * Takes a row, a name, or one of domain-linking's result objects — and those
@@ -1122,6 +1221,55 @@ router.post('/domains/add', async (req, res, next) => {
       attachTo = owned ? owned.id : null;
     }
 
+    /*
+     * ALREADY ON THIS ACCOUNT — the case that used to be a dead end.
+     *
+     * "That domain is already on your account." is a true sentence and a
+     * useless one. Somebody reaches this form having chosen their plan and
+     * typed the name they want on it; being told the name exists, with no
+     * mention of the plan they just picked, leaves them re-submitting the same
+     * form and getting the same refusal. That is the "I'm failing and failing"
+     * report, and the domain was attachable the whole time from a different
+     * page they had no reason to look at.
+     *
+     * So: if it is theirs and they named a plan, do the thing they asked for.
+     * If they named no plan, take them to the domain, which is where the
+     * controls are.
+     */
+    if (wanted) {
+      const mine = await db.one(
+        `SELECT * FROM domains
+          WHERE domain = ? AND customer_id = ? AND status NOT IN ('removed','cancelled')
+          LIMIT 1`,
+        [wanted, req.customer.id],
+      );
+      if (mine) {
+        if (!attachTo) {
+          flash(res, `${mine.domain} is already on your account — here it is.`, 'info');
+          return res.redirect(domainPath(mine));
+        }
+        if (mine.service_id === attachTo) {
+          flash(res, `${mine.domain} is already on that hosting plan.`, 'info');
+          return res.redirect(domainPath(mine));
+        }
+        const service = await db.one(
+          `SELECT s.*, p.name AS plan_name FROM services s
+             JOIN plans p ON p.id = s.plan_id
+            WHERE s.id = ? AND s.customer_id = ? AND s.status = 'active' LIMIT 1`,
+          [attachTo, req.customer.id],
+        );
+        if (!service) {
+          flash(res, 'That hosting plan is not on your account.', 'warn');
+          return res.redirect(domainPath(mine));
+        }
+        const outcome = await attachToService({
+          domain: mine, service, customer: req.customer, ip: req.ip,
+        });
+        flash(res, outcome.message, outcome.kind);
+        return res.redirect(domainPath(mine));
+      }
+    }
+
     const parent = wanted ? await linking.findParent(req.customer, wanted) : null;
 
     // ---- A subdomain of something they already have ------------------------
@@ -1562,78 +1710,12 @@ router.post('/domains/:id/service', async (req, res, next) => {
       return res.redirect(back);
     }
 
-    /*
-     * A plan with no domain adopts this one, AND THEN NEVER CHANGES IT.
-     *
-     * The plan's primary domain is not a label — it is the plan's identity on
-     * the node. The document root is /home/<user>/web/<domain>/public_html, the
-     * certificate is issued for that name, the mail domain is that name, and
-     * the vhost is filed under it. Changing the column renames none of those,
-     * so a "changed" primary domain is a panel that says one thing while the
-     * server serves another: the files are under the old name, the certificate
-     * covers the old name, and the new one 404s.
-     *
-     * So the first attach wins and `primary_domain_locked_at` records it.
-     * Additional domains still attach freely — they become add-on domains on
-     * the same account, which is what an add-on domain has always meant here —
-     * and moving the plan's identity is a support job that has to move the
-     * files and the certificate with it.
-     */
-    const adopted = !service.primary_domain;
-    if (adopted) {
-      await db.query(
-        'UPDATE services SET primary_domain = ?, primary_domain_locked_at = NOW() WHERE id = ?',
-        [domain.domain, service.id],
-      );
-    }
-
-    const result = await linking.rebuild({ ...domain, service_id: service.id }, req.customer);
-
-    await db.logActivity({
-      actorType: 'customer', actorId: req.customer.id, action: 'domain.attached',
-      target: domain.domain, ip: req.ip,
-      detail: `${service.plan_name}${adopted ? ' (adopted as the plan’s domain)' : ''}; `
-        + (result.ok ? 'built on the node' : `not built: ${result.error || result.built?.reason || 'unknown'}`),
-      ok: Boolean(result.ok),
+    // Both attach paths go through one function — see attachToService() above.
+    // The Add-a-domain form reaches the same code, so the two cannot drift.
+    const outcome = await attachToService({
+      domain, service, customer: req.customer, ip: req.ip,
     });
-
-    live.publish(req.customer.id, `domain:${domain.id}`);
-
-    if (!result.ok) {
-      /*
-       * THE ATTACH ITSELF SUCCEEDED. Only the build on the node did not.
-       *
-       * This distinction was invisible before and it is the whole of the
-       * "I try to add the domain to my hosting and it fails and fails" report:
-       * the row WAS being filed under the service every time, so the customer
-       * pressed the button again, got the same warning, and had no way to tell
-       * that the filing had worked and only the server step was stuck. The
-       * warning now says which half failed and why, and it goes into the
-       * notification inbox so it survives the next click.
-       */
-      const why = result.error || result.built?.reason || 'unknown error';
-      await notify.raise({
-        customerId: req.customer.id,
-        level: 'error',
-        area: 'hosting',
-        title: `${domain.domain} is attached but not serving yet`,
-        body: `It is filed under your ${service.plan_name} plan, but the website could not be created on `
-          + `the server: ${why}`,
-        fixUrl: `${back}#hosting`,
-        fixLabel: 'Set it up on the server',
-        dedupeKey: `domain:${domain.id}:not_built`,
-      });
-      flash(res, `${domain.domain} is now on your ${service.plan_name} plan, but the website could not be `
-        + `created on the server (${why}). `
-        + 'Try "Set it up on the server" on this page, or open a ticket.', 'warn');
-      return res.redirect(back);
-    }
-
-    await notify.resolve(req.customer.id, `domain:${domain.id}:not_built`);
-    await notify.resolve(req.customer.id, `domain:${domain.id}:unattached`);
-    await notify.resolve(req.customer.id, `service:${service.id}:no_domain`);
-
-    flash(res, buildOutcome(domain.domain, result), result.verdict?.matched ? 'ok' : 'info');
+    flash(res, outcome.message, outcome.kind);
     res.redirect(back);
   } catch (err) {
     next(err);
@@ -2194,7 +2276,6 @@ router.post('/domains/:id/auto-renew', async (req, res, next) => {
 router.get('/notifications', async (req, res, next) => {
   try {
     const history = await notify.list(req.customer.id, { limit: 40 });
-    await notify.markRead(req.customer.id);
     res.render('panel/notifications', {
       title: 'Notifications',
       pageTitle: 'Notifications',
@@ -2202,9 +2283,38 @@ router.get('/notifications', async (req, res, next) => {
         ? `${res.locals.warningSummary.count} thing${res.locals.warningSummary.count === 1 ? '' : 's'} need your attention`
         : 'Everything looks healthy',
       history,
-      // Read before markRead cleared it, so the page still shows what was new.
+      unread: Number(res.locals.notifyUnread || 0),
       customer: req.customer,
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Mark everything read.
+ *
+ * ---------------------------------------------------------------------------
+ * A BUTTON, NOT A SIDE EFFECT OF OPENING THE PAGE
+ * ---------------------------------------------------------------------------
+ * Opening the inbox used to clear the badge on its own. That is the wrong
+ * default for this particular list: half of what is in it is a warning about
+ * something still broken, and silently marking those read because somebody
+ * glanced at the page means the count stops reflecting anything. Worse, it
+ * makes the page impossible to come back to — you cannot re-find what was new.
+ *
+ * So reading is explicit. The badge means "things you have not acknowledged",
+ * and it goes to zero when the customer says so.
+ *
+ * A notification is still not a task: the WARNING above it is the task, and it
+ * stays until the condition clears regardless of what has been read here.
+ */
+router.post('/notifications/read', async (req, res, next) => {
+  try {
+    if (!auth.checkCsrf(req)) return res.redirect('/panel/notifications');
+    await notify.markRead(req.customer.id);
+    flash(res, 'All caught up.', 'ok');
+    res.redirect('/panel/notifications');
   } catch (err) {
     next(err);
   }

@@ -289,6 +289,10 @@ ul, ol { margin: 0 0 1em; padding-left: 1.15em; }
 .btn:hover { text-decoration: none; transform: translateY(-2px); box-shadow: 0 8px 22px rgba(165, 199, 21, .34); }
 .btn:active { transform: translateY(0); transition-duration: .06s; }
 .btn:disabled, .btn[aria-disabled='true'] { opacity: .5; cursor: not-allowed; transform: none; box-shadow: none; }
+/* A working button is disabled so it cannot be pressed twice, but it is not
+   UNAVAILABLE — it is mid-task. Fading it to 50% makes the spinner it is
+   showing hard to read, which is the one thing on it that matters. */
+.btn.is-working:disabled { opacity: 1; cursor: progress; }
 
 /* A sheen that crosses the button on hover. Pure decoration, and the one place
    on the site where that is the point. */
@@ -1441,6 +1445,46 @@ body.nav-open .nav-sheet-foot {
   animation: spin .7s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---- The busy button ----------------------------------------------------
+   ONE TREATMENT FOR THE WHOLE PRODUCT, defined here rather than in panel.css
+   because data-guard forms exist on the public checkout too — where panel.css
+   is not loaded, so the class was being added with nothing to style it.
+
+   The label is hidden and a spinner is drawn CENTRED OVER THE BUTTON, which is
+   why the width is pinned in JS before the class goes on: `color: transparent`
+   collapses nothing, but a button whose text is hidden and whose padding is
+   unchanged still needs its measured width held or it jumps.
+
+   `!important` on the colour is doing real work — it has to beat `.btn`'s own
+   `--btn-fg` colour, which is set on the element.
+   ------------------------------------------------------------------------ */
+.is-working {
+  position: relative;
+  color: transparent !important;
+  pointer-events: none;
+  /* An icon inside the label would otherwise keep its own fill and sit there
+     next to the spinner. */
+  --icon-hidden: 1;
+}
+.is-working > * { visibility: hidden; }
+.is-working::after {
+  content: '';
+  position: absolute; inset: 0; margin: auto;
+  width: 16px; height: 16px; border-radius: 999px;
+  border: 2px solid currentColor; border-top-color: transparent;
+  color: var(--ink-2);
+  animation: spin .7s linear infinite;
+  /* ::after inherits `color: transparent` from the rule above unless it is
+     re-stated, which is precisely how the spinner came to be invisible. */
+}
+.btn.is-working::after { color: var(--on-lime); }
+.btn-ghost.is-working::after,
+.btn-light.is-working::after { color: var(--ink); }
+.btn-dark.is-working::after { color: #fff; }
+@media (prefers-reduced-motion: reduce) {
+  .is-working::after { animation: spin 1.6s linear infinite; }
+}
 
 .divider { height: 1px; background: var(--rule); border: 0; margin: 28px 0; }
 .chip {

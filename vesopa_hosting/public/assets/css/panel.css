@@ -557,16 +557,10 @@ a.item:hover .item-go { color: var(--ink); }
 .sk-line { height: 11px; margin: 7px 0; }
 
 /* A button mid-request. Keeps its width so the row does not jump. */
-.is-working { position: relative; color: transparent !important; pointer-events: none; }
-.is-working::after {
-  content: ''; position: absolute; inset: 0; margin: auto;
-  width: 15px; height: 15px; border-radius: 999px;
-  border: 2px solid currentColor; border-top-color: transparent;
-  color: var(--ink-2);
-  animation: spin .7s linear infinite;
-}
-.btn.is-working::after { color: var(--on-lime); }
-@keyframes spin { to { transform: rotate(360deg); } }
+/* `.is-working` now lives in app.css — one definition, because data-guard
+   forms exist on the public checkout where panel.css is not loaded. The
+   duplicate here disagreed with it by a pixel and only styled half the
+   product. `spin` is still defined in app.css, which every page loads. */
 
 /* ---- Live connection dot ------------------------------------------------
    The panel holds a websocket so a provisioning site, a DNS check or a disk
@@ -1068,6 +1062,7 @@ summary.reveal:hover { color: var(--ink); }
 /* --- The bell ----------------------------------------------------------- */
 .bell {
   position: relative;
+  overflow: visible;
   display: inline-flex; align-items: center; justify-content: center;
   width: 36px; height: 36px;
   border-radius: 10px;
@@ -1076,13 +1071,21 @@ summary.reveal:hover { color: var(--ink); }
 }
 .bell:hover { background: var(--bg-3); color: var(--ink); }
 .bell.has-unread { color: var(--ink); }
+/* The count sits ON the corner of the icon, not tucked inside the button's
+   padding where it read as part of the artwork. Negative offsets put it half
+   outside, which is what makes it read as a badge — so the bell must not clip
+   its overflow. */
 .bell-dot {
-  position: absolute; top: 3px; right: 3px;
-  min-width: 16px; height: 16px; padding: 0 4px;
+  position: absolute; top: -3px; right: -3px;
+  min-width: 18px; height: 18px; padding: 0 5px;
   display: flex; align-items: center; justify-content: center;
-  font-size: .64rem; font-weight: 800; line-height: 1;
+  font-size: .66rem; font-weight: 800; line-height: 1;
   color: #fff; background: var(--red);
   border: 2px solid var(--bg); border-radius: 999px;
+  box-shadow: 0 1px 3px rgba(17, 17, 17, .18);
+  /* The topbar is off-white, not white — the ring has to match what is behind
+     it or the badge looks like it has a halo. */
+  border-color: var(--bg-2);
 }
 
 /* --- The notification history ------------------------------------------- */
