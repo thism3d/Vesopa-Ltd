@@ -1,0 +1,106 @@
+<%- include("../partials/head") %>
+<%- include("../partials/nav") %>
+<div class="wrap">
+  <div class="page-head">
+    <div class="grow">
+      <span class="eyebrow"><%= org ? org.name : "Your organisation" %></span>
+      <h1>Your team</h1>
+      <p>Add the people who need to see this work, and give each of them only what they need.</p>
+    </div>
+  </div>
+
+  <div class="split">
+    <div class="panel">
+      <h2>People</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Name</th><th>Role</th><th>Last seen</th><th></th></tr></thead>
+          <tbody>
+            <% for (const m of members) { %>
+              <tr>
+                <td><strong><%= m.name %></strong>
+                  <div class="muted" style="font-size:.74rem"><%= m.email %><% if (m.job_title) { %> · <%= m.job_title %><% } %></div></td>
+                <td>
+                  <% if (can("team.manage") && m.id !== user.id) { %>
+                    <form method="post" action="/portal/team/<%= m.id %>/role" style="display:flex;gap:.3rem">
+                      <input type="hidden" name="_csrf" value="<%= csrf %>">
+                      <select name="org_role" style="font-size:.78rem;padding:.3rem">
+                        <% for (const r of ORG_ROLES) { %>
+                          <option value="<%= r.id %>" <%= m.org_role === r.id ? "selected" : "" %>><%= r.label %></option>
+                        <% } %>
+                      </select>
+                      <button class="btn ghost small" type="submit">Save</button>
+                    </form>
+                  <% } else { %>
+                    <span class="pill <%= m.org_role === 'owner' ? 'lime' : '' %>"><%= m.org_role %></span>
+                  <% } %>
+                </td>
+                <td><% if (m.last_login_at) { %><time datetime="<%= new Date(m.last_login_at).toISOString() %>"></time><% } else { %><span class="muted">never</span><% } %></td>
+                <td class="num">
+                  <% if (can("team.manage") && m.id !== user.id) { %>
+                    <form method="post" action="/portal/team/<%= m.id %>/suspend">
+                      <input type="hidden" name="_csrf" value="<%= csrf %>">
+                      <button class="btn <%= m.status === 'active' ? 'danger' : 'ghost' %> small" type="submit">
+                        <%= m.status === "active" ? "Suspend" : "Restore" %>
+                      </button>
+                    </form>
+                  <% } %>
+                </td>
+              </tr>
+            <% } %>
+          </tbody>
+        </table>
+      </div>
+
+      <% if (invites.length) { %>
+        <hr><h3>Waiting to accept</h3>
+        <% for (const i of invites) { %>
+          <div style="display:flex;gap:.6rem;align-items:center;padding:.5rem 0;border-bottom:1px solid var(--rule);font-size:.86rem">
+            <div style="flex:1"><%= i.email %>
+              <div class="muted" style="font-size:.72rem">as <%= i.org_role %> · sent
+                <time datetime="<%= new Date(i.created_at).toISOString() %>"></time></div></div>
+            <% if (can("team.manage")) { %>
+              <form method="post" action="/portal/team/invite/<%= i.id %>/revoke">
+                <input type="hidden" name="_csrf" value="<%= csrf %>">
+                <button class="btn danger small" type="submit">Revoke</button>
+              </form>
+            <% } %>
+          </div>
+        <% } %>
+      <% } %>
+    </div>
+
+    <div>
+      <% if (can("team.manage")) { %>
+        <div class="panel">
+          <h3>Invite someone</h3>
+          <form method="post" action="/portal/team/invite">
+            <input type="hidden" name="_csrf" value="<%= csrf %>">
+            <div class="field"><label for="iname">Their name</label><input id="iname" name="name"></div>
+            <div class="field"><label for="iemail">Their email</label><input id="iemail" name="email" type="email" required></div>
+            <div class="field">
+              <label for="irole">What they can do</label>
+              <select id="irole" name="org_role">
+                <% for (const r of ORG_ROLES) { %>
+                  <option value="<%= r.id %>" <%= r.id === "member" ? "selected" : "" %>><%= r.label %> — <%= r.blurb %></option>
+                <% } %>
+              </select>
+            </div>
+            <button class="btn" type="submit" style="width:100%;justify-content:center">Send invitation</button>
+          </form>
+          <p class="hint">The link works once and expires in seven days.</p>
+        </div>
+      <% } %>
+      <div class="panel">
+        <h3>What the roles mean</h3>
+        <% for (const r of ORG_ROLES) { %>
+          <div style="padding:.45rem 0;border-bottom:1px solid var(--rule)">
+            <b style="font-size:.86rem"><%= r.label %></b>
+            <div class="muted" style="font-size:.78rem"><%= r.blurb %></div>
+          </div>
+        <% } %>
+      </div>
+    </div>
+  </div>
+</div>
+<%- include("../partials/foot") %>

@@ -1,0 +1,47 @@
+<%- include("../partials/head") %>
+<div class="auth">
+  <div class="auth-card">
+    <a class="brand" href="/"><img src="/assets/logo.svg" alt="">Vesopa <small>portal</small></a>
+    <% if (error) { %><div class="notice bad"><%= error %></div><% } %>
+    <% if (invite) { %>
+      <h1>Join <%= invite.org_name %></h1>
+      <p>You have been added as <strong><%= invite.org_role %></strong>. Set a password and you are in.</p>
+      <form method="post" action="/portal/invite/<%= token %>">
+        <input type="hidden" name="_csrf" value="<%= csrf %>">
+        <div class="field">
+          <label>Email</label>
+          <input value="<%= invite.email %>" disabled>
+        </div>
+        <div class="field">
+          <label for="name">Your name</label>
+          <input id="name" name="name" required value="<%= invite.name || '' %>" autocomplete="name" autofocus>
+        </div>
+        <div class="fields">
+          <div class="field">
+            <label for="job_title">Job title <span class="muted">(optional)</span></label>
+            <input id="job_title" name="job_title">
+          </div>
+          <div class="field">
+            <label for="phone">Phone <span class="muted">(optional)</span></label>
+            <input id="phone" name="phone" type="tel" autocomplete="tel">
+          </div>
+        </div>
+        <div class="fields">
+          <div class="field">
+            <label for="password">Password</label>
+            <input id="password" name="password" type="password" required minlength="8" autocomplete="new-password">
+          </div>
+          <div class="field">
+            <label for="password2">Repeat it</label>
+            <input id="password2" name="password2" type="password" required minlength="8" autocomplete="new-password">
+          </div>
+        </div>
+        <button class="btn" type="submit">Join the team</button>
+      </form>
+    <% } else { %>
+      <h1>That link is no longer live</h1>
+      <p><a class="btn" href="/portal/login">Go to sign in</a></p>
+    <% } %>
+  </div>
+</div>
+<%- include("../partials/foot") %>

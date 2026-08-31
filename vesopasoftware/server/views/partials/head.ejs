@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title><%= title %> · Vesopa Software</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Martian+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/portal/static/portal.css">
+<script>window.CSRF = "<%= csrf %>";</script>
+</head>
+<body<%= typeof user !== "undefined" && user ? ` data-user="${user.id}"` : "" %>>

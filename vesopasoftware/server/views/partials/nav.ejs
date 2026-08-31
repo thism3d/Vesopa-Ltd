@@ -1,0 +1,66 @@
+<% const isAdmin = user && user.role === "admin"; %>
+<header class="topbar">
+  <a class="brand" href="<%= isAdmin ? '/portal/admin' : '/portal' %>">
+    <img src="/assets/logo.svg" alt="">
+    Vesopa <small><%= isAdmin ? "admin" : "portal" %></small>
+  </a>
+
+  <nav class="topnav">
+    <% const links = isAdmin ? [
+         ["/portal/admin", "Overview"],
+         ["/portal/admin/projects", "Projects"],
+         ["/portal/admin/quotes", "Quotes"],
+         ["/portal/admin/invoices", "Invoices"],
+         ["/portal/admin/subscriptions", "Recurring"],
+         ["/portal/admin/customers", "Customers"],
+         ["/portal/admin/enquiries", "Enquiries"],
+         ["/portal/admin/mail", "Mail"],
+         ["/portal/admin/staff", "Staff"],
+       ] : [
+         ["/portal", "Dashboard"],
+         ["/portal/projects", "Projects"],
+         ["/portal/quotes", "Quotes"],
+         ["/portal/invoices", "Billing"],
+         ["/portal/team", "Team"],
+         ["/portal/account", "Account"],
+       ]; %>
+    <% for (const [href, label] of links) { %>
+      <% const on = href === "/portal" || href === "/portal/admin"
+            ? path === href : path.startsWith(href); %>
+      <a href="<%= href %>" class="<%= on ? 'on' : '' %>"><%= label %></a>
+    <% } %>
+  </nav>
+
+  <span class="spacer"></span>
+
+  <span class="live" id="live"><i></i><span>connecting</span></span>
+
+  <button class="btn ghost small" id="enable-notifications" hidden>Enable notifications</button>
+
+  <div style="position:relative">
+    <button class="bell" id="bell" aria-label="Notifications" title="Notifications">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+        <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+      </svg>
+      <% if (typeof unread !== "undefined" && unread > 0) { %><b><%= unread %></b><% } %>
+    </button>
+    <div class="drawer" id="drawer"></div>
+  </div>
+
+  <div class="clock" id="clock"></div>
+
+  <form method="post" action="/portal/logout">
+    <input type="hidden" name="_csrf" value="<%= csrf %>">
+    <button class="btn ghost small" type="submit">Sign out</button>
+  </form>
+</header>
+
+<% if (typeof flash !== "undefined" && flash) { %>
+  <div class="wrap" style="padding-bottom:0">
+    <div class="notice <%= flash.kind === 'warn' ? 'warn' : flash.kind === 'bad' ? 'bad' : '' %>">
+      <%= flash.message %>
+    </div>
+  </div>
+<% } %>

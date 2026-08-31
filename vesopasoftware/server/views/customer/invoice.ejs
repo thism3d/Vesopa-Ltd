@@ -1,0 +1,82 @@
+<%- include("../partials/head") %>
+<%- include("../partials/nav") %>
+<% const due = balanceOf(inv); %>
+<div class="wrap">
+  <div class="page-head">
+    <div class="grow">
+      <span class="eyebrow">Invoice</span>
+      <h1><%= inv.number %></h1>
+      <p>
+        Issued <time datetime="<%= new Date(inv.issue_date).toISOString() %>"></time> ·
+        due <time datetime="<%= new Date(inv.due_date).toISOString() %>"></time>
+        <% if (isOverdue(inv)) { %><span class="pill bad">Overdue</span>
+        <% } else { %><span class="pill <%= inv.status === 'paid' ? 'ok' : 'warn' %>"><%= STATUS_LABEL[inv.status] || inv.status %></span><% } %>
+      </p>
+    </div>
+    <div class="btn-row">
+      <a class="btn ghost" href="/portal/invoices">All invoices</a>
+      <% if (due > 0 && inv.status !== "void" && paymentMode !== "off" && can("billing.pay")) { %>
+        <form method="post" action="/portal/invoices/<%= inv.id %>/pay">
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <button class="btn" type="submit">Pay <%= money(due, inv.currency) %></button>
+        </form>
+      <% } %>
+    </div>
+  </div>
+
+  <div class="split">
+    <div class="panel">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Description</th><th class="num">Qty</th><th class="num">Unit</th><th class="num">Amount</th></tr></thead>
+          <tbody>
+            <% for (const it of items) { %>
+              <tr><td><%= it.description %></td><td class="num"><%= it.qty %></td>
+              <td class="num"><%= money(it.unit_price, inv.currency) %></td>
+              <td class="num"><%= money(it.amount, inv.currency) %></td></tr>
+            <% } %>
+          </tbody>
+        </table>
+      </div>
+      <hr>
+      <div style="display:grid;gap:.35rem;max-width:18rem;margin-left:auto;font-size:.9rem">
+        <div style="display:flex"><span style="flex:1" class="muted">Subtotal</span><span class="strong-num"><%= money(inv.subtotal, inv.currency) %></span></div>
+        <% if (Number(inv.tax_rate) > 0) { %>
+          <div style="display:flex"><span style="flex:1" class="muted">VAT <%= inv.tax_rate %>%</span><span class="strong-num"><%= money(inv.tax_amount, inv.currency) %></span></div>
+        <% } %>
+        <div style="display:flex;font-size:1.05rem;font-weight:700"><span style="flex:1">Total</span><span class="strong-num"><%= money(inv.total, inv.currency) %></span></div>
+        <div style="display:flex"><span style="flex:1" class="muted">Paid</span><span class="strong-num"><%= money(inv.amount_paid, inv.currency) %></span></div>
+        <div style="display:flex;color:var(--lime);font-weight:700"><span style="flex:1">Outstanding</span><span class="strong-num"><%= money(due, inv.currency) %></span></div>
+      </div>
+      <% if (inv.notes) { %><hr><p class="muted" style="font-size:.86rem"><%= inv.notes %></p><% } %>
+    </div>
+
+    <div>
+      <div class="panel">
+        <h3>Billed to</h3>
+        <p style="font-size:.9rem"><strong><%= customer.name %></strong><br>
+          <% if (customer.company) { %><%= customer.company %><br><% } %>
+          <span class="muted"><%= customer.email %></span></p>
+        <% if (project) { %>
+          <hr><div class="mono muted" style="font-size:.62rem">PROJECT</div>
+          <a href="/portal/projects/<%= project.id %>"><%= project.title %></a>
+        <% } %>
+      </div>
+      <div class="panel">
+        <h3>Payments</h3>
+        <% if (!payments.length) { %><p class="t-empty">Nothing received yet.</p><% } %>
+        <% for (const p of payments) { %>
+          <div style="display:flex;gap:.5rem;padding:.45rem 0;border-bottom:1px solid var(--rule);font-size:.85rem">
+            <div style="flex:1">
+              <span class="strong-num"><%= money(p.amount, p.currency) %></span>
+              <div class="muted" style="font-size:.72rem"><%= p.method.replace("_"," ") %> ·
+                <time datetime="<%= new Date(p.paid_at).toISOString() %>"></time></div>
+            </div>
+            <span class="pill <%= p.status === 'settled' ? 'ok' : '' %>"><%= p.status %></span>
+          </div>
+        <% } %>
+      </div>
+    </div>
+  </div>
+</div>
+<%- include("../partials/foot") %>

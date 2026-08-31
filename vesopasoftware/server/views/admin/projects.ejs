@@ -1,0 +1,42 @@
+<%- include("../partials/head") %>
+<%- include("../partials/nav") %>
+<div class="wrap">
+  <div class="page-head">
+    <div class="grow"><span class="eyebrow">Every job, separately tracked and separately billed</span><h1>Projects</h1></div>
+    <div class="btn-row">
+      <% for (const s of ["", "enquiry", "scoping", "in_progress", "review", "live", "complete"]) { %>
+        <a class="btn <%= status === s ? '' : 'ghost' %> small" href="/portal/admin/projects<%= s ? '?status=' + s : '' %>"><%= s ? (PROJECT_STATUS[s] ? PROJECT_STATUS[s].label : s) : "All" %></a>
+      <% } %>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Project</th><th>Customer</th><th>Status</th><th>Progress</th>
+          <th class="num">Budget</th><th class="num">Invoiced</th><th class="num">Collected</th></tr></thead>
+        <tbody>
+          <% if (!projects.length) { %><tr><td colspan="7" class="t-empty">Nothing here.</td></tr><% } %>
+          <% for (const p of projects) { %>
+            <tr>
+              <td><a href="/portal/admin/projects/<%= p.id %>"><strong><%= p.title %></strong></a>
+                <div class="mono muted" style="font-size:.65rem"><%= p.ref %> · <%= p.service_type %></div></td>
+              <td><%= p.customer %><% if (p.company) { %><div class="muted" style="font-size:.72rem"><%= p.company %></div><% } %></td>
+              <td><span class="pill <%= p.status === 'complete' ? 'ok' : p.status === 'on_hold' ? 'warn' : 'info' %>">
+                <%= PROJECT_STATUS[p.status] ? PROJECT_STATUS[p.status].label : p.status %></span></td>
+              <td style="min-width:8rem">
+                <div class="progress-line">
+                  <div class="bar" data-progress="<%= p.id %>"><i style="width:<%= p.progress_pct %>%"></i></div>
+                  <b data-progress-label="<%= p.id %>"><%= p.progress_pct %>%</b>
+                </div>
+              </td>
+              <td class="num"><%= moneyRound(p.budget_amount, p.currency) %></td>
+              <td class="num"><%= moneyRound(p.invoiced, p.currency) %></td>
+              <td class="num" style="color:var(--lime)"><%= moneyRound(p.collected, p.currency) %></td>
+            </tr>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<%- include("../partials/foot") %>

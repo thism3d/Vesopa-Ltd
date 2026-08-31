@@ -2,13 +2,30 @@
   "name": "vesopasoftware",
   "private": true,
   "type": "module",
-  "description": "vesopasoftware.com \u2014 scroll-driven site, static.",
+  "description": "vesopasoftware.com — scroll-driven site, static.",
   "scripts": {
     "serve": "python3 tools/serve.py 5080",
     "gen": "node tools/gen.mjs",
-    "drive": "node tools/drive.mjs"
+    "drive": "node tools/drive.mjs",
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "db:setup": "node server/setup-db.js",
+    "db:seed": "node server/seed.js"
   },
   "devDependencies": {
     "playwright": "^1.62.1"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "dotenv": "^16.6.1",
+    "ejs": "^3.1.10",
+    "express": "^4.22.2",
+    "express-mysql-session": "^3.0.3",
+    "express-rate-limit": "^7.5.1",
+    "express-session": "^1.19.0",
+    "multer": "^2.3.0",
+    "mysql2": "^3.24.2",
+    "nodemailer": "^9.1.0",
+    "ws": "^8.21.3"
   }
 }

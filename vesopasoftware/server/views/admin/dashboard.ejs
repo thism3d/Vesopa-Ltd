@@ -1,0 +1,167 @@
+<%- include("../partials/head") %>
+<%- include("../partials/nav") %>
+<% const peak = Math.max(1, ...monthly.map(m => Number(m.total))); %>
+
+<div class="wrap">
+  <div class="page-head">
+    <div class="grow">
+      <span class="eyebrow">Vesopa Software Ltd</span>
+      <h1>The business, right now.</h1>
+      <p>Earnings are counted from settled payments — money actually received, not invoices raised.</p>
+    </div>
+    <div class="btn-row">
+      <a class="btn ghost" href="/portal/admin/invoices/new">New invoice</a>
+      <a class="btn" href="/portal/admin/projects">Projects</a>
+    </div>
+  </div>
+
+  <div class="grid g4">
+    <div class="stat"><b><%= moneyRound(totals.this_month, currency) %></b><span>Received this month</span></div>
+    <div class="stat"><b><%= moneyRound(totals.this_year, currency) %></b><span>Received this year</span></div>
+    <div class="stat plain"><b><%= moneyRound(totals.lifetime, currency) %></b><span>Lifetime</span></div>
+    <div class="stat <%= pipeline.outstanding > 0 ? 'warn' : '' %>">
+      <b><%= moneyRound(pipeline.outstanding, currency) %></b><span>Outstanding on sent invoices</span>
+    </div>
+  </div>
+
+  <div class="grid g4" style="margin-top:1rem">
+    <div class="stat plain"><b><%= moneyRound(recurring.mrr, currency) %></b>
+      <span>Recurring, per month</span><small><%= recurring.n %> active</small></div>
+    <div class="stat plain"><b><%= customerCount %></b><span>Active customers</span></div>
+    <div class="stat plain"><b><%= openProjects.length %></b><span>Projects in flight</span></div>
+    <div class="stat <%= overdue.length ? 'bad' : 'plain' %>"><b><%= overdue.length %></b>
+      <span>Overdue invoices</span>
+      <% if (overdue.length) { %>
+        <small><%= moneyRound(overdue.reduce((s,i)=>s+balanceOf(i),0), currency) %> late</small>
+      <% } %>
+    </div>
+  </div>
+
+  <div class="split" style="margin-top:1rem">
+    <div>
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Money in, last 12 months</h2>
+          <span class="spacer"></span>
+          <span class="mono muted" style="font-size:.63rem">peak <%= moneyRound(peak, currency) %></span>
+        </div>
+        <% if (!monthly.length) { %>
+          <p class="t-empty">No payments recorded yet.</p>
+        <% } else { %>
+          <div class="spark">
+            <% for (const m of monthly) { %>
+              <div style="height:<%= Math.max(2, Math.round(Number(m.total) / peak * 100)) %>%"
+                   title="<%= m.ym %> — <%= moneyRound(m.total, currency) %> across <%= m.n %> payment(s)"></div>
+            <% } %>
+          </div>
+          <div class="legend">
+            <span><%= monthly[0].ym %></span>
+            <span><%= monthly[monthly.length - 1].ym %></span>
+          </div>
+        <% } %>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Projects in flight</h2><span class="spacer"></span>
+          <a class="btn ghost small" href="/portal/admin/projects">All projects</a>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Project</th><th>Customer</th><th>Status</th><th>Progress</th><th>Due</th></tr></thead>
+            <tbody>
+              <% if (!openProjects.length) { %><tr><td colspan="5" class="t-empty">Nothing open.</td></tr><% } %>
+              <% for (const p of openProjects) { %>
+                <tr>
+                  <td><a href="/portal/admin/projects/<%= p.id %>"><strong><%= p.title %></strong></a>
+                    <div class="mono muted" style="font-size:.65rem"><%= p.ref %></div></td>
+                  <td><%= p.customer %></td>
+                  <td><span class="pill info"><%= PROJECT_STATUS[p.status] ? PROJECT_STATUS[p.status].label : p.status %></span></td>
+                  <td style="min-width:8rem">
+                    <div class="progress-line">
+                      <div class="bar" data-progress="<%= p.id %>"><i style="width:<%= p.progress_pct %>%"></i></div>
+                      <b data-progress-label="<%= p.id %>"><%= p.progress_pct %>%</b>
+                    </div>
+                  </td>
+                  <td><% if (p.target_date) { %><time datetime="<%= new Date(p.target_date).toISOString() %>"></time><% } else { %><span class="muted">—</span><% } %></td>
+                </tr>
+              <% } %>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <% if (overdue.length) { %>
+        <div class="panel" style="border-left:3px solid var(--bad)">
+          <h2>Overdue — chase these</h2>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Invoice</th><th>Customer</th><th>Due</th><th class="num">Outstanding</th></tr></thead>
+              <tbody>
+                <% for (const i of overdue) { %>
+                  <tr>
+                    <td><a href="/portal/admin/invoices/<%= i.id %>"><%= i.number %></a></td>
+                    <td><%= i.customer %></td>
+                    <td><time datetime="<%= new Date(i.due_date).toISOString() %>"></time></td>
+                    <td class="num"><%= money(balanceOf(i), i.currency) %></td>
+                  </tr>
+                <% } %>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      <% } %>
+    </div>
+
+    <div>
+      <div class="panel">
+        <div class="panel-head"><h3>New quotes</h3><span class="spacer"></span>
+          <a class="btn ghost small" href="/portal/admin/quotes">All</a></div>
+        <% if (!newQuotes.length) { %><p class="t-empty">Nothing new.</p><% } %>
+        <% for (const qq of newQuotes) { %>
+          <a href="/portal/admin/quotes/<%= qq.id %>"
+             style="display:block;padding:.55rem 0;border-bottom:1px solid var(--rule);text-decoration:none">
+            <div style="display:flex;gap:.5rem;align-items:baseline">
+              <strong style="font-size:.9rem"><%= qq.name %></strong>
+              <span class="spacer" style="flex:1"></span>
+              <span class="strong-num" style="font-size:.8rem"><%= moneyRound(qq.estimate_min, qq.currency) %>+</span>
+            </div>
+            <div class="muted" style="font-size:.75rem"><%= qq.service_type %> · <%= qq.scope_tier %></div>
+            <time class="muted" style="font-size:.66rem" datetime="<%= new Date(qq.created_at).toISOString() %>"></time>
+          </a>
+        <% } %>
+      </div>
+
+      <div class="panel">
+        <h3>Recent payments</h3>
+        <% if (!recentPayments.length) { %><p class="t-empty">Nothing yet.</p><% } %>
+        <% for (const p of recentPayments) { %>
+          <div style="display:flex;gap:.5rem;padding:.5rem 0;border-bottom:1px solid var(--rule);font-size:.85rem">
+            <div style="flex:1;min-width:0">
+              <strong><%= p.customer %></strong>
+              <div class="muted" style="font-size:.72rem">
+                <%= p.number %> · <%= p.method.replace("_", " ") %> ·
+                <time datetime="<%= new Date(p.paid_at).toISOString() %>"></time>
+              </div>
+            </div>
+            <span class="strong-num" style="color:var(--lime)"><%= money(p.amount, p.currency) %></span>
+          </div>
+        <% } %>
+      </div>
+
+      <div class="panel">
+        <h3>Biggest customers</h3>
+        <% for (const c of topCustomers) { %>
+          <div style="display:flex;gap:.5rem;padding:.45rem 0;border-bottom:1px solid var(--rule);font-size:.85rem">
+            <a href="/portal/admin/customers/<%= c.id %>" style="flex:1;text-decoration:none">
+              <%= c.name %>
+              <% if (c.company) { %><div class="muted" style="font-size:.72rem"><%= c.company %></div><% } %>
+            </a>
+            <span class="strong-num"><%= moneyRound(c.paid, currency) %></span>
+          </div>
+        <% } %>
+      </div>
+    </div>
+  </div>
+</div>
+<%- include("../partials/foot") %>

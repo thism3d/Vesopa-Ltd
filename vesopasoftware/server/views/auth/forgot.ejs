@@ -1,0 +1,25 @@
+<%- include("../partials/head") %>
+<div class="auth">
+  <div class="auth-card">
+    <a class="brand" href="/"><img src="/assets/logo.svg" alt="">Vesopa <small>portal</small></a>
+    <% if (sent) { %>
+      <h1>Check your inbox</h1>
+      <p>If that address has an account, a reset link is on its way. It works once and expires in an hour.</p>
+      <a class="btn" href="/portal/login">Back to sign in</a>
+    <% } else { %>
+      <h1>Reset your password</h1>
+      <p>Give us the address you sign in with and we will send a link.</p>
+      <% if (error) { %><div class="notice bad"><%= error %></div><% } %>
+      <form method="post" action="/portal/forgot">
+        <input type="hidden" name="_csrf" value="<%= csrf %>">
+        <div class="field">
+          <label for="email">Email</label>
+          <input id="email" name="email" type="email" required autocomplete="username" autofocus>
+        </div>
+        <button class="btn" type="submit">Send the link</button>
+      </form>
+      <div class="auth-alt"><a href="/portal/login">Back to sign in</a></div>
+    <% } %>
+  </div>
+</div>
+<%- include("../partials/foot") %>

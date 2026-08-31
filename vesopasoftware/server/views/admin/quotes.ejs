@@ -1,0 +1,34 @@
+<%- include("../partials/head") %>
+<%- include("../partials/nav") %>
+<div class="wrap">
+  <div class="page-head">
+    <div class="grow"><span class="eyebrow">Everything anyone has asked us to price</span><h1>Quotes</h1></div>
+    <div class="btn-row">
+      <% for (const s of ["", "new", "reviewing", "quoted", "accepted", "declined"]) { %>
+        <a class="btn <%= status === s ? '' : 'ghost' %> small" href="/portal/admin/quotes<%= s ? '?status=' + s : '' %>"><%= s || "All" %></a>
+      <% } %>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Ref</th><th>Who</th><th>Work</th><th>Received</th><th>Status</th><th class="num">Estimate</th></tr></thead>
+        <tbody>
+          <% if (!quotes.length) { %><tr><td colspan="6" class="t-empty">Nothing here.</td></tr><% } %>
+          <% for (const qq of quotes) { %>
+            <tr>
+              <td class="mono" style="font-size:.72rem"><a href="/portal/admin/quotes/<%= qq.id %>"><%= qq.ref %></a></td>
+              <td><strong><%= qq.name %></strong>
+                <div class="muted" style="font-size:.73rem"><%= qq.email %><% if (qq.company) { %> · <%= qq.company %><% } %></div></td>
+              <td><%= qq.service_type %><div class="muted" style="font-size:.73rem"><%= qq.scope_tier %> · <%= qq.timeline %></div></td>
+              <td><time datetime="<%= new Date(qq.created_at).toISOString() %>"></time></td>
+              <td><span class="pill <%= qq.status === 'accepted' ? 'ok' : qq.status === 'declined' ? 'bad' : qq.status === 'new' ? 'lime' : '' %>"><%= qq.status %></span></td>
+              <td class="num"><%= moneyRound(qq.estimate_min, qq.currency) %> – <%= moneyRound(qq.estimate_max, qq.currency) %></td>
+            </tr>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<%- include("../partials/foot") %>

@@ -1,33 +1,53 @@
 ---
 name: run-vesopasoftware
-description: Build, serve, drive and screenshot the vesopasoftware.com marketing site, and generate its imagery with the Gemini image models. Use when asked to run, start, serve, screenshot, or visually check the Vesopa Software site, to verify the particle scroll spine, or to generate/regenerate site assets.
+description: Build, serve, drive and screenshot the vesopasoftware.com marketing site and its customer/admin portal, and generate its imagery with the Gemini image models. Use when asked to run, start, serve, screenshot, or visually check the Vesopa Software site, to verify the particle scroll spine, to work on the portal, quotes, invoicing or logins, or to generate/regenerate site assets.
 ---
 
 # Running vesopasoftware.com
 
-A static, scroll-driven marketing site. One WebGL particle field (32,768 points,
-one draw call) morphs through seven targets as you scroll, and the page inverts
-from ink to paper at the Cloud section. There is no build step and no framework.
+Two halves that share one origin and one server:
 
-Nothing interesting happens until you scroll, and the field only exists inside
-WebGL — `curl` tells you nothing. Drive it with `tools/drive.mjs`.
+- **The marketing site** (`site/`) — scroll-driven, one WebGL particle field
+  (one draw call) morphing through seven targets, and a night→dawn→day colour
+  ramp timed to the story section. No build step, no framework.
+- **The portal** (`server/`) — Express + MySQL + EJS at `/portal`: customer
+  accounts and teams, project tracking, files, tasks, a live message thread over
+  websockets, quotes, invoicing, recurring billing and an admin panel.
+
+Nothing interesting happens on the marketing side until you scroll, and the
+field only exists inside WebGL — `curl` tells you nothing. Drive it with
+`tools/drive.mjs`.
 
 All paths below are relative to `vesopasoftware/`.
 
 ## Prerequisites
 
 ```bash
-npm install                          # playwright only
+npm install                          # express, mysql2, ws, playwright, …
 npx playwright install chromium      # ~/Library/Caches/ms-playwright
+cp .env.example .env                 # defaults match MAMP out of the box
 ```
+
+MySQL comes from MAMP: `127.0.0.1:3306`, `root`/`root`, socket
+`/tmp/mamp3306.sock`. Start MAMP before the server. It is MySQL 5.7, **not**
+MariaDB, so the plain `utf8mb4_unicode_ci` collation in `server/schema.sql` is
+stable here — do not copy that file to a MariaDB 11.4 box unchanged.
+
+```bash
+npm run db:setup                     # create the database + apply schema
+npm run db:seed                      # accounts + demo workload (idempotent)
+```
+
+Seeded logins — admin `info@vesopasoftware.com`, customer `muzahid@onzep.uk`,
+both `@Vesopa2026`.
 
 ## Run (agent path)
 
-Two terminals, or background the server:
+One server now serves both halves. Background it:
 
 ```bash
-npm run serve &                      # threaded static server on :5080
-node tools/drive.mjs check           # assert the site works; exit 1 if not
+npm start &                          # site + portal + websockets on :5090
+node tools/drive.mjs check --url "http://localhost:5090/?probe=1"
 node tools/drive.mjs shots           # screenshot each of the 8 sections
 node tools/drive.mjs morphs          # screenshot each of the 7 particle targets
 node tools/drive.mjs shots --mobile  # iPhone 12 viewport
@@ -60,9 +80,45 @@ so a section's top almost never shows a resolved silhouette. Targets are
 
 ## Run (human path)
 
-`npm run serve` then open <http://localhost:5080/>. Scroll slowly — the whole
-design is in the scroll. Append `?probe=1` only when measuring; it makes the
-WebGL drawing buffer readable and costs real frames.
+`npm start`, then <http://localhost:5090/>. Scroll slowly — the whole design is
+in the scroll, and the colour ramp is timed to the story rather than to a fixed
+number of viewports. Append `?probe=1` only when measuring; it makes the WebGL
+drawing buffer readable and costs real frames.
+
+`npm run serve` still exists (threaded static server on :5080) but serves
+`site/` **only**: no `/portal`, no `/api`, so the quote builder and contact form
+on the marketing page cannot submit, and `<video>` has no Range support. Use it
+only for pure-static layout work. `npm start` is the real thing.
+
+## The portal
+
+```
+/portal              customer dashboard   /portal/admin        the money view
+/portal/login        sign in              /portal/admin/projects
+/portal/register     sign up              /portal/admin/invoices
+/portal/forgot       password reset       /portal/admin/subscriptions
+/portal/invite/:tok  team invitation      /portal/admin/mail    the mock mail log
+/portal/ws           websocket            /portal/admin/staff
+```
+
+- **Mail is mocked by default** (`MAIL_MODE=mock`). Nothing leaves the machine;
+  every message is written to `email_log` and printed. `/portal/admin/mail` is
+  how you prove a mail fired. Set `MAIL_MODE=smtp` plus the `SMTP_*` vars for
+  real delivery.
+- **Payments are mocked by default** (`PAYMENT_MODE=mock`). Paying settles the
+  invoice immediately so the earnings figures are exercisable. `PAYMENT_MODE=off`
+  hides the button and leaves invoices to be settled by an admin.
+- **The subscription sweep** runs on boot and daily, and can be forced from
+  `/portal/admin/subscriptions`. It rolls `next_charge_date` forward one
+  interval at a time in a loop, so a sweep that has not run for three months
+  raises the three invoices it owes rather than one.
+- **Money is never incremented in place.** `lib/invoices.js recalc()` reads an
+  invoice's items and settled payments back and rewrites the totals, so a
+  replayed webhook or a double-settle cannot inflate anything.
+
+Uploads live in `uploads/` (outside the web root) and are served only through
+`/portal/files/:id`, which re-checks project access. Do not hang
+`express.static` off that directory.
 
 ## Video clips
 
@@ -145,8 +201,50 @@ that reference it — so `--all` is always safe to re-run. It skips what exists.
 - **Reading the canvas needs `?probe=1`.** WebGL clears its drawing buffer after
   compositing, so `drawImage(canvas)` returns pure black. The page only sets
   `preserveDrawingBuffer` when that query param is present.
+- **The hero backdrop must live outside `main`.** `main` is `z-index:1`, which
+  makes it a stacking context, so a video placed inside the hero section cannot
+  be pushed behind the `#gl` canvas no matter how negative its `z-index` — it
+  simply covers the particle field. `#hero-bg` and `#spotlight` are therefore
+  siblings of the canvas, like `#plate` already was. The stack is video (-3),
+  spotlight (-2), plate (-1), particles (0), type (1).
+- **Nothing inside `#hero-bg` can protect the type**, for the same reason: the
+  canvas paints above it, so the particle field lands on the headline. The
+  guard that does work is `.hero .col::before` — inside `main`, above the
+  canvas, below the words. Verified with `_contrast` style pixel sampling:
+  hero copy measures 11.6–17.1 against a 4.5 AA threshold.
+- **`filter: blur()` on a playing full-screen video is the most expensive thing
+  on the page.** It is re-rasterised every frame the video advances. Removing
+  it on small screens took mobile from 24fps to 60. Desktop keeps a 2px blur
+  and costs ~2fps; do not raise it.
+- **Do not animate opacity on the layer holding the blurred video.** The bulb
+  warm-up originally ran on `#hero-bg` and dropped the first second of the page
+  to 2fps by re-compositing the blur on every keyframe. It runs on `.hero-bulb`
+  — one flat opaque sheet — and looks identical.
+- **`drive.mjs check` samples fps immediately** and will report a low number
+  during the bulb and the video's first decode. Wait ~2s before believing a
+  frame rate; settled is 60 desktop and mobile.
 - **`python3 -m http.server` is single-threaded** and stalls under Chromium's
   parallel connections. `npm run serve` uses `tools/serve.py`, which threads.
+- **`tools/serve.py` answers no Range requests.** `SimpleHTTPRequestHandler`
+  returns 200 with the whole file where a browser asked for `206 Partial
+  Content`, and Safari simply refuses to play a `<video>` whose source cannot be
+  range-requested — which is why clips looked broken there and fine in Chrome.
+  `npm start` uses `express.static`, which answers `206` properly. If video is
+  "not showing", check which server is up before touching the markup.
+- **`.fld label` beat `.opt` on specificity** in the quote form and forced
+  `display:block` over its flex row, stacking every tickbox above its own label
+  in uppercase mono. Field labels are scoped `.fld > label` for that reason;
+  keep it a direct-child selector.
+- **`loadUser` must select `org_id` and `org_role`.** Every customer-side
+  capability is decided from `org_role` in `lib/permissions.js`, and a column
+  left out of that SELECT reads as `undefined`, which silently denies
+  everything — the symptom is a 403 on billing and team for a legitimate owner.
+- **The public API sits ahead of the CSRF guard, deliberately.** `/api/quote`
+  and `/api/contact` are anonymous, act with nobody's authority, and are posted
+  from static HTML that cannot carry a session token. They are defended by the
+  rate limiter and the honeypot field instead. Everything mounted after
+  `app.use(csrf)` does carry authority and is guarded — do not move a route
+  across that line without thinking about which side it belongs on.
 - **Nano Banana Pro goes down under load.** It returned 503 "experiencing high
   demand" for an extended period while `nb2` stayed healthy throughout. `--as
   nb2` overrides every recipe's model so the set can be pulled anyway; the

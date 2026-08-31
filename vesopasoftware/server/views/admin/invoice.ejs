@@ -1,0 +1,94 @@
+<%- include("../partials/head") %>
+<%- include("../partials/nav") %>
+<% const due = balanceOf(inv); %>
+<div class="wrap">
+  <div class="page-head">
+    <div class="grow">
+      <span class="eyebrow">Invoice · <a href="/portal/admin/customers/<%= customer.id %>"><%= customer.name %></a></span>
+      <h1><%= inv.number %></h1>
+      <p>
+        Issued <time datetime="<%= new Date(inv.issue_date).toISOString() %>"></time> ·
+        due <time datetime="<%= new Date(inv.due_date).toISOString() %>"></time>
+        <% if (isOverdue(inv)) { %><span class="pill bad">Overdue</span>
+        <% } else { %><span class="pill <%= inv.status === 'paid' ? 'ok' : 'warn' %>"><%= STATUS_LABEL[inv.status] || inv.status %></span><% } %>
+        <% if (inv.sent_at) { %> · sent <time datetime="<%= new Date(inv.sent_at).toISOString() %>"></time><% } %>
+      </p>
+    </div>
+    <div class="btn-row">
+      <a class="btn ghost" href="/portal/invoices/<%= inv.id %>">Customer's view</a>
+      <form method="post" action="/portal/admin/invoices/<%= inv.id %>/send">
+        <input type="hidden" name="_csrf" value="<%= csrf %>">
+        <button class="btn" type="submit"><%= inv.sent_at ? "Send again" : "Send it" %></button>
+      </form>
+    </div>
+  </div>
+
+  <div class="split">
+    <div class="panel">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Description</th><th class="num">Qty</th><th class="num">Unit</th><th class="num">Amount</th></tr></thead>
+          <tbody><% for (const it of items) { %>
+            <tr><td><%= it.description %></td><td class="num"><%= it.qty %></td>
+            <td class="num"><%= money(it.unit_price, inv.currency) %></td>
+            <td class="num"><%= money(it.amount, inv.currency) %></td></tr>
+          <% } %></tbody>
+        </table>
+      </div>
+      <hr>
+      <div style="display:grid;gap:.35rem;max-width:18rem;margin-left:auto;font-size:.9rem">
+        <div style="display:flex"><span style="flex:1" class="muted">Subtotal</span><span class="strong-num"><%= money(inv.subtotal, inv.currency) %></span></div>
+        <% if (Number(inv.tax_rate) > 0) { %><div style="display:flex"><span style="flex:1" class="muted">VAT <%= inv.tax_rate %>%</span><span class="strong-num"><%= money(inv.tax_amount, inv.currency) %></span></div><% } %>
+        <div style="display:flex;font-size:1.05rem;font-weight:700"><span style="flex:1">Total</span><span class="strong-num"><%= money(inv.total, inv.currency) %></span></div>
+        <div style="display:flex"><span style="flex:1" class="muted">Paid</span><span class="strong-num"><%= money(inv.amount_paid, inv.currency) %></span></div>
+        <div style="display:flex;color:var(--lime);font-weight:700"><span style="flex:1">Outstanding</span><span class="strong-num"><%= money(due, inv.currency) %></span></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="panel">
+        <h3>Record a payment</h3>
+        <form method="post" action="/portal/admin/invoices/<%= inv.id %>/payments">
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <div class="fields">
+            <div class="field"><label for="amount">Amount</label>
+              <input id="amount" name="amount" type="number" step="0.01" value="<%= due > 0 ? due : '' %>" required></div>
+            <div class="field"><label for="method">How</label>
+              <select id="method" name="method">
+                <option value="bank_transfer">Bank transfer</option>
+                <option value="card">Card</option>
+                <option value="crypto">Crypto</option>
+                <option value="manual">Other</option>
+              </select></div>
+          </div>
+          <div class="fields">
+            <div class="field"><label for="paid_at">When</label><input id="paid_at" name="paid_at" type="date"></div>
+            <div class="field"><label for="provider_ref">Reference</label><input id="provider_ref" name="provider_ref"></div>
+          </div>
+          <button class="btn" type="submit" style="width:100%;justify-content:center">Record it</button>
+        </form>
+      </div>
+      <div class="panel">
+        <h3>Payments received</h3>
+        <% if (!payments.length) { %><p class="t-empty">Nothing yet.</p><% } %>
+        <% for (const p of payments) { %>
+          <div style="display:flex;gap:.5rem;padding:.45rem 0;border-bottom:1px solid var(--rule);font-size:.85rem">
+            <div style="flex:1"><span class="strong-num"><%= money(p.amount, p.currency) %></span>
+              <div class="muted" style="font-size:.72rem"><%= p.method.replace("_"," ") %> ·
+                <time datetime="<%= new Date(p.paid_at).toISOString() %>"></time>
+                <% if (p.note) { %><br><%= p.note %><% } %></div></div>
+            <span class="pill <%= p.status === 'settled' ? 'ok' : '' %>"><%= p.status %></span>
+          </div>
+        <% } %>
+        <% if (inv.status !== "void") { %>
+          <hr>
+          <form method="post" action="/portal/admin/invoices/<%= inv.id %>/void">
+            <input type="hidden" name="_csrf" value="<%= csrf %>">
+            <button class="btn danger small" type="submit">Void this invoice</button>
+          </form>
+        <% } %>
+      </div>
+    </div>
+  </div>
+</div>
+<%- include("../partials/foot") %>

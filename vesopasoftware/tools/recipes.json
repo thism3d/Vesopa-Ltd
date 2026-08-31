@@ -1,234 +1,269 @@
 {
- "R1": {
-  "out": "masters/particles/till.png",
-  "prompt": "An industrial 15-inch touchscreen point-of-sale terminal on a matte dark metal stand, blank powered-off black screen, thin bezel, screen angled back 20 degrees, brushed aluminium base plate, a single power cable coiled at the base. Product photography on a plain mid-grey seamless background, flat even softbox lighting from all sides, no cast shadows, straight-on front view with no perspective distortion, orthographic, the object filling 80 percent of the frame, sharp focus throughout, no depth of field, neutral colour, plain unbranded surfaces, no text or logos anywhere in frame.",
-  "model": "nbpro",
-  "ar": "1:1",
-  "size": "2K"
- },
- "R1m": {
-  "out": "masters/particles/till_mask.png",
-  "prompt": "Convert this image into a pure two-tone mask. Every pixel belonging to the object becomes solid pure white. Everything else becomes solid pure black. No grey, no anti-aliasing beyond one pixel, no shadow, no gradient, no highlight. Keep the object's exact outline, position and scale unchanged.",
-  "model": "nb2",
-  "ar": "1:1",
-  "size": "1K",
-  "refs": [
-   "masters/particles/till.png"
-  ]
- },
- "R1d": {
-  "out": "masters/particles/till_depth.png",
-  "prompt": "Generate a greyscale depth map of this image. Surfaces nearest the camera are pure white, surfaces furthest away are pure black, with smooth continuous gradients between them. The background is solid pure black. Keep the object's exact outline, position and scale identical to the source image. No colour, no texture, no lighting information, no text.",
-  "model": "nb2",
-  "ar": "1:1",
-  "size": "1K",
-  "refs": [
-   "masters/particles/till.png"
-  ]
- },
- "R6": {
-  "out": "masters/particles/rack.png",
-  "prompt": "An open 21U server rack column filled with eleven identical dark rack-mount units stacked evenly, vertical side rails visible on both sides, no doors and no side panels, cable management arms at the rear. Product photography on a plain mid-grey seamless background, flat even softbox lighting from all sides, no cast shadows, straight-on front view with no perspective distortion, orthographic, the object filling 80 percent of the frame, sharp focus throughout, no depth of field, neutral colour, plain unbranded surfaces, no text or logos anywhere in frame.",
-  "model": "nbpro",
-  "ar": "1:1",
-  "size": "2K"
- },
- "R6m": {
-  "out": "masters/particles/rack_mask.png",
-  "prompt": "Convert this image into a pure two-tone mask. Every pixel belonging to the object becomes solid pure white. Everything else becomes solid pure black. No grey, no anti-aliasing beyond one pixel, no shadow, no gradient, no highlight. Keep the object's exact outline, position and scale unchanged.",
-  "model": "nb2",
-  "ar": "1:1",
-  "size": "1K",
-  "refs": [
-   "masters/particles/rack.png"
-  ]
- },
- "R6d": {
-  "out": "masters/particles/rack_depth.png",
-  "prompt": "Generate a greyscale depth map of this image. Surfaces nearest the camera are pure white, surfaces furthest away are pure black, with smooth continuous gradients between them. The background is solid pure black. Keep the object's exact outline, position and scale identical to the source image. No colour, no texture, no lighting information, no text.",
-  "model": "nb2",
-  "ar": "1:1",
-  "size": "1K",
-  "refs": [
-   "masters/particles/rack.png"
-  ]
- },
- "R7": {
-  "out": "masters/particles/token.png",
-  "prompt": "A thick machined metal disc token 40mm across, bevelled edge, milled reeded rim, a single plain lightning bolt shape in raised relief on the face, dark gunmetal finish with warm bronze wear on the raised edges. Product photography on a plain mid-grey seamless background, flat even softbox lighting from all sides, no cast shadows, straight-on front view with no perspective distortion, orthographic, the object filling 80 percent of the frame, sharp focus throughout, no depth of field, neutral colour, plain unbranded surfaces, no currency symbols, no letters or numbers anywhere in frame.",
-  "model": "nbpro",
-  "ar": "1:1",
-  "size": "2K"
- },
- "R7m": {
-  "out": "masters/particles/token_mask.png",
-  "prompt": "Convert this image into a pure two-tone mask. Every pixel belonging to the object becomes solid pure white. Everything else becomes solid pure black. No grey, no anti-aliasing beyond one pixel, no shadow, no gradient, no highlight. Keep the object's exact outline, position and scale unchanged.",
-  "model": "nb2",
-  "ar": "1:1",
-  "size": "1K",
-  "refs": [
-   "masters/particles/token.png"
-  ]
- },
- "R7d": {
-  "out": "masters/particles/token_depth.png",
-  "prompt": "Generate a greyscale depth map of this image. Surfaces nearest the camera are pure white, surfaces furthest away are pure black, with smooth continuous gradients between them. The background is solid pure black. Keep the object's exact outline, position and scale identical to the source image. No colour, no texture, no lighting information, no text.",
-  "model": "nb2",
-  "ar": "1:1",
-  "size": "1K",
-  "refs": [
-   "masters/particles/token.png"
-  ]
- },
- "V1f": {
-  "out": "masters/video/v1_hero.png",
-  "prompt": "Macro close-up of a hand holding a plain unmarked bank card just above the contactless reader of a dark payment terminal resting on a worn wooden bar counter at night, extreme shallow depth of field, the reader ring lit lime-green, blurred amber bar lights far behind. Shot on ARRI Alexa 35, 40mm lens at T2.0, single hard key light from camera-left at 45 degrees, cool practical fill, deep near-black background, high micro-contrast, crushed blacks, clean specular highlights, fine 35mm film grain, photographic. UK pub interior. Clean uncluttered composition, natural correct anatomy, one hand with five fingers, realistic skin texture, plain unbranded card and terminal, muted natural colour, straight rectilinear lens, no text or signage anywhere in frame.",
-  "model": "nbpro",
-  "ar": "16:9",
-  "size": "2K"
- },
- "V3f": {
-  "out": "masters/video/v3_pass.png",
-  "prompt": "A thermal receipt printer mounted on a stainless steel kitchen shelf, a blank white ticket half fed out of it and curling forward, steam drifting upward through the frame from below, hot dark kitchen behind, shallow focus held on the printer. Shot on ARRI Alexa 35, 40mm lens at T2.0, single hard key light from camera-left at 45 degrees, cool practical fill, deep near-black background, high micro-contrast, crushed blacks, clean specular highlights, fine 35mm film grain, photographic. One lime-green practical light as a rim on the steel. UK commercial kitchen. Clean uncluttered composition, plain unbranded printer, entirely blank unprinted paper, muted natural colour, straight rectilinear lens, no text or signage anywhere in frame.",
-  "model": "nbpro",
-  "ar": "16:9",
-  "size": "2K"
- },
- "V5f": {
-  "out": "masters/video/v5_aisle.png",
-  "prompt": "The view straight down a cold-lit aisle between two tall rows of dark server racks in an empty data hall, hundreds of small status LEDs across both walls of racks, cold white light from panels overhead, a single lime-green LED strip running along the floor down the centre of the aisle, perfect one-point perspective with the vanishing point centred. The aisle is completely empty with no people present. Shot on ARRI Alexa 35, 40mm lens at T2.0, single hard key light from camera-left at 45 degrees, cool practical fill, deep near-black background, high micro-contrast, crushed blacks, clean specular highlights, fine 35mm film grain, photographic. Shallow depth of field falling off toward the far end, deep near-black shadows between the racks. Clean uncluttered composition, plain unbranded rack units, muted natural colour, straight rectilinear lens, no text or signage anywhere in frame.",
-  "model": "nbpro",
-  "ar": "16:9",
-  "size": "2K"
- },
- "V6f": {
-  "out": "masters/video/v6_settle.png",
-  "prompt": "Macro shot of a pool of dark liquid metal resting on a plain black surface, its surface tense and beginning to rise in the centre, warm amber light reflecting off the meniscus, deep black surrounding it. Shot on ARRI Alexa 35, 40mm lens at T2.0, single hard key light from camera-left at 45 degrees, cool practical fill, deep near-black background, high micro-contrast, crushed blacks, clean specular highlights, fine 35mm film grain, photographic. Extreme shallow depth of field, one warm amber practical light source as a rim. Clean uncluttered composition, a plain unmarked metal surface with no symbols or markings of any kind, muted natural colour, straight rectilinear lens, no text or letters anywhere in frame.",
-  "model": "nbpro",
-  "ar": "16:9",
-  "size": "2K"
- },
- "E1": {
-  "out": "masters/still/e1_hero.png",
-  "prompt": "A dark bar counter at night seen from a low angle, a payment terminal and a touchscreen till out of focus in the background, the wood grain of the counter sharp in the foreground, lime-green light spilling in from off-frame right. Shot on ARRI Alexa 35, 40mm lens at T2.0, single hard key light from camera-left at 45 degrees, cool practical fill, deep near-black background, high micro-contrast, crushed blacks, clean specular highlights, fine 35mm film grain, photographic. Extreme shallow depth of field. Welsh pub interior. Clean uncluttered composition, plain unbranded hardware, blank dark screens, muted natural colour, straight rectilinear lens, no people, no text or signage anywhere in frame.",
-  "model": "nbpro",
-  "ar": "16:9",
-  "size": "2K"
- },
- "E2": {
-  "out": "masters/still/e2_venue.png",
-  "prompt": "A busy Welsh pub interior during evening service seen from behind the bar, warm and crowded, figures blurred by motion, a touchscreen till in sharp focus in the foreground with a completely blank glowing white screen. Shot on ARRI Alexa 35, 40mm lens at T2.0, single hard key light from camera-left at 45 degrees, cool practical fill, deep near-black background, high micro-contrast, crushed blacks, clean specular highlights, fine 35mm film grain, photographic. UK pub interior. Clean uncluttered composition, natural correct anatomy, faces blurred and turned away, plain unbranded hardware, an entirely blank evenly lit screen with nothing displayed on it, muted natural colour, no text or signage anywhere in frame.",
-  "model": "nbpro",
-  "ar": "3:2",
-  "size": "2K"
- },
- "E3": {
-  "out": "masters/still/e3_cloud_day.png",
-  "prompt": "A small business owner's desk in bright daylight, a laptop with a completely blank glowing white screen, a mug, a small plant, a window with soft overcast light falling across the desk, warm off-white walls, calm and uncluttered. Soft even daylight, gentle contrast, no hard shadows, natural colour, photographic, UK interior, 50mm lens at f4. Clean uncluttered composition, plain unbranded laptop, an entirely blank screen with nothing displayed on it, no people, no text or signage anywhere in frame.",
-  "model": "nbpro",
-  "ar": "3:2",
-  "size": "2K"
- },
- "E4": {
-  "out": "masters/still/e4_dc.png",
-  "prompt": "A plain low industrial building at dusk under a flat overcast sky, no windows, a fenced perimeter, one steel door, cooling units along the roofline, wet tarmac in the foreground reflecting the sky. Shot on ARRI Alexa 35, 40mm lens, deep near-black shadows, high micro-contrast, crushed blacks, fine 35mm film grain, photographic, British industrial estate. Clean uncluttered composition, plain unbranded building, muted natural colour, straight rectilinear lens, no people, no vehicles, no text or signage anywhere in frame.",
-  "model": "nbpro",
-  "ar": "16:9",
-  "size": "2K"
- },
- "E5": {
-  "out": "masters/still/e5_pay.png",
-  "prompt": "A single machined metal disc token standing on its edge on a pale stone surface in bright even daylight, one hard shadow cast to the right, nothing else in the frame, extreme minimalism. Soft daylight from a large window, natural colour, photographic, 100mm macro lens at f5.6. Clean uncluttered composition, a plain unmarked token with no symbols, no currency marks, no letters or numbers anywhere in frame.",
-  "model": "nbpro",
-  "ar": "3:2",
-  "size": "2K"
- },
- "ST1": {
-  "out": "masters/story/st1_problem.png",
-  "prompt": "A dim empty pub after closing time, one old cash register sitting on the bar, chairs stacked upside down on the tables, a single warm light left on above the till, everything else falling into darkness. Shot on ARRI Alexa 35, 40mm lens at T2.0, single hard key light from camera-left at 45 degrees, cool practical fill, deep near-black background, high micro-contrast, crushed blacks, clean specular highlights, fine 35mm film grain, photographic. One hard practical light above the till as the key. Welsh pub interior. Clean uncluttered composition, plain unbranded fittings, muted natural colour, no people, no text or signage anywhere in frame.",
-  "model": "nbpro",
-  "ar": "3:2",
-  "size": "2K"
- },
- "ST2": {
-  "out": "masters/story/st2_build.png",
-  "prompt": "Using the attached image as the style reference \u2014 match its lighting, colour grade, lens, grain and world exactly. A laptop open on a domestic kitchen table late at night, its screen glowing lime-green onto a cold cup of tea and a paper notebook covered in handwriting, the rest of the room in darkness. Same camera, same film grain, same crushed blacks. Clean uncluttered composition, plain unbranded laptop, illegible handwriting with no readable words, muted natural colour, no people, no text or signage anywhere in frame.",
-  "model": "nbpro",
-  "ar": "3:2",
-  "size": "2K",
-  "refs": [
-   "masters/story/st1_problem.png"
-  ]
- },
- "ST3": {
-  "out": "masters/story/st3_install.png",
-  "prompt": "Using the attached image as the style reference \u2014 match its lighting, colour grade, lens, grain and world exactly. Two people crouched behind a bar counter feeding a cable up to a new touchscreen terminal, mid-afternoon, the pub empty, flat daylight coming through a front window. Same camera, same film grain. Clean uncluttered composition, natural correct anatomy, hands with five fingers, faces turned away from camera, plain unbranded hardware, a blank dark screen, muted natural colour, no text or signage anywhere in frame.",
-  "model": "nbpro",
-  "ar": "3:2",
-  "size": "2K",
-  "refs": [
-   "masters/story/st1_problem.png"
-  ]
- },
- "ST4": {
-  "out": "masters/story/st4_iteration.png",
-  "prompt": "Using the attached image as the style reference \u2014 match its lighting, colour grade, lens, grain and world exactly. A wall of small blank thermal receipts pinned in a neat grid, their edges curling away from the wall, lit hard from one side so each one casts its own small shadow. Same camera, same film grain, same crushed blacks. Clean uncluttered composition, entirely blank unprinted paper, muted natural colour, no people, no text or printed characters anywhere in frame.",
-  "model": "nbpro",
-  "ar": "3:2",
-  "size": "2K",
-  "refs": [
-   "masters/story/st1_problem.png"
-  ]
- },
- "ST5": {
-  "out": "masters/story/st5_wider.png",
-  "prompt": "Using the attached image as the style reference \u2014 match its lighting, colour grade, lens, grain and world exactly. A dark workshop room with four identical touchscreen terminals lined up on a workbench, all powered on with completely blank glowing white screens, cables running down to the floor. Same camera, same film grain, same crushed blacks. Clean uncluttered composition, plain unbranded hardware, entirely blank evenly lit screens with nothing displayed on them, muted natural colour, no people, no text or signage anywhere in frame.",
-  "model": "nbpro",
-  "ar": "3:2",
-  "size": "2K",
-  "refs": [
-   "masters/story/st1_problem.png"
-  ]
- },
- "ST6": {
-  "out": "masters/story/st6_stack.png",
-  "prompt": "Using the attached image as the style reference \u2014 match its lighting, colour grade, lens, grain and world exactly. Three objects arranged evenly spaced on a dark surface and lit hard from directly above: a touchscreen point-of-sale terminal on the left, a rack-mount server unit in the centre, a small metal disc token on the right. Product still life, hard shadows falling toward camera, deep near-black background. Same camera, same film grain, same crushed blacks. Clean uncluttered composition, plain unbranded objects, blank dark screen, no currency symbols on the token, muted natural colour, no people, no text or signage anywhere in frame.",
-  "model": "nbpro",
-  "ar": "3:2",
-  "size": "2K",
-  "refs": [
-   "masters/story/st1_problem.png"
-  ]
- },
- "F1": {
-  "out": "masters/tile/thermal.png",
-  "prompt": "Seamless tileable texture of blank white thermal receipt paper, very subtle fibre grain, faint warm off-white tint, extremely flat and even lighting, macro. No text, no printing, no folds, no creases, no shadows, no vignette, no visible seams or borders, no perspective, no depth of field.",
-  "model": "nb2",
-  "ar": "1:1",
-  "size": "2K"
- },
- "F2": {
-  "out": "masters/tile/metal.png",
-  "prompt": "Seamless tileable texture of dark grey brushed anodised aluminium, fine horizontal grain, matte finish, flat even lighting, macro. No scratches, no dents, no reflections, no hotspot, no fingerprints, no text, no visible seams or borders, no vignette, no perspective, no depth of field.",
-  "model": "nb2",
-  "ar": "1:1",
-  "size": "2K"
- },
- "F3": {
-  "out": "masters/tile/bokeh.png",
-  "prompt": "Out of focus lime-green and warm amber points of light scattered across a pure black background, heavy circular bokeh, no subject, random distribution. No shapes, no pattern, no grid, no symmetry, no text, no blue, no purple, no teal, no sharp focus, no foreground element, no vignette.",
-  "model": "nb2",
-  "ar": "1:1",
-  "size": "2K"
- },
- "E6": {
-  "out": "masters/og.png",
-  "prompt": "Using the attached logo as the exact mark to reproduce. A wide banner image: the attached logo centred on a deep near-black background, small and precise, with a faint lime-green rim light along its lower edge and a subtle field of fine dark particles fading toward the corners. Flat, restrained, high contrast. Reproduce the logo exactly as supplied with no alteration to its shape, weight or proportions. No other text anywhere in frame.",
-  "model": "nbpro",
-  "ar": "16:9",
-  "size": "1K",
-  "refs": [
-   "site/assets/logo.png"
-  ]
- }
+  "R1": {
+    "out": "masters/particles/till.png",
+    "prompt": "An industrial 15-inch touchscreen point-of-sale terminal on a matte dark metal stand, blank powered-off black screen, thin bezel, screen angled back 20 degrees, brushed aluminium base plate, a single power cable coiled at the base. Product photography on a plain mid-grey seamless background, flat even softbox lighting from all sides, no cast shadows, straight-on front view with no perspective distortion, orthographic, the object filling 80 percent of the frame, sharp focus throughout, no depth of field, neutral colour, plain unbranded surfaces, no text or logos anywhere in frame.",
+    "model": "nbpro",
+    "ar": "1:1",
+    "size": "2K"
+  },
+  "R1m": {
+    "out": "masters/particles/till_mask.png",
+    "prompt": "Convert this image into a pure two-tone mask. Every pixel belonging to the object becomes solid pure white. Everything else becomes solid pure black. No grey, no anti-aliasing beyond one pixel, no shadow, no gradient, no highlight. Keep the object's exact outline, position and scale unchanged.",
+    "model": "nb2",
+    "ar": "1:1",
+    "size": "1K",
+    "refs": [
+      "masters/particles/till.png"
+    ]
+  },
+  "R1d": {
+    "out": "masters/particles/till_depth.png",
+    "prompt": "Generate a greyscale depth map of this image. Surfaces nearest the camera are pure white, surfaces furthest away are pure black, with smooth continuous gradients between them. The background is solid pure black. Keep the object's exact outline, position and scale identical to the source image. No colour, no texture, no lighting information, no text.",
+    "model": "nb2",
+    "ar": "1:1",
+    "size": "1K",
+    "refs": [
+      "masters/particles/till.png"
+    ]
+  },
+  "R6": {
+    "out": "masters/particles/rack.png",
+    "prompt": "An open 21U server rack column filled with eleven identical dark rack-mount units stacked evenly, vertical side rails visible on both sides, no doors and no side panels, cable management arms at the rear. Product photography on a plain mid-grey seamless background, flat even softbox lighting from all sides, no cast shadows, straight-on front view with no perspective distortion, orthographic, the object filling 80 percent of the frame, sharp focus throughout, no depth of field, neutral colour, plain unbranded surfaces, no text or logos anywhere in frame.",
+    "model": "nbpro",
+    "ar": "1:1",
+    "size": "2K"
+  },
+  "R6m": {
+    "out": "masters/particles/rack_mask.png",
+    "prompt": "Convert this image into a pure two-tone mask. Every pixel belonging to the object becomes solid pure white. Everything else becomes solid pure black. No grey, no anti-aliasing beyond one pixel, no shadow, no gradient, no highlight. Keep the object's exact outline, position and scale unchanged.",
+    "model": "nb2",
+    "ar": "1:1",
+    "size": "1K",
+    "refs": [
+      "masters/particles/rack.png"
+    ]
+  },
+  "R6d": {
+    "out": "masters/particles/rack_depth.png",
+    "prompt": "Generate a greyscale depth map of this image. Surfaces nearest the camera are pure white, surfaces furthest away are pure black, with smooth continuous gradients between them. The background is solid pure black. Keep the object's exact outline, position and scale identical to the source image. No colour, no texture, no lighting information, no text.",
+    "model": "nb2",
+    "ar": "1:1",
+    "size": "1K",
+    "refs": [
+      "masters/particles/rack.png"
+    ]
+  },
+  "R7": {
+    "out": "masters/particles/token.png",
+    "prompt": "A thick machined metal disc token 40mm across, bevelled edge, milled reeded rim, a single plain lightning bolt shape in raised relief on the face, dark gunmetal finish with warm bronze wear on the raised edges. Product photography on a plain mid-grey seamless background, flat even softbox lighting from all sides, no cast shadows, straight-on front view with no perspective distortion, orthographic, the object filling 80 percent of the frame, sharp focus throughout, no depth of field, neutral colour, plain unbranded surfaces, no currency symbols, no letters or numbers anywhere in frame.",
+    "model": "nbpro",
+    "ar": "1:1",
+    "size": "2K"
+  },
+  "R7m": {
+    "out": "masters/particles/token_mask.png",
+    "prompt": "Convert this image into a pure two-tone mask. Every pixel belonging to the object becomes solid pure white. Everything else becomes solid pure black. No grey, no anti-aliasing beyond one pixel, no shadow, no gradient, no highlight. Keep the object's exact outline, position and scale unchanged.",
+    "model": "nb2",
+    "ar": "1:1",
+    "size": "1K",
+    "refs": [
+      "masters/particles/token.png"
+    ]
+  },
+  "R7d": {
+    "out": "masters/particles/token_depth.png",
+    "prompt": "Generate a greyscale depth map of this image. Surfaces nearest the camera are pure white, surfaces furthest away are pure black, with smooth continuous gradients between them. The background is solid pure black. Keep the object's exact outline, position and scale identical to the source image. No colour, no texture, no lighting information, no text.",
+    "model": "nb2",
+    "ar": "1:1",
+    "size": "1K",
+    "refs": [
+      "masters/particles/token.png"
+    ]
+  },
+  "V1f": {
+    "out": "masters/video/v1_hero.png",
+    "prompt": "Macro close-up of a hand holding a plain unmarked bank card just above the contactless reader of a dark payment terminal resting on a worn wooden bar counter at night, extreme shallow depth of field, the reader ring lit lime-green, blurred amber bar lights far behind. Shot on ARRI Alexa 35, 40mm lens at T2.0, single hard key light from camera-left at 45 degrees, cool practical fill, deep near-black background, high micro-contrast, crushed blacks, clean specular highlights, fine 35mm film grain, photographic. UK pub interior. Clean uncluttered composition, natural correct anatomy, one hand with five fingers, realistic skin texture, plain unbranded card and terminal, muted natural colour, straight rectilinear lens, no text or signage anywhere in frame.",
+    "model": "nbpro",
+    "ar": "16:9",
+    "size": "2K"
+  },
+  "V3f": {
+    "out": "masters/video/v3_pass.png",
+    "prompt": "A thermal receipt printer mounted on a stainless steel kitchen shelf, a blank white ticket half fed out of it and curling forward, steam drifting upward through the frame from below, hot dark kitchen behind, shallow focus held on the printer. Shot on ARRI Alexa 35, 40mm lens at T2.0, single hard key light from camera-left at 45 degrees, cool practical fill, deep near-black background, high micro-contrast, crushed blacks, clean specular highlights, fine 35mm film grain, photographic. One lime-green practical light as a rim on the steel. UK commercial kitchen. Clean uncluttered composition, plain unbranded printer, entirely blank unprinted paper, muted natural colour, straight rectilinear lens, no text or signage anywhere in frame.",
+    "model": "nbpro",
+    "ar": "16:9",
+    "size": "2K"
+  },
+  "V5f": {
+    "out": "masters/video/v5_aisle.png",
+    "prompt": "The view straight down a cold-lit aisle between two tall rows of dark server racks in an empty data hall, hundreds of small status LEDs across both walls of racks, cold white light from panels overhead, a single lime-green LED strip running along the floor down the centre of the aisle, perfect one-point perspective with the vanishing point centred. The aisle is completely empty with no people present. Shot on ARRI Alexa 35, 40mm lens at T2.0, single hard key light from camera-left at 45 degrees, cool practical fill, deep near-black background, high micro-contrast, crushed blacks, clean specular highlights, fine 35mm film grain, photographic. Shallow depth of field falling off toward the far end, deep near-black shadows between the racks. Clean uncluttered composition, plain unbranded rack units, muted natural colour, straight rectilinear lens, no text or signage anywhere in frame.",
+    "model": "nbpro",
+    "ar": "16:9",
+    "size": "2K"
+  },
+  "V6f": {
+    "out": "masters/video/v6_settle.png",
+    "prompt": "Macro shot of a pool of dark liquid metal resting on a plain black surface, its surface tense and beginning to rise in the centre, warm amber light reflecting off the meniscus, deep black surrounding it. Shot on ARRI Alexa 35, 40mm lens at T2.0, single hard key light from camera-left at 45 degrees, cool practical fill, deep near-black background, high micro-contrast, crushed blacks, clean specular highlights, fine 35mm film grain, photographic. Extreme shallow depth of field, one warm amber practical light source as a rim. Clean uncluttered composition, a plain unmarked metal surface with no symbols or markings of any kind, muted natural colour, straight rectilinear lens, no text or letters anywhere in frame.",
+    "model": "nbpro",
+    "ar": "16:9",
+    "size": "2K"
+  },
+  "E1": {
+    "out": "masters/still/e1_hero.png",
+    "prompt": "A dark bar counter at night seen from a low angle, a payment terminal and a touchscreen till out of focus in the background, the wood grain of the counter sharp in the foreground, lime-green light spilling in from off-frame right. Shot on ARRI Alexa 35, 40mm lens at T2.0, single hard key light from camera-left at 45 degrees, cool practical fill, deep near-black background, high micro-contrast, crushed blacks, clean specular highlights, fine 35mm film grain, photographic. Extreme shallow depth of field. Welsh pub interior. Clean uncluttered composition, plain unbranded hardware, blank dark screens, muted natural colour, straight rectilinear lens, no people, no text or signage anywhere in frame.",
+    "model": "nbpro",
+    "ar": "16:9",
+    "size": "2K"
+  },
+  "E2": {
+    "out": "masters/still/e2_venue.png",
+    "prompt": "A busy Welsh pub interior during evening service seen from behind the bar, warm and crowded, figures blurred by motion, a touchscreen till in sharp focus in the foreground with a completely blank glowing white screen. Shot on ARRI Alexa 35, 40mm lens at T2.0, single hard key light from camera-left at 45 degrees, cool practical fill, deep near-black background, high micro-contrast, crushed blacks, clean specular highlights, fine 35mm film grain, photographic. UK pub interior. Clean uncluttered composition, natural correct anatomy, faces blurred and turned away, plain unbranded hardware, an entirely blank evenly lit screen with nothing displayed on it, muted natural colour, no text or signage anywhere in frame.",
+    "model": "nbpro",
+    "ar": "3:2",
+    "size": "2K"
+  },
+  "E3": {
+    "out": "masters/still/e3_cloud_day.png",
+    "prompt": "A small business owner's desk in bright daylight, a laptop with a completely blank glowing white screen, a mug, a small plant, a window with soft overcast light falling across the desk, warm off-white walls, calm and uncluttered. Soft even daylight, gentle contrast, no hard shadows, natural colour, photographic, UK interior, 50mm lens at f4. Clean uncluttered composition, plain unbranded laptop, an entirely blank screen with nothing displayed on it, no people, no text or signage anywhere in frame.",
+    "model": "nbpro",
+    "ar": "3:2",
+    "size": "2K"
+  },
+  "E4": {
+    "out": "masters/still/e4_dc.png",
+    "prompt": "A plain low industrial building at dusk under a flat overcast sky, no windows, a fenced perimeter, one steel door, cooling units along the roofline, wet tarmac in the foreground reflecting the sky. Shot on ARRI Alexa 35, 40mm lens, deep near-black shadows, high micro-contrast, crushed blacks, fine 35mm film grain, photographic, British industrial estate. Clean uncluttered composition, plain unbranded building, muted natural colour, straight rectilinear lens, no people, no vehicles, no text or signage anywhere in frame.",
+    "model": "nbpro",
+    "ar": "16:9",
+    "size": "2K"
+  },
+  "E5": {
+    "out": "masters/still/e5_pay.png",
+    "prompt": "A single machined metal disc token standing on its edge on a pale stone surface in bright even daylight, one hard shadow cast to the right, nothing else in the frame, extreme minimalism. Soft daylight from a large window, natural colour, photographic, 100mm macro lens at f5.6. Clean uncluttered composition, a plain unmarked token with no symbols, no currency marks, no letters or numbers anywhere in frame.",
+    "model": "nbpro",
+    "ar": "3:2",
+    "size": "2K"
+  },
+  "ST1": {
+    "out": "masters/story/st1_problem.png",
+    "prompt": "A dim empty pub after closing time, one old cash register sitting on the bar, chairs stacked upside down on the tables, a single warm light left on above the till, everything else falling into darkness. Shot on ARRI Alexa 35, 40mm lens at T2.0, single hard key light from camera-left at 45 degrees, cool practical fill, deep near-black background, high micro-contrast, crushed blacks, clean specular highlights, fine 35mm film grain, photographic. One hard practical light above the till as the key. Welsh pub interior. Clean uncluttered composition, plain unbranded fittings, muted natural colour, no people, no text or signage anywhere in frame.",
+    "model": "nbpro",
+    "ar": "3:2",
+    "size": "2K"
+  },
+  "ST2": {
+    "out": "masters/story/st2_build.png",
+    "prompt": "Using the attached image as the style reference — match its lighting, colour grade, lens, grain and world exactly. A laptop open on a domestic kitchen table late at night, its screen glowing lime-green onto a cold cup of tea and a paper notebook covered in handwriting, the rest of the room in darkness. Same camera, same film grain, same crushed blacks. Clean uncluttered composition, plain unbranded laptop, illegible handwriting with no readable words, muted natural colour, no people, no text or signage anywhere in frame.",
+    "model": "nbpro",
+    "ar": "3:2",
+    "size": "2K",
+    "refs": [
+      "masters/story/st1_problem.png"
+    ]
+  },
+  "ST3": {
+    "out": "masters/story/st3_install.png",
+    "prompt": "Using the attached image as the style reference — match its lighting, colour grade, lens, grain and world exactly. Two people crouched behind a bar counter feeding a cable up to a new touchscreen terminal, mid-afternoon, the pub empty, flat daylight coming through a front window. Same camera, same film grain. Clean uncluttered composition, natural correct anatomy, hands with five fingers, faces turned away from camera, plain unbranded hardware, a blank dark screen, muted natural colour, no text or signage anywhere in frame.",
+    "model": "nbpro",
+    "ar": "3:2",
+    "size": "2K",
+    "refs": [
+      "masters/story/st1_problem.png"
+    ]
+  },
+  "ST4": {
+    "out": "masters/story/st4_iteration.png",
+    "prompt": "Using the attached image as the style reference — match its lighting, colour grade, lens, grain and world exactly. A wall of small blank thermal receipts pinned in a neat grid, their edges curling away from the wall, lit hard from one side so each one casts its own small shadow. Same camera, same film grain, same crushed blacks. Clean uncluttered composition, entirely blank unprinted paper, muted natural colour, no people, no text or printed characters anywhere in frame.",
+    "model": "nbpro",
+    "ar": "3:2",
+    "size": "2K",
+    "refs": [
+      "masters/story/st1_problem.png"
+    ]
+  },
+  "ST5": {
+    "out": "masters/story/st5_wider.png",
+    "prompt": "Using the attached image as the style reference — match its lighting, colour grade, lens, grain and world exactly. A dark workshop room with four identical touchscreen terminals lined up on a workbench, all powered on with completely blank glowing white screens, cables running down to the floor. Same camera, same film grain, same crushed blacks. Clean uncluttered composition, plain unbranded hardware, entirely blank evenly lit screens with nothing displayed on them, muted natural colour, no people, no text or signage anywhere in frame.",
+    "model": "nbpro",
+    "ar": "3:2",
+    "size": "2K",
+    "refs": [
+      "masters/story/st1_problem.png"
+    ]
+  },
+  "ST6": {
+    "out": "masters/story/st6_stack.png",
+    "prompt": "Using the attached image as the style reference — match its lighting, colour grade, lens, grain and world exactly. Three objects arranged evenly spaced on a dark surface and lit hard from directly above: a touchscreen point-of-sale terminal on the left, a rack-mount server unit in the centre, a small metal disc token on the right. Product still life, hard shadows falling toward camera, deep near-black background. Same camera, same film grain, same crushed blacks. Clean uncluttered composition, plain unbranded objects, blank dark screen, no currency symbols on the token, muted natural colour, no people, no text or signage anywhere in frame.",
+    "model": "nbpro",
+    "ar": "3:2",
+    "size": "2K",
+    "refs": [
+      "masters/story/st1_problem.png"
+    ]
+  },
+  "F1": {
+    "out": "masters/tile/thermal.png",
+    "prompt": "Seamless tileable texture of blank white thermal receipt paper, very subtle fibre grain, faint warm off-white tint, extremely flat and even lighting, macro. No text, no printing, no folds, no creases, no shadows, no vignette, no visible seams or borders, no perspective, no depth of field.",
+    "model": "nb2",
+    "ar": "1:1",
+    "size": "2K"
+  },
+  "F2": {
+    "out": "masters/tile/metal.png",
+    "prompt": "Seamless tileable texture of dark grey brushed anodised aluminium, fine horizontal grain, matte finish, flat even lighting, macro. No scratches, no dents, no reflections, no hotspot, no fingerprints, no text, no visible seams or borders, no vignette, no perspective, no depth of field.",
+    "model": "nb2",
+    "ar": "1:1",
+    "size": "2K"
+  },
+  "F3": {
+    "out": "masters/tile/bokeh.png",
+    "prompt": "Out of focus lime-green and warm amber points of light scattered across a pure black background, heavy circular bokeh, no subject, random distribution. No shapes, no pattern, no grid, no symmetry, no text, no blue, no purple, no teal, no sharp focus, no foreground element, no vignette.",
+    "model": "nb2",
+    "ar": "1:1",
+    "size": "2K"
+  },
+  "E6": {
+    "out": "masters/og.png",
+    "prompt": "Using the attached logo as the exact mark to reproduce. A wide banner image: the attached logo centred on a deep near-black background, small and precise, with a faint lime-green rim light along its lower edge and a subtle field of fine dark particles fading toward the corners. Flat, restrained, high contrast. Reproduce the logo exactly as supplied with no alteration to its shape, weight or proportions. No other text anywhere in frame.",
+    "model": "nbpro",
+    "ar": "16:9",
+    "size": "1K",
+    "refs": [
+      "site/assets/logo.png"
+    ]
+  },
+  "V2f": {
+    "out": "masters/video/v2_counter.png",
+    "prompt": "Over-the-shoulder view from behind a bartender working a touchscreen till during evening service, their hand raised toward the screen, the screen completely blank and glowing flat neutral white, a blurred queue of customers waiting beyond the counter, dark pub interior. Shot on ARRI Alexa 35, 40mm lens at T2.0, single hard key light from camera-left at 45 degrees, cool practical fill, deep near-black background, high micro-contrast, crushed blacks, clean specular highlights, fine 35mm film grain, photographic. Shallow depth of field, the white screen glow as the only bright source, UK pub interior. Natural correct anatomy, hands with five fingers, realistic skin texture, plain unbranded surfaces, an entirely blank evenly lit screen with nothing displayed on it. Clean uncluttered composition, muted natural colour, straight rectilinear lens, no text or signage anywhere in frame.",
+    "model": "nbpro",
+    "ar": "16:9",
+    "size": "2K"
+  },
+  "V4f": {
+    "out": "masters/video/v4_build.png",
+    "prompt": "Thousands of small dark glass fragments suspended and floating in empty black space, partly assembled into the beginnings of a flat rectangular slab at the centre, lime-green light catching the edges of the fragments, deep black void surrounding them. Shot on ARRI Alexa 35, 40mm lens at T2.0, single hard key light from camera-left at 45 degrees, cool practical fill, deep near-black background, high micro-contrast, crushed blacks, clean specular highlights, fine 35mm film grain, photographic. Shallow depth of field, one lime-green practical light source. Clean uncluttered composition, muted natural colour, straight rectilinear lens, no text or signage anywhere in frame.",
+    "model": "nbpro",
+    "ar": "16:9",
+    "size": "2K"
+  },
+  "V7f": {
+    "out": "masters/video/v7_wales.png",
+    "prompt": "An aerial view drifting over a Welsh coastal town at dawn, low mist sitting over slate rooftops, the sea on the right, green hills rising behind the town, overcast soft grey light with no visible sun. Shot on ARRI Alexa 35, 40mm lens, high micro-contrast, crushed blacks in the shadowed streets, fine 35mm film grain, photographic, British landscape. Clean uncluttered composition, muted natural colour, straight rectilinear lens, no text or signage anywhere in frame.",
+    "model": "nbpro",
+    "ar": "16:9",
+    "size": "2K"
+  },
+  "V8f": {
+    "out": "masters/video/v8_desktop.png",
+    "prompt": "A slim silver laptop open on a dark desk in a quiet office at night, the screen completely blank and glowing flat neutral white, a closed notebook and a cold cup of tea beside it, window blinds behind with faint street light coming through. Shot on ARRI Alexa 35, 40mm lens at T2.0, single hard key light from camera-left at 45 degrees, cool practical fill, deep near-black background, high micro-contrast, crushed blacks, clean specular highlights, fine 35mm film grain, photographic. Shallow depth of field, the white screen glow as the only bright source, UK office interior. Plain unbranded laptop, an entirely blank evenly lit screen with nothing displayed on it, no people. Clean uncluttered composition, muted natural colour, straight rectilinear lens, no text or signage anywhere in frame.",
+    "model": "nbpro",
+    "ar": "16:9",
+    "size": "2K"
+  },
+  "V9f": {
+    "out": "masters/video/v9_touch.png",
+    "prompt": "A detachable-keyboard tablet computer standing on a kitchen worktop in a small business back room, the screen completely blank and glowing flat neutral white, stock boxes stacked out of focus behind it, early morning light through a high window. Shot on ARRI Alexa 35, 40mm lens at T2.0, single hard key light from camera-left at 45 degrees, cool practical fill, deep near-black background, high micro-contrast, crushed blacks, clean specular highlights, fine 35mm film grain, photographic. Shallow depth of field, the white screen glow as the brightest source, UK small business interior. Plain unbranded hardware, an entirely blank evenly lit screen with nothing displayed on it, no people. Clean uncluttered composition, muted natural colour, straight rectilinear lens, no text or signage anywhere in frame.",
+    "model": "nbpro",
+    "ar": "16:9",
+    "size": "2K"
+  }
 }

@@ -17,9 +17,23 @@
 <meta name="twitter:card" content="summary_large_image">
 
 <link rel="icon" href="assets/logo.svg" type="image/svg+xml">
+
+<!-- The hero plate is the LCP element. Preloading it starts the fetch in the
+     head rather than waiting for the body's <img> to be discovered. -->
+<link rel="preload" as="image" href="assets/still/e1_hero.webp" fetchpriority="high">
+
+<!-- Fonts load without blocking the first paint. The old render-blocking
+     <link> held the whole page on a third-party round trip; this fetches the
+     same stylesheet as a non-blocking one and applies it on arrival. Text is
+     readable in the fallback face the entire time (display=swap). -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,400..700&family=Source+Serif+4:opsz,wght@8..60,300..600&family=Martian+Mono:wght@300;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" media="print" onload="this.media='all';this.onload=null"
+      href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,400..700&family=Source+Serif+4:opsz,wght@8..60,300..600&family=Martian+Mono:wght@300;500&display=swap">
+<noscript>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,400..700&family=Source+Serif+4:opsz,wght@8..60,300..600&family=Martian+Mono:wght@300;500&display=swap">
+</noscript>
+
 <link rel="stylesheet" href="css/site.css">
 
 <script type="application/ld+json">
@@ -32,7 +46,25 @@
 </head>
 <body>
 
-<!-- hero plate sits behind the particle field; it is the LCP element -->
+<!-- ---------- the hero backdrop ----------
+     Deliberately a sibling of the canvas rather than a child of the hero
+     section. `main` is a stacking context (z-index 1), so anything inside it —
+     however negative its z-index — is trapped above the particle canvas. Put
+     the video in the section and it covers the field. Out here it can sit
+     properly underneath: video (-3), spotlight (-2), plate (-1), particles (0),
+     type (1). -->
+<div id="hero-bg" aria-hidden="true">
+  <video id="hero-video" muted loop playsinline preload="auto"
+         poster="assets/video/v1_hero.webp"
+         src="assets/video/v1_hero.mp4"></video>
+  <div class="hero-grade"></div>
+  <div class="hero-scrim"></div>
+  <div class="hero-vignette"></div>
+</div>
+<div id="spotlight" aria-hidden="true"></div>
+
+<!-- The hero plate is the LCP element and the video's fallback. It sits behind
+     everything and stays put if autoplay is refused. -->
 <img id="plate" src="assets/still/e1_hero.webp" alt="" fetchpriority="high" decoding="async">
 <canvas id="gl"></canvas>
 
@@ -40,13 +72,33 @@
 
 <main>
 
-<section id="s0"><div class="col">
-  <span class="num">Baglan, Port Talbot · est. Wales</span>
-  <h1>We build it, then we run it.</h1>
-  <p class="lead">Three products in the field: a till system trading in Welsh pubs tonight, a hosting platform, and a payment layer. We build the same way for other people's problems.</p>
-  <a class="cta" href="#s7">Start a project</a>
-  <a class="cta ghost" href="#s5">See the hosting</a>
-</div></section>
+<!-- ---------- hero ----------
+     Layered back to front: video, grade, scrim, particles (canvas above),
+     type, spotlight. The video is background only — muted, aria-hidden, no
+     controls, carrying nothing the copy does not already say. -->
+<section id="s0" class="hero">
+  <!-- The bulb warm-up. A plain opaque sheet, animated on its own so the
+       stutter never touches the blurred video layer underneath. -->
+  <div class="hero-bulb" id="hero-bulb" aria-hidden="true"></div>
+
+  <div class="col">
+    <span class="num">Baglan, Port Talbot · est. Wales</span>
+    <h1>We build it, then we run it.</h1>
+    <p class="lead">Three products in the field: a till system trading in Welsh pubs tonight, a hosting platform, and a payment layer. We build the same way for other people's problems.</p>
+    <div class="cta-row">
+      <a class="cta" href="#quote">Get a price</a>
+      <a class="cta ghost" href="/portal">Client sign in</a>
+    </div>
+    <div class="hero-meta">
+      <span><b>3</b> shipped products</span>
+      <span><b>24/7</b> UK support</span>
+      <span><b>Wales</b> built and run here</span>
+    </div>
+  </div>
+
+  <button class="fs-btn" id="fs-btn" type="button" aria-pressed="false">Full screen</button>
+  <div class="cue" id="cue" aria-hidden="true"><i></i><span>Scroll</span></div>
+</section>
 
 <section id="s1"><div class="col">
   <span class="num">01 — Vesopa EPOS</span>
@@ -57,7 +109,7 @@
     <div class="well ar169" data-clip="assets/video/v1_hero.mp4">
       <img src="assets/video/v1_hero.webp" alt="A card held over the contactless reader of a payment terminal on a bar counter at night." loading="lazy" decoding="async">
     </div>
-    <figcaption>V1 · hero plate. The clip mounts here when assets/video/v1_hero.mp4 exists.</figcaption>
+    <figcaption>The tap. Card payments driven from the till.</figcaption>
   </figure>
   <div class="facts">
     <div class="fact"><b>Offline</b><i>Keeps trading</i></div>
@@ -69,11 +121,13 @@
     <div class="well ar169" data-clip="assets/video/v3_pass.mp4">
       <img src="assets/video/v3_pass.webp" alt="A blank ticket feeding out of a thermal printer on a steel kitchen shelf." loading="lazy" decoding="async">
     </div>
-    <figcaption>V3 · the pass. Counter to kitchen, same data.</figcaption>
+    <figcaption>The pass. Counter to kitchen, same data.</figcaption>
   </figure>
   <figure>
-    <img class="ar32" src="assets/still/e2_venue.webp" alt="A touchscreen till in the foreground of a busy pub during evening service." loading="lazy" decoding="async">
-    <figcaption>E2 · venue plate. Replace with the real EPOS sale screen when the 2560×1600 PNG lands.</figcaption>
+    <div class="well ar32" data-clip="assets/video/e2_venue.mp4">
+      <img src="assets/still/e2_venue.webp" alt="A touchscreen till in the foreground of a busy pub during evening service." loading="lazy" decoding="async">
+    </div>
+    <figcaption>Friday night, mid-service.</figcaption>
   </figure>
 </div></section>
 
@@ -82,10 +136,10 @@
   <h2>Section reserved.</h2>
   <p>Held for the first of your two Microsoft applications. Layout, particle target and scroll timing are already allocated — this section will take copy and two screenshots without any structural change.</p>
   <figure>
-    <div class="well ar169">
+    <div class="well ar169" data-clip="assets/video/e4_dc.mp4">
       <img src="assets/still/e4_dc.webp" alt="" loading="lazy" decoding="async">
     </div>
-    <figcaption>Standing in for V8. Add data-clip="assets/video/v8_desktop.mp4" to this well once that clip exists.</figcaption>
+    <figcaption>Standing in until the product shots land.</figcaption>
   </figure>
   <div class="hold">NEEDED
   · product name
@@ -113,17 +167,17 @@
   <p class="lead">It started with a till that couldn't do what a landlord needed. Everything after that is consequence.</p>
   <div class="beats">
     <div class="beat"><em>i</em><div><h3>The problem</h3><p>An old register on a bar, doing about a third of what the person behind it actually needed.</p>
-      <figure><img class="ar32" src="assets/story/st1_problem.webp" alt="A dim empty pub after closing, one old cash register lit on the bar." loading="lazy" decoding="async"></figure></div></div>
+      <figure><div class="well ar32" data-clip="assets/video/st1_problem.mp4"><img src="assets/story/st1_problem.webp" alt="A dim empty pub after closing, one old cash register lit on the bar." loading="lazy" decoding="async"></div></figure></div></div>
     <div class="beat"><em>ii</em><div><h3>The build</h3><p>A prototype on a kitchen table, written against the way a real service night actually runs rather than a spec.</p>
-      <figure><img class="ar32" src="assets/story/st2_build.webp" alt="A laptop glowing on a kitchen table late at night beside a notebook." loading="lazy" decoding="async"></figure></div></div>
+      <figure><div class="well ar32" data-clip="assets/video/st2_build.mp4"><img src="assets/story/st2_build.webp" alt="A laptop glowing on a kitchen table late at night beside a notebook." loading="lazy" decoding="async"></div></figure></div></div>
     <div class="beat"><em>iii</em><div><h3>First install</h3><p>One venue, one terminal, one Friday night. It either takes money under pressure or it doesn't.</p>
-      <figure><img class="ar32" src="assets/story/st3_install.webp" alt="Two people running a cable to a new touchscreen terminal behind a bar." loading="lazy" decoding="async"></figure></div></div>
+      <figure><div class="well ar32" data-clip="assets/video/st3_install.mp4"><img src="assets/story/st3_install.webp" alt="Two people running a cable to a new touchscreen terminal behind a bar." loading="lazy" decoding="async"></div></figure></div></div>
     <div class="beat"><em>iv</em><div><h3>Iteration</h3><p>Version after version, shipped against what the floor asked for. The release notes are still public.</p>
-      <figure><img class="ar32" src="assets/story/st4_iteration.webp" alt="A grid of blank thermal receipts pinned to a wall, curling at the edges." loading="lazy" decoding="async"></figure></div></div>
+      <figure><div class="well ar32" data-clip="assets/video/st4_iteration.mp4"><img src="assets/story/st4_iteration.webp" alt="A grid of blank thermal receipts pinned to a wall, curling at the edges." loading="lazy" decoding="async"></div></figure></div></div>
     <div class="beat"><em>v</em><div><h3>Going wider</h3><p>Into the Microsoft Store, onto Mac, iPad and Android handhelds. The same till, wherever the work is.</p>
-      <figure><img class="ar32" src="assets/story/st5_wider.webp" alt="Four identical touchscreen terminals on a workbench with blank glowing screens." loading="lazy" decoding="async"></figure></div></div>
+      <figure><div class="well ar32" data-clip="assets/video/st5_wider.mp4"><img src="assets/story/st5_wider.webp" alt="Four identical touchscreen terminals on a workbench with blank glowing screens." loading="lazy" decoding="async"></div></figure></div></div>
     <div class="beat"><em>vi</em><div><h3>The stack closes</h3><p>Hosting for the sites, then payments for the money. EPOS, Cloud and Pay, all ours end to end.</p>
-      <figure><img class="ar32" src="assets/story/st6_stack.webp" alt="A terminal, a rack server unit and a metal disc token lit hard from above." loading="lazy" decoding="async"></figure></div></div>
+      <figure><div class="well ar32" data-clip="assets/video/st6_stack.mp4"><img src="assets/story/st6_stack.webp" alt="A terminal, a rack server unit and a metal disc token lit hard from above." loading="lazy" decoding="async"></div></figure></div></div>
   </div>
   <div class="hold">PLACEHOLDER PROSE — the shape is right, the specifics are invented.
   Send real dates, the first venue, and the Store listing date before this ships.</div>
@@ -138,7 +192,7 @@
     <div class="well ar169" data-clip="assets/video/v5_aisle.mp4">
       <img src="assets/video/v5_aisle.webp" alt="Looking down a cold-lit aisle between two rows of server racks." loading="lazy" decoding="async">
     </div>
-    <figcaption>V5 · the aisle. The most important clip on the site.</figcaption>
+    <figcaption>The aisle. Our own iron, our own hands on it.</figcaption>
   </figure>
   <div class="plans">
     <div class="plan"><b>Starter</b><u>$2.89</u><i>per month on 3 years · 1 site · 25 GB NVMe</i></div>
@@ -151,11 +205,15 @@
     <div class="fact"><b>Free</b><i>Domain on any yearly plan</i></div>
     <div class="fact"><b>30-day</b><i>Money back, no retention call</i></div>
   </div>
-  <a class="cta" href="https://cloud.vesopa.com/hosting">Start building</a>
-  <a class="cta ghost" href="https://cloud.vesopa.com/transfer">Move an existing site</a>
+  <div class="cta-row">
+    <a class="cta" href="https://cloud.vesopa.com/hosting">Start building</a>
+    <a class="cta ghost" href="https://cloud.vesopa.com/transfer">Move an existing site</a>
+  </div>
   <figure>
-    <img class="ar32" src="assets/still/e3_cloud_day.webp" alt="A small business desk in daylight with a laptop, a mug and a plant." loading="lazy" decoding="async">
-    <figcaption>E3 · the daylight plate. Replace with the Cloud control panel screenshot.</figcaption>
+    <div class="well ar32" data-clip="assets/video/e3_cloud_day.mp4">
+      <img src="assets/still/e3_cloud_day.webp" alt="A small business desk in daylight with a laptop, a mug and a plant." loading="lazy" decoding="async">
+    </div>
+    <figcaption>An ordinary morning, running on our stack.</figcaption>
   </figure>
 </div></section>
 
@@ -168,7 +226,7 @@
     <div class="well ar169" data-clip="assets/video/v6_settle.mp4">
       <img src="assets/video/v6_settle.webp" alt="A pool of dark liquid metal rising and setting under warm amber light." loading="lazy" decoding="async">
     </div>
-    <figcaption>V6 · settlement.</figcaption>
+    <figcaption>Settlement.</figcaption>
   </figure>
   <div class="facts">
     <div class="fact"><b>BTC</b><i>On-chain settlement</i></div>
@@ -183,8 +241,108 @@
   and USDT stays off the fact list until its status is confirmed.</div>
 </div></section>
 
+<!-- ---------- how the work actually runs ----------
+     Every claim in this section is a thing the portal genuinely does. Nothing
+     here is aspirational — if a step changes, change the software or change
+     the copy, not just the copy. -->
+<section id="how" class="light"><div class="wide">
+  <span class="num">07 — How it works</span>
+  <h2>You will always know where it is.</h2>
+  <p class="lead">Most build shops go quiet for six weeks and send an invoice. You get an account on day one, and everything happens in it.</p>
+
+  <ol class="steps">
+    <li>
+      <span class="step-n">01</span>
+      <h3>Tell us the problem</h3>
+      <p>Answer four questions and you get a costed band on the spot — not "contact us". A person reads every brief.</p>
+    </li>
+    <li>
+      <span class="step-n">02</span>
+      <h3>We scope it properly</h3>
+      <p>We come back with a firm figure, a plan and a date, usually within one working day. If we are the wrong people for it, we say so.</p>
+    </li>
+    <li>
+      <span class="step-n">03</span>
+      <h3>We build, you watch</h3>
+      <p>Your account shows live progress, the task list, every file, and a message thread straight to the people doing the work — not an account manager.</p>
+    </li>
+    <li>
+      <span class="step-n">04</span>
+      <h3>Then we run it</h3>
+      <p>Hosting, support and updates, on our own iron. Invoices, receipts and any monthly cover sit in the same account, so the money is as visible as the work.</p>
+    </li>
+  </ol>
+
+  <div class="facts">
+    <div class="fact"><b>1 day</b><i>Typical time to a firm figure</i></div>
+    <div class="fact"><b>Live</b><i>Progress you can check at 2am</i></div>
+    <div class="fact"><b>Direct</b><i>You talk to the builders</i></div>
+    <div class="fact"><b>Yours</b><i>You own the code and the data</i></div>
+  </div>
+
+  <div class="cta-row">
+    <a class="cta" href="#quote">Price your project</a>
+    <a class="cta ghost" href="/portal">See the client portal</a>
+  </div>
+</div></section>
+
+<!-- ---------- the quote builder ---------- -->
+<section id="quote" class="light"><div class="col">
+  <span class="num">08 — What it costs</span>
+  <h2>Price it yourself, right now.</h2>
+  <p class="lead">Answer four things and you get a real band, not "contact us". A person reads every brief and comes back with a firm figure, usually within one working day.</p>
+
+  <form class="form-card" id="quote-form" novalidate>
+    <div class="two">
+      <div class="fld">
+        <label for="q-service">What are we building?</label>
+        <select id="q-service" name="service_type"></select>
+      </div>
+      <div class="fld">
+        <label for="q-tier">How big is it?</label>
+        <select id="q-tier" name="scope_tier"></select>
+      </div>
+    </div>
+
+    <div class="fld">
+      <label>What does it need to do?</label>
+      <div class="opts" id="q-features"></div>
+    </div>
+
+    <div class="fld">
+      <label for="q-timeline">When do you need it?</label>
+      <select id="q-timeline" name="timeline"></select>
+    </div>
+
+    <div class="estimate">
+      <b id="q-estimate">—</b>
+      <span>An estimate from what you have ticked. Not a quote until a person has read the brief.</span>
+    </div>
+
+    <div class="two" style="margin-top:1.6rem">
+      <div class="fld"><label for="q-name">Your name</label><input id="q-name" name="name" required autocomplete="name"></div>
+      <div class="fld"><label for="q-email">Email</label><input id="q-email" name="email" type="email" required autocomplete="email"></div>
+    </div>
+    <div class="two">
+      <div class="fld"><label for="q-company">Company</label><input id="q-company" name="company" autocomplete="organization"></div>
+      <div class="fld"><label for="q-phone">Phone</label><input id="q-phone" name="phone" type="tel" autocomplete="tel"></div>
+    </div>
+    <div class="fld">
+      <label for="q-message">Anything else we should know?</label>
+      <textarea id="q-message" name="message" placeholder="What you have now, what is wrong with it, and who uses it."></textarea>
+    </div>
+
+    <!-- Hidden from people, filled in by bots. -->
+    <div class="hp" aria-hidden="true"><label>Leave this empty<input name="website" tabindex="-1" autocomplete="off"></label></div>
+
+    <button class="cta" type="submit" id="q-submit" style="margin-top:0">Send it and get the estimate</button>
+    <p class="form-note">You get an email with your reference and the figure. No newsletter, no follow-up sequence.</p>
+    <div class="form-msg" id="q-msg" role="status"></div>
+  </form>
+</div></section>
+
 <section id="s7" class="light"><div class="col">
-  <span class="num">07</span>
+  <span class="num">09</span>
   <h2>Bring us the problem.</h2>
   <p class="lead">If it takes money, tracks stock, runs on a counter or needs to stay up, we've built it once already.</p>
   <div class="facts">
@@ -192,14 +350,55 @@
     <div class="fact"><b>Call</b><i>+44 1792 316282</i></div>
     <div class="fact"><b>Email</b><i>info@vesopa.com</i></div>
   </div>
-  <a class="cta" href="mailto:info@vesopa.com">Start a project</a>
+
+  <form class="form-card" id="contact-form" novalidate>
+    <h3>Or just send a message.</h3>
+    <div class="two">
+      <div class="fld"><label for="c-name">Your name</label><input id="c-name" name="name" required autocomplete="name"></div>
+      <div class="fld"><label for="c-email">Email</label><input id="c-email" name="email" type="email" required autocomplete="email"></div>
+    </div>
+    <div class="two">
+      <div class="fld"><label for="c-phone">Phone</label><input id="c-phone" name="phone" type="tel" autocomplete="tel"></div>
+      <div class="fld"><label for="c-subject">Subject</label><input id="c-subject" name="subject"></div>
+    </div>
+    <div class="fld"><label for="c-message">Message</label><textarea id="c-message" name="message" required></textarea></div>
+    <div class="hp" aria-hidden="true"><label>Leave this empty<input name="website" tabindex="-1" autocomplete="off"></label></div>
+    <button class="cta" type="submit" id="c-submit" style="margin-top:0">Send</button>
+    <div class="form-msg" id="c-msg" role="status"></div>
+  </form>
+
+  <p class="form-note" style="margin-top:2rem">
+    Already working with us? <a href="/portal" style="text-decoration:underline">Sign in to your portal</a>
+    to track progress, talk to the team and settle invoices.
+  </p>
+</div></section>
+
+<!-- ---------- the finale ----------
+     The last morph target is the Vesopa V, and it needs a page to itself. It
+     was previously resolving on top of the contact form, in Pay's orange,
+     which made the brand mark both illegible and the wrong colour. This
+     section is deliberately near-empty: the field has the floor. -->
+<section id="mark" class="light finale"><div class="col">
+  <p class="finale-line">Built in Wales. Run from Wales.</p>
+  <div class="cta-row">
+    <a class="cta" href="#quote">Start a project</a>
+    <a class="cta ghost" href="mailto:info@vesopa.com">info@vesopa.com</a>
+  </div>
+  <p class="finale-foot">
+    Baglan, Port Talbot SA12 7AX &nbsp;·&nbsp; +44 1792 316282
+  </p>
 </div></section>
 
 </main>
 
 <div id="perf">boot…</div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<!-- three.js is served from our own origin: one fewer DNS lookup, TLS
+     handshake and third-party dependency on the critical path. defer keeps it
+     off the parser, and site.js waits for it. -->
+<script src="js/vendor/three.min.js" defer></script>
 <script type="module" src="js/site.js"></script>
+<script src="js/hero.js" defer></script>
+<script src="js/forms.js" defer></script>
 </body>
 </html>

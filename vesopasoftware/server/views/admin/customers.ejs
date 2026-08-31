@@ -1,0 +1,32 @@
+<%- include("../partials/head") %>
+<%- include("../partials/nav") %>
+<div class="wrap">
+  <div class="page-head">
+    <div class="grow"><span class="eyebrow">Who pays us, and how much</span><h1>Customers</h1></div>
+  </div>
+  <div class="panel">
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Name</th><th>Organisation</th><th>Role</th><th>Projects</th><th>Joined</th>
+          <th class="num">Lifetime</th><th class="num">Outstanding</th></tr></thead>
+        <tbody>
+          <% if (!customers.length) { %><tr><td colspan="7" class="t-empty">No customers yet.</td></tr><% } %>
+          <% for (const c of customers) { %>
+            <tr>
+              <td><a href="/portal/admin/customers/<%= c.id %>"><strong><%= c.name %></strong></a>
+                <div class="muted" style="font-size:.72rem"><%= c.email %></div></td>
+              <td><%= c.org_name || c.company || "—" %></td>
+              <td><span class="pill <%= c.org_role === 'owner' ? 'lime' : '' %>"><%= roleLabel(c.org_role) %></span>
+                <% if (c.status !== "active") { %><span class="pill bad"><%= c.status %></span><% } %></td>
+              <td class="num"><%= c.projects %></td>
+              <td><time datetime="<%= new Date(c.created_at).toISOString() %>"></time></td>
+              <td class="num" style="color:var(--lime)"><%= moneyRound(c.paid, currency) %></td>
+              <td class="num"><%= c.outstanding > 0 ? moneyRound(c.outstanding, currency) : "—" %></td>
+            </tr>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<%- include("../partials/foot") %>

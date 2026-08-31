@@ -7,46 +7,65 @@
   --fg:#F2EFE6;
   --bg:#0B0E0A;
   --rule:rgba(242,239,230,.16);
+
+  /* One measure controls the whole page. Everything centres on it. */
+  --measure:46rem;
+  --wide:64rem;
 }
 *{box-sizing:border-box;margin:0;padding:0}
-html{scroll-behavior:auto;-webkit-text-size-adjust:100%}
+/* Smooth for the in-page jumps (Get a price, See the hosting). The scroll
+   spine drives the whole colour ramp off scrollY, so an instant jump also
+   teleports the time of day; easing the scroll eases the sunrise with it.
+   Honoured only when the visitor has not asked for less motion — see the
+   prefers-reduced-motion block at the foot of this file. */
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
 body{
   background:var(--bg);color:var(--fg);
   font-family:"Source Serif 4",Georgia,serif;
-  font-size:17px;line-height:1.55;
+  font-size:19px;line-height:1.55;
   overflow-x:hidden;
   transition:background-color .12s linear,color .12s linear;
 }
 #gl{position:fixed;inset:0;width:100vw;height:100vh;z-index:0;pointer-events:none}
 main{position:relative;z-index:1}
 
+/* ---------- the spine ----------
+   Every section is one centred column. The particle field runs behind the
+   middle of the screen, so type sitting off to one side left the composition
+   permanently lopsided — the field pulled one way, the words the other. */
 section{
   min-height:100svh;
-  display:flex;align-items:center;
-  padding:14vh 6vw;
+  display:flex;align-items:center;justify-content:center;
+  padding:14vh 5vw;
   position:relative;
+  text-align:center;
 }
-.col{max-width:34rem}
-.wide{max-width:52rem}
+.col,.wide{
+  width:100%;
+  max-width:var(--measure);
+  margin-inline:auto;
+  display:flex;flex-direction:column;align-items:center;
+}
+.wide{max-width:var(--wide)}
 
 h1,h2,h3,.mark{
   font-family:"Archivo",Helvetica,Arial,sans-serif;
   font-variation-settings:"wdth" 118,"wght" 620;
-  line-height:.98;letter-spacing:-.015em;
+  line-height:.98;letter-spacing:-.02em;
   text-wrap:balance;
 }
-h1{font-size:clamp(2.9rem,8.2vw,6rem)}
-h2{font-size:clamp(2.1rem,5.4vw,3.9rem)}
-h3{font-size:1.05rem;font-variation-settings:"wdth" 112,"wght" 600;line-height:1.25}
-p{margin-top:1.1rem;max-width:32rem}
-p.lead{font-size:clamp(1.05rem,2.4vw,1.3rem);line-height:1.5}
+h1{font-size:clamp(3.4rem,10vw,8rem)}
+h2{font-size:clamp(2.5rem,6.4vw,5rem)}
+h3{font-size:1.25rem;font-variation-settings:"wdth" 112,"wght" 600;line-height:1.25}
+p{margin-top:1.3rem;max-width:38rem;margin-inline:auto}
+p.lead{font-size:clamp(1.2rem,2.6vw,1.6rem);line-height:1.45;max-width:40rem}
 a{color:inherit}
 
 .mark{
   position:fixed;top:0;left:0;right:0;z-index:3;
-  padding:1.15rem 6vw;
+  padding:1.15rem 5vw;
   display:flex;justify-content:space-between;align-items:baseline;
-  font-size:.86rem;font-variation-settings:"wdth" 122,"wght" 640;
+  font-size:.9rem;font-variation-settings:"wdth" 122,"wght" 640;
   letter-spacing:.02em;
   mix-blend-mode:difference;color:#fff;
   pointer-events:none;
@@ -55,46 +74,55 @@ a{color:inherit}
 
 .num{
   font-family:"Martian Mono",monospace;font-weight:300;
-  font-size:.7rem;letter-spacing:.06em;opacity:.62;
-  display:block;margin-bottom:1.6rem;
+  font-size:.76rem;letter-spacing:.09em;opacity:.82;
+  display:block;margin-bottom:1.9rem;
 }
+/* The eyebrow and the fact captions sit directly over the densest part of the
+   particle field. At .62 the field won and they read as noise. Raising the
+   opacity is the whole fix — a backdrop or a shadow behind them would have to
+   invert with the page, and would look like a patch either way. */
 
-.facts{display:flex;flex-wrap:wrap;gap:1.6rem 2.4rem;margin-top:2.4rem}
-.fact{min-width:7.5rem}
+.facts{
+  display:flex;flex-wrap:wrap;justify-content:center;
+  gap:2rem 3rem;margin-top:3rem;
+}
+.fact{min-width:8rem}
 .fact b{
   display:block;font-family:"Martian Mono",monospace;font-weight:500;
-  font-size:1.35rem;line-height:1;letter-spacing:-.03em;color:var(--lime);
+  font-size:1.9rem;line-height:1;letter-spacing:-.04em;color:var(--lime);
 }
-.fact i{display:block;font-style:normal;font-size:.83rem;opacity:.66;margin-top:.4rem;max-width:9rem}
+.fact i{display:block;font-style:normal;font-size:.9rem;opacity:.85;margin-top:.5rem;max-width:11rem;margin-inline:auto}
 
 .cta{
-  display:inline-block;margin-top:2.6rem;
+  display:inline-block;margin-top:2.8rem;
   font-family:"Archivo",sans-serif;font-variation-settings:"wdth" 112,"wght" 600;
-  font-size:.95rem;
-  padding:.72rem 1.5rem;border-radius:2px;
+  font-size:1.05rem;
+  padding:.9rem 1.9rem;border-radius:2px;
   background:var(--lime);color:var(--ink);text-decoration:none;
   pointer-events:auto;
 }
-.cta.ghost{background:transparent;color:inherit;box-shadow:inset 0 0 0 1px var(--rule);margin-left:.5rem}
+.cta.ghost{background:transparent;color:inherit;box-shadow:inset 0 0 0 1px var(--rule)}
+.cta-row{display:flex;gap:.7rem;flex-wrap:wrap;justify-content:center}
 
 .hold{
-  margin-top:2rem;padding:1rem 1.2rem;
+  margin-top:2.4rem;padding:1.1rem 1.3rem;
   border-left:2px solid var(--lime);
-  font-family:"Martian Mono",monospace;font-size:.72rem;line-height:1.7;
-  opacity:.75;max-width:30rem;
+  font-family:"Martian Mono",monospace;font-size:.76rem;line-height:1.7;
+  opacity:.75;max-width:34rem;text-align:left;
 }
 
 /* story */
-#story{display:block;padding-top:12vh}
-.beats{margin-top:4rem;display:grid;gap:0}
+#story{padding-top:12vh}
+.beats{margin-top:4.5rem;display:grid;gap:0;width:100%}
 .beat{
-  display:grid;grid-template-columns:3.2rem 1fr;gap:1.4rem;
-  padding:1.9rem 0;border-top:1px solid var(--rule);
-  max-width:44rem;
+  display:grid;grid-template-columns:3.4rem 1fr;gap:1.6rem;
+  padding:2.4rem 0;border-top:1px solid var(--rule);
+  max-width:52rem;margin-inline:auto;width:100%;
+  text-align:left;
 }
 .beat:last-child{border-bottom:1px solid var(--rule)}
-.beat em{font-family:"Martian Mono",monospace;font-style:normal;font-size:.7rem;opacity:.55;padding-top:.3rem}
-.beat p{margin-top:.4rem;font-size:.98rem;opacity:.82}
+.beat em{font-family:"Martian Mono",monospace;font-style:normal;font-size:.76rem;opacity:.55;padding-top:.35rem}
+.beat p{margin-top:.5rem;font-size:1.05rem;opacity:.82;margin-inline:0}
 
 /* light half */
 .light{--fg:#0B0E0A;--rule:rgba(11,14,10,.18)}
@@ -104,11 +132,15 @@ a{color:inherit}
 .pay .fact b{color:var(--signal)}
 .pay .cta{background:var(--signal);color:#fff}
 
-.plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(11rem,1fr));gap:1px;margin-top:2.6rem;background:var(--rule);max-width:46rem}
-.plan{background:var(--paper);padding:1.3rem}
-.plan b{display:block;font-family:"Archivo",sans-serif;font-variation-settings:"wdth" 112,"wght" 620;font-size:1rem}
-.plan u{display:block;text-decoration:none;font-family:"Martian Mono",monospace;font-size:1.15rem;margin:.5rem 0 .3rem}
-.plan i{font-style:normal;font-size:.78rem;opacity:.62}
+.plans{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(13rem,1fr));
+  gap:1px;margin-top:3rem;background:var(--rule);
+  max-width:52rem;width:100%;text-align:left;
+}
+.plan{background:var(--paper);padding:1.6rem}
+.plan b{display:block;font-family:"Archivo",sans-serif;font-variation-settings:"wdth" 112,"wght" 620;font-size:1.1rem}
+.plan u{display:block;text-decoration:none;font-family:"Martian Mono",monospace;font-size:1.4rem;margin:.6rem 0 .35rem}
+.plan i{font-style:normal;font-size:.85rem;opacity:.62}
 
 #perf{
   position:fixed;right:.7rem;bottom:.7rem;z-index:5;
@@ -118,27 +150,51 @@ a{color:inherit}
   pointer-events:none;white-space:pre;
 }
 
-@media (max-width:640px){
-  body{font-size:16px}
-  section{padding:12vh 7vw}
-  .beat{grid-template-columns:2.4rem 1fr;gap:.9rem}
-}
-@media (prefers-reduced-motion:reduce){
-  body{transition:none}
-}
-
 /* ---------- media ----------
-   Every plate is boxed by aspect-ratio so nothing reflows as images
-   decode. Section 09 of the brief budgets LCP at 2.0s: only the hero
-   plate is eager, everything else is lazy + async. */
-figure{margin:2.6rem 0 0;max-width:46rem}
+   Plates break out past the text measure. Prose wants 38rem to stay readable;
+   a 16:9 clip at 38rem is a postage stamp on a 27-inch screen, which is why
+   the video looked broken rather than small. */
+figure{margin:3.4rem auto 0;width:100%;max-width:min(var(--wide),94vw)}
+
+/* ---------- full-bleed clips ----------
+   A figure capped at 64rem is a 1024px box floating in the middle of a 1512px
+   MacBook screen — which is exactly what "the videos are not full screen"
+   meant. Any figure holding a video well breaks out of the text column and
+   spans the whole viewport instead.
+
+   The margin trick rather than `width:100vw`: 100vw includes the scrollbar on
+   Windows, which pushes the page 15px wide and produces a horizontal scroll
+   on a site that must never have one. `calc(50% - 50vw)` measures from the
+   container and stays exact. */
+.col > figure:has(.well),
+.wide > figure:has(.well){
+  max-width:none;
+  width:auto;
+  margin-inline:calc(50% - 50vw);
+  margin-top:5vh;
+}
+/* Tall enough to be an event in its own right. object-fit:cover on both the
+   poster and the clip means the crop is identical whichever is showing, so
+   the swap when a clip mounts is invisible. */
+.col > figure:has(.well) .well,
+.wide > figure:has(.well) .well{
+  aspect-ratio:auto;
+  height:min(84svh,52rem);
+  border-radius:0;
+}
+.col > figure:has(.well) figcaption,
+.wide > figure:has(.well) figcaption{
+  max-width:var(--measure);
+  margin-inline:auto;
+  padding-inline:5vw;
+}
 figure img,figure video{
   display:block;width:100%;height:auto;border-radius:2px;
   background:var(--slate);
 }
 figure figcaption{
-  font-family:"Martian Mono",monospace;font-size:.66rem;line-height:1.6;
-  opacity:.5;margin-top:.6rem;letter-spacing:.02em;
+  font-family:"Martian Mono",monospace;font-size:.72rem;line-height:1.6;
+  opacity:.68;margin-top:.9rem;letter-spacing:.02em;
 }
 .ar169{aspect-ratio:16/9}
 .ar32{aspect-ratio:3/2}
@@ -152,24 +208,366 @@ figure figcaption{
   pointer-events:none;
 }
 
-/* the six story beats become a picture grid rather than a bare list */
-.beat figure{margin-top:1rem;max-width:26rem}
+/* ---------- the hero ----------
+   Five layers, back to front: video, grade, scrim, vignette, type, spotlight.
+
+   The brief was that nobody should feel there is a video playing. That is a
+   grading problem, not a markup one. Footage reads as *footage* because it is
+   sharp, saturated and rectangular; it reads as *atmosphere* when it is pushed
+   down in contrast, drained toward the page's own two colours, softened just
+   past the point of legible detail, and given no edges. Each layer below does
+   one of those jobs, and the scrim exists so the type never has to fight for
+   contrast no matter which frame is on screen. */
+.hero{position:relative}
+
+/* Fixed, like #plate, and a sibling of the canvas — see the note in the HTML.
+   --hero-fade is written by site.js as the hero leaves, so the footage recedes
+   into the night rather than being cut off at a section boundary. */
+#hero-bg{
+  position:fixed;inset:0;z-index:-3;
+  pointer-events:none;overflow:hidden;
+  --hero-fade:1;
+  opacity:var(--hero-fade);
+}
+
+#hero-bg video{
+  position:absolute;inset:0;
+  width:100%;height:100%;
+  object-fit:cover;
+  /* Scaled up so the softening never shows an edge, and so the spotlight has
+     somewhere to travel. */
+  transform:scale(1.08);
+  /* The whole grade in one declaration: drop it to a third of its brightness,
+     take most of the colour out, lift the black point slightly so it is not a
+     dead rectangle, and blur it past the point where anyone reads objects. */
+  filter:brightness(.46) saturate(.62) contrast(1.05) blur(2px);
+  opacity:0;
+  transition:opacity 1.6s ease 0.15s;
+}
+/* Revealed only once it is genuinely playing, so a stalled load never shows a
+   half-decoded frame or a black box. */
+#hero-bg video[data-playing]{opacity:1}
+body.no-video #hero-bg video{display:none}
+
+/* Duotone: multiply the footage toward ink, then screen the brand lime back
+   into its highlights. This is what stops it looking like stock video — the
+   scene ends up made of the same two colours as the rest of the page. */
+.hero-grade{
+  position:absolute;inset:0;
+  background:
+    radial-gradient(120% 90% at 50% 40%, rgba(165,199,21,.10), transparent 60%),
+    linear-gradient(180deg, rgba(11,14,10,.55), rgba(11,14,10,.78));
+  mix-blend-mode:multiply;
+}
+/* The contrast floor for type. Strongest exactly where the copy sits. */
+.hero-scrim{
+  position:absolute;inset:0;
+  background:
+    radial-gradient(90% 70% at 50% 46%, rgba(11,14,10,.72), rgba(11,14,10,.30) 70%, transparent),
+    linear-gradient(180deg, rgba(11,14,10,.62) 0%, transparent 30%, transparent 62%, rgba(11,14,10,.92) 100%);
+}
+/* No rectangle, no edges — the footage has to end without a border. */
+.hero-vignette{
+  position:absolute;inset:-2px;
+  background:radial-gradient(115% 100% at 50% 50%, transparent 42%, rgba(11,14,10,.75) 88%, #0B0E0A 100%);
+}
+
+/* ---------- the spotlight ----------
+   One radial that brightens whatever is under the pointer, so the scene reads
+   as being looked at. screen blend adds light rather than painting a grey
+   disc over it. Position comes from two custom properties written by hero.js;
+   nothing here changes layout, so it stays on the compositor. */
+#spotlight{
+  position:fixed;inset:0;z-index:-2;
+  pointer-events:none;
+  --x:50%; --y:42%;
+  background:
+    radial-gradient(28rem 28rem at var(--x) var(--y),
+      rgba(165,199,21,.16) 0%, rgba(228,118,27,.09) 32%, transparent 68%),
+    radial-gradient(13rem 13rem at var(--x) var(--y),
+      rgba(242,239,230,.13) 0%, transparent 70%);
+  mix-blend-mode:screen;
+  opacity:.85;
+  transition:opacity .5s ease;
+}
+body.lit #spotlight{opacity:1}
+
+/* ---------- click: light leaves the point of contact ---------- */
+.ring{
+  position:absolute;z-index:0;
+  width:2px;height:2px;
+  margin:-1px 0 0 -1px;
+  border-radius:50%;
+  pointer-events:none;
+  box-shadow:0 0 0 1px rgba(165,199,21,.85), 0 0 22px 3px rgba(165,199,21,.30);
+  animation:ring 1.25s cubic-bezier(.16,.7,.3,1) forwards;
+}
+@keyframes ring{
+  from{ transform:scale(1); opacity:.95 }
+  to  { transform:scale(320); opacity:0 }
+}
+
+/* ---------- the bulb ----------
+   One warm-up on first paint, then gone for good. A hero that keeps flickering
+   reads as a fault and makes the copy unreadable, so this runs once.
+
+   It is a separate opaque sheet rather than an opacity animation on .hero-bg,
+   which is where it started. Animating .hero-bg meant re-compositing the
+   blurred video underneath on every keyframe, and the whole first second of
+   the page dropped to single-figure frame rates — precisely the second that
+   decides whether the site feels fast. Fading one flat black layer costs
+   nothing and looks identical. */
+.hero-bulb{
+  position:absolute;inset:0;z-index:3;
+  background:#0B0E0A;
+  pointer-events:none;
+  opacity:0;
+}
+.hero.bulb .hero-bulb{ animation:bulb 1.3s steps(1,end) 1 both }
+.hero.bulb-done .hero-bulb{ animation:none;opacity:0;display:none }
+@keyframes bulb{
+  0%{opacity:1}     6%{opacity:.25}   9%{opacity:.95}
+  14%{opacity:.1}  17%{opacity:.85}  22%{opacity:0}
+  25%{opacity:.55} 30%{opacity:0}   100%{opacity:0}
+}
+
+/* ---------- the type guard ----------
+   The scrim inside #hero-bg cannot protect the copy, because the particle
+   canvas paints *above* it — the field was crossing the headline and the
+   mono eyebrow and turning both to noise.
+
+   This one sits inside `main`, so it is above the canvas and below the words:
+   the only band in the stack where type can be defended from the field. It is
+   a soft radial with no hard edge, so it darkens the ground behind the copy
+   without ever reading as a panel. */
+.hero .col{position:relative}
+.hero .col::before{
+  content:"";
+  position:absolute;
+  inset:-14% -18%;
+  z-index:-1;
+  pointer-events:none;
+  background:radial-gradient(62% 58% at 50% 50%,
+    rgba(11,14,10,.86) 0%, rgba(11,14,10,.66) 42%, rgba(11,14,10,.28) 68%, transparent 82%);
+}
+
+/* ---------- hero furniture ---------- */
+.hero-meta{
+  display:flex;gap:1.6rem 2.6rem;flex-wrap:wrap;justify-content:center;
+  margin-top:3.2rem;
+  font-family:"Martian Mono",monospace;font-size:.72rem;letter-spacing:.04em;
+  opacity:.72;
+}
+.hero-meta b{color:var(--lime);font-weight:500;margin-right:.4rem}
+
+.fs-btn{
+  position:absolute;right:clamp(1rem,4vw,2.4rem);top:clamp(4.2rem,8vh,5.5rem);
+  z-index:4;
+  font-family:"Martian Mono",monospace;font-size:.66rem;letter-spacing:.06em;
+  color:var(--fg);background:rgba(11,14,10,.4);
+  border:1px solid var(--rule);border-radius:2px;
+  padding:.5rem .8rem;cursor:pointer;
+  backdrop-filter:blur(6px);
+  transition:border-color .2s,background .2s;
+}
+.fs-btn:hover{border-color:var(--lime);background:rgba(11,14,10,.6)}
+
+.cue{
+  position:absolute;left:50%;bottom:2.2rem;transform:translateX(-50%);
+  z-index:4;display:flex;flex-direction:column;align-items:center;gap:.5rem;
+  font-family:"Martian Mono",monospace;font-size:.6rem;letter-spacing:.14em;
+  text-transform:uppercase;opacity:.5;
+  transition:opacity .4s ease;pointer-events:none;
+}
+.cue.gone{opacity:0}
+.cue i{
+  display:block;width:1px;height:2.2rem;
+  background:linear-gradient(180deg,transparent,var(--lime));
+  animation:cue 2.4s ease-in-out infinite;
+}
+@keyframes cue{
+  0%,100%{transform:scaleY(.4);transform-origin:top;opacity:.4}
+  50%{transform:scaleY(1);transform-origin:top;opacity:1}
+}
+
+/* Full screen hides the browser's own chrome; the page should not add its own
+   back. */
+body.is-fullscreen #perf{display:none}
+
+@media (max-width:640px){
+  /* No blur() on small screens. A full-screen blur is re-rasterised every
+     frame the video advances, and it is the single most expensive thing a
+     phone GPU can be asked to do here. Scaling further and dropping the
+     brightness gets the same softness for nothing. */
+  #hero-bg video{transform:scale(1.22);filter:brightness(.34) saturate(.5)}
+  .hero-meta{gap:.9rem 1.6rem;font-size:.66rem;margin-top:2.2rem}
+  .fs-btn{display:none}   /* iOS Safari has no element fullscreen worth offering */
+}
+@media (prefers-reduced-motion:reduce){
+  #hero-bg video{display:none}
+  .ring{display:none}
+  .cue i{animation:none}
+  .hero.bulb .hero-bulb{animation:none;opacity:0}
+  #spotlight{transition:none}
+}
+
+/* Story beats keep their plates inside the beat — but centred within it.
+   margin-inline:0 was pinning them to the left edge of the text block, which
+   is the other half of "the videos are not centered". */
+.beat figure{margin-top:1.4rem;max-width:34rem;margin-inline:auto}
 .beat img{filter:saturate(.9)}
 
-/* video wells: poster shows immediately, the clip swaps in when it can */
+/* video wells: the poster shows immediately, the clip swaps in when it can */
 .well{position:relative;background:var(--slate);border-radius:2px;overflow:hidden}
 .well video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .6s linear}
 .well video.on{opacity:1}
-.well img{display:block;width:100%;height:auto}
+.well img{display:block;width:100%;height:100%;object-fit:cover}
 
 /* light half: plates need less presence on paper than on ink */
 .light figure img{filter:none}
 
+/* ---------- how it works ----------
+   Four steps, read left to right on a desk and top to bottom on a phone. The
+   rule down the left of each is the only ornament: it lines the four up as one
+   sequence without drawing four boxes. */
+.steps{
+  list-style:none;
+  display:grid;gap:1px;
+  grid-template-columns:repeat(auto-fit,minmax(15rem,1fr));
+  background:var(--rule);
+  margin-top:3.4rem;width:100%;text-align:left;
+}
+.steps li{
+  background:var(--bg);
+  padding:1.8rem 1.6rem 2rem;
+  display:flex;flex-direction:column;gap:.15rem;
+}
+.light .steps li{background:var(--paper)}
+.step-n{
+  font-family:"Martian Mono",monospace;font-size:.7rem;letter-spacing:.1em;
+  color:var(--lime);margin-bottom:.9rem;display:block;
+}
+.light .step-n{color:#5E7A0E}
+.steps h3{margin-bottom:.5rem}
+.steps p{margin:0;font-size:.98rem;opacity:.78;max-width:none}
+
+/* The panels are painted with the page's own background, which the sunrise is
+   busy changing — so they have to follow it rather than sit as fixed blocks of
+   colour on a moving ground. */
+.steps li{background:transparent}
+.steps{background:transparent;gap:0}
+.steps li{border-top:1px solid var(--rule)}
+@media (min-width:60rem){
+  .steps li{border-top:0;border-left:1px solid var(--rule);padding-left:1.6rem}
+  .steps li:first-child{border-left:0;padding-left:0}
+}
+
+/* ---------- the finale ----------
+   The V forms in the middle of the viewport, so this section keeps its middle
+   empty and pushes its content to the top and bottom edges. It is the one
+   place on the page where the particle field is the content and the words are
+   the supporting act. */
+/* The V is drawn in view space, so it is always in the middle of the screen
+   regardless of where this section has scrolled to. The copy therefore has to
+   live below it, not be centred with it — anchoring the column to the foot of
+   a tall section puts the words under the mark at the page's resting position
+   instead of through the middle of it. */
+.finale{
+  min-height:150svh;
+  align-items:flex-end;
+  padding-bottom:10vh;
+}
+.finale .col{gap:.2rem}
+.finale-line{
+  font-family:"Archivo",Helvetica,Arial,sans-serif;
+  font-variation-settings:"wdth" 118,"wght" 620;
+  font-size:clamp(1.6rem,3.4vw,2.6rem);
+  line-height:1.05;letter-spacing:-.02em;
+  margin-top:.6rem;
+}
+.finale .cta-row{margin-top:auto}
+.finale-foot{
+  font-family:"Martian Mono",monospace;font-size:.72rem;letter-spacing:.05em;
+  opacity:.6;margin-top:1.6rem;
+}
+
+/* ---------- forms: the quote builder and the contact block ---------- */
+.form-card{
+  width:100%;max-width:52rem;margin:3rem auto 0;
+  background:rgba(242,239,230,.04);
+  border:1px solid var(--rule);border-radius:3px;
+  padding:clamp(1.4rem,3vw,2.4rem);
+  text-align:left;
+}
+.light .form-card{background:rgba(11,14,10,.03)}
+.form-card h3{margin-bottom:1.4rem;font-size:1.15rem}
+.fld{margin-bottom:1.1rem}
+/* Direct child only. The feature checkboxes are <label class="opt"> nested
+   inside a .fld, and a descendant selector here beat .opt on specificity —
+   which forced display:block over its flex row and put every tickbox above
+   its own label in uppercase mono. */
+.fld > label{
+  display:block;font-family:"Martian Mono",monospace;
+  font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;
+  opacity:.6;margin-bottom:.45rem;
+}
+.fld input,.fld select,.fld textarea{
+  width:100%;font:inherit;font-size:1rem;
+  color:var(--fg);background:transparent;
+  border:1px solid var(--rule);border-radius:2px;
+  padding:.75rem .85rem;
+}
+.fld textarea{resize:vertical;min-height:6rem;font-family:inherit}
+.fld input:focus,.fld select:focus,.fld textarea:focus{outline:2px solid var(--lime);outline-offset:-1px}
+.light .fld input,.light .fld select,.light .fld textarea{color:var(--ink)}
+.fld select option{background:var(--ink);color:var(--paper)}
+.light .fld select option{background:var(--paper);color:var(--ink)}
+.two{display:grid;gap:1.1rem;grid-template-columns:repeat(auto-fit,minmax(13rem,1fr))}
+.opts{display:grid;gap:.5rem;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));margin-bottom:1.2rem}
+.opt{
+  display:flex;gap:.7rem;align-items:flex-start;
+  border:1px solid var(--rule);border-radius:2px;padding:.8rem .9rem;
+  font-family:"Archivo",Helvetica,Arial,sans-serif;
+  font-size:.95rem;font-variation-settings:"wdth" 110,"wght" 560;
+  line-height:1.3;cursor:pointer;text-transform:none;letter-spacing:0;
+}
+.opt:has(input:checked){border-color:var(--lime);background:rgba(165,199,21,.09)}
+.opt input{width:1.05rem;height:1.05rem;margin-top:.1rem;accent-color:var(--lime);flex:none}
+.opt small{
+  display:block;opacity:.62;font-size:.82rem;margin-top:.2rem;
+  font-family:"Source Serif 4",Georgia,serif;font-variation-settings:normal;font-weight:400;
+}
+.estimate{
+  display:flex;align-items:baseline;gap:1rem;flex-wrap:wrap;
+  border-top:1px solid var(--rule);margin-top:1.6rem;padding-top:1.6rem;
+}
+.estimate b{
+  font-family:"Martian Mono",monospace;font-size:clamp(1.6rem,4vw,2.4rem);
+  color:var(--lime);letter-spacing:-.03em;line-height:1;
+}
+.light .estimate b{color:#5E7A0E}
+.estimate span{font-size:.88rem;opacity:.62;flex:1;min-width:12rem}
+.form-note{font-family:"Martian Mono",monospace;font-size:.72rem;opacity:.6;margin-top:1rem}
+.form-msg{margin-top:1rem;padding:.8rem 1rem;border-left:2px solid var(--lime);font-size:.92rem;display:none}
+.form-msg.on{display:block}
+.form-msg.bad{border-left-color:var(--signal)}
+.hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
+
+@media (max-width:900px){
+  body{font-size:18px}
+}
 @media (max-width:640px){
-  figure{margin-top:2rem}
+  body{font-size:17px}
+  section{padding:12vh 6vw}
+  .beat{grid-template-columns:2.4rem 1fr;gap:1rem;padding:1.8rem 0}
+  figure{margin-top:2.4rem}
   #plate{opacity:.22}
+  .facts{gap:1.6rem 2rem}
+  .fact b{font-size:1.6rem}
 }
 @media (prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  body{transition:none}
   .well video{display:none}
   #plate{transition:none}
 }

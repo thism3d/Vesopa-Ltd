@@ -25,7 +25,7 @@ const MOB  = has('mobile');
 
 mkdirSync(OUT, { recursive: true });
 
-const SECTIONS = ['s0','s1','s2','s3','story','s5','s6','s7'];
+const SECTIONS = ['s0','s1','s2','s3','story','s5','s6','how','quote','s7','mark'];
 
 // Headless Chromium has no GPU: WebGL falls back to software. The particle
 // field is additive-blended and fill-rate bound, so a retina-scale backing

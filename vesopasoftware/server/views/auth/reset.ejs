@@ -1,0 +1,26 @@
+<%- include("../partials/head") %>
+<div class="auth">
+  <div class="auth-card">
+    <a class="brand" href="/"><img src="/assets/logo.svg" alt="">Vesopa <small>portal</small></a>
+    <h1>Set a new password</h1>
+    <% if (error) { %><div class="notice bad"><%= error %></div><% } %>
+    <% if (token) { %>
+      <p>Choose something you will remember. Every other session will be signed out.</p>
+      <form method="post" action="/portal/reset/<%= token %>">
+        <input type="hidden" name="_csrf" value="<%= csrf %>">
+        <div class="field">
+          <label for="password">New password</label>
+          <input id="password" name="password" type="password" required minlength="8" autocomplete="new-password" autofocus>
+        </div>
+        <div class="field">
+          <label for="password2">Repeat it</label>
+          <input id="password2" name="password2" type="password" required minlength="8" autocomplete="new-password">
+        </div>
+        <button class="btn" type="submit">Save it</button>
+      </form>
+    <% } else { %>
+      <p><a class="btn" href="/portal/forgot">Ask for a new link</a></p>
+    <% } %>
+  </div>
+</div>
+<%- include("../partials/foot") %>

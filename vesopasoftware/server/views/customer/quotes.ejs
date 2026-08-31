@@ -1,0 +1,29 @@
+<%- include("../partials/head") %>
+<%- include("../partials/nav") %>
+<div class="wrap">
+  <div class="page-head">
+    <div class="grow"><span class="eyebrow">What you have asked us to price</span><h1>Quotes</h1></div>
+    <a class="btn" href="/portal/projects/new">New brief</a>
+  </div>
+  <div class="panel">
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Ref</th><th>Work</th><th>Sent</th><th>Status</th><th class="num">Estimate</th></tr></thead>
+        <tbody>
+          <% if (!quotes.length) { %><tr><td colspan="5" class="t-empty">No quotes yet.</td></tr><% } %>
+          <% for (const qq of quotes) { %>
+            <tr>
+              <td class="mono" style="font-size:.72rem"><%= qq.ref %></td>
+              <td><strong><%= qq.service_type %></strong>
+                <div class="muted" style="font-size:.74rem"><%= qq.scope_tier %> · <%= qq.timeline %></div></td>
+              <td><time datetime="<%= new Date(qq.created_at).toISOString() %>"></time></td>
+              <td><span class="pill <%= qq.status === 'accepted' ? 'ok' : qq.status === 'declined' ? 'bad' : '' %>"><%= qq.status %></span></td>
+              <td class="num"><%= moneyRound(qq.estimate_min, qq.currency) %> – <%= moneyRound(qq.estimate_max, qq.currency) %></td>
+            </tr>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<%- include("../partials/foot") %>

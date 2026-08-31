@@ -1,0 +1,103 @@
+<%- include("../partials/head") %>
+<%- include("../partials/nav") %>
+<% const payable = invoices.filter(i => i.status === "sent" || i.status === "part_paid");
+   const owed = payable.reduce((s,i) => s + balanceOf(i), 0);
+   const pendingTotal = charges.reduce((s,c) => s + Number(c.amount||0), 0); %>
+<div class="wrap">
+  <div class="page-head">
+    <div class="grow">
+      <span class="eyebrow">Everything you owe, and everything you have paid</span>
+      <h1>Billing</h1>
+    </div>
+    <a class="btn ghost" href="/portal/billing-details">Your billing details</a>
+  </div>
+
+  <div class="grid g3" style="margin-bottom:1rem">
+    <div class="stat <%= owed > 0 ? 'warn' : '' %>"><b><%= moneyRound(owed, currency) %></b><span>Owing now</span></div>
+    <div class="stat plain"><b><%= moneyRound(pendingTotal, currency) %></b><span>Pending charges, not yet invoiced</span></div>
+    <div class="stat"><b><%= moneyRound(invoices.reduce((s,i)=>s+Number(i.amount_paid||0),0), currency) %></b><span>Paid to date</span></div>
+  </div>
+
+  <% if (charges.length) { %>
+    <div class="panel" style="border-left:3px solid var(--warn)">
+      <div class="panel-head"><h2>Pending charges</h2><span class="spacer"></span>
+        <span class="pill warn"><%= moneyRound(pendingTotal, currency) %></span></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>What</th><th>Project</th><th>Incurred</th><th class="num">Qty</th><th class="num">Amount</th></tr></thead>
+        <tbody><% for (const c of charges) { %>
+          <tr><td><%= c.description %></td><td class="muted"><%= c.project_title || "—" %></td>
+          <td><time datetime="<%= new Date(c.incurred_on).toISOString() %>"></time></td>
+          <td class="num"><%= c.qty %></td><td class="num"><%= money(c.amount, c.currency) %></td></tr>
+        <% } %></tbody>
+      </table></div>
+      <p class="hint">Work done but not yet invoiced. These roll onto your next invoice.</p>
+    </div>
+  <% } %>
+
+  <% if (subs.length) { %>
+    <div class="panel">
+      <h2>Recurring charges</h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th>What</th><th>Project</th><th>Every</th><th>Next charge</th><th>Status</th><th class="num">Amount</th></tr></thead>
+        <tbody><% for (const s of subs) { %>
+          <tr><td><strong><%= s.name %></strong><% if (s.description) { %><div class="muted" style="font-size:.75rem"><%= s.description %></div><% } %></td>
+          <td class="muted"><%= s.project_title || "—" %></td><td><%= s.interval_unit %></td>
+          <td><time datetime="<%= new Date(s.next_charge_date).toISOString() %>"></time></td>
+          <td><span class="pill <%= s.status === 'active' ? 'ok' : 'warn' %>"><%= s.status %></span></td>
+          <td class="num"><%= money(s.amount, s.currency) %></td></tr>
+        <% } %></tbody>
+      </table></div>
+    </div>
+  <% } %>
+
+  <form class="panel" id="batch-form" method="post" action="/portal/invoices/pay-batch">
+    <input type="hidden" name="_csrf" value="<%= csrf %>">
+    <div class="panel-head">
+      <h2>Invoices</h2>
+      <span class="spacer"></span>
+      <% if (can("billing.pay") && payable.length && paymentMode !== "off") { %>
+        <span class="muted" style="font-size:.82rem">Selected:
+          <strong id="batch-total" data-currency="<%= currency %>" class="strong-num">—</strong></span>
+        <button class="btn" id="batch-pay" type="submit" disabled>Pay selected</button>
+      <% } %>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <% if (can("billing.pay") && payable.length) { %><th style="width:2rem"><input type="checkbox" id="batch-all" style="width:auto"></th><% } %>
+          <th>Invoice</th><th>Project</th><th>Issued</th><th>Due</th><th>Status</th>
+          <th class="num">Total</th><th class="num">Outstanding</th><th></th>
+        </tr></thead>
+        <tbody>
+          <% if (!invoices.length) { %>
+            <tr><td colspan="9" class="t-empty">No invoices yet.</td></tr>
+          <% } %>
+          <% for (const i of invoices) { const due = balanceOf(i); const canPay = due > 0 && (i.status === "sent" || i.status === "part_paid"); %>
+            <tr>
+              <% if (can("billing.pay") && payable.length) { %>
+                <td><% if (canPay) { %>
+                  <input type="checkbox" name="invoice_ids" value="<%= i.id %>" data-due="<%= due %>" style="width:auto">
+                <% } %></td>
+              <% } %>
+              <td><a href="/portal/invoices/<%= i.id %>"><strong><%= i.number %></strong></a></td>
+              <td class="muted"><%= i.project_title || "—" %></td>
+              <td><time datetime="<%= new Date(i.issue_date).toISOString() %>"></time></td>
+              <td><time datetime="<%= new Date(i.due_date).toISOString() %>"></time></td>
+              <td>
+                <% if (isOverdue(i)) { %><span class="pill bad">Overdue</span>
+                <% } else { %><span class="pill <%= i.status === 'paid' ? 'ok' : 'warn' %>"><%= STATUS_LABEL[i.status] || i.status %></span><% } %>
+              </td>
+              <td class="num"><%= money(i.total, i.currency) %></td>
+              <td class="num"><%= due > 0 ? money(due, i.currency) : "—" %></td>
+              <td class="num"><a class="btn ghost small" href="/portal/invoices/<%= i.id %>">Open</a></td>
+            </tr>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+    <% if (paymentMode === "mock") { %>
+      <p class="hint">Payments are in mock mode: paying settles the invoice immediately without taking real money.</p>
+    <% } %>
+  </form>
+</div>
+<%- include("../partials/foot") %>

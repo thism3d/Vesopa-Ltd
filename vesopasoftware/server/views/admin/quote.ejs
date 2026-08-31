@@ -1,0 +1,74 @@
+<%- include("../partials/head") %>
+<%- include("../partials/nav") %>
+<% let feats = []; try { feats = typeof quote.features === "string" ? JSON.parse(quote.features) : (quote.features || []); } catch (e) {} %>
+<div class="wrap">
+  <div class="page-head">
+    <div class="grow">
+      <span class="eyebrow">Quote <%= quote.ref %> · received <span class="mono"><%= date(quote.created_at) %></span></span>
+      <h1><%= quote.name %></h1>
+      <p><%= quote.email %><% if (quote.phone) { %> · <%= quote.phone %><% } %><% if (quote.company) { %> · <%= quote.company %><% } %></p>
+    </div>
+    <a class="btn ghost" href="/portal/admin/quotes">All quotes</a>
+  </div>
+
+  <div class="split">
+    <div>
+      <div class="panel">
+        <h2>What they asked for</h2>
+        <div class="grid g3" style="margin-bottom:1rem">
+          <div class="stat plain" style="padding:.7rem .9rem"><b style="font-size:1rem"><%= quote.service_type %></b><span>Kind of work</span></div>
+          <div class="stat plain" style="padding:.7rem .9rem"><b style="font-size:1rem"><%= quote.scope_tier %></b><span>Scope</span></div>
+          <div class="stat plain" style="padding:.7rem .9rem"><b style="font-size:1rem"><%= quote.timeline %></b><span>Timeline</span></div>
+        </div>
+        <div class="stat">
+          <b><%= moneyRound(quote.estimate_min, quote.currency) %> – <%= moneyRound(quote.estimate_max, quote.currency) %></b>
+          <span>What the calculator told them</span>
+        </div>
+        <% if (feats.length) { %>
+          <hr><div class="mono muted" style="font-size:.62rem;margin-bottom:.4rem">THEY TICKED</div>
+          <div class="chips"><% for (const f of feats) { %><span class="pill"><%= f %></span><% } %></div>
+        <% } %>
+        <% if (quote.message) { %>
+          <hr><div class="mono muted" style="font-size:.62rem;margin-bottom:.4rem">IN THEIR WORDS</div>
+          <p style="white-space:pre-wrap;font-size:.92rem"><%= quote.message %></p>
+        <% } %>
+      </div>
+    </div>
+
+    <div>
+      <div class="panel">
+        <h3>Move it on</h3>
+        <form method="post" action="/portal/admin/quotes/<%= quote.id %>/status" style="margin-bottom:1rem">
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <div class="field">
+            <label for="status">Status</label>
+            <select id="status" name="status">
+              <% for (const s of ["new","reviewing","quoted","accepted","declined"]) { %>
+                <option value="<%= s %>" <%= quote.status === s ? "selected" : "" %>><%= s %></option>
+              <% } %>
+            </select>
+          </div>
+          <button class="btn ghost" type="submit" style="width:100%;justify-content:center">Save status</button>
+        </form>
+        <hr>
+        <h3>Turn it into a project</h3>
+        <form method="post" action="/portal/admin/quotes/<%= quote.id %>/convert">
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <div class="field"><label for="title">Project name</label>
+            <input id="title" name="title" value="<%= (quote.company || quote.name) + ' — ' + quote.service_type %>"></div>
+          <div class="field"><label for="budget">Agreed budget</label>
+            <input id="budget" name="budget" type="number" step="0.01" value="<%= quote.estimate_min %>"></div>
+          <button class="btn" type="submit" style="width:100%;justify-content:center">Open the project</button>
+        </form>
+        <p class="hint">If they have no account we create one and email them a temporary password.</p>
+      </div>
+      <% if (customer) { %>
+        <div class="panel">
+          <h3>Existing customer</h3>
+          <p><a href="/portal/admin/customers/<%= customer.id %>"><%= customer.name %></a></p>
+        </div>
+      <% } %>
+    </div>
+  </div>
+</div>
+<%- include("../partials/foot") %>

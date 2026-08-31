@@ -1,4 +1,17 @@
 tools/.env
+.env
 node_modules/
 .DS_Store
 shots/
+shots-new/
+
+# Customer-uploaded project files. Real client material — never in the repo.
+uploads/
+
+# Intermediate render frames.
+#
+# tools/ renders these PNG sequences and then encodes them into the .mp4 and
+# .webp files in site/assets/video, which ARE committed. The frames are 13MB of
+# reproducible intermediate — the encode is the artefact worth keeping, not the
+# input to it.
+site/assets/video_frames/

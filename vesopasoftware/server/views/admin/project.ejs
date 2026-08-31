@@ -1,0 +1,302 @@
+<%- include("../partials/head") %>
+<%- include("../partials/nav") %>
+<% const pendingCharges = charges.filter(c => c.status === "pending");
+   const pendingTotal = pendingCharges.reduce((s,c) => s + Number(c.amount||0), 0); %>
+
+<div class="wrap">
+  <div class="page-head">
+    <div class="grow">
+      <span class="eyebrow"><%= project.ref %> · <a href="/portal/admin/customers/<%= customer.id %>"><%= customer.name %></a></span>
+      <h1><%= project.title %></h1>
+      <p>
+        <span class="pill info"><%= PROJECT_STATUS[project.status] ? PROJECT_STATUS[project.status].label : project.status %></span>
+        · opened <time datetime="<%= new Date(project.created_at).toISOString() %>"></time>
+        · last touched <time datetime="<%= new Date(project.updated_at).toISOString() %>"></time>
+      </p>
+    </div>
+    <a class="btn ghost" href="/portal/projects/<%= project.id %>">See it as the customer</a>
+  </div>
+
+  <div class="split">
+    <div>
+      <!-- settings -->
+      <div class="panel">
+        <h2>Project</h2>
+        <form method="post" action="/portal/admin/projects/<%= project.id %>">
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <div class="field"><label for="title">Title</label><input id="title" name="title" value="<%= project.title %>"></div>
+          <div class="fields">
+            <div class="field">
+              <label for="status">Status</label>
+              <select id="status" name="status">
+                <% for (const [k, v] of Object.entries(PROJECT_STATUS)) { %>
+                  <option value="<%= k %>" <%= project.status === k ? "selected" : "" %>><%= v.label %></option>
+                <% } %>
+              </select>
+            </div>
+            <div class="field"><label for="progress_pct">Progress %</label>
+              <input id="progress_pct" name="progress_pct" type="number" min="0" max="100" value="<%= project.progress_pct %>"></div>
+            <div class="field"><label for="budget_amount">Budget</label>
+              <input id="budget_amount" name="budget_amount" type="number" step="0.01" value="<%= project.budget_amount %>"></div>
+          </div>
+          <div class="fields">
+            <div class="field"><label for="start_date">Start</label>
+              <input id="start_date" name="start_date" type="date" value="<%= project.start_date || '' %>"></div>
+            <div class="field"><label for="target_date">Target</label>
+              <input id="target_date" name="target_date" type="date" value="<%= project.target_date || '' %>"></div>
+          </div>
+          <div class="field"><label for="description">Description</label>
+            <textarea id="description" name="description" rows="3"><%= project.description || '' %></textarea></div>
+          <button class="btn" type="submit">Save project</button>
+        </form>
+      </div>
+
+      <!-- conversation -->
+      <div class="panel">
+        <div class="panel-head"><h2>Conversation</h2><span class="spacer"></span>
+          <span class="live" id="live-thread"></span></div>
+        <div class="thread" id="thread" data-project="<%= project.id %>">
+          <% for (const m of messages) { %>
+            <% const mine = m.user_id === user.id; %>
+            <div class="msg <%= mine ? 'mine' : '' %> <%= m.author_role === 'admin' ? 'vesopa' : '' %> <%= m.recipient_id ? 'private' : '' %>" data-msg="<%= m.id %>">
+              <div class="who"><%= (m.author || "?").split(" ").map(w => w[0]).slice(0,2).join("").toUpperCase() %></div>
+              <div class="bubble">
+                <div class="meta">
+                  <b><%= m.author || "Someone" %></b>
+                  <% if (m.author_role === "admin") { %><span class="pill lime">Vesopa</span><% } %>
+                  <% if (m.recipient_id) { %><span class="pill warn">Private</span><% } %>
+                  <time datetime="<%= new Date(m.created_at).toISOString() %>"></time>
+                </div>
+                <div class="body"><%= m.body %></div>
+                <% if (m.invoice_id && m.invoice_number) { %>
+                  <div class="inv-card">
+                    <div><div class="mono muted" style="font-size:.62rem">INVOICE <%= m.invoice_number %></div>
+                      <b><%= money(m.invoice_total, m.invoice_currency) %></b></div>
+                    <span class="spacer"></span>
+                    <span class="pill <%= m.invoice_status === 'paid' ? 'ok' : 'warn' %>"><%= STATUS_LABEL[m.invoice_status] || m.invoice_status %></span>
+                    <a class="btn small ghost" href="/portal/admin/invoices/<%= m.invoice_id %>">Open</a>
+                  </div>
+                <% } %>
+              </div>
+            </div>
+          <% } %>
+        </div>
+        <div class="typing" id="typing"></div>
+        <form class="composer" id="composer" method="post" action="/portal/projects/<%= project.id %>/messages">
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <textarea name="body" placeholder="Reply to the customer… (Enter sends)" required></textarea>
+          <div class="row">
+            <select name="recipient_id" style="max-width:16rem">
+              <option value="">Everyone on this project</option>
+              <% for (const mem of members) { if (mem.user_id === user.id) continue; %>
+                <option value="<%= mem.user_id %>">Private to <%= mem.name %></option>
+              <% } %>
+            </select>
+            <span class="spacer" style="flex:1"></span>
+            <button class="btn" type="submit">Send</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- invoice into the chat -->
+      <div class="panel" style="border-left:3px solid var(--lime)">
+        <h2>Send an invoice into the conversation</h2>
+        <p class="muted" style="font-size:.86rem;margin-bottom:.8rem">
+          Raises it, emails it, and posts a payable card into the thread. Leave the invoice picker
+          on “new” to bill a single amount.
+        </p>
+        <form method="post" action="/portal/admin/projects/<%= project.id %>/send-invoice">
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <div class="fields">
+            <div class="field">
+              <label for="invoice_id">Existing invoice</label>
+              <select id="invoice_id" name="invoice_id">
+                <option value="">Raise a new one</option>
+                <% for (const i of invoices) { %>
+                  <option value="<%= i.id %>"><%= i.number %> — <%= money(i.total, i.currency) %> (<%= i.status %>)</option>
+                <% } %>
+              </select>
+            </div>
+            <div class="field"><label for="amount">Amount (new invoice)</label>
+              <input id="amount" name="amount" type="number" step="0.01" placeholder="0.00"></div>
+            <div class="field"><label for="due_days">Due in days</label>
+              <input id="due_days" name="due_days" type="number" value="14"></div>
+          </div>
+          <div class="field"><label for="description">What it is for</label>
+            <input id="description" name="description" placeholder="Stage two — build"></div>
+          <div class="field"><label for="body">Message to send with it</label>
+            <textarea name="body" id="body" rows="2" placeholder="Here is stage two, payable in the portal."></textarea></div>
+          <button class="btn" type="submit">Raise, email and post it</button>
+        </form>
+      </div>
+
+      <!-- files -->
+      <div class="panel">
+        <div class="panel-head"><h2>Files</h2><span class="spacer"></span><span class="pill"><%= files.length %></span></div>
+        <% if (files.length) { %>
+          <div class="files" style="margin-bottom:1rem">
+            <% for (const f of files) { %>
+              <div class="file">
+                <a class="thumb" href="/portal/files/<%= f.id %>" data-preview
+                   data-id="<%= f.id %>" data-mime="<%= f.mime || '' %>" data-name="<%= f.original_name %>">
+                  <% if ((f.mime || "").startsWith("image/")) { %>
+                    <img src="/portal/files/<%= f.id %>" alt="" loading="lazy">
+                  <% } else if (f.mime === "application/pdf") { %>PDF
+                  <% } else if (/zip/i.test(f.mime || "")) { %>ZIP
+                  <% } else { %>FILE<% } %>
+                </a>
+                <div class="meta">
+                  <b title="<%= f.original_name %>"><%= f.original_name %></b>
+                  <small><%= (f.size_bytes/1024).toFixed(0) %> KB · <time datetime="<%= new Date(f.created_at).toISOString() %>"></time></small>
+                  <small class="muted"><%= f.uploader || "—" %></small>
+                  <form method="post" action="/portal/files/<%= f.id %>/delete" style="margin-top:.3rem">
+                    <input type="hidden" name="_csrf" value="<%= csrf %>">
+                    <button class="btn danger small" type="submit">Remove</button>
+                  </form>
+                </div>
+              </div>
+            <% } %>
+          </div>
+        <% } %>
+        <form method="post" action="/portal/projects/<%= project.id %>/files" enctype="multipart/form-data">
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <input type="file" name="files" multiple class="sr">
+          <div class="dropzone" id="dropzone">Drop files here, or click to choose.</div>
+        </form>
+      </div>
+    </div>
+
+    <div>
+      <!-- post an update -->
+      <div class="panel">
+        <h3>Post an update</h3>
+        <form method="post" action="/portal/admin/projects/<%= project.id %>/updates">
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <div class="field"><label for="utitle">Headline</label><input id="utitle" name="title" required placeholder="Design signed off"></div>
+          <div class="field"><label for="ubody">Detail</label><textarea id="ubody" name="body" rows="3"></textarea></div>
+          <div class="field"><label for="upct">Set progress to %</label>
+            <input id="upct" name="progress_pct" type="number" min="0" max="100" placeholder="<%= project.progress_pct %>"></div>
+          <label class="check"><input type="checkbox" name="email_customer" value="1" checked>
+            <span>Email the customer</span></label>
+          <label class="check"><input type="checkbox" name="is_internal" value="1">
+            <span>Internal note<small>Not shown to the customer</small></span></label>
+          <button class="btn" type="submit" style="width:100%;justify-content:center">Post it</button>
+        </form>
+      </div>
+
+      <!-- charges -->
+      <div class="panel">
+        <div class="panel-head"><h3>Charges</h3><span class="spacer"></span>
+          <% if (pendingTotal) { %><span class="pill warn"><%= moneyRound(pendingTotal, project.currency) %> pending</span><% } %></div>
+        <% for (const c of charges) { %>
+          <div style="display:flex;gap:.5rem;align-items:center;padding:.45rem 0;border-bottom:1px solid var(--rule);font-size:.84rem">
+            <div style="flex:1;min-width:0">
+              <%= c.description %>
+              <div class="muted" style="font-size:.71rem"><%= c.qty %> × <%= money(c.unit_price, c.currency) %> ·
+                <time datetime="<%= new Date(c.incurred_on).toISOString() %>"></time></div>
+            </div>
+            <span class="strong-num"><%= money(c.amount, c.currency) %></span>
+            <span class="pill <%= c.status === 'pending' ? 'warn' : c.status === 'invoiced' ? 'ok' : '' %>"><%= c.status %></span>
+            <% if (c.status === "pending") { %>
+              <form method="post" action="/portal/admin/charges/<%= c.id %>/void">
+                <input type="hidden" name="_csrf" value="<%= csrf %>">
+                <button class="btn danger small" type="submit">Void</button>
+              </form>
+            <% } %>
+          </div>
+        <% } %>
+        <% if (!charges.length) { %><p class="t-empty">None logged.</p><% } %>
+
+        <hr>
+        <form method="post" action="/portal/admin/projects/<%= project.id %>/charges">
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <div class="field"><label for="cdesc">Add a charge</label>
+            <input id="cdesc" name="description" required placeholder="Extra reporting screen"></div>
+          <div class="fields">
+            <div class="field"><label for="cqty">Qty</label><input id="cqty" name="qty" type="number" step="0.01" value="1"></div>
+            <div class="field"><label for="cprice">Unit price</label><input id="cprice" name="unit_price" type="number" step="0.01" required></div>
+          </div>
+          <button class="btn ghost" type="submit" style="width:100%;justify-content:center">Log the charge</button>
+        </form>
+        <% if (pendingTotal) { %>
+          <form method="post" action="/portal/admin/customers/<%= customer.id %>/invoice-charges" style="margin-top:.6rem">
+            <input type="hidden" name="_csrf" value="<%= csrf %>">
+            <input type="hidden" name="send" value="1">
+            <button class="btn" type="submit" style="width:100%;justify-content:center">
+              Invoice all pending charges
+            </button>
+          </form>
+        <% } %>
+      </div>
+
+      <!-- members -->
+      <div class="panel">
+        <h3>Who is on this</h3>
+        <% for (const m of members) { %>
+          <div style="display:flex;gap:.5rem;align-items:center;padding:.45rem 0;border-bottom:1px solid var(--rule);font-size:.85rem">
+            <div style="flex:1;min-width:0">
+              <strong><%= m.name %></strong>
+              <div class="muted" style="font-size:.72rem"><%= m.role_label || m.job_title || "" %> · <%= m.email %></div>
+            </div>
+            <% if (m.side === "vesopa") { %><span class="pill lime">Vesopa</span><% } %>
+            <form method="post" action="/portal/admin/projects/<%= project.id %>/members/<%= m.user_id %>/remove">
+              <input type="hidden" name="_csrf" value="<%= csrf %>">
+              <button class="btn danger small" type="submit">×</button>
+            </form>
+          </div>
+        <% } %>
+        <hr>
+        <form method="post" action="/portal/admin/projects/<%= project.id %>/members">
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <div class="field">
+            <label for="user_id">Add someone</label>
+            <select id="user_id" name="user_id">
+              <optgroup label="Vesopa">
+                <% for (const s of staff) { %><option value="<%= s.id %>"><%= s.name %></option><% } %>
+              </optgroup>
+              <% if (orgPeople.length) { %>
+                <optgroup label="<%= customer.company || 'Customer' %>">
+                  <% for (const p of orgPeople) { %><option value="<%= p.id %>"><%= p.name %> (<%= p.org_role %>)</option><% } %>
+                </optgroup>
+              <% } %>
+            </select>
+          </div>
+          <div class="field"><label for="role_label">Their role here</label>
+            <input id="role_label" name="role_label" placeholder="Lead developer"></div>
+          <button class="btn ghost" type="submit" style="width:100%;justify-content:center">Add to project</button>
+        </form>
+      </div>
+
+      <!-- recurring on this project -->
+      <% if (subs.length) { %>
+        <div class="panel">
+          <h3>Recurring</h3>
+          <% for (const s of subs) { %>
+            <div style="padding:.45rem 0;border-bottom:1px solid var(--rule);font-size:.85rem">
+              <div style="display:flex"><strong style="flex:1"><%= s.name %></strong>
+                <span class="strong-num"><%= money(s.amount, s.currency) %></span></div>
+              <div class="muted" style="font-size:.72rem"><%= s.interval_unit %> · next
+                <time datetime="<%= new Date(s.next_charge_date).toISOString() %>"></time></div>
+            </div>
+          <% } %>
+        </div>
+      <% } %>
+
+      <!-- timeline -->
+      <div class="panel">
+        <h3>Timeline</h3>
+        <ul class="timeline">
+          <% updates.forEach((u, idx) => { %>
+            <li class="<%= idx ? 'muted' : '' %>">
+              <h4><%= u.title %> <% if (u.is_internal) { %><span class="pill warn">internal</span><% } %></h4>
+              <% if (u.body) { %><p><%= u.body %></p><% } %>
+              <time datetime="<%= new Date(u.created_at).toISOString() %>"></time>
+            </li>
+          <% }) %>
+          <% if (!updates.length) { %><li class="muted"><p>Nothing posted.</p></li><% } %>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+<%- include("../partials/foot") %>

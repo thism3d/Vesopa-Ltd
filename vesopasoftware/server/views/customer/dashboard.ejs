@@ -1,0 +1,194 @@
+<%- include("../partials/head") %>
+<%- include("../partials/nav") %>
+
+<div class="wrap">
+  <div class="page-head">
+    <div class="grow">
+      <span class="eyebrow">Signed in as <%= user.email %></span>
+      <h1>Hello, <%= user.name.split(" ")[0] %>.</h1>
+      <p>
+        <%= projects.length %> project<%= projects.length === 1 ? "" : "s" %> ·
+        last signed in <time datetime="<%= new Date().toISOString() %>"></time>
+      </p>
+    </div>
+    <% if (can("project.create")) { %>
+      <a class="btn" href="/portal/projects/new">Start a project</a>
+    <% } %>
+  </div>
+
+  <div class="grid g4" style="margin-bottom:1rem">
+    <div class="stat <%= outstanding > 0 ? 'warn' : '' %>">
+      <b><%= moneyRound(outstanding, currency) %></b>
+      <span>Outstanding on invoices</span>
+    </div>
+    <div class="stat <%= pendingTotal > 0 ? 'plain' : '' %>">
+      <b><%= moneyRound(pendingTotal, currency) %></b>
+      <span>Pending charges, not yet invoiced</span>
+      <small><%= charges.length %> item<%= charges.length === 1 ? "" : "s" %></small>
+    </div>
+    <div class="stat plain">
+      <b><%= moneyRound(monthlyRecurring, currency) %></b>
+      <span>Recurring, per month</span>
+      <small><%= subs.length %> active</small>
+    </div>
+    <div class="stat">
+      <b><%= moneyRound(paidTotal, currency) %></b>
+      <span>Paid to date</span>
+    </div>
+  </div>
+
+  <% if (charges.length && can("billing.view")) { %>
+    <div class="panel" style="border-left:3px solid var(--warn)">
+      <div class="panel-head">
+        <h2>Pending charges</h2>
+        <span class="spacer"></span>
+        <span class="pill warn"><%= moneyRound(pendingTotal, currency) %> not yet invoiced</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>What</th><th>Project</th><th>Incurred</th><th class="num">Amount</th></tr></thead>
+          <tbody>
+            <% for (const c of charges) { %>
+              <tr>
+                <td><%= c.description %></td>
+                <td class="muted"><%= c.project_title || "—" %></td>
+                <td><time datetime="<%= new Date(c.incurred_on).toISOString() %>"></time></td>
+                <td class="num"><%= money(c.amount, c.currency) %></td>
+              </tr>
+            <% } %>
+          </tbody>
+        </table>
+      </div>
+      <p class="hint">These are logged but not yet on an invoice. They will appear on your next one.</p>
+    </div>
+  <% } %>
+
+  <div class="split" style="margin-top:1rem">
+    <div>
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Your projects</h2>
+          <span class="spacer"></span>
+          <a class="btn ghost small" href="/portal/projects">See all</a>
+        </div>
+        <% if (!projects.length) { %>
+          <p class="t-empty">No projects yet. <a href="/portal/projects/new">Tell us what you need</a> and we will come back with a plan.</p>
+        <% } else { %>
+          <% for (const p of projects.slice(0, 6)) { %>
+            <div style="padding:.8rem 0;border-bottom:1px solid var(--rule)">
+              <div style="display:flex;gap:.7rem;align-items:baseline;flex-wrap:wrap">
+                <a href="/portal/projects/<%= p.id %>" style="font-weight:640;text-decoration:none"><%= p.title %></a>
+                <span class="pill <%= p.status === 'complete' ? 'ok' : p.status === 'on_hold' ? 'warn' : 'info' %>">
+                  <%= PROJECT_STATUS[p.status] ? PROJECT_STATUS[p.status].label : p.status %>
+                </span>
+                <span class="spacer" style="flex:1"></span>
+                <span class="mono muted" style="font-size:.68rem"><%= p.ref %></span>
+              </div>
+              <div class="progress-line" style="margin-top:.55rem">
+                <div class="bar" data-progress="<%= p.id %>"><i style="width:<%= p.progress_pct %>%"></i></div>
+                <b data-progress-label="<%= p.id %>"><%= p.progress_pct %>%</b>
+              </div>
+              <div class="muted" style="font-size:.75rem;margin-top:.35rem">
+                <%= moneyRound(p.budget_amount, p.currency) %> budget
+                <% if (p.target_date) { %> · due <time datetime="<%= new Date(p.target_date).toISOString() %>" data-rel="off"></time><% } %>
+              </div>
+            </div>
+          <% } %>
+        <% } %>
+      </div>
+
+      <div class="panel">
+        <h2>Latest updates</h2>
+        <% if (!updates.length) { %>
+          <p class="t-empty">Nothing posted yet.</p>
+        <% } else { %>
+          <ul class="timeline">
+            <% for (const u of updates) { %>
+              <li>
+                <h4><%= u.title %></h4>
+                <% if (u.body) { %><p><%= u.body %></p><% } %>
+                <time datetime="<%= new Date(u.created_at).toISOString() %>"></time>
+                <a class="mono muted" style="font-size:.63rem" href="/portal/projects/<%= u.pid %>"><%= u.project_title %></a>
+              </li>
+            <% } %>
+          </ul>
+        <% } %>
+      </div>
+    </div>
+
+    <div>
+      <% if (can("billing.view")) { %>
+        <div class="panel">
+          <div class="panel-head">
+            <h3>Invoices</h3>
+            <span class="spacer"></span>
+            <a class="btn ghost small" href="/portal/invoices">Billing</a>
+          </div>
+          <% const open = invoices.filter(i => i.status === "sent" || i.status === "part_paid"); %>
+          <% if (!open.length) { %>
+            <p class="t-empty">Nothing owing. </p>
+          <% } else { %>
+            <% for (const i of open) { %>
+              <div style="display:flex;gap:.6rem;align-items:center;padding:.55rem 0;border-bottom:1px solid var(--rule)">
+                <div style="flex:1;min-width:0">
+                  <a href="/portal/invoices/<%= i.id %>" style="text-decoration:none;font-weight:600"><%= i.number %></a>
+                  <div class="muted" style="font-size:.72rem">
+                    due <time datetime="<%= new Date(i.due_date).toISOString() %>"></time>
+                  </div>
+                </div>
+                <div class="right">
+                  <div class="strong-num"><%= money(balanceOf(i), i.currency) %></div>
+                  <% if (isOverdue(i)) { %><span class="pill bad">Overdue</span><% } %>
+                </div>
+              </div>
+            <% } %>
+          <% } %>
+        </div>
+      <% } %>
+
+      <% if (subs.length) { %>
+        <div class="panel">
+          <h3>Recurring charges</h3>
+          <% for (const s of subs) { %>
+            <div style="padding:.55rem 0;border-bottom:1px solid var(--rule)">
+              <div style="display:flex;gap:.5rem;align-items:baseline">
+                <b style="font-weight:600;font-size:.9rem"><%= s.name %></b>
+                <span class="spacer" style="flex:1"></span>
+                <span class="strong-num"><%= money(s.amount, s.currency) %></span>
+              </div>
+              <div class="muted" style="font-size:.72rem">
+                <%= s.interval_unit %> · next
+                <time datetime="<%= new Date(s.next_charge_date).toISOString() %>"></time>
+                <span class="pill <%= s.status === 'active' ? 'ok' : 'warn' %>"><%= s.status %></span>
+              </div>
+            </div>
+          <% } %>
+        </div>
+      <% } %>
+
+      <div class="panel">
+        <h3>Recent quotes</h3>
+        <% if (!quotes.length) { %>
+          <p class="t-empty">None yet.</p>
+        <% } else { %>
+          <% for (const qq of quotes) { %>
+            <div style="padding:.5rem 0;border-bottom:1px solid var(--rule);font-size:.85rem">
+              <div style="display:flex;gap:.5rem">
+                <span class="mono muted" style="font-size:.68rem"><%= qq.ref %></span>
+                <span class="spacer" style="flex:1"></span>
+                <span class="pill <%= qq.status === 'accepted' ? 'ok' : '' %>"><%= qq.status %></span>
+              </div>
+              <div style="margin-top:.2rem">
+                <%= moneyRound(qq.estimate_min, qq.currency) %> – <%= moneyRound(qq.estimate_max, qq.currency) %>
+              </div>
+              <time class="muted" style="font-size:.68rem" datetime="<%= new Date(qq.created_at).toISOString() %>"></time>
+            </div>
+          <% } %>
+          <p style="margin-top:.8rem"><a class="btn ghost small" href="/portal/quotes">All quotes</a></p>
+        <% } %>
+      </div>
+    </div>
+  </div>
+</div>
+
+<%- include("../partials/foot") %>

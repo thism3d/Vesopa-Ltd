@@ -1,0 +1,30 @@
+<%- include("../partials/head") %>
+<%- include("../partials/nav") %>
+<div class="wrap">
+  <div class="page-head"><div class="grow">
+    <span class="eyebrow">Every message the portal has sent</span><h1>Mail log</h1>
+    <p>Mail is currently in <strong><%= emails.length && emails[0].mode === "smtp" ? "SMTP" : "mock" %></strong> mode.
+       In mock mode nothing leaves the machine — this log is the proof it fired.</p></div></div>
+  <div class="panel">
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>When</th><th>To</th><th>Subject</th><th>Template</th><th>Mode</th><th>Status</th></tr></thead>
+        <tbody>
+          <% if (!emails.length) { %><tr><td colspan="6" class="t-empty">Nothing sent yet.</td></tr><% } %>
+          <% for (const e of emails) { %>
+            <tr>
+              <td><time datetime="<%= new Date(e.created_at).toISOString() %>"></time></td>
+              <td><%= e.to_email %></td>
+              <td><%= e.subject %></td>
+              <td class="mono muted" style="font-size:.7rem"><%= e.template || "—" %></td>
+              <td><span class="pill <%= e.mode === 'smtp' ? 'info' : '' %>"><%= e.mode %></span></td>
+              <td><span class="pill <%= e.status === 'sent' ? 'ok' : 'bad' %>"><%= e.status %></span>
+                <% if (e.error) { %><div class="muted" style="font-size:.7rem"><%= e.error %></div><% } %></td>
+            </tr>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<%- include("../partials/foot") %>
