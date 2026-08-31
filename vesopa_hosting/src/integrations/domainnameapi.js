@@ -282,32 +282,31 @@ async function call(method, endpoint, data = {}, { write = false, forceProd = fa
 
 /**
  * The four contact roles on a registration, spelled the way the gateway spells
- * them.
+ * them back to us.
  *
- * ---------------------------------------------------------------------------
- * READ THIS BEFORE CHANGING A SINGLE ONE OF THESE STRINGS
- * ---------------------------------------------------------------------------
- * These used to be 'Registrant', 'Administrative', 'Technical', 'Billing' —
- * the names the old SOAP service used and the names the marketing docs still
- * print. The REST gateway's enum is `Registrant`, `Admin`, `Tech`, `Billing`.
+ * These were 'Registrant', 'Administrative', 'Technical', 'Billing' — the SOAP
+ * era's names, which the documentation still prints. Every response from this
+ * gateway uses `Registrant`, `Admin`, `Tech`, `Billing`, and a no-op write of
+ * an unchanged contact set under those names is accepted (204), so these are
+ * the gateway's own vocabulary.
  *
- * The failure mode is the reason this comment is so long. An unrecognised
- * contactType does NOT fail the registration and does NOT appear in
- * `validationErrors`. The gateway silently discards the whole contacts array
- * and substitutes THE RESELLER ACCOUNT'S OWN DEFAULT CONTACT — our company
- * details — as registrant of record on a domain the customer just paid for.
+ * WHAT THIS DID *NOT* TURN OUT TO BE. The mismatch was initially suspected of
+ * causing the gateway to discard the contacts array and substitute the reseller
+ * account's default contact. It does not: measured 2026-09-01, vesopa.site
+ * carries `Muzahid Islam / muzahid@onzep.uk` and arpi.site carries
+ * `Nas Haque / inashaque@gmail.com` — each domain's own customer, and neither
+ * one the reseller ("Vesopa Software Limited"). The old names were evidently
+ * being accepted or mapped.
  *
- * Measured on arpi.site, registered 2026-08-31: all four contacts came back
- * carrying the reseller account holder's name, email and Bangladeshi address,
- * all four sharing one handle (D-699021228819), which is what gives it away —
- * four independently-supplied contacts cannot collapse to one handle.
+ * (All four contacts sharing a single handle is NOT a sign of substitution
+ * either — it is simply how this registrar stores one contact reused for four
+ * roles, and it is true of correctly-registered domains too. Worth writing down
+ * because it looks alarming and is not.)
  *
- * That is a registrant-of-record error, not a cosmetic one. It puts the wrong
- * legal person on the domain, sends ICANN's verification mail to the wrong
- * inbox, and for .uk it is a Nominet compliance breach. `assertContacts()`
- * below now reads the contacts back after every registration for exactly this
- * reason: a silent substitution has to be caught by looking, because the
- * gateway will never tell us.
+ * So this is a correctness change, not a bug fix: send the gateway the words it
+ * uses. `assertContacts()` below still reads the contacts back after every
+ * registration, because a registrant of record is worth verifying rather than
+ * assuming whatever the reason.
  */
 const CONTACT_TYPES = ['Registrant', 'Admin', 'Tech', 'Billing'];
 
@@ -599,11 +598,15 @@ async function register({ domain, years = 1, contact, nameservers, privacy = tru
   /*
    * Exactly the fields in DomainCreateWithContactInput and no others.
    *
-   * `isLocked` and `privacyEnabled` used to be sent here. Neither exists on
-   * that schema — locking and privacy are their own endpoints, applied below
-   * after the name exists. Unknown properties are not rejected loudly; they
-   * are simply dropped, which is how "privacyEnabled: true" appeared to work
-   * for months without ever having been read.
+   * `isLocked` and `privacyEnabled` used to be sent here and are not on that
+   * schema (checked against the gateway's own /swagger/v1/swagger.json, which
+   * declares `additionalProperties: false`). In practice both landed anyway —
+   * vesopa.site, registered through this code, came back with privacy and lock
+   * both on — so the gateway either tolerates them or defaults them enabled.
+   *
+   * They are sent as their own documented calls below regardless: relying on an
+   * undocumented tolerance for whether a customer's home address is published
+   * in WHOIS is not a thing to leave to chance.
    */
   const data = await call('POST', 'domains/register-with-contacts', {
     domainName: name,
@@ -784,7 +787,18 @@ async function getDomain(domain) {
     domain: name,
     status: data?.status || 'unknown',
     expires_at: (data?.expirationDate || '').slice(0, 10) || null,
-    nameservers: data?.nameServers || [],
+    /*
+     * `objectId` is what this gateway calls the registration's own handle —
+     * there is no top-level `id` on an info response, only on the one register
+     * returns. Reported here so the reconciler can write a real reference onto
+     * a row whose registration succeeded at the registry and failed on our side.
+     */
+    registrar_ref: String(data?.id || data?.domainId || data?.objectId || ''),
+    // The registry's own view of both, which is what makes it possible to tell
+    // "we asked for privacy" from "privacy is actually on".
+    privacy: data?.privacyProtectionStatus === true,
+    locked: data?.lockStatus === true,
+    nameservers: data?.nameServers || data?.nameservers || [],
   };
 }
 

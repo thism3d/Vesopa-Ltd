@@ -9,7 +9,8 @@
     "seed:admin": "node scripts/seed-admin.js",
     "preflight": "node scripts/preflight.js",
     "check:apps": "node scripts/check-apps.js",
-    "fix:contacts": "node scripts/fix-domain-contacts.js"
+    "fix:contacts": "node scripts/fix-domain-contacts.js",
+    "reconcile:domains": "node scripts/reconcile-domains.js"
   },
   "author": "Vesopa EPOS Ltd",
   "license": "UNLICENSED",

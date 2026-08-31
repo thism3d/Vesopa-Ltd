@@ -1,28 +1,23 @@
 #!/usr/bin/env node
 /**
- * Put the right registrant on domains that were registered with the wrong one.
+ * Check that the registrant on record at the registry is the customer, and put
+ * it right where it is not.
  *
  * ---------------------------------------------------------------------------
- * WHAT WENT WRONG, AND WHY THIS SCRIPT EXISTS
+ * WHAT THIS IS FOR
  * ---------------------------------------------------------------------------
- * `src/integrations/domainnameapi.js` sent its four contacts typed as
- * 'Registrant', 'Administrative', 'Technical' and 'Billing'. The REST gateway's
- * enum is 'Registrant', 'Admin', 'Tech', 'Billing'. An unrecognised contactType
- * is not rejected and does not appear in `validationErrors` — the gateway
- * silently DISCARDS the whole contacts array and substitutes the reseller
- * account's own default contact.
+ * A registrant of record is a legal fact about a domain, and nothing in this
+ * system had ever verified one. It is worth auditing on its own terms: a wrong
+ * registrant sends ICANN's verification mail to an inbox the owner does not
+ * read, and for a .uk it is a Nominet compliance matter.
  *
- * So every domain registered before that fix carries OUR company details as the
- * registrant of record instead of the customer's. Measured on arpi.site: all
- * four contacts came back with the reseller account holder's name, email and
- * address, and all four shared a single handle (D-699021228819) — four
- * independently supplied contacts cannot collapse to one handle, which is what
- * gives the substitution away.
- *
- * That is not cosmetic. It puts the wrong legal person on the domain, sends
- * ICANN's verification mail to an inbox the owner does not read (which is
- * exactly how arpi.site sat unusable for nine hours), and for a .uk it is a
- * Nominet compliance breach.
+ * The audit that prompted it (2026-09-01) found the registrants CORRECT —
+ * vesopa.site and arpi.site each carry their own customer's details. What it
+ * did find is that contacts registered before this release carry a WRONG PHONE
+ * COUNTRY CODE: the adapter derived it as `phone.slice(1, 3)` with a '44'
+ * default, so a Bangladeshi customer's 01752435220 was filed as +44 1752435220.
+ * Re-sending the contact through the fixed `toContact()` corrects that, which
+ * is most of what this script now does in practice.
  *
  * ---------------------------------------------------------------------------
  * USING IT
@@ -107,7 +102,38 @@ async function main() {
         continue;
       }
       const onRecord = String(current.registrant_email || '').toLowerCase();
-      if (onRecord === wanted) {
+
+      /*
+       * The email is not the whole contact. A registrant whose address is right
+       * and whose phone is filed under the wrong country is still wrong at the
+       * registry — and it is the failure this audit actually keeps finding,
+       * because the old `phone.slice(1, 3)` with a '44' default put a UK code on
+       * every customer who typed their number without a "+".
+       *
+       * So the on-record contact is compared field by field against what the
+       * fixed `toContact()` would send today.
+       */
+      const shouldBe = registrar.toContact(row, 'Registrant');
+      const reg = current.contacts.find((c) => /registrant/i.test(c?.contactType || '')) || {};
+      const drift = [];
+      if (String(reg.phoneCountryCode || '') !== shouldBe.phoneCountryCode) {
+        drift.push(`phone country code +${reg.phoneCountryCode || '?'} should be +${shouldBe.phoneCountryCode}`);
+      }
+      if (String(reg.phone || '').replace(/\D/g, '') !== shouldBe.phone) {
+        drift.push(`phone ${reg.phone || '(none)'} should be ${shouldBe.phone}`);
+      }
+      if (String(reg.country || '').toUpperCase() !== shouldBe.country) {
+        drift.push(`country ${reg.country || '(none)'} should be ${shouldBe.country}`);
+      }
+      if (String(reg.postalCode || '') !== shouldBe.postalCode) {
+        drift.push(`postcode ${reg.postalCode || '(none)'} should be ${shouldBe.postalCode}`);
+      }
+
+      if (onRecord === wanted && drift.length) {
+        wrong += 1;
+        console.log(`${label} ${YLW}NEEDS UPDATING${RST} ${DIM}(${onRecord})${RST}`);
+        for (const d of drift) console.log(`${' '.repeat(29)}${YLW}${d}${RST}`);
+      } else if (onRecord === wanted) {
         ok += 1;
         console.log(`${label} ${GRN}correct${RST} ${DIM}(${onRecord})${RST}`);
       } else {
@@ -134,24 +160,30 @@ async function main() {
       continue;
     }
 
+    /*
+     * `updateContacts`, not `assertContacts`.
+     *
+     * assertContacts short-circuits the moment the registrant EMAIL matches, which
+     * is exactly the case that still needs writing here: the email has always
+     * been right and the phone country code has always been wrong. Pushing the
+     * whole contact set unconditionally is idempotent — the gateway accepts an
+     * unchanged contact with a 204 — and it is the only way the corrected phone
+     * reaches the registry.
+     */
     let info;
     try {
-      // Checks, and repairs if the registrant on record is not ours.
-      info = await registrar.assertContacts(row.domain, row);
+      info = await registrar.updateContacts({ domain: row.domain, contact: row });
     } catch (err) {
-      console.log(`${label} ${RED}could not check${RST} — ${err.message}`);
+      console.log(`${label} ${RED}could not update${RST} — ${err.message}`);
       continue;
     }
 
-    if (info.contacts_verified && info.contacts_repaired) {
+    if (info.contacts_verified) {
       fixed += 1;
-      console.log(`${label} ${GRN}FIXED${RST} — registrant is now ${wanted}`);
-    } else if (info.contacts_verified) {
-      ok += 1;
-      console.log(`${label} ${GRN}already correct${RST}`);
+      console.log(`${label} ${GRN}UPDATED${RST} — registrant ${wanted}, +${registrar.toContact(row, 'Registrant').phoneCountryCode}`);
     } else {
       wrong += 1;
-      console.log(`${label} ${RED}could not fix${RST} — ${info.contacts_warning || 'unknown'}`);
+      console.log(`${label} ${RED}could not confirm${RST} — ${info.contacts_warning || 'unknown'}`);
     }
 
     // Record what we found, so the panel's warning banner agrees with reality.
