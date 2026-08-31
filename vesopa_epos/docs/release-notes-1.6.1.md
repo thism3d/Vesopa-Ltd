@@ -19,6 +19,37 @@ the video it always claimed to.
 
 ---
 
+## Microsoft Store — "What's new in this version"
+
+Paste the block below into Partner Center → Store listings → What's new in this
+version. Written for a venue owner: no file paths, no plugin names, and every
+claim is something they can watch happen at their own counter. 1,420 of the
+1,500 characters Partner Center allows — check the count again if you edit it,
+with `python tool/check-store-listing.py vesopa_epos/docs/store-listing.md`.
+
+Prose rather than bullets, matching how 1.3.4.0 and 1.3.5.0 were written.
+
+```
+Version 1.6.1.0 – The Customer's Screen, Set Up From the Till
+
+The second screen facing your customer is now yours to set up from the till itself, and it finds the till on its own.
+
+Set Up From the Till: One new page, under Settings then Customer display. Choose which monitor the customer sees and whether it fills that screen, where your adverts come from and how long each one stays up, how the screen splits between the bill and the adverts, and which side the bill sits on. Every change reaches the screen in a couple of seconds — you set it standing at the till and look up to check it.
+
+Nothing to Type In: A customer display on the same PC now finds this till by itself. No paths, no addresses, and it keeps looking until it finds it, so it makes no difference whether the till or the screen is switched on first in the morning.
+
+Connected or Not: The page says at a glance whether a display is running, and lists the screens it can see by size — so picking the right monitor is reading a list rather than guessing.
+
+What the Customer Reads: Show a price against every line or only the total, and set the message after payment. When a sale is paid for, the screen shows what was tendered and the change due. Adverts can be pictures or video, and video is silent unless you turn the sound up.
+
+Vesopa Customer Display is a separate download in the Store, and needs this version of the till to be set up from here.
+```
+
+The same block is the `whats_new` field in `docs/store-listing.md`, which is
+where the rest of this product's listing copy lives.
+
+---
+
 ## The till now says where it writes
 
 `%PROGRAMDATA%\Vesopa\customer-display.json`, rewritten on every start.
@@ -146,11 +177,3 @@ repository root.
 Build both with `pwsh tool/build-store-msix.ps1` in each project. Verify by
 reading `AppxManifest.xml` out of the .msix rather than trusting the filename,
 which never carries the version.
-
-## What's new in this version — for the till's Store listing
-
-> The customer display is now set up entirely from the till. A new page under
-> Settings → Customer display chooses which monitor it uses, where your adverts
-> come from, how the screen is split and what the customer reads — and tells you
-> whether a display is connected. The display also finds this till on its own,
-> with nothing to type in.

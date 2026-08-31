@@ -22,13 +22,19 @@ as one product family; take it or leave it.
 <!-- FIELD whats_new 0 1500 -->
 ## What's new in this version
 
-The customer display is now set up entirely from the till.
+Version 1.6.1.0 – The Customer's Screen, Set Up From the Till
 
-A new page under Settings, then Customer display, chooses which monitor the display uses and whether it fills that screen, where your adverts come from and how long each one stays up, how the screen is split between the bill and the adverts, which side the bill sits on, and what the customer reads. Every change reaches the display in a couple of seconds, so you can set it standing at the till and look up to check it. The page also tells you at a glance whether a display is connected at all.
+The second screen facing your customer is now yours to set up from the till itself, and it finds the till on its own.
 
-The till now tells the display where to find it, so a customer display installed on the same PC connects on its own with nothing to type in and no address to configure.
+Set Up From the Till: One new page, under Settings then Customer display. Choose which monitor the customer sees and whether it fills that screen, where your adverts come from and how long each one stays up, how the screen splits between the bill and the adverts, and which side the bill sits on. Every change reaches the screen in a couple of seconds — you set it standing at the till and look up to check it.
 
-Vesopa Customer Display is a companion app, available separately in the Store. It needs this version of the till to be set up from here.
+Nothing to Type In: A customer display on the same PC now finds this till by itself. No paths, no addresses, and it keeps looking until it finds it, so it makes no difference whether the till or the screen is switched on first in the morning.
+
+Connected or Not: The page says at a glance whether a display is running, and lists the screens it can see by size — so picking the right monitor is reading a list rather than guessing.
+
+What the Customer Reads: Show a price against every line or only the total, and set the message after payment. When a sale is paid for, the screen shows what was tendered and the change due. Adverts can be pictures or video, and video is silent unless you turn the sound up.
+
+Vesopa Customer Display is a separate download in the Store, and needs this version of the till to be set up from here.
 
 <!-- FIELD short_description 270 350 -->
 ## Short description
