@@ -83,7 +83,14 @@ async function domainView(req, row) {
     ownDns,
     accounts,
     catchall: thisDomain ? thisDomain.catchall : '',
-    records: ownDns ? [] : mailboxes.recordsFor(row, dkim),
+    /*
+     * The SPF the domain ALREADY publishes is passed in, so the record we show
+     * is a merge of theirs and ours rather than a second `v=spf1` line. Two SPF
+     * records is a permerror — it breaks the customer's existing mail as well
+     * as ours — so "add this" is the wrong instruction for anyone already on
+     * Google or Microsoft. See mergeSpf() in src/mailboxes.js.
+     */
+    records: ownDns ? [] : mailboxes.recordsFor(row, dkim, live ? live.spfSeen : ''),
     dnsCheck: live,
     settings: mailboxes.connectionSettings(),
   };

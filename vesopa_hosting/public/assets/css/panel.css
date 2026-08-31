@@ -1235,3 +1235,36 @@ summary.reveal:hover { color: var(--ink); }
 /* A fold whose content is the point rather than an occasional task — the
    mailbox list — starts open and reads as a normal card. */
 .fold.is-primary .fold-head { background: transparent; }
+
+/* --- SPF merge, on the mail records list --------------------------------
+   A merged SPF is a REPLACEMENT, and the difference matters more than any
+   other instruction on this page: a domain may publish exactly one v=spf1
+   record, and adding a second is a permerror that fails every sender —
+   including the one that was working. So the row shows both values, labelled,
+   rather than a single value the reader can mistake for another row to add.
+   ---------------------------------------------------------------------- */
+.rec.is-merged { border-color: #f0e4bd; background: #fdfaf0; }
+.rec-action {
+  font-size: .68rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;
+  color: #7d5c00; background: #fdf3d6; padding: 3px 8px; border-radius: 999px; white-space: nowrap;
+}
+.rec-was { display: flex; align-items: baseline; gap: 9px; margin-top: 9px; flex-wrap: wrap; }
+.rec-was-label {
+  font-size: .68rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--ink-3); flex: none;
+}
+.rec-was-new { color: var(--lime-deep); }
+.rec-was code {
+  font-size: .8rem; color: var(--ink-3); text-decoration: line-through;
+  text-decoration-color: #c2a86a; word-break: break-all;
+}
+.rec-flag {
+  display: flex; align-items: flex-start; gap: 7px;
+  margin: 9px 0 0; padding: 9px 11px; border-radius: 9px;
+  font-size: .8rem; line-height: 1.5;
+}
+.rec-flag svg { flex: none; margin-top: 2px; }
+.rec-flag code { font-size: .78rem; }
+.rec-flag.is-warn  { background: #fdf3d6; color: #6b4f00; }
+.rec-flag.is-error { background: #fbe2de; color: #8f2416; }
+.rec-flag a { color: inherit; font-weight: 700; }

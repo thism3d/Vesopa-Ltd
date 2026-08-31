@@ -176,7 +176,107 @@ function connectionSettings(address = '') {
  * exists to support — bounces the customer's real mail. Soft fail marks it and
  * delivers it, and they can tighten it once they have moved.
  */
-function recordsFor(domainRow, dkim = null) {
+/**
+ * Merge our SPF requirements into a record the domain already publishes.
+ *
+ * ---------------------------------------------------------------------------
+ * A DOMAIN MAY PUBLISH EXACTLY ONE SPF RECORD. THIS IS THE WHOLE PROBLEM.
+ * ---------------------------------------------------------------------------
+ * RFC 7208 §4.5 is unambiguous: if a check finds more than one record starting
+ * `v=spf1`, the result is **permerror**, and a permerror is not "one of them
+ * wins" — it is a hard authentication failure for EVERY sender, including the
+ * one that was working before.
+ *
+ * So telling a customer on Google Workspace to "add" our
+ * `v=spf1 a mx include:mail.vesopa.com ~all` next to their existing
+ * `v=spf1 include:_spf.google.com ~all` does not add us alongside them. It
+ * breaks both, and it breaks them at the DNS level where nothing in our panel
+ * would ever notice. That is exactly what this page used to instruct, because
+ * it printed a fixed record without ever looking at what was already there —
+ * even though `checkMailRecords()` had just read it.
+ *
+ * The merge keeps the customer's mechanisms in their original order, appends
+ * only what we need and they do not already have, and PRESERVES THEIR OWN `all`
+ * QUALIFIER. Rewriting a `-all` to `~all` would quietly loosen a policy they
+ * chose deliberately; rewriting `~all` to `-all` would start bouncing their
+ * mail. Neither is ours to decide.
+ *
+ * @param {string} existing  the SPF record currently published, or ''
+ * @param {string} host      our mail hostname, e.g. mail.vesopa.com
+ * @returns {{value: string, merged: boolean, alreadyOk: boolean,
+ *            lookups: number, tooManyLookups: boolean, redirect: boolean}}
+ */
+function mergeSpf(existing, host) {
+  const OURS = ['a', 'mx', `include:${host}`];
+  const bare = `v=spf1 ${OURS.join(' ')} ~all`;
+
+  const raw = String(existing || '').trim();
+  if (!raw.toLowerCase().startsWith('v=spf1')) {
+    return {
+      value: bare, merged: false, alreadyOk: false,
+      lookups: countLookups(OURS), tooManyLookups: false, redirect: false,
+    };
+  }
+
+  // Everything after the version token, whitespace-separated.
+  const terms = raw.split(/\s+/).slice(1).filter(Boolean);
+  const lower = terms.map((t) => t.toLowerCase());
+
+  /*
+   * `redirect=` REPLACES the whole evaluation and cannot coexist with `all`.
+   * Merging into one of those by hand is not something to do behind somebody's
+   * back — it is flagged so the panel can say "this one needs a person".
+   */
+  const redirect = lower.some((t) => t.startsWith('redirect='));
+
+  // Split off the trailing all-mechanism so ours can be inserted before it.
+  const allIndex = lower.findIndex((t) => /^[-~?+]?all$/.test(t));
+  const allTerm = allIndex >= 0 ? terms[allIndex] : '~all';
+  const body = allIndex >= 0 ? terms.filter((_, i) => i !== allIndex) : terms.slice();
+
+  const have = new Set(body.map((t) => t.toLowerCase()));
+  const missing = OURS.filter((m) => !have.has(m));
+
+  // Already authorises us, so there is nothing to change and nothing to show.
+  if (!missing.length) {
+    return {
+      value: raw, merged: false, alreadyOk: true,
+      lookups: countLookups(body), tooManyLookups: countLookups(body) > 10, redirect,
+    };
+  }
+
+  const terms2 = [...body, ...missing];
+  const lookups = countLookups(terms2);
+  return {
+    value: `v=spf1 ${terms2.join(' ')} ${allTerm}`,
+    merged: true,
+    alreadyOk: false,
+    lookups,
+    /*
+     * SPF allows ten DNS-querying mechanisms per evaluation and returns
+     * permerror past that — the same hard failure as a duplicate record. A
+     * domain already close to the limit can be tipped over by our include, so
+     * the number is reported rather than discovered by the customer later.
+     */
+    tooManyLookups: lookups > 10,
+    redirect,
+  };
+}
+
+/** How many of these terms cost a DNS lookup against SPF's limit of ten. */
+function countLookups(terms) {
+  return terms.filter((t) => /^(a|mx|ptr|exists:|include:|redirect=)/i.test(String(t))).length;
+}
+
+function recordsFor(domainRow, dkim = null, observedSpf = '') {
+  /*
+   * The SPF line is built from what the domain ALREADY publishes — see
+   * mergeSpf(). A second `v=spf1` record is a permerror, not an addition, so
+   * "add this record" is the wrong instruction for anyone already using Google,
+   * Microsoft or a mailing-list provider.
+   */
+  const spf = mergeSpf(observedSpf, MAIL_HOSTNAME);
+
   const records = [
     {
       type: 'MX',
@@ -188,9 +288,22 @@ function recordsFor(domainRow, dkim = null) {
     {
       type: 'TXT',
       name: '@',
-      value: `v=spf1 a mx include:${MAIL_HOSTNAME} ~all`,
-      why: 'Tells other mail servers that we are allowed to send on your behalf. '
-        + 'Without it your mail is far more likely to land in spam.',
+      value: spf.value,
+      // The panel needs to say REPLACE rather than ADD when there is already a
+      // record, and the two are not interchangeable advice.
+      action: spf.merged ? 'replace' : 'add',
+      merged: spf.merged,
+      existing: spf.merged ? String(observedSpf).trim() : '',
+      lookups: spf.lookups,
+      tooManyLookups: spf.tooManyLookups,
+      redirect: spf.redirect,
+      why: spf.merged
+        ? 'You already publish an SPF record, and a domain may only have ONE — a second '
+          + 'record makes every sender fail, including your current one. This is your existing '
+          + 'record with us added to it, so replace the old value with this rather than adding '
+          + 'a new row.'
+        : 'Tells other mail servers that we are allowed to send on your behalf. '
+          + 'Without it your mail is far more likely to land in spam.',
     },
   ];
   if (dkim && dkim.name && dkim.value) {
@@ -272,4 +385,5 @@ module.exports = {
   connectionSettings,
   recordsFor,
   checkMailRecords,
+  mergeSpf,
 };
