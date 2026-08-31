@@ -30,6 +30,7 @@
 const db = require('./db');
 const payments = require('./payments');
 const provisioning = require('./provisioning');
+const registrar = require('./integrations/domainnameapi');
 const linking = require('./domain-linking');
 const notify = require('./notifications');
 const nameservers = require('./nameservers');
@@ -185,6 +186,110 @@ async function finishPaidOrders() {
 /** When the nameserver complaint below was last written. See its note. */
 let lastNsComplaint = 0;
 
+/**
+ * Adopt registrations the registry completed but our provisioning never
+ * recorded. See the note in sweepDomains() for why this is safe to automate.
+ *
+ * Deliberately small: a handful per run, oldest first. A registrar that is
+ * rate-limiting (429 on concurrent calls) must not be hammered by a sweep, and
+ * there should never be many of these — if there are, something else is wrong
+ * and the log will say so.
+ */
+async function adoptRegisteredDomains() {
+  if (!registrar.isConnected()) return 0;
+
+  const stuck = await db.query(
+    `SELECT d.id, d.domain, d.customer_id, c.email
+       FROM domains d
+       JOIN customers c ON c.id = d.customer_id
+      WHERE d.source = 'registered'
+        AND d.status = 'pending'
+        AND d.created_at > DATE_SUB(NOW(), INTERVAL 30 DAY)
+      ORDER BY d.id
+      LIMIT 5`,
+  );
+  if (!stuck.length) return 0;
+
+  let adopted = 0;
+  for (const row of stuck) {
+    let info;
+    try {
+      info = await registrar.getDomain(row.domain);
+    } catch {
+      // Not at the registry: the registration really did fail and the row is
+      // correctly pending. Nothing to do, and nothing to log every five minutes.
+      continue;
+    }
+    if (!info?.ok) continue;
+
+    const { tld } = registrar.splitDomain(row.domain);
+    const needsVerify = provisioning.needsRegistrantVerification(tld);
+    const startedAt = info.started_at ? new Date(info.started_at) : new Date();
+    const deadline = needsVerify
+      ? new Date(startedAt.getTime() + provisioning.RAA_VERIFY_DAYS * 864e5)
+        .toISOString().slice(0, 19).replace('T', ' ')
+      : null;
+
+    await db.query(
+      `UPDATE domains
+          SET status = 'active',
+              registrar_ref = ?,
+              registered_at = COALESCE(registered_at, CURDATE()),
+              expires_at = COALESCE(?, expires_at),
+              ns1 = ?, ns2 = ?,
+              registrant_email = IF(registrant_email = '', ?, registrant_email),
+              verification_deadline = COALESCE(verification_deadline, ?)
+        WHERE id = ? AND status = 'pending'`,
+      [
+        String(info.registrar_ref || ''),
+        info.expires_at || null,
+        NAMESERVERS[0] || '', NAMESERVERS[1] || '',
+        row.email || '', deadline, row.id,
+      ],
+    );
+
+    await db.logActivity({
+      actorType: 'system', action: 'domain.reconciled', target: row.domain,
+      detail: 'The registry held this name while our record said pending — adopted by the sweep.',
+      ok: true,
+    }).catch(() => {});
+
+    await notify.raise({
+      customerId: row.customer_id,
+      level: 'success',
+      area: 'domain',
+      title: `${row.domain} is registered`,
+      body: 'The registration completed. You can attach it to a hosting plan now, and we will '
+        + 'build the site and its certificate automatically.',
+      fixUrl: `/panel/domains/${row.id}#hosting`,
+      fixLabel: 'Connect it to hosting',
+      dedupeKey: `domain:${row.id}:registered`,
+    }).catch(() => {});
+
+    adopted += 1;
+    console.log(`[jobs] adopted ${row.domain} — the registry had it, our record said pending`);
+    await new Promise((r) => setTimeout(r, 800));
+  }
+
+  /*
+   * An order sits at `provisioning` until everything on it is done. Adopting
+   * the domain above is usually the last thing it was waiting for, so close
+   * any order whose parts are now all complete — otherwise the customer's
+   * panel goes on saying "setting up" about work that finished.
+   */
+  if (adopted) {
+    await db.pool.query(
+      `UPDATE orders o SET o.status = 'active'
+        WHERE o.status = 'provisioning'
+          AND NOT EXISTS (SELECT 1 FROM domains d
+                           WHERE d.order_id = o.id AND d.status IN ('pending','awaiting_ns'))
+          AND NOT EXISTS (SELECT 1 FROM services s
+                           WHERE s.order_id = o.id AND s.status = 'pending')`,
+    ).catch(() => {});
+  }
+  return adopted;
+}
+
 async function sweepDomains() {
   /*
    * Nothing happens if our own nameservers are not answering.
@@ -216,6 +321,34 @@ async function sweepDomains() {
     }
     return { skipped: true, reason: 'nameservers_unresolvable', missing: self.missing };
   }
+
+  /*
+   * ---------------------------------------------------------------------
+   * FIRST: DOMAINS THE REGISTRY HAS AND WE DO NOT.
+   * ---------------------------------------------------------------------
+   * provisionDomain() registers and THEN records. When the gateway throws
+   * after the registry has already acted — a transient
+   * "Domain search is not available", an EPP timeout on a request that
+   * nonetheless landed — the name is registered, the money is spent, and our
+   * row is left `pending` with no registrar_ref.
+   *
+   * That state is invisible to the customer and unrecoverable BY the customer:
+   * a pending domain cannot be attached to hosting, its order never leaves
+   * `provisioning`, and every retry from the panel fails the same way. It took
+   * an admin running a script to get arpi.site and voiceodnation.site out of
+   * it, which is not a support model — it is a customer sitting on a paid
+   * domain that the panel refuses to let them use.
+   *
+   * So the sweep does it. This is narrower than it looks and it is safe: the
+   * row already exists, already belongs to that customer, and already came
+   * from a paid order. `domains/info` only answers for names on OUR reseller
+   * account, so a name we cannot see is left alone. Nothing is created here —
+   * it records a registration that has already happened, on a row that is
+   * already the customer's.
+   */
+  await adoptRegisteredDomains().catch((err) => {
+    console.error('[jobs] domain reconciliation failed:', err.message);
+  });
 
   const rows = await db.query(
     `SELECT d.*, c.hestia_user
