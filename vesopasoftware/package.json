@@ -1,0 +1,14 @@
+{
+  "name": "vesopasoftware",
+  "private": true,
+  "type": "module",
+  "description": "vesopasoftware.com \u2014 scroll-driven site, static.",
+  "scripts": {
+    "serve": "python3 tools/serve.py 5080",
+    "gen": "node tools/gen.mjs",
+    "drive": "node tools/drive.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.62.1"
+  }
+}
