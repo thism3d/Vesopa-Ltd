@@ -235,6 +235,29 @@ async function materialiseOrder(orderId) {
     const [items] = await conn.query('SELECT * FROM order_items WHERE order_id = ? ORDER BY id', [orderId]);
     const created = { services: 0, domains: 0, emails: 0, skipped: [] };
 
+    /*
+     * THE DOMAIN BOUGHT IN THE SAME BASKET.
+     *
+     * A hosting line carries `domain` only when the customer named one on the
+     * hosting product itself. Buying hosting AND a domain together puts the
+     * domain on its OWN line, so the hosting line is blank — and the rule below
+     * used to read only the hosting line, decide nothing was named, and open
+     * the setup wizard on "Which domain is this for?".
+     *
+     * Which is a question the customer had already answered, by putting
+     * voiceodnation.site in the basket and paying for it. They then land on a
+     * screen asking them to choose a domain, with their own domain not yet
+     * registered and not offered as an option — so the order sits at
+     * `provisioning` and the hosting at `pending` with nothing to serve.
+     *
+     * The first registered or transferred name on the order is the site's
+     * domain. `.sort()` is not needed: the query is ordered by id, so this is
+     * the one they chose first, which is the one they meant.
+     */
+    const orderedDomain = items.find(
+      (l) => (l.kind === 'domain' || l.kind === 'domain_transfer') && l.domain,
+    );
+
     for (const line of items) {
       /*
        * A line that cannot say what it is for is recorded and skipped, never
@@ -255,16 +278,19 @@ async function materialiseOrder(orderId) {
               currency, free_domain_eligible, free_domain_claimed, setup_step)
            VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)`,
           [
-            order.customer_id, line.plan_id, order.id, line.domain || '',
+            order.customer_id, line.plan_id, order.id,
+            // The hosting line's own domain, or the one bought alongside it.
+            line.domain || orderedDomain?.domain || '',
             line.term_months, line.total_pence, order.currency,
             line.free_domain_eligible ? 1 : 0,
             line.free_domain_spent ? 1 : 0,
             /*
-             * Where the wizard opens. Exactly the rule checkout used to apply,
-             * moved here with the row it belongs to: there is nothing to ask if
-             * the customer already named a domain and has no free one owing.
+             * Where the wizard opens. There is nothing to ask when a domain is
+             * already settled — named on the hosting line, or bought on the
+             * same order — and no free domain is still owing.
              */
-            (line.free_domain_eligible && !line.free_domain_spent) || !line.domain
+            (line.free_domain_eligible && !line.free_domain_spent)
+              || !(line.domain || orderedDomain?.domain)
               ? 'domain'
               : 'provisioning',
           ],

@@ -153,19 +153,26 @@
           %>
           <div class="recs">
             <% view.records.forEach(function (r) { %>
-              <div class="rec <%= r.merged ? 'is-merged' : '' %>">
+              <div class="rec <%= r.satisfied ? 'is-done' : (r.merged ? 'is-merged' : '') %>">
                 <div class="rec-head">
                   <span class="rec-type mono"><%= r.type %><% if (r.priority) { %> <span class="muted">(<%= r.priority %>)</span><% } %></span>
                   <span class="rec-name mono"><%= r.name %></span>
-                  <%# REPLACE, not add — a domain may publish only one SPF record,
-                      and a second one is a permerror that breaks every sender. %>
-                  <% if (r.action === 'replace') { %>
+                  <%#
+                    Three states, and the difference is the whole usefulness of
+                    this list: DONE (stop asking), REPLACE (a second SPF record
+                    is a permerror, so this must overwrite), or add.
+                  %>
+                  <% if (r.satisfied) { %>
+                    <span class="rec-ok"><%- icon('check', 13) %> Already set</span>
+                  <% } else if (r.action === 'replace') { %>
                     <span class="rec-action">Replace your existing record</span>
                   <% } %>
-                  <button type="button" class="btn btn-ghost btn-sm copy-btn" data-copy="<%= r.value %>">Copy</button>
+                  <% if (!r.satisfied) { %>
+                    <button type="button" class="btn btn-ghost btn-sm copy-btn" data-copy="<%= r.value %>">Copy</button>
+                  <% } %>
                 </div>
 
-                <% if (r.merged && r.existing) { %>
+                <% if (!r.satisfied && r.merged && r.existing) { %>
                   <div class="rec-was">
                     <span class="rec-was-label">You have now</span>
                     <code class="mono"><%= r.existing %></code>
@@ -179,7 +186,7 @@
                 <p class="rec-why"><%= r.why %></p>
 
                 <%# The two ways an SPF merge can still need a human. %>
-                <% if (r.redirect) { %>
+                <% if (!r.satisfied && r.redirect) { %>
                   <p class="rec-flag is-error">
                     <%- icon('warning', 14) %>
                     Your record uses <code>redirect=</code>, which hands the whole check to
@@ -187,7 +194,7 @@
                     <a href="/panel/tickets/new">Send us the record</a> and we will work out the
                     right merge — this one is not safe to guess at.
                   </p>
-                <% } else if (r.tooManyLookups) { %>
+                <% } else if (!r.satisfied && r.tooManyLookups) { %>
                   <p class="rec-flag is-warn">
                     <%- icon('warning', 14) %>
                     This record now needs <b><%= r.lookups %></b> DNS lookups and SPF allows ten.

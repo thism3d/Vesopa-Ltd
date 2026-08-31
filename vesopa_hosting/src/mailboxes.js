@@ -268,7 +268,7 @@ function countLookups(terms) {
   return terms.filter((t) => /^(a|mx|ptr|exists:|include:|redirect=)/i.test(String(t))).length;
 }
 
-function recordsFor(domainRow, dkim = null, observedSpf = '') {
+function recordsFor(domainRow, dkim = null, observedSpf = '', check = null) {
   /*
    * The SPF line is built from what the domain ALREADY publishes — see
    * mergeSpf(). A second `v=spf1` record is a permerror, not an addition, so
@@ -283,12 +283,28 @@ function recordsFor(domainRow, dkim = null, observedSpf = '') {
       name: '@',
       value: MAIL_HOSTNAME,
       priority: 10,
+      satisfied: Boolean(check && check.mxOk),
       why: 'Sends mail for this domain to our server.',
     },
     {
       type: 'TXT',
       name: '@',
       value: spf.value,
+      /*
+       * DONE IS A STATE, NOT A MISSING INSTRUCTION.
+       *
+       * `mergeSpf` compares mechanisms as a SET, so a record that already
+       * authorises us is recognised whatever order its terms are written in —
+       * `a mx include:mail.vesopa.com include:spf.google.com` and
+       * `include:spf.google.com a mx include:mail.vesopa.com` are the same
+       * record to an SPF evaluator and both come back alreadyOk.
+       *
+       * But the page went on printing the row as something to go and add, so
+       * somebody who had already done the work was told to do it again — in a
+       * slightly different word order, which reads as "you got it wrong". A
+       * satisfied record is now shown as satisfied.
+       */
+      satisfied: spf.alreadyOk,
       // The panel needs to say REPLACE rather than ADD when there is already a
       // record, and the two are not interchangeable advice.
       action: spf.merged ? 'replace' : 'add',
@@ -297,7 +313,10 @@ function recordsFor(domainRow, dkim = null, observedSpf = '') {
       lookups: spf.lookups,
       tooManyLookups: spf.tooManyLookups,
       redirect: spf.redirect,
-      why: spf.merged
+      why: spf.alreadyOk
+        ? 'Your SPF record already authorises us. The order the terms are written in does not '
+          + 'matter to an SPF check, so there is nothing to change here.'
+        : spf.merged
         ? 'You already publish an SPF record, and a domain may only have ONE — a second '
           + 'record makes every sender fail, including your current one. This is your existing '
           + 'record with us added to it, so replace the old value with this rather than adding '

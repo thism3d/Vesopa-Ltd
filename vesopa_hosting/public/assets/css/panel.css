@@ -1268,3 +1268,14 @@ summary.reveal:hover { color: var(--ink); }
 .rec-flag.is-warn  { background: #fdf3d6; color: #6b4f00; }
 .rec-flag.is-error { background: #fbe2de; color: #8f2416; }
 .rec-flag a { color: inherit; font-weight: 700; }
+
+/* A record that is already correct. Shown, not hidden — "where is my MX row
+   gone" is a worse question than "why is this ticked" — but visibly finished,
+   with no Copy button, because there is nothing left to paste anywhere. */
+.rec.is-done { border-color: #cfe8d9; background: #f2faf5; }
+.rec.is-done .rec-value { color: var(--ink-3); }
+.rec-ok {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: .68rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;
+  color: #1c6b3d; background: #e2f4e9; padding: 3px 9px; border-radius: 999px; white-space: nowrap;
+}

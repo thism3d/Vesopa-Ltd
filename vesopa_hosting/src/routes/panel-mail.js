@@ -90,7 +90,7 @@ async function domainView(req, row) {
      * as ours — so "add this" is the wrong instruction for anyone already on
      * Google or Microsoft. See mergeSpf() in src/mailboxes.js.
      */
-    records: ownDns ? [] : mailboxes.recordsFor(row, dkim, live ? live.spfSeen : ''),
+    records: ownDns ? [] : mailboxes.recordsFor(row, dkim, live ? live.spfSeen : '', live),
     dnsCheck: live,
     settings: mailboxes.connectionSettings(),
   };
