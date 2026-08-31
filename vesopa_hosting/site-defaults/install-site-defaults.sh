@@ -70,15 +70,35 @@ fi
 # ---------------------------------------------------------------------------
 if [ "$DO_EXISTING" = 1 ]; then
   step "Refreshing sites that already exist"
-  # The checksums of every index.html Hestia has ever shipped that we have a
-  # copy of. A live site whose home page matches one of these has never been
-  # touched by its owner and is safe to replace; anything else is somebody's
-  # website and is left completely alone.
+  # The checksums of every index.html we know to be an untouched default. A
+  # live site whose home page matches one has never been edited by its owner
+  # and is safe to replace; anything else is somebody's website and is left
+  # completely alone.
+  #
+  # THE HASH HAS TO BE TAKEN AFTER NORMALISING THE DOMAIN, and that is the
+  # whole reason this used to skip everything. Hestia's skeleton contains the
+  # literal string `%domain%`, and `v-add-web-domain` substitutes the real
+  # domain into each site's copy as it creates it — so every site ends up with
+  # a DIFFERENT hash and a different byte count, and a plain md5 against the
+  # skeleton can never match on any site, ever.
+  #
+  # The result was a refresh pass that reported "14 real websites left alone"
+  # about fourteen sites that were all still serving Hestia's stock "Coming
+  # Soon" page, including vesopasoftware.com. Substituting `%domain%` back in
+  # before hashing makes the comparison exact rather than approximate: the
+  # normalised live file and the skeleton are byte-identical, verified with
+  # diff, so this is not a heuristic that might catch a real site by accident.
   KNOWN_DEFAULTS="$(
     { [ -f "$BACKUP/skel/public_html/index.html" ] && md5sum "$BACKUP/skel/public_html/index.html"
       md5sum "$SRC/public_html/index.html"
     } | awk '{print $1}'
   )"
+
+  # md5 of a site's index.html with its own domain folded back to the
+  # placeholder Hestia's template carries.
+  normalised_sum() {
+    sed "s/$(printf '%s' "$2" | sed 's/[.[\*^$()+?{|]/\\&/g')/%domain%/g" "$1" | md5sum | awk '{print $1}'
+  }
 
   touched=0; skipped=0; errors=0
   for userdir in /home/*/; do
@@ -98,8 +118,12 @@ if [ "$DO_EXISTING" = 1 ]; then
       # The home page: only if untouched.
       index="$site/public_html/index.html"
       if [ -f "$index" ]; then
+        # Both forms: the raw hash catches our own previous holding pages,
+        # which carry no domain, and the normalised one catches Hestia's stock
+        # template, which does.
         sum="$(md5sum "$index" | awk '{print $1}')"
-        if grep -qx "$sum" <<< "$KNOWN_DEFAULTS"; then
+        nsum="$(normalised_sum "$index" "$domain")"
+        if grep -qx "$sum" <<< "$KNOWN_DEFAULTS" || grep -qx "$nsum" <<< "$KNOWN_DEFAULTS"; then
           install -o "$user" -g "$user" -m 0644 "$SRC/public_html/index.html" "$index"
           echo "    replaced holding page  $domain"
           touched=$((touched+1))
