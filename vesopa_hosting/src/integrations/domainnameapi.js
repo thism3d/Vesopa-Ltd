@@ -34,6 +34,8 @@
  * not change what someone is charged halfway through a checkout.
  */
 
+const countries = require('../countries');
+
 const MODE = (process.env.DNA_MODE || 'mock').toLowerCase();
 const RESELLER_ID = process.env.DNA_RESELLER_ID || '';
 
@@ -279,43 +281,122 @@ async function call(method, endpoint, data = {}, { write = false, forceProd = fa
 }
 
 /**
- * Our billing contact shape into the gateway's ContactLiteDto.
+ * The four contact roles on a registration, spelled the way the gateway spells
+ * them.
  *
- * `isHidden` is a non-nullable bool in the gateway's schema — leaving it out
- * fails ModelState validation and rejects the whole registration, which is a
- * miserable thing to debug from a "Validation failed" string.
+ * ---------------------------------------------------------------------------
+ * READ THIS BEFORE CHANGING A SINGLE ONE OF THESE STRINGS
+ * ---------------------------------------------------------------------------
+ * These used to be 'Registrant', 'Administrative', 'Technical', 'Billing' —
+ * the names the old SOAP service used and the names the marketing docs still
+ * print. The REST gateway's enum is `Registrant`, `Admin`, `Tech`, `Billing`.
+ *
+ * The failure mode is the reason this comment is so long. An unrecognised
+ * contactType does NOT fail the registration and does NOT appear in
+ * `validationErrors`. The gateway silently discards the whole contacts array
+ * and substitutes THE RESELLER ACCOUNT'S OWN DEFAULT CONTACT — our company
+ * details — as registrant of record on a domain the customer just paid for.
+ *
+ * Measured on arpi.site, registered 2026-08-31: all four contacts came back
+ * carrying the reseller account holder's name, email and Bangladeshi address,
+ * all four sharing one handle (D-699021228819), which is what gives it away —
+ * four independently-supplied contacts cannot collapse to one handle.
+ *
+ * That is a registrant-of-record error, not a cosmetic one. It puts the wrong
+ * legal person on the domain, sends ICANN's verification mail to the wrong
+ * inbox, and for .uk it is a Nominet compliance breach. `assertContacts()`
+ * below now reads the contacts back after every registration for exactly this
+ * reason: a silent substitution has to be caught by looking, because the
+ * gateway will never tell us.
+ */
+const CONTACT_TYPES = ['Registrant', 'Admin', 'Tech', 'Billing'];
+
+/**
+ * Our customer row into the gateway's DomainContactDetailCreateDto.
+ *
+ * Field names and lengths are taken from the gateway's own published schema at
+ * /swagger/v1/swagger.json, not from the docs. Two that used to be wrong:
+ *
+ *   `discloseFlag`, not `isHidden`. There is no `isHidden` in the DTO and the
+ *   schema is `additionalProperties: false`, so the old field was an unknown
+ *   property on every contact we ever sent.
+ *
+ *   Every string is length-capped here rather than at the far end, because
+ *   over-length values come back as the same opaque "Validation failed."
+ *   string that everything else does.
  */
 function toContact(c, contactType) {
-  const phone = String(c.phone || '').replace(/[^\d+]/g, '');
+  const country = (c.country || 'GB').toUpperCase();
+  const raw = String(c.phone || '').replace(/[^\d+]/g, '');
+
   /*
-   * The gateway wants the country code and the number in separate fields, and
-   * the country code must be BARE DIGITS — "44", never "+44".
-   *
-   * Sending "+44" fails the whole registration with a bare "Validation failed.
-   * Please check the provided information.", four times over (registrant,
-   * admin, technical, billing). The detail that names the field is only in the
-   * `validationErrors` array, which is why `call()` now unpacks it.
+   * The calling code comes from the customer's COUNTRY, which is a required
+   * field on the same form, and only falls back to a "+" prefix on the number
+   * itself. See the note on DIAL in src/countries.js for why the reverse — the
+   * old `phone.slice(1, 3)` with a '44' default — was wrong in two directions
+   * at once.
    */
-  const cc = (phone.startsWith('+') ? phone.slice(1, 3) : '44').replace(/\D/g, '') || '44';
-  const local = phone.replace(/^\+\d{1,3}/, '').replace(/^0/, '');
+  let cc = countries.dialCode(country);
+  let local = raw;
+  if (raw.startsWith('+')) {
+    // Longest-match the prefix against the real code list so +880 is not read
+    // as +88, which is not a country at all.
+    const digits = raw.slice(1);
+    const match = [cc, ...Object.values(countries.DIAL)]
+      .filter(Boolean)
+      .filter((d) => digits.startsWith(d))
+      .sort((a, b) => b.length - a.length)[0];
+    if (match) { cc = match; local = digits.slice(match.length); }
+    else local = digits;
+  }
+  // A national trunk prefix ("0" in the UK, BD, most of Europe) is not part of
+  // the international number and the registry rejects the number with it.
+  local = local.replace(/\D/g, '').replace(/^0+/, '');
+
+  const cap = (v, n) => String(v || '').trim().slice(0, n);
 
   return {
     contactType,
-    firstName: c.first_name || '',
-    lastName: c.last_name || '',
-    companyName: c.company || '',
-    eMail: c.email || '',
-    address: [c.address1, c.address2].filter(Boolean).join(', '),
-    city: c.city || '',
-    state: c.state || c.city || '',
-    country: (c.country || 'GB').toUpperCase(),
-    postalCode: c.postcode || '',
-    phoneCountryCode: cc,
-    phone: local,
+    firstName: cap(c.first_name, 80),
+    lastName: cap(c.last_name, 80),
+    // Registries require a company on the registrant contact. Falling back to
+    // the person's own name is what every registrar's own form does for an
+    // individual registrant.
+    companyName: cap(c.company || `${c.first_name || ''} ${c.last_name || ''}`.trim(), 256),
+    eMail: cap(c.email, 256),
+    address: cap([c.address1, c.address2].filter(Boolean).join(', '), 256),
+    city: cap(c.city, 80),
+    state: cap(c.state || c.city, 80),
+    country: country.slice(0, 2),
+    postalCode: cap(c.postcode, 15),
+    phoneCountryCode: cap(cc || '44', 3),
+    phone: cap(local, 16),
     faxCountryCode: '',
     fax: '',
-    isHidden: false,
+    discloseFlag: false,
   };
+}
+
+/**
+ * Is this customer row complete enough to be a registrant of record?
+ *
+ * Checked BEFORE the registration call rather than after, because a domain
+ * registered against a half-empty contact cannot be un-registered — the money
+ * is spent and the wrong details are filed. Returns a list of human-readable
+ * field names, empty when the row is good.
+ */
+function contactGaps(c) {
+  const gaps = [];
+  if (!String(c?.first_name || '').trim()) gaps.push('first name');
+  if (!String(c?.last_name || '').trim()) gaps.push('last name');
+  if (!String(c?.email || '').trim()) gaps.push('email address');
+  if (!String(c?.address1 || '').trim()) gaps.push('street address');
+  if (!String(c?.city || '').trim()) gaps.push('city');
+  if (!String(c?.postcode || '').trim()) gaps.push('postcode');
+  if (!countries.isValid(c?.country)) gaps.push('country');
+  const digits = String(c?.phone || '').replace(/\D/g, '');
+  if (digits.length < 6) gaps.push('phone number');
+  return gaps;
 }
 
 // ---------------------------------------------------------------------------
@@ -489,6 +570,20 @@ async function checkMany(sld, tlds) {
 async function register({ domain, years = 1, contact, nameservers, privacy = true }) {
   const { domain: name } = splitDomain(domain);
 
+  /*
+   * The contact is checked here, at the last point before money moves, and not
+   * only at checkout. Provisioning can be retried by an admin days later
+   * against a customer row that has since been edited, and a registration made
+   * against an incomplete row is not recoverable.
+   */
+  const gaps = contactGaps(contact);
+  if (gaps.length) {
+    throw new RegistrarError(
+      `Cannot register ${name}: the registrant contact is missing ${gaps.join(', ')}.`,
+      { code: 'incomplete_contact' },
+    );
+  }
+
   if (!isConnected()) {
     return {
       ok: true,
@@ -497,22 +592,30 @@ async function register({ domain, years = 1, contact, nameservers, privacy = tru
       registrar_ref: `MOCK-${Date.now().toString(36).toUpperCase()}`,
       expires_at: new Date(Date.now() + years * 365 * 864e5).toISOString().slice(0, 10),
       nameservers,
+      contacts_verified: true,
     };
   }
 
+  /*
+   * Exactly the fields in DomainCreateWithContactInput and no others.
+   *
+   * `isLocked` and `privacyEnabled` used to be sent here. Neither exists on
+   * that schema — locking and privacy are their own endpoints, applied below
+   * after the name exists. Unknown properties are not rejected loudly; they
+   * are simply dropped, which is how "privacyEnabled: true" appeared to work
+   * for months without ever having been read.
+   */
   const data = await call('POST', 'domains/register-with-contacts', {
     domainName: name,
     period: years,
     nameServers: (nameservers || []).filter(Boolean),
-    isLocked: true,
-    privacyEnabled: Boolean(privacy),
-    contacts: ['Registrant', 'Administrative', 'Technical', 'Billing'].map((t) => toContact(contact, t)),
+    contacts: CONTACT_TYPES.map((t) => toContact(contact, t)),
     // Typed as a string dictionary by the gateway; an empty ARRAY fails its
     // deserializer, so it must be an object.
     tldAttributes: {},
   }, { write: true });
 
-  return {
+  const result = {
     ok: true,
     test: !isLive(),
     domain: name,
@@ -520,6 +623,112 @@ async function register({ domain, years = 1, contact, nameservers, privacy = tru
     expires_at: (data?.expirationDate || data?.dates?.expiration || '').slice(0, 10) || null,
     nameservers,
   };
+
+  // Lock and privacy are post-registration operations. Neither is worth losing
+  // a successful registration over, so both are best-effort.
+  try { await call('POST', 'domains/lock', { domainName: name }, { write: true }); }
+  catch (err) { result.lock_warning = err.message; }
+  if (privacy) {
+    try {
+      await call('POST', 'domains/privacy', { domainName: name, privacyStatus: true }, { write: true });
+    } catch (err) { result.privacy_warning = err.message; }
+  }
+
+  /*
+   * Read the contacts back and repair them if the gateway substituted its own.
+   * See the note on CONTACT_TYPES: this substitution is silent, so the only way
+   * to know it happened is to look.
+   */
+  Object.assign(result, await assertContacts(name, contact));
+  return result;
+}
+
+/**
+ * Confirm the registrant we asked for is the registrant on record, and put it
+ * right if it is not.
+ *
+ * Returns `{ contacts_verified, contacts_repaired?, contacts_warning? }` and
+ * never throws — a registration that succeeded must not be reported as failed
+ * because the verification round trip did. What it must not do is claim the
+ * contacts are right without having checked.
+ */
+async function assertContacts(domain, contact) {
+  const { domain: name } = splitDomain(domain);
+  const wanted = String(contact?.email || '').trim().toLowerCase();
+  if (!wanted) return { contacts_verified: false, contacts_warning: 'No contact email to verify against.' };
+
+  try {
+    const info = await call('GET', 'domains/info', { DomainName: name });
+    const onRecord = Array.isArray(info?.contacts) ? info.contacts : [];
+    const registrant = onRecord.find((c) => /registrant/i.test(c?.contactType || ''));
+    if (registrant && String(registrant.eMail || '').trim().toLowerCase() === wanted) {
+      return { contacts_verified: true };
+    }
+
+    await call('PUT', 'domains/contacts/update', {
+      domainName: name,
+      contacts: CONTACT_TYPES.map((t) => toContact(contact, t)),
+    }, { write: true });
+
+    const after = await call('GET', 'domains/info', { DomainName: name });
+    const fixed = (Array.isArray(after?.contacts) ? after.contacts : [])
+      .find((c) => /registrant/i.test(c?.contactType || ''));
+    const good = fixed && String(fixed.eMail || '').trim().toLowerCase() === wanted;
+    return good
+      ? { contacts_verified: true, contacts_repaired: true }
+      : {
+        contacts_verified: false,
+        contacts_repaired: true,
+        contacts_warning:
+            `The registrar is still showing ${fixed?.eMail || 'a different contact'} as registrant of `
+            + `${name}. This needs fixing with the registrar by hand.`,
+      };
+  } catch (err) {
+    return { contacts_verified: false, contacts_warning: err.message };
+  }
+}
+
+/**
+ * The contacts currently on record at the registrar. READ ONLY.
+ *
+ * Separate from `assertContacts` because that one repairs what it finds, which
+ * is right after a registration and wrong on a dry run — the repair script's
+ * whole first pass is somebody reading a list before anything is written.
+ */
+async function getDomainContacts(domain) {
+  const { domain: name } = splitDomain(domain);
+  if (!isConnected()) {
+    return { ok: true, mock: true, domain: name, registrant_email: '', contacts: [] };
+  }
+  const data = await call('GET', 'domains/info', { DomainName: name });
+  const contacts = Array.isArray(data?.contacts) ? data.contacts : [];
+  const registrant = contacts.find((c) => /registrant/i.test(c?.contactType || ''));
+  return {
+    ok: true,
+    domain: name,
+    registrant_email: String(registrant?.eMail || ''),
+    registrant_name: `${registrant?.firstName || ''} ${registrant?.lastName || ''}`.trim(),
+    // All four sharing one handle is the signature of the gateway having
+    // substituted its own default contact — see the note on CONTACT_TYPES.
+    single_handle: contacts.length > 1
+      && new Set(contacts.map((c) => c?.handle).filter(Boolean)).size === 1,
+    contacts,
+  };
+}
+
+/** Replace the contacts on an existing registration. Used by the repair tool. */
+async function updateContacts({ domain, contact }) {
+  const { domain: name } = splitDomain(domain);
+  const gaps = contactGaps(contact);
+  if (gaps.length) {
+    throw new RegistrarError(`Contact is missing ${gaps.join(', ')}.`, { code: 'incomplete_contact' });
+  }
+  if (!isConnected()) return { ok: true, mock: true, domain: name };
+  await call('PUT', 'domains/contacts/update', {
+    domainName: name,
+    contacts: CONTACT_TYPES.map((t) => toContact(contact, t)),
+  }, { write: true });
+  return { ok: true, domain: name, ...(await assertContacts(name, contact)) };
 }
 
 /** Start an inbound transfer. Needs the auth/EPP code from the losing registrar. */
@@ -532,7 +741,7 @@ async function transfer({ domain, authCode, contact, years = 1 }) {
     domainName: name,
     authCode,
     period: years,
-    contacts: contact ? ['Registrant', 'Administrative', 'Technical', 'Billing'].map((t) => toContact(contact, t)) : [],
+    contacts: contact ? CONTACT_TYPES.map((t) => toContact(contact, t)) : [],
   }, { write: true });
   return { ok: true, test: !isLive(), domain: name, registrar_ref: String(data?.id || data?.domainId || '') };
 }
@@ -660,6 +869,12 @@ module.exports = {
   checkBulk,
   checkMany,
   register,
+  updateContacts,
+  assertContacts,
+  getDomainContacts,
+  contactGaps,
+  toContact,
+  CONTACT_TYPES,
   transfer,
   checkTransfer,
   setNameservers,

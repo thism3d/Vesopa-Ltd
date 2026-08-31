@@ -21,6 +21,8 @@ const pricing = require('../pricing');
 const linking = require('../domain-linking');
 const nameservers = require('../nameservers');
 const domainState = require('../domain-state');
+const notify = require('../notifications');
+const invoices = require('../invoices');
 const live = require('../panel-live');
 const countries = require('../countries');
 const geo = require('../geo');
@@ -67,6 +69,50 @@ router.use((req, res, next) => {
   }
   res.locals.bodyClass = 'has-panel';
   res.locals.panelPath = req.path;
+  next();
+});
+
+/**
+ * Everything wrong with this account, on every panel page.
+ *
+ * WHY THIS IS MIDDLEWARE AND NOT A CALL IN EACH HANDLER
+ * -----------------------------------------------------
+ * Because the handlers that would forget to call it are exactly the ones where
+ * it matters. The whole point of the banner is that a customer sitting on the
+ * mail page learns their domain is about to be suspended — a warning shown only
+ * on the dashboard is a warning shown only to people who were already looking
+ * in the right place.
+ *
+ * Two reads of indexed rows per page render, and both are skipped for the
+ * endpoints where nobody will see the answer: the live socket, the JSON
+ * fragments and the file downloads, which together are most of the traffic.
+ *
+ * A failure here is swallowed on purpose. A broken warnings query must not take
+ * down the page it was meant to annotate.
+ */
+router.use(async (req, res, next) => {
+  if (req.method !== 'GET' || /^\/(live|files\/(raw|download)|apps\/jobs)/.test(req.path)) return next();
+  try {
+    const [warnings, unread] = await Promise.all([
+      notify.collect(req.customer),
+      notify.unreadCount(req.customer.id),
+    ]);
+    res.locals.warnings = warnings;
+    res.locals.warningSummary = notify.summarise(warnings);
+    res.locals.notifyUnread = unread;
+    /*
+     * `areaWarnings('hosting')` is what a section page calls to show its own
+     * subset. It is a closure over the list already fetched rather than a
+     * second query, so a page can ask for its area without paying for it.
+     */
+    res.locals.areaWarnings = (area) => warnings.filter((w) => w.area === area);
+  } catch (err) {
+    console.error('[panel] warnings failed:', err.message);
+    res.locals.warnings = [];
+    res.locals.warningSummary = { count: 0, worst: null, errors: 0, warns: 0 };
+    res.locals.notifyUnread = 0;
+    res.locals.areaWarnings = () => [];
+  }
   next();
 });
 
@@ -1277,6 +1323,26 @@ router.get('/domains/:id', async (req, res, next) => {
        */
       canRemove: true,
       node,
+      /*
+       * The certificate's real state, and whether the reissue button should be
+       * offered at all. Derived on the server so the template asks rather than
+       * re-implementing the rule — see linking.sslState() for why "has a
+       * certificate" is not the same question as "has a working certificate".
+       */
+      sslState: linking.sslState(domain),
+      /*
+       * The ICANN verification, if one is outstanding. Rendered as a countdown
+       * rather than a yes/no, because "verify your email" with no deadline
+       * beside it reads as optional — which is exactly how arpi.site came to
+       * sit unverified for nine hours.
+       */
+      verification: (domain.verification_deadline && !domain.registrant_verified_at)
+        ? {
+          email: domain.registrant_email || req.customer.email,
+          deadline: domain.verification_deadline,
+          days_left: Math.ceil((new Date(domain.verification_deadline) - Date.now()) / 864e5),
+        }
+        : null,
       // The plans this domain could be attached to, and the one it is on. A
       // domain with no service is not broken — but it is also not hosted, and
       // until now the panel had no control that could change that.
@@ -1316,8 +1382,23 @@ router.post('/domains/:id/ssl', async (req, res, next) => {
     }
 
     const result = await linking.issueSsl(domain, req.customer);
-    if (result.ok) {
-      flash(res, `The certificate for ${domain.domain} is installed. It renews itself from here on.`);
+
+    if (result.alreadyValid) {
+      /*
+       * The certificate was fine, so nothing was spent.
+       *
+       * Reported as information rather than as a refusal: the customer pressed
+       * a button and is owed an answer about what happened, and "this already
+       * has 74 days left" is a better answer than a success message for work
+       * that was not done.
+       */
+      flash(res, result.message || `${domain.domain} already has a valid certificate.`, 'info');
+    } else if (result.ok) {
+      flash(res, `The certificate for ${domain.domain} is installed`
+        + `${result.days_left ? `, valid for ${result.days_left} days` : ''}. It renews itself from here on.`);
+      await notify.resolve(req.customer.id, `domain:${domain.id}:ssl_failed`);
+      await notify.resolve(req.customer.id, `domain:${domain.id}:ssl_expired`);
+      await notify.resolve(req.customer.id, `domain:${domain.id}:ssl_expiring`);
     } else {
       flash(res, result.message || result.error || 'That certificate could not be issued.', 'error');
     }
@@ -1426,6 +1507,30 @@ router.post('/domains/:id/service', async (req, res, next) => {
     const wanted = Number(req.body.service_id) || null;
     const back = domainPath(domain);
 
+    /*
+     * The plan's own main domain does not move from here.
+     *
+     * The template disables the picker, but a disabled select is a suggestion —
+     * it simply is not submitted, and a hand-made POST is not bound by it at
+     * all. This is the rule; the template is the courtesy.
+     *
+     * See the note on adoption below for why: the name is the document root,
+     * the certificate and the mail domain on the node, and moving the column
+     * moves none of them.
+     */
+    if (domain.service_id) {
+      const owner = await db.one(
+        'SELECT id, primary_domain FROM services WHERE id = ? AND customer_id = ? LIMIT 1',
+        [domain.service_id, req.customer.id],
+      );
+      if (owner && owner.primary_domain === domain.domain && wanted !== owner.id) {
+        flash(res, `${domain.domain} is the main domain of that hosting plan, so it cannot be moved off it. `
+          + 'The website\'s files, certificate and mailboxes are all filed under this name on the server. '
+          + 'Open a ticket if you need it moved and we will migrate all three together.', 'warn');
+        return res.redirect(back);
+      }
+    }
+
     let service = null;
     if (wanted) {
       service = await db.one(
@@ -1457,12 +1562,29 @@ router.post('/domains/:id/service', async (req, res, next) => {
       return res.redirect(back);
     }
 
-    // A plan with no domain adopts this one. A plan that already has a primary
-    // domain keeps it, and this becomes an additional domain on the same
-    // account — which is what an add-on domain has always meant here.
+    /*
+     * A plan with no domain adopts this one, AND THEN NEVER CHANGES IT.
+     *
+     * The plan's primary domain is not a label — it is the plan's identity on
+     * the node. The document root is /home/<user>/web/<domain>/public_html, the
+     * certificate is issued for that name, the mail domain is that name, and
+     * the vhost is filed under it. Changing the column renames none of those,
+     * so a "changed" primary domain is a panel that says one thing while the
+     * server serves another: the files are under the old name, the certificate
+     * covers the old name, and the new one 404s.
+     *
+     * So the first attach wins and `primary_domain_locked_at` records it.
+     * Additional domains still attach freely — they become add-on domains on
+     * the same account, which is what an add-on domain has always meant here —
+     * and moving the plan's identity is a support job that has to move the
+     * files and the certificate with it.
+     */
     const adopted = !service.primary_domain;
     if (adopted) {
-      await db.query('UPDATE services SET primary_domain = ? WHERE id = ?', [domain.domain, service.id]);
+      await db.query(
+        'UPDATE services SET primary_domain = ?, primary_domain_locked_at = NOW() WHERE id = ?',
+        [domain.domain, service.id],
+      );
     }
 
     const result = await linking.rebuild({ ...domain, service_id: service.id }, req.customer);
@@ -1478,11 +1600,38 @@ router.post('/domains/:id/service', async (req, res, next) => {
     live.publish(req.customer.id, `domain:${domain.id}`);
 
     if (!result.ok) {
+      /*
+       * THE ATTACH ITSELF SUCCEEDED. Only the build on the node did not.
+       *
+       * This distinction was invisible before and it is the whole of the
+       * "I try to add the domain to my hosting and it fails and fails" report:
+       * the row WAS being filed under the service every time, so the customer
+       * pressed the button again, got the same warning, and had no way to tell
+       * that the filing had worked and only the server step was stuck. The
+       * warning now says which half failed and why, and it goes into the
+       * notification inbox so it survives the next click.
+       */
+      const why = result.error || result.built?.reason || 'unknown error';
+      await notify.raise({
+        customerId: req.customer.id,
+        level: 'error',
+        area: 'hosting',
+        title: `${domain.domain} is attached but not serving yet`,
+        body: `It is filed under your ${service.plan_name} plan, but the website could not be created on `
+          + `the server: ${why}`,
+        fixUrl: `${back}#hosting`,
+        fixLabel: 'Set it up on the server',
+        dedupeKey: `domain:${domain.id}:not_built`,
+      });
       flash(res, `${domain.domain} is now on your ${service.plan_name} plan, but the website could not be `
-        + `created on the server (${result.error || result.built?.reason || 'unknown error'}). `
+        + `created on the server (${why}). `
         + 'Try "Set it up on the server" on this page, or open a ticket.', 'warn');
       return res.redirect(back);
     }
+
+    await notify.resolve(req.customer.id, `domain:${domain.id}:not_built`);
+    await notify.resolve(req.customer.id, `domain:${domain.id}:unattached`);
+    await notify.resolve(req.customer.id, `service:${service.id}:no_domain`);
 
     flash(res, buildOutcome(domain.domain, result), result.verdict?.matched ? 'ok' : 'info');
     res.redirect(back);
@@ -2027,6 +2176,40 @@ router.post('/domains/:id/auto-renew', async (req, res, next) => {
 // ---------------------------------------------------------------------------
 // Billing
 // ---------------------------------------------------------------------------
+/**
+ * The notification inbox.
+ *
+ * Two lists on one page, and the split matters. "Needs your attention" is
+ * derived live by notifications.collect() — it is the truth as of this
+ * millisecond, so a problem fixed two minutes ago is simply not there. "Earlier"
+ * is the stored history, which is what makes this an inbox rather than a second
+ * copy of the banner: it is where "your domain was registered" and "your
+ * certificate was issued" go once they are no longer news.
+ *
+ * Opening the page marks everything read. A notification is not a task — the
+ * task is the warning above it, which stays until the condition clears — so
+ * there is nothing to lose by clearing the badge on sight, and a badge that
+ * needs dismissing item by item is a badge people stop looking at.
+ */
+router.get('/notifications', async (req, res, next) => {
+  try {
+    const history = await notify.list(req.customer.id, { limit: 40 });
+    await notify.markRead(req.customer.id);
+    res.render('panel/notifications', {
+      title: 'Notifications',
+      pageTitle: 'Notifications',
+      pageSub: res.locals.warningSummary.count
+        ? `${res.locals.warningSummary.count} thing${res.locals.warningSummary.count === 1 ? '' : 's'} need your attention`
+        : 'Everything looks healthy',
+      history,
+      // Read before markRead cleared it, so the page still shows what was new.
+      customer: req.customer,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/billing', async (req, res, next) => {
   try {
     const orders = await db.query(
@@ -2038,7 +2221,49 @@ router.get('/billing', async (req, res, next) => {
         WHERE s.customer_id = ? AND s.status = 'active' ORDER BY s.next_due_at ASC`,
       [req.customer.id],
     );
-    res.render('panel/billing', { title: 'Billing', robots: 'noindex', orders, services });
+    res.render('panel/billing', {
+      title: 'Billing',
+      robots: 'noindex',
+      orders,
+      services,
+      invoices: await invoices.listFor(req.customer.id),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Download an invoice PDF.
+ *
+ * ---------------------------------------------------------------------------
+ * THE FILE IS NOT SERVED BY STATIC MIDDLEWARE, AND THAT IS THE POINT
+ * ---------------------------------------------------------------------------
+ * Invoices live in files/invoices, outside public/, and reach the customer only
+ * through this handler — which loads the row by id AND customer_id first. An
+ * invoice carries a name, a postal address and what somebody spent; a directory
+ * of them under a guessable URL is a data breach with a predictable file name
+ * (VES-2026-00042.pdf), which is about as guessable as a file name gets.
+ *
+ * The id in the URL is never trusted: `ownedBy` is the authorisation, and a
+ * miss falls through to the 404 handler rather than answering 403 — telling
+ * somebody that invoice 91 exists but is not theirs is itself a disclosure.
+ */
+router.get('/invoices/:id.pdf', async (req, res, next) => {
+  try {
+    const invoice = await invoices.ownedBy(req.customer.id, Number(req.params.id));
+    if (!invoice) return next();
+
+    // Regenerated on demand if the file is missing — a PDF that failed to write
+    // at settlement time, or a database restored without its files directory,
+    // should not leave the customer with no invoice at all.
+    const file = await invoices.ensurePdf(invoice);
+
+    res.type('application/pdf');
+    // `inline`, so a click opens it in the browser's viewer rather than landing
+    // silently in a downloads folder. The filename still applies when saved.
+    res.setHeader('Content-Disposition', `inline; filename="${invoice.number}.pdf"`);
+    res.sendFile(file);
   } catch (err) {
     next(err);
   }

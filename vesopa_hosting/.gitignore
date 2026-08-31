@@ -18,3 +18,14 @@ logs/
 # Python bytecode from the brokers.
 __pycache__/
 *.pyc
+
+# Generated invoice PDFs.
+#
+# These are customer documents, not source: a name, a postal address and what
+# somebody spent, one file per purchase. They belong on the server's disk and
+# in nobody's git history — `git rm --cached` does not remove a file from past
+# commits, so a single accidental commit here is permanent.
+#
+# The directory itself is tracked, so a fresh deploy has somewhere to write.
+files/invoices/*
+!files/invoices/.gitkeep

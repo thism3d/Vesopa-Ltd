@@ -7,11 +7,33 @@
   card renders as a black rectangle you cannot see, which is exactly the "logo
   not showing" people reported. One partial, one decision.
 
+  ---------------------------------------------------------------------------
+  THE WORDMARK FILE IS THE WHOLE LOGO. IT ALREADY CONTAINS THE V.
+  ---------------------------------------------------------------------------
+  vesopa_logo.png is not the word "esopa" waiting for a mark to be placed in
+  front of it — it is the finished lockup, green slash and all. This partial
+  used to draw the inline SVG V *and then* that image, so every full lockup in
+  the panel, the rail, the emails and the checkout rendered as
+
+      V  Vesopa
+
+  with the V doubled. It reads as a rendering fault rather than a logo, and it
+  was on every signed-in page in the product.
+
+  So the two modes are now genuinely exclusive:
+
+    full lockup   the PNG alone. It is the logo. Nothing goes beside it.
+    mark          the inline SVG V alone, for a collapsed rail or a favicon-
+                  sized slot where 130px of wordmark cannot fit.
+
+  Never both. If a space is too small for the wordmark, it wants `mark: true`;
+  it does not want the wordmark with a second V bolted on.
+
   THE MARK IS INLINE SVG AND THE WORDMARK IS A PNG, on purpose. The V is
-  geometry — it is crisp at 18px and at 180px, it costs no request, and it can
-  be recoloured for whatever it sits on. The wordmark is set type, and tracing
-  type by hand produces a logo that is nearly right, which is worse than a
-  bitmap that is exactly right.
+  geometry — crisp at 18px and at 180px, costs no request, and can be
+  recoloured for whatever it sits on. The wordmark is set type, and tracing type
+  by hand produces a logo that is nearly right, which is worse than a bitmap
+  that is exactly right.
 
   Options:
     on      'light' (default) — for white and off-white backgrounds
@@ -31,12 +53,17 @@
   const bInk = bOn === 'dark' ? '#ffffff' : '#111111';
 %>
 <% if (bHref) { %><a class="brand-lockup" href="<%= bHref %>" aria-label="Vesopa"><% } else { %><span class="brand-lockup"><% } %>
-  <svg class="brand-v" width="<%= bMarkW %>" height="<%= bSize %>" viewBox="0 0 100 70"
-       <%= bMarkOnly ? 'role="img" aria-label="Vesopa"' : 'aria-hidden="true"' %>>
-    <path fill="#a5c715" d="M0,0 L22.7,0 L50.7,49 L77.3,0 L100,0 L62,70 L40,70 Z"/>
-    <path fill="<%= bInk %>" d="M58.3,35 L81,35 L62,70 L40,70 L50.7,49 Z"/>
-  </svg>
-  <% if (!bMarkOnly) { %>
+  <% if (bMarkOnly) { %>
+    <%# The attributes are written out literally rather than through an escaping
+        interpolation. Building them as a string and printing it escaped is what
+        produced the invalid aria-hidden="&quot;true&quot;" that shipped on
+        every rail in the panel. %>
+    <svg class="brand-v" width="<%= bMarkW %>" height="<%= bSize %>" viewBox="0 0 100 70"
+         role="img" aria-label="Vesopa">
+      <path fill="#a5c715" d="M0,0 L22.7,0 L50.7,49 L77.3,0 L100,0 L62,70 L40,70 Z"/>
+      <path fill="<%= bInk %>" d="M58.3,35 L81,35 L62,70 L40,70 L50.7,49 Z"/>
+    </svg>
+  <% } else { %>
     <%# `height` is set and `width` deliberately is not: the intrinsic ratio of
         the file decides the width, so a new wordmark cannot squash itself. %>
     <img class="brand-word"

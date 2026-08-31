@@ -36,7 +36,7 @@
     </div>
     <div class="field mb-0" style="flex:0 1 200px">
       <label class="label" for="fcat">Category</label>
-      <select class="input" id="fcat" name="category">
+      <select class="input select" id="fcat" name="category">
         <option value="">All categories</option>
         <% categories.forEach(function (c) { %>
           <option value="<%= c.slug %>" <%= filters.category === c.slug ? 'selected' : '' %>><%= c.label %></option>
@@ -45,7 +45,7 @@
     </div>
     <div class="field mb-0" style="flex:0 1 190px">
       <label class="label" for="fshow">Show</label>
-      <select class="input" id="fshow" name="show">
+      <select class="input select" id="fshow" name="show">
         <option value="">Everything (<%= tally.all %>)</option>
         <option value="loss" <%= filters.show === 'loss' ? 'selected' : '' %>>Below cost (<%= tally.loss %>)</option>
         <option value="featured" <%= filters.show === 'featured' ? 'selected' : '' %>>Popular (<%= tally.featured %>)</option>
@@ -103,7 +103,7 @@
               <br><a class="tiny muted" href="/domains/tld/<%= encodeURIComponent(t.tld) %>" target="_blank" rel="noopener">view page</a>
             </td>
             <td>
-              <select class="input" style="width:126px;padding:6px 8px;font-size:.8rem" name="category">
+              <select class="input select" style="width:126px;padding:6px 8px;font-size:.8rem" name="category">
                 <% categories.forEach(function (c) { %>
                   <option value="<%= c.slug %>" <%= (t.category || 'other') === c.slug ? 'selected' : '' %>><%= c.label %></option>
                 <% }); %>

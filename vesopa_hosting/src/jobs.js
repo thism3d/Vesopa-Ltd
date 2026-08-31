@@ -31,6 +31,7 @@ const db = require('./db');
 const payments = require('./payments');
 const provisioning = require('./provisioning');
 const linking = require('./domain-linking');
+const notify = require('./notifications');
 const nameservers = require('./nameservers');
 const {
   JOB_INTERVAL_MINUTES, PAYMENT_SESSION_MINUTES, DOMAIN_NS_GRACE_DAYS, NAMESERVERS,
@@ -232,10 +233,48 @@ async function sweepDomains() {
   let verified = 0;
   for (const row of rows) {
     try {
+      // Was it already live before this check? Read BEFORE verify(), because
+      // verify() writes ns_verified_at and would make every domain look like it
+      // had just arrived on the very next sweep.
+      const wasLive = Boolean(row.ns_verified_at) && Boolean(row.pointed_at);
+
       const result = await linking.verify(row);
       if (result.matched) {
         verified += 1;
         console.log(`[jobs] ${row.domain} now points at us${result.pointed?.pointed ? ' — site created' : ''}`);
+
+        /*
+         * THE MOMENT THE SITE IS ACTUALLY LIVE, said out loud.
+         *
+         * This is the one event in the whole system the customer has been
+         * waiting for — they changed their nameservers hours ago and have been
+         * reloading ever since — and nothing announced it. The sweep knew, wrote
+         * a row, and moved on.
+         *
+         * Only on the TRANSITION. `wasLive` is what stops this being raised
+         * again every five minutes for the rest of the domain's life; the
+         * dedupe key would collapse them into one row anyway, but re-raising a
+         * resolved notification marks it unread again, so the bell would light
+         * up forever on a domain that has been fine for a month.
+         */
+        if (!wasLive && result.pointed?.pointed) {
+          await notify.raise({
+            customerId: row.customer_id,
+            level: 'success',
+            area: 'domain',
+            title: `${row.domain} is live`,
+            body: 'Your nameservers have come through and the website is being served. '
+              + `Open https://${row.domain} to see it.`
+              + (result.pointed.ssl ? ' The security certificate is installed too.' : ''),
+            fixUrl: `https://${row.domain}`,
+            fixLabel: 'Visit my site',
+            dedupeKey: `domain:${row.id}:live`,
+          }).catch(() => {});
+
+          // Whatever was being complained about is no longer true.
+          await notify.resolve(row.customer_id, `domain:${row.id}:not_delegated`).catch(() => {});
+          await notify.resolve(row.customer_id, `domain:${row.id}:not_built`).catch(() => {});
+        }
       }
     } catch (err) {
       console.error(`[jobs] nameserver check failed for ${row.domain}:`, err.message);

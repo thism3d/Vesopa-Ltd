@@ -1,0 +1,70 @@
+<%#
+  The warning stack.
+
+  Rendered at the top of the dashboard with everything, and at the top of a
+  section page with only that section's own warnings — so somebody who walks
+  into Email because their mail is broken is told about the mail problem there,
+  rather than having to go back to the overview to find out.
+
+  Usage:
+    include('../partials/warnings', { items: warnings })            // all
+    include('../partials/warnings', { items: areaWarnings('email'), compact: true })
+
+  ---------------------------------------------------------------------------
+  EVERY ROW CARRIES ITS OWN FIX, AND THE FIX IS SPECIFIC
+  ---------------------------------------------------------------------------
+  `fix_url` goes to the page that resolves THIS problem — /panel/domains/14#ssl,
+  not /panel/domains. A banner that says "one of your domains has a problem" and
+  drops somebody on a list of nine is a banner that has told them there is work
+  to do without telling them what, and they still have to go hunting. That is
+  how arpi.site stayed broken for nine hours.
+
+  ---------------------------------------------------------------------------
+  COLOUR CARRIES MEANING, SO THE LEVELS ARE NOT INTERCHANGEABLE
+  ---------------------------------------------------------------------------
+    error    red     broken now — service is being lost right now
+    warn     amber   will break on a known date if ignored
+    success  green   something awaited has finished
+    info     blue    worth knowing, nothing to do
+
+  Nothing merely pending is a warning. Colouring "your site is being set up"
+  amber is how amber comes to mean nothing, and then the amber that means
+  "verify this or lose the domain" gets scrolled past too.
+
+  Capped at four with a count for the rest: an account in a genuinely bad state
+  can produce a dozen, and a wall of red is read as a broken page rather than as
+  twelve things to do.
+%>
+<%
+  const wItems = (typeof items !== 'undefined' && items) ? items : [];
+  const wCompact = typeof compact !== 'undefined' && compact;
+  const wMax = wCompact ? 3 : 4;
+  const wShown = wItems.slice(0, wMax);
+  const wRest = wItems.length - wShown.length;
+  const wIcon = { error: 'warning', warn: 'warning', success: 'check', info: 'info' };
+%>
+<% if (wShown.length) { %>
+  <div class="warnstack <%= wCompact ? 'is-compact' : '' %>" role="region" aria-label="Things that need your attention">
+    <% wShown.forEach(function (w) { %>
+      <div class="warnrow is-<%= w.level %>">
+        <span class="warnrow-ico"><%- icon(wIcon[w.level] || 'info', 18) %></span>
+        <div class="warnrow-txt">
+          <b class="warnrow-title"><%= w.title %></b>
+          <% if (w.body) { %><span class="warnrow-body"><%= w.body %></span><% } %>
+        </div>
+        <% if (w.fix_url) { %>
+          <a class="warnrow-fix" href="<%= w.fix_url %>">
+            <%= w.fix_label || 'Fix this' %>
+            <%- icon('chevron-right', 15) %>
+          </a>
+        <% } %>
+      </div>
+    <% }); %>
+    <% if (wRest > 0) { %>
+      <a class="warnrow-more" href="/panel/notifications">
+        and <%= wRest %> more <%= wRest === 1 ? 'thing that needs' : 'things that need' %> attention
+        <%- icon('chevron-right', 14) %>
+      </a>
+    <% } %>
+  </div>
+<% } %>

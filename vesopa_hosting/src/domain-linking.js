@@ -724,17 +724,78 @@ function explainSslError(raw) {
  * nothing ever retried a failure, and the panel could not show a padlock or
  * explain its absence. A customer's only signal was the browser's.
  */
-async function recordSsl(domainId, ssl) {
+async function recordSsl(domainId, ssl, cert = null) {
   const status = ssl.ok ? 'active' : 'failed';
   await db.query(
     `UPDATE domains
         SET ssl_status = ?,
             ssl_checked_at = NOW(),
             ssl_issued_at = CASE WHEN ? = 'active' THEN COALESCE(ssl_issued_at, NOW()) ELSE ssl_issued_at END,
+            ssl_expires_at = COALESCE(?, ssl_expires_at),
+            ssl_self_signed = ?,
             ssl_error = ?
       WHERE id = ?`,
-    [status, status, ssl.ok ? '' : explainSslError(ssl.error).slice(0, 300), domainId],
+    [
+      status, status,
+      cert?.expires_at ? new Date(cert.expires_at).toISOString().slice(0, 19).replace('T', ' ') : null,
+      cert?.self_signed ? 1 : 0,
+      ssl.ok ? '' : explainSslError(ssl.error).slice(0, 300),
+      domainId,
+    ],
   );
+}
+
+/**
+ * Is this domain's certificate actually good right now, and may the customer
+ * ask for a new one?
+ *
+ * ---------------------------------------------------------------------------
+ * "HAS A CERTIFICATE" AND "HAS A WORKING CERTIFICATE" ARE DIFFERENT QUESTIONS
+ * ---------------------------------------------------------------------------
+ * `ssl_status` records the first; it stays 'active' for a certificate that
+ * expired months ago, and it is 'active' for the self-signed placeholder Hestia
+ * installs when Let's Encrypt has never succeeded. Gating the reissue button on
+ * it gets the answer wrong in both directions at once:
+ *
+ *   it HIDES the button from the person whose certificate lapsed on Tuesday
+ *   and who is looking at a browser warning right now, and
+ *
+ *   it OFFERS the button to the person whose certificate is fine, who presses
+ *   it, and spends one of the five issuances Let's Encrypt allows for that name
+ *   per week replacing a certificate that had eleven weeks left.
+ *
+ * So the question is answered from the expiry date. `mayIssue` is false only
+ * when we have positively established a valid, non-self-signed certificate with
+ * more than the renewal window left. Anything we do not know — a node we could
+ * not reach, an expiry we never read — leaves the button available, because
+ * being able to retry something that turns out not to have needed it is a much
+ * smaller problem than not being able to fix a site that is down.
+ */
+const SSL_RENEW_WINDOW_DAYS = 30;
+
+function sslState(domainRow) {
+  const expiresAt = domainRow?.ssl_expires_at ? new Date(domainRow.ssl_expires_at) : null;
+  const daysLeft = expiresAt && !Number.isNaN(expiresAt.getTime())
+    ? Math.floor((expiresAt.getTime() - Date.now()) / 864e5)
+    : null;
+  const selfSigned = Number(domainRow?.ssl_self_signed) === 1;
+  const valid = daysLeft !== null && daysLeft > 0 && !selfSigned;
+
+  return {
+    status: domainRow?.ssl_status || 'none',
+    expires_at: expiresAt,
+    days_left: daysLeft,
+    self_signed: selfSigned,
+    valid,
+    expired: daysLeft !== null && daysLeft <= 0,
+    // Inside the renewal window it is legitimate to ask early, so the button
+    // comes back a month before expiry rather than on the day.
+    mayIssue: !valid || daysLeft <= SSL_RENEW_WINDOW_DAYS,
+    why: valid && daysLeft > SSL_RENEW_WINDOW_DAYS
+      ? `This certificate is valid for another ${daysLeft} days and renews itself automatically. `
+        + 'There is nothing to do.'
+      : '',
+  };
 }
 
 /**
@@ -747,12 +808,46 @@ async function recordSsl(domainId, ssl) {
  * this one reaches domains that are not attached to a service at all, which
  * the old button could not.
  */
-async function issueSsl(domainRow, customer) {
+async function issueSsl(domainRow, customer, { force = false } = {}) {
   if (!customer?.hestia_user) {
     return { ok: false, error: 'There is no hosting account to install a certificate on.' };
   }
   if (!mayPoint(domainRow)) {
     return { ok: false, error: 'This domain is not pointing at us yet, so a certificate cannot be issued for it.' };
+  }
+
+  /*
+   * A certificate that is already good is not reissued.
+   *
+   * Let's Encrypt allows five duplicate certificates per name per week. Every
+   * needless reissue spends one, and the account that runs out is locked out at
+   * exactly the moment it has a real emergency. The state is read fresh from
+   * the node rather than from our row, because the row may be a week old and
+   * the customer pressing this button has usually just changed something.
+   *
+   * `force` exists for support, not for the panel.
+   */
+  if (!force) {
+    const cert = await hestia.webDomainCert({ username: customer.hestia_user, domain: domainRow.domain })
+      .catch(() => ({ ok: false }));
+    if (cert.ok && cert.expires_at) {
+      await recordSsl(domainRow.id, { ok: true }, cert);
+      const state = sslState({
+        ssl_status: 'active',
+        ssl_expires_at: cert.expires_at,
+        ssl_self_signed: cert.self_signed ? 1 : 0,
+      });
+      if (!state.mayIssue) {
+        return {
+          ok: true,
+          skipped: true,
+          alreadyValid: true,
+          expires_at: cert.expires_at,
+          days_left: cert.days_left,
+          message: state.why,
+        };
+      }
+    }
   }
 
   /*
@@ -781,8 +876,21 @@ async function issueSsl(domainRow, customer) {
     mail: false,
   }));
 
-  await recordSsl(domainRow.id, result);
-  return { ...result, message: result.ok ? '' : explainSslError(result.error) };
+  // Read the new certificate's dates back so the panel can say when it expires
+  // rather than only that it exists — and so the guard above has something to
+  // work with next time.
+  const cert = result.ok
+    ? await hestia.webDomainCert({ username: customer.hestia_user, domain: domainRow.domain })
+      .catch(() => null)
+    : null;
+
+  await recordSsl(domainRow.id, result, cert);
+  return {
+    ...result,
+    expires_at: cert?.expires_at || null,
+    days_left: cert?.days_left ?? null,
+    message: result.ok ? '' : explainSslError(result.error),
+  };
 }
 
 /**
@@ -814,14 +922,37 @@ async function refreshSsl(domainRow, customer) {
     // if we have a recorded reason; otherwise it has simply never been asked
     // for, and "none" is the honest word for that.
     const status = live.ssl ? 'active' : (domainRow.ssl_error ? 'failed' : 'none');
+
+    // The dates as well as the flag. Without these the panel can say a domain
+    // has a certificate but never that it expires on Thursday, which is the
+    // half a customer can act on — see sslState().
+    const cert = live.ssl
+      ? await hestia.webDomainCert({ username: customer.hestia_user, domain: domainRow.domain })
+        .catch(() => null)
+      : null;
+
     await db.query(
       `UPDATE domains
           SET ssl_status = ?, ssl_checked_at = NOW(),
-              ssl_issued_at = CASE WHEN ? = 'active' THEN COALESCE(ssl_issued_at, NOW()) ELSE ssl_issued_at END
+              ssl_issued_at = CASE WHEN ? = 'active' THEN COALESCE(ssl_issued_at, NOW()) ELSE ssl_issued_at END,
+              ssl_expires_at = COALESCE(?, ssl_expires_at),
+              ssl_self_signed = ?
         WHERE id = ?`,
-      [status, status, domainRow.id],
+      [
+        status, status,
+        cert?.expires_at ? new Date(cert.expires_at).toISOString().slice(0, 19).replace('T', ' ') : null,
+        cert?.self_signed ? 1 : 0,
+        domainRow.id,
+      ],
     );
-    return { status, error: status === 'failed' ? stored.error : '', issued_at: stored.issued_at, live: true };
+    return {
+      status,
+      error: status === 'failed' ? stored.error : '',
+      issued_at: stored.issued_at,
+      expires_at: cert?.expires_at || domainRow.ssl_expires_at || null,
+      days_left: cert?.days_left ?? null,
+      live: true,
+    };
   } catch {
     return stored;
   }
@@ -1227,6 +1358,8 @@ module.exports = {
   isSubdomain,
   findParent,
   issueSsl,
+  sslState,
+  SSL_RENEW_WINDOW_DAYS,
   refreshSsl,
   recordSsl,
   explainSslError,

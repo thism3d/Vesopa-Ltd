@@ -24,6 +24,9 @@
 <%- include('../partials/panel-shell', {
   pageTitle: 'Email',
   pageSub: 'Mailboxes at your own domain.',
+  // Mail problems, shown where somebody who came here because their mail is
+  // broken will actually be looking.
+  warnArea: 'email',
 }) %>
 
 <% if (!hestiaLive) { %>
@@ -244,13 +247,24 @@
           const caRaw = String(view.catchall || '').trim();
           const caOn = Boolean(caRaw) && caRaw.toLowerCase() !== 'reject';
         %>
-        <div class="p-card">
-          <div class="row-between mb-2" style="gap:10px;flex-wrap:wrap">
-            <h2 class="h3" style="margin:0">Unknown addresses</h2>
-            <span class="state <%= caOn ? 'state-amber' : 'state-grey' %>">
-              <i></i><%= caOn ? 'Catch-all on' : 'Bouncing' %>
+        <%#
+          Collapsed. Deciding what happens to mail sent to an address that does
+          not exist is a once-ever setting, and it was taking as much of the
+          page as the mailbox list. The summary line still says which way it is
+          set, so nobody has to open it to find out.
+        %>
+        <details class="fold"<%= caOn ? ' open' : '' %>>
+          <summary class="fold-head">
+            <span class="fold-ico"><%- icon('inbox', 17) %></span>
+            <span class="fold-txt">
+              <span class="fold-title">Unknown addresses</span>
+              <span class="fold-sub">
+                <%= caOn ? 'Catch-all on — going to ' + caRaw : 'Bouncing, which is usually right' %>
+              </span>
             </span>
-          </div>
+            <span class="fold-chev"><%- icon('chevron', 17) %></span>
+          </summary>
+          <div class="fold-body">
           <p class="small muted mb-2">
             <% if (caOn) { %>
               Mail to any address at <%= view.domain %> that does not exist is going
@@ -275,13 +289,33 @@
             </div>
             <button class="btn btn-ghost btn-sm" type="submit">Save</button>
           </form>
-        </div>
+          </div>
+        </details>
       </div>
 
       <aside>
         <%# ---- Create ---- %>
-        <div class="p-card">
-          <h2 class="h3 mb-2">Create a mailbox</h2>
+        <%#
+          Collapsed by default, and the sub-line carries the number left — which
+          is the thing somebody actually wants to know at a glance. Opening it
+          is one tap, and the page below is now a list of what you can do rather
+          than four open forms competing for the same attention.
+        %>
+        <details class="fold">
+          <summary class="fold-head">
+            <span class="fold-ico"><%- icon('plus', 17) %></span>
+            <span class="fold-txt">
+              <span class="fold-title">Create a mailbox</span>
+              <span class="fold-sub">
+                <% if (!quota || !quota.total) { %>No mailbox allowance on this account
+                <% } else if (quota.full) { %>All <%= quota.total %> in use
+                <% } else if (quota.remaining !== null && quota.remaining !== undefined) { %><%= quota.remaining %> of <%= quota.total %> still free
+                <% } else { %>Add an address at <%= view.domain %><% } %>
+              </span>
+            </span>
+            <span class="fold-chev"><%- icon('chevron', 17) %></span>
+          </summary>
+          <div class="fold-body">
           <% if (!quota || !quota.total) { %>
             <p class="small muted mb-2">
               Mailboxes come with a hosting plan, or with a business email plan.
@@ -351,10 +385,15 @@
               mailbox itself.
             </p>
           <% } %>
-        </div>
+          </div>
+        </details>
 
         <%#
           Connecting a device.
+
+          COLLAPSED, because this is the most once-only panel on the page:
+          you set your phone up on the day the mailbox is made and never open
+          it again. Expanded, it was the tallest thing in the column.
 
           ONE HOSTNAME for everybody — not mail.<their domain>, which has no
           certificate. See MAIL_HOSTNAME in config.js.
@@ -364,8 +403,16 @@
           settings and the exact steps, because pretending otherwise would be a
           download button that does nothing.
         %>
-        <div class="p-card">
-          <h2 class="h3 mb-2">Set up a mail app</h2>
+        <details class="fold">
+          <summary class="fold-head">
+            <span class="fold-ico"><%- icon('mail', 17) %></span>
+            <span class="fold-txt">
+              <span class="fold-title">Set up a mail app</span>
+              <span class="fold-sub">iPhone, Mac, Android and Outlook settings</span>
+            </span>
+            <span class="fold-chev"><%- icon('chevron', 17) %></span>
+          </summary>
+          <div class="fold-body">
 
           <% if (view.accounts.length) { %>
             <p class="small muted mb-2">Pick a mailbox, then your device:</p>
@@ -435,22 +482,37 @@
             customer — <b>not</b> your own domain. Your domain is the address;
             this is the server it is collected from.
           </p>
-        </div>
+          </div>
+        </details>
 
         <% if (quota && quota.total) { %>
-          <div class="p-card">
-            <h2 class="h3 mb-2">Your allowance</h2>
-            <div class="kv">
-              <% quota.sources.forEach(function (s) { %>
-                <div class="kv-row"><span class="kv-k"><%= s.label %></span><span class="kv-v"><%= s.count %></span></div>
-              <% }); %>
-              <div class="kv-row"><span class="kv-k">Total</span><span class="kv-v"><%= quota.total %></span></div>
-              <% if (quota.used !== null) { %>
-                <div class="kv-row"><span class="kv-k">In use</span><span class="kv-v"><%= quota.used %></span></div>
-                <div class="kv-row"><span class="kv-k">Left</span><span class="kv-v"><%= quota.remaining %></span></div>
-              <% } %>
+          <%# The headline number is in the summary, so the common case — "how
+              many have I got left" — is answered without opening anything. %>
+          <details class="fold">
+            <summary class="fold-head">
+              <span class="fold-ico"><%- icon('gauge', 17) %></span>
+              <span class="fold-txt">
+                <span class="fold-title">Your allowance</span>
+                <span class="fold-sub">
+                  <% if (quota.used !== null) { %><%= quota.used %> of <%= quota.total %> mailboxes in use
+                  <% } else { %><%= quota.total %> mailbox<%= quota.total === 1 ? '' : 'es' %> included<% } %>
+                </span>
+              </span>
+              <span class="fold-chev"><%- icon('chevron', 17) %></span>
+            </summary>
+            <div class="fold-body">
+              <div class="kv">
+                <% quota.sources.forEach(function (s) { %>
+                  <div class="kv-row"><span class="kv-k"><%= s.label %></span><span class="kv-v"><%= s.count %></span></div>
+                <% }); %>
+                <div class="kv-row"><span class="kv-k">Total</span><span class="kv-v"><%= quota.total %></span></div>
+                <% if (quota.used !== null) { %>
+                  <div class="kv-row"><span class="kv-k">In use</span><span class="kv-v"><%= quota.used %></span></div>
+                  <div class="kv-row"><span class="kv-k">Left</span><span class="kv-v"><%= quota.remaining %></span></div>
+                <% } %>
+              </div>
             </div>
-          </div>
+          </details>
         <% } %>
       </aside>
     </div>

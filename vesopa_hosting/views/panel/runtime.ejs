@@ -44,7 +44,7 @@
   <form method="get" action="/panel/apps/runtime" class="p-card mb-3">
     <label class="label" for="site">Website</label>
     <div class="row" style="gap:8px">
-      <select class="input" id="site" name="site" style="flex:1">
+      <select class="input select" id="site" name="site" style="flex:1">
         <% sites.forEach(function (s) { %>
           <option value="<%= s.domain %>" <%= s.domain === selected ? 'selected' : '' %>><%= s.domain %></option>
         <% }); %>

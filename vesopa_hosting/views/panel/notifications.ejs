@@ -1,0 +1,57 @@
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
+<%- include('../partials/panel-shell', {
+  pageTitle: 'Notifications',
+  pageSub: typeof pageSub !== 'undefined' ? pageSub : '',
+}) %>
+
+<%#
+  The shell has already rendered the live warnings above this, so the page does
+  not repeat them — it explains the empty case and then shows the history.
+%>
+
+<% if (!warnings.length) { %>
+  <div class="p-card p-card-flush">
+    <div class="empty">
+      <%- icon('check', 30) %>
+      <h3>Nothing needs your attention</h3>
+      <p>
+        Domains, certificates and renewals are all healthy. If something changes
+        we will show it here and email you.
+      </p>
+    </div>
+  </div>
+<% } %>
+
+<div class="p-card p-card-flush">
+  <div class="p-card-head">
+    <h2>Earlier</h2>
+    <span class="muted small">The last 30 days</span>
+  </div>
+
+  <% if (!history.length) { %>
+    <div class="p-card-body">
+      <p class="muted small mb-0">Nothing yet. Registrations, certificates and renewals will appear here.</p>
+    </div>
+  <% } else { %>
+    <ul class="notif-list">
+      <% history.forEach(function (n) { %>
+        <li class="notif is-<%= n.level %> <%= n.resolved_at ? 'is-done' : '' %>">
+          <span class="notif-ico"><%- icon(n.level === 'success' ? 'check' : (n.level === 'info' ? 'info' : 'warning'), 17) %></span>
+          <div class="notif-txt">
+            <b><%= n.title %></b>
+            <% if (n.body) { %><span class="notif-body"><%= n.body %></span><% } %>
+            <span class="notif-meta">
+              <%= new Date(n.created_at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }) %>
+              <% if (n.resolved_at) { %> &middot; resolved<% } %>
+            </span>
+          </div>
+          <% if (n.fix_url && !n.resolved_at) { %>
+            <a class="btn btn-sm btn-ghost" href="<%= n.fix_url %>"><%= n.fix_label || 'Open' %></a>
+          <% } %>
+        </li>
+      <% }); %>
+    </ul>
+  <% } %>
+</div>
+
+<%- include('../partials/panel-shell-end') %>

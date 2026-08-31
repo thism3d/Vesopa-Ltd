@@ -64,13 +64,43 @@
 .cart-item-price span.tiny { display: block; }
 
 .cart-item-remove { flex: none; }
+
+/* The remove button.
+   ---------------------------------------------------------------------------
+   THIS WAS INVISIBLE ON IPAD, and the root cause is fixed in app.css — the page
+   never declared `color-scheme`, so Safari in Dark Mode recoloured the icon,
+   which inherits `currentColor`, to white and left the explicit white
+   background untouched. White on white.
+
+   Everything below is the belt to that fix's braces, because a control whose
+   visibility depends on one line elsewhere is a control that will disappear
+   again:
+
+     `appearance: none` so no engine applies its own button treatment.
+     The icon colour is set explicitly rather than inherited, so nothing
+     upstream can recolour it by changing `color`.
+     `--ink-2` not `--ink-3`, on `--bg-2` not `#fff`: 5.9:1 against the card
+     instead of 2.4:1. It was legible on a calibrated laptop screen and gone on
+     an iPad held at arm's length in daylight, which is where people shop.
+     40px, not 32px. Apple's minimum is 44 and this sits in a row of targets;
+     32px next to a link is a miss-tap every time.
+   ------------------------------------------------------------------------ */
 .icon-btn {
-  width: 32px; height: 32px; border-radius: 9px;
-  border: 1px solid var(--rule); background: #fff; color: var(--ink-3);
+  -webkit-appearance: none; appearance: none;
+  width: 40px; height: 40px; border-radius: 10px;
+  border: 1.5px solid var(--rule);
+  background: var(--bg-2);
+  color: var(--ink-2);
   display: grid; place-items: center; cursor: pointer;
-  transition: color .18s var(--ease), border-color .18s var(--ease), background .18s var(--ease);
+  -webkit-tap-highlight-color: transparent;
+  transition: color .18s var(--ease), border-color .18s var(--ease),
+              background .18s var(--ease), transform .12s var(--ease);
 }
+/* Explicit, so a parent's `color` can never reach it. */
+.icon-btn svg { display: block; color: currentColor; }
 .icon-btn:hover { color: #a82a19; border-color: #f4cec7; background: #fdf0ee; }
+.icon-btn:active { transform: scale(.92); background: #fbe4e0; }
+.icon-btn:focus-visible { outline: 2px solid var(--lime-ink); outline-offset: 2px; }
 
 /* ---- Period picker ------------------------------------------------------ */
 .cart-period {
@@ -265,15 +295,116 @@
 .sum-saved svg { width: 15px; height: 15px; flex: none; }
 
 /* ---- Coupon ------------------------------------------------------------- */
+/* ---- Discount code -------------------------------------------------------
+   A PANEL, NOT A FOOTNOTE.
+
+   The old control was a line of small lime text with a "+" in front, sitting
+   in the gap between the total and the payment button. That gap is the one
+   part of a checkout the eye skips — it is travelling to the button — so the
+   control was invisible in practice and people with a valid code paid full
+   price. It is now a bordered, tinted card with an icon and a button-shaped
+   call to action: closed, but unmistakably a control.
+   ------------------------------------------------------------------------ */
 .cart-coupon { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--rule-soft); }
-.cart-coupon summary {
-  cursor: pointer; font-size: .88rem; font-weight: 700; color: var(--lime-ink);
-  list-style: none;
+
+.coupon-box {
+  border: 1.5px dashed var(--lime);
+  border-radius: var(--radius-sm);
+  background: var(--lime-soft);
+  overflow: hidden;
+  transition: background .18s var(--ease), border-color .18s var(--ease);
 }
-.cart-coupon summary::-webkit-details-marker { display: none; }
-.cart-coupon summary::before { content: '+ '; font-weight: 900; }
-.cart-coupon details[open] summary::before { content: '− '; }
+.coupon-box[open] { background: #fff; border-style: solid; }
+
+.coupon-toggle {
+  /* Label row, then a full-width button under it.
+     The summary column is ~280px of usable width. "Have a discount code?" and
+     a pill do not both fit on one line there, and the near-miss layouts are
+     all worse than committing: a wrapped label reads as a paragraph, and a
+     right-aligned pill on its own line reads as an accident. Stacked, the
+     button is the same full width as Apply in the open state and as Continue
+     to payment below it — so it looks like the control it is. */
+  display: grid; gap: 10px;
+  grid-template-columns: auto 1fr;
+  padding: 12px 13px;
+  cursor: pointer; list-style: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.coupon-toggle::-webkit-details-marker { display: none; }
+.coupon-toggle-ico { display: flex; align-self: center; color: var(--lime-ink); }
+.coupon-toggle-txt {
+  min-width: 0; align-self: center;
+  font-size: .87rem; font-weight: 700; color: var(--lime-deep);
+}
+/* The closed state's CTA and the open state's Apply are deliberately the same
+   shape and weight — pressing "Enter code" should feel like the first half of
+   pressing "Apply", not like following a link somewhere else. */
+.coupon-toggle-cta {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 10px 13px;
+  font-size: .82rem; font-weight: 800; letter-spacing: .01em;
+  color: var(--on-lime); background: var(--lime);
+  border-radius: 999px;
+  transition: filter .16s var(--ease), transform .12s var(--ease);
+}
+.coupon-toggle:hover .coupon-toggle-cta { filter: brightness(.94); }
+.coupon-toggle:active .coupon-toggle-cta { transform: scale(.96); }
+.coupon-box[open] .coupon-toggle-cta { display: none; }
+.coupon-toggle:focus-visible { outline: 2px solid var(--lime-ink); outline-offset: -2px; }
+
+.coupon-form { display: flex; gap: 8px; padding: 0 14px 14px; }
+.coupon-input {
+  flex: 1 1 auto; min-width: 0;
+  text-transform: uppercase;
+  letter-spacing: .06em; font-weight: 700;
+}
+.coupon-input::placeholder { letter-spacing: normal; font-weight: 400; text-transform: none; }
+/* Matched to the input's own box so the pair reads as one control. */
+.coupon-apply {
+  flex: none;
+  padding: 12px 20px;
+  border-radius: var(--radius-sm);
+  font-size: .88rem;
+}
+
+.coupon-applied {
+  display: flex; align-items: center; gap: 11px;
+  padding: 12px 14px;
+  border: 1.5px solid var(--lime);
+  border-radius: var(--radius-sm);
+  background: var(--lime-soft);
+}
+.coupon-applied-ico {
+  display: grid; place-items: center; flex: none;
+  width: 26px; height: 26px; border-radius: 50%;
+  background: var(--lime); color: var(--on-lime);
+}
+.coupon-applied-txt { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.coupon-applied-txt b {
+  font-size: .89rem; font-weight: 800; color: var(--lime-deep);
+  letter-spacing: .04em; text-transform: uppercase;
+}
+.coupon-applied-txt span { font-size: .79rem; color: var(--ink-2); }
+.coupon-remove {
+  -webkit-appearance: none; appearance: none;
+  flex: none; padding: 6px 10px;
+  border: 0; background: none; cursor: pointer;
+  font-size: .8rem; font-weight: 700; color: var(--ink-2);
+  text-decoration: underline; text-underline-offset: 2px;
+  border-radius: 8px;
+}
+.coupon-remove:hover { color: #a82a19; }
+.coupon-remove:focus-visible { outline: 2px solid var(--lime-ink); outline-offset: 1px; }
+
 .chip-lime { background: var(--lime-soft); border-color: var(--lime); color: var(--lime-deep); font-weight: 700; }
+
+@media (max-width: 420px) {
+  /* At this width the input and a 20px-padded button no longer both fit on one
+     line without the input becoming too narrow to read a code back in. */
+  .coupon-form { flex-wrap: wrap; }
+  .coupon-apply { width: 100%; }
+}
 
 /* ---- Trust -------------------------------------------------------------- */
 .cart-trust { list-style: none; padding: 0; margin: 18px 0 0; display: grid; gap: 9px; }
@@ -328,3 +459,38 @@
   .sum-total .sum-val b { font-size: 1.3rem; }
   .qty-input { width: 62px; }
 }
+
+/* ---- Billing contact -----------------------------------------------------
+   Collapsed and ticked by default. For nearly everybody the invoice goes to
+   the same name and address they just typed, and six more fields presented
+   open is a checkout people leave. The ones who need it — buying through a
+   company or an accountant — are looking for exactly this checkbox.
+
+   The reveal is `:has()` on the checkbox, so it works with no JavaScript at
+   all. The `hidden` attribute on the fields is the fallback for engines
+   without `:has()`, and the small script at the foot of checkout.ejs removes
+   it on load so those browsers get a permanently-open block rather than one
+   they can never open.
+   ------------------------------------------------------------------------ */
+.biller {
+  margin-top: 4px; padding-top: 15px;
+  border-top: 1px solid var(--rule-soft);
+}
+.biller-same { align-items: flex-start; }
+.biller-same span b { display: block; }
+.biller-same span .muted { display: block; margin-top: 2px; font-size: .82rem; line-height: 1.45; }
+
+.biller-fields { margin-top: 15px; }
+
+/* Open when the box is CLEARED — the checkbox means "same", so unticking is
+   what asks for the other address. */
+.biller:has(.biller-same input:checked) .biller-fields { display: none; }
+.biller:has(.biller-same input:not(:checked)) .biller-fields {
+  display: block;
+  animation: billerIn .22s cubic-bezier(.2, .7, .3, 1) both;
+}
+@keyframes billerIn { from { opacity: 0; transform: translateY(-5px); } }
+@media (prefers-reduced-motion: reduce) { .biller-fields { animation: none !important; } }
+
+/* ---- The discount code on the checkout ---------------------------------- */
+.checkout-coupon { margin: 0 0 16px; }

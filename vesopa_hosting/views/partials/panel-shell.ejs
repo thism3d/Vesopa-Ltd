@@ -114,6 +114,16 @@
               when it drops, so a page that has stopped updating itself admits
               to it instead of showing figures that quietly went stale. %>
           <span class="live-dot is-off hide-sm" data-live-dot hidden><i></i><span data-live-text>Live</span></span>
+          <%# The bell. The count is unread AND unresolved: a problem that fixed
+              itself stops asking to be read about. %>
+          <a class="bell <%= (typeof notifyUnread !== 'undefined' && notifyUnread) ? 'has-unread' : '' %>"
+             href="/panel/notifications"
+             aria-label="Notifications<%= (typeof notifyUnread !== 'undefined' && notifyUnread) ? ` (${notifyUnread} unread)` : '' %>">
+            <%- icon('inbox', 18) %>
+            <% if (typeof notifyUnread !== 'undefined' && notifyUnread) { %>
+              <span class="bell-dot"><%= notifyUnread > 9 ? '9+' : notifyUnread %></span>
+            <% } %>
+          </a>
           <% if (typeof topAction !== 'undefined' && topAction) { %>
             <a class="btn btn-sm" href="<%= topAction.href %>"><%- icon(topAction.icon || 'plus', 16) %> <%= topAction.label %></a>
           <% } %>
@@ -121,19 +131,27 @@
       </div>
     </header>
 
-    <% if (!customer.email_verified) { %>
+    <%#
+      The warnings, on every page.
+
+      This used to be a single hardcoded "confirm your email" alert, which meant
+      the panel had exactly one thing it could ever warn anybody about. Every
+      other problem — a domain about to be suspended, an expired certificate, a
+      plan with no domain on it — was visible only if you happened to open the
+      page it lived on.
+
+      A section page passes its own `area` so it shows its own problems at the
+      top; the dashboard passes nothing and shows all of them. Both come from
+      the same middleware in routes/panel.js, so a page cannot forget.
+    %>
+    <% if (typeof warnings !== 'undefined' && warnings.length) { %>
       <div class="wrap-panel" style="padding-bottom:0">
-        <div class="alert alert-warn">
-          <%- icon('warning', 19) %>
-          <div>
-            <b>Confirm your email address.</b> Until you do we cannot send you a
-            password reset, so losing your password would mean losing the account.
-            <form method="post" action="/register/resend" style="display:inline">
-              <input type="hidden" name="_csrf" value="<%= csrf %>">
-              <button class="linklike" type="submit">Send the link again</button>
-            </form>
-          </div>
-        </div>
+        <%- include('./warnings', {
+          items: typeof warnArea !== 'undefined' && warnArea
+            ? areaWarnings(warnArea)
+            : warnings,
+          compact: typeof warnArea !== 'undefined' && Boolean(warnArea),
+        }) %>
       </div>
     <% } %>
 

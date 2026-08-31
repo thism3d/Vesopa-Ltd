@@ -1260,5 +1260,169 @@ CREATE TABLE IF NOT EXISTS app_installs (
     FOREIGN KEY (customer_id) REFERENCES customers (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+
+-- ---------------------------------------------------------------------------
+-- The certificate's own expiry.
+--
+-- `ssl_status` records whether Hestia has a certificate installed. It does NOT
+-- record whether that certificate is still valid: the flag stays 'active' for
+-- one that lapsed months ago. The panel decides whether to offer the "issue a
+-- certificate" button from THIS column, because deciding it from the flag gets
+-- it wrong in both directions — hiding the button from somebody staring at a
+-- browser warning, and offering it to somebody whose certificate is fine, who
+-- then spends a Let's Encrypt rate-limit slot reissuing it.
+--
+-- NULL means "we have never successfully read the certificate", which is not
+-- the same as expired and must never be rendered as such.
+-- ---------------------------------------------------------------------------
+CALL vesopa_add_column('domains', 'ssl_expires_at', 'DATETIME NULL AFTER ssl_issued_at');
+CALL vesopa_add_column('domains', 'ssl_self_signed', 'TINYINT(1) NOT NULL DEFAULT 0 AFTER ssl_expires_at');
+
+-- ---------------------------------------------------------------------------
+-- Registrant verification.
+--
+-- ICANN requires the registrant's email address to be verified within 15 days
+-- of a gTLD registration, and SUSPENDS THE DOMAIN if it is not. The registrar
+-- sends that mail; we were never told it existed, so neither was the customer.
+--
+-- arpi.site is the reason these columns exist. It was registered on 2026-08-31,
+-- the verification mail went to an inbox the customer does not read, and the
+-- domain sat unusable for nine hours until they happened to find it. Nothing in
+-- the panel mentioned that a verification was outstanding, because nothing in
+-- the panel knew.
+--
+-- `registrant_verified_at` is set when the registrar reports the address
+-- verified. `verification_deadline` is when the domain gets suspended if it is
+-- not — shown to the customer as a countdown, because "verify your email" with
+-- no deadline reads as optional.
+-- ---------------------------------------------------------------------------
+CALL vesopa_add_column('domains', 'registrant_email', "VARCHAR(190) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT ''");
+CALL vesopa_add_column('domains', 'registrant_verified_at', 'DATETIME NULL');
+CALL vesopa_add_column('domains', 'verification_deadline', 'DATETIME NULL');
+CALL vesopa_add_column('domains', 'contacts_verified', 'TINYINT(1) NOT NULL DEFAULT 0');
+CALL vesopa_add_column('domains', 'contacts_warning', "VARCHAR(300) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT ''");
+
+-- Once a plan has adopted a domain, that domain is the plan's identity: the
+-- docroot, the certificate and the mail domain on the node are all named after
+-- it. Changing it later renames none of those, so the panel refuses — see the
+-- note on the attach route. Recorded here so the refusal survives a restart.
+CALL vesopa_add_column('services', 'primary_domain_locked_at', 'DATETIME NULL');
+
+-- ---------------------------------------------------------------------------
+-- Notifications: the panel's own inbox.
+--
+-- Everything this system knows that a customer needs to act on used to be
+-- either a flash message (gone on the next click) or an email (gone into a
+-- spam folder). Neither survives long enough to be a to-do list, which is what
+-- "your domain needs verifying within 15 days" actually is.
+--
+-- `level` drives the colour, and the four are not decorative:
+--   error    something is broken and the customer is losing service now
+--   warn     something will break on a known date if ignored
+--   success  something they were waiting for has finished
+--   info     worth knowing, nothing to do
+--
+-- `fix_url` is what the "Fix this" button points at — the specific page that
+-- can resolve this exact problem, never a section index. A warning that cannot
+-- be acted on from the warning is a warning the customer has to go hunting to
+-- resolve, which is how arpi.site stayed broken.
+--
+-- `dedupe_key` is what stops the sweep writing the same warning every five
+-- minutes. One live row per key per customer; re-raising an existing key
+-- refreshes it in place rather than stacking.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS notifications (
+  id           INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  customer_id  INT UNSIGNED NOT NULL,
+  level        ENUM('info','success','warn','error')
+               CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'info',
+  -- Which part of the panel this belongs to, so the hosting page can show the
+  -- hosting warnings and the mail page the mail ones without inventing its own
+  -- rules about what is relevant.
+  area         ENUM('account','hosting','domain','email','billing')
+               CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'account',
+  title        VARCHAR(190) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  body         VARCHAR(600) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  fix_url      VARCHAR(300) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  fix_label    VARCHAR(60)  CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  dedupe_key   VARCHAR(120) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  -- A warning is RESOLVED by the condition going away, not by being read. Both
+  -- are tracked: read_at dims the bell, resolved_at removes it from the banner.
+  read_at      DATETIME NULL,
+  resolved_at  DATETIME NULL,
+  created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_notifications_dedupe (customer_id, dedupe_key),
+  KEY idx_notifications_open (customer_id, resolved_at, level),
+  CONSTRAINT fk_notifications_customer
+    FOREIGN KEY (customer_id) REFERENCES customers (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- ---------------------------------------------------------------------------
+-- Invoices.
+--
+-- An order is what was bought; an invoice is the document proving it, and it
+-- has to keep saying the same thing forever. So the customer's name and address
+-- are COPIED HERE at issue time rather than joined from `customers` — a
+-- customer who moves house must not retroactively change the address on a
+-- receipt they filed with their accountant two years ago.
+--
+-- `pdf_path` is relative to files/invoices. The PDF is generated once and kept;
+-- regenerating it from current data would defeat the point of copying the
+-- address in the first place.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS invoices (
+  id            INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  customer_id   INT UNSIGNED NOT NULL,
+  order_id      INT UNSIGNED NULL,
+  -- Human-facing and gap-free per year: VES-2026-00042.
+  number        VARCHAR(32)  CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  status        ENUM('paid','refunded','void')
+                CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'paid',
+  currency      CHAR(3)      CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'GBP',
+  subtotal      DECIMAL(10,2) NOT NULL DEFAULT 0,
+  discount      DECIMAL(10,2) NOT NULL DEFAULT 0,
+  tax           DECIMAL(10,2) NOT NULL DEFAULT 0,
+  total         DECIMAL(10,2) NOT NULL DEFAULT 0,
+  -- The billed party, frozen at issue time. May be the customer or a separate
+  -- billing contact given at checkout.
+  bill_name     VARCHAR(160) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  bill_company  VARCHAR(160) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  bill_email    VARCHAR(190) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  bill_address1 VARCHAR(160) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  bill_address2 VARCHAR(160) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  bill_city     VARCHAR(80)  CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  bill_postcode VARCHAR(24)  CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  bill_country  CHAR(2)      CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'GB',
+  -- Line items as JSON: description, qty, unit, total. `line_items`, not `lines`
+-- — LINES is a reserved word in MySQL 8 and the CREATE fails with a syntax
+-- error pointing at the line AFTER it, which is a memorable ten minutes.
+-- Frozen for the same
+  -- reason the address is — a plan renamed next year must not rewrite history.
+  line_items    LONGTEXT     CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL,
+  pdf_path      VARCHAR(300) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  issued_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_invoices_number (number),
+  KEY idx_invoices_customer (customer_id, issued_at),
+  KEY idx_invoices_order (order_id),
+  CONSTRAINT fk_invoices_customer
+    FOREIGN KEY (customer_id) REFERENCES customers (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- The billing contact given at checkout, when it differs from the customer.
+-- Defaulted to "same as the account" on the form, because for almost everybody
+-- it is, and a second address block presented as mandatory is a checkout people
+-- abandon.
+CALL vesopa_add_column('orders', 'bill_name', "VARCHAR(160) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT ''");
+CALL vesopa_add_column('orders', 'bill_company', "VARCHAR(160) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT ''");
+CALL vesopa_add_column('orders', 'bill_email', "VARCHAR(190) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT ''");
+CALL vesopa_add_column('orders', 'bill_address1', "VARCHAR(160) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT ''");
+CALL vesopa_add_column('orders', 'bill_address2', "VARCHAR(160) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT ''");
+CALL vesopa_add_column('orders', 'bill_city', "VARCHAR(80) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT ''");
+CALL vesopa_add_column('orders', 'bill_postcode', "VARCHAR(24) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT ''");
+CALL vesopa_add_column('orders', 'bill_country', "CHAR(2) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT ''");
+
 CALL vesopa_fix_collations();
 DROP PROCEDURE IF EXISTS vesopa_fix_collations;

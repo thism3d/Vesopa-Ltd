@@ -24,13 +24,60 @@
   <% } %>
 </div>
 
+<%#
+  Invoices, above orders.
+
+  They are not the same thing and the difference matters to the person reading
+  this page: an ORDER is what happened, an INVOICE is the document their
+  accountant wants. Until now this page had a table of orders and a caption
+  promising "your invoices will appear here", which they never did, because
+  there was nothing generating any.
+%>
+<div class="p-card p-card-flush">
+  <div class="p-card-head">
+    <h2>Invoices</h2>
+    <span class="muted small">PDFs, ready to forward</span>
+  </div>
+  <% if (!invoices.length) { %>
+    <div class="p-card-body">
+      <p class="muted small mb-0">
+        Nothing yet. An invoice is issued automatically the moment a payment
+        goes through, and emailed to you with the PDF attached.
+      </p>
+    </div>
+  <% } else { %>
+    <div class="table-wrap">
+      <table class="table">
+        <thead>
+          <tr><th>Invoice</th><th>Date</th><th>Billed to</th><th class="num">Total</th><th></th></tr>
+        </thead>
+        <tbody>
+          <% invoices.forEach(function (inv) { %>
+            <tr>
+              <td class="strong mono"><%= inv.number %></td>
+              <td><%= new Date(inv.issued_at).toLocaleDateString('en-GB') %></td>
+              <td><%= inv.bill_company || inv.bill_name || '—' %></td>
+              <td class="num strong"><%= inv.currency %> <%= Number(inv.total).toFixed(2) %></td>
+              <td class="num">
+                <a class="btn btn-ghost btn-sm" href="/panel/invoices/<%= inv.id %>.pdf" target="_blank" rel="noopener">
+                  <%- icon('download', 15) %> PDF
+                </a>
+              </td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+  <% } %>
+</div>
+
 <div class="p-card p-card-flush">
   <div class="p-card-head"><h2>Orders</h2></div>
   <% if (!orders.length) { %>
     <div class="empty">
       <%- icon('card', 46) %>
       <h3>No orders yet</h3>
-      <p>Your invoices will appear here.</p>
+      <p>Anything you buy will be listed here.</p>
     </div>
   <% } else { %>
     <div class="table-wrap">

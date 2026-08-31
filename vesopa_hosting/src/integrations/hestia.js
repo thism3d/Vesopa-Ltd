@@ -763,6 +763,60 @@ async function webDomainSsl({ username, domain }) {
     : { ssl: false, letsencrypt: false, missing: true };
 }
 
+/**
+ * The certificate's own validity window, read off the installed certificate.
+ *
+ * WHY "does it have SSL" IS NOT ENOUGH
+ * ------------------------------------
+ * `webDomainSsl` answers Hestia's SSL flag, which stays `yes` for a certificate
+ * that expired months ago — the flag records that a certificate is installed,
+ * not that it is any good. Deciding whether to offer a customer the "issue a
+ * certificate" button on that flag alone gets it wrong in both directions: it
+ * hides the button from the person whose certificate lapsed on Tuesday and is
+ * staring at a browser warning, and offers it to the person whose certificate
+ * is fine, who then burns a Let's Encrypt rate-limit slot re-issuing it.
+ *
+ * `v-list-web-domain-ssl` returns the parsed certificate, `NOT_AFTER` included.
+ * That is the only field that answers "is this certificate valid right now".
+ *
+ * Returns `{ ok, expires_at, days_left, valid, self_signed }`. A node we cannot
+ * reach returns `{ ok: false }` and the caller keeps whatever it already knew —
+ * never "expired", which would send everybody to the reissue button at once.
+ */
+async function webDomainCert({ username, domain }) {
+  if (!isLive()) {
+    const far = new Date(Date.now() + 60 * 864e5);
+    return { ok: true, mock: true, expires_at: far, days_left: 60, valid: true, self_signed: false };
+  }
+  let data;
+  try {
+    data = await run('v-list-web-domain-ssl', [username, domain], { json: true });
+  } catch (err) {
+    if (err.code === E_NOT_EXIST) return { ok: true, expires_at: null, days_left: null, valid: false };
+    return { ok: false, error: err.message };
+  }
+
+  // Keyed by domain on some builds and returned bare on others.
+  const rec = data?.[domain] || data?.[Object.keys(data || {})[0]] || data || {};
+  const notAfter = rec.NOT_AFTER || rec.not_after || rec.CRT_NOT_AFTER || '';
+  const subject = String(rec.SUBJECT || rec.ISSUER || '');
+  if (!notAfter) return { ok: true, expires_at: null, days_left: null, valid: false };
+
+  const expires = new Date(notAfter);
+  if (Number.isNaN(expires.getTime())) return { ok: true, expires_at: null, days_left: null, valid: false };
+
+  const daysLeft = Math.floor((expires.getTime() - Date.now()) / 864e5);
+  return {
+    ok: true,
+    expires_at: expires,
+    days_left: daysLeft,
+    valid: daysLeft > 0,
+    // Hestia installs a self-signed placeholder when Let's Encrypt has never
+    // succeeded. It is a certificate, and it is not one any browser accepts.
+    self_signed: /self[- ]?signed|localhost/i.test(subject),
+  };
+}
+
 async function forceHttps({ username, domain }) {
   await run('v-add-web-domain-ssl-force', [username, domain]);
   return { ok: true };
@@ -1295,6 +1349,7 @@ module.exports = {
   clearRedirect,
   rebuildWebDomain,
   webDomainSsl,
+  webDomainCert,
   forceHttps,
   addDatabase,
   listDatabases,

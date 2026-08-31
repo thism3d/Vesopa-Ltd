@@ -14,6 +14,7 @@
 <%- include('../partials/panel-shell', {
   pageTitle: service.primary_domain || service.plan_name,
   pageSub: service.plan_name + ' plan',
+  warnArea: 'hosting',
 }) %>
 
 <%- include('../partials/service-tabs', { tab: 'overview' }) %>

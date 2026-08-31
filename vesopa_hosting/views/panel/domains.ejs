@@ -27,6 +27,8 @@
     ? (groups.needsYou.length === 1 ? 'One needs something from you.' : groups.needsYou.length + ' need something from you.')
     : 'Registered with us, or pointed here from elsewhere.',
   topAction: { href: '/panel/domains/add', label: 'Add a domain', icon: 'plus' },
+  // Only this section's own warnings here — the full set lives on the overview.
+  warnArea: 'domain',
 }) %>
 
 <%

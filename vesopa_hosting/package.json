@@ -1,14 +1,15 @@
 {
   "name": "vesopa_hosting",
   "version": "1.0.0",
-  "description": "hosting.vesopaepos.com — domain registration, shared hosting and the customer control panel",
+  "description": "hosting.vesopaepos.com \u2014 domain registration, shared hosting and the customer control panel",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "seed:admin": "node scripts/seed-admin.js",
     "preflight": "node scripts/preflight.js",
-    "check:apps": "node scripts/check-apps.js"
+    "check:apps": "node scripts/check-apps.js",
+    "fix:contacts": "node scripts/fix-domain-contacts.js"
   },
   "author": "Vesopa EPOS Ltd",
   "license": "UNLICENSED",

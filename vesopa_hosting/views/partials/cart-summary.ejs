@@ -66,25 +66,52 @@
   <% } %>
 </p>
 
-<%# --- Coupon ---------------------------------------------------------- %>
+<%# --- Coupon -------------------------------------------------------------
+    THIS WAS BEING MISSED BY EVERYONE, INCLUDING US.
+
+    It used to be a bare <details> whose summary was an 0.88rem line of lime
+    text with a "+" in front of it, sitting between the total and the payment
+    button — the one strip of a checkout page that the eye crosses on its way
+    to the button it is aiming for. It read as a footnote, so it was treated
+    as one, and customers with a working code paid full price.
+
+    So it is now a panel: its own tinted card, a bordered edge, a tag icon and
+    a real button rather than a text link. It looks like a thing you can use,
+    which is the entire requirement.
+
+    It stays collapsed by default. An open input on a checkout is its own
+    problem — an empty box labelled "discount code" invites people to leave and
+    go looking for one — but collapsed is not the same as hidden, and the
+    difference is whether the closed state is visibly a control.
+%>
 <div class="cart-coupon">
   <% if (couponCode) { %>
-    <form method="post" action="/cart/coupon/remove" class="row-between" style="gap:10px" data-cart-form>
+    <%# Applied. Loud and green, because the saving it produced is the reason
+        somebody would check this area at all. %>
+    <form method="post" action="/cart/coupon/remove" class="coupon-applied" data-cart-form>
       <input type="hidden" name="_csrf" value="<%= csrf %>">
-      <span class="chip chip-lime"><%- icon('check', 14) %> <%= couponCode %> applied</span>
-      <button class="btn-link" type="submit">Remove</button>
+      <span class="coupon-applied-ico"><%- icon('check', 16) %></span>
+      <span class="coupon-applied-txt">
+        <b><%= couponCode %></b>
+        <span><% if (couponDiscount_pence > 0) { %>You saved <%= money(couponDiscount_pence) %><% } else { %>Discount applied<% } %></span>
+      </span>
+      <button class="coupon-remove" type="submit" aria-label="Remove discount code <%= couponCode %>">Remove</button>
     </form>
   <% } else { %>
-    <details<%= couponError ? ' open' : '' %>>
-      <summary>Have a discount code?</summary>
-      <form method="post" action="/cart/coupon" class="row mt-2" style="gap:8px;flex-wrap:nowrap" data-cart-form>
+    <details class="coupon-box"<%= couponError ? ' open' : '' %>>
+      <summary class="coupon-toggle">
+        <span class="coupon-toggle-ico"><%- icon('tag', 17) %></span>
+        <span class="coupon-toggle-txt">Have a discount code?</span>
+        <span class="coupon-toggle-cta">Enter code</span>
+      </summary>
+      <form method="post" action="/cart/coupon" class="coupon-form" data-cart-form>
         <input type="hidden" name="_csrf" value="<%= csrf %>">
-        <input class="input" name="code" placeholder="Enter code"
-               autocomplete="off" spellcheck="false"
-               style="text-transform:uppercase" aria-label="Discount code">
-        <button class="btn btn-ghost btn-sm" type="submit" style="flex:none">Apply</button>
+        <input class="input coupon-input" name="code" placeholder="e.g. WELCOME10"
+               autocomplete="off" spellcheck="false" autocapitalize="characters"
+               aria-label="Discount code">
+        <button class="btn coupon-apply" type="submit">Apply</button>
       </form>
-      <% if (couponError) { %><p class="error-text mb-0"><%= couponError %></p><% } %>
+      <% if (couponError) { %><p class="error-text mb-0 mt-2"><%= couponError %></p><% } %>
     </details>
   <% } %>
 </div>

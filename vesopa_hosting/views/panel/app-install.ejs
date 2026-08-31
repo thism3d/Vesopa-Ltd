@@ -38,7 +38,7 @@
 
       <div class="field mb-3">
         <label class="label" for="domain">Website</label>
-        <select class="input" id="domain" name="domain" required>
+        <select class="input select" id="domain" name="domain" required>
           <% sites.forEach(function (s, i) { %>
             <option value="<%= s.domain %>" <%= i === 0 ? 'selected' : '' %>><%= s.domain %></option>
           <% }); %>
@@ -48,7 +48,7 @@
       <% if (app.kind === 'php') { %>
         <div class="field mb-3">
           <label class="label" for="php">PHP version</label>
-          <select class="input" id="php" name="php">
+          <select class="input select" id="php" name="php">
             <% (runtimes.php || []).forEach(function (p) { %>
               <option value="<%= p.version %>" <%= p.recommended ? 'selected' : '' %>>
                 PHP <%= p.version %><%= p.recommended ? ' — recommended' : '' %><%= p.eol ? ' — no longer supported upstream' : '' %>
@@ -65,7 +65,7 @@
       <% if (app.kind === 'node') { %>
         <div class="field mb-3">
           <label class="label" for="node">Node version</label>
-          <select class="input" id="node" name="node">
+          <select class="input select" id="node" name="node">
             <% (runtimes.node || []).forEach(function (n) { %>
               <option value="<%= n.major %>" <%= (app.needs.node === n.major || (app.needs.node === 'default' && n.recommended)) ? 'selected' : '' %>>
                 Node <%= n.major %><%= n.version ? ' (' + n.version + ')' : '' %><%= n.lts ? ' — long-term support' : '' %>

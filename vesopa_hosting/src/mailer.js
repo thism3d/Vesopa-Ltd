@@ -161,7 +161,13 @@ function detailTable(rows) {
   </table>`;
 }
 
-async function sendMail({ to, subject, html, replyTo, text }) {
+/**
+ * @param {object[]} [attachments] Passed straight to nodemailer — `{ filename,
+ *   path, contentType }` is the shape used here. Added for invoices: a PDF
+ *   somebody can forward to their accountant is worth more than a link into a
+ *   panel the accountant cannot sign in to.
+ */
+async function sendMail({ to, subject, html, replyTo, text, attachments }) {
   const tx = getTransport();
   if (!tx) {
     console.warn(`[mail] SMTP not configured — skipped "${subject}" to ${to || DEFAULT_TO}`);
@@ -175,6 +181,9 @@ async function sendMail({ to, subject, html, replyTo, text }) {
       html,
       text: text || undefined,
       replyTo: replyTo || undefined,
+      // Omitted rather than passed empty: nodemailer treats [] as "build a
+      // multipart body with no parts", which some servers reject.
+      attachments: (attachments && attachments.length) ? attachments : undefined,
     });
     return true;
   } catch (err) {

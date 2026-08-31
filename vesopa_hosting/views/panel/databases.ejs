@@ -196,7 +196,7 @@
           </div>
 
           <label class="label" for="db-type">Type</label>
-          <select class="input mb-2" id="db-type" name="type">
+          <select class="input select mb-2" id="db-type" name="type">
             <% Object.keys(engines).forEach(function (key) { %>
               <option value="<%= key %>"><%= engines[key].label %></option>
             <% }); %>

@@ -13,6 +13,36 @@
 
 /* ---- Tokens ------------------------------------------------------------ */
 :root {
+  /* ---------------------------------------------------------------------
+     DECLARE THE SCHEME, OR SAFARI PICKS ONE FOR YOU.
+     ---------------------------------------------------------------------
+     This site is a light design: every surface is an explicit white or an
+     off-white, and every ink is chosen against those. Without this line iOS
+     and iPadOS in Dark Mode apply their OWN adjustments to form controls, and
+     the author's colours are only half replaced.
+
+     Two reported bugs were the same instance of this:
+
+       The cart's remove button vanished on iPad. `.icon-btn` sets
+       `background: #fff` and lets the icon inherit `color`; Safari's dark
+       treatment recoloured the inherited ink to WHITE and left the explicit
+       white background alone. A white icon on a white button is not a subtle
+       contrast problem — there is no button on the screen at all.
+
+       The country picker ignored our styling and rendered as an iPad control.
+
+     `color-scheme: light` tells the engine the page has already made this
+     decision and to leave the controls alone. It is one line, and it is the
+     difference between our design rendering and Safari's guess at it.
+     --------------------------------------------------------------------- */
+  color-scheme: light;
+
+  /* Lets `block-size: auto` be a transition endpoint, which is what makes a
+     <details> panel able to animate to its own natural height instead of a
+     hardcoded one. Ignored by engines that do not support it; the fold's
+     keyframe fallback covers those. See `.fold` in panel.css. */
+  interpolate-size: allow-keywords;
+
   --lime: #a5c715;
   --lime-ink: #6e8a0e;   /* brand text on white — 4.6:1 */
   --lime-deep: #2f3b05;  /* headings, brand text on a lime wash — 12:1 */
@@ -342,15 +372,40 @@ ul, ol { margin: 0 0 1em; padding-left: 1.15em; }
 }
 
 /* ---- Forms ------------------------------------------------------------- */
-.field { margin-bottom: 17px; }
+.field { margin-bottom: 14px; }
 .label {
-  display: block; margin-bottom: 6px;
-  font-size: .84rem; font-weight: 700; color: var(--ink-2);
+  display: block; margin-bottom: 5px;
+  font-size: .82rem; font-weight: 700; color: var(--ink-2);
 }
+
+/* Form controls.
+   ---------------------------------------------------------------------------
+   THESE WERE TOO TALL. `padding: 12px 14px` on top of the inherited body
+   line-height of 1.6 built a 53px box for a single line of text. On the
+   checkout, which is eleven fields, that is a form you scroll rather than read
+   — and "big" reads as "important", so every field shouted equally and none of
+   them guided anybody.
+
+   44px is the target: Apple's minimum touch height exactly, and the size every
+   other checkout in the world uses. It is reached by tightening the
+   line-height, which was the actual culprit, rather than by shrinking the text.
+
+   THE FONT SIZE STAYS AT 1rem/16px, and that is not a style choice. Mobile
+   Safari ZOOMS THE WHOLE PAGE when a focused input's text is under 16px, and
+   it does not zoom back out on blur. A 15px input is how a checkout ends up
+   panned sideways with the pay button off screen — which is a far worse
+   problem than a field being two pixels taller than one would like.
+
+   `-webkit-appearance` alongside `appearance` for the same reason `color-scheme`
+   exists at the top of this file: iOS applies its own control chrome to
+   anything it has not been told to leave alone.
+   ------------------------------------------------------------------------ */
 .input, .select, .textarea {
-  width: 100%; padding: 12px 14px;
+  -webkit-appearance: none; appearance: none;
+  width: 100%; padding: 10px 13px;
+  font-size: 1rem; line-height: 1.35;
   border: 1.5px solid var(--rule); border-radius: var(--radius-sm);
-  background: #fff; color: var(--ink);
+  background-color: #fff; color: var(--ink);
   transition: border-color .18s var(--ease), box-shadow .18s var(--ease);
 }
 .input:focus, .select:focus, .textarea:focus {
@@ -358,12 +413,24 @@ ul, ol { margin: 0 0 1em; padding-left: 1.15em; }
 }
 .input::placeholder { color: #a9ab9e; }
 .textarea { min-height: 130px; resize: vertical; }
+/* The picker.
+   `appearance: none` is set on the shared rule above, which is what stops
+   iPadOS drawing its own control and ignoring every border, radius and colour
+   declared here — the "country picker takes its own style on iPad" report.
+   The chevron is ours, drawn as a background image, because removing the
+   platform control also removes the platform arrow. */
 .select {
-  appearance: none;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23787a6e' stroke-width='2' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
-  background-repeat: no-repeat; background-position: right 14px center;
-  padding-right: 38px;
+  background-repeat: no-repeat; background-position: right 13px center;
+  padding-right: 36px;
+  /* Safari centres the text of a native select differently once appearance is
+     removed; this keeps it on the same baseline as a text input beside it. */
+  text-overflow: ellipsis;
 }
+/* An <option> is drawn by the OS, not by us. Naming the colours explicitly is
+   the only way to stop a dark-mode iPad rendering the open list as white text
+   on a white sheet. */
+.select option { color: var(--ink); background-color: #fff; }
 .hint { margin: 5px 0 0; font-size: .8rem; color: var(--ink-3); }
 .field-error .input, .field-error .select, .field-error .textarea { border-color: var(--red); }
 .error-text { margin: 5px 0 0; font-size: .8rem; color: #a82a19; font-weight: 600; }

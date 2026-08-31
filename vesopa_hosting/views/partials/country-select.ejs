@@ -21,7 +21,18 @@
   const csCommon = csList.filter((c) => c.group === 'common');
   const csAll = csList.filter((c) => c.group === 'all');
 %>
-<select class="input" id="<%= csId %>" name="<%= csName %>" autocomplete="country">
+<%# `input select`, not `input` alone.
+
+    This carried only `.input`, so none of the `.select` rules ever reached it:
+    no `appearance: none`, and therefore no escape from the platform's own
+    control chrome. On iPadOS that is the whole of the "the country picker
+    ignores your styling and looks like an iPad control" report — the picker
+    was never actually styled as a select, on any platform. It merely looked
+    close enough on a Mac to pass.
+
+    It also means the custom chevron was never drawn, which is why this one
+    field had no arrow while every other select on the site did. %>
+<select class="input select" id="<%= csId %>" name="<%= csName %>" autocomplete="country">
   <optgroup label="Common">
     <% csCommon.forEach(function (c) { %>
       <option value="<%= c.code %>" <%= c.code === csSel ? 'selected' : '' %>><%= c.name %></option>

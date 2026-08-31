@@ -37,7 +37,32 @@ const auth = require('./auth');
 const linking = require('./domain-linking');
 const nameservers = require('./nameservers');
 const { sendMail, shell, detailTable, escapeHtml } = require('./mailer');
+const notify = require('./notifications');
 const { SITE_URL, NAMESERVERS } = require('./config');
+
+/**
+ * How long ICANN gives a registrant to confirm their email address before the
+ * registry suspends the domain. 15 days under the 2013 RAA.
+ */
+const RAA_VERIFY_DAYS = 15;
+
+/**
+ * ccTLDs that run their own policy and do NOT carry the RAA verification
+ * obligation. Nominet (.uk) validates registrant data its own way and sends no
+ * confirmation link; a countdown on a .co.uk would be a warning about something
+ * that is never going to happen, and warnings that never come true are how
+ * customers learn to ignore the ones that do.
+ *
+ * The list is deliberately conservative — an unlisted TLD is treated as needing
+ * verification, so the failure mode is telling somebody to check an email that
+ * turns out not to have been sent, rather than staying silent while a domain is
+ * suspended.
+ */
+const CCTLDS_WITHOUT_RAA = new Set([
+  'uk', 'co.uk', 'org.uk', 'me.uk', 'ltd.uk', 'plc.uk', 'net.uk', 'sch.uk', 'ac.uk',
+  'de', 'nl', 'fr', 'be', 'it', 'es', 'eu', 'ch', 'at', 'dk', 'se', 'no', 'fi',
+  'au', 'com.au', 'net.au', 'org.au', 'nz', 'co.nz', 'ca', 'jp', 'co.jp',
+]);
 
 /** The order states that mean the money is in. */
 const PAID_STATES = ['paid', 'provisioning', 'active'];
@@ -570,13 +595,82 @@ async function provisionDomain(domainRow, customer) {
     privacy: Boolean(domainRow.privacy),
   });
 
+  /*
+   * ICANN's registrant verification, written down at the moment we learn a
+   * domain exists.
+   *
+   * Every gTLD registration starts a 15-day clock: the registrant's email must
+   * be confirmed or THE REGISTRY SUSPENDS THE DOMAIN. The registrar sends that
+   * mail, not us, and until now nothing on our side knew the obligation
+   * existed — so nothing told the customer, and nothing could.
+   *
+   * arpi.site is why this is here. It was registered, the verification mail
+   * went to an inbox nobody was watching, and the domain sat unusable for nine
+   * hours while its owner tried to work out what was wrong. Every screen we
+   * showed them said the domain was active, because as far as we knew it was.
+   *
+   * A ccTLD like .uk has no such requirement, so the deadline is only set for
+   * TLDs that actually carry one — a countdown on a .co.uk would be a warning
+   * for something that is never going to happen, which is how customers learn
+   * to ignore the ones that matter.
+   */
+  const { tld } = registrar.splitDomain(domainRow.domain);
+  const needsVerification = !CCTLDS_WITHOUT_RAA.has(String(tld || '').toLowerCase());
+  const deadline = needsVerification
+    ? new Date(Date.now() + RAA_VERIFY_DAYS * 864e5).toISOString().slice(0, 19).replace('T', ' ')
+    : null;
+
   await db.query(
     `UPDATE domains
         SET status = 'active', registered_at = CURDATE(), expires_at = ?,
-            registrar_ref = ?, ns1 = ?, ns2 = ?
+            registrar_ref = ?, ns1 = ?, ns2 = ?,
+            registrant_email = ?, verification_deadline = ?,
+            contacts_verified = ?, contacts_warning = ?
       WHERE id = ?`,
-    [result.expires_at || null, result.registrar_ref || '', NAMESERVERS[0], NAMESERVERS[1], domainRow.id],
+    [
+      result.expires_at || null, result.registrar_ref || '', NAMESERVERS[0], NAMESERVERS[1],
+      customer.email || '', deadline,
+      result.contacts_verified ? 1 : 0,
+      String(result.contacts_warning || '').slice(0, 300),
+      domainRow.id,
+    ],
   );
+
+  /*
+   * Tell the customer, in the panel, that a verification is outstanding — and
+   * do it here rather than leaving it to the banner, because this one also
+   * needs to be in the inbox as a dated record of when the clock started.
+   */
+  if (needsVerification) {
+    await notify.raise({
+      customerId: customer.id,
+      level: 'warn',
+      area: 'domain',
+      title: `Verify your email to keep ${domainRow.domain}`,
+      body: `The registry requires you to confirm ${customer.email} within ${RAA_VERIFY_DAYS} days or `
+        + `${domainRow.domain} will be suspended. The confirmation email comes from the registrar, not `
+        + 'from us, and it is easy to mistake for spam — check your junk folder if it is not in your inbox.',
+      fixUrl: `/panel/domains/${domainRow.id}#verification`,
+      fixLabel: 'What do I need to do?',
+      dedupeKey: `domain:${domainRow.id}:registrant_verification`,
+    });
+  }
+
+  // The registrar put somebody else's details on the name and could not be
+  // talked out of it. That is a registrant-of-record problem, so it is an
+  // error rather than a note.
+  if (result.contacts_warning) {
+    await notify.raise({
+      customerId: customer.id,
+      level: 'error',
+      area: 'domain',
+      title: `${domainRow.domain} is registered to the wrong contact`,
+      body: result.contacts_warning,
+      fixUrl: `/panel/domains/${domainRow.id}#contacts`,
+      fixLabel: 'Get this fixed',
+      dedupeKey: `domain:${domainRow.id}:contacts`,
+    });
+  }
 
   /*
    * The registry has our nameservers, but the world does not know it yet —
@@ -627,13 +721,51 @@ async function provisionOrder(orderId, { actorType = 'admin', actorId = null, ip
    * nowhere. Labels are written for someone who has just paid, not for an
    * engineer reading a log.
    */
+  /*
+   * THE DOMAIN IS REGISTERED FIRST, BEFORE THE HOSTING ACCOUNT.
+   *
+   * It used to be the other way round, and the ordering is not cosmetic — it
+   * decides what the customer is looking at when something goes wrong.
+   *
+   * Registration is the only step here that can fail in a way nothing can undo
+   * and nothing can retry: the registry may refuse the name, the reseller
+   * balance may be short, the contact may be rejected. Hosting is the opposite
+   * — an account on our own node, which we can create, delete and recreate all
+   * day. Doing the recoverable thing first meant the customer watched "your
+   * hosting is ready" tick green and then found out the name they actually came
+   * for was never bought, on a screen that had already told them it succeeded.
+   *
+   * Registering first also means the hosting account is created when the domain
+   * it is for is known to exist, so `primary_domain` can be adopted immediately
+   * instead of the plan sitting empty waiting for a name that may never arrive.
+   */
   await planSteps(orderId, [
-    ...services.map((s) => ({ key: `service-${s.id}`, label: 'Creating your hosting account' })),
     ...domains.map((d) => ({ key: `domain-${d.id}`, label: `Registering ${d.domain}` })),
+    ...services.map((s) => ({ key: `service-${s.id}`, label: 'Creating your hosting account' })),
     ...emails.map((e) => ({ key: `email-${e.id}`, label: 'Setting up your mailboxes' })),
     ...services.map((s) => ({ key: `ssl-${s.id}`, label: 'Issuing your SSL certificate' })),
     { key: 'finish', label: 'Finishing up' },
   ]);
+
+  for (const domainRow of domains) {
+    const key = `domain-${domainRow.id}`;
+    const t0 = Date.now();
+    await stepStart(orderId, key);
+    try {
+      const r = await provisionDomain(domainRow, customer);
+      outcome.domains.push({ id: domainRow.id, domain: domainRow.domain, ...r });
+      await atLeast(MIN_STEP_MS, t0);
+      await stepEnd(orderId, key, r.skipped ? 'skipped' : 'ok',
+        r.skipped ? r.reason : `${domainRow.domain} is yours`);
+    } catch (err) {
+      outcome.domains.push({ id: domainRow.id, domain: domainRow.domain, ok: false, error: err.message });
+      await stepEnd(orderId, key, 'failed', err.message);
+      await db.logActivity({
+        actorType, actorId, action: 'domain.register_failed',
+        target: domainRow.domain, detail: err.message, ok: false, ip,
+      });
+    }
+  }
 
   for (const service of services) {
     const key = `service-${service.id}`;
@@ -667,26 +799,6 @@ async function provisionOrder(orderId, { actorType = 'admin', actorId = null, ip
       await db.logActivity({
         actorType, actorId, action: 'service.provision_failed',
         target: service.primary_domain || `service#${service.id}`, detail: err.message, ok: false, ip,
-      });
-    }
-  }
-
-  for (const domainRow of domains) {
-    const key = `domain-${domainRow.id}`;
-    const t0 = Date.now();
-    await stepStart(orderId, key);
-    try {
-      const r = await provisionDomain(domainRow, customer);
-      outcome.domains.push({ id: domainRow.id, domain: domainRow.domain, ...r });
-      await atLeast(MIN_STEP_MS, t0);
-      await stepEnd(orderId, key, r.skipped ? 'skipped' : 'ok',
-        r.skipped ? r.reason : `${domainRow.domain} is yours`);
-    } catch (err) {
-      outcome.domains.push({ id: domainRow.id, domain: domainRow.domain, ok: false, error: err.message });
-      await stepEnd(orderId, key, 'failed', err.message);
-      await db.logActivity({
-        actorType, actorId, action: 'domain.register_failed',
-        target: domainRow.domain, detail: err.message, ok: false, ip,
       });
     }
   }

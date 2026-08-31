@@ -101,6 +101,74 @@
               }) %>
             </div>
           </div>
+
+          <%#
+            Who the invoice is made out to.
+
+            DEFAULTED TO "the same", and collapsed, because for almost everybody
+            it is the same — and a second address block presented open and
+            mandatory is six more fields on a checkout, which is a checkout
+            people leave. The customers who need it are the ones buying through
+            an accountant or a parent company, and they are looking for exactly
+            this checkbox.
+
+            Unchecking it reveals the block. That is a `:has()` rule in cart.css
+            with a `hidden` fallback driven by the tiny script at the foot of
+            this page, so it works without JavaScript as well.
+          %>
+          <div class="biller">
+            <label class="check biller-same">
+              <input type="checkbox" name="bill_same" value="1" <%= values.bill_same === '0' ? '' : 'checked' %>>
+              <span class="small">
+                <b>Invoice to the same name and address</b>
+                <span class="muted">Uncheck if the invoice should be made out to someone else — a company or an accountant.</span>
+              </span>
+            </label>
+
+            <div class="biller-fields" <%= values.bill_same === '0' ? '' : 'hidden' %>>
+              <div class="grid grid-2" style="gap:0 16px">
+                <div class="field">
+                  <label class="label" for="bill_name">Billed to</label>
+                  <input class="input" id="bill_name" name="bill_name" autocomplete="off" value="<%= values.bill_name || '' %>">
+                </div>
+                <div class="field">
+                  <label class="label" for="bill_company">Company <span class="muted">(optional)</span></label>
+                  <input class="input" id="bill_company" name="bill_company" autocomplete="off" value="<%= values.bill_company || '' %>">
+                </div>
+              </div>
+              <div class="field">
+                <label class="label" for="bill_email">Send the invoice to</label>
+                <input class="input" id="bill_email" name="bill_email" type="email" autocomplete="off" value="<%= values.bill_email || '' %>">
+                <p class="hint">A copy of the invoice PDF goes to this address as well as to you.</p>
+              </div>
+              <div class="field">
+                <label class="label" for="bill_address1">Address</label>
+                <input class="input" id="bill_address1" name="bill_address1" autocomplete="off" value="<%= values.bill_address1 || '' %>">
+              </div>
+              <div class="field">
+                <input class="input" name="bill_address2" autocomplete="off" placeholder="Address line 2 (optional)" value="<%= values.bill_address2 || '' %>">
+              </div>
+              <div class="grid grid-3" style="gap:0 16px">
+                <div class="field">
+                  <label class="label" for="bill_city">Town or city</label>
+                  <input class="input" id="bill_city" name="bill_city" autocomplete="off" value="<%= values.bill_city || '' %>">
+                </div>
+                <div class="field">
+                  <label class="label" for="bill_postcode">Postcode</label>
+                  <input class="input" id="bill_postcode" name="bill_postcode" autocomplete="off" value="<%= values.bill_postcode || '' %>">
+                </div>
+                <div class="field">
+                  <label class="label" for="bill_country">Country</label>
+                  <%- include('../partials/country-select', {
+                    id: 'bill_country',
+                    name: 'bill_country',
+                    selected: countries.pick(values.bill_country, typeof geoCountry !== 'undefined' ? geoCountry : ''),
+                    geo: '',
+                  }) %>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div class="card mt-3">
@@ -195,6 +263,51 @@
               </div>
             </div>
           <% } %>
+
+          <%#
+            The discount code, ON THE PAY SCREEN.
+
+            It only existed on the basket, and it was easy to miss there too —
+            so somebody who found their code after moving on had to go back a
+            step to use it, and the ones who never found it paid full price.
+            The last screen before money moves is exactly where a person
+            remembers they have a code.
+
+            It is deliberately NOT a nested <form>: HTML does not allow one, and
+            a second form here would break the checkout submit entirely. It
+            posts to the same /cart/coupon endpoint with a `formaction`, which
+            redirects straight back to this page with the code applied.
+          %>
+          <div class="checkout-coupon">
+            <% if (couponCode) { %>
+              <div class="coupon-applied">
+                <span class="coupon-applied-ico"><%- icon('check', 16) %></span>
+                <span class="coupon-applied-txt">
+                  <b><%= couponCode %></b>
+                  <span><% if (couponDiscount_pence > 0) { %>You saved <%= money(couponDiscount_pence) %> on this order<% } else { %>Discount applied<% } %></span>
+                </span>
+                <button class="coupon-remove" type="submit" formaction="/cart/coupon/remove" formnovalidate
+                        aria-label="Remove discount code <%= couponCode %>">Remove</button>
+              </div>
+            <% } else { %>
+              <details class="coupon-box"<%= typeof couponError !== 'undefined' && couponError ? ' open' : '' %>>
+                <summary class="coupon-toggle">
+                  <span class="coupon-toggle-ico"><%- icon('tag', 17) %></span>
+                  <span class="coupon-toggle-txt">Have a discount code?</span>
+                  <span class="coupon-toggle-cta">Enter code</span>
+                </summary>
+                <div class="coupon-form">
+                  <input class="input coupon-input" name="code" placeholder="e.g. WELCOME10"
+                         autocomplete="off" spellcheck="false" autocapitalize="characters"
+                         aria-label="Discount code">
+                  <button class="btn coupon-apply" type="submit" formaction="/cart/coupon" formnovalidate>Apply</button>
+                </div>
+                <% if (typeof couponError !== 'undefined' && couponError) { %>
+                  <p class="error-text mb-0 mt-2" style="padding:0 14px 12px"><%= couponError %></p>
+                <% } %>
+              </details>
+            <% } %>
+          </div>
 
           <label class="check mb-3">
             <input type="checkbox" name="agree" required>
@@ -297,5 +410,28 @@
 </main>
 
 <style>@media (max-width: 900px) { main .grid[style*="1.5fr"] { grid-template-columns: 1fr !important; } }</style>
+
+<script>
+  /*
+   * The billing block's reveal is CSS (`:has()` in cart.css). This script only
+   * drops the `hidden` attribute that ships in the markup, which exists so the
+   * block starts closed on an engine WITHOUT `:has()` — there, leaving `hidden`
+   * on would give it no way to ever open.
+   *
+   * So: engines with `:has()` get a working toggle either way. Engines without
+   * get a permanently visible block, which is usable. Nobody gets a block they
+   * cannot open.
+   */
+  (function () {
+    var box = document.querySelector('.biller-same input');
+    var fields = document.querySelector('.biller-fields');
+    if (!box || !fields) return;
+    var hasSupport = CSS.supports && CSS.supports('selector(:has(*))');
+    if (hasSupport) { fields.hidden = false; return; }
+    var sync = function () { fields.hidden = box.checked; };
+    box.addEventListener('change', sync);
+    sync();
+  }());
+</script>
 
 <%- include('../partials/footer') %>

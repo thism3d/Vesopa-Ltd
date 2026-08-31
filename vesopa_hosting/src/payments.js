@@ -20,6 +20,8 @@ const crypto = require('crypto');
 const db = require('./db');
 const currency = require('./currency');
 const provisioning = require('./provisioning');
+const invoices = require('./invoices');
+const { sendMail, shell, detailTable, escapeHtml } = require('./mailer');
 const { SITE_URL, PAYMENT_SESSION_MINUTES } = require('./config');
 const sslcommerz = require('./integrations/sslcommerz');
 const stripe = require('./integrations/stripe');
@@ -498,6 +500,27 @@ async function settle(gatewayRef, payload = {}, { methodDetail = '' } = {}) {
     actorId: order.customer_id,
   });
 
+  /*
+   * The invoice, and the emails that carry it.
+   *
+   * ISSUED HERE because this is the one place a payment becomes real, and it is
+   * behind the same affectedRows guard as everything above — so a gateway that
+   * delivers its IPN twice, or an IPN racing the browser return, still produces
+   * exactly one invoice. `forOrder` is idempotent as well, which is belt to
+   * that brace.
+   *
+   * WRAPPED, because a failed invoice must never fail a settled payment. The
+   * money has moved and the account is built; a missing PDF is a thing support
+   * can regenerate in one click, whereas throwing here would leave the payment
+   * marked paid and the order never activated.
+   */
+  try {
+    const invoice = await invoices.forOrder(order.id);
+    await sendInvoiceEmails(invoice, order);
+  } catch (err) {
+    console.error(`[payments] ${order.reference}: invoicing failed —`, err.message);
+  }
+
   return {
     ok: true,
     already: false,
@@ -506,6 +529,74 @@ async function settle(gatewayRef, payload = {}, { methodDetail = '' } = {}) {
     payment,
     waiting: Boolean(activated.waiting),
   };
+}
+
+/**
+ * Email the invoice to the customer and, when it differs, to the billing
+ * contact.
+ *
+ * TWO RECIPIENTS, ONE MESSAGE, AND NEVER THE SAME ADDRESS TWICE. The billing
+ * contact is very often the customer — checkout defaults to exactly that — so
+ * the addresses are deduplicated case-insensitively before anything is sent.
+ * Two identical invoices arriving in one inbox reads as a system that has
+ * double-charged, which is a support ticket that starts from a position of
+ * alarm.
+ *
+ * The PDF goes as an attachment rather than a link. An invoice is a document
+ * somebody forwards to an accountant, and a link that needs a login is not
+ * forwardable.
+ */
+async function sendInvoiceEmails(invoice, order) {
+  const customer = await db.one('SELECT * FROM customers WHERE id = ? LIMIT 1', [order.customer_id]);
+  if (!customer) return;
+
+  const pdfPath = await invoices.ensurePdf(invoice);
+
+  const recipients = [];
+  const seen = new Set();
+  const add = (address, label) => {
+    const key = String(address || '').trim().toLowerCase();
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    recipients.push({ address: key, label });
+  };
+  add(customer.email, 'customer');
+  add(invoice.bill_email, 'billing contact');
+
+  const money = (v) => `${invoice.currency} ${Number(v || 0).toFixed(2)}`;
+  const rows = [
+    ['Invoice', invoice.number],
+    ['Order', order.reference],
+    ['Date', new Date(invoice.issued_at || Date.now()).toISOString().slice(0, 10)],
+    ['Total paid', money(invoice.total)],
+  ];
+  if (Number(invoice.discount) > 0) rows.splice(3, 0, ['Discount', `-${money(invoice.discount)}`]);
+
+  for (const to of recipients) {
+    await sendMail({
+      to: to.address,
+      subject: `Invoice ${invoice.number} — ${money(invoice.total)} paid`,
+      html: shell({
+        title: 'Thank you — here is your invoice',
+        intro: to.label === 'billing contact'
+          ? `You are named as the billing contact on this order, placed by ${escapeHtml(customer.email)}. `
+            + 'The invoice is attached as a PDF.'
+          : 'Your payment has gone through and your services are being set up. '
+            + 'The invoice is attached as a PDF for your records.',
+        body: detailTable(rows),
+        ctaLabel: 'See it in your account',
+        ctaUrl: `${SITE_URL}/panel/billing`,
+      }),
+      attachments: [{
+        filename: `${invoice.number}.pdf`,
+        path: pdfPath,
+        contentType: 'application/pdf',
+      }],
+    }).catch((err) => {
+      // One bad address must not stop the other recipient getting theirs.
+      console.error(`[payments] invoice ${invoice.number} to ${to.address}:`, err.message);
+    });
+  }
 }
 
 /** Record a payment that did not happen, and say why. */
@@ -563,6 +654,22 @@ async function settleFree(order) {
     actorType: 'customer',
     actorId: order.customer_id,
   });
+
+  /*
+   * A free order gets an invoice too, for zero.
+   *
+   * It would be easy to skip this on the grounds that nothing was paid, and it
+   * would be wrong: a 100%-off order still creates real services with a real
+   * renewal date, and the customer still needs a document saying what they hold
+   * and what it cost. A gap in the invoice series is also the one thing the
+   * numbering is designed to avoid.
+   */
+  try {
+    const invoice = await invoices.forOrder(order.id);
+    await sendInvoiceEmails(invoice, order);
+  } catch (err) {
+    console.error(`[payments] ${order.reference}: invoicing a free order failed —`, err.message);
+  }
 
   return { ok: true, orderId: order.id, waiting: Boolean(activated.waiting) };
 }

@@ -506,7 +506,7 @@ router.get('/cart/add-domain', async (req, res, next) => {
 // ---------------------------------------------------------------------------
 router.post('/cart/coupon', async (req, res, next) => {
   try {
-    if (!auth.checkCsrf(req)) return res.redirect('/cart');
+    if (!auth.checkCsrf(req)) return res.redirect(backTo(req));
     const code = coupons.normalise(req.body.code);
 
     if (!code) {
@@ -546,7 +546,7 @@ router.post('/cart/coupon', async (req, res, next) => {
 
 router.post('/cart/coupon/remove', async (req, res, next) => {
   try {
-    if (!auth.checkCsrf(req)) return res.redirect('/cart');
+    if (!auth.checkCsrf(req)) return res.redirect(backTo(req));
     writeCoupon(req, res, '');
     await finishCart(req, res, { message: 'Discount code removed.' });
   } catch (err) {
@@ -648,10 +648,28 @@ function renderPartial(res, view, data) {
  * connection is the first few seconds of every visit. Both paths run the same
  * validation and the same pricing; only the reply differs.
  */
+/**
+ * Where a basket action should land when it was a plain form post.
+ *
+ * The basket, normally — but the discount code can now be entered on the
+ * CHECKOUT page too, and sending somebody back a step for using a control that
+ * was on the page they were already on is a checkout people abandon.
+ *
+ * Only ever our own two pages. The Referer header is attacker-controlled, so it
+ * selects between a fixed pair rather than being redirected to.
+ */
+function backTo(req) {
+  const ref = String(req.get('Referer') || '');
+  try {
+    if (new URL(ref, `${req.protocol}://${req.get('host')}`).pathname === '/checkout') return '/checkout';
+  } catch { /* an unparseable Referer is just an absent one */ }
+  return '/cart';
+}
+
 async function finishCart(req, res, { message = '', kind = 'ok' } = {}) {
   if (!wantsFragment(req)) {
     if (message) flash(res, message, kind);
-    return res.redirect('/cart');
+    return res.redirect(backTo(req));
   }
 
   const view = await cartView(req);
@@ -783,7 +801,55 @@ router.post('/checkout', async (req, res, next) => {
       city: field(req.body.city, 80),
       postcode: field(req.body.postcode, 24),
       country: field(req.body.country, 2).toUpperCase() || 'GB',
+
+      /*
+       * The billing contact. `bill_same` is a checkbox, so it arrives as '1'
+       * when ticked and NOT AT ALL when cleared — which is why the default is
+       * read as "anything other than an explicit unticked value means same".
+       * Getting that backwards would silently invoice everybody to an empty
+       * address.
+       */
+      bill_same: req.body.bill_same ? '1' : '0',
+      bill_name: field(req.body.bill_name, 160),
+      bill_company: field(req.body.bill_company, 160),
+      bill_email: field(req.body.bill_email, 190).toLowerCase(),
+      bill_address1: field(req.body.bill_address1, 160),
+      bill_address2: field(req.body.bill_address2, 160),
+      bill_city: field(req.body.bill_city, 80),
+      bill_postcode: field(req.body.bill_postcode, 24),
+      bill_country: field(req.body.bill_country, 2).toUpperCase(),
     };
+
+    /*
+     * Resolve the billing contact once, here, so everything downstream — the
+     * order row, the invoice, the emails — reads one shape and cannot disagree
+     * about who was billed.
+     *
+     * "Same" is stored as the RESOLVED VALUES rather than as a flag, because an
+     * invoice has to keep saying the same thing after the customer moves house.
+     */
+    const billSame = values.bill_same !== '0';
+    const biller = billSame
+      ? {
+        name: `${values.first_name} ${values.last_name}`.trim(),
+        company: values.company,
+        email: values.email || req.customer?.email || '',
+        address1: values.address1,
+        address2: values.address2,
+        city: values.city,
+        postcode: values.postcode,
+        country: values.country,
+      }
+      : {
+        name: values.bill_name || `${values.first_name} ${values.last_name}`.trim(),
+        company: values.bill_company,
+        email: values.bill_email || values.email || req.customer?.email || '',
+        address1: values.bill_address1,
+        address2: values.bill_address2,
+        city: values.bill_city,
+        postcode: values.bill_postcode,
+        country: values.bill_country || values.country,
+      };
 
     /*
      * The gateway is validated against the server's own list, never taken as
@@ -812,6 +878,17 @@ router.post('/checkout', async (req, res, next) => {
       if (!values.city) errors.city = 'Required.';
       if (!values.postcode) errors.postcode = 'Required.';
       if (!values.phone) errors.phone = 'Required by the registry.';
+    }
+
+    // A separate billing contact is optional, but a half-filled one is not:
+    // an invoice addressed to a name with no address is not a document anybody
+    // can file.
+    if (!billSame) {
+      if (!values.bill_name) errors.bill_name = 'Who should the invoice be made out to?';
+      if (values.bill_email && !isEmail(values.bill_email)) errors.bill_email = 'That email address does not look right.';
+      if (!values.bill_address1) errors.bill_address1 = 'Required on an invoice.';
+      if (!values.bill_city) errors.bill_city = 'Required.';
+      if (!values.bill_postcode) errors.bill_postcode = 'Required.';
     }
 
     let customer = req.customer;
@@ -886,8 +963,10 @@ router.post('/checkout', async (req, res, next) => {
       const [orderIns] = await conn.query(
         `INSERT INTO orders
            (reference, customer_id, status, subtotal_pence, vat_pence, total_pence,
-            discount_pence, coupon_code, currency, fx_rate, base_total_pence, payment_method)
-         VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            discount_pence, coupon_code, currency, fx_rate, base_total_pence, payment_method,
+            bill_name, bill_company, bill_email, bill_address1, bill_address2,
+            bill_city, bill_postcode, bill_country)
+         VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           reference, customer.id,
           // net + vat = total. `subtotal_pence` is the NET here, not the gross
@@ -900,6 +979,11 @@ router.post('/checkout', async (req, res, next) => {
           // this to its own id when the payment settles; recording the intent
           // now is what makes an abandoned checkout legible in the admin.
           chosenGateway || PAYMENTS_MODE,
+          // The billed party, resolved above. Stored as values rather than as
+          // a "same as customer" flag so the invoice keeps saying the same
+          // thing after the customer edits their address.
+          biller.name, biller.company, biller.email, biller.address1, biller.address2,
+          biller.city, biller.postcode, biller.country,
         ],
       );
       const orderId = orderIns.insertId;

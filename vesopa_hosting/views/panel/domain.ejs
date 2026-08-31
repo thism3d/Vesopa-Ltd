@@ -191,32 +191,128 @@
       </div>
     </details>
 
+    <%#
+      The registrant verification.
+
+      FIRST CARD ON THE PAGE when it applies, above everything including the
+      certificate, because it is the only thing here with a deadline attached
+      to it — miss it and the registry turns the domain off. It used not to
+      exist at all, which is how arpi.site spent nine hours suspended-in-waiting
+      while every screen we showed its owner said "active".
+    %>
+    <% if (verification) { %>
+      <div class="p-card verify-card <%= verification.days_left <= 0 ? 'is-overdue' : '' %>" id="verification">
+        <div class="row-between mb-2">
+          <h2 class="h3">Confirm your email address</h2>
+          <span class="badge <%= verification.days_left <= 0 ? 'badge-red' : 'badge-amber' %>">
+            <%= verification.days_left > 0
+              ? verification.days_left + ' day' + (verification.days_left === 1 ? '' : 's') + ' left'
+              : 'Overdue' %>
+          </span>
+        </div>
+
+        <p class="small mb-2">
+          <% if (verification.days_left > 0) { %>
+            The registry requires the owner of a domain to confirm their email address within
+            15 days of registering it. <b><%= domain.domain %></b> will be
+            <b>suspended</b> on <%= new Date(verification.deadline).toDateString() %> if it is not done.
+          <% } else { %>
+            The deadline for confirming the owner's email address has passed, so
+            <b><%= domain.domain %></b> can be suspended by the registry at any time.
+          <% } %>
+        </p>
+
+        <ol class="verify-steps small">
+          <li>Open your inbox at <b class="mono"><%= verification.email %></b>.</li>
+          <li>
+            Look for an email from the <b>registrar</b> — it comes from them, not from us, so it
+            will not have Vesopa in the sender. Check your spam folder; this is the single most
+            common reason it is missed.
+          </li>
+          <li>Click the confirmation link inside it. That is the whole process.</li>
+        </ol>
+
+        <p class="tiny muted mb-0">
+          Confirmed it already? It can take a few minutes to reach us. If it is still showing
+          here tomorrow, <a href="/panel/tickets/new">open a ticket</a> and we will chase the
+          registrar for you.
+        </p>
+      </div>
+    <% } %>
+
     <%# The certificate — the thing customers actually come looking for. %>
-    <div class="p-card">
+    <div class="p-card" id="ssl">
       <div class="row-between mb-2">
         <h2 class="h3">Certificate</h2>
-        <span class="badge <%= ssl.status === 'active' ? 'badge-green' : ssl.status === 'failed' ? 'badge-red' : 'badge-grey' %>">
-          <%= ssl.status === 'active' ? 'Installed' : ssl.status === 'failed' ? 'Not issued' : 'None yet' %>
+        <span class="badge <%= sslState.valid ? 'badge-green' : (sslState.expired || ssl.status === 'failed') ? 'badge-red' : 'badge-grey' %>">
+          <%= sslState.valid ? 'Secured'
+            : sslState.expired ? 'Expired'
+            : ssl.status === 'failed' ? 'Not issued' : 'None yet' %>
         </span>
       </div>
 
-      <% if (ssl.status === 'active') { %>
+      <%#
+        WHICH BRANCH RUNS IS DECIDED BY THE EXPIRY DATE, NOT BY `ssl.status`.
+
+        `ssl.status` says whether a certificate is installed. It stays 'active'
+        for one that expired in March and for the self-signed placeholder Hestia
+        drops in when Let's Encrypt has never succeeded — so keying the reissue
+        button off it hid the button from the people who needed it and offered
+        it to the people who did not, who then spent Let's Encrypt rate limit
+        replacing a certificate with eleven weeks left on it.
+
+        `sslState` (server-side, in domain-linking.js) answers the real question.
+      %>
+      <% if (sslState.valid && !sslState.mayIssue) { %>
         <p class="small muted mb-2">
-          <span class="mono">https://<%= domain.domain %></span> is secured, and it renews itself
-          for as long as you host here. Nothing to do.
+          <span class="mono">https://<%= domain.domain %></span> is secured until
+          <b><%= sslState.expires_at.toDateString() %></b> — <%= sslState.days_left %> days away — and it
+          renews itself automatically. Nothing to do.
+        </p>
+        <p class="tiny muted mb-0">
+          <%- icon('info', 13) %>
+          There is no reissue button because there is nothing wrong with this certificate.
+          Renewal happens on its own about a month before it expires.
+        </p>
+
+      <% } else if (sslState.valid && sslState.mayIssue) { %>
+        <p class="small muted mb-2">
+          This certificate expires on <b><%= sslState.expires_at.toDateString() %></b>, in
+          <%= sslState.days_left %> days. It should renew itself before then — you can renew it
+          now if you would rather not wait.
         </p>
         <form method="post" action="/panel/domains/<%= domain.domain %>/ssl">
           <input type="hidden" name="_csrf" value="<%= csrf %>">
-          <button class="btn btn-ghost btn-sm" type="submit" data-busy="Reissuing…">Reissue it</button>
+          <button class="btn btn-ghost btn-sm" type="submit" data-busy="Renewing…">Renew it now</button>
         </form>
+
+      <% } else if (sslState.expired) { %>
+        <p class="small mb-2">
+          <b>This certificate expired on <%= sslState.expires_at.toDateString() %>.</b>
+          Visitors are seeing a security warning instead of your site. Issuing a new one
+          usually takes under a minute.
+        </p>
+        <form method="post" action="/panel/domains/<%= domain.domain %>/ssl">
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <button class="btn btn-sm" type="submit" data-busy="Issuing…">
+            <%- icon('lock', 15) %> Issue a new certificate
+          </button>
+        </form>
+
       <% } else if (!verified) { %>
         <p class="small muted mb-0">
           A certificate can only be issued for a name that already resolves to this server —
           that is Let's Encrypt's rule, not ours. Point the domain here first.
         </p>
+
       <% } else { %>
         <p class="small muted mb-2">
-          <%= ssl.error || 'This domain points at us, so a certificate can be issued now. It covers www. as well.' %>
+          <% if (sslState.self_signed) { %>
+            This site is using a placeholder certificate, which browsers do not trust.
+            Issue a real one to clear the warning visitors are seeing.
+          <% } else { %>
+            <%= ssl.error || 'This domain points at us, so a certificate can be issued now. It covers www. as well.' %>
+          <% } %>
         </p>
         <form method="post" action="/panel/domains/<%= domain.domain %>/ssl">
           <input type="hidden" name="_csrf" value="<%= csrf %>">
@@ -334,7 +430,7 @@
       bought alongside it. Attaching also BUILDS it, because a domain on a plan
       that the server does not serve is a row in a database, not hosting.
     %>
-    <div class="p-card">
+    <div class="p-card" id="hosting">
       <div class="row-between mb-2">
         <h2 class="h3">Hosting</h2>
         <span class="badge <%= attachedService ? 'badge-green' : 'badge-grey' %>">
@@ -352,7 +448,21 @@
         <p class="small muted mb-3">
           <% if (attachedService) { %>
             Served by your <b><%= attachedService.plan_name %></b> plan.
-            Changing this moves the website to another plan; the domain itself is not affected.
+            <% if (attachedService.primary_domain === domain.domain) { %>
+              <%#
+                The plan's main domain cannot be moved from here, and saying so
+                plainly is kinder than offering a control that silently does not
+                work. The name is the document root, the certificate and the
+                mail domain on the server; changing this column renames none of
+                them, so the panel would say one thing while the server served
+                another.
+              %>
+              This is the plan's main domain, so it stays where it is — the website's files,
+              certificate and mailboxes are all filed under this name on the server.
+              <a href="/panel/tickets/new">Ask us</a> if you need to move it.
+            <% } else { %>
+              Changing this moves the website to another plan; the domain itself is not affected.
+            <% } %>
           <% } else { %>
             <b><%= domain.domain %> is not attached to a hosting plan</b>, so there is no website for it
             on the server. Pick a plan and we set it up straight away — the DNS zone, the site and the
@@ -363,7 +473,8 @@
           <input type="hidden" name="_csrf" value="<%= csrf %>">
           <div class="field">
             <label class="label" for="service_id">Host it on</label>
-            <select class="select" id="service_id" name="service_id">
+            <select class="select" id="service_id" name="service_id"
+                    <%= (attachedService && attachedService.primary_domain === domain.domain) ? 'disabled' : '' %>>
               <option value="">Not hosted here</option>
               <% hostingServices.forEach(function (s) { %>
                 <option value="<%= s.id %>" <%= String(domain.service_id) === String(s.id) ? 'selected' : '' %>>
@@ -372,7 +483,11 @@
               <% }); %>
             </select>
           </div>
-          <button class="btn btn-sm" type="submit" data-busy="Setting up…">Save and set it up</button>
+          <% if (attachedService && attachedService.primary_domain === domain.domain) { %>
+            <p class="tiny muted mb-0"><%- icon('lock', 13) %> Locked — this is the plan's main domain.</p>
+          <% } else { %>
+            <button class="btn btn-sm" type="submit" data-busy="Setting up…">Save and set it up</button>
+          <% } %>
         </form>
       <% } %>
     </div>

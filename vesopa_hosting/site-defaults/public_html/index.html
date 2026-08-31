@@ -13,28 +13,67 @@
   ranking for nothing, and bad for us. It disappears the moment they upload
   their own index file, which is exactly when indexing should start.
 
-  SELF-CONTAINED ON PURPOSE. No stylesheet, no font, no image request. This is
+  SELF-CONTAINED ON PURPOSE. No stylesheet, no font, no external image. This is
   served by an account that may have nothing else in it yet, and a holding page
-  that half-loads looks like a broken site rather than a new one.
+  that half-loads looks like a broken site rather than a new one. The wordmark
+  is inlined as a data URI for the same reason — at display resolution it is
+  about 6KB, which is cheaper than the request it replaces and cannot fail.
+
+  THE LOGO IS THE REAL ONE. It used to be a hand-drawn `M7 8h6l3 9 3-9h6...`
+  approximation of the V, which is not the Vesopa mark — it is a triangle that
+  resembles it. The mark below is the exact geometry from
+  public/assets/img/brand/mark.svg, and the wordmark is the actual artwork
+  rather than a tracing of it.
 -->
 <meta name="robots" content="noindex, nofollow">
-<title>Your site is ready — Vesopa Cloud</title>
-<meta name="description" content="This website is hosted on Vesopa Cloud and is ready for its content.">
+<title>Your site is ready &mdash; Vesopa Cloud Hosting</title>
+<meta name="description" content="This website is hosted on Vesopa Cloud Hosting and is ready for its content. Fast UK hosting, free SSL and business email, in one control panel.">
+<meta name="author" content="Vesopa Software Ltd">
+<meta name="generator" content="Vesopa Cloud Hosting">
 <meta name="theme-color" content="#a5c715" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#14170f" media="(prefers-color-scheme: dark)">
 <meta name="color-scheme" content="light dark">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23a5c715'/><path d='M8 9h5l3 8 3-8h5l-6 15h-4z' fill='%2310130a'/></svg>">
+
+<!--
+  Social preview. A holding page gets shared more than anybody expects — the
+  customer sends the link to whoever is building the site, and it is pasted
+  into WhatsApp, Slack and a group chat before there is any content at all.
+  Without these it unfurls as a bare URL with no title.
+
+  og:url and og:image are filled in by the script at the foot of the page,
+  because these files are copied verbatim into every new account and Hestia
+  performs no placeholder substitution — the domain genuinely is not knowable
+  when this file is written.
+-->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Vesopa Cloud Hosting">
+<meta property="og:title" content="Your site is ready">
+<meta property="og:description" content="Hosted on Vesopa Cloud Hosting — the server, the certificate and the mail are all live. The website is next.">
+<meta property="og:image" content="https://cloud.vesopa.com/assets/img/brand/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Your site is ready">
+<meta name="twitter:description" content="Hosted on Vesopa Cloud Hosting — the server, the certificate and the mail are all live.">
+<meta name="twitter:image" content="https://cloud.vesopa.com/assets/img/brand/og.png">
+<link rel="canonical" href="https://cloud.vesopa.com/">
+
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 70'><path fill='%23a5c715' d='M0,0 L22.7,0 L50.7,49 L77.3,0 L100,0 L62,70 L40,70 Z'/><path fill='%23111111' d='M58.3,35 L81,35 L62,70 L40,70 L50.7,49 Z'/></svg>">
 <style>
   *,*::before,*::after{box-sizing:border-box}
   :root{
     --lime:#a5c715; --on-lime:#10130a; --lime-soft:#eff6d8; --lime-ink:#6e8a0e;
     --ink:#14170f; --ink-2:#4a4c41; --ink-3:#787a6e;
     --bg:#ffffff; --bg-2:#f8f9f4; --rule:#e4e7dd;
+    --sky:#eff6d8; --road:#d8dcc9;
     --font:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,Roboto,Helvetica,Arial,sans-serif;
     --mono:ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace;
   }
   @media (prefers-color-scheme:dark){
-    :root{--ink:#eef1e6;--ink-2:#b9bfae;--ink-3:#8b9280;--bg:#14170f;--bg-2:#1b2015;--rule:#2c3323;--lime-soft:#232a16;--lime-ink:#c3e33a}
+    :root{
+      --ink:#eef1e6;--ink-2:#b9bfae;--ink-3:#8b9280;--bg:#14170f;--bg-2:#1b2015;
+      --rule:#2c3323;--lime-soft:#232a16;--lime-ink:#c3e33a;--sky:#1b2015;--road:#2c3323;
+    }
   }
   html{-webkit-text-size-adjust:100%}
   body{
@@ -45,59 +84,189 @@
     -webkit-font-smoothing:antialiased;line-height:1.6;
     display:flex;align-items:center;justify-content:center;padding:40px 22px;
   }
-  .wrap{width:100%;max-width:660px;text-align:center}
-  .mark{
-    width:60px;height:60px;border-radius:16px;background:var(--lime);
-    display:grid;place-items:center;margin:0 auto 22px;
-    box-shadow:0 6px 22px rgba(165,199,21,.32);
+  .wrap{width:100%;max-width:680px;text-align:center}
+
+  /* ---- The lockup ------------------------------------------------------
+     Mark and wordmark, at the real proportions. `height` is set and `width`
+     is not, so the intrinsic ratio of the artwork decides the width and a
+     replacement file cannot squash itself. */
+  .brand{display:flex;align-items:center;justify-content:center;gap:11px;margin:0 0 8px}
+  .brand-v{display:block;flex:none}
+  .brand-word{display:block;height:26px;width:auto}
+  .brand-word.on-dark{display:none}
+  @media (prefers-color-scheme:dark){
+    .brand-word.on-light{display:none}
+    .brand-word.on-dark{display:block}
   }
-  .mark svg{display:block}
+  .brand-sub{
+    font-size:.7rem;font-weight:800;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--ink-3);margin:0 0 26px;
+  }
+
   .eyebrow{
-    display:inline-block;font-size:.72rem;font-weight:800;letter-spacing:.1em;
-    text-transform:uppercase;color:var(--lime-ink);
-    background:var(--lime-soft);padding:5px 12px;border-radius:999px;margin-bottom:16px;
+    display:inline-flex;align-items:center;gap:7px;font-size:.72rem;font-weight:800;
+    letter-spacing:.1em;text-transform:uppercase;color:var(--lime-ink);
+    background:var(--lime-soft);padding:6px 13px;border-radius:999px;margin-bottom:16px;
   }
+  /* A slow pulse on the status dot. The page is telling somebody the server is
+     alive; a dot that breathes says it more convincingly than the word does. */
+  .eyebrow i{
+    width:7px;height:7px;border-radius:50%;background:var(--lime-ink);flex:none;
+    animation:pulse 2.4s ease-in-out infinite;
+  }
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.45;transform:scale(.82)}}
+
   h1{font-size:clamp(1.7rem,5vw,2.5rem);line-height:1.15;letter-spacing:-.02em;margin:0 0 12px;font-weight:800}
   .host{
     font-family:var(--mono);font-size:.95rem;color:var(--ink-2);
     background:var(--bg-2);border:1px solid var(--rule);border-radius:9px;
     padding:6px 12px;display:inline-block;margin:0 0 22px;overflow-wrap:anywhere;
   }
-  .lede{color:var(--ink-2);font-size:1.02rem;margin:0 auto 32px;max-width:44ch}
-  .steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;text-align:left;margin-bottom:30px}
+  .lede{color:var(--ink-2);font-size:1.02rem;margin:0 auto 28px;max-width:46ch}
+
+  /* ---- The cyclist -----------------------------------------------------
+     A scene, not a decoration: a rider crossing the page on a road, once every
+     twenty-two seconds. It is here because the moment this page is on screen is
+     the moment somebody has just bought hosting and is waiting for something to
+     happen, and a still page reads as a page that is stuck.
+
+     SLOW ON PURPOSE. 22 seconds end to end is well under a walking pace across
+     the viewport — enough that the eye catches movement and not so much that it
+     competes with the text for attention. It never loops back visibly: the
+     rider leaves the right edge and re-enters from the left.
+
+     ENTIRELY DECORATIVE, so aria-hidden, and it stops completely under
+     prefers-reduced-motion — an animation that crosses the whole viewport is
+     exactly the kind that triggers vestibular symptoms. */
+  .scene{
+    position:relative;height:96px;margin:0 0 30px;overflow:hidden;
+    -webkit-mask-image:linear-gradient(90deg,transparent,#000 9%,#000 91%,transparent);
+            mask-image:linear-gradient(90deg,transparent,#000 9%,#000 91%,transparent);
+  }
+  .road{
+    position:absolute;left:0;right:0;bottom:20px;height:2px;background:var(--road);border-radius:2px;opacity:.85;
+  }
+  .rider{
+    position:absolute;bottom:14px;left:0;
+    animation:ride 22s linear infinite;
+    will-change:transform;
+  }
+  /* Starts fully off the left edge and ends fully off the right, so the rider
+     is never seen to pop into or out of existence. */
+  @keyframes ride{
+    from{transform:translateX(-90px)}
+    to{transform:translateX(calc(100% + 680px))}
+  }
+  .wheel{transform-origin:center;animation:roll 1.05s linear infinite}
+  @keyframes roll{to{transform:rotate(360deg)}}
+  /* The frame bobs a little against the wheels, which is what stops it reading
+     as a sticker being dragged sideways. */
+  .frame{animation:bob 1.05s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-1px)}}
+
+  .steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;text-align:left;margin-bottom:28px}
   .step{
     background:var(--bg);border:1px solid var(--rule);border-radius:14px;padding:17px 16px;
+    transition:transform .22s cubic-bezier(.2,.7,.3,1), box-shadow .22s ease, border-color .22s ease;
   }
+  /* Micro-interaction: the cards lift under the cursor and settle under a
+     finger, so the page answers a touch instead of absorbing it. */
+  .step:hover{transform:translateY(-3px);box-shadow:0 10px 26px rgba(20,23,15,.07);border-color:var(--lime)}
+  .step:active{transform:translateY(-1px)}
   .step .n{
     width:26px;height:26px;border-radius:8px;background:var(--lime-soft);color:var(--lime-ink);
     display:grid;place-items:center;font-weight:800;font-size:.82rem;margin-bottom:10px;
+    transition:background .22s ease,color .22s ease,transform .22s ease;
   }
+  .step:hover .n{background:var(--lime);color:var(--on-lime);transform:scale(1.06)}
   .step h2{font-size:.97rem;margin:0 0 4px;font-weight:700}
   .step p{font-size:.85rem;color:var(--ink-3);margin:0;line-height:1.5}
+
+  .actions{display:flex;flex-wrap:wrap;gap:10px;justify-content:center}
   .cta{
-    display:inline-block;background:var(--lime);color:var(--on-lime);
-    text-decoration:none;font-weight:700;padding:13px 26px;border-radius:12px;
-    transition:transform .18s ease, box-shadow .18s ease;
+    display:inline-flex;align-items:center;gap:8px;background:var(--lime);color:var(--on-lime);
+    text-decoration:none;font-weight:700;padding:13px 24px;border-radius:12px;
+    transition:transform .18s ease, box-shadow .18s ease, filter .18s ease;
   }
-  .cta:hover{transform:translateY(-1px);box-shadow:0 8px 22px rgba(165,199,21,.35)}
-  .foot{margin-top:30px;font-size:.8rem;color:var(--ink-3)}
+  .cta:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(165,199,21,.4)}
+  .cta:active{transform:translateY(0) scale(.98)}
+  .cta svg{transition:transform .18s ease}
+  .cta:hover svg{transform:translateX(3px)}
+  .cta-ghost{
+    background:transparent;color:var(--ink);border:1.5px solid var(--rule);
+  }
+  .cta-ghost:hover{border-color:var(--ink-3);box-shadow:none;background:var(--bg-2)}
+
+  .foot{margin-top:28px;font-size:.8rem;color:var(--ink-3)}
   .foot a{color:inherit}
-  @media (prefers-reduced-motion:reduce){.cta{transition:none}}
+
+  /* One switch, everything still. */
+  @media (prefers-reduced-motion:reduce){
+    .rider,.wheel,.frame,.eyebrow i{animation:none}
+    .rider{transform:translateX(38%)}
+    .cta,.step,.step .n,.cta svg{transition:none}
+    .cta:hover,.step:hover{transform:none}
+  }
 </style>
 </head>
 <body>
   <main class="wrap">
-    <div class="mark" aria-hidden="true">
-      <svg width="30" height="30" viewBox="0 0 32 32"><path d="M7 8h6l3 9 3-9h6l-7 17h-4z" fill="#10130a"/></svg>
+    <div class="brand">
+      <svg class="brand-v" width="34" height="24" viewBox="0 0 100 70" role="img" aria-label="Vesopa">
+        <path fill="#a5c715" d="M0,0 L22.7,0 L50.7,49 L77.3,0 L100,0 L62,70 L40,70 Z"/>
+        <path fill="currentColor" d="M58.3,35 L81,35 L62,70 L40,70 L50.7,49 Z"/>
+      </svg>
+      <img class="brand-word on-light" alt="Vesopa" height="26"
+           src="data:image/png;base64,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">
+      <img class="brand-word on-dark" alt="Vesopa" height="26"
+           src="data:image/png;base64,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">
     </div>
+    <p class="brand-sub">Cloud Hosting</p>
 
-    <span class="eyebrow">Hosting is live</span>
+    <span class="eyebrow"><i></i>Hosting is live</span>
     <h1>Your site is ready.</h1>
     <p class="host" id="host">This domain is set up and serving.</p>
     <p class="lede">
-      Everything behind the scenes is done — the server, the certificate and the
+      Everything behind the scenes is done &mdash; the server, the certificate and the
       mail are all waiting. All that is left is your website.
     </p>
+
+    <!--
+      Decorative. The rider is the only thing moving on the page, and it is
+      hidden from assistive technology because "a bicycle goes past" is not
+      information anybody needs read aloud.
+    -->
+    <div class="scene" aria-hidden="true">
+      <div class="road"></div>
+      <svg class="rider" width="95" height="57" viewBox="0 0 76 46" fill="none">
+        <g class="frame" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round" opacity=".78">
+          <!-- rider -->
+          <circle cx="45" cy="8" r="4.2" fill="currentColor" stroke="none"/>
+          <path d="M43 13.5 L38 22 L46 22"/>
+          <path d="M38 22 L31.5 30"/>
+          <path d="M46 22 L52 16 L58 19"/>
+          <!-- frame -->
+          <path d="M17 33 L31.5 30 L42 33"/>
+          <path d="M31.5 30 L28 33"/>
+          <path d="M28 33 L17 33"/>
+          <path d="M42 33 L52 16"/>
+          <path d="M52 16 L58 19" stroke-width="2.2"/>
+          <!-- pedal crank -->
+          <circle cx="28" cy="33" r="3" stroke-width="1.6"/>
+        </g>
+        <g stroke="#a5c715" stroke-width="2.2" fill="none">
+          <g class="wheel" style="transform-box:fill-box">
+            <circle cx="17" cy="33" r="10.5"/>
+            <path d="M17 22.5 L17 43.5 M6.5 33 L27.5 33" stroke-width="1.2" opacity=".5"/>
+          </g>
+          <g class="wheel" style="transform-box:fill-box">
+            <circle cx="59" cy="33" r="10.5"/>
+            <path d="M59 22.5 L59 43.5 M48.5 33 L69.5 33" stroke-width="1.2" opacity=".5"/>
+          </g>
+        </g>
+      </svg>
+    </div>
 
     <div class="steps">
       <div class="step">
@@ -117,25 +286,59 @@
       </div>
     </div>
 
-    <a class="cta" href="https://cloud.vesopa.com/panel">Open your control panel</a>
+    <div class="actions">
+      <a class="cta" href="https://cloud.vesopa.com/panel">
+        Open your control panel
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M5 12h14M13 6l6 6-6 6"/>
+        </svg>
+      </a>
+      <!--
+        Support, on the page. Somebody looking at a holding page they did not
+        expect, on a domain they have just bought, is the single likeliest
+        person on this platform to need a human — and until now this page gave
+        them nowhere to go but back to a panel they were already lost in.
+      -->
+      <a class="cta cta-ghost" href="https://cloud.vesopa.com/panel/tickets/new">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M4 18v-6a8 8 0 0116 0v6"/>
+          <path d="M20 19a2 2 0 01-2 2h-3"/>
+          <rect x="2" y="13" width="4" height="7" rx="1.4"/>
+          <rect x="18" y="13" width="4" height="7" rx="1.4"/>
+        </svg>
+        Ask Vesopa Support
+      </a>
+    </div>
 
     <p class="foot">
-      Hosted on <strong>Vesopa Cloud</strong> ·
+      Hosted on <strong>Vesopa Cloud Hosting</strong> &middot;
       <a href="https://cloud.vesopa.com">cloud.vesopa.com</a>
     </p>
   </main>
 
   <!--
-    The hostname, said back to the visitor. Filled in by script because these
-    files are copied verbatim into every new account — Hestia does no
-    placeholder substitution on them — so the domain cannot be baked in. The
-    static sentence above is what shows if script is off, which is a complete
-    page rather than an empty box.
+    The hostname, said back to the visitor, and the social tags pointed at this
+    domain. Filled in by script because these files are copied verbatim into
+    every new account — Hestia does no placeholder substitution on them — so the
+    domain cannot be baked in. The static sentence above is what shows if script
+    is off, which is a complete page rather than an empty box.
   -->
   <script>
     try {
       var h = document.getElementById('host');
-      if (location.hostname) { h.textContent = location.hostname; }
+      if (location.hostname) {
+        h.textContent = location.hostname;
+        var og = document.querySelector('meta[property="og:url"]');
+        if (!og) {
+          og = document.createElement('meta');
+          og.setAttribute('property', 'og:url');
+          document.head.appendChild(og);
+        }
+        og.setAttribute('content', location.origin + '/');
+        document.title = location.hostname + ' — ready on Vesopa Cloud Hosting';
+      }
     } catch (e) { /* the fallback sentence is already correct */ }
   </script>
 </body>
