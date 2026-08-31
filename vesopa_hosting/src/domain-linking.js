@@ -624,17 +624,41 @@ async function pointAtNode(domainRow, customer, { resolvesHere = null, force = f
   }
 
   /*
-   * `addWebDomain` is v-add-domain, which creates the zone and the mail domain
-   * as well — harmless when both were wanted, and exactly wrong when they were
-   * not. A name that opted out of either gets the narrow v-add-web-domain.
+   * ASK BEFORE CREATING, rather than creating and interpreting the failure.
+   *
+   * `ignoringExists` swallows Hestia's code 4 ("already exists"), which is the
+   * right answer when re-running a build on a name the account already serves.
+   * But Hestia does not always answer 4: on a package whose web-domain
+   * allowance is already spent BY THIS VERY DOMAIN, `v-add-domain` answers
+   * code 8, "the package limit was reached".
+   *
+   * So re-running a build on a working site reported "the website could not be
+   * created on the server" — for a website that was sitting there, serving,
+   * with a valid certificate. Measured on arpi.site: the vhost existed and had
+   * SSL, and every attempt to attach it to its plan failed with a limit error
+   * about the domain that was occupying the limit.
+   *
+   * Checking first is also simply more honest: a genuine limit breach on a NEW
+   * domain must still fail loudly, and blanket-swallowing code 8 would hide it.
    */
-  const webOnly = !wantsDns || !wantsMail;
-  steps.push({
-    step: 'web',
-    ...(await ignoringExists(() => (webOnly
-      ? hestia.addWebsite({ username, domain })
-      : hestia.addWebDomain({ username, domain })))),
-  });
+  const alreadyServed = await hestia.webDomainExists({ username, domain }).catch(() => false);
+
+  if (alreadyServed) {
+    steps.push({ step: 'web', ok: true, existed: true });
+  } else {
+    /*
+     * `addWebDomain` is v-add-domain, which creates the zone and the mail domain
+     * as well — harmless when both were wanted, and exactly wrong when they were
+     * not. A name that opted out of either gets the narrow v-add-web-domain.
+     */
+    const webOnly = !wantsDns || !wantsMail;
+    steps.push({
+      step: 'web',
+      ...(await ignoringExists(() => (webOnly
+        ? hestia.addWebsite({ username, domain })
+        : hestia.addWebDomain({ username, domain })))),
+    });
+  }
 
   if (wantsMail) {
     steps.push({ step: 'mail', ...(await ignoringExists(() => hestia.addMailDomain({ username, domain }))) });
