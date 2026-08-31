@@ -498,6 +498,52 @@ async function deleteWebDomain({ username, domain }) {
   return { ok: true };
 }
 
+/*
+ * THE THREE NARROW DELETES.
+ *
+ * `v-delete-domain` above takes all three halves at once, which is right when a
+ * domain is leaving the account altogether and wrong the moment a customer is
+ * asked WHICH of them to remove. Somebody detaching a website from their plan
+ * while keeping the DNS zone we answer for is not doing anything unusual — the
+ * zone is what makes their delegation work, and dropping it takes the domain
+ * off the internet rather than off the plan.
+ *
+ * Each mirrors its own `add`, and each tolerates being asked for something that
+ * is not there — the caller checks with the `exists` helpers below, but a race
+ * between the check and the delete must not turn into an error page.
+ */
+async function deleteWebsite({ username, domain }) {
+  await run('v-delete-web-domain', [username, domain]);
+  return { ok: true };
+}
+
+async function deleteDnsDomain({ username, domain }) {
+  await run('v-delete-dns-domain', [username, domain]);
+  return { ok: true };
+}
+
+async function deleteMailDomain({ username, domain }) {
+  await run('v-delete-mail-domain', [username, domain]);
+  return { ok: true };
+}
+
+/**
+ * Does this account have a vhost / a mail domain for this name?
+ *
+ * Both answer `false` in mock mode rather than throwing, exactly as
+ * `dnsDomainExists` does — a laptop with no node behind it must render the
+ * "nothing is set up yet" branch, not a stack trace.
+ */
+async function webDomainExists({ username, domain }) {
+  if (!isLive()) return false;
+  return exists('v-list-web-domain', [username, domain]);
+}
+
+async function mailDomainExists({ username, domain }) {
+  if (!isLive()) return false;
+  return exists('v-list-mail-domain', [username, domain]);
+}
+
 /**
  * The websites on an account.
  *
@@ -1237,6 +1283,11 @@ module.exports = {
   addWebDomain,
   addWebsite,
   deleteWebDomain,
+  deleteWebsite,
+  deleteDnsDomain,
+  deleteMailDomain,
+  webDomainExists,
+  mailDomainExists,
   listWebDomains,
   webDomain,
   enableSSL,

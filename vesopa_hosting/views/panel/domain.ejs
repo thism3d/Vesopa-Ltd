@@ -18,6 +18,24 @@
   const method = domain.verify_method || '';
   const deadline = domain.ns_grace_until ? new Date(domain.ns_grace_until) : null;
   const daysLeft = deadline ? Math.max(0, Math.ceil((deadline - Date.now()) / 864e5)) : null;
+
+  /*
+   * THE DEADLOCK, NAMED.
+   *
+   * A domain registered with us is delegated to our nameservers by us — there
+   * is no customer step. So an unverified one of ours with no DNS zone on the
+   * server is not "waiting for you" at all: ns1 answers REFUSED for a zone it
+   * does not have, every resolver turns that into SERVFAIL, and the check that
+   * would let us build the zone can never pass. Telling that customer to go and
+   * change their nameservers is telling them to fix the one thing that is
+   * already correct.
+   */
+  const stuck = !verified && !external && domain.dns_enabled && node.known && !node.dns;
+
+  // Which plan it is on, out of the ones offered. Found here rather than passed
+  // separately so the select below and this badge can never disagree.
+  const attachedService = (hostingServices || [])
+    .find(function (s) { return String(s.id) === String(domain.service_id); }) || null;
 %>
 <%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
 <link rel="stylesheet" href="<%= asset('/assets/css/apps.css') %>">
@@ -49,7 +67,15 @@
       <% } else if (observedIp.length) { %>
         — it answers with <span class="mono"><%= observedIp.join(', ') %></span>.
       <% } else { %>.<% } %>
-      There are two ways to fix that, on the right — either one is enough.
+      <% if (stuck) { %>
+        <br><br>
+        <b>Your nameservers are right — ours is the part that is missing.</b>
+        <%= domain.domain %> is delegated to <span class="mono"><%= defaultNameservers.join(' and ') %></span>,
+        and we have no DNS zone for it yet, so we answer nothing and the lookup fails. Nothing is wrong at
+        your registrar. Set it up and it starts resolving within minutes.
+      <% } else { %>
+        There are two ways to fix that, on the right — either one is enough.
+      <% } %>
       <% if (daysLeft !== null && external) { %>
         <br><b><%= daysLeft === 0 ? 'Today is the last day' : daysLeft + ' day' + (daysLeft === 1 ? '' : 's') + ' left' %></b>
         — a domain that has not pointed at us by then comes off the account. The domain itself is never touched.
@@ -122,14 +148,46 @@
 
       <%# A real form, so it works without JavaScript. panel.js intercepts the
           click and answers in place instead of throwing the page away. %>
-      <form method="post" action="/panel/domains/<%= domain.domain %>/verify" class="mt-2">
-        <input type="hidden" name="_csrf" value="<%= csrf %>">
-        <button class="btn btn-sm <%= verified ? 'btn-ghost' : '' %>" type="submit"
-                data-check="/panel/domains/<%= domain.domain %>/verify"
-                data-check-out="ns-check-result" data-csrf="<%= csrf %>">
-          <%- icon('refresh', 15) %> Check now
-        </button>
-      </form>
+      <div class="row mt-2" style="gap:8px;flex-wrap:wrap">
+        <form method="post" action="/panel/domains/<%= domain.domain %>/verify">
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <button class="btn btn-sm <%= verified || stuck ? 'btn-ghost' : '' %>" type="submit"
+                  data-check="/panel/domains/<%= domain.domain %>/verify"
+                  data-check-out="ns-check-result" data-csrf="<%= csrf %>">
+            <%- icon('refresh', 15) %> Check now
+          </button>
+        </form>
+
+        <%#
+          THE WAY OUT OF THE DEADLOCK.
+
+          Offered whenever the server is not serving this name — which is the
+          only state where it does anything — and worded as the plain fact
+          rather than as "rebuild", because a customer whose domain has never
+          worked is not rebuilding anything. It creates whatever is missing and
+          tolerates whatever is already there, so pressing it twice costs a few
+          seconds and changes nothing.
+        %>
+        <%
+          // Missing anything at all — no vhost, or no zone for a domain that
+          // asked for one — is the "never worked" case. Everything present is
+          // the "worked, and something has gone wrong with it" case, which
+          // wants the same button under a different name rather than no button
+          // at all: a rebuild is the only repair a customer can carry out
+          // themselves, and hiding it behind a support ticket for a vhost that
+          // needs recreating helps nobody.
+          const missing = !node.known || !node.web || (domain.dns_enabled && !node.dns);
+        %>
+        <% if (hasHosting) { %>
+          <form method="post" action="/panel/domains/<%= domain.domain %>/rebuild" data-guard
+                <% if (!missing) { %>data-confirm="Rebuild <%= domain.domain %> on the server? Its website, DNS zone and mail domain are recreated if anything is missing. Nothing that already exists is deleted or overwritten."<% } %>>
+            <input type="hidden" name="_csrf" value="<%= csrf %>">
+            <button class="btn btn-sm <%= stuck ? '' : 'btn-ghost' %>" type="submit" data-busy="Setting it up…">
+              <%- icon('refresh', 15) %> <%= missing ? 'Set it up on the server' : 'Rebuild on the server' %>
+            </button>
+          </form>
+        <% } %>
+      </div>
       </div>
     </details>
 
@@ -265,20 +323,62 @@
       </div>
     <% } %>
 
-    <% if (canRemove) { %>
-      <div class="p-card">
-        <h2 class="h3 mb-2">Remove from this account</h2>
-        <p class="small muted mb-2">
-          Takes <%= domain.domain %> off your Vesopa account and stops us hosting it.
-          The domain itself is registered elsewhere and is not affected in any way —
-          you can add it back at any time.
-        </p>
-        <form method="post" action="/panel/domains/<%= domain.domain %>/remove"
-              data-confirm="Remove <%= domain.domain %> from your account? Any site, mailboxes and certificate we host for it stop working.">
-          <input type="hidden" name="_csrf" value="<%= csrf %>">
-          <button class="btn btn-ghost btn-sm" type="submit">Remove this domain</button>
-        </form>
+    <%#
+      WHICH PLAN IS THIS DOMAIN ON.
+
+      A domain and a hosting plan are separate things here, and a domain filed
+      under no plan is not an error — a name can be registered and parked. What
+      was missing was any way to change the answer: it could be chosen once, on
+      the add form, and never again, so a domain registered through the order
+      flow (which files it under nothing) could not be put on the plan that was
+      bought alongside it. Attaching also BUILDS it, because a domain on a plan
+      that the server does not serve is a row in a database, not hosting.
+    %>
+    <div class="p-card">
+      <div class="row-between mb-2">
+        <h2 class="h3">Hosting</h2>
+        <span class="badge <%= attachedService ? 'badge-green' : 'badge-grey' %>">
+          <%= attachedService ? (attachedService.primary_domain === domain.domain ? 'Main domain' : 'On a plan') : 'Not hosted' %>
+        </span>
       </div>
+
+      <% if (!hostingServices.length) { %>
+        <p class="small muted mb-2">
+          There is no hosting plan on this account yet, so there is nowhere to put a website for
+          <%= domain.domain %>. The domain is registered and safe either way.
+        </p>
+        <a class="btn btn-sm" href="/hosting">See the plans</a>
+      <% } else { %>
+        <p class="small muted mb-3">
+          <% if (attachedService) { %>
+            Served by your <b><%= attachedService.plan_name %></b> plan.
+            Changing this moves the website to another plan; the domain itself is not affected.
+          <% } else { %>
+            <b><%= domain.domain %> is not attached to a hosting plan</b>, so there is no website for it
+            on the server. Pick a plan and we set it up straight away — the DNS zone, the site and the
+            certificate.
+          <% } %>
+        </p>
+        <form method="post" action="/panel/domains/<%= domain.domain %>/service" data-guard>
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <div class="field">
+            <label class="label" for="service_id">Host it on</label>
+            <select class="select" id="service_id" name="service_id">
+              <option value="">Not hosted here</option>
+              <% hostingServices.forEach(function (s) { %>
+                <option value="<%= s.id %>" <%= String(domain.service_id) === String(s.id) ? 'selected' : '' %>>
+                  <%= s.plan_name %><%= s.primary_domain ? ' — ' + s.primary_domain : ' — no domain attached' %>
+                </option>
+              <% }); %>
+            </select>
+          </div>
+          <button class="btn btn-sm" type="submit" data-busy="Setting up…">Save and set it up</button>
+        </form>
+      <% } %>
+    </div>
+
+    <% if (canRemove) { %>
+      <%- include('../partials/domain-remove', { domain, node, ours: !external, parentName: null }) %>
     <% } %>
   </div>
 
@@ -311,26 +411,46 @@
         the same; DNS and email stay with your provider.
       </p>
       <%#
-        THE ADDRESS IS NEVER PRINTED HERE. Only the hostname.
+        THE ADDRESS FIRST, THE HOSTNAME UNDER IT.
 
-        This card used to show the node's IP next to `point.vesopa.com`,
-        because a fair number of DNS panels refuse a name in an A record and
-        want four numbers. That is a real problem and this is not the way to
-        solve it: every customer who copies the raw address pins us to that
-        number in a zone we cannot see, and moving the node then breaks all of
-        them silently, with no list of who to warn. The hostname is the same
-        instruction with the indirection kept, and it is what support gives out
-        by hand for the handful of panels that cannot take one.
+        This card used to print the hostname alone, and the reasoning was real:
+        every customer who copies the raw address pins us to that number in a
+        zone we cannot see, so moving the node breaks all of them silently with
+        no list of who to warn. What that argument left out is that an A record
+        takes an ADDRESS. A good number of DNS panels reject a hostname in one
+        outright, and the ones that accept it are quietly storing a CNAME-ish
+        thing that behaves differently — so the instruction we were giving was,
+        for a fair share of customers, one they could not carry out, with a
+        support ticket as the only route through.
+
+        So both are here, the one that always works first. The hostname stays
+        underneath for anyone whose panel takes it, and it is still the value
+        every check in the code resolves — see nameservers.pointsAtUs, which
+        compares against whatever POINT_HOSTNAME answers with rather than
+        against anything written down here.
       %>
-      <div class="copyable">
-        <span class="mono"><%= pointHostname %></span>
-        <button type="button" class="btn btn-ghost btn-sm copy-btn" data-copy="<%= pointHostname %>">Copy</button>
-      </div>
-      <p class="tiny muted mt-2 mb-0">
-        If your DNS panel will not accept a name in an A record, open a ticket
-        and we will give you the address to use — we keep it out of the panel so
-        that moving your site to a faster machine never silently breaks it.
-      </p>
+      <% if (addresses.length) { %>
+        <% addresses.forEach(function (ip) { %>
+          <div class="copyable">
+            <span class="mono"><%= ip %></span>
+            <button type="button" class="btn btn-ghost btn-sm copy-btn" data-copy="<%= ip %>">Copy</button>
+          </div>
+        <% }); %>
+        <p class="tiny muted mt-2 mb-0">
+          If your DNS panel accepts a name instead of an address, <span class="mono"><%= pointHostname %></span>
+          is the better value to use — it follows the server if we ever move your site to a faster machine,
+          and the address above would then need changing by hand.
+        </p>
+      <% } else { %>
+        <div class="copyable">
+          <span class="mono"><%= pointHostname %></span>
+          <button type="button" class="btn btn-ghost btn-sm copy-btn" data-copy="<%= pointHostname %>">Copy</button>
+        </div>
+        <p class="tiny muted mt-2 mb-0">
+          If your DNS panel will not accept a name in an A record, open a ticket and we will give you
+          the address to use.
+        </p>
+      <% } %>
     </div>
 
     <div class="p-card">

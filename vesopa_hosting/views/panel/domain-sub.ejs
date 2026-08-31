@@ -172,19 +172,7 @@
     </div>
 
     <% if (canRemove) { %>
-      <div class="p-card">
-        <h2 class="h3 mb-2">Remove this subdomain</h2>
-        <p class="small muted mb-2">
-          Deletes the site, its files and its certificate from our server.
-          <b><%= parent || 'The main domain' %> is not affected.</b>
-          You can add the subdomain again at any time.
-        </p>
-        <form method="post" action="/panel/domains/<%= domain.domain %>/remove"
-              data-confirm="Remove <%= domain.domain %>? Its website and files are deleted from the server and cannot be recovered.">
-          <input type="hidden" name="_csrf" value="<%= csrf %>">
-          <button class="btn btn-ghost btn-sm" type="submit">Remove <%= domain.domain %></button>
-        </form>
-      </div>
+      <%- include('../partials/domain-remove', { domain, node, ours: false, parentName: parent }) %>
     <% } %>
   </div>
 
@@ -207,22 +195,26 @@
         <tr><td class="muted">Name</td>
             <td class="strong mono"><%= parent ? domain.domain.slice(0, -(parent.length + 1)) : domain.domain %></td></tr>
         <tr><td class="muted">Value</td>
-            <td class="strong mono"><%= pointHostname %></td></tr>
+            <td class="strong mono"><%= addresses[0] || pointHostname %></td></tr>
       </tbody></table></div>
 
       <p class="tiny muted mt-2 mb-1">Copy this into the record:</p>
-      <%# The node's address is never printed in the panel — see the note in
-          views/panel/domain.ejs. The hostname is the same instruction with the
-          indirection kept, so moving the node does not break anybody's zone. %>
-      <div class="copyable">
-        <span class="mono"><%= pointHostname %></span>
-        <button type="button" class="btn btn-ghost btn-sm copy-btn" data-copy="<%= pointHostname %>">Copy</button>
-      </div>
-      <p class="tiny muted mt-2 mb-0">
-        <span class="mono"><%= pointHostname %></span> is a name that
-        always follows it. Prefer the name if your DNS panel takes one — then a move on our side
-        never breaks your site.
-      </p>
+      <%# The address first, the hostname under it — see the long note on the
+          same card in views/panel/domain.ejs for why both are here and in this
+          order. An A record takes an address, and a panel that refuses a name
+          in one leaves a customer with no way to follow the instruction. %>
+      <% (addresses.length ? addresses : [pointHostname]).forEach(function (value) { %>
+        <div class="copyable">
+          <span class="mono"><%= value %></span>
+          <button type="button" class="btn btn-ghost btn-sm copy-btn" data-copy="<%= value %>">Copy</button>
+        </div>
+      <% }); %>
+      <% if (addresses.length) { %>
+        <p class="tiny muted mt-2 mb-0">
+          <span class="mono"><%= pointHostname %></span> is a name that always follows this server.
+          Prefer it if your DNS panel takes a name — then a move on our side never breaks your site.
+        </p>
+      <% } %>
     </div>
 
     <div class="p-card">

@@ -104,13 +104,17 @@ function extrasIn(list) {
 async function check(domain) {
   const name = normalise(domain);
   if (!name || !name.includes('.')) {
-    return { matched: false, nameservers: [], extras: [], error: 'Not a domain name.' };
+    return {
+      matched: false, nameservers: [], extras: [], error: 'Not a domain name.', serverFailure: false, code: '',
+    };
   }
 
   try {
     const found = await makeResolver().resolveNs(name);
     return {
       matched: matchesOurs(found),
+      serverFailure: false,
+      code: '',
       nameservers: found.map(normalise).sort(),
       // Present but not blocking — a registrar's verification record, or a
       // leftover delegation the customer has not cleaned up yet.
@@ -127,7 +131,31 @@ async function check(domain) {
     const message = err.code === 'ENOTFOUND' || err.code === 'ENODATA'
       ? 'That domain does not resolve yet.'
       : `Could not read the nameservers (${err.code || err.message}).`;
-    return { matched: false, nameservers: [], extras: [], error: message };
+    /*
+     * SERVFAIL IS ITS OWN ANSWER, and telling it apart from the others is what
+     * breaks the deadlock this whole module used to sit in.
+     *
+     * A domain delegated to ns1/ns2.vesopa.com that we do not yet have a zone
+     * for is REFUSED by our own nameserver, which every recursive resolver on
+     * the internet then reports as SERVFAIL. So the check fails — and the thing
+     * that would fix it is creating the zone, which the old code would only do
+     * AFTER the check passed. vesopa.site sat in exactly that state: correct
+     * delegation at the registry, nothing on the node, "could not read the
+     * nameservers (ESERVFAIL)" forever, and no button anywhere that helped.
+     *
+     * A flag rather than a decision. `servedByUs()` below settles whether we
+     * are the ones failing to answer, and domain-linking decides what to do
+     * about it.
+     */
+    const code = String(err.code || '');
+    return {
+      matched: false,
+      nameservers: [],
+      extras: [],
+      error: message,
+      serverFailure: ['ESERVFAIL', 'ETIMEOUT', 'ECONNREFUSED', 'EREFUSED', 'ENOTIMP'].includes(code),
+      code,
+    };
   }
 }
 
@@ -228,22 +256,85 @@ async function ourNameserversResolve({ fresh = false } = {}) {
  *
  * Cached, because it is the same answer for every page that shows it.
  */
-let addressCache = { at: 0, list: [] };
+/*
+ * KEYED BY TARGET. It used to be one cache for whatever was asked last, which
+ * was harmless only for as long as this had a single caller: point.vesopa.com
+ * and ns1.vesopa.com resolve to the same box today, so nothing ever went wrong.
+ * `servedByUs()` below asks for the nameserver's address, and the day the
+ * nameservers move off the web node a single cache would start handing one
+ * name's answer out under the other's name.
+ */
+const addressCache = new Map();
 const ADDRESS_TTL_MS = 10 * 60_000;
 
 async function ourAddresses(target, { fresh = false } = {}) {
-  if (!fresh && addressCache.list.length && Date.now() - addressCache.at < ADDRESS_TTL_MS) {
-    return addressCache.list;
-  }
-  const list = await makeResolver().resolve4(normalise(target)).catch(() => []);
+  const name = normalise(target);
+  const hit = addressCache.get(name);
+  if (!fresh && hit && hit.list.length && Date.now() - hit.at < ADDRESS_TTL_MS) return hit.list;
+
+  const list = await makeResolver().resolve4(name).catch(() => []);
   // A failed lookup keeps the last good answer rather than replacing it with
   // nothing: the panel showing one stale-but-plausible address beats it showing
   // a blank where the instruction should be.
-  if (list.length) addressCache = { at: Date.now(), list };
-  return addressCache.list;
+  if (list.length) addressCache.set(name, { at: Date.now(), list });
+  return addressCache.get(name)?.list || [];
+}
+
+/**
+ * Do WE answer for this zone?
+ *
+ * Asked of our own nameserver, by address, deliberately bypassing every
+ * recursive resolver — because the state this exists to detect is precisely the
+ * one a recursive resolver cannot describe. A domain delegated to us that we
+ * have no zone for is REFUSED here and SERVFAIL out there, and "SERVFAIL" is
+ * indistinguishable from a registry outage, a typo, or a lame delegation at
+ * somebody else's host. Asking ns1 directly turns that into a fact: either we
+ * hold the zone or we do not.
+ *
+ * The two answers this separates:
+ *
+ *   served: true    we hold the zone. A failing public lookup is then somebody
+ *                   else's problem — usually a delegation that has not
+ *                   propagated yet, which fixes itself.
+ *   served: false   the delegation may well be perfect and we are the ones
+ *                   answering REFUSED. Creating the zone is the fix, and it is
+ *                   ours to do.
+ *
+ * Never throws. `reachable: false` means we could not ask, which is not the
+ * same as "no" and must not be acted on as though it were.
+ */
+async function servedByUs(domain) {
+  const name = normalise(domain);
+  if (!name || !OURS.length) return { served: false, reachable: false, error: 'No nameservers configured.' };
+
+  const ips = await ourAddresses(OURS[0]);
+  if (!ips.length) return { served: false, reachable: false, error: `${OURS[0]} does not resolve.` };
+
+  const resolver = new dns.promises.Resolver({ timeout: TIMEOUT_MS, tries: 1 });
+  try {
+    resolver.setServers(ips);
+  } catch {
+    return { served: false, reachable: false, error: 'Could not address our own nameserver.' };
+  }
+
+  try {
+    // SOA rather than NS: a zone always has exactly one, and it is answered
+    // from the zone itself rather than from a delegation above it.
+    await resolver.resolveSoa(name);
+    return { served: true, reachable: true, error: '' };
+  } catch (err) {
+    const code = String(err.code || '');
+    // REFUSED and NXDOMAIN are both real answers from a server that is up and
+    // does not hold the zone. Anything else means we could not ask properly.
+    if (['EREFUSED', 'ENOTFOUND', 'ENODATA', 'ESERVFAIL'].includes(code)) {
+      return { served: false, reachable: true, error: code };
+    }
+    return { served: false, reachable: false, error: code || err.message };
+  }
 }
 
 module.exports = {
   ourAddresses,
+  servedByUs,
   check, matchesOurs, extrasIn, pointsAtUs, normalise, ourNameserversResolve, OURS, RESOLVERS,
 };

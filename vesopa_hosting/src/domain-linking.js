@@ -416,10 +416,55 @@ async function addSubdomain({
 async function verify(domainRow, { customer = null } = {}) {
   const isSubdomain = domainRow.source === 'subdomain';
 
-  let ns = { matched: false, nameservers: [], extras: [], error: '' };
+  let ns = { matched: false, nameservers: [], extras: [], error: '', serverFailure: false };
+  let healed = null;
 
   if (!isSubdomain) {
     ns = await nameservers.check(domainRow.domain);
+
+    /*
+     * ------------------------------------------------------------------
+     * THE DEADLOCK, BROKEN HERE.
+     * ------------------------------------------------------------------
+     * A domain registered through us has its nameservers set to ours at the
+     * registry by us — there is no customer step and nothing to prove. But
+     * until a zone exists on the node, ns1.vesopa.com answers REFUSED for it,
+     * public resolvers turn that into SERVFAIL, and this check fails. The old
+     * code then returned early, so the zone was never created, so the check
+     * failed again on the next sweep, forever. vesopa.site lived in that state
+     * with a perfect delegation and nothing on the node at all.
+     *
+     * So when the lookup fails with a SERVER failure (not "does not exist"),
+     * the domain is one we may serve on sight, and OUR OWN nameserver confirms
+     * it is not holding the zone — build it, then ask the public internet
+     * again. One retry, never a loop.
+     *
+     * An EXTERNAL domain is deliberately excluded. Its SERVFAIL is ambiguous:
+     * it may be delegated to us and waiting for exactly this, or it may be
+     * broken at a registrar we have nothing to do with, and creating zones for
+     * names nobody has pointed at us on the strength of a failed lookup is not
+     * a thing to do automatically. The panel gives its owner a button instead —
+     * see `rebuild()`.
+     */
+    if (!ns.matched && ns.serverFailure && mayPoint(domainRow)) {
+      const ours = await nameservers.servedByUs(domainRow.domain);
+      if (ours.reachable && !ours.served) {
+        const owner = customer
+          || await db.one('SELECT * FROM customers WHERE id = ? LIMIT 1', [domainRow.customer_id]);
+        healed = await pointAtNode(domainRow, owner, { resolvesHere: false, force: true });
+        if (healed.pointed) {
+          await db.logActivity({
+            actorType: 'system', action: 'domain.zone_created', target: domainRow.domain,
+            detail: 'Delegated to us with no zone here — created it so the delegation can resolve.',
+          });
+          // Ask again with the zone in place. A brand-new zone is answered by
+          // our own nameserver immediately; the recursive resolvers this check
+          // uses may still be holding the SERVFAIL for a minute or two, which
+          // is fine — the next sweep picks it up.
+          ns = await nameservers.check(domainRow.domain);
+        }
+      }
+    }
   }
 
   /*
@@ -482,6 +527,11 @@ async function verify(domainRow, { customer = null } = {}) {
     nameservers: ns.nameservers,
     addresses: ip.addresses,
     error: ns.error || '',
+    // Set when this call created the zone that was missing. The panel says so
+    // rather than reporting a bare "not yet" for a check that just did real
+    // work — "we have set it up, DNS is catching up" is a true and much less
+    // alarming sentence than the same failure twice.
+    healed: healed ? { built: Boolean(healed.pointed), reason: healed.reason || '' } : null,
   };
 
   if (!matched) return result;
@@ -523,8 +573,23 @@ async function verify(domainRow, { customer = null } = {}) {
  * failure for being set up. SSL is best-effort and last: a certificate that
  * cannot be issued yet is a retry button in the panel, not a broken site.
  */
-async function pointAtNode(domainRow, customer, { resolvesHere = null } = {}) {
-  if (!mayPoint(domainRow)) {
+async function pointAtNode(domainRow, customer, { resolvesHere = null, force = false } = {}) {
+  /*
+   * `force` exists for the one case the gate below gets wrong: a domain that
+   * cannot be verified UNTIL it is built.
+   *
+   * We are its nameservers. A resolver asking ns1.vesopa.com for a zone we have
+   * not created gets REFUSED, so the public answer is SERVFAIL, so verification
+   * fails, so we never create the zone. Nothing in that loop moves on its own,
+   * and the customer's registrar shows a delegation that is entirely correct.
+   *
+   * Building the zone is the cheap half and it is safe to do unasked: a zone
+   * for a name that turns out not to be delegated to us serves nobody and costs
+   * nothing. The EXPENSIVE half stays gated exactly as it was — `resolvesHere`
+   * still decides whether a certificate is attempted, so a forced build cannot
+   * burn a Let's Encrypt rate limit on a name that does not resolve here.
+   */
+  if (!force && !mayPoint(domainRow)) {
     return { pointed: false, reason: 'Not verified as pointing at us yet.' };
   }
   if (!customer?.hestia_user) {
@@ -789,22 +854,147 @@ async function refreshSsl(domainRow, customer) {
  * what removing a domain from a hosting account means, and it is why the caller
  * has to have established that the customer meant this domain.
  */
-async function unpointFromNode(domainRow, customer) {
+async function unpointFromNode(domainRow, customer, parts = {}) {
+  const { web = true, dns = true, mail = true } = parts;
   const username = customer?.hestia_user;
   if (!username || !domainRow?.domain) {
-    return { ok: true, skipped: 'no hosting account' };
+    return { ok: true, skipped: 'no hosting account', removed: [] };
   }
-  if (!hestia.isLive()) return { ok: true, skipped: 'node not live' };
+  if (!hestia.isLive()) return { ok: true, skipped: 'node not live', removed: [] };
 
-  try {
-    await hestia.deleteWebDomain({ username, domain: domainRow.domain });
-    return { ok: true, removed: true };
-  } catch (err) {
-    // 3 is E_NOTEXIST — there was nothing on the node to remove, which is the
-    // state we were trying to reach.
-    if (err.code === 3) return { ok: true, absent: true };
-    return { ok: false, error: err.message };
+  const domain = domainRow.domain;
+
+  /*
+   * ALL THREE IS STILL ONE CALL. `v-delete-domain` removes the vhost, the zone
+   * and the mail domain together, and doing it in one command rather than three
+   * is not just tidier — it is the only version that cannot leave a half-
+   * deleted domain behind if the second call fails.
+   *
+   * The narrow path exists because the customer is now asked WHICH parts to
+   * remove. Detaching a website while keeping the zone we answer for is an
+   * ordinary thing to want: the zone is what makes their delegation resolve at
+   * all, and taking it away turns "this domain is off my hosting plan" into
+   * "this domain is off the internet".
+   */
+  if (web && dns && mail) {
+    try {
+      await hestia.deleteWebDomain({ username, domain });
+      return { ok: true, removed: ['website', 'DNS zone', 'mail'] };
+    } catch (err) {
+      // 3 is E_NOTEXIST — there was nothing on the node to remove, which is the
+      // state we were trying to reach.
+      if (err.code === 3) return { ok: true, absent: true, removed: [] };
+      return { ok: false, error: err.message, removed: [] };
+    }
   }
+
+  // Mail first, then web, then DNS. Order matters on the way out: the zone is
+  // the last thing to go, so a failure part-way through leaves a domain that
+  // still resolves rather than one that has vanished from DNS with its site
+  // still on disk.
+  const wanted = [
+    mail && { label: 'mail', run: () => hestia.deleteMailDomain({ username, domain }) },
+    web && { label: 'website', run: () => hestia.deleteWebsite({ username, domain }) },
+    dns && { label: 'DNS zone', run: () => hestia.deleteDnsDomain({ username, domain }) },
+  ].filter(Boolean);
+
+  const removed = [];
+  const errors = [];
+  for (const part of wanted) {
+    try {
+      // eslint-disable-next-line no-await-in-loop -- three calls, and the order is the point
+      await part.run();
+      removed.push(part.label);
+    } catch (err) {
+      // Already gone is the state we wanted.
+      if (err.code === 3) continue;
+      errors.push(`${part.label}: ${err.message}`);
+    }
+  }
+
+  return { ok: errors.length === 0, removed, error: errors.join('; ') };
+}
+
+/**
+ * What actually exists on the node for this domain, right now.
+ *
+ * Asked of Hestia rather than inferred from our own columns, because the
+ * removal form is built from the answer and the two can disagree: a domain
+ * whose `dns_enabled` is 1 may have no zone yet (it was never built), and one
+ * adopted from the node may have all three with nothing in our database saying
+ * so. Offering to delete a mail domain that does not exist, or silently leaving
+ * one that does, are both worse than one extra call.
+ *
+ * NEVER THROWS. Every page that shows the removal card calls this, and a node
+ * that is slow or unreachable must degrade to "we cannot tell you what is
+ * there" rather than a 500 on a page whose main job is something else.
+ */
+async function nodeState(domainRow, customer) {
+  const empty = {
+    known: false, web: false, dns: false, mail: false, dnsRecords: 0, mailboxes: 0,
+  };
+  const username = customer?.hestia_user;
+  if (!username || !domainRow?.domain || !hestia.isLive()) return empty;
+
+  const domain = domainRow.domain;
+  try {
+    const [web, dns, mail] = await Promise.all([
+      hestia.webDomainExists({ username, domain }).catch(() => false),
+      hestia.dnsDomainExists({ username, domain }).catch(() => false),
+      hestia.mailDomainExists({ username, domain }).catch(() => false),
+    ]);
+
+    // Counts only where there is something to count — they are what make the
+    // checkbox honest ("and its 7 records") rather than an abstraction.
+    const [records, mailDomains] = await Promise.all([
+      dns ? hestia.listDnsRecords({ username, domain }).catch(() => []) : [],
+      mail ? hestia.listMailDomains(username).catch(() => []) : [],
+    ]);
+
+    const box = (mailDomains || []).find((m) => m.domain === domain);
+    return {
+      known: true,
+      web,
+      dns,
+      mail,
+      dnsRecords: (records || []).length,
+      mailboxes: box ? Number(box.accounts || 0) : 0,
+    };
+  } catch {
+    return empty;
+  }
+}
+
+/**
+ * Build this domain on the node NOW, without waiting to be convinced.
+ *
+ * The escape hatch for every version of "it should be working and it is not":
+ * a domain delegated to us that we never created a zone for, a vhost deleted by
+ * hand, a build that failed the first time. It creates whatever is missing —
+ * every step tolerates already-existing — and then runs the ordinary
+ * verification, so the answer the customer gets afterwards is the real state of
+ * the public DNS rather than a claim about what we just did.
+ *
+ * Safe to press repeatedly. The only irreversible thing in here is the
+ * certificate request, and that is still gated on the name genuinely resolving
+ * to this node.
+ */
+async function rebuild(domainRow, customer) {
+  const owner = customer
+    || await db.one('SELECT * FROM customers WHERE id = ? LIMIT 1', [domainRow.customer_id]);
+
+  if (!owner?.hestia_user) {
+    return { ok: false, error: 'There is no hosting account on this profile yet, so there is nothing to build the site on.' };
+  }
+
+  const built = await pointAtNode(domainRow, owner, { force: true });
+
+  // Re-read: pointAtNode writes pointed_at and the SSL columns, and the verify
+  // below should see them rather than the stale row we were handed.
+  const fresh = await db.one('SELECT * FROM domains WHERE id = ? LIMIT 1', [domainRow.id]) || domainRow;
+  const verdict = await verify(fresh, { customer: owner });
+
+  return { ok: Boolean(built.pointed), built, verdict };
 }
 
 // ---------------------------------------------------------------------------
@@ -1051,5 +1241,7 @@ module.exports = {
   verify,
   pointAtNode,
   unpointFromNode,
+  nodeState,
+  rebuild,
   dropUnverified,
 };

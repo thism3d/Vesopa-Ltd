@@ -227,7 +227,11 @@ function describe(d, opts = {}) {
       tone: 'grey',
       icon: 'pin',
       line: 'Registered to you, not pointed at a website yet',
-      hint: 'Nothing is wrong. Attach it to hosting whenever you want a site on it.',
+      // Names the control, because "attach it to hosting" described something
+      // the panel had no way to do until the Hosting card existed on the
+      // domain's own page. A hint that cannot be acted on is a complaint.
+      hint: 'Nothing is wrong. Open the domain and pick a plan under "Hosting" '
+        + 'whenever you want a website on it — we set up the DNS, the site and the certificate.',
     };
   }
 

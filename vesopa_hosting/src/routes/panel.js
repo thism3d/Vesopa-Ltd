@@ -151,9 +151,40 @@ async function foreignAddresses(domain) {
   return seen.filter((ip) => !ours.includes(ip));
 }
 
-/** The canonical path for a domain. Used everywhere so the links cannot drift. */
+/**
+ * The canonical path for a domain. Used everywhere so the links cannot drift.
+ *
+ * Takes a row, a name, or one of domain-linking's result objects — and those
+ * are the reason for the `id` fallback. A successful result carries `domain`,
+ * but the "that domain is already on your account" refusal carries only `id`,
+ * and the old `d.domain || d` turned that object into the literal string
+ * "[object Object]" in the URL. An id resolves here exactly as a name does
+ * (see ownedDomain), so referencing the row is both correct and enough.
+ */
 function domainPath(d, suffix = '') {
-  return `/panel/domains/${encodeURIComponent(d.domain || d)}${suffix}`;
+  const ref = d && typeof d === 'object' ? (d.domain || d.id || '') : d;
+  return `/panel/domains/${encodeURIComponent(ref)}${suffix}`;
+}
+
+/**
+ * What to say after building a domain on the node.
+ *
+ * Three genuinely different outcomes, and the middle one is the one worth
+ * getting right: a zone that has just been created is correct and not yet
+ * resolving anywhere, because the resolvers that answered SERVFAIL a minute ago
+ * are still holding that answer. "Not pointing at us" would be the same red
+ * message the customer has been staring at all along, for a state that is now
+ * fixed and merely waiting on the internet's own clock.
+ */
+function buildOutcome(name, result) {
+  if (result.verdict?.matched) {
+    return result.built?.ssl
+      ? `${name} is set up, pointing at us and secured with a certificate.`
+      : `${name} is set up and pointing at us. The certificate follows once DNS has settled — usually a few minutes.`;
+  }
+  return `${name} is now set up on the server. Its DNS is being published — public resolvers `
+    + 'can take a few minutes to pick it up, and the certificate is issued automatically after that. '
+    + 'Press "Check now" in a little while.';
 }
 
 // ---------------------------------------------------------------------------
@@ -1171,9 +1202,13 @@ router.get('/domains/:id', async (req, res, next) => {
       : null;
     const hasHosting = Boolean(req.customer.hestia_user);
 
-    const [ssl, addresses] = await Promise.all([
+    const [ssl, addresses, node] = await Promise.all([
       linking.refreshSsl(domain, req.customer),
       nameservers.ourAddresses(POINT_HOSTNAME),
+      // What is actually on the node for this name. The removal card is built
+      // from this, so it can offer the DNS zone and the mailboxes only when
+      // they exist — and say how much is in each.
+      linking.nodeState(domain, req.customer),
     ]);
 
     if (subdomain) {
@@ -1198,6 +1233,7 @@ router.get('/domains/:id', async (req, res, next) => {
         addresses,
         observed: await foreignAddresses(domain),
         canRemove: true,
+        node,
         site,
         hasHosting,
       });
@@ -1227,9 +1263,30 @@ router.get('/domains/:id', async (req, res, next) => {
       // be a second copy that drifts.
       canEditDns: linking.mayEditDns(domain, req.customer),
       canHaveMail: linking.mayHaveMail(domain),
-      // Only an external domain can be taken off the account — one registered
-      // here is the customer's property and leaves by transfer, not by button.
-      canRemove: domain.source === 'external',
+      /*
+       * REMOVAL IS OFFERED FOR EVERY DOMAIN NOW, and what it means depends on
+       * who holds the registration.
+       *
+       * It used to be external-only, on the reasoning that a domain registered
+       * here is the customer's property and leaves by transfer rather than by
+       * button. True of the REGISTRATION, and it quietly took the hosting with
+       * it: there was no way to take a domain we registered off a plan, off a
+       * server, or out of a broken half-built state. The registration is still
+       * untouched by this button — see the remove handler, which detaches one
+       * of ours and only fully removes an external name.
+       */
+      canRemove: true,
+      node,
+      // The plans this domain could be attached to, and the one it is on. A
+      // domain with no service is not broken — but it is also not hosted, and
+      // until now the panel had no control that could change that.
+      hostingServices: await db.query(
+        `SELECT s.id, s.primary_domain, p.name AS plan_name FROM services s
+           JOIN plans p ON p.id = s.plan_id
+          WHERE s.customer_id = ? AND s.status = 'active'
+          ORDER BY s.id`,
+        [req.customer.id],
+      ),
     });
   } catch (err) {
     next(err);
@@ -1345,48 +1402,274 @@ router.post('/domains/:id/verify', async (req, res, next) => {
   }
 });
 
-/** Take an external domain off the account. The domain itself is untouched. */
+/**
+ * Attach this domain to a hosting plan, or take it off one.
+ *
+ * The control that was missing. A domain could be filed under a service only at
+ * the moment it was added and never afterwards — so a name registered through
+ * the order flow, which files it under nothing, could not be put on the plan the
+ * customer had just bought. `vesopa.site` was in exactly that position: paid
+ * for, delegated to us, attached to nothing, with no control on the page that
+ * could change it.
+ *
+ * Attaching does three things, and the third is the one that matters: it files
+ * the domain under the service, adopts it as the plan's primary domain if the
+ * plan has none, and BUILDS IT ON THE NODE. A domain attached to a plan that
+ * the node does not serve is a database row pretending to be hosting.
+ */
+router.post('/domains/:id/service', async (req, res, next) => {
+  try {
+    if (!auth.checkCsrf(req)) return res.redirect(`/panel/domains/${req.params.id}`);
+    const domain = await ownedDomain(req);
+    if (!domain) return next();
+
+    const wanted = Number(req.body.service_id) || null;
+    const back = domainPath(domain);
+
+    let service = null;
+    if (wanted) {
+      service = await db.one(
+        `SELECT s.*, p.name AS plan_name FROM services s
+           JOIN plans p ON p.id = s.plan_id
+          WHERE s.id = ? AND s.customer_id = ? AND s.status = 'active' LIMIT 1`,
+        [wanted, req.customer.id],
+      );
+      if (!service) {
+        flash(res, 'That hosting plan is not on your account.', 'warn');
+        return res.redirect(back);
+      }
+    }
+
+    await db.query('UPDATE domains SET service_id = ? WHERE id = ?', [service ? service.id : null, domain.id]);
+
+    if (!service) {
+      /*
+       * Detaching from the plan is a filing change and nothing more. The site,
+       * the zone and the mailboxes stay exactly as they are — removing those is
+       * the remove button's job, and doing it here would take a live website
+       * down for somebody who only meant to tidy up which plan it sits under.
+       */
+      await db.logActivity({
+        actorType: 'customer', actorId: req.customer.id, action: 'domain.detached',
+        target: domain.domain, ip: req.ip,
+      });
+      flash(res, `${domain.domain} is no longer filed under a hosting plan. Nothing on the server has changed.`, 'info');
+      return res.redirect(back);
+    }
+
+    // A plan with no domain adopts this one. A plan that already has a primary
+    // domain keeps it, and this becomes an additional domain on the same
+    // account — which is what an add-on domain has always meant here.
+    const adopted = !service.primary_domain;
+    if (adopted) {
+      await db.query('UPDATE services SET primary_domain = ? WHERE id = ?', [domain.domain, service.id]);
+    }
+
+    const result = await linking.rebuild({ ...domain, service_id: service.id }, req.customer);
+
+    await db.logActivity({
+      actorType: 'customer', actorId: req.customer.id, action: 'domain.attached',
+      target: domain.domain, ip: req.ip,
+      detail: `${service.plan_name}${adopted ? ' (adopted as the plan’s domain)' : ''}; `
+        + (result.ok ? 'built on the node' : `not built: ${result.error || result.built?.reason || 'unknown'}`),
+      ok: Boolean(result.ok),
+    });
+
+    live.publish(req.customer.id, `domain:${domain.id}`);
+
+    if (!result.ok) {
+      flash(res, `${domain.domain} is now on your ${service.plan_name} plan, but the website could not be `
+        + `created on the server (${result.error || result.built?.reason || 'unknown error'}). `
+        + 'Try "Set it up on the server" on this page, or open a ticket.', 'warn');
+      return res.redirect(back);
+    }
+
+    flash(res, buildOutcome(domain.domain, result), result.verdict?.matched ? 'ok' : 'info');
+    res.redirect(back);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Build this domain on the server now.
+ *
+ * The button for the deadlock. A domain delegated to our nameservers that we
+ * hold no zone for is answered REFUSED by ns1, which the public internet reads
+ * as SERVFAIL — so the verification that gates the build can never pass, and
+ * the build that would fix it never runs. `verify` now breaks that loop by
+ * itself for domains registered here; this is the manual version, and it is the
+ * only route to it for an EXTERNAL domain, where building automatically on the
+ * strength of a failed lookup would mean creating zones for names nobody has
+ * pointed at us.
+ *
+ * Pressing it twice is harmless — every step tolerates already-existing.
+ */
+router.post('/domains/:id/rebuild', async (req, res, next) => {
+  try {
+    if (!auth.checkCsrf(req)) return res.redirect(`/panel/domains/${req.params.id}`);
+    const domain = await ownedDomain(req);
+    if (!domain) return next();
+
+    const back = domainPath(domain);
+
+    // Three or four calls to the node and possibly one to Let's Encrypt. Cheap
+    // enough to offer freely, expensive enough not to leave unbounded.
+    if (rateLimited(req.customer.id, 'domain-rebuild', { max: 6, windowMs: 600_000 })) {
+      flash(res, 'We have just done that a few times. Give DNS a couple of minutes and try again.', 'warn');
+      return res.redirect(back);
+    }
+
+    const result = await linking.rebuild(domain, req.customer);
+    live.publish(req.customer.id, `domain:${domain.id}`);
+
+    await db.logActivity({
+      actorType: 'customer', actorId: req.customer.id, action: 'domain.rebuilt',
+      target: domain.domain, ip: req.ip,
+      detail: result.ok ? 'Website, zone and mail created or confirmed on the node.' : (result.error || 'not built'),
+      ok: Boolean(result.ok),
+    });
+
+    if (!result.ok) {
+      flash(res, result.error
+        || `${domain.domain} could not be set up on the server. ${result.built?.reason || ''}`.trim(), 'warn');
+      return res.redirect(back);
+    }
+
+    flash(res, buildOutcome(domain.domain, result), result.verdict?.matched ? 'ok' : 'info');
+    res.redirect(back);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Take a domain off the account, or off its hosting.
+ *
+ * WHAT "REMOVE" MEANS DEPENDS ON WHO HOLDS THE REGISTRATION, and conflating the
+ * two is how this used to refuse the request outright.
+ *
+ *   external      A name registered somewhere else and merely pointed here.
+ *                 Removing it takes the row off the account entirely; there is
+ *                 nothing else of theirs here to keep.
+ *
+ *   ours          A name registered THROUGH us. The registration is the
+ *                 customer's property, is paid for, and has a renewal date — so
+ *                 the row stays, and what is removed is the hosting: the site
+ *                 comes off the node, the domain comes off its plan, and if it
+ *                 was that plan's primary domain the plan goes back to having
+ *                 none. It reappears in the panel as a parked domain, which is
+ *                 exactly what it now is.
+ *
+ * The old handler refused the second case with "open a ticket and we will
+ * transfer it out", which answered a question nobody asked: wanting a domain off
+ * a hosting plan is not wanting it moved to another registrar.
+ *
+ * THE ZONE AND THE MAILBOXES ARE ASKED ABOUT, NOT ASSUMED. `v-delete-domain`
+ * takes website, DNS and mail together, and for a domain delegated to us the
+ * zone is the thing making the delegation resolve at all — deleting it as a
+ * side effect of "remove this site" takes the domain off the internet rather
+ * than off the plan, and takes the mailboxes with it. The form offers each one
+ * that actually exists, with what is in it; nothing here is removed unless it
+ * was ticked.
+ */
 router.post('/domains/:id/remove', async (req, res, next) => {
   try {
     if (!auth.checkCsrf(req)) return res.redirect(`/panel/domains/${req.params.id}`);
     const domain = await ownedDomain(req);
     if (!domain) return next();
 
-    if (domain.source !== 'external') {
-      flash(
-        res,
-        'This domain is registered with us, so it cannot be removed here — open a ticket and we will transfer it out for you.',
-        'warn',
-      );
-      return res.redirect(domainPath(domain));
-    }
+    const ours = domain.source === 'registered' || domain.source === 'transfer';
+    const back = domainPath(domain);
 
     /*
-     * Take it off the node BEFORE the row is marked removed. In that order a
-     * failure leaves the domain visibly still on the account, which is a state
-     * the customer can retry from; the other way round loses the only record of
+     * The checkboxes. Absent means unticked, which is the safe reading in both
+     * directions: a request that lost them removes less than asked rather than
+     * more, and a crafted one cannot delete a zone the form never offered.
+     *
+     * An EXTERNAL domain leaving the account is the exception — there is no row
+     * left to hold the leftovers against, so it takes everything with it, which
+     * is what it has always done and what its confirmation says.
+     */
+    const dropDns = ours ? Boolean(req.body.drop_dns) : true;
+    const dropMail = ours ? Boolean(req.body.drop_mail) : true;
+
+    /*
+     * Take it off the node BEFORE the row changes. In that order a failure
+     * leaves the domain visibly still on the account, which is a state the
+     * customer can retry from; the other way round loses the only record of
      * which account the leftover zone belonged to.
      */
-    const unpointed = await linking.unpointFromNode(domain, req.customer);
+    const unpointed = await linking.unpointFromNode(domain, req.customer, {
+      web: true, dns: dropDns, mail: dropMail,
+    });
 
-    await db.query("UPDATE domains SET status = 'removed', service_id = NULL WHERE id = ?", [domain.id]);
+    // Whichever parts were kept are still ours to serve, so the flags that say
+    // whether we serve them have to agree. A zone kept with `dns_enabled = 0`
+    // would be deleted by the next rebuild without anybody asking again.
+    if (ours) {
+      const service = domain.service_id
+        ? await db.one('SELECT id, primary_domain FROM services WHERE id = ? AND customer_id = ? LIMIT 1',
+          [domain.service_id, req.customer.id])
+        : null;
+
+      await db.query(
+        `UPDATE domains
+            SET service_id = NULL, pointed_at = NULL,
+                dns_enabled = ?, mail_enabled = ?,
+                ns_verified_at = NULL, verify_method = ''
+          WHERE id = ?`,
+        [dropDns ? 0 : 1, dropMail ? 0 : 1, domain.id],
+      );
+
+      /*
+       * The plan goes back to "No domain attached" and NOTHING ELSE HAPPENS to
+       * it. Not suspended, not cancelled, not rebuilt — the account, its files,
+       * its databases and its other domains are untouched. A customer changing
+       * which name their plan answers to must not be able to lose the plan.
+       */
+      if (service && service.primary_domain === domain.domain) {
+        await db.query("UPDATE services SET primary_domain = '' WHERE id = ?", [service.id]);
+      }
+    } else {
+      await db.query("UPDATE domains SET status = 'removed', service_id = NULL WHERE id = ?", [domain.id]);
+    }
+
+    const kept = ours ? [!dropDns && 'DNS', !dropMail && 'email'].filter(Boolean) : [];
+
     await db.logActivity({
-      actorType: 'customer', actorId: req.customer.id, action: 'domain.removed',
+      actorType: 'customer', actorId: req.customer.id,
+      action: ours ? 'domain.unhosted' : 'domain.removed',
       target: domain.domain, ip: req.ip,
-      detail: unpointed.ok ? 'Website, DNS zone and mail removed from the node.' : `Node cleanup failed: ${unpointed.error}`,
+      detail: unpointed.ok
+        ? `Removed from the node: ${(unpointed.removed || []).join(', ') || 'nothing was there'}`
+          + `${kept.length ? `; kept ${kept.join(' and ')}` : ''}`
+        : `Node cleanup failed: ${unpointed.error}`,
       ok: unpointed.ok,
     });
 
-    flash(
-      res,
-      unpointed.ok
-        ? `${domain.domain} has been removed from your account, along with its website, DNS and mail here. The domain itself is untouched.`
-        // Said plainly rather than swallowed: the row is gone from their list
-        // either way, and a zone still answering for a domain they believe they
-        // have removed is exactly the thing they need to be able to tell us.
-        : `${domain.domain} has been removed from your account, but its files, DNS or mail could not be cleared from the server. We have logged it — open a ticket if the domain still resolves here.`,
-      unpointed.ok ? 'info' : 'warn',
-    );
+    live.publish(req.customer.id, `domain:${domain.id}`);
+
+    if (!unpointed.ok) {
+      // Said plainly rather than swallowed: the change has happened either way,
+      // and a zone still answering for a domain they believe they have removed
+      // is exactly the thing they need to be able to tell us about.
+      flash(res, `${domain.domain} has been taken off its hosting, but part of it could not be cleared `
+        + `from the server (${unpointed.error}). We have logged it — open a ticket if the domain still `
+        + 'resolves here.', 'warn');
+      return res.redirect(ours ? back : '/panel/domains');
+    }
+
+    if (ours) {
+      flash(res, `${domain.domain} is no longer hosted here`
+        + `${kept.length ? `, but we still run its ${kept.join(' and ')}` : ''}. `
+        + 'The registration is untouched — it is still yours and still renews. '
+        + 'Attach it to a plan again whenever you want a site on it.', 'info');
+      return res.redirect(back);
+    }
+
+    flash(res, `${domain.domain} has been removed from your account, along with its website, DNS and mail `
+      + 'here. The domain itself is registered elsewhere and is untouched.', 'info');
     res.redirect('/panel/domains');
   } catch (err) {
     next(err);
