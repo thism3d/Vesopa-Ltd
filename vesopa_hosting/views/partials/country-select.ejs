@@ -1,0 +1,43 @@
+<%#
+  A country picker, in one place so the two forms that ask cannot disagree.
+
+  Both used to be `<input maxlength="2">` — a field only somebody who already
+  knows the ISO code can fill in. Everyone else types "UK", which is not the
+  code (GB is), and the value goes to the registrar as the registrant's country
+  of record on a real registration.
+
+  Options:
+    name      field name (default "country")
+    id        element id (default the name)
+    selected  the code to pre-select — use countries.pick() to work it out
+    geo       the code IP geolocation suggested, so the form can say so
+%>
+<%
+  const csName = typeof name !== 'undefined' ? name : 'country';
+  const csId = typeof id !== 'undefined' ? id : csName;
+  const csSel = String(typeof selected !== 'undefined' ? selected : 'GB').toUpperCase();
+  const csGeo = String(typeof geo !== 'undefined' && geo ? geo : '').toUpperCase();
+  const csList = countries.options();
+  const csCommon = csList.filter((c) => c.group === 'common');
+  const csAll = csList.filter((c) => c.group === 'all');
+%>
+<select class="input" id="<%= csId %>" name="<%= csName %>" autocomplete="country">
+  <optgroup label="Common">
+    <% csCommon.forEach(function (c) { %>
+      <option value="<%= c.code %>" <%= c.code === csSel ? 'selected' : '' %>><%= c.name %></option>
+    <% }); %>
+  </optgroup>
+  <optgroup label="All countries">
+    <% csAll.forEach(function (c) { %>
+      <option value="<%= c.code %>" <%= c.code === csSel ? 'selected' : '' %>><%= c.name %></option>
+    <% }); %>
+  </optgroup>
+</select>
+<%# Said only when we guessed AND the guess is what is showing. A note claiming
+    to have detected a country the customer has since changed is worse than no
+    note at all. %>
+<% if (csGeo && csGeo === csSel) { %>
+  <p class="hint">
+    <%- icon('pin', 13) %> Picked from where you are connecting from. Change it if that is wrong.
+  </p>
+<% } %>

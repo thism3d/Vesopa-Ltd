@@ -162,6 +162,41 @@ a.item:hover { background: var(--bg-2); text-decoration: none; }
 .msg-meta { font-size: .8rem; color: var(--ink-3); margin-bottom: 5px; }
 .msg-text { white-space: pre-wrap; font-size: .94rem; line-height: 1.6; word-wrap: break-word; }
 
+/* A subdomain listed under the domain it belongs to. Indented and lighter, so
+   the hierarchy is readable without a second list or a heading. */
+.item-child {
+  padding-left: 40px;
+  background: var(--bg-2);
+}
+.item-child .item-title { font-size: .93rem; font-weight: 650; }
+.item-child .item-icon { color: var(--ink-3); }
+@media (max-width: 560px) { .item-child { padding-left: 24px; } }
+
+/* The add form saying what it worked out from what you typed. */
+.detect {
+  display: flex; align-items: flex-start; gap: 9px;
+  padding: 11px 14px; border-radius: var(--radius-sm);
+  font-size: .87rem; line-height: 1.5; margin: -6px 0 18px;
+}
+.detect[hidden] { display: none; }
+.detect-icon { display: grid; place-items: center; flex: none; margin-top: 1px; }
+.detect.is-sub { background: var(--lime-soft); color: var(--lime-deep); }
+.detect.is-dom { background: #eef4fb; color: #244d75; }
+
+/* The two-kinds explainer under the form. */
+.how-row { display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid var(--rule-soft); }
+.how-row:last-child { border-bottom: 0; }
+.how-tag {
+  flex: none; min-width: 78px; text-align: center;
+  padding: 3px 9px; border-radius: 999px;
+  background: #eef4fb; color: #244d75;
+  font-size: .72rem; font-weight: 800; letter-spacing: .02em;
+}
+.how-tag-sub { background: var(--lime-soft); color: var(--lime-deep); }
+@media (max-width: 520px) { .how-row { flex-direction: column; gap: 6px; } }
+
+.plain-list { margin: 0; padding-left: 18px; font-size: .87rem; line-height: 1.9; }
+
 /* ---- Phone ------------------------------------------------------------- */
 @media (max-width: 860px) {
   .shell { flex-direction: column; }
@@ -230,3 +265,714 @@ a.item:hover { background: var(--bg-2); text-decoration: none; }
 @media (max-width: 1100px) { .p-grid-tld { grid-template-columns: repeat(3, 1fr); } }
 @media (max-width: 700px)  { .p-grid-tld { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 460px)  { .p-grid-tld { grid-template-columns: 1fr; } }
+
+/* ===========================================================================
+   PANEL 2.0 — the object-first layer
+   ---------------------------------------------------------------------------
+   Everything below was added when the panel was rebuilt around OBJECTS rather
+   than around features. The old shape was a rail of nine feature pages, so a
+   customer wanting to look at one website had to know in advance that "the
+   files for that site" lived under Files, "the mailboxes for that site" lived
+   under Email, and the site itself lived under Hosting — three destinations,
+   none of which is the thing they were thinking about.
+
+   The panels people find easy do the opposite: a website is a place you go,
+   and everything about that website is there when you arrive. So the pieces
+   here are mostly containers for ONE object — a hero header, a row of tools,
+   a usage read-out, a setup checklist — plus the small parts that let a page
+   say one true thing about state instead of five hedged ones.
+
+   Colour rules are inherited and not negotiable: --lime is a graphic fill and
+   never small text, brand-coloured type is --lime-ink, and every state chip
+   below was checked against its own background rather than eyeballed.
+   =========================================================================== */
+
+/* ---- Account block in the rail -----------------------------------------
+   The avatar in the top right used to be decoration: it showed a name and did
+   nothing when clicked, which is the single most-tapped dead end in any panel.
+   It is a real destination now, at the foot of the rail where account controls
+   live in every tool people already use, and it LOOKS like one — a chevron, a
+   hover state, and the word "settings" written out. */
+.acct {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 10px; margin-bottom: 6px;
+  border-radius: 11px; text-decoration: none;
+  transition: background .18s var(--ease);
+}
+.acct:hover { background: #1e1e1b; text-decoration: none; }
+.acct-av {
+  width: 34px; height: 34px; border-radius: 50%; flex: none;
+  display: grid; place-items: center;
+  background: var(--lime); color: var(--on-lime);
+  font-weight: 900; font-size: .88rem;
+}
+.acct-txt { min-width: 0; flex: 1; }
+.acct-name {
+  display: block; color: #fff; font-size: .87rem; font-weight: 700;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.acct-sub { display: block; color: #9ba095; font-size: .74rem; }
+.acct-chev { color: #6d7268; flex: none; display: grid; place-items: center; }
+
+/* ---- Hero: the header of one object ------------------------------------- */
+.obj {
+  background: #fff; border: 1px solid var(--rule); border-radius: var(--radius);
+  padding: 20px 22px; margin-bottom: 18px;
+}
+.obj-top { display: flex; align-items: flex-start; gap: 15px; flex-wrap: wrap; }
+.obj-mark {
+  width: 46px; height: 46px; border-radius: 13px; flex: none;
+  display: grid; place-items: center;
+  background: var(--lime-soft); color: var(--lime-deep);
+}
+.obj-id { min-width: 0; flex: 1 1 240px; }
+.obj-name {
+  font-size: 1.32rem; font-weight: 900; letter-spacing: -.03em; line-height: 1.2;
+  word-break: break-word;
+}
+.obj-meta { font-size: .85rem; color: var(--ink-3); margin-top: 2px; }
+.obj-acts { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+@media (max-width: 620px) {
+  .obj-acts { margin-left: 0; width: 100%; }
+  .obj-acts > * { flex: 1 1 auto; justify-content: center; }
+}
+
+/* ---- Tools: the row of places you can go from an object -----------------
+   Buttons, not links in a sidebar. "Where is the enter button?" was asked of
+   a page whose only affordance was the whole row being clickable, which is
+   invisible. Every destination is now a target with a name and a picture. */
+.tools { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 10px; }
+.tool {
+  display: flex; flex-direction: column; gap: 9px;
+  padding: 15px 14px; text-decoration: none; color: inherit;
+  background: #fff; border: 1px solid var(--rule); border-radius: 12px;
+  transition: transform .2s var(--ease), border-color .2s var(--ease), box-shadow .2s var(--ease);
+  min-height: 92px;
+}
+a.tool:hover { text-decoration: none; transform: translateY(-2px); border-color: #cfd5bd; box-shadow: var(--shadow-1); }
+.tool-ic {
+  width: 34px; height: 34px; border-radius: 10px;
+  display: grid; place-items: center;
+  background: var(--bg-3); color: var(--ink-2);
+}
+a.tool:hover .tool-ic { background: var(--lime-soft); color: var(--lime-deep); }
+.tool-name { font-size: .89rem; font-weight: 700; }
+.tool-note { font-size: .76rem; color: var(--ink-3); line-height: 1.35; }
+.tool.is-off { opacity: .5; pointer-events: none; }
+
+/* ---- State chip ---------------------------------------------------------
+   One chip, five tones, every pair measured against its own background rather
+   than picked by eye. The dot carries the same information as the colour so
+   the chip still works for anybody who cannot separate green from amber. */
+.state {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 10px; border-radius: 999px;
+  font-size: .74rem; font-weight: 800; letter-spacing: .01em; white-space: nowrap;
+}
+.state i { width: 6px; height: 6px; border-radius: 999px; background: currentColor; flex: none; }
+.state-green { background: #e7f5ec; color: #1c6b3d; }   /* 5.6:1 */
+.state-amber { background: #fdf0d8; color: #7a5510; }   /* 6.1:1 */
+.state-red   { background: #fdeae7; color: #a32a18; }   /* 5.9:1 */
+.state-blue  { background: #e9f1fb; color: #24557f; }   /* 6.4:1 */
+.state-grey  { background: var(--bg-3); color: var(--ink-2); }
+
+/* ---- Usage: a ring, and a labelled bar ---------------------------------- */
+.rings { display: flex; gap: 22px; flex-wrap: wrap; }
+.ring { display: flex; align-items: center; gap: 12px; }
+.ring-svg { flex: none; transform: rotate(-90deg); }
+.ring-track { stroke: var(--bg-3); }
+.ring-fill { stroke: var(--lime); stroke-linecap: round; transition: stroke-dashoffset .9s var(--ease); }
+.ring.is-high .ring-fill { stroke: var(--amber); }
+.ring.is-full .ring-fill { stroke: var(--red); }
+.ring-num { font-size: 1.06rem; font-weight: 900; letter-spacing: -.03em; line-height: 1.15; }
+.ring-lab { font-size: .76rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+.ring-sub { font-size: .78rem; color: var(--ink-3); }
+
+.bars { display: flex; flex-direction: column; gap: 13px; }
+.bar-head { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; font-size: .84rem; }
+.bar-name { font-weight: 700; }
+.bar-val { color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+/* A seven-day sparkline of visits or mail. Single hue, no gradient, no legend:
+   the shape is the whole message and a second colour would imply a second
+   series that does not exist. */
+.spark { display: flex; align-items: flex-end; gap: 3px; height: 44px; }
+.spark span {
+  flex: 1; min-width: 3px; border-radius: 3px 3px 0 0;
+  background: var(--lime); opacity: .55;
+  transition: opacity .18s var(--ease);
+}
+.spark span:last-child { opacity: 1; }
+.spark:hover span { opacity: .85; }
+.spark:hover span:last-child { opacity: 1; }
+
+/* ---- Setup checklist ----------------------------------------------------
+   Shown only while something on it is unfinished, then it disappears for good.
+   A permanent checklist is a permanent reproach; a temporary one is the reason
+   somebody's first hour goes well. */
+.checklist { display: flex; flex-direction: column; }
+.chk {
+  display: flex; gap: 13px; padding: 14px 0;
+  border-bottom: 1px solid var(--rule-soft);
+}
+.chk:last-child { border-bottom: 0; }
+.chk-n {
+  width: 26px; height: 26px; border-radius: 999px; flex: none;
+  display: grid; place-items: center;
+  font-size: .78rem; font-weight: 900;
+  background: var(--bg-3); color: var(--ink-3);
+}
+.chk.is-done .chk-n { background: var(--green); color: #fff; }
+.chk.is-now .chk-n { background: var(--lime); color: var(--on-lime); }
+.chk-b { min-width: 0; flex: 1; }
+.chk-t { font-weight: 700; font-size: .94rem; }
+.chk.is-done .chk-t { color: var(--ink-3); }
+.chk-d { font-size: .84rem; color: var(--ink-3); line-height: 1.5; margin-top: 2px; }
+.chk-a { margin-top: 9px; }
+
+/* ---- Tip ----------------------------------------------------------------
+   ONE per page, never a wall. The panel's problem was never too little
+   explanation — it was explanation everywhere at once, so none of it was read.
+   A tip earns its place by answering the question this page actually raises. */
+.tip {
+  display: flex; gap: 11px; align-items: flex-start;
+  padding: 13px 15px; border-radius: var(--radius-sm);
+  background: #f2f6fb; border: 1px solid #dbe6f2; color: #24557f;
+  font-size: .86rem; line-height: 1.55;
+}
+.tip-ic { flex: none; margin-top: 1px; }
+.tip b { color: #1a3f60; }
+.tip a { color: #1a3f60; font-weight: 700; }
+
+/* An inline "?" that reveals one sentence. No modal, no tour, no help centre. */
+.qmark { position: relative; display: inline-flex; vertical-align: middle; margin-left: 5px; }
+.qmark > button {
+  width: 18px; height: 18px; padding: 0; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--rule); background: var(--bg-2); color: var(--ink-3);
+  font-size: .68rem; font-weight: 900; line-height: 1; display: grid; place-items: center;
+}
+.qmark > button:hover { border-color: var(--ink-3); color: var(--ink-2); }
+.qmark-pop {
+  position: absolute; z-index: 60; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+  width: max-content; max-width: 260px;
+  padding: 10px 13px; border-radius: 10px;
+  background: var(--chrome); color: #e8e9e3;
+  font-size: .8rem; font-weight: 500; line-height: 1.5; text-align: left;
+  box-shadow: var(--shadow-2);
+}
+.qmark-pop::after {
+  content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+  border: 6px solid transparent; border-top-color: var(--chrome);
+}
+@media (max-width: 560px) {
+  /* A centred pop-up runs off the side of a phone when its trigger is near the
+     edge. Pinning it to the viewport is the only version that always fits. */
+  .qmark-pop { position: fixed; left: 12px; right: 12px; bottom: auto; top: auto; transform: none; max-width: none; width: auto; margin-top: 8px; }
+  .qmark-pop::after { display: none; }
+}
+
+/* ---- Switcher: pick which object this page is about ---------------------
+   Was two bare underlined links stacked on top of each other with a globe
+   above each, which read as a broken list rather than a control. */
+.switch {
+  display: flex; gap: 6px; overflow-x: auto; padding-bottom: 3px; margin-bottom: 16px;
+  scrollbar-width: none; -webkit-overflow-scrolling: touch;
+}
+.switch::-webkit-scrollbar { display: none; }
+.switch-item {
+  display: inline-flex; align-items: center; gap: 8px; flex: none;
+  padding: 8px 14px; border-radius: 999px;
+  background: #fff; border: 1px solid var(--rule);
+  font-size: .87rem; font-weight: 700; color: var(--ink-2); text-decoration: none;
+  transition: border-color .18s var(--ease), background .18s var(--ease);
+}
+.switch-item:hover { text-decoration: none; border-color: #cfd5bd; background: var(--bg-2); }
+.switch-item.is-on { background: var(--chrome); border-color: var(--chrome); color: #fff; }
+.switch-item.is-on .switch-n { background: rgba(255,255,255,.16); color: #fff; }
+.switch-n {
+  font-size: .72rem; font-weight: 800; padding: 1px 7px; border-radius: 999px;
+  background: var(--bg-3); color: var(--ink-3);
+}
+
+/* ---- Disclosure: settled work, folded away -----------------------------
+   The DNS instructions are the example this was built for. They are essential
+   for ten minutes and then they are clutter that makes a working domain look
+   unfinished. Verified state collapses to one line with the proof in it. */
+.fold { border: 1px solid var(--rule); border-radius: var(--radius); background: #fff; margin-bottom: 18px; }
+.fold > summary {
+  display: flex; align-items: center; gap: 11px;
+  padding: 15px 20px; cursor: pointer; list-style: none;
+  font-size: .92rem; font-weight: 700;
+}
+.fold > summary::-webkit-details-marker { display: none; }
+.fold > summary .fold-chev { margin-left: auto; color: var(--ink-3); transition: transform .22s var(--ease); }
+.fold[open] > summary .fold-chev { transform: rotate(180deg); }
+.fold[open] > summary { border-bottom: 1px solid var(--rule-soft); }
+.fold-body { padding: 18px 20px 20px; }
+.fold-ok { color: var(--green); flex: none; display: grid; place-items: center; }
+.fold-sub { font-weight: 500; color: var(--ink-3); font-size: .84rem; }
+
+/* ---- Key/value that cannot overflow ------------------------------------
+   The account card printed an email address into a fixed-width right column
+   and it broke mid-word across three lines. A label above its value always
+   fits; a label beside it only fits sometimes. */
+.kv { display: flex; flex-direction: column; gap: 14px; }
+.kv-row { display: flex; flex-direction: column; gap: 2px; }
+.kv-k { font-size: .74rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+.kv-v { font-size: .93rem; font-weight: 600; word-break: break-word; overflow-wrap: anywhere; }
+.kv-v.mono { font-family: var(--mono); font-size: .85rem; }
+
+/* ---- Segmented control -------------------------------------------------- */
+.seg { display: inline-flex; padding: 3px; border-radius: 999px; background: var(--bg-3); gap: 2px; }
+.seg > * {
+  padding: 6px 14px; border-radius: 999px; border: 0; background: none; cursor: pointer;
+  font: inherit; font-size: .85rem; font-weight: 700; color: var(--ink-3); text-decoration: none;
+}
+.seg > .is-on { background: #fff; color: var(--ink); box-shadow: var(--shadow-1); }
+
+/* ---- Row of objects, with a real end cap -------------------------------- */
+.item-go { color: var(--ink-3); flex: none; display: grid; place-items: center; }
+a.item:hover .item-go { color: var(--ink); }
+.item-tags { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
+
+/* A section label above a group of rows — "Needs you", "Working". */
+.group-lab {
+  display: flex; align-items: center; gap: 9px;
+  padding: 13px 22px 9px;
+  font-size: .74rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3);
+}
+.group-lab + .item { border-top: 1px solid var(--rule-soft); }
+
+/* ---- Copy-to-clipboard row that fits on a phone ------------------------- */
+.copyable { flex-wrap: wrap; }
+.copyable > span:first-child { min-width: 0; flex: 1 1 140px; overflow-wrap: anywhere; }
+
+/* ---- Skeletons: something to look at while a check runs ----------------- */
+@keyframes shimmer { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
+.sk {
+  border-radius: 6px; background: linear-gradient(90deg, var(--bg-3) 25%, #e8ebe0 50%, var(--bg-3) 75%);
+  background-size: 200% 100%; animation: shimmer 1.3s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) { .sk { animation: none; } }
+.sk-line { height: 11px; margin: 7px 0; }
+
+/* A button mid-request. Keeps its width so the row does not jump. */
+.is-working { position: relative; color: transparent !important; pointer-events: none; }
+.is-working::after {
+  content: ''; position: absolute; inset: 0; margin: auto;
+  width: 15px; height: 15px; border-radius: 999px;
+  border: 2px solid currentColor; border-top-color: transparent;
+  color: var(--ink-2);
+  animation: spin .7s linear infinite;
+}
+.btn.is-working::after { color: var(--on-lime); }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---- Live connection dot ------------------------------------------------
+   The panel holds a websocket so a provisioning site, a DNS check or a disk
+   figure updates itself. When it drops, say so quietly rather than letting a
+   stale page pretend to be live. */
+.live-dot { display: inline-flex; align-items: center; gap: 6px; font-size: .74rem; color: var(--ink-3); }
+.live-dot i { width: 7px; height: 7px; border-radius: 999px; background: var(--green); flex: none; }
+.live-dot.is-off i { background: var(--ink-3); }
+.live-dot.is-off { opacity: .7; }
+
+/* ---- Empty states worth reading ----------------------------------------- */
+.empty { text-align: center; padding: 46px 24px; color: var(--ink-3); }
+.empty > svg { color: #c6cbb8; }
+.empty h3 { margin: 14px 0 6px; font-size: 1.06rem; color: var(--ink); }
+.empty p { margin: 0 auto; max-width: 380px; font-size: .89rem; line-height: 1.6; }
+
+/* ---- Responsive repairs -------------------------------------------------
+   The panel was built at 1440 and checked at 390, and nothing in between. The
+   sizes that broke were the ones nobody opens on purpose: a 1024 iPad in
+   portrait, where the 232px rail plus a two-column grid left 340px columns
+   with tables in them, and a 760 phablet, where the bottom bar's nine items
+   were 38px wide each. */
+@media (max-width: 1180px) {
+  .wrap-panel, .topbar-inner { max-width: none; }
+}
+@media (max-width: 1024px) {
+  .rail { width: 76px; padding: 20px 10px 16px; }
+  .rail-label, .acct-txt, .acct-chev { display: none; }
+  .rail-link { justify-content: center; padding: 12px 0; }
+  .rail-brand { padding: 0 0 20px; display: grid; place-items: center; overflow: hidden; }
+  .rail-brand img { width: 34px; height: auto; object-fit: cover; object-position: left center; }
+  .acct { justify-content: center; padding: 9px 0; }
+  .shell-main { margin-left: 76px; }
+}
+@media (max-width: 860px) {
+  .rail { width: 100%; }
+  .shell-main { margin-left: 0; }
+  .rail-label { display: block; }
+  /*
+   * Nine destinations do not fit across a phone. Five do, and the five here
+   * are the ones with somewhere to go; the rest live behind the account page,
+   * which is itself one of the five. A scrolling tab bar was the alternative
+   * and it is worse — a destination you have to swipe to find is a destination
+   * nobody finds.
+   */
+  .rail-link.is-extra { display: none; }
+  .rail-nav { justify-content: space-around; }
+  .rail-link { max-width: 20%; }
+}
+@media (max-width: 620px) {
+  .obj { padding: 17px 16px; }
+  .p-card { padding: 17px 16px; }
+  .p-card-head, .p-card-body { padding-left: 16px; padding-right: 16px; }
+  .item { padding: 14px 16px; }
+  .group-lab { padding-left: 16px; padding-right: 16px; }
+  .topbar-title { font-size: 1.2rem; }
+  .tools { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* 44px is the smallest target a thumb hits reliably; every control that a
+     phone can reach is at least that tall from here down. */
+  .btn, .btn-sm { min-height: 44px; }
+  .input, select, textarea { min-height: 44px; font-size: 16px; }
+}
+
+/* ---- Bottom sheet -------------------------------------------------------
+   The phone's More. A sheet rather than a drawer or a full-screen menu: it
+   comes from the bar it was opened from, it keeps the page visible behind it
+   so nobody loses their place, and it is dismissed by the same thumb that
+   opened it. Desktop never sees it — every item is already in the rail. */
+.sheet { position: fixed; inset: 0; z-index: 90; display: flex; align-items: flex-end; }
+.sheet[hidden] { display: none; }
+.sheet-scrim {
+  position: absolute; inset: 0; background: rgba(17, 17, 17, .42);
+  opacity: 0; transition: opacity .2s var(--ease);
+}
+.sheet.is-open .sheet-scrim { opacity: 1; }
+.sheet-card {
+  position: relative; width: 100%;
+  background: #fff; border-radius: 20px 20px 0 0;
+  padding: 8px 14px calc(18px + env(safe-area-inset-bottom));
+  transform: translateY(100%); transition: transform .24s var(--ease);
+  max-height: 86vh; overflow-y: auto;
+}
+.sheet.is-open .sheet-card { transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  .sheet-scrim, .sheet-card { transition: none; }
+}
+.sheet-grab { width: 38px; height: 4px; border-radius: 999px; background: var(--rule); margin: 6px auto 12px; }
+.sheet-row {
+  display: flex; align-items: center; gap: 13px; width: 100%;
+  padding: 13px 8px; border: 0; background: none; cursor: pointer;
+  border-bottom: 1px solid var(--rule-soft);
+  color: inherit; text-decoration: none; text-align: left; font: inherit;
+}
+.sheet-row:last-of-type { border-bottom: 0; }
+.sheet-row:hover { text-decoration: none; background: var(--bg-2); border-radius: 10px; }
+.sheet-row > span:nth-child(2) { flex: 1; min-width: 0; }
+.sheet-row b { display: block; font-size: .95rem; font-weight: 700; }
+.sheet-row small { display: block; font-size: .79rem; color: var(--ink-3); line-height: 1.4; }
+.sheet-row > svg:last-child { color: var(--ink-3); flex: none; }
+.sheet-ic {
+  width: 36px; height: 36px; border-radius: 10px; flex: none;
+  display: grid; place-items: center; background: var(--bg-3); color: var(--ink-2);
+}
+.sheet-row-form { display: contents; }
+.sheet-cancel { margin-top: 12px; }
+/* The bar item that opens it, and the bar itself, exist only on a phone. */
+.rail-more { display: none; }
+@media (max-width: 860px) { .rail-more { display: flex; } }
+@media (min-width: 861px) { .sheet { display: none !important; } }
+
+/* ---- Tip tones ----------------------------------------------------------
+   The neutral tip is the default. These two are for a result, not for advice:
+   something was checked and this is what came back. */
+.tip-ok { background: #eaf6ee; border-color: #cbe6d4; color: #1c6b3d; }
+.tip-ok b { color: #175732; }
+.tip-warn { background: #fdf4e3; border-color: #f0e0b0; color: #7a5510; }
+.tip-warn b { color: #5c4400; }
+.tip-ic { width: 18px; height: 18px; flex: none; margin-top: 1px; }
+/* Drawn in CSS so a tip does not need an icon passed into it from the server;
+   the tone already decides which mark is right. */
+.tip .tip-ic::before {
+  content: ''; display: block; width: 18px; height: 18px; border-radius: 999px;
+  background: currentColor; opacity: .18;
+}
+.tip-ok .tip-ic { position: relative; }
+.tip-ok .tip-ic::after {
+  content: ''; position: absolute; inset: 0; margin: auto;
+  width: 5px; height: 9px; border: 2px solid currentColor;
+  border-top: 0; border-left: 0; transform: rotate(42deg) translate(-1px, -1px);
+}
+
+/* A plain button that reads as a link, for a one-word action inside a
+   sentence — resending a verification email, mostly. A real <button> because
+   it posts, and posting from an <a> is how a link preloader signs somebody out. */
+.linklike {
+  border: 0; background: none; padding: 0; cursor: pointer;
+  font: inherit; color: inherit; font-weight: 700; text-decoration: underline;
+}
+.linklike:hover { opacity: .8; }
+
+/* ---- Input with a fixed prefix ------------------------------------------
+   `u265966_` in front of a database name, `@example.com` after a mailbox. The
+   prefix is part of the field rather than a sentence underneath it, because a
+   customer who does not see it types the full name and gets `u265966_u265966_shop`. */
+.input-affix { display: flex; align-items: stretch; }
+.input-affix .input-prefix, .input-affix .input-suffix {
+  display: flex; align-items: center; flex: none;
+  padding: 0 11px; background: var(--bg-3); color: var(--ink-3);
+  border: 1px solid var(--rule); font-size: .84rem;
+  white-space: nowrap; max-width: 45%; overflow: hidden; text-overflow: ellipsis;
+}
+.input-affix .input-prefix { border-right: 0; border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
+.input-affix .input-suffix { border-left: 0; border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+.input-affix .input { min-width: 0; flex: 1; }
+.input-affix .input-prefix + .input { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+.input-affix .input:has(+ .input-suffix) { border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
+
+/* ---- Destructive action, folded away ------------------------------------
+   Delete is a <details> rather than a modal: a modal is dismissed by muscle
+   memory, and a confirmation that has to be TYPED is the only kind that
+   actually stops the wrong database being dropped. */
+.inline-danger { position: relative; display: inline-block; }
+.inline-danger > summary { list-style: none; cursor: pointer; }
+.inline-danger > summary::-webkit-details-marker { display: none; }
+.inline-danger-body {
+  position: absolute; z-index: 50; right: 0; top: calc(100% + 7px); width: 280px;
+  padding: 15px; border-radius: var(--radius); text-align: left;
+  background: #fff; border: 1px solid var(--rule); box-shadow: var(--shadow-2);
+}
+@media (max-width: 560px) {
+  .inline-danger { position: static; }
+  .inline-danger-body { position: static; width: auto; margin-top: 10px; box-shadow: none; }
+}
+
+/* ---- The lockup ---------------------------------------------------------
+   The V is inline SVG and the wordmark is a bitmap beside it, so the two are
+   aligned on their optical baseline rather than by whatever padding happened
+   to be inside the old single image. */
+.brand-lockup { display: inline-flex; align-items: center; gap: 9px; text-decoration: none; }
+.brand-lockup:hover { text-decoration: none; }
+.brand-v { flex: none; display: block; }
+.brand-word { display: block; }
+
+/* The rail shows the wordmark when it is wide and the V alone when it is not.
+   The old version scaled a 130px image down to 34px with object-fit:cover,
+   which cropped it to a sliver of two letters — that is the "logo missing"
+   people were seeing at tablet width. */
+.rail-v { display: none; }
+@media (max-width: 1024px) and (min-width: 861px) {
+  .rail-word { display: none; }
+  .rail-v { display: block; }
+  /* Overrides the crop hack this replaces. */
+  .rail-brand img { width: auto; object-fit: initial; }
+}
+
+/* ---- Phone repairs ------------------------------------------------------
+   Everything below fixes something visible in a 390px screenshot. The panel
+   had been checked at 1440 and at nothing else, and the failures are the ones
+   that only appear when a column gets narrow. */
+
+@media (max-width: 860px) {
+  /*
+   * The rail is a bottom bar here, and the brand does not belong in it.
+   *
+   * The earlier `.rail-brand { display: none }` for this width was being
+   * overridden by the tablet block above — a 390px phone matches BOTH media
+   * queries, and the later rule wins at equal specificity. So the wordmark was
+   * painted into the middle of the tab bar, shoving the five destinations
+   * sideways. Stated again here, after it, where it wins.
+   */
+  .rail-brand, .rail-foot, .rail-v, .rail-word { display: none !important; }
+
+  /* A <button> in the bar must be visually identical to the <a>s beside it. */
+  .rail-more {
+    -webkit-appearance: none; appearance: none;
+    background: transparent; border: 0; margin: 0; font: inherit; cursor: pointer;
+    color: #9ba095;
+  }
+
+  .rail-nav { align-items: stretch; }
+  .rail-link {
+    max-width: none; flex: 1 1 0; min-width: 0;
+    justify-content: center; text-align: center;
+  }
+  .rail-label {
+    display: block; max-width: 100%;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+}
+
+/*
+ * A hostname must never break mid-word.
+ *
+ * `word-break: break-all` splits at whichever character happens to hit the
+ * edge, so `janesbakery.co.uk` came out as "janesbakery.co.u" / "k" — which
+ * reads as a different domain, and is the kind of detail somebody opens a
+ * ticket about. `anywhere` breaks only when a word genuinely cannot fit.
+ */
+.item-title, .obj-name { word-break: normal; overflow-wrap: anywhere; }
+
+@media (max-width: 620px) {
+  /*
+   * A list row on a phone is two rows, not one squeezed one.
+   *
+   * Icon and title first, then the state and the description underneath at
+   * full width. Four things competing for 340px is how a status chip ended up
+   * sitting inside the middle of a wrapped domain name.
+   */
+  .item {
+    flex-wrap: wrap; align-items: flex-start; row-gap: 8px;
+    padding-right: 44px;          /* room for the chevron, absolute below */
+    position: relative;
+  }
+  .item-icon { width: 34px; height: 34px; border-radius: 9px; order: 1; }
+  .item-main { flex: 1 1 calc(100% - 50px); order: 2; }
+  .item-end { order: 3; margin-left: 0; text-align: left; flex: 1 1 100%; }
+  .item-end .row { justify-content: flex-start !important; }
+  /* The chevron is decoration on a phone — the whole row is the target — so it
+     sits out of the flow rather than taking a column from the content. */
+  .item-go { position: absolute; right: 16px; top: 18px; }
+  .item-child { padding-left: 16px; border-left: 3px solid var(--rule); }
+
+  .obj-name { font-size: 1.12rem; }
+  .obj-acts { width: 100%; }
+  .obj-acts .btn { flex: 1 1 auto; justify-content: center; }
+
+  /* Two tools per row is the most that fits with a readable label under it. */
+  .tools { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .tool { min-height: 86px; padding: 13px 12px; }
+
+  .rings { gap: 16px; }
+  .ring > span > span { min-width: 92px; }
+
+  /* A card head with a button in it wraps rather than shrinking the button
+     below its own label. */
+  .p-card-head { align-items: flex-start; }
+  .p-card-head > .btn { flex: none; }
+}
+
+/* A long page title and a "+ Add a domain" button do not share 358px. The
+   button drops to its own full-width line rather than being squeezed. */
+@media (max-width: 560px) {
+  .topbar-inner { flex-wrap: wrap; row-gap: 12px; }
+  .topbar-inner > div:first-child { flex: 1 1 100%; }
+  .topbar-inner > .row { width: 100%; }
+  .topbar-inner > .row > .btn { flex: 1; justify-content: center; }
+}
+
+/* A row's title and its description are two lines, always.
+   Both were <span>s with no display set, so they ran together into one
+   sentence — "janesbakery.co.uk Business · renews 2027-08-04" reads as a
+   single label rather than a name with a note under it. */
+.item-title, .item-sub { display: block; }
+.item-sub { margin-top: 1px; }
+
+/* ---- Checkbox with a description ----------------------------------------
+   A tick-box whose label is one word and whose consequence is a paragraph. The
+   paragraph belongs INSIDE the label so the whole block is the target, and so
+   nobody agrees to something whose explanation was somewhere else. */
+.check { display: flex; gap: 11px; align-items: flex-start; cursor: pointer; }
+.check input[type="checkbox"] { margin-top: 3px; flex: none; width: 17px; height: 17px; accent-color: var(--lime-ink); }
+.check b { display: block; font-size: .88rem; font-weight: 700; }
+.check small { display: block; font-size: .79rem; line-height: 1.5; color: var(--ink-3); margin-top: 2px; }
+
+/* One mailbox, one download button. */
+.setup-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 9px 0; border-bottom: 1px solid var(--rule-soft);
+}
+.setup-row:last-of-type { border-bottom: 0; }
+.setup-row > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.setup-row .btn { flex: none; }
+@media (max-width: 480px) {
+  .setup-row { flex-direction: column; align-items: stretch; gap: 6px; }
+  .setup-row .btn { justify-content: center; }
+}
+
+/*
+ * `hidden` must actually hide.
+ *
+ * The attribute's UA rule is `display: none`, and ANY `display` in a stylesheet
+ * beats it — so `.tip { display: flex }` re-showed every `<div class="tip"
+ * hidden>` as an empty coloured bar. Bitten once already in the file manager;
+ * stated here as a rule rather than patched per component.
+ */
+[hidden] { display: none !important; }
+
+/* A <details> summary that reads as a control rather than as a stray triangle.
+   The default marker sits on its own line next to an inline SVG and looks like
+   a rendering fault. */
+summary.reveal {
+  display: flex; align-items: center; gap: 8px;
+  cursor: pointer; list-style: none;
+  font-size: .86rem; font-weight: 700; color: var(--ink-2);
+  padding: 9px 0;
+}
+summary.reveal::-webkit-details-marker { display: none; }
+summary.reveal::after {
+  content: ''; margin-left: auto; width: 8px; height: 8px;
+  border-right: 2px solid var(--ink-3); border-bottom: 2px solid var(--ink-3);
+  transform: rotate(45deg) translate(-2px, -2px);
+  transition: transform .2s var(--ease);
+}
+details[open] > summary.reveal::after { transform: rotate(-135deg) translate(-2px, -2px); }
+summary.reveal:hover { color: var(--ink); }
+
+/* The label legend. A chip and a sentence, aligned so the chips form a column
+   somebody can scan against the badges they just saw in the list. */
+.legend { display: flex; flex-direction: column; gap: 13px; }
+.legend-row { display: flex; gap: 13px; align-items: flex-start; font-size: .87rem; line-height: 1.55; color: var(--ink-2); }
+.legend-row > .state { flex: none; min-width: 118px; justify-content: center; }
+@media (max-width: 520px) {
+  .legend-row { flex-direction: column; gap: 5px; }
+  .legend-row > .state { min-width: 0; align-self: flex-start; }
+}
+
+/* A checklist step's title and its explanation are two lines. Both were spans
+   with no display set, so they ran together into one long sentence. */
+.chk-t, .chk-d { display: block; }
+.chk-a { display: block; }
+
+/* On a phone the object header's name must sit BESIDE its icon, not under it.
+   `flex: 1 1 240px` cannot fit next to a 46px mark inside a 358px card, so the
+   whole identity wrapped to its own line and the icon sat alone above it. */
+@media (max-width: 620px) {
+  .obj-id { flex: 1 1 140px; }
+  .obj-mark { width: 38px; height: 38px; border-radius: 11px; }
+  .obj-top { gap: 12px; }
+}
+
+/* ---- DNS records as a list -----------------------------------------------
+   A four-column table is unreadable on a phone: the value column carries all
+   the content, and at 90px an SPF string breaks across five lines mid-token.
+   Each record gets its value on a full-width line with Copy beside the name,
+   which is the shape of the job — copy this, paste it at the registrar. */
+.recs { display: flex; flex-direction: column; gap: 10px; }
+.rec { border: 1px solid var(--rule); border-radius: var(--radius-sm); padding: 12px 14px; background: var(--bg-2); }
+.rec-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.rec-type {
+  flex: none; font-size: .74rem; font-weight: 800; letter-spacing: .04em;
+  padding: 2px 8px; border-radius: 5px; background: var(--chrome); color: #fff;
+}
+.rec-name { flex: 1 1 auto; font-size: .84rem; color: var(--ink-2); min-width: 0; overflow-wrap: anywhere; }
+.rec-head .btn { flex: none; margin-left: auto; }
+.rec-value {
+  margin-top: 9px; padding: 9px 11px; border-radius: 8px;
+  background: #fff; border: 1px solid var(--rule);
+  font-size: .82rem; line-height: 1.5; overflow-wrap: anywhere;
+  /* A DNS value is one token; it must never be broken mid-word by hyphenation
+     or the customer copies it by eye and gets it wrong. */
+  word-break: normal; hyphens: none;
+}
+.rec-why { margin: 8px 0 0; font-size: .78rem; line-height: 1.5; color: var(--ink-3); }
+@media (max-width: 480px) {
+  .rec-head .btn { margin-left: 0; width: 100%; justify-content: center; }
+}
+
+/* ---- Six across a phone --------------------------------------------------
+   The bar was built for five and now carries six. At 360px — the narrowest
+   screen still in use — six items are 60px each, which holds a 19px icon and a
+   one-word label without either wrapping. Below that the label shrinks rather
+   than the bar scrolling: a destination you have to swipe to find is one
+   nobody finds. Measured, not guessed. */
+@media (max-width: 860px) {
+  .rail-link { padding-left: 2px; padding-right: 2px; letter-spacing: -.01em; }
+}
+@media (max-width: 380px) {
+  .rail-link { font-size: .63rem; }
+}

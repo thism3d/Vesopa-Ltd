@@ -109,15 +109,42 @@ async function atLeast(ms, started) {
 }
 
 /**
+ * Where the serial starts on a node that has never issued one.
+ *
+ * Deliberately not 1. The number is visible in paths and mail headers, and a
+ * customer who can see they are `u3` can see how many accounts the business has
+ * sold. Starting high costs nothing and tells them nothing.
+ */
+const USERNAME_SERIAL_START = Number(process.env.HESTIA_USERNAME_START || 265966);
+
+/**
  * Allocate a Hestia username for a customer that does not have one yet.
- * Suffixes on collision rather than failing, because two people called
- * `info@` is the normal case, not the exception.
+ *
+ * `u265966`, then `u265967`, and so on — see hestia.serialUsername for why it
+ * is a serial rather than the customer's email local part. The customer never
+ * types it: they sign in here with their email address, and to the Hestia panel
+ * with this name and the password from their welcome email.
+ *
+ * The next number is read from the highest serial we have already issued rather
+ * than from a counter, so there is nothing to keep in step and nothing to reset
+ * when the table is restored from a backup. Collisions are still checked for
+ * both here and on the node, because the read and the write are not atomic:
+ * two orders provisioning in the same instant can compute the same number, and
+ * the second one simply takes the next.
  */
 async function allocateUsername(customer) {
   if (customer.hestia_user) return customer.hestia_user;
 
-  for (let attempt = 0; attempt < 30; attempt++) {
-    const candidate = hestia.suggestUsername(customer.email, attempt ? String(attempt) : '');
+  const highest = await db.one(
+    `SELECT MAX(CAST(SUBSTRING(hestia_user, 2) AS UNSIGNED)) AS n
+       FROM customers
+      WHERE hestia_user REGEXP '^u[0-9]+$'`,
+  );
+  let serial = Math.max(Number(highest?.n || 0) + 1, USERNAME_SERIAL_START);
+
+  for (let attempt = 0; attempt < 50; attempt++, serial++) {
+    const candidate = hestia.serialUsername(serial);
+
     const taken = await db.one('SELECT id FROM customers WHERE hestia_user = ? LIMIT 1', [candidate]);
     if (taken) continue;
     // Also ask the node, in case a username exists there that we have no row
@@ -737,7 +764,7 @@ async function sendWelcome(order, customer, outcome) {
 
   await sendMail({
     to: customer.email,
-    subject: 'Your hosting is live — Vesopa Hosting',
+    subject: 'Your hosting is live — Vesopa Cloud',
     html: shell({
       title: `You are live, ${escapeHtml(customer.first_name || 'there')}`,
       intro: 'Your hosting account is set up and ready. Everything below is also in your control panel.',

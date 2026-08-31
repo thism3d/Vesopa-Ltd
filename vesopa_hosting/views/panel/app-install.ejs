@@ -1,0 +1,174 @@
+<%#
+  Install one application.
+
+  One screen, one form, and every question on it is one somebody can answer
+  without leaving the page. There is no wizard: a four-step wizard for three
+  fields is how a one-minute job becomes a five-minute one.
+
+  THE WARNING IS NOT A FOOTNOTE. Installing over a site that already has
+  something on it is the mistake people make here, and it is the one this page
+  is built to prevent — it is the last thing before the button, it is a tick
+  rather than a sentence, and the copy says exactly where the old files go so
+  that somebody who does it anyway knows they are recoverable.
+%>
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css', sections: false }) %>
+<link rel="stylesheet" href="<%= asset('/assets/css/apps.css') %>">
+<%- include('../partials/panel-shell', {
+  pageTitle: 'Install ' + app.name,
+  pageSub: app.tagline,
+}) %>
+
+<p class="mb-3"><a class="linklike small" href="/panel/apps"><%- icon('chevron-left', 14) %> All apps</a></p>
+
+<% if (!sites.length) { %>
+  <div class="empty">
+    <p class="mb-2"><b>No websites yet.</b></p>
+    <p class="mb-3">An app has to go somewhere. Add a domain first — register one with us, or point one you already own.</p>
+    <a class="btn" href="/panel/domains/add">Add a domain</a>
+  </div>
+<% } else { %>
+
+<div class="p-grid p-grid-side">
+  <div>
+    <form method="post" action="/panel/apps/install/<%= app.slug %>" class="p-card">
+      <input type="hidden" name="_csrf" value="<%= csrf %>">
+
+      <h2 class="h3 mb-1">Where should it go?</h2>
+      <p class="small muted mb-3">Pick one of your sites. The app takes over the whole of it.</p>
+
+      <div class="field mb-3">
+        <label class="label" for="domain">Website</label>
+        <select class="input" id="domain" name="domain" required>
+          <% sites.forEach(function (s, i) { %>
+            <option value="<%= s.domain %>" <%= i === 0 ? 'selected' : '' %>><%= s.domain %></option>
+          <% }); %>
+        </select>
+      </div>
+
+      <% if (app.kind === 'php') { %>
+        <div class="field mb-3">
+          <label class="label" for="php">PHP version</label>
+          <select class="input" id="php" name="php">
+            <% (runtimes.php || []).forEach(function (p) { %>
+              <option value="<%= p.version %>" <%= p.recommended ? 'selected' : '' %>>
+                PHP <%= p.version %><%= p.recommended ? ' — recommended' : '' %><%= p.eol ? ' — no longer supported upstream' : '' %>
+              </option>
+            <% }); %>
+          </select>
+          <p class="hint">
+            <%= app.name %> needs at least PHP <%= app.needs.php %>. You can change this
+            afterwards on the <a href="/panel/apps/runtime">Languages</a> page.
+          </p>
+        </div>
+      <% } %>
+
+      <% if (app.kind === 'node') { %>
+        <div class="field mb-3">
+          <label class="label" for="node">Node version</label>
+          <select class="input" id="node" name="node">
+            <% (runtimes.node || []).forEach(function (n) { %>
+              <option value="<%= n.major %>" <%= (app.needs.node === n.major || (app.needs.node === 'default' && n.recommended)) ? 'selected' : '' %>>
+                Node <%= n.major %><%= n.version ? ' (' + n.version + ')' : '' %><%= n.lts ? ' — long-term support' : '' %>
+              </option>
+            <% }); %>
+          </select>
+          <p class="hint">
+            <% if (typeof app.needs.node === 'number') { %>
+              <%= app.name %> is tested on Node <%= app.needs.node %>. Another version may work and is not supported by them.
+            <% } else { %>
+              Even-numbered versions get long-term support. Pick one of those unless you know you need otherwise.
+            <% } %>
+          </p>
+        </div>
+      <% } %>
+
+      <%# ---- The part that matters ---- %>
+      <div class="danger-note mb-3">
+        <p class="mb-2"><b>This replaces whatever is on that site now.</b></p>
+        <p class="small mb-2">
+          Nothing is deleted. Everything currently in the web root is moved to
+          <code>~/.vesopa/replaced/</code> on your account, where you can get it back
+          from the file manager or the terminal. But the site itself will be
+          <%= app.name %> from the moment this finishes.
+        </p>
+        <label class="check">
+          <input type="checkbox" name="confirm" value="1" required>
+          <span class="small">I understand — install <%= app.name %> over that site.</span>
+        </label>
+      </div>
+
+      <button class="btn btn-block" type="submit">
+        <%- icon('rocket', 16) %> Install <%= app.name %>
+      </button>
+      <p class="tiny muted mt-2 mb-0" style="text-align:center">
+        Takes about <%= app.minutes %> minute<%= app.minutes === 1 ? '' : 's' %>. You can close the tab.
+      </p>
+    </form>
+  </div>
+
+  <aside>
+    <div class="p-card mb-3">
+      <div class="row mb-2" style="gap:12px;align-items:center">
+        <span class="card-app-logo" style="width:44px;height:44px">
+          <% if (app.logo) { %>
+            <img src="<%= asset('/assets/img/apps/' + app.logo) %>" alt="" width="28" height="28">
+          <% } else { %>
+            <%- icon(app.icon || 'box', 24) %>
+          <% } %>
+        </span>
+        <div>
+          <div class="strong"><%= app.name %></div>
+          <div class="tiny muted"><%= app.licence || 'Open source' %></div>
+        </div>
+      </div>
+      <p class="small mb-3"><%= app.blurb %></p>
+      <% if (app.site) { %>
+        <a class="linklike small" href="<%= app.site %>" target="_blank" rel="noopener noreferrer">
+          <%= app.site.replace(/^https?:\/\//, '') %> <%- icon('external', 12) %>
+        </a>
+      <% } %>
+    </div>
+
+    <div class="p-card">
+      <h3 class="h3 mb-2">What we will set up</h3>
+      <div class="legend">
+        <div class="legend-row">
+          <span style="color:var(--green);flex:none"><%- icon('check', 16) %></span>
+          <span>The application files, in your web root.</span>
+        </div>
+        <% if (app.needs.database) { %>
+          <div class="legend-row">
+            <span style="color:var(--green);flex:none"><%- icon('check', 16) %></span>
+            <span>A MySQL database and a user for it. The password is shown once, on the next page, and is already in the app's config.</span>
+          </div>
+        <% } %>
+        <% if (app.kind === 'node') { %>
+          <div class="legend-row">
+            <span style="color:var(--green);flex:none"><%- icon('check', 16) %></span>
+            <span>A pm2 process that restarts the app if it falls over, and starts it again after a reboot.</span>
+          </div>
+          <div class="legend-row">
+            <span style="color:var(--green);flex:none"><%- icon('check', 16) %></span>
+            <span>A port, and nginx pointed at it. Your app reads it from <code>PORT</code>.</span>
+          </div>
+        <% } %>
+        <% if (app.docroot) { %>
+          <div class="legend-row">
+            <span style="color:var(--green);flex:none"><%- icon('check', 16) %></span>
+            <span>
+              The web root pointed at <code><%= app.docroot %>/</code>, so the rest of the
+              framework — including its <code>.env</code> — is not reachable from the internet.
+            </span>
+          </div>
+        <% } %>
+        <div class="legend-row">
+          <span style="color:var(--ink-3);flex:none"><%- icon('info', 16) %></span>
+          <span>Not the HTTPS certificate — that is already handled per domain on the <a href="/panel/domains">Domains</a> page.</span>
+        </div>
+      </div>
+    </div>
+  </aside>
+</div>
+<% } %>
+
+<%- include('../partials/panel-shell-end') %>

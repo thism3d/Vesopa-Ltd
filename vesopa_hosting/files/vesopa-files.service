@@ -1,0 +1,44 @@
+[Unit]
+Description=Vesopa Cloud file manager broker
+Documentation=file:/opt/vesopa-files/broker.py
+After=network.target
+
+[Service]
+Type=simple
+# Root, because reading and writing a customer's files AS THAT CUSTOMER is the
+# one thing it does, and changing user is something only root can do. Everything
+# else about this unit exists to make sure that is all it can do.
+User=root
+ExecStart=/usr/bin/python3 /opt/vesopa-files/broker.py
+Restart=always
+RestartSec=2
+
+# The website's group. Only members can connect to the socket; see broker.py,
+# where the 0660 root:<group> permission is explained as the access control it
+# is. This value must match the group of the unix account the app runs as.
+Environment=VESOPA_FILES_GROUP=vesopasoftware
+Environment=VESOPA_FILES_SOCKET=/run/vesopa-files/broker.sock
+# Must not be smaller than FILES_MAX_EDIT in the app's .env — the app offers the
+# editor up to its own limit and this is what actually refuses.
+Environment=VESOPA_FILES_MAX_EDIT=2097152
+Environment=VESOPA_FILES_MAX_UPLOAD=536870912
+Environment=PYTHONUNBUFFERED=1
+
+# systemd creates and owns the directory, so the socket path exists on every
+# boot without the broker having to make it — /run is a tmpfs, empty at boot.
+RuntimeDirectory=vesopa-files
+RuntimeDirectoryMode=0755
+
+# NoNewPrivileges is deliberately NOT set: the broker has to setuid, which is a
+# privilege change, and setting it would break the one thing this does.
+#
+# ProtectHome and ProtectSystem are off for the same kind of reason — /home is
+# precisely what it exists to reach, and a read-only /usr would not stop
+# anything that matters here. The real boundary is the socket's group ownership
+# plus resolve_user() refusing root, non-Hestia accounts and suspended ones.
+ProtectHome=false
+ProtectSystem=false
+PrivateTmp=false
+
+[Install]
+WantedBy=multi-user.target

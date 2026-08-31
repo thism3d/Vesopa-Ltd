@@ -171,7 +171,7 @@
               <span class="item-sub"><%= d.email %></span>
             </span>
             <span class="item-end">
-              <span class="badge <%= d.auto_renew ? 'badge-soft' : 'badge-red' %>"><%= d.expires_at %></span>
+              <span class="badge <%= d.auto_renew ? 'badge-soft' : 'badge-red' %>"><%= when(d.expires_at, { dateOnly: true }) %></span>
             </span>
           </div>
         <% }); %>
@@ -199,4 +199,3 @@
 </div>
 
 <%- include('../partials/panel-shell-end') %>
-<%- include('../partials/footer') %>

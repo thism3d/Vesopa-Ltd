@@ -11,26 +11,58 @@
  */
 
 const nodemailer = require('nodemailer');
-const { SITE_URL, BRAND, CONTACT } = require('./config');
+const { SITE_URL, SITE_HOSTNAME, BRAND, CONTACT } = require('./config');
 
-const FROM_NAME = process.env.MAIL_FROM_NAME || 'Vesopa Hosting';
-const FROM = process.env.MAIL_FROM || 'hosting@vesopaepos.com';
+const FROM_NAME = process.env.MAIL_FROM_NAME || 'Vesopa Cloud';
+/*
+ * The envelope sender. A REAL mailbox on the node (no-reply@vesopa.com), not a
+ * made-up address: SPF and DMARC are published for vesopa.com, so a From that
+ * does not exist there is either rejected outright or filed as spam. It is a
+ * no-reply because these are machine-generated; the address a customer should
+ * write to is CONTACT.support_email, and every template says so.
+ */
+const FROM = process.env.MAIL_FROM || 'no-reply@vesopa.com';
 const DEFAULT_TO = process.env.MAIL_TO || FROM;
 
 let transport = null;
 
 function getTransport() {
   if (transport) return transport;
-  if (!process.env.SMTP_HOST || !process.env.SMTP_PASSWORD) return null;
+  if (!process.env.SMTP_HOST) return null;
+
+  /*
+   * A password is NOT what makes SMTP usable, and requiring one here used to
+   * disable mail entirely on the machine best placed to send it.
+   *
+   * There are two shapes of relay. A remote provider authenticates us, so it
+   * needs a user and a password. The node's own MTA — exim on 127.0.0.1:25,
+   * which every Hestia box runs — relays for localhost precisely because the
+   * connection is local, and offers no credentials to send. Passing an `auth`
+   * block with an undefined password to that server makes nodemailer attempt a
+   * login the server never asked for, which it then rejects.
+   *
+   * So auth is included only when there is something to authenticate with.
+   * Without this the site boots, serves every page, reports itself healthy —
+   * and silently sends no verification, no password reset, and no welcome mail
+   * carrying the control-panel password a customer cannot get any other way.
+   */
+  const user = process.env.SMTP_USER;
+  const pass = process.env.SMTP_PASSWORD;
+  const port = Number(process.env.SMTP_PORT) || 465;
 
   transport = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT) || 465,
-    secure: String(process.env.SMTP_SECURE || 'true') === 'true',
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASSWORD,
-    },
+    port,
+    // Implicit TLS is right for 465 and wrong for 25 and 587, where the session
+    // starts in the clear and upgrades with STARTTLS instead.
+    secure: String(process.env.SMTP_SECURE || (port === 465 ? 'true' : 'false')) === 'true',
+    ...(user && pass ? { auth: { user, pass } } : {}),
+    // A local relay presents a self-signed certificate for its own hostname.
+    // Refusing it would reject the one relay we control; a remote provider is
+    // still verified normally.
+    ...(/^(127\.0\.0\.1|::1|localhost)$/i.test(process.env.SMTP_HOST)
+      ? { tls: { rejectUnauthorized: false } }
+      : {}),
   });
   return transport;
 }
@@ -103,7 +135,7 @@ function shell({ title, intro, bodyHtml, ctaText, ctaUrl, footNote }) {
               ${escapeHtml(CONTACT.company)} · ${escapeHtml(CONTACT.address_line1)}, ${escapeHtml(CONTACT.address_line2)}
             </p>
             <p style="margin:0;font-size:12px;line-height:1.6;color:#787a6e;">
-              <a href="${SITE_URL}" style="color:${BRAND.lime_ink};text-decoration:none;">hosting.vesopaepos.com</a>
+              <a href="${SITE_URL}" style="color:${BRAND.lime_ink};text-decoration:none;">${escapeHtml(SITE_HOSTNAME)}</a>
               &nbsp;·&nbsp; <a href="mailto:${CONTACT.support_email}" style="color:${BRAND.lime_ink};text-decoration:none;">${CONTACT.support_email}</a>
             </p>
           </div>

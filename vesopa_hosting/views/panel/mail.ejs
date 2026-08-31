@@ -1,0 +1,460 @@
+<%#
+  Email: mailboxes at the customer's own domain.
+
+  WHAT CHANGED, and each one was reported:
+
+  1. The domain switcher was two underlined links stacked under two globes,
+     using classes from the file manager's stylesheet that this page does not
+     load — so it rendered as a broken list rather than as a control. It is a
+     row of real tabs now, carrying every mail domain and its mailbox count.
+
+  2. The DNS records used to sit at the top of the page forever. They matter for
+     about ten minutes and are clutter after that, and a domain that is working
+     perfectly should not still be showing setup instructions. Verified now
+     collapses to one line with the proof in it; unverified still leads.
+
+  3. "Check now" was a form post: the page went away, four DNS lookups happened
+     with nothing on screen, and the whole page was rebuilt. It answers in place
+     now. The lookups take the same time; the waiting no longer looks broken.
+
+  4. A mailbox opens in one tap where the customer asked us to remember its
+     password, and asks for it where they did not.
+%>
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css', sections: false }) %>
+<%- include('../partials/panel-shell', {
+  pageTitle: 'Email',
+  pageSub: 'Mailboxes at your own domain.',
+}) %>
+
+<% if (!hestiaLive) { %>
+  <div class="alert alert-info">
+    <%- icon('info', 19) %>
+    <div><b>Demonstration mode.</b> This is not connected to a live mail server, so nothing is listed here.</div>
+  </div>
+<% } %>
+
+<% if (!usable.length) { %>
+  <div class="p-card">
+    <div class="empty">
+      <%- icon('mail', 46) %>
+      <h3>No domain ready for email yet</h3>
+      <p>
+        A mailbox lives at a domain, and that domain has to be pointing at us
+        before we can accept mail for it. Subdomains do not get mailboxes —
+        email belongs on your main domain.
+      </p>
+      <a class="btn mt-2" href="/panel/domains">Your domains</a>
+    </div>
+  </div>
+<% } else { %>
+
+  <%# ---- Which domain. Every one, with its count. ---- %>
+  <% if (switcher.length > 1) { %>
+    <nav class="switch" aria-label="Your mail domains">
+      <% switcher.forEach(function (d) { %>
+        <a class="switch-item <%= d.domain === chosen ? 'is-on' : '' %>"
+           href="/panel/mail?domain=<%= encodeURIComponent(d.domain) %>"
+           <%= d.domain === chosen ? 'aria-current="page"' : '' %>>
+          <%- icon('at', 15) %>
+          <span><%= d.domain %></span>
+          <% if (d.accounts !== null) { %>
+            <span class="switch-n"><%= d.accounts %></span>
+          <% } %>
+        </a>
+      <% }); %>
+    </nav>
+  <% } %>
+
+  <% if (view) { %>
+    <%
+      const dnsOk = view.ownDns || (view.dnsCheck && view.dnsCheck.mxOk && view.dnsCheck.spfOk);
+      const checkUrl = '/panel/mail/' + encodeURIComponent(view.domain) + '/check';
+    %>
+
+    <%#
+      The records. Folded once they are right — a working domain does not need
+      to keep showing its own setup instructions — and leading, open, when they
+      are not, because a mailbox created before them cannot receive anything.
+    %>
+    <% if (view.ownDns) { %>
+      <div class="fold">
+        <summary style="cursor:default;list-style:none">
+          <span class="fold-ok"><%- icon('check-circle', 19) %></span>
+          <span>
+            Email is set up for <%= view.domain %>
+            <span class="fold-sub">— we run its DNS, so the records are already in place</span>
+          </span>
+        </summary>
+      </div>
+    <% } else { %>
+      <details class="fold" <%= dnsOk ? '' : 'open' %>>
+        <summary>
+          <% if (dnsOk) { %>
+            <span class="fold-ok"><%- icon('check-circle', 19) %></span>
+            <span>
+              DNS verified for <%= view.domain %>
+              <span class="fold-sub">— MX and SPF point at us. Show the records</span>
+            </span>
+          <% } else { %>
+            <span style="color:#7a5510;display:grid;place-items:center"><%- icon('alert-circle', 19) %></span>
+            <span>
+              Add these records before email will work
+              <span class="fold-sub">— <%= view.domain %>'s DNS is at your own provider, so we cannot add them for you</span>
+            </span>
+          <% } %>
+          <span class="fold-chev"><%- icon('chevron', 17) %></span>
+        </summary>
+
+        <div class="fold-body">
+          <div class="row-between mb-2" style="gap:12px;flex-wrap:wrap">
+            <p class="small muted" style="margin:0;flex:1 1 260px">
+              Add these at whoever runs DNS for <b><%= view.domain %></b>. Add them
+              all — the first makes mail arrive, the rest are what stop your
+              outgoing mail being treated as spam.
+            </p>
+            <%# A real form, so this works with JavaScript off. panel.js takes
+                the click and answers in place instead. %>
+            <form method="post" action="<%= checkUrl %>" style="flex:none">
+              <input type="hidden" name="_csrf" value="<%= csrf %>">
+              <button class="btn btn-ghost btn-sm" type="submit"
+                      data-check="<%= checkUrl %>" data-check-out="mail-dns-result"
+                      data-csrf="<%= csrf %>">
+                <%- icon('refresh', 15) %> Check now
+              </button>
+            </form>
+          </div>
+
+          <div id="mail-dns-result" class="tip mb-2" hidden></div>
+
+          <% if (!dnsOk && view.dnsCheck && view.dnsCheck.mxSeen.length) { %>
+            <div class="tip tip-warn mb-2">
+              <span class="tip-ic"></span>
+              <span>
+                Mail for <%= view.domain %> is currently going to
+                <span class="mono"><%= view.dnsCheck.mxSeen.join(', ') %></span>.
+                Adding the MX below moves it here — anything already delivered
+                stays where it is.
+              </span>
+            </div>
+          <% } %>
+
+          <%#
+            A list of records, not a table.
+
+            A four-column table cannot be read on a 358px phone: the value
+            column is where the whole content is, and squeezing it to 90px
+            broke SPF strings across five lines mid-token. Each record is a
+            small card with its value on its own full-width line and the Copy
+            button under it, which is the shape somebody is actually going to
+            use — copy this, paste it at the registrar, come back.
+          %>
+          <div class="recs">
+            <% view.records.forEach(function (r) { %>
+              <div class="rec">
+                <div class="rec-head">
+                  <span class="rec-type mono"><%= r.type %><% if (r.priority) { %> <span class="muted">(<%= r.priority %>)</span><% } %></span>
+                  <span class="rec-name mono"><%= r.name %></span>
+                  <button type="button" class="btn btn-ghost btn-sm copy-btn" data-copy="<%= r.value %>">Copy</button>
+                </div>
+                <div class="rec-value mono"><%= r.value %></div>
+                <p class="rec-why"><%= r.why %></p>
+              </div>
+            <% }); %>
+          </div>
+          <p class="tiny muted mt-2 mb-0">
+            Changes take anywhere from a few minutes to a few hours to spread.
+            You can create mailboxes now — they simply start receiving once the
+            records are visible.
+          </p>
+        </div>
+      </details>
+    <% } %>
+
+    <div class="p-grid p-grid-side">
+      <div>
+        <%# ---- The mailboxes ---- %>
+        <div class="p-card p-card-flush">
+          <div class="p-card-head">
+            <h2>Mailboxes at <%= view.domain %></h2>
+            <% if (quota && quota.used !== null) { %>
+              <span class="small muted"><%= quota.used %> of <%= quota.total %> used</span>
+            <% } %>
+          </div>
+
+          <% if (!view.accounts.length) { %>
+            <div class="empty">
+              <%- icon('inbox', 46) %>
+              <h3>No mailboxes yet</h3>
+              <p>Create one on the right — <span class="mono">you@<%= view.domain %></span> takes about ten seconds.</p>
+            </div>
+          <% } else { %>
+            <% view.accounts.forEach(function (a) {
+                 const canOpen = openable.has(a.address);
+                 const base = '/panel/mail/' + encodeURIComponent(view.domain) + '/' + encodeURIComponent(a.account); %>
+              <div class="item">
+                <span class="item-icon"><%- icon('mail', 19) %></span>
+                <span class="item-main">
+                  <a class="item-title" href="<%= base %>" style="color:inherit"><%= a.address %></a>
+                  <span class="item-sub">
+                    <%= a.used_mb %> MB used<% if (a.quota_mb) { %> of <%= a.quota_mb %> MB<% } else { %> · no limit<% } %>
+                    <% if (a.forwards.length) { %> · forwards to <%= a.forwards.join(', ') %><% } %>
+                    <% if (a.forwardOnly) { %> <b>(no copy kept)</b><% } %>
+                    <% if (a.aliases.length) { %> · <%= a.aliases.length %> extra address<%= a.aliases.length === 1 ? '' : 'es' %><% } %>
+                    <% if (a.autoreply) { %> · auto-reply on<% } %>
+                  </span>
+                </span>
+                <span class="item-end row" style="gap:7px;justify-content:flex-end;flex-wrap:wrap">
+                  <a class="btn btn-sm" href="<%= base %>/open" target="_blank" rel="noopener">
+                    <%- icon('inbox', 15) %> <%= canOpen ? 'Open inbox' : 'Webmail' %>
+                  </a>
+                  <a class="btn btn-ghost btn-sm" href="<%= base %>">Settings</a>
+                </span>
+              </div>
+            <% }); %>
+          <% } %>
+        </div>
+
+        <% if (view.accounts.length && ssoReady) { %>
+          <div class="tip mb-3">
+            <span class="tip-ic"></span>
+            <span>
+              <b>Open inbox</b> takes you straight in — you are already signed in here,
+              so there is nothing more to type. We do not hold your mailbox password to
+              do it, and signing in from a phone or another device still asks for it,
+              as it should.
+            </span>
+          </div>
+        <% } else if (view.accounts.length && vaultReady) { %>
+          <div class="tip mb-3">
+            <span class="tip-ic"></span>
+            <span>
+              <b>Open inbox</b> signs you straight in for any mailbox where you
+              ticked "let me open this in one click". For the rest it takes you
+              to <%= webmail %> and asks for the mailbox password — which is what
+              anyone signing in from another device will always do.
+            </span>
+          </div>
+        <% } %>
+
+        <%# ---- Catch-all ---- %>
+        <%
+          // Hestia reports the catch-all as an address, as `*@domain`, or as a
+          // literal "reject" depending on version — so the page decides what is
+          // ON from the value rather than from its own guess.
+          const caRaw = String(view.catchall || '').trim();
+          const caOn = Boolean(caRaw) && caRaw.toLowerCase() !== 'reject';
+        %>
+        <div class="p-card">
+          <div class="row-between mb-2" style="gap:10px;flex-wrap:wrap">
+            <h2 class="h3" style="margin:0">Unknown addresses</h2>
+            <span class="state <%= caOn ? 'state-amber' : 'state-grey' %>">
+              <i></i><%= caOn ? 'Catch-all on' : 'Bouncing' %>
+            </span>
+          </div>
+          <p class="small muted mb-2">
+            <% if (caOn) { %>
+              Mail to any address at <%= view.domain %> that does not exist is going
+              to <b class="mono"><%= caRaw %></b>. That includes every typo and
+              every address a spammer ever guesses at your domain, so the volume
+              can be surprising. Clear the box to make them bounce instead.
+            <% } else { %>
+              Mail to an address at <%= view.domain %> that does not exist —
+              <span class="mono">saels@</span> instead of <span class="mono">sales@</span>,
+              say — currently bounces, which tells the sender they got it wrong.
+              That is usually what you want. Give an address here to collect them
+              instead.
+            <% } %>
+          </p>
+          <form method="post" action="/panel/mail/<%= encodeURIComponent(view.domain) %>/catchall">
+            <input type="hidden" name="_csrf" value="<%= csrf %>">
+            <div class="field">
+              <label class="label" for="catchall">Send them to</label>
+              <input class="input mono" id="catchall" name="address" type="email"
+                     placeholder="leave empty to bounce them"
+                     value="<%= caOn ? caRaw : '' %>" autocomplete="off">
+            </div>
+            <button class="btn btn-ghost btn-sm" type="submit">Save</button>
+          </form>
+        </div>
+      </div>
+
+      <aside>
+        <%# ---- Create ---- %>
+        <div class="p-card">
+          <h2 class="h3 mb-2">Create a mailbox</h2>
+          <% if (!quota || !quota.total) { %>
+            <p class="small muted mb-2">
+              Mailboxes come with a hosting plan, or with a business email plan.
+              Neither is active on this account yet.
+            </p>
+            <a class="btn btn-sm btn-block" href="/email">See email plans</a>
+          <% } else if (quota.full) { %>
+            <p class="small muted mb-2">
+              You are using all <%= quota.total %> mailbox<%= quota.total === 1 ? '' : 'es' %>
+              on this account. Add a business email plan for more, or free one up
+              by deleting one you no longer need.
+            </p>
+            <a class="btn btn-sm btn-block" href="/email">Add mailboxes</a>
+          <% } else { %>
+            <form method="post" action="/panel/mail/<%= encodeURIComponent(view.domain) %>/create">
+              <input type="hidden" name="_csrf" value="<%= csrf %>">
+              <div class="field">
+                <label class="label" for="account">Address</label>
+                <div class="input-affix">
+                  <input class="input mono" id="account" name="account" required placeholder="hello"
+                         autocomplete="off" spellcheck="false">
+                  <span class="input-suffix mono">@<%= view.domain %></span>
+                </div>
+              </div>
+              <div class="field">
+                <label class="label" for="password">Password</label>
+                <input class="input" id="password" name="password" type="password" required
+                       autocomplete="new-password">
+                <p class="hint">
+                  The password for this mailbox — what goes into Outlook or
+                  webmail. It is not your Vesopa password and does not have to
+                  match it.
+                </p>
+              </div>
+              <div class="field">
+                <label class="label" for="quota_mb">Size limit</label>
+                <input class="input" id="quota_mb" name="quota_mb" type="number" min="0" step="256"
+                       value="1024">
+                <p class="hint">In MB. 0 for no limit.</p>
+              </div>
+
+              <%# Only where the node has no SSO. With it, one-click already
+                  works for every mailbox without anybody holding a password —
+                  so offering to keep one would be asking for a permission we
+                  no longer need and would not use. %>
+              <% if (vaultReady && !ssoReady) { %>
+                <%# Opt-in, and honest about what it means. Defaulting this on
+                    would be deciding on somebody's behalf that we may hold
+                    their mail password. %>
+                <label class="check mb-3">
+                  <input type="checkbox" name="remember" checked>
+                  <span>
+                    <b>Let me open this inbox in one click</b>
+                    <small>
+                      We keep an encrypted copy of this password so the panel can
+                      sign you in. Untick it and we keep nothing — you will type
+                      the password at webmail, as usual.
+                    </small>
+                  </span>
+                </label>
+              <% } %>
+
+              <button class="btn btn-block" type="submit">Create mailbox</button>
+            </form>
+            <p class="tiny muted mt-2 mb-0">
+              Setup instructions are emailed to you and left waiting in the new
+              mailbox itself.
+            </p>
+          <% } %>
+        </div>
+
+        <%#
+          Connecting a device.
+
+          ONE HOSTNAME for everybody — not mail.<their domain>, which has no
+          certificate. See MAIL_HOSTNAME in config.js.
+
+          Apple gets a real profile because .mobileconfig is the only format any
+          platform actually installs from a file. Android and Outlook get the
+          settings and the exact steps, because pretending otherwise would be a
+          download button that does nothing.
+        %>
+        <div class="p-card">
+          <h2 class="h3 mb-2">Set up a mail app</h2>
+
+          <% if (view.accounts.length) { %>
+            <p class="small muted mb-2">Pick a mailbox, then your device:</p>
+            <% view.accounts.slice(0, 4).forEach(function (a) {
+                 const base = '/panel/mail/' + encodeURIComponent(view.domain) + '/' + encodeURIComponent(a.account); %>
+              <div class="setup-row">
+                <span class="mono small" title="<%= a.address %>"><%= a.address %></span>
+                <a class="btn btn-ghost btn-sm" href="<%= base %>/apple.mobileconfig">
+                  <%- icon('apple', 15) %> iPhone / Mac
+                </a>
+              </div>
+            <% }); %>
+            <p class="tiny muted mt-2 mb-3">
+              Tap the file on an iPhone or iPad and it installs the account —
+              you type the mailbox password once during setup.
+            </p>
+          <% } %>
+
+          <div class="kv mb-3">
+            <div class="kv-row">
+              <span class="kv-k">Incoming — IMAP</span>
+              <span class="kv-v mono"><%= mailHost %> · port <%= ports.imap %> · SSL/TLS</span>
+            </div>
+            <div class="kv-row">
+              <span class="kv-k">Outgoing — SMTP</span>
+              <span class="kv-v mono"><%= mailHost %> · port <%= ports.smtp %> · SSL/TLS</span>
+            </div>
+            <div class="kv-row">
+              <span class="kv-k">Username</span>
+              <span class="kv-v">Your full email address</span>
+            </div>
+          </div>
+
+          <div class="copyable">
+            <span class="mono"><%= mailHost %></span>
+            <button type="button" class="btn btn-ghost btn-sm copy-btn" data-copy="<%= mailHost %>">Copy</button>
+          </div>
+
+          <details class="mt-2">
+            <summary class="reveal">
+              <%- icon('android', 15) %> Android, Gmail and Outlook
+            </summary>
+            <div class="small muted mt-2">
+              <p class="mb-2">
+                <b>Android / Gmail app:</b> Settings → Add account → <b>Other</b>,
+                type the address, choose <b>Personal (IMAP)</b>, then use the
+                server above for both incoming and outgoing.
+              </p>
+              <p class="mb-2">
+                <b>Outlook:</b> add the account, choose <b>IMAP</b> when it asks,
+                and enter the same server for both. Do not let it try to detect
+                the settings — it looks for Microsoft's servers and fails.
+              </p>
+              <p class="mb-0">
+                Neither platform can be set up from a downloaded file the way an
+                iPhone can, so these are the steps rather than a button that
+                would not work.
+              </p>
+            </div>
+          </details>
+
+          <a class="btn btn-ghost btn-sm btn-block mt-2" href="<%= webmail %>" target="_blank" rel="noopener">
+            <%- icon('external', 15) %> Open webmail
+          </a>
+          <p class="tiny muted mt-2 mb-0">
+            The server is <span class="mono"><%= mailHost %></span> for every
+            customer — <b>not</b> your own domain. Your domain is the address;
+            this is the server it is collected from.
+          </p>
+        </div>
+
+        <% if (quota && quota.total) { %>
+          <div class="p-card">
+            <h2 class="h3 mb-2">Your allowance</h2>
+            <div class="kv">
+              <% quota.sources.forEach(function (s) { %>
+                <div class="kv-row"><span class="kv-k"><%= s.label %></span><span class="kv-v"><%= s.count %></span></div>
+              <% }); %>
+              <div class="kv-row"><span class="kv-k">Total</span><span class="kv-v"><%= quota.total %></span></div>
+              <% if (quota.used !== null) { %>
+                <div class="kv-row"><span class="kv-k">In use</span><span class="kv-v"><%= quota.used %></span></div>
+                <div class="kv-row"><span class="kv-k">Left</span><span class="kv-v"><%= quota.remaining %></span></div>
+              <% } %>
+            </div>
+          </div>
+        <% } %>
+      </aside>
+    </div>
+  <% } %>
+<% } %>
+
+<%- include('../partials/panel-shell-end') %>

@@ -1,17 +1,82 @@
-<%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
+<%#
+  One website.
+
+  Rebuilt around what somebody came here to do. The old page opened with a
+  usage table and an SSL card, and every way INTO the site — the files, the
+  terminal, the mailboxes — was three cards down in the right-hand column under
+  a heading called "Manage this site". "Where is the enter button?" was asked of
+  its sibling page and applies just as well here.
+
+  So: the site's name and the two buttons that matter at the top, the tools
+  immediately under them, and everything that is a setting after that.
+%>
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css', sections: false }) %>
 <%- include('../partials/panel-shell', {
   pageTitle: service.primary_domain || service.plan_name,
-  pageSub: service.plan_name + ' plan' + (service.server_hostname ? ' · ' + service.server_hostname : ''),
+  pageSub: service.plan_name + ' plan',
 }) %>
 
 <%- include('../partials/service-tabs', { tab: 'overview' }) %>
 
-<% if (service.status === 'pending') { %>
-  <div class="alert alert-warn">
-    <%- icon('clock', 19) %>
-    <div><b>This account is still being set up.</b> It goes live as soon as your order is paid — we will email you.</div>
-  </div>
-<% } %>
+<%
+  const live = service.status === 'active';
+  const url = service.primary_domain ? 'https://' + service.primary_domain : null;
+  const docRoot = service.primary_domain ? 'web/' + service.primary_domain + '/public_html' : 'web';
+  const diskPct = stats && stats.disk_quota_mb
+    ? Math.min(100, Math.round((stats.disk_used_mb / stats.disk_quota_mb) * 100))
+    : null;
+  const gb = (mb) => (mb >= 1024 ? (mb / 1024).toFixed(mb >= 10240 ? 0 : 1) + ' GB' : Math.round(mb) + ' MB');
+  const pointsHere = primaryDomain
+    ? (primaryDomain.source !== 'external' || Boolean(primaryDomain.ns_verified_at))
+    : false;
+
+  /*
+   * The first-run checklist.
+   *
+   * Shown only while something on it is unfinished, and gone for good after
+   * that. A permanent checklist is a permanent reproach; a temporary one is the
+   * reason somebody's first hour goes well. Each step knows whether it is done,
+   * so the page can lead with the one that is not.
+   */
+  const steps = [
+    {
+      done: service.status === 'active',
+      title: 'Your hosting is set up',
+      note: 'The account is created on the server and ready for files.',
+    },
+    {
+      done: Boolean(service.primary_domain),
+      title: 'Attach a domain',
+      note: 'A website needs a name. Register one with us, or point one you already own.',
+      action: { href: '/panel/domains/add', label: 'Add a domain' },
+    },
+    {
+      done: pointsHere,
+      title: 'Point the domain at us',
+      note: service.primary_domain
+        ? 'Set our nameservers at your registrar, or aim an A record here. It takes a few minutes to spread.'
+        : 'Once a domain is attached, point it here.',
+      action: service.primary_domain && primaryDomain
+        ? { href: '/panel/domains/' + primaryDomain.domain, label: 'Show me how' }
+        : null,
+    },
+    {
+      done: Boolean(primaryDomain && primaryDomain.ssl_status === 'active'),
+      title: 'Get the padlock',
+      note: 'A free certificate is issued automatically once the domain resolves here.',
+      action: primaryDomain ? { href: '/panel/domains/' + primaryDomain.domain, label: 'Check it' } : null,
+    },
+    {
+      done: Boolean(stats && stats.web_domains && stats.disk_used_mb > 12),
+      title: 'Put your site up',
+      note: 'Upload your files, or install WordPress from the terminal.',
+      action: { href: '/panel/files?path=' + encodeURIComponent(docRoot), label: 'Open files' },
+    },
+  ];
+  const nextStep = steps.findIndex((st) => !st.done);
+  const setupDone = nextStep === -1;
+%>
+
 <% if (service.status === 'suspended') { %>
   <div class="alert alert-error">
     <%- icon('warning', 19) %>
@@ -25,7 +90,93 @@
 <% if (!hestiaLive) { %>
   <div class="alert alert-info">
     <%- icon('info', 19) %>
-    <div><b>Demonstration mode.</b> This terminal is not connected to a live hosting node, so the usage figures below are examples.</div>
+    <div><b>Demonstration mode.</b> This panel is not connected to a live hosting node, so the usage figures below are examples.</div>
+  </div>
+<% } %>
+
+<%# ---- The site itself, and the two ways in ---- %>
+<div class="obj" data-live="service:<%= service.id %>"
+     <% if (service.status === 'pending') { %>data-live-reload-on="active"<% } %>>
+  <div class="obj-top">
+    <span class="obj-mark"><%- icon('globe', 22) %></span>
+    <span class="obj-id">
+      <span class="obj-name"><%= service.primary_domain || 'No domain attached yet' %></span>
+      <span class="obj-meta">
+        <span class="state state-<%= live ? 'green' : service.status === 'pending' ? 'blue' : service.status === 'suspended' ? 'red' : 'grey' %>" data-live-chip><i></i><%
+          %><%= live ? 'Live' : service.status === 'pending' ? 'Setting up' : service.status === 'suspended' ? 'Suspended' : service.status %></span>
+        &nbsp;<%= service.plan_name %>
+        <% if (service.next_due_at) { %> · renews <%= when(service.next_due_at, { dateOnly: true }) %><% } %>
+      </span>
+    </span>
+    <span class="obj-acts">
+      <% if (url && live) { %>
+        <a class="btn btn-sm" href="<%= url %>" target="_blank" rel="noopener">
+          <%- icon('external', 16) %> Open site
+        </a>
+      <% } %>
+      <a class="btn btn-ghost btn-sm" href="/panel/files?path=<%= encodeURIComponent(docRoot) %>">
+        <%- icon('folder', 16) %> Files
+      </a>
+    </span>
+  </div>
+</div>
+
+<%# ---- Everything you can do with it ---- %>
+<div class="tools mb-3">
+  <a class="tool <%= live ? '' : 'is-off' %>" href="/panel/apps">
+    <span class="tool-ic"><%- icon('grid', 18) %></span>
+    <span class="tool-name">Install an app</span>
+    <span class="tool-note">WordPress, Node, and more</span>
+  </a>
+  <a class="tool <%= live ? '' : 'is-off' %>" href="/panel/files?path=<%= encodeURIComponent(docRoot) %>">
+    <span class="tool-ic"><%- icon('folder', 18) %></span>
+    <span class="tool-name">Files</span>
+    <span class="tool-note">Upload, edit, unzip</span>
+  </a>
+  <a class="tool <%= live ? '' : 'is-off' %>" href="/panel/databases">
+    <span class="tool-ic"><%- icon('database', 18) %></span>
+    <span class="tool-name">Databases</span>
+    <span class="tool-note">MySQL and PostgreSQL</span>
+  </a>
+  <a class="tool <%= live ? '' : 'is-off' %>" href="/panel/mail<%= service.primary_domain ? '?domain=' + encodeURIComponent(service.primary_domain) : '' %>">
+    <span class="tool-ic"><%- icon('mail', 18) %></span>
+    <span class="tool-name">Mailboxes</span>
+    <span class="tool-note">Email at your domain</span>
+  </a>
+  <a class="tool <%= live ? '' : 'is-off' %>" href="/panel/terminal">
+    <span class="tool-ic"><%- icon('code', 18) %></span>
+    <span class="tool-name">Terminal</span>
+    <span class="tool-note">A real shell</span>
+  </a>
+  <a class="tool <%= live ? '' : 'is-off' %>" href="/panel/services/<%= service.id %>/backups">
+    <span class="tool-ic"><%- icon('backup', 18) %></span>
+    <span class="tool-name">Backups</span>
+    <span class="tool-note">Nightly, kept 30 days</span>
+  </a>
+</div>
+
+<%# ---- The checklist, while there is anything left on it ---- %>
+<% if (!setupDone) { %>
+  <div class="p-card mb-3">
+    <h2 class="h3 mb-1">Finish setting up</h2>
+    <p class="small muted mb-3">
+      <%= steps.filter((st) => st.done).length %> of <%= steps.length %> done. This
+      disappears once everything is ticked.
+    </p>
+    <div class="checklist">
+      <% steps.forEach(function (st, i) { %>
+        <div class="chk <%= st.done ? 'is-done' : (i === nextStep ? 'is-now' : '') %>">
+          <span class="chk-n"><%= st.done ? '✓' : (i + 1) %></span>
+          <span class="chk-b">
+            <span class="chk-t"><%= st.title %></span>
+            <span class="chk-d"><%= st.note %></span>
+            <% if (!st.done && i === nextStep && st.action) { %>
+              <span class="chk-a"><a class="btn btn-sm" href="<%= st.action.href %>"><%= st.action.label %></a></span>
+            <% } %>
+          </span>
+        </div>
+      <% }); %>
+    </div>
   </div>
 <% } %>
 
@@ -37,24 +188,42 @@
         <% if (statsError) { %><span class="badge badge-amber">Node unreachable</span><% } %>
       </div>
 
-      <% if (stats) {
-           const pct = stats.disk_quota_mb ? Math.min(100, Math.round(stats.disk_used_mb / stats.disk_quota_mb * 100)) : 0;
-           const cls = pct >= 90 ? 'is-full' : pct >= 75 ? 'is-high' : ''; %>
-        <div class="mb-3">
-          <div class="row-between">
-            <span class="small strong">Storage</span>
-            <span class="small muted">
-              <%= (stats.disk_used_mb / 1024).toFixed(1) %> GB of
-              <%= stats.disk_quota_mb ? (stats.disk_quota_mb / 1024).toFixed(0) + ' GB' : 'unlimited' %>
+      <% if (stats) { %>
+        <div class="rings">
+          <% if (diskPct !== null) { %>
+            <div class="ring" data-ring="<%= diskPct %>">
+              <svg class="ring-svg" width="58" height="58" viewBox="0 0 58 58">
+                <circle class="ring-track" cx="29" cy="29" r="24" fill="none" stroke-width="7"></circle>
+                <circle class="ring-fill" cx="29" cy="29" r="24" fill="none" stroke-width="7"></circle>
+              </svg>
+              <span>
+                <span class="ring-lab">Disk</span>
+                <span class="ring-num"><%= gb(stats.disk_used_mb) %></span>
+                <span class="ring-sub">of <%= gb(stats.disk_quota_mb) %></span>
+              </span>
+            </div>
+          <% } %>
+          <div class="ring" style="align-items:flex-start">
+            <span style="display:flex;gap:24px;flex-wrap:wrap">
+              <span>
+                <span class="ring-lab">Traffic</span>
+                <span class="ring-num"><%= gb(stats.bandwidth_used_mb) %></span>
+                <span class="ring-sub">this month</span>
+              </span>
+              <span>
+                <span class="ring-lab">Websites</span>
+                <span class="ring-num"><%= stats.web_domains %><span class="ring-sub" style="display:inline"> / <%= service.websites %></span></span>
+              </span>
+              <span>
+                <span class="ring-lab">Databases</span>
+                <span class="ring-num"><%= stats.databases %><span class="ring-sub" style="display:inline"> / <%= service.plan_databases %></span></span>
+              </span>
+              <span>
+                <span class="ring-lab">Mailboxes</span>
+                <span class="ring-num"><%= stats.mail_accounts %><span class="ring-sub" style="display:inline"> / <%= service.plan_mailboxes %></span></span>
+              </span>
             </span>
           </div>
-          <div class="meter <%= cls %>"><i style="width:<%= pct %>%"></i></div>
-        </div>
-
-        <div class="p-grid p-grid-3">
-          <div><div class="tile-label">Websites</div><div class="strong"><%= stats.web_domains %> / <%= service.websites %></div></div>
-          <div><div class="tile-label">Databases</div><div class="strong"><%= stats.databases %> / <%= service.plan_databases %></div></div>
-          <div><div class="tile-label">Mailboxes</div><div class="strong"><%= stats.mail_accounts %> / <%= service.plan_mailboxes %></div></div>
         </div>
       <% } else { %>
         <p class="muted small mb-0">
@@ -111,7 +280,7 @@
       <div class="p-card p-card-flush">
         <div class="p-card-head"><h2>Other domains on this site</h2></div>
         <% addonDomains.forEach(function (d) { %>
-          <a class="item" href="/panel/domains/<%= d.id %>">
+          <a class="item" href="/panel/domains/<%= d.domain %>">
             <span class="item-icon"><%- icon('globe', 19) %></span>
             <span class="item-main"><span class="item-title"><%= d.domain %></span></span>
           </a>
@@ -140,14 +309,21 @@
           <tr><td class="muted">Term</td><td class="strong"><%= service.term_months %> months</td></tr>
           <tr><td class="muted">Price</td><td class="strong"><%= money(service.price_pence, service.currency) %> <span class="tiny muted"><%= service.currency %></span></td></tr>
           <% if (service.next_due_at) { %>
-            <tr><td class="muted">Renews</td><td class="strong"><%= service.next_due_at %></td></tr>
+            <tr><td class="muted">Renews</td><td class="strong"><%= when(service.next_due_at, { dateOnly: true }) %></td></tr>
           <% } %>
         </tbody>
       </table></div>
       <a class="btn btn-ghost btn-sm btn-block mt-2" href="/hosting">Change plan</a>
     </div>
+
+    <%#
+      The tools for this site. All of them are pages on cloud.vesopa.com, signed
+      in with the session the customer already has — there is no second login and
+      no trip to the control panel on :2083. "Files" opens this site's own
+      public_html rather than the top of the account, because that is what
+      somebody clicking it from a website is looking for.
+    %>
   </aside>
 </div>
 
 <%- include('../partials/panel-shell-end') %>
-<%- include('../partials/footer') %>

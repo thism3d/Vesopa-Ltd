@@ -1,0 +1,208 @@
+/*
+ * Web terminal.
+ *
+ * Two audiences, one layout: a desktop where the terminal is a panel on a page,
+ * and a phone where it needs most of the screen and a row of keys the on-screen
+ * keyboard does not have.
+ */
+
+.term-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.term-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.term-who {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .82rem;
+  color: #5a6154;
+  overflow-wrap: anywhere;
+}
+
+.term-status {
+  font-size: .78rem;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: #eef0ea;
+  color: #5a6154;
+  white-space: nowrap;
+}
+.term-status.is-ok   { background: #eaf3d2; color: #4a6109; }
+.term-status.is-warn { background: #fdf0d8; color: #7a5510; }
+.term-status.is-busy { background: #e8eef7; color: #3a5170; }
+
+/*
+ * The terminal itself.
+ *
+ * A fixed height on desktop; on a phone the height is overwritten from
+ * JavaScript with whatever visualViewport says is actually visible, because the
+ * on-screen keyboard overlays the page instead of resizing it.
+ */
+.term-shell {
+  background: #10130A;
+  border-radius: 12px;
+  padding: 10px 6px 10px 12px;
+  height: 60vh;
+  min-height: 260px;
+  overflow: hidden;
+}
+
+.term-shell .xterm {
+  height: 100%;
+}
+
+/* xterm measures its own scrollbar; letting the page scroll as well means two
+   scrollbars fighting over the same gesture on a touch screen. */
+.term-shell .xterm-viewport {
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+/* ---- the key bar -------------------------------------------------------- */
+
+/*
+ * Everything a shell needs that a phone keyboard does not have. Horizontally
+ * scrollable rather than wrapped, so it stays one predictable row instead of
+ * reflowing into two and moving the keys under the user's thumb.
+ */
+.term-keys {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.term-keys::-webkit-scrollbar { display: none; }
+
+.term-keys button {
+  flex: 0 0 auto;
+  min-width: 44px;      /* a real touch target, not a 28px desktop button */
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid #d9ddd2;
+  border-radius: 9px;
+  background: #fff;
+  color: #2c3128;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .84rem;
+  cursor: pointer;
+  /* Stops the double-tap-to-zoom delay and the grey tap flash on iOS. */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.term-keys button:active { background: #eef0ea; }
+
+/* Ctrl is a sticky modifier, so it has to look latched when it is armed. */
+.term-keys button.is-on {
+  background: #A5C715;
+  border-color: #8fae10;
+  color: #10130A;
+  font-weight: 600;
+}
+
+.term-note {
+  font-size: .8rem;
+  color: #5a6154;
+}
+
+/* ---- phones ------------------------------------------------------------- */
+
+@media (max-width: 700px) {
+  .term-shell {
+    /* Height comes from JS on mobile; this is the pre-script fallback. */
+    height: 55vh;
+    padding: 8px 4px 8px 8px;
+    border-radius: 10px;
+  }
+
+  .term-head { gap: 6px; }
+  .term-who  { font-size: .74rem; }
+
+  /*
+   * The key bar sticks to the bottom of the viewport so it stays above the
+   * on-screen keyboard rather than scrolling away with the page.
+   */
+  .term-keys {
+    position: sticky;
+    bottom: 0;
+    background: #f7f8f4;
+    padding: 8px 0 calc(8px + env(safe-area-inset-bottom));
+    margin: 0 -4px;
+    z-index: 5;
+  }
+}
+
+/* ---- Scrolling the buffer -----------------------------------------------
+   Added when the terminal was made usable on a tablet. Two things: a pill that
+   appears only while the view is away from the end, and the separators that
+   group the key bar into "keys the keyboard lacks" / "move the view" / "zoom",
+   so seventeen buttons read as three sets rather than one wall. */
+
+.term-shell { position: relative; }
+
+.term-jump {
+  position: absolute; right: 14px; bottom: 12px; z-index: 5;
+  display: inline-flex; align-items: center; gap: 6px;
+  min-height: 36px; padding: 0 14px;
+  border: 1px solid #3a4326; border-radius: 999px;
+  background: rgba(24, 29, 14, .94); color: #dfe8c6;
+  font: inherit; font-size: .8rem; font-weight: 700; cursor: pointer;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .35);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+}
+.term-jump:hover { background: rgba(34, 41, 20, .97); color: #fff; }
+.term-jump[hidden] { display: none; }
+
+.term-keys-sep {
+  flex: none; width: 1px; align-self: stretch; margin: 4px 2px;
+  background: var(--rule);
+}
+
+/* The gesture is not discoverable, so it is written down once, quietly, and
+   only where a touch screen might see it. */
+.term-gesture {
+  display: none;
+  align-items: flex-start; gap: 7px;
+  margin: 0; font-size: .79rem; line-height: 1.5; color: var(--ink-3);
+}
+.term-gesture svg { flex: none; margin-top: 2px; }
+@media (pointer: coarse) { .term-gesture { display: flex; } }
+
+/*
+ * A key bar you can actually hit.
+ *
+ * 44px is the smallest target a thumb reaches reliably, and the bar scrolls
+ * sideways rather than wrapping into three rows that eat the terminal.
+ */
+@media (max-width: 860px) {
+  .term-keys { overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .term-keys::-webkit-scrollbar { display: none; }
+  .term-keys button { min-width: 44px; min-height: 44px; flex: 0 0 auto; }
+  .term-jump { right: 10px; bottom: 10px; }
+}
+
+/*
+ * The terminal must not be part of the page's own scrolling.
+ *
+ * `overscroll-behavior: contain` stops a swipe that reaches the top of the
+ * buffer from continuing into the page — the "rubber band" that made the
+ * whole panel move when somebody was trying to read output. `touch-action`
+ * hands vertical dragging to our own two-finger handler rather than to the
+ * browser's scroller.
+ */
+.term-shell, .term-shell .xterm-viewport {
+  overscroll-behavior: contain;
+}
+@media (pointer: coarse) {
+  .term-shell .xterm-screen { touch-action: pan-y pinch-zoom; }
+}

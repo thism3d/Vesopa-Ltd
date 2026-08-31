@@ -1,0 +1,180 @@
+<%# One mailbox: everything that can be changed about a single address. %>
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
+<%- include('../partials/panel-shell', {
+  pageTitle: box.address,
+  pageSub: 'Mailbox settings',
+}) %>
+
+<p class="mb-2">
+  <a class="btn btn-ghost btn-sm" href="/panel/mail?domain=<%= encodeURIComponent(domain) %>">
+    ← All mailboxes at <%= domain %>
+  </a>
+</p>
+
+<% if (box.forwardOnly && box.forwards.length) { %>
+  <div class="alert alert-warn">
+    <%- icon('warning', 19) %>
+    <div>
+      <b>Nothing is being kept here.</b>
+      Mail to <%= box.address %> goes to <%= box.forwards.join(', ') %> and is not stored in this
+      mailbox — so there is nothing to see in webmail. Untick "Do not keep a copy here" below if that is not what you meant.
+    </div>
+  </div>
+<% } %>
+
+<div class="p-grid p-grid-side">
+  <div>
+    <div class="p-card">
+      <h2 class="h3 mb-2">Password</h2>
+      <p class="small muted mb-2">
+        Changing it signs out every device using this mailbox — they will each ask for the
+        new one. This is the mailbox's own password, not your Vesopa password.
+      </p>
+      <form method="post" action="/panel/mail/<%= encodeURIComponent(domain) %>/<%= encodeURIComponent(box.account) %>/password" data-guard>
+        <input type="hidden" name="_csrf" value="<%= csrf %>">
+        <div class="field">
+          <label class="label" for="password">New password</label>
+          <input class="input" id="password" name="password" type="password" required autocomplete="new-password">
+        </div>
+        <button class="btn btn-sm" type="submit" data-busy="Changing…">Change password</button>
+      </form>
+    </div>
+
+    <%#
+      Forwarding. The "do not keep a copy" tick is the control that matters:
+      with it set, mail is delivered ONLY to the forward address and nothing is
+      stored here — a legitimate thing to want and a disaster to switch on by
+      accident, so it is worded as what happens rather than as a flag name, and
+      it is the option you have to reach for rather than the default.
+    %>
+    <div class="p-card">
+      <h2 class="h3 mb-2">Forwarding</h2>
+      <p class="small muted mb-2">
+        Send a copy of everything that arrives here on to another address. One per line,
+        or separated by commas. Leave empty to turn forwarding off.
+      </p>
+      <form method="post" action="/panel/mail/<%= encodeURIComponent(domain) %>/<%= encodeURIComponent(box.account) %>/forwards" data-guard>
+        <input type="hidden" name="_csrf" value="<%= csrf %>">
+        <div class="field">
+          <label class="label" for="forwards">Forward to</label>
+          <textarea class="textarea mono" id="forwards" name="forwards" rows="3"
+                    placeholder="you@gmail.com" spellcheck="false"><%= box.forwards.join('\n') %></textarea>
+        </div>
+        <%#
+          Stated as what it DOES, not as a flag to invert.
+          An earlier draft had a "keep a copy" tick whose value was flipped by an
+          inline onchange — which this site's CSP blocks outright (script-src
+          'self'), so it would have silently done nothing. The checkbox now maps
+          straight to the field the route reads, and the dangerous option is the
+          one you have to tick.
+        %>
+        <label class="check mb-2">
+          <input type="checkbox" name="forward_only" value="1" <%= box.forwardOnly ? 'checked' : '' %>>
+          <span>
+            <span class="strong">Do not keep a copy here</span>
+            <span class="tiny muted" style="display:block">
+              Tick this and mail is delivered ONLY to the address above — nothing is stored
+              in this mailbox and webmail will look empty. Leave it unticked to keep a copy,
+              which is what most people want.
+            </span>
+          </span>
+        </label>
+        <button class="btn btn-sm" type="submit" data-busy="Saving…">Save forwarding</button>
+      </form>
+    </div>
+
+    <div class="p-card">
+      <h2 class="h3 mb-2">Extra addresses</h2>
+      <p class="small muted mb-2">
+        Other names at <span class="mono">@<%= domain %></span> that land in this same mailbox —
+        <span class="mono">info</span>, <span class="mono">sales</span>, and so on. Just the part
+        before the @. One per line or comma separated.
+      </p>
+      <form method="post" action="/panel/mail/<%= encodeURIComponent(domain) %>/<%= encodeURIComponent(box.account) %>/aliases" data-guard>
+        <input type="hidden" name="_csrf" value="<%= csrf %>">
+        <div class="field">
+          <label class="label" for="aliases">Also receive at</label>
+          <textarea class="textarea mono" id="aliases" name="aliases" rows="3"
+                    placeholder="info" spellcheck="false"><%= box.aliases.join('\n') %></textarea>
+        </div>
+        <button class="btn btn-sm" type="submit" data-busy="Saving…">Save addresses</button>
+      </form>
+    </div>
+
+    <div class="p-card">
+      <h2 class="h3 mb-2">Auto-reply</h2>
+      <p class="small muted mb-2">
+        Sent back automatically to anyone who writes in — an out-of-office note, say.
+        Leave it empty to turn it off.
+      </p>
+      <form method="post" action="/panel/mail/<%= encodeURIComponent(domain) %>/<%= encodeURIComponent(box.account) %>/autoreply" data-guard>
+        <input type="hidden" name="_csrf" value="<%= csrf %>">
+        <div class="field">
+          <label class="label" for="message">Message</label>
+          <textarea class="textarea" id="message" name="message" rows="4"
+                    placeholder="Thanks for your message — I am away until Monday and will reply then."><%= autoreply %></textarea>
+        </div>
+        <button class="btn btn-sm" type="submit" data-busy="Saving…">
+          <%= autoreply ? 'Update auto-reply' : 'Turn on auto-reply' %>
+        </button>
+      </form>
+    </div>
+
+    <div class="p-card">
+      <h2 class="h3 mb-2">Delete this mailbox</h2>
+      <p class="small muted mb-2">
+        <b>Every message in it is deleted too, and we cannot get them back.</b>
+        If you only want to stop using the address, set up forwarding instead.
+      </p>
+      <form method="post" action="/panel/mail/<%= encodeURIComponent(domain) %>/<%= encodeURIComponent(box.account) %>/delete"
+            data-confirm="Delete <%= box.address %>? Every message in it is deleted with it and cannot be recovered.">
+        <input type="hidden" name="_csrf" value="<%= csrf %>">
+        <button class="btn btn-ghost btn-sm" type="submit">Delete <%= box.address %></button>
+      </form>
+    </div>
+  </div>
+
+  <aside>
+    <div class="p-card">
+      <h2 class="h3 mb-2">This mailbox</h2>
+      <div class="table-wrap"><table class="table" style="font-size:.86rem"><tbody>
+        <tr><td class="muted">Address</td><td class="strong mono" style="word-break:break-all"><%= box.address %></td></tr>
+        <tr><td class="muted">Used</td><td class="strong"><%= box.used_mb %> MB</td></tr>
+        <tr><td class="muted">Limit</td><td class="strong"><%= box.quota_mb ? box.quota_mb + ' MB' : 'No limit' %></td></tr>
+        <tr><td class="muted">Forwarding</td><td class="strong"><%= box.forwards.length ? box.forwards.join(', ') : 'Off' %></td></tr>
+        <tr><td class="muted">Auto-reply</td><td class="strong"><%= box.autoreply ? 'On' : 'Off' %></td></tr>
+      </tbody></table></div>
+    </div>
+
+    <div class="p-card">
+      <h2 class="h3 mb-2">Size limit</h2>
+      <form method="post" action="/panel/mail/<%= encodeURIComponent(domain) %>/<%= encodeURIComponent(box.account) %>/quota" data-guard>
+        <input type="hidden" name="_csrf" value="<%= csrf %>">
+        <div class="field">
+          <label class="label" for="quota_mb">Megabytes</label>
+          <input class="input" id="quota_mb" name="quota_mb" type="number" min="0" step="256"
+                 value="<%= box.quota_mb || 0 %>">
+          <p class="hint">0 for no limit. Counts against your account's total storage.</p>
+        </div>
+        <button class="btn btn-ghost btn-sm" type="submit" data-busy="Saving…">Save limit</button>
+      </form>
+    </div>
+
+    <div class="p-card">
+      <h2 class="h3 mb-2">Connect this mailbox</h2>
+      <div class="table-wrap"><table class="table" style="font-size:.82rem"><tbody>
+        <tr><td class="muted">Username</td><td class="strong mono" style="word-break:break-all"><%= box.address %></td></tr>
+        <tr><td class="muted">Incoming</td><td class="strong mono"><%= settings.imap.host %> · <%= settings.imap.port %> · SSL</td></tr>
+        <tr><td class="muted">Outgoing</td><td class="strong mono"><%= settings.smtp.host %> · <%= settings.smtp.port %> · SSL</td></tr>
+      </tbody></table></div>
+      <p class="tiny muted mt-2 mb-2">
+        The server name is the same for every customer — it is not your own domain.
+      </p>
+      <a class="btn btn-ghost btn-sm btn-block" href="<%= webmail %>" target="_blank" rel="noopener">
+        <%- icon('external', 15) %> Open webmail
+      </a>
+    </div>
+  </aside>
+</div>
+
+<%- include('../partials/panel-shell-end') %>

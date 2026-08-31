@@ -1,37 +1,91 @@
-<%# The signed-in chrome: a dark rail on the left, content on the right.
-    Collapses to a bottom bar on a phone, because a hamburger for six
-    destinations is a tap nobody needs to make. %>
+<%#
+  The signed-in chrome: a dark rail on the left, content on the right.
+
+  THREE THINGS CHANGED HERE and each fixes something a customer reported.
+
+  1. The avatar is a destination. It used to sit in the top right showing a name
+     and an email address and doing nothing at all when clicked — the single
+     most-tapped dead end in the panel. Account controls belong at the foot of
+     the rail, where every tool people already use puts them, and this one says
+     "Account & settings" with a chevron so it reads as a link before anybody
+     has to try it.
+
+  2. Ten destinations do not fit across a phone. Six do — measured, at 360px,
+     which is the narrowest screen anybody still uses. The six that survive are
+     the ones with somewhere to go; the rest are behind a More sheet that is
+     itself the sixth. A ten-item bar scrolling sideways was the other option
+     and it is worse: a destination you have to swipe to find is a destination
+     nobody finds.
+
+     Apps went into the bar rather than the sheet because it is where a new
+     customer's first hour goes — installing the thing they bought hosting for —
+     and a first-run destination behind a More menu is a first run that ends in
+     a support ticket.
+
+  3. The panel no longer ends in the marketing footer. Forty links to hosting
+     plans and TLD pricing under a page about the customer's own mailboxes is
+     the "too much information, none of it organised" complaint in its purest
+     form. `panel-shell-end` closes the page instead.
+%>
+<%
+  const railPrimary = [
+    ['/panel',          'chart',  'Overview'],
+    ['/panel/services', 'server', 'Hosting'],
+    ['/panel/apps',     'grid',   'Apps'],
+    ['/panel/domains',  'globe',  'Domains'],
+    ['/panel/mail',     'mail',   'Email'],
+  ];
+  const railExtra = [
+    ['/panel/files',    'folder',   'Files'],
+    ['/panel/terminal', 'code',     'Terminal'],
+    ['/panel/billing',  'card',     'Billing'],
+    ['/panel/tickets',  'ticket',   'Support'],
+  ];
+  // Exact match for the root, prefix match for the rest, so /panel/services/12
+  // still lights up "Hosting".
+  const railActive = (href) => (href === '/panel'
+    ? currentPath === '/panel'
+    : currentPath.indexOf(href) === 0);
+  const accountActive = currentPath.indexOf('/panel/settings') === 0;
+%>
 <div class="shell">
   <aside class="rail">
-    <a class="rail-brand" href="/">
-      <img src="/assets/img/brand/vesopa_logo_on_dark.png" alt="Vesopa" width="130" height="19">
+    <a class="rail-brand" href="/panel">
+      <span class="rail-word"><%- include('./brand', { on: 'dark', size: 19 }) %></span>
+      <span class="rail-v"><%- include('./brand', { on: 'dark', size: 22, mark: true }) %></span>
     </a>
 
-    <nav class="rail-nav">
-      <%
-      const railItems = [
-        ['/panel',          'chart',    'Overview'],
-        ['/panel/services', 'server',   'Hosting'],
-        ['/panel/domains',  'globe',    'Domains'],
-        ['/panel/billing',  'card',     'Billing'],
-        ['/panel/tickets',  'ticket',   'Support'],
-        ['/panel/settings', 'settings', 'Settings'],
-      ];
-      railItems.forEach(function (item) {
-        // Exact match for the root, prefix match for the rest, so
-        // /panel/services/12 still lights up "Hosting".
-        const active = item[0] === '/panel'
-          ? currentPath === '/panel'
-          : currentPath.indexOf(item[0]) === 0;
-      %>
-        <a class="rail-link <%= active ? 'is-active' : '' %>" href="<%= item[0] %>">
+    <nav class="rail-nav" aria-label="Panel">
+      <% railPrimary.forEach(function (item) { %>
+        <a class="rail-link <%= railActive(item[0]) ? 'is-active' : '' %>" href="<%= item[0] %>">
           <span class="rail-icon"><%- icon(item[1], 19) %></span>
           <span class="rail-label"><%= item[2] %></span>
         </a>
       <% }); %>
+      <% railExtra.forEach(function (item) { %>
+        <a class="rail-link is-extra <%= railActive(item[0]) ? 'is-active' : '' %>" href="<%= item[0] %>">
+          <span class="rail-icon"><%- icon(item[1], 19) %></span>
+          <span class="rail-label"><%= item[2] %></span>
+        </a>
+      <% }); %>
+
+      <%# Phone only. Opens the sheet in panel-shell-end holding the four items
+          hidden above, plus sign-out. %>
+      <button class="rail-link rail-more" type="button" data-sheet-open="more" aria-haspopup="dialog">
+        <span class="rail-icon"><%- icon('menu', 19) %></span>
+        <span class="rail-label">More</span>
+      </button>
     </nav>
 
     <div class="rail-foot">
+      <a class="acct <%= accountActive ? 'is-active' : '' %>" href="/panel/settings">
+        <span class="acct-av"><%= (customer.first_name || customer.email).charAt(0).toUpperCase() %></span>
+        <span class="acct-txt">
+          <span class="acct-name"><%= [customer.first_name, customer.last_name].filter(Boolean).join(' ') || customer.email %></span>
+          <span class="acct-sub">Account &amp; settings</span>
+        </span>
+        <span class="acct-chev"><%- icon('chevron-right', 15) %></span>
+      </a>
       <a class="rail-link" href="/support">
         <span class="rail-icon"><%- icon('info', 19) %></span>
         <span class="rail-label">Help</span>
@@ -49,35 +103,35 @@
   <div class="shell-main">
     <header class="topbar">
       <div class="topbar-inner">
-        <div>
+        <div style="min-width:0">
           <h1 class="topbar-title"><%= typeof pageTitle !== 'undefined' ? pageTitle : title %></h1>
           <% if (typeof pageSub !== 'undefined' && pageSub) { %>
             <p class="topbar-sub"><%= pageSub %></p>
           <% } %>
         </div>
-        <div class="row" style="gap:10px">
+        <div class="row" style="gap:10px;flex:none">
+          <%# A live indicator, not decoration: the socket in panel.js flips it
+              when it drops, so a page that has stopped updating itself admits
+              to it instead of showing figures that quietly went stale. %>
+          <span class="live-dot is-off hide-sm" data-live-dot hidden><i></i><span data-live-text>Live</span></span>
           <% if (typeof topAction !== 'undefined' && topAction) { %>
             <a class="btn btn-sm" href="<%= topAction.href %>"><%- icon(topAction.icon || 'plus', 16) %> <%= topAction.label %></a>
           <% } %>
-          <div class="topbar-user">
-            <span class="topbar-avatar"><%= (customer.first_name || customer.email).charAt(0).toUpperCase() %></span>
-            <span class="hide-sm">
-              <span class="strong small"><%= customer.first_name %> <%= customer.last_name %></span>
-              <span class="tiny muted" style="display:block"><%= customer.email %></span>
-            </span>
-          </div>
         </div>
       </div>
     </header>
 
     <% if (!customer.email_verified) { %>
-      <div class="wrap-panel">
+      <div class="wrap-panel" style="padding-bottom:0">
         <div class="alert alert-warn">
           <%- icon('warning', 19) %>
           <div>
-            <b>Confirm your email address.</b> Until you do, we cannot send you a
-            password reset if you lose your password.
-            <a href="/register/check-email">Send the link again</a>.
+            <b>Confirm your email address.</b> Until you do we cannot send you a
+            password reset, so losing your password would mean losing the account.
+            <form method="post" action="/register/resend" style="display:inline">
+              <input type="hidden" name="_csrf" value="<%= csrf %>">
+              <button class="linklike" type="submit">Send the link again</button>
+            </form>
           </div>
         </div>
       </div>

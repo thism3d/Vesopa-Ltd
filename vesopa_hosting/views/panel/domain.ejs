@@ -1,17 +1,52 @@
-<% const external = domain.source === 'external';
-   const verified = Boolean(domain.ns_verified_at);
-   const observed = (domain.ns_observed || '').split(' ').filter(Boolean);
-   const deadline = domain.ns_grace_until ? new Date(domain.ns_grace_until) : null;
-   const daysLeft = deadline ? Math.max(0, Math.ceil((deadline - Date.now()) / 864e5)) : null; %>
+<%#
+  A full domain. Subdomains get views/panel/domain-sub.ejs instead — see the
+  note at the top of that file for why they are not this page with things
+  hidden.
+
+  TWO WAYS TO POINT AT US, and the page has to be honest about which one is in
+  force, because it decides what else is on offer:
+
+    ns   delegated to our nameservers. We answer for the zone, so the DNS
+         editor works and mail simply works.
+    a    an A record aimed here while DNS stays at their provider. Site and
+         certificate are identical; the zone is not ours, so DNS is read-only
+         and mail needs records they add themselves.
+%>
+<%
+  const external = domain.source === 'external';
+  const verified = Boolean(domain.ns_verified_at);
+  const method = domain.verify_method || '';
+  const deadline = domain.ns_grace_until ? new Date(domain.ns_grace_until) : null;
+  const daysLeft = deadline ? Math.max(0, Math.ceil((deadline - Date.now()) / 864e5)) : null;
+
+  /*
+   * THE DEADLOCK, NAMED.
+   *
+   * A domain registered with us is delegated to our nameservers by us — there
+   * is no customer step. So an unverified one of ours with no DNS zone on the
+   * server is not "waiting for you" at all: ns1 answers REFUSED for a zone it
+   * does not have, every resolver turns that into SERVFAIL, and the check that
+   * would let us build the zone can never pass. Telling that customer to go and
+   * change their nameservers is telling them to fix the one thing that is
+   * already correct.
+   */
+  const stuck = !verified && !external && domain.dns_enabled && node.known && !node.dns;
+
+  // Which plan it is on, out of the ones offered. Found here rather than passed
+  // separately so the select below and this badge can never disagree.
+  const attachedService = (hostingServices || [])
+    .find(function (s) { return String(s.id) === String(domain.service_id); }) || null;
+%>
 <%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
+<link rel="stylesheet" href="<%= asset('/assets/css/apps.css') %>">
 <%- include('../partials/panel-shell', {
   pageTitle: domain.domain,
   pageSub: external ? 'Registered elsewhere, hosted here' : 'Registered with Vesopa',
 }) %>
 
 <nav class="tabs">
-  <a class="tab is-active" href="/panel/domains/<%= domain.id %>">Overview</a>
-  <a class="tab" href="/panel/domains/<%= domain.id %>/dns">DNS</a>
+  <a class="tab is-active" href="/panel/domains/<%= domain.domain %>">Overview</a>
+  <a class="tab" href="/panel/domains/<%= domain.domain %>/dns">DNS</a>
 </nav>
 
 <% if (!registrarLive && !external) { %>
@@ -21,15 +56,27 @@
   </div>
 <% } %>
 
-<% if (domain.status === 'awaiting_ns') { %>
+<% if (!verified) { %>
   <div class="alert alert-warn">
     <%- icon('clock', 19) %>
     <div>
-      <b>Waiting for your nameservers.</b>
-      We are not hosting <%= domain.domain %> yet — it points at
-      <% if (observed.length) { %><span class="mono"><%= observed.join(', ') %></span><% } else { %>somewhere else<% } %>.
-      Set the two nameservers on the right at whoever the domain is registered with.
-      <% if (daysLeft !== null) { %>
+      <b>Not pointing at us yet.</b>
+      We are not serving <%= domain.domain %>
+      <% if (observedNs.length) { %>
+        — it is delegated to <span class="mono"><%= observedNs.join(', ') %></span>.
+      <% } else if (observedIp.length) { %>
+        — it answers with <span class="mono"><%= observedIp.join(', ') %></span>.
+      <% } else { %>.<% } %>
+      <% if (stuck) { %>
+        <br><br>
+        <b>Your nameservers are right — ours is the part that is missing.</b>
+        <%= domain.domain %> is delegated to <span class="mono"><%= defaultNameservers.join(' and ') %></span>,
+        and we have no DNS zone for it yet, so we answer nothing and the lookup fails. Nothing is wrong at
+        your registrar. Set it up and it starts resolving within minutes.
+      <% } else { %>
+        There are two ways to fix that, on the right — either one is enough.
+      <% } %>
+      <% if (daysLeft !== null && external) { %>
         <br><b><%= daysLeft === 0 ? 'Today is the last day' : daysLeft + ' day' + (daysLeft === 1 ? '' : 's') + ' left' %></b>
         — a domain that has not pointed at us by then comes off the account. The domain itself is never touched.
       <% } %>
@@ -39,37 +86,175 @@
 
 <div class="p-grid p-grid-side">
   <div>
-    <div class="p-card">
-      <div class="row-between mb-2">
-        <h2 class="h3">Where this domain points</h2>
+    <%#
+      Where it points.
+
+      COLLAPSED ONCE VERIFIED. This card is essential for about ten minutes and
+      is clutter for the rest of the domain's life — a working domain that keeps
+      showing its own setup instructions reads as a domain that is not finished.
+      Verified, it is one line with the proof in it; unverified, it is open and
+      leading, because it is the only thing on the page that matters.
+    %>
+    <details class="fold" <%= verified ? '' : 'open' %>>
+      <summary>
         <% if (verified) { %>
-          <span class="badge badge-green">Pointing at us</span>
+          <span class="fold-ok"><%- icon('check-circle', 19) %></span>
+          <span>
+            Pointing at us
+            <span class="fold-sub">
+              — <%= method === 'ns' ? 'through our nameservers' : 'by A record' %><%
+              if (domain.ns_checked_at) { %>, checked <%= when(domain.ns_checked_at) %><% } %>
+            </span>
+          </span>
         <% } else { %>
-          <span class="badge badge-amber">Not pointing here yet</span>
+          <span style="color:#7a5510;display:grid;place-items:center"><%- icon('alert-circle', 19) %></span>
+          <span>
+            Not pointing at us yet
+            <span class="fold-sub">— either method on the right is enough</span>
+          </span>
         <% } %>
-      </div>
+        <span class="fold-chev"><%- icon('chevron', 17) %></span>
+      </summary>
+      <div class="fold-body">
 
       <p class="small muted mb-2">
-        <% if (verified) { %>
-          Checked against public DNS<% if (domain.ns_checked_at) { %> on <%= domain.ns_checked_at %><% } %>.
-          Everything we host for this domain — the site, the mailboxes and the certificate — works because of this.
+        <% if (method === 'ns') { %>
+          Delegated to our nameservers, so we answer for the whole zone —
+          your DNS records and your email are both ours to run.
+        <% } else if (method === 'a') { %>
+          Pointing here with an <b>A record</b>, while your DNS stays with your own provider.
+          The website and the certificate work exactly the same. Records and email
+          are changed at your provider, not here — switch the nameservers to ours
+          if you would rather we ran those too.
         <% } else { %>
-          We look this up on the public internet rather than taking anyone's word for it, because it is
-          what decides whether we can serve the site, accept the mail and issue the certificate.
-          <% if (observed.length) { %>
-            Right now it answers <span class="mono"><%= observed.join(', ') %></span>.
-          <% } else if (domain.ns_checked_at) { %>
-            Right now we cannot read its nameservers at all.
-          <% } %>
+          We look this up on the public internet rather than taking anyone's word for it,
+          because it is what decides whether we can serve the site and issue a certificate.
         <% } %>
+        <% if (domain.ns_checked_at) { %>Last checked <%= when(domain.ns_checked_at) %>.<% } %>
       </p>
 
-      <form method="post" action="/panel/domains/<%= domain.id %>/verify">
-        <input type="hidden" name="_csrf" value="<%= csrf %>">
-        <button class="btn btn-sm <%= verified ? 'btn-ghost' : '' %>" type="submit" data-busy="Checking…">
-          <%- icon('search', 15) %> Check now
-        </button>
-      </form>
+      <% if (observedNs.length || observedIp.length) { %>
+        <div class="table-wrap"><table class="table" style="font-size:.86rem"><tbody>
+          <% if (observedNs.length) { %>
+            <tr><td class="muted">Nameservers</td><td class="strong mono"><%= observedNs.join(', ') %></td></tr>
+          <% } %>
+          <% if (observedIp.length) { %>
+            <tr><td class="muted">Address</td><td class="strong mono"><%= observedIp.join(', ') %></td></tr>
+          <% } %>
+        </tbody></table></div>
+      <% } %>
+
+      <div id="ns-check-result" class="tip mb-2" hidden></div>
+
+      <%# A real form, so it works without JavaScript. panel.js intercepts the
+          click and answers in place instead of throwing the page away. %>
+      <div class="row mt-2" style="gap:8px;flex-wrap:wrap">
+        <form method="post" action="/panel/domains/<%= domain.domain %>/verify">
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <button class="btn btn-sm <%= verified || stuck ? 'btn-ghost' : '' %>" type="submit"
+                  data-check="/panel/domains/<%= domain.domain %>/verify"
+                  data-check-out="ns-check-result" data-csrf="<%= csrf %>">
+            <%- icon('refresh', 15) %> Check now
+          </button>
+        </form>
+
+        <%#
+          THE WAY OUT OF THE DEADLOCK.
+
+          Offered whenever the server is not serving this name — which is the
+          only state where it does anything — and worded as the plain fact
+          rather than as "rebuild", because a customer whose domain has never
+          worked is not rebuilding anything. It creates whatever is missing and
+          tolerates whatever is already there, so pressing it twice costs a few
+          seconds and changes nothing.
+        %>
+        <%
+          // Missing anything at all — no vhost, or no zone for a domain that
+          // asked for one — is the "never worked" case. Everything present is
+          // the "worked, and something has gone wrong with it" case, which
+          // wants the same button under a different name rather than no button
+          // at all: a rebuild is the only repair a customer can carry out
+          // themselves, and hiding it behind a support ticket for a vhost that
+          // needs recreating helps nobody.
+          const missing = !node.known || !node.web || (domain.dns_enabled && !node.dns);
+        %>
+        <% if (hasHosting) { %>
+          <form method="post" action="/panel/domains/<%= domain.domain %>/rebuild" data-guard
+                <% if (!missing) { %>data-confirm="Rebuild <%= domain.domain %> on the server? Its website, DNS zone and mail domain are recreated if anything is missing. Nothing that already exists is deleted or overwritten."<% } %>>
+            <input type="hidden" name="_csrf" value="<%= csrf %>">
+            <button class="btn btn-sm <%= stuck ? '' : 'btn-ghost' %>" type="submit" data-busy="Setting it up…">
+              <%- icon('refresh', 15) %> <%= missing ? 'Set it up on the server' : 'Rebuild on the server' %>
+            </button>
+          </form>
+        <% } %>
+      </div>
+      </div>
+    </details>
+
+    <%# The certificate — the thing customers actually come looking for. %>
+    <div class="p-card">
+      <div class="row-between mb-2">
+        <h2 class="h3">Certificate</h2>
+        <span class="badge <%= ssl.status === 'active' ? 'badge-green' : ssl.status === 'failed' ? 'badge-red' : 'badge-grey' %>">
+          <%= ssl.status === 'active' ? 'Installed' : ssl.status === 'failed' ? 'Not issued' : 'None yet' %>
+        </span>
+      </div>
+
+      <% if (ssl.status === 'active') { %>
+        <p class="small muted mb-2">
+          <span class="mono">https://<%= domain.domain %></span> is secured, and it renews itself
+          for as long as you host here. Nothing to do.
+        </p>
+        <form method="post" action="/panel/domains/<%= domain.domain %>/ssl">
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <button class="btn btn-ghost btn-sm" type="submit" data-busy="Reissuing…">Reissue it</button>
+        </form>
+      <% } else if (!verified) { %>
+        <p class="small muted mb-0">
+          A certificate can only be issued for a name that already resolves to this server —
+          that is Let's Encrypt's rule, not ours. Point the domain here first.
+        </p>
+      <% } else { %>
+        <p class="small muted mb-2">
+          <%= ssl.error || 'This domain points at us, so a certificate can be issued now. It covers www. as well.' %>
+        </p>
+        <form method="post" action="/panel/domains/<%= domain.domain %>/ssl">
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <button class="btn btn-sm" type="submit" data-busy="Requesting…">
+            <%- icon('lock', 15) %> Issue the certificate
+          </button>
+        </form>
+      <% } %>
+    </div>
+
+    <%- include('../partials/redirect-card', { site, domain, hasHosting }) %>
+
+    <%# Email. Says which of the three situations this domain is in. %>
+    <div class="p-card">
+      <div class="row-between mb-2">
+        <h2 class="h3">Email</h2>
+        <% if (canHaveMail.ok) { %>
+          <span class="badge <%= canHaveMail.needsRecords ? 'badge-amber' : 'badge-green' %>">
+            <%= canHaveMail.needsRecords ? 'Needs DNS records' : 'Ready' %>
+          </span>
+        <% } %>
+      </div>
+      <% if (!canHaveMail.ok) { %>
+        <p class="small muted mb-0"><%= canHaveMail.reason %></p>
+      <% } else if (canHaveMail.needsRecords) { %>
+        <p class="small muted mb-2">
+          You can create mailboxes at <span class="mono">@<%= domain.domain %></span>, but because your
+          DNS is at your own provider, mail cannot arrive until you add the records we give you there.
+          The mail page shows exactly what to paste and tells you when it has taken effect.
+        </p>
+        <a class="btn btn-ghost btn-sm" href="/panel/mail?domain=<%= encodeURIComponent(domain.domain) %>">Set up email</a>
+      <% } else { %>
+        <p class="small muted mb-2">
+          We run this domain's DNS, so its mail records are already correct.
+          Create mailboxes and they work immediately.
+        </p>
+        <a class="btn btn-ghost btn-sm" href="/panel/mail?domain=<%= encodeURIComponent(domain.domain) %>">Mailboxes</a>
+      <% } %>
     </div>
 
     <% if (!external) { %>
@@ -80,7 +265,7 @@
           change them to point the domain somewhere else. Changes take a few hours
           to reach everyone.
         </p>
-        <form method="post" action="/panel/domains/<%= domain.id %>/nameservers" data-guard>
+        <form method="post" action="/panel/domains/<%= domain.domain %>/nameservers" data-guard>
           <input type="hidden" name="_csrf" value="<%= csrf %>">
           <div class="p-grid p-grid-2">
             <% [1,2,3,4].forEach(function (n) { %>
@@ -95,89 +280,189 @@
           <button class="btn btn-sm" type="submit" data-busy="Saving…">Save nameservers</button>
         </form>
       </div>
+
+      <div class="p-card">
+        <h2 class="h3 mb-2">Automatic renewal</h2>
+        <p class="small muted mb-3">
+          <% if (domain.auto_renew) { %>
+            This domain renews automatically. We email you 30 days before, and again
+            before we take payment — you will never be surprised by a charge.
+          <% } else { %>
+            <b>Automatic renewal is off.</b> This domain will expire on
+            <%= domain.expires_at || 'its expiry date' %> and someone else will be able to
+            register it. Once a name lapses we cannot get it back for you.
+          <% } %>
+        </p>
+        <form method="post" action="/panel/domains/<%= domain.domain %>/auto-renew"
+              <% if (domain.auto_renew) { %>data-confirm="Turn off automatic renewal? If you forget to renew manually, you will lose this domain."<% } %>>
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <input type="hidden" name="auto_renew" value="<%= domain.auto_renew ? '0' : '1' %>">
+          <button class="btn btn-sm <%= domain.auto_renew ? 'btn-ghost' : '' %>" type="submit">
+            <%= domain.auto_renew ? 'Turn off auto-renew' : 'Turn on auto-renew' %>
+          </button>
+        </form>
+      </div>
+
+      <div class="p-card">
+        <h2 class="h3 mb-2">Transfer away</h2>
+        <p class="small muted mb-2">
+          This domain is yours. To move it to another registrar, open a ticket and we
+          will unlock it and send the authorisation code — no fee and no delay beyond
+          what the registry itself requires.
+        </p>
+        <a class="btn btn-ghost btn-sm" href="/panel/tickets/new?subject=Transfer%20out%20<%= encodeURIComponent(domain.domain) %>">Request the code</a>
+      </div>
     <% } else { %>
       <div class="p-card">
         <h2 class="h3 mb-2">Nameservers</h2>
-        <p class="small muted mb-2">
+        <p class="small muted mb-0">
           <%= domain.domain %> is registered somewhere else, so its nameservers are changed
-          in that registrar's control panel — not here. Set them to the two on the right
+          in that registrar's control panel — not here. Use either method on the right
           and this page updates itself within a few minutes.
         </p>
       </div>
     <% } %>
 
-    <% if (!external) { %>
-    <div class="p-card">
-      <h2 class="h3 mb-2">Automatic renewal</h2>
-      <p class="small muted mb-3">
-        <% if (domain.auto_renew) { %>
-          This domain renews automatically. We email you 30 days before, and again
-          before we take payment — you will never be surprised by a charge.
-        <% } else { %>
-          <b>Automatic renewal is off.</b> This domain will expire on
-          <%= domain.expires_at || 'its expiry date' %> and someone else will be able to
-          register it. Once a name lapses we cannot get it back for you.
-        <% } %>
-      </p>
-      <form method="post" action="/panel/domains/<%= domain.id %>/auto-renew"
-            <% if (domain.auto_renew) { %>data-confirm="Turn off automatic renewal? If you forget to renew manually, you will lose this domain."<% } %>>
-        <input type="hidden" name="_csrf" value="<%= csrf %>">
-        <input type="hidden" name="auto_renew" value="<%= domain.auto_renew ? '0' : '1' %>">
-        <button class="btn btn-sm <%= domain.auto_renew ? 'btn-ghost' : '' %>" type="submit">
-          <%= domain.auto_renew ? 'Turn off auto-renew' : 'Turn on auto-renew' %>
-        </button>
-      </form>
-    </div>
+    <%#
+      WHICH PLAN IS THIS DOMAIN ON.
 
+      A domain and a hosting plan are separate things here, and a domain filed
+      under no plan is not an error — a name can be registered and parked. What
+      was missing was any way to change the answer: it could be chosen once, on
+      the add form, and never again, so a domain registered through the order
+      flow (which files it under nothing) could not be put on the plan that was
+      bought alongside it. Attaching also BUILDS it, because a domain on a plan
+      that the server does not serve is a row in a database, not hosting.
+    %>
     <div class="p-card">
-      <h2 class="h3 mb-2">Transfer away</h2>
-      <p class="small muted mb-2">
-        This domain is yours. To move it to another registrar, open a ticket and we
-        will unlock it and send the authorisation code — no fee and no delay beyond
-        what the registry itself requires.
-      </p>
-      <a class="btn btn-ghost btn-sm" href="/panel/tickets/new?subject=Transfer%20out%20<%= encodeURIComponent(domain.domain) %>">Request the code</a>
+      <div class="row-between mb-2">
+        <h2 class="h3">Hosting</h2>
+        <span class="badge <%= attachedService ? 'badge-green' : 'badge-grey' %>">
+          <%= attachedService ? (attachedService.primary_domain === domain.domain ? 'Main domain' : 'On a plan') : 'Not hosted' %>
+        </span>
+      </div>
+
+      <% if (!hostingServices.length) { %>
+        <p class="small muted mb-2">
+          There is no hosting plan on this account yet, so there is nowhere to put a website for
+          <%= domain.domain %>. The domain is registered and safe either way.
+        </p>
+        <a class="btn btn-sm" href="/hosting">See the plans</a>
+      <% } else { %>
+        <p class="small muted mb-3">
+          <% if (attachedService) { %>
+            Served by your <b><%= attachedService.plan_name %></b> plan.
+            Changing this moves the website to another plan; the domain itself is not affected.
+          <% } else { %>
+            <b><%= domain.domain %> is not attached to a hosting plan</b>, so there is no website for it
+            on the server. Pick a plan and we set it up straight away — the DNS zone, the site and the
+            certificate.
+          <% } %>
+        </p>
+        <form method="post" action="/panel/domains/<%= domain.domain %>/service" data-guard>
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <div class="field">
+            <label class="label" for="service_id">Host it on</label>
+            <select class="select" id="service_id" name="service_id">
+              <option value="">Not hosted here</option>
+              <% hostingServices.forEach(function (s) { %>
+                <option value="<%= s.id %>" <%= String(domain.service_id) === String(s.id) ? 'selected' : '' %>>
+                  <%= s.plan_name %><%= s.primary_domain ? ' — ' + s.primary_domain : ' — no domain attached' %>
+                </option>
+              <% }); %>
+            </select>
+          </div>
+          <button class="btn btn-sm" type="submit" data-busy="Setting up…">Save and set it up</button>
+        </form>
+      <% } %>
     </div>
-    <% } %>
 
     <% if (canRemove) { %>
-      <div class="p-card">
-        <h2 class="h3 mb-2">Remove from this account</h2>
-        <p class="small muted mb-2">
-          Takes <%= domain.domain %> off your Vesopa account and stops us hosting it.
-          The domain itself is registered elsewhere and is not affected in any way —
-          you can add it back at any time.
-        </p>
-        <form method="post" action="/panel/domains/<%= domain.id %>/remove"
-              data-confirm="Remove <%= domain.domain %> from your account? Any site, mailboxes and certificate we host for it stop working.">
-          <input type="hidden" name="_csrf" value="<%= csrf %>">
-          <button class="btn btn-ghost btn-sm" type="submit">Remove this domain</button>
-        </form>
-      </div>
+      <%- include('../partials/domain-remove', { domain, node, ours: !external, parentName: null }) %>
     <% } %>
   </div>
 
   <aside>
+    <%#
+      Both ways of pointing, side by side, with the trade-off stated. The old
+      page offered only the nameservers, so a customer who had to keep DNS where
+      it was had no route through the panel at all.
+    %>
     <div class="p-card">
       <h2 class="h3 mb-2">Point it at us</h2>
-      <p class="small muted mb-2">
-        <% if (external) { %>Set these two at your registrar.<% } else { %>Ours, and already set unless you have changed them.<% } %>
+      <p class="small muted mb-2">Either one works. You do not need both.</p>
+
+      <p class="label mb-1">1 &nbsp;Let us run your DNS <span class="badge badge-green" style="font-size:.62rem">recommended</span></p>
+      <p class="tiny muted mb-2">
+        Set these two nameservers at your registrar. Mail, records and certificates
+        are then all handled here.
       </p>
       <% defaultNameservers.forEach(function (ns) { %>
         <div class="copyable">
-          <span><%= ns %></span>
+          <span class="mono"><%= ns %></span>
           <button type="button" class="btn btn-ghost btn-sm copy-btn" data-copy="<%= ns %>">Copy</button>
         </div>
       <% }); %>
+
+      <p class="label mb-1 mt-3">2 &nbsp;Keep your DNS where it is</p>
+      <p class="tiny muted mb-2">
+        Point an <span class="mono">A</span> record for <span class="mono">@</span> (and
+        <span class="mono">www</span>) at us instead. The site and the certificate work
+        the same; DNS and email stay with your provider.
+      </p>
+      <%#
+        THE ADDRESS FIRST, THE HOSTNAME UNDER IT.
+
+        This card used to print the hostname alone, and the reasoning was real:
+        every customer who copies the raw address pins us to that number in a
+        zone we cannot see, so moving the node breaks all of them silently with
+        no list of who to warn. What that argument left out is that an A record
+        takes an ADDRESS. A good number of DNS panels reject a hostname in one
+        outright, and the ones that accept it are quietly storing a CNAME-ish
+        thing that behaves differently — so the instruction we were giving was,
+        for a fair share of customers, one they could not carry out, with a
+        support ticket as the only route through.
+
+        So both are here, the one that always works first. The hostname stays
+        underneath for anyone whose panel takes it, and it is still the value
+        every check in the code resolves — see nameservers.pointsAtUs, which
+        compares against whatever POINT_HOSTNAME answers with rather than
+        against anything written down here.
+      %>
+      <% if (addresses.length) { %>
+        <% addresses.forEach(function (ip) { %>
+          <div class="copyable">
+            <span class="mono"><%= ip %></span>
+            <button type="button" class="btn btn-ghost btn-sm copy-btn" data-copy="<%= ip %>">Copy</button>
+          </div>
+        <% }); %>
+        <p class="tiny muted mt-2 mb-0">
+          If your DNS panel accepts a name instead of an address, <span class="mono"><%= pointHostname %></span>
+          is the better value to use — it follows the server if we ever move your site to a faster machine,
+          and the address above would then need changing by hand.
+        </p>
+      <% } else { %>
+        <div class="copyable">
+          <span class="mono"><%= pointHostname %></span>
+          <button type="button" class="btn btn-ghost btn-sm copy-btn" data-copy="<%= pointHostname %>">Copy</button>
+        </div>
+        <p class="tiny muted mt-2 mb-0">
+          If your DNS panel will not accept a name in an A record, open a ticket and we will give you
+          the address to use.
+        </p>
+      <% } %>
     </div>
 
     <div class="p-card">
       <h2 class="h3 mb-2">Details</h2>
       <div class="table-wrap"><table class="table" style="font-size:.86rem">
         <tbody>
-          <tr><td class="muted">Status</td><td class="strong"><%= domain.status === 'awaiting_ns' ? 'Waiting for nameservers' : domain.status %></td></tr>
+          <tr><td class="muted">Status</td><td class="strong"><%= domain.status === 'awaiting_ns' ? 'Waiting to be pointed' : domain.status %></td></tr>
           <tr><td class="muted">Held by</td><td class="strong"><%= external ? 'Another registrar' : 'Vesopa' %></td></tr>
-          <tr><td class="muted">Points at us</td><td class="strong"><%= verified ? 'Yes' : 'Not yet' %></td></tr>
+          <tr><td class="muted">Points at us</td>
+              <td class="strong"><%= verified ? (method === 'ns' ? 'Yes, via nameservers' : 'Yes, via A record') : 'Not yet' %></td></tr>
+          <tr><td class="muted">Certificate</td>
+              <td class="strong"><%= ssl.status === 'active' ? 'Installed' : ssl.status === 'failed' ? 'Not issued' : 'None yet' %></td></tr>
           <tr><td class="muted">Last checked</td><td class="strong"><%= domain.ns_checked_at || 'Not yet' %></td></tr>
           <% if (!external) { %>
             <tr><td class="muted">Registered</td><td class="strong"><%= domain.registered_at || '—' %></td></tr>
@@ -200,10 +485,9 @@
           <%= canEditDns.reason %>
         <% } %>
       </p>
-      <a class="btn btn-ghost btn-sm btn-block" href="/panel/domains/<%= domain.id %>/dns">Open DNS records</a>
+      <a class="btn btn-ghost btn-sm btn-block" href="/panel/domains/<%= domain.domain %>/dns">Open DNS records</a>
     </div>
   </aside>
 </div>
 
 <%- include('../partials/panel-shell-end') %>
-<%- include('../partials/footer') %>

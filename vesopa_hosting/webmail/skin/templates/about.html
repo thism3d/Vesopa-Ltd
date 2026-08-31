@@ -1,0 +1,74 @@
+<roundcube:include file="includes/layout.html" />
+
+<h1 class="voice"><roundcube:label name="about" /></h1>
+
+<!--
+  About.
+
+  WHAT WAS REMOVED and why. This page used to be a wall: the stock "about"
+  blurb, the version, the copyright, the licence, the skin's own metadata and a
+  table of every installed plugin. None of that is for a customer — it is a
+  developer's diagnostics page wearing an About label, and it was the first
+  thing anybody saw when they went looking for "who is this and how do I get
+  help".
+
+  WHAT WAS KEPT, deliberately. One line of Roundcube attribution stays. Vesopa
+  Mail is built on Roundcube, which is GPLv3, and clause 5(d) is explicit that
+  an interactive program displaying Appropriate Legal Notices must keep
+  displaying them. Removing it is not ours to do, and it costs one quiet line.
+-->
+<div class="frame-content vesopa-about">
+	<style>
+		.vesopa-about { display: flex; align-items: center; justify-content: center; padding: 8vh 20px; }
+		.vesopa-about .card {
+			width: 100%; max-width: 28rem; text-align: center;
+			background: #fff; border: 1px solid #e4e7dd; border-radius: 18px;
+			padding: 34px 28px 28px;
+			box-shadow: 0 2px 6px rgba(17,17,17,.05), 0 14px 40px rgba(17,17,17,.07);
+		}
+		html.dark-mode .vesopa-about .card { background: #21292c; border-color: #33403f; box-shadow: none; }
+		.vesopa-about .mark { width: 156px; margin: 0 auto 6px; }
+		.vesopa-about .mark img { width: 100%; height: auto; display: block; }
+		.vesopa-about .word { font-size: 1.5rem; font-weight: 800; letter-spacing: -.01em; margin: 0 0 4px; }
+		.vesopa-about .tag { margin: 0 0 22px; color: #787a6e; font-size: .93rem; line-height: 1.55; }
+		html.dark-mode .vesopa-about .tag { color: #9aa79e; }
+		.vesopa-about .links { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-bottom: 22px; }
+		.vesopa-about .links a {
+			display: inline-block; padding: 9px 16px; border-radius: 10px;
+			border: 1px solid #e4e7dd; text-decoration: none; font-weight: 600; font-size: .88rem;
+			color: #1a1f14;
+		}
+		.vesopa-about .links a.primary { background: #a5c715; border-color: #a5c715; color: #10130a; }
+		html.dark-mode .vesopa-about .links a { border-color: #33403f; color: #e9edea; }
+		html.dark-mode .vesopa-about .links a.primary { color: #10130a; }
+		.vesopa-about .fine {
+			margin: 0; padding-top: 18px; border-top: 1px solid #eef0e9;
+			font-size: .76rem; line-height: 1.6; color: #9aa093;
+		}
+		html.dark-mode .vesopa-about .fine { border-top-color: #33403f; color: #7e8a82; }
+		.vesopa-about .fine a { color: inherit; }
+	</style>
+
+	<div class="card">
+		<div class="mark"><roundcube:object name="logo" src="/images/logo-wordmark.svg" alt="Vesopa" /></div>
+		<p class="word">Mail</p>
+		<p class="tag">
+			Email on your own domain, hosted in the UK by Vesopa Software.
+			Your mailbox, your data, no adverts and nothing read by anybody but you.
+		</p>
+
+		<div class="links">
+			<a class="primary" href="https://vesopa.com/support" target="_blank" rel="noopener">Get help</a>
+			<a href="mailto:support@vesopa.com">support@vesopa.com</a>
+		</div>
+
+		<p class="fine">
+			&copy; Vesopa Software Ltd. &middot; <roundcube:object name="productname" />
+			<roundcube:object name="version" /><br>
+			Built on <a href="https://roundcube.net" target="_blank" rel="noopener">Roundcube</a>,
+			free software under the GNU GPL v3.
+		</p>
+	</div>
+</div>
+
+<roundcube:include file="includes/footer.html" />

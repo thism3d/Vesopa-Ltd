@@ -6,8 +6,8 @@
 }) %>
 
 <nav class="tabs">
-  <a class="tab" href="/panel/domains/<%= domain.id %>">Overview</a>
-  <a class="tab is-active" href="/panel/domains/<%= domain.id %>/dns">DNS</a>
+  <a class="tab" href="/panel/domains/<%= domain.domain %>">Overview</a>
+  <a class="tab is-active" href="/panel/domains/<%= domain.domain %>/dns">DNS</a>
 </nav>
 
 <% if (!allowed.ok) { %>
@@ -16,7 +16,7 @@
     <div>
       <b>DNS for this domain is not ours to edit.</b> <%= allowed.reason %>
       <% if (domain.status === 'awaiting_ns') { %>
-        <a href="/panel/domains/<%= domain.id %>">Check the nameservers</a>
+        <a href="/panel/domains/<%= domain.domain %>">Check the nameservers</a>
       <% } %>
     </div>
   </div>
@@ -63,7 +63,7 @@
                 <td style="text-align:right;white-space:nowrap">
                   <details>
                     <summary class="btn-link">Edit</summary>
-                    <form method="post" action="/panel/domains/<%= domain.id %>/dns" class="mt-2" data-guard>
+                    <form method="post" action="/panel/domains/<%= domain.domain %>/dns" class="mt-2" data-guard>
                       <input type="hidden" name="_csrf" value="<%= csrf %>">
                       <input type="hidden" name="action" value="edit">
                       <input type="hidden" name="record_id" value="<%= r.id %>">
@@ -93,7 +93,7 @@
                       <button class="btn btn-sm" type="submit" data-busy="Saving…">Save record</button>
                     </form>
 
-                    <form method="post" action="/panel/domains/<%= domain.id %>/dns" class="mt-2"
+                    <form method="post" action="/panel/domains/<%= domain.domain %>/dns" class="mt-2"
                           data-confirm="Delete this <%= r.type %> record? Anything relying on it stops working as soon as the change propagates.">
                       <input type="hidden" name="_csrf" value="<%= csrf %>">
                       <input type="hidden" name="action" value="delete">
@@ -116,7 +116,7 @@
       Changes are live as soon as they are saved, but the internet remembers the old
       answer until the record’s TTL runs out — usually an hour.
     </p>
-    <form method="post" action="/panel/domains/<%= domain.id %>/dns" data-guard>
+    <form method="post" action="/panel/domains/<%= domain.domain %>/dns" data-guard>
       <input type="hidden" name="_csrf" value="<%= csrf %>">
       <input type="hidden" name="action" value="add">
       <div class="p-grid p-grid-2">
@@ -152,4 +152,3 @@
 <% } %>
 
 <%- include('../partials/panel-shell-end') %>
-<%- include('../partials/footer') %>

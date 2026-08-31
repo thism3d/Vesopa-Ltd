@@ -1,0 +1,26 @@
+# Vesopa Cloud: one master user, for signing a customer into their own webmail.
+#
+# The panel already knows who the customer is. Making them type a mailbox
+# password to open an inbox they are already authenticated for is the friction
+# the panel exists to remove — and it is a password people write down or reuse.
+#
+# Roundcube authenticates with SASL PLAIN proxy authorization: the mailbox is
+# the authorization identity, this account is the authentication identity. So
+# nothing — not the panel, not the database, not Roundcube — ever holds a
+# customer's own mailbox password.
+#
+# result_success = continue is the line that makes this a MASTER user rather
+# than simply a second account: once this passdb authenticates the master,
+# Dovecot carries on to the normal passdb to find the mailbox being opened, and
+# does not ask for its password.
+#
+# THIS FILE MUST BE INCLUDED BEFORE auth-passwdfile.conf.ext in 10-auth.conf.
+# A master passdb is consulted for the authenticating identity and has to be
+# reached first; listed after the normal one it is never tried and every SSO
+# login fails with a plain "authentication failed".
+passdb {
+  driver = passwd-file
+  args = /etc/dovecot/master-users
+  master = yes
+  result_success = continue
+}

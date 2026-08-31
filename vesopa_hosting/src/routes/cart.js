@@ -722,10 +722,27 @@ router.get('/checkout', async (req, res, next) => {
     const priced = await priceCart(req.cart, ctxOf(req));
     if (!priced.lines.length) return res.redirect('/cart');
 
+    /*
+     * A country to pre-select for a visitor who has no account yet. A suggestion
+     * on a visible field, never a value written to an order without the customer
+     * seeing it — see the same note on the settings route. It must not be able
+     * to fail the checkout, which is why it is caught here rather than awaited
+     * bare.
+     */
+    let geoCountry = '';
+    if (!req.customer || !req.customer.country) {
+      try {
+        geoCountry = (await require('../geo').countryFor(req.ip)) || '';
+      } catch {
+        geoCountry = '';
+      }
+    }
+
     res.render('public/checkout', {
       title: 'Checkout',
       robots: 'noindex',
       ...priced,
+      geoCountry,
       paymentsMode: PAYMENTS_MODE,
       ...paymentChoices(priced),
       values: req.customer
@@ -813,6 +830,8 @@ router.post('/checkout', async (req, res, next) => {
         title: 'Checkout',
         robots: 'noindex',
         ...priced,
+        // Whatever they picked is in `values`; no need to guess again.
+        geoCountry: '',
         paymentsMode: PAYMENTS_MODE,
         ...paymentChoices(priced),
         values,
@@ -999,7 +1018,7 @@ router.post('/checkout', async (req, res, next) => {
 
     sendMail({
       to: customer.email,
-      subject: `Order ${reference} received — Vesopa Hosting`,
+      subject: `Order ${reference} received — Vesopa Cloud`,
       html: shell({
         title: 'Thanks for your order',
         intro:

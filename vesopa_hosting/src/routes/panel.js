@@ -14,16 +14,48 @@ const express = require('express');
 const db = require('../db');
 const auth = require('../auth');
 const hestia = require('../integrations/hestia');
+const apps = require('../apps');
 const sso = require('../integrations/hestia-sso');
 const registrar = require('../integrations/domainnameapi');
 const pricing = require('../pricing');
 const linking = require('../domain-linking');
+const nameservers = require('../nameservers');
+const domainState = require('../domain-state');
+const live = require('../panel-live');
+const countries = require('../countries');
+const geo = require('../geo');
 const mailboxes = require('../mailboxes');
 const { sendMail, shell, detailTable, escapeHtml, DEFAULT_TO } = require('../mailer');
 const { flash, field, rateLimited } = require('../http-utils');
-const { NAMESERVERS, DOMAIN_NS_GRACE_DAYS } = require('../config');
+const {
+  NAMESERVERS, DOMAIN_NS_GRACE_DAYS, SITE_URL, POINT_HOSTNAME,
+} = require('../config');
 
 const router = express.Router();
+
+/**
+ * The tools on a service page, all of which now live on this site.
+ *
+ * These used to be deep links into HestiaCP on :2083 — a second sign-in, a
+ * second password out of the welcome email, and a control panel that looks
+ * nothing like this one. The file manager and the terminal are both served
+ * here now, signed in with the session the customer already has, so nothing
+ * sends a customer to the panel and nothing asks them to log in twice.
+ *
+ * `files` deep-links to the site's own document root rather than the top of the
+ * home directory: somebody who clicks "Files" from a website is looking for
+ * that website's files, and public_html is where they are.
+ */
+function siteTools(service) {
+  const domain = (service && service.primary_domain) || '';
+  const docRoot = domain ? `web/${domain}/public_html` : 'web';
+  return {
+    files: `/panel/files?path=${encodeURIComponent(docRoot)}`,
+    filesHome: '/panel/files',
+    terminal: '/panel/terminal',
+    profile: '/panel/settings',
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Guard
@@ -60,11 +92,99 @@ async function ownedService(req) {
   );
 }
 
+/**
+ * Fetch a domain and prove it belongs to the signed-in customer.
+ *
+ * ACCEPTS EITHER THE NAME OR THE ID, and the name is what the panel now links
+ * to: `/panel/domains/example.com` rather than `/panel/domains/4`.
+ *
+ * The numeric URL was never a security hole — `customer_id = ?` has always been
+ * in the WHERE clause, so editing the number has only ever produced a 404. But
+ * it was a URL that invited editing, which is its own problem: somebody who
+ * tries it and gets "not found" has no way to know whether that means "not
+ * yours" or "we lost it", and a support ticket is the cheapest way to find out.
+ * A name answers the question before it is asked. It is also the thing a
+ * customer can read in a browser history, paste into a ticket, and bookmark
+ * without wondering which of their domains it was.
+ *
+ * Ids still resolve, because they are in emails, in the activity log and in
+ * anybody's bookmarks. Both paths carry the same ownership check; neither is
+ * more trusted than the other.
+ */
 async function ownedDomain(req) {
-  return db.one('SELECT * FROM domains WHERE id = ? AND customer_id = ? LIMIT 1', [
-    req.params.id,
-    req.customer.id,
-  ]);
+  const raw = String(req.params.id || '').trim().toLowerCase();
+  if (!raw) return null;
+  // A bare run of digits is an id. Everything else is treated as a name — a
+  // domain label cannot be all digits at the top level, so the two cannot be
+  // confused for one another.
+  if (/^[0-9]+$/.test(raw)) {
+    return db.one('SELECT * FROM domains WHERE id = ? AND customer_id = ? LIMIT 1', [raw, req.customer.id]);
+  }
+  if (!/^[a-z0-9.-]{3,190}$/.test(raw)) return null;
+  return db.one('SELECT * FROM domains WHERE domain = ? AND customer_id = ? LIMIT 1', [raw, req.customer.id]);
+}
+
+/**
+ * The addresses a domain resolves to, MINUS our own.
+ *
+ * The observed address is genuinely useful diagnostics — "we can see
+ * 203.0.113.9" lets a customer fix a wrong A record in two minutes, where
+ * "not pointing here" is a support ticket. But once the domain DOES point at
+ * us, the same field is our node's address printed into the panel, which is
+ * the one thing that must never appear there: every customer who copies it
+ * pins us to that number in a zone we cannot see, and moving the node then
+ * breaks all of them silently.
+ *
+ * So the diagnostic survives and the leak does not. Where the answer is us,
+ * the page says so in words instead.
+ */
+async function foreignAddresses(domain) {
+  const seen = (domain.ip_observed || '').split(' ').filter(Boolean);
+  if (!seen.length) return [];
+  let ours = [];
+  try {
+    ours = await nameservers.ourAddresses(POINT_HOSTNAME);
+  } catch {
+    // Unable to say which are ours — so treat them all as ours and print none.
+    return [];
+  }
+  return seen.filter((ip) => !ours.includes(ip));
+}
+
+/**
+ * The canonical path for a domain. Used everywhere so the links cannot drift.
+ *
+ * Takes a row, a name, or one of domain-linking's result objects — and those
+ * are the reason for the `id` fallback. A successful result carries `domain`,
+ * but the "that domain is already on your account" refusal carries only `id`,
+ * and the old `d.domain || d` turned that object into the literal string
+ * "[object Object]" in the URL. An id resolves here exactly as a name does
+ * (see ownedDomain), so referencing the row is both correct and enough.
+ */
+function domainPath(d, suffix = '') {
+  const ref = d && typeof d === 'object' ? (d.domain || d.id || '') : d;
+  return `/panel/domains/${encodeURIComponent(ref)}${suffix}`;
+}
+
+/**
+ * What to say after building a domain on the node.
+ *
+ * Three genuinely different outcomes, and the middle one is the one worth
+ * getting right: a zone that has just been created is correct and not yet
+ * resolving anywhere, because the resolvers that answered SERVFAIL a minute ago
+ * are still holding that answer. "Not pointing at us" would be the same red
+ * message the customer has been staring at all along, for a state that is now
+ * fixed and merely waiting on the internet's own clock.
+ */
+function buildOutcome(name, result) {
+  if (result.verdict?.matched) {
+    return result.built?.ssl
+      ? `${name} is set up, pointing at us and secured with a certificate.`
+      : `${name} is set up and pointing at us. The certificate follows once DNS has settled — usually a few minutes.`;
+  }
+  return `${name} is now set up on the server. Its DNS is being published — public resolvers `
+    + 'can take a few minutes to pick it up, and the certificate is issued automatically after that. '
+    + 'Press "Check now" in a little while.';
 }
 
 // ---------------------------------------------------------------------------
@@ -95,22 +215,43 @@ router.get('/', async (req, res, next) => {
       ),
     ]);
 
-    // Anything expiring inside 30 days deserves the top of the page, because a
-    // domain that lapses is the one failure a customer cannot undo themselves.
-    const soon = domains.filter((d) => {
-      if (!d.expires_at) return false;
-      const days = (new Date(d.expires_at) - Date.now()) / 864e5;
-      return days <= 30 && days > -30;
-    });
+    /*
+     * Live usage off the node, and its absence must not take the page with it.
+     * The overview is the page somebody opens when something is wrong, so it
+     * has to render when the node is the thing that is wrong.
+     */
+    let stats = null;
+    if (req.customer.hestia_user && services.some((s) => s.status === 'active')) {
+      try {
+        stats = await hestia.userStats(req.customer.hestia_user);
+      } catch {
+        stats = null;
+      }
+    }
+
+    /*
+     * Every judgement about a domain comes from src/domain-state, once, so this
+     * page cannot disagree with the domain list or the domain page about what
+     * a given row means. It used to: this page's fallback branch printed
+     * "Registering…" for anything without an expiry date, which is every
+     * adopted domain, every subdomain and every external one — so six live
+     * websites were all described as being registered, next to an ACTIVE badge
+     * saying the opposite.
+     */
+    const grouped = domainState.group(domains);
 
     res.render('panel/dashboard', {
       title: 'Your panel',
       robots: 'noindex',
       services,
       domains,
+      domainGroups: grouped,
+      stats,
       openTickets,
       unpaid,
-      expiringSoon: soon,
+      // Anything a customer has to act on, in one list, so the page can lead
+      // with it instead of scattering four warnings down the column.
+      todo: grouped.needsYou,
     });
   } catch (err) {
     next(err);
@@ -123,11 +264,36 @@ router.get('/', async (req, res, next) => {
 router.get('/services', async (req, res, next) => {
   try {
     const services = await db.query(
-      `SELECT s.*, p.name AS plan_name, p.slug AS plan_slug FROM services s
+      `SELECT s.*, p.name AS plan_name, p.slug AS plan_slug,
+              p.\`databases\` AS plan_databases, p.mailboxes AS plan_mailboxes,
+              p.storage_gb
+         FROM services s
          JOIN plans p ON p.id = s.plan_id
-        WHERE s.customer_id = ? ORDER BY s.created_at DESC`,
+        WHERE s.customer_id = ? AND s.status <> 'terminated'
+        ORDER BY s.created_at DESC`,
       [req.customer.id],
     );
+
+    /*
+     * Live usage, attached to each card.
+     *
+     * ONE call, not one per site: every hosting account a customer has lives
+     * under the same Hestia user, so `v-list-user` answers for all of them and
+     * asking per row would be the same round trip repeated. And it is wrapped,
+     * because a node that is slow or down must not take this page with it —
+     * "Open site" is exactly the button somebody wants when the node is having
+     * a bad day.
+     */
+    let stats = null;
+    if (req.customer.hestia_user && services.some((s) => s.status === 'active')) {
+      try {
+        stats = await hestia.userStats(req.customer.hestia_user);
+      } catch {
+        stats = null;
+      }
+    }
+    services.forEach((s) => { s.stats = s.status === 'active' ? stats : null; });
+
     res.render('panel/services', { title: 'Your hosting', robots: 'noindex', services });
   } catch (err) {
     next(err);
@@ -176,6 +342,7 @@ router.get('/services/:id', async (req, res, next) => {
       primaryDomain,
       nameservers: NAMESERVERS,
       hestiaLive: hestia.isLive(),
+      tools: siteTools(service),
     });
   } catch (err) {
     next(err);
@@ -539,6 +706,219 @@ router.post('/services/:id/backups', async (req, res, next) => {
 // ---------------------------------------------------------------------------
 // Domains
 // ---------------------------------------------------------------------------
+/*
+ * The file manager. Its own router because it is a dozen routes and two of them
+ * do not take a JSON body — see src/routes/panel-files.js. Mounted here so it
+ * inherits the signed-in guard at the top of this file.
+ */
+/*
+ * Applications, runtimes and the Node process manager.
+ *
+ * Mounted before /databases only because that is the order they read in on the
+ * rail. Everything under /apps needs the same session and the same hosting
+ * account as every other panel page, which the middleware above has already
+ * established.
+ */
+/**
+ * Backups: download one, put one back, throw one away.
+ *
+ * ---------------------------------------------------------------------------
+ * WHAT WAS MISSING
+ * ---------------------------------------------------------------------------
+ * The page listed backups and could take a new one, and that was all. A backup
+ * you cannot download is not a backup — it is a promise about a file on a
+ * machine you do not control — and a backup you cannot restore is a list.
+ * Between them those two gaps meant the nightly job was, from the customer's
+ * side, decoration.
+ *
+ * ---------------------------------------------------------------------------
+ * THE DOWNLOAD GOES THROUGH THE BROKER, AND HAS TO
+ * ---------------------------------------------------------------------------
+ * Every customer's archive lives in one flat /backup directory, each one mode
+ * 0640 owned `hestiaweb:<that customer>`. This process runs as the website's
+ * own account and can read exactly one customer's — its own. So the file is
+ * streamed by apps/broker.py, which drops to the asking customer first and
+ * lets the filesystem decide. Nothing is buffered: a backup is measured in
+ * gigabytes.
+ */
+const BACKUP_NAME_RE = /^[A-Za-z0-9._-]{1,120}\.tar(\.(gz|zst|bz2|xz))?$/;
+
+router.get('/services/:id/backups/:name/download', async (req, res, next) => {
+  const back = `/panel/services/${req.params.id}/backups`;
+  try {
+    const service = await ownedService(req);
+    if (!service) return next();
+    const name = String(req.params.name || '');
+    if (!BACKUP_NAME_RE.test(name)) {
+      flash(res, 'That is not a backup we know about.', 'error');
+      return res.redirect(back);
+    }
+
+    const user = await apps.accountFor(req.customer);
+    const file = await apps.downloadBackup(user, name);
+
+    res.set('Content-Type', 'application/x-tar');
+    res.set('Content-Disposition', `attachment; filename="${name}"`);
+    if (file.size) res.set('Content-Length', String(file.size));
+    /*
+     * `no-transform` alongside `no-store`, and it is doing real work.
+     *
+     * no-store because a backup is the customer's whole account and must not
+     * sit in a shared cache anywhere between here and them.
+     *
+     * no-transform because the compression middleware in server.js otherwise
+     * takes the response, and a compressed response has NO Content-Length —
+     * so a browser downloading a four-gigabyte archive showed no size, no
+     * progress and no estimate, just a number climbing. (`compression` honours
+     * no-transform explicitly, which is why this works rather than needing a
+     * filter.) Gzipping a tar of already-compressed site data buys nothing
+     * anyway; it is CPU spent to make the file marginally larger.
+     */
+    res.set('Cache-Control', 'no-store, no-transform');
+
+    file.stream.pipe(res);
+    // A dropped download must not leave a broker child streaming into nothing.
+    res.on('close', () => { try { file.stream.destroy(); } catch { /* gone */ } });
+    return undefined;
+  } catch (err) {
+    if (err instanceof apps.AppError) {
+      flash(res, err.message, 'error');
+      return res.redirect(back);
+    }
+    return next(err);
+  }
+});
+
+router.post('/services/:id/backups/:name/restore', async (req, res, next) => {
+  const back = `/panel/services/${req.params.id}/backups`;
+  try {
+    if (!auth.checkCsrf(req)) return res.redirect(back);
+    const service = await ownedService(req);
+    if (!service) return next();
+    const name = String(req.params.name || '');
+    if (!BACKUP_NAME_RE.test(name)) {
+      flash(res, 'That is not a backup we know about.', 'error');
+      return res.redirect(back);
+    }
+
+    /*
+     * Typing the date is not theatre. A restore OVERWRITES — the website in the
+     * web root now, the contents of the database now — and it cannot be undone
+     * from inside the panel, because the thing that would undo it is the state
+     * being replaced. A checkbox is too easy to click by accident on a page
+     * whose other buttons are all harmless.
+     */
+    if (String(req.body.confirm || '').trim() !== name) {
+      flash(res, 'Type the backup name exactly to confirm the restore.', 'error');
+      return res.redirect(back);
+    }
+
+    const sections = {
+      web: req.body.web === 'on',
+      dns: req.body.dns === 'on',
+      mail: req.body.mail === 'on',
+      db: req.body.db === 'on',
+      cron: req.body.cron === 'on',
+      udir: req.body.udir === 'on',
+    };
+    if (!Object.values(sections).some(Boolean)) {
+      flash(res, 'Choose at least one thing to restore.', 'error');
+      return res.redirect(back);
+    }
+
+    if (rateLimited(req.customer.id, 'restore', { max: 3, windowMs: 86_400_000 })) {
+      flash(res, 'That is three restores today. Open a ticket if something is going wrong.', 'warn');
+      return res.redirect(back);
+    }
+
+    try {
+      await hestia.restoreBackup({ username: req.customer.hestia_user, backup: name, ...sections });
+      await db.logActivity({
+        actorType: 'customer', actorId: req.customer.id,
+        action: 'backup.restored', target: name, ip: req.ip,
+      }).catch(() => {});
+      flash(res, 'Restore started. It runs on the server and takes a few minutes — your site may be inconsistent until it finishes.');
+    } catch (err) {
+      flash(res, `Could not start the restore: ${err.message}`, 'error');
+    }
+    return res.redirect(back);
+  } catch (err) {
+    return next(err);
+  }
+});
+
+router.post('/services/:id/backups/:name/delete', async (req, res, next) => {
+  const back = `/panel/services/${req.params.id}/backups`;
+  try {
+    if (!auth.checkCsrf(req)) return res.redirect(back);
+    const service = await ownedService(req);
+    if (!service) return next();
+    const name = String(req.params.name || '');
+    if (!BACKUP_NAME_RE.test(name)) {
+      flash(res, 'That is not a backup we know about.', 'error');
+      return res.redirect(back);
+    }
+    try {
+      await hestia.deleteBackup({ username: req.customer.hestia_user, backup: name });
+      flash(res, 'Backup deleted.');
+    } catch (err) {
+      flash(res, `Could not delete it: ${err.message}`, 'error');
+    }
+    return res.redirect(back);
+  } catch (err) {
+    return next(err);
+  }
+});
+
+router.use('/apps', require('./panel-apps'));
+
+router.use('/databases', require('./panel-databases'));
+
+router.use('/files', require('./panel-files'));
+
+/*
+ * Email. Its own router for the same reason as the file manager: a dozen routes
+ * with their own validation, and mounting it here means it inherits the
+ * signed-in guard at the top of this file.
+ */
+router.use('/mail', require('./panel-mail'));
+
+/**
+ * The terminal page.
+ *
+ * The page itself is trivial; everything real happens over the websocket at
+ * /panel/terminal/ws, which does its own authentication (src/terminal.js). The
+ * checks here are only so that somebody without hosting gets an explanation
+ * rather than a black rectangle that fails to connect.
+ */
+router.get('/terminal', async (req, res, next) => {
+  try {
+    if (!req.customer.hestia_user) {
+      flash(res, 'There is no hosting on this account yet, so there is nothing to open a terminal on.', 'warn');
+      return res.redirect('/panel');
+    }
+    const service = await db.one(
+      "SELECT id FROM services WHERE customer_id = ? AND status = 'active' LIMIT 1",
+      [req.customer.id],
+    );
+    if (!service) {
+      flash(res, 'Your hosting is not active yet — the terminal opens once it is set up.', 'warn');
+      return res.redirect('/panel');
+    }
+
+    res.render('panel/terminal', {
+      title: 'Terminal',
+      robots: 'noindex',
+      username: req.customer.hestia_user,
+      // A label, not the node's address — the IP is shown nowhere, and the
+      // hostname is what a customer would put in an SSH client anyway.
+      hostLabel: new URL(SITE_URL).hostname,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/domains', async (req, res, next) => {
   try {
     // A removed domain is history, not a holding. It stays in the table so the
@@ -546,13 +926,61 @@ router.get('/domains', async (req, res, next) => {
     // this list so the panel only ever shows domains the account actually has.
     const domains = await db.query(
       `SELECT * FROM domains WHERE customer_id = ? AND status <> 'removed'
-        ORDER BY expires_at IS NULL, expires_at ASC`,
+        ORDER BY domain`,
       [req.customer.id],
     );
+
+    /*
+     * The state of each row, decided ONCE by src/domain-state, and the split
+     * into what needs the customer / what is in flight / what is fine.
+     *
+     * This is the repair for "your domains always registering?". The template
+     * used to work it out for itself, in EJS, with a bare `else` that printed
+     * "Being registered…" whenever there was no expiry date — true of every
+     * adopted domain, every subdomain and every external one.
+     */
+    const groups = domainState.group(domains);
+
+    /*
+     * Subdomains are listed UNDER the domain they belong to, not scattered
+     * through an alphabetical list of everything. A flat list puts
+     * `shop.example.com` and `example.com` in different places and makes them
+     * look like two unrelated purchases — which is also why people go looking
+     * for a renewal date and a DNS tab on a subdomain that has neither.
+     *
+     * Built here rather than in the template: it is a decision about the data,
+     * and EJS is a poor place to keep one.
+     */
+    const settled = groups.fine;
+    const parents = settled.filter((d) => d.source !== 'subdomain');
+    const subs = settled.filter((d) => d.source === 'subdomain');
+    const byName = new Map(parents.map((d) => [d.domain, { ...d, children: [] }]));
+
+    const orphans = [];
+    subs.forEach((sub) => {
+      // Walk up the labels: shop.example.co.uk sits under a three-label parent,
+      // and a.b.example.com is a legitimate second-level subdomain.
+      const labels = sub.domain.split('.');
+      let placed = false;
+      for (let i = 1; i < labels.length - 1 && !placed; i++) {
+        const owner = byName.get(labels.slice(i).join('.'));
+        if (owner) {
+          owner.children.push(sub);
+          placed = true;
+        }
+      }
+      // A subdomain whose parent was removed from the account still has a site
+      // on the node. Hiding it would be the panel disagreeing with the server.
+      if (!placed) orphans.push(sub);
+    });
+
     res.render('panel/domains', {
       title: 'Your domains',
       robots: 'noindex',
-      domains,
+      groups,
+      tree: [...byName.values()],
+      orphans,
+      total: domains.length,
       graceDays: DOMAIN_NS_GRACE_DAYS,
     });
   } catch (err) {
@@ -566,20 +994,38 @@ router.get('/domains', async (req, res, next) => {
  * Registered ABOVE `/domains/:id` on purpose — Express matches in order, and a
  * parameter route declared first would swallow `/domains/add` and answer 404.
  */
-router.get('/domains/add', async (req, res, next) => {
-  try {
-    const services = await db.query(
+/** Everything the add form needs, in one place so the GET and the re-render agree. */
+async function addFormData(req) {
+  const [services, parents] = await Promise.all([
+    db.query(
       `SELECT s.id, s.primary_domain, p.name AS plan_name FROM services s
          JOIN plans p ON p.id = s.plan_id
         WHERE s.customer_id = ? AND s.status = 'active'`,
       [req.customer.id],
-    );
+    ),
+    db.query(
+      `SELECT domain FROM domains
+        WHERE customer_id = ? AND status <> 'removed' AND source <> 'subdomain'
+        ORDER BY domain`,
+      [req.customer.id],
+    ),
+  ]);
+  return {
+    services,
+    parents,
+    defaultNameservers: NAMESERVERS,
+    pointHostname: POINT_HOSTNAME,
+    addresses: await nameservers.ourAddresses(POINT_HOSTNAME),
+    graceDays: DOMAIN_NS_GRACE_DAYS,
+  };
+}
+
+router.get('/domains/add', async (req, res, next) => {
+  try {
     res.render('panel/domain-add', {
       title: 'Add a domain',
       robots: 'noindex',
-      services,
-      nameservers: NAMESERVERS,
-      graceDays: DOMAIN_NS_GRACE_DAYS,
+      ...(await addFormData(req)),
       values: {},
       errors: {},
     });
@@ -588,16 +1034,36 @@ router.get('/domains/add', async (req, res, next) => {
   }
 });
 
+/**
+ * Add a domain OR a subdomain — one form, one route, told apart by the name.
+ *
+ * There used to be two forms on the page and two routes behind them, and the
+ * customer had to know which of the two things they had before they could
+ * start. They do not: "add heat6.com" and "add shop.heat6.com" are the same
+ * intention, and which one it is, is a fact about the name that we can work out
+ * ourselves.
+ *
+ * The test is NOT the number of dots. `shop.heat6.com` and `vesopa.co.uk` both
+ * have three labels; one is a subdomain and one is a registrable domain, and no
+ * amount of counting separates them. What separates them is whether the account
+ * already holds something this name sits under — which is also exactly the
+ * authorisation check for creating it. See linking.findParent.
+ */
 router.post('/domains/add', async (req, res, next) => {
   try {
     if (!auth.checkCsrf(req)) return res.redirect('/panel/domains/add');
 
-    if (rateLimited(req.customer.id, 'domain-add', { max: 10, windowMs: 3600_000 })) {
-      flash(res, 'That is a lot of domains in one go. Try again in a little while.', 'warn');
+    if (rateLimited(req.customer.id, 'domain-add', { max: 20, windowMs: 3600_000 })) {
+      flash(res, 'That is a lot of names in one go. Try again in a little while.', 'warn');
       return res.redirect('/panel/domains');
     }
 
-    const wanted = field(req.body.domain, 190);
+    const wanted = field(req.body.domain, 190).trim().toLowerCase()
+      // People paste URLs. Taking the domain out of one is a kindness that
+      // costs three characters of code and saves a confusing error.
+      .replace(/^https?:\/\//, '')
+      .replace(/^www\./, '')
+      .replace(/[/?#].*$/, '');
     const serviceId = Number(req.body.service_id) || null;
 
     // The service, if one was chosen, has to be this customer's own.
@@ -610,51 +1076,98 @@ router.post('/domains/add', async (req, res, next) => {
       attachTo = owned ? owned.id : null;
     }
 
+    const parent = wanted ? await linking.findParent(req.customer, wanted) : null;
+
+    // ---- A subdomain of something they already have ------------------------
+    if (parent) {
+      /*
+       * DNS and mail are not asked about and not accepted. A subdomain lives in
+       * its parent's zone and email belongs on the main domain — the form does
+       * not offer either, and ignoring anything posted here means a crafted
+       * request cannot turn them on behind the UI's back.
+       */
+      const added = await linking.addSubdomain({
+        customer: req.customer,
+        subdomain: wanted,
+        serviceId: attachTo,
+        wantDns: false,
+        wantMail: false,
+      });
+
+      if (!added.ok) {
+        flash(res, added.error, 'warn');
+        return res.redirect(added.id ? `/panel/domains/${added.id}` : '/panel/domains/add');
+      }
+      if (!added.built.pointed) {
+        flash(res, `${added.domain} was added, but the website could not be created on the server. `
+          + 'Open a ticket and we will sort it.', 'warn');
+        return res.redirect(domainPath(added));
+      }
+
+      // Whether it RESOLVES is the thing worth saying. A "done" message for a
+      // name that answers nowhere is the most annoying kind of wrong.
+      const live = await linking.verify(added.row, { customer: req.customer });
+      flash(
+        res,
+        live.matched
+          ? `${added.domain} is set up and serving.`
+          : `${added.domain} is set up. One thing left: add an A record for it at whoever runs `
+            + `DNS for ${added.parent} — this page shows exactly what.`,
+        live.matched ? 'ok' : 'warn',
+      );
+      return res.redirect(domainPath(added));
+    }
+
+    // ---- A domain in its own right ----------------------------------------
     const added = await linking.addExternal({
       customer: req.customer,
       domain: wanted,
       serviceId: attachTo,
+      // Checkbox absent means unticked. DNS arrives ticked on the form, so an
+      // absent value here is a deliberate opt-out rather than a default.
+      wantDns: Boolean(req.body.want_dns),
+      wantMail: Boolean(req.body.want_mail),
     });
 
     if (!added.ok) {
       if (added.id) {
         flash(res, added.error, 'warn');
-        return res.redirect(`/panel/domains/${added.id}`);
+        return res.redirect(domainPath(added));
       }
-      const services = await db.query(
-        `SELECT s.id, s.primary_domain, p.name AS plan_name FROM services s
-           JOIN plans p ON p.id = s.plan_id
-          WHERE s.customer_id = ? AND s.status = 'active'`,
-        [req.customer.id],
-      );
       return res.status(400).render('panel/domain-add', {
         title: 'Add a domain',
         robots: 'noindex',
-        services,
-        nameservers: NAMESERVERS,
-        graceDays: DOMAIN_NS_GRACE_DAYS,
+        ...(await addFormData(req)),
         values: { domain: wanted, service_id: serviceId },
         errors: { domain: added.error },
       });
     }
 
     /*
-     * Checked once, immediately. Most people add a domain AFTER changing the
-     * nameservers, so this is usually the moment it goes live — and being told
-     * "you are all set" on the same screen is worth far more than the same
-     * message arriving from a sweep fifteen minutes later.
+     * Checked once, immediately. Most people add a domain AFTER pointing it, so
+     * this is usually the moment it goes live — and being told "you are all
+     * set" on the same screen is worth far more than the same message arriving
+     * from a sweep fifteen minutes later.
      */
     const verdict = await linking.verify(added.row, { customer: req.customer });
 
-    flash(
-      res,
-      verdict.matched
-        ? `${added.domain} is pointing at us — we are setting it up now.`
-        : `${added.domain} has been added. Set the nameservers below at your registrar; `
-          + `we check every few minutes and will email you when it is live.`,
-      verdict.matched ? 'ok' : 'warn',
-    );
-    res.redirect(`/panel/domains/${added.id}`);
+    if (verdict.matched) {
+      flash(res, `${added.domain} is pointing at us — we are setting it up now.`);
+    } else if (wanted.split('.').length > 2) {
+      /*
+       * Looks like a subdomain, but of a domain this account does not hold. It
+       * is still perfectly addable — an A record aimed here is enough, and the
+       * new verification will pick that up — so it is added rather than
+       * refused. Saying why avoids the "it did not offer me the subdomain
+       * options" confusion.
+       */
+      flash(res, `${added.domain} has been added. We do not have its main domain on this account, `
+        + 'so point it here with an A record — this page shows the value to use.', 'warn');
+    } else {
+      flash(res, `${added.domain} has been added. Point it at us using either method shown on `
+        + 'this page; we check every few minutes and will email you when it is live.', 'warn');
+    }
+    res.redirect(domainPath(added));
   } catch (err) {
     next(err);
   }
@@ -664,25 +1177,151 @@ router.get('/domains/:id', async (req, res, next) => {
   try {
     const domain = await ownedDomain(req);
     if (!domain) return next();
+
+    const subdomain = linking.isSubdomain(domain);
+
+    /*
+     * A SUBDOMAIN GETS A DIFFERENT PAGE, not the same page with things hidden.
+     *
+     * Nearly nothing on the domain overview applies to one: it has no
+     * nameservers to set, no registrar, no expiry, no auto-renew, no transfer
+     * and no zone of its own. Rendering that template and hiding two thirds of
+     * it leaves a page that is mostly absence — and it is how the panel came to
+     * tell customers a working subdomain was "waiting for your nameservers".
+     */
+    /*
+     * The website record behind this name, for the redirect card — which both
+     * this page and the subdomain page draw. `webDomain` and not
+     * `listWebDomains`: the plural command does not return REDIRECT, which is
+     * how a customer could switch a redirect on and then find no way to switch
+     * it off. See the note on webDomain in integrations/hestia.js.
+     */
+    const site = req.customer.hestia_user
+      ? await hestia.webDomain({ username: req.customer.hestia_user, domain: domain.domain })
+        .catch(() => null)
+      : null;
+    const hasHosting = Boolean(req.customer.hestia_user);
+
+    const [ssl, addresses, node] = await Promise.all([
+      linking.refreshSsl(domain, req.customer),
+      nameservers.ourAddresses(POINT_HOSTNAME),
+      // What is actually on the node for this name. The removal card is built
+      // from this, so it can offer the DNS zone and the mailboxes only when
+      // they exist — and say how much is in each.
+      linking.nodeState(domain, req.customer),
+    ]);
+
+    if (subdomain) {
+      const parentName = linking.parentNameOf(domain.domain);
+      // The parent's own row, so the page can link straight to its DNS rather
+      // than telling the customer to go and find it.
+      const parentRow = parentName
+        ? await db.one(
+          "SELECT id FROM domains WHERE domain = ? AND customer_id = ? AND status <> 'removed' LIMIT 1",
+          [parentName, req.customer.id],
+        )
+        : null;
+
+      return res.render('panel/domain-sub', {
+        title: domain.domain,
+        robots: 'noindex',
+        domain,
+        ssl,
+        parent: parentName,
+        parentId: parentRow ? parentRow.id : null,
+        pointHostname: POINT_HOSTNAME,
+        addresses,
+        observed: await foreignAddresses(domain),
+        canRemove: true,
+        node,
+        site,
+        hasHosting,
+      });
+    }
+
     // The renewal quote is in the visitor's own currency: nothing has been
     // charged yet, so this is a shop price like any other.
     const price = await pricing.priceForTld(domain.tld, req.currency);
+
     res.render('panel/domain', {
+      site,
+      hasHosting,
       title: domain.domain,
       robots: 'noindex',
       domain,
       price,
+      ssl,
       defaultNameservers: NAMESERVERS,
+      pointHostname: POINT_HOSTNAME,
+      addresses,
+      observedNs: (domain.ns_observed || '').split(' ').filter(Boolean),
+      observedIp: await foreignAddresses(domain),
       registrarLive: registrar.isLive(),
       graceDays: DOMAIN_NS_GRACE_DAYS,
       // What the customer may do with it, decided by the server. The template
       // asks these rather than re-deriving the rules in EJS, where they would
       // be a second copy that drifts.
       canEditDns: linking.mayEditDns(domain, req.customer),
-      // Only an external domain can be taken off the account — one registered
-      // here is the customer's property and leaves by transfer, not by button.
-      canRemove: domain.source === 'external',
+      canHaveMail: linking.mayHaveMail(domain),
+      /*
+       * REMOVAL IS OFFERED FOR EVERY DOMAIN NOW, and what it means depends on
+       * who holds the registration.
+       *
+       * It used to be external-only, on the reasoning that a domain registered
+       * here is the customer's property and leaves by transfer rather than by
+       * button. True of the REGISTRATION, and it quietly took the hosting with
+       * it: there was no way to take a domain we registered off a plan, off a
+       * server, or out of a broken half-built state. The registration is still
+       * untouched by this button — see the remove handler, which detaches one
+       * of ours and only fully removes an external name.
+       */
+      canRemove: true,
+      node,
+      // The plans this domain could be attached to, and the one it is on. A
+      // domain with no service is not broken — but it is also not hosted, and
+      // until now the panel had no control that could change that.
+      hostingServices: await db.query(
+        `SELECT s.id, s.primary_domain, p.name AS plan_name FROM services s
+           JOIN plans p ON p.id = s.plan_id
+          WHERE s.customer_id = ? AND s.status = 'active'
+          ORDER BY s.id`,
+        [req.customer.id],
+      ),
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Issue or retry the certificate for one domain.
+ *
+ * The single most-used button in the panel, and until now it existed only on
+ * the SERVICE page — so a domain not attached to a service had no way to ask
+ * for a certificate at all, which is most of them on this node.
+ */
+router.post('/domains/:id/ssl', async (req, res, next) => {
+  try {
+    if (!auth.checkCsrf(req)) return res.redirect(`/panel/domains/${req.params.id}`);
+    const domain = await ownedDomain(req);
+    if (!domain) return next();
+    const back = domainPath(domain);
+
+    // Let's Encrypt rate-limits per domain and the limit is not generous. A
+    // customer holding down the button would spend it and then be locked out
+    // for an hour at the exact moment they need a certificate.
+    if (rateLimited(req.customer.id, 'domain-ssl', { max: 5, windowMs: 3600_000 })) {
+      flash(res, 'We have tried a few times just now. Give it an hour — Let\'s Encrypt limits how often a domain may be asked for.', 'warn');
+      return res.redirect(back);
+    }
+
+    const result = await linking.issueSsl(domain, req.customer);
+    if (result.ok) {
+      flash(res, `The certificate for ${domain.domain} is installed. It renews itself from here on.`);
+    } else {
+      flash(res, result.message || result.error || 'That certificate could not be issued.', 'error');
+    }
+    res.redirect(back);
   } catch (err) {
     next(err);
   }
@@ -696,64 +1335,341 @@ router.get('/domains/:id', async (req, res, next) => {
  * lookup per click is a lookup somebody will hold down the button on, and
  * because propagation is not measured in seconds.
  */
+/**
+ * Check whether the domain points at us yet.
+ *
+ * ANSWERS JSON WHEN ASKED TO. "Why is the DNS check taking very long" was not
+ * really about the lookups — those are a second or two — but about what the
+ * page did while they ran: it threw itself away, waited with a blank screen,
+ * and rebuilt everything. If the answer was "not yet", which it is most of the
+ * time somebody presses this, you did the whole thing again.
+ *
+ * The form post is untouched and still works without JavaScript.
+ */
 router.post('/domains/:id/verify', async (req, res, next) => {
+  const wantsJson = req.is('application/json') || (req.get('accept') || '').includes('application/json');
+  try {
+    if (!auth.checkCsrf(req)) {
+      if (wantsJson) return res.status(403).json({ ok: false, message: 'Your session expired. Reload the page.' });
+      return res.redirect(`/panel/domains/${req.params.id}`);
+    }
+    const domain = await ownedDomain(req);
+    if (!domain) return next();
+
+    const back = domainPath(domain);
+    const answer = (ok, message) => {
+      if (wantsJson) return res.json({ ok, message });
+      flash(res, message, ok ? 'ok' : 'warn');
+      return res.redirect(back);
+    };
+
+    if (rateLimited(req.customer.id, 'domain-verify', { max: 12, windowMs: 600_000 })) {
+      return answer(false, 'We have just checked a few times. Give DNS a couple of minutes and try again.');
+    }
+
+    const verdict = await linking.verify(domain, { customer: req.customer });
+    const sub = linking.isSubdomain(domain);
+
+    // Anyone watching this domain gets the new state immediately rather than
+    // up to a tick later — see src/panel-live.js.
+    live.publish(req.customer.id, `domain:${domain.id}`);
+
+    if (verdict.matched) {
+      const how = verdict.method === 'ns' ? 'through our nameservers' : 'with an A record';
+      return answer(true, verdict.pointed?.pointed
+        ? `${domain.domain} points here ${how} and the site is set up.`
+        : `${domain.domain} points here ${how}. ${verdict.pointed?.reason || ''}`.trim());
+    }
+
+    if (sub) {
+      /*
+       * A subdomain is never about nameservers, so its failure must never
+       * mention them. Saying what it DOES answer with is the whole value of the
+       * message: "we can see 3.72.113.21" is a customer fixing it in two
+       * minutes, where "not pointing here" is a support ticket.
+       */
+      return answer(false, verdict.addresses.length
+        ? `Not yet — ${domain.domain} answers with ${verdict.addresses.join(', ')}, which is not this server.`
+        : `Not yet — ${domain.domain} does not resolve anywhere yet. Add the A record shown on this page.`);
+    }
+
+    return answer(false, verdict.nameservers.length
+      ? `Not yet — ${domain.domain} still points at ${verdict.nameservers.join(' and ')}. `
+        + 'Either switch its nameservers to ours, or point an A record here.'
+      : `Not yet — ${verdict.error || 'we could not read its nameservers.'}`);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Attach this domain to a hosting plan, or take it off one.
+ *
+ * The control that was missing. A domain could be filed under a service only at
+ * the moment it was added and never afterwards — so a name registered through
+ * the order flow, which files it under nothing, could not be put on the plan the
+ * customer had just bought. `vesopa.site` was in exactly that position: paid
+ * for, delegated to us, attached to nothing, with no control on the page that
+ * could change it.
+ *
+ * Attaching does three things, and the third is the one that matters: it files
+ * the domain under the service, adopts it as the plan's primary domain if the
+ * plan has none, and BUILDS IT ON THE NODE. A domain attached to a plan that
+ * the node does not serve is a database row pretending to be hosting.
+ */
+router.post('/domains/:id/service', async (req, res, next) => {
   try {
     if (!auth.checkCsrf(req)) return res.redirect(`/panel/domains/${req.params.id}`);
     const domain = await ownedDomain(req);
     if (!domain) return next();
 
-    const back = `/panel/domains/${domain.id}`;
-    if (rateLimited(req.customer.id, 'domain-verify', { max: 12, windowMs: 600_000 })) {
-      flash(res, 'We have just checked a few times. Give DNS a couple of minutes and try again.', 'warn');
+    const wanted = Number(req.body.service_id) || null;
+    const back = domainPath(domain);
+
+    let service = null;
+    if (wanted) {
+      service = await db.one(
+        `SELECT s.*, p.name AS plan_name FROM services s
+           JOIN plans p ON p.id = s.plan_id
+          WHERE s.id = ? AND s.customer_id = ? AND s.status = 'active' LIMIT 1`,
+        [wanted, req.customer.id],
+      );
+      if (!service) {
+        flash(res, 'That hosting plan is not on your account.', 'warn');
+        return res.redirect(back);
+      }
+    }
+
+    await db.query('UPDATE domains SET service_id = ? WHERE id = ?', [service ? service.id : null, domain.id]);
+
+    if (!service) {
+      /*
+       * Detaching from the plan is a filing change and nothing more. The site,
+       * the zone and the mailboxes stay exactly as they are — removing those is
+       * the remove button's job, and doing it here would take a live website
+       * down for somebody who only meant to tidy up which plan it sits under.
+       */
+      await db.logActivity({
+        actorType: 'customer', actorId: req.customer.id, action: 'domain.detached',
+        target: domain.domain, ip: req.ip,
+      });
+      flash(res, `${domain.domain} is no longer filed under a hosting plan. Nothing on the server has changed.`, 'info');
       return res.redirect(back);
     }
 
-    const verdict = await linking.verify(domain, { customer: req.customer });
-
-    if (verdict.matched) {
-      flash(
-        res,
-        verdict.pointed?.pointed
-          ? `${domain.domain} points at us and the site is set up.`
-          : `${domain.domain} points at us. ${verdict.pointed?.reason || ''}`.trim(),
-      );
-    } else {
-      flash(
-        res,
-        verdict.nameservers.length
-          ? `Not yet — ${domain.domain} still points at ${verdict.nameservers.join(' and ')}.`
-          : `Not yet — ${verdict.error || 'we could not read its nameservers.'}`,
-        'warn',
-      );
+    // A plan with no domain adopts this one. A plan that already has a primary
+    // domain keeps it, and this becomes an additional domain on the same
+    // account — which is what an add-on domain has always meant here.
+    const adopted = !service.primary_domain;
+    if (adopted) {
+      await db.query('UPDATE services SET primary_domain = ? WHERE id = ?', [domain.domain, service.id]);
     }
+
+    const result = await linking.rebuild({ ...domain, service_id: service.id }, req.customer);
+
+    await db.logActivity({
+      actorType: 'customer', actorId: req.customer.id, action: 'domain.attached',
+      target: domain.domain, ip: req.ip,
+      detail: `${service.plan_name}${adopted ? ' (adopted as the plan’s domain)' : ''}; `
+        + (result.ok ? 'built on the node' : `not built: ${result.error || result.built?.reason || 'unknown'}`),
+      ok: Boolean(result.ok),
+    });
+
+    live.publish(req.customer.id, `domain:${domain.id}`);
+
+    if (!result.ok) {
+      flash(res, `${domain.domain} is now on your ${service.plan_name} plan, but the website could not be `
+        + `created on the server (${result.error || result.built?.reason || 'unknown error'}). `
+        + 'Try "Set it up on the server" on this page, or open a ticket.', 'warn');
+      return res.redirect(back);
+    }
+
+    flash(res, buildOutcome(domain.domain, result), result.verdict?.matched ? 'ok' : 'info');
     res.redirect(back);
   } catch (err) {
     next(err);
   }
 });
 
-/** Take an external domain off the account. The domain itself is untouched. */
+/**
+ * Build this domain on the server now.
+ *
+ * The button for the deadlock. A domain delegated to our nameservers that we
+ * hold no zone for is answered REFUSED by ns1, which the public internet reads
+ * as SERVFAIL — so the verification that gates the build can never pass, and
+ * the build that would fix it never runs. `verify` now breaks that loop by
+ * itself for domains registered here; this is the manual version, and it is the
+ * only route to it for an EXTERNAL domain, where building automatically on the
+ * strength of a failed lookup would mean creating zones for names nobody has
+ * pointed at us.
+ *
+ * Pressing it twice is harmless — every step tolerates already-existing.
+ */
+router.post('/domains/:id/rebuild', async (req, res, next) => {
+  try {
+    if (!auth.checkCsrf(req)) return res.redirect(`/panel/domains/${req.params.id}`);
+    const domain = await ownedDomain(req);
+    if (!domain) return next();
+
+    const back = domainPath(domain);
+
+    // Three or four calls to the node and possibly one to Let's Encrypt. Cheap
+    // enough to offer freely, expensive enough not to leave unbounded.
+    if (rateLimited(req.customer.id, 'domain-rebuild', { max: 6, windowMs: 600_000 })) {
+      flash(res, 'We have just done that a few times. Give DNS a couple of minutes and try again.', 'warn');
+      return res.redirect(back);
+    }
+
+    const result = await linking.rebuild(domain, req.customer);
+    live.publish(req.customer.id, `domain:${domain.id}`);
+
+    await db.logActivity({
+      actorType: 'customer', actorId: req.customer.id, action: 'domain.rebuilt',
+      target: domain.domain, ip: req.ip,
+      detail: result.ok ? 'Website, zone and mail created or confirmed on the node.' : (result.error || 'not built'),
+      ok: Boolean(result.ok),
+    });
+
+    if (!result.ok) {
+      flash(res, result.error
+        || `${domain.domain} could not be set up on the server. ${result.built?.reason || ''}`.trim(), 'warn');
+      return res.redirect(back);
+    }
+
+    flash(res, buildOutcome(domain.domain, result), result.verdict?.matched ? 'ok' : 'info');
+    res.redirect(back);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Take a domain off the account, or off its hosting.
+ *
+ * WHAT "REMOVE" MEANS DEPENDS ON WHO HOLDS THE REGISTRATION, and conflating the
+ * two is how this used to refuse the request outright.
+ *
+ *   external      A name registered somewhere else and merely pointed here.
+ *                 Removing it takes the row off the account entirely; there is
+ *                 nothing else of theirs here to keep.
+ *
+ *   ours          A name registered THROUGH us. The registration is the
+ *                 customer's property, is paid for, and has a renewal date — so
+ *                 the row stays, and what is removed is the hosting: the site
+ *                 comes off the node, the domain comes off its plan, and if it
+ *                 was that plan's primary domain the plan goes back to having
+ *                 none. It reappears in the panel as a parked domain, which is
+ *                 exactly what it now is.
+ *
+ * The old handler refused the second case with "open a ticket and we will
+ * transfer it out", which answered a question nobody asked: wanting a domain off
+ * a hosting plan is not wanting it moved to another registrar.
+ *
+ * THE ZONE AND THE MAILBOXES ARE ASKED ABOUT, NOT ASSUMED. `v-delete-domain`
+ * takes website, DNS and mail together, and for a domain delegated to us the
+ * zone is the thing making the delegation resolve at all — deleting it as a
+ * side effect of "remove this site" takes the domain off the internet rather
+ * than off the plan, and takes the mailboxes with it. The form offers each one
+ * that actually exists, with what is in it; nothing here is removed unless it
+ * was ticked.
+ */
 router.post('/domains/:id/remove', async (req, res, next) => {
   try {
     if (!auth.checkCsrf(req)) return res.redirect(`/panel/domains/${req.params.id}`);
     const domain = await ownedDomain(req);
     if (!domain) return next();
 
-    if (domain.source !== 'external') {
-      flash(
-        res,
-        'This domain is registered with us, so it cannot be removed here — open a ticket and we will transfer it out for you.',
-        'warn',
+    const ours = domain.source === 'registered' || domain.source === 'transfer';
+    const back = domainPath(domain);
+
+    /*
+     * The checkboxes. Absent means unticked, which is the safe reading in both
+     * directions: a request that lost them removes less than asked rather than
+     * more, and a crafted one cannot delete a zone the form never offered.
+     *
+     * An EXTERNAL domain leaving the account is the exception — there is no row
+     * left to hold the leftovers against, so it takes everything with it, which
+     * is what it has always done and what its confirmation says.
+     */
+    const dropDns = ours ? Boolean(req.body.drop_dns) : true;
+    const dropMail = ours ? Boolean(req.body.drop_mail) : true;
+
+    /*
+     * Take it off the node BEFORE the row changes. In that order a failure
+     * leaves the domain visibly still on the account, which is a state the
+     * customer can retry from; the other way round loses the only record of
+     * which account the leftover zone belonged to.
+     */
+    const unpointed = await linking.unpointFromNode(domain, req.customer, {
+      web: true, dns: dropDns, mail: dropMail,
+    });
+
+    // Whichever parts were kept are still ours to serve, so the flags that say
+    // whether we serve them have to agree. A zone kept with `dns_enabled = 0`
+    // would be deleted by the next rebuild without anybody asking again.
+    if (ours) {
+      const service = domain.service_id
+        ? await db.one('SELECT id, primary_domain FROM services WHERE id = ? AND customer_id = ? LIMIT 1',
+          [domain.service_id, req.customer.id])
+        : null;
+
+      await db.query(
+        `UPDATE domains
+            SET service_id = NULL, pointed_at = NULL,
+                dns_enabled = ?, mail_enabled = ?,
+                ns_verified_at = NULL, verify_method = ''
+          WHERE id = ?`,
+        [dropDns ? 0 : 1, dropMail ? 0 : 1, domain.id],
       );
-      return res.redirect(`/panel/domains/${domain.id}`);
+
+      /*
+       * The plan goes back to "No domain attached" and NOTHING ELSE HAPPENS to
+       * it. Not suspended, not cancelled, not rebuilt — the account, its files,
+       * its databases and its other domains are untouched. A customer changing
+       * which name their plan answers to must not be able to lose the plan.
+       */
+      if (service && service.primary_domain === domain.domain) {
+        await db.query("UPDATE services SET primary_domain = '' WHERE id = ?", [service.id]);
+      }
+    } else {
+      await db.query("UPDATE domains SET status = 'removed', service_id = NULL WHERE id = ?", [domain.id]);
     }
 
-    await db.query("UPDATE domains SET status = 'removed', service_id = NULL WHERE id = ?", [domain.id]);
+    const kept = ours ? [!dropDns && 'DNS', !dropMail && 'email'].filter(Boolean) : [];
+
     await db.logActivity({
-      actorType: 'customer', actorId: req.customer.id, action: 'domain.removed',
+      actorType: 'customer', actorId: req.customer.id,
+      action: ours ? 'domain.unhosted' : 'domain.removed',
       target: domain.domain, ip: req.ip,
+      detail: unpointed.ok
+        ? `Removed from the node: ${(unpointed.removed || []).join(', ') || 'nothing was there'}`
+          + `${kept.length ? `; kept ${kept.join(' and ')}` : ''}`
+        : `Node cleanup failed: ${unpointed.error}`,
+      ok: unpointed.ok,
     });
-    flash(res, `${domain.domain} has been removed from your account. The domain itself is untouched.`);
+
+    live.publish(req.customer.id, `domain:${domain.id}`);
+
+    if (!unpointed.ok) {
+      // Said plainly rather than swallowed: the change has happened either way,
+      // and a zone still answering for a domain they believe they have removed
+      // is exactly the thing they need to be able to tell us about.
+      flash(res, `${domain.domain} has been taken off its hosting, but part of it could not be cleared `
+        + `from the server (${unpointed.error}). We have logged it — open a ticket if the domain still `
+        + 'resolves here.', 'warn');
+      return res.redirect(ours ? back : '/panel/domains');
+    }
+
+    if (ours) {
+      flash(res, `${domain.domain} is no longer hosted here`
+        + `${kept.length ? `, but we still run its ${kept.join(' and ')}` : ''}. `
+        + 'The registration is untouched — it is still yours and still renews. '
+        + 'Attach it to a plan again whenever you want a site on it.', 'info');
+      return res.redirect(back);
+    }
+
+    flash(res, `${domain.domain} has been removed from your account, along with its website, DNS and mail `
+      + 'here. The domain itself is registered elsewhere and is untouched.', 'info');
     res.redirect('/panel/domains');
   } catch (err) {
     next(err);
@@ -772,6 +1688,25 @@ router.get('/domains/:id/dns', async (req, res, next) => {
   try {
     const domain = await ownedDomain(req);
     if (!domain) return next();
+
+    /*
+     * A SUBDOMAIN HAS NO DNS PAGE. Sent to the parent's instead, which is the
+     * page that can actually change it.
+     *
+     * Enforced here and not only in the template: a link removed from a page is
+     * not a rule, it is a tidier page, and the URL is still typed, bookmarked
+     * and followed. The redirect is also the more useful answer — somebody who
+     * got here wanted to change where this name points, and the parent's zone
+     * is where that record lives.
+     */
+    if (linking.isSubdomain(domain)) {
+      const parent = await db.one(
+        "SELECT id FROM domains WHERE domain = ? AND customer_id = ? AND status <> 'removed' LIMIT 1",
+        [linking.parentNameOf(domain.domain), req.customer.id],
+      );
+      flash(res, `${domain.domain} is a subdomain — its DNS lives in ${linking.parentNameOf(domain.domain)}'s zone.`, 'warn');
+      return res.redirect(parent ? `/panel/domains/${parent.id}/dns` : `/panel/domains/${domain.id}`);
+    }
 
     const allowed = linking.mayEditDns(domain, req.customer);
     let records = [];
@@ -809,6 +1744,14 @@ router.post('/domains/:id/dns', async (req, res, next) => {
   try {
     const back = `/panel/domains/${req.params.id}/dns`;
     if (!auth.checkCsrf(req)) return res.redirect(back);
+    // Same rule as the GET, restated because a POST is a separate door.
+    {
+      const target = await ownedDomain(req);
+      if (target && linking.isSubdomain(target)) {
+        flash(res, 'A subdomain has no DNS zone of its own — change the record on its parent domain.', 'warn');
+        return res.redirect(domainPath(target));
+      }
+    }
     const domain = await ownedDomain(req);
     if (!domain) return next();
 
@@ -905,13 +1848,20 @@ router.post('/domains/:id/nameservers', async (req, res, next) => {
      * a form here would send a change to a registrar that has never heard of
      * the name, and the customer would believe they had done what we asked.
      */
+    if (linking.isSubdomain(domain)) {
+      // A subdomain has no delegation of its own. `source` is checked before
+      // 'external' below because a subdomain is neither registered here nor
+      // there, and would otherwise fall through to the registrar call.
+      flash(res, 'A subdomain has no nameservers of its own — it follows whatever its parent domain does.', 'warn');
+      return res.redirect(domainPath(domain));
+    }
     if (domain.source === 'external') {
       flash(
         res,
         'This domain is registered elsewhere, so its nameservers are changed at that registrar, not here.',
         'warn',
       );
-      return res.redirect(`/panel/domains/${domain.id}`);
+      return res.redirect(domainPath(domain));
     }
 
     const ns = [req.body.ns1, req.body.ns2, req.body.ns3, req.body.ns4]
@@ -920,7 +1870,7 @@ router.post('/domains/:id/nameservers', async (req, res, next) => {
 
     if (ns.length < 2) {
       flash(res, 'A domain needs at least two nameservers.', 'error');
-      return res.redirect(`/panel/domains/${domain.id}`);
+      return res.redirect(domainPath(domain));
     }
 
     try {
@@ -946,9 +1896,106 @@ router.post('/domains/:id/nameservers', async (req, res, next) => {
     } catch (err) {
       flash(res, `Could not update the nameservers: ${err.message}`, 'error');
     }
-    res.redirect(`/panel/domains/${domain.id}`);
+    res.redirect(domainPath(domain));
   } catch (err) {
     next(err);
+  }
+});
+
+/**
+ * Send visitors somewhere else.
+ *
+ * ---------------------------------------------------------------------------
+ * WHY THIS WAS THE MISSING PAGE
+ * ---------------------------------------------------------------------------
+ * People buy a second domain for one of three reasons: they want the .co.uk as
+ * well as the .com, they are moving to a new name, or they bought a misspelling
+ * before somebody else did. All three end in the same request — "point it at
+ * the main site" — and there was no way to do it. The answer was a support
+ * ticket, or a one-line index.php somebody had to be told how to write.
+ *
+ * ---------------------------------------------------------------------------
+ * THE CODE IS THE PART PEOPLE GET WRONG, SO THE FORM DOES NOT SAY "301"
+ * ---------------------------------------------------------------------------
+ * 301 is cached hard — some browsers keep one until their cache is cleared, so
+ * a redirect set by mistake follows that visitor around long after the server
+ * has been fixed, and there is nothing we can do about it from here. 302 is not
+ * cached and is the right answer for anything temporary or unfinished.
+ *
+ * The form therefore offers "moved for good" and "just for now", explains what
+ * each does to somebody's browser, and defaults to neither — see
+ * views/panel/domain.ejs. The numbers are shown, because somebody who knows
+ * what they want is looking for them, but they are not the label.
+ */
+router.post('/domains/:id/redirect', async (req, res, next) => {
+  try {
+    if (!auth.checkCsrf(req)) return res.redirect('/panel/domains');
+    const domain = await ownedDomain(req);
+    if (!domain) return next();
+    const back = domainPath(domain);
+
+    if (!req.customer.hestia_user) {
+      flash(res, 'There is no hosting on this account yet, so there is no website to redirect.', 'error');
+      return res.redirect(back);
+    }
+
+    // Clearing is its own submit, and it is the easy half.
+    if (req.body.action === 'clear') {
+      try {
+        await hestia.clearRedirect({ username: req.customer.hestia_user, domain: domain.domain });
+        flash(res, `${domain.domain} serves its own website again.`);
+      } catch (err) {
+        flash(res, `Could not remove the redirect: ${err.message}`, 'error');
+      }
+      return res.redirect(back);
+    }
+
+    const raw = String(req.body.target || '').trim();
+    const code = req.body.code === '302' ? 302 : 301;
+
+    /*
+     * Accept what people actually type. "example.com", "https://example.com"
+     * and "example.com/shop" are all the same intent, and refusing two of the
+     * three teaches nothing. The scheme is stripped for the bare-host case
+     * because that is the form Hestia's own examples use, and kept when there
+     * is a path, because then it matters.
+     */
+    let target = raw.replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+    if (!target) {
+      flash(res, 'Type where visitors should go.', 'error');
+      return res.redirect(back);
+    }
+    if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+(\/[^\s?#]*)?$/i.test(target)) {
+      flash(res, 'That does not look like a web address. Try something like example.com, or example.com/page.', 'error');
+      return res.redirect(back);
+    }
+    if (target.toLowerCase() === domain.domain.toLowerCase()) {
+      /*
+       * A domain redirecting to itself is an infinite loop, and the browser
+       * reports it as "too many redirects" on a site that was working a minute
+       * ago. Cheaper to refuse than to explain afterwards.
+       */
+      flash(res, `${domain.domain} cannot redirect to itself — visitors would go round in a loop.`, 'error');
+      return res.redirect(back);
+    }
+
+    try {
+      await hestia.setRedirect({
+        username: req.customer.hestia_user, domain: domain.domain, target, code,
+      });
+      await db.logActivity({
+        actorType: 'customer', actorId: req.customer.id,
+        action: 'domain.redirect', target: `${domain.domain} -> ${target} (${code})`, ip: req.ip,
+      }).catch(() => {});
+      flash(res, code === 301
+        ? `${domain.domain} now sends visitors to ${target}, permanently. Browsers remember a permanent redirect, so test it in a private window.`
+        : `${domain.domain} now sends visitors to ${target}, temporarily. Nothing caches this one, so you can change it freely.`);
+    } catch (err) {
+      flash(res, `Could not set the redirect: ${err.message}`, 'error');
+    }
+    return res.redirect(back);
+  } catch (err) {
+    return next(err);
   }
 });
 
@@ -971,7 +2018,7 @@ router.post('/domains/:id/auto-renew', async (req, res, next) => {
         : 'Automatic renewal is off. This domain will expire on its expiry date unless you renew it manually.',
       on ? 'ok' : 'warn',
     );
-    res.redirect(`/panel/domains/${domain.id}`);
+    res.redirect(domainPath(domain));
   } catch (err) {
     next(err);
   }
@@ -1171,8 +2218,41 @@ router.post('/tickets/:id/reply', async (req, res, next) => {
 // ---------------------------------------------------------------------------
 // Account settings
 // ---------------------------------------------------------------------------
-router.get('/settings', (req, res) => {
-  res.render('panel/settings', { title: 'Account settings', robots: 'noindex', errors: {}, values: {} });
+router.get('/settings', async (req, res, next) => {
+  try {
+    /*
+     * The country the form OPENS on, when the account has none stored.
+     *
+     * Geolocation is a suggestion on a visible form, never a value written to
+     * an account. A VPN, a mobile carrier routing through another country, or a
+     * corporate proxy would otherwise file somebody's domain registration under
+     * a country they have never been to — and the registrant country is a
+     * matter of record at the registry, not a preference.
+     *
+     * `countryFor` has its own cache, its own timeout and its own circuit
+     * breaker, but a settings page must render even when all three are having a
+     * bad day.
+     */
+    let guessed = '';
+    if (!req.customer.country) {
+      try {
+        guessed = (await geo.countryFor(req.ip)) || '';
+      } catch {
+        guessed = '';
+      }
+    }
+
+    res.render('panel/settings', {
+      title: 'Account settings',
+      robots: 'noindex',
+      errors: {},
+      values: {},
+      geoCountry: guessed,
+      country: countries.pick(req.customer.country, guessed),
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 
 router.post('/settings', async (req, res, next) => {
@@ -1187,14 +2267,31 @@ router.post('/settings', async (req, res, next) => {
       address2: field(req.body.address2, 160),
       city: field(req.body.city, 80),
       postcode: field(req.body.postcode, 24),
-      country: field(req.body.country, 2).toUpperCase() || 'GB',
+      country: field(req.body.country, 2).toUpperCase(),
     };
 
     const errors = {};
     if (!values.first_name) errors.first_name = 'Required.';
     if (!values.last_name) errors.last_name = 'Required.';
+    /*
+     * Checked against the list, not merely truncated to two characters.
+     *
+     * This value is the registrant's country of record on any domain the
+     * account holds, so `ZZ` is not a harmless typo — it is a registry record
+     * that has to be corrected by hand later. The picker cannot produce one,
+     * which means anything invalid arriving here came from a crafted POST and
+     * deserves a plain refusal rather than a silent fallback to GB.
+     */
+    if (!countries.isValid(values.country)) errors.country = 'Choose a country from the list.';
     if (Object.keys(errors).length) {
-      return res.status(400).render('panel/settings', { title: 'Account settings', robots: 'noindex', errors, values });
+      return res.status(400).render('panel/settings', {
+        title: 'Account settings',
+        robots: 'noindex',
+        errors,
+        values,
+        geoCountry: '',
+        country: countries.pick(values.country || req.customer.country, ''),
+      });
     }
 
     await db.query(
@@ -1245,10 +2342,10 @@ router.post('/settings/password', async (req, res, next) => {
 
     sendMail({
       to: req.customer.email,
-      subject: 'Your password was changed — Vesopa Hosting',
+      subject: 'Your password was changed — Vesopa Cloud',
       html: shell({
         title: 'Your password was changed',
-        intro: 'The password on your Vesopa Hosting account has just been changed, and every other device has been signed out.',
+        intro: 'The password on your Vesopa Cloud account has just been changed, and every other device has been signed out.',
         footNote: '<b>If this was not you</b>, reply to this email immediately.',
       }),
     });

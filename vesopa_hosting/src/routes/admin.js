@@ -1449,12 +1449,19 @@ router.get('/servers', async (req, res, next) => {
 router.post('/servers/:id', async (req, res, next) => {
   try {
     if (!guard(req, res, '/admin/servers')) return;
+    /*
+     * `ip` is deliberately not written and not shown. The node's address is
+     * never surfaced in this panel — not to a customer and not to an admin —
+     * because an address copied out of a screen ends up pinned in zones we
+     * cannot see. Customers are given POINT_HOSTNAME instead, and the app reads
+     * the real address from Hestia's own IP record when it needs it. The column
+     * stays for now so this is not a migration; nothing reads it.
+     */
     await db.query(
-      'UPDATE servers SET name=?, hostname=?, ip=?, api_port=?, location=?, max_accounts=?, active=?, notes=? WHERE id = ?',
+      'UPDATE servers SET name=?, hostname=?, api_port=?, location=?, max_accounts=?, active=?, notes=? WHERE id = ?',
       [
         field(req.body.name, 80),
         field(req.body.hostname, 190).toLowerCase(),
-        field(req.body.ip, 45),
         Number(req.body.api_port) || 8083,
         field(req.body.location, 80),
         Number(req.body.max_accounts) || 200,
@@ -1524,7 +1531,7 @@ router.post('/tickets/:id/reply', async (req, res, next) => {
     if (body.length >= 2) {
       await db.query(
         'INSERT INTO ticket_messages (ticket_id, author, author_name, body) VALUES (?, ?, ?, ?)',
-        [ticket.id, 'staff', req.admin.name || 'Vesopa Hosting', body],
+        [ticket.id, 'staff', req.admin.name || 'Vesopa Cloud', body],
       );
       sendMail({
         to: ticket.email,

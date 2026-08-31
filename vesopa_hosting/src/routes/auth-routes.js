@@ -60,12 +60,26 @@ async function consumeToken(token, purpose) {
   return db.one('SELECT * FROM customers WHERE id = ? LIMIT 1', [row.customer_id]);
 }
 
+/**
+ * @returns {Promise<boolean>} whether SMTP accepted it.
+ *
+ * THE RETURN VALUE IS THE POINT. `sendMail` swallows its own failures on
+ * purpose — a bounced notification must never fail an action the customer has
+ * already completed — but every caller here then told the customer to go and
+ * check their inbox regardless. With SMTP misconfigured that produced the worst
+ * possible outcome: an account created, a confident "we have sent you a link",
+ * and no link, ever, with nothing on the page to suggest anything had gone
+ * wrong. "Account created — verification mail where?" is that bug.
+ *
+ * So the boolean comes back and the pages branch on it. A customer who is told
+ * the truth can open a ticket; a customer who is told a comforting lie waits.
+ */
 async function sendVerifyEmail(customer, req) {
   const token = await issueToken(customer.id, 'verify', VERIFY_TTL_HOURS * 3600_000);
   const url = `${SITE_URL}/verify/${token}`;
-  await sendMail({
+  return sendMail({
     to: customer.email,
-    subject: 'Confirm your email — Vesopa Hosting',
+    subject: 'Confirm your email — Vesopa Cloud',
     html: shell({
       title: 'Confirm your email address',
       intro: `Hello ${escapeHtml(customer.first_name || 'there')} — click below to confirm this address and finish setting up your account.`,
@@ -83,7 +97,10 @@ router.get('/register', (req, res) => {
   if (req.customer) return res.redirect('/panel');
   res.render('auth/register', {
     title: 'Create your account',
-    robots: 'noindex',
+    // Indexable. A sign-up page nobody can find is a sign-up page nobody uses,
+    // and there is nothing private on it. The POST handler's own re-renders
+    // keep `noindex` — those carry back what somebody typed into the form.
+    robots: '',
     values: {},
     errors: {},
     next: safeNext(req.query.next),
@@ -122,18 +139,105 @@ router.post('/register', async (req, res, next) => {
       });
     }
 
-    const existing = await db.one('SELECT id FROM customers WHERE email = ? LIMIT 1', [values.email]);
+    /*
+     * A VERIFIED address is taken. An unverified one is not.
+     *
+     * Only a verified address is evidence that somebody actually holds that
+     * mailbox. An unverified row is just a string somebody typed into a form —
+     * and letting it reserve the address forever means anyone can lock a real
+     * person out of their own email by signing up with it first, then never
+     * clicking the link.
+     *
+     * AND THE ROW HAS TO BE EMPTY. `email_verified` gates nothing else in this
+     * app today: checkout does not check it, so an unverified customer can pay
+     * for hosting and own domains. Handing their row to whoever types the same
+     * address would be handing over a paid account. So takeover is allowed only
+     * where there is genuinely nothing behind it — no service, no domain, no
+     * order. An abandoned sign-up is released; anything with history is not,
+     * whether it was verified or not.
+     *
+     * The two paths are deliberately indistinguishable from outside. Both end
+     * on /register/check-email with the same message, so the form cannot be
+     * used to ask "does this address have an account here" — which is the
+     * question the enumeration-resistant handling below exists to refuse.
+     */
+    const existing = await db.one(
+      `SELECT c.id, c.email_verified,
+              (SELECT COUNT(*) FROM services s WHERE s.customer_id = c.id)  AS services,
+              (SELECT COUNT(*) FROM domains  d WHERE d.customer_id = c.id)  AS domains,
+              (SELECT COUNT(*) FROM orders   o WHERE o.customer_id = c.id)  AS orders
+         FROM customers c
+        WHERE c.email = ? LIMIT 1`,
+      [values.email],
+    );
+
+    const abandoned = existing
+      && !existing.email_verified
+      && !Number(existing.services)
+      && !Number(existing.domains)
+      && !Number(existing.orders);
+
+    if (abandoned) {
+      const hash = await auth.hashPassword(password);
+      /*
+       * The row is REUSED rather than deleted and re-inserted: the id may
+       * already be referenced by an abandoned order or an activity entry, and a
+       * delete would either fail on the foreign key or orphan the history. Every
+       * field the previous attempt set is overwritten, so nothing of theirs
+       * survives into the new account.
+       *
+       * Writing a new password_hash is also what kills any session the previous
+       * attempt left behind: a session cookie carries `pwv`, a digest of the
+       * hash it was issued against (auth.passwordVersion), so every cookie
+       * minted for the old owner stops validating the moment this row changes.
+       * There is no separate version column to bump.
+       *
+       * The `email_verified = 0` in the WHERE clause is the race guard. Between
+       * the SELECT above and this UPDATE the real owner may have clicked their
+       * verification link, and taking the account over at that point would hand
+       * a stranger a verified account. If that happened, this matches no rows.
+       */
+      const took = await db.query(
+        `UPDATE customers
+            SET password_hash = ?, first_name = ?, last_name = ?, company = ?, phone = ?,
+                email_verified = 0, status = 'active'
+          WHERE id = ? AND email_verified = 0`,
+        [hash, values.first_name, values.last_name, values.company, values.phone, existing.id],
+      );
+
+      // Lost the race — the real owner verified in the meantime, so this is now
+      // an ordinary "that address already has an account" and takes that path.
+      if (!took.affectedRows) {
+        flash(res, 'Check your inbox to continue.');
+        return res.redirect('/register/check-email');
+      }
+
+      const taken = await db.one('SELECT * FROM customers WHERE id = ? LIMIT 1', [existing.id]);
+      const sent = await sendVerifyEmail(taken, req);
+      await db.logActivity({
+        actorType: 'customer',
+        actorId: taken.id,
+        action: 'account.created',
+        target: taken.email,
+        detail: 'Took over an unverified sign-up for the same address.',
+        ip: req.ip,
+      });
+      auth.issueCustomerSession(res, taken);
+      flash(res, 'Check your inbox to continue.');
+      return res.redirect(`/register/check-email${sent ? '' : '?undelivered=1'}`);
+    }
+
     if (existing) {
       // Do not say "that address is taken" — that answers the question an
       // attacker is asking. Send the *existing* owner a note instead, which is
       // useful to them and reveals nothing to whoever submitted the form.
       sendMail({
         to: values.email,
-        subject: 'Someone tried to sign up with your email — Vesopa Hosting',
+        subject: 'Someone tried to sign up with your email — Vesopa Cloud',
         html: shell({
           title: 'You already have an account',
           intro:
-            'Someone just tried to create a Vesopa Hosting account with this address. If that was you, you already have one — sign in instead.',
+            'Someone just tried to create a Vesopa Cloud account with this address. If that was you, you already have one — sign in instead.',
           ctaText: 'Sign in',
           ctaUrl: `${SITE_URL}/login`,
           footNote: 'If it was not you, you can safely ignore this. Your account has not changed and nobody has gained access to it.',
@@ -151,14 +255,14 @@ router.post('/register', async (req, res, next) => {
     );
 
     const customer = await db.one('SELECT * FROM customers WHERE id = ? LIMIT 1', [result.insertId]);
-    await sendVerifyEmail(customer, req);
+    const mailed = await sendVerifyEmail(customer, req);
     await db.logActivity({ actorType: 'customer', actorId: customer.id, action: 'account.created', target: customer.email, ip: req.ip });
 
     // Signed in straight away. Waiting for verification before letting someone
     // into their own empty panel is friction for no security benefit — the
     // things that matter are gated on `email_verified`, not on the session.
     auth.issueCustomerSession(res, customer);
-    res.redirect('/register/check-email');
+    res.redirect(`/register/check-email${mailed ? '' : '?undelivered=1'}`);
   } catch (err) {
     next(err);
   }
@@ -169,6 +273,9 @@ router.get('/register/check-email', (req, res) => {
     title: 'Check your email',
     robots: 'noindex',
     email: req.customer ? req.customer.email : '',
+    // Set when SMTP refused the message. The page then says so rather than
+    // telling somebody to watch an inbox nothing is coming to.
+    undelivered: req.query.undelivered === '1',
   });
 });
 
@@ -180,9 +287,14 @@ router.post('/register/resend', async (req, res, next) => {
       flash(res, 'We have sent several already — check your spam folder.', 'warn');
       return res.redirect('/register/check-email');
     }
-    await sendVerifyEmail(req.customer, req);
-    flash(res, 'Sent. It should arrive within a minute.');
-    res.redirect('/register/check-email');
+    const sent = await sendVerifyEmail(req.customer, req);
+    if (sent) {
+      flash(res, 'Sent. It should arrive within a minute.');
+      res.redirect('/register/check-email');
+    } else {
+      flash(res, 'Our mail server would not take it. That is our fault, not yours — please open a ticket and we will confirm the address by hand.', 'error');
+      res.redirect('/register/check-email?undelivered=1');
+    }
   } catch (err) {
     next(err);
   }
@@ -313,9 +425,9 @@ router.post('/forgot', async (req, res, next) => {
     const customer = await db.one('SELECT * FROM customers WHERE email = ? AND status = ? LIMIT 1', [email, 'active']);
     if (customer) {
       const token = await issueToken(customer.id, 'reset', RESET_TTL_MINUTES * 60_000);
-      await sendMail({
+      const delivered = await sendMail({
         to: customer.email,
-        subject: 'Reset your password — Vesopa Hosting',
+        subject: 'Reset your password — Vesopa Cloud',
         html: shell({
           title: 'Reset your password',
           intro: 'Click below to choose a new password. If you did not ask for this, ignore this email — your password has not changed.',
@@ -325,9 +437,18 @@ router.post('/forgot', async (req, res, next) => {
         }),
       });
       await db.logActivity({ actorType: 'customer', actorId: customer.id, action: 'password.reset_requested', target: email, ip: req.ip });
+      /*
+       * Logged loudly, and NOT shown. Whether the address exists must not leak,
+       * so the page says the same thing either way — but an SMTP refusal is our
+       * failure and somebody has to be able to find out about it afterwards
+       * without the customer having to report it twice.
+       */
+      if (!delivered) {
+        console.error(`[auth] reset email REFUSED by SMTP for customer ${customer.id}. Check the mail configuration.`);
+      }
     }
 
-    // Identical response either way.
+    // Identical response either way — see the note at the top of this file.
     res.render('auth/forgot', { title: 'Reset your password', robots: 'noindex', sent: true, error: null });
   } catch (err) {
     next(err);
@@ -382,10 +503,10 @@ router.post('/reset/:token', async (req, res, next) => {
 
     sendMail({
       to: customer.email,
-      subject: 'Your password was changed — Vesopa Hosting',
+      subject: 'Your password was changed — Vesopa Cloud',
       html: shell({
         title: 'Your password was changed',
-        intro: 'This is a confirmation that the password on your Vesopa Hosting account has just been changed, and every other device has been signed out.',
+        intro: 'This is a confirmation that the password on your Vesopa Cloud account has just been changed, and every other device has been signed out.',
         footNote: '<b>If this was not you</b>, reply to this email immediately — someone else has access to your inbox.',
       }),
     });

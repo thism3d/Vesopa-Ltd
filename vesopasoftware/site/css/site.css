@@ -1,0 +1,175 @@
+:root{
+  --ink:#0B0E0A;
+  --paper:#F2EFE6;
+  --lime:#A5C715;
+  --signal:#E4761B;
+  --slate:#2A312B;
+  --fg:#F2EFE6;
+  --bg:#0B0E0A;
+  --rule:rgba(242,239,230,.16);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:auto;-webkit-text-size-adjust:100%}
+body{
+  background:var(--bg);color:var(--fg);
+  font-family:"Source Serif 4",Georgia,serif;
+  font-size:17px;line-height:1.55;
+  overflow-x:hidden;
+  transition:background-color .12s linear,color .12s linear;
+}
+#gl{position:fixed;inset:0;width:100vw;height:100vh;z-index:0;pointer-events:none}
+main{position:relative;z-index:1}
+
+section{
+  min-height:100svh;
+  display:flex;align-items:center;
+  padding:14vh 6vw;
+  position:relative;
+}
+.col{max-width:34rem}
+.wide{max-width:52rem}
+
+h1,h2,h3,.mark{
+  font-family:"Archivo",Helvetica,Arial,sans-serif;
+  font-variation-settings:"wdth" 118,"wght" 620;
+  line-height:.98;letter-spacing:-.015em;
+  text-wrap:balance;
+}
+h1{font-size:clamp(2.9rem,8.2vw,6rem)}
+h2{font-size:clamp(2.1rem,5.4vw,3.9rem)}
+h3{font-size:1.05rem;font-variation-settings:"wdth" 112,"wght" 600;line-height:1.25}
+p{margin-top:1.1rem;max-width:32rem}
+p.lead{font-size:clamp(1.05rem,2.4vw,1.3rem);line-height:1.5}
+a{color:inherit}
+
+.mark{
+  position:fixed;top:0;left:0;right:0;z-index:3;
+  padding:1.15rem 6vw;
+  display:flex;justify-content:space-between;align-items:baseline;
+  font-size:.86rem;font-variation-settings:"wdth" 122,"wght" 640;
+  letter-spacing:.02em;
+  mix-blend-mode:difference;color:#fff;
+  pointer-events:none;
+}
+.mark span:last-child{font-family:"Martian Mono",monospace;font-weight:300;font-size:.66rem;opacity:.8}
+
+.num{
+  font-family:"Martian Mono",monospace;font-weight:300;
+  font-size:.7rem;letter-spacing:.06em;opacity:.62;
+  display:block;margin-bottom:1.6rem;
+}
+
+.facts{display:flex;flex-wrap:wrap;gap:1.6rem 2.4rem;margin-top:2.4rem}
+.fact{min-width:7.5rem}
+.fact b{
+  display:block;font-family:"Martian Mono",monospace;font-weight:500;
+  font-size:1.35rem;line-height:1;letter-spacing:-.03em;color:var(--lime);
+}
+.fact i{display:block;font-style:normal;font-size:.83rem;opacity:.66;margin-top:.4rem;max-width:9rem}
+
+.cta{
+  display:inline-block;margin-top:2.6rem;
+  font-family:"Archivo",sans-serif;font-variation-settings:"wdth" 112,"wght" 600;
+  font-size:.95rem;
+  padding:.72rem 1.5rem;border-radius:2px;
+  background:var(--lime);color:var(--ink);text-decoration:none;
+  pointer-events:auto;
+}
+.cta.ghost{background:transparent;color:inherit;box-shadow:inset 0 0 0 1px var(--rule);margin-left:.5rem}
+
+.hold{
+  margin-top:2rem;padding:1rem 1.2rem;
+  border-left:2px solid var(--lime);
+  font-family:"Martian Mono",monospace;font-size:.72rem;line-height:1.7;
+  opacity:.75;max-width:30rem;
+}
+
+/* story */
+#story{display:block;padding-top:12vh}
+.beats{margin-top:4rem;display:grid;gap:0}
+.beat{
+  display:grid;grid-template-columns:3.2rem 1fr;gap:1.4rem;
+  padding:1.9rem 0;border-top:1px solid var(--rule);
+  max-width:44rem;
+}
+.beat:last-child{border-bottom:1px solid var(--rule)}
+.beat em{font-family:"Martian Mono",monospace;font-style:normal;font-size:.7rem;opacity:.55;padding-top:.3rem}
+.beat p{margin-top:.4rem;font-size:.98rem;opacity:.82}
+
+/* light half */
+.light{--fg:#0B0E0A;--rule:rgba(11,14,10,.18)}
+.light .fact b{color:#5E7A0E}
+.light .cta{background:var(--ink);color:var(--paper)}
+.light .cta.ghost{background:transparent;color:var(--ink)}
+.pay .fact b{color:var(--signal)}
+.pay .cta{background:var(--signal);color:#fff}
+
+.plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(11rem,1fr));gap:1px;margin-top:2.6rem;background:var(--rule);max-width:46rem}
+.plan{background:var(--paper);padding:1.3rem}
+.plan b{display:block;font-family:"Archivo",sans-serif;font-variation-settings:"wdth" 112,"wght" 620;font-size:1rem}
+.plan u{display:block;text-decoration:none;font-family:"Martian Mono",monospace;font-size:1.15rem;margin:.5rem 0 .3rem}
+.plan i{font-style:normal;font-size:.78rem;opacity:.62}
+
+#perf{
+  position:fixed;right:.7rem;bottom:.7rem;z-index:5;
+  font-family:"Martian Mono",monospace;font-size:.6rem;line-height:1.5;
+  padding:.4rem .55rem;border-radius:3px;
+  background:rgba(120,120,120,.22);color:#fff;mix-blend-mode:difference;
+  pointer-events:none;white-space:pre;
+}
+
+@media (max-width:640px){
+  body{font-size:16px}
+  section{padding:12vh 7vw}
+  .beat{grid-template-columns:2.4rem 1fr;gap:.9rem}
+}
+@media (prefers-reduced-motion:reduce){
+  body{transition:none}
+}
+
+/* ---------- media ----------
+   Every plate is boxed by aspect-ratio so nothing reflows as images
+   decode. Section 09 of the brief budgets LCP at 2.0s: only the hero
+   plate is eager, everything else is lazy + async. */
+figure{margin:2.6rem 0 0;max-width:46rem}
+figure img,figure video{
+  display:block;width:100%;height:auto;border-radius:2px;
+  background:var(--slate);
+}
+figure figcaption{
+  font-family:"Martian Mono",monospace;font-size:.66rem;line-height:1.6;
+  opacity:.5;margin-top:.6rem;letter-spacing:.02em;
+}
+.ar169{aspect-ratio:16/9}
+.ar32{aspect-ratio:3/2}
+
+/* hero plate sits behind the particle field, never in front of type */
+#plate{
+  position:fixed;inset:0;z-index:-1;
+  width:100%;height:100%;object-fit:cover;
+  opacity:.30;
+  transition:opacity .4s linear;
+  pointer-events:none;
+}
+
+/* the six story beats become a picture grid rather than a bare list */
+.beat figure{margin-top:1rem;max-width:26rem}
+.beat img{filter:saturate(.9)}
+
+/* video wells: poster shows immediately, the clip swaps in when it can */
+.well{position:relative;background:var(--slate);border-radius:2px;overflow:hidden}
+.well video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .6s linear}
+.well video.on{opacity:1}
+.well img{display:block;width:100%;height:auto}
+
+/* light half: plates need less presence on paper than on ink */
+.light figure img{filter:none}
+
+@media (max-width:640px){
+  figure{margin-top:2rem}
+  #plate{opacity:.22}
+}
+@media (prefers-reduced-motion:reduce){
+  .well video{display:none}
+  #plate{transition:none}
+}

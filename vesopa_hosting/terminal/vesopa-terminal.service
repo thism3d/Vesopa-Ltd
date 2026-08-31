@@ -1,0 +1,39 @@
+[Unit]
+Description=Vesopa Cloud web terminal broker
+Documentation=file:/opt/vesopa-terminal/broker.py
+After=network.target
+
+[Service]
+Type=simple
+# Root, because opening a shell as another account is the one thing it does and
+# nothing else can do it. Everything below is here to make sure that is ALL it
+# can do.
+User=root
+ExecStart=/usr/bin/python3 /opt/vesopa-terminal/broker.py
+Restart=always
+RestartSec=2
+
+# The website's group. Only members can connect to the socket; see broker.py.
+Environment=VESOPA_TERMINAL_GROUP=vesopasoftware
+Environment=VESOPA_TERMINAL_SOCKET=/run/vesopa-terminal/broker.sock
+Environment=PYTHONUNBUFFERED=1
+
+# systemd creates and owns the directory, so the socket path exists on every
+# boot without the broker needing to make it — /run is a tmpfs and empty at boot.
+RuntimeDirectory=vesopa-terminal
+RuntimeDirectoryMode=0755
+
+# NO NEW PRIVILEGES is deliberately NOT set: the broker has to setuid, which is
+# a privilege change, and NoNewPrivileges would break exactly the thing it does.
+# The hardening below is what is safe to apply to something that must stay root.
+ProtectHome=false
+ProtectSystem=false
+PrivateTmp=false
+
+# It spawns login shells, which legitimately need to see the whole machine, so
+# namespacing the filesystem would break customer sessions rather than protect
+# anything. The real boundary is the socket's group ownership plus the
+# allowlist in resolve().
+
+[Install]
+WantedBy=multi-user.target

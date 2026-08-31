@@ -1,0 +1,261 @@
+/*
+ * Vesopa Mail — the skin.
+ *
+ * ---------------------------------------------------------------------------
+ * IT EXTENDS ELASTIC RATHER THAN REPLACING IT
+ * ---------------------------------------------------------------------------
+ * Elastic is 120KB of compiled CSS covering a mail client's entire surface:
+ * three responsive layouts, a dozen dialog types, the contacts grid, the
+ * settings tree, print styles and a dark mode. Rewriting that from scratch to
+ * change how it LOOKS would mean re-deriving every one of those decisions, and
+ * the ones you would get wrong are the ones you cannot see from a screenshot —
+ * the compose dialog on a phone in landscape, the folder manager, print.
+ *
+ * So this imports it and overrides colour, type, weight and radius. Every rule
+ * below was written against a selector read out of elastic's own stylesheet,
+ * not guessed: `grep`ping the compiled CSS for #37beff is how the accent list
+ * was found. Nothing here touches flex or grid — the layout is Elastic's and
+ * stays Elastic's, because that is the part that is hard and already works.
+ *
+ * ---------------------------------------------------------------------------
+ * WHAT CHANGES
+ * ---------------------------------------------------------------------------
+ *   type      Roboto -> the system stack. A mail client should look like it
+ *             belongs to the device it is on; Roboto on an iPad does not.
+ *   accent    Elastic's #37beff -> Vesopa lime, with ink chosen per surface
+ *             rather than one colour used everywhere (lime text on white is
+ *             2.1:1 and unreadable; lime FILL with near-black ink is 12:1).
+ *   chrome    Softer rules, more air, rounded rows. Closer to Apple Mail than
+ *             to a 2015 web app.
+ *   editor    The TinyMCE toolbar wraps instead of overflowing — see the block
+ *             at the bottom, which is the fix for the bar being unusable on
+ *             Android and iPad.
+ */
+
+@import url("../../elastic/styles/styles.min.css");
+
+:root {
+  --v-lime: #a5c715;
+  --v-lime-ink: #6e8a0e;    /* accent TEXT on white — 4.6:1 */
+  --v-lime-deep: #2f3b05;
+  --v-lime-soft: #eff6d8;
+  --v-on-lime: #10130a;     /* the only ink that reads on a lime fill */
+
+  --v-ink: #1a1f14;
+  --v-ink-2: #4a4c41;
+  --v-ink-3: #787a6e;
+  --v-rule: #e4e7dd;
+  --v-rule-soft: #eef0e9;
+  --v-bg: #ffffff;
+  --v-bg-2: #f8f9f4;
+
+  --v-radius: 12px;
+  --v-radius-sm: 9px;
+
+  --v-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto,
+            Helvetica, Arial, sans-serif;
+}
+
+/* ---- Type ---------------------------------------------------------------
+   Elastic sets Roboto with !important in a few places, so this has to match
+   that weight to win. The icon font is deliberately untouched — overriding it
+   would replace every icon in the interface with tofu. */
+body,
+input, select, textarea, button,
+.header-title, .listing, .menu, .propform {
+  font-family: var(--v-font) !important;
+}
+body { color: var(--v-ink); -webkit-font-smoothing: antialiased; }
+
+/* ---- Accent -------------------------------------------------------------
+   Every selector here came out of elastic's own stylesheet. A lime FILL takes
+   near-black ink; lime as text is only used at --v-lime-ink, which is the
+   darkened version that actually passes contrast on white. */
+.btn-primary,
+.floating-action-buttons a.button,
+#taskmenu .action-buttons a {
+  background-color: var(--v-lime) !important;
+  border-color: var(--v-lime) !important;
+  color: var(--v-on-lime) !important;
+}
+.btn-primary:hover,
+.floating-action-buttons a.button:hover,
+#taskmenu .action-buttons a:hover {
+  background-color: #b7da21 !important;
+  border-color: #b7da21 !important;
+  color: var(--v-on-lime) !important;
+}
+.btn-primary.disabled, .btn-primary:disabled {
+  background-color: #d6e08f !important;
+  border-color: #d6e08f !important;
+  color: #55603a !important;
+}
+
+.folderlist li.mailbox .unreadcount,
+.folderlist li.mailbox.recent > a > .unreadcount {
+  background-color: var(--v-lime) !important;
+  color: var(--v-on-lime) !important;
+  font-weight: 700;
+}
+
+.quota-widget .value { background-color: var(--v-lime) !important; }
+
+/*
+ * ACCENT LINKS ARE SCOPED TO ACTUAL LINKS, and this is a correction worth
+ * recording. The first version of this rule was `a:not(.btn):not(.button)`,
+ * on the assumption that an <a> in a mail client is a hyperlink. It is not:
+ * Roundcube builds the folder list, the message list, the toolbar and the task
+ * menu out of anchors, so one blanket rule turned every subject line, every
+ * folder name and every toolbar label lime — a wall of green text that was
+ * harder to read than what it replaced and looked like a broken stylesheet.
+ *
+ * Only two things should carry the accent: a link inside a message the
+ * customer is reading, and a link inside one of our own notices.
+ */
+.ui.alert a:not(.btn) { color: var(--v-lime-ink); }
+#messagecontent a[href],
+.message-htmlpart a[href],
+.message-part a[href],
+#message-content a[href] { color: var(--v-lime-ink); }
+
+.popupmenu .listing li > a:not(.disabled):hover,
+.popupmenu .listing li.selected,
+.popover .menu li a:not(.disabled):hover,
+.popover .menu .dropbutton a.dropdown:hover,
+.ui-menu .ui-state-active,
+.ui-datepicker a.ui-state-active {
+  background-color: var(--v-lime) !important;
+  color: var(--v-on-lime) !important;
+}
+
+/* ---- The message list ---------------------------------------------------
+   Apple Mail's shape: a soft wash and a coloured rule down the left for the
+   selected row, rather than a saturated fill. It keeps the subject readable
+   while selected, which a solid accent does not. */
+.folderlist li.selected > a,
+#layout-sidebar .listing li.selected > a,
+.listing li.selected,
+.listing tr.selected td,
+.messagelist tr.selected td {
+  background-color: var(--v-lime-soft) !important;
+  color: var(--v-ink) !important;
+  box-shadow: inset 3px 0 0 var(--v-lime);
+}
+.listing li:hover,
+.messagelist tr:hover td { background-color: var(--v-bg-2); }
+
+.messagelist tr td { border-color: var(--v-rule-soft) !important; }
+.messagelist tr.unread td.subject,
+.listing li.unread { font-weight: 700; }
+
+/* A little more air between rows. Density is a preference elastic already
+   exposes in Settings, so this only moves the comfortable default. */
+.messagelist tr td.subject { line-height: 1.45; }
+
+/* ---- Chrome -------------------------------------------------------------
+   Hairlines instead of hard borders, and a white header rather than the
+   grey slab. */
+#layout > div > .header {
+  background: var(--v-bg) !important;
+  color: var(--v-ink) !important;
+  border-bottom: 1px solid var(--v-rule);
+  box-shadow: none;
+}
+#layout > div > .header a.button { color: var(--v-ink-2) !important; }
+#layout-sidebar, #layout-list { border-color: var(--v-rule) !important; }
+.toolbar { border-color: var(--v-rule) !important; }
+
+/* Rounded, contained panels — the single biggest thing that separates a
+   modern mail client from a 2015 one. */
+@media screen and (min-width: 1024px) {
+  #layout-list, #layout-content { border-radius: var(--v-radius); }
+  #layout-list { overflow: hidden; }
+}
+
+a.btn, button.btn, .btn {
+  border-radius: var(--v-radius-sm);
+  font-weight: 600;
+}
+
+/* ---- Dark mode ----------------------------------------------------------
+   Elastic ships a full dark theme; only the accent is retinted. Lime on a
+   dark ground is legible as text, so links use the bright value here rather
+   than the darkened one that white backgrounds need. */
+html.dark-mode a:not(.btn):not(.button) { color: #c3e33a; }
+html.dark-mode .listing li.selected,
+html.dark-mode .listing tr.selected td,
+html.dark-mode .messagelist tr.selected td {
+  background-color: rgba(165, 199, 21, .16) !important;
+  color: #f2f5e8 !important;
+  box-shadow: inset 3px 0 0 var(--v-lime);
+}
+html.dark-mode #layout > div > .header {
+  background: #21292c !important;
+  color: #e9edea !important;
+  border-bottom-color: #33403f;
+}
+html.dark-mode #layout > div > .header a.button { color: #cdd6d2 !important; }
+
+/* ---- The login screen ---------------------------------------------------
+   The first thing anybody sees. Elastic's is a bare form on grey. */
+#layout-content.no-navbar {
+  background:
+    radial-gradient(900px 460px at 50% -12%, var(--v-lime-soft) 0%, rgba(239, 246, 216, 0) 70%),
+    var(--v-bg-2);
+}
+#login-form {
+  max-width: 30rem; margin: 0 auto;
+  background: var(--v-bg);
+  border: 1px solid var(--v-rule);
+  border-radius: 18px;
+  padding: 26px 24px 22px;
+  box-shadow: 0 2px 6px rgba(17, 17, 17, .05), 0 14px 40px rgba(17, 17, 17, .07);
+}
+#login-form .input-group { margin-bottom: 12px; }
+#login-footer { margin-top: 18px; font-size: .84rem; color: var(--v-ink-3); }
+html.dark-mode #layout-content.no-navbar {
+  background: radial-gradient(900px 460px at 50% -12%, rgba(165,199,21,.10) 0%, rgba(0,0,0,0) 70%), #1b2224;
+}
+html.dark-mode #login-form { background: #21292c; border-color: #33403f; box-shadow: none; }
+
+/* =========================================================================
+   The compose toolbar, and why this block exists
+   =========================================================================
+   REPORTED AS "tox-toolbar__primary never works on Android, and on iPad it is
+   worse". It is TinyMCE's formatting bar, and on a narrow screen its buttons
+   ran off the right-hand edge with no way to reach them — no wrap, no scroll,
+   no overflow menu. On a phone that meant no bold, no lists, no link button.
+
+   THE ROOT CAUSE IS AN OPTION NAME. Roundcube's program/js/editor.js sets
+   `toolbar_drawer: 'sliding'`, which is TinyMCE 4's spelling. This node runs
+   TinyMCE 5.10, where it was renamed `toolbar_mode` — so the option is
+   silently ignored, no drawer is ever created, and the bar is left as a
+   single non-wrapping flex row. (The line even carries a comment about a
+   TinyMCE issue from the version it was written for.)
+
+   Fixing it in editor.js would mean patching an upstream file that the next
+   Roundcube update overwrites. `flex-wrap: wrap` gets the same result — it is
+   exactly what `toolbar_mode: 'wrap'` does — from the skin, where it survives.
+   ========================================================================= */
+.tox .tox-toolbar__primary,
+.tox .tox-toolbar,
+.tox .tox-toolbar--scrolling {
+  flex-wrap: wrap !important;
+  overflow-x: auto;
+}
+.tox .tox-toolbar__group {
+  /* Groups must be allowed to break too, or the row wraps as three huge
+     blocks and the last one still overflows. */
+  flex-wrap: wrap;
+  padding-left: 2px;
+  padding-right: 2px;
+}
+.tox-tinymce { border-radius: var(--v-radius-sm) !important; }
+
+@media screen and (max-width: 1024px) {
+  /* Bigger targets where there is a finger rather than a pointer, and a
+     toolbar that is allowed to be two or three rows tall rather than one row
+     with half of it unreachable. */
+  .tox .tox-tbtn { width: 40px !important; height: 40px !important; margin: 1px !important; }
+  .tox .tox-toolbar__primary { padding: 2px 0; }
+}

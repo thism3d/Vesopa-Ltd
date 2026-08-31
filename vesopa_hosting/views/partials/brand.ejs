@@ -1,0 +1,46 @@
+<%#
+  The Vesopa lockup, in one place.
+
+  There were eleven copies of this <img> across the views, each with its own
+  width, its own height and its own guess at which of the two PNGs suited the
+  background it sat on. Three of them were wrong: the black wordmark on a dark
+  card renders as a black rectangle you cannot see, which is exactly the "logo
+  not showing" people reported. One partial, one decision.
+
+  THE MARK IS INLINE SVG AND THE WORDMARK IS A PNG, on purpose. The V is
+  geometry — it is crisp at 18px and at 180px, it costs no request, and it can
+  be recoloured for whatever it sits on. The wordmark is set type, and tracing
+  type by hand produces a logo that is nearly right, which is worse than a
+  bitmap that is exactly right.
+
+  Options:
+    on      'light' (default) — for white and off-white backgrounds
+            'dark'            — for the near-black chrome
+    size    height of the lockup in px (default 22)
+    mark    true to render the V alone, no wordmark — for a collapsed rail,
+            where a 130px-wide image was being cropped with object-fit
+    href    wrap it in a link to here (omit for a bare image)
+%>
+<%
+  const bOn = typeof on !== 'undefined' ? on : 'light';
+  const bSize = typeof size !== 'undefined' ? size : 22;
+  const bMarkOnly = typeof mark !== 'undefined' && mark;
+  const bHref = typeof href !== 'undefined' ? href : null;
+  // The V's own aspect ratio, straight off the viewBox in mark.svg.
+  const bMarkW = Math.round((bSize * 100) / 70);
+  const bInk = bOn === 'dark' ? '#ffffff' : '#111111';
+%>
+<% if (bHref) { %><a class="brand-lockup" href="<%= bHref %>" aria-label="Vesopa"><% } else { %><span class="brand-lockup"><% } %>
+  <svg class="brand-v" width="<%= bMarkW %>" height="<%= bSize %>" viewBox="0 0 100 70"
+       <%= bMarkOnly ? 'role="img" aria-label="Vesopa"' : 'aria-hidden="true"' %>>
+    <path fill="#a5c715" d="M0,0 L22.7,0 L50.7,49 L77.3,0 L100,0 L62,70 L40,70 Z"/>
+    <path fill="<%= bInk %>" d="M58.3,35 L81,35 L62,70 L40,70 L50.7,49 Z"/>
+  </svg>
+  <% if (!bMarkOnly) { %>
+    <%# `height` is set and `width` deliberately is not: the intrinsic ratio of
+        the file decides the width, so a new wordmark cannot squash itself. %>
+    <img class="brand-word"
+         src="/assets/img/brand/vesopa_logo<%= bOn === 'dark' ? '_on_dark' : '' %>.png"
+         alt="Vesopa" height="<%= bSize %>" style="height:<%= bSize %>px;width:auto">
+  <% } %>
+<% if (bHref) { %></a><% } else { %></span><% } %>

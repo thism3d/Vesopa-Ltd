@@ -1,0 +1,90 @@
+<%#
+  Taking a domain off its hosting.
+
+  ONE CARD FOR THREE CASES, because the wording is the whole feature and three
+  copies of it in three templates would disagree within a month:
+
+    ours       registered through us. The registration is paid for and stays;
+               only the hosting goes. The plan it was on goes back to having no
+               domain attached, and nothing else about the plan changes.
+    subdomain  a name under a domain on this account. Nothing else holds it, so
+               removing it removes it.
+    external   registered elsewhere and pointed here. Same — the row goes, the
+               domain itself is somebody else's registry entry and untouched.
+
+  THE CHECKBOXES ARE THE POINT for the first case. `v-delete-domain` takes the
+  website, the DNS zone and the mail domain together, and for a domain delegated
+  to our nameservers that zone is the only reason the name resolves at all —
+  removing a site should not silently take the domain off the internet and
+  delete its mailboxes on the way. So each part that actually exists on the
+  server is offered separately, with what is in it, and unticked stays.
+
+  Expects: domain, node (from linking.nodeState), ours, parentName.
+%>
+<div class="p-card">
+  <h2 class="h3 mb-2"><%= ours ? 'Remove from hosting' : 'Remove this ' + (domain.source === 'subdomain' ? 'subdomain' : 'domain') %></h2>
+
+  <% if (ours) { %>
+    <p class="small muted mb-2">
+      Takes <span class="mono"><%= domain.domain %></span> off its hosting plan and deletes its
+      website and files from our server. <b>The registration is not affected</b> — the domain
+      stays yours, keeps its renewal date, and you can attach it to a plan again at any time.
+    </p>
+  <% } else if (domain.source === 'subdomain') { %>
+    <p class="small muted mb-2">
+      Deletes the site, its files and its certificate from our server.
+      <b><%= parentName || 'The main domain' %> is not affected.</b>
+      You can add the subdomain again at any time.
+    </p>
+  <% } else { %>
+    <p class="small muted mb-2">
+      Takes <span class="mono"><%= domain.domain %></span> off your Vesopa account and stops us
+      hosting it, along with its website, DNS and mail here. The domain itself is registered
+      elsewhere and is not affected in any way — you can add it back at any time.
+    </p>
+  <% } %>
+
+  <form method="post" action="/panel/domains/<%= domain.domain %>/remove" data-guard
+        data-confirm="Remove <%= domain.domain %> from <%= ours ? 'its hosting plan' : 'your account' %>? Its website and files are deleted from the server and cannot be recovered.">
+    <input type="hidden" name="_csrf" value="<%= csrf %>">
+
+    <% if (ours && (node.dns || node.mail)) { %>
+      <p class="label mb-1">We also run these for <%= domain.domain %></p>
+      <p class="tiny muted mb-2">
+        Tick anything you want deleted as well. Leave them and they keep working —
+        the domain simply has no website here.
+      </p>
+
+      <% if (node.dns) { %>
+        <label class="check">
+          <input type="checkbox" name="drop_dns" value="1">
+          <span>
+            <span class="strong">DNS<% if (node.dnsRecords) { %> — <%= node.dnsRecords %> record<%= node.dnsRecords === 1 ? '' : 's' %><% } %></span>
+            <span class="tiny muted" style="display:block">
+              Deletes the zone we answer for. <b>Only do this if you are moving DNS elsewhere first</b> —
+              while the domain is delegated to our nameservers, deleting the zone stops the name
+              resolving anywhere at all, email included.
+            </span>
+          </span>
+        </label>
+      <% } %>
+
+      <% if (node.mail) { %>
+        <label class="check">
+          <input type="checkbox" name="drop_mail" value="1">
+          <span>
+            <span class="strong">Email<% if (node.mailboxes) { %> — <%= node.mailboxes %> mailbox<%= node.mailboxes === 1 ? '' : 'es' %><% } %></span>
+            <span class="tiny muted" style="display:block">
+              Stops us accepting mail for this domain<%= node.mailboxes ? ' and deletes the mailboxes and everything in them' : '' %>.
+              This cannot be undone.
+            </span>
+          </span>
+        </label>
+      <% } %>
+    <% } %>
+
+    <button class="btn btn-ghost btn-sm" type="submit" data-busy="Removing…">
+      <%= ours ? 'Remove from hosting' : 'Remove ' + domain.domain %>
+    </button>
+  </form>
+</div>

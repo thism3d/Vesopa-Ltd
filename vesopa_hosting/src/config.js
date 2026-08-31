@@ -9,7 +9,27 @@
  */
 
 const SITE_URL = process.env.SITE_URL || 'http://localhost:5075';
-const MAIN_SITE_URL = process.env.MAIN_SITE_URL || 'https://vesopaepos.com';
+const MAIN_SITE_URL = process.env.MAIN_SITE_URL || 'https://vesopa.com';
+
+/**
+ * HestiaCP's own web interface, e.g. https://panel.vesopa.com:2083.
+ *
+ * NOTHING IN THE CUSTOMER PANEL LINKS HERE ANY MORE, and that is the point.
+ *
+ * It used to: the file manager, the web terminal and the account profile were
+ * all deep links onto :2083, which meant a second sign-in with a password out
+ * of a welcome email and a control panel that looks nothing like this one. Both
+ * of the tools that mattered are served by this app now — /panel/files
+ * (src/routes/panel-files.js) and /panel/terminal (src/terminal.js) — each
+ * signed in with the session the customer already has.
+ *
+ * The value is kept because it is still the right address for staff, and
+ * because blanking it should not be load-bearing. If something new ever needs
+ * to hand a customer to Hestia, read this rather than hard-coding a host — and
+ * think hard first, because "log in again over there" is the experience this
+ * whole panel exists to avoid.
+ */
+const CONTROL_PANEL_URL = (process.env.HESTIA_PANEL_URL || '').replace(/\/+$/, '');
 
 /**
  * The currency the CATALOGUE IS PRICED IN — not the currency a given visitor
@@ -28,15 +48,44 @@ const MAIN_SITE_URL = process.env.MAIN_SITE_URL || 'https://vesopaepos.com';
  */
 const BASE_CURRENCY = process.env.BASE_CURRENCY || process.env.CURRENCY || 'GBP';
 
+/**
+ * The trading entity behind this panel, and the addresses on every email.
+ *
+ * IT IS NOT THE EPOS COMPANY. Vesopa runs an EPOS business at vesopaepos.com
+ * and a hosting business here, and they are separate limited companies at
+ * separate addresses. Every one of these values used to be the EPOS one,
+ * because this app was forked from that site — which meant a customer buying
+ * hosting was told, in the footer of the receipt, that they had bought it from
+ * a till company in Swansea. Registrar contact records, invoices and the
+ * consumer-rights notices all read from here, so getting it wrong is a legal
+ * problem as well as a confusing one.
+ *
+ * `email` and `support_email` are the addresses a HUMAN reads. The address the
+ * server SENDS from is MAIL_FROM in the environment (no-reply@vesopa.com) and
+ * is deliberately not one of these: replying to a no-reply mailbox should never
+ * be the route to support.
+ */
 const CONTACT = {
-  company: 'VESOPA EPOS LTD',
-  address_line1: '1 High Street, Pontardawe',
-  address_line2: 'Swansea, SA8 4HU',
+  company: 'VESOPA SOFTWARE LTD',
+  address_line1: 'Baglan, Port Talbot',
+  address_line2: 'Wales, SA12 7AX',
   phone: '+44 7501 928043',
   phone_e164: '+447501928043',
-  email: 'hosting@vesopaepos.com',
-  support_email: 'hosting@vesopaepos.com',
+  email: 'support@vesopa.com',
+  support_email: 'support@vesopa.com',
 };
+
+/**
+ * The panel's own hostname, shown as the link in every email footer.
+ *
+ * Derived from SITE_URL rather than written down, so a deploy that moves the
+ * panel moves the footer with it. The footer used to be the literal string
+ * `hosting.vesopaepos.com` while SITE_URL pointed at cloud.vesopa.com, and
+ * nothing anywhere flagged the disagreement.
+ */
+const SITE_HOSTNAME = (() => {
+  try { return new URL(SITE_URL).host; } catch { return 'cloud.vesopa.com'; }
+})();
 
 /** The 2026 mark: black wordmark, one lime slash. */
 const BRAND = {
@@ -49,9 +98,63 @@ const BRAND = {
 };
 
 const NAMESERVERS = [
-  process.env.NS1 || 'ns1.vesopaepos.com',
-  process.env.NS2 || 'ns2.vesopaepos.com',
+  process.env.NS1 || 'ns1.vesopa.com',
+  process.env.NS2 || 'ns2.vesopa.com',
 ];
+
+/**
+ * The name a customer points a record at when they keep DNS elsewhere.
+ *
+ * THE HOSTNAME IS THE INSTRUCTION; the address is the footnote.
+ *
+ * A raw address in the panel is a commitment: every customer who copies it into
+ * a zone we cannot see pins us to that number, and moving the node silently
+ * breaks all of them with no list of who to warn. `A record -> point.vesopa.com`
+ * is the same instruction with the indirection kept, and changing where it
+ * points moves everybody at once.
+ *
+ * The address IS now shown next to it, because a fair number of DNS control
+ * panels refuse a hostname in an A record and want four numbers — a customer
+ * staring at a form that rejects `point.vesopa.com` cannot proceed without
+ * asking us. It is always RESOLVED from this hostname at request time
+ * (nameservers.ourAddresses), never written down here, so there is still one
+ * source of truth and it cannot go stale.
+ */
+const POINT_HOSTNAME = process.env.POINT_HOSTNAME || 'point.vesopa.com';
+
+/**
+ * The one hostname every mailbox connects to, for IMAP, SMTP and webmail.
+ *
+ * NOT `mail.<customer's domain>`, which is what a control panel does by default
+ * and what this used to tell people to type into Outlook. That name has no
+ * certificate — issuing one per customer domain means a certificate per domain,
+ * and it fails outright for any customer whose DNS lives elsewhere — so the
+ * instruction was for a server that could not actually be reached. A mail
+ * client meeting a certificate for the wrong name either refuses to connect or
+ * teaches its owner to click through a security warning, and the second is
+ * worse than the first.
+ *
+ * One hostname, one certificate, correct for everybody: the customer's own
+ * domain is their ADDRESS, and this is the SERVER they collect it from. Those
+ * are different things and only the first has to be theirs.
+ *
+ * MX for every domain we run DNS for points here too, so mail arrives at the
+ * same place it is read from.
+ */
+const MAIL_HOSTNAME = process.env.MAIL_HOSTNAME || 'mail.vesopa.com';
+
+/** Where webmail lives. The same host — one name is one thing to remember. */
+const WEBMAIL_URL = process.env.WEBMAIL_URL || `https://${MAIL_HOSTNAME}`;
+
+/**
+ * The mail ports we tell customers to use, and only the secure ones.
+ *
+ * No 143 and no 587-without-TLS anywhere in the panel. Every one of these is
+ * implicit TLS from the first byte, so there is no version of these
+ * instructions that sends a password in the clear because a client did not
+ * negotiate STARTTLS.
+ */
+const MAIL_PORTS = { imap: 993, smtp: 465, pop3: 995 };
 
 /**
  * How long a domain somebody already owns has to point at us.
@@ -211,10 +314,16 @@ function savingPercent(monthlyPence, termTotalPence, months) {
 module.exports = {
   SITE_URL,
   MAIN_SITE_URL,
+  CONTROL_PANEL_URL,
   BASE_CURRENCY,
   CONTACT,
+  SITE_HOSTNAME,
   BRAND,
   NAMESERVERS,
+  POINT_HOSTNAME,
+  MAIL_HOSTNAME,
+  WEBMAIL_URL,
+  MAIL_PORTS,
   DOMAIN_NS_GRACE_DAYS,
   PAYMENT_SESSION_MINUTES,
   JOB_INTERVAL_MINUTES,

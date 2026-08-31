@@ -1,0 +1,307 @@
+<%- include('../partials/head', { extraCss: '/assets/css/panel.css' }) %>
+<link rel="stylesheet" href="<%= asset('/assets/css/files.css') %>">
+<%- include('../partials/panel-shell', {
+  pageTitle: 'Files',
+  pageSub: 'Your websites and everything else on your hosting account.',
+}) %>
+
+<%#
+  Configuration reaches the script through data attributes, not an inline
+  <script> block: the site's CSP is `script-src 'self'` and an inline script
+  would be blocked outright. Same reason xterm is vendored rather than pulled
+  from a CDN.
+%>
+<div class="fm"
+     id="fm"
+     data-start="<%= startPath %>"
+     data-user="<%= username %>"
+     data-csrf="<%= csrf %>"
+     data-max-edit="<%= maxEdit %>"
+     data-max-upload="<%= maxUpload %>">
+
+  <%# ---- Shortcuts: the folders a customer actually wants, one tap away ---- %>
+  <div class="fm-jump" role="navigation" aria-label="Shortcuts">
+    <button type="button" class="fm-chip" data-go="">
+      <%- icon('home', 15) %> Home
+    </button>
+    <button type="button" class="fm-chip" data-go="web">
+      <%- icon('folder', 15) %> web
+    </button>
+    <% sites.forEach(function (site) { %>
+      <button type="button" class="fm-chip" data-go="web/<%= site %>/public_html" title="<%= site %> — public_html">
+        <%- icon('globe', 15) %> <%= site %>
+      </button>
+    <% }); %>
+
+    <%#
+      Disk usage, here, because this is the page where somebody is about to
+      spend it. Without it the first sign of a full account is an upload that
+      fails with whatever message the node happened to produce.
+    %>
+    <% if (disk) { %>
+      <%
+        const gb = (mb) => (mb >= 1024 ? (mb / 1024).toFixed(mb >= 10240 ? 0 : 1) + ' GB' : Math.round(mb) + ' MB');
+        const tone = disk.pct >= 90 ? 'is-full' : disk.pct >= 75 ? 'is-high' : '';
+      %>
+      <div class="fm-disk <%= tone %>" title="<%= disk.quotaMb ? disk.pct + '% of your storage used' : 'Storage used' %>">
+        <%- icon('gauge', 15) %>
+        <span class="fm-disk-text">
+          <b><%= gb(disk.usedMb) %></b><% if (disk.quotaMb) { %> of <%= gb(disk.quotaMb) %><% } else { %> used<% } %>
+        </span>
+        <% if (disk.quotaMb) { %>
+          <span class="fm-disk-bar" aria-hidden="true"><i style="width:<%= Math.max(2, disk.pct) %>%"></i></span>
+        <% } %>
+      </div>
+    <% } %>
+  </div>
+
+  <div class="p-card p-card-flush fm-card">
+
+    <%# ---- Toolbar --------------------------------------------------------- %>
+    <div class="fm-bar">
+      <nav class="fm-crumbs" id="fm-crumbs" aria-label="Folder"></nav>
+
+      <div class="fm-bar-actions">
+        <div class="fm-find">
+          <span class="fm-find-icon"><%- icon('search', 16) %></span>
+          <input type="search" id="fm-search" placeholder="Search this folder…"
+                 autocomplete="off" spellcheck="false" aria-label="Search this folder">
+          <button type="button" class="fm-find-clear" id="fm-search-clear" hidden aria-label="Clear search">
+            <%- icon('x', 15) %>
+          </button>
+        </div>
+
+        <button type="button" class="btn btn-sm" id="fm-upload-btn">
+          <%- icon('upload', 16) %> <span class="fm-btn-text">Upload</span>
+        </button>
+        <button type="button" class="btn btn-ghost btn-sm" id="fm-newfolder">
+          <%- icon('folder-plus', 16) %> <span class="fm-btn-text">Folder</span>
+        </button>
+        <button type="button" class="btn btn-ghost btn-sm" id="fm-newfile">
+          <%- icon('file-plus', 16) %> <span class="fm-btn-text">File</span>
+        </button>
+
+        <button type="button" class="fm-icon-btn" id="fm-view" title="Switch between list and grid" aria-label="Switch view">
+          <span data-when="list"><%- icon('grid', 17) %></span>
+          <span data-when="grid" hidden><%- icon('list', 17) %></span>
+        </button>
+        <button type="button" class="fm-icon-btn" id="fm-hidden" title="Show hidden files" aria-pressed="false" aria-label="Show hidden files">
+          <%- icon('eye', 17) %>
+        </button>
+        <button type="button" class="fm-icon-btn" id="fm-refresh" title="Refresh" aria-label="Refresh">
+          <%- icon('refresh', 17) %>
+        </button>
+      </div>
+    </div>
+
+    <%#
+      The selection bar. Hidden until something is ticked, and on a phone it
+      pins itself to the bottom of the screen — the actions have to be reachable
+      with a thumb while the list is still scrolled to wherever the selection is.
+    %>
+    <div class="fm-selbar" id="fm-selbar" hidden>
+      <span class="fm-selcount" id="fm-selcount">0 selected</span>
+      <div class="fm-selactions">
+        <button type="button" class="btn btn-ghost btn-sm" data-act="download"><%- icon('download', 15) %> Download</button>
+        <button type="button" class="btn btn-ghost btn-sm" data-act="rename"><%- icon('pencil', 15) %> Rename</button>
+        <button type="button" class="btn btn-ghost btn-sm" data-act="copy"><%- icon('copy', 15) %> Copy</button>
+        <button type="button" class="btn btn-ghost btn-sm" data-act="move"><%- icon('scissors', 15) %> Move</button>
+        <button type="button" class="btn btn-ghost btn-sm" data-act="compress"><%- icon('box', 15) %> Zip</button>
+        <button type="button" class="btn btn-ghost btn-sm" data-act="chmod"><%- icon('lock', 15) %> Permissions</button>
+        <button type="button" class="btn btn-ghost btn-sm fm-danger" data-act="delete"><%- icon('trash', 15) %> Delete</button>
+        <button type="button" class="fm-icon-btn" data-act="clear" aria-label="Clear selection"><%- icon('x', 16) %></button>
+      </div>
+    </div>
+
+    <%#
+      The drop zone is the whole listing area. `fm-drop` is toggled on it while
+      a drag is over the window, so there is a visible target rather than a
+      guess about where a file has to be let go.
+    %>
+    <div class="fm-body" id="fm-body">
+      <div class="fm-head" id="fm-head">
+        <label class="fm-check">
+          <input type="checkbox" id="fm-all" aria-label="Select everything in this folder">
+        </label>
+        <span class="fm-col-name">Name</span>
+        <span class="fm-col-size">Size</span>
+        <span class="fm-col-time">Modified</span>
+        <span class="fm-col-mode">Perms</span>
+        <span class="fm-col-menu"></span>
+      </div>
+
+      <div class="fm-list" id="fm-list" role="list"></div>
+
+      <div class="fm-empty" id="fm-empty" hidden></div>
+      <div class="fm-loading" id="fm-loading"><span class="fm-spin"></span> Loading…</div>
+
+      <div class="fm-dropnote" id="fm-dropnote" aria-hidden="true">
+        <%- icon('upload', 34) %>
+        <b>Drop files to upload</b>
+        <span>They go into the folder you are looking at.</span>
+      </div>
+    </div>
+
+    <div class="fm-foot" id="fm-foot"></div>
+  </div>
+
+  <%# The real input behind the Upload button. Hidden, never styled, always present. %>
+  <input type="file" id="fm-file" multiple hidden>
+
+  <%# ---- Upload progress, bottom-right, dismissible ----------------------- %>
+  <div class="fm-uploads" id="fm-uploads" hidden>
+    <div class="fm-uploads-head">
+      <span id="fm-uploads-title">Uploading</span>
+      <button type="button" class="fm-icon-btn" id="fm-uploads-close" aria-label="Hide uploads"><%- icon('x', 15) %></button>
+    </div>
+    <div class="fm-uploads-list" id="fm-uploads-list"></div>
+  </div>
+
+  <%#
+    ---- Editor ------------------------------------------------------------
+    A textarea with a highlighted <pre> underneath it, scrolled in step. The
+    textarea's own text is transparent, so what is read is the <pre> and what is
+    typed into is the textarea — which keeps every native behaviour a phone
+    depends on: the caret, selection handles, autocorrect off, and the
+    keyboard's own arrow keys.
+  %>
+  <div class="fm-modal" id="fm-editor" hidden>
+    <div class="fm-modal-sheet fm-editor-sheet">
+      <div class="fm-modal-head">
+        <div class="fm-editor-title">
+          <span class="fm-editor-name" id="fm-editor-name"></span>
+          <span class="fm-editor-path mono" id="fm-editor-path"></span>
+        </div>
+        <div class="fm-editor-tools">
+          <span class="fm-editor-state" id="fm-editor-state"></span>
+          <%#
+            Indent and outdent as BUTTONS, not only as Tab.
+
+            A phone keyboard has no Tab key, so on the device where this editor
+            is most useful there was previously no way to indent anything at
+            all. They sit next to the wrap toggle because all three are "how the
+            text is laid out" rather than "what happens to the file".
+          %>
+          <button type="button" class="fm-icon-btn" id="fm-outdent" title="Outdent (Shift+Tab)" aria-label="Outdent">
+            <%- icon('chevron-left', 16) %>
+          </button>
+          <button type="button" class="fm-icon-btn" id="fm-indent" title="Indent (Tab)" aria-label="Indent">
+            <%- icon('chevron-right', 16) %>
+          </button>
+          <button type="button" class="fm-icon-btn" id="fm-editor-wrap" title="Wrap long lines" aria-pressed="true">
+            <%- icon('list', 16) %>
+          </button>
+          <%# A named Cancel, not only an X. On a phone the X is a 17px glyph in
+              the corner and people do not trust it to discard safely. %>
+          <button type="button" class="btn btn-ghost btn-sm fm-editor-cancel" id="fm-editor-cancel">Cancel</button>
+          <button type="button" class="btn btn-sm" id="fm-editor-save"><%- icon('save', 15) %> Save</button>
+          <button type="button" class="fm-icon-btn" id="fm-editor-close" aria-label="Close editor"><%- icon('x', 17) %></button>
+        </div>
+      </div>
+      <div class="fm-editor-wrap" id="fm-editor-body">
+        <div class="fm-gutter" id="fm-gutter" aria-hidden="true"></div>
+        <div class="fm-code">
+          <pre class="fm-hl" id="fm-hl" aria-hidden="true"><code></code></pre>
+          <textarea id="fm-ta" spellcheck="false" autocapitalize="off" autocomplete="off"
+                    autocorrect="off" wrap="off" aria-label="File contents"></textarea>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <%# ---- Image preview ----------------------------------------------------- %>
+  <div class="fm-modal" id="fm-preview" hidden>
+    <div class="fm-modal-sheet fm-preview-sheet">
+      <div class="fm-modal-head">
+        <span class="fm-editor-name" id="fm-preview-name"></span>
+        <div class="fm-editor-tools">
+          <a class="btn btn-ghost btn-sm" id="fm-preview-dl" href="#"><%- icon('download', 15) %> Download</a>
+          <button type="button" class="fm-icon-btn" id="fm-preview-close" aria-label="Close"><%- icon('x', 17) %></button>
+        </div>
+      </div>
+      <div class="fm-preview-body"><img id="fm-preview-img" alt=""></div>
+    </div>
+  </div>
+
+  <%#
+    ---- One prompt dialog, reused ----------------------------------------
+    New folder, new file, rename, permissions and the move/copy destination are
+    all "ask for one value and confirm". Five separate modals would be five
+    places to fix the same focus-trap bug.
+  %>
+  <div class="fm-modal" id="fm-ask" hidden>
+    <div class="fm-modal-sheet fm-ask-sheet">
+      <div class="fm-modal-head">
+        <h2 class="h3" id="fm-ask-title">Rename</h2>
+        <button type="button" class="fm-icon-btn" id="fm-ask-close" aria-label="Close"><%- icon('x', 17) %></button>
+      </div>
+      <form class="fm-ask-body" id="fm-ask-form">
+        <p class="small muted" id="fm-ask-note"></p>
+
+        <label class="field" id="fm-ask-field">
+          <span class="label" id="fm-ask-label">Name</span>
+          <input type="text" class="input" id="fm-ask-input" autocomplete="off" spellcheck="false">
+        </label>
+
+        <%# Only shown for Permissions. The checkboxes and the number stay in step. %>
+        <div id="fm-ask-modes" hidden>
+          <div class="fm-modegrid">
+            <span></span><span>Read</span><span>Write</span><span>Run</span>
+            <span class="fm-modelabel">Owner</span>
+            <label><input type="checkbox" data-bit="400"></label>
+            <label><input type="checkbox" data-bit="200"></label>
+            <label><input type="checkbox" data-bit="100"></label>
+            <span class="fm-modelabel">Group</span>
+            <label><input type="checkbox" data-bit="040"></label>
+            <label><input type="checkbox" data-bit="020"></label>
+            <label><input type="checkbox" data-bit="010"></label>
+            <span class="fm-modelabel">Everyone</span>
+            <label><input type="checkbox" data-bit="004"></label>
+            <label><input type="checkbox" data-bit="002"></label>
+            <label><input type="checkbox" data-bit="001"></label>
+          </div>
+          <label class="fm-inline-check">
+            <input type="checkbox" id="fm-ask-recursive">
+            <span>Apply to everything inside as well</span>
+          </label>
+          <p class="tiny muted">
+            Websites normally want <span class="mono">755</span> on folders and
+            <span class="mono">644</span> on files.
+          </p>
+        </div>
+
+        <%# Only shown for Move and Copy: pick a destination folder. %>
+        <div id="fm-ask-picker" hidden>
+          <div class="fm-picker-crumbs" id="fm-picker-crumbs"></div>
+          <div class="fm-picker-list" id="fm-picker-list"></div>
+        </div>
+
+        <p class="fm-ask-error" id="fm-ask-error" hidden></p>
+
+        <div class="fm-ask-actions">
+          <button type="button" class="btn btn-ghost btn-sm" id="fm-ask-cancel">Cancel</button>
+          <button type="submit" class="btn btn-sm" id="fm-ask-ok">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <%#
+    The row menu, one element moved to whichever row asked for it. Rendering a
+    menu per row would put several hundred hidden dialogs in the document.
+  %>
+  <div class="fm-menu" id="fm-menu" hidden role="menu"></div>
+
+  <%# Hidden form that POSTs a zip download, so the browser streams it to disk. %>
+  <form method="post" action="/panel/files/zip" id="fm-zipform" hidden>
+    <input type="hidden" name="_csrf" value="<%= csrf %>">
+    <input type="hidden" name="name" id="fm-zipname" value="files.zip">
+    <div id="fm-zipinputs"></div>
+  </form>
+
+  <div class="fm-toast" id="fm-toast" hidden></div>
+</div>
+
+<script src="<%= asset('/assets/js/files.js') %>" defer></script>
+
+<%- include('../partials/panel-shell-end') %>

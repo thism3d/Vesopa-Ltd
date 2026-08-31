@@ -1,0 +1,116 @@
+<%#
+  Redirect.
+
+  Shared by the domain page and the subdomain page, because a subdomain is
+  just another website to Hestia and the question is identical: send everyone
+  who visits this name somewhere else.
+
+  People buy a second domain to hold the .co.uk beside the .com, to move to a
+  new name, or to grab a misspelling; they make a subdomain to park `old.` or
+  point `shop.` at a marketplace. All of it ends in "point it at the other
+  site", which had no button and became a support ticket.
+
+  THE FORM DOES NOT LEAD WITH "301". That number is the thing customers get
+  wrong, and getting it wrong is expensive in a way nothing else on this
+  page is: a permanent redirect is cached by the browser, sometimes until
+  its cache is cleared, so a mistake follows that visitor around long after
+  we have fixed the server. So the choice is worded as what it does, the
+  consequence is spelled out under each option, and the number is shown for
+  the people who came looking for it.
+%>
+<div class="p-card">
+  <div class="row-between mb-2">
+    <h2 class="h3">Redirect</h2>
+    <% if (site && site.redirect) { %>
+      <span class="badge badge-amber">On</span>
+    <% } %>
+  </div>
+
+  <% if (!site) { %>
+    <p class="small muted mb-0">
+      <% if (!hasHosting) { %>
+        There is no hosting on this account yet, so there is no website to redirect.
+        <a href="/hosting">See the plans</a>.
+      <% } else { %>
+        This domain does not have a website on our server yet — point it at us first,
+        using the panel on the right, and this appears.
+      <% } %>
+    </p>
+  <% } else if (site.redirect) { %>
+    <p class="small mb-3">
+      Everyone visiting <b><%= domain.domain %></b> is sent to
+      <b class="mono"><%= site.redirect %></b><%
+        %><% if (site.redirect_code) { %>, <%= site.redirect_code === 301 ? 'permanently' : 'temporarily' %>
+        (<%= site.redirect_code %>)<% } %>.
+    </p>
+    <% if (site.redirect_code === 301) { %>
+      <div class="tip tip-warn mb-3">
+        <span class="tip-ic"></span>
+        <div>
+          <b>A permanent redirect is remembered by browsers.</b> If you turn this off,
+          anyone who already visited may keep going to
+          <span class="mono"><%= site.redirect %></span> until they clear their cache.
+          Test in a private window.
+        </div>
+      </div>
+    <% } %>
+    <form method="post" action="/panel/domains/<%= domain.id %>/redirect">
+      <input type="hidden" name="_csrf" value="<%= csrf %>">
+      <button class="btn btn-ghost btn-sm" name="action" value="clear" type="submit">
+        Turn it off and serve the website again
+      </button>
+    </form>
+  <% } else { %>
+    <p class="small muted mb-3">
+      Send everyone who visits <b><%= domain.domain %></b> to a different address —
+      useful for a second domain you want pointing at your main site, or a name you
+      have moved away from.
+    </p>
+
+    <form method="post" action="/panel/domains/<%= domain.id %>/redirect">
+      <input type="hidden" name="_csrf" value="<%= csrf %>">
+
+      <div class="field mb-3">
+        <label class="label" for="rd-target">Send visitors to</label>
+        <input class="input mono" id="rd-target" name="target" placeholder="example.com"
+               autocomplete="off" spellcheck="false" required>
+        <p class="hint">
+          A domain, or a domain and a page — <code>example.com</code> or
+          <code>example.com/welcome</code>. The <code>https://</code> is optional.
+        </p>
+      </div>
+
+      <p class="label mb-2">How permanent is this?</p>
+      <div class="vers mb-3">
+        <label class="ver">
+          <input type="radio" name="code" value="301" required>
+          <span class="ver-n">Moved for good</span>
+          <span class="ver-t">
+            301. Search engines move your ranking across, and browsers remember it —
+            including if you change your mind. Right for a name you have left behind.
+          </span>
+        </label>
+        <label class="ver">
+          <input type="radio" name="code" value="302">
+          <span class="ver-n">Just for now</span>
+          <span class="ver-t">
+            302. Nothing is cached and nothing is transferred, so you can change or
+            remove it at any time. Right while you are testing, or for a holding page.
+          </span>
+        </label>
+      </div>
+
+      <div class="tip mb-3">
+        <span class="tip-ic"></span>
+        <div>
+          <b>Not sure? Choose "just for now".</b> You can always make it permanent later,
+          and a temporary redirect set by mistake is undone the moment you remove it —
+          a permanent one is not.
+        </div>
+      </div>
+
+      <button class="btn btn-sm" type="submit"><%- icon('arrow', 15) %> Set the redirect</button>
+    </form>
+  <% } %>
+</div>
+

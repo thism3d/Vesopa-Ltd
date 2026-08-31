@@ -37,7 +37,6 @@
       <div class="p-grid p-grid-2">
         <div class="field"><label class="label" for="name<%= s.id %>">Name</label><input class="input" id="name<%= s.id %>" name="name" value="<%= s.name %>"></div>
         <div class="field"><label class="label" for="host<%= s.id %>">Hostname</label><input class="input mono" id="host<%= s.id %>" name="hostname" value="<%= s.hostname %>"></div>
-        <div class="field"><label class="label" for="ip<%= s.id %>">IP address</label><input class="input mono" id="ip<%= s.id %>" name="ip" value="<%= s.ip %>" placeholder="Set this once the Azure box has DNS"></div>
         <div class="field"><label class="label" for="port<%= s.id %>">API port</label><input class="input" id="port<%= s.id %>" name="api_port" type="number" value="<%= s.api_port %>"></div>
         <div class="field"><label class="label" for="loc<%= s.id %>">Location</label><input class="input" id="loc<%= s.id %>" name="location" value="<%= s.location %>"></div>
         <div class="field"><label class="label" for="max<%= s.id %>">Max accounts</label><input class="input" id="max<%= s.id %>" name="max_accounts" type="number" value="<%= s.max_accounts %>"></div>
@@ -53,4 +52,3 @@
 <% }); %>
 
 <%- include('../partials/panel-shell-end') %>
-<%- include('../partials/footer') %>

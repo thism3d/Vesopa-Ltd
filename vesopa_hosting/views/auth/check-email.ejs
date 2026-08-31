@@ -2,23 +2,49 @@
 <div class="auth-page">
   <div class="auth-card center">
     <a class="auth-brand" href="/" style="justify-content:center">
-      <img src="/assets/img/brand/vesopa_logo.png" alt="Vesopa" width="150" height="22">
+      <%- include('../partials/brand', { on: 'light', size: 24 }) %>
       <span class="brand-sub">Hosting</span>
     </a>
 
     <div class="f-icon" style="width:56px;height:56px;margin:0 auto 16px"><%- icon('mail', 28) %></div>
     <h1>Confirm your email</h1>
     <p class="lede">
-      We have sent a link<% if (email) { %> to <b><%= email %></b><% } %>.
-      Click it to confirm your address.
+      <% if (undelivered) { %>
+        We could not send the link<% if (email) { %> to <b><%= email %></b><% } %>.
+      <% } else { %>
+        We have sent a link<% if (email) { %> to <b><%= email %></b><% } %>.
+        Click it to confirm your address. It can take a minute, and it sometimes
+        lands in spam.
+      <% } %>
     </p>
 
-    <div class="alert alert-info" style="text-align:left">
-      <%- icon('info', 19) %>
-      <div>You can carry on and use your panel now — confirming just secures your account for password resets.</div>
-    </div>
+    <% if (undelivered) { %>
+      <%# SMTP refused it. Saying so is the only honest option: the alternative
+          is a page telling somebody to watch an inbox nothing is coming to. %>
+      <div class="alert alert-error" style="text-align:left">
+        <%- icon('warning', 19) %>
+        <div>
+          <b>That email did not send.</b> Our mail server refused it, which is a
+          fault at our end rather than anything you did. Your account is created
+          and you can use it now — open a ticket and we will confirm the address
+          by hand.
+        </div>
+      </div>
+    <% } else { %>
+      <div class="alert alert-info" style="text-align:left">
+        <%- icon('info', 19) %>
+        <div>
+          You can carry on and use your panel now — confirming just secures your
+          account so we can send you a password reset if you ever need one.
+        </div>
+      </div>
+    <% } %>
 
     <a class="btn btn-block btn-lg" href="/panel">Go to my panel</a>
+
+    <% if (undelivered) { %>
+      <a class="btn btn-ghost btn-block mt-2" href="/panel/tickets/new?subject=Email%20verification">Open a ticket</a>
+    <% } %>
 
     <form method="post" action="/register/resend" class="mt-2" data-guard>
       <input type="hidden" name="_csrf" value="<%= csrf %>">

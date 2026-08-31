@@ -1,6 +1,7 @@
 require('dotenv').config();
 
 const path = require('path');
+const http = require('node:http');
 const express = require('express');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
@@ -10,6 +11,7 @@ const db = require('./db');
 const { verifyMail } = require('./mailer');
 const auth = require('./auth');
 const { icon } = require('./icons');
+const { asset } = require('./assets');
 const currencyContext = require('./currency-context');
 const geo = require('./geo');
 const registrar = require('./integrations/domainnameapi');
@@ -17,6 +19,26 @@ const hestia = require('./integrations/hestia');
 
 const PORT = Number(process.env.PORT) || 5075;
 const HOST = process.env.HOST || '127.0.0.1';
+/**
+ * The site's own WebSocket origin, for the Content-Security-Policy below.
+ *
+ * Derived from SITE_URL rather than written down, so a deploy to a different
+ * hostname cannot leave the terminal working everywhere except Safari with
+ * nothing in any log to say why.
+ */
+const WSS_ORIGIN = (() => {
+  try {
+    const url = new URL(config.SITE_URL);
+    return `${url.protocol === 'http:' ? 'ws' : 'wss'}://${url.host}`;
+  } catch {
+    // Should not happen — config.js validates SITE_URL — but a bare `wss:` is
+    // the safe wrong answer: the feature works and the policy is one notch
+    // broader, rather than the feature silently dying on Safari.
+    console.warn('[csp] could not derive a websocket origin from SITE_URL; allowing wss:');
+    return 'wss:';
+  }
+})();
+
 const app = express();
 
 // Behind nginx on the live server, so req.ip is the visitor and not the proxy.
@@ -63,7 +85,24 @@ app.use((req, res, next) => {
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data:",
       "font-src 'self'",
-      "connect-src 'self'",
+      /*
+       * `'self'` AND the site's own wss:// origin, and the second one is not
+       * redundant.
+       *
+       * The spec says `'self'` covers a same-origin WebSocket. WebKit disagrees
+       * — Safari has long refused `wss://` under a bare `connect-src 'self'`,
+       * and it refuses it silently: the socket never opens, the console shows a
+       * CSP violation the customer never sees, and the page just sits there.
+       * The panel's terminal and its live status channel are both websockets,
+       * so on an iPad the terminal opened, drew its cursor, and did nothing
+       * for ever, while working perfectly from a desktop and perfectly against
+       * the server when driven directly.
+       *
+       * Naming the origin costs nothing — it is the same origin the page came
+       * from — and it is the difference between the feature existing on an iPad
+       * and not.
+       */
+      `connect-src 'self' ${WSS_ORIGIN}`,
       /*
        * Checkout POSTs to /checkout (self) and the server 303s the browser on
        * to whichever gateway was chosen. Chromium and WebKit apply form-action
@@ -120,6 +159,43 @@ app.use(async (req, res, next) => {
   // rather than passing it through from every route.
   res.locals.query = req.query || {};
   res.locals.icon = icon;
+
+  /*
+   * Dates, said the way a person says them.
+   *
+   * A DATETIME column arrives as a JS Date, and `<%= row.checked_at %>` prints
+   * its toString(): "Sun Aug 30 2026 21:10:02 GMT+0600 (Bangladesh Standard
+   * Time)". That is unreadable, it is 60 characters wide in a table cell, and
+   * the timezone it names is the SERVER's — which for a UK hosting company
+   * running on a box that happens to be set to Asia/Dhaka is actively
+   * misleading about when something happened.
+   *
+   * Recent times are relative, because "4 minutes ago" is what somebody
+   * watching a DNS check actually wants to know; older ones get a date.
+   */
+  res.locals.when = (value, opts = {}) => {
+    if (!value) return opts.empty || '—';
+    const at = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(at.getTime())) return String(value);
+    const secs = Math.round((Date.now() - at.getTime()) / 1000);
+    if (!opts.dateOnly && secs >= 0 && secs < 60) return 'just now';
+    if (!opts.dateOnly && secs < 3600) {
+      const m = Math.round(secs / 60);
+      return `${m} minute${m === 1 ? '' : 's'} ago`;
+    }
+    if (!opts.dateOnly && secs < 86400) {
+      const h = Math.round(secs / 3600);
+      return `${h} hour${h === 1 ? '' : 's'} ago`;
+    }
+    return at.toLocaleDateString('en-GB', {
+      day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Europe/London',
+    });
+  };
+  // Every form that asks for a country renders from the same list.
+  res.locals.countries = require('./countries');
+  // Appends a deploy stamp to every asset URL. Without it the 7-day max-age
+  // below serves old CSS and JS alongside new HTML — see src/assets.js.
+  res.locals.asset = asset;
   // money(), moneyParts(), currency, vatPercent and showVat are set by the
   // currency middleware immediately below — they cannot be constants any more,
   // because what they mean depends on who is asking.
@@ -127,6 +203,7 @@ app.use(async (req, res, next) => {
   res.locals.customer = null;
   res.locals.admin = null;
   res.locals.flash = null;
+  res.locals.flashData = null;
   res.locals.csrf = auth.csrfToken(req, res);
   res.locals.cartCount = 0;
 
@@ -135,7 +212,11 @@ app.use(async (req, res, next) => {
   const flash = req.cookies?.vh_flash;
   if (flash) {
     try {
-      res.locals.flash = JSON.parse(Buffer.from(flash, 'base64url').toString('utf8'));
+      const parsed = JSON.parse(Buffer.from(flash, 'base64url').toString('utf8'));
+      res.locals.flash = parsed;
+      // Split out so a template cannot render the payload by accident when it
+      // prints the message. Nothing but the page that expects it looks here.
+      res.locals.flashData = parsed.data || null;
     } catch {
       /* a malformed flash is not worth an error page */
     }
@@ -359,8 +440,50 @@ app.use((err, req, res, _next) => {
    * HOST is overridable for the rare case of a proxy on another machine; the
    * default is the safe one.
    */
-  app.listen(PORT, HOST, () => {
-    console.log(`\n  Vesopa Hosting running on http://${HOST}:${PORT}`);
+  /*
+   * An explicit http.Server rather than app.listen(), because the web terminal
+   * needs the `upgrade` event and Express does not expose it — an upgrade
+   * request never reaches a route. app.listen() creates this same object and
+   * hides it; this only makes it reachable.
+   */
+  const server = http.createServer(app);
+  /*
+   * Two websocket servers on one http.Server. Each registers its own `upgrade`
+   * listener and returns immediately when the path is not its own, so they
+   * coexist without a router in front of them — Node calls every listener.
+   */
+  /*
+   * ONE upgrade router, and it is not optional.
+   *
+   * Node calls every `upgrade` listener on the server, in order, and none of
+   * them knows whether another has already answered. So a module that both
+   * listens and 404s what it does not recognise silently breaks every other
+   * websocket in the process — which is exactly what happened when the live
+   * channel was added alongside the terminal.
+   *
+   * Each handler answers "was this mine?" and only ever touches a socket it has
+   * claimed. Nothing claimed it, nothing answered: that is the 404, once, here.
+   */
+  const upgradeHandlers = [
+    require('./terminal').attach(server),
+    require('./panel-live').attach(server),
+  ];
+  server.on('upgrade', (req, socket, head) => {
+    for (const handle of upgradeHandlers) {
+      try {
+        if (handle(req, socket, head)) return;
+      } catch (err) {
+        console.error('[upgrade] handler threw:', err.message);
+        socket.destroy();
+        return;
+      }
+    }
+    socket.write('HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n');
+    socket.destroy();
+  });
+
+  server.listen(PORT, HOST, () => {
+    console.log(`\n  Vesopa Cloud running on http://${HOST}:${PORT}`);
     console.log(`  Admin panel:               http://${HOST}:${PORT}/admin\n`);
   });
 })();

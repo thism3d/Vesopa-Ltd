@@ -555,7 +555,11 @@ CREATE TABLE IF NOT EXISTS domains (
   tld               VARCHAR(32)  CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
   status            ENUM('pending','awaiting_ns','active','expired','transferred_away','cancelled','removed')
                       NOT NULL DEFAULT 'pending',
-  source            ENUM('registered','transfer','external') NOT NULL DEFAULT 'registered',
+  -- `subdomain` is a name under a domain already on this account. It is never
+  -- nameserver-checked and never swept: the parent is the thing that has to
+  -- point at us, and a subdomain is reachable either through the parent's zone
+  -- here or through an A record the customer adds at their own DNS provider.
+  source            ENUM('registered','transfer','external','subdomain') NOT NULL DEFAULT 'registered',
   years             TINYINT UNSIGNED NOT NULL DEFAULT 1,
   auto_renew        TINYINT(1) NOT NULL DEFAULT 1,
   privacy           TINYINT(1) NOT NULL DEFAULT 1,
@@ -572,6 +576,14 @@ CREATE TABLE IF NOT EXISTS domains (
   ns_observed       VARCHAR(400) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
   -- When the zone and the web/mail domain were actually created on the node.
   pointed_at        DATETIME NULL,
+  -- Which of the three a name actually got. A full domain gets all of them, so
+  -- these default to on and describe it correctly. A SUBDOMAIN is the reason
+  -- they exist: the website is compulsory, and DNS and mail are the customer's
+  -- choice at the point they add it — a zone for `shop.example.com` is wrong
+  -- unless the parent delegates to it, and a mail domain nobody asked for
+  -- quietly starts accepting mail for a name.
+  dns_enabled       TINYINT(1) NOT NULL DEFAULT 1,
+  mail_enabled      TINYINT(1) NOT NULL DEFAULT 1,
   -- The registrar's own id for this domain, so a reconcile can match rows up.
   registrar_ref     VARCHAR(120) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
   ns1               VARCHAR(190) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
@@ -1090,5 +1102,163 @@ BEGIN
   CLOSE cur;
 END //
 DELIMITER ;
+-- ---------------------------------------------------------------------------
+-- Columns added after the first release.
+--
+-- Guarded, so this file stays runnable against a database at any age. They live
+-- here rather than in the CREATE TABLE above so that the table definitions keep
+-- reading as the shape of the thing, and every later addition is in one place
+-- with the reason it was needed.
+-- ---------------------------------------------------------------------------
+
+-- HOW a domain was proved to point at us, which is not a detail — it decides
+-- what the panel may offer.
+--
+--   ns   delegated to our nameservers. We answer for the whole zone, so DNS is
+--        ours to edit and MX is ours to set.
+--   a    an A record aimed at this node while DNS stays at their provider. The
+--        website and the certificate work exactly the same; the zone is not
+--        ours, so the DNS editor is off and mail needs records THEY add.
+--   ''   not proved yet.
+--
+-- A SUBDOMAIN can only ever be 'a'. Asking whether `shop.example.com` is
+-- delegated to us is meaningless — a subdomain normally has no NS records at
+-- all, so the nameserver check fails forever on a name that is working
+-- perfectly. That mismatch is why the panel used to tell customers a live
+-- subdomain was "waiting for your nameservers".
+CALL vesopa_add_column('domains', 'verify_method', "ENUM('','ns','a') NOT NULL DEFAULT '' AFTER ns_observed");
+
+-- What the A lookup actually answered, for the same reason ns_observed exists:
+-- "we can see 3.72.113.21" lets a customer fix it in two minutes, where a bare
+-- "not pointing here" sends them to support.
+CALL vesopa_add_column('domains', 'ip_observed', "VARCHAR(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '' AFTER verify_method");
+
+-- The certificate.
+--
+-- This was computed and then thrown away: pointAtNode() asked for a certificate
+-- and discarded the answer, so nothing recorded whether one existed, nothing
+-- retried a failure, and the panel could not show a padlock or explain its
+-- absence. `ssl_error` is kept verbatim because "the DNS challenge failed" and
+-- "rate limited by Let's Encrypt" need completely different answers from us.
+CALL vesopa_add_column('domains', 'ssl_status', "ENUM('none','active','failed') NOT NULL DEFAULT 'none'");
+CALL vesopa_add_column('domains', 'ssl_issued_at', 'DATETIME NULL');
+CALL vesopa_add_column('domains', 'ssl_checked_at', 'DATETIME NULL');
+CALL vesopa_add_column('domains', 'ssl_error', "VARCHAR(300) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT ''");
+
+-- Which of web, DNS and mail a name actually got.
+--
+-- THESE WERE ONLY EVER IN THE `CREATE TABLE`, which means they exist on a
+-- database created after they were written and on no other. Every install that
+-- predates subdomains — which is every install that has been upgraded rather
+-- than built fresh — has a `domains` table without them, and nothing here ever
+-- added them. src/domain-linking.js writes both columns whenever a subdomain or
+-- an external domain is pointed at the node, so on one of those databases the
+-- "add a subdomain" form fails with ER_BAD_FIELD_ERROR and a 500 page.
+--
+-- A CREATE TABLE is not a migration. It runs once, on an empty schema, and
+-- every column added to it afterwards needs a line down here as well or it
+-- reaches new installs only. Both defaults are 1, which describes a full domain
+-- correctly, so existing rows are right the moment the column appears.
+CALL vesopa_add_column('domains', 'dns_enabled', 'TINYINT(1) NOT NULL DEFAULT 1');
+CALL vesopa_add_column('domains', 'mail_enabled', 'TINYINT(1) NOT NULL DEFAULT 1');
+
+-- `subdomain` as a fourth value for `domains.source`.
+--
+-- Added to the CREATE TABLE when subdomains were built, and nowhere else. On a
+-- database created before that — every install that has been upgraded rather
+-- than rebuilt — the column is still the original three-value ENUM, and MySQL's
+-- response to storing a value outside it depends entirely on sql_mode: in
+-- STRICT it errors, and WITHOUT strict mode it writes the empty string and
+-- carries on. The second is the dangerous one. The subdomain row is created,
+-- the customer is told it worked, and from then on it is neither a subdomain
+-- nor anything else: it is not nested under its parent in the list, it is swept
+-- by the nameserver job that subdomains are meant to be exempt from, and it is
+-- shown "waiting for your nameservers" forever on a name that is serving
+-- perfectly.
+--
+-- Charset and collation are stated rather than inherited. On MariaDB 11.4 a
+-- bare `utf8mb4` resolves to uca1400_ai_ci, which would leave this one column
+-- disagreeing with every other column in the table — and a JOIN across two
+-- collations fails at query time, a long way from here.
+ALTER TABLE domains
+  MODIFY COLUMN source ENUM('registered','transfer','external','subdomain')
+    CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci
+    NOT NULL DEFAULT 'registered';
+
+-- ---------------------------------------------------------------------------
+-- One-click webmail.
+--
+-- A mailbox password is a separate credential from the panel password, and
+-- Dovecot will not take a token in its place — so signing a customer into their
+-- own inbox from a panel they are already signed into means replaying the
+-- password. This table holds it sealed with AES-256-GCM under MAILBOX_KEY,
+-- which lives in the environment and never in here: a stolen database, on its
+-- own, yields nothing. See src/mailbox-vault.js for the full argument,
+-- including where it does not hold.
+--
+-- Opt-in per mailbox and empty by default. A row exists only where a customer
+-- typed the password into our own form and asked us to keep it.
+--
+-- ON DELETE CASCADE because a closed account must take its secrets with it,
+-- and remembering to tidy this by hand is how a table like this outlives the
+-- customer who consented to it.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS mailbox_secrets (
+  id           INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  customer_id  INT UNSIGNED NOT NULL,
+  address      VARCHAR(190) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  -- iv | auth tag | ciphertext, base64. The address is the AAD, so a row moved
+  -- to another mailbox fails to decrypt rather than opening the wrong inbox.
+  sealed       TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_mailbox_secrets (address),
+  KEY idx_mailbox_secrets_customer (customer_id),
+  CONSTRAINT fk_mailbox_secrets_customer
+    FOREIGN KEY (customer_id) REFERENCES customers (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- ---------------------------------------------------------------------------
+-- One-click application installs.
+--
+-- THIS TABLE IS HISTORY, NOT THE MECHANISM. The install itself lives entirely
+-- on the node: apps/broker.py writes its progress to a file in the customer's
+-- own home, and the panel polls that. This is here so the panel can answer
+-- "what did I install, and when" after the job file has been tidied away, and
+-- so support can see that a site was a WordPress before somebody put Laravel
+-- over the top of it.
+--
+-- That is also why nothing blocks on writing to it: a failed INSERT here must
+-- never stop an install that is otherwise fine.
+--
+-- NO CREDENTIALS. The database password generated for an install is shown once,
+-- on the progress page, and is already inside the application's own config file
+-- by the time anybody reads it. A column for it here would be a table of
+-- plaintext database passwords with no upside — the customer can reset one in a
+-- click.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS app_installs (
+  id            INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  customer_id   INT UNSIGNED NOT NULL,
+  service_id    INT UNSIGNED NULL,
+  -- The broker's job id: 12 hex characters, and the only handle the panel has
+  -- on a running install.
+  job_id        VARCHAR(64)  CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  slug          VARCHAR(40)  CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  domain        VARCHAR(190) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  database_name VARCHAR(120) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL,
+  status        ENUM('running','done','failed')
+                CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'running',
+  created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  finished_at   DATETIME NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_app_installs_job (job_id),
+  KEY idx_app_installs_customer (customer_id, created_at),
+  KEY idx_app_installs_domain (domain),
+  CONSTRAINT fk_app_installs_customer
+    FOREIGN KEY (customer_id) REFERENCES customers (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
 CALL vesopa_fix_collations();
 DROP PROCEDURE IF EXISTS vesopa_fix_collations;

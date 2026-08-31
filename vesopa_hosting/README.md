@@ -588,17 +588,28 @@ src/
   provisioning.js        paid order -> live services. Idempotent.
   icons.js               inline SVG set, exposed as res.locals.icon
   http-utils.js          flash, rate limiting, field trimming, paging
+  apps.js                the apps/runtimes broker client, and health()
+  app-catalogue.js       what can be installed — half of a contract with
+                         apps/broker.py, checked by `npm run check:apps`
   integrations/
     domainnameapi.js     registrar
     hestia.js            hosting node
   routes/
     pages.js  legal.js  domains-api.js  cart.js
     auth-routes.js  panel.js  setup.js  admin.js
+    panel-apps.js  panel-databases.js  panel-files.js  panel-mail.js
+terminal/  files/  apps/         the three root brokers, one per capability:
+                         a shell, a customer's files, and installing/running
+                         applications. Each is a small Python program, its
+                         systemd unit and a README.
   coupons.js             discount code rules, in one place
 views/
   partials/  public/  auth/  panel/  admin/
 public/assets/           app.css, sections.css, cart.css, setup.css, panel.css,
-                         app.js, domain-search.js, cart.js, setup.js
+                         files.css, terminal.css, apps.css,
+                         app.js, domain-search.js, cart.js, setup.js,
+                         panel.js, files.js, terminal.js, apps.js
+public/assets/img/apps/  brand marks for the catalogue (Simple Icons, CC0)
 ```
 
 `views/partials/header.ejs` defines the nav ONCE and renders it twice — as the
@@ -755,18 +766,78 @@ certificate that will succeed in an hour would be worse for everyone.
 
 ## Deploying
 
+**Two servers, two scripts.** They are not interchangeable and neither has been
+taught the other's addresses on purpose — editing one to reach both would break
+deploys of whichever site it was not pointed at that day.
+
 ```bash
-./deploy.sh              # rsync + npm install + pm2 restart
-./deploy.sh --schema     # also applies schema.sql and seed.sql
-./deploy.sh --logs       # tail
+./deploy-cloud.sh            # cloud.vesopa.com — the current product
+./deploy-cloud.sh --schema   # also applies schema.sql
+./deploy-cloud.sh --brokers  # also installs/refreshes the three root brokers
+./deploy-cloud.sh --logs     # tail the right pm2 files
+
+./deploy.sh                  # hosting.vesopaepos.com — the older box
 ```
 
-The live box runs a number of unrelated applications under the same account.
-Every pm2 command names `vesopa_hosting` explicitly — never `pm2 restart all`.
+`--brokers` is opt-in rather than part of every deploy: restarting them drops
+every open terminal and file-manager session on the machine, which a routine
+"push the CSS fix" should not do. Run it when `terminal/`, `files/` or `apps/`
+has changed, and check what it prints — a unit that starts and then dies leaves
+the panel silently on mock data, which looks exactly like everything working.
 
-nginx needs a server block for `hosting.vesopaepos.com` proxying to `127.0.0.1:5075`.
+**pm2 is per user on the cloud box.** One daemon per Hestia account, as
+`pm2-hestia@<user>.service`. Running pm2 as root there starts a *second* copy of
+the app beside the running one and the two fight over the port; everything in
+the script goes through `su - vesopasoftware`. On the older box every pm2
+command names `vesopa_hosting` explicitly — never `pm2 restart all`, because a
+number of unrelated applications share that account.
+
+**Never re-run `v-add-nodejs-app` to restart something.** It regenerates `.env`
+with a two-line stub: it is idempotent for the app and not for its environment,
+and it has wiped a 57-setting file and left the app crash-looping on a missing
+`DB_USER`. Restore the file and `pm2 restart`.
+
+nginx needs a server block proxying the site's name to the app's port —
+`127.0.0.1:5075` on the older box, `127.0.0.1:20001` on the cloud one.
 
 ---
+
+## Applications
+
+`/panel/apps` installs software onto a customer's site, `/panel/apps/node`
+manages the Node processes, and `/panel/apps/runtime` picks the language version
+and its settings. Three pieces:
+
+| Piece | Where | What it is |
+|---|---|---|
+| Catalogue | `src/app-catalogue.js` | Names, blurbs, logos, what each app needs. No executable content. |
+| Recipes | `apps/broker.py` | The commands, keyed by the same slug, running as the customer. |
+| Panel | `src/routes/panel-apps.js` | Sends a slug and validated arguments, never a command. |
+
+The two slug lists are a contract; `npm run check:apps` fails the build if they
+drift, because a card with no recipe is a button that 500s.
+
+**"Working" is a claim we only make when it is true.** pm2 reports `online` for
+a process that exists — including one that is crash-looping, that never bound
+its port, or that throws on every request. A panel repeating that word next to a
+green dot tells a customer their broken site is fine, they believe it, and the
+ticket arrives two days later. So `health()` in `src/apps.js` combines three
+facts that are allowed to disagree — the pm2 status, the restart count read
+against uptime, and a real HTTP probe of the app's port — and the pessimistic
+one wins. That is the whole reason the Node pages exist.
+
+**Nothing an install touches is deleted.** Every recipe assembles under
+`~/.vesopa/build/<id>` and is moved into place only on success, and whatever was
+in the web root goes to `~/.vesopa/replaced/<name>-<timestamp>`. A failed install
+leaves the site exactly as it was.
+
+**The mock is the same shape as the real thing.** With no broker socket the
+whole feature is clickable on invented data, which is how the pages were built.
+Two bugs have already come out of the mock diverging from the live answer — a
+version list with no extensions, and a job with no `finished` flag that polled
+for ever — so the two go through the same shaping code now. On a server this
+must be `APPS_MODE=live`: the automatic fallback would report a dead site as
+Working, and `npm run preflight` fails if it is not set.
 
 ## Not built yet
 
@@ -783,10 +854,9 @@ nginx needs a server block for `hosting.vesopaepos.com` proxying to `127.0.0.1:5
   job charges a stored card, and no card is stored.
 - **DNS templates** — records are editable one at a time. There is no "set this
   up for Google Workspace" button that writes five MX records at once.
-- **One-click WordPress** — advertised on the site, needs `v-add-web-app` wiring.
-- **Node/Python app deploys** — advertised in the "vibe code" section. Static and
-  PHP work today; the Node and Python runtimes need proxy templates on the Hestia
-  node and have **not** been proven. Confirm before that section goes public.
+- **Python app deploys** — advertised in the "vibe code" section alongside Node.
+  Node is built (see *Applications* above); Python has no runtime on the node and
+  no installer. Confirm before that section goes public.
 - **Marketing email sending** — sold, recorded, flagged for manual setup. No ESP
   is integrated.
 - **Renewal billing job** — `next_due_at` is set and shown, nothing charges it yet.

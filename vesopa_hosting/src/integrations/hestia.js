@@ -57,6 +57,24 @@ const DEFAULT_PACKAGE = process.env.HESTIA_DEFAULT_PACKAGE || 'default';
 const TIMEOUT_MS = 20_000;
 
 /**
+ * Issuing a certificate is not like the other calls.
+ *
+ * Everything else here is a config edit that returns in under a second, and
+ * twenty seconds is a generous ceiling for those. A Let's Encrypt issuance is a
+ * conversation with an external service — register, request, answer the
+ * challenge, wait for validation, collect — and thirty to ninety seconds is
+ * ordinary, not slow.
+ *
+ * At the shared timeout it therefore failed almost every time, and failed in
+ * the worst possible way: the request kept running on the node and often
+ * SUCCEEDED after we had already given up and written the attempt down as a
+ * failure. The panel then showed "not issued" for a site that had a working
+ * certificate, and the retry button spent Let's Encrypt rate limit reissuing
+ * one that already existed.
+ */
+const SSL_TIMEOUT_MS = 150_000;
+
+/**
  * Hestia's exit codes, as messages a support agent can act on.
  *
  * TAKEN FROM `/usr/local/hestia/func/main.sh` ON THE NODE, not from memory.
@@ -118,7 +136,7 @@ const mockCalls = [];
  * @param {string[]} args positional, in Hestia's documented order
  * @param {object} opts  `json: true` to parse a data response instead of a code
  */
-async function run(cmd, args = [], { json = false } = {}) {
+async function run(cmd, args = [], { json = false, timeoutMs = TIMEOUT_MS } = {}) {
   if (!isLive()) {
     mockCalls.push({ cmd, args, at: new Date().toISOString() });
     if (mockCalls.length > 200) mockCalls.shift();
@@ -143,7 +161,7 @@ async function run(cmd, args = [], { json = false } = {}) {
 
   let res;
   try {
-    res = await post(body);
+    res = await post(body, timeoutMs);
   } catch (err) {
     if (err.code === 'timeout') {
       throw new HestiaError('The hosting node did not respond in time.', { code: 'timeout', cmd });
@@ -228,7 +246,7 @@ async function run(cmd, args = [], { json = false } = {}) {
  * https.request takes `rejectUnauthorized` per request, so the exception stays
  * on the one connection it is meant for.
  */
-function post(body) {
+function post(body, timeoutMs = TIMEOUT_MS) {
   return new Promise((resolve, reject) => {
     const payload = body.toString();
     const req = https.request(
@@ -247,7 +265,7 @@ function post(body) {
           'Content-Type': 'application/x-www-form-urlencoded',
           'Content-Length': Buffer.byteLength(payload),
         },
-        timeout: TIMEOUT_MS,
+        timeout: timeoutMs,
       },
       (res) => {
         const chunks = [];
@@ -274,19 +292,36 @@ function post(body) {
 // ---------------------------------------------------------------------------
 
 /**
- * Hestia usernames are lowercase, alphanumeric, and short. Derived from the
- * email's local part with a numeric suffix for collisions, because a username
- * a human can read makes every support conversation faster than a UUID would.
+ * The account name on the node: `u` and a serial, e.g. `u265966`.
+ *
+ * NOBODY SIGNS IN WITH THIS. Customers authenticate to this site with their
+ * email address and password, and to Hestia's own panel with this name and the
+ * password from their welcome email. It is an internal handle, so it is chosen
+ * to be stable and unambiguous rather than memorable.
+ *
+ * It used to be derived from the email's local part — `info@` became `info`,
+ * `info2`, `info3` as they collided. Three problems with that, and the third is
+ * the one that decided it:
+ *
+ *   - It leaks. The Hestia username shows up in paths, in mail headers and in
+ *     SFTP; deriving it from the address publishes part of the customer's email
+ *     to anyone who sees a path.
+ *   - It collides constantly. `info@`, `admin@` and `sales@` are the normal
+ *     case, so the readable name is usually `info7` anyway, which is no more
+ *     meaningful than a serial and is now ALSO wrong-looking.
+ *   - It is not stable. A customer who changes their email address has a
+ *     username that no longer matches it, which is worse than one that never
+ *     claimed to.
+ *
+ * Hestia's own constraints: lowercase, alphanumeric, must not begin with a
+ * digit, and short. The `u` prefix satisfies the digit rule.
+ *
+ * Sequential rather than random, which does mean the number reveals roughly how
+ * many accounts came before it. Starting the run high is what takes the sting
+ * out of that — `u265966` says nothing useful about the size of the business.
  */
-function suggestUsername(email, suffix = '') {
-  const base = String(email || '')
-    .split('@')[0]
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, '')
-    .slice(0, 12) || 'user';
-  // Must not start with a digit: Hestia rejects it.
-  const safe = /^[0-9]/.test(base) ? `u${base}` : base;
-  return `${safe}${suffix}`.slice(0, 16);
+function serialUsername(n) {
+  return `u${Math.trunc(Number(n))}`;
 }
 
 /**
@@ -321,6 +356,19 @@ async function userExists(username) {
 async function addUser({ username, password, email, package: pkg = DEFAULT_PACKAGE, name = '' }) {
   await run('v-add-user', [username, password, email, pkg, name]);
   return { ok: true, username };
+}
+
+/**
+ * Every account on the node, keyed by username.
+ *
+ * Returns Hestia's own record verbatim — CONTACT, NAME, PACKAGE, SUSPENDED and
+ * the usage counters — because the one caller that wants this
+ * (scripts/adopt-hestia-users.js) is reconciling our database against the node
+ * and needs the node's version of the truth, not a tidied subset of it.
+ */
+async function listUsers() {
+  if (!isLive()) return {};
+  return run('v-list-users', [], { json: true });
 }
 
 async function changeUserPassword({ username, password }) {
@@ -415,18 +463,181 @@ async function userStats(username) {
 // Websites
 // ---------------------------------------------------------------------------
 
+/**
+ * `v-add-domain` — website, DNS zone AND mail domain, in one call.
+ *
+ * The name undersells it and has caused a bug already. Use `addWebsite` below
+ * when you want only the vhost.
+ */
 async function addWebDomain({ username, domain }) {
   await run('v-add-domain', [username, domain]);
   return { ok: true, domain };
 }
 
+/**
+ * The vhost and nothing else.
+ *
+ * `v-add-web-domain` is the narrow one: no zone, no mail domain. It exists for
+ * subdomains, where DNS and mail are the customer's choice rather than an
+ * automatic consequence of adding a name — and where a DNS zone is usually the
+ * WRONG default, because a zone for `shop.example.com` only means anything if
+ * the parent delegates to it, and otherwise just shadows a record the customer
+ * already has at their own provider.
+ */
+async function addWebsite({ username, domain }) {
+  await run('v-add-web-domain', [username, domain]);
+  return { ok: true, domain };
+}
+
+/**
+ * `v-delete-domain` — the mirror of addWebDomain: website, DNS and mail
+ * together. Deleting the web domain alone would leave the zone answering.
+ */
 async function deleteWebDomain({ username, domain }) {
   await run('v-delete-domain', [username, domain]);
   return { ok: true };
 }
 
+/*
+ * THE THREE NARROW DELETES.
+ *
+ * `v-delete-domain` above takes all three halves at once, which is right when a
+ * domain is leaving the account altogether and wrong the moment a customer is
+ * asked WHICH of them to remove. Somebody detaching a website from their plan
+ * while keeping the DNS zone we answer for is not doing anything unusual — the
+ * zone is what makes their delegation work, and dropping it takes the domain
+ * off the internet rather than off the plan.
+ *
+ * Each mirrors its own `add`, and each tolerates being asked for something that
+ * is not there — the caller checks with the `exists` helpers below, but a race
+ * between the check and the delete must not turn into an error page.
+ */
+async function deleteWebsite({ username, domain }) {
+  await run('v-delete-web-domain', [username, domain]);
+  return { ok: true };
+}
+
+async function deleteDnsDomain({ username, domain }) {
+  await run('v-delete-dns-domain', [username, domain]);
+  return { ok: true };
+}
+
+async function deleteMailDomain({ username, domain }) {
+  await run('v-delete-mail-domain', [username, domain]);
+  return { ok: true };
+}
+
+/**
+ * Does this account have a vhost / a mail domain for this name?
+ *
+ * Both answer `false` in mock mode rather than throwing, exactly as
+ * `dnsDomainExists` does — a laptop with no node behind it must render the
+ * "nothing is set up yet" branch, not a stack trace.
+ */
+async function webDomainExists({ username, domain }) {
+  if (!isLive()) return false;
+  return exists('v-list-web-domain', [username, domain]);
+}
+
+async function mailDomainExists({ username, domain }) {
+  if (!isLive()) return false;
+  return exists('v-list-mail-domain', [username, domain]);
+}
+
+/**
+ * The websites on an account.
+ *
+ * MOCK MODE ANSWERS WITH SOMETHING, not with nothing. An empty list is a
+ * different shape from any real answer, and every page that reads this then
+ * renders its "you have no websites yet" branch on a laptop — so the redirect
+ * form, the app installer's target picker and the runtime page could not be
+ * looked at during development at all. Two bugs have already come out of a
+ * mock that differed from the live answer; this is the same trap.
+ *
+ * The names are obviously invented, and they match the domains the seed data
+ * puts in the panel so the two halves agree with each other.
+ */
+/**
+ * ONE website, with the fields the listing leaves out.
+ *
+ * `v-list-web-domains` (plural) and `v-list-web-domain` (singular) do not
+ * return the same record, and the difference is not documented anywhere you
+ * would look. The plural one omits REDIRECT, REDIRECT_CODE, CUSTOM_DOCROOT,
+ * SSL_FORCE and SSL_HSTS entirely.
+ *
+ * That cost a shipped bug: the domain page read `redirect` off the listing,
+ * got undefined every time, and therefore always drew "set up a redirect" —
+ * so a customer could turn one on and then had no way in the panel to turn it
+ * off again. Anything that needs a per-domain setting has to ask for that
+ * domain by name.
+ */
+async function webDomain({ username, domain }) {
+  if (!isLive()) {
+    const all = await listWebDomains(username);
+    return all.find((w) => w.domain === domain) || null;
+  }
+  let data;
+  try {
+    data = await run('v-list-web-domain', [username, domain], { json: true });
+  } catch (err) {
+    if (err.code === E_NOT_EXIST) return null;
+    throw err;
+  }
+  const record = data[domain];
+  if (!record) return null;
+  return {
+    domain,
+    ip: record.IP,
+    ssl: String(record.SSL || 'no') === 'yes',
+    letsencrypt: String(record.LETSENCRYPT || 'no') === 'yes',
+    suspended: String(record.SUSPENDED || 'no') === 'yes',
+    disk_mb: Number(record.U_DISK || 0),
+    docroot: record.CUSTOM_DOCROOT || '',
+    redirect: record.REDIRECT || '',
+    redirect_code: Number(record.REDIRECT_CODE || 0) || null,
+  };
+}
+
 async function listWebDomains(username) {
-  if (!isLive()) return [];
+  if (!isLive()) {
+    return [
+      {
+        domain: 'janesbakery.co.uk',
+        ip: '203.0.113.10',
+        ssl: true,
+        letsencrypt: true,
+        suspended: false,
+        disk_mb: 148,
+        redirect: '',
+        redirect_code: null,
+      },
+      {
+        // A subdomain, because to Hestia that is just another website — and
+        // without one here the subdomain page renders its "no website yet"
+        // branch on a laptop and the redirect card cannot be looked at.
+        domain: 'shop.janesbakery.co.uk',
+        ip: '203.0.113.10',
+        ssl: true,
+        letsencrypt: true,
+        suspended: false,
+        disk_mb: 12,
+        redirect: '',
+        redirect_code: null,
+      },
+      {
+        domain: 'oldshop.co.uk',
+        ip: '203.0.113.10',
+        ssl: true,
+        letsencrypt: true,
+        suspended: false,
+        disk_mb: 2,
+        // One of them redirects, so the "already on" branch of the panel's
+        // redirect card is reachable without a live node.
+        redirect: 'janesbakery.co.uk',
+        redirect_code: 301,
+      },
+    ];
+  }
   const data = await run('v-list-web-domains', [username], { json: true });
   return Object.entries(data).map(([domain, d]) => ({
     domain,
@@ -435,19 +646,121 @@ async function listWebDomains(username) {
     letsencrypt: String(d.LETSENCRYPT || 'no') === 'yes',
     suspended: String(d.SUSPENDED || 'no') === 'yes',
     disk_mb: Number(d.U_DISK || 0),
+    // NOT redirect: v-list-web-domains does not return it. Ask webDomain().
   }));
 }
 
 /**
- * Issue and install a Let's Encrypt certificate.
+ * Issue and install a Let's Encrypt certificate for a WEBSITE.
  *
- * Fails until the domain's A record actually points at the node — that is the
- * ACME challenge doing its job, not a bug, and the panel says so in those words
- * rather than showing the raw exit code.
+ * THE FOURTH ARGUMENT IS NOT "ALSO DO MAIL". It is "do mail INSTEAD".
+ *
+ * `v-add-letsencrypt-domain USER DOMAIN [ALIASES] [MAIL]`, and inside it:
+ *
+ *     if [ -n "$mail" ]; then
+ *         root_domain=$domain
+ *         domain="mail.$root_domain"      # <- the target is REPLACED
+ *
+ * This used to pass a hardcoded 'yes' there, which meant no website on this
+ * node has ever been issued a certificate. Every call did one of two things:
+ * on a domain with mail it quietly issued a cert for `mail.<domain>` and left
+ * the actual site on plain HTTP; on a domain WITHOUT mail — which is every
+ * subdomain, by design — it aborted with "mail domain <name> doesn't exist"
+ * and issued nothing at all. Either way the padlock never appeared and nothing
+ * recorded why.
+ *
+ * So `mail` defaults to false and the website is the target. Mail is served
+ * under one hostname for everybody (see MAIL_HOSTNAME in config.js), so there
+ * is no per-customer mail certificate to issue here at all.
+ *
+ * ALIASES ARE THE CALLER'S DECISION, not a `www.` bolted on unconditionally.
+ * A cert request fails as a whole if any name in it fails validation, so
+ * asking for `www.shop.example.com` — which almost never resolves — would take
+ * the subdomain's own certificate down with it.
+ *
+ * Fails until the domain actually resolves to this node: that is the ACME
+ * challenge doing its job, not a bug, and the panel says so in those words
+ * rather than showing an exit code.
  */
-async function enableSSL({ username, domain, withWww = true }) {
-  await run('v-add-letsencrypt-domain', [username, domain, withWww ? `www.${domain}` : '', 'yes']);
+/**
+ * Send every visitor somewhere else.
+ *
+ * `v-add-web-domain-redirect USER DOMAIN TARGET [CODE]`. The target may be a
+ * bare hostname — which is how Hestia's own examples write it — or a full URL
+ * when a path is wanted; it is passed through as given, having been validated
+ * by the caller.
+ *
+ * THE CODE IS THE WHOLE DECISION and it is the one customers get wrong. 301
+ * says "permanently", and browsers and search engines cache it hard — some
+ * browsers keep a 301 until their cache is cleared, so a mistake follows a
+ * visitor around long after the server has been fixed. 302 says "for now" and
+ * is not cached, which makes it the right answer for anything temporary and
+ * the safe answer while testing. The panel says this in those words rather
+ * than offering two numbers.
+ */
+async function setRedirect({
+  username, domain, target, code = 301,
+}) {
+  await run('v-add-web-domain-redirect', [username, domain, target, String(code)]);
+  await rebuildWebDomain({ username, domain });
+  return { ok: true };
+}
+
+async function clearRedirect({ username, domain }) {
+  await run('v-delete-web-domain-redirect', [username, domain]);
+  await rebuildWebDomain({ username, domain });
+  return { ok: true };
+}
+
+/**
+ * Regenerate one website's server config and reload the web server.
+ *
+ * ---------------------------------------------------------------------------
+ * WITHOUT THIS, SETTING A REDIRECT DOES NOTHING VISIBLE
+ * ---------------------------------------------------------------------------
+ * `v-add-web-domain-redirect` writes REDIRECT and REDIRECT_CODE into the
+ * account's web.conf and stops. It does NOT rebuild the domain's nginx config,
+ * and the directive lives in a generated include — `nginx.conf_redirect` —
+ * that only a rebuild produces. So the command succeeded, Hestia's own records
+ * showed the redirect, the panel reported it set, and the site carried on
+ * serving its old content: every layer agreed except the one doing the work.
+ *
+ * It was found on a domain a customer had pointed at another of their sites
+ * and then watched not redirect. `v-delete-web-domain-redirect` has the same
+ * gap in reverse — the include has to be removed, and only a rebuild removes
+ * it — so turning one OFF needs this just as much as turning one on.
+ *
+ * `yes` for the restart argument because a config nginx has not reloaded is
+ * the same problem one step further along.
+ */
+async function rebuildWebDomain({ username, domain }) {
+  await run('v-rebuild-web-domain', [username, domain, 'yes']);
+  return { ok: true };
+}
+
+async function enableSSL({ username, domain, aliases = '', mail = false }) {
+  await run(
+    'v-add-letsencrypt-domain',
+    [username, domain, aliases, mail ? 'yes' : 'no'],
+    { timeoutMs: SSL_TIMEOUT_MS },
+  );
   return { ok: true, domain };
+}
+
+/**
+ * What certificate does this website actually have?
+ *
+ * Read from the node rather than from anything we wrote down, for the same
+ * reason mailbox counts are: support can issue or remove a certificate by hand,
+ * and a database that disagrees with the box is worse than no record at all.
+ */
+async function webDomainSsl({ username, domain }) {
+  if (!isLive()) return { ssl: false, letsencrypt: false };
+  const all = await listWebDomains(username);
+  const found = all.find((d) => d.domain === domain);
+  return found
+    ? { ssl: found.ssl, letsencrypt: found.letsencrypt }
+    : { ssl: false, letsencrypt: false, missing: true };
 }
 
 async function forceHttps({ username, domain }) {
@@ -495,9 +808,54 @@ async function deleteDatabase({ username, name }) {
 /** The record types a customer is offered. Anything else is refused. */
 const DNS_TYPES = ['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'SRV', 'NS', 'CAA'];
 
+/**
+ * The address this node's websites answer on, as the outside world sees it.
+ *
+ * Hestia's system IP is the address on the interface, which on a cloud box is
+ * very often a private one — 10.128.0.14 here, behind GCP's NAT. `NAT` on the
+ * IP record is the public address, and it is the one that belongs in a DNS
+ * zone: an A record pointing at 10.128.0.14 sends the whole internet nowhere.
+ *
+ * Cached for the life of the process. A node's address changes about as often
+ * as the node does, and this is on the path of every domain that verifies.
+ */
+let cachedPublicIp = null;
+
+async function publicIp() {
+  if (cachedPublicIp) return cachedPublicIp;
+  if (!isLive()) return '';
+  const data = await run('v-list-sys-ips', [], { json: true });
+  const entries = Object.entries(data || {});
+  if (!entries.length) return '';
+  const [ip, meta] = entries[0];
+  cachedPublicIp = (meta && meta.NAT) || ip;
+  return cachedPublicIp;
+}
+
+/**
+ * Create a DNS zone.
+ *
+ * THE IP IS NOT OPTIONAL, whatever the old default here implied. Hestia's
+ * `v-add-dns-domain` takes it as `$3` and substitutes it straight into the zone
+ * template as `%ip%` — there is no fallback to the user's own address. Passing
+ * an empty string, which this function used to do by default, produced a zone
+ * whose apex A record, mail A record and SPF were all blank: the domain
+ * resolved to nothing at all, and it did so silently, because Hestia reports
+ * the zone as created and every list command shows it as present.
+ *
+ * That is why a customer could point their nameservers at us, see the domain
+ * verify, see the site created, and still have nothing answer.
+ */
 async function addDnsDomain({ username, domain, ip = '' }) {
-  await run('v-add-dns-domain', [username, domain, ip]);
-  return { ok: true, domain };
+  const address = ip || await publicIp();
+  if (!address && isLive()) {
+    throw new HestiaError(
+      'Refusing to create a DNS zone with no IP — every record in it would be empty.',
+      { code: 'no_ip', cmd: 'v-add-dns-domain' },
+    );
+  }
+  await run('v-add-dns-domain', [username, domain, address]);
+  return { ok: true, domain, ip: address };
 }
 
 async function dnsDomainExists({ username, domain }) {
@@ -571,7 +929,16 @@ async function listMailDomains(username) {
   const data = await run('v-list-mail-domains', [username], { json: true });
   return Object.entries(data).map(([domain, d]) => ({
     domain,
-    accounts: Number(d.U_MAIL_ACCOUNTS || 0),
+    // Hestia reports the count as ACCOUNTS here; U_MAIL_ACCOUNTS is the user
+    // level total. Reading the wrong one made every domain report zero, which
+    // is what the allowance is enforced against.
+    accounts: Number(d.ACCOUNTS ?? d.U_MAIL_ACCOUNTS ?? 0),
+    catchall: d.CATCHALL || '',
+    dkim: String(d.DKIM || 'no') === 'yes',
+    ssl: String(d.SSL || 'no') === 'yes',
+    // Present means Hestia is publishing `mail.<domain>` as a webmail vhost.
+    // We take that off — see removeWebmailAlias.
+    webmailAlias: d.WEBMAIL_ALIAS || '',
     suspended: String(d.SUSPENDED || 'no') === 'yes',
   }));
 }
@@ -590,19 +957,177 @@ async function countMailAccounts(username) {
   return domains.reduce((sum, d) => sum + d.accounts, 0);
 }
 
+/**
+ * Every mailbox on a domain, with what it forwards and answers.
+ *
+ * `FWD` and `ALIAS` are comma-separated in Hestia, and `FWD_ONLY` decides
+ * whether a forwarded message is also kept — the difference between "send me a
+ * copy at gmail" and "this address is only a redirect", which are entirely
+ * different intentions and must not be shown as one.
+ */
 async function listMailAccounts({ username, domain }) {
   if (!isLive()) return [];
   const data = await run('v-list-mail-accounts', [username, domain], { json: true });
   return Object.entries(data).map(([account, d]) => ({
     account,
     address: `${account}@${domain}`,
+    domain,
     quota_mb: d.QUOTA === 'unlimited' ? 0 : Number(d.QUOTA || 0),
     used_mb: Number(d.U_DISK || 0),
+    aliases: String(d.ALIAS || '').split(',').map((a) => a.trim()).filter(Boolean),
+    forwards: String(d.FWD || '').split(',').map((a) => a.trim()).filter(Boolean),
+    forwardOnly: String(d.FWD_ONLY || '') === 'yes',
+    autoreply: String(d.AUTOREPLY || 'no') === 'yes',
+    suspended: String(d.SUSPENDED || 'no') === 'yes',
   }));
+}
+
+/** One mailbox, or null. Used by every page that acts on a single address. */
+async function mailAccount({ username, domain, account }) {
+  const all = await listMailAccounts({ username, domain });
+  return all.find((a) => a.account === account) || null;
 }
 
 async function deleteMailAccount({ username, domain, account }) {
   await run('v-delete-mail-account', [username, domain, account]);
+  return { ok: true };
+}
+
+async function changeMailPassword({ username, domain, account, password }) {
+  await run('v-change-mail-account-password', [username, domain, account, password]);
+  return { ok: true };
+}
+
+/** Quota in MB. 0 means unlimited, which is what Hestia calls it too. */
+async function changeMailQuota({ username, domain, account, quotaMb }) {
+  await run('v-change-mail-account-quota', [
+    username, domain, account, Number(quotaMb) > 0 ? String(quotaMb) : 'unlimited',
+  ]);
+  return { ok: true };
+}
+
+// ---- Forwarding ------------------------------------------------------------
+//
+// Hestia replaces the whole forward list on each call rather than appending, so
+// the caller sends the complete set every time and there is no add/remove pair
+// to keep in step.
+
+async function setMailForwards({ username, domain, account, forwards = [], forwardOnly = false }) {
+  const list = forwards.map((f) => String(f).trim()).filter(Boolean).join(',');
+  if (list) {
+    await run('v-add-mail-account-forward', [username, domain, account, list]);
+  } else {
+    // Clearing is its own command; passing an empty string is rejected.
+    await run('v-delete-mail-account-forward', [username, domain, account]).catch((err) => {
+      if (err.code !== 3 && err.code !== 5) throw err;   // already had none
+    });
+  }
+
+  /*
+   * "Forward only" is a separate flag, and getting it wrong loses mail.
+   *
+   * With it set, nothing is kept in the mailbox here — the message goes to the
+   * forward address and only there. It must never be left on when the customer
+   * has removed their forwards, or every message would be delivered nowhere at
+   * all.
+   */
+  const wantOnly = forwardOnly && Boolean(list);
+  await run(wantOnly ? 'v-add-mail-account-fwd-only' : 'v-delete-mail-account-fwd-only',
+    [username, domain, account]).catch((err) => {
+    if (err.code !== 3 && err.code !== 5) throw err;
+  });
+  return { ok: true };
+}
+
+// ---- Aliases (extra addresses that land in the same mailbox) ---------------
+
+async function setMailAliases({ username, domain, account, aliases = [] }) {
+  const list = aliases.map((a) => String(a).trim().toLowerCase()).filter(Boolean).join(',');
+  if (list) {
+    await run('v-add-mail-account-alias', [username, domain, account, list]);
+  } else {
+    await run('v-delete-mail-account-alias', [username, domain, account]).catch((err) => {
+      if (err.code !== 3 && err.code !== 5) throw err;
+    });
+  }
+  return { ok: true };
+}
+
+// ---- Auto-reply ------------------------------------------------------------
+
+async function setAutoreply({ username, domain, account, message }) {
+  if (message && String(message).trim()) {
+    await run('v-add-mail-account-autoreply', [username, domain, account, String(message)]);
+  } else {
+    await run('v-delete-mail-account-autoreply', [username, domain, account]).catch((err) => {
+      if (err.code !== 3 && err.code !== 5) throw err;
+    });
+  }
+  return { ok: true };
+}
+
+async function getAutoreply({ username, domain, account }) {
+  if (!isLive()) return '';
+  try {
+    const data = await run('v-list-mail-account-autoreply', [username, domain, account], { json: true });
+    // Hestia answers either a bare string or an object keyed by the account.
+    if (typeof data === 'string') return data;
+    const first = Object.values(data || {})[0];
+    return typeof first === 'string' ? first : (first?.MESSAGE || '');
+  } catch {
+    return '';
+  }
+}
+
+// ---- Whole-domain settings -------------------------------------------------
+
+async function setCatchall({ username, domain, address }) {
+  if (address) {
+    await run('v-add-mail-domain-catchall', [username, domain, address]);
+  } else {
+    await run('v-delete-mail-domain-catchall', [username, domain]).catch((err) => {
+      if (err.code !== 3 && err.code !== 5) throw err;
+    });
+  }
+  return { ok: true };
+}
+
+/**
+ * The DKIM record this domain needs published.
+ *
+ * Only actionable for a customer whose DNS is elsewhere — where we run the
+ * zone, Hestia has already written it. Returned as name/value so the panel can
+ * render a copyable row rather than a wall of BIND syntax.
+ */
+async function dkimRecord({ username, domain }) {
+  if (!isLive()) return null;
+  try {
+    const text = await run('v-list-mail-domain-dkim-dns', [username, domain]);
+    const raw = typeof text === 'string' ? text : String(text?.body || '');
+    const match = raw.match(/(\S*_domainkey\S*)[\s\S]*?"([^"]+)"/);
+    if (!match) return null;
+    return {
+      name: match[1].replace(new RegExp(`\\.?${domain}\\.?$`), '') || '_domainkey',
+      value: match[2].replace(/"\s+"/g, ''),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Remove the `mail.<domain>` webmail alias.
+ *
+ * Hestia adds one to every mail domain (WEBMAIL_ALIAS defaults to `mail`),
+ * which publishes `mail.customerdomain.com` as a webmail vhost on this node.
+ * That name has no certificate of its own and is not where we want anybody
+ * sent: webmail, IMAP and SMTP are all one hostname for every customer, so the
+ * per-domain alias is a broken door with our name on it.
+ */
+async function removeWebmailAlias({ username, domain }) {
+  await run('v-delete-mail-domain-webmail', [username, domain]).catch((err) => {
+    if (err.code !== 3 && err.code !== 5) throw err;   // not there is the goal
+  });
   return { ok: true };
 }
 
@@ -613,11 +1138,26 @@ async function deleteMailAccount({ username, domain, account }) {
 async function listBackups(username) {
   if (!isLive()) return [];
   const data = await run('v-list-user-backups', [username], { json: true });
+  const list = (value) => String(value || '').split(',').map((v) => v.trim()).filter(Boolean);
   return Object.entries(data).map(([name, b]) => ({
     name,
     type: b.TYPE,
     size_mb: Number(b.SIZE || 0),
     created_at: b.DATE ? `${b.DATE} ${b.TIME || ''}`.trim() : '',
+    /*
+     * What is actually inside it. Carried through rather than dropped because
+     * a restore is per section — websites, DNS, mail, databases, cron, home
+     * directory — and a customer choosing which sections to put back needs to
+     * see what each one contains. "Restore" with no idea what is in the archive
+     * is a button nobody should press.
+     */
+    web: list(b.WEB),
+    dns: list(b.DNS),
+    mail: list(b.MAIL),
+    db: list(b.DB),
+    cron: list(b.CRON),
+    udir: list(b.UDIR),
+    runtime_min: Number(b.RUNTIME || 0),
   }));
 }
 
@@ -625,6 +1165,37 @@ async function listBackups(username) {
 async function createBackup(username) {
   await run('v-backup-user', [username]);
   return { ok: true, queued: true };
+}
+
+/**
+ * Put a backup back.
+ *
+ * `v-restore-user USER BACKUP [WEB] [DNS] [MAIL] [DB] [CRON] [UDIR]`, where
+ * each section is either left empty — meaning restore all of it — or the
+ * literal string `no`, meaning skip it. There is no "restore just this one
+ * domain" through this command; it is per section.
+ *
+ * THIS OVERWRITES. A restored website replaces whatever is in the web root
+ * now, and a restored database replaces its current contents. The panel asks
+ * before calling this, per section, and says so in those words — "restore"
+ * sounds additive to most people and it is not.
+ *
+ * It also takes minutes and Hestia runs it in the background, so a success
+ * here means "accepted", not "done".
+ */
+async function restoreBackup({
+  username, backup, web = true, dns = true, mail = true, db = true, cron = true, udir = true,
+}) {
+  const on = (flag) => (flag ? '' : 'no');
+  await run('v-restore-user', [
+    username, backup, on(web), on(dns), on(mail), on(db), on(cron), on(udir),
+  ]);
+  return { ok: true, queued: true };
+}
+
+async function deleteBackup({ username, backup }) {
+  await run('v-delete-user-backup', [username, backup]);
+  return { ok: true };
 }
 
 // ---------------------------------------------------------------------------
@@ -696,10 +1267,11 @@ module.exports = {
   HestiaError,
   isLive,
   run,
-  suggestUsername,
+  serialUsername,
   exists,
   userExists,
   addUser,
+  listUsers,
   changeUserPassword,
   changeUserPackage,
   listPackages,
@@ -709,14 +1281,26 @@ module.exports = {
   deleteUser,
   userStats,
   addWebDomain,
+  addWebsite,
   deleteWebDomain,
+  deleteWebsite,
+  deleteDnsDomain,
+  deleteMailDomain,
+  webDomainExists,
+  mailDomainExists,
   listWebDomains,
+  webDomain,
   enableSSL,
+  setRedirect,
+  clearRedirect,
+  rebuildWebDomain,
+  webDomainSsl,
   forceHttps,
   addDatabase,
   listDatabases,
   deleteDatabase,
   DNS_TYPES,
+  publicIp,
   addDnsDomain,
   dnsDomainExists,
   listDnsRecords,
@@ -728,9 +1312,21 @@ module.exports = {
   listMailDomains,
   countMailAccounts,
   listMailAccounts,
+  mailAccount,
+  changeMailPassword,
+  changeMailQuota,
+  setMailForwards,
+  setMailAliases,
+  setAutoreply,
+  getAutoreply,
+  setCatchall,
+  dkimRecord,
+  removeWebmailAlias,
   deleteMailAccount,
   listBackups,
   createBackup,
+  restoreBackup,
+  deleteBackup,
   provision,
   status,
 };
