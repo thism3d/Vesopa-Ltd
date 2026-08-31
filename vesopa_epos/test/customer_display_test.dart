@@ -131,6 +131,57 @@ void main() {
     await expectLater(feed.publish(sale), completes);
   });
 
+  // ---------------------------------------------------------------------------
+  // Telling the display where to look
+  // ---------------------------------------------------------------------------
+
+  test('the till leaves a note saying where it writes', () async {
+    // The display used to work this path out from the till's version resources
+    // and its Store package name. Saying it outright is what stops a change to
+    // either of those going out as a blank customer screen.
+    final note = File('${dir.path}/customer-display.json');
+    final basket = File(r'C:\somewhere\displayasket.json');
+
+    await announceDisplayFile(
+      basket,
+      terminalName: 'Bar 1',
+      pathOverride: note.path,
+    );
+
+    final json = jsonDecode(note.readAsStringSync()) as Map<String, Object?>;
+    expect(json['format'], displayAnnouncementFormat);
+    expect(json['basket'], basket.path);
+    expect(json['terminal'], 'Bar 1');
+    expect(DateTime.tryParse(json['updated_at']! as String), isNotNull);
+  });
+
+  test('a note that cannot be written does not throw into a sale', () async {
+    // Same rule as everything else in this file. A machine whose ProgramData is
+    // locked down loses the note and nothing else: the display falls back to
+    // working the path out, which is what it did before the note existed.
+    await announceDisplayFile(
+      File('irrelevant'),
+      pathOverride: '${dir.path}/${'x' * 300}/note.json',
+    );
+  });
+
+  test('publishing into a test folder announces nothing', () async {
+    // The announcement is at one fixed machine-wide path. A test run that
+    // repointed a real customer display at a temp folder about to be deleted
+    // would be a memorable way to discover this was not guarded.
+    final real = displayAnnouncementPath();
+    final before = real == null || !File(real).existsSync()
+        ? null
+        : File(real).lastModifiedSync();
+
+    await feedInto(dir).publish(sale);
+
+    final after = real == null || !File(real).existsSync()
+        ? null
+        : File(real).lastModifiedSync();
+    expect(after, before);
+  });
+
   test('an empty basket is idle, not an empty sale', () {
     // A customer standing at a till with nothing rung up should be looking at
     // the venue's adverts, not at a bill for £0.00.

@@ -141,9 +141,11 @@ class BasketFeed {
     this.staleAfter = const Duration(minutes: 10),
   });
 
-  /// The file the till writes. Configured rather than derived, because the
-  /// till's data folder is under its own package identity and a display
-  /// installed from the Store cannot compute it.
+  /// The file the till writes.
+  ///
+  /// Passed in rather than worked out here. Finding the till is its own problem
+  /// with three tiers and a lot of judgement in it — see `data/settings.dart` —
+  /// and this class does one thing: follow a path, and never fall over doing it.
   final String path;
 
   /// The backstop under the file watcher. See the note at the top.
@@ -166,6 +168,15 @@ class BasketFeed {
 
   Basket _current = Basket.unknown;
   Basket get current => _current;
+
+  /// Whether a basket has ever been read from [path].
+  ///
+  /// What the display page uses to decide whether to keep looking for the till.
+  /// False means the path has never produced anything — a till that has not
+  /// started, or a path that is simply wrong — and those are worth re-checking.
+  /// True means this is the file, and it should be left alone.
+  bool get hasRead => _hasRead;
+  bool _hasRead = false;
 
   /// Whether the till has stopped writing.
   bool get isStale =>
@@ -215,6 +226,7 @@ class BasketFeed {
       if (basket == null) return;
 
       _lastModified = stat.modified;
+      _hasRead = true;
       _current = basket;
       if (!_baskets.isClosed) _baskets.add(basket);
     } catch (_) {

@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.vesopa" "\0"
-            VALUE "FileDescription", "vesopa_epos_display" "\0"
+            VALUE "CompanyName", "Vesopa EPOS Limited" "\0"
+            VALUE "FileDescription", "Vesopa Customer Display" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "vesopa_epos_display" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.vesopa. All rights reserved." "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 Vesopa EPOS Limited. All rights reserved." "\0"
             VALUE "OriginalFilename", "vesopa_epos_display.exe" "\0"
-            VALUE "ProductName", "vesopa_epos_display" "\0"
+            VALUE "ProductName", "Vesopa Customer Display" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

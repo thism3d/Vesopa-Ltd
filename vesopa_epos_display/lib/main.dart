@@ -10,18 +10,77 @@
 /// that falls over takes nothing with it: the till carries on selling and the
 /// only thing anybody loses is the picture facing the customer.
 ///
+/// It is also, in almost every venue, a second window on the *same PC* as the
+/// till: one machine, two monitors, the till on one and this on the other. That
+/// is why the window is put on its monitor before it is ever shown — see
+/// `data/screens.dart`.
+///
 /// See `vesopa_epos/lib/data/customer_display.dart` for the other end of the
 /// file, and `lib/data/basket_feed.dart` for how this one reads it.
 library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:media_kit/media_kit.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:window_manager/window_manager.dart';
 
+import 'data/screens.dart';
+import 'data/settings.dart';
 import 'ui/display_page.dart';
 import 'ui/theme.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // The advert player's own decoder, before anything can ask it to play. It is
+  // bundled rather than borrowed from Windows — see `ui/advert_panel.dart` for
+  // what depending on the machine's own codecs cost.
+  MediaKit.ensureInitialized();
+
+  await windowManager.ensureInitialized();
+
+  // Positioned before it is shown, not after. The alternative is a window that
+  // appears on the till's screen and jumps to the customer's a moment later,
+  // which looks like a fault every time the machine is switched on.
+  await windowManager.waitUntilReadyToShow(
+    const WindowOptions(
+      title: 'Vesopa Customer Display',
+      // No title bar, the same as the till. This is a screen pointed at the
+      // public: a customer reading a bill should not also be reading a close
+      // button, and there is nothing on it anybody is meant to drag.
+      titleBarStyle: TitleBarStyle.hidden,
+      // The size the window falls back to whenever it is not full screen —
+      // after Escape, or on a machine where full screen was turned off.
+      size: Size(1280, 720),
+      center: true,
+    ),
+    () async {
+      await _placeFromSettings();
+      await windowManager.show();
+      await windowManager.focus();
+    },
+  );
+
   runApp(const ProviderScope(child: VesopaDisplayApp()));
+}
+
+/// Read the chosen monitor straight out of preferences and move there.
+///
+/// Read here rather than through the Riverpod provider because this runs before
+/// there is a widget tree to hold one, and because a window that is already on
+/// screen cannot be moved without the customer seeing it happen. The provider
+/// reads the same two keys a moment later for the settings screen.
+Future<void> _placeFromSettings() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    await placeWindow(
+      screenKey: prefs.getString(keyScreen) ?? '',
+      fullScreen: prefs.getBool(keyFullScreen) ?? true,
+    );
+  } catch (_) {
+    // A window in the position Windows chose. See placeWindow.
+  }
 }
 
 class VesopaDisplayApp extends StatelessWidget {

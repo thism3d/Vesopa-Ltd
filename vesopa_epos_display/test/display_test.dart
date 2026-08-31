@@ -15,10 +15,12 @@ library;
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vesopa_epos_display/data/adverts.dart';
 import 'package:vesopa_epos_display/data/basket_feed.dart';
+import 'package:vesopa_epos_display/data/screens.dart';
 import 'package:vesopa_epos_display/data/settings.dart';
 import 'package:vesopa_epos_display/ui/theme.dart';
 
@@ -238,12 +240,26 @@ void main() {
   // Settings
   // -------------------------------------------------------------------------
 
-  test('a screen with no till file is not set up', () {
-    expect(const DisplaySettings().isConfigured, isFalse);
+  test('a typed-in path wins over anything found', () {
+    // The override exists for the one setup this application does not otherwise
+    // support: a display on a different PC, reading the till's folder over a
+    // share. When it is set, nothing discovers anything.
     expect(
-      const DisplaySettings(basketPath: r'C:\x\basket.json').isConfigured,
-      isTrue,
+      const DisplaySettings(basketPath: r'\\NAS\till\basket.json')
+          .resolveBasketPath(),
+      r'\\NAS\till\basket.json',
     );
+    expect(
+      const DisplaySettings(basketPath: '   ').resolveBasketPath(),
+      defaultBasketPath() ?? '',
+    );
+  });
+
+  test('with nothing typed in, the till is looked for', () {
+    // The default, and the whole point: a display beside its till needs nothing
+    // filled in. What it resolves to depends on the machine, so what is
+    // asserted here is that it resolves to the same thing discovery does.
+    expect(const DisplaySettings().resolveBasketPath(), defaultBasketPath() ?? '');
   });
 
   test('an empty advert folder is null, not the working directory', () {
@@ -261,6 +277,16 @@ void main() {
     );
   });
 
+  test('the bill cannot be squeezed out of existence', () {
+    // billShare crosses a file boundary from the till, and a hand-edited or
+    // corrupt one must not be able to produce a bill with no width — which
+    // reads on the glass as the display having failed.
+    expect(const DisplaySettings(billShare: 0).billFraction, 0.2);
+    expect(const DisplaySettings(billShare: 999).billFraction, 0.8);
+    expect(const DisplaySettings(billShare: 35).billFraction, closeTo(0.35, 1e-9));
+    expect(const DisplaySettings().billFraction, closeTo(0.5, 1e-9));
+  });
+
   test('zero seconds means never go full screen', () {
     // A screen beside a busy bar may want the bill up permanently. That is an
     // answer, not a mistake, so it is representable.
@@ -269,6 +295,66 @@ void main() {
       const DisplaySettings(idleSeconds: 45).idleAfter,
       const Duration(seconds: 45),
     );
+  });
+
+  // -------------------------------------------------------------------------
+  // Which screen this window belongs on
+  // -------------------------------------------------------------------------
+
+  Screen screen({
+    int index = 2,
+    String id = r'\?\DISPLAY#DELA0C1#5&1234',
+    String slot = r'\.\DISPLAY2',
+    Rect bounds = const Rect.fromLTWH(1920, 0, 1920, 1080),
+    bool isPrimary = false,
+  }) => Screen(
+    index: index,
+    id: id,
+    slot: slot,
+    bounds: bounds,
+    isPrimary: isPrimary,
+  );
+
+  test('a monitor is remembered by its panel, not by the port it is in', () {
+    // The point of storing the hardware id: a venue that unplugs both screens
+    // to move the counter and plugs them back the other way round should not
+    // end up with the bill facing the wall.
+    final moved = screen(slot: r'\.\DISPLAY1', index: 1);
+    expect(moved.matches(screen().key), isTrue);
+  });
+
+  test('a monitor Windows gives no id for is remembered by its port', () {
+    // Some virtual and remote-session displays come back with an empty id.
+    // Falling back to the slot name is what keeps those usable at all.
+    final anonymous = screen(id: '');
+    expect(anonymous.key, r'\.\DISPLAY2');
+    expect(anonymous.matches(r'\.\DISPLAY2'), isTrue);
+  });
+
+  test('nothing stored matches nothing', () {
+    // Empty is a fresh install, not "the first screen". placeWindow leaves the
+    // window where Windows put it, rather than moving it onto the till.
+    expect(screen().matches(''), isFalse);
+    expect(screen(id: '').matches(''), isFalse);
+  });
+
+  test('a screen that has been unplugged matches nothing attached', () {
+    expect(
+      screen(id: r'\?\DISPLAY#OTHER', slot: r'\.\DISPLAY3').matches(
+        screen().key,
+      ),
+      isFalse,
+    );
+  });
+
+  test('a screen is offered by number and size, and the till is marked', () {
+    // What a manager can act on. "Screen 2" and a resolution is how somebody
+    // tells the counter screen from the one on the wall without unplugging
+    // either of them.
+    expect(screen().label, contains('Screen 2'));
+    expect(screen().label, contains('1920 x 1080'));
+    expect(screen().label, isNot(contains('till')));
+    expect(screen(isPrimary: true).label, contains("till's screen"));
   });
 
   // -------------------------------------------------------------------------

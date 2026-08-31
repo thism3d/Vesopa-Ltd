@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' show File, Platform, exit;
 
 import 'package:file_selector/file_selector.dart';
@@ -6,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../config/constants.dart';
+import '../data/customer_display_control.dart';
 import '../data/fonts.dart';
 import '../data/terminal_identity.dart';
 import '../main.dart';
@@ -16,6 +18,7 @@ import '../printing/printer_transport.dart';
 import 'card_diagnostics_page.dart';
 import 'layout.dart';
 import 'nav_panel_controller.dart';
+import 'customer_display_page.dart';
 import 'printers_page.dart';
 import 'theme.dart';
 import 'theme_controller.dart';
@@ -274,6 +277,38 @@ class SettingsPage extends ConsumerWidget {
           ),
         ),
 
+        const SizedBox(height: 28),
+        const _SectionTitle('Customer display'),
+        Card(
+          margin: EdgeInsets.zero,
+          child: Column(
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+                child: Row(
+                  children: [
+                    Icon(Icons.desktop_windows, color: Pos.brandDeep),
+                    SizedBox(width: 14),
+                    Expanded(
+                      child: Text(
+                        'The second screen, facing the customer: their bill on '
+                        "one half and the venue's adverts on the other. It is "
+                        'a separate application on this PC, and everything it '
+                        'does is set from here.',
+                        style: TextStyle(fontSize: 13, height: 1.4),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Live, like the printer summary above it: whether a display is
+              // actually out there is the one thing worth knowing without
+              // opening the page.
+              _CustomerDisplaySummary(),
+            ],
+          ),
+        ),
+
         // ---- Closing the till ------------------------------------------
         //
         // The window has no X and no minimise button (see _lockWindowToKiosk
@@ -348,6 +383,72 @@ class SettingsPage extends ConsumerWidget {
     } catch (_) {
       exit(0);
     }
+  }
+}
+
+/// The Customer display row, with a live word on whether one is running.
+///
+/// Its own widget because it polls: a manager who has just plugged the second
+/// screen in and started the display should see this row change under them
+/// without leaving Settings and coming back.
+class _CustomerDisplaySummary extends StatefulWidget {
+  @override
+  State<_CustomerDisplaySummary> createState() =>
+      _CustomerDisplaySummaryState();
+}
+
+class _CustomerDisplaySummaryState extends State<_CustomerDisplaySummary> {
+  DisplayStatus? _status;
+  Timer? _poll;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_refresh());
+    _poll = Timer.periodic(
+      const Duration(seconds: 3),
+      (_) => unawaited(_refresh()),
+    );
+  }
+
+  @override
+  void dispose() {
+    _poll?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _refresh() async {
+    final status = await readDisplayStatus();
+    if (mounted) setState(() => _status = status);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final live = _status?.isLive ?? false;
+    return ListTile(
+      leading: Icon(
+        live ? Icons.check_circle : Icons.circle_outlined,
+        color: live ? Pos.brandDeep : Pos.graphite,
+      ),
+      title: const Text('Set up the customer display'),
+      subtitle: Text(
+        live
+            ? 'Connected  ·  ${_status!.fullScreen ? 'full screen' : 'in a window'}'
+                  '  ·  ${_status!.screens.length} screen'
+                  '${_status!.screens.length == 1 ? '' : 's'} attached'
+            : 'Not running. Settings made here are waiting for it when it '
+                  'starts.',
+      ),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => Scaffold(
+            appBar: AppBar(title: const Text('Customer display')),
+            body: const CustomerDisplayPage(),
+          ),
+        ),
+      ),
+    );
   }
 }
 
