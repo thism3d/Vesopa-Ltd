@@ -44,8 +44,14 @@ function mailEnabled() {
  * Send an HTML mail. Resolves either way and never throws — the reset route
  * answers the same regardless, so a bounce must not turn into a 500 that tells
  * the caller something about the address.
+ *
+ * `attachments` is nodemailer's own shape, `{ filename, content, contentType }`,
+ * and is what carries a scheduled report. Passed straight through rather than
+ * wrapped: the one caller that uses it is building a PDF in memory, and
+ * inventing a second vocabulary for "a file with a name" would only be
+ * something to translate back again.
  */
-async function sendMail({ to, subject, html, text }) {
+async function sendMail({ to, subject, html, text, attachments }) {
   const tx = getTransport();
   if (!tx) {
     console.warn(`[mail] SMTP not configured — skipped "${subject}" to ${to}`);
@@ -59,6 +65,7 @@ async function sendMail({ to, subject, html, text }) {
       subject,
       html,
       ...(text ? { text } : {}),
+      ...(attachments && attachments.length ? { attachments } : {}),
     });
     return true;
   } catch (e) {

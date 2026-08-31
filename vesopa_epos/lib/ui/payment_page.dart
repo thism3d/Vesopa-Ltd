@@ -10,6 +10,7 @@ import '../data/order_repository.dart';
 import '../data/pricing_engine.dart';
 import '../data/staff_session.dart';
 import '../data/tender_engine.dart';
+import '../data/customer_display.dart';
 import '../data/till_settings.dart';
 import '../main.dart';
 import '../payments/connect_pac.dart';
@@ -1237,6 +1238,25 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     final change = _tender.changeMinor;
     if (change <= 0) return false;
 
+    // The one moment the customer display genuinely earns its keep: the
+    // customer can check their change against the screen without asking. It
+    // goes up beside the clerk's own change box and comes down with it.
+    //
+    // Published here rather than left to the shell's basket feed, because by
+    // now the bill is closed and the shell has nothing to publish — what the
+    // customer needs to see is what they handed over and what is coming back.
+    final display = ref.read(customerDisplayProvider);
+    unawaited(
+      display.publish(
+        DisplaySnapshot(
+          state: 'paid',
+          totalMinor: _tender.totals.totalMinor,
+          paidMinor: _tender.paidMinor,
+          changeMinor: change,
+        ),
+      ),
+    );
+
     final timedOut = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -1245,6 +1265,10 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
         seconds: settings.changeWindowSeconds,
       ),
     );
+
+    // Back to adverts. A change figure left on a customer-facing screen is the
+    // next customer's first sight of the till, and it is somebody else's money.
+    unawaited(display.clear());
     return timedOut ?? false;
   }
 

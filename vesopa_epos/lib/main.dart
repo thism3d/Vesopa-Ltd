@@ -16,6 +16,7 @@ import 'data/commerce.dart';
 import 'data/floor_repository.dart';
 import 'data/kitchen_printing.dart';
 import 'data/kitchen_screens.dart';
+import 'data/customer_display.dart';
 import 'data/local/database.dart';
 import 'data/loyalty_repository.dart';
 import 'data/session_controller.dart';
@@ -55,6 +56,20 @@ final databaseProvider = Provider<AppDatabase>((ref) {
   ref.onDispose(db.close);
   return db;
 });
+
+/// The feed the customer display application reads.
+///
+/// One per process, held here rather than by the shell, because two things
+/// write to it: the shell publishes the basket as it is rung up, and the
+/// payment screen publishes what was paid and what change is owed. A second
+/// instance would mean the two overwriting each other's file with their own
+/// idea of what the customer should be looking at.
+///
+/// Everything it does is best-effort and swallowed — see
+/// data/customer_display.dart. Nothing here is on the path that takes money.
+final customerDisplayProvider = Provider<CustomerDisplayFeed>(
+  (_) => CustomerDisplayFeed(),
+);
 
 final orderRepositoryProvider = Provider<OrderRepository>(
   (ref) => OrderRepository(ref.watch(databaseProvider)),

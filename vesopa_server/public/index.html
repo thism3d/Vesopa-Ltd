@@ -173,6 +173,8 @@
           <button class="nav active" data-view="dashboard">Dashboard</button>
 
           <button class="nav-group" data-group="reports">Reports<span class="caret">▼</span></button>
+          <button class="nav" data-view="run_report">Financial Summary</button>
+          <button class="nav" data-view="report_schedules">Scheduled reports</button>
           <button class="nav" data-view="report">Report</button>
           <button class="nav" data-view="sales_explorer">Sales Explorer</button>
           <button class="nav" data-view="till_report">Till Report</button>
@@ -187,6 +189,7 @@
           <button class="nav" data-view="screens">Screen programming</button>
           <button class="nav" data-view="program_departments">Departments</button>
           <button class="nav" data-view="program_groups">Sub Departments</button>
+          <button class="nav" data-view="import">Import</button>
           <button class="nav" data-view="modifiers">Modifiers</button>
           <button class="nav" data-view="mix_match">Mix &amp; Match</button>
           <button class="nav" data-view="finalise_keys">Finalise Keys</button>
@@ -303,6 +306,75 @@
         </section>
 
         <!-- Sales Explorer -->
+        <!-- A report a venue hands to its accountant: pick a window, run it,
+             export it. See vesopa_server/src/reports.js. -->
+        <section id="view-run_report" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Financial Summary</h2>
+              <p class="muted small">
+                Sales by department and sub department for any period, with the discounts,
+                payments and spend per head that have to reconcile against them.
+              </p>
+            </div>
+          </div>
+
+          <div class="card rd-card">
+            <div class="rr-controls">
+              <label>Report
+                <select id="rr-report"></select>
+              </label>
+              <label>Period
+                <select id="rr-period"></select>
+              </label>
+              <label id="rr-from-field" hidden>From
+                <input type="date" id="rr-from">
+              </label>
+              <label id="rr-to-field" hidden>To
+                <input type="date" id="rr-to">
+              </label>
+              <div class="rr-actions">
+                <button type="button" class="btn primary" id="rr-run">Run report</button>
+                <select id="rr-format" aria-label="Export format"></select>
+                <button type="button" class="btn ghost" id="rr-export" disabled>Export</button>
+              </div>
+            </div>
+            <p class="muted small" id="rr-window" style="margin:10px 0 0"></p>
+          </div>
+
+          <div id="rr-result" style="margin-top:var(--stack)"></div>
+        </section>
+
+        <!-- Reports that run themselves and arrive by email. -->
+        <section id="view-report_schedules" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Scheduled reports</h2>
+              <p class="muted small">
+                A report that runs on a clock and emails itself. Nothing has to be remembered
+                on a Monday morning.
+              </p>
+            </div>
+            <button class="btn primary" id="rs-new">New schedule</button>
+          </div>
+
+          <p class="muted small" id="rs-mail-warning" hidden></p>
+
+          <div class="card">
+            <table class="table" id="rs-table">
+              <thead>
+                <tr>
+                  <th>Name</th><th>Report</th><th>Frequency</th><th>Time</th>
+                  <th>Covers</th><th>Last run</th><th>Next run</th><th></th>
+                </tr>
+              </thead>
+              <tbody id="rs-rows"></tbody>
+            </table>
+          </div>
+
+          <div id="rs-runs" style="margin-top:var(--stack)"></div>
+        </section>
+
         <section id="view-sales_explorer" class="view" hidden>
           <div class="page-head"><div><h2>Sales Explorer</h2><p class="muted small">Every product line sold, searchable by date and department. Click a row to see the receipt it came from.</p></div></div>
           <div class="card panel">
@@ -438,6 +510,61 @@
         </section>
 
         <!-- Modifiers -->
+        <!-- Catalogue import. Three sheets, in dependency order, and a
+             preview that writes nothing — see src/imports.js. -->
+        <section id="view-import" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Import</h2>
+              <p class="muted small">
+                Bring your departments, sub departments and products in from a spreadsheet
+                instead of typing them one at a time. Nothing is ever deleted by an import.
+              </p>
+            </div>
+          </div>
+
+          <div class="import-grid">
+            <div class="card rd-card">
+              <h3>1. Start from the template</h3>
+              <p class="muted small" style="margin:0 0 12px">
+                The template carries the exact column headings we read, so a file filled in
+                from it cannot be rejected for a heading you could not have guessed. It has a
+                sheet explaining each column and a few example rows showing the format.
+              </p>
+              <button type="button" class="btn ghost" id="import-template">
+                Download the template
+              </button>
+            </div>
+
+            <div class="card rd-card">
+              <h3>2. Upload your file</h3>
+              <p class="muted small" style="margin:0 0 12px">
+                An .xlsx workbook. Sheets you leave out are simply not imported — to change
+                only your prices, upload a workbook with just the Products sheet in it.
+              </p>
+              <input type="file" id="import-file"
+                     accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+              <div class="denom-actions" style="margin-top:12px">
+                <button type="button" class="btn ghost" id="import-check" disabled>
+                  Check the file
+                </button>
+                <!-- Deliberately disabled until a check has run. An import is the
+                     one action here that can rewrite a whole catalogue, and it
+                     should not be reachable in one click from an unread file. -->
+                <button type="button" class="btn primary" id="import-apply" disabled>
+                  Import
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div id="import-result" class="card rd-card" hidden style="margin-top:var(--stack)">
+            <h3 id="import-result-title">What this file would do</h3>
+            <div id="import-summary"></div>
+            <div id="import-problems"></div>
+          </div>
+        </section>
+
         <section id="view-modifiers" class="view" hidden>
           <div class="page-head">
             <div>
@@ -1305,6 +1432,18 @@
                 <label>Sub department
                   <select id="sp-subdept"></select>
                 </label>
+                <!-- Which of them, not just how many. A department is the
+                     fast way in; this is the way to lay out eight of its
+                     fourteen lagers without deleting six keys afterwards. -->
+                <div class="sp-fill-picker">
+                  <div class="sp-fill-tools">
+                    <input id="sp-fill-search" type="search" placeholder="Find a product"
+                           spellcheck="false" autocomplete="off">
+                    <button type="button" class="btn ghost small" id="sp-fill-all">All</button>
+                    <button type="button" class="btn ghost small" id="sp-fill-none">None</button>
+                  </div>
+                  <div id="sp-fill-list" class="sp-fill-list"></div>
+                </div>
                 <p class="muted small" id="sp-fill-count" style="margin:6px 0 0"></p>
                 <div class="denom-actions" style="margin-top:10px">
                   <button type="button" class="btn ghost small" id="sp-fill">Fill the selection</button>

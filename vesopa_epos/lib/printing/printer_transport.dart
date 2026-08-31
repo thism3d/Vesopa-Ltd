@@ -100,7 +100,7 @@ class PrinterConfig {
     this.usbDevicePath,
     this.usbLabel,
     this.paperWidthMm = 80,
-    this.codePage = 'CP1252',
+    this.codePage = escPosGbp,
   });
 
   final String id;
@@ -226,13 +226,45 @@ class PrinterConfig {
     usbDevicePath: j['usb_device_path'] as String?,
     usbLabel: j['usb_label'] as String?,
     paperWidthMm: (j['paper_width_mm'] as num?)?.toInt() == 58 ? 58 : 80,
-    // Absent on every printer set up before this existed, and absent means
-    // CP1252 -- which is exactly what those printers were already being sent.
+    // Absent means [escPosGbp] — the setting that draws a pound on any printer
+    // rather than on a well-behaved one.
+    //
+    // It used to mean CP1252, which is what every printer set up before this
+    // existed was already being sent, and that was the right call while the
+    // pound was believed to work. It is not: a venue reported X and Z reports
+    // printing "r" where the pound belonged, which is byte 0xA3 drawn out of
+    // CP866 — a printer resolving `ESC t 16` against a different table from the
+    // one this till's profile assumes. A default nobody has to find is the
+    // whole point, so the safe path is what an unset printer gets.
     codePage: (j['code_page'] as String?)?.trim().isNotEmpty ?? false
         ? j['code_page'] as String
-        : 'CP1252',
+        : escPosGbp,
   );
 }
+
+/// What the pound sign rests on, and the default.
+///
+/// Not a code page: it selects the UK *international character set* with
+/// `ESC R 3`, in which the printer draws the ASCII byte 0x23 as "£" instead of
+/// "#", and sends that byte for the pound.
+///
+/// This is the default because selecting a code page is not reliable enough to
+/// be one. `ESC t 16` means CP1252 in the Epson table this till's profile is
+/// built from, and 16 on a clone whose table is shifted is **CP866** — where
+/// 0xA3 is "г", which is precisely the "X and Z are printing r instead of £"
+/// that was reported from the field. A printer that ignores `ESC t` outright
+/// lands somewhere else again, and a venue cannot be asked to work out which.
+///
+/// `ESC R` is the oldest command in the standard and does not depend on the
+/// code page at all, so 0x23 comes out as a pound whether or not `ESC t` was
+/// understood. The cost is a single character: a genuine "#" cannot be drawn,
+/// and is spelled "No." instead. That is a trade worth making — a bill or a Z
+/// report with the wrong currency symbol on it is wrong in a way "No. 4" is
+/// not.
+///
+/// The upper range still gets a real code page selected underneath this, so
+/// accented names on a receipt are unaffected.
+const escPosGbp = 'UK_ASCII';
 
 /// Sends raw ESC/POS bytes to a printer.
 abstract class PrinterTransport {

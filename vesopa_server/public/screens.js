@@ -224,6 +224,19 @@ let spScreens = [];
 let spProducts = [];
 
 /**
+ * Which products a bulk fill will actually use, as a Set of PLU ids.
+ *
+ * `null` means "everything in the chosen department or sub department", which
+ * is the state the picker resets to whenever that choice changes — a manager
+ * who switches from Lagers to Wines means all of Wines, not the four ticks
+ * that happened to be left over.
+ *
+ * Held as ids rather than as indexes because the search box filters what is
+ * drawn and a tick must survive being scrolled out of view.
+ */
+let spFillChosen = null;
+
+/**
  * The three screens this venue's tills wear, by id. Null means the built-in.
  *
  * All three together rather than a lone `spHomeId`, because they are one
@@ -1949,7 +1962,9 @@ function spRenderSubDepartments() {
   // saying so. Hiding it would make the control appear and disappear as the
   // department changes, which reads as a fault rather than as an answer.
   $('sp-subdept').disabled = subs.length === 0;
-  spRenderFillCount();
+  // A different shelf means all of that shelf. Carrying four ticks over from
+  // Lagers into Wines would be a fill nobody asked for.
+  spFillReset();
 }
 
 /**
@@ -1962,30 +1977,132 @@ function spRenderSubDepartments() {
 function spRenderFillCount() {
   const note = $('sp-fill-count');
   if (!note) return;
-  const products = spFillProducts();
+  const scope = spFillScope();
+  const picked = spFillProducts();
   const where = $('sp-subdept').value || $('sp-dept').value;
-  note.textContent = !where
-    ? ''
-    : products.length === 0
-      ? `Nothing in ${where}.`
-      : `${products.length} product${products.length === 1 ? '' : 's'} in ${where}` +
-        `, in the order they appear on your product list.`;
+
+  if (!where) {
+    note.textContent = '';
+    return;
+  }
+  if (scope.length === 0) {
+    note.textContent = `Nothing in ${where}.`;
+    return;
+  }
+  // Say the subset *and* the whole, because "8 products" on its own reads as
+  // the size of the shelf and is about to be the size of the fill instead.
+  const all = picked.length === scope.length;
+  note.textContent = picked.length === 0
+    ? `Nothing ticked. Tick the products in ${where} you want laid out.`
+    : `${picked.length} of ${scope.length} in ${where}` +
+      (all ? ', in the order they appear on your product list.' : ' ticked.');
 }
 
 /**
- * The products a fill would use: a department, or one shelf inside it.
+ * Everything on the chosen shelf, before the ticks are applied.
  *
  * Order is the product list's own — which is `department_name`, then
  * `button_position`, then name, as the server sorts it — because a manager
  * laying out a screen is matching what they can already see rather than
  * receiving a shuffle.
  */
-function spFillProducts() {
+function spFillScope() {
   const department = $('sp-dept').value;
   const sub = $('sp-subdept').value;
+  if (!department) return [];
   return spProducts.filter(
     (p) => p.department_name === department && (!sub || p.group_name === sub)
   );
+}
+
+/**
+ * The products a fill would actually use.
+ *
+ * A department is the fast way in and, until now, the only way: it dropped in
+ * the whole shelf, so laying out eight of fourteen lagers meant filling all
+ * fourteen and deleting six keys. [spFillChosen] narrows it, and `null` keeps
+ * the old behaviour exactly — the fast path is still one press.
+ */
+function spFillProducts() {
+  const scope = spFillScope();
+  if (spFillChosen === null) return scope;
+  return scope.filter((p) => spFillChosen.has(Number(p.pluid)));
+}
+
+/** Whether a product is going in. */
+function spFillHas(pluid) {
+  return spFillChosen === null || spFillChosen.has(Number(pluid));
+}
+
+/**
+ * Promote the implicit "all" to a real Set, so one untick can be removed from
+ * it. Kept lazy because the common case never unticks anything and a Set of
+ * every PLU in a department is work nobody asked for.
+ */
+function spFillMaterialise() {
+  if (spFillChosen === null) {
+    spFillChosen = new Set(spFillScope().map((p) => Number(p.pluid)));
+  }
+  return spFillChosen;
+}
+
+/** Money as the back office writes it everywhere else. */
+function spFillPrice(p) {
+  const value = Number(p.price);
+  return Number.isFinite(value) ? `£${value.toFixed(2)}` : '';
+}
+
+/**
+ * The tick list.
+ *
+ * Filtered by the search box, which matters more than it looks: a department
+ * of ninety products is exactly the one somebody wants to lay out eight of,
+ * and scrolling a box 210px tall to find them is how the feature gets
+ * abandoned. A hidden row keeps its tick — see [spFillChosen].
+ */
+function spRenderFillList() {
+  const list = $('sp-fill-list');
+  if (!list) return;
+
+  const scope = spFillScope();
+  const query = ($('sp-fill-search').value || '').trim().toLowerCase();
+  const shown = query
+    ? scope.filter((p) =>
+        `${p.product_name} ${p.pluid}`.toLowerCase().includes(query)
+      )
+    : scope;
+
+  if (!scope.length) {
+    list.innerHTML =
+      '<p class="sp-fill-empty">Choose a department to see its products.</p>';
+    return;
+  }
+  if (!shown.length) {
+    list.innerHTML = `<p class="sp-fill-empty">Nothing here matches “${esc(
+      query
+    )}”.</p>`;
+    return;
+  }
+
+  list.innerHTML = shown
+    .map(
+      (p) =>
+        `<label class="check"><input type="checkbox" data-fill-plu="${esc(
+          String(p.pluid)
+        )}"${spFillHas(p.pluid) ? ' checked' : ''}> ` +
+        `<span>${esc(p.product_name)}</span>` +
+        `<span class="sp-fill-price">${esc(spFillPrice(p))}</span></label>`
+    )
+    .join('');
+}
+
+/** Reset the ticks to "all of it", which is what a new shelf means. */
+function spFillReset() {
+  spFillChosen = null;
+  const search = $('sp-fill-search');
+  if (search) search.value = '';
+  spRenderFillList();
+  spRenderFillCount();
 }
 
 /** Which screen this venue's tills wear on a given surface. */
@@ -3879,7 +3996,34 @@ function spBind() {
     $('sp-subdept').value = '';
     spRenderSubDepartments();
   });
-  $('sp-subdept').addEventListener('change', spRenderFillCount);
+  $('sp-subdept').addEventListener('change', spFillReset);
+
+  // The tick list. Delegated, because the rows are redrawn on every search
+  // keystroke and per-row listeners would be rebound each time.
+  $('sp-fill-list').addEventListener('change', (e) => {
+    const box = e.target.closest('[data-fill-plu]');
+    if (!box) return;
+    const chosen = spFillMaterialise();
+    const plu = Number(box.dataset.fillPlu);
+    if (box.checked) chosen.add(plu);
+    else chosen.delete(plu);
+    spRenderFillCount();
+  });
+
+  $('sp-fill-search').addEventListener('input', spRenderFillList);
+
+  // "All" goes back to the implicit null rather than to a full Set, so the
+  // count reads as the plain department fill it now is.
+  $('sp-fill-all').addEventListener('click', () => {
+    spFillChosen = null;
+    spRenderFillList();
+    spRenderFillCount();
+  });
+  $('sp-fill-none').addEventListener('click', () => {
+    spFillChosen = new Set();
+    spRenderFillList();
+    spRenderFillCount();
+  });
   $('sp-fill').addEventListener('click', spFillFromDepartment);
   $('sp-preset').addEventListener('click', spLayOutBuiltInBar);
 
@@ -4396,9 +4540,18 @@ async function spFillFromDepartment() {
   }
 
   const where = $('sp-subdept').value || $('sp-dept').value;
+  const scope = spFillScope();
   const products = spFillProducts();
   if (!products.length) {
-    alert(`There are no products in ${where}.`);
+    // Two different answers, because they need two different actions: an empty
+    // shelf is a catalogue problem and an empty tick list is one press away
+    // from being fixed.
+    alert(
+      scope.length
+        ? `Nothing in ${where} is ticked. Tick the products you want laid out, ` +
+            'or press All.'
+        : `There are no products in ${where}.`
+    );
     return;
   }
 
@@ -4426,12 +4579,15 @@ async function spFillFromDepartment() {
     }
     if (short) {
       lines.push(
-        `${where} has ${products.length} products and there is room for ` +
-          `${cells.length}. The first ${cells.length} go in; the rest are left.`
+        `${products.length === scope.length ? where : 'Your selection'} has ` +
+          `${products.length} products and there is room for ${cells.length}. ` +
+          `The first ${cells.length} go in; the rest are left.`
       );
     }
     const answer = await spAsk(
-      `Fill ${cells.length} buttons from ${where}?`,
+      products.length === scope.length
+        ? `Fill ${cells.length} buttons from ${where}?`
+        : `Fill ${cells.length} buttons with ${products.length} picked from ${where}?`,
       lines.join(' '),
       [
         { value: 'cancel', label: 'Cancel' },

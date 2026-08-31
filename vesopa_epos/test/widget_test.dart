@@ -12,7 +12,8 @@ void main() {
       (tester) async {
     final db = AppDatabase.forTesting(NativeDatabase.memory());
 
-    // The tree has to come down *before* the database does.
+    // The tree has to come down *before* the database does — and it has to come
+    // down inside the test body, not in a tear-down.
     //
     // `addTearDown(db.close)` on its own hung this test for ten minutes: tear-
     // downs run last-registered-first, so the database closed while the sale
@@ -21,12 +22,13 @@ void main() {
     // markAsClosed) that the test's fake clock never runs, and flutter_test
     // waits out its full timeout on the pending timer.
     //
-    // Pumping an empty widget unmounts the subscribers first, so the streams are
-    // already cancelled by the time the database goes.
-    addTearDown(() async {
-      await tester.pumpWidget(const SizedBox.shrink());
-      await db.close();
-    });
+    // Pumping an empty widget first fixes the ordering, but doing it in a
+    // tear-down is already too late: flutter_test unmounts whatever is left at
+    // the end of the *body* and checks for pending timers there, before any
+    // tear-down runs. So the unmount happens at the end of the body — see the
+    // last two lines of this test — and the tear-down only closes the database,
+    // by which point nothing is subscribed to it.
+    addTearDown(db.close);
 
     await db.into(db.products).insert(
           ProductsCompanion.insert(
@@ -82,5 +84,14 @@ void main() {
     // had gone stale.
     expect(find.text('1'), findsWidgets);
     expect(find.text('£1.50'), findsWidgets);
+
+    // Unmount here, not in a tear-down. See the note above the tear-down.
+    //
+    // The pump that follows has to *advance the clock*: cancelling a drift
+    // stream schedules its cleanup with `Timer.run`, and a zero-duration
+    // `pump()` does not run it — the frame is drawn and the timer is still
+    // sitting there when the binding checks. A millisecond is enough.
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(milliseconds: 1));
   });
 }

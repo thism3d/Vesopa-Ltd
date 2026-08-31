@@ -6,7 +6,7 @@ import '../main.dart';
 import 'card_machine_page.dart';
 import 'clock_sheet.dart';
 import 'layout.dart';
-import 'sign_on_sheet.dart';
+import 'sign_on_pad.dart';
 import 'theme.dart';
 import 'till_actions.dart';
 import 'widgets/pos_message.dart';
@@ -163,7 +163,7 @@ class FunctionsPage extends ConsumerWidget {
                       'exactly as it is.'
                 : 'Enter your PIN to start a shift. Everything you ring up is '
                       'recorded against your name.',
-            () => showSignOnSheet(context, ref),
+            () => showSignOnPad(context, ref),
           ),
           if (staffSession.signedOn)
             _Function(

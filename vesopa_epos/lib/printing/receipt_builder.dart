@@ -11,12 +11,17 @@ import '../data/cash_tally.dart';
 import '../data/receipt_repository.dart';
 import 'printer_transport.dart';
 
+// The pound-sign setting lives beside the printer it is a property of, and
+// is re-exported here because every caller that needs it also needs
+// [escPosCodePages] and [escPosSafe], which are this file's.
+export 'printer_transport.dart' show escPosGbp;
+
 String _money(int minor) =>
     NumberFormat.currency(locale: 'en_GB', symbol: '£').format(minor / 100);
 
 final _time = DateFormat('dd/MM/yyyy HH:mm');
 
-/// The code page every document is printed in.
+/// The code page used for the *upper* half of the character range.
 ///
 /// A thermal printer powers up in its factory code page, which is almost always
 /// CP437 — and in CP437 the byte 0xA3 is "ú", not "£". Nothing here used to
@@ -27,33 +32,28 @@ final _time = DateFormat('dd/MM/yyyy HH:mm');
 /// range, and Latin-1 is what [Generator] encodes with. The bytes the till
 /// already produced are right; this is what makes the printer read them the
 /// same way.
+///
+/// It is no longer what the pound sign rests on. See [escPosGbp].
 const _codePage = 'CP1252';
 
-/// The pages a venue may choose between, and what each is for.
+/// The character handling a venue may choose between, and what each is for.
 ///
-/// Every one of these draws "£" at byte 0xA3, which is the only reason any of
-/// them is offered: the till encodes Latin-1 and the printer has to agree about
-/// that one byte. They differ in what they do with the rest of the upper range,
-/// which matters for accented names on a receipt and not much else.
+/// [escPosGbp] is the default and the one that always draws a pound. The rest
+/// are code pages, which reach the pound through byte 0xA3 and are here for the
+/// venue that would rather have a literal "#" than a guaranteed "£" — a menu
+/// full of "#1 Burger", say.
 ///
-/// [escPosGbp] is the exception and the answer for a printer that ignores
-/// `ESC t` altogether. It is not a code page at all -- it selects the UK
-/// *international character set*, where the ASCII byte 0x23 draws as "£"
-/// instead of "#", and sends that byte for the pound. Every printer made
-/// supports `ESC R`; it is the oldest command in the standard. The cost is that
-/// a genuine "#" cannot be printed, which is why it is the last resort rather
-/// than the default.
+/// **Every entry must exist in the capability profile.** `ISO_8859-1` used to
+/// be on this list and is not in the default profile at all, so choosing it
+/// made `getCodePageId` throw and the document did not print — a worse failure
+/// than the wrong glyph it was offered to fix. [ReceiptBuilder] now falls back
+/// rather than throwing, and this list no longer offers it.
 const escPosCodePages = <String, String>{
-  'CP1252': 'Windows Latin-1 — the right answer for almost every printer',
+  escPosGbp: 'Always draws £ — the right answer for every printer',
+  'CP1252': 'Windows Latin-1 — pound via the code page, keeps a literal #',
   'CP858': 'CP858 — Latin-1 with the euro sign',
   'CP1250': 'Windows Central European',
-  'ISO_8859-1': 'ISO Latin-1',
-  escPosGbp: 'Last resort — for a printer that draws £ as ú or ?',
 };
-
-/// The pseudo-page that swaps the international character set instead.
-/// See [escPosCodePages].
-const escPosGbp = 'UK_ASCII';
 
 /// Characters no CP1252 printer can render, mapped to what a receipt should
 /// show instead.
@@ -138,21 +138,54 @@ String escPosSafe(String text, {bool ukAscii = false}) {
   return out.toString();
 }
 
+/// The name a venue sees for a stored character-set setting.
+///
+/// Falls back to the raw value rather than to "unknown": a printer carrying a
+/// setting this build no longer offers is a thing a support call needs to be
+/// able to read off a slip.
+String escPosCodePageName(String page) =>
+    page == escPosGbp ? 'Always draws £' : page;
+
 /// Renders EPOS documents as ESC/POS byte streams for a thermal printer.
 class ReceiptBuilder {
   ReceiptBuilder(
     this._generator, {
     this.columns = 48,
-    this.codePage = _codePage,
+    this.codePage = escPosGbp,
   }) {
     // Recorded on the generator rather than emitted, so that every later
     // `reset()` re-selects it: `reset()` sends ESC @, which drops the printer
     // back to its factory code page, and then re-applies whatever was set here.
     // [_begin] is what actually puts the selection on the wire.
     //
-    // The last-resort page is not a page and must not be handed to the
-    // generator, which would refuse a name its profile has never heard of.
-    if (!usesUkAscii) _generator.setGlobalCodeTable(codePage);
+    // A code page is selected on **both** paths. [escPosGbp] is not a code page
+    // — it is an international character set, handled in [_begin] — but the
+    // upper range still has to be told what it is, or an accented name on a
+    // receipt falls back to whatever the printer powered up in. Only the pound
+    // is taken out of the code page's hands.
+    _selectPage(usesUkAscii ? _codePage : codePage);
+  }
+
+  /// Record a code page, falling back rather than throwing.
+  ///
+  /// `setGlobalCodeTable` resolves the name against the printer profile
+  /// immediately, and throws for a name the profile has never heard of — but it
+  /// has already stored the name by then, so every later `reset()` throws too
+  /// and *nothing prints at all*. That is how offering `ISO_8859-1`, which is
+  /// absent from the default profile, turned a cosmetic complaint about the
+  /// pound sign into a printer that produced no paper.
+  ///
+  /// Catching it here and immediately overwriting the stored name with one that
+  /// does resolve is what makes a bad setting cost the wrong glyph instead of
+  /// the whole document.
+  /// Returns the bytes that make the selection, so there is exactly one guarded
+  /// way to change the code page and no unguarded one sitting next to it.
+  List<int> _selectPage(String page) {
+    try {
+      return _generator.setGlobalCodeTable(page);
+    } catch (_) {
+      return _generator.setGlobalCodeTable(_codePage);
+    }
   }
 
   final Generator _generator;
@@ -176,7 +209,7 @@ class ReceiptBuilder {
   /// taking the right-hand price column with it.
   static Future<ReceiptBuilder> create({
     int paperWidthMm = 80,
-    String codePage = _codePage,
+    String codePage = escPosGbp,
   }) async {
     final profile = await CapabilityProfile.load();
     final narrow = paperWidthMm == 58;
@@ -867,13 +900,10 @@ class ReceiptBuilder {
     bytes.addAll(_generator.hr());
 
     // The pound sign, checked on paper rather than on screen. It depends on the
-    // printer being on the right code page, which is a property of the printer
-    // and not of the till — so it is only ever really answered by printing one.
-    //
-    // The page in use is named beside it, because the slip is now the
-    // instruction for fixing it: if the amount does not show a £, the venue
-    // changes this setting and prints another one.
-    bytes.addAll(_row('Character set', codePage));
+    // printer being on the right character set, which is a property of the
+    // printer and not of the till — so it is only ever really answered by
+    // printing one.
+    bytes.addAll(_row('Character set', escPosCodePageName(codePage)));
     bytes.addAll(_row('Currency', _money(123456)));
     bytes.addAll(
       _text(
@@ -881,16 +911,7 @@ class ReceiptBuilder {
         styles: const PosStyles(align: PosAlign.center),
       ),
     );
-    bytes.addAll(
-      _text(
-        'If it does not, change Character set in this '
-        "printer's settings and print this again.",
-        styles: const PosStyles(
-          align: PosAlign.center,
-          fontType: PosFontType.fontB,
-        ),
-      ),
-    );
+    bytes.addAll(_poundSampler());
 
     bytes.addAll(_generator.hr());
     bytes.addAll(
@@ -904,6 +925,78 @@ class ReceiptBuilder {
     bytes.addAll(_text(('1234567890' * 5).substring(0, columns)));
     bytes.addAll(_generator.feed(2));
     bytes.addAll(_generator.cut());
+    return bytes;
+  }
+
+  /// Every setting on offer, each drawing its own pound, on one slip.
+  ///
+  /// The old slip printed a pound in the setting already chosen and said "if
+  /// this is wrong, change the setting and print another one" — which is a loop
+  /// a venue runs four times, over the phone, mid-service. This prints all of
+  /// them at once, labelled, so the answer is read off the paper in one press:
+  /// whichever line shows a £ names the setting to pick.
+  ///
+  /// Each line switches the printer, draws the sample and switches it back, so
+  /// the sampler cannot leave the printer somewhere the rest of the slip did
+  /// not ask for.
+  List<int> _poundSampler() {
+    final bytes = <int>[];
+
+    bytes.addAll(_generator.hr());
+    bytes.addAll(
+      _text(
+        'If it does not, find the £ below and set '
+        "Character set to that line's name.",
+        styles: const PosStyles(
+          align: PosAlign.center,
+          fontType: PosFontType.fontB,
+        ),
+      ),
+    );
+
+    for (final page in escPosCodePages.keys) {
+      // Left column is the setting's name as it appears in the till's own
+      // dropdown, so there is nothing to translate between paper and screen.
+      final label = page == escPosGbp ? 'Always draws £' : page;
+
+      if (page == escPosGbp) {
+        // ESC R 3 — the UK international set, in which 0x23 is a pound.
+        bytes.addAll(const [0x1B, 0x52, 3]);
+        bytes.addAll(_generator.row([
+          PosColumn(text: label, width: 7),
+          PosColumn(
+            text: '#12.34',
+            width: 5,
+            styles: const PosStyles(align: PosAlign.right),
+          ),
+        ]));
+        // ESC R 0 — back to the USA set, so a "#" printed later is a "#".
+        bytes.addAll(const [0x1B, 0x52, 0]);
+        continue;
+      }
+
+      // A code page that the profile cannot resolve must not take the slip
+      // down with it — that failure is the one this whole sampler is for.
+      try {
+        bytes.addAll(_generator.setGlobalCodeTable(page));
+      } catch (_) {
+        continue;
+      }
+      bytes.addAll(_generator.row([
+        PosColumn(text: label, width: 7),
+        PosColumn(
+          text: '£12.34',
+          width: 5,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+      ]));
+    }
+
+    // Whatever the loop last selected, put the printer back where this
+    // builder's own documents expect it.
+    bytes.addAll(_selectPage(usesUkAscii ? _codePage : codePage));
+    if (usesUkAscii) bytes.addAll(const [0x1B, 0x52, 3]);
+
     return bytes;
   }
 

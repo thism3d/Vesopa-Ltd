@@ -9,7 +9,7 @@ import '../sale_page.dart' show productsProvider;
 
 import '../clock_sheet.dart';
 import '../shell.dart' show StaffChip, SyncStatusBadge;
-import '../sign_on_sheet.dart';
+import '../sign_on_pad.dart';
 import '../theme.dart';
 import 'nav_rail.dart';
 import 'programmed_bar.dart';
@@ -380,7 +380,7 @@ class VenueTopBarBody extends ConsumerWidget {
         // which is why the bar lists them among the keys it keeps live off the
         // sale screen. Neither touches the bill.
         if (key == 'sign_on') {
-          await showSignOnSheet(context, ref);
+          await showSignOnPad(context, ref);
           return;
         }
         if (key == 'clock_in_out') {

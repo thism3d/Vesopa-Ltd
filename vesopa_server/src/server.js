@@ -37,6 +37,12 @@ const { assetVersions, staticCache } = require('./assets');
 const { modifierRoutes, tillModifierRoutes } = require('./modifiers');
 const { dojoWebhookRoutes, webhookStatus } = require('./dojo');
 const { terminalRoutes, timesheetRoutes } = require('./terminals');
+const { importRoutes } = require('./imports');
+const { reportRoutes } = require('./reports');
+const {
+  reportScheduleRoutes,
+  startScheduler,
+} = require('./report_schedules');
 
 const PORT = process.env.PORT || 4000;
 
@@ -226,6 +232,13 @@ app.use(tillKitchenRoutes({ pool, broadcast, secret: JWT_SECRET }));
 // these routes carry what customers have ordered and who is on shift.
 app.use(terminalRoutes({ pool, broadcast, secret: JWT_SECRET }));
 app.use('/api', timesheetRoutes({ pool, broadcast, secret: JWT_SECRET }));
+// Bringing a catalogue in from a spreadsheet. Mounted after the CRUD routes
+// it writes through, so nothing here can shadow /api/products.
+app.use('/api', importRoutes({ pool, broadcast, secret: JWT_SECRET }));
+
+// Reports a venue hands to its accountant, and the schedules that send them.
+app.use('/api', reportRoutes({ pool, secret: JWT_SECRET }));
+app.use('/api', reportScheduleRoutes({ pool, secret: JWT_SECRET }));
 
 /**
  * The floor plan, as the till sees it. Unauthenticated like /products: a
@@ -828,6 +841,15 @@ const server = app.listen(PORT, () =>
 // Say at boot whether password-reset mail can actually leave the building.
 // Only logs — an unreachable mailbox must never stop the tills from selling.
 verifyMail();
+
+/*
+ * The clock behind scheduled reports.
+ *
+ * Started after `listen`, so a database that is slow to answer delays a report
+ * rather than the port opening. The timer is `unref`'d inside, so it can never
+ * be the reason a deploy's restart hangs waiting for the process to exit.
+ */
+startScheduler({ pool });
 
 /*
  * Say at boot which Dojo webhook environments can actually verify a delivery.

@@ -76,9 +76,36 @@ class _VoidDialogState extends ConsumerState<_VoidDialog> {
   final _custom = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    // Follow the field itself, not just the keystrokes Flutter reports.
+    //
+    // This is the whole of "typing a reason still won't let me press Void".
+    // The button is gated on [_canConfirm], which reads this controller, and
+    // the on-screen keyboard below types by *writing to the controller* —
+    // `controller.value = ...`. A programmatic write like that does not go
+    // through the input connection, so `TextField.onChanged` never fires for
+    // it. On a till, which is a touch screen with no keyboard behind it, that
+    // is every character a clerk types: the reason appeared in the box and the
+    // only button that would accept it stayed grey.
+    //
+    // A listener on the controller sees both paths — the on-screen keyboard
+    // and a hardware one — which is why the fix belongs here rather than on
+    // another `onChanged`. The same omission was found and fixed in the sale
+    // page's field dialog; this dialog is the one it was named after and the
+    // one that never got it.
+    _custom.addListener(_onCustomChanged);
+  }
+
+  @override
   void dispose() {
+    _custom.removeListener(_onCustomChanged);
     _custom.dispose();
     super.dispose();
+  }
+
+  void _onCustomChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
@@ -175,15 +202,9 @@ class _VoidDialogState extends ConsumerState<_VoidDialog> {
                   child: TextField(
                     controller: _custom,
                     autofocus: true,
-                    // Rebuild on every keystroke.
-                    //
-                    // Without this the Void button never came back to life: it
-                    // is gated on `_canConfirm`, which reads this field, and a
-                    // TextEditingController changing does not rebuild the
-                    // widget that reads it. So a clerk typed a perfectly good
-                    // reason and watched the only button that would accept it
-                    // stay grey — with no way forward except cancelling.
-                    onChanged: (_) => setState(() {}),
+                    // No `onChanged` here on purpose: the controller listener
+                    // set up in initState covers this field and the on-screen
+                    // keyboard both, and `onChanged` covers only one of them.
                     // The green key on the on-screen keyboard, and Enter on a
                     // hardware one, mean "that is my reason" — not "insert a
                     // newline into a single-line field".

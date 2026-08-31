@@ -74,6 +74,9 @@ const ctx = lift([
   'spLabelFor',
   'spMissing',
   'spFillProducts',
+  'spFillScope',
+  'spFillHas',
+  'spFillMaterialise',
 ]);
 
 /** The module-level state those functions read. */
@@ -100,9 +103,12 @@ function withState({
  * spFillProducts reads $('sp-dept') and $('sp-subdept') and nothing else, so a
  * two-entry lookup is the whole of the DOM this needs.
  */
-function withFillPickers({ department = '', sub = '' } = {}) {
+function withFillPickers({ department = '', sub = '', chosen = null } = {}) {
   ctx.$ = (id) =>
     ({ 'sp-dept': { value: department }, 'sp-subdept': { value: sub } }[id]);
+  // `null` is the editor's own resting state: every product on the shelf, and
+  // the one-press fill it has always been.
+  ctx.spFillChosen = chosen === null ? null : new Set(chosen);
 }
 
 // Scalars the lifter cannot take — it works on `function name(` and
@@ -760,6 +766,105 @@ check('the order is the product list’s own, not a shuffle', () => {
   withFillPickers({ department: 'Drinks' });
   const filled = ctx.spFillProducts().map((p) => p.pluid);
   assert.deepStrictEqual(filled, [...filled].sort((a, b) => a - b));
+});
+
+// ---- ...and picking individual products out of it ------------------------
+//
+// "Mass applying buttons from Department or Sub Department should allow you to
+// select individual products." The department is the fast way in and stays
+// exactly as fast; these guard the narrowing that sits on top of it.
+
+check('an untouched picker still means the whole shelf', () => {
+  withState({ products: CATALOGUE });
+  withFillPickers({ department: 'Drinks' });
+  assert.strictEqual(ctx.spFillChosen, null);
+  assert.deepStrictEqual(
+    ctx.spFillProducts().map((p) => p.product_name),
+    ['Stella', 'Peroni', 'Guinness', 'Loose']
+  );
+});
+
+check('ticking a few fills only those', () => {
+  withState({ products: CATALOGUE });
+  withFillPickers({ department: 'Drinks', chosen: [1, 3] });
+  assert.deepStrictEqual(
+    ctx.spFillProducts().map((p) => p.product_name),
+    ['Stella', 'Guinness']
+  );
+});
+
+check('the picked products keep the product list’s order, not the tick order', () => {
+  withState({ products: CATALOGUE });
+  // Ticked youngest-first; the fill must still come out in catalogue order,
+  // because that is the order the manager can see on screen.
+  withFillPickers({ department: 'Drinks', chosen: [4, 2, 1] });
+  assert.deepStrictEqual(
+    ctx.spFillProducts().map((p) => p.pluid),
+    [1, 2, 4]
+  );
+});
+
+check('a tick for something on another shelf cannot pull it in', () => {
+  withState({ products: CATALOGUE });
+  // 5 is Burger, in Food. Ticks are held as PLU ids, so the scope has to be
+  // what stops a stale one reaching across departments.
+  withFillPickers({ department: 'Drinks', sub: 'Lagers', chosen: [1, 5] });
+  assert.deepStrictEqual(
+    ctx.spFillProducts().map((p) => p.product_name),
+    ['Stella']
+  );
+});
+
+check('nothing ticked fills nothing', () => {
+  withState({ products: CATALOGUE });
+  withFillPickers({ department: 'Drinks', chosen: [] });
+  assert.strictEqual(ctx.spFillProducts().length, 0);
+});
+
+check('spFillHas reads the implicit all as ticked', () => {
+  withState({ products: CATALOGUE });
+  withFillPickers({ department: 'Drinks' });
+  assert.strictEqual(ctx.spFillHas(1), true);
+  assert.strictEqual(ctx.spFillHas(3), true);
+});
+
+check('materialising the implicit all keeps every product on the shelf', () => {
+  withState({ products: CATALOGUE });
+  withFillPickers({ department: 'Drinks' });
+  const chosen = ctx.spFillMaterialise();
+  assert.deepStrictEqual([...chosen].sort((a, b) => a - b), [1, 2, 3, 4]);
+
+  // ...and the first untick then removes exactly one of them.
+  chosen.delete(2);
+  assert.deepStrictEqual(
+    ctx.spFillProducts().map((p) => p.product_name),
+    ['Stella', 'Guinness', 'Loose']
+  );
+});
+
+check('materialising is scoped to the sub department showing', () => {
+  withState({ products: CATALOGUE });
+  withFillPickers({ department: 'Drinks', sub: 'Lagers' });
+  assert.deepStrictEqual(
+    [...ctx.spFillMaterialise()].sort((a, b) => a - b),
+    [1, 2]
+  );
+});
+
+check('the scope is the shelf regardless of what is ticked', () => {
+  withState({ products: CATALOGUE });
+  withFillPickers({ department: 'Drinks', chosen: [1] });
+  assert.strictEqual(ctx.spFillScope().length, 4);
+  assert.strictEqual(ctx.spFillProducts().length, 1);
+});
+
+check('no department chosen is an empty scope, not the whole catalogue', () => {
+  withState({ products: CATALOGUE });
+  withFillPickers({});
+  // Lengths, not deepStrictEqual: an array literal built inside the vm context
+  // has that context's Array prototype, and deepStrictEqual compares those.
+  assert.strictEqual(ctx.spFillScope().length, 0);
+  assert.strictEqual(ctx.spFillProducts().length, 0);
 });
 
 check('no editor calls prompt', () => {

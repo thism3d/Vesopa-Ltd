@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/customer_display.dart';
 import '../data/session_controller.dart';
 import '../data/staff_session.dart';
 import '../data/sync_service.dart';
@@ -38,6 +39,20 @@ class _PosShellState extends ConsumerState<PosShell> {
   int _index = 0;
   String? _orderId;
 
+  /// Which bill the customer display is following.
+  ///
+  /// The shell owns the *subscription* because it is the only thing that knows
+  /// which bill is in front of the customer — the sale page is rebuilt,
+  /// replaced and swapped between orders, and a publisher owned by it would
+  /// restart on every one of those. The feed itself is shared (see
+  /// `customerDisplayProvider`), because the payment screen writes to it too.
+  StreamSubscription<void>? _displayFeed;
+
+  /// Held rather than read through `ref` each time, because [dispose] needs it
+  /// and a `ref.read` there is a read against a container that may already have
+  /// gone.
+  late final CustomerDisplayFeed _display;
+
   /// Why the till could not open a bill, when it could not.
   ///
   /// This used to be nowhere: [_newOrder] awaited a database write and, if that
@@ -61,7 +76,53 @@ class _PosShellState extends ConsumerState<PosShell> {
     // moment: before sign-in there is no venue whose tables this terminal
     // could be showing. A no-op on a till that is not commissioned for it.
     ref.read(billSyncRunnerProvider);
+    _display = ref.read(customerDisplayProvider);
     _newOrder();
+  }
+
+  @override
+  void dispose() {
+    _displayFeed?.cancel();
+    // Put the customer's screen back to adverts rather than leaving the last
+    // bill of the night on it.
+    unawaited(_display.clear());
+    super.dispose();
+  }
+
+  /// Follow [orderId] on the customer display.
+  ///
+  /// Re-subscribed rather than filtered, so switching to another table stops
+  /// publishing the one before it immediately — a customer standing at the
+  /// counter must never see the previous table's bill.
+  void _followOnDisplay(String? orderId) {
+    _displayFeed?.cancel();
+    _displayFeed = null;
+
+    if (orderId == null) {
+      unawaited(_display.clear());
+      return;
+    }
+
+    final repo = ref.read(orderRepositoryProvider);
+    _displayFeed = repo
+        .watchOrder(orderId)
+        .asyncMap((order) async {
+          final lines = await repo.watchLines(orderId).first;
+          return snapshotFor(
+            lines: lines,
+            subtotalMinor: order.subtotalMinor,
+            discountMinor: order.discountMinor,
+            taxMinor: order.taxMinor,
+            totalMinor: order.totalMinor,
+          );
+        })
+        .listen(
+          (snapshot) => unawaited(_display.publish(snapshot)),
+          // A database stream that ends badly must not take the till's shell
+          // down. The display stops updating; the sale carries on.
+          onError: (Object _) {},
+          cancelOnError: false,
+        );
   }
 
   Future<void> _newOrder() async {
@@ -72,6 +133,7 @@ class _PosShellState extends ConsumerState<PosShell> {
         _orderId = id;
         _openFailure = null;
       });
+      _followOnDisplay(id);
     } catch (e) {
       // The local database would not answer. Nothing else on this screen can
       // work without it, so say so and offer the repair rather than spin.
@@ -327,6 +389,7 @@ class _PosShellState extends ConsumerState<PosShell> {
       _orderId = id;
       _index = navDestinations.indexWhere((d) => d.label == 'Sale');
     });
+    _followOnDisplay(id);
   }
 
   Widget _page(

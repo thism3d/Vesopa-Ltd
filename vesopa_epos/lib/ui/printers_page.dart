@@ -557,7 +557,7 @@ class _PrinterDialogState extends State<_PrinterDialog> {
 
   late PrinterKind _kind = widget.existing?.kind ?? _defaultKind;
   late int _width = widget.existing?.paperWidthMm ?? 80;
-  late String _codePage = widget.existing?.codePage ?? 'CP1252';
+  late String _codePage = widget.existing?.codePage ?? escPosGbp;
   late String? _usbPath = widget.existing?.usbDevicePath;
   late String? _usbLabel = widget.existing?.usbLabel;
   late String? _queue = widget.existing?.windowsQueueName;
@@ -667,9 +667,10 @@ class _PrinterDialogState extends State<_PrinterDialog> {
               ),
               const SizedBox(height: 18),
 
-              // Only ever touched by a venue whose printer draws the pound sign
-              // wrong, which is why it is a dropdown with the right answer
-              // already in it rather than a decision anybody has to make.
+              // Only ever touched by a venue that would rather have a literal
+              // "#" than a guaranteed "£", which is why it is a dropdown with
+              // the right answer already in it rather than a decision anybody
+              // has to make.
               Text('Character set', style: theme.textTheme.labelLarge),
               const SizedBox(height: 6),
               DropdownButtonFormField<String>(
@@ -686,16 +687,17 @@ class _PrinterDialogState extends State<_PrinterDialog> {
                     ),
                 ],
                 onChanged: (v) =>
-                    setState(() => _codePage = v ?? 'CP1252'),
+                    setState(() => _codePage = v ?? escPosGbp),
               ),
               const SizedBox(height: 6),
               Text(
                 _codePage == escPosGbp
-                    ? 'Sends the pound as the byte this printer draws as £ '
-                          'whatever its settings say. A real # prints as "No." '
-                          'Use this only if the test slip shows the wrong sign.'
-                    : 'Leave this alone unless the test slip below prints '
-                          'something other than £ against the amount.',
+                    ? 'Draws the pound on any printer, whatever code page it is '
+                          'set to. The one cost is that a real # prints as '
+                          '"No." — change this only if you need the # itself.'
+                    : 'Reaches the pound through this code page, which the '
+                          'printer has to agree about. If the test slip shows '
+                          'anything but £, go back to “Always draws £”.',
                 style: theme.textTheme.bodySmall,
               ),
               const SizedBox(height: 18),

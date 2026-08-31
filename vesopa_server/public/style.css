@@ -2958,3 +2958,146 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
 }
 
 .rail-theme { padding: 12px 22px 20px; }
+
+/* The bulk-fill product picker.
+   ----------------------------------------------------------------------------
+   A department is the fast way to fill a screen and was, for a while, the only
+   way: it dropped in everything on the shelf and a manager who wanted eight of
+   the fourteen lagers deleted six keys afterwards. The list below is the answer,
+   so it has to stay a *list* — scrolling inside its own box rather than pushing
+   "Fill the selection" off the bottom of a panel that is already tall. */
+.sp-fill-picker { margin-top: 10px; }
+
+.sp-fill-tools {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.sp-fill-tools input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.sp-fill-list {
+  max-height: 210px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 4px;
+  background: var(--card);
+}
+
+.sp-fill-list .check {
+  margin: 0;
+  padding: 4px 6px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  gap: 8px;
+}
+
+.sp-fill-list .check:hover { background: rgba(127, 127, 127, .1); }
+
+/* The price sits at the end of the row, greyed, so a manager can tell two
+   similarly named products apart without opening the catalogue. */
+.sp-fill-list .sp-fill-price {
+  margin-left: auto;
+  opacity: .6;
+  font-variant-numeric: tabular-nums;
+}
+
+.sp-fill-list .sp-fill-empty {
+  padding: 10px 6px;
+  opacity: .65;
+  font-size: 12.5px;
+}
+
+/* The catalogue import.
+   ----------------------------------------------------------------------------
+   Two cards side by side, because the order is the instruction: get the
+   template, then upload the file. They stack on a narrow screen rather than
+   shrinking, since a file input has a minimum useful width and a squeezed one
+   is a button nobody can read. */
+.import-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: var(--stack);
+}
+
+.import-grid input[type="file"] {
+  width: 100%;
+  font-size: 13px;
+}
+
+.import-summary {
+  margin: 0;
+  padding-left: 20px;
+  line-height: 1.9;
+}
+
+/* Errors are a list somebody works down with the spreadsheet open beside them,
+   so the row numbers line up and the list scrolls rather than running the page
+   off the bottom. */
+.import-errors {
+  margin: 6px 0 0;
+  padding-left: 20px;
+  max-height: 260px;
+  overflow-y: auto;
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+#import-problems .error { margin: 14px 0 0; }
+
+/* Reports.
+   ----------------------------------------------------------------------------
+   The controls sit on one line and wrap rather than shrink: a date input that
+   has been squeezed is one nobody can read the year in. */
+.rr-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.rr-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12.5px;
+  margin: 0;
+}
+
+.rr-controls select,
+.rr-controls input { min-width: 150px; }
+
+.rr-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-left: auto;
+}
+
+.rr-section { margin: 0 0 10px; }
+
+/* A report has seven columns and a venue may be reading it on a laptop. The
+   table scrolls inside its own card rather than pushing the page sideways —
+   a horizontally scrolling page loses the left-hand column, which is the one
+   that says which department the row is. */
+.rr-scroll { overflow-x: auto; }
+
+.rr-table { min-width: 640px; }
+
+/* Figures right-aligned and tabular, so the decimal points line up down the
+   column. A money column that does not is a money column nobody can scan. */
+.rr-table td.num,
+.rr-table th.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.rr-table tfoot td {
+  font-weight: 700;
+  border-top: 2px solid var(--line);
+}

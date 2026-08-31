@@ -5,7 +5,7 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "test": "node test/kitchen.test.js && node test/kitchen-branding.test.js && node test/backoffice-kitchen-ui.test.js && node test/backoffice-cropper.test.js && node test/screens.test.js && node test/modifiers.test.js && node test/fonts.test.js && node test/backoffice-products.test.js && node test/backoffice-screens-ui.test.js && node test/backoffice-screens-browser.test.js && node test/backoffice-tablet.test.js && node test/assets.test.js && node test/backoffice-layout.test.js && node test/dojo.test.js"
+    "test": "node test/kitchen.test.js && node test/kitchen-branding.test.js && node test/backoffice-kitchen-ui.test.js && node test/backoffice-cropper.test.js && node test/screens.test.js && node test/modifiers.test.js && node test/fonts.test.js && node test/backoffice-products.test.js && node test/backoffice-screens-ui.test.js && node test/backoffice-screens-browser.test.js && node test/backoffice-tablet.test.js && node test/assets.test.js && node test/backoffice-layout.test.js && node test/vesopatest1-layout.test.js && node test/imports.test.js && node test/reports.test.js && node test/dojo.test.js"
   },
   "keywords": [],
   "author": "",
@@ -15,11 +15,13 @@
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
+    "exceljs": "^4.4.0",
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.2.0",
     "mysql2": "^3.22.6",
     "nodemailer": "^7.0.13",
+    "pdfkit": "^0.20.2",
     "ws": "^8.21.1"
   }
 }

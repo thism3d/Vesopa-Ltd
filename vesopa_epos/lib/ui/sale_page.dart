@@ -16,7 +16,7 @@ import 'modifier_prompt.dart';
 import 'clock_sheet.dart';
 import 'customer_picker.dart';
 import 'payment_page.dart';
-import 'sign_on_sheet.dart';
+import 'sign_on_pad.dart';
 import 'table_picker.dart';
 import 'theme.dart';
 import 'till_actions.dart';
@@ -1079,7 +1079,7 @@ class SalePage extends ConsumerWidget {
       // bill catches up with them; the sheet returns its id and the till
       // switches to it.
       case 'sign_on':
-        await showSignOnSheet(context, ref);
+        await showSignOnPad(context, ref);
         return;
 
       // The shift, not the till. Deliberately a different key from the two

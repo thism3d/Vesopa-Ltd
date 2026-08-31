@@ -272,6 +272,9 @@ const ROUTES = {
   screens: '/screen-programming',
   program_departments: '/program-departments',
   program_groups: '/program-groups',
+  import: '/import',
+  run_report: '/reports/financial-summary',
+  report_schedules: '/reports/schedules',
   modifiers: '/modifiers',
   mix_match: '/mix-match',
   finalise_keys: '/finalise-keys',
@@ -698,6 +701,9 @@ function render() {
     tables: loadFloor,
     program_departments: () => loadCrud('departments'),
     program_groups: () => loadCrud('groups'),
+    import: loadImport,
+    run_report: loadRunReport,
+    report_schedules: loadReportSchedules,
     modifiers: () => loadCrud('modifiers'),
     mix_match: () => loadCrud('mix-match'),
     finalise_keys: () => loadCrud('finalise-keys'),
@@ -5311,4 +5317,588 @@ function kdsEditScreen(screen) {
       }),
     });
   });
+}
+
+// ---- Catalogue import -----------------------------------------------------
+
+/**
+ * Bringing departments, sub departments and products in from a spreadsheet.
+ *
+ * The shape of the screen is the shape of the promise: download the template,
+ * upload the file, **check**, and only then import. Check is not optional
+ * decoration — the Import button stays disabled until one has run against the
+ * file currently chosen, because an import is the one action in the back office
+ * that can rewrite a whole catalogue and it should never be one click away from
+ * a file nobody has read.
+ *
+ * Choosing a different file disarms Import again, so a check run against one
+ * spreadsheet can never authorise a different one.
+ *
+ * See vesopa_server/src/imports.js for what the server does with it.
+ */
+function loadImport() {
+  const file = $('import-file');
+  const check = $('import-check');
+  const apply = $('import-apply');
+  const result = $('import-result');
+
+  // Bound once. `loadImport` runs on every visit to the view, and a second set
+  // of listeners would run every action twice — which on the Import button
+  // means importing the file twice.
+  if (!file.dataset.bound) {
+    file.dataset.bound = '1';
+
+    $('import-template').addEventListener('click', importTemplate);
+
+    file.addEventListener('change', () => {
+      check.disabled = !file.files.length;
+      // A new file has not been checked, whatever the last one's result was.
+      apply.disabled = true;
+      result.hidden = true;
+    });
+
+    check.addEventListener('click', () => importRun(false));
+    apply.addEventListener('click', () => importRun(true));
+  }
+
+  check.disabled = !file.files.length;
+  apply.disabled = true;
+  result.hidden = true;
+}
+
+/**
+ * Download the template.
+ *
+ * Fetched rather than linked, because the route is behind the session token and
+ * a plain `<a href>` carries no Authorization header — it would land on the
+ * sign-in page and download an HTML error as "template.xlsx".
+ */
+async function importTemplate() {
+  const button = $('import-template');
+  button.disabled = true;
+  try {
+    const res = await fetch('/api/import/template', {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (res.status === 401) return signOut();
+    if (!res.ok) throw new Error('The template could not be built.');
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'vesopa-catalogue-template.xlsx';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    // Revoked on the next turn of the event loop: revoking synchronously can
+    // beat the click in some browsers and download nothing at all.
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  } catch (e) {
+    alert(e.message || 'The template could not be downloaded.');
+  } finally {
+    button.disabled = false;
+  }
+}
+
+/** Check the chosen file, or import it. Same request, different route. */
+async function importRun(commit) {
+  const input = $('import-file');
+  if (!input.files.length) return;
+
+  const check = $('import-check');
+  const apply = $('import-apply');
+  check.disabled = true;
+  apply.disabled = true;
+
+  const form = new FormData();
+  form.append('file', input.files[0]);
+
+  try {
+    const res = await fetch(
+      commit ? '/api/import/catalogue' : '/api/import/catalogue/preview',
+      {
+        method: 'POST',
+        // No Content-Type: the browser sets it, with the multipart boundary
+        // that the server cannot parse the body without.
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: form,
+      }
+    );
+    if (res.status === 401) return signOut();
+
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || 'That file could not be read.');
+
+    importRender(body, commit);
+
+    if (body.applied) {
+      // No alert on success: the panel below now says exactly what changed,
+      // which is more than "Catalogue imported" could, and one fewer dialog on
+      // a page where a chain of them is how Chrome starts suppressing them.
+      // Checked once and spent. Pressing Import again would apply the same
+      // file a second time, which for products without a PLU means a second
+      // copy of every one of them.
+      input.value = '';
+      apply.disabled = true;
+      check.disabled = true;
+    } else {
+      apply.disabled = body.blocked;
+    }
+  } catch (e) {
+    alert(e.message);
+    apply.disabled = true;
+  } finally {
+    check.disabled = !input.files.length;
+  }
+}
+
+/** The preview, or what the import did. */
+function importRender(body, commit) {
+  const result = $('import-result');
+  result.hidden = false;
+
+  $('import-result-title').textContent = body.applied
+    ? 'What this file changed'
+    : body.blocked
+      ? 'This file cannot be imported yet'
+      : 'What this file would do';
+
+  const past = body.applied;
+  const line = (what, counts) => {
+    if (!counts.created && !counts.updated) return '';
+    const parts = [];
+    if (counts.created) {
+      parts.push(`${counts.created} new`);
+    }
+    if (counts.updated) {
+      parts.push(`${counts.updated} ${past ? 'updated' : 'to update'}`);
+    }
+    return `<li><strong>${esc(what)}</strong> — ${esc(parts.join(', '))}</li>`;
+  };
+
+  const rows =
+    line('Departments', body.summary.departments) +
+    line('Sub departments', body.summary.groups) +
+    line('Products', body.summary.products);
+
+  $('import-summary').innerHTML = rows
+    ? `<ul class="import-summary">${rows}</ul>`
+    : '<p class="muted small">There is nothing in this file to import.</p>';
+
+  // Problems last and in full. A heading we did not recognise is a warning
+  // rather than an error — the row still imports — but it is said out loud,
+  // because a venue that adds a "Supplier" column should find out now and not
+  // in six months.
+  const problems = [];
+  for (const sheet of body.sheets) {
+    if (!sheet.present) continue;
+    if (sheet.unknownColumns.length) {
+      problems.push(
+        `<p class="muted small"><strong>${esc(sheet.sheet)}</strong>: ` +
+          `${esc(sheet.unknownColumns.join(', '))} ` +
+          `${sheet.unknownColumns.length === 1 ? 'is a column' : 'are columns'} ` +
+          'we do not import. Everything else on the sheet was read.</p>'
+      );
+    }
+    if (sheet.errors.length) {
+      problems.push(
+        `<p class="error"><strong>${esc(sheet.sheet)}</strong></p><ul class="import-errors">` +
+          sheet.errors
+            .map((e) => `<li>Row ${e.row}: ${esc(e.message)}</li>`)
+            .join('') +
+          '</ul>'
+      );
+    }
+  }
+  if (body.blocked) {
+    problems.push(
+      '<p class="muted small">Nothing has been written. Fix the rows above and ' +
+        'upload the file again — an import is all or nothing, so half a ' +
+        'catalogue can never be left behind.</p>'
+    );
+  } else if (!commit && !body.applied) {
+    problems.push(
+      '<p class="muted small">Nothing has been written yet. Press Import to apply it.</p>'
+    );
+  }
+  $('import-problems').innerHTML = problems.join('');
+}
+
+// ---- Running a report -----------------------------------------------------
+
+/**
+ * The report a venue hands to its accountant.
+ *
+ * Pick a window, run it, read it, export it. The three formats are built by the
+ * server from the same in-memory report the tables below are drawn from, so
+ * what is exported is always what was on screen — see
+ * vesopa_server/src/reports.js.
+ */
+let rrCatalogue = null;
+
+async function loadRunReport() {
+  if (!rrCatalogue) {
+    rrCatalogue = await api('/reports/catalogue');
+    $('rr-report').innerHTML = rrCatalogue.reports
+      .map((r) => `<option value="${esc(r.key)}">${esc(r.label)}</option>`)
+      .join('');
+    $('rr-period').innerHTML = rrCatalogue.ranges
+      .map((r) => `<option value="${esc(r.key)}">${esc(r.label)}</option>`)
+      .join('');
+    $('rr-format').innerHTML = rrCatalogue.formats
+      .map((f) => `<option value="${esc(f.key)}">${esc(f.label)}</option>`)
+      .join('');
+
+    // Yesterday rather than Today, because the question a manager opens this
+    // page to answer is almost always about a day that has finished.
+    $('rr-period').value = 'yesterday';
+
+    $('rr-period').addEventListener('change', rrToggleCustom);
+    $('rr-run').addEventListener('click', rrRun);
+    $('rr-export').addEventListener('click', rrExport);
+    rrToggleCustom();
+  }
+
+  // Nothing is run on arrival. A report is a query over the whole ledger, and
+  // firing one because somebody clicked a menu item is how a back office comes
+  // to feel slow at the venue with three years of trading in it.
+  $('rr-result').innerHTML =
+    '<p class="muted small">Choose a period and press Run report.</p>';
+  $('rr-window').textContent = '';
+  $('rr-export').disabled = true;
+}
+
+/** The two date boxes only exist for Custom Range. */
+function rrToggleCustom() {
+  const custom = $('rr-period').value === 'custom';
+  $('rr-from-field').hidden = !custom;
+  $('rr-to-field').hidden = !custom;
+  if (custom && !$('rr-from').value) {
+    // Seeded with a sensible week rather than left blank, so the first press of
+    // Run does something instead of complaining.
+    const today = new Date();
+    const weekAgo = new Date(today);
+    weekAgo.setDate(weekAgo.getDate() - 6);
+    $('rr-from').value = weekAgo.toISOString().slice(0, 10);
+    $('rr-to').value = today.toISOString().slice(0, 10);
+  }
+}
+
+/** What the run and the export both send. */
+function rrSpec() {
+  return {
+    report: $('rr-report').value,
+    period: $('rr-period').value,
+    from: $('rr-from').value || undefined,
+    to: $('rr-to').value || undefined,
+  };
+}
+
+async function rrRun() {
+  const button = $('rr-run');
+  button.disabled = true;
+  $('rr-result').innerHTML = '<p class="muted small">Running…</p>';
+  try {
+    const report = await api('/reports/run', {
+      method: 'POST',
+      body: JSON.stringify(rrSpec()),
+    });
+    rrRender(report);
+    $('rr-export').disabled = false;
+  } catch (e) {
+    $('rr-result').innerHTML = `<p class="error">${esc(e.message)}</p>`;
+    $('rr-export').disabled = true;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function rrRender(report) {
+  $('rr-window').textContent = report.header
+    .map(([label, value]) => `${label}: ${value}`)
+    .join('   ·   ');
+
+  const cell = (tag, value, i) =>
+    `<${tag}${i === 0 ? '' : ' class="num"'}>${esc(value)}</${tag}>`;
+
+  $('rr-result').innerHTML = report.sections
+    .map((part) => {
+      const head = part.columns.map((c, i) => cell('th', c.label, i)).join('');
+
+      const body = part.rows.length
+        ? part.rows
+            .map(
+              (row) =>
+                '<tr>' + row.values.map((v, i) => cell('td', v, i)).join('') + '</tr>'
+            )
+            .join('')
+        : `<tr><td colspan="${part.columns.length}" class="muted small">` +
+          'Nothing in this period.</td></tr>';
+
+      const total = part.total
+        ? '<tfoot><tr>' +
+          part.total.values.map((v, i) => cell('td', v, i)).join('') +
+          '</tr></tfoot>'
+        : '';
+
+      return `<div class="card rd-card" style="margin-bottom:var(--stack)">
+        <h3 class="rr-section">${esc(part.title)}</h3>
+        <div class="rr-scroll">
+          <table class="table rr-table">
+            <thead><tr>${head}</tr></thead>
+            <tbody>${body}</tbody>
+            ${total}
+          </table>
+        </div>
+      </div>`;
+    })
+    .join('');
+}
+
+/**
+ * Download the report in the chosen format.
+ *
+ * Posted and read as a blob rather than linked, for the same reason the import
+ * template is: the route is behind the session token, and a plain link carries
+ * no Authorization header — it would land on the sign-in page and save an HTML
+ * error as "report.pdf".
+ */
+async function rrExport() {
+  const button = $('rr-export');
+  button.disabled = true;
+  try {
+    const res = await fetch('/api/reports/export', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ ...rrSpec(), format: $('rr-format').value }),
+    });
+    if (res.status === 401) return signOut();
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || 'The export failed.');
+    }
+
+    // The server has already named the file. Taking its name rather than
+    // inventing a second one keeps a downloaded report and an emailed one
+    // identical, which matters when somebody is comparing the two.
+    const disposition = res.headers.get('content-disposition') || '';
+    const match = /filename="([^"]+)"/.exec(disposition);
+    const url = URL.createObjectURL(await res.blob());
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = match ? match[1] : 'report';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  } catch (e) {
+    alert(e.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+// ---- Scheduled reports ----------------------------------------------------
+
+let rsOptions = null;
+
+async function loadReportSchedules() {
+  if (!rsOptions) {
+    rsOptions = await api('/reports/schedule-options');
+    $('rs-new').addEventListener('click', () => rsEdit(null));
+  }
+
+  // Said once, at the top, rather than discovered when the first report fails
+  // to arrive: a schedule on a server with no mailbox configured runs happily,
+  // builds the report, and then has nowhere to send it.
+  const warning = $('rs-mail-warning');
+  warning.hidden = !!rsOptions.mailEnabled;
+  warning.className = 'error';
+  warning.textContent = rsOptions.mailEnabled
+    ? ''
+    : 'This server has no mailbox configured, so scheduled reports will be ' +
+      'built but not sent. Set SMTP_HOST and SMTP_PASSWORD on the server.';
+
+  const rows = await api('/reports/schedules');
+  $('rs-rows').innerHTML = rows.length
+    ? rows.map(rsRow).join('')
+    : '<tr><td colspan="8" class="muted small">No scheduled reports yet.</td></tr>';
+
+  $('rs-rows').onclick = (e) => rsAction(e, rows);
+  $('rs-runs').innerHTML = '';
+}
+
+function rsRow(r) {
+  return `<tr>
+    <td>${esc(r.name)}${r.active ? '' : ' <span class="badge paused">paused</span>'}</td>
+    <td>${esc(r.report_label)} <span class="muted small">${esc(String(r.format).toUpperCase())}</span></td>
+    <td>${esc(r.frequency_label)}</td>
+    <td>${esc(r.time)}</td>
+    <td>${esc(r.period_label)}</td>
+    <td>${r.last_run_at ? esc(rsWhen(r.last_run_at)) : '<span class="muted small">never</span>'}</td>
+    <td>${r.next_run_at ? esc(rsWhen(r.next_run_at)) : '<span class="muted small">—</span>'}</td>
+    <td class="right nowrap">
+      <button class="btn small ghost" data-rs-runs="${r.id}">Results</button>
+      <button class="btn small ghost" data-rs-send="${r.id}">Send now</button>
+      <button class="btn small ghost" data-rs-edit="${r.id}">Edit</button>
+      <button class="btn small danger-ghost" data-rs-delete="${r.id}">Delete</button>
+    </td>
+  </tr>`;
+}
+
+async function rsAction(e, rows) {
+  const button = e.target.closest('button');
+  if (!button) return;
+  const data = button.dataset;
+
+  if (data.rsRuns) return rsShowRuns(data.rsRuns);
+  if (data.rsEdit) {
+    return rsEdit(rows.find((r) => String(r.id) === data.rsEdit));
+  }
+
+  if (data.rsSend) {
+    button.disabled = true;
+    try {
+      const outcome = await api(`/reports/schedules/${data.rsSend}/run`, {
+        method: 'POST',
+      });
+      alert(
+        outcome.status === 'sent'
+          ? outcome.detail
+          : `Not sent: ${outcome.detail || outcome.status}`
+      );
+      render();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      button.disabled = false;
+    }
+    return;
+  }
+
+  if (data.rsDelete) {
+    const row = rows.find((r) => String(r.id) === data.rsDelete);
+    if (!confirm(`Delete "${row.name}"? It will stop sending.`)) return;
+    await api(`/reports/schedules/${data.rsDelete}`, { method: 'DELETE' });
+    render();
+  }
+}
+
+/** A timestamp as somebody standing at a counter reads it. */
+function rsWhen(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${pad(date.getDate())}/${pad(date.getMonth() + 1)} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+/**
+ * The five things a schedule needs, in the order they were asked for: what it
+ * is called, which report and in what format, how often and when, what period
+ * it covers, and who gets it.
+ *
+ * One modal rather than a five-tab wizard. Eight fields fit on one screen, and
+ * a wizard over eight fields costs four presses to check what you typed on the
+ * first page. It is also the back office's own editor shape — see the note in
+ * app.js about native dialogs, which is why this is a drawn modal and not a
+ * chain of prompts.
+ */
+function rsEdit(existing) {
+  modal(
+    existing ? `Edit "${existing.name}"` : 'New scheduled report',
+    [
+      { name: 'name', label: 'Name', value: existing ? existing.name : '', required: true },
+      {
+        name: 'description',
+        label: 'Description (optional)',
+        value: existing && existing.description ? existing.description : '',
+      },
+      {
+        name: 'report_key',
+        label: 'Report',
+        type: 'select',
+        value: existing ? existing.report_key : rsOptions.reports[0].key,
+        options: rsOptions.reports.map((r) => ({ value: r.key, label: r.label })),
+      },
+      {
+        name: 'format',
+        label: 'Format',
+        type: 'select',
+        value: existing ? existing.format : 'pdf',
+        options: rsOptions.formats.map((f) => ({ value: f.key, label: f.label })),
+      },
+      {
+        name: 'frequency',
+        label: 'How often it runs',
+        type: 'select',
+        value: existing ? existing.frequency : 'daily',
+        options: rsOptions.frequencies.map((f) => ({ value: f.key, label: f.label })),
+      },
+      {
+        name: 'time',
+        label: 'Time of day',
+        type: 'time',
+        value: existing ? existing.time : '08:30',
+      },
+      {
+        name: 'period',
+        label: 'Period it covers',
+        type: 'select',
+        value: existing ? existing.period : 'yesterday',
+        options: rsOptions.periods.map((p) => ({ value: p.key, label: p.label })),
+      },
+      {
+        name: 'recipients',
+        label: 'Send to (separate addresses with commas)',
+        value: existing ? existing.recipients : '',
+        required: true,
+      },
+      {
+        name: 'active',
+        label: 'Active',
+        type: 'checkbox',
+        value: existing ? (existing.active ? 1 : 0) : 1,
+      },
+    ],
+    async (data) => {
+      await api(
+        existing ? `/reports/schedules/${existing.id}` : '/reports/schedules',
+        {
+          method: existing ? 'PUT' : 'POST',
+          body: JSON.stringify({ ...data, active: Number(data.active) === 1 }),
+        }
+      );
+    }
+  );
+}
+
+/** What happened each time it fired. The answer to "it never arrived". */
+async function rsShowRuns(id) {
+  const runs = await api(`/reports/schedules/${id}/runs`);
+  const body = runs.length
+    ? runs
+        .map(
+          (r) => `<tr>
+            <td>${esc(rsWhen(r.ran_at))}</td>
+            <td><span class="badge ${r.status === 'sent' ? 'active' : 'paused'}">${esc(r.status)}</span></td>
+            <td>${r.covered_from ? esc(`${rsWhen(r.covered_from)} – ${rsWhen(r.covered_to)}`) : '—'}</td>
+            <td>${esc(r.recipients || '')}</td>
+            <td class="muted small">${esc(r.detail || '')}</td>
+          </tr>`
+        )
+        .join('')
+    : '<tr><td colspan="5" class="muted small">It has not run yet.</td></tr>';
+
+  $('rs-runs').innerHTML = `<div class="card">
+    <h3 class="rr-section">Recent runs</h3>
+    <table class="table">
+      <thead><tr><th>When</th><th>Outcome</th><th>Covered</th><th>Sent to</th><th>Detail</th></tr></thead>
+      <tbody>${body}</tbody>
+    </table>
+  </div>`;
+  $('rs-runs').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }

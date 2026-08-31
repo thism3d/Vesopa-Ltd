@@ -1,0 +1,88 @@
+name: vesopa_epos_display
+# Plain ASCII, deliberately. The msix tool copies this straight into
+# AppxManifest.xml's Description and mangles a non-ASCII character on the way -
+# an em-dash in the kitchen app's description came out as a replacement glyph on
+# the Store tile.
+description: "Vesopa Customer Display: the customer-facing screen for Vesopa EPOS."
+# Private, like the till and the kitchen screen. Never published to pub.dev.
+publish_to: 'none'
+
+# Tracks the till's release line rather than starting at 1.0.0, for the same
+# reason the kitchen screen does: the two ship together, and a display and a
+# till on different major versions is a support question nobody can answer over
+# the phone. The build number is this app's own.
+version: 1.6.0+1
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  # State. The same choice as the till and the kitchen screen, so a developer
+  # moving between the three repositories is reading the same idioms.
+  riverpod: ^3.3.2
+  flutter_riverpod: ^3.3.2
+
+  # This screen's own memory: where the till's basket file is, which folder the
+  # adverts are in, and how long to wait before going full screen. All local to
+  # this device - there is nothing here another machine needs to know.
+  shared_preferences: ^2.5.5
+
+  # Money and clocks, formatted the way the till formats them.
+  intl: ^0.20.3
+
+  # Video adverts. A venue that has had a promo cut for its own screens has an
+  # MP4, not a folder of stills, and telling them to export frames is not an
+  # answer.
+  video_player: ^2.9.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  msix: ^3.18.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/brand/
+
+# Microsoft Store packaging.
+#
+#     dart run msix:create --store
+#
+# The identity values below are assigned by the Store (Partner Center ->
+# Product -> Product identity) and must match it character for character. The
+# publisher is the GUID the Store issues, not the company name.
+#
+# NOTE: identity_name is a placeholder until this app has its own Store listing.
+# It must be replaced with the one Partner Center issues before the first
+# submission, or the upload is rejected — a name that merely looks right is not
+# one the Store has heard of.
+msix_config:
+  display_name: Vesopa Customer Display
+  publisher_display_name: Vesopa EPOS Ltd
+  identity_name: MeirionDavies.VesopaCustomerDisplay
+  publisher: CN=3AD172E6-2CBA-4B09-AD50-B52C88D57FB3
+
+  # Four parts, and the last must be 0 — the Store reserves the revision field
+  # and rejects anything else. Tracks `version:` at the top of this file.
+  msix_version: 1.6.0.0
+
+  logo_path: assets/brand/512x512.png
+
+  # No network capability at all, and that is the point rather than an omission.
+  # This screen reads one file the till writes and plays media off a local
+  # folder; it has no business reaching the internet, and a customer-facing
+  # screen with no network is one fewer thing to think about.
+  capabilities: ""
+
+  # The Store signs the package, so no local certificate is used or needed.
+  store: true
+
+  architecture: x64
+  languages: en-gb
