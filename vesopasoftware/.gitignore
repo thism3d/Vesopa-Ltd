@@ -15,3 +15,4 @@ uploads/
 # reproducible intermediate — the encode is the artefact worth keeping, not the
 # input to it.
 site/assets/video_frames/
+shots-live/

@@ -1,271 +1,320 @@
 <%- include("../partials/head") %>
 <%- include("../partials/nav") %>
-<% const isAdminView = false; const doneTasks = tasks.filter(t => t.status === "done").length; %>
+<%
+/* The project hub.
+ *
+ * This used to be five stacked panels — updates, messages, tasks, files,
+ * invoices — each a separate list in its own box. Somebody joining a project
+ * three weeks in had to read all five and reconstruct the order of events in
+ * their head. The conversation is the spine now, and everything that happened
+ * is an entry in it: a message, a published update, a file, a task raised or
+ * finished. The board, the calendar and the money sit beside it.
+ */
+const fmtDay = (d) => new Date(d).toLocaleDateString("en-GB",
+  { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+const initials = (n) => String(n || "?").split(" ").map(w => w[0]).slice(0,2).join("").toUpperCase();
+const isImg = (m) => /^image\//.test(m || "");
+const STATUS = { enquiry:"info", scoping:"info", in_progress:"lime", review:"warn",
+                 on_hold:"warn", live:"ok", complete:"ok", cancelled:"bad" };
+const nextDue = buckets.open.find(t => t.due_date);
+const cal = calendar.month;
+const prev = new Date(cal.getFullYear(), cal.getMonth() - 1, 1);
+const next = new Date(cal.getFullYear(), cal.getMonth() + 1, 1);
+const calBase = `/portal/projects/${project.id}`;
+%>
 
 <div class="wrap">
-  <div class="page-head">
-    <div class="grow">
-      <span class="eyebrow"><%= project.ref %> · <%= project.service_type %></span>
-      <h1><%= project.title %></h1>
-      <p>
-        <span class="pill <%= project.status === 'complete' ? 'ok' : project.status === 'on_hold' ? 'warn' : 'info' %>">
-          <%= PROJECT_STATUS[project.status] ? PROJECT_STATUS[project.status].label : project.status %>
-        </span>
-        · started <time datetime="<%= new Date(project.created_at).toISOString() %>"></time>
-        <% if (project.target_date) { %>
-          · due <time datetime="<%= new Date(project.target_date).toISOString() %>"></time>
-        <% } %>
-      </p>
-    </div>
-    <div class="right">
-      <div class="stat plain" style="padding:.7rem .9rem">
-        <b><%= moneyRound(project.budget_amount, project.currency) %></b>
-        <span>Agreed budget</span>
+
+  <!-- ---------- pinned: what this is, where it is ---------- -->
+  <div class="hub-head panel">
+    <div class="hub-head-top">
+      <div class="grow">
+        <span class="eyebrow"><a href="/portal/projects" class="muted">Projects</a> · <%= project.ref %></span>
+        <h1><%= project.title %></h1>
       </div>
+      <span class="pill <%= STATUS[project.status] || '' %>"><%= String(project.status).replace(/_/g," ") %></span>
     </div>
-  </div>
 
-  <div class="panel">
-    <div class="progress-line">
-      <div class="bar" data-progress="<%= project.id %>"><i style="width:<%= project.progress_pct %>%"></i></div>
-      <b data-progress-label="<%= project.id %>"><%= project.progress_pct %>%</b>
-    </div>
     <% if (project.description) { %>
-      <p class="muted" style="margin-top:.8rem;font-size:.9rem;white-space:pre-wrap"><%= project.description %></p>
+      <p class="hub-brief"><%= project.description %></p>
     <% } %>
+
+    <div class="hub-facts">
+      <div class="progress-line" style="min-width:12rem;flex:1">
+        <div class="bar" data-task-progress><i style="width:<%= project.progress_pct || 0 %>%"></i></div>
+        <b data-task-progress-label><%= project.progress_pct || 0 %>%</b>
+      </div>
+      <span class="hub-fact"><small>Next up</small>
+        <b><%= nextDue ? nextDue.title : (buckets.open.length ? buckets.open[0].title : "Nothing outstanding") %></b>
+        <% if (nextDue && nextDue.due_date) { %><time datetime="<%= new Date(nextDue.due_date).toISOString() %>"></time><% } %>
+      </span>
+      <span class="hub-fact"><small>Open tasks</small><b><%= buckets.open.length %><%
+        if (buckets.overdue) { %> <span class="pill bad"><%= buckets.overdue %> overdue</span><% } %></b></span>
+      <span class="hub-fact"><small>Team</small>
+        <b class="hub-avatars">
+          <% for (const m of members.slice(0,6)) { %><span class="avatar sm <%= m.side === 'vesopa' ? 'v' : '' %>"
+             title="<%= m.name %> — <%= m.side === 'vesopa' ? 'Vesopa' : roleLabel(m.org_role) %>"><%= initials(m.name) %></span><% } %>
+        </b>
+      </span>
+    </div>
   </div>
 
-  <div class="split" style="margin-top:1rem">
-    <div>
-      <!-- conversation -->
-      <div class="panel">
-        <div class="panel-head">
-          <h2>Conversation</h2>
-          <span class="spacer"></span>
-          <span class="live" id="live-thread"></span>
-        </div>
+  <div class="hub">
+    <!-- ================= the feed ================= -->
+    <section class="panel hub-feed" aria-label="Project activity">
+      <div class="panel-head">
+        <h2>Activity</h2>
+        <span class="spacer"></span>
+        <span class="mono muted" style="font-size:.63rem"><%= timeline.reduce((n,d)=>n+d.entries.length,0) %> entries</span>
+      </div>
 
-        <div class="thread" id="thread" data-project="<%= project.id %>">
-          <% for (const m of messages) { %>
-            <% const mine = m.user_id === user.id; %>
-            <div class="msg <%= mine ? 'mine' : '' %> <%= m.author_role === 'admin' ? 'vesopa' : '' %> <%= m.recipient_id ? 'private' : '' %>"
-                 data-msg="<%= m.id %>">
-              <div class="who"><%= (m.author || "?").split(" ").map(w => w[0]).slice(0,2).join("").toUpperCase() %></div>
-              <div class="bubble">
-                <div class="meta">
-                  <b><%= m.author || "Someone" %></b>
-                  <% if (m.author_role === "admin") { %><span class="pill lime">Vesopa</span><% } %>
-                  <% if (m.recipient_id) { %><span class="pill warn">Private</span><% } %>
-                  <time datetime="<%= new Date(m.created_at).toISOString() %>"></time>
-                </div>
-                <div class="body"><%= m.body %></div>
-                <% if (m.invoice_id && m.invoice_number) { %>
-                  <div class="inv-card">
-                    <div>
-                      <div class="mono muted" style="font-size:.62rem">INVOICE <%= m.invoice_number %></div>
-                      <b><%= money(m.invoice_total, m.invoice_currency) %></b>
+      <div class="thread" id="thread" data-project="<%= project.id %>">
+        <% if (!timeline.length) { %>
+          <p class="muted" style="text-align:center;padding:2rem 0">
+            Nothing here yet. Say hello — this is where every update, file and decision will live.
+          </p>
+        <% } %>
+
+        <% for (const day of timeline) { %>
+          <div class="day-rule"><span><%= fmtDay(day.date) %></span></div>
+
+          <% for (const e of day.entries) { %>
+            <% if (e.kind === "message") { %>
+              <div class="msg <%= e.userId === user.id ? 'mine' : '' %> <%= e.authorRole === 'admin' ? 'vesopa' : '' %> <%= e.private ? 'private' : '' %>"
+                   data-msg="<%= e.id %>">
+                <div class="who"><%= initials(e.author) %></div>
+                <div class="bubble">
+                  <div class="meta">
+                    <b><%= e.author || "Someone" %></b>
+                    <% if (e.authorRole === "admin") { %><span class="pill lime">Vesopa</span><% } %>
+                    <% if (e.private) { %><span class="pill warn">Private</span><% } %>
+                    <time datetime="<%= new Date(e.at).toISOString() %>"></time>
+                  </div>
+                  <div class="body"><%= e.body %></div>
+
+                  <% if (e.attachments.length) { %>
+                    <div class="msg-files">
+                      <% for (const f of e.attachments) { %>
+                        <a class="file" href="/portal/files/<%= f.id %>"
+                           data-preview="<%= f.id %>" data-name="<%= f.original_name %>" data-mime="<%= f.mime %>">
+                          <span class="thumb">
+                            <% if (isImg(f.mime)) { %><img src="/portal/files/<%= f.id %>" alt="<%= f.original_name %>" loading="lazy">
+                            <% } else { %><%= (f.original_name.split(".").pop() || "file").toUpperCase() %><% } %>
+                          </span>
+                          <span class="meta"><b><%= f.original_name %></b><small><%= prettySize(f.size_bytes) %></small></span>
+                        </a>
+                      <% } %>
                     </div>
-                    <span class="spacer"></span>
-                    <span class="pill <%= m.invoice_status === 'paid' ? 'ok' : 'warn' %>">
-                      <%= STATUS_LABEL[m.invoice_status] || m.invoice_status %>
-                    </span>
-                    <a class="btn small" href="/portal/invoices/<%= m.invoice_id %>">
-                      <%= m.invoice_status === "paid" ? "View" : "View and pay" %>
+                  <% } %>
+
+                  <% if (e.invoice) { %>
+                    <div class="inv-card">
+                      <b><%= e.invoice.number %></b>
+                      <span class="pill <%= e.invoice.status === 'paid' ? 'ok' : 'warn' %>"><%= e.invoice.status %></span>
+                      <span class="spacer"></span>
+                      <a class="btn ghost small" href="/portal/invoices">Open</a>
+                    </div>
+                  <% } %>
+                </div>
+              </div>
+
+            <% } else if (e.kind === "update") { %>
+              <div class="ev ev-update">
+                <span class="ev-dot" aria-hidden="true"></span>
+                <div class="ev-body">
+                  <div class="meta"><b><%= e.title %></b>
+                    <span class="pill lime">Update</span>
+                    <time datetime="<%= new Date(e.at).toISOString() %>"></time>
+                  </div>
+                  <% if (e.body) { %><p><%= e.body %></p><% } %>
+                  <% if (e.progress != null) { %>
+                    <div class="progress-line" style="margin-top:.5rem">
+                      <div class="bar thin"><i style="width:<%= e.progress %>%"></i></div><b><%= e.progress %>%</b>
+                    </div>
+                  <% } %>
+                  <small class="muted"><%= e.author || "Vesopa" %></small>
+                </div>
+              </div>
+
+            <% } else if (e.kind === "file") { %>
+              <div class="ev ev-file">
+                <span class="ev-dot" aria-hidden="true"></span>
+                <div class="ev-body">
+                  <div class="meta"><b><%= e.uploader || "Someone" %> added a file</b>
+                    <time datetime="<%= new Date(e.at).toISOString() %>"></time></div>
+                  <div class="msg-files">
+                    <a class="file" href="/portal/files/<%= e.id %>"
+                       data-preview="<%= e.id %>" data-name="<%= e.name %>" data-mime="<%= e.mime %>">
+                      <span class="thumb">
+                        <% if (isImg(e.mime)) { %><img src="/portal/files/<%= e.id %>" alt="<%= e.name %>" loading="lazy">
+                        <% } else { %><%= (e.name.split(".").pop() || "file").toUpperCase() %><% } %>
+                      </span>
+                      <span class="meta"><b><%= e.name %></b><small><%= prettySize(e.size) %></small></span>
                     </a>
                   </div>
-                <% } %>
+                </div>
               </div>
-            </div>
-          <% } %>
-        </div>
 
-        <div class="typing" id="typing"></div>
-
-        <% if (can("message.send")) { %>
-          <form class="composer" id="composer" method="post" action="/portal/projects/<%= project.id %>/messages">
-            <input type="hidden" name="_csrf" value="<%= csrf %>">
-            <textarea name="body" placeholder="Write to the team… (Enter sends, Shift+Enter for a new line)" required></textarea>
-            <div class="row">
-              <select name="recipient_id" style="max-width:16rem">
-                <option value="">Everyone on this project</option>
-                <% for (const mem of members) { if (mem.user_id === user.id) continue; %>
-                  <option value="<%= mem.user_id %>">
-                    Private to <%= mem.name %><%= mem.role === "admin" ? " (Vesopa)" : "" %>
-                  </option>
-                <% } %>
-              </select>
-              <span class="spacer" style="flex:1"></span>
-              <button class="btn" type="submit">Send</button>
-            </div>
-          </form>
-        <% } %>
-      </div>
-
-      <!-- files -->
-      <div class="panel">
-        <div class="panel-head">
-          <h2>Files</h2>
-          <span class="spacer"></span>
-          <span class="pill"><%= files.length %></span>
-        </div>
-
-        <% if (files.length) { %>
-          <div class="files" style="margin-bottom:1rem">
-            <% for (const f of files) { %>
-              <div class="file">
-                <a class="thumb" href="/portal/files/<%= f.id %>" data-preview
-                   data-id="<%= f.id %>" data-mime="<%= f.mime || '' %>" data-name="<%= f.original_name %>">
-                  <% if ((f.mime || "").startsWith("image/")) { %>
-                    <img src="/portal/files/<%= f.id %>" alt="<%= f.original_name %>" loading="lazy">
-                  <% } else if (f.mime === "application/pdf") { %>
-                    PDF
-                  <% } else if (/zip/i.test(f.mime || "") || /\.zip$/i.test(f.original_name)) { %>
-                    ZIP
-                  <% } else { %>
-                    FILE
-                  <% } %>
-                </a>
-                <div class="meta">
-                  <b title="<%= f.original_name %>"><%= f.original_name %></b>
-                  <small>
-                    <%= (f.size_bytes/1024).toFixed(0) %> KB ·
-                    <time datetime="<%= new Date(f.created_at).toISOString() %>"></time>
-                  </small>
-                  <small class="muted"><%= f.uploader || "—" %><%= f.side === "vesopa" ? " · Vesopa" : "" %></small>
-                  <% if (f.user_id === user.id) { %>
-                    <form method="post" action="/portal/files/<%= f.id %>/delete" style="margin-top:.3rem">
-                      <input type="hidden" name="_csrf" value="<%= csrf %>">
-                      <button class="btn danger small" type="submit">Remove</button>
-                    </form>
-                  <% } %>
+            <% } else if (e.kind === "task") { %>
+              <div class="ev ev-task <%= e.event === 'done' ? 'is-done' : '' %>">
+                <span class="ev-dot" aria-hidden="true"></span>
+                <div class="ev-body">
+                  <div class="meta">
+                    <b><%= e.event === "done" ? "Completed" : "Task added" %></b>
+                    <span><%= e.title %></span>
+                    <time datetime="<%= new Date(e.at).toISOString() %>"></time>
+                  </div>
                 </div>
               </div>
             <% } %>
-          </div>
-        <% } %>
-
-        <% if (can("message.send")) { %>
-          <form method="post" action="/portal/projects/<%= project.id %>/files" enctype="multipart/form-data">
-            <input type="hidden" name="_csrf" value="<%= csrf %>">
-            <input type="file" name="files" multiple class="sr">
-            <div class="dropzone" id="dropzone">
-              Drop files here, or click to choose. Images, PDFs, documents, zips and video, up to 25 MB each.
-            </div>
-          </form>
+          <% } %>
         <% } %>
       </div>
-    </div>
 
-    <div>
-      <!-- tasks -->
-      <div class="panel">
+      <p class="typing" id="typing"></p>
+
+      <% if (can("message.send")) { %>
+        <form class="composer" id="composer" method="post" action="/portal/projects/<%= project.id %>/messages">
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <div class="row">
+            <textarea name="body" rows="2" placeholder="Write to the team… (Enter sends, Shift+Enter for a new line)"></textarea>
+            <button class="btn" type="submit">Send</button>
+          </div>
+        </form>
+
+        <form class="composer-files" method="post" enctype="multipart/form-data"
+              action="/portal/projects/<%= project.id %>/files">
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <label class="dropzone" id="dropzone">
+            <input type="file" name="files" multiple hidden id="file-input">
+            <b>Add images or files</b>
+            <small>Drop them here, or choose. They appear in the conversation above.</small>
+          </label>
+          <div class="btn-row" id="file-go" hidden>
+            <span class="mono muted" id="file-count"></span>
+            <span class="spacer" style="flex:1"></span>
+            <button class="btn small" type="submit">Upload</button>
+          </div>
+        </form>
+      <% } %>
+    </section>
+
+    <!-- ================= the board ================= -->
+    <aside class="hub-side">
+
+      <section class="panel" aria-label="Tasks">
         <div class="panel-head">
-          <h3>Tasks</h3>
+          <h3>Board</h3>
           <span class="spacer"></span>
-          <span class="pill" data-task-progress-label><%= doneTasks %>/<%= tasks.length %></span>
+          <div class="seg" role="tablist">
+            <button class="on" data-bucket="open" role="tab">Open <b><%= buckets.open.length %></b></button>
+            <button data-bucket="done" role="tab">Done <b><%= buckets.done.length %></b></button>
+            <button data-bucket="archived" role="tab">Archive <b><%= buckets.archived.length %></b></button>
+          </div>
         </div>
-        <div class="bar thin" data-task-progress style="margin-bottom:.7rem">
-          <i style="width:<%= tasks.length ? Math.round(doneTasks / tasks.length * 100) : 0 %>%"></i>
-        </div>
-        <% if (!tasks.length) { %>
-          <p class="t-empty">No tasks yet.</p>
-        <% } else { %>
-          <ul class="tasks">
-            <% for (const t of tasks) { %>
-              <li class="task <%= t.status === 'done' ? 'done' : '' %>">
-                <input type="checkbox" data-task="<%= t.id %>"
-                       data-url="/portal/projects/<%= project.id %>/tasks/<%= t.id %>/status"
-                       <%= t.status === "done" ? "checked" : "" %>
-                       <%= can("message.send") ? "" : "disabled" %>>
+
+        <% for (const key of ["open","done","archived"]) { %>
+          <ul class="tasks bucket" data-bucket-list="<%= key %>" <%= key === "open" ? "" : "hidden" %>>
+            <% if (!buckets[key].length) { %>
+              <li class="t-empty">Nothing <%= key === "open" ? "outstanding" : key %>.</li>
+            <% } %>
+            <% for (const t of buckets[key]) { %>
+              <li class="task <%= t.status === 'done' ? 'done' : '' %>" data-task-row="<%= t.id %>">
+                <input type="checkbox" data-task="<%= t.id %>" <%= t.status === "done" ? "checked" : "" %>
+                       <%= key === "archived" ? "disabled" : "" %> aria-label="Mark done">
                 <div class="grow">
                   <b><%= t.title %></b>
                   <small>
-                    <span class="pill <%= t.status === 'doing' ? 'info' : t.status === 'blocked' ? 'bad' : '' %>"><%= t.status %></span>
-                    <% if (t.assignee) { %> · <%= t.assignee %><% } %>
-                    <% if (t.due_date) { %> · due <time datetime="<%= new Date(t.due_date).toISOString() %>"></time><% } %>
+                    <% if (t.due_date) { %>
+                      <span class="<%= t.status !== 'done' && new Date(t.due_date) < new Date() ? 'overdue' : '' %>">
+                        due <time datetime="<%= new Date(t.due_date).toISOString() %>"></time></span> ·
+                    <% } %>
+                    <%= t.assignee ? t.assignee : (t.creator ? "raised by " + t.creator : "unassigned") %>
                   </small>
                 </div>
+                <% if (can("message.send")) { %>
+                  <button class="task-arch" type="button" data-archive="<%= t.id %>"
+                          data-restore="<%= key === 'archived' ? '1' : '0' %>"
+                          title="<%= key === 'archived' ? 'Restore' : 'Archive' %>">
+                    <%= key === "archived" ? "↺" : "×" %>
+                  </button>
+                <% } %>
               </li>
             <% } %>
           </ul>
         <% } %>
-      </div>
 
-      <!-- who is on it -->
-      <div class="panel">
-        <h3>Who is on this</h3>
-        <% if (!members.length) { %>
-          <p class="t-empty">Nobody assigned yet.</p>
-        <% } else { %>
-          <% for (const m of members) { %>
-            <div style="display:flex;gap:.6rem;align-items:center;padding:.5rem 0;border-bottom:1px solid var(--rule)">
-              <div class="who" style="width:2rem;height:2rem;border-radius:50%;background:var(--panel-2);
-                   border:1px solid var(--rule-strong);display:grid;place-items:center;font-size:.62rem"
-                   class="mono">
-                <%= m.name.split(" ").map(w => w[0]).slice(0,2).join("").toUpperCase() %>
-              </div>
-              <div style="flex:1;min-width:0">
-                <b style="font-size:.88rem;font-weight:600"><%= m.name %></b>
-                <div class="muted" style="font-size:.72rem">
-                  <%= m.role_label || m.job_title || (m.role === "admin" ? "Vesopa" : roleLabel(m.org_role)) %>
-                </div>
-              </div>
-              <% if (m.side === "vesopa") { %><span class="pill lime">Vesopa</span><% } %>
+        <% if (can("message.send")) { %>
+          <form class="task-new" id="task-new" method="post" action="/portal/projects/<%= project.id %>/tasks">
+            <input type="hidden" name="_csrf" value="<%= csrf %>">
+            <input name="title" placeholder="Add a task…" maxlength="200" required>
+            <input name="due_date" type="date" aria-label="Due date">
+            <button class="btn small" type="submit">Add</button>
+          </form>
+        <% } %>
+      </section>
+
+      <!-- ================= the calendar ================= -->
+      <section class="panel" aria-label="Calendar">
+        <div class="panel-head">
+          <h3><%= cal.toLocaleDateString("en-GB",{month:"long",year:"numeric"}) %></h3>
+          <span class="spacer"></span>
+          <a class="btn ghost small" href="<%= calBase %>?y=<%= prev.getFullYear() %>&m=<%= prev.getMonth() %>#cal" aria-label="Previous month">‹</a>
+          <a class="btn ghost small" href="<%= calBase %>#cal" aria-label="This month">Today</a>
+          <a class="btn ghost small" href="<%= calBase %>?y=<%= next.getFullYear() %>&m=<%= next.getMonth() %>#cal" aria-label="Next month">›</a>
+        </div>
+        <div class="cal" id="cal">
+          <% for (const d of ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]) { %>
+            <span class="cal-h"><%= d %></span>
+          <% } %>
+          <% for (const c of calendar.cells) { %>
+            <div class="cal-d <%= c.inMonth ? "" : "out" %> <%= c.today ? "today" : "" %> <%= c.tasks.length ? "has" : "" %>"
+                 <%= c.tasks.length ? `title="${c.tasks.map(t=>t.title.replace(/"/g,"")).join(" · ")}"` : "" %>>
+              <span><%= c.day %></span>
+              <% if (c.tasks.length) { %>
+                <i class="cal-dots" aria-hidden="true"><% for (const t of c.tasks.slice(0,3)) { %><b class="<%= t.status === 'done' ? 'ok' : (new Date(t.due_date) < new Date() ? 'bad' : '') %>"></b><% } %></i>
+              <% } %>
             </div>
           <% } %>
-          <p class="hint">Use the dropdown under the message box to write to one of them privately.</p>
-        <% } %>
-      </div>
-
-      <!-- money on this project -->
-      <% if (can("billing.view")) { %>
-        <div class="panel">
-          <h3>Money on this project</h3>
-          <% if (charges.length) { %>
-            <div class="mono muted" style="font-size:.62rem;margin-bottom:.4rem">PENDING CHARGES</div>
-            <% for (const c of charges) { %>
-              <div style="display:flex;gap:.5rem;font-size:.83rem;padding:.35rem 0;border-bottom:1px solid var(--rule)">
-                <span style="flex:1"><%= c.description %></span>
-                <span class="strong-num"><%= money(c.amount, c.currency) %></span>
-              </div>
-            <% } %>
-          <% } %>
-          <% if (invoices.length) { %>
-            <div class="mono muted" style="font-size:.62rem;margin:.9rem 0 .4rem">INVOICES</div>
-            <% for (const i of invoices) { %>
-              <div style="display:flex;gap:.5rem;align-items:center;font-size:.83rem;padding:.35rem 0;border-bottom:1px solid var(--rule)">
-                <a href="/portal/invoices/<%= i.id %>" style="flex:1;text-decoration:none"><%= i.number %></a>
-                <span class="pill <%= i.status === 'paid' ? 'ok' : isOverdue(i) ? 'bad' : 'warn' %>">
-                  <%= STATUS_LABEL[i.status] || i.status %>
-                </span>
-                <span class="strong-num"><%= money(i.total, i.currency) %></span>
-              </div>
-            <% } %>
-          <% } %>
-          <% if (!charges.length && !invoices.length) { %>
-            <p class="t-empty">Nothing billed yet.</p>
-          <% } %>
         </div>
+      </section>
+
+      <!-- ================= money ================= -->
+      <% if (can("billing.view") && (invoices.length || charges.length)) { %>
+        <section class="panel" aria-label="Billing">
+          <div class="panel-head"><h3>Billing</h3><span class="spacer"></span>
+            <a class="btn ghost small" href="/portal/invoices">All invoices</a></div>
+          <ul class="tasks">
+            <% for (const i of invoices.slice(0,5)) { %>
+              <li class="task">
+                <div class="grow">
+                  <b><%= i.number %></b>
+                  <small><time datetime="<%= new Date(i.issue_date).toISOString() %>"></time></small>
+                </div>
+                <span class="pill <%= i.status === 'paid' ? 'ok' : i.status === 'overdue' ? 'bad' : 'warn' %>"><%= i.status %></span>
+                <a class="btn ghost small" href="/portal/invoices/<%= i.id %>/pdf" title="Download PDF">PDF</a>
+              </li>
+            <% } %>
+            <% if (!invoices.length) { %><li class="t-empty">No invoices yet.</li><% } %>
+          </ul>
+        </section>
       <% } %>
 
-      <!-- timeline -->
-      <div class="panel">
-        <h3>Timeline</h3>
-        <% if (!updates.length) { %>
-          <p class="t-empty">Nothing posted yet.</p>
-        <% } else { %>
-          <ul class="timeline">
-            <% updates.forEach((u, idx) => { %>
-              <li class="<%= idx ? 'muted' : '' %>">
-                <h4><%= u.title %></h4>
-                <% if (u.body) { %><p><%= u.body %></p><% } %>
-                <time datetime="<%= new Date(u.created_at).toISOString() %>"></time>
-              </li>
-            <% }) %>
-          </ul>
-        <% } %>
-      </div>
-    </div>
+      <!-- ================= team ================= -->
+      <section class="panel" aria-label="Team">
+        <div class="panel-head"><h3>On this project</h3></div>
+        <ul class="tasks">
+          <% for (const m of members) { %>
+            <li class="task">
+              <span class="avatar sm <%= m.side === 'vesopa' ? 'v' : '' %>"><%= initials(m.name) %></span>
+              <div class="grow"><b><%= m.name %></b>
+                <small><%= m.side === "vesopa" ? "Vesopa" : roleLabel(m.org_role) %><%= m.job_title ? " · " + m.job_title : "" %></small></div>
+            </li>
+          <% } %>
+          <% if (!members.length) { %><li class="t-empty">Nobody assigned yet.</li><% } %>
+        </ul>
+      </section>
+    </aside>
   </div>
 </div>
 

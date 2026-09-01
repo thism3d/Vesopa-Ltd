@@ -125,9 +125,24 @@
         if (!d.ok) throw new Error(d.error || "That did not send.");
         form.querySelectorAll("input[type=text], input[type=email], input[type=tel], textarea, input:not([type])")
           .forEach((i) => { i.value = ""; });
+        /* The estimate, and the one useful next step.
+           Registering is entirely optional — the brief is already saved and a
+           person is already reading it. But an account is where the answer
+           comes back, and the register page claims this quote by email, so
+           carrying the reference across means it can say so rather than
+           silently attaching it. */
         show(msg,
           `Sent. Your reference is ${d.ref} and the estimate is ${money(d.min)} – ${money(d.max)}. ` +
           `Check your email — a person is reading the brief now.`);
+        const email = String(fd.get("email") || "").trim();
+        const next = document.createElement("a");
+        next.className = "cta";
+        next.style.marginTop = "1rem";
+        next.href = `/portal/register?quote=${encodeURIComponent(d.ref)}`
+          + (email ? `&email=${encodeURIComponent(email)}` : "");
+        next.textContent = "Create an account to track it";
+        msg.appendChild(document.createElement("br"));
+        msg.appendChild(next);
       } catch (err) {
         show(msg, err.message || "Could not send that. Email info@vesopasoftware.com instead.", true);
       } finally {

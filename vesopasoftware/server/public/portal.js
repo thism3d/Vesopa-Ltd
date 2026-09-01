@@ -11,6 +11,84 @@
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
+  /* ---------- the navigation drawer ----------
+     One column on a desk, off-canvas under 1000px. The button is the only
+     thing that toggles it; the scrim, Escape, and following a link all close
+     it, because a drawer you cannot dismiss by tapping beside it is a trap on
+     a phone. */
+  (() => {
+    const toggle = $("#nav-toggle");
+    const nav = $("#sidenav");
+    const scrim = $("#nav-scrim");
+    if (!toggle || !nav || !scrim) return;
+
+    const setOpen = (open) => {
+      document.body.classList.toggle("nav-open", open);
+      toggle.setAttribute("aria-expanded", String(open));
+      scrim.hidden = !open;
+      if (open) nav.querySelector("a")?.focus({ preventScroll: true });
+    };
+
+    toggle.addEventListener("click", () =>
+      setOpen(!document.body.classList.contains("nav-open")));
+    scrim.addEventListener("click", () => setOpen(false));
+    addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && document.body.classList.contains("nav-open")) {
+        setOpen(false);
+        toggle.focus();
+      }
+    });
+    // Navigating away should not leave the drawer open behind the new page on
+    // a back-button return from the browser cache.
+    nav.addEventListener("click", (e) => { if (e.target.closest("a")) setOpen(false); });
+    // Dragged past the breakpoint with the drawer open: hand the column back.
+    matchMedia("(min-width: 1001px)").addEventListener("change", (e) => {
+      if (e.matches) setOpen(false);
+    });
+    scrim.hidden = true;
+  })();
+
+  /* ---------- data tables on a phone ----------
+     A ten-column invoice table inside an overflow-x box is technically
+     scrollable and practically unreadable: the figure you want is off the side
+     of the screen, and the header that says what it means has scrolled away
+     from it. Under 820px each row becomes a card and each cell carries its own
+     label, which is what the CSS `table.cards` rules render.
+
+     Done here rather than in 26 templates: the labels come from the table's own
+     <th> text, so it works on every table in the portal — including any added
+     later — and no view has to remember to do it. */
+  (() => {
+    const small = matchMedia("(max-width: 820px)");
+
+    const label = (table) => {
+      const heads = $$("thead th", table).map((th) => th.textContent.trim());
+      if (!heads.length) return;
+      for (const row of $$("tbody tr", table)) {
+        [...row.children].forEach((cell, i) => {
+          if (heads[i] && !cell.dataset.label) cell.dataset.label = heads[i];
+        });
+      }
+    };
+
+    const apply = () => {
+      for (const table of $$(".table-wrap table, table")) {
+        if (!table.tHead) continue;                 // not a data table
+        label(table);
+        table.classList.toggle("cards", small.matches);
+        // The horizontal scroller has nothing to scroll once rows are blocks,
+        // and leaving it on traps a vertical swipe that starts inside it.
+        const wrap = table.closest(".table-wrap");
+        if (wrap) wrap.style.overflowX = small.matches ? "visible" : "";
+      }
+    };
+
+    apply();
+    small.addEventListener("change", apply);
+    // Rows arrive over the websocket on some pages.
+    addEventListener("vesopa:rows", apply);
+  })();
+
   /* ---------- time, everywhere ----------
      Timestamps render on the server in UTC-safe ISO and are localised here, so
      a page cached anywhere still shows the reader's own clock. */
@@ -305,6 +383,89 @@
     }
   });
   on("project:update", () => toast("This project has a new update — reload to see it.", location.pathname));
+
+  /* ---------- the board ----------
+     Three buckets behind one control, a task composer that does not reload the
+     page, and archive-rather-than-delete. */
+  (() => {
+    const seg = $(".seg");
+    if (seg) {
+      seg.addEventListener("click", (e) => {
+        const btn = e.target.closest("button[data-bucket]");
+        if (!btn) return;
+        $$("button", seg).forEach((b) => b.classList.toggle("on", b === btn));
+        $$("[data-bucket-list]").forEach((ul) => {
+          ul.hidden = ul.dataset.bucketList !== btn.dataset.bucket;
+        });
+      });
+    }
+
+    const form = $("#task-new");
+    if (form) {
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const fd = new FormData(form);
+        if (!String(fd.get("title") || "").trim()) return;
+        const btn = $("button", form);
+        btn.disabled = true;
+        try {
+          const r = await fetch(form.action, { method: "POST", body: fd, headers: { Accept: "application/json" } });
+          const j = await r.json();
+          // Reload rather than splicing the row in by hand: the task also
+          // belongs on the calendar, in the "next up" line and in the feed,
+          // and three hand-maintained copies of one row is how they drift.
+          if (j.ok) location.reload();
+        } catch { /* leave the form as it was; the visitor can retry */ }
+        btn.disabled = false;
+      });
+    }
+
+    $$("[data-archive]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = btn.dataset.archive;
+        const restore = btn.dataset.restore === "1";
+        const project = $("#thread")?.dataset.project;
+        if (!project) return;
+        btn.disabled = true;
+        try {
+          const body = new URLSearchParams({ _csrf: window.CSRF, restore: restore ? "1" : "0" });
+          const r = await fetch(`/portal/projects/${project}/tasks/${id}/archive`, {
+            method: "POST", body, headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          });
+          if ((await r.json()).ok) location.reload();
+        } catch { btn.disabled = false; }
+      });
+    });
+  })();
+
+  /* ---------- attaching files to the conversation ---------- */
+  (() => {
+    const zone = $("#dropzone");
+    const input = $("#file-input");
+    const go = $("#file-go");
+    const count = $("#file-count");
+    if (!zone || !input) return;
+
+    const show = () => {
+      const n = input.files?.length || 0;
+      if (go) go.hidden = n === 0;
+      if (count) count.textContent = n ? `${n} file${n > 1 ? "s" : ""} ready` : "";
+    };
+    input.addEventListener("change", show);
+
+    for (const ev of ["dragenter", "dragover"]) {
+      zone.addEventListener(ev, (e) => { e.preventDefault(); zone.classList.add("over"); });
+    }
+    for (const ev of ["dragleave", "drop"]) {
+      zone.addEventListener(ev, (e) => { e.preventDefault(); zone.classList.remove("over"); });
+    }
+    zone.addEventListener("drop", (e) => {
+      if (!e.dataTransfer?.files?.length) return;
+      // DataTransfer -> the input, so the ordinary multipart form posts them.
+      input.files = e.dataTransfer.files;
+      show();
+    });
+  })();
 
   /* ---------- tasks ---------- */
   $$(".task input[type=checkbox]").forEach((box) => {

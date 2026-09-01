@@ -1,0 +1,16 @@
+{
+  "name": "Vesopa Software",
+  "short_name": "Vesopa",
+  "description": "A software house in Baglan, Port Talbot. EPOS, Kitchen and Customer Display on the Microsoft Store, plus hosting, mail and payments.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0B0E0A",
+  "theme_color": "#0B0E0A",
+  "icons": [
+    { "src": "/assets/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/assets/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/assets/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "/assets/logo.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

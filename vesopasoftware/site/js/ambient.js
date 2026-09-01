@@ -66,6 +66,11 @@ export function createAmbient(THREE, { count = 2600, dpr = 1 } = {}) {
     // Four concurrent clicks is more than anyone produces; the fifth replaces
     // the oldest. Each is (x, y, startTime, unused) in NDC.
     uPulse: { value: [0, 1, 2, 3].map(() => new THREE.Vector4(0, 0, -99, 0)) },
+    // The beacon: a point on screen the motes lean toward. Used to aim the
+    // field at whatever the page most wants looked at — a screenshot as it
+    // pins, a Microsoft Store badge as it arrives.
+    uBeacon: { value: new THREE.Vector2(0, 0) },
+    uBeaconOn: { value: 0 },
   };
 
   const material = new THREE.ShaderMaterial({
@@ -76,8 +81,8 @@ export function createAmbient(THREE, { count = 2600, dpr = 1 } = {}) {
     blending: THREE.AdditiveBlending,
     vertexShader: `
       attribute float aSpeed, aSeed, aSize, aTint;
-      uniform float uTime, uAspect, uDpr, uPointerOn, uLight;
-      uniform vec2 uPointer;
+      uniform float uTime, uAspect, uDpr, uPointerOn, uLight, uBeaconOn;
+      uniform vec2 uPointer, uBeacon;
       uniform vec4 uPulse[4];
       varying float vTint;
       varying float vGlow;
@@ -103,6 +108,21 @@ export function createAmbient(THREE, { count = 2600, dpr = 1 } = {}) {
           float push = smoothstep(0.42, 0.0, dist);
           p += normalize(d + vec2(1e-5)) * push * 0.085;
           glow += push * 0.55;
+        }
+
+        // The beacon. Motes within reach drift toward it and brighten as they
+        // close, so the field reads as pointing at the thing rather than just
+        // clustering near it. The pull is strongest at middle distance: right
+        // on top of the target it eases off, or every mote piles into one dot
+        // and the effect becomes a blob instead of a current.
+        if (uBeaconOn > 0.001) {
+          vec2 bd = uBeacon - p;
+          bd.x *= uAspect;
+          float bdist = length(bd);
+          float reach = smoothstep(1.05, 0.10, bdist) * (1.0 - smoothstep(0.10, 0.02, bdist));
+          float pull = reach * uBeaconOn;
+          p += normalize(bd + vec2(1e-5)) * pull * 0.16;
+          glow += pull * 0.9;
         }
 
         // Click pulses: a gaussian band travelling outward from the strike.
@@ -174,6 +194,17 @@ export function createAmbient(THREE, { count = 2600, dpr = 1 } = {}) {
       if (x == null) { uniforms.uPointerOn.value = 0; return; }
       uniforms.uPointer.value.set(x, y);
       uniforms.uPointerOn.value = 1;
+    },
+
+    /**
+     * Aim the field at a point in NDC. `strength` is eased by the caller so
+     * the current builds and releases rather than snapping on at a boundary.
+     * Pass strength 0 (or nothing) to let go.
+     */
+    beacon(x, y, strength = 1) {
+      if (x == null || strength <= 0) { uniforms.uBeaconOn.value = 0; return; }
+      uniforms.uBeacon.value.set(x, y);
+      uniforms.uBeaconOn.value = strength;
     },
 
     /** Fire a pulse from an NDC point. Oldest slot is recycled. */

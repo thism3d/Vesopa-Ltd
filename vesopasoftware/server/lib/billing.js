@@ -62,6 +62,23 @@ export async function createInvoice({
 }
 
 /** Mark an invoice sent, email it, notify and push. Idempotent on sent_at. */
+/** The invoice PDF as a mail attachment, or nothing if it cannot be built.
+ *  A failure here must not stop the invoice being sent: the customer still
+ *  needs to know it exists, and the portal can always serve the document. */
+async function invoiceAttachment(inv) {
+  try {
+    const { renderInvoicePDF } = await import("./invoice-render.js");
+    return [{
+      filename: `${inv.number}.pdf`,
+      content: await renderInvoicePDF(inv),
+      contentType: "application/pdf",
+    }];
+  } catch (err) {
+    console.error(`  invoice PDF failed for ${inv.number}: ${err.message}`);
+    return null;
+  }
+}
+
 export async function sendInvoice(invoiceId, { note = null } = {}) {
   const inv = await one("SELECT * FROM invoices WHERE id = ?", [invoiceId]);
   if (!inv) return null;
@@ -95,6 +112,11 @@ export async function sendInvoice(invoiceId, { note = null } = {}) {
       ],
       cta: { label: "View and pay", href: `${config.baseUrl}/portal/invoices/${inv.id}` },
     }),
+    // The PDF rides along. An invoice that only exists behind a login is one
+    // the customer's accountant cannot file, and "please sign in to download
+    // it" is the reply we would get back every time. Same document the portal
+    // serves — both go through lib/invoice-render.js so they cannot drift.
+    attachments: await invoiceAttachment(inv),
   });
 
   await notify(inv.user_id, {

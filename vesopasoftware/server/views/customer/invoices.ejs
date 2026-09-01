@@ -89,7 +89,10 @@
               </td>
               <td class="num"><%= money(i.total, i.currency) %></td>
               <td class="num"><%= due > 0 ? money(due, i.currency) : "—" %></td>
-              <td class="num"><a class="btn ghost small" href="/portal/invoices/<%= i.id %>">Open</a></td>
+              <td class="num" style="white-space:nowrap">
+                <a class="btn ghost small" href="/portal/invoices/<%= i.id %>">Open</a>
+                <a class="btn ghost small" href="/portal/invoices/<%= i.id %>/pdf" target="_blank" rel="noopener" title="Download PDF">PDF</a>
+              </td>
             </tr>
           <% } %>
         </tbody>

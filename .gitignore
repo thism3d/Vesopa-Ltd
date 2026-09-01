@@ -163,3 +163,7 @@ desktop.ini
 brandAssets/
 brandAssets.zip
 p.md
+# Credential notes kept alongside the repo. Never committed — the filename is
+# an accurate description of what is in it, and this repo is on GitHub.
+ClientAllCredentialsForAllBusinessWeHaveWithExplanation.md
+*Credentials*.md

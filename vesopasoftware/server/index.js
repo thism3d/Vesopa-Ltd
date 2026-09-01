@@ -12,6 +12,7 @@ import { money, moneyRound } from "./lib/pricing.js";
 import { STATUS_LABEL, PROJECT_STATUS, balanceOf, isOverdue } from "./lib/invoices.js";
 
 import publicRoutes from "./routes/public.js";
+import aiRoutes from "./routes/ai.js";
 import authRoutes from "./routes/auth.js";
 import customerRoutes from "./routes/customer.js";
 import adminRoutes from "./routes/admin.js";
@@ -85,6 +86,11 @@ app.use((req, res, next) => {
    honeypot field in routes/public.js instead.
    Everything below this line does carry authority, and is guarded. */
 app.use("/api", publicRoutes);
+// Vesopa AI sits on the same side of the line and for the same reason: it is
+// anonymous, it acts with nobody's authority, and it is posted from static
+// HTML that carries no session token. Its own rate limiter is what stops it
+// being used as a free model endpoint.
+app.use("/api", aiRoutes);
 
 app.use(csrf);
 

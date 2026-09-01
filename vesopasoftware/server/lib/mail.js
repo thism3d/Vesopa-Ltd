@@ -4,6 +4,10 @@ import { exec } from "./db.js";
 
 let transport = null;
 
+/** Is this host the machine we are running on? */
+const isLoopback = (host) =>
+  ["127.0.0.1", "::1", "localhost"].includes(String(host || "").trim().toLowerCase());
+
 function getTransport() {
   if (transport) return transport;
   transport =
@@ -13,6 +17,19 @@ function getTransport() {
           port: config.mail.port,
           secure: config.mail.secure,
           auth: config.mail.user ? { user: config.mail.user, pass: config.mail.pass } : undefined,
+          // A relay on loopback is the node's own exim, which answers STARTTLS
+          // with a certificate for its hostname — never for 127.0.0.1. Node
+          // rejects it ("Hostname/IP does not match certificate's altnames")
+          // and every message fails, which on this codepath is silent: sendMail
+          // catches, writes status='failed' to email_log, and the visitor still
+          // gets their confirmation page. So the site looks healthy while no
+          // quote confirmation, enquiry or password reset ever leaves.
+          //
+          // Verifying the certificate of a host that is this process's own
+          // machine buys nothing — there is no network to intercept — so the
+          // check is dropped for loopback only. A real external relay still
+          // gets a fully verified TLS connection.
+          ...(isLoopback(config.mail.host) ? { tls: { rejectUnauthorized: false } } : {}),
         })
       // jsonTransport serialises the message and delivers nowhere. Nothing can
       // escape to a real inbox while MAIL_MODE=mock, which is what makes the
@@ -26,13 +43,18 @@ function getTransport() {
  * customer who submitted a quote should get their confirmation page even if
  * our mail host is down, because the quote is already saved.
  */
-export async function sendMail({ to, subject, text, html, template = null }) {
+export async function sendMail({ to, subject, text, html, template = null, attachments = null }) {
   const mode = config.mail.mode;
   let status = "sent";
   let error = null;
 
   try {
-    await getTransport().sendMail({ from: config.mail.from, to, subject, text, html });
+    await getTransport().sendMail({
+      from: config.mail.from, to, subject, text, html,
+      // nodemailer wants the key absent rather than empty when there is
+      // nothing attached; jsonTransport in mock mode serialises either way.
+      ...(attachments && attachments.length ? { attachments } : {}),
+    });
     if (mode === "mock") {
       console.log(`\n  ✉  [mock mail] → ${to}\n     ${subject}\n     ${(text || "").split("\n")[0]}\n`);
     }

@@ -1,40 +1,72 @@
-/* Vesopa Software — scroll spine.
-   One particle field carries the whole page: seven morph targets, one draw
-   call, no per-frame allocation. Everything else on the page stays still.  */
+/* Vesopa Software — the scroll spine.
+ *
+ * One particle field carries the whole page: ten morph targets, one draw call,
+ * no per-frame allocation. Everything else — the video behind it, the
+ * screenshots pinned in front of it, the stars over the top — hangs off the
+ * same scroll read, in the same frame, so nothing can disagree with anything
+ * else about where on the page we are.
+ *
+ * Layer order, back to front, is set in CSS and assumed here:
+ *   backdrop video (-6) · grade (-5) · plate (-1) · FIELD (0) ·
+ *   words (1) · stars (40) · AI (60) · loader (90)
+ */
 import { buildShapes, upgradeShapes } from "./particles.js";
 import { createAmbient } from "./ambient.js";
+import { createBackdrop, createShowcase, createReveals } from "./stage.js";
+import { createStars } from "./stars.js";
+import { createAudio } from "./audio.js";
+import { createLoader } from "./loader.js";
+import { mountAI } from "./ai.js";
+import { mountMotion } from "./motion.js";
+import { wireStoreLinks, mountBadges, isIOS } from "./store.js";
+import { wordmarkSVG, wordmarkOnView } from "./wordmark.js";
 
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const clamp01 = (v) => Math.min(1, Math.max(0, v));
 
 /* ---------- tier ----------
-   Counts are sized to the brief's mobile promise: 16ms frame time on a
-   Pixel 7. The adaptive cut in frame() is the safety net, not the plan. */
+   Counts are sized to hold 16ms on a Pixel 7. The adaptive cut in frame() is
+   the safety net, not the plan. Ten morph targets rather than the original
+   seven means the build is ~40% more work up front, which is precisely what
+   the loader is covering. */
 const w = innerWidth, coarse = matchMedia("(pointer: coarse)").matches;
 let TIER, COUNT;
 if (coarse && w < 820) { TIER = "mobile";  COUNT = 4096; }
-else if (coarse)       { TIER = "tablet";  COUNT = 16384; }
-else if (w < 1500)     { TIER = "laptop";  COUNT = 24576; }
-else                   { TIER = "desktop"; COUNT = 40960; }
+else if (coarse)       { TIER = "tablet";  COUNT = 14336; }
+else if (w < 1500)     { TIER = "laptop";  COUNT = 22528; }
+else                   { TIER = "desktop"; COUNT = 34816; }
 
-// Desktop was 65,536 points across seven morph targets — 1.4 million floats
-// generated synchronously before the first frame could be drawn, which is a
-// visible stall on the very thing the page is judged by. At 40,960 the field
-// reads identically (the points overlap heavily at this density) and the
-// build costs about a third less. The adaptive cut in frame() still trims
-// further on a machine that cannot hold 60fps.
 const DPR = Math.min(devicePixelRatio || 1, 2);
 let drawCount = COUNT;
+// Raised by the adaptive downgrade to keep the field's mass as points are cut.
+let densityBoost = 1;
 
-const SHAPES = buildShapes(COUNT);
+/* Shapes carry their own colours now: a per-point palette index and a small
+   palette per shape. That is what lets the field resolve the Windows flag in
+   four colours, Bitcoin in its orange, a Visa card in its blue and gold, and
+   the V with its near-black inner stroke — none of which a single tint over
+   the whole field could do. Index 0 always means "the page's own colour". */
+const { shapes: SHAPES, regions: REGIONS, palettes: PALETTES } = buildShapes(COUNT);
 const NS = SHAPES.length;
+// Regions run 0..4 (0 = the page's own colour, 1..4 = the shape's palette), so
+// the uniform needs FIVE slots. At four, the Windows flag's fourth pane indexed
+// past the end of the array and rendered as undefined colour.
+const PAL_SLOTS = 5;
+
+/** A shape's palette, flattened into the vec3 slots the shader reads. */
+function palToUniform(list, target) {
+  for (let i = 0; i < PAL_SLOTS; i++) {
+    const c = list[i - 1];                     // region 1 -> palette[0]
+    if (i > 0 && c) target[i].set(c);
+    else target[i].set("#000000");
+  }
+}
 
 /* ---------- three ---------- */
 const canvas = document.getElementById("gl");
-// ?probe=1 keeps the drawing buffer readable so tools/drive.mjs can measure
-// whether the field actually rendered. WebGL clears the buffer after each
-// composite, so without this any readback of the canvas comes back empty.
-// It costs real performance, so it is never on for visitors.
 const PROBE = location.search.includes("probe");
+// The fps readout is an instrument, not furniture: it only appears when asked.
+if (PROBE) document.body.classList.add("probing");
 const renderer = new THREE.WebGLRenderer({
   canvas, alpha: true, antialias: false,
   powerPreference: "high-performance",
@@ -45,7 +77,34 @@ renderer.setSize(innerWidth, innerHeight, false);
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(46, innerWidth / innerHeight, .1, 60);
-camera.position.z = 4.3;
+
+/* Every shape is normalised into roughly a 2.4-unit box, so the widest of them
+ * needs ~1.2 units of horizontal half-extent plus a margin to breathe.
+ *
+ * A perspective camera's field of view is VERTICAL, so the horizontal extent is
+ * that multiplied by the aspect ratio — and on a portrait phone (412x915,
+ * aspect 0.45) it collapses to about 1.6 units total. The V was 2.4 wide, so
+ * both arms were simply cut off by the edges of the screen, and what was left
+ * sat on top of the finale's copy. It looked like the mark had failed to form;
+ * it had formed perfectly and been cropped.
+ *
+ * So the camera is placed to fit the shape rather than pinned at a constant:
+ * far enough back that 1.45 units of half-width is always visible.
+ */
+const FIT_HALF_W = 1.45;
+const Z_MIN = 4.3, Z_MAX = 9.5;
+
+function fitCamera() {
+  camera.aspect = innerWidth / innerHeight;
+  const halfFov = (camera.fov * Math.PI) / 360;
+  const zForWidth = FIT_HALF_W / (Math.tan(halfFov) * camera.aspect);
+  const z = Math.min(Z_MAX, Math.max(Z_MIN, zForWidth));
+  camera.position.z = z;
+  // uSize is a pixel size only because the shader divides by uRef; leave this
+  // behind and the points scale with the camera, ~70x too large at the far end.
+  if (typeof uni !== "undefined") uni.uRef.value = z;
+  camera.updateProjectionMatrix();
+}
 
 const geo = new THREE.BufferGeometry();
 geo.setAttribute("position", new THREE.BufferAttribute(SHAPES[0], 3));
@@ -56,22 +115,32 @@ for (let i = 0; i < COUNT; i++) { stag[i] = Math.random(); seed[i] = Math.random
 geo.setAttribute("aStag", new THREE.BufferAttribute(stag, 1));
 geo.setAttribute("aSeed", new THREE.BufferAttribute(seed, 1));
 geo.setAttribute("aVary", new THREE.BufferAttribute(vary, 1));
+// Per-point palette index for each side of the morph, re-uploaded with the
+// positions whenever the pair changes.
+geo.setAttribute("aRegA", new THREE.BufferAttribute(REGIONS[0].slice(), 1));
+geo.setAttribute("aRegB", new THREE.BufferAttribute(REGIONS[1].slice(), 1));
 geo.setDrawRange(0, drawCount);
 geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 6);
 
 const uni = {
   uMorph: { value: 0 }, uTime: { value: 0 },
-  uSize: { value: TIER === "mobile" ? 3.0 : TIER === "tablet" ? 2.4 : TIER === "laptop" ? 2.0 : 1.6 },
+  uSize: { value: TIER === "mobile" ? 3.0 : TIER === "tablet" ? 2.4 : TIER === "laptop" ? 2.0 : 1.7 },
   uDpr: { value: DPR },
   uColA: { value: new THREE.Color("#A5C715") },
   uColB: { value: new THREE.Color("#F2EFE6") },
   uOpacity: { value: 1 }, uDrift: { value: 1 },
-  uRef: { value: 4.3 },        // camera z: makes uSize a real pixel size at rest
+  uRef: { value: Z_MIN },      // camera z: makes uSize a real pixel size at rest
+  // How much of the shape is formed, 0..1. Shape colours arrive WITH the
+  // shape: the same points carry the till and the cloud on the way past, and
+  // painting a third of the field Bitcoin orange everywhere would read as a
+  // fault rather than a logo.
+  uMark: { value: 0 },
+  uPalA: { value: Array.from({ length: PAL_SLOTS }, () => new THREE.Color(0, 0, 0)) },
+  uPalB: { value: Array.from({ length: PAL_SLOTS }, () => new THREE.Color(0, 0, 0)) },
 };
 
-// Additive blending accumulates: N overlapping splats sum to N x alpha. A field
-// tuned at 4k points blows out to solid white at 65k. Scale the base alpha by
-// the count so every tier lands at roughly the same on-screen density.
+// Additive blending accumulates: N overlapping splats sum to N x alpha. Scale
+// the base alpha by the count so every tier lands at the same visual density.
 const BASE_ALPHA = Math.min(.95, .55 + 8000 / COUNT);
 const BASE_SIZE = uni.uSize.value;
 
@@ -81,8 +150,10 @@ const mat = new THREE.ShaderMaterial({
   vertexShader: `
     attribute vec3 aA; attribute vec3 aB;
     attribute float aStag; attribute float aSeed; attribute float aVary;
+    attribute float aRegA; attribute float aRegB;
     uniform float uMorph,uTime,uSize,uDpr,uDrift,uRef;
-    varying float vV;
+    uniform vec3 uPalA[5]; uniform vec3 uPalB[5];
+    varying float vV; varying float vTintK; varying vec3 vTint;
     void main(){
       float t = clamp((uMorph - aStag*0.34)/0.66, 0.0, 1.0);
       t = t*t*(3.0-2.0*t);
@@ -94,40 +165,100 @@ const mat = new THREE.ShaderMaterial({
       p.y += cos(tt*0.27 + s*1.7)*0.028*uDrift;
       p.z += sin(tt*0.22 + s*0.6)*0.030*uDrift;
       vV = aVary;
+
+      // Palette lookup happens here, in the vertex shader, because dynamic
+      // indexing of a uniform array is only guaranteed to compile on this
+      // side under GLSL ES 1.0. The two sides of the morph are resolved
+      // separately and crossfaded, so a point travelling from a white glyph
+      // to a lime stroke passes through the colours in between rather than
+      // snapping at the halfway mark.
+      int ia = int(aRegA + 0.5);
+      int ib = int(aRegB + 0.5);
+      vec3 ca = uPalA[ia];
+      vec3 cb = uPalB[ib];
+      float ka = step(0.5, aRegA);
+      float kb = step(0.5, aRegB);
+      vTint  = mix(ca, cb, t);
+      vTintK = mix(ka, kb, t);
+
       vec4 mv = modelViewMatrix * vec4(p,1.0);
       gl_PointSize = uSize * uDpr * (uRef / -mv.z);
       gl_Position = projectionMatrix * mv;
     }`,
   fragmentShader: `
     precision mediump float;
-    uniform vec3 uColA,uColB; uniform float uOpacity;
-    varying float vV;
+    uniform vec3 uColA,uColB; uniform float uOpacity,uMark;
+    varying float vV; varying float vTintK; varying vec3 vTint;
     void main(){
       vec2 d = gl_PointCoord - 0.5;
       float a = 1.0 - smoothstep(0.22,0.5,length(d));
       if(a<0.01) discard;
-      gl_FragColor = vec4(mix(uColA,uColB,vV*0.55), a*uOpacity);
+      vec3 col = mix(uColA,uColB,vV*0.55);
+      // A shape's own colours fade in with the shape. uMark is how resolved
+      // the current target is, so Bitcoin's orange and the Windows flag
+      // arrive as the silhouette does and are gone again by the next section.
+      float k = vTintK * uMark;
+      col = mix(col, vTint, k);
+      // A brand colour on an additive pass is washed out, and a near-black one
+      // is invisible — adding dark to dark adds nothing. Give tinted points
+      // their own alpha so they paint as mass rather than disappearing.
+      gl_FragColor = vec4(col, a * mix(uOpacity, min(1.0, uOpacity + 0.35), k));
     }`,
 });
 scene.add(new THREE.Points(geo, mat));
 
-/* ---------- scroll → morph ---------- */
-let idxA = 0, idxB = 1;
+/* ---------- the acts ----------
+ * The old spine spread the morph evenly across total scroll height, which
+ * meant a shape resolved wherever the arithmetic happened to put it — usually
+ * halfway between two sections, in the gap, where nobody was looking.
+ *
+ * Every section now declares which target belongs to it (data-shape), and the
+ * morph interpolates between the *centres* of consecutive sections. A shape is
+ * therefore fully formed exactly when its section is centred on screen, and in
+ * transit the rest of the time. Two sections may name the same target — a
+ * showcase and the strip of facts under it both say "till" — which morphs the
+ * shape to itself and simply holds it, which is what you want there.
+ */
+const actEls = [...document.querySelectorAll("[data-shape]")];
+let acts = [];                 // { at: pageY of centre, shape: index }
 
-/** How much of the final target (the Vesopa V) is currently formed, 0..1.
- *  Used to bring the mark back to brand lime wherever it lands in the page. */
-function markness() {
-  if (idxB !== NS - 1) return 0;
-  // uMorph runs 0..1 across the pair; ease it so the colour arrives with the
-  // shape rather than ahead of it.
-  const t = Math.min(1, Math.max(0, uni.uMorph.value));
-  return t * t * (3 - 2 * t);
+function measureActs() {
+  acts = actEls.map((el) => {
+    const r = el.getBoundingClientRect();
+    return {
+      at: scrollY + r.top + r.height / 2 - innerHeight / 2,
+      shape: Math.min(NS - 1, Number(el.dataset.shape) || 0),
+      el,
+    };
+  }).sort((a, b) => a.at - b.at);
 }
+
+let idxA = 0, idxB = 1;
 function setPair(a, b, force) {
   if (!force && a === idxA && b === idxB) return;
   idxA = a; idxB = b;
   geo.attributes.aA.array.set(SHAPES[a]); geo.attributes.aA.needsUpdate = true;
   geo.attributes.aB.array.set(SHAPES[b]); geo.attributes.aB.needsUpdate = true;
+  // Colours travel with the geometry, or a point would arrive at the Windows
+  // flag still carrying the palette index of the till it came from.
+  geo.attributes.aRegA.array.set(REGIONS[a]); geo.attributes.aRegA.needsUpdate = true;
+  geo.attributes.aRegB.array.set(REGIONS[b]); geo.attributes.aRegB.needsUpdate = true;
+  palToUniform(PALETTES[a], uni.uPalA.value);
+  palToUniform(PALETTES[b], uni.uPalB.value);
+}
+
+/** How resolved the current target is, 0..1 — eased, not linear. */
+function resolvedness() {
+  if (idxA === idxB) return 1;                   // held on one shape
+  const t = clamp01(uni.uMorph.value);
+  return t * t * (3 - 2 * t);
+}
+
+/** How much of the final target (the V) is formed, 0..1. */
+function markness() {
+  if (idxB !== NS - 1) return 0;
+  if (idxA === NS - 1) return 1;                 // held past the last act
+  return resolvedness();
 }
 
 const INK = new THREE.Color("#0B0E0A"), PAPER = new THREE.Color("#F2EFE6");
@@ -137,19 +268,10 @@ const bgC = new THREE.Color(), fgC = new THREE.Color();
 let lightMode = false;
 
 /* ---------- night to day ----------
-   The page used to cut from ink to paper across two thirds of one viewport,
-   straight down the middle of the colour cube — which passes through mud,
-   because the shortest path from near-black to warm off-white is grey.
-
-   This walks a dawn instead. Each stop is a real moment of one: the blue hour
-   before any sun, the first warm cast on the horizon, low sun, then full
-   daylight. Interpolating between adjacent stops keeps the hue moving through
-   blue and amber rather than collapsing to neutral, so the eye reads a time of
-   day changing rather than a brightness slider being dragged.
-
-   The ramp is also spread over a much longer scroll — from inside the story to
-   the middle of Cloud — because that is what makes it feel like a sunrise and
-   not a light switch. */
+   Each stop is a real moment of a dawn: the blue hour, the first warm cast,
+   low sun, then daylight. Interpolating between adjacent stops keeps the hue
+   moving through blue and amber rather than collapsing to the mud you get
+   walking straight down the middle of the colour cube from black to cream. */
 const DAWN = [
   { at: 0.00, c: new THREE.Color("#0B0E0A") },  // night
   { at: 0.30, c: new THREE.Color("#0F1922") },  // blue hour
@@ -160,24 +282,21 @@ const DAWN = [
 ];
 
 function dawnAt(t, out) {
-  const k = Math.min(1, Math.max(0, t));
+  const k = clamp01(t);
   for (let i = 1; i < DAWN.length; i++) {
     if (k > DAWN[i].at && i < DAWN.length - 1) continue;
     const a = DAWN[i - 1], b = DAWN[i];
     const span = b.at - a.at;
     const local = span <= 0 ? 0 : (k - a.at) / span;
-    // Smoothstep inside each segment so the stops do not announce themselves
-    // as creases in the gradient.
     const e = local * local * (3 - 2 * local);
-    return out.copy(a.c).lerp(b.c, Math.min(1, Math.max(0, e)));
+    return out.copy(a.c).lerp(b.c, clamp01(e));
   }
   return out.copy(DAWN[DAWN.length - 1].c);
 }
 
-/* WCAG relative luminance, and the contrast ratio between two colours.
-   The inversion is the loudest moment on the page and it must never cost
-   legibility: rather than lerping the text through the same mid-grey the
-   background is passing through, we measure and pick the readable ink. */
+/* WCAG relative luminance and contrast ratio. The inversion is the loudest
+   moment on the page and must never cost legibility, so the ink is measured
+   against the live background rather than switched at a threshold. */
 const relLum = c => {
   const f = v => (v <= .03928 ? v / 12.92 : Math.pow((v + .055) / 1.055, 2.4));
   return .2126 * f(c.r) + .7152 * f(c.g) + .0722 * f(c.b);
@@ -188,87 +307,126 @@ const ratio = (a, b) => {
 };
 
 const story = document.getElementById("story");
-const s5 = document.getElementById("s5");
-const s6 = document.getElementById("s6");
+const cloud = document.getElementById("cloud");
+const pay = document.getElementById("pay");
 const plate = document.getElementById("plate");
-const heroBg = document.getElementById("hero-bg");
+const backdropEl = document.getElementById("backdrop");
+const gradeEl = document.getElementById("grade");
 
-/* Where the sun comes up, in page coordinates.
- *
- * The colour is the story, so it is timed to the story rather than to a fixed
- * number of viewports. Night holds through the hero and EPOS — the problem and
- * the long build. First light arrives around the third story beat, the one
- * where the thing actually goes into a venue. By the time Cloud is centred it
- * is full day, which is the point: that section is a daylight desk in a
- * working business.
- *
- * Measured off offsetTop rather than a viewport multiple, so a tall phone and
- * a wide desktop reach dawn at the same moment in the narrative instead of at
- * the same number of pixels. Recomputed on resize, because these move.
- */
+/* Where the sun comes up, in page coordinates. Timed to the story rather than
+   to a fixed number of viewports, so a tall phone and a wide desktop reach
+   dawn at the same moment in the narrative. */
 let dawnStart = 0, dawnEnd = 1;
 function measureDawn() {
-  const eye = innerHeight * 0.5;                       // what counts as "on screen"
+  const eye = innerHeight * 0.5;
   const storyTop = story ? story.offsetTop : 0;
   const storyH = story ? story.offsetHeight : innerHeight;
-  const s5Top = s5 ? s5.offsetTop : storyTop + storyH;
-  const s5H = s5 ? s5.offsetHeight : innerHeight;
+  const cTop = cloud ? cloud.offsetTop : storyTop + storyH;
+  const cH = cloud ? cloud.offsetHeight : innerHeight;
 
-  dawnStart = storyTop + storyH * 0.34 - eye;          // third beat
-  dawnEnd = s5Top + s5H * 0.42 - eye;                  // Cloud, centred
+  dawnStart = storyTop + storyH * 0.30 - eye;
+  dawnEnd = cTop + cH * 0.45 - eye;
   if (dawnEnd - dawnStart < innerHeight) dawnEnd = dawnStart + innerHeight;
 }
-measureDawn();
 
-// The eased value the page actually paints. kTarget tracks the scrollbar; kNow
-// chases it in the rAF loop, which is what turns a scroll into a sunrise — a
-// trackpad flick moves the bar instantly, and the light should not.
 let kTarget = 0, kNow = 0;
+let scrollK = 0;                 // 0..1 down the whole page, for the audio filter
 
 function readScroll() {
   const max = Math.max(1, document.body.scrollHeight - innerHeight);
-  const p = Math.min(1, Math.max(0, scrollY / max));
-  // Reach the last target (the V) at 92% of the scroll rather than at the
-  // final pixel, so the mark is fully formed and *held* for the whole finale
-  // section. Resolving it only at scrollY === max meant the brand mark existed
-  // for one scroll position that most people never land on exactly.
-  const f = Math.min(1, p / 0.92) * (NS - 1);
-  const a = Math.min(NS - 2, Math.floor(f));
-  setPair(a, a + 1);
-  uni.uMorph.value = f - a;
-  camera.position.y = -p * .35;
+  scrollK = clamp01(scrollY / max);
 
-  kTarget = Math.min(1, Math.max(0, (scrollY - dawnStart) / (dawnEnd - dawnStart)));
+  /* morph from the acts */
+  if (acts.length) {
+    const y = scrollY;
+    if (y <= acts[0].at) {
+      setPair(acts[0].shape, acts[0].shape);
+      uni.uMorph.value = 1;
+    } else if (y >= acts[acts.length - 1].at) {
+      const s = acts[acts.length - 1].shape;
+      setPair(s, s);
+      uni.uMorph.value = 1;
+    } else {
+      let i = 0;
+      while (i < acts.length - 2 && y > acts[i + 1].at) i++;
+      const a = acts[i], b = acts[i + 1];
+      const span = Math.max(1, b.at - a.at);
+      setPair(a.shape, b.shape);
+      uni.uMorph.value = clamp01((y - a.at) / span);
+    }
+  }
+
+  camera.position.y = -scrollK * .35;
+  kTarget = clamp01((scrollY - dawnStart) / (dawnEnd - dawnStart));
 }
 
-/** Paint everything that depends on the time of day. Called every frame with
- *  the eased value, never with the raw one. */
+/* The field's colour depends on scroll position, not on the dawn: which
+ * section is arriving (Pay's orange) and how much of the V has formed. Those
+ * keep changing long after the sunrise has finished.
+ *
+ * This is split out of paintDawn because paintDawn only runs while the light
+ * is still easing — and once kNow reaches kTarget it stops being called at
+ * all. Everything colour-related therefore froze at whatever it was when the
+ * ramp saturated, which is why the brand mark assembled at the foot of the
+ * page in Pay's gold instead of coming home to lime. Uniform writes are cheap,
+ * so these run every frame; the body background and the DOM writes stay in
+ * paintDawn, where they are only paid for when the light actually moves.
+ */
+function paintField() {
+  const payK = pay ? clamp01(1 - (pay.getBoundingClientRect().top / (innerHeight * .6))) : 0;
+  const warm = clamp01((kNow - .45) / .4) * .55;
+  const m = markness();
+
+  uni.uColA.value.copy(LIME).lerp(SIGNAL, Math.max(warm, payK * .9));
+  // ...except the last shape. The V is the brand, so it comes home to lime as
+  // it assembles, pulled back by exactly how much of it is showing.
+  uni.uColA.value.lerp(LIME, m);
+  uni.uColB.value.copy(PAPER).lerp(DARKP, lightMode ? 1 : 0);
+  // The mark reads as one solid green form rather than a two-tone cloud, so
+  // the secondary colour collapses into the primary as it resolves.
+  uni.uColB.value.lerp(LIME, m * .75);
+  // Step back where a screenshot is pinned. Those sections already have a
+  // device frame and a column of copy competing for the same middle of the
+  // screen, and the field at full strength was crossing both — which is what
+  // made the text hard to read. beaconK is already an eased measure of how
+  // centred the pinned shot is, so the field recedes and returns with it.
+  uni.uOpacity.value = Math.min(.95,
+    BASE_ALPHA * densityBoost * (lightMode ? .85 : 1.0) * (1 - beaconK * 0.5));
+  // How strongly a shape's own colours show. They arrive with the silhouette
+  // and are gone by the next section.
+  //
+  // The V's near-black inner stroke is the one that needs the page to have
+  // reached its paper half first: the material is on NormalBlending by then,
+  // and near-black added to a night sky under additive blending is nothing at
+  // all. Every other palette (Bitcoin's orange, the Windows flag, Visa's blue)
+  // is a light colour and shows on either ground.
+  const onMark = idxB === NS - 1 || idxA === NS - 1;
+  uni.uMark.value = onMark ? (lightMode ? m : 0) : resolvedness();
+}
+
+/** Paint everything that depends on the time of day. */
 function paintDawn(k) {
   dawnAt(k, bgC);
-  // Pick whichever ink actually wins on contrast against the live background.
-  // Measured, not guessed: the ramp passes through mid-tones where neither
-  // choice is obvious, and a threshold would pick wrong in exactly that window.
   fgC.copy(ratio(PAPER, bgC) >= ratio(INK, bgC) ? PAPER : INK);
   document.body.style.backgroundColor = "#" + bgC.getHexString();
   document.body.style.color = "#" + fgC.getHexString();
+  // The chips in the fixed bar cannot read the body colour through a blend
+  // mode, so they get told which half of the page they are on.
+  document.body.classList.toggle("day", relLum(bgC) > .18);
 
-  // The hero plate belongs to the night. It fades on its own past the hero,
-  // and the rising light finishes it off.
   if (plate) {
     const fade = Math.max(0, 1 - scrollY / (innerHeight * 1.8));
-    plate.style.opacity = String((1 - k) * .30 * fade);
+    plate.style.opacity = String((1 - k) * .28 * fade);
   }
 
-  // The footage belongs to the hero alone. It is gone by one viewport down,
-  // so it never competes with the story plates or survives into the daylight.
-  if (heroBg) {
-    const gone = Math.max(0, 1 - scrollY / (innerHeight * 0.9));
-    heroBg.style.setProperty("--hero-fade", (gone * (1 - k)).toFixed(3));
-  }
+  // The footage belongs to the night. It recedes as the light comes up rather
+  // than being cut off at a section boundary.
+  const bd = (1 - k * 0.92).toFixed(3);
+  backdropEl?.style.setProperty("--bd-fade", bd);
+  gradeEl?.style.setProperty("--bd-fade", bd);
 
-  // Particles must survive the whole ramp. Additive light on a dark sky is
-  // right; on a bright one it blows out, so the switch follows the measured
-  // luminance of the live background rather than an arbitrary point in k.
+  // Additive light is right on a dark sky and blows out on a bright one, so
+  // the switch follows the measured luminance of the live background.
   const nowLight = relLum(bgC) > .18;
   if (nowLight !== lightMode) {
     lightMode = nowLight;
@@ -276,124 +434,177 @@ function paintDawn(k) {
     mat.needsUpdate = true;
   }
 
-  // The field warms with the sky, then turns to Pay's signal orange as that
-  // section arrives — one continuous colour journey, not two unrelated ones.
-  const payK = s6 ? Math.min(1, Math.max(0, 1 - (s6.getBoundingClientRect().top / (innerHeight * .6)))) : 0;
-  const warm = Math.min(1, Math.max(0, (k - .45) / .4)) * .55;
-  uni.uColA.value.copy(LIME).lerp(SIGNAL, Math.max(warm, payK * .9));
-
-  // ...except for the last shape. The final morph target is the Vesopa V, and
-  // it was resolving in Pay's orange purely because it happens to form at the
-  // bottom of the page, where the orange lerp is at full strength. The mark is
-  // the brand, so it comes home to lime as it assembles: markness is how much
-  // of the last target is showing, and the colour is pulled back by exactly
-  // that much.
-  uni.uColA.value.lerp(LIME, markness());
-  uni.uColB.value.copy(PAPER).lerp(DARKP, nowLight ? 1 : 0);
-  // The mark reads as a solid green form rather than a two-tone cloud, so the
-  // secondary colour collapses into the primary as it resolves.
-  uni.uColB.value.lerp(LIME, markness() * .75);
-  uni.uOpacity.value = BASE_ALPHA * (nowLight ? .85 : 1.0);
-
-  // The motes live through the same sunrise: additive sparks on the night
-  // sky, darkened dust once the page is paper.
-  ambient.light(Math.min(1, Math.max(0, (k - .55) / .35)));
+  ambient.light(clamp01((k - .55) / .35));
 }
 
-function onScroll() { readScroll(); }
+/* ---------- ambient drift ---------- */
+const AMBIENT_COUNT = TIER === "mobile" ? 700 : TIER === "tablet" ? 1400 : 2400;
+const ambient = createAmbient(THREE, { count: AMBIENT_COUNT, dpr: DPR });
+ambient.resize(innerWidth, innerHeight);
+
+/* ---------- the backdrop ----------
+   One clip per section, declared in the markup. Posters and sources share a
+   slug, so the markup says `data-clip="v1_hero"` and both paths follow. */
+const backdrop = createBackdrop(backdropEl);
+const clipEls = [...document.querySelectorAll("[data-clip]")];
+backdrop.register(
+  [...new Set(clipEls.map((el) => el.dataset.clip))].map((slug) => ({
+    slug,
+    src: `assets/video/${slug}.mp4`,
+    poster: `assets/video/${slug}.webp`,
+  })),
+);
+
+/** Whichever clip-bearing section owns the middle of the screen. */
+function pickClip() {
+  const mid = innerHeight / 2;
+  let best = null, bestD = Infinity;
+  for (const el of clipEls) {
+    const r = el.getBoundingClientRect();
+    if (r.bottom < 0 || r.top > innerHeight) continue;
+    const d = Math.abs(r.top + r.height / 2 - mid);
+    if (d < bestD) { bestD = d; best = el.dataset.clip; }
+  }
+  if (best) backdrop.show(best);
+}
+
+/* ---------- showcases ---------- */
+const showcases = [...document.querySelectorAll(".showcase")]
+  .map((sec) => createShowcase(sec, {
+    onStep: (i, shotEl) => {
+      audio.tick();
+      // Push the field out from the screenshot as it changes, so the swap is
+      // something the whole page does rather than something one <img> does.
+      const r = shotEl.getBoundingClientRect();
+      window.__vesopaField?.pulse?.(
+        ((r.left + r.width / 2) / innerWidth) * 2 - 1,
+        (1 - (r.top + r.height / 2) / innerHeight) * 2 - 1,
+      );
+    },
+  }))
+  .filter(Boolean);
+
+/* ---------- the beacon ----------
+   The field leans toward whatever the page most wants looked at: the pinned
+   screenshot, and with it the Store badge beside it. Strength is eased by how
+   centred the target is, so the current gathers and releases instead of
+   snapping on at a section boundary. */
+const beaconEls = [...document.querySelectorAll("[data-beacon]")];
+let beaconK = 0;
+
+function updateBeacon() {
+  let best = null, bestK = 0;
+  for (const el of beaconEls) {
+    const r = el.getBoundingClientRect();
+    if (r.bottom < 0 || r.top > innerHeight) continue;
+    const cy = r.top + r.height / 2;
+    // 1 when the element is centred, 0 by the time it is a viewport away.
+    const k = clamp01(1 - Math.abs(cy - innerHeight / 2) / (innerHeight * 0.6));
+    if (k > bestK) { bestK = k; best = { r, cy }; }
+  }
+  // Ease, so a fast scroll does not strobe the field between two targets.
+  beaconK += ((best ? bestK : 0) - beaconK) * 0.06;
+  if (beaconK < 0.01 || !best) return ambient.beacon(null);
+  const cx = best.r.left + best.r.width / 2;
+  ambient.beacon((cx / innerWidth) * 2 - 1, 1 - (best.cy / innerHeight) * 2, beaconK * 0.85);
+}
+
+/* ---------- stars ---------- */
+const stars = createStars(document.getElementById("stars"));
+let starsArmed = false;
+
+/* ---------- audio ---------- */
+const audio = createAudio();
+const soundBtn = document.getElementById("sound-btn");
+const fsBtn = document.getElementById("fs-btn");
+if (soundBtn) {
+  if (!audio.available) soundBtn.hidden = true;
+  soundBtn.addEventListener("click", async () => {
+    const on = audio.enabled ? (audio.disable(), false) : await audio.enable();
+    soundBtn.setAttribute("aria-pressed", String(!!on));
+    soundBtn.querySelector(".lbl").textContent = on ? "Sound on" : "Sound";
+    if (on) audio.scroll(scrollK);
+  });
+}
+
+/* ---------- scroll ---------- */
+function onScroll() {
+  readScroll();
+  pickClip();
+  for (const s of showcases) s.update();
+  if (!starsArmed && scrollY > innerHeight * 0.55) { starsArmed = true; stars.start(); }
+}
 addEventListener("scroll", onScroll, { passive: true });
+
 addEventListener("resize", () => {
   renderer.setSize(innerWidth, innerHeight, false);
-  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+  // Rotating a tablet changes the aspect enormously, and with it how far back
+  // the camera has to sit for the shape to fit.
+  fitCamera();
   ambient.resize(innerWidth, innerHeight);
+  measureActs();
   measureDawn();
-  readScroll();
+  onScroll();
   // Snap on resize: easing toward a target that just moved looks like a bug.
   kNow = kTarget;
   paintDawn(kNow);
+  paintField();
 }, { passive: true });
-
-/* ---------- ambient drift ----------
-   The second field: motes falling through screen space, independent of the
-   morphing field and of the camera. Sized well below the main field because it
-   is additive on top of it — the two together must still land inside the same
-   frame budget, so the ambient count is roughly a tenth of the morph count. */
-const AMBIENT_COUNT = TIER === "mobile" ? 700 : TIER === "tablet" ? 1400 : 2600;
-const ambient = createAmbient(THREE, { count: AMBIENT_COUNT, dpr: DPR });
-ambient.resize(innerWidth, innerHeight);
 
 /* pointer parallax, desktop only */
 let px = 0, py = 0, tx = 0, ty = 0;
 if (!coarse) addEventListener("pointermove", e => {
   tx = (e.clientX / innerWidth - .5) * .36; ty = (e.clientY / innerHeight - .5) * .24;
-  // Same pointer, expressed in NDC for the ambient field.
   ambient.pointer((e.clientX / innerWidth) * 2 - 1, (1 - e.clientY / innerHeight) * 2 - 1);
 }, { passive: true });
 if (!coarse) addEventListener("pointerleave", () => ambient.pointer(null), { passive: true });
 
 /* The hero's click handler reaches the field through this. Published rather
-   than imported so hero.js keeps working when WebGL does not come up at all. */
+   than imported so hero.js keeps working when WebGL does not come up. */
 window.__vesopaField = {
   pulse(nx, ny) { ambient.pulse(nx, ny, performance.now() * 0.001); },
+  /* What the spine currently thinks. The morph is driven off measured section
+     centres, so when a shape fails to resolve on a device the question is
+     always "was its act reachable?" — and that is arithmetic, not a hunch. */
+  debug() {
+    const max = Math.max(1, document.body.scrollHeight - innerHeight);
+    return {
+      scrollY: Math.round(scrollY), maxScroll: Math.round(max),
+      vh: innerHeight, scrollH: document.body.scrollHeight,
+      a: idxA, b: idxB, morph: +uni.uMorph.value.toFixed(3),
+      markness: +markness().toFixed(3),
+      acts: acts.map(x => ({ id: x.el.id || x.el.className, at: Math.round(x.at), shape: x.shape })),
+      lastActReachable: acts.length ? acts[acts.length - 1].at <= max : false,
+    };
+  },
 };
-
-/* ---------- lazy video ----------
-   Poster is a real <img> so it is the LCP candidate and costs nothing extra.
-   The clip only mounts inside one viewport, and only when the tab is not
-   asking us to save data.
-
-   Thirteen wells now share this observer, so the mount is deliberately
-   conservative: one viewport of lookahead rather than two, `preload=metadata`
-   rather than `auto`, and the element is only revealed once the browser says
-   it can actually play it. Nine of the thirteen clips do not exist yet — a
-   404 removes the element and leaves the still, which is the normal state
-   until the files land. */
-const saveData = navigator.connection && navigator.connection.saveData;
-if (!reduced && !saveData && "IntersectionObserver" in window) {
-  const io = new IntersectionObserver((es) => {
-    for (const e of es) {
-      if (!e.isIntersecting) continue;
-      const well = e.target, src = well.dataset.clip;
-      io.unobserve(well);
-      if (!src) continue;
-      const v = document.createElement("video");
-      v.muted = v.loop = v.playsInline = true;
-      v.preload = "metadata";
-      v.setAttribute("aria-hidden", "true");
-      v.setAttribute("playsinline", "");          // iOS Safari needs the attribute, not just the property
-      v.src = src;
-      const reveal = () => { v.classList.add("on"); v.play().catch(() => {}); };
-      // canplay is the honest signal, but Safari can settle on loadeddata and
-      // never fire canplay for a looping muted clip. Take whichever arrives.
-      v.addEventListener("canplay", reveal, { once: true });
-      v.addEventListener("loadeddata", reveal, { once: true });
-      v.addEventListener("error", () => v.remove(), { once: true });
-      well.appendChild(v);
-    }
-  }, { rootMargin: "50% 0px" });
-  document.querySelectorAll(".well[data-clip]").forEach(w => io.observe(w));
-}
 
 /* ---------- loop + adaptive downgrade ---------- */
 const perf = document.getElementById("perf");
-const tierEl = document.getElementById("tier");
-if (tierEl) tierEl.textContent = TIER + " / " + COUNT.toLocaleString();
 let last = performance.now(), acc = 0, frames = 0, fps = 0, settled = 0;
+let audioK = -1;
 
 function frame(now) {
   const dt = now - last; last = now;
   acc += dt; frames++;
 
   // Ease the light toward where the scrollbar says it should be. The rate is
-  // per-second and scaled by the real frame time, so the sunrise takes the
-  // same wall-clock time at 60fps as it does at 30 — a fixed per-frame lerp
-  // would run at half speed on a slow machine.
+  // per-second and scaled by real frame time, so the sunrise takes the same
+  // wall-clock time at 60fps as at 30.
   if (kNow !== kTarget) {
     const step = 1 - Math.pow(0.0016, Math.min(dt, 60) / 1000);
     kNow += (kTarget - kNow) * step;
     if (Math.abs(kTarget - kNow) < 0.0006) kNow = kTarget;
     paintDawn(kNow);
   }
+
+  paintField();
+  updateBeacon();
+
+  // The filter follows the scroll, but setTargetAtTime on every frame is a lot
+  // of scheduling for a parameter that moves slowly.
+  if (Math.abs(scrollK - audioK) > 0.01) { audioK = scrollK; audio.scroll(scrollK); }
+
   if (acc > 500) {
     fps = Math.round(1000 / (acc / frames));
     if (settled > 6 && fps < 52 && drawCount > 6000) {
@@ -402,13 +613,16 @@ function frame(now) {
       // Nudge size up so the field keeps its mass, but never past 1.45x base:
       // beyond that the points merge and the shape stops being legible.
       uni.uSize.value = Math.min(uni.uSize.value * 1.08, BASE_SIZE * 1.45);
-      // Fewer points means less accumulation, so give each one a little more.
-      uni.uOpacity.value = Math.min(.95, uni.uOpacity.value * 1.1);
+      // Through the multiplier, not uOpacity itself: paintField rewrites that
+      // uniform every frame, so a value poked in here was gone by the next one
+      // and the field simply thinned out with each downgrade.
+      densityBoost = Math.min(1.6, densityBoost * 1.1);
     }
     settled++;
     if (perf) perf.textContent = fps + " fps\n" + drawCount.toLocaleString() + " pts\n" + TIER;
     acc = 0; frames = 0;
   }
+
   uni.uTime.value = now * .001;
   px += (tx - px) * .045; py += (ty - py) * .045;
   camera.position.x = px; camera.rotation.y = -px * .08; camera.rotation.x = py * .06;
@@ -416,8 +630,7 @@ function frame(now) {
   renderer.render(scene, camera);
 
   // Second pass, over the first. autoClear off or this wipes the morph field;
-  // both passes are depth-testless and transparent, so draw order is the only
-  // thing deciding what sits in front — the motes are meant to be nearest.
+  // both passes are depth-testless, so draw order decides what sits in front.
   ambient.update(now * .001);
   renderer.autoClear = false;
   renderer.render(ambient.scene, ambient.camera);
@@ -426,17 +639,39 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
-// Paint the opening state before the first frame, with no easing — the light
-// should already be correct when the page appears, and only ease thereafter.
+/* ---------- boot ---------- */
+fitCamera();
+measureActs();
+measureDawn();
 readScroll();
+pickClip();
 kNow = kTarget;
 paintDawn(kNow);
+paintField();
+
+/* The lockup, wherever the page asks for one. Rendered from the module rather
+   than written into the HTML so the loader and the page share one copy of the
+   artwork, and played once as it arrives. */
+for (const slot of document.querySelectorAll("[data-wordmark]")) {
+  slot.innerHTML = wordmarkSVG("Vesopa");
+  wordmarkOnView(slot);
+}
+
+createReveals();
+wireStoreLinks();
+mountBadges();
+mountMotion();
+mountAI();
+
+// Sections are tall and full of lazy images; the act positions measured before
+// layout settles are wrong by a viewport or more. Re-measure once fonts have
+// applied, which is the last thing that moves anything.
+document.fonts?.ready.then(() => { measureActs(); measureDawn(); onScroll(); });
 
 // Signal for tools/drive.mjs: first frame is up, the field exists.
 window.__vesopaReady = true;
+
 if (reduced) {
-  // No easing for someone who asked for less motion: the colour still tells
-  // the story, it just arrives with the scroll instead of chasing it.
   uni.uDrift.value = 0;
   const still = () => {
     renderer.render(scene, camera);
@@ -447,18 +682,74 @@ if (reduced) {
   still();
   if (perf) perf.textContent = "reduced motion\nstatic frame";
   addEventListener("scroll", () => {
-    readScroll();
     kNow = kTarget;
     paintDawn(kNow);
+    paintField();
     still();
   }, { passive: true });
 } else {
   requestAnimationFrame(frame);
 }
 
-/* Swap the procedural till / rack / bolt for the matte+depth clouds once
-   they decode. If the PNGs are absent the procedural shapes simply stay —
-   this is why the site is not blocked on asset delivery. */
+/* ---------- the way in ----------
+   The loader covers the build above and asks the one question that has to come
+   from a click. Skipped entirely for a deep link: someone arriving at #quote
+   wants the form, not a title card. */
+const deepLink = location.hash && location.hash !== "#s0";
+/* Fullscreen is offered everywhere except iOS and iPadOS. Safari there exits
+   fullscreen on an upward scroll — it reads the gesture as a request for the
+   browser chrome back — and paints its own exit control over the top-left
+   corner of the page. A button that loses a fight with the OS every time is
+   worse than no button, so on those devices the invitation is sound only. */
+const OFFER_FULLSCREEN =
+  !isIOS() &&
+  !!(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen);
+if (!OFFER_FULLSCREEN && fsBtn) fsBtn.hidden = true;
+
+const loader = deepLink ? null : createLoader({
+  canFullscreen: OFFER_FULLSCREEN,
+  async onEnter(withExtras) {
+    if (!withExtras) return;
+    // Still inside the click, which is the only reason either of these works.
+    const okAudio = await audio.enable();
+    if (okAudio && soundBtn) {
+      soundBtn.setAttribute("aria-pressed", "true");
+      soundBtn.querySelector(".lbl").textContent = "Sound on";
+      audio.scroll(scrollK);
+    }
+    try {
+      if (OFFER_FULLSCREEN) {
+        await document.documentElement.requestFullscreen?.({ navigationUI: "hide" });
+      }
+    } catch { /* refused, or unsupported — the page is fine either way */ }
+    stars.burst(2);
+  },
+});
+
+/* Once the visitor is actually on the page, pull the rest of the clips into
+   cache in the background so none of them is still downloading when its
+   section arrives. */
+const warmVideo = () => backdrop.warm();
+if (loader) {
+  // After the loader is dismissed — not during, when the field is still
+  // building and the first clip is competing for the same connection.
+  setTimeout(warmVideo, 2500);
+} else {
+  addEventListener("load", () => setTimeout(warmVideo, 1200), { once: true });
+}
+
+// Real milestones rather than a timer pretending to be one. The shapes are
+// already built by the time this module body runs, so that is most of it.
+loader?.to(0.55);
+requestAnimationFrame(() => loader?.to(0.75));
+Promise.all([
+  document.fonts?.ready ?? Promise.resolve(),
+  new Promise((r) => setTimeout(r, 500)),
+]).then(() => loader?.to(1));
+
+/* Swap the procedural till and coin for the matte+depth clouds once they
+   decode. If the PNGs are absent the procedural shapes stay — which is why the
+   site is not blocked on asset delivery. */
 upgradeShapes(SHAPES, COUNT).then(changed => {
   if (!changed.length) return;
   setPair(idxA, idxB, true);

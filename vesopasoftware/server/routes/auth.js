@@ -75,12 +75,39 @@ router.post("/login", authLimiter, async (req, res, next) => {
 
 /* ---------- register ---------- */
 
-router.get("/register", (req, res) => {
-  if (req.user) return res.redirect("/portal");
-  res.render("auth/register", {
-    title: "Create an account", error: null,
-    form: { email: req.query.email || "", name: "", company: "", phone: "" },
-  });
+/* Registration stands on its own — anybody can just make an account.
+ *
+ * But somebody arriving from the quote builder has already told us what they
+ * want, and the POST below quietly claims every unclaimed quote on their
+ * email. Quietly is the problem: they had no way of knowing it happened. If a
+ * reference is on the URL it is looked up and shown, so the page says what is
+ * about to come with them. Nothing depends on it — a bad or missing ref just
+ * renders the ordinary form. */
+router.get("/register", async (req, res, next) => {
+  try {
+    if (req.user) return res.redirect("/portal");
+
+    const ref = String(req.query.quote || "").trim().slice(0, 40);
+    let quote = null;
+    if (ref) {
+      quote = await one(
+        `SELECT ref, name, email, company, phone, service_type, scope_tier, timeline,
+                estimate_min, estimate_max, currency
+           FROM quotes WHERE ref = ? AND user_id IS NULL`, [ref]);
+    }
+
+    res.render("auth/register", {
+      title: "Create an account", error: null, quote,
+      form: {
+        // The quote's own answers beat the query string: they came from a form
+        // this person filled in, not from a link that could have been edited.
+        email: quote?.email || req.query.email || "",
+        name: quote?.name || "",
+        company: quote?.company || "",
+        phone: quote?.phone || "",
+      },
+    });
+  } catch (err) { next(err); }
 });
 
 router.post("/register", authLimiter, async (req, res, next) => {
@@ -90,7 +117,7 @@ router.post("/register", authLimiter, async (req, res, next) => {
     company: String(req.body.company || "").trim().slice(0, 150),
     phone: String(req.body.phone || "").trim().slice(0, 40),
   };
-  const bad = (error) => res.status(400).render("auth/register", { title: "Create an account", error, form });
+  const bad = (error) => res.status(400).render("auth/register", { title: "Create an account", error, form, quote: null });
 
   try {
     if (!form.name) return bad("Your name is required.");

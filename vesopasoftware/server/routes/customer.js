@@ -13,6 +13,8 @@ import { sendMail, layout, esc } from "../lib/mail.js";
 import { notifyAdmins, notify, unreadCount } from "../lib/notify.js";
 import { toProject, toUser, toAdmins, joinProjectRoom } from "../lib/realtime.js";
 import { config } from "../lib/config.js";
+import { buildTimeline, groupByDay, monthGrid, bucketTasks } from "../lib/timeline.js";
+import { renderInvoicePDF } from "../lib/invoice-render.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -260,7 +262,10 @@ router.get("/projects/:id", async (req, res, next) => {
       q(`SELECT * FROM charges WHERE project_id = ? AND status = 'pending' ORDER BY incurred_on DESC`, [project.id]),
       q(`SELECT f.*, u.name AS uploader FROM project_files f LEFT JOIN users u ON u.id = f.user_id
           WHERE f.project_id = ? ORDER BY f.created_at DESC`, [project.id]),
-      q(`SELECT t.*, a.name AS assignee FROM project_tasks t LEFT JOIN users a ON a.id = t.assignee_id
+      q(`SELECT t.*, a.name AS assignee, c.name AS creator
+           FROM project_tasks t
+           LEFT JOIN users a ON a.id = t.assignee_id
+           LEFT JOIN users c ON c.id = t.created_by
           WHERE t.project_id = ? AND t.is_visible = 1
           ORDER BY FIELD(t.status,'doing','todo','blocked','done'), t.sort_order, t.id`, [project.id]),
     ]);
@@ -270,9 +275,20 @@ router.get("/projects/:id", async (req, res, next) => {
       [project.id, req.user.id],
     );
 
+    /* One feed rather than four tabs — see lib/timeline.js. The calendar month
+       comes from the query string so paging through it is a plain link and
+       works with no JavaScript at all. */
+    const now = new Date();
+    const cy = Number(req.query.y) || now.getFullYear();
+    const cm = Number.isInteger(Number(req.query.m)) ? Number(req.query.m) : now.getMonth();
+    const month = new Date(cy, cm, 1);
+
     res.render("customer/project", {
       title: project.title, project, updates, messages, invoices, members, charges,
       files, tasks, roleLabel, prettySize,
+      timeline: groupByDay(buildTimeline({ messages, updates, files, tasks })),
+      buckets: bucketTasks(tasks),
+      calendar: { month, cells: monthGrid(cy, cm, tasks) },
     });
   } catch (err) { next(err); }
 });
@@ -344,11 +360,21 @@ router.post("/projects/:id/files", requireCap("message.send"), upload.array("fil
     const project = await ownedProject(req, req.params.id);
     if (!project) return res.status(404).render("error", { title: "No such project", message: "Not yours.", back: "/portal" });
 
+    /* An upload posted from the composer carries the message it belongs to, so
+       it renders inside that bubble rather than as a separate event further
+       down the feed. Verified against this project before it is trusted — the
+       id arrives from a form field. */
+    let messageId = Number(req.body.message_id) || null;
+    if (messageId) {
+      const owns = await one("SELECT id FROM messages WHERE id = ? AND project_id = ?", [messageId, project.id]);
+      if (!owns) messageId = null;
+    }
+
     for (const f of req.files || []) {
       await exec(
-        `INSERT INTO project_files (project_id, user_id, side, stored_name, original_name, mime, size_bytes, caption)
-         VALUES (?,?,?,?,?,?,?,?)`,
-        [project.id, req.user.id, req.user.role === "admin" ? "vesopa" : "customer",
+        `INSERT INTO project_files (project_id, message_id, user_id, side, stored_name, original_name, mime, size_bytes, caption)
+         VALUES (?,?,?,?,?,?,?,?,?)`,
+        [project.id, messageId, req.user.id, req.user.role === "admin" ? "vesopa" : "customer",
          f.filename, f.originalname.slice(0, 255), f.mimetype, f.size,
          String(req.body.caption || "").slice(0, 255) || null],
       );
@@ -468,6 +494,29 @@ router.get("/invoices/:id", requireCap("billing.view"), async (req, res, next) =
       inv.project_id ? one("SELECT * FROM projects WHERE id = ?", [inv.project_id]) : null,
     ]);
     res.render("customer/invoice", { title: `Invoice ${inv.number}`, inv, items, payments, customer, project });
+  } catch (err) { next(err); }
+});
+
+/** The invoice as a PDF — the thing that actually gets forwarded to an
+ *  accountant. Same access check as the HTML view: an invoice is only ever
+ *  reachable by the organisation it belongs to. */
+router.get("/invoices/:id/pdf", requireCap("billing.view"), async (req, res, next) => {
+  try {
+    const inv = await one("SELECT * FROM invoices WHERE id = ?", [req.params.id]);
+    const mine = inv && (req.user.role === "admin" || inv.user_id === req.user.id
+      || (inv.org_id && req.user.org_id && inv.org_id === req.user.org_id));
+    if (!inv || !mine || (req.user.role !== "admin" && inv.status === "draft")) {
+      return res.status(404).render("error", {
+        title: "No such invoice", message: "That invoice does not exist, or is not yours.", back: "/portal/invoices",
+      });
+    }
+    const pdf = await renderInvoicePDF(inv);
+    res.setHeader("Content-Type", "application/pdf");
+    // inline, not attachment: most people want to look at it first, and the
+    // browser's own viewer has a download button anyway.
+    res.setHeader("Content-Disposition", `inline; filename="${inv.number}.pdf"`);
+    res.setHeader("Content-Length", pdf.length);
+    res.end(pdf);
   } catch (err) { next(err); }
 });
 
@@ -625,6 +674,58 @@ router.post("/projects/:id/tasks/:taskId/status", requireCap("message.send"), as
 
     toProject(project.id, "task", { projectId: project.id, taskId: task.id, status, done, total, pct });
     res.json({ ok: true, status, done, total, pct });
+  } catch (err) { next(err); }
+});
+
+/** Anyone on the project can raise a task — that is the point of a shared
+ *  board. `is_visible` stays 1 so it appears on both sides; an internal-only
+ *  task is something admin creates from the admin view. */
+router.post("/projects/:id/tasks", requireCap("message.send"), async (req, res, next) => {
+  try {
+    const project = await ownedProject(req, req.params.id);
+    if (!project) return res.status(404).json({ ok: false, error: "Not yours." });
+
+    const title = String(req.body.title || "").trim().slice(0, 200);
+    if (!title) return res.status(400).json({ ok: false, error: "The task needs a name." });
+
+    // An empty date field posts as "", which MySQL would coerce to 0000-00-00.
+    const due = /^\d{4}-\d{2}-\d{2}$/.test(String(req.body.due_date || "")) ? req.body.due_date : null;
+
+    const r = await exec(
+      `INSERT INTO project_tasks (project_id, title, detail, status, created_by, due_date, is_visible)
+       VALUES (?,?,?,'todo',?,?,1)`,
+      [project.id, title, String(req.body.detail || "").trim().slice(0, 2000) || null, req.user.id, due],
+    );
+
+    const task = await one(
+      `SELECT t.*, a.name AS assignee, c.name AS creator FROM project_tasks t
+         LEFT JOIN users a ON a.id = t.assignee_id
+         LEFT JOIN users c ON c.id = t.created_by
+        WHERE t.id = ?`, [r.insertId]);
+
+    toProject(project.id, "task-added", { projectId: project.id, task });
+    res.json({ ok: true, task });
+  } catch (err) { next(err); }
+});
+
+/** Archive, and put back. Never a DELETE: the board is also the record of what
+ *  was asked for and when, and a project that quietly loses its history is one
+ *  nobody can audit later. */
+router.post("/projects/:id/tasks/:taskId/archive", requireCap("message.send"), async (req, res, next) => {
+  try {
+    const project = await ownedProject(req, req.params.id);
+    if (!project) return res.status(404).json({ ok: false, error: "Not yours." });
+
+    const task = await one("SELECT * FROM project_tasks WHERE id = ? AND project_id = ?",
+      [req.params.taskId, project.id]);
+    if (!task) return res.status(404).json({ ok: false, error: "No such task." });
+
+    const restore = String(req.body.restore || "") === "1";
+    await exec("UPDATE project_tasks SET archived_at = ? WHERE id = ?",
+      [restore ? null : new Date(), task.id]);
+
+    toProject(project.id, "task-archived", { projectId: project.id, taskId: task.id, archived: !restore });
+    res.json({ ok: true, archived: !restore });
   } catch (err) { next(err); }
 });
 

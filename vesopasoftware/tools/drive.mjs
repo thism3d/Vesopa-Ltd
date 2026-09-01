@@ -10,7 +10,7 @@
      node tools/drive.mjs eval "<expr>"    evaluate an expression in the page
      node tools/drive.mjs repl             stdin: goto/scroll/ss/eval/quit
 
-   Assumes `npm run serve` is up on :5080 (or pass --url).                  */
+   Assumes `npm start` is up on :5090 (or pass --url).                      */
 import { chromium, devices } from 'playwright';
 import { mkdirSync } from 'node:fs';
 
@@ -19,13 +19,13 @@ const cmd  = argv[0] || 'check';
 const arg  = (n, d) => { const i = argv.indexOf('--' + n); return i > -1 ? argv[i+1] : d; };
 const has  = (n) => argv.includes('--' + n);
 // ?probe=1 makes the WebGL drawing buffer readable — see site/js/site.js
-const URL  = arg('url', 'http://localhost:5080/?probe=1');
+const URL  = arg('url', 'http://localhost:5090/?probe=1');
 const OUT  = arg('out', 'shots');
 const MOB  = has('mobile');
 
 mkdirSync(OUT, { recursive: true });
 
-const SECTIONS = ['s0','s1','s2','s3','story','s5','s6','how','quote','s7','mark'];
+const SECTIONS = ['s0','epos','kitchen','display','story','cloud','stack','pay','how','quote','contact','mark'];
 
 // Headless Chromium has no GPU: WebGL falls back to software. The particle
 // field is additive-blended and fill-rate bound, so a retina-scale backing
@@ -56,16 +56,33 @@ page.on('response', r => { if (r.status() === 404) missing.push(r.url().replace(
 // the first frame is on screen — wait for that instead.
 await page.goto(URL, { waitUntil: 'domcontentloaded' });
 await page.waitForFunction(() => window.__vesopaReady === true, null, { timeout: 20000 });
-await page.waitForTimeout(1200);
+
+/* The loader covers the page and holds the scroll (html.loading sets
+   overflow:hidden), so every screenshot below would otherwise be a title card
+   and every scrollTo would go nowhere. Take the quiet door: the noisy one asks
+   for fullscreen and audio, neither of which a headless run wants. */
+const skip = page.locator('#loader .ld-skip');
+try {
+  await skip.waitFor({ state: 'visible', timeout: 9000 });
+  await skip.click();
+  await page.waitForFunction(() => !document.documentElement.classList.contains('loading'), null, { timeout: 4000 });
+} catch { /* deep link, reduced motion, or it never mounted — carry on */ }
+
+await page.waitForTimeout(1400);
 
 const tag = MOB ? 'mobile' : 'desktop';
 
-async function scrollTo(id) {
-  await page.evaluate(sel => {
+/* Centre a section rather than land on its top edge. The showcases are two to
+   three viewports tall and pin a stage in the middle of themselves, so their
+   offsetTop is a screen of empty page above the thing worth photographing. */
+async function scrollTo(id, frac = 0.5) {
+  await page.evaluate(([sel, f]) => {
     const el = document.getElementById(sel);
-    window.scrollTo({ top: el.offsetTop, behavior: 'instant' });
-  }, id);
-  await page.waitForTimeout(700);           // let the morph settle
+    if (!el) return;
+    const y = el.offsetTop + Math.max(0, el.offsetHeight - innerHeight) * f;
+    window.scrollTo({ top: Math.round(y), behavior: 'instant' });
+  }, [id, frac]);
+  await page.waitForTimeout(900);           // let the morph and the fades settle
 }
 
 async function shots() {
@@ -77,16 +94,18 @@ async function shots() {
   }
 }
 
-/* Shapes are mapped to raw scroll fraction, not to sections: f = p*(NS-1).
-   So a section's top almost never coincides with a fully-formed silhouette.
-   This jumps to the exact scrollY where shape index i is resolved.        */
-const SHAPE_NAMES = ['field','till','window','code','rack','bolt','mark'];
+/* Each shape belongs to a section now (data-shape), and is fully formed when
+   that section is centred — so jumping to a target means finding its act and
+   landing on the middle of it, not computing a scroll fraction. */
+const SHAPE_NAMES = ['field','till','screen','window','code','cloud','envelope','coin','card','mark'];
 async function morphTo(i) {
   await page.evaluate(k => {
-    const max = document.body.scrollHeight - innerHeight;
-    window.scrollTo({ top: Math.round(max * (k / 6)), behavior: 'instant' });
+    const el = document.querySelector(`[data-shape="${k}"]`);
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    window.scrollTo({ top: Math.round(scrollY + r.top + r.height / 2 - innerHeight / 2), behavior: 'instant' });
   }, i);
-  await page.waitForTimeout(900);
+  await page.waitForTimeout(1000);
 }
 
 async function probe() {
@@ -119,7 +138,9 @@ async function probe() {
 if (cmd === 'video') {
   // Ask the real decoder rather than parsing atoms by hand: dimensions,
   // duration, and whether the clip actually reaches a playable state.
-  const clips = await page.$$eval('.well[data-clip]', ws => ws.map(w => w.dataset.clip));
+  // Sections declare a backdrop by slug; the paths follow from it.
+  const clips = await page.$$eval('[data-clip]', ws =>
+    [...new Set(ws.map(w => w.dataset.clip))].map(s => `assets/video/${s}.mp4`));
   for (const src of clips) {
     const r = await page.evaluate(u => new Promise(res => {
       const v = document.createElement('video');
@@ -176,11 +197,28 @@ if (cmd === 'video') {
     }
   }
 
+} else if (cmd === 'steps') {
+  // Walk each showcase through its screens: the pinned stage is the one part
+  // of the page a single screenshot per section cannot show.
+  const shows = await page.$$eval('.showcase', ss => ss.map(s => ({
+    id: s.id, steps: s.querySelectorAll('.shot').length,
+  })));
+  for (const { id, steps } of shows) {
+    for (let i = 0; i < steps; i++) {
+      await scrollTo(id, steps === 1 ? 0.5 : (i + 0.5) / steps);
+      const on = await page.$eval(`#${id}`, s => s.style.getPropertyValue('--shot'));
+      const f = `${OUT}/${tag}-${id}-step${i}.png`;
+      await page.screenshot({ path: f });
+      console.log(`shot ${f}  (--shot=${on || '0'})`);
+    }
+  }
+  console.log(errors.length ? '\nerrors:\n' + [...new Set(errors)].join('\n') : '\nno page errors');
+
 } else {                                   // check
   const top = await probe();
-  await scrollTo('s5');                    // the ink→paper inversion
+  await scrollTo('cloud');                 // the ink→paper inversion
   const light = await probe();
-  await scrollTo('s7');
+  await scrollTo('contact');
   await page.screenshot({ path: `${OUT}/${tag}-check.png` });
 
   const fail = [];

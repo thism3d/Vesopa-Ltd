@@ -4,6 +4,17 @@
     <a class="brand" href="/"><img src="/assets/logo.svg" alt="">Vesopa <small>portal</small></a>
     <h1>Create an account</h1>
     <p>Track a build, talk to the people doing it, and settle invoices without an email chain.</p>
+    <% if (typeof quote !== "undefined" && quote) { %>
+      <div class="notice" style="margin-bottom:1.1rem">
+        <b>Your estimate is coming with you.</b>
+        <div class="mono muted" style="font-size:.68rem;margin-top:.3rem">
+          <%= quote.ref %> · <%= quote.estimate_min %>–<%= quote.estimate_max %> <%= quote.currency %>
+        </div>
+        <small class="muted" style="display:block;margin-top:.35rem">
+          Create the account and this brief lands in it, ready for us to price properly.
+        </small>
+      </div>
+    <% } %>
     <% if (error) { %><div class="notice bad"><%= error %></div><% } %>
     <form method="post" action="/portal/register">
       <input type="hidden" name="_csrf" value="<%= csrf %>">
@@ -44,4 +55,4 @@
     </div>
   </div>
 </div>
-<%- include("../partials/foot") %>
+<%- include("../partials/foot-auth") %>
