@@ -1114,6 +1114,42 @@ tr.clickable:hover { background: var(--brand-soft); }
   gap: 18px;
   align-items: start;
 }
+/* An editor with nothing to preview is one column, not one column and a hole.
+
+   Four of the five screens built on this — Kitchen screens, Receipt designer,
+   Loyalty, Tender — put a preview pane in the second track. Till & printers
+   never had one: its preview is the phone-shaped panel inside the first card,
+   so the 340px track sat empty and the page stopped 358px short of the right
+   edge on every desktop, which is the gap that gets reported. Asked of the
+   markup rather than fixed by giving the idle view a class of its own, so the
+   next single-pane editor is right the day it is written. */
+.rd-layout:not(:has(> * + *)) { grid-template-columns: minmax(0, 1fr); }
+
+/* …and then it has to do something with the width it just got back.
+
+   A settings form 1100px across is its own kind of wrong: a tick box and the
+   sentence explaining it end up a monitor apart, and a printer name capped at
+   forty characters gets a box wide enough for four hundred. Two columns of
+   about 550px is the measure the two-pane editors already read at, so the
+   single-pane one is not a different page — it is the same page using the
+   space the preview pane was holding. Below 1101px the preview pane would have
+   dropped under the editor anyway, and one column is right again. */
+@media (min-width: 1101px) {
+  .rd-layout:not(:has(> * + *)) .rd-editor {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+}
+
+/* A set of names that belong together, laid out as a set. Seven printers down
+   a page as seven full-width boxes reads as seven unrelated questions. */
+.rd-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 6px 14px;
+}
+.rd-card .rd-fields label { margin-bottom: 4px; }
 
 .rd-editor { display: flex; flex-direction: column; gap: var(--stack); min-width: 0; }
 
@@ -1758,7 +1794,14 @@ table.plain th { color: var(--muted, #7a828c); font-weight: 600; font-size: 11px
   border-radius: 10px;
   background: var(--panel, #fff);
 }
-.sp-bar .sp-spacer { flex: 1 1 auto; }
+/* `.tbl-bar` above a table is the same furniture as `.sp-bar` above the screen
+   editor and borrows its parts by name — but this rule was scoped to `.sp-bar`
+   alone, so the spacer in a filter bar spaced nothing. The row count and the
+   bulk-edit strip, which the markup puts after the spacer precisely so they
+   sit at the far end, were bunched against the Clear button with the rest of
+   the bar empty beside them. */
+.sp-bar .sp-spacer,
+.tbl-bar .sp-spacer { flex: 1 1 auto; }
 .sp-pick { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; margin: 0; }
 .sp-pick select, .sp-pick input { min-width: 90px; }
 .sp-bar .check { margin: 0; }
@@ -2501,6 +2544,14 @@ table.sortable th.sorted[data-dir="down"]::after { content: ' ▼'; }
    Picking several products at once, and editing a cell where it sits.
    --------------------------------------------------------------------------- */
 .pick-col { width: 34px; }
+/* `input, select { width: 100% }` near the top of this file is a bare element
+   selector, so it reaches every control in the application including the tick
+   boxes — and a checkbox is not a field that wants filling. It went unnoticed
+   only because the column above is 34px wide and a 34px checkbox still looks
+   like a checkbox. Give the same box the full width of a card on a phone and
+   it is drawn adrift in the middle of a 650px row, which is where this was
+   found. A checkbox is its own size, wherever it is put. */
+.pick-col input[type="checkbox"] { width: auto; margin: 0; }
 .bulk-bar {
   display: inline-flex;
   align-items: center;
@@ -3474,10 +3525,43 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
        would run out of the side of it. */
     white-space: normal;
     overflow-wrap: anywhere;
+    /* THE HOLE DOWN THE RIGHT-HAND SIDE OF EVERY CARD.
+
+       `.card > table td { max-width: 42ch }` is a ceiling on a *column*: it
+       stops one long note making a desktop table two thousand pixels wide.
+       Here there are no columns. Every cell is a full-width row of the card,
+       and 42ch is about 357px — so on anything from a large phone to a tablet
+       in portrait each row stopped dead at 357px and the rest of the card, up
+       to 335px of it, was empty. Products, Stock, Staff, Customers, Vouchers,
+       Promotions, Gift cards, Deposits, Departments, Tax, Offices, Billing:
+       every table this layout touches, which is why it read as a whole app
+       with a margin down one side rather than as one broken page.
+
+       It survived the rule above it because `.card > table td` is a class and
+       two elements and `.table-cards td` is a class and one, so the ceiling
+       out-specified the layout meant to replace it, and saying `max-width: none`
+       on `.table-cards td` alone loses the same argument for the same reason.
+       Lifted in the rule below, which carries a class more than the ceiling
+       does and so actually reaches it. */
   }
+
+  /* (0,2,1) against the ceiling's (0,1,2) — this is the rule that lifts it.
+     The bare `.table-cards td` is for the tables drawn into a plain <div>
+     rather than straight into a card, on the kitchen screens: no `.card >`
+     ancestor, so no ceiling to lift, but no reason to differ either. */
+  .card > .table-cards td,
+  .table-cards td { max-width: none; }
   .table-cards td::before {
     content: attr(data-label);
     flex: none;
+    /* `justify-content: space-between` spaces *every* item, which is right for
+       a cell holding one value and wrong for one holding two: the Printing
+       cell put its routing badge in the middle of the card and "Not on
+       receipt" against the far edge, as though they were unrelated. An auto
+       margin takes the free space before the split does, so the heading goes
+       left and everything the cell actually contains stays together on the
+       right, however many pieces it comes in. */
+    margin-right: auto;
     color: var(--muted);
     font-size: 11.5px;
     font-weight: 700;
@@ -3489,6 +3573,13 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
      reads better with no label than with a blank one. */
   .table-cards td:not([data-label])::before,
   .table-cards td[data-label=""]::before { content: none; }
+
+  /* `.right` aligns a money column under its heading — a desktop idea, and it
+     needs a column to mean anything. In a card it only pushed the heading to
+     the far edge, so Price alone read right-to-left while Name, Department and
+     Sub Department read left-to-right, and the value landed underneath on the
+     other side. The flex row already puts the value on the right. */
+  .table-cards td.right { text-align: left; }
 
   /* The first column is the card's title, not another label/value pair. */
   .table-cards td.card-title {
@@ -3562,8 +3653,20 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
 
   /* The bulk-select box is under a heading that is itself a checkbox, so there
      is no word to take. It is the one column that gets told what it is here. */
-  .table-cards td.pick-col { display: flex; gap: 10px; align-items: center; }
+  .table-cards td.pick-col {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    /* The one cell whose value is a control rather than a fact. Sent to the far
+       side of a 690px card the box reads as belonging to nothing, and a
+       checkbox is a flex item with no intrinsic stretch — so it was drawn in
+       the middle of the space it had been given instead. It sits against its
+       own word. */
+    justify-content: flex-start;
+  }
+  .table-cards td.pick-col input { flex: none; }
   .table-cards td.pick-col::before {
+    margin-right: 0;
     content: 'Select';
     color: var(--muted);
     font-size: 11.5px;

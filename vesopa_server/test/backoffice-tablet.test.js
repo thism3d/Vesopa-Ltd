@@ -493,6 +493,87 @@ check('no table is clipped or left unscrollable', async (cdp) => {
   );
 });
 
+/**
+ * The same question one breakpoint down, where the tables are not tables.
+ *
+ * Below 760px a table carrying `.table-cards` stops being a grid and each row
+ * becomes a card: the heading row goes, every cell is a full-width label/value
+ * line, and the row buttons get a line of their own. That layout has one thing
+ * it must do, and it is the thing it was not doing — fill the card.
+ *
+ * `.card > table td { max-width: 42ch }` is a ceiling meant for a *column*, and
+ * it out-specifies `.table-cards td`, so every cell stopped at about 357px and
+ * left the rest of the card — up to 335px of it — blank. On Products, Stock,
+ * Staff, Customers, Vouchers, Promotions, Gift cards, Deposits, Departments,
+ * Tax, and every admin list besides. It reads as an application with a margin
+ * down one side, which is exactly how it was reported.
+ *
+ * A phone width in a file about tablets because the fault is the same fault:
+ * a rule written for one device size reaching into another. 700px is chosen so
+ * a 42ch cell would leave a hole nobody could mistake for slack.
+ */
+check('no card row stops short of the card it is in', async (cdp) => {
+  await cdp.asTablet(700, 1000);
+  const bad = [];
+  for (const view of VIEWS) {
+    await cdp.open(view);
+    const short = await cdp.eval(
+      `const out = [];
+       for (const table of document.querySelectorAll('#view-${view} table.table-cards')) {
+         for (const row of table.tBodies[0] ? table.tBodies[0].rows : []) {
+           const rs = getComputedStyle(row);
+           const rr = row.getBoundingClientRect();
+           const right =
+             rr.right - parseFloat(rs.paddingRight) - parseFloat(rs.borderRightWidth);
+           for (const cell of row.cells) {
+             if (getComputedStyle(cell).display === 'none') continue;
+             const cr = cell.getBoundingClientRect();
+             if (cr.width === 0) continue;
+             // The cell's own box, not its contents: a checkbox beside its
+             // heading is meant to stop early, a cell is not.
+             const gap = Math.round(right - cr.right);
+             if (gap > 8) {
+               out.push((cell.getAttribute('data-label') || cell.className || 'cell') +
+                        ' stops ' + gap + 'px short');
+             }
+           }
+         }
+       }
+       return [...new Set(out)];`
+    );
+    for (const why of short) bad.push(`${view}: ${why}`);
+  }
+  // Put the browser back, or every check written after this one runs on a phone.
+  await cdp.asTablet(1024, 1366);
+  assert.deepStrictEqual(
+    bad,
+    [],
+    'cells that stop short of their card:\n      ' + bad.join('\n      ')
+  );
+});
+
+/** And a card layout was actually reached, or the check above passed on an
+    empty list of tables. */
+check('the phone card layout is the one being measured', async (cdp) => {
+  await cdp.asTablet(700, 1000);
+  await cdp.open('products');
+  const seen = await cdp.eval(
+    `const t = document.querySelector('#view-products table.table-cards');
+     if (!t) return null;
+     const row = t.tBodies[0].rows[0];
+     return {
+       stacked: getComputedStyle(row).display === 'block',
+       labelled: [...row.cells].some((c) => c.hasAttribute('data-label')),
+       cells: row.cells.length,
+     };`
+  );
+  await cdp.asTablet(1024, 1366);
+  assert.ok(seen, 'the products table never took the card layout');
+  assert.ok(seen.stacked, 'rows are still laid out as table rows at 700px');
+  assert.ok(seen.labelled, 'no cell carries the heading it lost with the thead');
+  assert.ok(seen.cells > 3, `only ${seen.cells} cells to measure`);
+});
+
 /** And the products table is genuinely wider than an iPad, or the check above
     would be passing because there was nothing to test. */
 check('the products table really is wider than the screen', async (cdp) => {
