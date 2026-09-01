@@ -131,6 +131,61 @@ check('a schedule row draws icon buttons, not a row of full-size ones', () => {
   assert.ok(!/class="btn/.test(rsRow), 'a full-size button is back in the row');
 });
 
+check('every cell gets the heading it loses on a phone', () => {
+  // The card layout drops the heading row, so a cell with no data-label shows
+  // its value with nothing saying what the value is: a bare "08:30". The
+  // labels are stamped on from the <th> each cell sits under rather than
+  // written out beside the row, so what this checks is that every table that
+  // becomes cards is actually passed through that.
+  const fn = app.slice(app.indexOf('function cardsOnPhone('), app.indexOf('async function loadCrud('));
+  assert.match(fn, /table\.tHead/, 'the labels do not come from the headings');
+  assert.match(fn, /setAttribute\('data-label'/, 'nothing is labelled');
+  // Half these screens re-draw their rows without going back through render(),
+  // and the class stays on the table when they do. Labels that disappear on
+  // the second render are worse than labels that were never there.
+  assert.match(fn, /MutationObserver/, 'a re-rendered row keeps its headings by luck');
+
+  // Both screens that become cards go through it: the schedules table, and
+  // every programming table loadCrud draws — which is Departments, Sub
+  // departments, Modifiers and the rest, in one place.
+  assert.match(app, /cardsOnPhone\(\$\('rs-table'\)\)/, 'schedules are not labelled');
+  assert.match(app, /cardsOnPhone\(body\.closest\('table'\)\)/, 'programming tables are not');
+});
+
+check('a wide table stops being a table before it stops fitting', () => {
+  const phone = css.slice(css.indexOf('@media (max-width: 760px)'));
+  assert.ok(phone.startsWith('@media'), 'no narrow-screen rules for wide tables');
+  assert.match(phone, /\.table-cards thead \{ display: none; \}/, 'the heading row survives');
+  assert.match(phone, /\.table-cards \{ min-width: 0; \}/, 'a min-width floor survives');
+  assert.match(
+    phone,
+    /td::before \{\s*content: attr\(data-label\)/,
+    'the headings are dropped without being put back on the cells'
+  );
+  assert.match(
+    phone,
+    /\.table-cards td \{[^}]*white-space: normal/,
+    'the narrow-screen `nowrap` runs a long name out of the side of its card'
+  );
+});
+
+check('and the actions land in the card rather than off its right edge', () => {
+  const cell = /\.table-cards td\.row-actions-cell \{([^}]*)\}/.exec(css);
+  assert.ok(cell, 'the actions cell is left as a table cell on a phone');
+  assert.match(cell[1], /display: flex/);
+
+  const icons = /\.table-cards td\.row-actions-cell \.row-actions \{([^}]*)\}/.exec(css);
+  assert.ok(icons, 'the six icon actions are left to wrap');
+  assert.match(icons[1], /flex-wrap:\s*nowrap/);
+});
+
+check('the row of buttons is the cell that gets the treatment', () => {
+  assert.ok(rsRow.includes('row-actions-cell'), 'the schedule actions cell is unmarked');
+  const crud = app.slice(app.indexOf('async function loadCrud('), app.indexOf('function crudModalFields('));
+  assert.ok(crud.includes('row-actions-cell'), 'the programming actions cell is unmarked');
+  assert.ok(crud.includes('card-title'), 'a programming card has no title');
+});
+
 check('every action in the row has a name a screen reader can read', () => {
   const helper = app.slice(app.indexOf('const iconButton ='), app.indexOf('async function loadRunReport'));
   assert.ok(helper.includes('aria-label='), 'icon buttons with no accessible name');

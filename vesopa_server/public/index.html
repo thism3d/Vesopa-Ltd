@@ -383,7 +383,7 @@
                that says which schedule the row is — off the left edge. -->
           <div class="card">
             <div class="rr-scroll">
-              <table class="table rs-table" id="rs-table">
+              <table class="table rs-table table-cards" id="rs-table">
                 <thead>
                   <tr>
                     <th>Name</th><th>Report</th><th>Terminal</th><th>Frequency</th><th>Time</th>
@@ -497,7 +497,11 @@
             </span>
           </div>
 
-          <div class="card"><table class="sortable">
+          <!-- data-no-cards: the catalogue is edited in place — a drag handle, a
+               select in half the cells, a bulk-select column — and stacking it into
+               cards on a phone loses the column alignment that editing depends on.
+               It keeps scrolling inside its card. -->
+          <div class="card"><table class="sortable" data-no-cards>
             <thead><tr>
               <th class="pick-col"><input type="checkbox" id="prod-pick-all" title="Select every product shown"></th>
               <th data-sort="product_name">Name</th>

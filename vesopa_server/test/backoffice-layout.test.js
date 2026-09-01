@@ -28,6 +28,12 @@ const css = fs.readFileSync(
   path.join(__dirname, '..', 'public', 'style.css'),
   'utf8'
 );
+// The mark is placed from both: the shell puts it in the markup, the report
+// header and the viewer draw it from here.
+const app = fs.readFileSync(
+  path.join(__dirname, '..', 'public', 'app.js'),
+  'utf8'
+);
 
 let passed = 0;
 function check(name, fn) {
@@ -197,6 +203,50 @@ check('every view says what it is for', () => {
     [],
     'a section with a bare title reads as unfinished next to one without'
   );
+});
+
+// ---- The mark -------------------------------------------------------------
+//
+// The Vesopa lockup is 900x130 — nearly seven to one — so sizing it by height
+// is what makes it wide. At `height: 30px` the rail's copy came out 208px
+// across in a 192px column, and the top bar's could push the menu button and
+// the connection dot off the end of a narrow phone. An image sized by a
+// max-width with `height: auto` cannot do either.
+/** The classes the Vesopa mark is drawn with, wherever it is placed. */
+const markClasses = new Set();
+for (const source of [html, app]) {
+  for (const tag of source.matchAll(/<img[^>]*src="[^"]*vesopa_logo[^"]*"[^>]*>/g)) {
+    const cls = /class="([^"]+)"/.exec(tag[0]);
+    for (const name of (cls ? cls[1] : '').split(/\s+/)) if (name) markClasses.add(name);
+  }
+}
+
+/** Everything the stylesheet declares for one class, across all its rules. */
+const declarationsFor = (name) =>
+  ALL.filter((rule) => rule.selectors.includes(`.${name}`))
+    .map((rule) => rule.body)
+    .join(';');
+
+check('the mark is on the page with a class to size it by', () => {
+  assert.ok(markClasses.size >= 4, `only found ${markClasses.size}: ${[...markClasses]}`);
+});
+
+check('every logo is sized by width, not by height', () => {
+  const wrong = [];
+  for (const name of markClasses) {
+    const height = /(^|[;\s])height\s*:\s*([^;]+)/.exec(declarationsFor(name));
+    if (height && height[2].trim() !== 'auto') {
+      wrong.push(`.${name} sets height: ${height[2].trim()}`);
+    }
+  }
+  assert.deepStrictEqual(wrong, []);
+});
+
+check('and every logo is given a width it may not exceed', () => {
+  const uncapped = [...markClasses].filter(
+    (name) => !/(^|[;\s])max-width\s*:/.test(declarationsFor(name))
+  );
+  assert.deepStrictEqual(uncapped, []);
 });
 
 console.log(`\n${passed} checks passed`);

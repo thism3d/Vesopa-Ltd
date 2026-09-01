@@ -108,7 +108,20 @@ h3 { font-size: 16px; }
 
 .login-card { width: 100%; max-width: 384px; }
 
-.login-logo { display: block; height: 34px; width: auto; margin: 0 0 30px; }
+/* The mark, sized the responsive way round: a width it may not exceed and a
+   height that follows from it, rather than a fixed height and whatever width
+   the aspect ratio makes of it. The lockup is 900x130 — nearly seven to one —
+   so a "34px tall" logo is 235px wide, and on a narrow screen that is a picture
+   which cannot shrink pushing everything beside it out of the way. Each of
+   these is a flex item, and an image with an intrinsic width does not shrink
+   below it unless it is told it may. */
+.login-logo {
+  display: block;
+  width: 100%;
+  max-width: 220px;
+  height: auto;
+  margin: 0 0 30px;
+}
 
 .login-card h1 {
   font-size: clamp(24px, 2.2vw, 28px);
@@ -667,8 +680,11 @@ tr.new { animation: flash 1.6s ease-out; }
 
 /* ---------- Brand ---------- */
 
-.brand-logo { height: 30px; display: block; }
-.login-card .brand-logo { height: 42px; margin: 0 auto 6px; }
+/* 192px is the rail's content box: 236 wide, less 22 of padding either side.
+   At `height: 30px` this mark came out 208px and had been hanging 16px out of
+   its own column. */
+.brand-logo { display: block; width: 100%; max-width: 192px; height: auto; }
+.login-card .brand-logo { max-width: 240px; margin: 0 auto 6px; }
 
 /* ---------- Floor designer ---------- */
 
@@ -852,7 +868,16 @@ tr.new { animation: flash 1.6s ease-out; }
     background: var(--rail);
     z-index: 45;
   }
-  .topbar-logo { height: 24px; margin-right: auto; }
+  /* Caps at the size it has always looked, and shrinks below it on a phone
+     narrow enough that the menu button and the connection dot would otherwise
+     be pushed off the end of the bar. */
+  .topbar-logo {
+    width: 100%;
+    max-width: 160px;
+    height: auto;
+    min-width: 0;
+    margin-right: auto;
+  }
 
   .rail-toggle {
     width: 40px;
@@ -926,8 +951,21 @@ tr.new { animation: flash 1.6s ease-out; }
   .page-head { flex-wrap: wrap; gap: 12px; }
   h2 { font-size: 21px; }
 
-  /* Wide report tables scroll in their own box rather than the page body. */
-  .card > table,
+  /* Wide report tables scroll in their own box rather than the page body —
+     which `.card:has(> table)` above now does, at the card, and is why the
+     table itself must NOT also be `display: block` here.
+
+     That is what made Stock, and every other short table, stop at about a
+     third of the screen with the rest of the card empty beside it. A <table>
+     set to `display: block` keeps its rows and cells as table parts, so the
+     browser wraps them in an anonymous table box inside the block — and that
+     inner box shrink-wraps its content. `min-width: 100%` then applies to the
+     outer block, which was already full width, and the columns everyone can
+     actually see stay bunched against the left edge. Four short columns of
+     PLUs and quantities is the worst case and Stock is exactly that.
+
+     Left as a real table, `min-width: 100%` reaches the columns and the card
+     does the scrolling when the content is genuinely wider. */
   .panel-body { display: block; overflow-x: auto; }
   th, td { padding: 10px 12px; white-space: nowrap; }
 
@@ -1530,6 +1568,23 @@ table.plain th { color: var(--muted, #7a828c); font-weight: 600; font-size: 11px
    something unreadable, so it shrinks rather than reflows. */
 .kds-mode-seg { flex: none; }
 .kds-mode-seg .seg-btn { padding: 6px 12px; font-size: 12.5px; }
+
+/* On a phone it stops shrinking and starts stacking.
+   "Cold Larder" plus three buttons plus the routed-products note is more than
+   360px of row, and side by side the name was down to a couple of words per
+   line with the control jammed against it. The station is a heading and the
+   three choices are a full-width control under it, which is also three targets
+   a thumb can hit rather than three 60px ones. */
+@media (max-width: 760px) {
+  .kds-mode-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 12px 0;
+  }
+  .kds-mode-seg { display: flex; }
+  .kds-mode-seg .seg-btn { flex: 1 1 0; padding: 9px 8px; }
+}
 
 /* ---- The live monitor -----------------------------------------------------
    Read-only, and deliberately: bumping an order is a decision made by somebody
@@ -3163,7 +3218,13 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
   border-bottom: 4px solid var(--brand);
 }
 
-.rr-head-logo { height: 26px; width: auto; display: block; margin-bottom: 14px; }
+.rr-head-logo {
+  display: block;
+  width: 100%;
+  max-width: 175px;
+  height: auto;
+  margin-bottom: 14px;
+}
 .rr-head h3 { color: #fff; font-size: 21px; margin: 0; }
 .rr-head-kicker {
   margin: 4px 0 0;
@@ -3343,6 +3404,133 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
 .rs-table td { vertical-align: middle; }
 .rs-table { min-width: 900px; }
 
+/* ---- A wide table on a phone ---------------------------------------------
+   Scrolling a table sideways on a 360px screen is the worst of both: the
+   columns hold it open, whatever is at the right — which on every table here
+   is the row's own buttons — is off screen, and finding it means scrolling
+   past the column that says which row you are on. On Departments and
+   Modifiers that put Edit and Delete out of reach entirely.
+
+   So a table carrying `.table-cards` stops being a table below 760px and each
+   row becomes a card. The heading row goes and every cell carries its own
+   heading instead, out of the `data-label` the row was rendered with — which
+   is why that attribute is not decoration, and why a cell without one shows
+   its value alone rather than an empty label.
+
+   Applied to the scheduled reports table in the markup, and by loadCrud to
+   every programming table it draws, so this is written once for all of them.
+
+   Kept off the product catalogue and the report tables on purpose: those are
+   read as a grid, column against column, and stacking them loses the very
+   comparison they exist for. They still scroll. */
+@media (max-width: 760px) {
+  .table-cards,
+  .table-cards tbody,
+  .table-cards tr,
+  .table-cards td {
+    display: block;
+    width: auto;
+  }
+
+  /* The headings live on the cells now. */
+  .table-cards thead { display: none; }
+
+  .table-cards { min-width: 0; }
+
+  .table-cards tr {
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    margin-bottom: 12px;
+    background: var(--card);
+  }
+  .table-cards tr:last-child { margin-bottom: 0; }
+  /* The shared `tbody tr:hover` wash makes a card look pressed on a touch
+     screen, where there is no pointer to explain it. */
+  .table-cards tbody tr:hover { background: var(--card); }
+
+  .table-cards td {
+    border: 0;
+    padding: 5px 0;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 14px;
+    font-size: 13.5px;
+    min-width: 0;
+    /* The narrow-screen block above sets `nowrap` on every cell, which is
+       right for a scrolling table and wrong for a card: a long department name
+       would run out of the side of it. */
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .table-cards td::before {
+    content: attr(data-label);
+    flex: none;
+    color: var(--muted);
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  /* A cell nobody gave a heading to — a computed column, an empty spacer —
+     reads better with no label than with a blank one. */
+  .table-cards td:not([data-label])::before,
+  .table-cards td[data-label=""]::before { content: none; }
+
+  /* The first column is the card's title, not another label/value pair. */
+  .table-cards td.card-title {
+    display: block;
+    font-size: 16px;
+    font-weight: 650;
+    padding: 0 0 8px;
+    margin-bottom: 6px;
+    border-bottom: 1px solid var(--line);
+  }
+  .table-cards td.card-title::before { content: none; }
+
+  /* Reordering is a mouse gesture — the handle arms `draggable` on mousedown,
+     which no touch screen sends — so the grip is hidden rather than left there
+     as a control that does nothing. The order is still set on a desktop and
+     still pushes to the tills. */
+  .table-cards .drag-cell { display: none; }
+
+  /* The buttons get the whole width of the card and share it evenly, instead
+     of being the thing hiding off the right-hand edge. */
+  .table-cards td.row-actions-cell {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 12px 0 0;
+    margin-top: 8px;
+    border-top: 1px solid var(--line);
+    text-align: left;
+    white-space: normal;
+  }
+  .table-cards td.row-actions-cell::before { content: none; }
+  .table-cards td.row-actions-cell .btn {
+    flex: 1 1 96px;
+    /* `td .btn + .btn` adds a left margin for the inline row; here the gap
+       does that job and the margin only makes the last button short. */
+    margin-left: 0;
+  }
+  .table-cards td.row-actions-cell .row-actions {
+    flex: 1 1 100%;
+    flex-wrap: nowrap;
+    justify-content: space-between;
+    gap: 6px;
+  }
+  .table-cards td.row-actions-cell .row-actions .icon-btn {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  /* "Nothing yet." is a colspan cell with no heading of its own. */
+  .table-cards td[colspan] { display: block; padding: 4px 0; }
+  .table-cards td[colspan]::before { content: none; }
+}
+
 /* ---- The report viewer ---------------------------------------------------
    Full screen with the chrome kept to a strip, because the thing worth looking
    at is the report. */
@@ -3382,7 +3570,9 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
   background: #111111;
   border-bottom: 3px solid var(--brand);
 }
-.pdfv-logo { height: 20px; width: auto; flex: none; }
+/* Shrinks rather than shoves: the viewer header carries three buttons that
+   matter more than the mark does. */
+.pdfv-logo { width: 100%; max-width: 135px; height: auto; flex: 0 1 auto; min-width: 60px; }
 .pdfv-titles { flex: 1 1 200px; min-width: 0; }
 .pdfv-titles h3 { color: #fff; font-size: 15px; }
 .pdfv-sub { margin: 2px 0 0; font-size: 11.5px; color: #b8bcb0; }

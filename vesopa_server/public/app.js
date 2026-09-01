@@ -556,6 +556,108 @@ function cellText(field, value) {
   return esc(String(value ?? '—'));
 }
 
+/**
+ * Let a table become a stack of cards on a phone.
+ *
+ * Below 760px `.table-cards` drops the heading row, so every cell has to carry
+ * its own heading — and it takes it from the very `<th>` it sits under rather
+ * than from a second list written beside the row. A duplicate list is a list
+ * that goes stale: a column renamed in the markup would go on being labelled
+ * with the old word on every phone, and nothing on a desktop would ever show
+ * it. Read it from the table and the two cannot disagree.
+ *
+ * An empty heading — the drag handle's column, the actions column on a
+ * programming screen — labels nothing, which is what the CSS wants: those
+ * cells show their contents alone.
+ */
+function cardsOnPhone(table) {
+  if (!table) return;
+
+  const headings = [...(table.tHead?.rows[0]?.cells || [])].map((th) =>
+    th.textContent.trim()
+  );
+  // A table with no headings has nothing to label its cells with, and a card
+  // of unlabelled values is worse than a row of them. It keeps scrolling.
+  if (!headings.some(Boolean)) return;
+
+  const body = table.tBodies[0];
+  if (!body) return;
+
+  table.classList.add('table-cards');
+  labelRows(body, headings);
+
+  // Rows are re-drawn by all sorts of things that never come back through
+  // here: a save, a delete, a websocket nudge, a filter box. The class stays on
+  // the table when they do, so without this the new rows would be cards whose
+  // cells had lost their headings — labels that vanish on the second render
+  // are worse than labels that were never there, because nobody can reproduce
+  // it. Watching the tbody costs nothing and cannot get out of step.
+  //
+  // childList only, so writing the attributes below does not re-trigger it.
+  if (!table.dataset.cardsWatched) {
+    table.dataset.cardsWatched = '1';
+    new MutationObserver(() => labelRows(body, headings)).observe(body, {
+      childList: true,
+    });
+  }
+}
+
+/** Put each cell under the heading it belongs to. */
+function labelRows(body, headings) {
+  for (const row of body.rows) {
+    // The "Nothing yet." row spans the lot and is under no column at all.
+    if (row.cells.length === 1 && row.cells[0].hasAttribute('colspan')) continue;
+    [...row.cells].forEach((cell, i) => {
+      if (isActionsCell(cell)) cell.classList.add('row-actions-cell');
+      else if (headings[i]) cell.setAttribute('data-label', headings[i]);
+    });
+  }
+}
+
+/**
+ * Is this cell the row's buttons and nothing else?
+ *
+ * Asked rather than declared, because twenty screens put their Edit and Delete
+ * in the last cell and not one of them marks it as anything. On a phone that
+ * cell needs the full width of the card instead of being squeezed against the
+ * right-hand edge — which, in a table being dragged sideways, is where it was
+ * hiding in the first place.
+ *
+ * Deliberately strict: buttons, or a wrapper full of them, and no loose text.
+ * A cell reading "£4.60 [Refund]" is a value with a button after it and should
+ * stay a labelled row like any other.
+ */
+function isActionsCell(cell) {
+  const kids = [...cell.children];
+  if (!kids.length) return false;
+  if (!kids.every((el) => el.matches('.btn, .icon-btn, .row-actions'))) return false;
+  return ![...cell.childNodes].some(
+    (node) => node.nodeType === Node.TEXT_NODE && node.textContent.trim()
+  );
+}
+
+/**
+ * Every table on the view that has just loaded becomes cards on a phone.
+ *
+ * Done once, here, rather than in each of the twenty loaders. Back office
+ * users, Customers, Vouchers, Promotions, Gift cards, Deposits, Automation
+ * rules, Tax, Mix and match, Error reasons — every one of them was a table
+ * eight or ten columns wide that a phone could only be dragged sideways
+ * through, with the row's own buttons off the right-hand edge. They are one
+ * shape and they get one fix, and the next screen someone adds gets it without
+ * having to know about it.
+ *
+ * `data-no-cards` opts a table out. Only the product catalogue does: it is a
+ * grid that is edited in place, with a drag handle, a select in half its cells
+ * and a bulk-select column, and stacking that loses the alignment the editing
+ * depends on.
+ */
+function cardsInView() {
+  document
+    .querySelectorAll('.view:not([hidden]) table:not([data-no-cards])')
+    .forEach(cardsOnPhone);
+}
+
 async function loadCrud(key) {
   const cfg = CRUD[key];
   const rows = await api(`/${cfg.path}`);
@@ -574,9 +676,19 @@ async function loadCrud(key) {
     .map(
       (r) => `<tr data-row-id="${r.id}">
         ${cfg.sortable ? '<td class="drag-cell"><span class="drag-handle" title="Drag to reorder">⋮⋮</span></td>' : ''}
-        ${columns.map((f) => `<td>${cellText(f, r[f.name])}</td>`).join('')}
+        ${columns
+          .map((f, i) =>
+            // The first column is the card's title on a phone rather than
+            // another label/value pair: on Departments that is the department's
+            // own name, which is what somebody scanning the list is looking
+            // for. The rest are labelled by cardLabels() below.
+            i === 0
+              ? `<td class="card-title">${cellText(f, r[f.name])}</td>`
+              : `<td>${cellText(f, r[f.name])}</td>`
+          )
+          .join('')}
         ${extras.map((c) => `<td>${c.cell(r)}</td>`).join('')}
-        <td class="right nowrap">
+        <td class="right nowrap row-actions-cell">
           ${cfg.rowActions ? cfg.rowActions(r) : ''}
           <button class="btn small ghost" data-edit="${key}" data-id="${r.id}">Edit</button>
           <button class="btn small danger" data-del="${cfg.path}" data-id="${r.id}">Delete</button>
@@ -585,6 +697,10 @@ async function loadCrud(key) {
     )
     .join('') ||
     `<tr><td colspan="${span}" class="empty">Nothing yet.</td></tr>`;
+
+  // Stated here rather than on nine <table>s in index.html, so a programming
+  // screen added later gets the phone layout without anybody remembering to.
+  cardsOnPhone(body.closest('table'));
 
   if (cfg.sortable) makeSortable(body, cfg.path);
 }
@@ -724,7 +840,11 @@ function render() {
     subscriptions: loadSubscriptions,
   }[currentView];
 
-  if (load) Promise.resolve(load()).catch((e) => console.error(e));
+  if (load) {
+    Promise.resolve(load())
+      .then(cardsInView)
+      .catch((e) => console.error(e));
+  }
 }
 
 // ---- New reports ----------------------------------------------------------
@@ -1440,18 +1560,73 @@ async function loadUsers() {
     .join('') || '<tr><td colspan="5" class="empty">No users.</td></tr>';
 }
 
+/**
+ * How many of each product remain.
+ *
+ * The count on its own was not telling anybody anything. Every product that
+ * does not track stock came out as a flat "0", so a catalogue where nothing is
+ * counted looked exactly like a catalogue where everything has run out — a
+ * page of zeros that reads as an emergency and means nothing. Three states now,
+ * and they are different states:
+ *
+ *   * **Not tracked** — no figure has ever been set. Said in words, greyed,
+ *     because it is the absence of a number rather than the number nought.
+ *   * **Out of stock** — tracked, and at or below zero. This is the emergency,
+ *     and it is now the only thing that looks like one.
+ *   * **Low** — tracked, and at or under the product's own low_stock_at. The
+ *     dashboard has counted these for a while; this is the list that says which
+ *     ones they are.
+ *
+ * Out of stock first, then low, then the rest in catalogue order: a stock list
+ * is opened to find what needs ordering, and that should not need scrolling to.
+ */
 async function loadStock() {
   const rows = await api('/products');
-  $('stock').innerHTML = rows
-    .map(
-      (p) => `<tr>
+
+  const level = (p) => {
+    if (p.stock_quantity === null || p.stock_quantity === undefined) return 'none';
+    const left = Number(p.stock_quantity);
+    if (!Number.isFinite(left)) return 'none';
+    if (left <= 0) return 'out';
+    const at = Number(p.low_stock_at);
+    return Number.isFinite(at) && p.low_stock_at !== null && left <= at ? 'low' : 'ok';
+  };
+
+  const rank = { out: 0, low: 1, ok: 2, none: 3 };
+  const sorted = [...rows].sort((a, b) => rank[level(a)] - rank[level(b)]);
+
+  const count = (p) => {
+    const left = Number(p.stock_quantity);
+    // Stock is a DOUBLE — half a kilo of something is a real quantity — but
+    // almost every product is whole, and "12.00 in stock" reads as an error.
+    return Number.isInteger(left) ? String(left) : left.toFixed(2);
+  };
+
+  const cell = (p) => {
+    switch (level(p)) {
+      case 'none':
+        return '<span class="muted small">Not tracked</span>';
+      case 'out':
+        return '<span class="badge paused">Out of stock</span>';
+      case 'low':
+        return `${count(p)} <span class="badge due">Low</span>`;
+      default:
+        return count(p);
+    }
+  };
+
+  $('stock').innerHTML =
+    sorted
+      .map(
+        (p) => `<tr>
         <td>${p.pluid}</td>
         <td>${esc(p.product_name)}</td>
         <td>${esc(p.department_name || '—')}</td>
-        <td class="right">${p.stock_quantity ?? 0}</td>
+        <td class="right nowrap">${cell(p)}</td>
       </tr>`
-    )
-    .join('');
+      )
+      .join('') ||
+    '<tr><td colspan="4" class="empty">No products yet.</td></tr>';
 }
 
 async function loadStaff() {
@@ -4780,6 +4955,12 @@ function renderKitchenUsers() {
       '</tr>'
     ).join('') +
     '</tbody></table>';
+
+  // This table lives inside a div rather than straight in a card, so it never
+  // got the card's own horizontal scroll either — on a phone it simply ran out
+  // of the side of the panel. Re-rendered on every add, edit and delete, so it
+  // cannot rely on the pass render() makes when the view first opens.
+  cardsOnPhone(box.querySelector('table'));
 }
 
 function renderKitchenScreens() {
@@ -4816,6 +4997,8 @@ function renderKitchenScreens() {
       '</tr>'
     ).join('') +
     '</tbody></table>';
+
+  cardsOnPhone(box.querySelector('table'));
 }
 
 /**
@@ -5769,7 +5952,11 @@ function rrRender(report) {
           }</span>
         </div>
         <div class="rr-scroll">
-          <table class="table rr-table">
+          <!-- data-no-cards: a report section is read column against column,
+               and seven money columns stacked into fifteen cards of seven
+               label/value pairs is a page nobody can total by eye. It scrolls,
+               and the better read on a phone is View PDF. -->
+          <table class="table rr-table" data-no-cards>
             <thead><tr>${head_}</tr></thead>
             <tbody>${body}</tbody>
             ${total}
@@ -5990,6 +6177,7 @@ async function loadReportSchedules() {
   $('rs-rows').innerHTML = rows.length
     ? rows.map(rsRow).join('')
     : '<tr><td colspan="9" class="muted small">No scheduled reports yet.</td></tr>';
+  cardsOnPhone($('rs-table'));
 
   $('rs-rows').onclick = (e) => rsAction(e, rows);
   $('rs-runs').innerHTML = '';
@@ -6009,8 +6197,11 @@ async function loadReportSchedules() {
  * test.
  */
 function rsRow(r) {
+  // The cells are unlabelled here on purpose: cardsOnPhone() takes each one's
+  // heading off the <th> it sits under, so the phone layout and the desktop
+  // column cannot end up calling the same thing two different names.
   return `<tr>
-    <td>${esc(r.name)}${r.active ? '' : ' <span class="badge paused">paused</span>'}</td>
+    <td class="card-title">${esc(r.name)}${r.active ? '' : ' <span class="badge paused">paused</span>'}</td>
     <td>${esc(r.report_label)} <span class="muted small">${esc(String(r.format).toUpperCase())}</span></td>
     <td class="muted small">${esc(r.terminal_label || 'All terminals')}</td>
     <td>${esc(r.frequency_label)}</td>
@@ -6018,7 +6209,7 @@ function rsRow(r) {
     <td>${esc(r.period_label)}</td>
     <td>${r.last_run_at ? esc(rsWhen(r.last_run_at)) : '<span class="muted small">never</span>'}</td>
     <td>${r.next_run_at ? esc(rsWhen(r.next_run_at)) : '<span class="muted small">—</span>'}</td>
-    <td>
+    <td class="row-actions-cell">
       <div class="row-actions">
         ${iconButton(ICON.eye, 'View the report', `data-rs-view="${r.id}"`)}
         ${iconButton(ICON.download, `Download as ${String(r.format).toUpperCase()}`, `data-rs-download="${r.id}"`)}
@@ -6234,5 +6425,7 @@ async function rsShowRuns(id) {
       </table>
     </div>
   </div>`;
+  // Written after the view loaded, so it missed the pass in render().
+  cardsOnPhone($('rs-runs').querySelector('table'));
   $('rs-runs').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
