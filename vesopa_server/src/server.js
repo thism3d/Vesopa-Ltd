@@ -573,15 +573,6 @@ app.get(['/', '/index.html'], sendShell);
 app.use(express.static(PUBLIC_DIR, { setHeaders: staticCache }));
 
 /**
- * Deep links. The back office routes client-side (/products, /tables, …), so a
- * refresh or a pasted URL must still serve the app rather than 404 — the
- * client then reads location.pathname and opens the right section.
- *
- * Declared after the API routes so it can never swallow them.
- */
-app.get(/^\/(?!api|till|orders|health|assets|.*\.[a-z]+$)[a-z0-9-]*$/, sendShell);
-
-/**
  * Catalogue pull. The till caches this locally so it can sell while offline.
  *
  * Served under /till/* because the back office routes client-side and owns
@@ -835,6 +826,40 @@ app.get('/reports/end-of-day', async (req, res, next) => {
     next(err);
   }
 });
+
+/**
+ * Deep links, and this is the last route on purpose.
+ *
+ * The back office routes client-side (/products, /tables, /reports/schedules,
+ * …), so a refresh or a pasted URL has to serve the app rather than 404 — the
+ * client then reads location.pathname and opens that section.
+ *
+ * TWO things about it, both learned the hard way:
+ *
+ *   * **It matches more than one segment.** It used to end `[a-z0-9-]*$`,
+ *     which is a single segment with no slash in it, so every one-word route
+ *     refreshed fine and the only two that did not were the two report pages —
+ *     /reports/financial-summary and /reports/schedules — which 404d. That is
+ *     the sort of fault that looks like "refresh is broken" while most of the
+ *     app refreshes perfectly.
+ *
+ *   * **It is registered last, after every real route.** It used to sit above
+ *     /till/products and /reports/end-of-day and hold them out by name, in an
+ *     exclusion list that a new route has to remember to join. Widening the
+ *     pattern to two segments would have swallowed /reports/end-of-day whole
+ *     and answered a till's JSON request with a page of HTML. Express matches
+ *     in order, so being last means every real route wins by construction and
+ *     nothing has to be remembered.
+ *
+ * The exclusions stay anyway, and are worth keeping: an unknown /api/... should
+ * 404 as an API rather than hand a fetch() a page of HTML to choke on. They are
+ * anchored to a whole segment, so a future /apiary would not be caught by the
+ * `api` in the list.
+ */
+app.get(
+  /^\/(?!(?:api|till|orders|health|assets)(?:\/|$))(?!.*\.[a-z0-9]+$)[a-z0-9-]+(?:\/[a-z0-9-]+)*\/?$/,
+  sendShell
+);
 
 app.use((err, _req, res, _next) => {
   console.error(err);
