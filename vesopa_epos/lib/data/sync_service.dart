@@ -84,6 +84,18 @@ class SyncService {
   /// what decides whether office-scoped pushes reach it at all.
   final WebSocketChannel Function(Uri url)? connector;
 
+  /// What this terminal calls itself, read at send time.
+  ///
+  /// A callback rather than a value because the name is a preference a manager
+  /// can change while the service is alive, and because it arrives
+  /// asynchronously at startup -- capturing a string here would stamp "Till" on
+  /// every sale taken in the first second after launch.
+  ///
+  /// Set from the provider in main.dart. Null in tests that do not care, where
+  /// the field is simply left off the payload rather than sent as "Till" -- an
+  /// invented name is worse than no name in a column reports group by.
+  String Function()? terminalName;
+
   WebSocketChannel? _channel;
   StreamSubscription<void>? _connectivitySub;
   Timer? _retryTimer;
@@ -293,6 +305,14 @@ class SyncService {
                 ...jsonDecode(entry.payload) as Map<String, dynamic>,
                 'email': office,
                 'office': office,
+                // Which machine took the money. Stamped here rather than when
+                // the sale was rung up because the outbox is this terminal's
+                // own disk -- nothing else can drain it, so the answer is the
+                // same either way, and doing it here means sales already
+                // queued from before this release are attributed too.
+                if (terminalName?.call() case final String name
+                    when name.isNotEmpty)
+                  'terminal': name,
               }),
             )
             .timeout(const Duration(seconds: 10));

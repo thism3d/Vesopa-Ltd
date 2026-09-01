@@ -319,6 +319,14 @@
             </div>
           </div>
 
+          <!-- The fields and the buttons are two rows, not one.
+               They were one flex line with the actions pushed right by
+               `margin-left:auto`, which is fine at 1400px and nonsense at 900:
+               the Export button wrapped underneath on its own, half a row of
+               white space appeared beside Terminal, and on a tablet the date
+               boxes ended up narrower than the year they hold. Fields wrap in
+               a grid that gives every one of them a whole column; the actions
+               sit on their own rule under it and stay together. -->
           <div class="card rd-card">
             <div class="rr-controls">
               <label>Report
@@ -327,19 +335,28 @@
               <label>Period
                 <select id="rr-period"></select>
               </label>
+              <label>Terminal
+                <select id="rr-terminal"></select>
+              </label>
               <label id="rr-from-field" hidden>From
                 <input type="date" id="rr-from">
               </label>
               <label id="rr-to-field" hidden>To
                 <input type="date" id="rr-to">
               </label>
-              <div class="rr-actions">
-                <button type="button" class="btn primary" id="rr-run">Run report</button>
-                <select id="rr-format" aria-label="Export format"></select>
-                <button type="button" class="btn ghost" id="rr-export" disabled>Export</button>
+            </div>
+
+            <div class="rr-actions">
+              <button type="button" class="btn primary" id="rr-run">Run report</button>
+              <div class="rr-export-group">
+                <label class="rr-format-field">
+                  <span class="sr-only">Export format</span>
+                  <select id="rr-format" aria-label="Export format"></select>
+                </label>
+                <button type="button" class="btn ghost" id="rr-view" disabled>View PDF</button>
+                <button type="button" class="btn ghost" id="rr-export" disabled>Download</button>
               </div>
             </div>
-            <p class="muted small" id="rr-window" style="margin:10px 0 0"></p>
           </div>
 
           <div id="rr-result" style="margin-top:var(--stack)"></div>
@@ -360,16 +377,22 @@
 
           <p class="muted small" id="rs-mail-warning" hidden></p>
 
+          <!-- Nine columns and six actions do not fit a laptop, let alone a
+               tablet. The table scrolls inside its own card rather than pushing
+               the page sideways, which would take the Name column — the one
+               that says which schedule the row is — off the left edge. -->
           <div class="card">
-            <table class="table" id="rs-table">
-              <thead>
-                <tr>
-                  <th>Name</th><th>Report</th><th>Frequency</th><th>Time</th>
-                  <th>Covers</th><th>Last run</th><th>Next run</th><th></th>
-                </tr>
-              </thead>
-              <tbody id="rs-rows"></tbody>
-            </table>
+            <div class="rr-scroll">
+              <table class="table rs-table table-cards" id="rs-table">
+                <thead>
+                  <tr>
+                    <th>Name</th><th>Report</th><th>Terminal</th><th>Frequency</th><th>Time</th>
+                    <th>Covers</th><th>Last run</th><th>Next run</th><th class="right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="rs-rows"></tbody>
+              </table>
+            </div>
           </div>
 
           <div id="rs-runs" style="margin-top:var(--stack)"></div>
@@ -389,6 +412,11 @@
             <thead><tr><th>When</th><th>Item</th><th>Department</th><th class="right">Qty</th><th class="right">Line total</th></tr></thead>
             <tbody id="explorer"></tbody>
           </table></div>
+          <!-- The foot of the list, and what the next page is fetched off:
+               app.js watches this with 500px of margin, so the rows are already
+               on their way before the scroll reaches the end of what is drawn.
+               It doubles as where "Loading more…" and the final count are said. -->
+          <p class="ex-more" id="ex-more" aria-live="polite"></p>
         </section>
 
         <!-- Timesheets.
@@ -474,6 +502,10 @@
             </span>
           </div>
 
+          <!-- This one is edited in place, so on a phone it becomes cards whose
+               editable cells stack: the label on its own line and the control full
+               width under it. Sorting is a column-heading gesture and the headings
+               are gone there — the search box above is what narrows it down. -->
           <div class="card"><table class="sortable">
             <thead><tr>
               <th class="pick-col"><input type="checkbox" id="prod-pick-all" title="Select every product shown"></th>
@@ -1780,6 +1812,36 @@
 
     <div id="modal-root"></div>
     <div id="cropper-root"></div>
+
+    <!-- The report viewer.
+         A report is read far more often than it is filed, and until this
+         existed the only way to read one was to download it and go looking in
+         a downloads folder. The route is behind the session token, so the file
+         cannot simply be linked: app.js posts for it, holds the bytes as a
+         blob, and points this frame at that. Same bytes as the download, so
+         what is on screen is what gets saved. -->
+    <div id="pdfv" class="pdfv" hidden>
+      <div class="pdfv-back" data-pdfv-close></div>
+      <div class="pdfv-panel" role="dialog" aria-modal="true" aria-labelledby="pdfv-title">
+        <header class="pdfv-head">
+          <img src="/assets/vesopa_logo_on_dark.png" alt="Vesopa" class="pdfv-logo">
+          <div class="pdfv-titles">
+            <h3 id="pdfv-title">Report</h3>
+            <p class="pdfv-sub" id="pdfv-sub"></p>
+          </div>
+          <div class="pdfv-actions">
+            <button type="button" class="btn small ghost" id="pdfv-tab">Open in a tab</button>
+            <button type="button" class="btn small primary" id="pdfv-download">Download</button>
+            <button type="button" class="btn small ghost" id="pdfv-close"
+                    data-pdfv-close aria-label="Close the preview">Close</button>
+          </div>
+        </header>
+        <div class="pdfv-body">
+          <p class="pdfv-state" id="pdfv-state">Building the report…</p>
+          <iframe id="pdfv-frame" title="Report preview" hidden></iframe>
+        </div>
+      </div>
+    </div>
     <!-- app.js LAST, and that is load-bearing rather than tidiness.
          It signs in and opens a view as it parses, so its navigation table has
          to be able to resolve `loadScreens` there and then. With screens.js

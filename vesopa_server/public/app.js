@@ -556,6 +556,109 @@ function cellText(field, value) {
   return esc(String(value ?? '—'));
 }
 
+/**
+ * Let a table become a stack of cards on a phone.
+ *
+ * Below 760px `.table-cards` drops the heading row, so every cell has to carry
+ * its own heading — and it takes it from the very `<th>` it sits under rather
+ * than from a second list written beside the row. A duplicate list is a list
+ * that goes stale: a column renamed in the markup would go on being labelled
+ * with the old word on every phone, and nothing on a desktop would ever show
+ * it. Read it from the table and the two cannot disagree.
+ *
+ * An empty heading — the drag handle's column, the actions column on a
+ * programming screen — labels nothing, which is what the CSS wants: those
+ * cells show their contents alone.
+ */
+function cardsOnPhone(table) {
+  if (!table) return;
+
+  const headings = [...(table.tHead?.rows[0]?.cells || [])].map((th) =>
+    th.textContent.trim()
+  );
+  // A table with no headings has nothing to label its cells with, and a card
+  // of unlabelled values is worse than a row of them. It keeps scrolling.
+  if (!headings.some(Boolean)) return;
+
+  const body = table.tBodies[0];
+  if (!body) return;
+
+  table.classList.add('table-cards');
+  labelRows(body, headings);
+
+  // Rows are re-drawn by all sorts of things that never come back through
+  // here: a save, a delete, a websocket nudge, a filter box. The class stays on
+  // the table when they do, so without this the new rows would be cards whose
+  // cells had lost their headings — labels that vanish on the second render
+  // are worse than labels that were never there, because nobody can reproduce
+  // it. Watching the tbody costs nothing and cannot get out of step.
+  //
+  // childList only, so writing the attributes below does not re-trigger it.
+  if (!table.dataset.cardsWatched) {
+    table.dataset.cardsWatched = '1';
+    new MutationObserver(() => labelRows(body, headings)).observe(body, {
+      childList: true,
+    });
+  }
+}
+
+/** Put each cell under the heading it belongs to. */
+function labelRows(body, headings) {
+  for (const row of body.rows) {
+    // The "Nothing yet." row spans the lot and is under no column at all.
+    if (row.cells.length === 1 && row.cells[0].hasAttribute('colspan')) continue;
+    [...row.cells].forEach((cell, i) => {
+      if (isActionsCell(cell)) cell.classList.add('row-actions-cell');
+      else if (headings[i]) cell.setAttribute('data-label', headings[i]);
+    });
+  }
+}
+
+/**
+ * Is this cell the row's buttons and nothing else?
+ *
+ * Asked rather than declared, because twenty screens put their Edit and Delete
+ * in the last cell and not one of them marks it as anything. On a phone that
+ * cell needs the full width of the card instead of being squeezed against the
+ * right-hand edge — which, in a table being dragged sideways, is where it was
+ * hiding in the first place.
+ *
+ * Deliberately strict: buttons, or a wrapper full of them, and no loose text.
+ * A cell reading "£4.60 [Refund]" is a value with a button after it and should
+ * stay a labelled row like any other.
+ */
+function isActionsCell(cell) {
+  const kids = [...cell.children];
+  if (!kids.length) return false;
+  if (!kids.every((el) => el.matches('.btn, .icon-btn, .row-actions'))) return false;
+  return ![...cell.childNodes].some(
+    (node) => node.nodeType === Node.TEXT_NODE && node.textContent.trim()
+  );
+}
+
+/**
+ * Every table on the view that has just loaded becomes cards on a phone.
+ *
+ * Done once, here, rather than in each of the twenty loaders. Back office
+ * users, Customers, Vouchers, Promotions, Gift cards, Deposits, Automation
+ * rules, Tax, Mix and match, Error reasons — every one of them was a table
+ * eight or ten columns wide that a phone could only be dragged sideways
+ * through, with the row's own buttons off the right-hand edge. They are one
+ * shape and they get one fix, and the next screen someone adds gets it without
+ * having to know about it.
+ *
+ * `data-no-cards` opts a table out. Only the report sections do: they are read
+ * column against column, and seven money columns stacked into label/value pairs
+ * is a page nobody can total by eye. The catalogue, which is edited in place,
+ * does become cards — its editable cells stack, label above control, which is a
+ * better form on a phone than a row of squeezed inputs.
+ */
+function cardsInView() {
+  document
+    .querySelectorAll('.view:not([hidden]) table:not([data-no-cards])')
+    .forEach(cardsOnPhone);
+}
+
 async function loadCrud(key) {
   const cfg = CRUD[key];
   const rows = await api(`/${cfg.path}`);
@@ -574,9 +677,19 @@ async function loadCrud(key) {
     .map(
       (r) => `<tr data-row-id="${r.id}">
         ${cfg.sortable ? '<td class="drag-cell"><span class="drag-handle" title="Drag to reorder">⋮⋮</span></td>' : ''}
-        ${columns.map((f) => `<td>${cellText(f, r[f.name])}</td>`).join('')}
+        ${columns
+          .map((f, i) =>
+            // The first column is the card's title on a phone rather than
+            // another label/value pair: on Departments that is the department's
+            // own name, which is what somebody scanning the list is looking
+            // for. The rest are labelled by cardLabels() below.
+            i === 0
+              ? `<td class="card-title">${cellText(f, r[f.name])}</td>`
+              : `<td>${cellText(f, r[f.name])}</td>`
+          )
+          .join('')}
         ${extras.map((c) => `<td>${c.cell(r)}</td>`).join('')}
-        <td class="right nowrap">
+        <td class="right nowrap row-actions-cell">
           ${cfg.rowActions ? cfg.rowActions(r) : ''}
           <button class="btn small ghost" data-edit="${key}" data-id="${r.id}">Edit</button>
           <button class="btn small danger" data-del="${cfg.path}" data-id="${r.id}">Delete</button>
@@ -585,6 +698,10 @@ async function loadCrud(key) {
     )
     .join('') ||
     `<tr><td colspan="${span}" class="empty">Nothing yet.</td></tr>`;
+
+  // Stated here rather than on nine <table>s in index.html, so a programming
+  // screen added later gets the phone layout without anybody remembering to.
+  cardsOnPhone(body.closest('table'));
 
   if (cfg.sortable) makeSortable(body, cfg.path);
 }
@@ -724,29 +841,130 @@ function render() {
     subscriptions: loadSubscriptions,
   }[currentView];
 
-  if (load) Promise.resolve(load()).catch((e) => console.error(e));
+  if (load) {
+    Promise.resolve(load())
+      .then(cardsInView)
+      .catch((e) => console.error(e));
+  }
 }
 
 // ---- New reports ----------------------------------------------------------
 
+/**
+ * Sales Explorer: a page at a time, fetched before the scroll gets there.
+ *
+ * This page used to ask for five hundred lines and draw all of them. A venue
+ * with a busy Saturday has five hundred lines by lunchtime, and on a phone —
+ * where every one of them is a card of five fields — that is a wait, a scroll
+ * bar that lies about how much is left, and a page that janks all the way
+ * down.
+ *
+ * So it loads sixty, and the next sixty are already on their way by the time
+ * the last of them comes into view: the sentinel below the table is watched
+ * with 500px of margin, which at a normal scrolling speed is about a second of
+ * warning. Done well this is invisible — the list simply never ends and never
+ * stalls — which is the whole point.
+ *
+ * `token` guards against a race that is easy to hit here: change the date and
+ * press Search while a page is still in flight, and the old request comes back
+ * afterwards and appends yesterday's lines under today's heading. Each search
+ * takes a number, and a reply carrying the wrong one is dropped.
+ */
+const EX_PAGE = 60;
+let exFeed = { token: 0, offset: 0, done: false, loading: false, watcher: null };
+
 async function loadExplorer() {
+  exFeed.watcher?.disconnect();
+  exFeed = { token: exFeed.token + 1, offset: 0, done: false, loading: false, watcher: null };
+
+  $('explorer').innerHTML = '';
+  exSay('');
+  await exNextPage();
+  exWatch();
+}
+
+/** The line under the table: loading, finished, or nothing at all. */
+function exSay(text, spinning = false) {
+  const box = $('ex-more');
+  if (!box) return;
+  box.textContent = text;
+  box.className = spinning ? 'ex-more loading' : 'ex-more';
+}
+
+/** Fetch and append the next page. */
+async function exNextPage() {
+  if (exFeed.loading || exFeed.done) return;
+  const mine = exFeed.token;
+  exFeed.loading = true;
+  if (exFeed.offset) exSay('Loading more…', true);
+
   const params = new URLSearchParams();
   if ($('ex-from').value) params.set('from', $('ex-from').value);
   if ($('ex-to').value) params.set('to', $('ex-to').value);
   if ($('ex-dept').value) params.set('department', $('ex-dept').value);
+  params.set('limit', String(EX_PAGE));
+  params.set('offset', String(exFeed.offset));
 
-  const rows = await api(`/sales-explorer?${params}`);
-  $('explorer').innerHTML = rows
-    .map(
-      (r) => `<tr class="clickable" data-receipt="${esc(r.id)}">
+  try {
+    const rows = await api(`/sales-explorer?${params}`);
+    // A reply to a search that has since been replaced.
+    if (mine !== exFeed.token) return;
+
+    $('explorer').insertAdjacentHTML(
+      'beforeend',
+      rows
+        .map(
+          (r) => `<tr class="clickable" data-receipt="${esc(r.id)}">
         <td>${date(r.closed_at)} ${time(r.closed_at)}</td>
         <td>${esc(r.name)}</td>
         <td>${esc(r.department)}</td>
         <td class="right">${r.quantity}</td>
         <td class="right">${money(r.line_total_minor)}</td>
       </tr>`
-    )
-    .join('') || '<tr><td colspan="5" class="empty">No matching sales.</td></tr>';
+        )
+        .join('')
+    );
+
+    exFeed.offset += rows.length;
+    // A short page is the last page. Asking again to be told "none" costs a
+    // round trip and a query to learn nothing.
+    exFeed.done = rows.length < EX_PAGE;
+
+    if (!exFeed.offset) {
+      $('explorer').innerHTML =
+        '<tr><td colspan="5" class="empty">No matching sales.</td></tr>';
+      exSay('');
+    } else if (exFeed.done) {
+      exSay(`All ${exFeed.offset} lines.`);
+    } else {
+      exSay('');
+    }
+  } catch (e) {
+    if (mine === exFeed.token) exSay(e.message);
+  } finally {
+    if (mine === exFeed.token) exFeed.loading = false;
+  }
+}
+
+/**
+ * Watch the foot of the list.
+ *
+ * The scroller is `main`, not the window — the rail is fixed beside it — so
+ * that is what the observer has to measure against. With `null` it would watch
+ * the viewport, the sentinel would never be seen to move, and the list would
+ * simply stop at sixty.
+ */
+function exWatch() {
+  const sentinel = $('ex-more');
+  if (!sentinel || typeof IntersectionObserver !== 'function') return;
+
+  exFeed.watcher = new IntersectionObserver(
+    (entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) exNextPage();
+    },
+    { root: document.querySelector('main'), rootMargin: '500px 0px' }
+  );
+  exFeed.watcher.observe(sentinel);
 }
 
 /**
@@ -1440,18 +1658,73 @@ async function loadUsers() {
     .join('') || '<tr><td colspan="5" class="empty">No users.</td></tr>';
 }
 
+/**
+ * How many of each product remain.
+ *
+ * The count on its own was not telling anybody anything. Every product that
+ * does not track stock came out as a flat "0", so a catalogue where nothing is
+ * counted looked exactly like a catalogue where everything has run out — a
+ * page of zeros that reads as an emergency and means nothing. Three states now,
+ * and they are different states:
+ *
+ *   * **Not tracked** — no figure has ever been set. Said in words, greyed,
+ *     because it is the absence of a number rather than the number nought.
+ *   * **Out of stock** — tracked, and at or below zero. This is the emergency,
+ *     and it is now the only thing that looks like one.
+ *   * **Low** — tracked, and at or under the product's own low_stock_at. The
+ *     dashboard has counted these for a while; this is the list that says which
+ *     ones they are.
+ *
+ * Out of stock first, then low, then the rest in catalogue order: a stock list
+ * is opened to find what needs ordering, and that should not need scrolling to.
+ */
 async function loadStock() {
   const rows = await api('/products');
-  $('stock').innerHTML = rows
-    .map(
-      (p) => `<tr>
+
+  const level = (p) => {
+    if (p.stock_quantity === null || p.stock_quantity === undefined) return 'none';
+    const left = Number(p.stock_quantity);
+    if (!Number.isFinite(left)) return 'none';
+    if (left <= 0) return 'out';
+    const at = Number(p.low_stock_at);
+    return Number.isFinite(at) && p.low_stock_at !== null && left <= at ? 'low' : 'ok';
+  };
+
+  const rank = { out: 0, low: 1, ok: 2, none: 3 };
+  const sorted = [...rows].sort((a, b) => rank[level(a)] - rank[level(b)]);
+
+  const count = (p) => {
+    const left = Number(p.stock_quantity);
+    // Stock is a DOUBLE — half a kilo of something is a real quantity — but
+    // almost every product is whole, and "12.00 in stock" reads as an error.
+    return Number.isInteger(left) ? String(left) : left.toFixed(2);
+  };
+
+  const cell = (p) => {
+    switch (level(p)) {
+      case 'none':
+        return '<span class="muted small">Not tracked</span>';
+      case 'out':
+        return '<span class="badge paused">Out of stock</span>';
+      case 'low':
+        return `${count(p)} <span class="badge due">Low</span>`;
+      default:
+        return count(p);
+    }
+  };
+
+  $('stock').innerHTML =
+    sorted
+      .map(
+        (p) => `<tr>
         <td>${p.pluid}</td>
         <td>${esc(p.product_name)}</td>
         <td>${esc(p.department_name || '—')}</td>
-        <td class="right">${p.stock_quantity ?? 0}</td>
+        <td class="right nowrap">${cell(p)}</td>
       </tr>`
-    )
-    .join('');
+      )
+      .join('') ||
+    '<tr><td colspan="4" class="empty">No products yet.</td></tr>';
 }
 
 async function loadStaff() {
@@ -4780,6 +5053,12 @@ function renderKitchenUsers() {
       '</tr>'
     ).join('') +
     '</tbody></table>';
+
+  // This table lives inside a div rather than straight in a card, so it never
+  // got the card's own horizontal scroll either — on a phone it simply ran out
+  // of the side of the panel. Re-rendered on every add, edit and delete, so it
+  // cannot rely on the pass render() makes when the view first opens.
+  cardsOnPhone(box.querySelector('table'));
 }
 
 function renderKitchenScreens() {
@@ -4816,6 +5095,8 @@ function renderKitchenScreens() {
       '</tr>'
     ).join('') +
     '</tbody></table>';
+
+  cardsOnPhone(box.querySelector('table'));
 }
 
 /**
@@ -5524,18 +5805,53 @@ function importRender(body, commit) {
   }
   $('import-problems').innerHTML = problems.join('');
 }
-
 // ---- Running a report -----------------------------------------------------
 
 /**
  * The report a venue hands to its accountant.
  *
- * Pick a window, run it, read it, export it. The three formats are built by the
- * server from the same in-memory report the tables below are drawn from, so
- * what is exported is always what was on screen — see
- * vesopa_server/src/reports.js.
+ * Pick a window, run it, read it, look at the PDF, save it. Everything on
+ * screen — the dark header band, the four meta cells, the six figure tiles, the
+ * sections in order — is the furniture the PDF prints, in the same order and
+ * the same colours, because they are one document in two media. See
+ * vesopa_server/src/reports.js, which builds both from the same object.
  */
 let rrCatalogue = null;
+
+/**
+ * The icons the row actions are drawn with.
+ *
+ * Inline rather than a font or a sprite: there are six of them, they never
+ * change, and a webfont that has not loaded yet turns a row of actions into a
+ * row of empty boxes. Every one is a 24-unit stroked path, so they all sit at
+ * the same weight beside each other.
+ */
+const ICON = {
+  eye:
+    '<path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/>' +
+    '<circle cx="12" cy="12" r="3"/>',
+  download:
+    '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>' +
+    '<polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
+  send: '<line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>',
+  history:
+    '<path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/>' +
+    '<path d="M12 7v5l4 2"/>',
+  edit:
+    '<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>' +
+    '<path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z"/>',
+  trash:
+    '<polyline points="3 6 5 6 21 6"/>' +
+    '<path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+};
+
+/** An icon button: a picture, a tooltip, and a name a screen reader can read. */
+const iconButton = (icon, label, data, extra = '') =>
+  `<button type="button" class="icon-btn ${extra}" ${data} title="${esc(label)}"
+           aria-label="${esc(label)}">
+     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icon}</svg>
+   </button>`;
 
 async function loadRunReport() {
   if (!rrCatalogue) {
@@ -5549,6 +5865,7 @@ async function loadRunReport() {
     $('rr-format').innerHTML = rrCatalogue.formats
       .map((f) => `<option value="${esc(f.key)}">${esc(f.label)}</option>`)
       .join('');
+    rrFillTerminals();
 
     // Yesterday rather than Today, because the question a manager opens this
     // page to answer is almost always about a day that has finished.
@@ -5557,6 +5874,7 @@ async function loadRunReport() {
     $('rr-period').addEventListener('change', rrToggleCustom);
     $('rr-run').addEventListener('click', rrRun);
     $('rr-export').addEventListener('click', rrExport);
+    $('rr-view').addEventListener('click', rrView);
     rrToggleCustom();
   }
 
@@ -5565,8 +5883,35 @@ async function loadRunReport() {
   // to feel slow at the venue with three years of trading in it.
   $('rr-result').innerHTML =
     '<p class="muted small">Choose a period and press Run report.</p>';
-  $('rr-window').textContent = '';
-  $('rr-export').disabled = true;
+  rrReady(false);
+}
+
+/** View and Download only mean anything once something has been run. */
+function rrReady(ready) {
+  $('rr-export').disabled = !ready;
+  $('rr-view').disabled = !ready;
+}
+
+/**
+ * The terminal list, with the sale count beside each name.
+ *
+ * The count is there to answer the question the dropdown provokes -- "is Bar 2
+ * the one that's been quiet, or is Bar 2 just not connected?" -- before a
+ * manager runs three reports to find out.
+ *
+ * Rebuilt from the catalogue rather than cached separately: a till that took
+ * its first sale this morning has to appear without a page reload.
+ */
+function rrFillTerminals() {
+  const list = (rrCatalogue && rrCatalogue.terminals) || [];
+  $('rr-terminal').innerHTML =
+    '<option value="">All terminals</option>' +
+    list
+      .map(
+        (t) =>
+          `<option value="${esc(t.value)}">${esc(t.label)} (${t.sales})</option>`
+      )
+      .join('');
 }
 
 /** The two date boxes only exist for Custom Range. */
@@ -5585,13 +5930,16 @@ function rrToggleCustom() {
   }
 }
 
-/** What the run and the export both send. */
+/** What the run, the preview and the download all send. */
 function rrSpec() {
   return {
     report: $('rr-report').value,
     period: $('rr-period').value,
     from: $('rr-from').value || undefined,
     to: $('rr-to').value || undefined,
+    // Empty string means every terminal. Sent as undefined rather than '' so
+    // the server's own "unfiltered" default is the one thing deciding it.
+    terminal: $('rr-terminal').value || undefined,
   };
 }
 
@@ -5605,26 +5953,78 @@ async function rrRun() {
       body: JSON.stringify(rrSpec()),
     });
     rrRender(report);
-    $('rr-export').disabled = false;
+    rrReady(true);
   } catch (e) {
     $('rr-result').innerHTML = `<p class="error">${esc(e.message)}</p>`;
-    $('rr-export').disabled = true;
+    rrReady(false);
   } finally {
     button.disabled = false;
   }
 }
 
+/** dd/MM/yyyy HH:mm:ss — the same stamp every export prints. */
+function rrWhen(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  const pad = (n) => String(n).padStart(2, '0');
+  return (
+    `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()} ` +
+    `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+  );
+}
+
 function rrRender(report) {
-  $('rr-window').textContent = report.header
-    .map(([label, value]) => `${label}: ${value}`)
-    .join('   ·   ');
+  const meta = [
+    ['Site', report.site],
+    ['Period covered', `${rrWhen(report.from)} — ${rrWhen(report.to)}`],
+    ['Terminal', report.terminalLabel || 'All terminals'],
+    ['Generated', rrWhen(report.generatedAt)],
+  ];
+
+  const head = `
+    <div class="rr-head">
+      <div class="rr-head-band">
+        <div>
+          <img src="/assets/vesopa_logo_on_dark.png" alt="Vesopa" class="rr-head-logo">
+          <h3>${esc(report.name)}</h3>
+          <p class="rr-head-kicker">EPOS reporting</p>
+        </div>
+        <div class="rr-head-site">
+          <strong>${esc(report.site)}</strong>
+          <span>${esc(rrWhen(report.from))} — ${esc(rrWhen(report.to))}</span>
+        </div>
+      </div>
+      <dl class="rr-meta">
+        ${meta
+          .map(
+            ([label, value]) =>
+              `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`
+          )
+          .join('')}
+      </dl>
+    </div>`;
+
+  // The headline figures come from the report itself rather than being added up
+  // here, so the tiles, the PDF's tiles and the emailed summary are the same
+  // arithmetic done once.
+  const tiles = (report.highlights || []).length
+    ? `<div class="rr-tiles">${report.highlights
+        .map(
+          (item, i) => `<div class="rr-tile${i === 0 ? ' hero' : ''}">
+            <div class="rr-tile-label">${esc(item.label)}</div>
+            <div class="rr-tile-value">${esc(item.value)}</div>
+            ${item.hint ? `<div class="rr-tile-hint">${esc(item.hint)}</div>` : ''}
+          </div>`
+        )
+        .join('')}</div>`
+    : '';
 
   const cell = (tag, value, i) =>
     `<${tag}${i === 0 ? '' : ' class="num"'}>${esc(value)}</${tag}>`;
 
-  $('rr-result').innerHTML = report.sections
+  const sections = report.sections
     .map((part) => {
-      const head = part.columns.map((c, i) => cell('th', c.label, i)).join('');
+      const head_ = part.columns.map((c, i) => cell('th', c.label, i)).join('');
 
       const body = part.rows.length
         ? part.rows
@@ -5643,10 +6043,19 @@ function rrRender(report) {
         : '';
 
       return `<div class="card rd-card" style="margin-bottom:var(--stack)">
-        <h3 class="rr-section">${esc(part.title)}</h3>
+        <div class="rr-section-head">
+          <h3>${esc(part.title)}</h3>
+          <span class="muted small">${
+            part.rows.length === 1 ? '1 row' : `${part.rows.length} rows`
+          }</span>
+        </div>
         <div class="rr-scroll">
-          <table class="table rr-table">
-            <thead><tr>${head}</tr></thead>
+          <!-- data-no-cards: a report section is read column against column,
+               and seven money columns stacked into fifteen cards of seven
+               label/value pairs is a page nobody can total by eye. It scrolls,
+               and the better read on a phone is View PDF. -->
+          <table class="table rr-table" data-no-cards>
+            <thead><tr>${head_}</tr></thead>
             <tbody>${body}</tbody>
             ${total}
           </table>
@@ -5654,52 +6063,191 @@ function rrRender(report) {
       </div>`;
     })
     .join('');
+
+  $('rr-result').innerHTML = head + tiles + sections;
 }
 
 /**
- * Download the report in the chosen format.
+ * Ask the server to build one of the three files.
  *
- * Posted and read as a blob rather than linked, for the same reason the import
- * template is: the route is behind the session token, and a plain link carries
- * no Authorization header — it would land on the sign-in page and save an HTML
- * error as "report.pdf".
+ * Posted and read as a blob rather than linked, and that is not a preference:
+ * the route is behind the session token, and a plain <a href> carries no
+ * Authorization header. It would land on the sign-in page and save an HTML
+ * error page as "report.pdf" — which is exactly what a download that silently
+ * does nothing looks like from the outside.
  */
+async function reportFile(path, body) {
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+  if (res.status === 401) {
+    signOut();
+    return null;
+  }
+  if (!res.ok) {
+    const problem = await res.json().catch(() => ({}));
+    throw new Error(problem.error || 'The report could not be built.');
+  }
+
+  // The server has already named the file. Taking its name rather than
+  // inventing a second one keeps a downloaded report and an emailed one
+  // identical, which matters when somebody is comparing the two.
+  const disposition = res.headers.get('content-disposition') || '';
+  const match = /filename="([^"]+)"/.exec(disposition);
+  return { blob: await res.blob(), filename: match ? match[1] : 'report' };
+}
+
+/** Hand a blob to the browser as a save. */
+function saveBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename || 'report';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  // Revoked on the next tick rather than immediately: Safari has not finished
+  // with the URL when click() returns, and revoking under it saves nothing.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** Download the report on screen in the chosen format. */
 async function rrExport() {
   const button = $('rr-export');
+  const label = button.textContent;
   button.disabled = true;
+  button.textContent = 'Preparing…';
   try {
-    const res = await fetch('/api/reports/export', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify({ ...rrSpec(), format: $('rr-format').value }),
+    const file = await reportFile('/api/reports/export', {
+      ...rrSpec(),
+      format: $('rr-format').value,
     });
-    if (res.status === 401) return signOut();
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || 'The export failed.');
-    }
-
-    // The server has already named the file. Taking its name rather than
-    // inventing a second one keeps a downloaded report and an emailed one
-    // identical, which matters when somebody is comparing the two.
-    const disposition = res.headers.get('content-disposition') || '';
-    const match = /filename="([^"]+)"/.exec(disposition);
-    const url = URL.createObjectURL(await res.blob());
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = match ? match[1] : 'report';
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 0);
+    if (file) saveBlob(file.blob, file.filename);
   } catch (e) {
     alert(e.message);
   } finally {
+    button.textContent = label;
     button.disabled = false;
   }
+}
+
+/**
+ * Read the report as a PDF, on screen, without saving anything.
+ *
+ * Always PDF, whatever the export dropdown says: it is the one of the three a
+ * browser can draw, and "View" that hands back a spreadsheet is a download with
+ * a misleading name on it.
+ */
+function rrView() {
+  const period = $('rr-period');
+  const window_ = period.options[period.selectedIndex];
+  viewReport({
+    path: '/api/reports/export',
+    body: { ...rrSpec(), format: 'pdf', disposition: 'inline' },
+    title: $('rr-report').options[$('rr-report').selectedIndex].text,
+    subtitle: `${window_ ? window_.text : ''} · ${
+      $('rr-terminal').options[$('rr-terminal').selectedIndex].text
+    }`,
+  });
+}
+
+// ---- The report viewer ----------------------------------------------------
+
+/**
+ * A report on screen, in the shape it prints.
+ *
+ * The alternative — and what this replaces — is downloading a file, finding it,
+ * opening it in something else, and doing that again for every date you were
+ * not sure about. The bytes are the same bytes the download gets, held as a
+ * blob and pointed at an iframe, so a preview can never be a different document
+ * from the file.
+ */
+let viewerUrl = null;
+let viewerBlob = null;
+let viewerFile = null;
+let viewerWired = false;
+
+function wireViewer() {
+  if (viewerWired) return;
+  viewerWired = true;
+
+  $('pdfv').addEventListener('click', (e) => {
+    if (e.target.closest('[data-pdfv-close]')) closeViewer();
+  });
+  $('pdfv-download').addEventListener('click', () => {
+    if (viewerUrl) saveBlob(viewerBlob, viewerFile);
+  });
+  // Some browsers will not print or search inside a framed PDF. Rather than
+  // reimplement a PDF reader, hand the same blob to the one the browser already
+  // has.
+  $('pdfv-tab').addEventListener('click', () => {
+    if (viewerUrl) window.open(viewerUrl, '_blank', 'noopener');
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !$('pdfv').hidden) closeViewer();
+  });
+}
+
+/** Open the viewer, then fill it when the server has built the report. */
+async function viewReport({ path, body, title, subtitle }) {
+  wireViewer();
+
+  const frame = $('pdfv-frame');
+  const state = $('pdfv-state');
+
+  $('pdfv-title').textContent = title || 'Report';
+  $('pdfv-sub').textContent = subtitle || '';
+  frame.hidden = true;
+  frame.removeAttribute('src');
+  state.hidden = false;
+  state.className = 'pdfv-state';
+  state.textContent = 'Building the report…';
+  $('pdfv-download').disabled = true;
+  $('pdfv-tab').disabled = true;
+  $('pdfv').hidden = false;
+  // The page behind must not scroll under the overlay on a phone, where the
+  // two scrolls fight each other and the report is the one that loses.
+  document.body.style.overflow = 'hidden';
+
+  try {
+    const file = await reportFile(path, body);
+    if (!file) return; // signed out; signOut() has taken the page
+
+    releaseViewer();
+    viewerBlob = file.blob;
+    viewerFile = file.filename;
+    viewerUrl = URL.createObjectURL(file.blob);
+
+    frame.src = viewerUrl;
+    frame.hidden = false;
+    state.hidden = true;
+    $('pdfv-download').disabled = false;
+    $('pdfv-tab').disabled = false;
+  } catch (e) {
+    state.className = 'pdfv-state error';
+    state.textContent = e.message;
+  }
+}
+
+/** Let go of the blob. A held object URL is a held copy of the whole report. */
+function releaseViewer() {
+  if (viewerUrl) URL.revokeObjectURL(viewerUrl);
+  viewerUrl = null;
+}
+
+function closeViewer() {
+  const frame = $('pdfv-frame');
+  frame.hidden = true;
+  frame.removeAttribute('src');
+  releaseViewer();
+  viewerBlob = null;
+  $('pdfv').hidden = true;
+  document.body.style.overflow = '';
 }
 
 // ---- Scheduled reports ----------------------------------------------------
@@ -5726,26 +6274,48 @@ async function loadReportSchedules() {
   const rows = await api('/reports/schedules');
   $('rs-rows').innerHTML = rows.length
     ? rows.map(rsRow).join('')
-    : '<tr><td colspan="8" class="muted small">No scheduled reports yet.</td></tr>';
+    : '<tr><td colspan="9" class="muted small">No scheduled reports yet.</td></tr>';
+  cardsOnPhone($('rs-table'));
 
   $('rs-rows').onclick = (e) => rsAction(e, rows);
   $('rs-runs').innerHTML = '';
 }
 
+/**
+ * One schedule, and the six things you can do to it.
+ *
+ * Icons rather than words, in one fixed order — look, save, send, history,
+ * edit, delete — because six labelled buttons in the last cell of a nine column
+ * table is a row wider than the screen it is read on. The destructive one is
+ * last and is the only one with a colour.
+ *
+ * View and Download come first deliberately. Until they existed the only way to
+ * find out what a schedule produces was Send now, which mails it to everybody
+ * on the list: setting up a Monday report meant sending the whole office a
+ * test.
+ */
 function rsRow(r) {
+  // The cells are unlabelled here on purpose: cardsOnPhone() takes each one's
+  // heading off the <th> it sits under, so the phone layout and the desktop
+  // column cannot end up calling the same thing two different names.
   return `<tr>
-    <td>${esc(r.name)}${r.active ? '' : ' <span class="badge paused">paused</span>'}</td>
+    <td class="card-title">${esc(r.name)}${r.active ? '' : ' <span class="badge paused">paused</span>'}</td>
     <td>${esc(r.report_label)} <span class="muted small">${esc(String(r.format).toUpperCase())}</span></td>
+    <td class="muted small">${esc(r.terminal_label || 'All terminals')}</td>
     <td>${esc(r.frequency_label)}</td>
     <td>${esc(r.time)}</td>
     <td>${esc(r.period_label)}</td>
     <td>${r.last_run_at ? esc(rsWhen(r.last_run_at)) : '<span class="muted small">never</span>'}</td>
     <td>${r.next_run_at ? esc(rsWhen(r.next_run_at)) : '<span class="muted small">—</span>'}</td>
-    <td class="right nowrap">
-      <button class="btn small ghost" data-rs-runs="${r.id}">Results</button>
-      <button class="btn small ghost" data-rs-send="${r.id}">Send now</button>
-      <button class="btn small ghost" data-rs-edit="${r.id}">Edit</button>
-      <button class="btn small danger-ghost" data-rs-delete="${r.id}">Delete</button>
+    <td class="row-actions-cell">
+      <div class="row-actions">
+        ${iconButton(ICON.eye, 'View the report', `data-rs-view="${r.id}"`)}
+        ${iconButton(ICON.download, `Download as ${String(r.format).toUpperCase()}`, `data-rs-download="${r.id}"`)}
+        ${iconButton(ICON.send, 'Email it now', `data-rs-send="${r.id}"`)}
+        ${iconButton(ICON.history, 'Recent runs', `data-rs-runs="${r.id}"`)}
+        ${iconButton(ICON.edit, 'Edit the schedule', `data-rs-edit="${r.id}"`)}
+        ${iconButton(ICON.trash, 'Delete the schedule', `data-rs-delete="${r.id}"`, 'danger')}
+      </div>
     </td>
   </tr>`;
 }
@@ -5754,13 +6324,48 @@ async function rsAction(e, rows) {
   const button = e.target.closest('button');
   if (!button) return;
   const data = button.dataset;
+  const row = (id) => rows.find((r) => String(r.id) === id);
 
   if (data.rsRuns) return rsShowRuns(data.rsRuns);
-  if (data.rsEdit) {
-    return rsEdit(rows.find((r) => String(r.id) === data.rsEdit));
+  if (data.rsEdit) return rsEdit(row(data.rsEdit));
+
+  if (data.rsView) {
+    const schedule = row(data.rsView);
+    return viewReport({
+      path: `/api/reports/schedules/${data.rsView}/export`,
+      body: { format: 'pdf', disposition: 'inline' },
+      title: schedule ? schedule.name : 'Scheduled report',
+      subtitle: schedule
+        ? `${schedule.report_label} · ${schedule.period_label} · ${schedule.terminal_label}`
+        : '',
+    });
+  }
+
+  if (data.rsDownload) {
+    button.disabled = true;
+    try {
+      const file = await reportFile(
+        `/api/reports/schedules/${data.rsDownload}/export`,
+        {}
+      );
+      if (file) saveBlob(file.blob, file.filename);
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      button.disabled = false;
+    }
+    return;
   }
 
   if (data.rsSend) {
+    // Asked first. This posts a real report to a real list of addresses, and
+    // it used to be the only button here that did anything — so it got pressed
+    // by anybody wanting to see what the schedule produced, and the whole
+    // office got the test.
+    const schedule = row(data.rsSend);
+    const to = schedule ? schedule.recipients : 'its recipients';
+    if (!confirm(`Email this report now to ${to}?`)) return;
+
     button.disabled = true;
     try {
       const outcome = await api(`/reports/schedules/${data.rsSend}/run`, {
@@ -5781,8 +6386,8 @@ async function rsAction(e, rows) {
   }
 
   if (data.rsDelete) {
-    const row = rows.find((r) => String(r.id) === data.rsDelete);
-    if (!confirm(`Delete "${row.name}"? It will stop sending.`)) return;
+    const schedule = row(data.rsDelete);
+    if (!confirm(`Delete "${schedule.name}"? It will stop sending.`)) return;
     await api(`/reports/schedules/${data.rsDelete}`, { method: 'DELETE' });
     render();
   }
@@ -5797,12 +6402,12 @@ function rsWhen(value) {
 }
 
 /**
- * The five things a schedule needs, in the order they were asked for: what it
- * is called, which report and in what format, how often and when, what period
- * it covers, and who gets it.
+ * The six things a schedule needs, in the order they were asked for: what it
+ * is called, which report and in what format, which till it covers, how often
+ * and when, what period it covers, and who gets it.
  *
- * One modal rather than a five-tab wizard. Eight fields fit on one screen, and
- * a wizard over eight fields costs four presses to check what you typed on the
+ * One modal rather than a six-tab wizard. Nine fields fit on one screen, and a
+ * wizard over nine fields costs four presses to check what you typed on the
  * first page. It is also the back office's own editor shape — see the note in
  * app.js about native dialogs, which is why this is a drawn modal and not a
  * chain of prompts.
@@ -5830,6 +6435,22 @@ function rsEdit(existing) {
         type: 'select',
         value: existing ? existing.format : 'pdf',
         options: rsOptions.formats.map((f) => ({ value: f.key, label: f.label })),
+      },
+      {
+        // The same list the Financial Summary screen offers, so a manager who
+        // has just run a report for Bar 2 can schedule exactly that. Empty is
+        // the whole venue, which is what every schedule made before the filter
+        // existed already means.
+        name: 'terminal',
+        label: 'Terminal',
+        type: 'select',
+        value: existing ? existing.terminal || '' : '',
+        options: [{ value: '', label: 'All terminals' }].concat(
+          (rsOptions.terminals || []).map((t) => ({
+            value: t.value,
+            label: `${t.label} (${t.sales})`,
+          }))
+        ),
       },
       {
         name: 'frequency',
@@ -5894,11 +6515,15 @@ async function rsShowRuns(id) {
     : '<tr><td colspan="5" class="muted small">It has not run yet.</td></tr>';
 
   $('rs-runs').innerHTML = `<div class="card">
-    <h3 class="rr-section">Recent runs</h3>
-    <table class="table">
-      <thead><tr><th>When</th><th>Outcome</th><th>Covered</th><th>Sent to</th><th>Detail</th></tr></thead>
-      <tbody>${body}</tbody>
-    </table>
+    <div class="rr-section-head"><h3>Recent runs</h3></div>
+    <div class="rr-scroll">
+      <table class="table">
+        <thead><tr><th>When</th><th>Outcome</th><th>Covered</th><th>Sent to</th><th>Detail</th></tr></thead>
+        <tbody>${body}</tbody>
+      </table>
+    </div>
   </div>`;
+  // Written after the view loaded, so it missed the pass in render().
+  cardsOnPhone($('rs-runs').querySelector('table'));
   $('rs-runs').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }

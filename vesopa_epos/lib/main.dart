@@ -734,6 +734,11 @@ final syncServiceProvider = Provider<SyncService>((ref) {
   // this service being rebuilt.
   sync.pullStaff = () => ref.read(staffRepositoryProvider).sync();
 
+  // Which machine this is, read at send time for the same reason as above: the
+  // name is a preference that resolves asynchronously and can be changed by a
+  // manager, so it is asked for when a sale actually goes out.
+  sync.terminalName = () => ref.read(terminalNameProvider);
+
   // Kitchen tickets that could not be posted when they fired ride on the same
   // catch-up. Read lazily for the same reason as above.
   sync.flushKitchen = () => ref.read(kitchenScreenSenderProvider).flush();

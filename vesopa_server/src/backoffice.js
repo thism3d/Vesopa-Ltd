@@ -129,9 +129,13 @@ function backofficeRoutes({ pool, broadcast, secret }) {
     try {
       const email = scope(req, await tenantEmail(req));
       const [rows] = await pool.query(
+        // low_stock_at comes along so the Stock screen can say "low" rather
+        // than only printing a number nobody has a threshold for. The
+        // dashboard has counted against it for a while; the list that would
+        // tell you *which* products they are could not.
         `SELECT id, pluid, product_name, department_name, group_name,
                 accounting_code, price, tax_percentage, stock_quantity,
-                button_position, button_color, printer_routes,
+                low_stock_at, button_position, button_color, printer_routes,
                 print_to_receipt, emoji, image_url
          FROM bo_products
          WHERE email = ?
