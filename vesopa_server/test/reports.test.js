@@ -653,9 +653,20 @@ function tickPool(schedules) {
     assert.strictEqual(fired, 1);
     assert.strictEqual(sent.length, 1, 'nothing was sent');
     assert.strictEqual(sent[0].to, 'owner@venue.co.uk');
-    assert.strictEqual(sent[0].attachments.length, 1);
+    // The report is the first attachment and the only one a mail client offers
+    // to save: the brand mark rides along after it, inline and behind a cid,
+    // because a covering note with a broken image in it looks like a phish.
     assert.match(sent[0].attachments[0].filename, /\.pdf$/);
     assert.strictEqual(sent[0].attachments[0].content.subarray(0, 5).toString(), '%PDF-');
+    for (const extra of sent[0].attachments.slice(1)) {
+      assert.strictEqual(extra.contentDisposition, 'inline', 'a second savable file');
+      assert.ok(extra.cid, 'an inline attachment nothing references');
+    }
+
+    // And the figures are in the body, so the mail answers "what did we take"
+    // without the attachment being opened at all.
+    assert.match(sent[0].html, /Takings/);
+    assert.match(sent[0].text, /Takings: £/);
 
     const update = pool.written.find((w) => w.sql.startsWith('UPDATE bo_report_schedules'));
     assert.ok(update, 'next_run_at was never advanced');

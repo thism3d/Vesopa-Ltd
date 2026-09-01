@@ -3052,34 +3052,212 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
 
 /* Reports.
    ----------------------------------------------------------------------------
-   The controls sit on one line and wrap rather than shrink: a date input that
-   has been squeezed is one nobody can read the year in. */
+   The screen and the PDF are the same document in two media, and they are held
+   in step deliberately: the dark band, the lime rule under it, the four meta
+   cells and the six figure tiles are the same furniture in the same order as
+   vesopa_server/src/reports.js draws on paper. Somebody who ran a report on
+   screen and then opens the file they exported should not have to work out
+   whether it is the same report. */
+
+/* Visible to a screen reader, gone from the page. The export format select
+   needs a label; the word "Format" beside a dropdown that says PDF does not
+   earn its width. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* The fields, then the actions, in two rows.
+   These were one flex line with the actions pushed over by `margin-left:auto`.
+   That works at 1400px and falls apart below it: the buttons wrap to their own
+   line anyway but without the rule above them, and the gap left behind sits in
+   the middle of the fields. A grid gives every field a whole column and drops
+   to one column on a phone, where a squeezed date input is one nobody can read
+   the year in. */
 .rr-controls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px 14px;
+  align-items: end;
 }
 
 .rr-controls label {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
   font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
   margin: 0;
+  min-width: 0;
 }
 
 .rr-controls select,
-.rr-controls input { min-width: 150px; }
+.rr-controls input {
+  width: 100%;
+  min-width: 0;
+}
 
 .rr-actions {
   display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+/* Format, view and download belong together — they are one sentence: "this
+   format, look at it or save it". Kept in their own box so a wrap moves all
+   three, rather than leaving a lone dropdown under Run report looking like a
+   fourth filter. */
+.rr-export-group {
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
   margin-left: auto;
 }
 
-.rr-section { margin: 0 0 10px; }
+.rr-format-field select { min-width: 92px; }
+
+@media (max-width: 720px) {
+  /* Nothing is pushed right on a phone: `margin-left:auto` there means the
+     buttons are two thirds of the way across a 360px screen with a hole beside
+     them. Full-width, in the order they are used. */
+  .rr-export-group { margin-left: 0; width: 100%; }
+  .rr-actions > .btn { width: 100%; }
+  .rr-export-group .btn { flex: 1 1 120px; }
+  .rr-format-field { flex: 1 1 100%; }
+  .rr-format-field select { width: 100%; }
+}
+
+/* ---- The report's own header ---------------------------------------------
+   The same band the PDF opens with, so the screen and the file are recognisably
+   one document. Stated in absolute colours rather than in theme tokens: this is
+   the brand's near-black with the brand's lime on it, in both themes, exactly
+   as it prints. */
+.rr-head {
+  background: #111111;
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+  margin-bottom: var(--stack);
+}
+
+.rr-head-band {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 22px var(--card-pad) 20px;
+  border-bottom: 4px solid var(--brand);
+}
+
+.rr-head-logo { height: 26px; width: auto; display: block; margin-bottom: 14px; }
+.rr-head h3 { color: #fff; font-size: 21px; margin: 0; }
+.rr-head-kicker {
+  margin: 4px 0 0;
+  font-size: 10.5px;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: #b8bcb0;
+}
+.rr-head-site {
+  text-align: right;
+  min-width: 0;
+  flex: 1 1 220px;
+}
+.rr-head-site strong { color: var(--brand); font-size: 15px; }
+.rr-head-site span { display: block; color: #b8bcb0; font-size: 12px; margin-top: 3px; }
+
+/* The four things every export prints in its header, in the same order. */
+.rr-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1px;
+  background: rgba(255, 255, 255, .09);
+}
+.rr-meta > div { background: #111111; padding: 14px var(--card-pad); min-width: 0; }
+.rr-meta dt {
+  font-size: 9.5px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: #8f948a;
+  margin: 0 0 5px;
+  font-weight: 700;
+}
+.rr-meta dd {
+  margin: 0;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+/* ---- The headline figures ------------------------------------------------
+   Six of them, three across, the first one lime — the same tiles the PDF puts
+   under its meta strip and the same order, because a manager reading the screen
+   and an accountant reading the file quote these at each other. */
+.rr-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+  margin-bottom: var(--stack);
+}
+
+.rr-tile {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px 18px 14px;
+  min-width: 0;
+}
+.rr-tile.hero { background: var(--brand); border-color: var(--brand); }
+.rr-tile-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.rr-tile.hero .rr-tile-label,
+.rr-tile.hero .rr-tile-hint { color: rgba(16, 19, 10, .66); }
+.rr-tile-value {
+  font-size: 25px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.rr-tile.hero .rr-tile-value { color: var(--on-brand); }
+.rr-tile-hint { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
+
+/* The heading tick, the same lime mark the PDF puts beside a section title. */
+.rr-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.rr-section-head h3 {
+  margin: 0;
+  font-size: 15px;
+  padding-left: 11px;
+  border-left: 3.5px solid var(--brand);
+  line-height: 1.25;
+}
 
 /* A report has seven columns and a venue may be reading it on a laptop. The
    table scrolls inside its own card rather than pushing the page sideways —
@@ -3089,6 +3267,15 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
 
 .rr-table { min-width: 640px; }
 
+.rr-table thead th {
+  background: var(--brand-soft);
+  color: var(--brand-deep);
+  font-size: 10.5px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  border-bottom: 0;
+}
+
 /* Figures right-aligned and tabular, so the decimal points line up down the
    column. A money column that does not is a money column nobody can scan. */
 .rr-table td.num,
@@ -3097,7 +3284,128 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
   font-variant-numeric: tabular-nums;
 }
 
+.rr-table tbody tr:nth-child(even) { background: var(--surface-2); }
+
+/* The zebra out-specifies the shared `tbody tr:hover`, so without this the
+   pointer stops responding on every other row. */
+.rr-table tbody tr:hover,
+.rr-table tbody tr:nth-child(even):hover { background: var(--hover); }
+
+/* The solid total bar the PDF prints, in the brand near-black rather than in
+   `--ink` — which is `--text`, and in the dark theme that is a near-white bar
+   with white type on it. `--rail` is #111 in both themes, which is the point
+   of it. */
 .rr-table tfoot td {
   font-weight: 700;
-  border-top: 2px solid var(--line);
+  background: var(--rail);
+  color: #fff;
+  border-top: 0;
+}
+.rr-table tfoot td:first-child { border-radius: 0 0 0 8px; }
+.rr-table tfoot td:last-child { border-radius: 0 0 8px 0; }
+
+/* ---- Row actions ---------------------------------------------------------
+   A scheduled report has six things you can do to it, and six labelled buttons
+   in one cell is a row that is wider than the screen. Icons with a tooltip and
+   an accessible name, wrapping in place, in one predictable order: look, save,
+   send, history, edit, delete. */
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--card);
+  color: var(--text);
+  cursor: pointer;
+}
+.icon-btn svg { width: 16px; height: 16px; display: block; }
+.icon-btn:hover { background: var(--brand-soft); border-color: var(--brand); }
+.icon-btn:disabled { opacity: .45; cursor: default; }
+.icon-btn.danger { color: var(--red); }
+.icon-btn.danger:hover { background: var(--bad-wash); border-color: var(--red); }
+
+@media (pointer: coarse) {
+  /* Same floor as .btn.small below — a 34px target is a mis-tap on a tablet. */
+  .icon-btn { width: 40px; height: 40px; }
+}
+
+.rs-table td { vertical-align: middle; }
+.rs-table { min-width: 900px; }
+
+/* ---- The report viewer ---------------------------------------------------
+   Full screen with the chrome kept to a strip, because the thing worth looking
+   at is the report. */
+.pdfv {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: max(16px, 2.5vh) max(12px, 2vw);
+}
+.pdfv-back {
+  position: absolute;
+  inset: 0;
+  background: rgba(12, 12, 14, .62);
+  backdrop-filter: blur(3px);
+}
+.pdfv-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(1080px, 100%);
+  height: min(96vh, 100%);
+  background: var(--card);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, .45);
+}
+
+.pdfv-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 14px 18px;
+  background: #111111;
+  border-bottom: 3px solid var(--brand);
+}
+.pdfv-logo { height: 20px; width: auto; flex: none; }
+.pdfv-titles { flex: 1 1 200px; min-width: 0; }
+.pdfv-titles h3 { color: #fff; font-size: 15px; }
+.pdfv-sub { margin: 2px 0 0; font-size: 11.5px; color: #b8bcb0; }
+.pdfv-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.pdfv-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  background: var(--surface-2);
+  display: flex;
+}
+.pdfv-body iframe { flex: 1 1 auto; width: 100%; height: 100%; border: 0; }
+.pdfv-state {
+  margin: auto;
+  padding: 24px;
+  color: var(--muted);
+  font-size: 13.5px;
+  text-align: center;
+}
+
+@media (max-width: 720px) {
+  .pdfv { padding: 0; }
+  .pdfv-panel { height: 100%; border-radius: 0; }
+  .pdfv-actions { width: 100%; }
+  .pdfv-actions .btn { flex: 1 1 0; }
 }

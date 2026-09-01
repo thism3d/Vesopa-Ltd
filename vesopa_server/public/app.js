@@ -5524,18 +5524,53 @@ function importRender(body, commit) {
   }
   $('import-problems').innerHTML = problems.join('');
 }
-
 // ---- Running a report -----------------------------------------------------
 
 /**
  * The report a venue hands to its accountant.
  *
- * Pick a window, run it, read it, export it. The three formats are built by the
- * server from the same in-memory report the tables below are drawn from, so
- * what is exported is always what was on screen — see
- * vesopa_server/src/reports.js.
+ * Pick a window, run it, read it, look at the PDF, save it. Everything on
+ * screen — the dark header band, the four meta cells, the six figure tiles, the
+ * sections in order — is the furniture the PDF prints, in the same order and
+ * the same colours, because they are one document in two media. See
+ * vesopa_server/src/reports.js, which builds both from the same object.
  */
 let rrCatalogue = null;
+
+/**
+ * The icons the row actions are drawn with.
+ *
+ * Inline rather than a font or a sprite: there are six of them, they never
+ * change, and a webfont that has not loaded yet turns a row of actions into a
+ * row of empty boxes. Every one is a 24-unit stroked path, so they all sit at
+ * the same weight beside each other.
+ */
+const ICON = {
+  eye:
+    '<path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/>' +
+    '<circle cx="12" cy="12" r="3"/>',
+  download:
+    '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>' +
+    '<polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
+  send: '<line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>',
+  history:
+    '<path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/>' +
+    '<path d="M12 7v5l4 2"/>',
+  edit:
+    '<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>' +
+    '<path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z"/>',
+  trash:
+    '<polyline points="3 6 5 6 21 6"/>' +
+    '<path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+};
+
+/** An icon button: a picture, a tooltip, and a name a screen reader can read. */
+const iconButton = (icon, label, data, extra = '') =>
+  `<button type="button" class="icon-btn ${extra}" ${data} title="${esc(label)}"
+           aria-label="${esc(label)}">
+     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icon}</svg>
+   </button>`;
 
 async function loadRunReport() {
   if (!rrCatalogue) {
@@ -5549,6 +5584,7 @@ async function loadRunReport() {
     $('rr-format').innerHTML = rrCatalogue.formats
       .map((f) => `<option value="${esc(f.key)}">${esc(f.label)}</option>`)
       .join('');
+    rrFillTerminals();
 
     // Yesterday rather than Today, because the question a manager opens this
     // page to answer is almost always about a day that has finished.
@@ -5557,6 +5593,7 @@ async function loadRunReport() {
     $('rr-period').addEventListener('change', rrToggleCustom);
     $('rr-run').addEventListener('click', rrRun);
     $('rr-export').addEventListener('click', rrExport);
+    $('rr-view').addEventListener('click', rrView);
     rrToggleCustom();
   }
 
@@ -5565,8 +5602,35 @@ async function loadRunReport() {
   // to feel slow at the venue with three years of trading in it.
   $('rr-result').innerHTML =
     '<p class="muted small">Choose a period and press Run report.</p>';
-  $('rr-window').textContent = '';
-  $('rr-export').disabled = true;
+  rrReady(false);
+}
+
+/** View and Download only mean anything once something has been run. */
+function rrReady(ready) {
+  $('rr-export').disabled = !ready;
+  $('rr-view').disabled = !ready;
+}
+
+/**
+ * The terminal list, with the sale count beside each name.
+ *
+ * The count is there to answer the question the dropdown provokes -- "is Bar 2
+ * the one that's been quiet, or is Bar 2 just not connected?" -- before a
+ * manager runs three reports to find out.
+ *
+ * Rebuilt from the catalogue rather than cached separately: a till that took
+ * its first sale this morning has to appear without a page reload.
+ */
+function rrFillTerminals() {
+  const list = (rrCatalogue && rrCatalogue.terminals) || [];
+  $('rr-terminal').innerHTML =
+    '<option value="">All terminals</option>' +
+    list
+      .map(
+        (t) =>
+          `<option value="${esc(t.value)}">${esc(t.label)} (${t.sales})</option>`
+      )
+      .join('');
 }
 
 /** The two date boxes only exist for Custom Range. */
@@ -5585,13 +5649,16 @@ function rrToggleCustom() {
   }
 }
 
-/** What the run and the export both send. */
+/** What the run, the preview and the download all send. */
 function rrSpec() {
   return {
     report: $('rr-report').value,
     period: $('rr-period').value,
     from: $('rr-from').value || undefined,
     to: $('rr-to').value || undefined,
+    // Empty string means every terminal. Sent as undefined rather than '' so
+    // the server's own "unfiltered" default is the one thing deciding it.
+    terminal: $('rr-terminal').value || undefined,
   };
 }
 
@@ -5605,26 +5672,78 @@ async function rrRun() {
       body: JSON.stringify(rrSpec()),
     });
     rrRender(report);
-    $('rr-export').disabled = false;
+    rrReady(true);
   } catch (e) {
     $('rr-result').innerHTML = `<p class="error">${esc(e.message)}</p>`;
-    $('rr-export').disabled = true;
+    rrReady(false);
   } finally {
     button.disabled = false;
   }
 }
 
+/** dd/MM/yyyy HH:mm:ss — the same stamp every export prints. */
+function rrWhen(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  const pad = (n) => String(n).padStart(2, '0');
+  return (
+    `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()} ` +
+    `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+  );
+}
+
 function rrRender(report) {
-  $('rr-window').textContent = report.header
-    .map(([label, value]) => `${label}: ${value}`)
-    .join('   ·   ');
+  const meta = [
+    ['Site', report.site],
+    ['Period covered', `${rrWhen(report.from)} — ${rrWhen(report.to)}`],
+    ['Terminal', report.terminalLabel || 'All terminals'],
+    ['Generated', rrWhen(report.generatedAt)],
+  ];
+
+  const head = `
+    <div class="rr-head">
+      <div class="rr-head-band">
+        <div>
+          <img src="/assets/vesopa_logo_on_dark.png" alt="Vesopa" class="rr-head-logo">
+          <h3>${esc(report.name)}</h3>
+          <p class="rr-head-kicker">EPOS reporting</p>
+        </div>
+        <div class="rr-head-site">
+          <strong>${esc(report.site)}</strong>
+          <span>${esc(rrWhen(report.from))} — ${esc(rrWhen(report.to))}</span>
+        </div>
+      </div>
+      <dl class="rr-meta">
+        ${meta
+          .map(
+            ([label, value]) =>
+              `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`
+          )
+          .join('')}
+      </dl>
+    </div>`;
+
+  // The headline figures come from the report itself rather than being added up
+  // here, so the tiles, the PDF's tiles and the emailed summary are the same
+  // arithmetic done once.
+  const tiles = (report.highlights || []).length
+    ? `<div class="rr-tiles">${report.highlights
+        .map(
+          (item, i) => `<div class="rr-tile${i === 0 ? ' hero' : ''}">
+            <div class="rr-tile-label">${esc(item.label)}</div>
+            <div class="rr-tile-value">${esc(item.value)}</div>
+            ${item.hint ? `<div class="rr-tile-hint">${esc(item.hint)}</div>` : ''}
+          </div>`
+        )
+        .join('')}</div>`
+    : '';
 
   const cell = (tag, value, i) =>
     `<${tag}${i === 0 ? '' : ' class="num"'}>${esc(value)}</${tag}>`;
 
-  $('rr-result').innerHTML = report.sections
+  const sections = report.sections
     .map((part) => {
-      const head = part.columns.map((c, i) => cell('th', c.label, i)).join('');
+      const head_ = part.columns.map((c, i) => cell('th', c.label, i)).join('');
 
       const body = part.rows.length
         ? part.rows
@@ -5643,10 +5762,15 @@ function rrRender(report) {
         : '';
 
       return `<div class="card rd-card" style="margin-bottom:var(--stack)">
-        <h3 class="rr-section">${esc(part.title)}</h3>
+        <div class="rr-section-head">
+          <h3>${esc(part.title)}</h3>
+          <span class="muted small">${
+            part.rows.length === 1 ? '1 row' : `${part.rows.length} rows`
+          }</span>
+        </div>
         <div class="rr-scroll">
           <table class="table rr-table">
-            <thead><tr>${head}</tr></thead>
+            <thead><tr>${head_}</tr></thead>
             <tbody>${body}</tbody>
             ${total}
           </table>
@@ -5654,52 +5778,191 @@ function rrRender(report) {
       </div>`;
     })
     .join('');
+
+  $('rr-result').innerHTML = head + tiles + sections;
 }
 
 /**
- * Download the report in the chosen format.
+ * Ask the server to build one of the three files.
  *
- * Posted and read as a blob rather than linked, for the same reason the import
- * template is: the route is behind the session token, and a plain link carries
- * no Authorization header — it would land on the sign-in page and save an HTML
- * error as "report.pdf".
+ * Posted and read as a blob rather than linked, and that is not a preference:
+ * the route is behind the session token, and a plain <a href> carries no
+ * Authorization header. It would land on the sign-in page and save an HTML
+ * error page as "report.pdf" — which is exactly what a download that silently
+ * does nothing looks like from the outside.
  */
+async function reportFile(path, body) {
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+  if (res.status === 401) {
+    signOut();
+    return null;
+  }
+  if (!res.ok) {
+    const problem = await res.json().catch(() => ({}));
+    throw new Error(problem.error || 'The report could not be built.');
+  }
+
+  // The server has already named the file. Taking its name rather than
+  // inventing a second one keeps a downloaded report and an emailed one
+  // identical, which matters when somebody is comparing the two.
+  const disposition = res.headers.get('content-disposition') || '';
+  const match = /filename="([^"]+)"/.exec(disposition);
+  return { blob: await res.blob(), filename: match ? match[1] : 'report' };
+}
+
+/** Hand a blob to the browser as a save. */
+function saveBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename || 'report';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  // Revoked on the next tick rather than immediately: Safari has not finished
+  // with the URL when click() returns, and revoking under it saves nothing.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** Download the report on screen in the chosen format. */
 async function rrExport() {
   const button = $('rr-export');
+  const label = button.textContent;
   button.disabled = true;
+  button.textContent = 'Preparing…';
   try {
-    const res = await fetch('/api/reports/export', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify({ ...rrSpec(), format: $('rr-format').value }),
+    const file = await reportFile('/api/reports/export', {
+      ...rrSpec(),
+      format: $('rr-format').value,
     });
-    if (res.status === 401) return signOut();
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || 'The export failed.');
-    }
-
-    // The server has already named the file. Taking its name rather than
-    // inventing a second one keeps a downloaded report and an emailed one
-    // identical, which matters when somebody is comparing the two.
-    const disposition = res.headers.get('content-disposition') || '';
-    const match = /filename="([^"]+)"/.exec(disposition);
-    const url = URL.createObjectURL(await res.blob());
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = match ? match[1] : 'report';
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 0);
+    if (file) saveBlob(file.blob, file.filename);
   } catch (e) {
     alert(e.message);
   } finally {
+    button.textContent = label;
     button.disabled = false;
   }
+}
+
+/**
+ * Read the report as a PDF, on screen, without saving anything.
+ *
+ * Always PDF, whatever the export dropdown says: it is the one of the three a
+ * browser can draw, and "View" that hands back a spreadsheet is a download with
+ * a misleading name on it.
+ */
+function rrView() {
+  const period = $('rr-period');
+  const window_ = period.options[period.selectedIndex];
+  viewReport({
+    path: '/api/reports/export',
+    body: { ...rrSpec(), format: 'pdf', disposition: 'inline' },
+    title: $('rr-report').options[$('rr-report').selectedIndex].text,
+    subtitle: `${window_ ? window_.text : ''} · ${
+      $('rr-terminal').options[$('rr-terminal').selectedIndex].text
+    }`,
+  });
+}
+
+// ---- The report viewer ----------------------------------------------------
+
+/**
+ * A report on screen, in the shape it prints.
+ *
+ * The alternative — and what this replaces — is downloading a file, finding it,
+ * opening it in something else, and doing that again for every date you were
+ * not sure about. The bytes are the same bytes the download gets, held as a
+ * blob and pointed at an iframe, so a preview can never be a different document
+ * from the file.
+ */
+let viewerUrl = null;
+let viewerBlob = null;
+let viewerFile = null;
+let viewerWired = false;
+
+function wireViewer() {
+  if (viewerWired) return;
+  viewerWired = true;
+
+  $('pdfv').addEventListener('click', (e) => {
+    if (e.target.closest('[data-pdfv-close]')) closeViewer();
+  });
+  $('pdfv-download').addEventListener('click', () => {
+    if (viewerUrl) saveBlob(viewerBlob, viewerFile);
+  });
+  // Some browsers will not print or search inside a framed PDF. Rather than
+  // reimplement a PDF reader, hand the same blob to the one the browser already
+  // has.
+  $('pdfv-tab').addEventListener('click', () => {
+    if (viewerUrl) window.open(viewerUrl, '_blank', 'noopener');
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !$('pdfv').hidden) closeViewer();
+  });
+}
+
+/** Open the viewer, then fill it when the server has built the report. */
+async function viewReport({ path, body, title, subtitle }) {
+  wireViewer();
+
+  const frame = $('pdfv-frame');
+  const state = $('pdfv-state');
+
+  $('pdfv-title').textContent = title || 'Report';
+  $('pdfv-sub').textContent = subtitle || '';
+  frame.hidden = true;
+  frame.removeAttribute('src');
+  state.hidden = false;
+  state.className = 'pdfv-state';
+  state.textContent = 'Building the report…';
+  $('pdfv-download').disabled = true;
+  $('pdfv-tab').disabled = true;
+  $('pdfv').hidden = false;
+  // The page behind must not scroll under the overlay on a phone, where the
+  // two scrolls fight each other and the report is the one that loses.
+  document.body.style.overflow = 'hidden';
+
+  try {
+    const file = await reportFile(path, body);
+    if (!file) return; // signed out; signOut() has taken the page
+
+    releaseViewer();
+    viewerBlob = file.blob;
+    viewerFile = file.filename;
+    viewerUrl = URL.createObjectURL(file.blob);
+
+    frame.src = viewerUrl;
+    frame.hidden = false;
+    state.hidden = true;
+    $('pdfv-download').disabled = false;
+    $('pdfv-tab').disabled = false;
+  } catch (e) {
+    state.className = 'pdfv-state error';
+    state.textContent = e.message;
+  }
+}
+
+/** Let go of the blob. A held object URL is a held copy of the whole report. */
+function releaseViewer() {
+  if (viewerUrl) URL.revokeObjectURL(viewerUrl);
+  viewerUrl = null;
+}
+
+function closeViewer() {
+  const frame = $('pdfv-frame');
+  frame.hidden = true;
+  frame.removeAttribute('src');
+  releaseViewer();
+  viewerBlob = null;
+  $('pdfv').hidden = true;
+  document.body.style.overflow = '';
 }
 
 // ---- Scheduled reports ----------------------------------------------------
@@ -5726,26 +5989,44 @@ async function loadReportSchedules() {
   const rows = await api('/reports/schedules');
   $('rs-rows').innerHTML = rows.length
     ? rows.map(rsRow).join('')
-    : '<tr><td colspan="8" class="muted small">No scheduled reports yet.</td></tr>';
+    : '<tr><td colspan="9" class="muted small">No scheduled reports yet.</td></tr>';
 
   $('rs-rows').onclick = (e) => rsAction(e, rows);
   $('rs-runs').innerHTML = '';
 }
 
+/**
+ * One schedule, and the six things you can do to it.
+ *
+ * Icons rather than words, in one fixed order — look, save, send, history,
+ * edit, delete — because six labelled buttons in the last cell of a nine column
+ * table is a row wider than the screen it is read on. The destructive one is
+ * last and is the only one with a colour.
+ *
+ * View and Download come first deliberately. Until they existed the only way to
+ * find out what a schedule produces was Send now, which mails it to everybody
+ * on the list: setting up a Monday report meant sending the whole office a
+ * test.
+ */
 function rsRow(r) {
   return `<tr>
     <td>${esc(r.name)}${r.active ? '' : ' <span class="badge paused">paused</span>'}</td>
     <td>${esc(r.report_label)} <span class="muted small">${esc(String(r.format).toUpperCase())}</span></td>
+    <td class="muted small">${esc(r.terminal_label || 'All terminals')}</td>
     <td>${esc(r.frequency_label)}</td>
     <td>${esc(r.time)}</td>
     <td>${esc(r.period_label)}</td>
     <td>${r.last_run_at ? esc(rsWhen(r.last_run_at)) : '<span class="muted small">never</span>'}</td>
     <td>${r.next_run_at ? esc(rsWhen(r.next_run_at)) : '<span class="muted small">—</span>'}</td>
-    <td class="right nowrap">
-      <button class="btn small ghost" data-rs-runs="${r.id}">Results</button>
-      <button class="btn small ghost" data-rs-send="${r.id}">Send now</button>
-      <button class="btn small ghost" data-rs-edit="${r.id}">Edit</button>
-      <button class="btn small danger-ghost" data-rs-delete="${r.id}">Delete</button>
+    <td>
+      <div class="row-actions">
+        ${iconButton(ICON.eye, 'View the report', `data-rs-view="${r.id}"`)}
+        ${iconButton(ICON.download, `Download as ${String(r.format).toUpperCase()}`, `data-rs-download="${r.id}"`)}
+        ${iconButton(ICON.send, 'Email it now', `data-rs-send="${r.id}"`)}
+        ${iconButton(ICON.history, 'Recent runs', `data-rs-runs="${r.id}"`)}
+        ${iconButton(ICON.edit, 'Edit the schedule', `data-rs-edit="${r.id}"`)}
+        ${iconButton(ICON.trash, 'Delete the schedule', `data-rs-delete="${r.id}"`, 'danger')}
+      </div>
     </td>
   </tr>`;
 }
@@ -5754,13 +6035,48 @@ async function rsAction(e, rows) {
   const button = e.target.closest('button');
   if (!button) return;
   const data = button.dataset;
+  const row = (id) => rows.find((r) => String(r.id) === id);
 
   if (data.rsRuns) return rsShowRuns(data.rsRuns);
-  if (data.rsEdit) {
-    return rsEdit(rows.find((r) => String(r.id) === data.rsEdit));
+  if (data.rsEdit) return rsEdit(row(data.rsEdit));
+
+  if (data.rsView) {
+    const schedule = row(data.rsView);
+    return viewReport({
+      path: `/api/reports/schedules/${data.rsView}/export`,
+      body: { format: 'pdf', disposition: 'inline' },
+      title: schedule ? schedule.name : 'Scheduled report',
+      subtitle: schedule
+        ? `${schedule.report_label} · ${schedule.period_label} · ${schedule.terminal_label}`
+        : '',
+    });
+  }
+
+  if (data.rsDownload) {
+    button.disabled = true;
+    try {
+      const file = await reportFile(
+        `/api/reports/schedules/${data.rsDownload}/export`,
+        {}
+      );
+      if (file) saveBlob(file.blob, file.filename);
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      button.disabled = false;
+    }
+    return;
   }
 
   if (data.rsSend) {
+    // Asked first. This posts a real report to a real list of addresses, and
+    // it used to be the only button here that did anything — so it got pressed
+    // by anybody wanting to see what the schedule produced, and the whole
+    // office got the test.
+    const schedule = row(data.rsSend);
+    const to = schedule ? schedule.recipients : 'its recipients';
+    if (!confirm(`Email this report now to ${to}?`)) return;
+
     button.disabled = true;
     try {
       const outcome = await api(`/reports/schedules/${data.rsSend}/run`, {
@@ -5781,8 +6097,8 @@ async function rsAction(e, rows) {
   }
 
   if (data.rsDelete) {
-    const row = rows.find((r) => String(r.id) === data.rsDelete);
-    if (!confirm(`Delete "${row.name}"? It will stop sending.`)) return;
+    const schedule = row(data.rsDelete);
+    if (!confirm(`Delete "${schedule.name}"? It will stop sending.`)) return;
     await api(`/reports/schedules/${data.rsDelete}`, { method: 'DELETE' });
     render();
   }
@@ -5797,12 +6113,12 @@ function rsWhen(value) {
 }
 
 /**
- * The five things a schedule needs, in the order they were asked for: what it
- * is called, which report and in what format, how often and when, what period
- * it covers, and who gets it.
+ * The six things a schedule needs, in the order they were asked for: what it
+ * is called, which report and in what format, which till it covers, how often
+ * and when, what period it covers, and who gets it.
  *
- * One modal rather than a five-tab wizard. Eight fields fit on one screen, and
- * a wizard over eight fields costs four presses to check what you typed on the
+ * One modal rather than a six-tab wizard. Nine fields fit on one screen, and a
+ * wizard over nine fields costs four presses to check what you typed on the
  * first page. It is also the back office's own editor shape — see the note in
  * app.js about native dialogs, which is why this is a drawn modal and not a
  * chain of prompts.
@@ -5830,6 +6146,22 @@ function rsEdit(existing) {
         type: 'select',
         value: existing ? existing.format : 'pdf',
         options: rsOptions.formats.map((f) => ({ value: f.key, label: f.label })),
+      },
+      {
+        // The same list the Financial Summary screen offers, so a manager who
+        // has just run a report for Bar 2 can schedule exactly that. Empty is
+        // the whole venue, which is what every schedule made before the filter
+        // existed already means.
+        name: 'terminal',
+        label: 'Terminal',
+        type: 'select',
+        value: existing ? existing.terminal || '' : '',
+        options: [{ value: '', label: 'All terminals' }].concat(
+          (rsOptions.terminals || []).map((t) => ({
+            value: t.value,
+            label: `${t.label} (${t.sales})`,
+          }))
+        ),
       },
       {
         name: 'frequency',
@@ -5894,11 +6226,13 @@ async function rsShowRuns(id) {
     : '<tr><td colspan="5" class="muted small">It has not run yet.</td></tr>';
 
   $('rs-runs').innerHTML = `<div class="card">
-    <h3 class="rr-section">Recent runs</h3>
-    <table class="table">
-      <thead><tr><th>When</th><th>Outcome</th><th>Covered</th><th>Sent to</th><th>Detail</th></tr></thead>
-      <tbody>${body}</tbody>
-    </table>
+    <div class="rr-section-head"><h3>Recent runs</h3></div>
+    <div class="rr-scroll">
+      <table class="table">
+        <thead><tr><th>When</th><th>Outcome</th><th>Covered</th><th>Sent to</th><th>Detail</th></tr></thead>
+        <tbody>${body}</tbody>
+      </table>
+    </div>
   </div>`;
   $('rs-runs').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
