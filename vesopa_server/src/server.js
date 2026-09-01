@@ -386,8 +386,8 @@ app.post('/till/voids', async (req, res, next) => {
     await pool.execute(
       `INSERT IGNORE INTO epos_void_log
          (id, email, order_id, clerk_pin, reason, items, scope, amount_minor,
-          voided_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          voided_at, terminal)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         v.id,
         v.office || 'default',
@@ -400,6 +400,9 @@ app.post('/till/voids', async (req, res, next) => {
         v.scope === 'item' ? 'item' : 'sale',
         v.amount_minor ?? 0,
         v.voided_at ? new Date(v.voided_at) : new Date(),
+        // Which till the void was rung on. "Where are the voids coming from"
+        // is the question this log exists to answer and could not.
+        v.terminal ?? null,
       ]
     );
     broadcast({ type: 'voids.updated' });
@@ -656,9 +659,9 @@ app.post(['/till/orders', '/orders'], async (req, res, next) => {
           gift_card_minor, gift_card_code, deposit_minor, deposit_reference,
           points_redeemed, points_value_minor, promo_minor, customer_id,
           customer_phone, split_group, split_index, split_count, staff_id,
-          room_id)
+          room_id, terminal)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-               ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+               ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         order.id,
         order.email || 'default',
@@ -707,6 +710,10 @@ app.post(['/till/orders', '/orders'], async (req, res, next) => {
         // so without this two rooms' Table 1 are the same table in every report
         // that groups by it.
         order.room_id ?? null,
+        // Which machine took the money. Null from a till on an older build,
+        // and left null rather than guessed -- reports show those as Unknown,
+        // which is the truth about a sale nobody recorded a terminal for.
+        order.terminal ?? null,
       ]
     );
 

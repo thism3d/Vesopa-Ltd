@@ -99,3 +99,39 @@ CREATE TABLE IF NOT EXISTS bo_report_runs (
     REFERENCES bo_report_schedules (id) ON DELETE CASCADE,
   INDEX idx_run_schedule (schedule_id, ran_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
+-- ---------------------------------------------------------------------------
+-- Which terminal a schedule covers (added with the terminal filter).
+-- ---------------------------------------------------------------------------
+-- NULL means the whole venue, which is what every schedule created before this
+-- release means and what an unset dropdown sends. So this is additive in the
+-- strictest sense: nothing that exists changes behaviour.
+--
+-- Not a foreign key to anything. A terminal is a name a manager types into a
+-- till, tills get renamed and retired, and a schedule that stopped sending
+-- because somebody renamed a till would fail silently at 8am on a Sunday.
+DROP PROCEDURE IF EXISTS vesopa_reports_add_column;
+DELIMITER //
+CREATE PROCEDURE vesopa_reports_add_column(
+  IN tbl VARCHAR(64), IN col VARCHAR(64), IN ddl VARCHAR(255))
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = tbl
+      AND COLUMN_NAME = col
+  ) THEN
+    SET @s = CONCAT('ALTER TABLE `', tbl, '` ADD COLUMN `', col, '` ', ddl);
+    PREPARE stmt FROM @s;
+    EXECUTE stmt;
+    DEALLOCATE PREPARE stmt;
+  END IF;
+END //
+DELIMITER ;
+
+CALL vesopa_reports_add_column(
+  'bo_report_schedules', 'terminal',
+  'VARCHAR(120) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL');
+
+DROP PROCEDURE IF EXISTS vesopa_reports_add_column;
