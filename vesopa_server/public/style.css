@@ -3435,7 +3435,18 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
   /* The headings live on the cells now. */
   .table-cards thead { display: none; }
 
-  .table-cards { min-width: 0; }
+  /* Full width, said loudly enough to be heard.
+     `.card > table` sets `width: max-content` for the desktop table and, being
+     a class *and* an element, it out-specifies a bare `.table-cards` — so the
+     table went on shrink-wrapping to its widest label/value pair and every card
+     had a 129px hole down its right-hand side, which is what all that "padding"
+     on the right actually was. Matching its shape here is what wins. */
+  .card > .table-cards,
+  .table-cards {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
 
   .table-cards tr {
     border: 1px solid var(--line);
@@ -3529,6 +3540,70 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
   /* "Nothing yet." is a colspan cell with no heading of its own. */
   .table-cards td[colspan] { display: block; padding: 4px 0; }
   .table-cards td[colspan]::before { content: none; }
+
+  /* ---- Cells that are edited in place ------------------------------------
+     The catalogue keeps its inline inputs and selects on a phone, and squeezed
+     into whatever is left beside their label they are unreadable and unhittable
+     — a select showing "Draught Beer" in 90px. So an editable cell stops being
+     a label/value row and becomes a little form field: heading on its own line,
+     control full width under it. */
+  /* cellSelect() returns a <select class="cell-edit">, so the one class covers
+     the text boxes and the dropdowns alike. */
+  .table-cards td:has(> .cell-edit) { display: block; }
+  .table-cards td:has(> .cell-edit)::before {
+    display: block;
+    margin-bottom: 5px;
+  }
+  .table-cards td .cell-edit {
+    width: 100%;
+    max-width: 100%;
+    text-align: left;
+  }
+
+  /* The bulk-select box is under a heading that is itself a checkbox, so there
+     is no word to take. It is the one column that gets told what it is here. */
+  .table-cards td.pick-col { display: flex; gap: 10px; align-items: center; }
+  .table-cards td.pick-col::before {
+    content: 'Select';
+    color: var(--muted);
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+  }
+
+  /* The product picture sits above its name rather than beside a full-width
+     input it would otherwise be pushed off the end of. */
+  .table-cards td .thumb { margin: 0 0 8px; }
+
+}
+
+/* The foot of a list that loads as it is scrolled. Always present, so the
+   space it needs is reserved rather than appearing under the last row and
+   nudging the page as it arrives. */
+.ex-more {
+  min-height: 34px;
+  padding: 12px 4px 4px;
+  color: var(--muted);
+  font-size: 12.5px;
+  text-align: center;
+}
+.ex-more.loading::before {
+  content: '';
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  margin-right: 8px;
+  vertical-align: -1px;
+  border: 2px solid var(--line);
+  border-top-color: var(--brand);
+  border-radius: 50%;
+  animation: ex-spin .7s linear infinite;
+}
+@keyframes ex-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .ex-more.loading::before { animation: none; }
 }
 
 /* ---- The report viewer ---------------------------------------------------

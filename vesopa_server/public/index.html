@@ -412,6 +412,11 @@
             <thead><tr><th>When</th><th>Item</th><th>Department</th><th class="right">Qty</th><th class="right">Line total</th></tr></thead>
             <tbody id="explorer"></tbody>
           </table></div>
+          <!-- The foot of the list, and what the next page is fetched off:
+               app.js watches this with 500px of margin, so the rows are already
+               on their way before the scroll reaches the end of what is drawn.
+               It doubles as where "Loading more…" and the final count are said. -->
+          <p class="ex-more" id="ex-more" aria-live="polite"></p>
         </section>
 
         <!-- Timesheets.
@@ -497,11 +502,11 @@
             </span>
           </div>
 
-          <!-- data-no-cards: the catalogue is edited in place — a drag handle, a
-               select in half the cells, a bulk-select column — and stacking it into
-               cards on a phone loses the column alignment that editing depends on.
-               It keeps scrolling inside its card. -->
-          <div class="card"><table class="sortable" data-no-cards>
+          <!-- This one is edited in place, so on a phone it becomes cards whose
+               editable cells stack: the label on its own line and the control full
+               width under it. Sorting is a column-heading gesture and the headings
+               are gone there — the search box above is what narrows it down. -->
+          <div class="card"><table class="sortable">
             <thead><tr>
               <th class="pick-col"><input type="checkbox" id="prod-pick-all" title="Select every product shown"></th>
               <th data-sort="product_name">Name</th>

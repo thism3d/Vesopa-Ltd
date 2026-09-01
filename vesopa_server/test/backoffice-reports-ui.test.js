@@ -156,7 +156,16 @@ check('a wide table stops being a table before it stops fitting', () => {
   const phone = css.slice(css.indexOf('@media (max-width: 760px)'));
   assert.ok(phone.startsWith('@media'), 'no narrow-screen rules for wide tables');
   assert.match(phone, /\.table-cards thead \{ display: none; \}/, 'the heading row survives');
-  assert.match(phone, /\.table-cards \{ min-width: 0; \}/, 'a min-width floor survives');
+
+  // The card has to be told to fill the width, and told it in a selector that
+  // outranks `.card > table { width: max-content }` — which is a class *and* an
+  // element, so a bare `.table-cards` loses to it. That is not hypothetical:
+  // it is why every card had a 129px hole down its right-hand side and read as
+  // far too much padding.
+  const fill = /\.card > \.table-cards,\s*\.table-cards \{([^}]*)\}/.exec(css);
+  assert.ok(fill, 'nothing outranks the desktop `width: max-content`');
+  assert.match(fill[1], /width:\s*100%/, 'the table does not fill the card');
+  assert.match(fill[1], /min-width:\s*0/, 'a min-width floor survives');
   assert.match(
     phone,
     /td::before \{\s*content: attr\(data-label\)/,
@@ -232,6 +241,52 @@ check('the viewer asks for a PDF it can actually draw', () => {
 check('closing the viewer lets go of the report', () => {
   const fn = app.slice(app.indexOf('function closeViewer('));
   assert.match(fn, /releaseViewer\(\)/, 'the blob is held after the panel closes');
+});
+
+// ---------------------------------------------------------------------------
+// 5. The Sales Explorer loads as it is scrolled
+// ---------------------------------------------------------------------------
+
+const explorer = fs.readFileSync(
+  path.join(__dirname, '..', 'src', 'programming.js'),
+  'utf8'
+);
+
+check('a page of sales is fetched, not five hundred', () => {
+  const fn = app.slice(app.indexOf('async function exNextPage('), app.indexOf('function exWatch('));
+  assert.match(fn, /params\.set\('limit'/, 'no page size is asked for');
+  assert.match(fn, /params\.set\('offset'/, 'every page would be the first one');
+  assert.match(fn, /rows\.length < EX_PAGE/, 'a short page is not recognised as the last');
+});
+
+check('and the next page is on its way before the scroll arrives', () => {
+  const fn = app.slice(app.indexOf('function exWatch('), app.indexOf('function exWatch(') + 800);
+  assert.match(fn, /IntersectionObserver/);
+  assert.match(fn, /rootMargin/, 'the page is only fetched once the foot is reached');
+  // `main` is the scroller — the rail is fixed beside it — so a null root
+  // watches a viewport the sentinel never appears to move in, and the list
+  // silently stops at the first page.
+  assert.match(fn, /root: document\.querySelector\('main'\)/);
+});
+
+check('a search that lands late cannot append to a newer one', () => {
+  const fn = app.slice(app.indexOf('async function exNextPage('), app.indexOf('function exWatch('));
+  assert.match(fn, /mine !== exFeed\.token/, 'no guard against an overtaken request');
+});
+
+check('paged sales are ordered by something unique', () => {
+  // Every line on one bill shares closed_at to the second. Ordering by that
+  // alone leaves the order within a bill undefined, and LIMIT/OFFSET over an
+  // undefined order shows one line twice and another never.
+  const route = explorer.slice(
+    explorer.indexOf("router.get('/sales-explorer'"),
+    explorer.indexOf("router.get('/till-report'")
+  );
+  assert.match(route, /ORDER BY o\.closed_at DESC, l\.id DESC/);
+  assert.match(route, /LIMIT \$\{limit\} OFFSET \$\{offset\}/);
+  // Interpolated, so they have to be numbers by the time they get there.
+  assert.match(route, /const limit = Math\.min\(Math\.max\(Number\(/);
+  assert.match(route, /const offset = Math\.max\(Number\(/);
 });
 
 check('sending a schedule by email asks first', () => {

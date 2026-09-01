@@ -647,10 +647,11 @@ function isActionsCell(cell) {
  * shape and they get one fix, and the next screen someone adds gets it without
  * having to know about it.
  *
- * `data-no-cards` opts a table out. Only the product catalogue does: it is a
- * grid that is edited in place, with a drag handle, a select in half its cells
- * and a bulk-select column, and stacking that loses the alignment the editing
- * depends on.
+ * `data-no-cards` opts a table out. Only the report sections do: they are read
+ * column against column, and seven money columns stacked into label/value pairs
+ * is a page nobody can total by eye. The catalogue, which is edited in place,
+ * does become cards — its editable cells stack, label above control, which is a
+ * better form on a phone than a row of squeezed inputs.
  */
 function cardsInView() {
   document
@@ -849,24 +850,121 @@ function render() {
 
 // ---- New reports ----------------------------------------------------------
 
+/**
+ * Sales Explorer: a page at a time, fetched before the scroll gets there.
+ *
+ * This page used to ask for five hundred lines and draw all of them. A venue
+ * with a busy Saturday has five hundred lines by lunchtime, and on a phone —
+ * where every one of them is a card of five fields — that is a wait, a scroll
+ * bar that lies about how much is left, and a page that janks all the way
+ * down.
+ *
+ * So it loads sixty, and the next sixty are already on their way by the time
+ * the last of them comes into view: the sentinel below the table is watched
+ * with 500px of margin, which at a normal scrolling speed is about a second of
+ * warning. Done well this is invisible — the list simply never ends and never
+ * stalls — which is the whole point.
+ *
+ * `token` guards against a race that is easy to hit here: change the date and
+ * press Search while a page is still in flight, and the old request comes back
+ * afterwards and appends yesterday's lines under today's heading. Each search
+ * takes a number, and a reply carrying the wrong one is dropped.
+ */
+const EX_PAGE = 60;
+let exFeed = { token: 0, offset: 0, done: false, loading: false, watcher: null };
+
 async function loadExplorer() {
+  exFeed.watcher?.disconnect();
+  exFeed = { token: exFeed.token + 1, offset: 0, done: false, loading: false, watcher: null };
+
+  $('explorer').innerHTML = '';
+  exSay('');
+  await exNextPage();
+  exWatch();
+}
+
+/** The line under the table: loading, finished, or nothing at all. */
+function exSay(text, spinning = false) {
+  const box = $('ex-more');
+  if (!box) return;
+  box.textContent = text;
+  box.className = spinning ? 'ex-more loading' : 'ex-more';
+}
+
+/** Fetch and append the next page. */
+async function exNextPage() {
+  if (exFeed.loading || exFeed.done) return;
+  const mine = exFeed.token;
+  exFeed.loading = true;
+  if (exFeed.offset) exSay('Loading more…', true);
+
   const params = new URLSearchParams();
   if ($('ex-from').value) params.set('from', $('ex-from').value);
   if ($('ex-to').value) params.set('to', $('ex-to').value);
   if ($('ex-dept').value) params.set('department', $('ex-dept').value);
+  params.set('limit', String(EX_PAGE));
+  params.set('offset', String(exFeed.offset));
 
-  const rows = await api(`/sales-explorer?${params}`);
-  $('explorer').innerHTML = rows
-    .map(
-      (r) => `<tr class="clickable" data-receipt="${esc(r.id)}">
+  try {
+    const rows = await api(`/sales-explorer?${params}`);
+    // A reply to a search that has since been replaced.
+    if (mine !== exFeed.token) return;
+
+    $('explorer').insertAdjacentHTML(
+      'beforeend',
+      rows
+        .map(
+          (r) => `<tr class="clickable" data-receipt="${esc(r.id)}">
         <td>${date(r.closed_at)} ${time(r.closed_at)}</td>
         <td>${esc(r.name)}</td>
         <td>${esc(r.department)}</td>
         <td class="right">${r.quantity}</td>
         <td class="right">${money(r.line_total_minor)}</td>
       </tr>`
-    )
-    .join('') || '<tr><td colspan="5" class="empty">No matching sales.</td></tr>';
+        )
+        .join('')
+    );
+
+    exFeed.offset += rows.length;
+    // A short page is the last page. Asking again to be told "none" costs a
+    // round trip and a query to learn nothing.
+    exFeed.done = rows.length < EX_PAGE;
+
+    if (!exFeed.offset) {
+      $('explorer').innerHTML =
+        '<tr><td colspan="5" class="empty">No matching sales.</td></tr>';
+      exSay('');
+    } else if (exFeed.done) {
+      exSay(`All ${exFeed.offset} lines.`);
+    } else {
+      exSay('');
+    }
+  } catch (e) {
+    if (mine === exFeed.token) exSay(e.message);
+  } finally {
+    if (mine === exFeed.token) exFeed.loading = false;
+  }
+}
+
+/**
+ * Watch the foot of the list.
+ *
+ * The scroller is `main`, not the window — the rail is fixed beside it — so
+ * that is what the observer has to measure against. With `null` it would watch
+ * the viewport, the sentinel would never be seen to move, and the list would
+ * simply stop at sixty.
+ */
+function exWatch() {
+  const sentinel = $('ex-more');
+  if (!sentinel || typeof IntersectionObserver !== 'function') return;
+
+  exFeed.watcher = new IntersectionObserver(
+    (entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) exNextPage();
+    },
+    { root: document.querySelector('main'), rootMargin: '500px 0px' }
+  );
+  exFeed.watcher.observe(sentinel);
 }
 
 /**

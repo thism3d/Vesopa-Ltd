@@ -438,7 +438,24 @@ function programmingRoutes({ pool, broadcast, secret }) {
 
   // ---- Reports ------------------------------------------------------------
 
-  /** Sales explorer: every line sold, filterable. */
+  /**
+   * Sales explorer: every line sold, filterable, a page at a time.
+   *
+   * It used to answer with a flat 500 rows and the browser drew all of them.
+   * On a phone that is 500 cards of five fields in one go — a slow query, a
+   * slow paint, and a scrollbar that says the list is nearly over when it is
+   * not. The browser now asks for a page at a time and fetches the next one
+   * before the scroll reaches the bottom, so `limit` and `offset` are what
+   * decide the size of the work rather than a constant in the SQL.
+   *
+   * ORDER BY carries `l.id` as a tiebreak, and that is what makes paging
+   * correct rather than merely possible. Every line on one bill shares its
+   * `closed_at` to the second, so ordering by that alone leaves the order
+   * within a bill undefined — MySQL is free to return those rows differently
+   * for page 2 than it did for page 1, and the reader gets one line twice and
+   * never sees another. A unique column at the end of the sort is what stops
+   * that.
+   */
   router.get('/sales-explorer', auth, async (req, res, next) => {
     const { from, to, department } = req.query;
     try {
@@ -447,6 +464,13 @@ function programmingRoutes({ pool, broadcast, secret }) {
       if (from) { where.push('DATE(o.closed_at) >= ?'); params.push(from); }
       if (to) { where.push('DATE(o.closed_at) <= ?'); params.push(to); }
       if (department) { where.push('pr.department_name = ?'); params.push(department); }
+
+      // Coerced to integers here and interpolated, not bound: LIMIT and OFFSET
+      // placeholders are a well-known way to get "You have an error in your SQL
+      // syntax" out of a prepared statement, and a number that has been through
+      // Number() and Math.max cannot carry an injection.
+      const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 200);
+      const offset = Math.max(Number(req.query.offset) || 0, 0);
 
       const [rows] = await pool.query(
         `SELECT o.id, o.closed_at, o.table_number,
@@ -457,10 +481,13 @@ function programmingRoutes({ pool, broadcast, secret }) {
          JOIN epos_orders o ON o.id = l.order_id
          LEFT JOIN bo_products pr ON pr.pluid = l.plu_id
          WHERE ${where.join(' AND ')}
-         ORDER BY o.closed_at DESC
-         LIMIT 500`,
+         ORDER BY o.closed_at DESC, l.id DESC
+         LIMIT ${limit} OFFSET ${offset}`,
         params
       );
+
+      // Still a bare array, because that is what this route has always
+      // answered with and the browser tells "there is more" from a full page.
       res.json(rows);
     } catch (e) {
       next(e);
