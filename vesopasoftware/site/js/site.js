@@ -122,9 +122,30 @@ geo.setAttribute("aRegB", new THREE.BufferAttribute(REGIONS[1].slice(), 1));
 geo.setDrawRange(0, drawCount);
 geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 6);
 
+/* How big one point should be, given how many of them are covering how much
+ * screen.
+ *
+ * This used to be a constant per tier, which meant a 2560x1440 Mac drew the
+ * same shape across four times the area of a laptop with the same points at
+ * the same size — a quarter of the density, and the mark read as a faint haze
+ * rather than a solid form.
+ *
+ * Density is points x area-per-point over the area covered, so to hold it
+ * steady the point's edge scales with sqrt(screen area / point count). DPR
+ * cancels out of that ratio, which is why this is computed in CSS pixels and
+ * the shader multiplies by uDpr afterwards.
+ *
+ * The constant is calibrated from the laptop case that already looked right:
+ * 2.0px at 1440x900 with 22,528 points.
+ */
+const SIZE_K = 0.264;
+const sizeFor = (count) =>
+  Math.min(4.6, Math.max(1.7,
+    SIZE_K * Math.sqrt(innerWidth * innerHeight) / Math.sqrt(Math.max(1, count))));
+
 const uni = {
   uMorph: { value: 0 }, uTime: { value: 0 },
-  uSize: { value: TIER === "mobile" ? 3.0 : TIER === "tablet" ? 2.4 : TIER === "laptop" ? 2.0 : 1.7 },
+  uSize: { value: sizeFor(COUNT) },
   uDpr: { value: DPR },
   uColA: { value: new THREE.Color("#A5C715") },
   uColB: { value: new THREE.Color("#F2EFE6") },
@@ -142,7 +163,9 @@ const uni = {
 // Additive blending accumulates: N overlapping splats sum to N x alpha. Scale
 // the base alpha by the count so every tier lands at the same visual density.
 const BASE_ALPHA = Math.min(.95, .55 + 8000 / COUNT);
-const BASE_SIZE = uni.uSize.value;
+// Recomputed whenever the count or the viewport changes, so a downgraded
+// field grows its points to cover the same ground rather than thinning out.
+const resize_size = () => { uni.uSize.value = sizeFor(drawCount); };
 
 const mat = new THREE.ShaderMaterial({
   uniforms: uni, transparent: true, depthWrite: false, depthTest: false,
@@ -539,8 +562,10 @@ addEventListener("scroll", onScroll, { passive: true });
 addEventListener("resize", () => {
   renderer.setSize(innerWidth, innerHeight, false);
   // Rotating a tablet changes the aspect enormously, and with it how far back
-  // the camera has to sit for the shape to fit.
+  // the camera has to sit for the shape to fit. Dragging a window onto a
+  // second display changes the area, and with it how big a point must be.
   fitCamera();
+  resize_size();
   ambient.resize(innerWidth, innerHeight);
   measureActs();
   measureDawn();
@@ -563,6 +588,16 @@ if (!coarse) addEventListener("pointerleave", () => ambient.pointer(null), { pas
    than imported so hero.js keeps working when WebGL does not come up. */
 window.__vesopaField = {
   pulse(nx, ny) { ambient.pulse(nx, ny, performance.now() * 0.001); },
+  /* Force a point budget, to see a shape as a struggling machine draws it.
+     The adaptive downgrade truncates the draw range, so this is the only way
+     to check that a shape survives being cut without owning the hardware that
+     cuts it. */
+  setDrawCount(n) {
+    drawCount = Math.max(500, Math.min(COUNT, n | 0));
+    geo.setDrawRange(0, drawCount);
+    resize_size();
+    return drawCount;
+  },
   /* What the spine currently thinks. The morph is driven off measured section
      centres, so when a shape fails to resolve on a device the question is
      always "was its act reachable?" — and that is arithmetic, not a hunch. */
@@ -612,7 +647,8 @@ function frame(now) {
       geo.setDrawRange(0, drawCount);
       // Nudge size up so the field keeps its mass, but never past 1.45x base:
       // beyond that the points merge and the shape stops being legible.
-      uni.uSize.value = Math.min(uni.uSize.value * 1.08, BASE_SIZE * 1.45);
+      // Fewer points, each covering more, so the silhouette keeps its mass.
+      resize_size();
       // Through the multiplier, not uOpacity itself: paintField rewrites that
       // uniform every frame, so a value poked in here was gone by the next one
       // and the field simply thinned out with each downgrade.

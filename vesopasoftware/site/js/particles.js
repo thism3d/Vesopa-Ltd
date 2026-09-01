@@ -479,10 +479,41 @@ export function markShape(count, regions) {
  * colour), and `palettes[i]` is that shape's colour list, where index 0 of the
  * list answers to region 1. Region 0 always means "the page's own colour".
  */
+/**
+ * Shuffle a shape's points, carrying its regions with them.
+ *
+ * This is not cosmetic. Every builder lays its parts out in blocks — the V is
+ * poly 0, then poly 1, then poly 2; the Windows flag is four consecutive
+ * panes; the coin is the disc and then the glyph. The renderer draws
+ * `setDrawRange(0, drawCount)`, and the adaptive downgrade lowers drawCount
+ * when a machine cannot hold 60fps.
+ *
+ * A prefix of a block-laid-out buffer is not a smaller version of the shape —
+ * it is the *first part of it*. On a 2560x1440 Retina Mac the downgrade cut
+ * 34,816 points to 12,994 and the brand mark rendered as a single diagonal
+ * stroke, because the other two polygons lived past the end of the draw range.
+ * The Windows flag lost three of its four panes the same way. It looked like
+ * the shape had failed to form; it had formed and been truncated.
+ *
+ * Interleaved, any prefix is a uniform sample of the whole shape, so a
+ * downgraded field is a sparser V rather than a third of one.
+ */
+function interleave(positions, regions, count) {
+  for (let i = count - 1; i > 0; i--) {
+    const j = (Math.random() * (i + 1)) | 0;
+    for (let k = 0; k < 3; k++) {
+      const a = i * 3 + k, b = j * 3 + k;
+      const t = positions[a]; positions[a] = positions[b]; positions[b] = t;
+    }
+    if (regions) { const t = regions[i]; regions[i] = regions[j]; regions[j] = t; }
+  }
+}
+
 export function buildShapes(count) {
   const mk = (fn, palette) => {
     const regions = palette ? new Float32Array(count) : null;
     const positions = fn(count, regions);
+    interleave(positions, regions, count);
     return { positions, regions, palette: palette || [] };
   };
 
