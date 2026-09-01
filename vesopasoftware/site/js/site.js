@@ -19,6 +19,7 @@ import { createLoader } from "./loader.js";
 import { mountAI } from "./ai.js";
 import { mountMotion } from "./motion.js";
 import { wireStoreLinks, mountBadges, isIOS } from "./store.js";
+import { videoRendition, reportFps, dprCap, lowEnd, onStrain } from "./device.js";
 import { wordmarkSVG, wordmarkOnView } from "./wordmark.js";
 
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -35,8 +36,15 @@ if (coarse && w < 820) { TIER = "mobile";  COUNT = 4096; }
 else if (coarse)       { TIER = "tablet";  COUNT = 14336; }
 else if (w < 1500)     { TIER = "laptop";  COUNT = 22528; }
 else                   { TIER = "desktop"; COUNT = 34816; }
+/* A machine device.js already knows to be modest starts a tier down instead of
+   discovering it six seconds in. The adaptive cut in frame() works, but it
+   works by letting the visitor scroll through a janky opening first, which is
+   precisely the complaint. */
+if (lowEnd) { TIER += "-low"; COUNT = Math.round(COUNT * 0.7); }
 
-const DPR = Math.min(devicePixelRatio || 1, 2);
+// Retina on a weak GPU is four times the fill rate for a field that is
+// deliberately soft-edged anyway. device.js caps it by tier.
+const DPR = Math.min(devicePixelRatio || 1, dprCap);
 let drawCount = COUNT;
 // Raised by the adaptive downgrade to keep the field's mass as points are cut.
 let densityBoost = 1;
@@ -461,7 +469,13 @@ function paintDawn(k) {
 }
 
 /* ---------- ambient drift ---------- */
-const AMBIENT_COUNT = TIER === "mobile" ? 700 : TIER === "tablet" ? 1400 : 2400;
+const AMBIENT_COUNT = lowEnd ? 420
+  : TIER === "mobile" ? 700 : TIER === "tablet" ? 1400 : 2400;
+/* The ambient drift is a whole second render pass over the whole viewport,
+   every frame, for an effect nobody looks at directly. On a machine that is
+   struggling it is the first thing to go and the least missed. */
+let ambientOn = !reduced;
+onStrain((level) => { if (level >= 1) ambientOn = false; });
 const ambient = createAmbient(THREE, { count: AMBIENT_COUNT, dpr: DPR });
 ambient.resize(innerWidth, innerHeight);
 
@@ -473,7 +487,9 @@ const clipEls = [...document.querySelectorAll("[data-clip]")];
 backdrop.register(
   [...new Set(clipEls.map((el) => el.dataset.clip))].map((slug) => ({
     slug,
-    src: `assets/video/${slug}.mp4`,
+    // Two encodes of every clip, and the device picks. See device.js for what
+    // counts as a phone and tools/encode-video.mjs for what the two are.
+    src: `assets/video/${slug}.${videoRendition}.mp4`,
     poster: `assets/video/${slug}.webp`,
   })),
 );
@@ -642,6 +658,9 @@ function frame(now) {
 
   if (acc > 500) {
     fps = Math.round(1000 / (acc / frames));
+    // One verdict, shared. The backdrop, the stars and the ambient pass all
+    // shed work off this rather than each guessing at the device separately.
+    if (settled > 6) reportFps(fps);
     if (settled > 6 && fps < 52 && drawCount > 6000) {
       drawCount = Math.floor(drawCount * .72);
       geo.setDrawRange(0, drawCount);
@@ -667,10 +686,12 @@ function frame(now) {
 
   // Second pass, over the first. autoClear off or this wipes the morph field;
   // both passes are depth-testless, so draw order decides what sits in front.
-  ambient.update(now * .001);
-  renderer.autoClear = false;
-  renderer.render(ambient.scene, ambient.camera);
-  renderer.autoClear = true;
+  if (ambientOn) {
+    ambient.update(now * .001);
+    renderer.autoClear = false;
+    renderer.render(ambient.scene, ambient.camera);
+    renderer.autoClear = true;
+  }
 
   requestAnimationFrame(frame);
 }
@@ -732,6 +753,13 @@ if (reduced) {
    from a click. Skipped entirely for a deep link: someone arriving at #quote
    wants the form, not a title card. */
 const deepLink = location.hash && location.hash !== "#s0";
+/* The cover is markup now, so skipping the loader means taking it down by
+   hand. Left in place it would sit there, black and inert, until the watchdog
+   in index.html fired twelve seconds later. */
+if (deepLink) {
+  document.documentElement.classList.remove("loading", "booting");
+  document.getElementById("loader")?.remove();
+}
 /* Fullscreen is offered everywhere except iOS and iPadOS. Safari there exits
    fullscreen on an upward scroll — it reads the gesture as a request for the
    browser chrome back — and paints its own exit control over the top-left

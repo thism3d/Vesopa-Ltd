@@ -97,7 +97,7 @@ async function shots() {
 /* Each shape belongs to a section now (data-shape), and is fully formed when
    that section is centred — so jumping to a target means finding its act and
    landing on the middle of it, not computing a scroll fraction. */
-const SHAPE_NAMES = ['field','till','screen','window','code','cloud','envelope','coin','card','mark'];
+const SHAPE_NAMES = ['field','till','screen','window','code','cloud','envelope','coin','visa','mark'];
 async function morphTo(i) {
   await page.evaluate(k => {
     const el = document.querySelector(`[data-shape="${k}"]`);
@@ -139,8 +139,12 @@ if (cmd === 'video') {
   // Ask the real decoder rather than parsing atoms by hand: dimensions,
   // duration, and whether the clip actually reaches a playable state.
   // Sections declare a backdrop by slug; the paths follow from it.
+  // Both renditions of every clip. The phone encode is the one that used to be
+  // reported broken, and it is the one nobody checks by looking at the site on
+  // a desktop, so it is checked here explicitly rather than assumed.
   const clips = await page.$$eval('[data-clip]', ws =>
-    [...new Set(ws.map(w => w.dataset.clip))].map(s => `assets/video/${s}.mp4`));
+    [...new Set(ws.map(w => w.dataset.clip))]
+      .flatMap(s => [`assets/video/${s}.lg.mp4`, `assets/video/${s}.sm.mp4`]));
   for (const src of clips) {
     const r = await page.evaluate(u => new Promise(res => {
       const v = document.createElement('video');
@@ -156,7 +160,7 @@ if (cmd === 'video') {
     }), src);
     const name = r.src.split('/').pop();
     console.log(r.error ? `FAIL ${name}: ${r.error}`
-      : `ok   ${name.padEnd(16)} ${r.w}x${r.h}  ${r.dur}s  ${r.playable ? 'playable' : 'STALLED'}`);
+      : `ok   ${name.padEnd(22)} ${String(r.w+'x'+r.h).padEnd(9)}  ${r.dur}s  ${r.playable ? 'playable' : 'STALLED'}`);
   }
 
 } else if (cmd === 'morphs') {

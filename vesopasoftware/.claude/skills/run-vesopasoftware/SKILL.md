@@ -219,15 +219,44 @@ start frames in `masters/video/`, and dropped into `site/assets/video/` as
 Every new clip needs one pass before it ships:
 
 ```bash
-python3 tools/faststart.py site/assets/video/*.mp4   # idempotent; keeps a .orig
-node tools/drive.mjs video                           # confirm it still decodes
+node tools/encode-video.mjs        # both renditions of every source clip
+node tools/drive.mjs video         # confirm both actually decode
 ```
 
-`tools/faststart.py` moves the `moov` atom in front of `mdat` and rewrites the
-`stco`/`co64` chunk-offset tables to match. Hailuo writes `moov` last, which
-forces a browser to download the whole clip before the first frame — invisible
-on localhost, a visible stall on 4G. There is no `ffmpeg` on this machine, which
-is why this is hand-rolled rather than `-movflags +faststart`.
+**Each clip ships as two encodes, and the page picks one.** `device.js` decides:
+`<slug>.lg.mp4` (1280px, High profile) for anything with room, `<slug>.sm.mp4`
+(720px, Main profile) for phones, metered lines and anything `lowEnd`. The bare
+`<slug>.mp4` is the source and is never served. A phone pulls 2.3 MB across the
+whole page instead of 10 MB.
+
+Three flags in `encode-video.mjs` are not tuning, they are the difference
+between playing and not: `+faststart` (index in front, so playback can start on
+the first packets), `-an` (these are muted backdrops — the audio track is bytes
+nobody hears and a decoder on devices short of them), and `yuv420p` (the only
+chroma layout every hardware decoder must support).
+
+**Faststart is the one that bites.** Hailuo writes `moov` *after* `mdat`, so a
+browser cannot begin playback until it has the whole file. Nine of the thirteen
+original clips were index-last — every story clip and e2/e3/e4 — which is
+exactly why "the later videos never load" was reported from a phone and never
+reproduced on a desktop. `tools/faststart.py` still exists and still works
+(it relocates `moov` and rewrites the `stco`/`co64` chunk offsets losslessly,
+no re-encode); it predates ffmpeg being installed here and is the right tool
+when a clip must not be re-encoded at all.
+
+`ffmpeg` **is** on this machine now (9.0.1, Homebrew). Installing it needed a
+workaround worth remembering: the system resolver returns a wrong Fastly IP for
+`raw.githubusercontent.com`, which serves `CN=default.ssl.fastly.net` and fails
+certificate verification, so `brew install` dies fetching one formula file.
+`sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder` fixes it
+system-wide; without root, pin the address for Homebrew's curl only:
+
+```bash
+printf 'resolve = raw.githubusercontent.com:443:185.199.110.133\n' > /tmp/brewcurlrc
+HOMEBREW_CURLRC=/tmp/brewcurlrc brew install ffmpeg
+```
+
+`HOMEBREW_CURLRC` is a **path** in Homebrew 6, not the boolean it used to be.
 
 A well only mounts a clip if it has `data-clip`. Leave the attribute off until
 the file exists: pointing it at a missing file is a decoder error
@@ -374,6 +403,53 @@ Three things about this endpoint cost real time to discover:
   the answer, it spends the whole budget on reasoning and returns empty content.
 
 ## Gotchas
+
+- **The loading screen is markup, not JavaScript.** `#loader` lives in
+  `index.html` with its critical CSS inlined ahead of the stylesheet, and
+  `<html>` ships with `class="loading booting"`. It used to be built by
+  `js/loader.js` — a module, therefore deferred — so the browser's first paint
+  was the real hero and the cover dropped on top of it a moment later. You
+  watched the page arrive and then watched it be covered. `createLoader()`
+  *adopts* the element and fills the lockup; it does not create it. Three
+  things must stay in step: a deep link removes the cover by hand in
+  `site.js`, `dismiss()` clears **both** `loading` and `booting`, and a 12s
+  watchdog in the page lifts it if the module throws before it is wired.
+- **One module decides what the device can do.** `js/device.js` owns the
+  tiering — `videoBudget`, `videoRendition`, `dprCap`, `lowEnd`, and a
+  measured `strain` the frame loop feeds with `reportFps`. Subsystems used to
+  each guess separately and disagree: the field would decide it was on a phone
+  and thin out while the backdrop kept three 1280px decoders alive behind it.
+  Note `navigator.deviceMemory` does not exist in Safari, so it can only move a
+  device *down* a tier, never up.
+- **A phone gets one video decoder, and that is deliberate.** Browsers cap
+  concurrent decoders and older iOS refuses to start past the limit, which
+  presents as "some of the videos don't work" on the devices you cannot debug
+  on. And when `play()` is refused — iOS in Low Power Mode does exactly that,
+  with no API that admits to it — the rejection arms a retry on the next real
+  gesture instead of being swallowed. Swallowing it left the page on a poster
+  forever.
+- **`.shot` screenshots are eager, not lazy, on purpose.** All five are 225kB
+  between them, less than one backdrop clip. Safari measures a lazy image's
+  distance using the image's own box, and these are absolutely positioned
+  inside a `position: sticky` stage several viewports tall, so it could defer
+  one well past the scroll position that reveals it. Do not "optimise" them
+  back to `loading="lazy"`.
+- **A descendant type selector outranks a component's own class.**
+  `.ev-body .meta span{color:var(--muted)}` is (0,2,1) and beat
+  `.pill.lime` (0,2,0), so the lime "Update" badge rendered muted grey on lime
+  at a contrast ratio of **1.35** — invisible, while the identical "Vesopa"
+  pill beside it measured 9.97. It is `> span:not(.pill)` now. This is the same
+  failure as the bare `section {}` rule below, one specificity level up. Measure
+  contrast by compositing translucent backgrounds over what is actually behind
+  them, or every tinted pill reads as a failure when it is fine.
+- **The hero headline is two lines on every screen, and that is enforced.**
+  `We build it, / then we run it.` broke into three at *both* ends of the
+  range: wide, because `.col` caps at `--measure` (46rem) and the h1 at 7.4rem
+  needs ~876px; narrow, because the clamp's 3rem *floor* is bigger than a
+  360px phone's column can set. The hero column takes `--wide`, the size is
+  `min(10.6vw, 7.4rem)` with no floor, and the two lines are spans with
+  `white-space: nowrap` so a third line would be obvious rather than silent.
+  Verified 320px to 2560px.
 
 - **A bare `section {}` selector is not yours alone.** The page spine was
   written as `section{min-height:100svh; justify-content:center; padding:14vh

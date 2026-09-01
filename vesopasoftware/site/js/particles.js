@@ -86,6 +86,43 @@ export function faceGlyph(out, off, n, drawFn, cx, cy, cz, size) {
   }
 }
 
+/* faceGlyph's higher-resolution sibling, for artwork whose *shape* is the
+   point rather than its presence.
+ *
+ * faceGlyph rasterises at 128px, which is ample for a ₿ on a coin or a row of
+ * UI lines on a screen. A four-letter wordmark at that raster loses its
+ * counters — the A fills in, the S closes up — and what the field draws is a
+ * blue smudge of roughly the right width. At SC (256px) the letterforms
+ * survive, which is the entire reason this target exists.
+ *
+ * Points are drawn from the hit list without replacement wherever the list is
+ * long enough, so the mark is covered evenly instead of clumping the way
+ * independent random picks do at low counts. */
+export function glyphInto(out, off, n, drawFn, cx, cy, cz, size) {
+  const c = document.createElement("canvas"); c.width = c.height = SC;
+  const g = c.getContext("2d", { willReadFrequently: true });
+  g.fillStyle = "#fff"; drawFn(g, SC);
+  const px = g.getImageData(0, 0, SC, SC).data;
+
+  const hits = [];
+  for (let y = 0; y < SC; y++) for (let x = 0; x < SC; x++) {
+    if (px[(y * SC + x) * 4 + 3] > 128) hits.push(x, y);
+  }
+  const m = hits.length / 2;
+
+  for (let i = 0; i < n; i++) {
+    const k = (off + i) * 3;
+    if (!m) { out[k] = cx; out[k+1] = cy; out[k+2] = cz; continue; }
+    // Walk the hit list on a stride when there are more hits than points, so
+    // the coverage is even; fall back to random picks once points outnumber
+    // hits and every pixel is being used more than once anyway.
+    const j = (m >= n ? Math.floor(i * m / n) : (Math.random() * m) | 0) * 2;
+    out[k]   = cx + (hits[j]     / SC - .5) * size;
+    out[k+1] = cy + (.5 - hits[j+1] / SC) * size;
+    out[k+2] = cz + (Math.random() - .5) * .020;
+  }
+}
+
 /* Draw anything on a 2D canvas, get a point cloud from its alpha. */
 export function silhouette(count, drawFn, depth) {
   const c = document.createElement("canvas"); c.width = c.height = SC;
@@ -287,45 +324,53 @@ export function coinShape(count, regions) {
   return o;
 }
 
-/* A payment card: slab, chip, stripe. Tilted a little so it has a face and an
-   edge rather than reading as a flat rectangle. */
-/* Payment card, with the Visa wordmark on its face — the card the till takes,
-   in the colours it actually carries. Blue #1A1F71 and the gold #F7B600 of the
-   swoosh; both sit on the daylight half of the page, where they read. */
-export const CARD_PALETTE = ["#1A1F71", "#F7B600"];
-export function cardShape(count, regions) {
+/* The Visa mark: the wordmark and its gold flick, centred and nothing else.
+   Visa Blue #1434CB and Visa Gold #F7B600, both of which read on the daylight
+   half of the page where this target sits. */
+export const VISA_PALETTE = ["#1434CB", "#F7B600"];
+export function visaShape(count, regions) {
   const o = new Float32Array(count * 3);
-  const slab  = Math.floor(count * .52);
-  const chip  = Math.floor(count * .08);
-  const strip = Math.floor(count * .10);
-  const word  = Math.floor(count * .22);
-  const swoosh = count - slab - chip - strip - word;
+  // Wordmark and swoosh only. This used to be a whole card — a slab with a
+  // chip, a magnetic stripe and the wordmark printed small on its face — and
+  // at this distance the card read as a rectangle with something written on
+  // it. The mark alone, centred and large, is the thing anyone actually
+  // recognises, and it is legible at a fraction of the point count because
+  // every point is spent on the letterforms instead of on a blank slab.
+  const word = Math.floor(count * .82);
+  const flick = count - word;
 
-  boxSurface(o, 0, slab, 0, 0, 0, 2.10, 1.32, .06);
-  boxSurface(o, slab, chip, -.58, .18, .045, .34, .26, .01);
-  mark(regions, slab, chip, 2);                                 // gold chip
-  boxSurface(o, slab + chip, strip, 0, -.44, .045, 1.86, .17, .01);
-
-  let off = slab + chip + strip;
-  faceGlyph(o, off, word, (g, s) => {
+  glyphInto(o, 0, word, (g, s) => {
     g.fillStyle = "#fff";
-    g.font = `italic 700 ${s * .34}px Georgia, serif`;
+    // Visa's own face is custom, but the read is unmistakable from the
+    // proportions: heavy, slightly condensed, italic, very tight tracking.
+    g.font = `italic 800 ${s * .40}px "Helvetica Neue", Helvetica, Arial, sans-serif`;
     g.textAlign = "center"; g.textBaseline = "middle";
-    g.fillText("VISA", s * .5, s * .5);
-  }, .34, .40, .05, 1.5);
-  mark(regions, off, word, 1);                                  // blue wordmark
-  off += word;
-  // The gold underline the wordmark sits on.
-  boxSurface(o, off, swoosh, .34, .18, .05, .62, .05, .01);
-  mark(regions, off, swoosh, 2);
+    g.letterSpacing = `${-s * .006}px`;
+    g.fillText("VISA", s * .5, s * .52);
+  }, 0, .04, 0, 1.86);
+  mark(regions, 0, word, 1);                                    // Visa blue
 
-  // Roll it about x so the top edge comes forward — a card seen dead flat is
-  // indistinguishable from the window shape two targets earlier.
-  const s = Math.sin(-.34), c = Math.cos(-.34);
+  // The gold flick beneath the word — the second half of the blue-and-gold
+  // the brand is known by, and the thing that stops a blue wordmark reading
+  // as any other blue wordmark.
+  glyphInto(o, word, flick, (g, s) => {
+    g.fillStyle = "#fff";
+    g.beginPath();
+    g.moveTo(s * .17, s * .70);
+    g.quadraticCurveTo(s * .50, s * .60, s * .83, s * .70);
+    g.quadraticCurveTo(s * .50, s * .66, s * .17, s * .755);
+    g.closePath();
+    g.fill();
+  }, 0, .04, 0, 1.86);
+  mark(regions, word, flick, 2);                                // Visa gold
+
+  // A shallow roll, so the mark sits in the same space as the shapes either
+  // side of it rather than reading as a flat sticker on the glass.
+  const sn = Math.sin(-.20), cs = Math.cos(-.20);
   for (let i = 0; i < count; i++) {
     const k = i * 3, y = o[k+1], z = o[k+2];
-    o[k+1] = y * c - z * s;
-    o[k+2] = y * s + z * c;
+    o[k+1] = y * cs - z * sn;
+    o[k+2] = y * sn + z * cs;
   }
   return o;
 }
@@ -526,7 +571,7 @@ export function buildShapes(count) {
     mk(cloudShape),                                 // 5 Cloud
     mk(envelopeShape),                              // 6 Mail
     mk(coinShape, COIN_PALETTE),                    // 7 Pay — Bitcoin
-    mk(cardShape, CARD_PALETTE),                    // 8 the build work — Visa
+    mk(visaShape, VISA_PALETTE),                    // 8 the build work — Visa
     mk(markShape, MARK_PALETTE),                    // 9 the V
   ];
 

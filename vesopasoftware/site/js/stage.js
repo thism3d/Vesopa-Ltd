@@ -11,6 +11,10 @@
  *                   stepping through the app's screens as you scroll past.
  */
 
+import {
+  reduced, saveData, slowLink, lowEnd, videoBudget, onStrain, strain,
+} from "./device.js";
+
 const clamp01 = (v) => Math.min(1, Math.max(0, v));
 
 /* ------------------------------------------------------------------ *
@@ -18,52 +22,98 @@ const clamp01 = (v) => Math.min(1, Math.max(0, v));
  * ------------------------------------------------------------------ */
 
 /**
- * One <video> per clip, but only ever three alive at once.
+ * One <video> per clip, and only as many alive at once as the device can hold.
  *
  * The obvious build is one element per section, mounted up front. Eight
  * simultaneous H.264 decoders is fine on a desktop and comfortably enough to
- * stall a phone — Safari caps concurrent decoders and simply refuses to play
- * the ninth, which shows up as "some of the videos don't work" on exactly the
- * devices you cannot debug on.
+ * stall a phone — browsers cap concurrent decoders and older iOS simply
+ * refuses to start the next one, which shows up as "some of the videos don't
+ * work" on exactly the devices you cannot debug on.
  *
- * So elements are built on demand and evicted once they are two sections away.
- * The poster image underneath means an evicted or not-yet-decoded slot still
- * shows the right frame rather than a black rectangle.
+ * So elements are built on demand, evicted as soon as they are outside the
+ * decoder budget in device.js, and on a phone that budget is one. The poster
+ * underneath means an evicted slot, a refused autoplay and a clip still on its
+ * way all show the right frame rather than a black rectangle.
  */
 export function createBackdrop(root) {
-  const live = new Map();          // slug -> { el, wrap }
+  const live = new Map();          // slug -> { el, wrap, failed }
   let order = [];                  // slugs in page order, for adjacency
   let current = null;
-  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const saveData = navigator.connection?.saveData;
+  let posterOnly = reduced || saveData || slowLink;
+
+  // Autoplay can be refused outright — iOS in Low Power Mode does exactly
+  // that, and there is no API that admits to it. The refusal used to be
+  // swallowed, so the page sat on a poster forever with nothing to retry it.
+  // Now the first refusal arms a one-shot listener on the next real gesture,
+  // which is the only thing that will lift it.
+  let blocked = false;
+  function armUnblock() {
+    if (blocked) return;
+    blocked = true;
+    const retry = () => {
+      blocked = false;
+      const rec = current && live.get(current);
+      rec?.el?.play().catch(() => armUnblock());
+    };
+    addEventListener("pointerdown", retry, { once: true, passive: true });
+    addEventListener("touchstart", retry, { once: true, passive: true });
+    addEventListener("keydown", retry, { once: true });
+  }
+
+  // If the frame loop reports the machine is struggling, the backdrop is the
+  // most expensive thing on the page that nobody is looking directly at.
+  onStrain((level) => {
+    if (level < 2) return;
+    posterOnly = true;
+    for (const rec of live.values()) {
+      rec.el?.pause();
+      rec.el?.remove();
+      rec.el = null;
+    }
+  });
 
   function build(slug, src, poster) {
     const wrap = document.createElement("div");
     wrap.className = "bd-clip";
     wrap.style.setProperty("--k", "0");
+    // The poster is the floor: an evicted slot, a refused autoplay, a decode
+    // that never finishes and a machine in posterOnly all land here rather
+    // than on a black rectangle.
     if (poster) wrap.style.backgroundImage = `url("${poster}")`;
-
-    if (!reduced && !saveData) {
-      const v = document.createElement("video");
-      v.muted = true; v.loop = true; v.playsInline = true;
-      v.setAttribute("playsinline", "");     // iOS needs the attribute
-      v.setAttribute("aria-hidden", "true");
-      v.preload = "auto";
-      v.src = src;
-      // Only reveal once it can actually paint, or a slow connection shows a
-      // black box over the poster it was meant to replace.
-      const ready = () => v.classList.add("on");
-      v.addEventListener("canplay", ready, { once: true });
-      v.addEventListener("loadeddata", ready, { once: true });
-      v.addEventListener("error", () => v.remove(), { once: true });
-      wrap.appendChild(v);
-      live.set(slug, { wrap, el: v });
-    } else {
-      live.set(slug, { wrap, el: null });
-    }
-
     root.appendChild(wrap);
-    return live.get(slug);
+
+    const rec = { wrap, el: null, failed: false };
+    live.set(slug, rec);
+    if (posterOnly) return rec;
+
+    const v = document.createElement("video");
+    v.muted = true; v.loop = true; v.playsInline = true;
+    v.setAttribute("playsinline", "");           // iOS needs the attribute too
+    v.setAttribute("aria-hidden", "true");
+    v.setAttribute("disableremoteplayback", "");
+    // `metadata` where decoders are scarce: `auto` on a phone starts pulling
+    // the whole clip for a section that may never be reached.
+    v.preload = videoBudget > 1 ? "auto" : "metadata";
+    v.src = src;
+
+    const ready = () => v.classList.add("on");
+    v.addEventListener("canplay", ready, { once: true });
+    v.addEventListener("loadeddata", ready, { once: true });
+    // A clip that errors is gone for good — retrying a 404 or an unsupported
+    // encode on every section change is just a slower way to show the poster.
+    v.addEventListener("error", () => { rec.failed = true; v.remove(); rec.el = null; },
+                       { once: true });
+
+    wrap.appendChild(v);
+    rec.el = v;
+    return rec;
+  }
+
+  /** Start a clip, and notice if the browser refuses. */
+  function start(rec) {
+    if (!rec.el) return;
+    const r = rec.el.play();
+    if (r && typeof r.catch === "function") r.catch(() => armUnblock());
   }
 
   return {
@@ -79,8 +129,13 @@ export function createBackdrop(root) {
       current = slug;
 
       const i = order.indexOf(slug);
-      // Keep this one and its immediate neighbours; drop the rest.
-      const keep = new Set([slug, order[i - 1], order[i + 1]].filter(Boolean));
+      // How much stays resident is a decoder budget, not a fixed window. On a
+      // phone that is the current clip and nothing else; three simultaneous
+      // decoders is what stopped the later clips ever playing.
+      const keep = new Set([slug]);
+      if (videoBudget > 1) keep.add(order[i + 1]);
+      if (videoBudget > 2) keep.add(order[i - 1]);
+      keep.delete(undefined);
 
       for (const [key, rec] of live) {
         if (keep.has(key)) continue;
@@ -96,46 +151,39 @@ export function createBackdrop(root) {
         const active = key === slug;
         rec.wrap.style.setProperty("--k", active ? "1" : "0");
         if (!rec.el) continue;
-        if (active) rec.el.play().catch(() => {});
         // Neighbours stay loaded but paused: decoding a clip nobody can see
         // is the cheapest frame rate you will ever throw away.
-        else rec.el.pause();
+        if (active) start(rec); else rec.el.pause();
       }
     },
 
     /**
-     * Pull every clip into the HTTP cache, in page order, once the page is up.
+     * Pull the clips into the HTTP cache, in page order, once the page is up.
      *
-     * The lazy build above means a clip starts downloading only as its section
-     * arrives, so on anything but a fast line the visitor reaches a section
-     * and watches a poster while the video is still on its way. Warming the
-     * cache first means the <video> element, when it is finally built, is
-     * reading from disk.
+     * Without this a clip only starts downloading as its section arrives, so
+     * on anything but a fast line the visitor reaches a section and watches a
+     * poster while the video is still on its way.
      *
-     * Deliberately NOT eight <video> elements up front: browsers cap
-     * concurrent decoders, and Safari simply refuses to play past the limit.
-     * This fetches bytes, which costs no decoder at all, and the elements are
-     * still created one section at a time.
-     *
-     * Sequential, and skipped entirely on a metered or slow connection —
-     * roughly 7MB of video is not something to pull down a phone's data plan
-     * before it has been asked for.
+     * Fetching bytes costs no decoder, which is the whole point — but it is
+     * still bandwidth and still memory pressure, so it is skipped entirely
+     * wherever either is scarce. On a metered line, a slow line, or a machine
+     * already showing strain, the posters are the answer.
      */
     async warm() {
-      if (reduced || saveData) return;
-      const c = navigator.connection;
-      if (c && /(^|-)2g$/.test(c.effectiveType || "")) return;
+      if (posterOnly || lowEnd || saveData || slowLink) return;
 
       const idle = window.requestIdleCallback || ((f) => setTimeout(f, 900));
       await new Promise((r) => idle(r, { timeout: 2500 }));
 
       for (const slug of order) {
+        if (strain() > 0) return;      // the page needs the bandwidth elsewhere
         const clip = this.clips.get(slug);
         if (!clip) continue;
         try {
-          // One at a time: a parallel burst would compete with the clip the
-          // visitor is actually looking at.
-          await fetch(clip.src, { priority: "low", cache: "force-cache" });
+          // One at a time, and the body is drained rather than abandoned: an
+          // unread response body holds its buffer open until GC gets to it.
+          const res = await fetch(clip.src, { priority: "low", cache: "force-cache" });
+          await res.arrayBuffer().catch(() => {});
         } catch { /* offline, or the visitor left — neither is worth reporting */ }
       }
     },

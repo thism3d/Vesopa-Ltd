@@ -16,3 +16,6 @@ uploads/
 # input to it.
 site/assets/video_frames/
 shots-live/
+
+# Python bytecode from tools/
+__pycache__/

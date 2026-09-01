@@ -244,6 +244,38 @@ body.day .chip-btn[aria-pressed="true"]{color:#4F6A0B;border-color:#7E9E12}
 
 /* ================= hero ================= */
 .hero .col{position:relative}
+
+/* The headline is two lines, always, on every screen.
+ *
+ * It was written as `We build it,<br>then we run it.` and broke into three
+ * lines at both ends of the range, for two different reasons:
+ *
+ *   - Wide: `.col` is capped at --measure (46rem), but the h1 at its 7.4rem
+ *     maximum needs about 876px to set "then we run it." on one line. The
+ *     line did not fit the column, so it wrapped underneath the <br>.
+ *   - Narrow: the clamp's *floor* of 3rem is not a floor the text can honour.
+ *     On a 360px phone that line wants ~360px against ~324px of column.
+ *
+ * So: the headline gets the wide measure rather than the reading one — a
+ * display line is not body copy and has no business being held to a 46rem
+ * column — and the size is driven by viewport width all the way down, with
+ * `min()` rather than a clamp floor, so it keeps shrinking on the small
+ * screens where a floor would have forced the wrap.
+ *
+ * The two lines are spans rather than a <br> so `white-space: nowrap` can be
+ * applied to each. That turns a silent third line into something that would
+ * be visible immediately, which is the point: the sizing above is what keeps
+ * it on two lines, and the nowrap is the assertion that it worked.
+ */
+.hero .col{max-width:var(--wide)}
+.hero h1{
+  font-size:min(10.6vw, 7.4rem);
+  text-wrap:nowrap;
+}
+.hero h1 .ln{display:block;white-space:nowrap}
+/* The lead keeps the reading measure the column no longer imposes. */
+.hero .lead{max-width:40rem}
+.hero .num,.hero .cta-row,.hero-meta{max-width:46rem}
 /* The scrim inside #grade cannot protect the copy, because the particle canvas
    paints above it. This guard is inside `main` — above the canvas, below the
    words — which is the only band in the stack where type can be defended. */

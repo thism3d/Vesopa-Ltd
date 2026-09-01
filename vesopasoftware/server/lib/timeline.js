@@ -36,6 +36,7 @@ export function buildTimeline({ messages = [], updates = [], files = [], tasks =
       userId: m.user_id, body: m.body,
       private: Boolean(m.recipient_id),
       invoice: m.invoice_number ? {
+        id: m.invoice_id,
         number: m.invoice_number, total: m.invoice_total, status: m.invoice_status,
         currency: m.invoice_currency, paid: m.invoice_paid,
       } : null,
@@ -48,6 +49,11 @@ export function buildTimeline({ messages = [], updates = [], files = [], tasks =
     out.push({
       kind: "update", at: u.created_at, id: u.id,
       author: u.author, title: u.title, body: u.body, progress: u.progress_pct,
+      // Only ever true on the admin side: the customer's query filters these
+      // out before they reach here. Carried so the admin feed can label them,
+      // because an internal note and a published update look identical
+      // otherwise and that is how one gets written as the other.
+      internal: !!u.is_internal,
     });
   }
 
@@ -106,7 +112,36 @@ export function groupByDay(entries) {
     }
     current.entries.push(e);
   }
+  for (const day of days) day.entries = coalesceTasks(day.entries);
   return days;
+}
+
+/**
+ * Fold a run of task events into one line.
+ *
+ * Tasks are usually raised in a batch — a scoping call turns into eight of
+ * them in the same minute — and eight consecutive "Task added" rows is a wall
+ * of near-identical text that pushes the actual conversation off the screen.
+ * The information anyone wants from it is "eight tasks were added, here they
+ * are", which is one row.
+ *
+ * Only *consecutive* entries of the same event are folded, so a task raised in
+ * the middle of a discussion keeps its place in the order things happened.
+ * A run of one is left exactly as it was, because "1 task added" reads worse
+ * than the sentence it replaces.
+ */
+function coalesceTasks(entries) {
+  const out = [];
+  for (const e of entries) {
+    const prev = out[out.length - 1];
+    const runnable = e.kind === "task" && prev && prev.kind === "task"
+      && prev.event === e.event;
+    if (!runnable) { out.push({ ...e }); continue; }
+    if (!prev.group) prev.group = [{ id: prev.id, title: prev.title }];
+    prev.group.push({ id: e.id, title: e.title });
+    prev.at = e.at;                       // the run is stamped by its last event
+  }
+  return out;
 }
 
 /**

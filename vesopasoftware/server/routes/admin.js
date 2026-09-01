@@ -8,6 +8,8 @@ import { sendMail, layout, esc } from "../lib/mail.js";
 import { notify, unreadCount } from "../lib/notify.js";
 import { toProject, toUser, joinProjectRoom } from "../lib/realtime.js";
 import { ORG_ROLES, roleLabel } from "../lib/permissions.js";
+import { buildTimeline, groupByDay, monthGrid, bucketTasks } from "../lib/timeline.js";
+import { prettySize } from "../lib/uploads.js";
 import { config } from "../lib/config.js";
 
 const router = Router();
@@ -202,7 +204,8 @@ router.get("/projects/:id", async (req, res, next) => {
     const project = await one("SELECT * FROM projects WHERE id = ?", [req.params.id]);
     if (!project) return res.status(404).render("error", { title: "No such project", message: "Gone.", back: "/portal/admin/projects" });
 
-    const [customer, updates, messages, invoices, members, charges, staff, orgPeople, subs, files] = await Promise.all([
+    const [customer, updates, messages, invoices, members, charges, staff, orgPeople, subs, files, tasks] =
+      await Promise.all([
       one("SELECT * FROM users WHERE id = ?", [project.user_id]),
       q(`SELECT pu.*, u.name AS author FROM project_updates pu LEFT JOIN users u ON u.id = pu.author_id
           WHERE pu.project_id = ? ORDER BY pu.created_at DESC`, [project.id]),
@@ -223,11 +226,32 @@ router.get("/projects/:id", async (req, res, next) => {
       q("SELECT * FROM subscriptions WHERE project_id = ? ORDER BY next_charge_date", [project.id]),
       q(`SELECT f.*, u.name AS uploader FROM project_files f LEFT JOIN users u ON u.id = f.user_id
           WHERE f.project_id = ? ORDER BY f.created_at DESC`, [project.id]),
+      /* Every task, including the ones hidden from the customer. The customer
+         view filters on `is_visible`; this is the side that decides what that
+         flag should be, so it has to be able to see both. */
+      q(`SELECT t.*, a.name AS assignee, c.name AS creator
+           FROM project_tasks t
+           LEFT JOIN users a ON a.id = t.assignee_id
+           LEFT JOIN users c ON c.id = t.created_by
+          WHERE t.project_id = ?
+          ORDER BY FIELD(t.status,'doing','todo','blocked','done'), t.sort_order, t.id`, [project.id]),
     ]);
+
+    /* The same one-feed treatment the customer hub has, for the same reason:
+       whoever picks this project up needs the order events happened in, not
+       five separate lists to reconcile. The difference is what goes into it —
+       internal updates and hidden tasks are part of the admin's record. */
+    const now = new Date();
+    const cy = Number(req.query.y) || now.getFullYear();
+    const cm = Number.isInteger(Number(req.query.m)) ? Number(req.query.m) : now.getMonth();
+    const month = new Date(cy, cm, 1);
 
     res.render("admin/project", {
       title: project.title, project, customer, updates, messages, invoices, members,
-      charges, staff, orgPeople, subs, files, PROJECT_STATUS, roleLabel,
+      charges, staff, orgPeople, subs, files, tasks, PROJECT_STATUS, roleLabel, prettySize,
+      timeline: groupByDay(buildTimeline({ messages, updates, files, tasks })),
+      buckets: bucketTasks(tasks),
+      calendar: { month, cells: monthGrid(cy, cm, tasks) },
     });
   } catch (err) { next(err); }
 });

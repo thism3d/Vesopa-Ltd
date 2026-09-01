@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en-GB">
+<html lang="en-GB" class="loading booting">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -45,6 +45,32 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,400..700&family=Source+Serif+4:opsz,wght@8..60,300..600&family=Martian+Mono:wght@300;500&display=swap">
 </noscript>
 
+<!-- The cover, inlined.
+     This used to be built in JavaScript by js/loader.js, which is a module and
+     therefore deferred — so the browser's first paint was the real hero, and
+     the loading screen dropped on top of it a moment later. You watched the
+     page arrive, then watched it be covered up.
+     The fix is that the cover is now markup, and the only thing JavaScript
+     does is animate what is already on screen. These rules are inline and
+     ahead of the stylesheet so the black is painted even on the frame where
+     css/site.css has not landed yet. -->
+<style>
+  html.loading, html.loading body { overflow: hidden }
+  #loader{
+    position:fixed;inset:0;z-index:90;background:#0B0E0A;color:#F2EFE6;
+    display:flex;align-items:center;justify-content:center;
+  }
+  /* Before the module boots there is nothing to animate, so the cover is plain
+     black and holds the lockup's space rather than collapsing and then jumping
+     when the artwork arrives. */
+  html.booting .ld-bar, html.booting .ld-ask{visibility:hidden}
+  .ld-lockup{min-height:5.2rem}
+</style>
+<!-- No script, no loader: never trap the page behind a cover nothing can lift.
+     A <noscript> block rather than a class toggle, because a class the script
+     removes leaves a frame where the cover is already hidden. -->
+<noscript><style>#loader{display:none}html.loading,html.loading body{overflow:auto}</style></noscript>
+
 <link rel="stylesheet" href="css/site.css">
 
 <script type="application/ld+json">
@@ -56,6 +82,38 @@
 </script>
 </head>
 <body>
+
+<!-- The way in. Static markup so it is on screen at first paint; js/loader.js
+     adopts this element, fills the lockup with the shared artwork and runs the
+     animation. See the note in the head. -->
+<div id="loader" role="dialog" aria-label="Vesopa Software">
+  <div class="ld-inner">
+    <div class="ld-lockup"></div>
+    <div class="ld-bar"><i></i></div>
+    <div class="ld-ask" hidden>
+      <p class="ld-ask-t"></p>
+      <p class="ld-ask-s"></p>
+      <div class="ld-ask-r">
+        <button class="ld-go" type="button"></button>
+        <button class="ld-skip" type="button">Enter quietly</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+  // The guard for JavaScript that boots but throws before the loader is
+  // wired. The loader's own 6s "ready" timer cannot help there, because it
+  // lives in the code that failed. (Scripting off entirely is handled by the
+  // <noscript> block in the head.)
+  setTimeout(function () {
+    var d = document.documentElement;
+    if (d.classList.contains("booting")) {
+      d.classList.remove("loading", "booting");
+      var l = document.getElementById("loader");
+      if (l) l.remove();
+    }
+  }, 12000);
+</script>
 
 <!-- ================= the back of the page =================
      Four fixed layers behind everything, in order:
@@ -97,7 +155,7 @@
 <section id="s0" class="hero" data-shape="0" data-clip="v1_hero">
   <div class="col">
     <span class="num" data-reveal="0">Baglan, Port Talbot · est. Wales</span>
-    <h1 data-reveal="60">We build it,<br>then we run it.</h1>
+    <h1 data-reveal="60"><span class="ln">We build it,</span><span class="ln">then we run it.</span></h1>
     <p class="lead" data-reveal="140">Three Windows apps trading in real venues tonight — the till, the kitchen screen and the customer display. Plus the hosting, the mail and the payments underneath them. All ours, end to end.</p>
     <div class="cta-row" data-reveal="220">
       <a class="cta" href="#quote">Get a price</a>
@@ -142,9 +200,19 @@
 
       <div class="stage-shots" data-beacon>
         <div class="frame">
+          <!-- Eager, not lazy, and deliberately.
+               Five WebP screenshots come to 225kB between them — less than one
+               backdrop clip — so deferring them saves nothing worth having. It
+               cost reliability: Safari measures a lazy image's distance from
+               the viewport using the image's own box, and these are absolutely
+               positioned inside a `position: sticky` stage several viewports
+               tall, so it could defer one well past the scroll position that
+               reveals it. `fetchpriority="low"` keeps them behind the hero;
+               the width/height are the intrinsic sizes, so `.frame` never
+               reflows as one arrives. -->
           <div class="shot-stack">
-            <img class="shot on" src="assets/screenshots/epos_home.webp" alt="The Vesopa EPOS sale screen: a bill on the left, the coffee menu as product tiles, category buttons down the right." loading="lazy" decoding="async">
-            <img class="shot" src="assets/screenshots/epos_pay.webp" alt="The Vesopa EPOS payment screen: amount left to pay, cash and card tender buttons, and a numeric keypad." loading="lazy" decoding="async">
+            <img class="shot on" src="assets/screenshots/epos_home.webp" alt="The Vesopa EPOS sale screen: a bill on the left, the coffee menu as product tiles, category buttons down the right." fetchpriority="low" decoding="async" width="1800" height="1013">
+            <img class="shot" src="assets/screenshots/epos_pay.webp" alt="The Vesopa EPOS payment screen: amount left to pay, cash and card tender buttons, and a numeric keypad." fetchpriority="low" decoding="async" width="1800" height="1008">
           </div>
         </div>
         <div class="shot-dots" role="tablist" aria-label="Vesopa EPOS screens">
@@ -193,8 +261,8 @@
       <div class="stage-shots" data-beacon>
         <div class="frame">
           <div class="shot-stack">
-            <img class="shot on" src="assets/screenshots/kitchen_home.webp" alt="The Vesopa Kitchen display: six open order tickets showing table number, order reference, elapsed time and items, each with a Done button." loading="lazy" decoding="async">
-            <img class="shot" src="assets/screenshots/kitchen_boot.webp" alt="The Vesopa Kitchen loading screen as the display pairs with the till." loading="lazy" decoding="async">
+            <img class="shot on" src="assets/screenshots/kitchen_home.webp" alt="The Vesopa Kitchen display: six open order tickets showing table number, order reference, elapsed time and items, each with a Done button." fetchpriority="low" decoding="async" width="1273" height="857">
+            <img class="shot" src="assets/screenshots/kitchen_boot.webp" alt="The Vesopa Kitchen loading screen as the display pairs with the till." fetchpriority="low" decoding="async" width="1800" height="1013">
           </div>
         </div>
         <div class="shot-dots" role="tablist" aria-label="Vesopa Kitchen screens">
@@ -236,7 +304,7 @@
       <div class="stage-shots" data-beacon>
         <div class="frame">
           <div class="shot-stack">
-            <img class="shot on" src="assets/screenshots/display_home.webp" alt="The Vesopa Customer Display: the bill on the left with a running total of sixty pounds, and the Vesopa mark on the advert panel to the right." loading="lazy" decoding="async">
+            <img class="shot on" src="assets/screenshots/display_home.webp" alt="The Vesopa Customer Display: the bill on the left with a running total of sixty pounds, and the Vesopa mark on the advert panel to the right." fetchpriority="low" decoding="async" width="1164" height="696">
           </div>
         </div>
       </div>

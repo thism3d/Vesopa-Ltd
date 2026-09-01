@@ -489,6 +489,51 @@ hr{border:0;border-top:1px solid var(--rule);margin:1rem 0}
 .hub-side{display:grid;gap:1rem;align-content:start}
 @media (max-width:1000px){ .hub{grid-template-columns:minmax(0,1fr)} }
 
+/* Disclosure panels — the admin hub's side column.
+ *
+ * The admin project page had eight permanently-open panels and the
+ * conversation was somewhere in the middle of them. These are the things that
+ * act on a project rather than describe it: posting an update, raising an
+ * invoice, logging a charge, changing the status. Each is used a handful of
+ * times in a project's life and the feed is used every day, so they are closed
+ * until asked for.
+ *
+ * `<details>` rather than a JS accordion: it opens with no script, it is
+ * keyboard-operable and screen-reader-labelled for free, and the browser finds
+ * text inside a closed one when the visitor searches the page. */
+details.panel.act{padding:0}
+details.panel.act > summary{
+  display:flex;align-items:baseline;gap:.6rem;
+  padding:.85rem 1rem;cursor:pointer;list-style:none;
+  border-radius:inherit;
+}
+/* Safari draws its own triangle through ::-webkit-details-marker, which
+   `list-style:none` alone does not remove. */
+details.panel.act > summary::-webkit-details-marker{display:none}
+details.panel.act > summary h3{margin:0;font-size:.95rem}
+details.panel.act > summary small{color:var(--muted);font-size:.74rem}
+/* The chevron is the affordance, so it has to be the thing that turns. */
+details.panel.act > summary::after{
+  content:"";margin-left:auto;width:.5rem;height:.5rem;flex:none;
+  border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;
+  transform:rotate(45deg) translateY(-2px);opacity:.5;
+  transition:transform .18s ease;
+}
+details.panel.act[open] > summary::after{transform:rotate(-135deg) translateY(-2px)}
+details.panel.act > summary:hover{background:var(--rule-soft,rgba(127,127,127,.06))}
+details.panel.act > *:not(summary){padding:0 1rem}
+details.panel.act > *:last-child{padding-bottom:1rem}
+details.panel.act > form:last-child{padding-bottom:1rem}
+@media (prefers-reduced-motion: reduce){
+  details.panel.act > summary::after{transition:none}
+}
+
+/* An internal note must never be mistakable for something the customer saw. */
+.ev-update.is-internal .ev-body{
+  border-left:2px solid var(--warn,#d9a441);
+  padding-left:.7rem;
+}
+
 .hub-feed .thread{max-height:min(62vh,46rem)}
 /* A date rule, so a long history reads as days rather than one endless column. */
 .day-rule{display:flex;align-items:center;gap:.7rem;margin:.9rem 0 .2rem;
@@ -507,10 +552,24 @@ hr{border:0;border-top:1px solid var(--rule);margin:1rem 0}
 .ev-body{min-width:0;flex:1;border-left:1px solid var(--rule);padding:.35rem 0 .35rem .75rem}
 .ev-body .meta{display:flex;gap:.5rem;align-items:baseline;flex-wrap:wrap;font-size:.85rem}
 .ev-body .meta b{font-weight:620}
-.ev-body .meta span{color:var(--muted)}
+/* `:not(.pill)`, and it matters. This was `.ev-body .meta span`, which is
+   specificity (0,2,1) and therefore beat `.pill.lime` (0,2,0) — so the lime
+   "Update" badge rendered muted grey on lime at a contrast ratio of 1.35,
+   which is to say invisible. A pill carries its own colours; the meta row is
+   only entitled to style its own plain text. */
+.ev-body .meta > span:not(.pill){color:var(--muted)}
 .ev-body .meta time{font-family:"Martian Mono",monospace;font-size:.6rem;color:var(--muted)}
 .ev-body p{font-size:.87rem;color:var(--muted);margin-top:.3rem}
 .ev-body > small{display:block;font-size:.68rem;color:var(--muted);margin-top:.35rem}
+/* The folded batch's contents. Columns rather than one long list: eight task
+   titles down the page is the wall this was meant to remove. */
+.ev-list{
+  margin:.35rem 0 0;padding:0;list-style:none;
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(13rem,1fr));
+  gap:.05rem .9rem;font-size:.83rem;color:var(--muted);
+}
+.ev-list li{position:relative;padding-left:.75rem}
+.ev-list li::before{content:"·";position:absolute;left:.15rem;opacity:.6}
 
 /* Attachments inside a bubble. */
 .msg-files{display:grid;gap:.4rem;grid-template-columns:repeat(auto-fill,minmax(7.5rem,1fr));margin-top:.55rem}

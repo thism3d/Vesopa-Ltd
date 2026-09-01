@@ -160,10 +160,22 @@ const calBase = `/portal/projects/${project.id}`;
                 <span class="ev-dot" aria-hidden="true"></span>
                 <div class="ev-body">
                   <div class="meta">
-                    <b><%= e.event === "done" ? "Completed" : "Task added" %></b>
-                    <span><%= e.title %></span>
-                    <time datetime="<%= new Date(e.at).toISOString() %>"></time>
+                    <% if (e.group) { %>
+                      <%# A batch, folded by lib/timeline.js — eight identical
+                          rows is a wall, one row with the list is the fact. %>
+                      <b><%= e.group.length %> tasks <%= e.event === "done" ? "completed" : "added" %></b>
+                      <time datetime="<%= new Date(e.at).toISOString() %>"></time>
+                    <% } else { %>
+                      <b><%= e.event === "done" ? "Completed" : "Task added" %></b>
+                      <span><%= e.title %></span>
+                      <time datetime="<%= new Date(e.at).toISOString() %>"></time>
+                    <% } %>
                   </div>
+                  <% if (e.group) { %>
+                    <ul class="ev-list">
+                      <% for (const t of e.group) { %><li><%= t.title %></li><% } %>
+                    </ul>
+                  <% } %>
                 </div>
               </div>
             <% } %>

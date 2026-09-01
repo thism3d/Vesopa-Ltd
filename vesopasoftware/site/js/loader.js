@@ -27,25 +27,27 @@ import { wordmarkSVG, playWordmark } from "./wordmark.js";
 export function createLoader({ onEnter, canFullscreen = true } = {}) {
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  const el = document.createElement("div");
-  el.id = "loader";
-  el.setAttribute("role", "dialog");
-  el.setAttribute("aria-label", "Vesopa Software");
-  el.innerHTML = `
-    <div class="ld-inner">
-      <div class="ld-lockup">${wordmarkSVG("Vesopa")}</div>
-      <div class="ld-bar"><i></i></div>
-      <div class="ld-ask" hidden>
-        <p class="ld-ask-t">${canFullscreen ? "Best with sound, full screen." : "Best with sound."}</p>
-        <p class="ld-ask-s">There is a room tone under this page and it is worth hearing.
-          ${canFullscreen ? "Both are one click, and either" : "It"} can be turned off at any point.</p>
-        <div class="ld-ask-r">
-          <button class="ld-go" type="button">Enter with sound${canFullscreen ? " &amp; full screen" : ""}</button>
-          <button class="ld-skip" type="button">Enter quietly</button>
-        </div>
-      </div>
-    </div>`;
-  document.body.appendChild(el);
+  // Adopted, not built. The shell is in index.html so that it is on screen at
+  // the browser's first paint; creating it here meant the module had to load
+  // and run first, and by then the real page had already been painted and the
+  // visitor had watched the loading screen arrive *after* the thing it was
+  // supposed to be covering.
+  const el = document.getElementById("loader");
+  if (!el) return null;
+
+  el.querySelector(".ld-lockup").innerHTML = wordmarkSVG("Vesopa");
+  el.querySelector(".ld-ask-t").textContent =
+    canFullscreen ? "Best with sound, full screen." : "Best with sound.";
+  el.querySelector(".ld-ask-s").textContent =
+    "There is a room tone under this page and it is worth hearing. "
+    + (canFullscreen ? "Both are one click, and either" : "It")
+    + " can be turned off at any point.";
+  el.querySelector(".ld-go").textContent =
+    canFullscreen ? "Enter with sound & full screen" : "Enter with sound";
+
+  // The bar and the invitation were held back by the inline critical CSS until
+  // there was something real to show; there is now.
+  document.documentElement.classList.remove("booting");
   document.documentElement.classList.add("loading");
 
   const bar = el.querySelector(".ld-bar i");
@@ -89,7 +91,7 @@ export function createLoader({ onEnter, canFullscreen = true } = {}) {
     /** Take the loader down. */
     async dismiss(withExtras) {
       el.classList.add("gone");
-      document.documentElement.classList.remove("loading");
+      document.documentElement.classList.remove("loading", "booting");
       // The click is still live here, which is the only reason audio and
       // fullscreen can be started at all.
       try { await onEnter?.(withExtras); } catch { /* never block the page */ }
