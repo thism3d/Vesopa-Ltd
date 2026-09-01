@@ -700,6 +700,13 @@ tr.new { animation: flash 1.6s ease-out; }
 .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 24px; }
 .row { display: flex; gap: 12px; }
 .row > * { flex: 1; }
+/* Stretch is the flex default, and in a row mixing a label-above-a-field with
+   anything of its own height — a button, a checkbox — it aligns the tops of
+   boxes that are not the same height and leaves the shorter control floating
+   above the fields it belongs to. Controls line up on the bottom edge, which
+   is where the fields end. Same rule as `.tbl-bar` and `.sp-bar`, for the same
+   reason. */
+.row { align-items: flex-end; }
 
 .empty { padding: 40px; text-align: center; color: var(--muted); }
 
@@ -1863,7 +1870,13 @@ table.plain th { color: var(--muted, #7a828c); font-weight: 600; font-size: 11px
 .sp-bar .sp-spacer,
 .tbl-bar .sp-spacer { flex: 1 1 auto; }
 .sp-pick { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; margin: 0; }
-.sp-pick select, .sp-pick input { min-width: 90px; }
+/* A date field, a text field and a select are three different heights in the
+   same browser — Chrome gives `type="date"` 44px for its calendar indicator and
+   a plain text box 41px. The bar aligns them on their bottom edge, which is
+   what matters, but their *labels* then sit on three different lines: on the
+   Sales Explorer "Department" was drawn 3px below "From" and "To". One height
+   for every control in a filter bar, which is also the 44px touch target. */
+.sp-pick select, .sp-pick input { min-width: 90px; min-height: 44px; }
 .sp-bar .check { margin: 0; }
 
 .sp-layout {

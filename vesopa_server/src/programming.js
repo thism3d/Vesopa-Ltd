@@ -515,9 +515,23 @@ function programmingRoutes({ pool, broadcast, secret }) {
     }
   });
 
-  /** Bill report: one row per bill, with its tender. */
-  router.get('/bill-report', auth, async (_req, res, next) => {
+  /**
+   * Bill report: one row per bill, with its tender.
+   *
+   * Paged, like /sales-explorer and for the same reason: a venue a year old has
+   * more bills than anyone will scroll, and `LIMIT 200` did not so much page
+   * that as hide it — the two hundred and first bill could not be reached at
+   * all, from anywhere in the back office.
+   *
+   * Interpolated rather than bound, because MySQL will not take a placeholder
+   * in LIMIT out of a prepared statement; both have been through Number() and
+   * Math.max/min by then and cannot carry an injection.
+   */
+  router.get('/bill-report', auth, async (req, res, next) => {
     try {
+      const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 200);
+      const offset = Math.max(Number(req.query.offset) || 0, 0);
+
       const [rows] = await pool.query(
         `SELECT o.id, o.closed_at, o.table_number, o.covers,
                 o.subtotal_minor, o.discount_minor, o.tax_minor, o.total_minor,
@@ -526,8 +540,12 @@ function programmingRoutes({ pool, broadcast, secret }) {
          LEFT JOIN epos_payments p ON p.order_id = o.id
          WHERE o.closed_at IS NOT NULL
          GROUP BY o.id
-         ORDER BY o.closed_at DESC
-         LIMIT 200`
+         -- closed_at alone is not unique: a busy counter settles several bills
+         -- in the same second, and LIMIT/OFFSET over an order that is only
+         -- partly defined shows one of them twice and another never. The id
+         -- breaks the tie.
+         ORDER BY o.closed_at DESC, o.id DESC
+         LIMIT ${limit} OFFSET ${offset}`
       );
       res.json(rows);
     } catch (e) {

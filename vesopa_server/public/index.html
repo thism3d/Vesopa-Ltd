@@ -400,13 +400,27 @@
 
         <section id="view-sales_explorer" class="view" hidden>
           <div class="page-head"><div><h2>Sales Explorer</h2><p class="muted small">Every product line sold, searchable by date and department. Click a row to see the receipt it came from.</p></div></div>
-          <div class="card panel">
-            <div class="row">
-              <label>From<input type="date" id="ex-from" /></label>
-              <label>To<input type="date" id="ex-to" /></label>
-              <label>Department<input id="ex-dept" placeholder="All" /></label>
-              <label>&nbsp;<button class="btn primary" id="ex-run" style="margin-top:6px">Search</button></label>
-            </div>
+          <!-- The same filter bar as the catalogue's, built out of the same
+               parts. It used to be a `.row` of four labels, the fourth holding
+               a non-breaking space and the Search button: every other label's
+               input is `width: 100%`, so it cannot sit beside its own wording
+               and drops to a line of its own, while a button is only as wide as
+               its word and stayed up on the line the label text was on. Search
+               was drawn a line higher than the three fields it searches, and
+               the `margin-top: 6px` written on it to mimic an input could not
+               reach across that. A bar that aligns its controls on their own
+               bottom edge has nothing to mimic. -->
+          <div class="tbl-bar">
+            <label class="sp-pick">From
+              <input type="date" id="ex-from">
+            </label>
+            <label class="sp-pick">To
+              <input type="date" id="ex-to">
+            </label>
+            <label class="sp-pick">Department
+              <input id="ex-dept" placeholder="All">
+            </label>
+            <button type="button" class="btn primary" id="ex-run">Search</button>
           </div>
           <div class="card"><table>
             <thead><tr><th>When</th><th>Item</th><th>Department</th><th class="right">Qty</th><th class="right">Line total</th></tr></thead>
@@ -468,6 +482,11 @@
             <thead><tr><th>When</th><th>Bill</th><th>Table</th><th>Covers</th><th>Tender</th><th class="right">Total</th></tr></thead>
             <tbody id="billreport"></tbody>
           </table></div>
+          <!-- The foot of the list, and what the next page is fetched off —
+               the same sentinel the Sales Explorer uses. Always present, so the
+               space it needs is reserved rather than appearing under the last
+               row and nudging the page as it arrives. -->
+          <p class="ex-more" id="br-more" aria-live="polite"></p>
         </section>
 
         <!-- Products -->

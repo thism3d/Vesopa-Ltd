@@ -885,10 +885,7 @@ async function loadExplorer() {
 
 /** The line under the table: loading, finished, or nothing at all. */
 function exSay(text, spinning = false) {
-  const box = $('ex-more');
-  if (!box) return;
-  box.textContent = text;
-  box.className = spinning ? 'ex-more loading' : 'ex-more';
+  feedSay('ex-more', text, spinning);
 }
 
 /** Fetch and append the next page. */
@@ -946,6 +943,27 @@ async function exNextPage() {
   }
 }
 
+function exFill() {
+  return feedFill('ex-more', exFeed, exNextPage);
+}
+
+function exWatch() {
+  exFeed.watcher = feedWatch('ex-more', exFill);
+}
+
+/* ---------------------------------------------------------------------------
+   A list that loads as it is scrolled
+
+   Two tables in the back office are unbounded — every sale line in the Sales
+   Explorer, every bill in the Bill Report — and both have to answer the same
+   two questions: when is the next page wanted, and what stops it. Written once
+   here; each page brings its own fetch, its own row, and a `feed` holding
+   `{ token, offset, done, loading, watcher }`.
+   --------------------------------------------------------------------------- */
+
+/** How much warning the foot of a list gets, in pixels of scroll. */
+const FEED_MARGIN = 500;
+
 /**
  * Load until the foot of the list is off the bottom of the screen.
  *
@@ -953,34 +971,35 @@ async function exNextPage() {
  * difficulty with a sentinel: if a page arrives and the sentinel is still in
  * view, nothing has changed, no callback runs, and the feed stalls with the
  * "load more" marker sitting in plain sight. That is guaranteed on the first
- * page of a short result and on any tall screen, and it is why the list used to
- * stop dead — on a phone, on a tablet and on a desktop alike.
+ * page of a short result and on any tall screen, and it is why the Sales
+ * Explorer used to stop dead — on a phone, on a tablet and on a desktop alike.
  *
  * So the observer's job is only to notice that the foot has come into view; the
  * filling is done here, in a loop, until it is not. Bounded, so a server that
  * answers a full page for ever cannot spin the tab, and it stops the moment a
  * page adds nothing.
  */
-async function exFill() {
-  const sentinel = $('ex-more');
+async function feedFill(footId, feed, nextPage) {
+  const sentinel = $(footId);
   if (!sentinel) return;
 
   for (let guard = 0; guard < 40; guard++) {
-    if (exFeed.done) return;
+    if (feed.done) return;
     const box = sentinel.getBoundingClientRect();
-    // The same 500px of warning the observer is given, asked directly.
-    if (box.top > (window.innerHeight || document.documentElement.clientHeight) + 500) return;
+    // The same margin the observer is given, asked directly.
+    const fold = window.innerHeight || document.documentElement.clientHeight;
+    if (box.top > fold + FEED_MARGIN) return;
 
-    const before = exFeed.offset;
-    const token = exFeed.token;
-    await exNextPage();
-    // A search replaced this one, or the page brought nothing back.
-    if (token !== exFeed.token || exFeed.offset === before) return;
+    const before = feed.offset;
+    const token = feed.token;
+    await nextPage();
+    // A newer search replaced this one, or the page brought nothing back.
+    if (token !== feed.token || feed.offset === before) return;
   }
 }
 
 /**
- * Watch the foot of the list.
+ * Watch the foot of a list.
  *
  * Against the viewport, not `main`. `#app` is `min-height: 100vh`, so it grows
  * with its content and `main` — a flex item in it with no height to be held to
@@ -988,20 +1007,28 @@ async function exFill() {
  * scroll container. The document is what scrolls, at every width. Rooting the
  * observer on `main` therefore measured the sentinel against a box that always
  * contained it, so `isIntersecting` was true from the first frame and never
- * changed again: one extra page arrived and the feed stopped at a hundred and
- * twenty lines for ever.
+ * changed again: one extra page arrived and the feed stopped for ever.
  */
-function exWatch() {
-  const sentinel = $('ex-more');
-  if (!sentinel || typeof IntersectionObserver !== 'function') return;
+function feedWatch(footId, fill) {
+  const sentinel = $(footId);
+  if (!sentinel || typeof IntersectionObserver !== 'function') return null;
 
-  exFeed.watcher = new IntersectionObserver(
+  const watcher = new IntersectionObserver(
     (entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) exFill();
+      if (entries.some((entry) => entry.isIntersecting)) fill();
     },
-    { root: null, rootMargin: '500px 0px' }
+    { root: null, rootMargin: `${FEED_MARGIN}px 0px` }
   );
-  exFeed.watcher.observe(sentinel);
+  watcher.observe(sentinel);
+  return watcher;
+}
+
+/** The line under a list: loading, finished, or nothing at all. */
+function feedSay(footId, text, spinning = false) {
+  const box = $(footId);
+  if (!box) return;
+  box.textContent = text;
+  box.className = spinning ? 'ex-more loading' : 'ex-more';
 }
 
 /**
@@ -1111,11 +1138,48 @@ async function loadTillReport() {
     .join('') || '<tr><td colspan="5" class="empty">No trading days yet.</td></tr>';
 }
 
+/**
+ * Every bill, loaded as it is scrolled.
+ *
+ * The same feed as the Sales Explorer, on the same parts — see feedFill(). It
+ * used to be one request for a flat `LIMIT 200`, which is not a first page but
+ * a ceiling: a venue six months old had bills that could not be reached from
+ * anywhere in the back office, and nothing on the screen said so. Nobody
+ * scrolls two hundred rows to discover a limit.
+ */
+const BR_PAGE = 60;
+let brFeed = { token: 0, offset: 0, done: false, loading: false, watcher: null };
+
 async function loadBillReport() {
-  const rows = await api('/bill-report');
-  $('billreport').innerHTML = rows
-    .map(
-      (r) => `<tr class="clickable" data-receipt="${esc(r.id)}">
+  brFeed.watcher?.disconnect();
+  brFeed = { token: brFeed.token + 1, offset: 0, done: false, loading: false, watcher: null };
+
+  $('billreport').innerHTML = '';
+  feedSay('br-more', '');
+  brWatch();
+  await feedFill('br-more', brFeed, brNextPage);
+}
+
+async function brNextPage() {
+  if (brFeed.loading || brFeed.done) return;
+  const mine = brFeed.token;
+  brFeed.loading = true;
+  if (brFeed.offset) feedSay('br-more', 'Loading more…', true);
+
+  const params = new URLSearchParams();
+  params.set('limit', String(BR_PAGE));
+  params.set('offset', String(brFeed.offset));
+
+  try {
+    const rows = await api(`/bill-report?${params}`);
+    // A reload that has since been replaced — the view was left and reopened.
+    if (mine !== brFeed.token) return;
+
+    $('billreport').insertAdjacentHTML(
+      'beforeend',
+      rows
+        .map(
+          (r) => `<tr class="clickable" data-receipt="${esc(r.id)}">
         <td>${date(r.closed_at)} ${time(r.closed_at)}</td>
         <td class="muted small">${esc(String(r.id).slice(0, 8))}</td>
         <td>${r.table_number ?? '—'}</td>
@@ -1123,8 +1187,37 @@ async function loadBillReport() {
         <td>${esc(r.methods || '—')}</td>
         <td class="right">${money(r.total_minor)}</td>
       </tr>`
-    )
-    .join('') || '<tr><td colspan="6" class="empty">No bills.</td></tr>';
+        )
+        .join('')
+    );
+
+    brFeed.offset += rows.length;
+    // A short page is the last page; asking again to be told "none" costs a
+    // round trip and a query to learn nothing.
+    brFeed.done = rows.length < BR_PAGE;
+
+    if (!brFeed.offset) {
+      $('billreport').innerHTML =
+        '<tr><td colspan="6" class="empty">No bills.</td></tr>';
+      feedSay('br-more', '');
+    } else if (brFeed.done) {
+      feedSay('br-more', `All ${brFeed.offset} bills.`);
+    } else {
+      feedSay('br-more', '');
+    }
+  } catch (e) {
+    if (mine === brFeed.token) feedSay('br-more', e.message);
+  } finally {
+    if (mine === brFeed.token) brFeed.loading = false;
+  }
+}
+
+function brFill() {
+  return feedFill('br-more', brFeed, brNextPage);
+}
+
+function brWatch() {
+  brFeed.watcher = feedWatch('br-more', brFill);
 }
 
 async function loadDashboard() {

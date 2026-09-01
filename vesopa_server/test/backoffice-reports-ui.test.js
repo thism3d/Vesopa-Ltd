@@ -260,7 +260,7 @@ check('a page of sales is fetched, not five hundred', () => {
 });
 
 check('and the next page is on its way before the scroll arrives', () => {
-  const fn = app.slice(app.indexOf('function exWatch('), app.indexOf('function exWatch(') + 900);
+  const fn = app.slice(app.indexOf('function feedWatch('), app.indexOf('/** The line under a list'));
   assert.match(fn, /IntersectionObserver/);
   assert.match(fn, /rootMargin/, 'the page is only fetched once the foot is reached');
   // The viewport, NOT `main`.
@@ -277,6 +277,9 @@ check('and the next page is on its way before the scroll arrives', () => {
   // 120 rows before, all 500 after.
   assert.match(fn, /root: null/);
   assert.doesNotMatch(fn, /root: document\.querySelector\('main'\)/);
+  // And both feeds are watched by this one function, not two copies of it.
+  assert.match(app, /exFeed\.watcher = feedWatch\('ex-more'/);
+  assert.match(app, /brFeed\.watcher = feedWatch\('br-more'/);
 });
 
 check('a page that does not fill the screen still asks for the next one', () => {
@@ -284,14 +287,50 @@ check('a page that does not fill the screen still asks for the next one', () => 
   // sentinel in view produces no second callback, so the observer alone stalls
   // on a short result or a tall screen however the root is set. The filling is
   // a loop; the observer only starts it.
-  const fill = app.slice(app.indexOf('async function exFill('), app.indexOf('function exWatch('));
-  assert.ok(fill, 'there is no exFill()');
+  const fill = app.slice(app.indexOf('async function feedFill('), app.indexOf('function feedWatch('));
+  assert.ok(fill, 'there is no feedFill()');
   assert.match(fill, /getBoundingClientRect/, 'nothing measures where the foot is');
-  assert.match(fill, /await exNextPage\(\)/, 'the loop never fetches');
-  assert.match(fill, /exFeed\.done/, 'nothing stops it at the end of the list');
+  assert.match(fill, /await nextPage\(\)/, 'the loop never fetches');
+  assert.match(fill, /feed\.done/, 'nothing stops it at the end of the list');
   assert.match(fill, /guard/, 'an unbounded loop can spin the tab');
-  const watch = app.slice(app.indexOf('function exWatch('), app.indexOf('function exWatch(') + 900);
-  assert.match(watch, /exFill\(\)/, 'the observer still calls exNextPage directly');
+  assert.match(fill, /token !== feed\.token/, 'a replaced search can still append');
+});
+
+// ---------------------------------------------------------------------------
+// 6. The Bill Report loads the same way
+// ---------------------------------------------------------------------------
+
+check('the bill report is a feed, not a ceiling', () => {
+  const fn = app.slice(app.indexOf('async function brNextPage('), app.indexOf('function brFill('));
+  assert.match(fn, /params\.set\('limit'/, 'no page size is asked for');
+  assert.match(fn, /params\.set\('offset'/, 'every page would be the first one');
+  assert.match(fn, /rows\.length < BR_PAGE/, 'a short page is not recognised as the last');
+  assert.match(fn, /insertAdjacentHTML/, 'a page replaces the list instead of extending it');
+  assert.match(fn, /mine !== brFeed\.token/, 'no guard against an overtaken request');
+});
+
+check('and it has a foot to hang the next page off', () => {
+  assert.match(html, /id="br-more"/, 'no sentinel under the bill table');
+  assert.match(html, /class="ex-more" id="br-more"/, 'the sentinel is not styled as one');
+  const load = app.slice(app.indexOf('async function loadBillReport('), app.indexOf('async function brNextPage('));
+  assert.match(load, /brWatch\(\)/, 'nothing watches the foot');
+  assert.match(load, /feedFill\('br-more'/, 'the first screen is never filled');
+  assert.match(load, /brFeed\.watcher\?\.disconnect\(\)/, 'reopening the view leaks an observer');
+});
+
+check('paged bills are ordered by something unique', () => {
+  // Same trap as the sales explorer: a busy counter settles several bills in
+  // the same second, and LIMIT/OFFSET over a partly-defined order shows one
+  // twice and another never.
+  const route = explorer.slice(
+    explorer.indexOf("router.get('/bill-report'"),
+    explorer.indexOf("router.get('/bill-report'") + 1600
+  );
+  assert.match(route, /ORDER BY o\.closed_at DESC, o\.id DESC/);
+  assert.match(route, /LIMIT \$\{limit\} OFFSET \$\{offset\}/);
+  assert.match(route, /const limit = Math\.min\(Math\.max\(Number\(/);
+  assert.match(route, /const offset = Math\.max\(Number\(/);
+  assert.doesNotMatch(route, /LIMIT 200\b/, 'the flat ceiling is still there');
 });
 
 check('a search that lands late cannot append to a newer one', () => {
