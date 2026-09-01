@@ -770,9 +770,23 @@ const OFFER_FULLSCREEN =
   !!(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen);
 if (!OFFER_FULLSCREEN && fsBtn) fsBtn.hidden = true;
 
+/* Once the visitor is actually on the page, pull every clip into cache in the
+   background so none of them is still downloading when its section arrives.
+   Once only, from whichever trigger reaches it first. */
+let warmed = false;
+const warmVideo = () => { if (warmed) return; warmed = true; backdrop.warm(); };
+
 const loader = deepLink ? null : createLoader({
   canFullscreen: OFFER_FULLSCREEN,
   async onEnter(withExtras) {
+    /* Both buttons are a real user gesture, and a gesture is the only thing
+       that lifts an autoplay refusal — so this runs above the branch, for Skip
+       as well as Enter. On an iOS device in Low Power Mode the backdrop starts
+       here or it does not start at all. */
+    backdrop.unlock();
+    // And the rest of the clips can start arriving: the loader is on its way
+    // out, so the first one is no longer competing for the same connection.
+    warmVideo();
     if (!withExtras) return;
     // Still inside the click, which is the only reason either of these works.
     const okAudio = await audio.enable();
@@ -790,16 +804,11 @@ const loader = deepLink ? null : createLoader({
   },
 });
 
-/* Once the visitor is actually on the page, pull the rest of the clips into
-   cache in the background so none of them is still downloading when its
-   section arrives. */
-const warmVideo = () => backdrop.warm();
 if (loader) {
-  // After the loader is dismissed — not during, when the field is still
-  // building and the first clip is competing for the same connection.
-  setTimeout(warmVideo, 2500);
+  // A visitor who presses neither button still gets the clips.
+  setTimeout(warmVideo, 4000);
 } else {
-  addEventListener("load", () => setTimeout(warmVideo, 1200), { once: true });
+  addEventListener("load", () => setTimeout(warmVideo, 800), { once: true });
 }
 
 // Real milestones rather than a timer pretending to be one. The shapes are

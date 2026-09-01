@@ -139,12 +139,12 @@ if (cmd === 'video') {
   // Ask the real decoder rather than parsing atoms by hand: dimensions,
   // duration, and whether the clip actually reaches a playable state.
   // Sections declare a backdrop by slug; the paths follow from it.
-  // Both renditions of every clip. The phone encode is the one that used to be
-  // reported broken, and it is the one nobody checks by looking at the site on
-  // a desktop, so it is checked here explicitly rather than assumed.
+  // Every rendition of every clip. The phone and tablet encodes are the ones
+  // that get reported broken, and they are the ones nobody checks by looking
+  // at the site on a desktop, so they are checked here rather than assumed.
   const clips = await page.$$eval('[data-clip]', ws =>
     [...new Set(ws.map(w => w.dataset.clip))]
-      .flatMap(s => [`assets/video/${s}.lg.mp4`, `assets/video/${s}.sm.mp4`]));
+      .flatMap(s => ['lg', 'md', 'sm'].map(r => `assets/video/${s}.${r}.mp4`)));
   for (const src of clips) {
     const r = await page.evaluate(u => new Promise(res => {
       const v = document.createElement('video');

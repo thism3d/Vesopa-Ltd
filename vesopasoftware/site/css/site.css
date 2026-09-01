@@ -980,7 +980,13 @@ body.is-fullscreen .mark-home{padding-left:env(safe-area-inset-left,0)}
   html{scroll-behavior:auto}
   body{transition:none}
   #plate{transition:none}
-  .bd-clip video{display:none}
+  /* The clip itself stays. `display:none` here is what stopped the backdrop
+     ever appearing on an iPad in Low Power Mode, which reports this preference
+     for a battery setting rather than an accessibility one — see the note in
+     stage.js. What reduced motion takes away is the *movement between* clips:
+     the cross-fade becomes a cut. */
+  .bd-clip{transition:none}
+  .bd-clip video{transition:none}
   .cue i{animation:none}
   #spotlight{transition:none}
   [data-reveal]{opacity:1;transform:none;transition:none}

@@ -11,9 +11,7 @@
  *                   stepping through the app's screens as you scroll past.
  */
 
-import {
-  reduced, saveData, slowLink, lowEnd, videoBudget, onStrain, strain,
-} from "./device.js";
+import { saveData, slowLink, videoBudget, onStrain } from "./device.js";
 
 const clamp01 = (v) => Math.min(1, Math.max(0, v));
 
@@ -36,77 +34,199 @@ const clamp01 = (v) => Math.min(1, Math.max(0, v));
  * way all show the right frame rather than a black rectangle.
  */
 export function createBackdrop(root) {
-  const live = new Map();          // slug -> { el, wrap, failed }
+  const live = new Map();          // slug -> rec, one per declared clip
   let order = [];                  // slugs in page order, for adjacency
+  let clips = new Map();
   let current = null;
-  let posterOnly = reduced || saveData || slowLink;
+  let budget = videoBudget;
 
-  // Autoplay can be refused outright — iOS in Low Power Mode does exactly
-  // that, and there is no API that admits to it. The refusal used to be
-  // swallowed, so the page sat on a poster forever with nothing to retry it.
-  // Now the first refusal arms a one-shot listener on the next real gesture,
-  // which is the only thing that will lift it.
-  let blocked = false;
+  /* Reduced motion is deliberately not consulted here.
+   *
+   * It used to be: `reduced` was part of this flag, so a browser reporting
+   * the preference got no <video> element at all. What made that wrong is
+   * what actually sets it. iPadOS reports `prefers-reduced-motion: reduce`
+   * for Low Power Mode as well as for the accessibility switch, so a tablet
+   * at 20% battery was handed the treatment meant for someone who had asked
+   * for a still page — and got posters for the rest of the visit with nothing
+   * able to bring the footage back. That is the bug this file was opened for.
+   *
+   * The rest of the page still honours the preference in full: no parallax,
+   * no star field, no reveal animations, instant transitions. The backdrop is
+   * the one thing that no longer does, by decision.
+   *
+   * Save-Data and a 2g link do still stop it, because those are about what the
+   * visitor is paying to download, which is not a matter of design intent. */
+  let posterOnly = saveData || slowLink;
+
+  /* ---------- autoplay refusal ---------- */
+
+  /* Muted inline video is supposed to start without asking. iOS in Low Power
+   * Mode refuses anyway, and there is no API that admits to it: `play()`
+   * simply rejects. The refusal is only ever lifted by a real gesture, so one
+   * is waited for — several kinds, because a visitor who scrolls with a
+   * finger and never taps must lift it too. */
+  const GESTURES = ["pointerdown", "touchstart", "touchend", "keydown", "click"];
+  let waiting = false;
+
   function armUnblock() {
-    if (blocked) return;
-    blocked = true;
-    const retry = () => {
-      blocked = false;
-      const rec = current && live.get(current);
-      rec?.el?.play().catch(() => armUnblock());
+    if (waiting) return;
+    waiting = true;
+    const lift = () => {
+      if (!waiting) return;
+      waiting = false;
+      for (const type of GESTURES) removeEventListener(type, lift, true);
+      resume();
     };
-    addEventListener("pointerdown", retry, { once: true, passive: true });
-    addEventListener("touchstart", retry, { once: true, passive: true });
-    addEventListener("keydown", retry, { once: true });
+    for (const type of GESTURES) {
+      addEventListener(type, lift, { capture: true, passive: true });
+    }
   }
 
-  // If the frame loop reports the machine is struggling, the backdrop is the
-  // most expensive thing on the page that nobody is looking directly at.
+  /** Try the current clip again — after a gesture, a tab switch, or a retry. */
+  function resume() {
+    const rec = current && live.get(current);
+    if (rec) start(rec);
+  }
+
+  /* Coming back to a backgrounded tab, iOS has usually torn the decoder down
+   * and left the element paused. Nothing else notices, so the page comes back
+   * to a frozen frame that looks exactly like a clip that never loaded. */
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) resume();
+  });
+
+  /* ---------- strain ---------- */
+
+  /* If the frame loop reports the machine is struggling, the backdrop is the
+   * most expensive thing on the page nobody is looking at directly — but it is
+   * also the thing the page is largely made of, so level 2 now sheds the
+   * clips that are merely resident rather than the one on screen. Dropping to
+   * a poster wholesale was too blunt: one bad second during the opening, when
+   * the field is still building, used to cost the visitor every clip. */
   onStrain((level) => {
     if (level < 2) return;
-    posterOnly = true;
+    budget = 1;
     for (const rec of live.values()) {
-      rec.el?.pause();
-      rec.el?.remove();
-      rec.el = null;
+      if (rec.slug !== current) detach(rec);
     }
   });
 
-  function build(slug, src, poster) {
+  /* ---------- elements ---------- */
+
+  /* The wrapper — and with it the poster — is built once and kept for the life
+   * of the page. Only the <video> comes and goes.
+   *
+   * This used to remove the whole wrapper on eviction and build it again on
+   * return, which on any device whose budget is one meant every section change
+   * destroyed and recreated the element. iOS is slow to release a decoder, so
+   * scrolling back and forth would ask for one that had not been handed back
+   * yet, and the request that failed was never retried. It also meant the
+   * poster blinked out at each boundary. */
+  function wrapFor(slug) {
+    let rec = live.get(slug);
+    if (rec) return rec;
+    const clip = clips.get(slug);
+    if (!clip) return null;
+
     const wrap = document.createElement("div");
     wrap.className = "bd-clip";
     wrap.style.setProperty("--k", "0");
-    // The poster is the floor: an evicted slot, a refused autoplay, a decode
-    // that never finishes and a machine in posterOnly all land here rather
-    // than on a black rectangle.
-    if (poster) wrap.style.backgroundImage = `url("${poster}")`;
+    // The poster is the floor: a detached slot, a refused autoplay, a decode
+    // still on its way and a machine in posterOnly all land here rather than
+    // on a black rectangle.
+    if (clip.poster) wrap.style.backgroundImage = `url("${clip.poster}")`;
     root.appendChild(wrap);
 
-    const rec = { wrap, el: null, failed: false };
+    rec = { slug, clip, wrap, el: null, tries: 0, retry: null, watchdog: null };
     live.set(slug, rec);
-    if (posterOnly) return rec;
+    return rec;
+  }
+
+  function attach(rec) {
+    if (posterOnly || rec.el) return;
 
     const v = document.createElement("video");
     v.muted = true; v.loop = true; v.playsInline = true;
-    v.setAttribute("playsinline", "");           // iOS needs the attribute too
+    // Safari has historically wanted each of these as an attribute rather than
+    // a property, and an old iPad is exactly where that still bites.
+    v.setAttribute("playsinline", "");
+    v.setAttribute("webkit-playsinline", "");
+    v.setAttribute("muted", "");
     v.setAttribute("aria-hidden", "true");
     v.setAttribute("disableremoteplayback", "");
-    // `metadata` where decoders are scarce: `auto` on a phone starts pulling
-    // the whole clip for a section that may never be reached.
-    v.preload = videoBudget > 1 ? "auto" : "metadata";
-    v.src = src;
+    // Always `auto`. `metadata` on a small budget was a false economy: it
+    // saved bytes the visitor was going to spend anyway and moved the whole
+    // download to the moment the section arrived, so the clip was still on the
+    // wire while its section was on screen. Prefetching is what keeps this
+    // honest — see `warm`.
+    v.preload = "auto";
+    v.src = rec.clip.src;
 
-    const ready = () => v.classList.add("on");
-    v.addEventListener("canplay", ready, { once: true });
-    v.addEventListener("loadeddata", ready, { once: true });
-    // A clip that errors is gone for good — retrying a 404 or an unsupported
-    // encode on every section change is just a slower way to show the poster.
-    v.addEventListener("error", () => { rec.failed = true; v.remove(); rec.el = null; },
-                       { once: true });
+    const ready = () => {
+      rec.tries = 0;
+      clearTimeout(rec.watchdog);
+      rec.watchdog = null;
+      v.classList.add("on");
+    };
+    v.addEventListener("loadeddata", ready);
+    v.addEventListener("canplay", ready);
+    v.addEventListener("error", () => fail(rec));
 
-    wrap.appendChild(v);
+    /* A load that neither succeeds nor errors is the failure mode with no
+     * event: a connection that dropped mid-file leaves the element sitting at
+     * readyState 0 forever, and the visitor sees a poster with nothing behind
+     * it. Nothing else will notice, so this does. */
+    rec.watchdog = setTimeout(() => {
+      if (v.readyState < 2) fail(rec);
+    }, 9000);
+
+    rec.wrap.appendChild(v);
     rec.el = v;
-    return rec;
+  }
+
+  function detach(rec) {
+    clearTimeout(rec.watchdog);
+    rec.watchdog = null;
+    if (!rec.el) return;
+    rec.el.pause();
+    // Emptying the source before dropping the element is what actually
+    // releases the decoder on iOS; simply removing the node leaves it held
+    // until GC, which is how a budget of two becomes a budget of none.
+    rec.el.removeAttribute("src");
+    rec.el.load();
+    rec.el.remove();
+    rec.el = null;
+  }
+
+  /* ---------- retry ---------- */
+
+  /* A clip that fails is retried, never abandoned.
+   *
+   * The old handler removed the element on the first `error` and set a flag
+   * meaning "never again". That is the right answer for a 404 and the wrong
+   * one for everything else that fires the same event — a connection dropped
+   * as a tunnel arrives, a decoder iOS would not hand out because two were
+   * already open, a request cancelled because the page was backgrounded
+   * mid-load. All momentary, all of them cost the visitor the clip for the
+   * rest of the session.
+   *
+   * So it backs off instead, which keeps a genuinely missing file down to one
+   * request every few seconds rather than a spin, and keeps trying as long as
+   * the page still wants the clip. */
+  const RETRY_CAP = 8000;
+
+  function fail(rec) {
+    rec.tries += 1;
+    detach(rec);
+    if (rec.retry) return;
+    const wait = Math.min(RETRY_CAP, 500 * 2 ** Math.min(rec.tries, 5));
+    rec.retry = setTimeout(() => {
+      rec.retry = null;
+      // Only if it is still one of the clips the page is holding open.
+      if (!wanted().has(rec.slug)) return;
+      attach(rec);
+      if (rec.slug === current) start(rec);
+    }, wait);
   }
 
   /** Start a clip, and notice if the browser refuses. */
@@ -116,11 +236,38 @@ export function createBackdrop(root) {
     if (r && typeof r.catch === "function") r.catch(() => armUnblock());
   }
 
+  /** The slugs that should be holding a decoder right now. */
+  function wanted() {
+    const i = order.indexOf(current);
+    const keep = new Set(current ? [current] : []);
+    if (budget > 1) keep.add(order[i + 1]);
+    if (budget > 2) keep.add(order[i - 1]);
+    keep.delete(undefined);
+    return keep;
+  }
+
   return {
     /** Declare the clips, in page order. */
     register(list) {
       order = list.map((c) => c.slug);
-      this.clips = new Map(list.map((c) => [c.slug, c]));
+      clips = new Map(list.map((c) => [c.slug, c]));
+      this.clips = clips;
+      // Posters up front, all of them. They are one background-image each and
+      // they are what the visitor looks at until the footage lands, so there
+      // is nothing to gain by making a section wait for its own.
+      for (const slug of order) wrapFor(slug);
+    },
+
+    /**
+     * Let a real user gesture lift an autoplay refusal.
+     *
+     * Called from inside the loader's Enter click, which is the one moment on
+     * the page guaranteed to be a genuine gesture. iOS in Low Power Mode will
+     * start a muted clip from there and from nowhere else.
+     */
+    unlock() {
+      waiting = false;
+      resume();
     },
 
     /** Make one clip the visible backdrop. Safe to call every frame. */
@@ -128,64 +275,78 @@ export function createBackdrop(root) {
       if (slug === current) return;
       current = slug;
 
-      const i = order.indexOf(slug);
-      // How much stays resident is a decoder budget, not a fixed window. On a
-      // phone that is the current clip and nothing else; three simultaneous
-      // decoders is what stopped the later clips ever playing.
-      const keep = new Set([slug]);
-      if (videoBudget > 1) keep.add(order[i + 1]);
-      if (videoBudget > 2) keep.add(order[i - 1]);
-      keep.delete(undefined);
-
-      for (const [key, rec] of live) {
-        if (keep.has(key)) continue;
-        rec.el?.pause();
-        rec.wrap.remove();
-        live.delete(key);
+      const keep = wanted();
+      for (const rec of live.values()) {
+        if (keep.has(rec.slug)) continue;
+        rec.wrap.style.setProperty("--k", "0");
+        detach(rec);
       }
 
       for (const key of keep) {
-        const clip = this.clips.get(key);
-        if (!clip) continue;
-        const rec = live.get(key) || build(key, clip.src, clip.poster);
+        const rec = wrapFor(key);
+        if (!rec) continue;
         const active = key === slug;
         rec.wrap.style.setProperty("--k", active ? "1" : "0");
+        attach(rec);
         if (!rec.el) continue;
-        // Neighbours stay loaded but paused: decoding a clip nobody can see
-        // is the cheapest frame rate you will ever throw away.
+        // Neighbours stay loaded but paused: decoding a clip nobody can see is
+        // the cheapest frame rate you will ever throw away.
         if (active) start(rec); else rec.el.pause();
       }
     },
 
     /**
-     * Pull the clips into the HTTP cache, in page order, once the page is up.
+     * Pull every clip into the HTTP cache, in page order, as soon as the page
+     * is up.
      *
      * Without this a clip only starts downloading as its section arrives, so
      * on anything but a fast line the visitor reaches a section and watches a
-     * poster while the video is still on its way.
+     * poster while the video is still on its way. Fetching bytes costs no
+     * decoder, which is the whole point.
      *
-     * Fetching bytes costs no decoder, which is the whole point — but it is
-     * still bandwidth and still memory pressure, so it is skipped entirely
-     * wherever either is scarce. On a metered line, a slow line, or a machine
-     * already showing strain, the posters are the answer.
+     * It no longer skips modest devices. It used to bail on `lowEnd`, which
+     * covers every iPad reporting four cores — the machines with the least
+     * headroom to spare were the ones asked to download each clip at the
+     * moment it was needed. Bandwidth is not the scarce resource there;
+     * decoders are, and this spends none.
+     *
+     * A clip that fails is retried rather than skipped, because a prefetch
+     * that quietly gives up leaves exactly the stall it exists to prevent.
      */
     async warm() {
-      if (posterOnly || lowEnd || saveData || slowLink) return;
+      if (posterOnly) return;
 
-      const idle = window.requestIdleCallback || ((f) => setTimeout(f, 900));
-      await new Promise((r) => idle(r, { timeout: 2500 }));
+      const idle = window.requestIdleCallback || ((f) => setTimeout(f, 300));
+      await new Promise((r) => idle(r, { timeout: 1200 }));
 
-      for (const slug of order) {
-        if (strain() > 0) return;      // the page needs the bandwidth elsewhere
-        const clip = this.clips.get(slug);
-        if (!clip) continue;
-        try {
-          // One at a time, and the body is drained rather than abandoned: an
-          // unread response body holds its buffer open until GC gets to it.
-          const res = await fetch(clip.src, { priority: "low", cache: "force-cache" });
-          await res.arrayBuffer().catch(() => {});
-        } catch { /* offline, or the visitor left — neither is worth reporting */ }
-      }
+      const queue = order.filter((s) => clips.has(s));
+      let cursor = 0;
+
+      const pull = async (slug) => {
+        const clip = clips.get(slug);
+        for (let attempt = 0; attempt < 4; attempt++) {
+          try {
+            // The body is drained rather than abandoned: an unread response
+            // body holds its buffer open until GC gets to it.
+            const res = await fetch(clip.src, { priority: "low", cache: "force-cache" });
+            if (!res.ok) throw new Error(String(res.status));
+            await res.arrayBuffer();
+            return;
+          } catch {
+            // Offline, or the visitor left, or the connection dropped. Wait,
+            // then ask again — a half-fetched clip is the stall this prevents.
+            await new Promise((r) => setTimeout(r, 800 * 2 ** attempt));
+          }
+        }
+      };
+
+      // Two at a time. One is slower than the page needs; the whole list at
+      // once competes with the clip actually on screen for the same
+      // connection, which is the stall in a different costume.
+      const worker = async () => {
+        while (cursor < queue.length) await pull(queue[cursor++]);
+      };
+      await Promise.all([worker(), worker()]);
     },
 
     /** Nothing on screen wants a backdrop — fade the lot out. */

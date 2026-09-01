@@ -43,6 +43,24 @@ const mem = navigator.deviceMemory || 0;          // absent in Safari
 export const phone = coarse && Math.min(innerWidth, innerHeight) < 820;
 
 /**
+ * A phone, and specifically not a tablet.
+ *
+ * `phone` above draws its line at 820px because that is where the particle
+ * field has to thin out, and on that measure every iPad but the largest is a
+ * phone — an iPad in portrait is 768 to 834 points wide. That is the right
+ * call for the field and the wrong one for video: it handed a 10-inch tablet
+ * with a 2x display one 720px decoder and the phone encode, which is the
+ * "why does the backdrop look soft and arrive late on my iPad" report.
+ *
+ * So video sizes itself off this instead. 600 is below any tablet in
+ * circulation and above every phone in landscape.
+ */
+export const handset = coarse && Math.min(innerWidth, innerHeight) < 600;
+
+/** Coarse pointer, big screen. An iPad, or an Android tablet. */
+export const tablet = coarse && !handset;
+
+/**
  * Weak enough that the page should not spend everything it has.
  *
  * Deliberately generous about what counts. The cost of treating a capable
@@ -68,11 +86,13 @@ export const lowEnd =
  * show the section you are looking at; the rest is prefetching, which the
  * cache does better and without a decoder.
  */
-export const videoBudget = lowEnd ? 1 : phone ? 1 : coarse ? 2 : 3;
+export const videoBudget = lowEnd ? 1 : handset ? 1 : tablet ? 2 : 3;
 
 /** Which encode to fetch. See tools/encode-video.mjs for what these are. */
 export const videoRendition =
-  saveData || slowLink || lowEnd || phone ? "sm" : "lg";
+  saveData || slowLink || lowEnd || handset ? "sm"
+  : tablet ? "md"
+  : "lg";
 
 /** Cap the canvas backing store. Retina on a weak GPU is four times the fill. */
 export const dprCap = lowEnd ? 1.25 : phone ? 1.75 : 2;

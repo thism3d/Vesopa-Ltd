@@ -17,7 +17,15 @@
  * So each source produces:
  *
  *   <slug>.lg.mp4   1280px, High profile, for anything with room for it
+ *   <slug>.md.mp4   1024px, High profile, for tablets
  *   <slug>.sm.mp4    720px, Main profile,  for phones and metered lines
+ *
+ * The middle one exists because an iPad is neither of the other two. It has a
+ * 2x display a metre from your face, where the 720px encode is visibly soft,
+ * and it does not have a laptop's thermal headroom for the 1280px one behind
+ * a live particle field. Serving it `sm` was the reason the backdrop looked
+ * like a low-resolution smear on exactly the device most likely to be held
+ * close enough to notice.
  *
  * Both are `+faststart`, both are silent, and both are `yuv420p`. Those three
  * are not tuning, they are the difference between playing and not:
@@ -45,6 +53,7 @@ const DIR = path.resolve("site/assets/video");
 /** width, H.264 profile+level, quality, max bitrate. */
 const RENDITIONS = [
   { name: "lg", width: 1280, profile: "high", level: "4.0", crf: 24, maxrate: "1400k", bufsize: "2800k" },
+  { name: "md", width: 1024, profile: "high", level: "3.1", crf: 25, maxrate: "900k",  bufsize: "1800k" },
   { name: "sm", width: 720,  profile: "main", level: "3.1", crf: 27, maxrate: "600k",  bufsize: "1200k" },
 ];
 
@@ -81,7 +90,7 @@ const all = await readdir(DIR);
 // themselves inputs, or a second run would encode the encodes.
 const sources = all
   .filter((f) => f.endsWith(".mp4"))
-  .filter((f) => !/\.(lg|sm)\.mp4$/.test(f))
+  .filter((f) => !/\.(lg|md|sm)\.mp4$/.test(f))
   .sort();
 
 if (!sources.length) {
