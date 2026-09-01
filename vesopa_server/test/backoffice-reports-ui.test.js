@@ -260,13 +260,38 @@ check('a page of sales is fetched, not five hundred', () => {
 });
 
 check('and the next page is on its way before the scroll arrives', () => {
-  const fn = app.slice(app.indexOf('function exWatch('), app.indexOf('function exWatch(') + 800);
+  const fn = app.slice(app.indexOf('function exWatch('), app.indexOf('function exWatch(') + 900);
   assert.match(fn, /IntersectionObserver/);
   assert.match(fn, /rootMargin/, 'the page is only fetched once the foot is reached');
-  // `main` is the scroller — the rail is fixed beside it — so a null root
-  // watches a viewport the sentinel never appears to move in, and the list
-  // silently stops at the first page.
-  assert.match(fn, /root: document\.querySelector\('main'\)/);
+  // The viewport, NOT `main`.
+  //
+  // This check used to require the opposite, on the stated grounds that `main`
+  // is the scroller. It is not, and never was: `#app` is `min-height: 100vh`,
+  // so it grows with its content and `main` — a flex item in it with no height
+  // to be held to — grows with it. `overflow: auto` on a box that never
+  // overflows makes no scroll container, and the document is what scrolls at
+  // every width. Rooted on `main`, the sentinel was measured against a box that
+  // always contained it: `isIntersecting` was true on the first frame and never
+  // changed again, so exactly one extra page arrived and the feed stopped at a
+  // hundred and twenty lines. Measured in a browser at 1440px and at 390px —
+  // 120 rows before, all 500 after.
+  assert.match(fn, /root: null/);
+  assert.doesNotMatch(fn, /root: document\.querySelector\('main'\)/);
+});
+
+check('a page that does not fill the screen still asks for the next one', () => {
+  // An IntersectionObserver reports changes, not states. A page that leaves the
+  // sentinel in view produces no second callback, so the observer alone stalls
+  // on a short result or a tall screen however the root is set. The filling is
+  // a loop; the observer only starts it.
+  const fill = app.slice(app.indexOf('async function exFill('), app.indexOf('function exWatch('));
+  assert.ok(fill, 'there is no exFill()');
+  assert.match(fill, /getBoundingClientRect/, 'nothing measures where the foot is');
+  assert.match(fill, /await exNextPage\(\)/, 'the loop never fetches');
+  assert.match(fill, /exFeed\.done/, 'nothing stops it at the end of the list');
+  assert.match(fill, /guard/, 'an unbounded loop can spin the tab');
+  const watch = app.slice(app.indexOf('function exWatch('), app.indexOf('function exWatch(') + 900);
+  assert.match(watch, /exFill\(\)/, 'the observer still calls exNextPage directly');
 });
 
 check('a search that lands late cannot append to a newer one', () => {

@@ -879,8 +879,8 @@ async function loadExplorer() {
 
   $('explorer').innerHTML = '';
   exSay('');
-  await exNextPage();
   exWatch();
+  await exFill();
 }
 
 /** The line under the table: loading, finished, or nothing at all. */
@@ -947,12 +947,49 @@ async function exNextPage() {
 }
 
 /**
+ * Load until the foot of the list is off the bottom of the screen.
+ *
+ * An IntersectionObserver reports *changes*, not states, and that is the whole
+ * difficulty with a sentinel: if a page arrives and the sentinel is still in
+ * view, nothing has changed, no callback runs, and the feed stalls with the
+ * "load more" marker sitting in plain sight. That is guaranteed on the first
+ * page of a short result and on any tall screen, and it is why the list used to
+ * stop dead — on a phone, on a tablet and on a desktop alike.
+ *
+ * So the observer's job is only to notice that the foot has come into view; the
+ * filling is done here, in a loop, until it is not. Bounded, so a server that
+ * answers a full page for ever cannot spin the tab, and it stops the moment a
+ * page adds nothing.
+ */
+async function exFill() {
+  const sentinel = $('ex-more');
+  if (!sentinel) return;
+
+  for (let guard = 0; guard < 40; guard++) {
+    if (exFeed.done) return;
+    const box = sentinel.getBoundingClientRect();
+    // The same 500px of warning the observer is given, asked directly.
+    if (box.top > (window.innerHeight || document.documentElement.clientHeight) + 500) return;
+
+    const before = exFeed.offset;
+    const token = exFeed.token;
+    await exNextPage();
+    // A search replaced this one, or the page brought nothing back.
+    if (token !== exFeed.token || exFeed.offset === before) return;
+  }
+}
+
+/**
  * Watch the foot of the list.
  *
- * The scroller is `main`, not the window — the rail is fixed beside it — so
- * that is what the observer has to measure against. With `null` it would watch
- * the viewport, the sentinel would never be seen to move, and the list would
- * simply stop at sixty.
+ * Against the viewport, not `main`. `#app` is `min-height: 100vh`, so it grows
+ * with its content and `main` — a flex item in it with no height to be held to
+ * — grows with it: `overflow: auto` on an element that never overflows makes no
+ * scroll container. The document is what scrolls, at every width. Rooting the
+ * observer on `main` therefore measured the sentinel against a box that always
+ * contained it, so `isIntersecting` was true from the first frame and never
+ * changed again: one extra page arrived and the feed stopped at a hundred and
+ * twenty lines for ever.
  */
 function exWatch() {
   const sentinel = $('ex-more');
@@ -960,9 +997,9 @@ function exWatch() {
 
   exFeed.watcher = new IntersectionObserver(
     (entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) exNextPage();
+      if (entries.some((entry) => entry.isIntersecting)) exFill();
     },
-    { root: document.querySelector('main'), rootMargin: '500px 0px' }
+    { root: null, rootMargin: '500px 0px' }
   );
   exFeed.watcher.observe(sentinel);
 }

@@ -593,6 +593,60 @@ td.right, th.right { text-align: right; }
    width they already fit; this is the belt to that braces, because a stack of
    buttons overlapping a card's rounded corner is the thing that looks broken. */
 td .btn { white-space: nowrap; }
+
+/* ---- …and they do not scroll away either ---------------------------------
+
+   The rule above lets a wide table scroll inside its card, which is right. What
+   it does not say is which column goes first, and the answer is always the last
+   one — which on every list in this application is the row's own buttons. So on
+   an iPad, Edit and Delete on Departments, Top up and History on Gift cards,
+   Edit on Deposits, Delete on Automation rules and all six icons on Scheduled
+   reports were painted past the right-hand edge of the card, with nothing on
+   screen to say they were there. Six separate bug reports, one cause.
+
+   The catalogue is the worst of them: 1303px of table in a 776px card on an
+   iPad in portrait. Scrolling 527px to reach Delete also takes the product's
+   name off the left-hand side, so by the time the button is under your thumb
+   the row no longer says what it is — which is how you delete the wrong one.
+
+   The actions column stays put. Nothing has to be scrolled to act on a row, so
+   the column that says which row it is stops being scrolled away to get there.
+
+   Asked of the markup — `.row-actions-cell` is put on the last cell by
+   cardsOnPhone() for the phone layout — so a list added later gets this without
+   anyone remembering to, and a table whose last column is data (Stock, the
+   report tables) is left alone. Not scoped to `.card > table`, because
+   Scheduled reports puts its table inside a `.rr-scroll` of its own and that
+   is the very table with six buttons in the cell. */
+table:has(tbody > tr > .row-actions-cell) tr > :last-child {
+  position: sticky;
+  right: 0;
+  z-index: 1;
+  background: var(--card);
+  /* `border-collapse: collapse` and `position: sticky` disagree: a collapsed
+     border belongs to the table, not the cell, so it does not travel with a
+     cell that has been lifted out of the flow and the column loses its row
+     lines. Drawn inside the cell instead. The second shadow is the edge the
+     column floats above — soft enough to read as a seam when the table fits
+     and as a lifted edge when it does not. */
+  box-shadow:
+    inset 0 -1px 0 var(--line),
+    -10px 0 12px -10px rgba(20, 18, 26, .28);
+}
+table:has(tbody > tr > .row-actions-cell) thead tr > :last-child {
+  /* Above its own column, and above the rest of the heading row. */
+  z-index: 2;
+  background: var(--hover);
+}
+/* The hover wash is painted on the row, and the row is underneath this cell. */
+table:has(tbody > tr > .row-actions-cell) tbody tr:hover > :last-child {
+  background: var(--hover);
+}
+/* The last row owns the card's bottom corners; a line drawn under it sits on
+   the border and reads as a stray rule. */
+table:has(tbody > tr > .row-actions-cell) tbody tr:last-child > :last-child {
+  box-shadow: -10px 0 12px -10px rgba(20, 18, 26, .28);
+}
 td .btn + .btn { margin-left: 6px; }
 
 /* A row that just arrived over the socket. */
@@ -1207,6 +1261,12 @@ tr.clickable:hover { background: var(--brand-soft); }
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 12px;
+  /* Stretch is the flex default, and it is wrong the moment this row holds a
+     label-above-a-field beside a plain button: on Timesheets the From and To
+     columns are two lines tall, so Show and Export PDF were drawn 60px high,
+     towering over the boxes they act on. Every button in here is its own
+     height and sits on the same line the fields end on. */
+  align-items: flex-end;
 }
 
 @media (max-width: 720px) {
@@ -2574,6 +2634,14 @@ table.sortable th.sorted[data-dir="down"]::after { content: ' ▼'; }
   font: inherit;
   color: inherit;
 }
+/* A number is not a sentence.
+
+   `input, select { width: 100% }` hands every inline editor the browser's
+   default field width as its *intrinsic* size, and a table sized to its
+   content then asks for that: the price column wanted 208px to show "3.00",
+   and the catalogue came out 1303px wide inside a card 776px across on an iPad
+   in portrait. Half the width of that table was empty boxes. */
+.cell-edit[type="number"] { max-width: 96px; }
 .cell-edit:hover { border-color: var(--line); }
 .cell-edit:focus {
   border-color: var(--brand-deep);
@@ -3423,10 +3491,25 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
    send, history, edit, delete. */
 .row-actions {
   display: flex;
-  flex-wrap: wrap;
+  /* NOT `wrap`.
+
+     Nine columns and six buttons is wider than `min-width: 900px` allows, so
+     the table layout gave this cell about the width of one icon and the six
+     of them wrapped into a vertical stack — a 234px column of buttons holding
+     a 250px-tall row open for one line of text, with `vertical-align: middle`
+     centring the other eight cells in the middle of all that emptiness. It
+     read as a table with one enormous blank row in it.
+
+     A row of actions is one line. Held to it, the cell's min-content width is
+     the six buttons, the table asks for the width it actually needs, and the
+     card scrolls — which is what the card is for. */
+  flex-wrap: nowrap;
   gap: 6px;
   justify-content: flex-end;
 }
+/* And they keep their size while it happens: `width: 34px` is not a floor on
+   its own, because a flex item may still shrink below its width. */
+.row-actions .icon-btn { flex: none; }
 
 .icon-btn {
   display: inline-flex;
@@ -3626,6 +3709,16 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
   .table-cards td.row-actions-cell .row-actions .icon-btn {
     flex: 1 1 0;
     min-width: 0;
+  }
+
+  /* The sticky actions column is a rule about a table that scrolls sideways.
+     Down here there is no table and no sideways: the cell is a block at the
+     foot of a card, and left floating it would sit over the row above it. */
+  .card > .table-cards tr > :last-child,
+  .table-cards tr > :last-child {
+    position: static;
+    background: none;
+    box-shadow: none;
   }
 
   /* "Nothing yet." is a colspan cell with no heading of its own. */
