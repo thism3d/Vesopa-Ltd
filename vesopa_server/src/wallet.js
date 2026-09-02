@@ -2,7 +2,9 @@ const crypto = require('crypto');
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const { requireAuth } = require('./auth');
+const QRCode = require('qrcode');
 const G = require('./wallet_google');
+const A = require('./wallet_apple');
 
 /**
  * Google Wallet passes: the back-office routes that configure and mint them,
@@ -26,6 +28,7 @@ const G = require('./wallet_google');
 function walletCore({ pool, secret }) {
   const config = G.readConfig();
   const client = config.configured ? G.makeClient(config) : null;
+  const appleConfig = A.readConfig();
 
   const BRAND_DEFAULTS = {
     enabled: 0,
@@ -37,6 +40,10 @@ function walletCore({ pool, secret }) {
     homepage_url: '',
     support_phone: '',
     terms: '',
+    // The venue's own word in the enrolment URL, in place of its email
+    // address. Null rather than '' so the unique index can hold: MySQL lets
+    // any number of rows share a NULL in a unique index, but only one ''.
+    join_slug: null,
     loyalty_enabled: 1,
     customer_enabled: 0,
     giftcard_enabled: 0,
@@ -273,9 +280,9 @@ function walletCore({ pool, secret }) {
    */
   async function mint(office, kind, subjectId) {
     if (!G.KINDS[kind]) throw new G.WalletError(`Unknown pass kind "${kind}"`, 400);
-    if (!config.configured) {
+    if (!config.configured && !appleConfig.configured) {
       throw new G.WalletError(
-        `Google Wallet is not configured: ${config.problems.join('; ')}`,
+        `Wallet is not configured: ${config.problems.concat(appleConfig.problems).join('; ')}`,
         503
       );
     }
@@ -284,84 +291,124 @@ function walletCore({ pool, secret }) {
     const subject = await loadSubject(office, kind, subjectId);
     if (!subject) throw new G.WalletError('No such customer, staff member or promotion', 404);
 
-    const built = G.buildPass({ kind, config, office, brand, subject });
-    let state = 'pending';
-    let link;
-    let lastError = null;
-
-    try {
-      await client.upsertClass(kind, built.klass);
-      await client.upsertObject(kind, built.object);
-      state = 'active';
-      // Registered, so the link only has to name the object. This is what keeps
-      // it comfortably under the length at which browsers start truncating.
-      link = G.saveUrl({ config, kind, ids: [built.objectId] });
-    } catch (e) {
-      lastError = e.message.slice(0, 500);
-      link = G.saveUrl({ config, kind, klass: built.klass, object: built.object });
-    }
-
     const [[existing]] = await pool.query(
-      'SELECT id FROM epos_wallet_passes WHERE office = ? AND kind = ? AND subject_id = ?',
+      'SELECT id, apple_serial, apple_auth_token FROM epos_wallet_passes WHERE office = ? AND kind = ? AND subject_id = ?',
       [office, kind, String(subjectId)]
     );
     const id = existing ? existing.id : crypto.randomUUID();
 
+    // ---- Google ------------------------------------------------------------
+    // Left exactly as before when Google is not configured: no class/object
+    // built, no save link, and the office falls back to Apple alone.
+    let state = 'pending';
+    let saveUrl = null;
+    let googleError = null;
+    // Google's own object id when Google is configured; otherwise the Apple
+    // serial (already unique per office/kind/subject) stands in, so the
+    // column's NOT NULL UNIQUE constraint holds for an office running Apple
+    // Wallet alone.
+    let objectId = A.serialFor(office, kind, subjectId);
+    if (config.configured) {
+      const built = G.buildPass({ kind, config, office, brand, subject });
+      objectId = built.objectId;
+      try {
+        await client.upsertClass(kind, built.klass);
+        await client.upsertObject(kind, built.object);
+        state = 'active';
+        // Registered, so the link only has to name the object. This is what
+        // keeps it comfortably under the length at which browsers truncate.
+        saveUrl = G.saveUrl({ config, kind, ids: [built.objectId] });
+      } catch (e) {
+        googleError = e.message.slice(0, 500);
+        saveUrl = G.saveUrl({ config, kind, klass: built.klass, object: built.object });
+      }
+
+      await pool.execute(
+        `INSERT INTO epos_wallet_classes (office, kind, class_id, review_status, last_error, synced_at)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+           class_id = VALUES(class_id), review_status = VALUES(review_status),
+           last_error = VALUES(last_error), synced_at = VALUES(synced_at)`,
+        [
+          office,
+          kind,
+          built.classId,
+          config.reviewStatus,
+          googleError,
+          state === 'active' ? new Date() : null,
+        ]
+      );
+    }
+
+    // ---- Apple ---------------------------------------------------------
+    // The serial and the authentication token are both stable across
+    // re-mints: the serial because it is how a returning customer's card
+    // updates in place instead of duplicating, the token because a phone
+    // that already registered for updates keeps sending back whatever token
+    // its installed copy carries.
+    const appleSerial = existing?.apple_serial || A.serialFor(office, kind, subjectId);
+    const appleAuthToken = existing?.apple_auth_token || A.newAuthToken();
+    let appleError = null;
+    if (!appleConfig.configured) appleError = appleConfig.problems.join('; ').slice(0, 500);
+
     await pool.execute(
       `INSERT INTO epos_wallet_passes
          (id, office, kind, subject_id, object_id, card_number, state, save_url,
-          last_error, synced_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          last_error, synced_at, apple_serial, apple_auth_token)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE
          object_id = VALUES(object_id), card_number = VALUES(card_number),
          state = VALUES(state), save_url = VALUES(save_url),
-         last_error = VALUES(last_error), synced_at = VALUES(synced_at)`,
+         last_error = VALUES(last_error), synced_at = VALUES(synced_at),
+         apple_serial = VALUES(apple_serial), apple_auth_token = VALUES(apple_auth_token)`,
       [
         id,
         office,
         kind,
         String(subjectId),
-        built.objectId,
+        objectId,
         String(subject.card_number || ''),
         state,
-        link.url,
-        lastError,
+        saveUrl ? saveUrl.url : null,
+        googleError || appleError,
         state === 'active' ? new Date() : null,
+        appleSerial,
+        appleAuthToken,
       ]
     );
 
-    await pool.execute(
-      `INSERT INTO epos_wallet_classes (office, kind, class_id, review_status, last_error, synced_at)
-       VALUES (?, ?, ?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE
-         class_id = VALUES(class_id), review_status = VALUES(review_status),
-         last_error = VALUES(last_error), synced_at = VALUES(synced_at)`,
-      [
-        office,
-        kind,
-        built.classId,
-        config.reviewStatus,
-        lastError,
-        state === 'active' ? new Date() : null,
-      ]
-    );
+    // A phone that already has this pass registered for updates is told to
+    // check now, so a re-mint (points changed, a balance moved) reaches a
+    // wallet already on someone's phone rather than only the next one issued.
+    if (appleConfig.configured && existing) pushApple(kind, appleSerial).catch(() => {});
 
     return {
       id,
       kind,
       subject_id: String(subjectId),
-      object_id: built.objectId,
-      class_id: built.classId,
+      object_id: objectId,
       card_number: subject.card_number || '',
       state,
-      save_url: link.url,
+      save_url: saveUrl ? saveUrl.url : null,
       // Over the safe length the save link may be truncated by the browser, so
       // the back office can warn instead of handing out a link that dies on a
       // customer's phone.
-      too_long: link.tooLong,
-      qr_url: shortLink(office, kind, subjectId),
-      warning: lastError,
+      too_long: saveUrl ? saveUrl.tooLong : false,
+      qr_url: config.configured ? shortLink(office, kind, subjectId) : null,
+      apple_url: appleConfig.configured ? shortLinkApple(office, kind, subjectId) : null,
+      warning: googleError || appleError,
     };
+  }
+
+  /** Tells every phone registered for `serial` to fetch this pass again. */
+  async function pushApple(kind, serial) {
+    const [rows] = await pool.query(
+      `SELECT d.push_token FROM epos_wallet_apple_registrations r
+       JOIN epos_wallet_apple_devices d ON d.device_library_id = r.device_library_id
+       WHERE r.pass_type_identifier = ? AND r.serial_number = ?`,
+      [G.PASS_TYPES[kind].appleType, serial]
+    );
+    await Promise.all(rows.map((r) => A.push(appleConfig, kind, r.push_token)));
   }
 
   /**
@@ -383,15 +430,59 @@ function walletCore({ pool, secret }) {
     return `${base}/wallet/s/${token}`;
   }
 
+  /**
+   * The Apple equivalent of shortLink(): a link that, unlike Google's, must
+   * serve the signed .pkpass bytes directly rather than redirect, because
+   * there is no third party to hand the customer off to.
+   */
+  function shortLinkApple(office, kind, subjectId) {
+    const token = jwt.sign(
+      { scope: 'wallet-apple', office, kind, sub: String(subjectId) },
+      secret,
+      { expiresIn: '365d' }
+    );
+    const base = String(process.env.BACKOFFICE_URL || '').replace(/\/+$/, '');
+    return `${base}/wallet/a/${token}`;
+  }
+
+  /**
+   * Builds and signs the .pkpass for a pass already minted. Used both by the
+   * initial download link and by the PassKit web service's "give me the
+   * latest copy" endpoint — the two differ only in how the caller is
+   * authenticated, never in what gets built.
+   */
+  async function buildApplePkpass(office, kind, subjectId) {
+    const brand = await readBrand(office);
+    const subject = await loadSubject(office, kind, subjectId);
+    if (!subject) throw new G.WalletError('No such customer, staff member or promotion', 404);
+    const [[row]] = await pool.query(
+      'SELECT apple_serial, apple_auth_token FROM epos_wallet_passes WHERE office = ? AND kind = ? AND subject_id = ?',
+      [office, kind, String(subjectId)]
+    );
+    if (!row) throw new G.WalletError('This pass has not been issued yet', 404);
+    return A.buildPkpass({
+      kind,
+      config: appleConfig,
+      brand,
+      subject,
+      serialNumber: row.apple_serial,
+      authenticationToken: row.apple_auth_token,
+    });
+  }
+
   return {
     config,
+    appleConfig,
     client,
     BRAND_DEFAULTS,
     BRAND_FIELDS,
     readBrand,
     loadSubject,
     mint,
+    pushApple,
     shortLink,
+    shortLinkApple,
+    buildApplePkpass,
   };
 }
 
@@ -404,7 +495,8 @@ function walletCore({ pool, secret }) {
 function walletRoutes({ pool, broadcast, secret, core }) {
   const router = express.Router();
   const auth = requireAuth(secret);
-  const { config, client, BRAND_FIELDS, readBrand, mint } = core || walletCore({ pool, secret });
+  const { config, appleConfig, client, BRAND_FIELDS, readBrand, mint, shortLink } =
+    core || walletCore({ pool, secret });
 
   async function tenantEmail(req) {
     if (req.user.officeId) {
@@ -450,6 +542,11 @@ function walletRoutes({ pool, broadcast, secret, core }) {
         // back office can say so before a card comes out blank.
         logo_public: /^https:\/\//i.test(brand.logo_url || ''),
         hero_public: !brand.hero_url || /^https:\/\//i.test(brand.hero_url),
+        apple: {
+          configured: appleConfig.configured,
+          problems: appleConfig.problems,
+          team_identifier: appleConfig.teamIdentifier || null,
+        },
         classes,
         counts: counts || { total: 0, active: 0, pending: 0 },
       });
@@ -461,6 +558,43 @@ function walletRoutes({ pool, broadcast, secret, core }) {
   router.get('/wallet/settings', auth, async (req, res, next) => {
     try {
       res.json(await readBrand(await tenantEmail(req)));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /**
+   * The enrolment link and its QR code, for a poster or a table card.
+   *
+   * The QR is SVG rather than PNG because the thing it ends up on is
+   * usually printed, and a QR that was rasterised at screen resolution
+   * before being blown up to A4 is a QR that does not scan.
+   *
+   * `?target=pass&kind=&subject=` gives the same for one customer's own card
+   * instead of the venue's sign-up page.
+   */
+  router.get('/wallet/qr', auth, async (req, res, next) => {
+    try {
+      const office = await tenantEmail(req);
+      const base = String(process.env.BACKOFFICE_URL || '').replace(/\/+$/, '');
+      if (!base) {
+        return res.status(503).json({ error: 'BACKOFFICE_URL is not set, so links cannot be built' });
+      }
+
+      let url;
+      if (String(req.query.target || 'join') === 'pass') {
+        const kind = String(req.query.kind || '');
+        const subject = String(req.query.subject || '');
+        if (!G.KINDS[kind] || !subject) {
+          return res.status(400).json({ error: 'A pass QR needs a kind and a subject' });
+        }
+        url = shortLink(office, kind, subject);
+      } else {
+        const brand = await readBrand(office);
+        url = `${base}/wallet/join/${encodeURIComponent(brand.join_slug || office)}`;
+      }
+
+      res.json({ url, svg: await QRCode.toString(url, { type: 'svg', margin: 1 }) });
     } catch (e) {
       next(e);
     }
@@ -489,6 +623,24 @@ function walletRoutes({ pool, broadcast, secret, core }) {
       if (hex && !/^#[0-9a-f]{6}$/i.test(hex)) {
         return res.status(400).json({ error: 'Card colour must be a hex value like #0f5132' });
       }
+
+      // The slug goes in a URL a customer types off a poster, so it is
+      // lower-cased and narrowed to what survives being read aloud, written
+      // down and typed back in. Blank means "no slug", not "the empty slug".
+      const slug = String(next_.join_slug || '').trim().toLowerCase();
+      if (slug) {
+        if (!/^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/.test(slug)) {
+          return res.status(400).json({
+            error: 'The link name may use letters, numbers and hyphens, and must be 3 to 64 characters',
+          });
+        }
+        const [[taken]] = await pool.query(
+          'SELECT office FROM epos_wallet_settings WHERE join_slug = ? AND office <> ?',
+          [slug, office]
+        );
+        if (taken) return res.status(409).json({ error: 'That link name is already taken' });
+      }
+      next_.join_slug = slug || null;
 
       const cols = BRAND_FIELDS;
       const placeholders = cols.map(() => '?').join(', ');
@@ -669,7 +821,7 @@ function walletRoutes({ pool, broadcast, secret, core }) {
  */
 function walletPublicRoutes({ pool, secret, core }) {
   const router = express.Router();
-  const { mint, readBrand } = core || walletCore({ pool, secret });
+  const { mint, readBrand, buildApplePkpass, pushApple } = core || walletCore({ pool, secret });
 
   /**
    * The QR target: verify the signed token, build the pass, redirect to Google.
@@ -677,6 +829,11 @@ function walletPublicRoutes({ pool, secret, core }) {
    * A 302 rather than a page with a button. The customer has already expressed
    * intent by scanning; Google's own save page is the confirmation step, and
    * putting another one in front of it loses people.
+   *
+   * If Google is not configured for this office but Apple is, this falls
+   * through to the Apple download instead of redirecting to a null URL — a
+   * printed QR predates knowing which platforms end up configured, so it has
+   * to cope with either.
    */
   router.get('/wallet/s/:token', async (req, res) => {
     let claims;
@@ -691,7 +848,50 @@ function walletPublicRoutes({ pool, secret, core }) {
 
     try {
       const result = await mint(claims.office, claims.kind, claims.sub);
-      res.redirect(302, result.save_url);
+      if (result.save_url) return res.redirect(302, result.save_url);
+      if (result.apple_url) return res.redirect(302, result.apple_url);
+      throw new G.WalletError('Wallet is not configured for this venue', 503);
+    } catch (e) {
+      res
+        .status(e.status === 404 ? 404 : 502)
+        .type('html')
+        .send(page('That card could not be issued', e.message));
+    }
+  });
+
+  /**
+   * The Apple equivalent: mints the pass if needed, then serves the signed
+   * .pkpass directly rather than redirecting — there is no page of Apple's to
+   * hand the customer off to the way pay.google.com/gp/v/save serves Google.
+   *
+   * `application/vnd.apple.pkpass` is the one thing that makes iOS treat the
+   * response as a pass rather than a file to save: get the Content-Type wrong
+   * here and "Add" does nothing, silently, which is exactly the failure mode
+   * this route exists to not have.
+   */
+  router.get('/wallet/a/:token', async (req, res) => {
+    let claims;
+    try {
+      claims = jwt.verify(String(req.params.token), secret);
+    } catch {
+      return res.status(400).type('html').send(page('This code has expired', 'Ask a member of staff for a new one.'));
+    }
+    if (claims.scope !== 'wallet-apple') {
+      return res.status(400).type('html').send(page('This code is not a wallet link', ''));
+    }
+
+    try {
+      await mint(claims.office, claims.kind, claims.sub);
+      const pkpass = await buildApplePkpass(claims.office, claims.kind, claims.sub);
+      res
+        .status(200)
+        .set({
+          'Content-Type': 'application/vnd.apple.pkpass',
+          'Content-Disposition': 'attachment; filename="pass.pkpass"',
+          'Content-Length': String(pkpass.length),
+          'Cache-Control': 'no-store',
+        })
+        .send(pkpass);
     } catch (e) {
       res
         .status(e.status === 404 ? 404 : 502)
@@ -707,14 +907,32 @@ function walletPublicRoutes({ pool, secret, core }) {
    * this form costs sign-ups, and the phone number is already the thing the
    * till looks a customer up by.
    */
+  /**
+   * Turns whatever is in the URL into an office.
+   *
+   * A venue's chosen slug first, then the office's own email — which is what
+   * every link printed before slugs existed carries, and those posters are
+   * already on walls.
+   */
+  async function officeFor(handle) {
+    const [[row]] = await pool.query(
+      'SELECT office FROM epos_wallet_settings WHERE join_slug = ?',
+      [handle]
+    );
+    return row ? row.office : handle;
+  }
+
   router.get('/wallet/join/:office', async (req, res, next) => {
     try {
-      const office = String(req.params.office);
-      const brand = await readBrand(office);
+      // The form posts back to whatever the customer arrived on — the slug if
+      // that is what the poster carries — so the pretty URL survives a failed
+      // submission instead of turning into the venue's email address.
+      const handle = String(req.params.office);
+      const brand = await readBrand(await officeFor(handle));
       if (!Number(brand.enabled) || !Number(brand.loyalty_enabled)) {
         return res.status(404).type('html').send(page('Not available', 'This venue is not issuing loyalty cards.'));
       }
-      res.type('html').send(joinPage(brand, office, null));
+      res.type('html').send(joinPage(brand, handle, null));
     } catch (e) {
       next(e);
     }
@@ -722,7 +940,8 @@ function walletPublicRoutes({ pool, secret, core }) {
 
   router.post('/wallet/join/:office', express.urlencoded({ extended: false }), async (req, res, next) => {
     try {
-      const office = String(req.params.office);
+      const handle = String(req.params.office);
+      const office = await officeFor(handle);
       const brand = await readBrand(office);
       if (!Number(brand.enabled) || !Number(brand.loyalty_enabled)) {
         return res.status(404).type('html').send(page('Not available', ''));
@@ -734,7 +953,7 @@ function walletPublicRoutes({ pool, secret, core }) {
         return res
           .status(400)
           .type('html')
-          .send(joinPage(brand, office, 'Please enter your name and a valid phone number.'));
+          .send(joinPage(brand, handle, 'Please enter your name and a valid phone number.'));
       }
 
       // Scanning the poster twice must not create a second account — the
@@ -756,11 +975,159 @@ function walletPublicRoutes({ pool, secret, core }) {
       }
 
       const result = await mint(office, 'loyalty', id);
-      res.redirect(302, result.save_url);
+      // One button when only one platform is configured — a single tap beats
+      // a choice nobody asked for. Both only when both are actually usable.
+      if (result.save_url && result.apple_url) {
+        return res.type('html').send(choosePage(brand, result.save_url, result.apple_url));
+      }
+      if (result.save_url) return res.redirect(302, result.save_url);
+      if (result.apple_url) return res.redirect(302, result.apple_url);
+      return res.status(503).type('html').send(page('Wallet is not set up yet', 'Ask a member of staff.'));
     } catch (e) {
       next(e);
     }
   });
+
+  return router;
+}
+
+/**
+ * The PassKit web service: what a phone talks to on its own, with no
+ * customer in front of it, once it has installed a pass with a
+ * webServiceURL. Mounted at /apple-wallet — pass.json builds the URLs below
+ * by appending Apple's fixed /v1/... paths to that prefix.
+ *
+ * Every route here authenticates with `Authorization: ApplePass <token>`,
+ * the same authenticationToken embedded in the pass at mint time — never a
+ * session, because there is no user signed in on the other end, only a
+ * phone that has to prove it is holding a specific pass and nothing more.
+ */
+function walletApplePassKitRoutes({ pool, core, secret }) {
+  const router = express.Router();
+  const { buildApplePkpass } = core || walletCore({ pool, secret });
+
+  const KIND_BY_APPLE_TYPE = Object.fromEntries(
+    Object.entries(G.PASS_TYPES).map(([kind, t]) => [t.appleType, kind])
+  );
+
+  /** Looks up the pass a request names, and checks the bearer token against it. */
+  async function authenticate(req, passTypeIdentifier, serialNumber) {
+    const kind = KIND_BY_APPLE_TYPE[passTypeIdentifier];
+    if (!kind) return null;
+    const token = String(req.get('Authorization') || '').replace(/^ApplePass\s+/i, '');
+    if (!token) return null;
+    const [[row]] = await pool.query(
+      `SELECT office, kind, subject_id, apple_auth_token, updated_at
+       FROM epos_wallet_passes WHERE kind = ? AND apple_serial = ?`,
+      [kind, serialNumber]
+    );
+    if (!row || row.apple_auth_token !== token) return null;
+    return row;
+  }
+
+  /** A phone registering to hear about updates to one pass. */
+  router.post(
+    '/apple-wallet/v1/devices/:deviceLibraryIdentifier/registrations/:passTypeIdentifier/:serialNumber',
+    async (req, res) => {
+      const { deviceLibraryIdentifier, passTypeIdentifier, serialNumber } = req.params;
+      const row = await authenticate(req, passTypeIdentifier, serialNumber);
+      if (!row) return res.sendStatus(401);
+
+      const pushToken = String(req.body?.pushToken || '');
+      if (!pushToken) return res.sendStatus(400);
+
+      const [[already]] = await pool.query(
+        `SELECT 1 FROM epos_wallet_apple_registrations
+         WHERE device_library_id = ? AND pass_type_identifier = ? AND serial_number = ?`,
+        [deviceLibraryIdentifier, passTypeIdentifier, serialNumber]
+      );
+
+      await pool.execute(
+        `INSERT INTO epos_wallet_apple_devices (device_library_id, push_token)
+         VALUES (?, ?)
+         ON DUPLICATE KEY UPDATE push_token = VALUES(push_token)`,
+        [deviceLibraryIdentifier, pushToken]
+      );
+      await pool.execute(
+        `INSERT IGNORE INTO epos_wallet_apple_registrations
+           (device_library_id, pass_type_identifier, serial_number)
+         VALUES (?, ?, ?)`,
+        [deviceLibraryIdentifier, passTypeIdentifier, serialNumber]
+      );
+
+      res.sendStatus(already ? 200 : 201);
+    }
+  );
+
+  /** Which of this device's passes (of one type) changed since `passesUpdatedSince`. */
+  router.get(
+    '/apple-wallet/v1/devices/:deviceLibraryIdentifier/registrations/:passTypeIdentifier',
+    async (req, res) => {
+      const { deviceLibraryIdentifier, passTypeIdentifier } = req.params;
+      const since = req.query.passesUpdatedSince ? new Date(String(req.query.passesUpdatedSince)) : null;
+
+      const [rows] = await pool.query(
+        `SELECT p.apple_serial AS serial, p.updated_at
+         FROM epos_wallet_apple_registrations r
+         JOIN epos_wallet_passes p ON p.apple_serial = r.serial_number
+         WHERE r.device_library_id = ? AND r.pass_type_identifier = ?
+           ${since && !Number.isNaN(since.getTime()) ? 'AND p.updated_at > ?' : ''}`,
+        since && !Number.isNaN(since.getTime())
+          ? [deviceLibraryIdentifier, passTypeIdentifier, since]
+          : [deviceLibraryIdentifier, passTypeIdentifier]
+      );
+      if (!rows.length) return res.sendStatus(204);
+
+      const lastUpdated = rows.reduce(
+        (max, r) => (r.updated_at > max ? r.updated_at : max),
+        rows[0].updated_at
+      );
+      res.json({
+        lastUpdated: new Date(lastUpdated).toISOString(),
+        serialNumbers: rows.map((r) => r.serial),
+      });
+    }
+  );
+
+  /** A device that no longer wants updates — the pass was deleted, or the phone was. */
+  router.delete(
+    '/apple-wallet/v1/devices/:deviceLibraryIdentifier/registrations/:passTypeIdentifier/:serialNumber',
+    async (req, res) => {
+      const { deviceLibraryIdentifier, passTypeIdentifier, serialNumber } = req.params;
+      const row = await authenticate(req, passTypeIdentifier, serialNumber);
+      if (!row) return res.sendStatus(401);
+
+      await pool.execute(
+        `DELETE FROM epos_wallet_apple_registrations
+         WHERE device_library_id = ? AND pass_type_identifier = ? AND serial_number = ?`,
+        [deviceLibraryIdentifier, passTypeIdentifier, serialNumber]
+      );
+      res.sendStatus(200);
+    }
+  );
+
+  /** "Send me the latest copy" — a fresh sign, so this reflects the current balance. */
+  router.get('/apple-wallet/v1/passes/:passTypeIdentifier/:serialNumber', async (req, res) => {
+    const { passTypeIdentifier, serialNumber } = req.params;
+    const row = await authenticate(req, passTypeIdentifier, serialNumber);
+    if (!row) return res.sendStatus(401);
+
+    try {
+      const pkpass = await buildApplePkpass(row.office, row.kind, row.subject_id);
+      res
+        .status(200)
+        .set({
+          'Content-Type': 'application/vnd.apple.pkpass',
+          'Last-Modified': new Date(row.updated_at).toUTCString(),
+        })
+        .send(pkpass);
+    } catch (e) {
+      res.status(e.status || 500).json({ error: e.message });
+    }
+  });
+
+  /** Apple's device-side error log. Accepted and dropped — nobody reads it. */
+  router.post('/apple-wallet/v1/log', (req, res) => res.sendStatus(200));
 
   return router;
 }
@@ -810,15 +1177,95 @@ function joinPage(brand, office, error) {
 <form method="post" action="/wallet/join/${encodeURIComponent(office)}">
   ${logo ? `<img src="${escapeHtml(logo)}" alt="">` : ''}
   <h1>${programme}</h1>
-  <p class="sub">Join at ${name} and add your card to Google Wallet.</p>
+  <p class="sub">Join at ${name} and add your card to your phone's wallet.</p>
   ${error ? `<p class="err">${escapeHtml(error)}</p>` : ''}
   <label for="name">Your name</label>
   <input id="name" name="name" autocomplete="name" required>
   <label for="phone">Mobile number</label>
   <input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" required>
-  <button type="submit">Add to Google Wallet</button>
+  <button type="submit">Add to Wallet</button>
   <p class="fine">We use your number to find your points at the till. Nothing else.</p>
 </form>`;
+}
+
+/**
+ * The two wallet badges, as inline SVG.
+ *
+ * Drawn here rather than linked because this page has to render with no
+ * external assets — it is served to a customer's phone on a venue's wifi and
+ * an image that fails to load leaves an unlabelled black rectangle where the
+ * only button on the page should be.
+ *
+ * These follow Apple's and Google's badge specifications for shape, wording
+ * and colour (both require the exact strings below, on a black and a white
+ * field respectively, at no less than these proportions). If either party's
+ * official artwork is ever dropped into passes_and_oauth/assets, swap the
+ * body of these two functions for an <img> and nothing else changes.
+ */
+function appleWalletBadge() {
+  return `<svg viewBox="0 0 199 55" role="img" aria-label="Add to Apple Wallet" focusable="false">
+  <rect x=".5" y=".5" width="198" height="54" rx="9" fill="#000" stroke="#3c3c3c"/>
+  <g transform="translate(20 15)">
+    <rect x="0" y="0" width="30" height="4.5" rx="1.6" fill="#ea4b3b"/>
+    <rect x="0" y="4" width="30" height="4.5" rx="1.6" fill="#f5a623"/>
+    <rect x="0" y="8" width="30" height="4.5" rx="1.6" fill="#4cb050"/>
+    <rect x="0" y="11" width="30" height="14" rx="3" fill="#e8e6e1"/>
+    <path d="M9 11h5.5a2.6 2.6 0 0 0 5 0H25" fill="none" stroke="#c9c6bf" stroke-width="1.4"/>
+  </g>
+  <text x="62" y="25" fill="#fff" font-family="-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,sans-serif" font-size="13" letter-spacing=".1">Add to</text>
+  <text x="62" y="43" fill="#fff" font-family="-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,sans-serif" font-size="20" font-weight="500" letter-spacing=".1">Apple Wallet</text>
+</svg>`;
+}
+
+function googleWalletBadge() {
+  return `<svg viewBox="0 0 199 55" role="img" aria-label="Add to Google Wallet" focusable="false">
+<rect x="0.5" y="0.5" width="198" height="54" rx="27" fill="#1F1F1F"/>
+<path d="M57 23.791H21V18.1456C21 15.0809 23.6422 12.5001 26.7798 12.5001H51.2202C54.3578 12.5001 57 15.0809 57 18.1456V23.791Z" fill="#34A853"/>
+<path d="M57 29H21V23C21 19.7429 23.6422 17 26.7798 17H51.2202C54.3578 17 57 19.7429 57 23V29Z" fill="#FBBC04"/>
+<path d="M57 34H21V28C21 24.7429 23.6422 22 26.7798 22H51.2202C54.3578 22 57 24.7429 57 28V34Z" fill="#EA4335"/>
+<path d="M21 25.2409L43.8493 30.4025C46.4795 31.0477 49.4384 30.4025 51.5753 28.7895L57 24.9183V37.0157C57 40.0804 54.3699 42.4999 51.2466 42.4999H26.7534C23.6301 42.4999 21 40.0804 21 37.0157V25.2409Z" fill="url(#vesopa_gwallet)"/>
+<path d="M69.195 21.5L72.705 12.192H74.33L77.853 21.5H76.28L75.422 19.108H71.626L70.768 21.5H69.195ZM73.134 14.935L72.107 17.782H74.941L73.914 14.935L73.563 13.869H73.485L73.134 14.935ZM81.5143 21.708C80.9163 21.708 80.3747 21.5607 79.8893 21.266C79.4127 20.9627 79.0313 20.5467 78.7453 20.018C78.468 19.4807 78.3293 18.8697 78.3293 18.185C78.3293 17.5003 78.468 16.8937 78.7453 16.365C79.0313 15.8363 79.4127 15.4203 79.8893 15.117C80.3747 14.8137 80.9163 14.662 81.5143 14.662C82.0257 14.662 82.4633 14.7747 82.8273 15C83.2 15.2253 83.473 15.481 83.6463 15.767H83.7243L83.6463 14.844V12.192H85.0373V21.5H83.7243V20.616H83.6463C83.473 20.902 83.2 21.1577 82.8273 21.383C82.4633 21.5997 82.0257 21.708 81.5143 21.708ZM81.7223 20.421C82.069 20.421 82.394 20.33 82.6973 20.148C83.0093 19.966 83.2563 19.7103 83.4383 19.381C83.629 19.043 83.7243 18.6443 83.7243 18.185C83.7243 17.7257 83.629 17.3313 83.4383 17.002C83.2563 16.664 83.0093 16.404 82.6973 16.222C82.394 16.04 82.069 15.949 81.7223 15.949C81.3757 15.949 81.0507 16.04 80.7473 16.222C80.444 16.404 80.197 16.664 80.0063 17.002C79.8157 17.3313 79.7203 17.7257 79.7203 18.185C79.7203 18.6443 79.8157 19.043 80.0063 19.381C80.197 19.7103 80.444 19.966 80.7473 20.148C81.0507 20.33 81.3757 20.421 81.7223 20.421ZM89.4616 21.708C88.8636 21.708 88.3219 21.5607 87.8366 21.266C87.3599 20.9627 86.9786 20.5467 86.6926 20.018C86.4153 19.4807 86.2766 18.8697 86.2766 18.185C86.2766 17.5003 86.4153 16.8937 86.6926 16.365C86.9786 15.8363 87.3599 15.4203 87.8366 15.117C88.3219 14.8137 88.8636 14.662 89.4616 14.662C89.9729 14.662 90.4106 14.7747 90.7746 15C91.1473 15.2253 91.4203 15.481 91.5936 15.767H91.6716L91.5936 14.844V12.192H92.9846V21.5H91.6716V20.616H91.5936C91.4203 20.902 91.1473 21.1577 90.7746 21.383C90.4106 21.5997 89.9729 21.708 89.4616 21.708ZM89.6696 20.421C90.0163 20.421 90.3413 20.33 90.6446 20.148C90.9566 19.966 91.2036 19.7103 91.3856 19.381C91.5763 19.043 91.6716 18.6443 91.6716 18.185C91.6716 17.7257 91.5763 17.3313 91.3856 17.002C91.2036 16.664 90.9566 16.404 90.6446 16.222C90.3413 16.04 90.0163 15.949 89.6696 15.949C89.3229 15.949 88.9979 16.04 88.6946 16.222C88.3913 16.404 88.1443 16.664 87.9536 17.002C87.7629 17.3313 87.6676 17.7257 87.6676 18.185C87.6676 18.6443 87.7629 19.043 87.9536 19.381C88.1443 19.7103 88.3913 19.966 88.6946 20.148C88.9979 20.33 89.3229 20.421 89.6696 20.421ZM98.3745 19.576V16.092H97.2175V14.87H98.3745V12.998H99.7785V14.87H101.404V16.092H99.7785V19.277C99.7785 19.6063 99.8435 19.8577 99.9735 20.031C100.112 20.2043 100.342 20.291 100.663 20.291C100.827 20.291 100.966 20.2693 101.079 20.226C101.2 20.1827 101.321 20.122 101.443 20.044V21.409C101.295 21.4697 101.139 21.5173 100.975 21.552C100.81 21.5867 100.615 21.604 100.39 21.604C99.7742 21.604 99.2845 21.4263 98.9205 21.071C98.5565 20.707 98.3745 20.2087 98.3745 19.576ZM105.617 21.708C104.932 21.708 104.33 21.552 103.81 21.24C103.29 20.928 102.882 20.5077 102.588 19.979C102.293 19.4503 102.146 18.8523 102.146 18.185C102.146 17.5263 102.293 16.9327 102.588 16.404C102.882 15.8667 103.29 15.442 103.81 15.13C104.33 14.818 104.932 14.662 105.617 14.662C106.293 14.662 106.891 14.818 107.411 15.13C107.931 15.442 108.338 15.8667 108.633 16.404C108.927 16.9327 109.075 17.5263 109.075 18.185C109.075 18.8523 108.927 19.4503 108.633 19.979C108.338 20.5077 107.931 20.928 107.411 21.24C106.891 21.552 106.293 21.708 105.617 21.708ZM105.617 20.421C105.981 20.421 106.319 20.3343 106.631 20.161C106.943 19.979 107.194 19.7233 107.385 19.394C107.584 19.056 107.684 18.653 107.684 18.185C107.684 17.717 107.584 17.3183 107.385 16.989C107.194 16.651 106.943 16.3953 106.631 16.222C106.319 16.04 105.981 15.949 105.617 15.949C105.253 15.949 104.91 16.04 104.59 16.222C104.278 16.3953 104.022 16.651 103.823 16.989C103.632 17.3183 103.537 17.717 103.537 18.185C103.537 18.653 103.632 19.056 103.823 19.394C104.022 19.7233 104.278 19.979 104.59 20.161C104.91 20.3343 105.253 20.421 105.617 20.421Z" fill="white"/>
+<path d="M76.14 41.772C75.2673 41.772 74.4457 41.6133 73.675 41.296C72.9157 40.9787 72.2413 40.5367 71.652 39.97C71.0627 39.392 70.598 38.7177 70.258 37.947C69.9293 37.165 69.765 36.3207 69.765 35.414C69.765 34.5073 69.9293 33.6687 70.258 32.898C70.598 32.116 71.057 31.4417 71.635 30.875C72.2243 30.297 72.9043 29.8493 73.675 29.532C74.4457 29.2147 75.2673 29.056 76.14 29.056C77.0693 29.056 77.925 29.2203 78.707 29.549C79.5003 29.8777 80.1633 30.3367 80.696 30.926L79.404 32.201C79.0073 31.759 78.5313 31.419 77.976 31.181C77.432 30.943 76.82 30.824 76.14 30.824C75.3353 30.824 74.593 31.0167 73.913 31.402C73.233 31.776 72.6833 32.3087 72.264 33C71.856 33.68 71.652 34.4847 71.652 35.414C71.652 36.3433 71.8617 37.1537 72.281 37.845C72.7003 38.525 73.25 39.0577 73.93 39.443C74.61 39.817 75.3523 40.004 76.157 40.004C76.8937 40.004 77.5623 39.868 78.163 39.596C78.7637 39.3127 79.2453 38.916 79.608 38.406C79.982 37.896 80.2087 37.284 80.288 36.57H76.123V34.921H82.039C82.107 35.227 82.141 35.55 82.141 35.89V35.907C82.141 37.0857 81.8803 38.117 81.359 39.001C80.849 39.8737 80.1407 40.5537 79.234 41.041C78.3273 41.5283 77.296 41.772 76.14 41.772ZM87.6149 41.772C86.7195 41.772 85.9319 41.568 85.2519 41.16C84.5719 40.752 84.0392 40.2023 83.6539 39.511C83.2685 38.8197 83.0759 38.0377 83.0759 37.165C83.0759 36.3037 83.2685 35.5273 83.6539 34.836C84.0392 34.1333 84.5719 33.578 85.2519 33.17C85.9319 32.762 86.7195 32.558 87.6149 32.558C88.4989 32.558 89.2809 32.762 89.9609 33.17C90.6409 33.578 91.1735 34.1333 91.5589 34.836C91.9442 35.5273 92.1369 36.3037 92.1369 37.165C92.1369 38.0377 91.9442 38.8197 91.5589 39.511C91.1735 40.2023 90.6409 40.752 89.9609 41.16C89.2809 41.568 88.4989 41.772 87.6149 41.772ZM87.6149 40.089C88.0909 40.089 88.5329 39.9757 88.9409 39.749C89.3489 39.511 89.6775 39.1767 89.9269 38.746C90.1875 38.304 90.3179 37.777 90.3179 37.165C90.3179 36.553 90.1875 36.0317 89.9269 35.601C89.6775 35.159 89.3489 34.8247 88.9409 34.598C88.5329 34.36 88.0909 34.241 87.6149 34.241C87.1389 34.241 86.6912 34.36 86.2719 34.598C85.8639 34.8247 85.5295 35.159 85.2689 35.601C85.0195 36.0317 84.8949 36.553 84.8949 37.165C84.8949 37.777 85.0195 38.304 85.2689 38.746C85.5295 39.1767 85.8639 39.511 86.2719 39.749C86.6912 39.9757 87.1389 40.089 87.6149 40.089ZM97.9078 41.772C97.0125 41.772 96.2248 41.568 95.5448 41.16C94.8648 40.752 94.3322 40.2023 93.9468 39.511C93.5615 38.8197 93.3688 38.0377 93.3688 37.165C93.3688 36.3037 93.5615 35.5273 93.9468 34.836C94.3322 34.1333 94.8648 33.578 95.5448 33.17C96.2248 32.762 97.0125 32.558 97.9078 32.558C98.7918 32.558 99.5738 32.762 100.254 33.17C100.934 33.578 101.467 34.1333 101.852 34.836C102.237 35.5273 102.43 36.3037 102.43 37.165C102.43 38.0377 102.237 38.8197 101.852 39.511C101.467 40.2023 100.934 40.752 100.254 41.16C99.5738 41.568 98.7918 41.772 97.9078 41.772ZM97.9078 40.089C98.3838 40.089 98.8258 39.9757 99.2338 39.749C99.6418 39.511 99.9705 39.1767 100.22 38.746C100.481 38.304 100.611 37.777 100.611 37.165C100.611 36.553 100.481 36.0317 100.22 35.601C99.9705 35.159 99.6418 34.8247 99.2338 34.598C98.8258 34.36 98.3838 34.241 97.9078 34.241C97.4318 34.241 96.9842 34.36 96.5648 34.598C96.1568 34.8247 95.8225 35.159 95.5618 35.601C95.3125 36.0317 95.1878 36.553 95.1878 37.165C95.1878 37.777 95.3125 38.304 95.5618 38.746C95.8225 39.1767 96.1568 39.511 96.5648 39.749C96.9842 39.9757 97.4318 40.089 97.9078 40.089ZM108.031 45.444C107.271 45.444 106.614 45.3193 106.059 45.07C105.515 44.832 105.073 44.5203 104.733 44.135C104.393 43.761 104.149 43.3757 104.002 42.979L105.702 42.265C105.883 42.7183 106.172 43.0867 106.569 43.37C106.977 43.6647 107.464 43.812 108.031 43.812C108.824 43.812 109.447 43.574 109.901 43.098C110.365 42.622 110.598 41.9477 110.598 41.075V40.242H110.496C110.224 40.65 109.844 40.9787 109.357 41.228C108.881 41.466 108.337 41.585 107.725 41.585C106.988 41.585 106.314 41.398 105.702 41.024C105.09 40.65 104.597 40.1287 104.223 39.46C103.849 38.78 103.662 37.9867 103.662 37.08C103.662 36.162 103.849 35.3687 104.223 34.7C104.597 34.02 105.09 33.493 105.702 33.119C106.314 32.745 106.988 32.558 107.725 32.558C108.337 32.558 108.881 32.6827 109.357 32.932C109.844 33.1813 110.224 33.51 110.496 33.918H110.598V32.83H112.349V41.041C112.349 41.9817 112.162 42.7807 111.788 43.438C111.425 44.0953 110.921 44.594 110.275 44.934C109.629 45.274 108.881 45.444 108.031 45.444ZM108.048 39.919C108.501 39.919 108.92 39.8113 109.306 39.596C109.691 39.3693 110.003 39.0463 110.241 38.627C110.479 38.1963 110.598 37.6807 110.598 37.08C110.598 36.4567 110.479 35.9353 110.241 35.516C110.003 35.0853 109.691 34.7623 109.306 34.547C108.92 34.3317 108.501 34.224 108.048 34.224C107.594 34.224 107.169 34.3373 106.773 34.564C106.387 34.7793 106.076 35.0967 105.838 35.516C105.6 35.9353 105.481 36.4567 105.481 37.08C105.481 37.692 105.6 38.2133 105.838 38.644C106.076 39.0633 106.387 39.3807 106.773 39.596C107.169 39.8113 107.594 39.919 108.048 39.919ZM114.514 41.5V29.328H116.35V41.5H114.514ZM122.392 41.772C121.542 41.772 120.783 41.5737 120.114 41.177C119.446 40.7803 118.919 40.2363 118.533 39.545C118.159 38.8537 117.972 38.066 117.972 37.182C117.972 36.3547 118.154 35.5897 118.516 34.887C118.879 34.1843 119.383 33.6233 120.029 33.204C120.687 32.7733 121.44 32.558 122.29 32.558C123.186 32.558 123.945 32.7507 124.568 33.136C125.203 33.5213 125.685 34.0483 126.013 34.717C126.342 35.3857 126.506 36.1393 126.506 36.978C126.506 37.1027 126.501 37.216 126.489 37.318C126.489 37.42 126.484 37.4993 126.472 37.556H119.774C119.865 38.4173 120.165 39.0633 120.675 39.494C121.197 39.9247 121.786 40.14 122.443 40.14C123.033 40.14 123.52 40.0097 123.905 39.749C124.291 39.477 124.597 39.1427 124.823 38.746L126.336 39.477C125.962 40.157 125.452 40.7123 124.806 41.143C124.16 41.5623 123.356 41.772 122.392 41.772ZM122.307 34.122C121.695 34.122 121.174 34.309 120.743 34.683C120.313 35.057 120.024 35.5557 119.876 36.179H124.687C124.665 35.8843 124.568 35.5783 124.398 35.261C124.228 34.9437 123.968 34.6773 123.616 34.462C123.276 34.2353 122.84 34.122 122.307 34.122ZM133.979 41.5L130.715 29.328H132.789L134.727 37.233L134.931 38.287H135.033L135.288 37.233L137.736 29.328H139.606L141.952 37.233L142.207 38.27H142.309L142.513 37.233L144.451 29.328H146.508L143.295 41.5H141.323L138.994 33.425L138.722 32.286H138.62L138.331 33.425L135.9 41.5H133.979ZM149.922 41.772C149.299 41.772 148.743 41.653 148.256 41.415C147.769 41.1657 147.389 40.82 147.117 40.378C146.845 39.936 146.709 39.4317 146.709 38.865C146.709 38.253 146.868 37.7317 147.185 37.301C147.514 36.859 147.95 36.5247 148.494 36.298C149.038 36.0713 149.639 35.958 150.296 35.958C150.84 35.958 151.316 36.009 151.724 36.111C152.143 36.213 152.461 36.3207 152.676 36.434V35.975C152.676 35.4083 152.472 34.955 152.064 34.615C151.656 34.275 151.129 34.105 150.483 34.105C150.041 34.105 149.622 34.207 149.225 34.411C148.828 34.6037 148.511 34.87 148.273 35.21L147.015 34.241C147.389 33.7197 147.882 33.3117 148.494 33.017C149.117 32.711 149.797 32.558 150.534 32.558C151.792 32.558 152.761 32.8697 153.441 33.493C154.121 34.105 154.461 34.9663 154.461 36.077V41.5H152.676V40.429H152.574C152.347 40.7803 152.007 41.092 151.554 41.364C151.101 41.636 150.557 41.772 149.922 41.772ZM150.245 40.276C150.721 40.276 151.14 40.1627 151.503 39.936C151.866 39.7093 152.149 39.4147 152.353 39.052C152.568 38.678 152.676 38.2757 152.676 37.845C152.415 37.6977 152.109 37.5787 151.758 37.488C151.407 37.386 151.033 37.335 150.636 37.335C149.888 37.335 149.355 37.488 149.038 37.794C148.721 38.0887 148.562 38.4513 148.562 38.882C148.562 39.29 148.715 39.6243 149.021 39.885C149.327 40.1457 149.735 40.276 150.245 40.276ZM156.499 41.5V29.328H158.335V41.5H156.499ZM160.517 41.5V29.328H162.353V41.5H160.517ZM168.395 41.772C167.545 41.772 166.786 41.5737 166.117 41.177C165.449 40.7803 164.922 40.2363 164.536 39.545C164.162 38.8537 163.975 38.066 163.975 37.182C163.975 36.3547 164.157 35.5897 164.519 34.887C164.882 34.1843 165.386 33.6233 166.032 33.204C166.69 32.7733 167.443 32.558 168.293 32.558C169.189 32.558 169.948 32.7507 170.571 33.136C171.206 33.5213 171.688 34.0483 172.016 34.717C172.345 35.3857 172.509 36.1393 172.509 36.978C172.509 37.1027 172.504 37.216 172.492 37.318C172.492 37.42 172.487 37.4993 172.475 37.556H165.777C165.868 38.4173 166.168 39.0633 166.678 39.494C167.2 39.9247 167.789 40.14 168.446 40.14C169.036 40.14 169.523 40.0097 169.908 39.749C170.294 39.477 170.6 39.1427 170.826 38.746L172.339 39.477C171.965 40.157 171.455 40.7123 170.809 41.143C170.163 41.5623 169.359 41.772 168.395 41.772ZM168.31 34.122C167.698 34.122 167.177 34.309 166.746 34.683C166.316 35.057 166.027 35.5557 165.879 36.179H170.69C170.668 35.8843 170.571 35.5783 170.401 35.261C170.231 34.9437 169.971 34.6773 169.619 34.462C169.279 34.2353 168.843 34.122 168.31 34.122ZM174.882 38.984V34.428H173.369V32.83H174.882V30.382H176.718V32.83H178.843V34.428H176.718V38.593C176.718 39.0237 176.803 39.3523 176.973 39.579C177.154 39.8057 177.454 39.919 177.874 39.919C178.089 39.919 178.27 39.8907 178.418 39.834C178.576 39.7773 178.735 39.698 178.894 39.596V41.381C178.701 41.4603 178.497 41.5227 178.282 41.568C178.066 41.6133 177.811 41.636 177.517 41.636C176.712 41.636 176.072 41.4037 175.596 40.939C175.12 40.463 174.882 39.8113 174.882 38.984Z" fill="white"/>
+
+<!-- fill="none" is not in Google's exported artwork and has to be: an SVG
+     rect with no fill paints solid black by default, and this one is drawn
+     last, so without it the border ring covers the whole badge. -->
+<rect x="0.5" y="0.5" width="198" height="54" rx="27" fill="none" stroke="#747775"/>
+<defs>
+<linearGradient id="vesopa_gwallet" x1="37.2843" y1="34.0448" x2="18.7823" y2="55.7227" gradientUnits="userSpaceOnUse">
+<stop stop-color="#4285F4"/>
+<stop offset="1" stop-color="#1B74E8"/>
+</linearGradient>
+</defs>
+</svg>`;
+}
+
+/**
+ * Shown after joining when both Google and Apple Wallet are configured.
+ *
+ * The venue's name is deliberately not in the sentence: half of them begin
+ * with "The", and "Add your The Crown card" is what that produces.
+ */
+function choosePage(brand, googleUrl, appleUrl) {
+  return `<!doctype html><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Add your card</title>
+<style>
+  :root{color-scheme:dark}
+  body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0b0f14;color:#e6edf3;
+       font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding:24px}
+  .card{width:min(24rem,100%);background:#121821;border:1px solid #1e2733;border-radius:16px;padding:24px;text-align:center}
+  h1{font-size:1.25rem;margin:0 0 .25rem}
+  p{margin:0 0 20px;color:#9aa7b4;font-size:.95rem}
+  a{display:block;margin-top:12px;text-decoration:none}
+  a svg{display:block;width:100%;height:auto;max-width:15rem;margin:0 auto}
+</style>
+<div class="card">
+  <h1>You're in</h1>
+  <p>Add your card to your phone.</p>
+  <a href="${escapeHtml(appleUrl)}">${appleWalletBadge()}</a>
+  <a href="${escapeHtml(googleUrl)}">${googleWalletBadge()}</a>
+</div>`;
 }
 
 function escapeHtml(value) {
@@ -828,4 +1275,4 @@ function escapeHtml(value) {
   );
 }
 
-module.exports = { walletCore, walletRoutes, walletPublicRoutes };
+module.exports = { walletCore, walletRoutes, walletPublicRoutes, walletApplePassKitRoutes };

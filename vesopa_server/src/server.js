@@ -43,7 +43,7 @@ const {
   reportScheduleRoutes,
   startScheduler,
 } = require('./report_schedules');
-const { walletCore, walletRoutes, walletPublicRoutes } = require('./wallet');
+const { walletCore, walletRoutes, walletPublicRoutes, walletApplePassKitRoutes } = require('./wallet');
 
 const PORT = process.env.PORT || 4000;
 
@@ -256,6 +256,7 @@ app.use('/api', reportScheduleRoutes({ pool, secret: JWT_SECRET }));
 const wallet = walletCore({ pool, secret: JWT_SECRET });
 app.use('/api', walletRoutes({ pool, broadcast, secret: JWT_SECRET, core: wallet }));
 app.use(walletPublicRoutes({ pool, secret: JWT_SECRET, core: wallet }));
+app.use(walletApplePassKitRoutes({ pool, secret: JWT_SECRET, core: wallet }));
 
 /**
  * The floor plan, as the till sees it. Unauthenticated like /products: a

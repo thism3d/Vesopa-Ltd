@@ -25,6 +25,15 @@
 !promotion_pass.cer
 !staffcard_pass.cer
 
+# The fallback pass artwork, which is ordinary public brand imagery and has to
+# travel with the code: wallet_apple.js reads it at build time for every pass a
+# venue has not put its own logo on, so a deployment without it signs passes
+# that will not install. The directory needs unignoring before the files in it
+# can be — `*` above matches the directory, and git never looks inside an
+# excluded directory to find an exception.
+!assets/
+!assets/*.png
+
 # Belt and braces. If one of the names above is ever reused for something that
 # is not a certificate, these still hold — and they document the intent.
 *.p12
