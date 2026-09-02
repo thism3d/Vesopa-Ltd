@@ -3984,6 +3984,44 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
 }
 .wal-qr p { word-break: break-all; margin-top: 8px; }
 
+/* The QR arrives as inline SVG rather than an <img>, because /api/qr.svg is
+   behind the session and an <img> cannot send the bearer token. Same white
+   card the <img> rule above gives it. */
+.wal-qr-img {
+  display: inline-block;
+  border-radius: 10px;
+  background: #fff;
+  padding: 8px;
+  line-height: 0;
+}
+.wal-qr-img svg { display: block; width: 220px; height: 220px; }
+
+/* The sign-up code, shown as the tail of a URL so it reads as one. */
+.wal-slug {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--line, #263244);
+  border-radius: 10px;
+  overflow: hidden;
+  margin: 6px 0;
+}
+.wal-slug-prefix {
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  font-size: .82rem;
+  color: var(--muted, #9aa7b4);
+  background: rgba(255, 255, 255, .04);
+  white-space: nowrap;
+}
+.wal-slug input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
 .grid3 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));

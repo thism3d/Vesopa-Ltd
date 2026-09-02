@@ -1787,6 +1787,21 @@
               </div>
 
               <div class="card rd-card">
+                <h3>Where you are</h3>
+                <p class="muted small">
+                  Apple puts the card on the customer's lock screen when their
+                  phone is near you, so it is ready before they reach the till.
+                  Right-click your venue in Google Maps and paste the two
+                  numbers it copies. Leave blank and the card still works —
+                  it just waits to be opened.
+                </p>
+                <div class="grid2">
+                  <label>Latitude<input type="text" inputmode="decimal" data-wal="latitude" placeholder="51.621400"></label>
+                  <label>Longitude<input type="text" inputmode="decimal" data-wal="longitude" placeholder="-3.785600"></label>
+                </div>
+              </div>
+
+              <div class="card rd-card">
                 <h3>Apple Wallet</h3>
                 <label class="check"><input type="checkbox" data-wal="apple_enabled"> Issue Apple passes</label>
                 <div id="wallet-apple-status"></div>
@@ -1813,6 +1828,17 @@
                   Put this on a table card or a poster. It opens a page where a
                   customer joins with a name and a phone number, and the card
                   lands straight in their wallet.
+                </p>
+                <label class="small muted" for="wallet-join-slug">Your code</label>
+                <div class="wal-slug">
+                  <span class="wal-slug-prefix">/wallet/join/</span>
+                  <input id="wallet-join-slug" data-wal="join_slug" type="text"
+                         spellcheck="false" autocapitalize="none" autocomplete="off"
+                         maxlength="64" placeholder="your-venue">
+                </div>
+                <p class="muted small">
+                  Letters, numbers and hyphens. Change it and the old link stops
+                  working, so reprint anything already on a table.
                 </p>
                 <div id="wallet-join-qr" class="wal-qr"></div>
               </div>

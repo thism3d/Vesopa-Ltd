@@ -355,6 +355,52 @@ const money = (minor, currency) =>
  * exercise: it carries the card number, so a phone at the counter scans to
  * exactly what a piece of plastic would.
  */
+/**
+ * The points ledger, written the way a customer reads it.
+ *
+ *     Earned      +12   ->  340      2 Sep, £24.50
+ *
+ * One line per movement, on the back of the card, because "why is my balance
+ * that number" is the question staff are asked and cannot answer without going
+ * to a screen. The arrow is the running balance after the movement, which is
+ * what makes the list explain the number on the front rather than just
+ * decorate it.
+ */
+function historyLines(history) {
+  const WORD = { earn: 'Earned', redeem: 'Redeemed', adjust: 'Adjusted', expire: 'Expired' };
+  return (history || [])
+    .filter((h) => h && h.at)
+    .map((h) => {
+      const when = new Date(h.at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+      const moved = `${h.points > 0 ? '+' : ''}${h.points}`;
+      const spend = h.spend_minor ? `, ${money(h.spend_minor, 'GBP')}` : '';
+      return `${WORD[h.kind] || h.kind}  ${moved} → ${h.balance_after}      ${when}${spend}`;
+    })
+    .join('\n');
+}
+
+/**
+ * Where the venue is, so the card offers itself on the lock screen.
+ *
+ * iOS shows a pass on the lock screen when the phone is near one of these,
+ * which is the single feature that turns a card somebody installed once into
+ * a card they actually use. Silently ignored by Wallet when the coordinates
+ * are absent, so a venue that has not set them loses nothing else.
+ *
+ * `maxDistance` is metres and deliberately generous: the point is to have the
+ * card ready as somebody walks in, not to wait until they are at the counter.
+ */
+function relevantLocations(brand) {
+  const lat = Number(brand.latitude);
+  const lon = Number(brand.longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon) || (lat === 0 && lon === 0)) return null;
+  return [{
+    latitude: lat,
+    longitude: lon,
+    relevantText: `${brand.issuer_name || 'Your card'} — show this at the till`,
+  }];
+}
+
 function buildPassJson({ kind, config, brand, subject, serial, authToken }) {
   const type = G.PASS_TYPES[kind];
   if (!type) throw new Error(`Unknown pass kind "${kind}"`);
@@ -433,6 +479,43 @@ function buildPassJson({ kind, config, brand, subject, serial, authToken }) {
     backFields: back,
   };
 
+  // ---- The modern keys ------------------------------------------------------
+  //
+  // Everything below is optional in the format and ignored by Wallet when it is
+  // absent, so a venue that has filled nothing in still gets a working card.
+
+  // Where the card is useful. Puts it on the lock screen as somebody arrives.
+  const locations = relevantLocations(brand);
+  if (locations) {
+    pass.locations = locations;
+    pass.maxDistance = 150;
+  }
+
+  // What the card *means*, in Apple's own vocabulary rather than as display
+  // text. Only tags Apple actually defines are set: a made-up key is ignored,
+  // and a real key holding the wrong kind of thing is worse than none.
+  const semantics = {};
+  if (organisation) semantics.venueName = organisation;
+  if (brand.support_phone) semantics.venuePhoneNumber = String(brand.support_phone);
+  if (kind === 'giftcard' && Number.isFinite(Number(subject.balance_minor))) {
+    // A currencyAmount, not a string: this is the form Siri and the Wallet
+    // search field can read, and the one that survives a currency that is not
+    // sterling.
+    semantics.balance = {
+      amount: (Number(subject.balance_minor) / 100).toFixed(2),
+      currencyCode: subject.currency || 'GBP',
+    };
+  }
+  if (Object.keys(semantics).length) pass.semantics = semantics;
+
+  // A staff card identifies a person and should not be AirDropped to another.
+  // Apple has no way to enforce that; this is the flag that asks.
+  if (kind === 'staff') pass.sharingProhibited = true;
+
+  // Suppresses the strip-image shine on the styles that have one. Every card
+  // Apple ships itself has been flat since iOS 7; the gloss dates a pass.
+  pass.suppressStripShine = true;
+
   switch (kind) {
     case 'loyalty': {
       push(body.primaryFields, 'points', 'Points', Number(subject.points) || 0);
@@ -445,6 +528,14 @@ function buildPassJson({ kind, config, brand, subject, serial, authToken }) {
         push(body.auxiliaryFields, 'discount', 'Your discount', subject.discount);
       }
       push(back, 'since', 'Member since', subject.member_since);
+      // The ledger behind the number on the front. `PKTextAlignmentLeft` so the
+      // columns line up as columns rather than drifting to the middle.
+      const ledger = historyLines(subject.history);
+      if (ledger) {
+        push(back, 'history', 'Recent points', ledger, {
+          textAlignment: 'PKTextAlignmentLeft',
+        });
+      }
       break;
     }
 

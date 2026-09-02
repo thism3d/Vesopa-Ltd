@@ -4607,15 +4607,44 @@ const walletKindLabel = (kind) => ({
   staff: 'Staff', promo: 'Offer',
 }[kind] || kind);
 
-/** The poster code: one link that enrols a customer and hands them a card. */
+/**
+ * The poster code: one link that enrols a customer and hands them a card.
+ *
+ * The SVG is fetched rather than dropped into an <img src>, which is what this
+ * did and why no code ever appeared. /api/qr.svg is behind the session, the
+ * session is a bearer token in a header, and an <img> cannot send a header —
+ * so every one of those requests came back 401 and rendered as a broken image
+ * with no error anywhere but the network tab.
+ *
+ * The link carries the venue's own sign-up code. It falls back to the office
+ * email only for a venue whose settings have not been saved since codes
+ * existed, which is the same address the old posters already carry.
+ */
 async function walletJoinCode() {
-  const office = walletState && walletState.office;
-  if (!office) return;
-  const url = `${location.origin}/wallet/join/${encodeURIComponent(office)}`;
-  $('wallet-join-qr').innerHTML =
-    `<img alt="Sign-up code" width="200" height="200"
-          src="/api/qr.svg?size=200&text=${encodeURIComponent(url)}">
-     <p class="small muted">${esc(url)}</p>`;
+  const box = $('wallet-join-qr');
+  if (!box || !walletState) return;
+
+  const handle = walletState.join_slug || walletState.office;
+  if (!handle) return;
+  const url = `${location.origin}/wallet/join/${encodeURIComponent(handle)}`;
+
+  box.innerHTML = `<p class="small muted">${esc(url)}</p>`;
+  try {
+    const res = await fetch(`/api/qr.svg?size=220&text=${encodeURIComponent(url)}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new Error(await res.text());
+    box.innerHTML =
+      `<div class="wal-qr-img">${await res.text()}</div>
+       <p class="small muted">${esc(url)}</p>
+       <p class="small"><a href="${esc(url)}" target="_blank" rel="noopener">Open the sign-up page</a></p>`;
+  } catch (e) {
+    // Said out loud rather than left blank: a missing code on this screen is
+    // the venue's poster not existing.
+    box.innerHTML =
+      `<p class="small muted">${esc(url)}</p>
+       <p class="small err">The code could not be drawn: ${esc(e.message || 'unknown error')}</p>`;
+  }
 }
 
 document.addEventListener('input', (e) => {

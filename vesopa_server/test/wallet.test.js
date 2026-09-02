@@ -575,6 +575,95 @@ function stubPool(rows = {}) {
   };
 }
 
+// ---- The sign-up code -----------------------------------------------------
+
+testAsync('a venue is reachable by its sign-up code, and still by its email', async () => {
+  const express = require('express');
+  const { walletPublicRoutes, walletCore } = require('../src/wallet');
+  const secret = 'test-secret';
+
+  // The code resolves to the office; anything else falls through as the office
+  // itself, which is what the posters printed before codes existed carry.
+  const pool = {
+    query: async (sql, params) => {
+      if (sql.includes('WHERE join_slug = ?')) {
+        return [params[0] === 'vesopa-kitchen' ? [{ office: 'manager@vesopa.co.uk' }] : []];
+      }
+      if (sql.includes('FROM epos_wallet_settings')) {
+        return [[{ office: 'manager@vesopa.co.uk', enabled: 1, loyalty_enabled: 1,
+                   issuer_name: 'The Vesopa Kitchen' }]];
+      }
+      return [[]];
+    },
+    execute: async () => [[]],
+  };
+
+  const app = express();
+  app.use(walletPublicRoutes({ pool, secret, core: walletCore({ pool, secret }) }));
+  const server = app.listen(0);
+  await new Promise((r) => server.once('listening', r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  try {
+    const bySlug = await fetch(`${base}/wallet/join/vesopa-kitchen`);
+    assert.strictEqual(bySlug.status, 200, 'the sign-up code should reach the venue');
+    const html = await bySlug.text();
+    assert.ok(html.includes('The Vesopa Kitchen'));
+
+    // And the form posts back to the code, not to the email — otherwise a
+    // mistyped phone number turns the pretty URL into the venue's address.
+    assert.ok(
+      html.includes('action="/wallet/join/vesopa-kitchen"'),
+      'the form should post back to the code the customer arrived on'
+    );
+
+    const byEmail = await fetch(`${base}/wallet/join/${encodeURIComponent('manager@vesopa.co.uk')}`);
+    assert.strictEqual(byEmail.status, 200, 'old printed links must keep working');
+  } finally {
+    server.close();
+  }
+});
+
+testAsync('a code that is taken, reserved or malformed is refused', async () => {
+  const express = require('express');
+  const jwt = require('jsonwebtoken');
+  const { walletRoutes, walletCore } = require('../src/wallet');
+  const secret = 'test-secret';
+
+  const pool = {
+    query: async (sql, params) => {
+      // Somebody else already holds "taken".
+      if (sql.includes('WHERE join_slug = ? AND office <> ?')) {
+        return [params[0] === 'taken' ? [{ office: 'other@venue.example' }] : []];
+      }
+      if (sql.includes('FROM offices')) return [[]];
+      return [[]];
+    },
+    execute: async () => [[]],
+  };
+
+  const app = express();
+  app.use(express.json());
+  app.use('/api', walletRoutes({ pool, broadcast: () => {}, secret, core: walletCore({ pool, secret }) }));
+  const server = app.listen(0);
+  await new Promise((r) => server.once('listening', r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const auth = { Authorization: `Bearer ${jwt.sign({ email: 'manager@vesopa.co.uk' }, secret)}`,
+                 'Content-Type': 'application/json' };
+
+  const save = (join_slug) =>
+    fetch(`${base}/api/wallet/settings`, { method: 'PUT', headers: auth, body: JSON.stringify({ join_slug }) });
+
+  try {
+    assert.strictEqual((await save('taken')).status, 409, 'a code another venue holds');
+    assert.strictEqual((await save('api')).status, 400, 'a reserved word');
+    assert.strictEqual((await save('-nope-')).status, 400, 'a code that cannot start with a hyphen');
+    assert.strictEqual((await save('a')).status, 400, 'too short to read off a poster');
+  } finally {
+    server.close();
+  }
+});
+
 testAsync('the QR link refuses a token this server did not sign', async () => {
   const express = require('express');
   const { walletPublicRoutes, walletCore } = require('../src/wallet');
