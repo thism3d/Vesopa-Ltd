@@ -629,9 +629,16 @@ function sign(manifest, kind, config) {
     // `-legacy` because a .p12 exported by macOS Keychain uses RC2/3DES, which
     // OpenSSL 3 moved to the legacy provider. Without it the export reads as
     // "unsupported" and looks like a wrong passphrase.
-    const passin = `pass:${config.passphrase}`;
-    run(['pkcs12', '-in', bundle, '-nocerts', '-nodes', '-out', keyPath,
-         '-passin', passin, '-legacy'], 'read the private key');
+    // Through the environment, never as `pass:...` on the argv. An argument
+    // is visible in `ps` to every account on the machine for as long as the
+    // call runs, and this box is shared with other tenants — so a command
+    // line here would leak the Wallet passphrase on every pass signed.
+    run(
+      ['pkcs12', '-in', bundle, '-nocerts', '-nodes', '-out', keyPath,
+       '-passin', 'env:VESOPA_P12_PASS', '-legacy'],
+      'read the private key',
+      { VESOPA_P12_PASS: config.passphrase || '' }
+    );
 
     // The certificate comes from the *public* .cer for this kind, not from the
     // bundle. A shared bundle carries one certificate and would sign all five
@@ -677,10 +684,17 @@ function sign(manifest, kind, config) {
  * openssl's own messages are about providers and store routines. On their own
  * they send somebody looking in the wrong place — "unsupported" for a Keychain
  * export means the legacy provider, not a corrupt file.
+ *
+ * [extraEnv] is merged into the child environment, which is how a passphrase
+ * reaches openssl without appearing in `ps`.
  */
-function run(args, what) {
+function run(args, what, extraEnv) {
   try {
-    execFileSync('openssl', args, { timeout: 15000, stdio: 'pipe' });
+    execFileSync('openssl', args, {
+      timeout: 15000,
+      stdio: 'pipe',
+      env: extraEnv ? { ...process.env, ...extraEnv } : process.env,
+    });
   } catch (e) {
     const detail = String(e.stderr || e.message || '').trim().split('\n')[0];
     throw new Error(`Could not ${what}: ${detail}`);
