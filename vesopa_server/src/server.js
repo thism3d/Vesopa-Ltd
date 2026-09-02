@@ -43,6 +43,7 @@ const {
   reportScheduleRoutes,
   startScheduler,
 } = require('./report_schedules');
+const { walletCore, walletRoutes, walletPublicRoutes } = require('./wallet');
 
 const PORT = process.env.PORT || 4000;
 
@@ -239,6 +240,22 @@ app.use('/api', importRoutes({ pool, broadcast, secret: JWT_SECRET }));
 // Reports a venue hands to its accountant, and the schedules that send them.
 app.use('/api', reportRoutes({ pool, secret: JWT_SECRET }));
 app.use('/api', reportScheduleRoutes({ pool, secret: JWT_SECRET }));
+
+/**
+ * Google Wallet passes.
+ *
+ * One core is built and handed to both route sets so they share an OAuth token
+ * cache — the token is good for an hour, and a customer scanning a QR should
+ * not cause a second exchange with Google just because a different router
+ * served the request.
+ *
+ * The public half is mounted at the root and *before* the static middleware and
+ * the client-side routing shell, so /wallet/join/... resolves here rather than
+ * being answered with the back-office single-page app.
+ */
+const wallet = walletCore({ pool, secret: JWT_SECRET });
+app.use('/api', walletRoutes({ pool, broadcast, secret: JWT_SECRET, core: wallet }));
+app.use(walletPublicRoutes({ pool, secret: JWT_SECRET, core: wallet }));
 
 /**
  * The floor plan, as the till sees it. Unauthenticated like /products: a

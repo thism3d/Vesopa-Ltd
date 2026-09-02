@@ -1,11 +1,48 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- One page. The site is a single scroll spine; the fragments below are the
-     sections a search result would sensibly land on, but they are not separate
-     URLs, so only the root is listed. -->
+<!-- The marketing site is a single scroll spine — its sections are fragments,
+     not URLs, so only the root is listed for it. The document pages below are
+     real, separate pages, and two of them (privacy, data deletion) are URLs
+     Apple and Google check directly, so they are declared here explicitly. -->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://vesopasoftware.com/</loc>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://vesopasoftware.com/support</loc>
+    <lastmod>2026-09-02</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://vesopasoftware.com/privacy</loc>
+    <lastmod>2026-09-02</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://vesopasoftware.com/terms</loc>
+    <lastmod>2026-09-02</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://vesopasoftware.com/cookies</loc>
+    <lastmod>2026-09-02</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.5</priority>
+  </url>
+  <url>
+    <loc>https://vesopasoftware.com/data-deletion</loc>
+    <lastmod>2026-09-02</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://vesopasoftware.com/delete-my-data</loc>
+    <lastmod>2026-09-02</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.7</priority>
   </url>
 </urlset>

@@ -584,6 +584,14 @@ body.probing .hold{
 }
 .finale .cta-row{margin-top:auto}
 .finale-foot{font-family:"Martian Mono",monospace;font-size:.72rem;letter-spacing:.05em;opacity:.6;margin-top:1.6rem}
+/* The legal row under the finale. Wraps rather than scrolls: on a phone these
+   are seven links and a single line of them would run off the side. */
+.finale-legal{display:flex;flex-wrap:wrap;gap:.5rem 1.3rem;margin-top:1.6rem}
+.finale-legal a{
+  font-family:"Martian Mono",monospace;font-size:.68rem;letter-spacing:.06em;
+  text-transform:uppercase;opacity:.62;text-decoration:none;
+}
+.finale-legal a:hover{opacity:1;color:#5E7A0E}
 
 /* The frame counter is a development instrument, not part of the page. It ships
    hidden and site.js reveals it only under ?probe — it was previously sitting
