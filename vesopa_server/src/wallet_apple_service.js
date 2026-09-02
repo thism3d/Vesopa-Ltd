@@ -160,10 +160,22 @@ function appleWalletRoutes({ pool, secret, core }) {
       .status(200)
       .set({
         'Content-Type': 'application/vnd.apple.pkpass',
-        // The filename a phone shows while it downloads. Named after the kind
-        // rather than the customer: a file called `sarah-jones.pkpass` in a
-        // shared Downloads folder is a small privacy leak for no benefit.
-        'Content-Disposition': `attachment; filename="vesopa-${kind}.pkpass"`,
+        // `inline`, not `attachment` — this is the difference between a pass
+        // that installs and one that does not.
+        //
+        // Safari has had a download manager since iOS 13, and `attachment` is
+        // what sends a file into it. The pass lands in the Files app, and Files
+        // is a dead end for `.pkpass`: there is no Quick Look generator for the
+        // type, so tapping it does nothing at all and the customer is left
+        // holding a card they cannot add, with no error to explain why. With
+        // `inline` Safari hands the bytes straight to Wallet and they get the
+        // "Add to Apple Wallet" sheet, which is the whole point.
+        //
+        // The filename still matters to the few clients that do save it. Named
+        // after the kind rather than the customer: a file called
+        // `sarah-jones.pkpass` in a shared Downloads folder is a small privacy
+        // leak for no benefit.
+        'Content-Disposition': `inline; filename="vesopa-${kind}.pkpass"`,
         // Built fresh on every scan and carrying a balance, so it must never
         // sit in a CDN or a phone's HTTP cache.
         'Cache-Control': 'no-store, must-revalidate',

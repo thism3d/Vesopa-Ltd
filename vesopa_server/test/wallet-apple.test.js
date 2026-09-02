@@ -466,4 +466,42 @@ check('the bundle is chosen by testing the key, not by its name', () => {
   assert.strictEqual(fromKey, fromCert, `${path.basename(chosen)} is the wrong key`);
 });
 
+/**
+ * The two response headers a served pass lives or dies by.
+ *
+ * Checked against the source rather than a live response, because `serve`
+ * is a closure inside the router factory. That is a weaker test than
+ * mounting the app, and it is still worth having: the regression it catches
+ * is one word in a string literal, and the symptom is a customer at a
+ * counter unable to add a card, with nothing logged anywhere.
+ */
+check('a served pass is inline, not an attachment', () => {
+  const src = require('fs').readFileSync(
+    path.join(__dirname, '..', 'src', 'wallet_apple_service.js'),
+    'utf8'
+  );
+
+  assert.ok(
+    src.includes("'Content-Type': 'application/vnd.apple.pkpass'"),
+    'the pkpass MIME type is what makes a phone offer Wallet at all'
+  );
+
+  const header = src
+    .split('\n')
+    .find((line) => line.includes("'Content-Disposition'"));
+  assert.ok(header, 'no Content-Disposition is set on a served pass');
+
+  // `attachment` sends the file into Safari’s download manager and thence to
+  // the Files app, where a `.pkpass` cannot be opened at all — there is no
+  // Quick Look generator for the type, so tapping it does nothing.
+  assert.ok(
+    !header.includes('attachment'),
+    'attachment sends the pass to Files, which cannot open it'
+  );
+  assert.ok(
+    header.includes('inline'),
+    'inline is what hands the bytes straight to Wallet'
+  );
+});
+
 console.log(`\n${passed} checks passed\n`);
