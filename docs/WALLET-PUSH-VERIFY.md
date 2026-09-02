@@ -189,7 +189,33 @@ All four were verified green on live at deploy time.
 
 ---
 
-## 7. Still outstanding
+## 7. What the card looks like now
+
+Verified on live, by pulling real `.pkpass` files off the server and opening
+them:
+
+| | Loyalty | Gift card | Promo |
+|---|---|---|---|
+| Header | `NEXT REWARD · 55 to go` | `GIFT CARD · ···· PH37` | `ENDS IN` |
+| Primary | `POINTS · 45` | `BALANCE · £30.00` | `OFFER · 20% OFF` |
+| Secondary | Member, tier | `of £60.00` loaded, for | `WHEN · Every day, 5pm–7pm` |
+| Auxiliary | `MEMBER NO. · VK · 0001` | — | — |
+| Strip | banded to 50% | plain | plain |
+
+All five kinds are `eventTicket` with `groupingIdentifier: venue:vesopa-kitchen`,
+so a venue's cards collapse into one stack. `logoText` is the venue's name.
+
+**The progress bar is an image, not a field.** PassKit has fields and images and
+nothing in between, and the server has no image codec. `tools/wallet_art` renders
+eleven states at build time (`strip_loyalty_p000` … `p100`) and the server picks
+the nearest — 45 points against a 100 floor served `p050`. Each pass still ships
+one strip at the size it always did.
+
+The other three decorations the design asked for — the tier chip, the gift-card
+spend bar, the staff initials disc — restate text already on the card, so they
+are fields rather than per-customer images.
+
+## 8. Still outstanding
 
 - **Staff and promo cards don't push.** Only loyalty points and gift-card
   balances trigger one. Those two change during a sale; staff and promo change
@@ -197,7 +223,18 @@ All four were verified green on live at deploy time.
 - **Google Wallet is not configured on live.** Every Android customer currently
   gets no card at all. The sign-up no longer breaks because of it, but they still
   leave empty-handed. Needs `GOOGLE_WALLET_ISSUER_ID` and a service account.
-- **Card stacking and member numbers** — next piece of work, not started.
+- **Staff `SHIFT` and `AUTHORISES`** have no data model — there is no roster
+  table and no permissions model to read. Unlike `NEXT REWARD`, which turned out
+  to have had its data in `epos_loyalty_settings` all along, these two genuinely
+  do not exist yet.
+- **`featuredActions` is unverified against a real iOS 27 device.** It ships
+  because older iOS ignores the key, and the same link is also a tappable back
+  field so the pages work today. `APPLE_WALLET_FEATURED_ACTIONS=off` stops the
+  tiles if a pass ever fails to install.
+- **Venue photographs** still cannot reach an Apple strip: `photo_url` is stored
+  and feeds Google, but Apple needs bytes at an exact size and the resize has to
+  happen somewhere. The back office cropper already does this in a browser
+  canvas, which is the likely home.
 
 ---
 
