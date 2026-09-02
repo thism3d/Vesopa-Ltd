@@ -359,6 +359,8 @@ class LoyaltyCustomer {
     this.tierName,
     this.tierMultiplier = 1.0,
     this.visits = 0,
+    this.discountType = 'none',
+    this.discountValue = 0,
     this.enabled = true,
     this.minRedeemPoints = 100,
     this.redeemStepPoints = 100,
@@ -380,6 +382,15 @@ class LoyaltyCustomer {
   /// all. 1.0 when the customer is not on one.
   final double tierMultiplier;
   final int visits;
+
+  /// The standing discount this member carries onto every bill.
+  ///
+  /// Carried here as well as on [TillCustomer] because a swiped card produces
+  /// one lookup, not two, and the sale needs the discount at the same moment it
+  /// needs the points. The server has always sent these two columns; nothing
+  /// read them until a card could put a member on a bill in one movement.
+  final String discountType;
+  final int discountValue;
 
   /// Whether the venue's scheme is switched on. A retired scheme still has
   /// members and balances; it just stops moving points.
@@ -463,6 +474,8 @@ class LoyaltyCustomer {
       // `as num?` cast silently yields null and every tier quietly earns ×1.
       tierMultiplier: _decimal(tier?['points_multiplier'], 1.0),
       visits: (j['visits'] as num?)?.toInt() ?? 0,
+      discountType: j['discount_type'] as String? ?? 'none',
+      discountValue: (j['discount_value'] as num?)?.toInt() ?? 0,
       enabled: settings['enabled'] != 0 && settings['enabled'] != false,
       minRedeemPoints: (settings['min_redeem_points'] as num?)?.toInt() ?? 100,
       redeemStepPoints: (settings['redeem_step_points'] as num?)?.toInt() ?? 100,
@@ -659,6 +672,41 @@ class CommerceRepository {
     if (res.statusCode != 200) {
       throw CommerceException(
           body['error'] as String? ?? 'No customer with that number');
+    }
+    return LoyaltyCustomer.fromJson(body);
+  }
+
+  /// The member holding the card that was just swiped.
+  ///
+  /// Returns null where the card belongs to nobody, rather than throwing.
+  /// That is not an error and must not be treated as one: it is the venue's
+  /// own case — "if no member is found it would ask, would you like to create
+  /// a new member for the card that's been swiped" — and the till turns it
+  /// into an offer rather than a failure.
+  ///
+  /// A genuine failure (the network, a server that is down) still throws, and
+  /// the difference matters at the counter. "Nobody holds this card, shall we
+  /// enrol them?" and "the till cannot reach the back office" call for two
+  /// completely different things from the clerk, and a method that answered
+  /// null for both would put the first message in front of a member who has
+  /// been with the venue for three years.
+  Future<LoyaltyCustomer?> loyaltyByCard(String cardNumber) async {
+    final res = await _client
+        .get(
+          Uri.parse(
+            '$apiBase/api/loyalty/card?$_officeParam'
+            '&number=${Uri.encodeComponent(cardNumber)}',
+          ),
+        )
+        .timeout(_timeout);
+
+    if (res.statusCode == 404) return null;
+
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    if (res.statusCode != 200) {
+      throw CommerceException(
+        body['error'] as String? ?? 'Could not look that card up',
+      );
     }
     return LoyaltyCustomer.fromJson(body);
   }

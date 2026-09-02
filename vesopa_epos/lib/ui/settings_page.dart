@@ -16,6 +16,7 @@ import '../payments/dojo_config.dart';
 import '../payments/payment_provider.dart';
 import '../printing/printer_transport.dart';
 import 'card_diagnostics_page.dart';
+import 'cards_page.dart';
 import 'layout.dart';
 import 'nav_panel_controller.dart';
 import 'customer_display_page.dart';
@@ -204,6 +205,35 @@ class SettingsPage extends ConsumerWidget {
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute<void>(
                 builder: (_) => const CardDiagnosticsPage(),
+              ),
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 28),
+        // Deliberately its own section, and deliberately not under "Card
+        // payments" above. The two have nothing to do with each other beyond
+        // the word: that one is a machine that takes money, this is a piece of
+        // plastic that says who somebody is, and filing them together is how a
+        // manager ends up in the wrong screen.
+        const _SectionTitle('Swipe cards'),
+        Card(
+          margin: EdgeInsets.zero,
+          child: ListTile(
+            leading: const Icon(Icons.badge_outlined, color: Pos.brandDeep),
+            title: const Text('Staff, loyalty and gift cards'),
+            subtitle: const Text(
+              'See what the reader is sending, and give somebody a card. The '
+              'prefixes themselves are set in the back office.',
+              style: TextStyle(fontSize: 12.5),
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => Scaffold(
+                  appBar: AppBar(title: const Text('Swipe cards')),
+                  body: const CardsPage(),
+                ),
               ),
             ),
           ),

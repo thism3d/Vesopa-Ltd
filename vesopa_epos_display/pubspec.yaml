@@ -35,6 +35,22 @@ dependencies:
   # Money and clocks, formatted the way the till formats them.
   intl: ^0.20.3
 
+  # The customer's QR code - "scan to join", or a link to a wallet pass.
+  #
+  # The encoder only, not qr_flutter: this needs about forty lines of
+  # CustomPainter (see ui/customer_qr.dart) and a widget package would bring a
+  # dependency, its own theming and its own opinions for the sake of them. `qr`
+  # is pure Dart, has no plugin and no platform code, which matters on a screen
+  # whose Store package declares no capabilities at all.
+  qr: ^3.0.2
+
+  # Opening the Microsoft Store when Vesopa EPOS is not installed on this PC.
+  #
+  # The one thing this application ever asks Windows to do for it. It is not a
+  # network capability - nothing is fetched here - it is ShellExecute on a
+  # ms-windows-store:// URI, which hands the job to the Store app.
+  url_launcher: ^6.3.2
+
   # Putting this window on the right monitor, full screen, without anybody
   # dragging it there.
   #
@@ -112,7 +128,23 @@ msix_config:
   # This screen reads one file the till writes and plays media off a local
   # folder; it has no business reaching the internet, and a customer-facing
   # screen with no network is one fewer thing to think about.
+  #
+  # Opening the Store is not an exception to that. It is a ShellExecute on a
+  # ms-windows-store:// URI - Windows does the fetching, in its own application,
+  # and this one still never opens a socket.
   capabilities: ""
+
+  # Deep link. Reverse DNS, matching the web host the same app answers on:
+  #
+  #     display.vesopa.com   ->  com.vesopa.display
+  #     epos.vesopa.com      ->  com.vesopa.epos
+  #     kitchen.vesopa.com   ->  com.vesopa.kitchen   (when there is one)
+  #
+  # So `com.vesopa.display:` typed in a browser, or followed from a link, opens
+  # this screen. The runner already passes the URI through to `main`, which
+  # takes a screen that was opened deliberately straight to its setup card
+  # rather than to whatever it happened to be showing.
+  protocol_activation: com.vesopa.display
 
   # The Store signs the package, so no local certificate is used or needed.
   store: true

@@ -14,11 +14,13 @@
 library;
 
 import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 const _key = 'terminal_name';
+const _keyDeviceId = 'terminal_device_id';
 
 /// Longest name worth carrying. The column behind it is VARCHAR(120), and a
 /// name that does not fit on a bar key is not a name anybody reads.
@@ -59,6 +61,32 @@ class TerminalIdentity extends AsyncNotifier<String> {
     }
     return 'Till';
   }
+}
+
+/// This machine's permanent id, generated on first run.
+///
+/// Separate from the name above, and the difference is the whole reason it
+/// exists: a name is changed by whoever is standing at the till, and the back
+/// office's device list is keyed on this so that renaming a machine moves one
+/// row rather than creating a second. It is also what a display's pairing is
+/// recorded against.
+///
+/// Thirty-two hex characters from the platform's secure source. Not a UUID only
+/// because a UUID would mean parsing something nothing ever parses — it is
+/// compared, and that is all.
+Future<String> terminalDeviceId() async {
+  final prefs = await SharedPreferences.getInstance();
+  final existing = prefs.getString(_keyDeviceId)?.trim();
+  if (existing != null && existing.length >= 8) return existing;
+
+  final random = Random.secure();
+  final id = [
+    for (var i = 0; i < 16; i++)
+      random.nextInt(256).toRadixString(16).padLeft(2, '0'),
+  ].join();
+
+  await prefs.setString(_keyDeviceId, id);
+  return id;
 }
 
 final terminalIdentityProvider =

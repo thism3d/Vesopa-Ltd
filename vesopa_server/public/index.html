@@ -197,6 +197,7 @@
           <button class="nav" data-view="tax">Tax</button>
           <button class="nav" data-view="idle">Till &amp; printers</button>
           <button class="nav" data-view="kitchen">Kitchen screens</button>
+          <button class="nav" data-view="devices">Devices</button>
 
           <button class="nav-group" data-group="floor">Floor<span class="caret">▼</span></button>
           <button class="nav" data-view="tables">Table Designer</button>
@@ -213,6 +214,8 @@
           <button class="nav" data-view="gift_cards">Gift cards</button>
           <button class="nav" data-view="deposits">Deposits</button>
           <button class="nav" data-view="loyalty">Loyalty</button>
+          <button class="nav" data-view="cards">Cards</button>
+          <button class="nav" data-view="wallet">Wallet passes</button>
           <button class="nav" data-view="tender">Tender &amp; gratuity</button>
           <button class="nav" data-view="rules">Automation rules</button>
 
@@ -1529,7 +1532,7 @@
             <button class="btn primary" id="add-customer">Add customer</button>
           </div>
           <div class="card"><table>
-            <thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Discount</th><th class="right">Points</th><th>Membership</th><th></th></tr></thead>
+            <thead><tr><th>Name</th><th>Card</th><th>Phone</th><th>Email</th><th>Discount</th><th class="right">Points</th><th>Membership</th><th></th></tr></thead>
             <tbody id="customers"></tbody>
           </table></div>
         </section>
@@ -1717,6 +1720,192 @@
                 <div id="loyalty-top"></div>
               </div>
             </div>
+          </div>
+        </section>
+
+        <!-- Wallet passes: Apple and Google, one set of branding. -->
+        <section id="view-wallet" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Wallet passes</h2>
+              <p class="muted small">
+                A card on the customer's phone. The barcode carries the same
+                number as the plastic, so a phone and a card scan to the same
+                person at the till.
+              </p>
+            </div>
+            <button class="btn primary" id="wallet-save">Save branding</button>
+          </div>
+          <div class="grid-cards" id="wallet-stats"></div>
+
+          <div class="rd-layout">
+            <div class="rd-editor">
+              <div class="card rd-card">
+                <h3>The programme</h3>
+                <label class="check"><input type="checkbox" data-wal="enabled"> Issue wallet passes</label>
+                <div class="grid2">
+                  <label>Programme name<input type="text" maxlength="120" data-wal="program_name" placeholder="Crown Rewards"></label>
+                  <label>Venue name<input type="text" maxlength="120" data-wal="issuer_name" placeholder="The Crown"></label>
+                </div>
+                <p class="muted small">
+                  The programme name is the big line on the card; the venue name
+                  sits under it. Both fall back to your receipt branding.
+                </p>
+              </div>
+
+              <div class="card rd-card">
+                <h3>Colours</h3>
+                <p class="muted small">
+                  Apple needs all three and works none of them out. Leave them
+                  blank for the Vesopa palette — a dark card with lime labels —
+                  rather than Apple's default, which is grey on near-black.
+                </p>
+                <div class="grid3 wal-colours">
+                  <label>Background<input type="color" data-wal="hex_background" value="#111111"></label>
+                  <label>Text<input type="color" data-wal="hex_foreground" value="#F2F4F0"></label>
+                  <label>Labels<input type="color" data-wal="hex_label" value="#A5C715"></label>
+                </div>
+              </div>
+
+              <div class="card rd-card">
+                <h3>Which cards</h3>
+                <p class="muted small">A venue may want a loyalty card and nothing else.</p>
+                <label class="check"><input type="checkbox" data-wal="loyalty_enabled"> Loyalty card</label>
+                <label class="check"><input type="checkbox" data-wal="customer_enabled"> Membership card</label>
+                <label class="check"><input type="checkbox" data-wal="giftcard_enabled"> Gift card</label>
+                <label class="check"><input type="checkbox" data-wal="staff_enabled"> Staff card</label>
+                <label class="check"><input type="checkbox" data-wal="promo_enabled"> Promotional offer</label>
+              </div>
+
+              <div class="card rd-card">
+                <h3>On the back of the card</h3>
+                <div class="grid2">
+                  <label>Website<input type="url" maxlength="255" data-wal="homepage_url" placeholder="https://…"></label>
+                  <label>Contact number<input type="text" maxlength="40" data-wal="support_phone"></label>
+                </div>
+                <label>Terms<textarea rows="3" data-wal="terms" placeholder="Points expire after 24 months."></textarea></label>
+              </div>
+
+              <div class="card rd-card">
+                <h3>Apple Wallet</h3>
+                <label class="check"><input type="checkbox" data-wal="apple_enabled"> Issue Apple passes</label>
+                <div id="wallet-apple-status"></div>
+              </div>
+
+              <div class="card rd-card">
+                <h3>Passes issued</h3>
+                <p class="muted small">
+                  Every card handed out. Scan a code to see what the customer
+                  sees — the link works on both an iPhone and an Android phone.
+                </p>
+                <div id="wallet-passes"></div>
+              </div>
+            </div>
+
+            <div class="rd-preview-pane">
+              <div class="rd-preview-head"><span class="small muted">What the customer gets</span></div>
+              <div class="card rd-card">
+                <div id="wallet-preview"></div>
+              </div>
+              <div class="card rd-card">
+                <h3>Sign-up code</h3>
+                <p class="muted small">
+                  Put this on a table card or a poster. It opens a page where a
+                  customer joins with a name and a phone number, and the card
+                  lands straight in their wallet.
+                </p>
+                <div id="wallet-join-qr" class="wal-qr"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Swipe cards: what each prefix means, and every card issued. -->
+        <section id="view-cards" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Cards</h2>
+              <p class="muted small">
+                A card reader on a till counter behaves as a keyboard: swipe a
+                card and it types <code>;999800001?</code>. The digits it starts
+                with are what tell the till which programme the card belongs to.
+              </p>
+            </div>
+            <button class="btn primary" id="cards-save">Save cards</button>
+          </div>
+          <div class="grid-cards" id="cards-stats"></div>
+          <div class="rd-layout">
+            <div class="rd-editor">
+              <div class="card rd-card">
+                <h3>Prefixes</h3>
+                <p class="muted small">
+                  Set once for the venue and followed by every till, so the same
+                  card does the same thing at both ends of the bar. Leave one
+                  empty to switch that programme off — an empty prefix matches
+                  nothing.
+                </p>
+                <label class="check"><input type="checkbox" data-card="enabled"> Read cards at the till</label>
+                <div class="grid2">
+                  <label>Staff (clerk)<input type="text" inputmode="numeric" maxlength="8" data-card="clerk_prefix" placeholder="9999"></label>
+                  <label>Loyalty<input type="text" inputmode="numeric" maxlength="8" data-card="loyalty_prefix" placeholder="9998"></label>
+                  <label>Gift<input type="text" inputmode="numeric" maxlength="8" data-card="gift_prefix" placeholder="9878"></label>
+                  <label>Membership<input type="text" inputmode="numeric" maxlength="8" data-card="membership_prefix" placeholder="not used"></label>
+                </div>
+                <p class="muted small" id="cards-example"></p>
+              </div>
+              <div class="card rd-card">
+                <h3>Issuing</h3>
+                <div class="grid2">
+                  <label>Digits after the prefix<input type="number" min="4" max="12" data-card="number_digits"></label>
+                </div>
+                <label class="check"><input type="checkbox" data-card="auto_enrol"> Offer to create a member when an unknown loyalty card is swiped</label>
+                <p class="muted small">
+                  A number is never handed out twice, even after a card is
+                  cancelled — the lost card is still out there.
+                </p>
+              </div>
+              <div class="card rd-card">
+                <h3>Cards issued</h3>
+                <p class="muted small">
+                  Every card this venue has given out. Cancelling one detaches
+                  it from whoever held it, so it stops working at the till.
+                </p>
+                <div id="cards-issues"></div>
+              </div>
+            </div>
+            <div class="rd-preview-pane">
+              <div class="rd-preview-head"><span class="small muted">What a card looks like</span></div>
+              <div class="card rd-card">
+                <div id="cards-preview"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Machines: which tills and screens a venue has, and what happened. -->
+        <section id="view-devices" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Devices</h2>
+              <p class="muted small">
+                The machines in this venue. A till registers itself and every
+                customer display paired to it, so this is what is actually
+                plugged in rather than what somebody wrote down.
+              </p>
+            </div>
+            <button class="btn" id="devices-refresh">Refresh</button>
+          </div>
+          <div class="grid-cards" id="devices-stats"></div>
+          <div class="card rd-card">
+            <div id="devices-list"></div>
+          </div>
+          <div class="card rd-card">
+            <h3>What has happened</h3>
+            <p class="muted small">
+              Append-only. Nothing here can be edited or deleted, which is the
+              point of keeping it.
+            </p>
+            <div id="devices-log"></div>
           </div>
         </section>
 

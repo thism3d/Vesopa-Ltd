@@ -56,6 +56,14 @@ dependencies:
   pdf: ^3.12.0
   printing: ^5.14.3
   url_launcher: ^6.3.0
+
+  # Drawing a customer's wallet code on the till, and on the screen facing them.
+  #
+  # The encoder only, not a widget package: painting a module grid is forty
+  # lines (see ui/widgets/wallet_qr.dart) and it is the same package the
+  # customer display and the back office's checked-against reference use, so all
+  # three surfaces draw a byte-identical code for the same payload.
+  qr: ^3.0.2
   # Choosing an idle-screen background from this terminal's own disk. Desktop
   # and Android only in practice, which is every platform a till runs on.
   file_selector: ^1.0.3
@@ -147,8 +155,23 @@ msix_config:
   languages: en-us
   # Lets the till be launched as `vesopa` from a command line or shortcut, and
   # deep-linked as vesopa:// (used for returning from the Dojo checkout window).
+  #
+  # `com.vesopa.epos` is registered beside it, not instead of it. Reverse DNS,
+  # matching the web host the same application answers on:
+  #
+  #     epos.vesopa.com      ->  com.vesopa.epos
+  #     display.vesopa.com   ->  com.vesopa.display
+  #     kitchen.vesopa.com   ->  com.vesopa.kitchen   (when there is one)
+  #
+  # A bare scheme like `vesopa:` is a global name with no registry behind it, so
+  # on a machine where something else had claimed it the last installer would
+  # win and the other application would silently become unreachable. One derived
+  # from a domain we own cannot collide.
+  #
+  # The old scheme has to stay: the Dojo checkout window returns to it, and
+  # every terminal already commissioned expects it.
   execution_alias: vesopa
-  protocol_activation: vesopa
+  protocol_activation: vesopa, com.vesopa.epos
   # Both irrelevant to a Store package: Microsoft handles trust, and a till that
   # launches itself on boot invites certification questions we do not need on a
   # first submission. Revisit enable_at_startup once the app is through review.

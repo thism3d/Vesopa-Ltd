@@ -111,6 +111,11 @@ class StaffRepository {
                     ? (r['name'] as String).trim()
                     : 'Staff ${r['id']}',
                 pin: (r['pin'] as String).trim(),
+                // Absent from a server that predates swipe cards, and empty for
+                // anybody who has not been handed one. Both mean the same thing
+                // here — no card — which is why this is a string and not a
+                // nullable one.
+                swipeCard: (r['swipe_card'] as String?)?.trim() ?? '',
               ),
               mode: InsertMode.insertOrReplace,
             );
@@ -162,4 +167,52 @@ class StaffRepository {
   /// than a guess between candidates.
   Future<StaffData?> _cachedByPin(String pin) =>
       (db.select(db.staff)..where((s) => s.pin.equals(pin))).getSingleOrNull();
+
+  /// Who this swipe card belongs to, or null if it belongs to nobody.
+  ///
+  /// The same shape as [byPin] and for the same reasons — cache first, one
+  /// re-pull on a miss, and never more than that. A card issued in the back
+  /// office moments ago and a card that belongs to nobody are indistinguishable
+  /// from the cache alone, and guessing "unknown card" is what would leave
+  /// somebody standing at a till unable to sign on with the card they were
+  /// handed thirty seconds earlier.
+  ///
+  /// Empty is refused outright rather than looked up. Every member of staff
+  /// without a card has an empty column, so an empty needle would match the
+  /// first of them — and a reader that sent nothing would sign somebody on.
+  Future<StaffData?> byCard(String cardNumber) async {
+    final trimmed = cardNumber.trim();
+    if (trimmed.isEmpty) return null;
+
+    final cached = await _cachedByCard(trimmed);
+    if (cached != null) return cached;
+
+    if (terminalToken == null) return null;
+
+    try {
+      await sync(timeout: const Duration(seconds: 5));
+    } on StaffSyncFailed {
+      // Offline, or the token has been revoked. The cache already said no, and
+      // that is the best answer available — which is the whole point of caching
+      // the card alongside the PIN.
+      return null;
+    }
+    return _cachedByCard(trimmed);
+  }
+
+  /// The local half of [byCard].
+  ///
+  /// `getSingleOrNull` throws where two rows match, so this takes the first of
+  /// them instead: two people sharing a card number is a back-office mistake,
+  /// and refusing to sign anybody on — with an exception, mid-service — is a
+  /// worse answer than signing on the first of the two and letting the venue
+  /// notice.
+  Future<StaffData?> _cachedByCard(String cardNumber) async {
+    final rows =
+        await (db.select(db.staff)
+              ..where((s) => s.swipeCard.equals(cardNumber))
+              ..limit(1))
+            .get();
+    return rows.isEmpty ? null : rows.first;
+  }
 }

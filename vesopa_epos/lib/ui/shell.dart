@@ -3,17 +3,23 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../config/constants.dart';
 import '../data/customer_display.dart';
+import '../data/device_registry.dart';
+import '../data/display_pairing.dart';
 import '../data/session_controller.dart';
 import '../data/staff_session.dart';
 import '../data/sync_service.dart';
+import '../data/terminal_identity.dart';
 import '../data/terminal_service.dart';
 import '../main.dart';
 import 'layout.dart';
 import 'about_page.dart';
+import 'card_actions.dart';
 import 'functions_page.dart';
 import 'logout_dialog.dart';
 import 'nav_panel_controller.dart';
+import 'pair_request_overlay.dart';
 import 'placeholder_page.dart';
 import 'products_page.dart';
 import 'settings_page.dart';
@@ -21,6 +27,7 @@ import 'receipts_page.dart';
 import 'recovery_page.dart';
 import 'reports_page.dart';
 import 'sale_page.dart';
+import 'swipe_listener.dart';
 import 'tables_page.dart';
 import 'theme.dart';
 import 'widgets/pos_message.dart';
@@ -47,6 +54,18 @@ class _PosShellState extends ConsumerState<PosShell> {
   /// restart on every one of those. The feed itself is shared (see
   /// `customerDisplayProvider`), because the payment screen writes to it too.
   StreamSubscription<void>? _displayFeed;
+
+  /// Says "this till is running" for any customer display on this machine.
+  ///
+  /// A display cannot ask whether a process is running — there is no supported
+  /// way to do that from a sandboxed application — so the till says so, every
+  /// few seconds, and the display judges by the timestamp. See
+  /// data/display_pairing.dart.
+  Timer? _presence;
+
+  /// Held for [dispose], which cannot `ref.read` a container that may already
+  /// have gone.
+  String? _presenceDeviceId;
 
   /// Held rather than read through `ref` each time, because [dispose] needs it
   /// and a `ref.read` there is a read against a container that may already have
@@ -77,11 +96,112 @@ class _PosShellState extends ConsumerState<PosShell> {
     // could be showing. A no-op on a till that is not commissioned for it.
     ref.read(billSyncRunnerProvider);
     _display = ref.read(customerDisplayProvider);
+    unawaited(_announceThisMachine());
+    unawaited(_readCardRules());
+    unawaited(_startPresence());
     _newOrder();
+  }
+
+  /// Load the venue's card prefixes, then refresh them.
+  ///
+  /// Stored first and pulled second, so a till with no network starts reading
+  /// cards immediately with whatever it had last — and a brand new one starts
+  /// with the defaults, which are this venue's real numbers. A reader that only
+  /// worked once the broadband was up would be a staff card that cannot unlock
+  /// the till at the one moment it matters.
+  /// Start saying that this till is here, and keep saying it.
+  ///
+  /// The heartbeat runs whether or not anybody has signed in: "installed and
+  /// running but signed out" is a state the display needs to be able to tell
+  /// apart from "not running at all", because the two call for completely
+  /// different things from whoever is standing in front of the screen.
+  Future<void> _startPresence() async {
+    final pairing = ref.read(displayPairingProvider);
+    final deviceId = await terminalDeviceId();
+    if (!mounted) return;
+    _presenceDeviceId = deviceId;
+
+    Future<void> beat() async {
+      final session = ref.read(sessionControllerProvider).value;
+      await pairing.announcePresence(
+        deviceId: deviceId,
+        terminalName: ref.read(terminalNameProvider),
+        venueName: session?.venueName ?? '',
+        appVersion: VesopaBrand.appVersion,
+        signedIn: session?.signedIn ?? false,
+      );
+    }
+
+    await beat();
+    _presence = Timer.periodic(tillPresenceInterval, (_) => unawaited(beat()));
+  }
+
+  Future<void> _readCardRules() async {
+    final cards = ref.read(cardRepositoryProvider);
+    await cards.load();
+    if (!mounted) return;
+    // The pull is a courtesy. Nothing waits on it and a failure is not reported
+    // anywhere: the till carries on with what it had.
+    await cards.sync();
+    if (mounted) setState(() {});
+  }
+
+  /// Re-grant every paired display, and tell the back office what is here.
+  ///
+  /// Runs once, on the first screen the till draws after sign-in.
+  ///
+  /// The re-grant is what makes a pairing survive this application being
+  /// upgraded, reinstalled, or moved between the .exe and the Store: the
+  /// relationship is remembered and the *path* is written afresh from wherever
+  /// this build actually writes today. See data/display_pairing.dart. A venue
+  /// that has paired its display once never has to do it again, and the class of
+  /// fault where a screen quietly follows a folder nobody writes to any more
+  /// cannot come back.
+  ///
+  /// The registration is best-effort and unawaited by anything. A till whose
+  /// POST does not land sells exactly as it did; the back office's device list
+  /// is a day out of date until the next start.
+  Future<void> _announceThisMachine() async {
+    final session = ref.read(sessionControllerProvider).value;
+    // Nothing to do on a till nobody has signed in: a display is registered
+    // against a venue, and there is not one yet.
+    if (session == null || !session.signedIn) return;
+
+    final office = session.office ?? '';
+    final terminalName = ref.read(terminalNameProvider);
+    final pairing = ref.read(displayPairingProvider);
+
+    await pairing.refreshGrants(
+      office: office,
+      terminalName: terminalName,
+      venueName: session.venueName,
+    );
+
+    final registry = ref.read(deviceRegistryProvider);
+    if (!registry.canRegister) return;
+
+    await registry.register(
+      describeDevices(
+        terminalDeviceId: await terminalDeviceId(),
+        terminalName: terminalName,
+        appVersion: VesopaBrand.appVersion,
+        signedInAs: session.email,
+        displays: await pairing.paired(),
+      ),
+    );
   }
 
   @override
   void dispose() {
+    _presence?.cancel();
+    // Say the till has gone, so a display on this machine stops offering a code
+    // the moment the till closes rather than twenty seconds later. Best effort:
+    // a till that loses power says nothing, which is why the display judges by
+    // the timestamp and not by whether this file exists.
+    final deviceId = _presenceDeviceId;
+    if (deviceId != null) {
+      unawaited(ref.read(displayPairingProvider).withdrawPresence(deviceId));
+    }
     _displayFeed?.cancel();
     // Put the customer's screen back to adverts rather than leaving the last
     // bill of the night on it.
@@ -326,43 +446,76 @@ class _PosShellState extends ConsumerState<PosShell> {
           );
 
     if (context.useCompactNav && !pinned) {
-      return Scaffold(
+      return _withCounterHardware(
+        Scaffold(
+          key: _scaffold,
+          drawer: drawer,
+          body: Column(
+            children: [
+              ?topBar,
+              Expanded(child: body),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return _withCounterHardware(
+      Scaffold(
         key: _scaffold,
         drawer: drawer,
         body: Column(
           children: [
             ?topBar,
-            Expanded(child: body),
+            Expanded(
+              child: pinned
+                  ? Row(
+                      children: [
+                        fixedRail,
+                        VerticalDivider(
+                          width: 1,
+                          thickness: 1,
+                          color: Theme.of(context).posLine,
+                        ),
+                        Expanded(child: body),
+                      ],
+                    )
+                  : body,
+            ),
           ],
         ),
-      );
-    }
-
-    return Scaffold(
-      key: _scaffold,
-      drawer: drawer,
-      body: Column(
-        children: [
-          ?topBar,
-          Expanded(
-            child: pinned
-                ? Row(
-                    children: [
-                      fixedRail,
-                      VerticalDivider(
-                        width: 1,
-                        thickness: 1,
-                        color: Theme.of(context).posLine,
-                      ),
-                      Expanded(child: body),
-                    ],
-                  )
-                : body,
-          ),
-        ],
       ),
     );
   }
+
+  /// Listen for the card reader across the whole till.
+  ///
+  /// Wrapped around the shell rather than fitted to the sale screen, because a
+  /// card is held out whenever a customer feels like holding one out: mid-sale,
+  /// on the payment page, with a dialog open, or with the idle lock covering
+  /// everything. The listener installs a keyboard handler, so it hears a swipe
+  /// even while the lock screen is drawn on top of this — which is exactly the
+  /// case a staff card exists for.
+  ///
+  /// [_orderId] is read inside the callback rather than captured, so a card
+  /// swiped after the clerk has switched tables goes on the bill that is
+  /// actually on screen.
+  /// The till, with a card reader listening and a pairing request able to
+  /// interrupt it.
+  ///
+  /// The order matters. The pairing sheet is *outside* the card listener, so a
+  /// card swiped while the sheet is up is still read — a member of staff
+  /// signing on to answer the prompt is exactly the sort of thing that happens
+  /// on install day.
+  Widget _withCounterHardware(Widget child) =>
+      PairRequestOverlay(child: _hearingCards(child));
+
+  Widget _hearingCards(Widget child) => SwipeCardListener(
+    enabled: ref.watch(cardRepositoryProvider).settings.enabled,
+    onCard: (card) =>
+        handleSwipedCard(context, ref, card, orderId: _orderId),
+    child: child,
+  );
 
   /// Bring a parked bill onto the till and show it on the sale screen. Recalls
   /// it (flips it back to open) so it is no longer counted as a separate booked

@@ -862,6 +862,110 @@ class ReceiptBuilder {
     return bytes;
   }
 
+  /// The slip that goes with a card that has just been issued.
+  ///
+  /// WHY THIS IS WORTH PRINTING
+  ///
+  /// Issuing a card and *making* one are two different jobs done by two
+  /// different people, usually not at the same moment. The till allocates the
+  /// number and attaches it to a member; the plastic is encoded on whatever
+  /// writer the venue already owns, at the back, later. This is what travels
+  /// between the two — and it carries the track exactly as it must be encoded,
+  /// sentinels and all, because reading a number down a phone or off a screen
+  /// is where the digit gets dropped.
+  ///
+  /// The number is printed twice on purpose: once large enough to read across a
+  /// counter, and once as a barcode. A venue that has a scanner can then attach
+  /// the same number to a wallet pass or check a card against the slip without
+  /// typing anything.
+  List<int> cardSlip({
+    required String kindLabel,
+    required String cardNumber,
+    required String track,
+    String? holder,
+    String? shopName,
+    String? issuedBy,
+    DateTime? at,
+  }) {
+    final bytes = _begin();
+
+    if (shopName != null && shopName.trim().isNotEmpty) {
+      bytes.addAll(_shopName(shopName));
+    }
+    bytes.addAll(
+      _text(
+        '$kindLabel CARD',
+        styles: const PosStyles(align: PosAlign.center, bold: true),
+      ),
+    );
+    bytes.addAll(_generator.hr());
+
+    if (holder != null && holder.trim().isNotEmpty) {
+      bytes.addAll(
+        _text(
+          holder.trim(),
+          styles: const PosStyles(align: PosAlign.center, bold: true),
+        ),
+      );
+      bytes.addAll(_generator.feed(1));
+    }
+
+    // Big enough to read at arm's length, because this is the figure somebody
+    // types into an encoder.
+    bytes.addAll(
+      _text(
+        cardNumber,
+        styles: const PosStyles(
+          align: PosAlign.center,
+          height: PosTextSize.size2,
+          width: PosTextSize.size2,
+          bold: true,
+        ),
+      ),
+    );
+    bytes.addAll(_generator.feed(1));
+
+    bytes.addAll(
+      _text(
+        'ENCODE ON TRACK 2 AS',
+        styles: const PosStyles(align: PosAlign.center),
+      ),
+    );
+    bytes.addAll(
+      _text(track, styles: const PosStyles(align: PosAlign.center, bold: true)),
+    );
+    bytes.addAll(
+      _text(
+        'including the ; and ?',
+        styles: const PosStyles(align: PosAlign.center),
+      ),
+    );
+
+    // The same number a scanner can read, so it can be checked or attached to a
+    // wallet pass without anybody typing it. Bare — no sentinels — because those
+    // belong to the stripe reader and a barcode carrying them would not match.
+    bytes.addAll(_generator.feed(1));
+    try {
+      bytes.addAll(
+        _generator.barcode(Barcode.code128(cardNumber.split(''))),
+      );
+    } catch (_) {
+      // A profile or a printer that will not take this symbology. The number is
+      // already on the slip twice in human-readable form, so a missing barcode
+      // costs a convenience and not the job.
+    }
+
+    bytes.addAll(_generator.hr());
+    if (issuedBy != null && issuedBy.trim().isNotEmpty) {
+      bytes.addAll(_row('Issued by', issuedBy.trim()));
+    }
+    bytes.addAll(_row('Issued', _time.format(at ?? DateTime.now())));
+
+    bytes.addAll(_generator.feed(2));
+    bytes.addAll(_generator.cut());
+    return bytes;
+  }
+
   /// Opens the cash drawer (the "No Sale" key). The drawer is a solenoid wired
   /// into a printer's RJ11 socket, so this is a printer command with nothing to
   /// print.

@@ -68,6 +68,8 @@ class DisplayControl {
     this.billShare = 50,
     this.fillScreen = false,
     this.standingMessage = '',
+    this.customerQr = '',
+    this.customerQrCaption = 'Scan to join',
   });
 
   /// A folder of pictures and clips on the display's machine.
@@ -116,6 +118,21 @@ class DisplayControl {
   /// width at all.
   final int billShare;
 
+  /// A code for the customer to point their phone at, or empty for none.
+  ///
+  /// Whatever the venue wants it to be: a sign-up page, a wallet pass, a review
+  /// link. Neither this application nor the display knows or cares what it
+  /// means — the display draws the square and this carries the string.
+  ///
+  /// The moment it earns its keep is narrow and worth naming: a customer
+  /// watching their round go up is the one person in the day who is looking at
+  /// that screen with a phone already in their hand.
+  final String customerQr;
+
+  /// The line under it. A code with no instruction beside it is a square nobody
+  /// points a phone at.
+  final String customerQrCaption;
+
   /// Whether adverts fill the panel, cropping to fit, instead of sitting inside
   /// it with bars around them.
   ///
@@ -144,6 +161,8 @@ class DisplayControl {
     int? billShare,
     bool? fillScreen,
     String? standingMessage,
+    String? customerQr,
+    String? customerQrCaption,
   }) => DisplayControl(
     advertFolder: advertFolder ?? this.advertFolder,
     idleSeconds: idleSeconds ?? this.idleSeconds,
@@ -157,6 +176,8 @@ class DisplayControl {
     billShare: billShare ?? this.billShare,
     fillScreen: fillScreen ?? this.fillScreen,
     standingMessage: standingMessage ?? this.standingMessage,
+    customerQr: customerQr ?? this.customerQr,
+    customerQrCaption: customerQrCaption ?? this.customerQrCaption,
   );
 
   Map<String, Object?> toJson() => {
@@ -174,6 +195,8 @@ class DisplayControl {
     'bill_share': billShare,
     'fill_screen': fillScreen,
     'standing_message': standingMessage,
+    'customer_qr': customerQr,
+    'customer_qr_caption': customerQrCaption,
   };
 
   /// Null when the file is from a newer till than this build understands.
@@ -199,6 +222,8 @@ class DisplayControl {
       billShare: _int(raw['bill_share'], 50),
       fillScreen: _bool(raw['fill_screen'], fallback: false),
       standingMessage: _str(raw['standing_message'], ''),
+      customerQr: _str(raw['customer_qr'], ''),
+      customerQrCaption: _str(raw['customer_qr_caption'], 'Scan to join'),
     );
   }
 }

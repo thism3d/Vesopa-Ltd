@@ -1132,17 +1132,32 @@ function backofficeRoutes({ pool, broadcast, secret }) {
     try {
       const email = scope(req, await tenantEmail(req));
       const q = req.query.q ? `%${req.query.q}%` : null;
-      const [rows] = await pool.query(
-        `SELECT id, name, phone, email, card_number, discount_type,
-                discount_value, points_balance,
-                DATE_FORMAT(membership_expiry, '%Y-%m-%d') AS membership_expiry
+      const where = `
          FROM epos_customers
          WHERE email_key = ?
          ${q ? 'AND (name LIKE ? OR phone LIKE ? OR email LIKE ?)' : ''}
          ORDER BY name
-         LIMIT 200`,
-        q ? [email, q, q, q] : [email]
-      );
+         LIMIT 200`;
+
+      const columns = `id, name, phone, email, card_number, discount_type,
+                discount_value, points_balance,
+                DATE_FORMAT(membership_expiry, '%Y-%m-%d') AS membership_expiry`;
+
+      const params = q ? [email, q, q, q] : [email];
+
+      // `member_no` is added by schema_swipe_cards.sql, and deploy.ps1 applies
+      // the migrations only when it is asked to. So it is tried and fallen back
+      // from rather than assumed: naming a column that is not there yet is an
+      // error, not a degraded response, and it would take this whole page down
+      // for the sake of one extra field.
+      let rows;
+      try {
+        [rows] = await pool.query(
+          `SELECT ${columns}, member_no ${where}`, params);
+      } catch (e) {
+        if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+        [rows] = await pool.query(`SELECT ${columns} ${where}`, params);
+      }
       res.json(rows);
     } catch (e) {
       next(e);

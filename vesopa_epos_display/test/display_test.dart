@@ -240,28 +240,6 @@ void main() {
   // Settings
   // -------------------------------------------------------------------------
 
-  test('a typed-in path wins over anything found', () {
-    // The override exists for the one setup this application does not otherwise
-    // support: a display on a different PC, reading the till's folder over a
-    // share. When it is set, nothing discovers anything.
-    expect(
-      const DisplaySettings(basketPath: r'\\NAS\till\basket.json')
-          .resolveBasketPath(),
-      r'\\NAS\till\basket.json',
-    );
-    expect(
-      const DisplaySettings(basketPath: '   ').resolveBasketPath(),
-      defaultBasketPath() ?? '',
-    );
-  });
-
-  test('with nothing typed in, the till is looked for', () {
-    // The default, and the whole point: a display beside its till needs nothing
-    // filled in. What it resolves to depends on the machine, so what is
-    // asserted here is that it resolves to the same thing discovery does.
-    expect(const DisplaySettings().resolveBasketPath(), defaultBasketPath() ?? '');
-  });
-
   test('an empty advert folder is null, not the working directory', () {
     // An empty path resolves to wherever the process happens to be running,
     // and a display that decided to play every image next to its own

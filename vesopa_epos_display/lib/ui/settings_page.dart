@@ -15,6 +15,7 @@ import 'package:window_manager/window_manager.dart';
 
 import '../data/adverts.dart';
 import '../data/control.dart';
+import '../data/pairing.dart';
 import '../data/screens.dart';
 import '../data/settings.dart';
 import 'theme.dart';
@@ -27,18 +28,13 @@ class SettingsPage extends ConsumerStatefulWidget {
 }
 
 class _SettingsPageState extends ConsumerState<SettingsPage> {
-  final _basket = TextEditingController();
   final _adverts = TextEditingController();
+  final _name = TextEditingController();
   final _thanks = TextEditingController();
   int _idle = 45;
   int _dwell = 12;
   bool _prices = true;
   bool _loaded = false;
-
-  /// Whether the manager has asked to type a path instead of letting this
-  /// screen find the till. Off unless a path was already stored, which is the
-  /// only way one gets there.
-  bool _override = false;
 
   String _screenKey = '';
   bool _fullScreen = true;
@@ -61,10 +57,12 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   /// When it is, the sections below are hidden rather than shown disabled. A
   /// greyed-out slider still invites somebody to try to move it; a sentence
   /// saying where the setting actually lives does not.
-  bool get _tillOwnsSettings =>
-      isControlledByTill(_basket.text.trim().isNotEmpty
-          ? _basket.text.trim()
-          : (defaultBasketPath() ?? ''));
+  ///
+  /// Read from the pairing, because that is now the only way this screen knows
+  /// where the till writes.
+  bool get _tillOwnsSettings => isControlledByTill(
+    ref.read(pairingProvider).value?.basketPath ?? '',
+  );
 
   Future<void> _readScreens() async {
     final screens = await listScreens();
@@ -77,8 +75,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
   @override
   void dispose() {
-    _basket.dispose();
     _adverts.dispose();
+    _name.dispose();
     _thanks.dispose();
     super.dispose();
   }
@@ -86,9 +84,12 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   void _fill(DisplaySettings settings) {
     if (_loaded) return;
     _loaded = true;
-    _basket.text = settings.basketPath;
-    _override = settings.basketPath.trim().isNotEmpty;
     _adverts.text = settings.advertFolder;
+    unawaited(
+      ref.read(pairingProvider.notifier).name().then((name) {
+        if (mounted && _name.text.isEmpty) _name.text = name;
+      }),
+    );
     _thanks.text = settings.thankYou;
     _idle = settings.idleSeconds;
     _dwell = settings.dwellSeconds;
@@ -107,11 +108,41 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     await placeWindow(screenKey: _screenKey, fullScreen: _fullScreen);
   }
 
+  /// Disconnect, behind a confirmation.
+  ///
+  /// One tap from a working screen to a blank one is too short a drop, and this
+  /// button sits on the page a manager opens to change the advert folder. The
+  /// dialog also says how to undo it, because the way back is on the *other*
+  /// machine and is not obvious from here.
+  Future<void> _confirmDisconnect() async {
+    final yes = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Disconnect from the till?'),
+        content: const Text(
+          'This screen will stop showing bills and go back to asking to be '
+          'connected. To put it back, press Connect on the till.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Keep it connected'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Disconnect'),
+          ),
+        ],
+      ),
+    );
+    if (yes ?? false) await ref.read(pairingProvider.notifier).forget();
+  }
+
   Future<void> _save() async {
+    await ref.read(pairingProvider.notifier).rename(_name.text);
     final current = ref.read(displaySettingsProvider).value ?? const DisplaySettings();
     await ref.read(displaySettingsProvider.notifier).save(
       current.copyWith(
-        basketPath: _basket.text.trim(),
         advertFolder: _adverts.text.trim(),
         idleSeconds: _idle,
         dwellSeconds: _dwell,
@@ -124,39 +155,59 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     if (mounted) Navigator.of(context).pop();
   }
 
-  /// What the display is following, and how it found it.
+  /// Which till this screen is connected to, and whether it is talking.
   ///
-  /// The point of this paragraph is that nobody should have to type a path. It
-  /// says which of the three tiers answered, so a support call can be "it says
-  /// it found the till automatically" rather than a reading of a path down the
-  /// phone.
-  String _basketState() {
-    final typed = _basket.text.trim();
-    final path = typed.isNotEmpty ? typed : (defaultBasketPath() ?? '');
+  /// No path is offered as something to change, because there is no longer
+  /// anything a person could usefully put in its place — see
+  /// `data/pairing.dart`. The path is still *shown*, because a support call
+  /// goes faster when the person on the phone can read out what the screen
+  /// thinks it is following.
+  String _pairingState(PairingState pairing) {
+    switch (pairing.stage) {
+      case PairingStage.unavailable:
+        return 'This screen cannot reach the folder it shares with the till, '
+            'so it cannot be connected on this machine.';
 
-    if (path.isEmpty) {
-      return 'No till found on this PC, and nothing typed in. Start Vesopa '
-          'EPOS on this machine and this will fill itself in.';
+      case PairingStage.tillMissing:
+        return 'Vesopa EPOS is not installed on this PC.\n\nThis screen shows '
+            'the bill from a till running on the same computer. Install Vesopa '
+            'EPOS here and start it, and this screen will find it.';
+
+      case PairingStage.tillIdle:
+        return 'Vesopa EPOS is installed on this PC and is not running.\n\n'
+            'Start it, and this screen will offer a code to connect the two.';
+
+      case PairingStage.tillSignedOut:
+        return '${pairing.till?.terminalName ?? 'The till'} is running, but '
+            'nobody is signed in.\n\nA customer display belongs to a venue, so '
+            'the till has to be signed in before it can connect one.';
+
+      case PairingStage.waiting:
+        return 'Not connected to a till.\n\nOn Vesopa EPOS, open Settings and '
+            'choose Customer display. This screen is waiting there under code '
+            '${pairing.identity.code} — check the code matches and press '
+            'Connect.\n\nThe till has to be signed in before it can connect '
+            'anything.';
+
+      case PairingStage.paired:
+        final path = pairing.basketPath;
+        final connected = 'Connected to ${pairing.pairing!.terminalName}'
+            '${pairing.pairing!.venueName.isEmpty ? '' : ' at '
+                '${pairing.pairing!.venueName}'}.';
+
+        final file = File(path);
+        if (!file.existsSync()) {
+          return '$connected\n$path\n\nNothing there yet. The till writes it '
+              'when it opens a bill, so this is normal before the first sale '
+              'of the day.';
+        }
+
+        final age = DateTime.now().difference(file.lastModifiedSync());
+        if (age.inMinutes < 2) {
+          return '$connected\n$path\n\nThe till is writing to it now.';
+        }
+        return '$connected\n$path\n\nLast written ${_ago(age)} ago.';
     }
-
-    final how = typed.isNotEmpty
-        ? 'Set by hand.'
-        : announcedBasketPath() == path
-        ? 'Found automatically — the till on this PC says this is where it '
-              'writes.'
-        : 'Found automatically, by looking for the till on this PC.';
-
-    final file = File(path);
-    if (!file.existsSync()) {
-      return '$how\n$path\n\nNothing there yet. The till writes it when it '
-          'opens a bill, so this is normal before the till has been started.';
-    }
-
-    final age = DateTime.now().difference(file.lastModifiedSync());
-    if (age.inMinutes < 2) {
-      return '$how\n$path\n\nConnected - the till is writing to it now.';
-    }
-    return '$how\n$path\n\nLast written ${_ago(age)} ago.';
   }
 
   /// How many adverts the chosen folder actually has.
@@ -236,7 +287,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     final settings = ref.watch(displaySettingsProvider).value;
-    if (settings == null) {
+    final pairing = ref.watch(pairingProvider).value;
+    if (settings == null || pairing == null) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     _fill(settings);
@@ -260,48 +312,38 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               _Section(
                 title: 'The till',
                 blurb:
-                    'This finds Vesopa EPOS on this PC by itself, and keeps '
-                    'looking until it does. There is nothing to fill in unless '
-                    'the till is on a different machine.',
+                    'This screen is connected to a till by pairing the two '
+                    'applications, not by pointing at a folder. Whoever is at '
+                    'the till presses Connect once, and the till tells this '
+                    'screen where to look — including after it is upgraded or '
+                    'reinstalled.',
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    _Note(_basketState()),
+                    _Note(_pairingState(pairing)),
                     const SizedBox(height: 14),
-                    if (!_override)
+                    TextField(
+                      controller: _name,
+                      decoration: const InputDecoration(
+                        labelText: 'What this screen is called',
+                        helperText:
+                            'How it appears on the till and in the back '
+                            'office. Worth setting where a venue has two.',
+                      ),
+                      onSubmitted: (value) => unawaited(
+                        ref.read(pairingProvider.notifier).rename(value),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    if (pairing.stage == PairingStage.paired)
                       Align(
                         alignment: Alignment.centerLeft,
                         child: TextButton.icon(
-                          icon: const Icon(Icons.edit_outlined, size: 18),
-                          label: const Text('Point it somewhere else'),
-                          onPressed: () => setState(() => _override = true),
-                        ),
-                      )
-                    else ...[
-                      TextField(
-                        controller: _basket,
-                        onChanged: (_) => setState(() {}),
-                        style: const TextStyle(fontFamily: 'Consolas'),
-                        decoration: InputDecoration(
-                          labelText: "The till's basket file",
-                          hintText: defaultBasketPath() ?? '',
-                          suffixIcon: IconButton(
-                            icon: const Icon(Icons.auto_fix_high),
-                            tooltip: 'Go back to finding it automatically',
-                            onPressed: () => setState(() {
-                              _basket.text = '';
-                              _override = false;
-                            }),
-                          ),
+                          icon: const Icon(Icons.link_off, size: 18),
+                          label: const Text('Disconnect from this till'),
+                          onPressed: _confirmDisconnect,
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      const _Note(
-                        'Only for a display on a different PC from its till, '
-                        'reading the folder over a share. Leave it empty and '
-                        'this screen finds the till on its own.',
-                      ),
-                    ],
                   ],
                 ),
               ),

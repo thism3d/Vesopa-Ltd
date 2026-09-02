@@ -17,6 +17,10 @@ import 'data/floor_repository.dart';
 import 'data/kitchen_printing.dart';
 import 'data/kitchen_screens.dart';
 import 'data/customer_display.dart';
+import 'data/card_repository.dart';
+import 'data/wallet_passes.dart';
+import 'data/device_registry.dart';
+import 'data/display_pairing.dart';
 import 'data/local/database.dart';
 import 'data/loyalty_repository.dart';
 import 'data/session_controller.dart';
@@ -69,6 +73,53 @@ final databaseProvider = Provider<AppDatabase>((ref) {
 /// data/customer_display.dart. Nothing here is on the path that takes money.
 final customerDisplayProvider = Provider<CustomerDisplayFeed>(
   (_) => CustomerDisplayFeed(),
+);
+
+/// The venue's swipe-card rules, and issuing a card.
+///
+/// One per process, because it holds the cached prefixes every swipe is read
+/// against — see data/card_repository.dart. Rebuilt when the terminal token
+/// changes, which is a sign-in: a till that has just been commissioned should
+/// be able to pull its prefixes without being restarted.
+final cardRepositoryProvider = Provider<CardRepository>(
+  (ref) => CardRepository(
+    apiBase: ref.watch(apiBaseProvider),
+    terminalToken: ref.watch(sessionControllerProvider).value?.terminalToken,
+  ),
+);
+
+/// The cards a customer carries on their phone.
+///
+/// Terminal token rather than the public `?office=` routes: this says which
+/// cards a named person holds, and knowing a venue's contact email must not be
+/// enough to ask.
+final walletRepositoryProvider = Provider<WalletRepository>(
+  (ref) => WalletRepository(
+    apiBase: ref.watch(apiBaseProvider),
+    terminalToken: ref.watch(sessionControllerProvider).value?.terminalToken,
+  ),
+);
+
+/// The till's end of the customer-display handshake.
+///
+/// One per process. It reads a machine-wide folder and writes small files into
+/// it, so a second instance would be two things racing to grant the same screen
+/// — see data/display_pairing.dart.
+final displayPairingProvider = Provider<DisplayPairing>(
+  (_) => DisplayPairing(),
+);
+
+/// Registers this till and its screens with the back office.
+///
+/// Terminal token rather than the public `?office=` routes: this writes rows
+/// saying what hardware a venue has, and knowing a contact email must not be
+/// enough to add one. A till commissioned before terminal tokens existed gets a
+/// registry that quietly registers nothing, which is the honest behaviour.
+final deviceRegistryProvider = Provider<DeviceRegistry>(
+  (ref) => DeviceRegistry(
+    apiBase: ref.watch(apiBaseProvider),
+    terminalToken: ref.watch(sessionControllerProvider).value?.terminalToken,
+  ),
 );
 
 final orderRepositoryProvider = Provider<OrderRepository>(

@@ -7391,8 +7391,20 @@ class $StaffTable extends Staff with TableInfo<$StaffTable, StaffData> {
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _swipeCardMeta = const VerificationMeta(
+    'swipeCard',
+  );
   @override
-  List<GeneratedColumn> get $columns => [id, pluid, name, pin];
+  late final GeneratedColumn<String> swipeCard = GeneratedColumn<String>(
+    'swipe_card',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [id, pluid, name, pin, swipeCard];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -7430,6 +7442,12 @@ class $StaffTable extends Staff with TableInfo<$StaffTable, StaffData> {
     } else if (isInserting) {
       context.missing(_pinMeta);
     }
+    if (data.containsKey('swipe_card')) {
+      context.handle(
+        _swipeCardMeta,
+        swipeCard.isAcceptableOrUnknown(data['swipe_card']!, _swipeCardMeta),
+      );
+    }
     return context;
   }
 
@@ -7455,6 +7473,10 @@ class $StaffTable extends Staff with TableInfo<$StaffTable, StaffData> {
         DriftSqlType.string,
         data['${effectivePrefix}pin'],
       )!,
+      swipeCard: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}swipe_card'],
+      )!,
     );
   }
 
@@ -7474,11 +7496,24 @@ class StaffData extends DataClass implements Insertable<StaffData> {
 
   /// The PIN as the back office holds it. See the class note above.
   final String pin;
+
+  /// The number on this person's swipe card, or empty where they have none.
+  ///
+  /// Cached here for exactly the reason the PIN is: signing on has to work with
+  /// the broadband down, so the check is an equality against a handful of local
+  /// rows and never a round trip. A staff card that only worked online would be
+  /// a card that stops working at the one moment nobody can afford it.
+  ///
+  /// The whole number, prefix included — see `data/swipe_cards.dart`. Empty
+  /// rather than nullable, so the match below cannot be satisfied by a person
+  /// with no card and a reader that sent nothing.
+  final String swipeCard;
   const StaffData({
     required this.id,
     required this.pluid,
     required this.name,
     required this.pin,
+    required this.swipeCard,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -7487,6 +7522,7 @@ class StaffData extends DataClass implements Insertable<StaffData> {
     map['pluid'] = Variable<int>(pluid);
     map['name'] = Variable<String>(name);
     map['pin'] = Variable<String>(pin);
+    map['swipe_card'] = Variable<String>(swipeCard);
     return map;
   }
 
@@ -7496,6 +7532,7 @@ class StaffData extends DataClass implements Insertable<StaffData> {
       pluid: Value(pluid),
       name: Value(name),
       pin: Value(pin),
+      swipeCard: Value(swipeCard),
     );
   }
 
@@ -7509,6 +7546,7 @@ class StaffData extends DataClass implements Insertable<StaffData> {
       pluid: serializer.fromJson<int>(json['pluid']),
       name: serializer.fromJson<String>(json['name']),
       pin: serializer.fromJson<String>(json['pin']),
+      swipeCard: serializer.fromJson<String>(json['swipeCard']),
     );
   }
   @override
@@ -7519,22 +7557,30 @@ class StaffData extends DataClass implements Insertable<StaffData> {
       'pluid': serializer.toJson<int>(pluid),
       'name': serializer.toJson<String>(name),
       'pin': serializer.toJson<String>(pin),
+      'swipeCard': serializer.toJson<String>(swipeCard),
     };
   }
 
-  StaffData copyWith({int? id, int? pluid, String? name, String? pin}) =>
-      StaffData(
-        id: id ?? this.id,
-        pluid: pluid ?? this.pluid,
-        name: name ?? this.name,
-        pin: pin ?? this.pin,
-      );
+  StaffData copyWith({
+    int? id,
+    int? pluid,
+    String? name,
+    String? pin,
+    String? swipeCard,
+  }) => StaffData(
+    id: id ?? this.id,
+    pluid: pluid ?? this.pluid,
+    name: name ?? this.name,
+    pin: pin ?? this.pin,
+    swipeCard: swipeCard ?? this.swipeCard,
+  );
   StaffData copyWithCompanion(StaffCompanion data) {
     return StaffData(
       id: data.id.present ? data.id.value : this.id,
       pluid: data.pluid.present ? data.pluid.value : this.pluid,
       name: data.name.present ? data.name.value : this.name,
       pin: data.pin.present ? data.pin.value : this.pin,
+      swipeCard: data.swipeCard.present ? data.swipeCard.value : this.swipeCard,
     );
   }
 
@@ -7544,13 +7590,14 @@ class StaffData extends DataClass implements Insertable<StaffData> {
           ..write('id: $id, ')
           ..write('pluid: $pluid, ')
           ..write('name: $name, ')
-          ..write('pin: $pin')
+          ..write('pin: $pin, ')
+          ..write('swipeCard: $swipeCard')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, pluid, name, pin);
+  int get hashCode => Object.hash(id, pluid, name, pin, swipeCard);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -7558,7 +7605,8 @@ class StaffData extends DataClass implements Insertable<StaffData> {
           other.id == this.id &&
           other.pluid == this.pluid &&
           other.name == this.name &&
-          other.pin == this.pin);
+          other.pin == this.pin &&
+          other.swipeCard == this.swipeCard);
 }
 
 class StaffCompanion extends UpdateCompanion<StaffData> {
@@ -7566,17 +7614,20 @@ class StaffCompanion extends UpdateCompanion<StaffData> {
   final Value<int> pluid;
   final Value<String> name;
   final Value<String> pin;
+  final Value<String> swipeCard;
   const StaffCompanion({
     this.id = const Value.absent(),
     this.pluid = const Value.absent(),
     this.name = const Value.absent(),
     this.pin = const Value.absent(),
+    this.swipeCard = const Value.absent(),
   });
   StaffCompanion.insert({
     this.id = const Value.absent(),
     this.pluid = const Value.absent(),
     required String name,
     required String pin,
+    this.swipeCard = const Value.absent(),
   }) : name = Value(name),
        pin = Value(pin);
   static Insertable<StaffData> custom({
@@ -7584,12 +7635,14 @@ class StaffCompanion extends UpdateCompanion<StaffData> {
     Expression<int>? pluid,
     Expression<String>? name,
     Expression<String>? pin,
+    Expression<String>? swipeCard,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (pluid != null) 'pluid': pluid,
       if (name != null) 'name': name,
       if (pin != null) 'pin': pin,
+      if (swipeCard != null) 'swipe_card': swipeCard,
     });
   }
 
@@ -7598,12 +7651,14 @@ class StaffCompanion extends UpdateCompanion<StaffData> {
     Value<int>? pluid,
     Value<String>? name,
     Value<String>? pin,
+    Value<String>? swipeCard,
   }) {
     return StaffCompanion(
       id: id ?? this.id,
       pluid: pluid ?? this.pluid,
       name: name ?? this.name,
       pin: pin ?? this.pin,
+      swipeCard: swipeCard ?? this.swipeCard,
     );
   }
 
@@ -7622,6 +7677,9 @@ class StaffCompanion extends UpdateCompanion<StaffData> {
     if (pin.present) {
       map['pin'] = Variable<String>(pin.value);
     }
+    if (swipeCard.present) {
+      map['swipe_card'] = Variable<String>(swipeCard.value);
+    }
     return map;
   }
 
@@ -7631,7 +7689,8 @@ class StaffCompanion extends UpdateCompanion<StaffData> {
           ..write('id: $id, ')
           ..write('pluid: $pluid, ')
           ..write('name: $name, ')
-          ..write('pin: $pin')
+          ..write('pin: $pin, ')
+          ..write('swipeCard: $swipeCard')
           ..write(')'))
         .toString();
   }
@@ -11964,6 +12023,7 @@ typedef $$StaffTableCreateCompanionBuilder =
       Value<int> pluid,
       required String name,
       required String pin,
+      Value<String> swipeCard,
     });
 typedef $$StaffTableUpdateCompanionBuilder =
     StaffCompanion Function({
@@ -11971,6 +12031,7 @@ typedef $$StaffTableUpdateCompanionBuilder =
       Value<int> pluid,
       Value<String> name,
       Value<String> pin,
+      Value<String> swipeCard,
     });
 
 class $$StaffTableFilterComposer extends Composer<_$AppDatabase, $StaffTable> {
@@ -11998,6 +12059,11 @@ class $$StaffTableFilterComposer extends Composer<_$AppDatabase, $StaffTable> {
 
   ColumnFilters<String> get pin => $composableBuilder(
     column: $table.pin,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get swipeCard => $composableBuilder(
+    column: $table.swipeCard,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -12030,6 +12096,11 @@ class $$StaffTableOrderingComposer
     column: $table.pin,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get swipeCard => $composableBuilder(
+    column: $table.swipeCard,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$StaffTableAnnotationComposer
@@ -12052,6 +12123,9 @@ class $$StaffTableAnnotationComposer
 
   GeneratedColumn<String> get pin =>
       $composableBuilder(column: $table.pin, builder: (column) => column);
+
+  GeneratedColumn<String> get swipeCard =>
+      $composableBuilder(column: $table.swipeCard, builder: (column) => column);
 }
 
 class $$StaffTableTableManager
@@ -12086,18 +12160,27 @@ class $$StaffTableTableManager
                 Value<int> pluid = const Value.absent(),
                 Value<String> name = const Value.absent(),
                 Value<String> pin = const Value.absent(),
-              }) => StaffCompanion(id: id, pluid: pluid, name: name, pin: pin),
+                Value<String> swipeCard = const Value.absent(),
+              }) => StaffCompanion(
+                id: id,
+                pluid: pluid,
+                name: name,
+                pin: pin,
+                swipeCard: swipeCard,
+              ),
           createCompanionCallback:
               ({
                 Value<int> id = const Value.absent(),
                 Value<int> pluid = const Value.absent(),
                 required String name,
                 required String pin,
+                Value<String> swipeCard = const Value.absent(),
               }) => StaffCompanion.insert(
                 id: id,
                 pluid: pluid,
                 name: name,
                 pin: pin,
+                swipeCard: swipeCard,
               ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))

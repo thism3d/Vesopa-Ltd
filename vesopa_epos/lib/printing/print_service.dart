@@ -230,6 +230,38 @@ class PrintService {
     ).send(builder.tillReport(report, shopName: setup.shopName));
   }
 
+  /// The slip that goes with a card that has just been issued.
+  ///
+  /// Printed on the receipt printer rather than the report one. This is a slip
+  /// handed to somebody — the member, or whoever is going to encode the plastic
+  /// — and the receipt printer is the one at the counter where they are
+  /// standing. A venue that sends its reports to an office printer at the back
+  /// would otherwise have to go and fetch it.
+  Future<void> printCardSlip({
+    required String kindLabel,
+    required String cardNumber,
+    required String track,
+    String? holder,
+    String? issuedBy,
+  }) async {
+    final printer = setup.deviceFor(PrintTarget.customerReceipt);
+    if (printer == null) {
+      throw StateError('No receipt printer is set up on this till.');
+    }
+
+    final builder = await _for(printer);
+    await PrinterTransport.of(printer).send(
+      builder.cardSlip(
+        kindLabel: kindLabel,
+        cardNumber: cardNumber,
+        track: track,
+        holder: holder,
+        shopName: setup.shopName,
+        issuedBy: issuedBy,
+      ),
+    );
+  }
+
   Future<void> openCashDrawer() async {
     final printer = setup.deviceFor(PrintTarget.cashDrawer);
     if (printer == null) {

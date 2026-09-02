@@ -22,7 +22,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../config/constants.dart';
 import '../data/customer_display_control.dart';
+import '../data/deep_links.dart';
+import '../data/device_registry.dart';
+import '../data/display_pairing.dart';
+import '../data/session_controller.dart';
+import '../data/terminal_identity.dart';
+import '../main.dart';
 import 'theme.dart';
 
 class CustomerDisplayPage extends ConsumerStatefulWidget {
@@ -37,10 +44,33 @@ class _CustomerDisplayPageState extends ConsumerState<CustomerDisplayPage> {
   final _adverts = TextEditingController();
   final _thanks = TextEditingController();
   final _standing = TextEditingController();
+  final _qr = TextEditingController();
+  final _qrCaption = TextEditingController();
 
   DisplayControl _control = const DisplayControl();
   DisplayStatus? _status;
   bool _loaded = false;
+
+  /// Screens on this PC asking to be connected, and screens already connected.
+  ///
+  /// Both re-read on the same two-second poll as the status file, because this
+  /// page is open while somebody is plugging a display in and switching it on:
+  /// it should catch up with them rather than the other way round.
+  List<DisplayPairRequest> _pending = const [];
+  List<PairedDisplay> _paired = const [];
+
+  /// Screens that have been told "not now". Still listed, and marked, because
+  /// the prompt being off is worth seeing.
+  Set<String> _declined = const {};
+
+  /// Set while a Connect is in flight, so the button cannot be pressed twice
+  /// and produce two grants for one screen.
+  String? _connecting;
+
+  /// Set when Windows refused to open the Store. Worth showing: on a managed
+  /// till with the Store removed the button does nothing, and one that appears
+  /// broken is worse than one that explains itself.
+  bool _storeRefused = false;
 
   /// Whether the last write failed. A settings screen that appears to have
   /// saved and has not is worse than one that says it could not.
@@ -69,6 +99,8 @@ class _CustomerDisplayPageState extends ConsumerState<CustomerDisplayPage> {
     _adverts.dispose();
     _thanks.dispose();
     _standing.dispose();
+    _qr.dispose();
+    _qrCaption.dispose();
     super.dispose();
   }
 
@@ -82,14 +114,140 @@ class _CustomerDisplayPageState extends ConsumerState<CustomerDisplayPage> {
       _adverts.text = control.advertFolder;
       _thanks.text = control.thankYou;
       _standing.text = control.standingMessage;
+      _qr.text = control.customerQr;
+      _qrCaption.text = control.customerQrCaption;
       _loaded = true;
     });
   }
 
   Future<void> _refreshStatus() async {
+    final pairing = ref.read(displayPairingProvider);
     final status = await readDisplayStatus();
+    // Declined screens included, deliberately. Saying "not now" to the
+    // full-screen prompt stops it interrupting; it does not mean the screen can
+    // never be connected, and this page is where somebody comes when they have
+    // decided they do want it after all.
+    final pending = await pairing.pending(includeDeclined: true);
+    final paired = await pairing.paired();
+    final declined = await pairing.declined();
     if (!mounted) return;
-    setState(() => _status = status);
+    setState(() {
+      _status = status;
+      _pending = pending;
+      _paired = paired;
+      _declined = declined;
+    });
+  }
+
+  /// Connect the screen the manager just pressed the button beside.
+  ///
+  /// The grant is written first and the back office told second, and that order
+  /// matters: the display has to start working whether or not this till can
+  /// reach the internet. A venue whose broadband is down still gets a customer
+  /// display; what it does not get, until the next start, is a row in the back
+  /// office saying so.
+  Future<void> _connect(DisplayPairRequest request) async {
+    final session = ref.read(sessionControllerProvider).value;
+    final terminalName = ref.read(terminalNameProvider);
+    final pairing = ref.read(displayPairingProvider);
+
+    setState(() => _connecting = request.deviceId);
+    final failure = await pairing.connect(
+      request,
+      office: session?.office ?? '',
+      terminalName: terminalName,
+      venueName: session?.venueName ?? '',
+    );
+    if (!mounted) return;
+    setState(() => _connecting = null);
+
+    if (failure != null) {
+      _say(_explain(failure));
+      return;
+    }
+
+    await _refreshStatus();
+    unawaited(_registerWithBackOffice());
+    if (mounted) _say('${request.name} is connected.');
+  }
+
+  Future<void> _forget(PairedDisplay display) async {
+    final yes = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Disconnect ${display.name}?'),
+        content: const Text(
+          'The screen will stop showing bills and go back to asking to be '
+          'connected. Nothing else about the till changes, and you can connect '
+          'it again from this page.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Keep it'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Disconnect'),
+          ),
+        ],
+      ),
+    );
+    if (!(yes ?? false)) return;
+
+    await ref.read(displayPairingProvider).forget(display.deviceId);
+    unawaited(
+      ref.read(deviceRegistryProvider).offline(
+        display.deviceId,
+        event: 'unpaired',
+      ),
+    );
+    await _refreshStatus();
+  }
+
+  /// Tell the back office what this venue has, now that it has changed.
+  Future<void> _registerWithBackOffice() async {
+    final session = ref.read(sessionControllerProvider).value;
+    if (session == null || !session.signedIn) return;
+
+    final registry = ref.read(deviceRegistryProvider);
+    if (!registry.canRegister) return;
+
+    await registry.register(
+      describeDevices(
+        terminalDeviceId: await terminalDeviceId(),
+        terminalName: ref.read(terminalNameProvider),
+        appVersion: VesopaBrand.appVersion,
+        signedInAs: session.email,
+        displays: await ref.read(displayPairingProvider).paired(),
+      ),
+    );
+  }
+
+  /// What went wrong, said so a manager can act on it.
+  ///
+  /// Only the first of these is the till refusing; the rest are it being
+  /// unable, and each one names the thing to go and do about it.
+  static String _explain(PairFailure failure) => switch (failure) {
+    PairFailure.notSignedIn =>
+      'Sign this till in first. A customer display belongs to a venue, and '
+          'until the till is signed in there is no venue to attach it to.',
+    PairFailure.noSharedFolder =>
+      'This machine has no shared folder for the two applications to meet in, '
+          'so a display cannot be connected on it.',
+    PairFailure.noBasketFolder =>
+      "The till could not open its own data folder, so there is no file to "
+          'point the screen at. Nothing else about the till is affected.',
+    PairFailure.couldNotWrite =>
+      'The till could not write the connection file. Check that this account '
+          'can write to the Vesopa folder in ProgramData.',
+  };
+
+  void _say(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   /// Save on every change, rather than behind a button.
@@ -114,6 +272,123 @@ class _CustomerDisplayPageState extends ConsumerState<CustomerDisplayPage> {
       padding: const EdgeInsets.all(16),
       children: [
         _StatusCard(status: _status),
+
+        // Screens asking to be connected, first and unmissable.
+        //
+        // This is the whole setup procedure now. A display with nowhere to
+        // point puts itself here within a few seconds of being switched on, and
+        // the manager presses one button — no path to find, nothing to type,
+        // and no way to connect the wrong thing, because the code on the button
+        // is the code on the glass in front of them.
+        if (_pending.isNotEmpty) ...[
+          const SizedBox(height: 28),
+          const _SectionTitle('Screens waiting to be connected'),
+          for (final request in _pending)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _PairRequestCard(
+                request: request,
+                busy: _connecting == request.deviceId,
+                declined: _declined.contains(request.deviceId),
+                onConnect: () => unawaited(_connect(request)),
+              ),
+            ),
+        ],
+
+        if (_paired.isNotEmpty) ...[
+          const SizedBox(height: 28),
+          const _SectionTitle('Connected screens'),
+          Card(
+            margin: EdgeInsets.zero,
+            child: Column(
+              children: [
+                for (final display in _paired)
+                  ListTile(
+                    leading: const Icon(Icons.tv_outlined),
+                    title: Text(display.name),
+                    subtitle: Text(
+                      'Connected ${_when(display.pairedAt)}. This till tells it '
+                      'where to look on every start, so it keeps working after '
+                      'an update.',
+                      style: const TextStyle(fontSize: 12.5),
+                    ),
+                    trailing: TextButton(
+                      onPressed: () => unawaited(_forget(display)),
+                      child: const Text('Disconnect'),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+
+        if (_pending.isEmpty && _paired.isEmpty) ...[
+          const SizedBox(height: 28),
+          const _SectionTitle('Connecting a screen'),
+          Card(
+            margin: EdgeInsets.zero,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.info_outline),
+                      SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'No customer display is asking to be connected',
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                            SizedBox(height: 6),
+                            Text(
+                              'Start Vesopa Customer Display on this PC. It '
+                              'puts itself on this page within a few seconds, '
+                              'showing a four-digit code — check that code '
+                              'against the screen and press Connect. There is '
+                              'no folder to find and nothing to type.',
+                              style: TextStyle(fontSize: 12.5, height: 1.4),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  // The other half of the same problem. The display can send
+                  // somebody to install the till; this sends them the other
+                  // way, so whichever of the two applications a venue installs
+                  // first can fetch the other.
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.storefront_outlined, size: 18),
+                      label: const Text('Get Vesopa Customer Display'),
+                      onPressed: () async {
+                        final opened = await openDisplayInStore();
+                        if (mounted) setState(() => _storeRefused = !opened);
+                      },
+                    ),
+                  ),
+                  if (_storeRefused) ...[
+                    const SizedBox(height: 10),
+                    const Text(
+                      'The Microsoft Store would not open on this machine. '
+                      'Search the Store for "Vesopa Customer Display", or '
+                      'install it the way the rest of this venue was set up.',
+                      style: TextStyle(fontSize: 12.5, height: 1.4),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ],
 
         if (_writeFailed) ...[
           const SizedBox(height: 12),
@@ -371,6 +646,60 @@ class _CustomerDisplayPageState extends ConsumerState<CustomerDisplayPage> {
             ],
           ),
         ),
+
+        const SizedBox(height: 28),
+        const _SectionTitle('A code for the customer'),
+        Card(
+          margin: EdgeInsets.zero,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'A QR code under the total, on the screen the customer '
+                  'reads. The '
+                  'moment somebody is watching their round go up is the one '
+                  'moment in the day when they are looking at that screen with '
+                  'a phone already in their hand — which is when "join our '
+                  'scheme" actually gets done, rather than on a poster by the '
+                  'door.',
+                  style: TextStyle(fontSize: 13, height: 1.4),
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: _qr,
+                  decoration: const InputDecoration(
+                    labelText: 'What the code opens',
+                    hintText: 'https://…',
+                    helperText: 'A sign-up page, a wallet pass, a review link — '
+                        'anything a phone can open. Leave it empty for no code '
+                        'at all.',
+                    helperMaxLines: 3,
+                    border: OutlineInputBorder(),
+                  ),
+                  onChanged: (value) =>
+                      _push(_control.copyWith(customerQr: value.trim())),
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: _qrCaption,
+                  decoration: const InputDecoration(
+                    labelText: 'The line under it',
+                    hintText: 'Scan to join',
+                    helperText: 'A code with nothing beside it is a square '
+                        'nobody points a phone at.',
+                    helperMaxLines: 2,
+                    border: OutlineInputBorder(),
+                  ),
+                  onChanged: (value) => _push(
+                    _control.copyWith(customerQrCaption: value.trim()),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
         const SizedBox(height: 32),
       ],
     );
@@ -382,6 +711,112 @@ class _CustomerDisplayPageState extends ConsumerState<CustomerDisplayPage> {
 /// First on the page on purpose. Every other control here is pointless if
 /// nothing is listening, and "I changed it and nothing happened" is the support
 /// call this card exists to prevent.
+/// How long ago, in the roundest words that are still true.
+String _when(DateTime at) {
+  final age = DateTime.now().difference(at);
+  if (age.inMinutes < 1) return 'just now';
+  if (age.inHours < 1) return '${age.inMinutes} min ago';
+  if (age.inDays < 1) return '${age.inHours} h ago';
+  if (age.inDays == 1) return 'yesterday';
+  return '${age.inDays} days ago';
+}
+
+/// One screen asking to be connected.
+///
+/// The code is the largest thing on the card on purpose. It is the only piece
+/// of information the manager has to *check* rather than read — everything else
+/// is the till saying what it found, and this is the one line where they get to
+/// say it found the right screen.
+class _PairRequestCard extends StatelessWidget {
+  const _PairRequestCard({
+    required this.request,
+    required this.busy,
+    required this.declined,
+    required this.onConnect,
+  });
+
+  final DisplayPairRequest request;
+  final bool busy;
+
+  /// Whether somebody has already said "not now" to this screen. Marked rather
+  /// than hidden: a manager looking for a display they dismissed by accident
+  /// needs to be able to see that is what happened.
+  final bool declined;
+  final VoidCallback onConnect;
+
+  @override
+  Widget build(BuildContext context) => Card(
+    margin: EdgeInsets.zero,
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: BoxDecoration(
+              color: Pos.green.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Column(
+              children: [
+                const Text(
+                  'CODE',
+                  style: TextStyle(
+                    fontSize: 10,
+                    letterSpacing: 2,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Text(
+                  request.code,
+                  style: const TextStyle(
+                    fontSize: 30,
+                    height: 1.1,
+                    letterSpacing: 3,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  request.name,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  declined
+                      ? 'This screen was dismissed, so it no longer interrupts '
+                            'the till. It is still asking, and can be connected '
+                            'from here.'
+                      : 'Check this code is the one on the customer display '
+                            'before you connect it.'
+                            '${request.appVersion.isEmpty ? '' : ' Version '
+                                '${request.appVersion}.'}',
+                  style: const TextStyle(fontSize: 12.5, height: 1.35),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          FilledButton(
+            onPressed: busy ? null : onConnect,
+            child: Text(busy ? 'Connecting…' : 'Connect'),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
 class _StatusCard extends StatelessWidget {
   const _StatusCard({required this.status});
 

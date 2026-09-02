@@ -699,6 +699,65 @@ function commerceRoutes({ pool, broadcast, secret }) {
     } catch (e) { next(e); }
   });
 
+  /**
+   * Find a member by the card they just swiped.
+   *
+   * Exact match, never a LIKE. `/loyalty/search` matches a card number as a
+   * substring, which is right when a clerk is typing part of one and wrong when
+   * a reader has sent a whole one: a venue whose numbers run 999800001 upwards
+   * would find member 1 by searching for 99980000**1** and also find member 11,
+   * 21 and 100 with it, and the till would have to guess between them with a
+   * customer waiting.
+   *
+   * The same shape as `/loyalty/customer`, so the till treats a swiped member
+   * and a phoned-in one identically -- including the settings block, which is
+   * what every redemption on the till is priced against.
+   */
+  router.get('/loyalty/card', async (req, res, next) => {
+    try {
+      const office = tillOffice(req);
+      // The sentinels are the reader's framing, not the card's data, and the
+      // till strips them before it gets here. Stripped again anyway: a route
+      // that trusts its caller to have sanitised is a route that answers 404
+      // for a perfectly good card the first time somebody calls it by hand.
+      const number = String(req.query.number || '')
+        .replace(/^[;%B]+/, '')
+        .replace(/[?].*$/, '')
+        .replace(/\D/g, '');
+
+      if (!office || !number) {
+        return res.status(400).json({ error: 'office and number are required' });
+      }
+
+      const [[customer]] = await pool.query(
+        `SELECT id, name, phone, email, card_number, points_balance, tier_name,
+                lifetime_spend_minor, visits, discount_type, discount_value,
+                membership_expiry
+         FROM epos_customers
+         WHERE email_key = ? AND card_number = ?
+         LIMIT 1`,
+        [office, number]
+      );
+
+      // Not an error, and said as its own thing rather than as a 404 with a
+      // generic message: "no member holds that card" is what the till turns
+      // into "would you like to create a new member for this card?", which is
+      // the venue's own request and the single most useful thing this route
+      // does.
+      if (!customer) {
+        return res.status(404).json({ error: 'No member holds that card', number });
+      }
+
+      const settings = await readLoyalty(office);
+      res.json({
+        ...customer,
+        points_value_minor: customer.points_balance * settings.point_value_minor,
+        redeemable: customer.points_balance >= settings.min_redeem_points,
+        settings,
+      });
+    } catch (e) { next(e); }
+  });
+
   /** Enrol at the till: a name and a phone number is all it takes. */
   router.post('/loyalty/customer', async (req, res, next) => {
     try {

@@ -25,6 +25,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/adverts.dart';
 import '../data/basket_feed.dart';
 import '../data/control.dart';
+import '../data/deep_links.dart';
+import '../data/pairing.dart';
 import '../data/screens.dart';
 import '../data/settings.dart';
 import 'advert_panel.dart';
@@ -61,11 +63,8 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
   /// nothing relevant does not tear down a playing advert.
   String? _builtFor;
 
-  /// The till's basket file, as most recently resolved.
-  ///
-  /// Held here rather than recomputed, because resolving it reads the disk —
-  /// the till's note, then a couple of known folders, then a sweep — and that
-  /// is not something to do on every frame of a screen that plays video.
+  /// The till's basket file, as the till itself named it when the two were
+  /// paired. See `data/pairing.dart`: this application no longer works it out.
   String _basketPath = '';
   Timer? _findTill;
 
@@ -79,6 +78,7 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
   /// till, because a screen plugged in mid-setup should appear on the till
   /// without anything being restarted.
   List<Screen> _screens = const [];
+  Timer? _screenSweep;
 
   @override
   void initState() {
@@ -91,42 +91,26 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
       if (mounted) setState(() {});
     });
 
-    // Look for the till now, and keep looking until it is found. A display is
-    // switched on at the wall with the rest of the counter, and there is no
-    // saying whether it or the till gets there first.
-    _findTill = Timer.periodic(const Duration(seconds: 10), (_) {
-      _locateTill();
-      unawaited(_readScreens());
+    // Keep the handshake turning. While this screen is unpaired that is what
+    // puts its request in front of the till; once it is paired it is what picks
+    // up a till that has moved — see `data/pairing.dart` for why the grant is
+    // re-read rather than remembered.
+    //
+    // Three seconds, so that pressing Connect on the till lights this screen up
+    // while the manager is still looking at it. It costs one small file read.
+    _findTill = Timer.periodic(const Duration(seconds: 3), (_) {
+      unawaited(ref.read(pairingProvider.notifier).refresh());
     });
     unawaited(_readScreens());
+    _screenSweep = Timer.periodic(
+      const Duration(seconds: 10),
+      (_) => unawaited(_readScreens()),
+    );
   }
 
   Future<void> _readScreens() async {
     final screens = await listScreens();
     if (mounted) setState(() => _screens = screens);
-  }
-
-  /// Re-resolve the till's file, unless this display is already following it.
-  ///
-  /// Left alone once a basket has been read: that path is the till, and a
-  /// display that kept re-deciding could be pulled onto a stale file left by an
-  /// older install halfway through somebody's round.
-  ///
-  /// Resumed when the feed goes stale, which is ten minutes of silence. That is
-  /// the till having been shut down for the night — in which case nothing
-  /// changes, because it will announce the same path in the morning — or the
-  /// till having been reinstalled somewhere else, which is the case this exists
-  /// for.
-  void _locateTill() {
-    final settings = ref.read(displaySettingsProvider).value;
-    if (settings == null) return;
-
-    final feed = _feed;
-    if (feed != null && feed.hasRead && !feed.isStale) return;
-
-    final found = settings.resolveBasketPath();
-    if (found == _basketPath || !mounted) return;
-    setState(() => _basketPath = found);
   }
 
   /// Escape leaves full screen.
@@ -153,6 +137,7 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
     HardwareKeyboard.instance.removeHandler(_onKey);
     _tick?.cancel();
     _findTill?.cancel();
+    _screenSweep?.cancel();
     unawaited(_controlChanges?.cancel());
     unawaited(_control?.dispose());
     unawaited(_baskets?.cancel());
@@ -227,6 +212,8 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
       billShare: control.billShare,
       fillScreen: control.fillScreen,
       standingMessage: control.standingMessage,
+      customerQr: control.customerQr,
+      customerQrCaption: control.customerQrCaption,
       screenKey: control.screenKey,
       fullScreen: control.fullScreen,
     );
@@ -261,13 +248,25 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
   @override
   Widget build(BuildContext context) {
     final settings = ref.watch(displaySettingsProvider).value;
-    if (settings == null) {
+    final pairing = ref.watch(pairingProvider).value;
+    if (settings == null || pairing == null) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
-    // The first resolution, before anything is drawn. After this the timer
-    // owns it.
-    if (_basketPath.isEmpty) _basketPath = settings.resolveBasketPath();
-    if (_basketPath.isEmpty) return const _NotSetUp();
+
+    // Until a till has handed this screen a file there is nothing to draw a
+    // bill from, and — since this application stopped guessing — nothing to
+    // guess at either. The pairing card takes the whole screen, because asking
+    // to be connected is the only thing anybody can usefully do here.
+    if (!pairing.isPaired) return _PairingCard(state: pairing);
+
+    // Just connected. Held for a few seconds before the bill takes over, so the
+    // person who pressed Connect on the till sees that it worked from this side
+    // of the counter too.
+    if (pairing.justConnected) {
+      return _ConnectedNow(name: pairing.pairing?.terminalName ?? '');
+    }
+
+    _basketPath = pairing.basketPath;
 
     // Tell the till what this screen is doing, every build. Cheap — it is
     // assigning a record; the channel writes it on its own two-second timer —
@@ -307,6 +306,8 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
                         basket: _basket,
                         showPrices: settings.showPrices,
                         thankYou: settings.thankYou,
+                        customerQr: settings.customerQr,
+                        customerQrCaption: settings.customerQrCaption,
                       );
 
                       // The bill's share of the screen, and which side it is
@@ -415,57 +416,334 @@ class _StaleBadge extends StatelessWidget {
   );
 }
 
-/// A screen that has been mounted and switched on and told nothing.
-class _NotSetUp extends StatelessWidget {
-  const _NotSetUp();
+/// A screen that has been mounted and switched on and not yet connected.
+///
+/// This is what replaced "point this at a folder". There is nothing to fill in
+/// and nothing to browse to.
+///
+/// FIVE STATES, BECAUSE THERE ARE FIVE DIFFERENT JOBS
+///
+/// "No code yet" has four causes and each one sends the person standing here
+/// somewhere different: install the till, start the till, sign the till in, or
+/// read the code out to whoever is at it. One message for all four would send
+/// most of them to do the wrong thing, and the person mounting a display is
+/// very often not the person who knows the till.
+///
+/// So each state says the one thing that is true and offers the one action that
+/// helps — including a way to check again, because somebody who has just gone
+/// and started the till should not have to stand here waiting for a timer they
+/// cannot see.
+class _PairingCard extends ConsumerWidget {
+  const _PairingCard({required this.state});
+
+  final PairingState state;
 
   @override
-  Widget build(BuildContext context) => Scaffold(
+  Widget build(BuildContext context, WidgetRef ref) => Scaffold(
     body: Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 520),
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Image.asset(
-                'assets/brand/vesopa_logo_on_dark.png',
-                width: 240,
-                errorBuilder: (_, _, _) => const SizedBox.shrink(),
-              ),
-              const SizedBox(height: 28),
-              const Text(
-                'Customer Display',
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.w700,
-                  color: Brand.ink,
+      child: SingleChildScrollView(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 640),
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Image.asset(
+                  'assets/brand/vesopa_logo_on_dark.png',
+                  width: 200,
+                  errorBuilder: (_, _, _) => const SizedBox.shrink(),
                 ),
-              ),
-              const SizedBox(height: 10),
-              const Text(
-                'Point this screen at the till it belongs to, and choose a '
-                'folder of adverts to play.',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 15, color: Brand.inkSoft),
-              ),
-              const SizedBox(height: 28),
-              Builder(
-                builder: (context) => FilledButton.icon(
-                  icon: const Icon(Icons.settings),
-                  label: const Text('Set this screen up'),
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => const SettingsPage(),
+                const SizedBox(height: 24),
+                const Text(
+                  'Customer Display',
+                  style: TextStyle(
+                    fontSize: 26,
+                    fontWeight: FontWeight.w700,
+                    color: Brand.ink,
+                  ),
+                ),
+                const SizedBox(height: 22),
+
+                switch (state.stage) {
+                  PairingStage.unavailable => const _Unavailable(),
+                  PairingStage.tillMissing => const _TillMissing(),
+                  PairingStage.tillIdle => const _TillIdle(),
+                  PairingStage.tillSignedOut => _TillSignedOut(state: state),
+                  PairingStage.waiting => _Waiting(state: state),
+                  // Only reachable for the moment between the grant landing and
+                  // the display page rebuilding. Drawn rather than left blank
+                  // so that moment is never an empty screen.
+                  PairingStage.paired => const _ConnectedNow(name: ''),
+                },
+
+                const SizedBox(height: 24),
+                if (state.stage != PairingStage.unavailable)
+                  TextButton.icon(
+                    icon: const Icon(Icons.refresh, size: 18),
+                    label: const Text('Check again'),
+                    onPressed: () => unawaited(
+                      ref.read(pairingProvider.notifier).checkNow(),
                     ),
                   ),
+                TextButton.icon(
+                  icon: const Icon(Icons.settings, size: 18),
+                  label: const Text('Settings'),
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(builder: (_) => const SettingsPage()),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+/// Vesopa EPOS is not on this PC.
+class _TillMissing extends StatefulWidget {
+  const _TillMissing();
+
+  @override
+  State<_TillMissing> createState() => _TillMissingState();
+}
+
+class _TillMissingState extends State<_TillMissing> {
+  /// Set when Windows refused the Store link. Worth showing: on a managed till
+  /// with the Store removed the button does nothing, and a button that appears
+  /// broken is worse than one that explains itself.
+  bool _storeRefused = false;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    children: [
+      const Text(
+        'Vesopa EPOS is not installed on this PC',
+        textAlign: TextAlign.center,
+        style: TextStyle(fontSize: 19, fontWeight: FontWeight.w600, color: Brand.ink),
+      ),
+      const SizedBox(height: 12),
+      const Text(
+        'This screen shows the bill from a till running on the same computer. '
+        'Install Vesopa EPOS here, start it, and this screen will find it.',
+        textAlign: TextAlign.center,
+        style: TextStyle(fontSize: 14.5, height: 1.5, color: Brand.inkSoft),
+      ),
+      const SizedBox(height: 22),
+      FilledButton.icon(
+        icon: const Icon(Icons.storefront_outlined),
+        label: const Text('Get Vesopa EPOS'),
+        style: FilledButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 16),
+        ),
+        onPressed: () async {
+          final opened = await openTillInStore();
+          if (mounted) setState(() => _storeRefused = !opened);
+        },
+      ),
+      if (_storeRefused) ...[
+        const SizedBox(height: 12),
+        const Text(
+          'The Microsoft Store would not open on this machine. Search the '
+          'Store for "Vesopa EPOS", or install it the way the rest of this '
+          'venue was set up.',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 13, height: 1.4, color: Brand.inkSoft),
+        ),
+      ],
+    ],
+  );
+}
+
+/// Installed, and not running.
+class _TillIdle extends StatelessWidget {
+  const _TillIdle();
+
+  @override
+  Widget build(BuildContext context) => const Column(
+    children: [
+      Text(
+        'Vesopa EPOS is not running',
+        textAlign: TextAlign.center,
+        style: TextStyle(fontSize: 19, fontWeight: FontWeight.w600, color: Brand.ink),
+      ),
+      SizedBox(height: 12),
+      Text(
+        'It is installed on this PC. Start it, and this screen will offer a '
+        'code to connect the two.',
+        textAlign: TextAlign.center,
+        style: TextStyle(fontSize: 14.5, height: 1.5, color: Brand.inkSoft),
+      ),
+    ],
+  );
+}
+
+/// Running, and nobody has signed in.
+class _TillSignedOut extends StatelessWidget {
+  const _TillSignedOut({required this.state});
+
+  final PairingState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final name = state.till?.terminalName ?? 'The till';
+    return Column(
+      children: [
+        Text(
+          '$name is running, but nobody is signed in',
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontSize: 19,
+            fontWeight: FontWeight.w600,
+            color: Brand.ink,
+          ),
+        ),
+        const SizedBox(height: 12),
+        const Text(
+          'A customer display belongs to a venue, so the till has to be signed '
+          'in before it can connect one. Sign in at the till and this screen '
+          'will show a code.',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 14.5, height: 1.5, color: Brand.inkSoft),
+        ),
+      ],
+    );
+  }
+}
+
+/// Running, signed in, and asking. The code is up.
+class _Waiting extends StatelessWidget {
+  const _Waiting({required this.state});
+
+  final PairingState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final till = state.till;
+
+    return Column(
+      children: [
+        Text(
+          till == null
+              ? 'Ready to connect'
+              : 'Connect this screen to ${till.terminalName}',
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w600, color: Brand.ink),
+        ),
+        const SizedBox(height: 20),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
+          decoration: BoxDecoration(
+            color: Brand.panelSoft,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Brand.line, width: 2),
+          ),
+          child: Column(
+            children: [
+              const Text(
+                'CODE',
+                style: TextStyle(
+                  fontSize: 11,
+                  letterSpacing: 2.4,
+                  fontWeight: FontWeight.w700,
+                  color: Brand.inkSoft,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                state.identity.code,
+                style: const TextStyle(
+                  fontSize: 52,
+                  height: 1.05,
+                  letterSpacing: 9,
+                  fontWeight: FontWeight.w700,
+                  color: Brand.lime,
                 ),
               ),
             ],
           ),
         ),
+        const SizedBox(height: 20),
+        const Text(
+          'The till is showing a request with this code on it. Check the '
+          'numbers match and press Connect there.',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 14.5, height: 1.45, color: Brand.inkSoft),
+        ),
+        const SizedBox(height: 10),
+        const Text(
+          'If it is not on screen, open Settings on the till and choose '
+          'Customer display.',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 12.5, height: 1.4, color: Brand.inkSoft),
+        ),
+      ],
+    );
+  }
+}
+
+/// The moment after a pairing lands.
+///
+/// Somebody has just pressed a button on a machine facing the other way. This
+/// is the only confirmation they get on this side of the counter, and a screen
+/// that went straight to adverts would leave them wondering whether it worked.
+class _ConnectedNow extends StatelessWidget {
+  const _ConnectedNow({required this.name});
+
+  /// The till's name, or empty during the instant before it is known.
+  final String name;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    body: Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.check_circle, size: 76, color: Brand.lime),
+            const SizedBox(height: 22),
+            const Text(
+              'Connected',
+              style: TextStyle(
+                fontSize: 34,
+                fontWeight: FontWeight.w700,
+                color: Brand.ink,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              name.isEmpty
+                  ? 'This screen is now showing the till.'
+                  : 'This screen is now showing $name.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 17, color: Brand.inkSoft),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'It stays connected through updates and reinstalls.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13.5, color: Brand.inkSoft),
+            ),
+          ],
+        ),
       ),
     ),
+  );
+}
+
+/// No ProgramData to meet the till in — which in practice means this build is
+/// running somewhere it was never meant to.
+class _Unavailable extends StatelessWidget {
+  const _Unavailable();
+
+  @override
+  Widget build(BuildContext context) => const Text(
+    'This screen cannot reach the folder it shares with the till, so it has '
+    'no way to be connected on this machine.',
+    textAlign: TextAlign.center,
+    style: TextStyle(fontSize: 15, height: 1.45, color: Brand.inkSoft),
   );
 }

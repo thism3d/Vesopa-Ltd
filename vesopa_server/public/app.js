@@ -292,6 +292,9 @@ const ROUTES = {
   gift_cards: '/gift-cards',
   deposits: '/deposits',
   loyalty: '/loyalty',
+  cards: '/cards',
+  wallet: '/wallet',
+  devices: '/devices',
   tender: '/tender',
   rules: '/rules',
   templates: '/templates',
@@ -835,6 +838,9 @@ function render() {
     gift_cards: loadGiftCards,
     deposits: loadDeposits,
     loyalty: loadLoyalty,
+    cards: loadCards,
+    wallet: loadWallet,
+    devices: loadDevices,
     tender: loadTender,
     rules: loadRules,
     templates: loadTemplates,
@@ -1924,6 +1930,14 @@ async function loadCustomers() {
       const lapsed = expiry && expiry < new Date().toISOString().slice(0, 10);
       return `<tr>
         <td>${esc(c.name)}</td>
+        <td class="muted small">${c.card_number
+          // The number on the stripe, and the membership number under it.
+          // Two different things a member is asked for: one is swiped, the
+          // other is quoted down the phone, and a venue that only ever saw the
+          // first could not answer "I am member 42".
+          ? `<code>${esc(c.card_number)}</code>${c.member_no
+              ? ` <span class="muted">no. ${esc(String(c.member_no))}</span>` : ''}`
+          : '—'}</td>
         <td class="muted small">${esc(c.phone || '—')}</td>
         <td class="muted small">${esc(c.email || '—')}</td>
         <td>${discountLabel(c)}</td>
@@ -1937,7 +1951,7 @@ async function loadCustomers() {
         </td>
       </tr>`;
     })
-    .join('') || '<tr><td colspan="7" class="empty">No customers yet.</td></tr>';
+    .join('') || '<tr><td colspan="8" class="empty">No customers yet.</td></tr>';
 }
 
 // ---- Admin ----------------------------------------------------------------
@@ -4393,6 +4407,527 @@ document.addEventListener('click', async (e) => {
     e.target.textContent = 'Saved ✓';
     setTimeout(() => { e.target.textContent = 'Save loyalty'; }, 1500);
     loadLoyalty();
+  }
+});
+
+// ---- Wallet passes --------------------------------------------------------
+//
+// One set of branding, two platforms. The venue fills this in once and both an
+// iPhone and an Android phone get a card that looks like the venue rather than
+// like a default.
+//
+// The preview is the point of the page. A pass is a thing a customer looks at,
+// and a form of colour pickers with no picture beside it is a form nobody can
+// tell they have got right.
+
+let walletState = null;
+let walletApple = null;
+
+const WALLET_KINDS = [
+  { key: 'loyalty', label: 'Loyalty', field: 'Points', value: '240' },
+  { key: 'customer', label: 'Membership', field: 'Member', value: 'S. Jones' },
+  { key: 'giftcard', label: 'Gift card', field: 'Balance', value: '£25.50' },
+  { key: 'staff', label: 'Staff', field: 'Staff', value: 'O. Price' },
+  { key: 'promo', label: 'Offer', field: 'Offer', value: '2 for 1' },
+];
+
+async function loadWallet() {
+  walletState = await api('/wallet/settings');
+
+  for (const el of document.querySelectorAll('[data-wal]')) {
+    const value = walletState[el.dataset.wal];
+    if (el.type === 'checkbox') el.checked = !!Number(value);
+    else if (el.type === 'color') el.value = normaliseHex(value, el.defaultValue);
+    else el.value = value ?? '';
+  }
+
+  const live = WALLET_KINDS.filter((k) => Number(walletState[`${k.key}_enabled`]));
+  statCards($('wallet-stats'), [
+    {
+      label: 'Passes',
+      value: Number(walletState.enabled) ? 'On' : 'Off',
+      tone: Number(walletState.enabled) ? 'green' : 'red',
+    },
+    { label: 'Cards offered', value: String(live.length), tone: 'primary',
+      hint: live.map((k) => k.label).join(', ') || 'None' },
+    // Filled in by loadWalletApple once it has asked. Not guessed from the
+    // settings row: whether a pass can be *signed* is a property of the
+    // deployment, not of what the venue has typed.
+    { label: 'Apple Wallet', value: '…', tone: '' },
+    { label: 'Cards issued', value: '…', tone: '' },
+  ]);
+
+  walletPreview();
+  await Promise.all([loadWalletApple(), loadWalletPasses(), walletJoinCode()]);
+}
+
+/** A colour input will not accept an empty value, so blank means "the brand". */
+function normaliseHex(value, fallback) {
+  const hex = String(value || '').trim();
+  return /^#?[0-9a-f]{6}$/i.test(hex) ? (hex.startsWith('#') ? hex : `#${hex}`) : fallback;
+}
+
+/**
+ * What the card will look like.
+ *
+ * Not a mock-up of Apple's chrome — that would be a promise this page cannot
+ * keep, because iOS draws the card and its rendering is not ours. It is the
+ * three things the venue actually controls: the artwork, the colours and the
+ * words, in the arrangement the pass puts them in.
+ */
+function walletPreview() {
+  const read = (name) => {
+    const el = document.querySelector(`[data-wal="${name}"]`);
+    return el ? el.value : '';
+  };
+  const background = read('hex_background') || '#111111';
+  const foreground = read('hex_foreground') || '#F2F4F0';
+  const label = read('hex_label') || '#A5C715';
+  const programme = read('program_name') || 'Your Rewards';
+  const venue = read('issuer_name') || 'Your venue';
+
+  const cards = WALLET_KINDS.filter((k) =>
+    document.querySelector(`[data-wal="${k.key}_enabled"]`)?.checked
+  );
+
+  $('wallet-preview').innerHTML = (cards.length ? cards : [WALLET_KINDS[0]])
+    .map(
+      (k) => `
+      <div class="wal-pass" style="background:${esc(background)};color:${esc(foreground)}">
+        <div class="wal-pass-head">
+          <span class="wal-pass-logo">${esc(programme)}</span>
+          <span class="wal-pass-kind" style="color:${esc(label)}">${esc(k.label)}</span>
+        </div>
+        <div class="wal-pass-strip"
+             style="background-image:url('/assets/wallet/strip_${esc(k.key)}.png')"></div>
+        <div class="wal-pass-body">
+          <span class="wal-pass-label" style="color:${esc(label)}">${esc(k.field)}</span>
+          <span class="wal-pass-value">${esc(k.value)}</span>
+        </div>
+        <div class="wal-pass-foot">
+          <span class="wal-pass-code"></span>
+          <span class="wal-pass-venue" style="color:${esc(label)}">${esc(venue)}</span>
+        </div>
+      </div>`
+    )
+    .join('');
+}
+
+/**
+ * Whether this deployment can actually sign an Apple pass, and what is missing.
+ *
+ * Every problem is named. The whole failure mode of a `.pkpass` is that a bad
+ * one produces no diagnostic anywhere — iOS says "Safari cannot download this
+ * file" whatever is wrong — so this screen is the only place the reason is ever
+ * visible.
+ */
+async function loadWalletApple() {
+  try {
+    walletApple = await api('/wallet/apple/status');
+  } catch (e) {
+    $('wallet-apple-status').innerHTML =
+      '<p class="muted small">Apple Wallet is not available on this server.</p>';
+    return;
+  }
+
+  const stat = document.querySelectorAll('#wallet-stats .stat-card')[2];
+  if (stat) {
+    stat.querySelector('.stat-value').textContent =
+      walletApple.configured ? 'Ready' : 'Not set up';
+    stat.classList.add(walletApple.configured ? 'green' : 'amber');
+  }
+
+  const certs = (walletApple.certificates || [])
+    .map(
+      (c) => `<tr>
+        <td>${esc(c.label)}</td>
+        <td class="small muted"><code>${esc(c.pass_type_id)}</code></td>
+        <td>${c.present
+          ? '<span class="pill on">signing</span>'
+          : `<span class="pill">${esc(c.file)} missing</span>`}</td>
+      </tr>`
+    )
+    .join('');
+
+  $('wallet-apple-status').innerHTML = `
+    ${walletApple.configured
+      ? `<p class="muted small">Signing as team <code>${esc(walletApple.team_id)}</code>
+           using ${esc(walletApple.openssl)}.</p>`
+      : `<div class="callout warn"><b>Apple passes cannot be signed yet.</b><ul>${
+          (walletApple.problems || []).map((p) => `<li>${esc(p)}</li>`).join('')
+        }</ul>
+        <p class="small">The five public certificates are in
+        <code>passes_and_oauth/</code>. The private keys are not, and must never
+        be — they are supplied to the server as <code>.p12</code> files.</p></div>`}
+    <table class="table"><tbody>${certs}</tbody></table>
+    <p class="muted small">${walletApple.push_updates
+      ? 'Passes update themselves in the customer’s wallet.'
+      : 'Passes are correct when issued and refresh when the code is scanned again. Automatic updates need a web service URL.'}</p>`;
+}
+
+async function loadWalletPasses() {
+  let rows = [];
+  try {
+    rows = await api('/wallet/passes');
+    const stat = document.querySelectorAll('#wallet-stats .stat-card')[3];
+    if (stat) stat.querySelector('.stat-value').textContent = String(rows.length);
+  } catch (e) {
+    $('wallet-passes').innerHTML =
+      '<p class="muted small">No pass record is available on this server yet.</p>';
+    return;
+  }
+
+  if (!rows.length) {
+    $('wallet-passes').innerHTML =
+      '<p class="muted small">No passes issued yet. One is created the first time a customer scans a sign-up code, or when you issue a card at the till.</p>';
+    return;
+  }
+
+  $('wallet-passes').innerHTML =
+    '<table class="table"><thead><tr><th>Card</th><th>Kind</th>' +
+    '<th>Number</th><th>State</th><th></th></tr></thead><tbody>' +
+    rows.map((r) => `<tr>
+        <td>${esc(r.subject_name || r.subject_id)}</td>
+        <td>${esc(walletKindLabel(r.kind))}</td>
+        <td class="small muted"><code>${esc(r.card_number || '—')}</code></td>
+        <td>${r.apple_issued_at
+          ? '<span class="pill on">Apple</span> '
+          : ''}${r.state === 'active'
+            ? '<span class="pill on">Google</span>'
+            : `<span class="pill">${esc(r.state || 'pending')}</span>`}</td>
+        <td class="right">
+          <button class="btn small" data-wallet-qr="${esc(r.kind)}|${esc(r.subject_id)}|${esc(r.subject_name || '')}">Show code</button>
+        </td>
+      </tr>`).join('') +
+    '</tbody></table>';
+}
+
+const walletKindLabel = (kind) => ({
+  loyalty: 'Loyalty', customer: 'Membership', giftcard: 'Gift card',
+  staff: 'Staff', promo: 'Offer',
+}[kind] || kind);
+
+/** The poster code: one link that enrols a customer and hands them a card. */
+async function walletJoinCode() {
+  const office = walletState && walletState.office;
+  if (!office) return;
+  const url = `${location.origin}/wallet/join/${encodeURIComponent(office)}`;
+  $('wallet-join-qr').innerHTML =
+    `<img alt="Sign-up code" width="200" height="200"
+          src="/api/qr.svg?size=200&text=${encodeURIComponent(url)}">
+     <p class="small muted">${esc(url)}</p>`;
+}
+
+document.addEventListener('input', (e) => {
+  // Live, because the preview is the whole reason the colours are on this page
+  // rather than in a config file.
+  if (e.target.matches('[data-wal]') && walletState) walletPreview();
+});
+
+document.addEventListener('change', (e) => {
+  if (e.target.matches('[data-wal]') && walletState) walletPreview();
+});
+
+document.addEventListener('click', async (e) => {
+  if (e.target.id === 'wallet-save') {
+    const body = {};
+    for (const el of document.querySelectorAll('[data-wal]')) {
+      body[el.dataset.wal] = el.type === 'checkbox' ? el.checked : el.value;
+    }
+    await api('/wallet/settings', { method: 'PUT', body: JSON.stringify(body) });
+    e.target.textContent = 'Saved ✓';
+    setTimeout(() => { e.target.textContent = 'Save branding'; }, 1500);
+    loadWallet();
+  }
+
+  const show = e.target.dataset && e.target.dataset.walletQr;
+  if (show) {
+    const [kind, subjectId, name] = show.split('|');
+    e.target.disabled = true;
+    try {
+      // Issuing and showing are the same action on purpose: a code that pointed
+      // at a pass which had never been built would fail in the customer's hand
+      // rather than here.
+      const out = await api(
+        `/wallet/apple/${encodeURIComponent(kind)}/${encodeURIComponent(subjectId)}`,
+        { method: 'POST' }
+      );
+      walletShowCode(name || subjectId, out.scan_url, out.card_number);
+    } catch (err) {
+      alert(String(err && err.message ? err.message : err));
+    } finally {
+      e.target.disabled = false;
+    }
+  }
+});
+
+/** The code, big enough to scan off the screen. */
+function walletShowCode(name, url, cardNumber) {
+  const wrap = document.createElement('div');
+  wrap.className = 'wal-modal';
+  wrap.innerHTML = `
+    <div class="wal-modal-card">
+      <h3>${esc(name)}</h3>
+      <img alt="Wallet code" width="260" height="260"
+           src="/api/qr.svg?size=260&text=${encodeURIComponent(url)}">
+      <p class="small muted">Point a phone at this. An iPhone gets an Apple
+        pass, anything else gets a Google one.</p>
+      ${cardNumber ? `<p class="small"><code>${esc(cardNumber)}</code></p>` : ''}
+      <button class="btn" data-wal-close>Close</button>
+    </div>`;
+  wrap.addEventListener('click', (ev) => {
+    if (ev.target === wrap || ev.target.hasAttribute('data-wal-close')) wrap.remove();
+  });
+  document.body.appendChild(wrap);
+}
+
+// ---- Swipe cards ----------------------------------------------------------
+//
+// A card reader on a till counter is a keyboard: swipe a card and it types
+// `;999800001?`. The prefix on the front is what tells the till which programme
+// the card belongs to before anything is looked up, which is why this page is
+// four numbers and not much else.
+//
+// The prefixes live here, for the venue, rather than on each till. Cards are
+// programmed once and then carried around in customers' wallets, so two tills
+// that disagreed about what 9998 means would be two tills where the same card
+// does different things depending on which end of the bar somebody is standing
+// at — and the one that is wrong fails silently, by finding no member and
+// offering to enrol a customer who has been with the venue for years.
+
+let cardsState = null;
+
+const CARD_KINDS = [
+  { key: 'clerk_prefix', label: 'Staff' },
+  { key: 'loyalty_prefix', label: 'Loyalty' },
+  { key: 'gift_prefix', label: 'Gift' },
+  { key: 'membership_prefix', label: 'Membership' },
+];
+
+const cardKindLabel = (kind) => ({
+  clerk: 'Staff', loyalty: 'Loyalty', gift: 'Gift', membership: 'Membership',
+}[kind] || kind);
+
+async function loadCards() {
+  cardsState = await api('/cards/settings');
+
+  for (const el of document.querySelectorAll('[data-card]')) {
+    const value = cardsState[el.dataset.card];
+    if (el.type === 'checkbox') el.checked = !!Number(value);
+    else el.value = value ?? '';
+  }
+
+  const running = CARD_KINDS.filter((k) => String(cardsState[k.key] || '').length);
+  statCards($('cards-stats'), [
+    { label: 'Reading cards', value: cardsState.enabled ? 'On' : 'Off',
+      tone: cardsState.enabled ? 'green' : 'red' },
+    { label: 'Programmes', value: String(running.length), tone: 'primary',
+      hint: running.map((k) => k.label).join(', ') || 'None set' },
+    { label: 'Digits after prefix', value: String(cardsState.number_digits || 5) },
+    { label: 'Enrol at the till', value: cardsState.auto_enrol ? 'Yes' : 'No',
+      tone: cardsState.auto_enrol ? 'green' : '' },
+  ]);
+
+  cardsPreview();
+  await loadCardIssues();
+}
+
+/**
+ * What a card of each kind will actually look like.
+ *
+ * Worth showing rather than describing. The one thing a venue has to get right
+ * on this page is that these numbers match the cards already in their
+ * customers' wallets, and a worked example is how somebody checks that in two
+ * seconds instead of reasoning about it.
+ */
+function cardsPreview() {
+  const digits = document.querySelector('[data-card="number_digits"]');
+  const width = Math.min(Math.max(Number(digits && digits.value) || 5, 4), 12);
+
+  const rows = CARD_KINDS.map((kind) => {
+    const field = document.querySelector('[data-card="' + kind.key + '"]');
+    const prefix = String((field && field.value) || '').replace(/\D/g, '');
+
+    if (!prefix) {
+      return '<div class="card-eg off">'
+        + '<span class="card-eg-label">' + esc(kind.label) + '</span> '
+        + '<span class="muted small">not used — nothing will match</span>'
+        + '</div>';
+    }
+
+    const number = prefix + '1'.padStart(width, '0');
+    return '<div class="card-eg">'
+      + '<span class="card-eg-label">' + esc(kind.label) + '</span> '
+      + '<code class="card-eg-track">;' + esc(number) + '?</code> '
+      + '<span class="muted small">card ' + esc(number) + ' — member 1</span>'
+      + '</div>';
+  });
+
+  $('cards-preview').innerHTML = rows.join('')
+    + '<p class="muted small">The <code>;</code> and <code>?</code> belong to '
+    + 'the reader, not to the card. They are typed by the reader and must be '
+    + 'encoded on the stripe, but they are never stored and never appear in a '
+    + 'barcode or a wallet pass.</p>';
+}
+
+async function loadCardIssues() {
+  let rows = [];
+  try {
+    rows = await api('/cards/issues?limit=200');
+  } catch (e) {
+    // A server that has not had schema_swipe_cards.sql applied yet. The
+    // prefixes above still save; only the record is missing, and saying so is
+    // better than an empty list that reads as "no cards have been issued".
+    $('cards-issues').innerHTML =
+      '<p class="muted small">The card record is not available on this server yet.</p>';
+    return;
+  }
+
+  if (!rows.length) {
+    $('cards-issues').innerHTML = '<p class="muted small">No cards issued yet.</p>';
+    return;
+  }
+
+  $('cards-issues').innerHTML = '<table class="table"><thead><tr>'
+    + '<th>Card</th><th>Kind</th><th>Who</th><th>Issued</th><th>By</th><th></th>'
+    + '</tr></thead><tbody>'
+    + rows.map((r) => '<tr class="' + (r.voided_at ? 'muted' : '') + '">'
+      + '<td><code>' + esc(r.card_number) + '</code></td>'
+      + '<td>' + esc(cardKindLabel(r.kind)) + '</td>'
+      + '<td>' + esc(r.subject_name || '—') + '</td>'
+      + '<td class="small muted">' + new Date(r.at).toLocaleString('en-GB') + '</td>'
+      + '<td class="small muted">' + esc(r.issued_by || '—') + '</td>'
+      + '<td class="right">' + (r.voided_at
+        ? '<span class="pill">cancelled</span>'
+        : '<button class="btn small danger-ghost" data-card-void="' + r.id + '">Cancel</button>')
+      + '</td></tr>').join('')
+    + '</tbody></table>';
+}
+
+document.addEventListener('input', (e) => {
+  // Live, because the preview is the check: somebody typing a prefix here is
+  // comparing it against a card in their hand.
+  if (e.target.matches('[data-card]') && cardsState) cardsPreview();
+});
+
+document.addEventListener('click', async (e) => {
+  if (e.target.id === 'cards-save') {
+    const body = {};
+    for (const el of document.querySelectorAll('[data-card]')) {
+      body[el.dataset.card] = el.type === 'checkbox' ? el.checked : el.value;
+    }
+    await api('/cards/settings', { method: 'PUT', body: JSON.stringify(body) });
+    e.target.textContent = 'Saved ✓';
+    setTimeout(() => { e.target.textContent = 'Save cards'; }, 1500);
+    loadCards();
+  }
+
+  const voidId = e.target.dataset && e.target.dataset.cardVoid;
+  if (voidId) {
+    // Spelled out, because this is the one destructive thing on the page and
+    // what it does to the person holding the card is not obvious from "cancel".
+    if (!confirm(
+      'Cancel this card?\n\n'
+      + 'It stops working at the till immediately and is detached from whoever '
+      + 'held it. The number is never reissued — the card itself is still out '
+      + 'there.'
+    )) return;
+    const reason = prompt('Why? (kept on the record)', 'Lost') || 'Cancelled';
+    await api('/cards/issues/' + voidId + '/void', {
+      method: 'POST', body: JSON.stringify({ reason }),
+    });
+    loadCards();
+  }
+});
+
+// ---- Devices --------------------------------------------------------------
+//
+// Which machines a venue has. A till registers itself and every customer
+// display paired to it — the display ships with no network capability at all,
+// deliberately, so the till speaks for it.
+
+const deviceKindLabel = (kind) => ({
+  till: 'Till', display: 'Customer display', kitchen: 'Kitchen screen',
+}[kind] || kind);
+
+async function loadDevices() {
+  let rows = [];
+  try {
+    rows = await api('/devices');
+  } catch (e) {
+    $('devices-list').innerHTML =
+      '<p class="muted small">Device registration is not available on this server yet.</p>';
+    return;
+  }
+
+  const online = rows.filter((d) => d.online && !d.stale);
+  statCards($('devices-stats'), [
+    { label: 'Machines', value: String(rows.length), tone: 'primary' },
+    { label: 'On now', value: String(online.length), tone: online.length ? 'green' : '' },
+    { label: 'Tills', value: String(rows.filter((d) => d.kind === 'till').length) },
+    { label: 'Customer displays',
+      value: String(rows.filter((d) => d.kind === 'display').length) },
+  ]);
+
+  $('devices-list').innerHTML = rows.length
+    ? '<table class="table"><thead><tr>'
+      + '<th>Machine</th><th>Kind</th><th>Version</th><th>Signed in as</th>'
+      + '<th>Last seen</th><th></th></tr></thead><tbody>'
+      + rows.map((d) => '<tr>'
+        + '<td><b>' + esc(d.name || d.device_id) + '</b></td>'
+        + '<td>' + esc(deviceKindLabel(d.kind)) + '</td>'
+        + '<td class="small muted">' + esc(d.app_version || '—') + '</td>'
+        + '<td class="small muted">' + esc(d.signed_in_as || '—') + '</td>'
+        + '<td>' + (d.online && !d.stale
+          ? '<span class="pill on">on now</span>'
+          : '<span class="small muted">'
+            + new Date(d.last_seen_at).toLocaleString('en-GB') + '</span>')
+        + '</td>'
+        + '<td class="right"><button class="btn small danger-ghost" '
+        + 'data-device-forget="' + esc(d.device_id) + '">Forget</button></td>'
+        + '</tr>').join('')
+      + '</tbody></table>'
+    : '<p class="muted small">No machines have registered yet. A till registers '
+      + 'itself when it starts, so this fills in the next time one is switched '
+      + 'on.</p>';
+
+  await loadDeviceLog();
+}
+
+async function loadDeviceLog() {
+  let rows = [];
+  try {
+    rows = await api('/devices/log?limit=100');
+  } catch (e) {
+    return;
+  }
+  $('devices-log').innerHTML = rows.length
+    ? '<table class="table"><thead><tr><th>When</th><th>Machine</th>'
+      + '<th>What</th><th>Who</th></tr></thead><tbody>'
+      + rows.map((r) => '<tr>'
+        + '<td class="small muted">' + new Date(r.at).toLocaleString('en-GB') + '</td>'
+        + '<td>' + esc(r.device_name || r.device_id) + '</td>'
+        + '<td>' + esc(r.event) + '</td>'
+        + '<td class="small muted">' + esc(r.actor || '—') + '</td>'
+        + '</tr>').join('')
+      + '</tbody></table>'
+    : '<p class="muted small">Nothing recorded yet.</p>';
+}
+
+document.addEventListener('click', async (e) => {
+  if (e.target.id === 'devices-refresh') return loadDevices();
+
+  const forget = e.target.dataset && e.target.dataset.deviceForget;
+  if (forget) {
+    if (!confirm(
+      'Forget this machine?\n\n'
+      + 'It disappears from this list. If it is still running it will register '
+      + 'again the next time it starts — this is for a screen that has been '
+      + 'taken off the wall, not a way to stop one reporting.\n\n'
+      + 'What it did stays in the log below.'
+    )) return;
+    await api('/devices/' + encodeURIComponent(forget), { method: 'DELETE' });
+    loadDevices();
   }
 });
 

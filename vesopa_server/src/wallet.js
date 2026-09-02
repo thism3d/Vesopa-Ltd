@@ -42,6 +42,13 @@ function walletCore({ pool, secret }) {
     giftcard_enabled: 0,
     staff_enabled: 0,
     promo_enabled: 0,
+    // Apple's half. Two more colours, because Apple takes three and works none
+    // of them out, and its own switch — a venue can be live on one platform and
+    // not the other, and one flag for both would mean a Google outage turning
+    // off cards that work. See schema_wallet_apple.sql.
+    hex_foreground: '',
+    hex_label: '',
+    apple_enabled: 1,
   };
   const BRAND_FIELDS = Object.keys(BRAND_DEFAULTS);
 

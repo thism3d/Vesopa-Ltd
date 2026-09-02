@@ -89,6 +89,8 @@ class TillControl {
     required this.billShare,
     required this.fillScreen,
     required this.standingMessage,
+    required this.customerQr,
+    required this.customerQrCaption,
   });
 
   final String advertFolder;
@@ -103,6 +105,13 @@ class TillControl {
   final int billShare;
   final bool fillScreen;
   final String standingMessage;
+
+  /// A code for the customer to point their phone at, or empty for none. What
+  /// it means is the venue's business — this end draws the square.
+  final String customerQr;
+
+  /// The line under it.
+  final String customerQrCaption;
 
   /// Null when the file is missing, unreadable, or written by a newer till than
   /// this build understands. All three mean the same thing to the caller: carry
@@ -124,6 +133,8 @@ class TillControl {
       billShare: _int(raw['bill_share'], 50),
       fillScreen: _bool(raw['fill_screen'], fallback: false),
       standingMessage: _str(raw['standing_message'], ''),
+      customerQr: _str(raw['customer_qr'], ''),
+      customerQrCaption: _str(raw['customer_qr_caption'], 'Scan to join'),
     );
   }
 }

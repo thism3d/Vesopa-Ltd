@@ -25,13 +25,25 @@ import 'package:media_kit/media_kit.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:window_manager/window_manager.dart';
 
+import 'data/deep_links.dart';
 import 'data/screens.dart';
 import 'data/settings.dart';
 import 'ui/display_page.dart';
+import 'ui/settings_page.dart';
 import 'ui/theme.dart';
 
-Future<void> main() async {
+/// [args] is the command line, which on Windows is how a deep link arrives:
+/// the runner passes it straight through, so following `com.vesopa.display:`
+/// from a browser starts this application with that URI as an argument.
+///
+/// See `data/deep_links.dart` for the scheme and why it is reverse DNS.
+Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Whether somebody arrived here deliberately. A screen opened from a link is
+  // one somebody is setting up right now, so it opens with its settings in
+  // front of them rather than with whatever it happened to be showing.
+  final fromLink = launchedByLink(args);
 
   // The advert player's own decoder, before anything can ask it to play. It is
   // bundled rather than borrowed from Windows — see `ui/advert_panel.dart` for
@@ -62,7 +74,7 @@ Future<void> main() async {
     },
   );
 
-  runApp(const ProviderScope(child: VesopaDisplayApp()));
+  runApp(ProviderScope(child: VesopaDisplayApp(openSettings: fromLink)));
 }
 
 /// Read the chosen monitor straight out of preferences and move there.
@@ -84,7 +96,15 @@ Future<void> _placeFromSettings() async {
 }
 
 class VesopaDisplayApp extends StatelessWidget {
-  const VesopaDisplayApp({super.key});
+  const VesopaDisplayApp({this.openSettings = false, super.key});
+
+  /// Start on the settings screen rather than the display.
+  ///
+  /// True only when this application was opened by following its own deep
+  /// link — see `data/deep_links.dart`. Somebody who has just clicked a link to
+  /// this screen is setting it up, and putting them on the setup page saves
+  /// them hunting for the faint cog in the corner.
+  final bool openSettings;
 
   @override
   Widget build(BuildContext context) => MaterialApp(
@@ -95,5 +115,14 @@ class VesopaDisplayApp extends StatelessWidget {
     // faces a customer across a counter and a white panel at that distance is
     // a lamp pointed at them.
     home: const DisplayPage(),
+    // Pushed rather than swapped for the home, so Back still leads to the
+    // display and a screen opened from a link cannot be left with no way to the
+    // thing it exists to show.
+    onGenerateInitialRoutes: openSettings
+        ? (_) => [
+            MaterialPageRoute<void>(builder: (_) => const DisplayPage()),
+            MaterialPageRoute<void>(builder: (_) => const SettingsPage()),
+          ]
+        : null,
   );
 }

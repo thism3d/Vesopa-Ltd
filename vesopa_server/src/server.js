@@ -37,6 +37,8 @@ const { assetVersions, staticCache } = require('./assets');
 const { modifierRoutes, tillModifierRoutes } = require('./modifiers');
 const { dojoWebhookRoutes, webhookStatus } = require('./dojo');
 const { terminalRoutes, timesheetRoutes } = require('./terminals');
+const { deviceRoutes } = require('./devices');
+const { cardRoutes } = require('./cards');
 const { importRoutes } = require('./imports');
 const { reportRoutes } = require('./reports');
 const {
@@ -44,6 +46,7 @@ const {
   startScheduler,
 } = require('./report_schedules');
 const { walletCore, walletRoutes, walletPublicRoutes } = require('./wallet');
+const { appleWalletRoutes } = require('./wallet_apple_service');
 
 const PORT = process.env.PORT || 4000;
 
@@ -233,6 +236,18 @@ app.use(tillKitchenRoutes({ pool, broadcast, secret: JWT_SECRET }));
 // these routes carry what customers have ordered and who is on shift.
 app.use(terminalRoutes({ pool, broadcast, secret: JWT_SECRET }));
 app.use('/api', timesheetRoutes({ pool, broadcast, secret: JWT_SECRET }));
+
+// Which machines a venue has and what has happened to them. Mounted once at
+// the root because the routes inside carry their own absolute paths: the tills
+// write through /till/devices with a terminal token, the back office reads
+// /api/devices with a session one, and they are two halves of one table.
+app.use(deviceRoutes({ pool, broadcast, secret: JWT_SECRET }));
+
+// Magnetic swipe cards: staff, loyalty and gift. Mounted once at the root for
+// the same reason devices is -- the tills' half and the back office's half are
+// two views of one set of tables, and splitting them across two mounts would
+// put them in two places to read.
+app.use(cardRoutes({ pool, broadcast, secret: JWT_SECRET }));
 // Bringing a catalogue in from a spreadsheet. Mounted after the CRUD routes
 // it writes through, so nothing here can shadow /api/products.
 app.use('/api', importRoutes({ pool, broadcast, secret: JWT_SECRET }));
@@ -256,6 +271,25 @@ app.use('/api', reportScheduleRoutes({ pool, secret: JWT_SECRET }));
 const wallet = walletCore({ pool, secret: JWT_SECRET });
 app.use('/api', walletRoutes({ pool, broadcast, secret: JWT_SECRET, core: wallet }));
 app.use(walletPublicRoutes({ pool, secret: JWT_SECRET, core: wallet }));
+
+// Apple Wallet, sharing the same core so both platforms read one set of brand
+// settings and one subject loader. Mounted at the root: it carries both the
+// customer-facing /wallet/c/:token link -- which serves an iPhone a .pkpass and
+// redirects everything else to the Google half -- and its own /api routes.
+app.use(appleWalletRoutes({ pool, secret: JWT_SECRET, core: wallet }));
+
+// The pass artwork. Public on purpose and safe to be: it is the same branded
+// bands that go inside every .pkpass, with nothing in them that is not already
+// on a card in a customer's pocket. The back office's live preview reads them
+// from here, and Google Wallet -- which fetches artwork itself, with no
+// credentials -- can be pointed at them too.
+app.use(
+  '/assets/wallet',
+  express.static(path.join(__dirname, '..', 'assets', 'wallet'), {
+    maxAge: '7d',
+    immutable: false,
+  })
+);
 
 /**
  * The floor plan, as the till sees it. Unauthenticated like /products: a
@@ -504,13 +538,41 @@ app.get('/till/departments', async (req, res, next) => {
  */
 app.get('/till/staff', requireTerminal(JWT_SECRET), async (req, res, next) => {
   try {
-    const [rows] = await pool.query(
-      `SELECT id, pluid, clark_name AS name, pin_code AS pin
-       FROM bo_clarks
+    // swipe_card comes down with the PIN, and for the same reason: a staff card
+    // has to sign somebody on with the broadband down, so the check happens
+    // against the till's own cache.
+    //
+    // TRIED, THEN FALLEN BACK FROM, RATHER THAN ASSUMED
+    //
+    // `swipe_card` is added by schema_swipe_cards.sql, and deploy.ps1 applies the
+    // migrations only when it is asked to (`-Schema`). So there is a real
+    // window in which this code is live and the column is not -- and naming a
+    // column that does not exist is not a degraded response, it is an error,
+    // which would take *staff sign-on itself* down across every till in the
+    // venue for the sake of a feature none of them is using yet.
+    //
+    // A till that gets no swipe_card simply has no staff cards, which is
+    // exactly true on a venue that has not run the migration.
+    const WITH_CARD = `
+      SELECT id, pluid, clark_name AS name, pin_code AS pin,
+             COALESCE(swipe_card, '') AS swipe_card
+        FROM bo_clarks
        WHERE email = ? AND COALESCE(active, 1) = 1
-       ORDER BY pluid, clark_name`,
-      [req.office]
-    );
+       ORDER BY pluid, clark_name`;
+
+    const WITHOUT_CARD = `
+      SELECT id, pluid, clark_name AS name, pin_code AS pin
+        FROM bo_clarks
+       WHERE email = ? AND COALESCE(active, 1) = 1
+       ORDER BY pluid, clark_name`;
+
+    let rows;
+    try {
+      [rows] = await pool.query(WITH_CARD, [req.office]);
+    } catch (e) {
+      if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+      [rows] = await pool.query(WITHOUT_CARD, [req.office]);
+    }
     res.json(rows);
   } catch (e) {
     next(e);

@@ -467,6 +467,18 @@ class Staff extends Table {
   /// The PIN as the back office holds it. See the class note above.
   TextColumn get pin => text()();
 
+  /// The number on this person's swipe card, or empty where they have none.
+  ///
+  /// Cached here for exactly the reason the PIN is: signing on has to work with
+  /// the broadband down, so the check is an equality against a handful of local
+  /// rows and never a round trip. A staff card that only worked online would be
+  /// a card that stops working at the one moment nobody can afford it.
+  ///
+  /// The whole number, prefix included — see `data/swipe_cards.dart`. Empty
+  /// rather than nullable, so the match below cannot be satisfied by a person
+  /// with no card and a reader that sent nothing.
+  TextColumn get swipeCard => text().withDefault(const Constant(''))();
+
   @override
   Set<Column> get primaryKey => {id};
 }
@@ -496,7 +508,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 16;
+  int get schemaVersion => 17;
 
 
   /// Add a column only if the table has not already got it.
@@ -651,6 +663,13 @@ class AppDatabase extends _$AppDatabase {
             // what every bill already on the till is — so nothing is
             // backfilled and nothing changes for a venue with one terminal.
             await _addColumnIfMissing(m, orders, orders.heldBy);
+          }
+          if (from < 17) {
+            // Staff swipe cards. Empty for everybody until the next staff pull
+            // brings the numbers down, which is correct: nobody has a card
+            // until the back office says they do, and a till that guessed would
+            // be a till where an empty column signs somebody on.
+            await _addColumnIfMissing(m, staff, staff.swipeCard);
           }
         },
       );

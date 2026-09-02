@@ -1,0 +1,11 @@
+# The @3x renders. Produced by tools/wallet_art and deliberately not committed:
+# nothing ships them.
+#
+# A .pkpass carries @1x and @2x only -- these are photographic gradients, which
+# PNG compresses badly, and all three scales together come to about 900KB per
+# card against 340KB for two. An @3x device upscaling an @2x gradient by half is
+# a difference nobody can see; the wait on mobile data is one they can.
+#
+# The tool still makes them, so shipping them later is a one-line change in
+# wallet_apple.js rather than a re-render.
+*@3x.png

@@ -9,6 +9,7 @@ library;
 import 'package:flutter/material.dart';
 
 import '../data/basket_feed.dart';
+import 'customer_qr.dart';
 import 'theme.dart';
 
 class BillPanel extends StatefulWidget {
@@ -17,11 +18,22 @@ class BillPanel extends StatefulWidget {
     required this.basket,
     required this.showPrices,
     required this.thankYou,
+    this.customerQr = '',
+    this.customerQrCaption = '',
   });
 
   final Basket basket;
   final bool showPrices;
   final String thankYou;
+
+  /// A code for the customer to point their phone at, or empty for none.
+  ///
+  /// Drawn beside the total rather than over the adverts on purpose. A customer
+  /// reading their bill is looking at this half of the screen, and it is the
+  /// one moment in the day when they are looking at this screen with a phone
+  /// already in their hand.
+  final String customerQr;
+  final String customerQrCaption;
 
   @override
   State<BillPanel> createState() => _BillPanelState();
@@ -73,7 +85,12 @@ class _BillPanelState extends State<BillPanel> {
                   _Line(line: basket.lines[i], showPrice: widget.showPrices),
             ),
           ),
-          _Totals(basket: basket, thankYou: widget.thankYou),
+          _Totals(
+            basket: basket,
+            thankYou: widget.thankYou,
+            customerQr: widget.customerQr,
+            customerQrCaption: widget.customerQrCaption,
+          ),
         ],
       ),
     );
@@ -149,10 +166,17 @@ class _Line extends StatelessWidget {
 }
 
 class _Totals extends StatelessWidget {
-  const _Totals({required this.basket, required this.thankYou});
+  const _Totals({
+    required this.basket,
+    required this.thankYou,
+    required this.customerQr,
+    required this.customerQrCaption,
+  });
 
   final Basket basket;
   final String thankYou;
+  final String customerQr;
+  final String customerQrCaption;
 
   @override
   Widget build(BuildContext context) {
@@ -201,6 +225,27 @@ class _Totals extends StatelessWidget {
                 fontSize: 24,
                 color: Brand.lime,
                 fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+
+          // The customer's code, under the total.
+          //
+          // Deliberately below everything and deliberately small. The bill is
+          // what this panel is for and the total is what the customer is
+          // checking; a code that competed with either would be a code that got
+          // in the way of the thing people actually came to the counter to do.
+          //
+          // It stays up while a sale is on screen and after it is paid for,
+          // because "scan to join" is answered while the change is being
+          // counted at least as often as before.
+          if (customerQr.trim().isNotEmpty) ...[
+            const SizedBox(height: 18),
+            Center(
+              child: CustomerQr(
+                data: customerQr,
+                caption: customerQrCaption,
+                size: 116,
               ),
             ),
           ],

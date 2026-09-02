@@ -1,0 +1,20 @@
+name: vesopa_wallet_art
+description: >-
+  Turns the generated pass artwork into the exact PNGs an Apple .pkpass needs.
+  A build-time tool, run by hand when the artwork changes; nothing at runtime
+  depends on it.
+publish_to: 'none'
+version: 1.0.0
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  # The only image codec available to this project offline. Node has no decoder
+  # built in and none of the server's dependencies bring one, so the conversion
+  # is done here, once, and the results are committed.
+  image: ^4.9.2
+
+  # A second QR implementation, used only to check the one in src/qr.js. It is
+  # never shipped and never called at runtime -- see bin/qr_reference.dart.
+  qr: ^3.0.2
