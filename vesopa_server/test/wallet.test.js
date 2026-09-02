@@ -637,6 +637,40 @@ testAsync('a venue is reachable by its sign-up code, and still by its email', as
  * The rule the fix encodes: the two platforms fail independently. Neither one
  * being broken may cost the customer the other.
  */
+// ---- When an offer is on ---------------------------------------------------
+
+test('a day mask reads the way somebody would say it', () => {
+  const { walletCore } = require('../src/wallet');
+  const pool = { query: async () => [[]], execute: async () => [[]] };
+  const { whenLine } = walletCore({ pool, secret: 'test-secret' });
+
+  assert.strictEqual(whenLine('1111111', null, null), 'Every day');
+  assert.strictEqual(whenLine('1111100', null, null), 'Mon–Fri');
+  assert.strictEqual(whenLine('0000011', null, null), 'Weekends');
+
+  // A run of three or more collapses; two stay listed, because "Mon–Tue" is
+  // longer than "Mon, Tue" and reads worse.
+  assert.strictEqual(whenLine('1110000', null, null), 'Mon–Wed');
+  assert.strictEqual(whenLine('1100000', null, null), 'Mon, Tue');
+  assert.strictEqual(whenLine('1000000', null, null), 'Mon');
+  assert.strictEqual(whenLine('1110001', null, null), 'Mon–Wed, Sun');
+  assert.strictEqual(whenLine('0101010', null, null), 'Tue, Thu, Sat');
+});
+
+test('a happy hour window is written as somebody would read it aloud', () => {
+  const { walletCore } = require('../src/wallet');
+  const pool = { query: async () => [[]], execute: async () => [[]] };
+  const { whenLine } = walletCore({ pool, secret: 'test-secret' });
+
+  assert.strictEqual(whenLine('1111100', '17:00:00', '19:00:00'), 'Mon–Fri, 5pm–7pm');
+  assert.strictEqual(whenLine('1111111', '17:30:00', '19:00:00'), 'Every day, 5.30pm–7pm');
+  // Noon and midnight are the two the twelve-hour clock gets wrong.
+  assert.strictEqual(whenLine('1111111', '12:00:00', '13:00:00'), 'Every day, 12pm–1pm');
+  assert.strictEqual(whenLine('1111111', '00:00:00', '02:00:00'), 'Every day, 12am–2am');
+  // No window at all is just the days.
+  assert.strictEqual(whenLine('1111100', null, null), 'Mon–Fri');
+});
+
 testAsync('signing up survives Google being unconfigured', async () => {
   const express = require('express');
   const { walletPublicRoutes, walletCore } = require('../src/wallet');

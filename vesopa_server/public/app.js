@@ -4532,9 +4532,18 @@ function walletPreview() {
                ['MEMBER NO.', `${initials} · 0241`]],
     customer: [['YOUR DISCOUNT', '10% off'], ['MEMBER SINCE', 'March 2024'],
                ['MEMBER NO.', `${initials} · 0241`]],
-    giftcard: [['FOR', 'Owen Price'], ['EXPIRES', '2027-01-14']],
+    giftcard: [['FOR', 'Owen Price'], ['LOADED', 'of £50.00'], ['EXPIRES', '2027-01-14']],
     staff:    [['ROLE', 'Manager'], ['SITE', venue], ['CARD', '999900007']],
-    promo:    [['', 'Two for one on mains'], ['ENDS', '2026-12-31']],
+    promo:    [['WHEN', 'Mon–Fri, 5pm–7pm'], ['ENDS', '2026-12-31']],
+  };
+
+  // The loyalty strip carries a progress bar, and it is baked into the image
+  // rather than drawn by Wallet — PassKit has fields and images and nothing in
+  // between, so tools/wallet_art renders eleven states and the server picks
+  // one. The preview shows the 40% band so the bar is visible at all; a real
+  // card picks the step nearest that customer's balance.
+  const STRIP = {
+    loyalty: 'strip_loyalty_p040',
   };
 
   $('wallet-preview').innerHTML = (cards.length ? cards : [WALLET_KINDS[0]])
@@ -4561,7 +4570,7 @@ function walletPreview() {
           </span>` : ''}
         </div>
         <div class="wal-pass-strip"
-             style="background-image:url('/assets/wallet/strip_${esc(k.key)}.png')">
+             style="background-image:url('/assets/wallet/${esc(STRIP[k.key] || `strip_${k.key}`)}.png')">
           <div class="wal-pass-primary">
             <span class="wal-pass-label" style="color:${esc(label)}">${esc(k.field)}</span>
             <span class="wal-pass-value">${esc(k.value)}</span>

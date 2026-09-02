@@ -563,6 +563,34 @@ function historyLines(history) {
 }
 
 /**
+ * The gift card ledger, written the way a holder reads it.
+ *
+ *     Spent      −£12.50  →  £25.50      2 Sep
+ *
+ * Same shape as historyLines() and for the same reason: the arrow is the
+ * balance *after* the movement, which is what makes the list explain the number
+ * on the front rather than sit beside it.
+ */
+function spendLines(movements, currency) {
+  return (movements || [])
+    .filter((m) => m && m.created_at)
+    .map((m) => {
+      const WORD = {
+        issue: 'Issued', reload: 'Topped up', redeem: 'Spent',
+        refund: 'Refunded', void: 'Voided', adjust: 'Adjusted',
+      };
+      const when = new Date(m.created_at).toLocaleDateString('en-GB', {
+        day: 'numeric',
+        month: 'short',
+      });
+      const amount = Number(m.amount_minor) || 0;
+      const moved = `${amount < 0 ? '−' : '+'}${money(Math.abs(amount), currency)}`;
+      return `${WORD[m.kind] || m.kind}  ${moved} → ${money(m.balance_after, currency)}      ${when}`;
+    })
+    .join('\n');
+}
+
+/**
  * Where the venue is, so the card offers itself on the lock screen.
  *
  * iOS shows a pass on the lock screen when the phone is near one of these,
@@ -878,10 +906,32 @@ function buildPassJson({ kind, config, brand, subject, serial, authToken, link }
         money(subject.balance_minor, subject.currency),
         { changeMessage: '%@ left on the card.' }
       );
+      // "of £50.00 loaded" — the design asked for this as a vertical bar beside
+      // the balance, which PassKit cannot draw. The *information* in that bar is
+      // how much of the card has been spent, and a field says it in words that
+      // also survive being read aloud. See the note above artworkFor() on which
+      // decorations are worth an image and which are worth a sentence.
+      if (Number(subject.loaded_minor) > Number(subject.balance_minor)) {
+        push(
+          body.secondaryFields,
+          'loaded',
+          'LOADED',
+          `of ${money(subject.loaded_minor, subject.currency)}`
+        );
+      }
       push(body.secondaryFields, 'for', 'FOR', subject.name);
       push(body.secondaryFields, 'expires', 'EXPIRES', subject.expires_on);
 
       push(back, 'issued', 'Issued', subject.issued_on);
+      // Where the money went. The balance on the front answers "how much is
+      // left"; this answers "why is it lower than I thought", which is the
+      // question that otherwise ends in a phone call to the venue.
+      const spend = spendLines(subject.movements, subject.currency);
+      if (spend) {
+        push(back, 'spend_history', 'Recent spend', spend, {
+          textAlignment: 'PKTextAlignmentLeft',
+        });
+      }
       break;
     }
 
@@ -906,8 +956,25 @@ function buildPassJson({ kind, config, brand, subject, serial, authToken, link }
         changeMessage: 'Your offer ends in %@.',
       });
       push(body.primaryFields, 'offer', 'OFFER', subject.title);
-      push(body.secondaryFields, 'detail', '', subject.details);
+      // When the offer is actually on, from the venue's own day mask and
+      // happy-hour window. "Every day" is dropped rather than printed: an offer
+      // with no restriction does not need a line saying it has none, and the
+      // row is better spent on the end date.
+      push(
+        body.secondaryFields,
+        'when',
+        'WHEN',
+        subject.when === 'Every day' ? '' : subject.when
+      );
       push(body.secondaryFields, 'ends', 'ENDS', subject.ends_on);
+      // Only if there is room. Apple draws four secondary and auxiliary fields
+      // between them, and the offer's own wording is the least useful of the
+      // four when the other three say when it runs.
+      if (body.secondaryFields.length < 2) {
+        push(body.secondaryFields, 'detail', '', subject.details);
+      } else {
+        push(back, 'conditions', 'Offer conditions', subject.details);
+      }
       break;
     }
 
@@ -956,7 +1023,7 @@ function buildPassJson({ kind, config, brand, subject, serial, authToken, link }
  * specific pixel sizes. Sizing an arbitrary upload without an image codec is
  * the missing half, and Node has none. See the note in tools/wallet_art.
  */
-function artworkFor(kind, brand, assetsDir) {
+function artworkFor(kind, brand, assetsDir, progress = null) {
   const files = {};
 
   const read = (name) => {
@@ -968,6 +1035,29 @@ function artworkFor(kind, brand, assetsDir) {
       return null;
     }
   };
+
+  // The progress bar, chosen rather than drawn.
+  //
+  // WHICH DECORATIONS EARN AN IMAGE
+  //
+  // The design asked for four: a progress bar on the loyalty card, a spend bar
+  // on the gift card, a tier chip on the membership and an initials disc on the
+  // staff card. PassKit can draw none of them — it has fields and images and
+  // nothing in between — so each one costs an image generated per customer.
+  //
+  // Only the first is worth that. A progress bar says something no field says
+  // as well: how close you are, at a glance, without reading. The other three
+  // are restatements of text that is already on the card — the tier is a header
+  // field, the spend is "of £50.00 loaded", the initials are the name in 25pt —
+  // and an image per customer to draw them again would be cost with no answer.
+  //
+  // Even the bar is not drawn here. The server has no image codec and gets none
+  // for this: tools/wallet_art renders eleven states at build time and this
+  // picks the nearest. See _progressStrips() there.
+  const band =
+    kind === 'loyalty' && Number.isFinite(progress)
+      ? `_p${String(Math.round(Math.min(Math.max(progress, 0), 1) * 10) * 10).padStart(3, '0')}`
+      : '';
 
   // @1x and @2x, and deliberately not @3x.
   //
@@ -981,7 +1071,15 @@ function artworkFor(kind, brand, assetsDir) {
     ['strip.png', ''],
     ['strip@2x.png', '@2x'],
   ]) {
-    const art = read(`strip_${kind}${suffix}`) || read(`strip_loyalty${suffix}`);
+    // The banded variant first when there is one, then this kind's plain strip,
+    // then loyalty's as the last resort — a branded band in the wrong mood
+    // beats a flat rectangle. A missing band file falls through to the plain
+    // strip rather than to nothing, so a half-run of tools/wallet_art costs a
+    // progress bar and not a card.
+    const art =
+      (band && read(`strip_${kind}${band}${suffix}`)) ||
+      read(`strip_${kind}${suffix}`) ||
+      read(`strip_loyalty${suffix}`);
     if (art) files[target] = art;
   }
 
@@ -1430,9 +1528,16 @@ function buildPkpass({ kind, config, brand, subject, assetsDir, serial, authToke
     link,
   });
 
+  // How far along the loyalty card's bar is. Only meaningful when the venue has
+  // set a redemption floor — without one there is no "along" to be, and the
+  // plain strip is used. Same rule as the NEXT REWARD field, from the same two
+  // numbers, so the bar and the words agree.
+  const floor = Number(subject.reward_floor) || 0;
+  const progress = floor ? (Number(subject.points) || 0) / floor : null;
+
   const files = {
     'pass.json': Buffer.from(JSON.stringify(passJson, null, 2), 'utf8'),
-    ...artworkFor(kind, brand, assetsDir),
+    ...artworkFor(kind, brand, assetsDir, progress),
   };
 
   // SHA-1, and not because it is a good hash. It is what Apple specifies and

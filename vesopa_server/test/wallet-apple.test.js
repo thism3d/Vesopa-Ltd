@@ -13,6 +13,7 @@
  */
 
 const assert = require('assert');
+const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 
@@ -732,6 +733,152 @@ check('only the last four of a gift card number is printed', () => {
   );
   // Still scannable: the full number belongs in the barcode, where it is needed.
   assert.strictEqual(pass.barcodes[0].message, '987800001');
+});
+
+// ---------------------------------------------------------------------------
+// When an offer is on
+// ---------------------------------------------------------------------------
+
+check('a happy-hour offer says which days and what time', () => {
+  const pass = build('promo', {
+    id: 'p1',
+    title: '2 for 1',
+    details: 'Two for one on mains',
+    ends_on: '2026-12-31',
+    when: 'Mon–Fri, 5pm–7pm',
+  });
+  const when = body(pass, 'promo').secondaryFields.find((f) => f.key === 'when');
+  assert.ok(when, 'the offer does not say when it is on');
+  assert.strictEqual(when.value, 'Mon–Fri, 5pm–7pm');
+});
+
+// An offer with no restriction does not need a line saying it has none, and
+// the row is better spent on the end date.
+check('an all-week offer does not waste a row saying so', () => {
+  const pass = build('promo', {
+    id: 'p1', title: '2 for 1', ends_on: '2026-12-31', when: 'Every day',
+  });
+  const keys = body(pass, 'promo').secondaryFields.map((f) => f.key);
+  assert.ok(!keys.includes('when'), '"Every day" was printed as a field');
+});
+
+check('an offer with too much to say pushes the wording to the back', () => {
+  const pass = build('promo', {
+    id: 'p1',
+    title: '2 for 1',
+    details: 'Two for one on mains, excluding steak',
+    ends_on: '2026-12-31',
+    when: 'Mon–Fri, 5pm–7pm',
+  });
+  const b = body(pass, 'promo');
+  // Apple draws four secondary and auxiliary fields between them. When `when`
+  // and `ends` both have something to say, the wording goes on the back rather
+  // than off the edge.
+  assert.ok(b.secondaryFields.length <= 2, 'more fields than Apple will draw');
+  assert.ok(
+    b.backFields.some((f) => f.key === 'conditions'),
+    'the offer wording was dropped rather than moved'
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Where a gift card's money went
+// ---------------------------------------------------------------------------
+
+check('a gift card carries its recent spend on the back', () => {
+  const pass = build('giftcard', {
+    id: 'g1',
+    card_number: '987800001',
+    balance_minor: 2550,
+    loaded_minor: 5000,
+    currency: 'GBP',
+    movements: [
+      { kind: 'redeem', amount_minor: -2450, balance_after: 2550, created_at: '2026-08-02' },
+      { kind: 'issue', amount_minor: 5000, balance_after: 5000, created_at: '2026-01-05' },
+    ],
+  });
+  const spend = body(pass, 'giftcard').backFields.find((f) => f.key === 'spend_history');
+  assert.ok(spend, 'no spend history at all');
+  assert.ok(spend.value.includes('Spent'), 'a redemption is not named');
+  assert.ok(spend.value.includes('£24.50'), 'the amount is missing');
+  // The arrow is the balance after the movement, which is what makes the list
+  // explain the number on the front rather than sit beside it.
+  assert.ok(spend.value.includes('→ £25.50'), 'the running balance is missing');
+});
+
+check('a gift card says how much of it has been used', () => {
+  const pass = build('giftcard', {
+    id: 'g1', card_number: '987800001', balance_minor: 2550,
+    loaded_minor: 5000, currency: 'GBP',
+  });
+  const loaded = body(pass, 'giftcard').secondaryFields.find((f) => f.key === 'loaded');
+  assert.ok(loaded, 'nothing says what was loaded');
+  assert.strictEqual(loaded.value, 'of £50.00');
+});
+
+check('an untouched gift card does not say "of" its own balance', () => {
+  const pass = build('giftcard', {
+    id: 'g1', card_number: '987800001', balance_minor: 5000,
+    loaded_minor: 5000, currency: 'GBP',
+  });
+  const keys = body(pass, 'giftcard').secondaryFields.map((f) => f.key);
+  assert.ok(!keys.includes('loaded'), 'a full card claims it has been spent');
+});
+
+// ---------------------------------------------------------------------------
+// The progress bar, which is an image and not a field
+// ---------------------------------------------------------------------------
+
+const artworkDir = path.join(__dirname, '..', 'assets', 'wallet');
+
+check('a loyalty card gets the strip banded to its progress', () => {
+  const at = (p) => A.artworkFor('loyalty', brand, artworkDir, p)['strip@2x.png'];
+  const empty = at(0);
+  const part = at(0.4);
+  const full = at(1);
+
+  assert.ok(empty && part && full, 'a banded strip is missing');
+  assert.ok(!empty.equals(part), '0% and 40% are the same image');
+  assert.ok(!part.equals(full), '40% and 100% are the same image');
+});
+
+check('a venue with no redemption floor gets the plain strip', () => {
+  const plain = A.artworkFor('loyalty', brand, artworkDir, null)['strip@2x.png'];
+  const banded = A.artworkFor('loyalty', brand, artworkDir, 0)['strip@2x.png'];
+  assert.ok(plain && banded);
+  assert.ok(!plain.equals(banded), 'a venue with no rules got a 0% bar drawn on it');
+});
+
+check('a balance past the reward still fills the bar rather than overflowing', () => {
+  const at = (p) => A.artworkFor('loyalty', brand, artworkDir, p)['strip@2x.png'];
+  assert.ok(at(1).equals(at(4)), 'four times the target picked a different file');
+});
+
+// Only loyalty has a bar. The other three decorations the design asked for —
+// the tier chip, the spend bar, the initials disc — restate text already on the
+// card, and an image per customer to draw them again is cost with no answer.
+check('the other kinds are unaffected by progress', () => {
+  for (const kind of ['customer', 'giftcard', 'staff', 'promo']) {
+    const plain = A.artworkFor(kind, brand, artworkDir, null)['strip@2x.png'];
+    const withProgress = A.artworkFor(kind, brand, artworkDir, 0.5)['strip@2x.png'];
+    assert.ok(plain.equals(withProgress), `${kind} changed with a progress value`);
+  }
+});
+
+// A half-run of tools/wallet_art must cost a progress bar, not a card.
+check('a missing band file falls back to the plain strip', () => {
+  const os = require('os');
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vesopa-art-'));
+  try {
+    fs.copyFileSync(
+      path.join(artworkDir, 'strip_loyalty@2x.png'),
+      path.join(tmp, 'strip_loyalty@2x.png')
+    );
+    const files = A.artworkFor('loyalty', brand, tmp, 0.4);
+    assert.ok(files['strip@2x.png'], 'no strip at all when the band is missing');
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
 });
 
 console.log(`\n${passed} checks passed\n`);

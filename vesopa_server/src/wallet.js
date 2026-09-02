@@ -458,6 +458,99 @@ function walletCore({ pool, secret }) {
     }
   }
 
+  /**
+   * A gift card's movements, and what was loaded onto it in total.
+   *
+   * `loaded` is the sum of the issues and reloads rather than the current
+   * balance: "£25.50 of £50.00 loaded" tells a holder how much of the card they
+   * have spent, which the balance alone cannot.
+   *
+   * Twelve rows is what fits on the back of a card before it becomes a
+   * statement. The full ledger lives on /wallet/balance/:token, which can
+   * scroll.
+   */
+  async function giftMovements(office, cardId) {
+    try {
+      const [rows] = await pool.query(
+        `SELECT kind, amount_minor, balance_after, created_at
+           FROM epos_gift_card_txns
+          WHERE gift_card_id = ? AND office = ?
+          ORDER BY created_at DESC
+          LIMIT 12`,
+        [cardId, office]
+      );
+      const [[totals]] = await pool.query(
+        `SELECT COALESCE(SUM(amount_minor), 0) AS loaded
+           FROM epos_gift_card_txns
+          WHERE gift_card_id = ? AND office = ?
+            AND kind IN ('issue', 'reload')`,
+        [cardId, office]
+      );
+      return {
+        movements: rows || [],
+        loaded_minor: Number(totals && totals.loaded) || 0,
+      };
+    } catch {
+      // A venue whose gift cards predate the ledger still gets a working card.
+      return { movements: [], loaded_minor: 0 };
+    }
+  }
+
+  /**
+   * "Mon–Fri, 5–7pm", from a day mask and a happy-hour window.
+   *
+   * The mask is seven characters with Monday first, which is the format the
+   * till already reads — so this is a rendering of something the venue has
+   * already told us rather than a new thing to configure.
+   *
+   * Runs of consecutive days collapse to a range, because "Mon, Tue, Wed, Thu,
+   * Fri" is five words for a thing everybody calls weekdays. All seven says
+   * "Every day" and is then usually dropped by the caller, since an offer with
+   * no restriction does not need a line saying so.
+   */
+  function whenLine(mask, startTime, endTime) {
+    const NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const bits = String(mask || '1111111').padEnd(7, '0').slice(0, 7);
+
+    let days = '';
+    if (bits === '1111111') days = 'Every day';
+    else if (bits === '1111100') days = 'Mon–Fri';
+    else if (bits === '0000011') days = 'Weekends';
+    else {
+      // Collapse consecutive runs: 1110001 becomes "Mon–Wed, Sun".
+      const parts = [];
+      let run = -1;
+      for (let i = 0; i <= 7; i++) {
+        const on = i < 7 && bits[i] === '1';
+        if (on && run === -1) run = i;
+        if (!on && run !== -1) {
+          const last = i - 1;
+          parts.push(
+            last - run >= 2 ? `${NAMES[run]}–${NAMES[last]}`
+              : last === run ? NAMES[run]
+                : `${NAMES[run]}, ${NAMES[last]}`
+          );
+          run = -1;
+        }
+      }
+      days = parts.join(', ');
+    }
+
+    const window = [clockTime(startTime), clockTime(endTime)].filter(Boolean).join('–');
+    return [days, window].filter(Boolean).join(', ');
+  }
+
+  /** `17:00:00` as `5pm`, or `5.30pm`. A card has no room for seconds. */
+  function clockTime(value) {
+    const match = /^(\d{1,2}):(\d{2})/.exec(String(value || ''));
+    if (!match) return '';
+    const hour = Number(match[1]);
+    const minute = Number(match[2]);
+    const suffix = hour < 12 ? 'am' : 'pm';
+    const twelve = hour % 12 === 0 ? 12 : hour % 12;
+    return minute ? `${twelve}.${String(minute).padStart(2, '0')}${suffix}` : `${twelve}${suffix}`;
+  }
+
   async function loadSubject(office, kind, subjectId) {
     if (kind === 'loyalty' || kind === 'customer') {
       const memberNo = (await hasColumn('epos_customers', 'member_no'))
@@ -550,12 +643,18 @@ function walletCore({ pool, secret }) {
         // A spent or voided card stays in the wallet, greyed out, rather than
         // vanishing — the holder needs to see that it was theirs and is empty.
         state: g.status === 'active' ? 'ACTIVE' : 'EXPIRED',
+        // What has happened to the card, and what was put on it. The balance on
+        // the front answers "how much is left"; this is the answer to "where did
+        // it go", which is the question somebody asks when the number is lower
+        // than they expected and the only alternative is ringing the venue.
+        ...(await giftMovements(office, g.id)),
       };
     }
 
     if (kind === 'promo') {
       const [[p]] = await pool.query(
-        `SELECT id, name, kind, value, badge_text, ends_on, active
+        `SELECT id, name, kind, value, badge_text, ends_on, active,
+                days_of_week, start_time, end_time
          FROM epos_promotions WHERE id = ? AND office = ?`,
         [subjectId, office]
       );
@@ -566,6 +665,11 @@ function walletCore({ pool, secret }) {
         details: p.name,
         card_number: `PROMO${p.id}`,
         ends_on: p.ends_on ? new Date(p.ends_on).toISOString().slice(0, 10) : '',
+        // When the offer is actually on. `days_of_week` is a 7-character mask
+        // with Monday first, and the two times are a happy-hour window — all
+        // three have been on epos_promotions since promotions existed, and the
+        // card had no way to say "Mon–Fri, 5–7pm" without them.
+        when: whenLine(p.days_of_week, p.start_time, p.end_time),
         state: Number(p.active) ? 'ACTIVE' : 'INACTIVE',
       };
     }
@@ -730,6 +834,10 @@ function walletCore({ pool, secret }) {
     loadSubject,
     mint,
     shortLink,
+    // Pure, and exported so the day-mask collapsing can be tested without a
+    // database. "1110001" reading as "Mon–Wed, Sun" is the sort of thing that
+    // is either right or quietly nonsense on somebody's card.
+    whenLine,
     // The sign-up code's rules, so the route that validates a typed one and
     // the core that generates one cannot drift apart on what a code may be.
     SLUG_SHAPE,

@@ -85,6 +85,7 @@ void main(List<String> args) {
     }
   }
 
+  _progressStrips();
   _icon();
   _logo();
   stdout.writeln('\nDone. The .jpg sources can stay; the server reads the PNGs.');
@@ -124,6 +125,84 @@ img.Image _coverCrop(img.Image src, int width, int height) {
     height: height,
     interpolation: img.Interpolation.cubic,
   );
+}
+
+/// How many points along the way to the next reward, in ten-per-cent steps.
+///
+/// WHY THESE ARE MADE HERE AND NOT ON THE SERVER
+///
+/// The design asks for a progress bar on the loyalty card. A pass cannot draw
+/// one — PassKit has fields and images and nothing in between — so the bar has
+/// to be *in* the strip, which means an image per customer, which means
+/// compositing a rectangle onto a photograph at the moment a card is built.
+///
+/// The server cannot do that. It can encode a PNG from scratch (see solidPng in
+/// src/wallet_apple.js) but it cannot decode one, and there is no image codec in
+/// its dependencies — the note at the top of this file explains why that is
+/// deliberate rather than an oversight.
+///
+/// So the eleven states a bar can usefully be in are rendered here, where there
+/// *is* a codec, and the server picks the nearest file. Eleven steps rather than
+/// a hundred because nobody looking at a bar can tell 63% from 60%, and the
+/// difference is nine megabytes.
+const _progressSteps = 10; // 0, 10, 20 … 100
+
+/// The bar itself, in points at @1x.
+const _barHeight = 4;
+
+/// Vesopa lime, and the track it sits in. The same #a5c715 as everything else;
+/// the track is black at a third, which reads on every one of the five strips
+/// without knowing what is behind it.
+const _limeR = 0xa5, _limeG = 0xc7, _limeB = 0x15;
+
+void _progressStrips() {
+  final source = _find('$_assets/strip_loyalty');
+  if (source == null) {
+    stderr.writeln('! no loyalty artwork, so no progress strips');
+    return;
+  }
+  final decoded = img.decodeImage(source.readAsBytesSync());
+  if (decoded == null) return;
+
+  var written = 0;
+  for (final entry in _stripSizes.entries) {
+    // @3x is not shipped — see assets/wallet/.gitignore — and eleven more of
+    // them would be four megabytes nothing reads.
+    if (entry.key == '@3x') continue;
+
+    final (width, height) = entry.value;
+    final scale = width ~/ 375;
+    final bar = _barHeight * scale;
+    final base = _coverCrop(decoded, width, height);
+
+    for (var step = 0; step <= _progressSteps; step++) {
+      final percent = step * (100 ~/ _progressSteps);
+      final frame = img.Image.from(base);
+
+      // The track, full width, along the very bottom edge.
+      img.fillRect(
+        frame,
+        x1: 0, y1: height - bar, x2: width - 1, y2: height - 1,
+        color: img.ColorRgba8(0, 0, 0, 110),
+      );
+
+      // The filled part. Nothing at all at zero — a bar with a one-pixel nub on
+      // it looks like a rendering fault rather than an empty balance.
+      final filled = (width * percent / 100).round();
+      if (filled > 0) {
+        img.fillRect(
+          frame,
+          x1: 0, y1: height - bar, x2: filled - 1, y2: height - 1,
+          color: img.ColorRgb8(_limeR, _limeG, _limeB),
+        );
+      }
+
+      final name = 'strip_loyalty_p${percent.toString().padLeft(3, '0')}${entry.key}.png';
+      File('$_assets/$name').writeAsBytesSync(img.encodePng(frame, level: 9));
+      written++;
+    }
+  }
+  stdout.writeln('progress strips  $written files');
 }
 
 /// The app mark, square, from the display's own brand folder.
