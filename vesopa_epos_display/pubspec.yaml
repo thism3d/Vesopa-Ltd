@@ -11,7 +11,7 @@ publish_to: 'none'
 # reason the kitchen screen does: the two ship together, and a display and a
 # till on different major versions is a support question nobody can answer over
 # the phone. The build number is this app's own.
-version: 1.6.1+2
+version: 1.6.2+3
 
 environment:
   sdk: ^3.12.2
@@ -120,7 +120,7 @@ msix_config:
 
   # Four parts, and the last must be 0 — the Store reserves the revision field
   # and rejects anything else. Tracks `version:` at the top of this file.
-  msix_version: 1.6.1.0
+  msix_version: 1.6.2.0
 
   logo_path: assets/brand/512x512.png
 
