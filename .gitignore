@@ -162,8 +162,14 @@ desktop.ini
 # source artwork belongs in asset storage, not in every clone of the repo.
 brandAssets/
 brandAssets.zip
+brand_assets/
 p.md
 # Credential notes kept alongside the repo. Never committed — the filename is
 # an accurate description of what is in it, and this repo is on GitHub.
 ClientAllCredentialsForAllBusinessWeHaveWithExplanation.md
 *Credentials*.md
+
+# The client conversation that specified the loyalty programme. Private
+# correspondence rather than project documentation, and it has already
+# served its purpose as the spec — it stays on this machine.
+Conversation I had with my client regarding this.pdf
