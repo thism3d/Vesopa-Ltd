@@ -101,16 +101,15 @@ function readConfig(env = process.env) {
   // The private key is taken from whichever bundle is present and paired with
   // the *public* certificate for the kind being signed, which is already in the
   // repository. See signingMaterial().
-  const shared = dir
-    ? [SHARED_P12, ...Object.values(P12_FILES)]
-        .map((name) => path.join(dir, name))
-        .find(existsSafely) || ''
+  const shared = dir && existsSafely(dir)
+    ? findBundle(dir, { certDir, passphrase })
     : '';
 
   if (dir && existsSafely(dir) && !shared) {
     problems.push(
-      `no .p12 found in ${dir} — export one from Keychain Access ` +
-        `(any of ${SHARED_P12} or ${Object.values(P12_FILES).join(', ')})`
+      `no .p12 in ${dir} holds the key for these pass certificates — check ` +
+        `APPLE_WALLET_P12_PASSWORD, and that the bundle was exported from the ` +
+        `certificate Apple issued rather than from another CSR`
     );
   }
 
@@ -127,6 +126,117 @@ function readConfig(env = process.env) {
     problems,
   };
 }
+
+/**
+ * The signing bundle in [dir]: the one whose key actually fits the
+ * certificates.
+ *
+ * CHOSEN BY TESTING, NOT BY NAME
+ *
+ * This started out picking by filename and it picked the wrong file on the
+ * first real folder it saw. That folder held two exports — one matching these
+ * pass certificates and one from an unrelated CSR — and the wrong one sorted
+ * first. Keychain Access names its exports after whatever was selected, so the
+ * names carry no reliable information about which key is which.
+ *
+ * So every candidate is opened and its public half compared against a real
+ * certificate. It costs two openssl calls per file, once, at start-up — against
+ * the alternative, which is signing every pass with a key that does not belong
+ * to its certificate and producing cards that install on nobody's phone and
+ * report nothing anywhere.
+ *
+ * Returns '' when nothing matches, which [readConfig] turns into a problem the
+ * back office can show. That is a far better failure than a plausible guess.
+ */
+function findBundle(dir, { certDir, passphrase }) {
+  const named = [SHARED_P12, ...Object.values(P12_FILES)].map((n) =>
+    path.join(dir, n)
+  );
+
+  let loose = [];
+  try {
+    loose = fs
+      .readdirSync(dir)
+      .filter((name) => name.toLowerCase().endsWith('.p12'))
+      .sort()
+      .map((name) => path.join(dir, name));
+  } catch {
+    loose = [];
+  }
+
+  // Named first, so a venue that has deliberately laid the folder out the
+  // documented way gets the file it named — but still only if it verifies.
+  const candidates = [...new Set([...named, ...loose])].filter(existsSafely);
+  if (!candidates.length) return '';
+
+  const reference = certificatePublicKey(certDir);
+  if (!reference) {
+    // No certificate to check against. Nothing can be verified, so the named
+    // convention is all there is to go on.
+    return candidates[0];
+  }
+
+  for (const candidate of candidates) {
+    if (bundlePublicKey(candidate, passphrase) === reference) return candidate;
+  }
+  return '';
+}
+
+/** The public half of one of the pass certificates, as a fingerprint. */
+function certificatePublicKey(certDir) {
+  for (const file of Object.values(CER_FILES)) {
+    const cer = path.join(certDir, file);
+    if (!existsSafely(cer)) continue;
+    try {
+      return fingerprint(
+        execFileSync('openssl', ['x509', '-inform', 'DER', '-in', cer, '-pubkey', '-noout'], {
+          stdio: 'pipe',
+          timeout: 10000,
+        })
+      );
+    } catch {
+      // Try the next certificate; they all share one key.
+    }
+  }
+  return '';
+}
+
+/**
+ * The public half of a bundle's private key, or '' if it cannot be opened.
+ *
+ * The passphrase goes through the environment rather than the command line: an
+ * argument is visible in `ps` to every account on the machine for as long as
+ * the call runs.
+ *
+ * `-legacy` because a .p12 exported by macOS Keychain is encrypted with
+ * 3DES, which OpenSSL 3 moved out of the default provider. Without it a correct
+ * passphrase reads as an unsupported algorithm.
+ */
+function bundlePublicKey(bundle, passphrase) {
+  try {
+    const key = execFileSync(
+      'openssl',
+      ['pkcs12', '-in', bundle, '-nocerts', '-nodes', '-passin', 'env:VESOPA_P12_PASS', '-legacy'],
+      {
+        stdio: 'pipe',
+        timeout: 10000,
+        env: { ...process.env, VESOPA_P12_PASS: passphrase || '' },
+      }
+    );
+    return fingerprint(
+      execFileSync('openssl', ['pkey', '-pubout'], {
+        input: key,
+        stdio: 'pipe',
+        timeout: 10000,
+      })
+    );
+  } catch {
+    return '';
+  }
+}
+
+const fingerprint = (buffer) =>
+  crypto.createHash('sha256').update(String(buffer).trim()).digest('hex');
 
 function existsSafely(target) {
   try {
@@ -754,6 +864,7 @@ module.exports = {
   P12_FILES,
   CER_FILES,
   SHARED_P12,
+  findBundle,
   readConfig,
   buildPassJson,
   buildPkpass,

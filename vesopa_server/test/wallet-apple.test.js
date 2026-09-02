@@ -427,7 +427,43 @@ check('a folder with no bundle in it says so', () => {
     APPLE_WWDR_CERT: __filename,
   });
   assert.strictEqual(config.configured, false);
-  assert.ok(config.problems.some((p) => p.includes('no .p12 found')));
+  assert.ok(config.problems.some((p) => p.includes('holds the key')));
+});
+
+check('the bundle is chosen by testing the key, not by its name', () => {
+  // This is not hypothetical. The first real folder held two exports — one for
+  // these certificates and one from an unrelated CSR — and the wrong one sorted
+  // first alphabetically. Keychain Access names an export after whatever was
+  // selected, so a filename says nothing about which key is inside.
+  const dir = path.join(__dirname, '..', '..', 'passes_and_oauth');
+  if (!require('fs').existsSync(dir)) return;
+
+  const bundles = require('fs')
+    .readdirSync(dir)
+    .filter((f) => f.toLowerCase().endsWith('.p12'));
+  if (bundles.length < 2 || !process.env.APPLE_WALLET_P12_PASSWORD) return;
+
+  const chosen = A.findBundle(dir, {
+    certDir: dir,
+    passphrase: process.env.APPLE_WALLET_P12_PASSWORD,
+  });
+  assert.ok(chosen, 'nothing matched the certificates');
+
+  // Whatever was chosen, its key has to fit the certificates.
+  const { execFileSync } = require('child_process');
+  const key = execFileSync('openssl', [
+    'pkcs12', '-in', chosen, '-nocerts', '-nodes',
+    '-passin', 'env:APPLE_WALLET_P12_PASSWORD', '-legacy',
+  ], { stdio: 'pipe' });
+  const fromKey = execFileSync('openssl', ['pkey', '-pubout'], {
+    input: key, stdio: 'pipe',
+  }).toString().trim();
+  const fromCert = execFileSync('openssl', [
+    'x509', '-inform', 'DER',
+    '-in', path.join(dir, A.CER_FILES.loyalty), '-pubkey', '-noout',
+  ], { stdio: 'pipe' }).toString().trim();
+
+  assert.strictEqual(fromKey, fromCert, `${path.basename(chosen)} is the wrong key`);
 });
 
 console.log(`\n${passed} checks passed\n`);
