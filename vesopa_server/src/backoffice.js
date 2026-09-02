@@ -936,8 +936,26 @@ function backofficeRoutes({ pool, broadcast, secret }) {
     try {
       const admin = req.user.role === 'admin';
       const [rows] = await pool.query(
+        // `staff_id` is the till operator this login belongs to, when there is
+        // one. Matched on name and not on email, because bo_clarks.email is the
+        // OFFICE key -- the tenant column, shared by every clerk in the venue --
+        // and no personal address is held for a clerk anywhere. So the name is
+        // the only thing the two records have in common, and a venue with two
+        // people of the same name gets the lower id rather than a guess.
+        //
+        // Collated on both sides for the reason wallet.js documents at length:
+        // bo_clarks.email is utf8mb3 and offices.contact_email is utf8mb4, and
+        // MariaDB refuses to compare them when the statement is prepared -- so
+        // leaving this alone would 500 the user list for every venue, empty or
+        // not. Converting in the query keeps a live ALTER off a shared table.
         `SELECT u.id, u.email, u.name, u.approved, u.role, u.office_id,
-                o.name AS office_name
+                o.name AS office_name,
+                (SELECT c.id FROM bo_clarks c
+                  WHERE CONVERT(c.email USING utf8mb4) COLLATE utf8mb4_general_ci
+                      = CONVERT(o.contact_email USING utf8mb4) COLLATE utf8mb4_general_ci
+                    AND CONVERT(c.clark_name USING utf8mb4) COLLATE utf8mb4_general_ci
+                      = CONVERT(u.name USING utf8mb4) COLLATE utf8mb4_general_ci
+                  ORDER BY c.id LIMIT 1) AS staff_id
          FROM backoffice_users u
          LEFT JOIN offices o ON o.id = u.office_id
          ${admin ? '' : 'WHERE u.office_id = ?'}

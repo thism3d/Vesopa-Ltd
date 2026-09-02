@@ -54,6 +54,10 @@ function appleWalletRoutes({ pool, secret, core }) {
 
   const config = A.cachedConfig();
   const assetsDir = path.join(__dirname, '..', 'assets', 'wallet');
+  // Where a venue's own uploads land. The back office writes them at Apple's
+  // exact pixel sizes -- the cropper is the codec -- so artworkFor() reads them
+  // straight out of here rather than resizing anything.
+  const uploadsDir = path.join(__dirname, '..', 'public', 'uploads');
 
   const { readBrand, loadSubject, shortLink } = core;
 
@@ -129,6 +133,7 @@ function appleWalletRoutes({ pool, secret, core }) {
       brand,
       subject,
       assetsDir,
+      uploadsDir,
       serial,
       authToken,
       link: link && link.url ? link : null,
@@ -310,13 +315,26 @@ function appleWalletRoutes({ pool, secret, core }) {
       const office = await tenantEmail(req);
       const brand = await readBrand(office);
 
-      const certificates = Object.entries(A.P12_FILES).map(([kind, file]) => ({
-        kind,
-        label: G.PASS_TYPES[kind].label,
-        pass_type_id: G.PASS_TYPES[kind].appleType,
-        file,
-        present: config.configured && certificatePresent(file),
-      }));
+      // Asked of the signer rather than worked out again here. This screen used
+      // to check only whether `loyalty_pass.p12` and its four siblings existed,
+      // so a server holding one shared bundle — the arrangement the README
+      // recommends and this one uses — signed every pass while the page
+      // reported all five certificates missing. See A.signingBundle().
+      const certificates = Object.entries(A.P12_FILES).map(([kind, file]) => {
+        const bundle = config.configured ? A.signingBundle(kind, config) : null;
+        return {
+          kind,
+          label: G.PASS_TYPES[kind].label,
+          pass_type_id: G.PASS_TYPES[kind].appleType,
+          // The name of the file that will actually sign this kind, so the row
+          // says something true either way: which bundle is signing, or which
+          // one is missing.
+          file: bundle ? bundle.file : file,
+          expected_file: file,
+          shared: Boolean(bundle && bundle.shared),
+          present: Boolean(bundle),
+        };
+      });
 
       // What the update service is actually doing, rather than whether it is
       // switched on. A venue that has turned push updates on and has zero
@@ -350,14 +368,6 @@ function appleWalletRoutes({ pool, secret, core }) {
       next(e);
     }
   });
-
-  function certificatePresent(file) {
-    try {
-      return require('fs').existsSync(path.join(config.dir, file));
-    } catch {
-      return false;
-    }
-  }
 
   /**
    * A QR code, as an SVG.

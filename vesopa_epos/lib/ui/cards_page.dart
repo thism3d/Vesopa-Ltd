@@ -142,6 +142,12 @@ class _CardsPageState extends ConsumerState<CardsPage> {
           ),
         ),
 
+        // Both of the next two sections are the venue's to switch off. A venue
+        // with no card printer has no use for the second, and a venue that has
+        // never set Wallet up has no use for the first -- and a button that
+        // produces an error every time it is pressed teaches the counter to
+        // distrust the screen it is on.
+        if (settings.tillWalletButton) ...[
         const SizedBox(height: 28),
         const _SectionTitle('Cards on a phone'),
         Card(
@@ -177,6 +183,9 @@ class _CardsPageState extends ConsumerState<CardsPage> {
           ),
         ),
 
+        ],
+
+        if (settings.tillPrintButton) ...[
         const SizedBox(height: 28),
         const _SectionTitle('Give somebody a card'),
         Card(
@@ -224,6 +233,20 @@ class _CardsPageState extends ConsumerState<CardsPage> {
             ),
           ),
         ),
+        ],
+
+        // Neither switch on is a deliberate configuration, not an empty screen.
+        // The reader test above is still the reason to be here, so this says so
+        // rather than leaving the page looking half-loaded.
+        if (!settings.tillWalletButton && !settings.tillPrintButton) ...[
+          const SizedBox(height: 28),
+          const Text(
+            'Handing out cards is switched off for this venue. The reader test '
+            'above still works. Turn the buttons back on in the back office, '
+            'under Cards.',
+            style: TextStyle(fontSize: 13, height: 1.4, color: Pos.graphite),
+          ),
+        ],
       ],
     );
   }

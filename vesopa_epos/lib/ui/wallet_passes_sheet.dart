@@ -96,6 +96,20 @@ class _WalletSheetState extends ConsumerState<_WalletSheet> {
         _offer = offer;
         _loading = false;
       });
+
+      // Straight onto the screen facing the customer, when the venue has asked
+      // for that -- which is the default, and is the whole point of having a
+      // second screen. The clerk's move becomes "open the sheet"; without this
+      // it was "open the sheet, then find and press a second button", with the
+      // customer waiting through both.
+      //
+      // Only where there is exactly one card to show. With two or more there is
+      // a choice to be made and making it for them would put the wrong card in
+      // front of the customer half the time.
+      final settings = ref.read(cardRepositoryProvider).settings;
+      if (settings.walletOnDisplay && offer.passes.length == 1) {
+        await _showOnDisplay(offer.passes.first);
+      }
     } on WalletException catch (e) {
       if (!mounted) return;
       setState(() {

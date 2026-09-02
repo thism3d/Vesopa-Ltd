@@ -1,5 +1,8 @@
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const express = require('express');
+const multer = require('multer');
 const jwt = require('jsonwebtoken');
 const { requireAuth } = require('./auth');
 const G = require('./wallet_google');
@@ -857,12 +860,53 @@ function walletCore({ pool, secret }) {
  * Takes the core rather than building one, so the public QR routes and these
  * share a single OAuth token cache and a single read of the environment.
  */
+/**
+ * Where a venue's card artwork lands.
+ *
+ * Beside every other upload, under `public/uploads`, which is excluded from the
+ * deploy and lives only on the server. PNG only, and that is not fussiness: the
+ * pair is written as `<name>.png` and `<name>@2x.png` and read back by name, so
+ * one JPEG in the middle of that convention is a picture Apple silently drops.
+ * The browser's cropper produces PNG anyway.
+ */
+const artwork = multer({
+  storage: multer.diskStorage({
+    destination: path.join(__dirname, '..', 'public', 'uploads'),
+    filename: (_req, _file, cb) => cb(null, `${crypto.randomUUID()}.png`),
+  }),
+  limits: { fileSize: 4 * 1024 * 1024, files: 2 },
+  fileFilter: (_req, file, cb) => {
+    const ok = file.mimetype === 'image/png';
+    cb(ok ? null : new Error('Card artwork must be a PNG'), ok);
+  },
+});
+
+/**
+ * An absolute address for something this server serves.
+ *
+ * Google fetches artwork itself, from its own machines, so a relative path is a
+ * picture that never appears and never explains why. The host is taken from the
+ * request rather than from configuration: this app answers on one domain in
+ * production and on localhost in a test, and both should produce a URL that
+ * works from where the caller is standing.
+ */
+function publicUrl(req, pathname) {
+  const proto = String(req.headers['x-forwarded-proto'] || req.protocol || 'https')
+    .split(',')[0]
+    .trim();
+  const host = String(req.headers['x-forwarded-host'] || req.headers.host || '')
+    .split(',')[0]
+    .trim();
+  return host ? `${proto}://${host}${pathname}` : pathname;
+}
+
 function walletRoutes({ pool, broadcast, secret, core }) {
   const router = express.Router();
   const auth = requireAuth(secret);
   const {
     config, client, BRAND_FIELDS, readBrand, mint,
     SLUG_SHAPE, SLUG_RESERVED, ensureJoinSlug,
+    readPrograms, ensureProgramCode, readProgramBrand, loadSubject, shortLink,
   } = core || walletCore({ pool, secret });
 
   async function tenantEmail(req) {
@@ -1019,6 +1063,211 @@ function walletRoutes({ pool, broadcast, secret, core }) {
     } catch (e) {
       next(e);
     }
+  });
+
+  /**
+   * Everything needed to print one card, for one subject.
+   *
+   * Read-only and idempotent, which is the whole difference between this and
+   * the pass routes: pressing print must not issue anybody anything. A manager
+   * printing a replacement for a lost card is not asking for a second card, and
+   * a route that minted one would quietly give them two.
+   *
+   * The scan target is the same short link the pass carries, so the code on the
+   * printed card and the code on the phone are the same code. A venue that
+   * hands out both has one number, one scan, one person.
+   */
+  router.get('/wallet/card/:kind/:subjectId', auth, async (req, res, next) => {
+    try {
+      const kind = String(req.params.kind);
+      if (!G.PASS_TYPES[kind]) {
+        return res.status(400).json({ error: 'Unknown pass kind' });
+      }
+      const office = await tenantEmail(req);
+      const subjectId = String(req.params.subjectId);
+
+      const subject = await loadSubject(office, kind, subjectId);
+      if (!subject) return res.status(404).json({ error: 'No such record' });
+
+      const design = await readProgramBrand(office, kind);
+      const number = String(subject.card_number || '');
+
+      res.json({
+        kind,
+        name: subject.name || subject.title || '',
+        card_number: number,
+        member_no: subject.member_no || '',
+        // The sentinels belong to the reader, not to the card, but they have to
+        // be encoded on the stripe — so the venue's encoder is shown the exact
+        // string, sentinels included, rather than the bare number it would
+        // otherwise be given and would then have to know to wrap.
+        //
+        // Digits only, and that is the whole point of the guard. A customer who
+        // has never been issued plastic has no card number, and loadSubject()
+        // falls back to their uuid so the QR still identifies them — which is
+        // right for a barcode and wrong for a magnetic stripe, because track 2
+        // is a numeric encoding and a uuid cannot go on one. Offering it anyway
+        // would send somebody to a card writer with a string it will refuse,
+        // and the card writer's error message will not explain why.
+        track: /^\d+$/.test(number) ? `;${number}?` : '',
+        // So the panel can say which of the two it is looking at rather than
+        // showing a uuid in a box labelled "card number".
+        has_plastic: /^\d+$/.test(number),
+        scan_url: shortLink(office, kind, subjectId).replace('/wallet/s/', '/wallet/c/'),
+        program_name: design.program_name || '',
+        issuer_name: design.issuer_name || '',
+      });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // ---- The pass designer --------------------------------------------------
+  //
+  // Five cards, designed one at a time.
+  //
+  // `epos_wallet_programs` and readProgramBrand() have held the per-kind design
+  // since the table was added, and nothing was ever routed to them: the Wallet
+  // screen offered one set of colours for all five cards and a column of
+  // free-text boxes, so a venue that wanted its gift card to look nothing like
+  // its staff card had no way to say so. These are the two routes that were
+  // missing, and the back office draws a card against them.
+  //
+  // Everything left blank inherits. That is the rule the whole screen rests on:
+  // a venue sets its look once on the Wallet screen, opens one card, changes
+  // the two things that should differ, and the other three stay in step for
+  // ever after.
+
+  /** The five designs, venue branding already merged in. */
+  router.get('/wallet/programs', auth, async (req, res, next) => {
+    try {
+      const office = await tenantEmail(req);
+      res.json(await readPrograms(office));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /**
+   * Save one card's design.
+   *
+   * Only the seven fields a design owns. `enabled` is deliberately not among
+   * them — which cards a venue issues is a property of the venue and lives on
+   * the settings row, and having it in two places is how a card ends up
+   * switched on in one screen and off in the other.
+   */
+  const DESIGN_FIELDS = [
+    'program_name', 'hex_background', 'hex_foreground', 'hex_label',
+    'strip_url', 'terms', 'change_message',
+  ];
+
+  router.put('/wallet/programs/:kind', auth, async (req, res, next) => {
+    try {
+      const kind = String(req.params.kind);
+      if (!G.PASS_TYPES[kind]) {
+        return res.status(400).json({ error: 'Unknown pass kind' });
+      }
+      const office = await tenantEmail(req);
+
+      const values = {};
+      for (const field of DESIGN_FIELDS) {
+        if (req.body[field] === undefined) continue;
+        const raw = String(req.body[field] ?? '').trim();
+        // '' is stored as '' rather than refused: on this screen an empty box
+        // means "inherit the venue's own branding", and readProgramBrand()
+        // treats '' and NULL the same way. Clearing a field has to be possible
+        // or the first colour anybody picks is permanent.
+        values[field] = raw;
+      }
+
+      for (const field of ['hex_background', 'hex_foreground', 'hex_label']) {
+        const hex = values[field];
+        if (hex && !/^#[0-9a-f]{6}$/i.test(hex)) {
+          return res.status(400).json({
+            error: 'A colour must be a hex value like #0f5132',
+          });
+        }
+      }
+
+      // Google fetches this address itself and cannot sign in, so a relative
+      // path or an http:// one is a picture that silently never appears. The
+      // uploader returns an absolute https:// URL for exactly this reason.
+      const strip = values.strip_url;
+      if (strip && !/^https:\/\//i.test(strip)) {
+        return res.status(400).json({
+          error: 'Artwork must be a public https:// address — Google fetches it '
+            + 'directly and cannot sign in. Use Upload artwork to get one.',
+        });
+      }
+
+      // The row has to exist before it can be updated, and its `code` is what
+      // the venue's QR links are built from — generated once and never changed.
+      await ensureProgramCode(office, kind, await readBrand(office));
+
+      const cols = Object.keys(values);
+      if (cols.length) {
+        await pool.execute(
+          `UPDATE epos_wallet_programs
+              SET ${cols.map((c) => `\`${c}\` = ?`).join(', ')}
+            WHERE office = ? AND kind = ?`,
+          [...cols.map((c) => values[c]), office, kind]
+        );
+      }
+
+      broadcast({ type: 'wallet.settings' });
+      const all = await readPrograms(office);
+      res.json(all.find((p) => p.kind === kind) || null);
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /**
+   * Artwork for a card, at the sizes Apple insists on.
+   *
+   * WHY TWO FILES AND NOT ONE
+   *
+   * Google fetches a URL and accepts whatever it finds. Apple wants bytes, at
+   * exact pixel sizes, inside the archive — and Node has no image codec to
+   * resize an upload with, which is why this half of the feature sat unbuilt
+   * and the screen said "Apple does not use it yet".
+   *
+   * The codec is the browser. The back office's cropper already draws to a
+   * canvas at whatever size it is told, so it sends the same framing twice:
+   * `x1` at Apple's @1x size and `x2` at @2x. They are stored side by side as
+   * `<name>.png` and `<name>@2x.png`, which is the convention artworkFor()
+   * looks for, and the @1x URL is what gets stored on the row and handed to
+   * Google.
+   *
+   * An absolute URL comes back, not a path. Google cannot follow a relative
+   * one, and a venue pasting the value somewhere else should get something
+   * that works.
+   */
+  router.post('/wallet/artwork', auth, (req, res) => {
+    artwork.fields([{ name: 'x1', maxCount: 1 }, { name: 'x2', maxCount: 1 }])(
+      req,
+      res,
+      (err) => {
+        if (err) return res.status(400).json({ error: err.message });
+        const one = req.files && req.files.x1 && req.files.x1[0];
+        const two = req.files && req.files.x2 && req.files.x2[0];
+        if (!one || !two) {
+          return res.status(400).json({ error: 'Both sizes are required' });
+        }
+
+        // The @2x is renamed to sit beside the @1x. multer has already given
+        // each a random name; this is the only place the pair becomes a pair.
+        const base = path.basename(one.filename, '.png');
+        const dir = path.dirname(one.path);
+        try {
+          fs.renameSync(two.path, path.join(dir, `${base}@2x.png`));
+        } catch (e) {
+          return res.status(500).json({ error: `Could not store the artwork: ${e.message}` });
+        }
+
+        res.status(201).json({ url: publicUrl(req, `/uploads/${base}.png`) });
+      }
+    );
   });
 
   /**
