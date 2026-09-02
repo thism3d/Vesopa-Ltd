@@ -40,21 +40,89 @@ const SCOPE = 'https://www.googleapis.com/auth/wallet_object.issuer';
 // blank "something went wrong" page with no clue as to why.
 const SAFE_JWT_LENGTH = 1800;
 
-/** The four passes this system issues, and the Google resource behind each. */
-const KINDS = {
-  loyalty: { classResource: 'loyaltyClass', objectResource: 'loyaltyObject' },
-  customer: { classResource: 'genericClass', objectResource: 'genericObject' },
-  staff: { classResource: 'genericClass', objectResource: 'genericObject' },
-  promo: { classResource: 'offerClass', objectResource: 'offerObject' },
+/**
+ * The five passes this system issues, stated once.
+ *
+ * One row per kind, carrying both halves of the world: what Apple calls it and
+ * what Google calls it. They are registered together because they are the same
+ * decision — "a gift card" is one product, and having its Apple identifier in
+ * a plist, its Google resource in this file and its label in a template is how
+ * the three drift apart.
+ *
+ *   appleType   the pass type identifier registered at developer.apple.com.
+ *               Fixed for the life of the certificate: changing it invalidates
+ *               every pass already in every phone, so these are effectively
+ *               permanent.
+ *   appleStyle  Apple's pass style. `storeCard` for anything with a balance or
+ *               a scheme behind it, `coupon` for an offer with an end date,
+ *               `generic` for identity.
+ *   classResource / objectResource   the Google Wallet REST resources.
+ *   payloadKey  the key this kind takes inside a save JWT.
+ *
+ * Note where the two platforms disagree, because it is not a mistake:
+ * membership and staff are both `storeCard`/`generic` on Apple but both land
+ * on Google's `genericClass`, and loyalty and gift card are both `storeCard`
+ * on Apple while Google gives each its own resource. Apple models the *shape*
+ * of the card; Google models what it is *for*.
+ */
+const PASS_TYPES = {
+  loyalty: {
+    label: 'Loyalty Card',
+    appleType: 'pass.com.vesopa.loyalty',
+    appleStyle: 'storeCard',
+    classResource: 'loyaltyClass',
+    objectResource: 'loyaltyObject',
+    payloadKey: 'loyaltyObjects',
+  },
+  // "Membership" to a customer, `customer` in this codebase since before the
+  // Apple identifiers existed. The internal name is not worth a rename across
+  // four tables and a settings screen; the label is what anybody sees.
+  customer: {
+    label: 'Membership Card',
+    appleType: 'pass.com.vesopa.membership',
+    appleStyle: 'storeCard',
+    classResource: 'genericClass',
+    objectResource: 'genericObject',
+    payloadKey: 'genericObjects',
+  },
+  giftcard: {
+    label: 'Gift Card',
+    appleType: 'pass.com.vesopa.giftcard',
+    appleStyle: 'storeCard',
+    classResource: 'giftCardClass',
+    objectResource: 'giftCardObject',
+    payloadKey: 'giftCardObjects',
+  },
+  staff: {
+    label: 'Staff Card',
+    appleType: 'pass.com.vesopa.staff',
+    appleStyle: 'generic',
+    classResource: 'genericClass',
+    objectResource: 'genericObject',
+    payloadKey: 'genericObjects',
+  },
+  promo: {
+    label: 'Promotion',
+    appleType: 'pass.com.vesopa.promo',
+    appleStyle: 'coupon',
+    classResource: 'offerClass',
+    objectResource: 'offerObject',
+    payloadKey: 'offerObjects',
+  },
 };
 
-/** The key each kind takes in a save JWT's payload. */
-const PAYLOAD_KEYS = {
-  loyalty: 'loyaltyObjects',
-  customer: 'genericObjects',
-  staff: 'genericObjects',
-  promo: 'offerObjects',
-};
+/** The Google resources behind each kind. Derived, so it cannot disagree. */
+const KINDS = Object.fromEntries(
+  Object.entries(PASS_TYPES).map(([kind, t]) => [
+    kind,
+    { classResource: t.classResource, objectResource: t.objectResource },
+  ])
+);
+
+/** The key each kind takes in a save JWT's payload. Also derived. */
+const PAYLOAD_KEYS = Object.fromEntries(
+  Object.entries(PASS_TYPES).map(([kind, t]) => [kind, t.payloadKey])
+);
 
 class WalletError extends Error {
   constructor(message, status) {
@@ -290,6 +358,59 @@ function buildPass({ kind, config, office, brand = {}, subject = {} }) {
           ['Member no', subject.member_no],
           ['Member since', subject.member_since],
           ['Phone', subject.phone],
+        ]),
+        linksModuleData,
+      },
+    };
+  }
+
+  if (kind === 'giftcard') {
+    // Google's gift card object carries the balance itself, in a currency
+    // object rather than as text, which is what makes the phone show "£25.00"
+    // in the right place and update it when the till spends some of it.
+    const money = (minor, currency) => ({
+      micros: Math.round(Number(minor || 0) * 10000),
+      currencyCode: currency || 'GBP',
+    });
+    return {
+      classId,
+      objectId,
+      klass: {
+        id: classId,
+        issuerName,
+        reviewStatus,
+        countryCode: 'GB',
+        programLogo: logo,
+        heroImage: hero,
+        hexBackgroundColor,
+        // The card's own title, not the loyalty programme's: a venue running a
+        // rewards scheme and selling gift cards is running two things.
+        merchantName: issuerName,
+        localizedMerchantName: text(issuerName),
+        // Google shows these two under the balance, and a gift card with no
+        // stated terms is the one people ring up about.
+        allowMultipleUsersPerObject: false,
+        linksModuleData,
+        textModulesData: textModules([['Terms', terms]]),
+      },
+      object: {
+        id: objectId,
+        classId,
+        state: subject.state || 'ACTIVE',
+        cardNumber: String(subject.card_number || subject.id || ''),
+        balance: money(subject.balance_minor, subject.currency),
+        // Google will not accept a balance without the moment it was true.
+        // Without it the phone shows a figure with no date and no way for the
+        // holder to tell whether it is this morning's or last Christmas's.
+        balanceUpdateTime: subject.balance_at || new Date().toISOString(),
+        barcode: barcode(subject.card_number || subject.id, subject.card_number),
+        validTimeInterval: subject.expires_on
+          ? { end: { date: `${subject.expires_on}T23:59:59.000Z` } }
+          : undefined,
+        textModulesData: textModules([
+          ['Issued', subject.issued_on],
+          ['Expires', subject.expires_on],
+          ['For', subject.name],
         ]),
         linksModuleData,
       },
@@ -594,6 +715,7 @@ function makeClient(config, fetchImpl = fetch) {
 }
 
 module.exports = {
+  PASS_TYPES,
   KINDS,
   PAYLOAD_KEYS,
   SAFE_JWT_LENGTH,

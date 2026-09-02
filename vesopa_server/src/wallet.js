@@ -39,6 +39,7 @@ function walletCore({ pool, secret }) {
     terms: '',
     loyalty_enabled: 1,
     customer_enabled: 0,
+    giftcard_enabled: 0,
     staff_enabled: 0,
     promo_enabled: 0,
   };
@@ -180,6 +181,37 @@ function walletCore({ pool, secret }) {
         role: 'Staff',
         card_number: await staffCardNumber(office, s.id),
         state: Number(s.active) ? 'ACTIVE' : 'INACTIVE',
+      };
+    }
+
+    if (kind === 'giftcard') {
+      const [[g]] = await pool.query(
+        `SELECT g.id, g.code, g.balance_minor, g.currency, g.expires_on, g.status,
+                g.recipient_name, g.created_at, g.updated_at, c.name AS customer_name
+           FROM epos_gift_cards g
+           LEFT JOIN epos_customers c ON c.id = g.customer_id
+          WHERE g.id = ? AND g.office = ?`,
+        [subjectId, office]
+      );
+      if (!g) return null;
+      const day = (d) => (d ? new Date(d).toISOString().slice(0, 10) : '');
+      return {
+        id: String(g.id),
+        // The code, not the uuid. It is what is printed on the plastic and
+        // typed into the till, so it is what the barcode has to encode.
+        card_number: g.code,
+        name: g.recipient_name || g.customer_name || '',
+        balance_minor: g.balance_minor,
+        currency: g.currency || 'GBP',
+        // Not `new Date()`: the balance is as of the last movement on the
+        // card, and stamping it with "now" on every mint would tell the holder
+        // their balance was checked this second when it was not.
+        balance_at: g.updated_at ? new Date(g.updated_at).toISOString() : undefined,
+        issued_on: day(g.created_at),
+        expires_on: day(g.expires_on),
+        // A spent or voided card stays in the wallet, greyed out, rather than
+        // vanishing — the holder needs to see that it was theirs and is empty.
+        state: g.status === 'active' ? 'ACTIVE' : 'EXPIRED',
       };
     }
 

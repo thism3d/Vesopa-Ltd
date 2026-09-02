@@ -296,10 +296,53 @@ test('missing artwork is left out, not sent as an empty image', () => {
 });
 
 test('an unknown pass kind is refused', () => {
+  // Not 'giftcard' — that used to be the example here and became a real kind,
+  // which turned this assertion into a green light for a genuine regression.
   assert.throws(
-    () => build('giftcard', { id: '1' }),
+    () => build('parking', { id: '1' }),
     (e) => e instanceof G.WalletError && e.status === 400
   );
+});
+
+test('every registered pass type carries both platforms', () => {
+  const kinds = Object.keys(G.PASS_TYPES);
+  assert.deepStrictEqual(kinds.sort(), ['customer', 'giftcard', 'loyalty', 'promo', 'staff']);
+  for (const [kind, t] of Object.entries(G.PASS_TYPES)) {
+    assert.match(t.appleType, /^pass\.com\.vesopa\.[a-z]+$/, kind);
+    assert.ok(['storeCard', 'coupon', 'generic', 'eventTicket', 'boardingPass'].includes(t.appleStyle), kind);
+    // The derived maps must not be able to disagree with the registry.
+    assert.strictEqual(G.KINDS[kind].classResource, t.classResource, kind);
+    assert.strictEqual(G.PAYLOAD_KEYS[kind], t.payloadKey, kind);
+  }
+  // Apple identifiers are permanent once a pass is in somebody's phone.
+  const apple = Object.values(G.PASS_TYPES).map((t) => t.appleType);
+  assert.strictEqual(new Set(apple).size, apple.length, 'apple identifiers must be unique');
+});
+
+test('a gift card carries its balance as money, not as text', () => {
+  const { klass, object } = build('giftcard', {
+    id: 'gc-1',
+    card_number: 'GIFT1',
+    name: 'Ann',
+    balance_minor: 2500,
+    currency: 'GBP',
+    balance_at: '2026-09-02T10:00:00.000Z',
+    expires_on: '2027-09-01',
+  });
+  assert.strictEqual(klass.id.split('.')[0], config.issuerId);
+  assert.strictEqual(object.cardNumber, 'GIFT1');
+  // £25.00 -> 25000000 micros. Wrong by a factor of 100 is the classic here.
+  assert.deepStrictEqual(object.balance, { micros: 25000000, currencyCode: 'GBP' });
+  assert.strictEqual(object.balanceUpdateTime, '2026-09-02T10:00:00.000Z');
+  assert.strictEqual(object.validTimeInterval.end.date, '2027-09-01T23:59:59.000Z');
+  assert.strictEqual(object.barcode.value, 'GIFT1');
+});
+
+test('a gift card with no expiry has no time interval at all', () => {
+  const { object } = build('giftcard', { id: 'gc-2', card_number: 'GIFT2', balance_minor: 0 });
+  assert.strictEqual(object.validTimeInterval, undefined);
+  assert.deepStrictEqual(object.balance, { micros: 0, currencyCode: 'GBP' });
+  assert.ok(object.balanceUpdateTime, 'Google rejects a balance with no timestamp');
 });
 
 // ---- The save link --------------------------------------------------------

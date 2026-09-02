@@ -47,10 +47,11 @@ CREATE TABLE IF NOT EXISTS epos_wallet_settings (
   support_phone     VARCHAR(40)  CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
   terms             TEXT         CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL,
 
-  -- Which of the four passes this office issues. A venue may well want a
+  -- Which of the five passes this office issues. A venue may well want a
   -- loyalty card and nothing else.
   loyalty_enabled   TINYINT(1)   NOT NULL DEFAULT 1,
   customer_enabled  TINYINT(1)   NOT NULL DEFAULT 0,
+  giftcard_enabled  TINYINT(1)   NOT NULL DEFAULT 0,
   staff_enabled     TINYINT(1)   NOT NULL DEFAULT 0,
   promo_enabled     TINYINT(1)   NOT NULL DEFAULT 0,
 
@@ -69,7 +70,7 @@ CREATE TABLE IF NOT EXISTS epos_wallet_settings (
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS epos_wallet_classes (
   office        VARCHAR(190) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
-  -- 'loyalty' | 'customer' | 'staff' | 'promo'
+  -- 'loyalty' | 'customer' | 'giftcard' | 'staff' | 'promo'
   kind          VARCHAR(16)  CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   -- The full Google class id, "<issuerId>.<suffix>".
   class_id      VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
