@@ -146,6 +146,13 @@ msix_config:
   # rather than to whatever it happened to be showing.
   protocol_activation: com.vesopa.display
 
+  # Passed straight through to the `flutter build windows` that msix runs for
+  # itself. `flutter build` already defaults to release, so this pins intent
+  # rather than changing behaviour -- a Store package built in debug is accepted
+  # by the packer and rejected by certification, and that is not a thing to
+  # leave resting on a default. The till pins it for the same reason.
+  windows_build_args: --release
+
   # The Store signs the package, so no local certificate is used or needed.
   store: true
 

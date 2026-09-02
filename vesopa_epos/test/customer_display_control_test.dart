@@ -176,4 +176,44 @@ void main() {
     statusFile().writeAsStringSync(jsonEncode({'format': 1}));
     expect((await readDisplayStatus(override: dir))!.isLive, isFalse);
   });
+
+  group('a code left on the screen', () {
+    test('is taken down when the till starts', () async {
+      // The hole the sheet's own tidy-up cannot cover: a till that is killed,
+      // crashes, or loses power while a customer's code is up leaves it on a
+      // screen facing the room, and nobody watches a customer display.
+      await writeDisplayControl(
+        const DisplayControl(
+          customerQr: 'https://example.test/c/abc',
+          customerQrCaption: 'Scan to add your loyalty card',
+          advertFolder: r'C:dverts',
+          thankYou: 'Diolch',
+        ),
+        override: dir,
+      );
+
+      expect(await clearCustomerCode(override: dir), isTrue);
+
+      final after = await readDisplayControl(override: dir);
+      expect(after.customerQr, isEmpty);
+      // Everything that is the venue's own is left exactly as it was. Clearing
+      // the code must not be a reset.
+      expect(after.advertFolder, r'C:dverts');
+      expect(after.thankYou, 'Diolch');
+    });
+
+    test('costs nothing when there is no code up', () async {
+      await writeDisplayControl(
+        const DisplayControl(thankYou: 'Diolch'),
+        override: dir,
+      );
+      expect(await clearCustomerCode(override: dir), isTrue);
+      expect((await readDisplayControl(override: dir)).thankYou, 'Diolch');
+    });
+
+    test('a machine with no display attached is not an error', () async {
+      final gone = Directory('${dir.path}/not-there');
+      expect(await clearCustomerCode(override: gone), isTrue);
+    });
+  });
 }

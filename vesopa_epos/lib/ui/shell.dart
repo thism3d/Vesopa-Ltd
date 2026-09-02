@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../config/constants.dart';
 import '../data/customer_display.dart';
+import '../data/customer_display_control.dart' show clearCustomerCode;
 import '../data/device_registry.dart';
 import '../data/display_pairing.dart';
 import '../data/session_controller.dart';
@@ -199,6 +200,20 @@ class _PosShellState extends ConsumerState<PosShell> {
       terminalName: terminalName,
       venueName: session.venueName,
     );
+
+    // Take down any customer's code left on the screen by a previous run.
+    //
+    // The sheet puts the venue's own screen back when it closes, and that
+    // covers every graceful exit. It covers nothing else: a till that is killed,
+    // crashes, or has its power pulled while a code is up leaves that code on a
+    // screen facing the room until somebody notices — and nobody is watching a
+    // customer display for faults, which is the whole reason it is worth a write
+    // to avoid.
+    //
+    // A code is a transient thing belonging to one customer at one moment. It
+    // never survives a restart on purpose, so clearing it here costs nothing and
+    // closes the only hole left.
+    await clearCustomerCode();
 
     final registry = ref.read(deviceRegistryProvider);
     if (!registry.canRegister) return;

@@ -4495,6 +4495,7 @@ async function loadWallet() {
   ]);
 
   renderWalletArt();
+  walletSaveButton('design');
   walletPreview();
   await Promise.all([
     loadWalletDesign(), loadWalletApple(), loadWalletPasses(), walletJoinCode(),
@@ -4891,6 +4892,19 @@ function renderWalletDesignEditor() {
   walletDesignPreview();
 }
 
+/**
+ * Whether the page's own Save button applies to what is on screen.
+ *
+ * "Save branding" saves the venue's settings, and the Design tab does not have
+ * any: each card has its own Save this card, and pressing the wrong one is the
+ * kind of thing that teaches somebody their changes are not being kept. So the
+ * header button is hidden on the tab it cannot save.
+ */
+function walletSaveButton(tab) {
+  const save = $('wallet-save');
+  if (save) save.hidden = tab === 'design';
+}
+
 function walletDesignPreview() {
   const box = $('wal-design-card');
   if (!box || !walletPrograms) return;
@@ -4918,6 +4932,7 @@ document.addEventListener('click', async (e) => {
     // The join code draws into a panel that was display:none when it was first
     // asked for, and an SVG measured at zero stays at zero. Redrawn on arrival.
     if (want === 'programme') walletJoinCode();
+    walletSaveButton(want);
     return;
   }
 

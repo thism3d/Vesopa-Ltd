@@ -120,7 +120,17 @@ class _WalletSheetState extends ConsumerState<_WalletSheet> {
   }
 
   Future<void> _showOnDisplay(WalletPass pass) async {
-    _displayBefore ??= await readDisplayControl();
+    // Whatever the venue had there, with any code stripped out.
+    //
+    // Without the strip, this restores what it found — and if what it found was
+    // another customer's code, "Take it off their screen" puts that code back
+    // and the screen never clears. That is not hypothetical: a till killed while
+    // a code was up leaves one in the file, and the next sale inherits it.
+    //
+    // A code is never part of the state worth restoring. The venue's own screen
+    // is the adverts and the bill.
+    _displayBefore ??= (await readDisplayControl())
+        .copyWith(customerQr: '', customerQrCaption: '');
     final base = _displayBefore;
     if (base == null || !mounted) return;
 

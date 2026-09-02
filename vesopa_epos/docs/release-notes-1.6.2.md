@@ -34,6 +34,17 @@ statement is guarded, so it is safe to re-run.
   Paired screens register into `bo_devices` / `bo_device_log`.
 - **Every sale carries its till.** Stamped as the outbox drains, so sales queued
   before this release are attributed too. Reports can filter by terminal.
+- **The counter's card buttons are the venue's to switch off.** Back office →
+  Cards → At the till: offer a card on a phone, offer to print one, and whether
+  the customer's code goes to the screen facing them. Both buttons default on.
+  The till re-reads these the moment they are saved rather than on the next
+  restart — it now listens for the `cards` push it was already being sent.
+- **The code reaches the customer's screen.** "Show on the customer screen"
+  reported success and drew nothing whenever the basket was empty, which is
+  almost always: "I cannot find my loyalty card" is said before anything is rung
+  up. A code the till has put up now beats the idle rule and takes the panel at
+  a size somebody can scan. **This is a Customer Display fix** — a 1.6.1 screen
+  will not have it.
 
 ---
 
