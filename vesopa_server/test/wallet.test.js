@@ -304,11 +304,25 @@ test('an unknown pass kind is refused', () => {
   );
 });
 
+// Read straight off the certificates:
+//   openssl x509 -inform DER -in <f>.cer -noout -subject
+const EXPECTED_APPLE_TYPES = {
+  loyalty: 'pass.com.vesopa.loyalty',
+  customer: 'pass.com.vesopa.membership',
+  giftcard: 'pass.com.vesopa.giftcard',
+  staff: 'pass.com.vesopa.staff',
+  promo: 'pass.com.vesopa.promotions',
+};
+
 test('every registered pass type carries both platforms', () => {
   const kinds = Object.keys(G.PASS_TYPES);
   assert.deepStrictEqual(kinds.sort(), ['customer', 'giftcard', 'loyalty', 'promo', 'staff']);
   for (const [kind, t] of Object.entries(G.PASS_TYPES)) {
     assert.match(t.appleType, /^pass\.com\.vesopa\.[a-z]+$/, kind);
+    // Pinned against the issued certificates in passes_and_oauth/, byte for
+    // byte. These cannot be corrected later: an identifier is fixed for the
+    // life of the certificate, and every pass already in a phone carries it.
+    assert.strictEqual(t.appleType, EXPECTED_APPLE_TYPES[kind], kind);
     assert.ok(['storeCard', 'coupon', 'generic', 'eventTicket', 'boardingPass'].includes(t.appleStyle), kind);
     // The derived maps must not be able to disagree with the registry.
     assert.strictEqual(G.KINDS[kind].classResource, t.classResource, kind);

@@ -103,7 +103,12 @@ const PASS_TYPES = {
   },
   promo: {
     label: 'Promotion',
-    appleType: 'pass.com.vesopa.promo',
+    // `promotions`, plural, and not a typo. The certificate Apple issued says
+    // pass.com.vesopa.promotions, and the certificate is the authority — it is
+    // already issued and cannot be renamed. A .pkpass whose passTypeIdentifier
+    // differs from its signing certificate by one letter is rejected with an
+    // error that does not name the field.
+    appleType: 'pass.com.vesopa.promotions',
     appleStyle: 'coupon',
     classResource: 'offerClass',
     objectResource: 'offerObject',
