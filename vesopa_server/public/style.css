@@ -4379,3 +4379,4 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
   color: var(--muted);
 }
 .pill.amber { background: rgba(247, 127, 0, .14); color: #a35200; }
+.print-card-actions { display: flex; gap: 10px; justify-content: center; }

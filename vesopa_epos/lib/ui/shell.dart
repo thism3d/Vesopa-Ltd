@@ -146,6 +146,24 @@ class _PosShellState extends ConsumerState<PosShell> {
     if (mounted) setState(() {});
   }
 
+  /// Re-read the card rules when the back office changes them.
+  ///
+  /// The rules were read once, at start-up, and nothing brought them back. That
+  /// was survivable while they were only prefixes -- a venue sets those once and
+  /// never touches them again -- and stopped being survivable when they grew the
+  /// two switches that decide whether the counter is offered a card at all. A
+  /// manager turning those off in the back office and walking out to the till to
+  /// check would have found them still there, with no way to tell a setting that
+  /// had not arrived from one that does not work.
+  ///
+  /// `cards` is the event PUT /api/cards/settings already broadcasts. The till
+  /// was simply not listening to it.
+  void _watchCardRules() {
+    ref.listen(syncEventsProvider, (_, next) {
+      if (next.value?.type == 'cards') unawaited(_readCardRules());
+    });
+  }
+
   /// Re-grant every paired display, and tell the back office what is here.
   ///
   /// Runs once, on the first screen the till draws after sign-in.
@@ -293,6 +311,11 @@ class _PosShellState extends ConsumerState<PosShell> {
     // on the network.
     ref.watch(brandingRefreshProvider);
     ref.watch(commerceRefreshProvider);
+
+    // Registered here because ref.listen belongs in build(). It is idempotent
+    // across rebuilds -- Riverpod replaces the subscription rather than adding
+    // a second one.
+    _watchCardRules();
 
     // Shown instead of the shell, not inside it: a till that cannot open a bill
     // cannot do anything the tabs offer either.
