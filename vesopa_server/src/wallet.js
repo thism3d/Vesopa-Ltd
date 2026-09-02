@@ -725,7 +725,14 @@ function walletCore({ pool, secret }) {
       );
     }
 
-    const brand = await readBrand(office);
+    // This card's own design, not just the venue's. epos_wallet_programs and
+    // readProgramBrand() have resolved a per-kind look since the table was
+    // added, and every pass ever built went past it to readBrand() -- so a
+    // venue could describe a gift card that looked nothing like its staff card
+    // and be handed two identical ones. Everything the design leaves blank
+    // still falls back to the venue's branding, which is what readProgramBrand
+    // returns, so this is the same object with more of it filled in.
+    const brand = await readProgramBrand(office, kind);
     const subject = await loadSubject(office, kind, subjectId);
     if (!subject) throw new G.WalletError('No such customer, staff member or promotion', 404);
 
@@ -885,12 +892,28 @@ const artwork = multer({
  * An absolute address for something this server serves.
  *
  * Google fetches artwork itself, from its own machines, so a relative path is a
- * picture that never appears and never explains why. The host is taken from the
- * request rather than from configuration: this app answers on one domain in
- * production and on localhost in a test, and both should produce a URL that
- * works from where the caller is standing.
+ * picture that never appears and never explains why — and neither does Google.
+ *
+ * BACKOFFICE_URL FIRST, AND NOT THE REQUEST'S OWN HOST
+ *
+ * This started out reading the host off the request, which is the obvious thing
+ * and is wrong here. The value is not used to answer this request; it is
+ * *stored*, and read months later by Google's fetcher. So it has to be the
+ * address the venue is reachable at, not the address this particular caller
+ * happened to use — and those differ every time the app is spoken to over
+ * loopback, which is how its own health checks, its tools and anything on the
+ * box reach it. One such call stores `http://127.0.0.1:5060/uploads/…`, which
+ * is a card with no artwork on it and nothing anywhere saying why.
+ *
+ * BACKOFFICE_URL is already the answer to this question everywhere else in this
+ * file — the sign-up links, the short links and the pass web service are all
+ * built from it. The request is the fallback, for a development machine that
+ * has not set it.
  */
 function publicUrl(req, pathname) {
+  const configured = String(process.env.BACKOFFICE_URL || '').replace(/\/+$/, '');
+  if (configured) return `${configured}${pathname}`;
+
   const proto = String(req.headers['x-forwarded-proto'] || req.protocol || 'https')
     .split(',')[0]
     .trim();

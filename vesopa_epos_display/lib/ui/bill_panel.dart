@@ -191,19 +191,25 @@ class _Totals extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (basket.discountMinor > 0)
+          // A total of nothing is not a total. When the till has put a code up
+          // before anything is rung up -- which is the usual way round, since
+          // the conversation is "I cannot find my card" -- a great big
+          // "Total £0.00" over the code says the wrong thing entirely.
+          if (basket.hasSale) ...[
+            if (basket.discountMinor > 0)
+              _Row(
+                label: 'Discount',
+                value: '-${money(basket.discountMinor)}',
+                size: 20,
+                muted: true,
+              ),
             _Row(
-              label: 'Discount',
-              value: '-${money(basket.discountMinor)}',
-              size: 20,
-              muted: true,
+              label: 'Total',
+              value: money(basket.totalMinor),
+              size: 46,
+              bold: true,
             ),
-          _Row(
-            label: 'Total',
-            value: money(basket.totalMinor),
-            size: 46,
-            bold: true,
-          ),
+          ],
           if (paid) ...[
             const SizedBox(height: 10),
             _Row(label: 'Paid', value: money(basket.paidMinor), size: 24),

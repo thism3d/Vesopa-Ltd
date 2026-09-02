@@ -59,7 +59,7 @@ function appleWalletRoutes({ pool, secret, core }) {
   // straight out of here rather than resizing anything.
   const uploadsDir = path.join(__dirname, '..', 'public', 'uploads');
 
-  const { readBrand, loadSubject, shortLink } = core;
+  const { readBrand, readProgramBrand, loadSubject, shortLink } = core;
 
   /**
    * Build one `.pkpass`, and remember the serial it was built with.
@@ -80,7 +80,14 @@ function appleWalletRoutes({ pool, secret, core }) {
       );
     }
 
-    const brand = await readBrand(office);
+    // This card's own design, with the venue's branding underneath it. The
+    // Apple half read the venue row directly and so never saw a per-kind
+    // design at all -- the colours, the name and the band a venue set on one
+    // card reached the Google pass and not the .pkpass, which is the shape of
+    // bug where two phones at the same counter disagree about what the card
+    // looks like. readProgramBrand() returns the venue row with the overrides
+    // laid on top, so every field this used before is still here.
+    const brand = await readProgramBrand(office, kind);
     if (!Number(brand.apple_enabled ?? 1)) {
       throw Object.assign(new Error('This venue is not issuing Apple passes.'), {
         status: 404,

@@ -22,6 +22,7 @@ import 'package:vesopa_epos_display/data/adverts.dart';
 import 'package:vesopa_epos_display/data/basket_feed.dart';
 import 'package:vesopa_epos_display/data/screens.dart';
 import 'package:vesopa_epos_display/data/settings.dart';
+import 'package:vesopa_epos_display/ui/display_page.dart' show shouldShowAdverts;
 import 'package:vesopa_epos_display/ui/theme.dart';
 
 void main() {
@@ -344,5 +345,77 @@ void main() {
     expect(money(0), '£0.00');
     expect(money(5), '£0.05');
     expect(money(-250), '-£2.50');
+  });
+
+  group('what takes the screen', () {
+    test('nothing rung up shows adverts, immediately', () {
+      expect(
+        shouldShowAdverts(
+          hasSale: false, customerQr: '', idleSeconds: 30,
+          sinceChange: Duration.zero,
+        ),
+        isTrue,
+      );
+    });
+
+    test('a live bill holds the screen until the countdown', () {
+      expect(
+        shouldShowAdverts(
+          hasSale: true, customerQr: '', idleSeconds: 30,
+          sinceChange: const Duration(seconds: 29),
+        ),
+        isFalse,
+      );
+      expect(
+        shouldShowAdverts(
+          hasSale: true, customerQr: '', idleSeconds: 30,
+          sinceChange: const Duration(seconds: 30),
+        ),
+        isTrue,
+      );
+    });
+
+    test('zero seconds means the bill never gives the screen up', () {
+      expect(
+        shouldShowAdverts(
+          hasSale: true, customerQr: '', idleSeconds: 0,
+          sinceChange: const Duration(hours: 3),
+        ),
+        isFalse,
+      );
+    });
+
+    test('a code the till put up beats an empty basket', () {
+      // The bug this is here for: the customer asking for their card has not
+      // bought anything yet, so the screen was idle and the code went to a
+      // panel that was not on screen -- while the till reported success.
+      expect(
+        shouldShowAdverts(
+          hasSale: false, customerQr: 'https://example.test/c/abc',
+          idleSeconds: 30, sinceChange: const Duration(hours: 1),
+        ),
+        isFalse,
+      );
+    });
+
+    test('and beats a bill that has gone quiet', () {
+      expect(
+        shouldShowAdverts(
+          hasSale: true, customerQr: 'https://example.test/c/abc',
+          idleSeconds: 5, sinceChange: const Duration(minutes: 10),
+        ),
+        isFalse,
+      );
+    });
+
+    test('taking the code away lets the adverts back', () {
+      expect(
+        shouldShowAdverts(
+          hasSale: false, customerQr: '', idleSeconds: 30,
+          sinceChange: const Duration(hours: 1),
+        ),
+        isTrue,
+      );
+    });
   });
 }

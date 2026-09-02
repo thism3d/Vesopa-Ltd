@@ -80,6 +80,10 @@ class _CardsPageState extends ConsumerState<CardsPage> {
   @override
   Widget build(BuildContext context) {
     final cards = ref.watch(cardRepositoryProvider);
+    // The repository is one long-lived object whose settings change in place, so
+    // watching it alone would never rebuild this page. The revision is what
+    // moves when the back office changes the rules.
+    ref.watch(cardRulesRevisionProvider);
     final settings = cards.settings;
     final last = ref.watch(lastCardReadProvider);
 

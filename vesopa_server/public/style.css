@@ -4380,3 +4380,9 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
 }
 .pill.amber { background: rgba(247, 127, 0, .14); color: #a35200; }
 .print-card-actions { display: flex; gap: 10px; justify-content: center; }
+
+/* The venue's two pictures, on the Programme tab. A logo is a small mark and
+   is shown at its own shape rather than stretched into the band's frame. */
+.wal-art-preview.logo { width: 160px; height: 50px; }
+.wal-art-preview.logo img { object-fit: contain; }
+.wal-art [data-artclear][hidden] { display: none !important; }

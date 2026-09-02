@@ -143,7 +143,12 @@ class _PosShellState extends ConsumerState<PosShell> {
     // The pull is a courtesy. Nothing waits on it and a failure is not reported
     // anywhere: the till carries on with what it had.
     await cards.sync();
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    // Anything already on screen that is laid out from these rules -- the Swipe
+    // cards page, chiefly -- watches this rather than the repository, which
+    // mutates in place and so never looks changed. See cardRulesRevisionProvider.
+    ref.read(cardRulesRevisionProvider.notifier).bump();
+    setState(() {});
   }
 
   /// Re-read the card rules when the back office changes them.

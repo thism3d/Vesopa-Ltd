@@ -41,6 +41,41 @@ class DisplayPage extends ConsumerStatefulWidget {
   ConsumerState<DisplayPage> createState() => _DisplayPageState();
 }
 
+/// Whether the adverts take the screen, rather than the bill.
+///
+/// Lifted out of the widget so it can be tested on its own: everything in here
+/// is three booleans and a duration, and everything around it is a Flutter tree
+/// that needs a monitor. The same trick the back office plays with its crop
+/// geometry, for the same reason.
+///
+/// THE ORDER OF THESE THREE RULES IS THE WHOLE FUNCTION
+///
+/// A code the till has put up wins over all of it. That is the fix for the bug
+/// that made "Show on the customer screen" look broken: the move it exists for
+/// is a customer at the counter who cannot find their loyalty card, and that
+/// conversation happens BEFORE anything is rung up. So the basket was empty,
+/// the screen was idle, the adverts had the whole of it, and the code was
+/// handed to a bill panel that was not on screen — while the till said "Take it
+/// off their screen", because from the till's side the write had succeeded.
+bool shouldShowAdverts({
+  required bool hasSale,
+  required String customerQr,
+  required int idleSeconds,
+  required Duration sinceChange,
+}) {
+  if (customerQr.isNotEmpty) return false;
+
+  // Nothing rung up is not a quiet moment in a sale, it is no sale. Adverts
+  // take the screen immediately rather than after the countdown.
+  if (!hasSale) return true;
+
+  // Zero means never: a screen beside a busy bar may want the bill up
+  // permanently, and that is an answer rather than a mistake.
+  if (idleSeconds <= 0) return false;
+
+  return sinceChange >= Duration(seconds: idleSeconds);
+}
+
 class _DisplayPageState extends ConsumerState<DisplayPage> {
   BasketFeed? _feed;
   AdvertLibrary? _library;
@@ -235,15 +270,12 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
   }
 
   /// Whether the adverts should have the whole screen.
-  bool _isIdle(DisplaySettings settings) {
-    // Nothing rung up is not a quiet moment in a sale, it is no sale. Adverts
-    // take the screen immediately rather than after the countdown.
-    if (!_basket.hasSale) return true;
-    // Zero means never: a screen beside a busy bar may want the bill up
-    // permanently, and that is an answer rather than a mistake.
-    if (settings.idleSeconds <= 0) return false;
-    return DateTime.now().difference(_lastChange) >= settings.idleAfter;
-  }
+  bool _isIdle(DisplaySettings settings) => shouldShowAdverts(
+    hasSale: _basket.hasSale,
+    customerQr: settings.customerQr,
+    idleSeconds: settings.idleSeconds,
+    sinceChange: DateTime.now().difference(_lastChange),
+  );
 
   @override
   Widget build(BuildContext context) {

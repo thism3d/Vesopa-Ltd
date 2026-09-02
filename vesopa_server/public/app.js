@@ -4494,6 +4494,7 @@ async function loadWallet() {
     { label: 'Cards issued', value: '…', tone: '' },
   ]);
 
+  renderWalletArt();
   walletPreview();
   await Promise.all([
     loadWalletDesign(), loadWalletApple(), loadWalletPasses(), walletJoinCode(),
@@ -4644,6 +4645,11 @@ function walletPreview() {
     hex_label: read('hex_label'),
     program_name: read('program_name'),
     issuer_name: read('issuer_name'),
+    // The two pictures live on walletState rather than in an input, so they are
+    // taken from there — and the venue's band is `photo_url`, which is what a
+    // card with no design of its own falls back to.
+    strip_url: (walletState && walletState.photo_url) || '',
+    logo_url: (walletState && walletState.logo_url) || '',
   };
 
   const cards = WALLET_KINDS.filter((k) =>
@@ -4691,9 +4697,17 @@ let walletDesignKind = 'loyalty';
 /** Edits not yet saved, per kind. Cleared when a card is saved or reset. */
 let walletDesignDraft = {};
 
-/** Apple's strip sizes. The browser is the codec; see POST /wallet/artwork. */
+/**
+ * Apple's own pixel sizes. The browser is the codec; see POST /wallet/artwork.
+ *
+ * OUT_* is @1x and the upload sends @2x alongside it. These are Apple's
+ * published sizes for a storeCard: 375x123 for the strip, 160x50 for the logo.
+ * Google accepts anything and crops to its own ratio, so matching Apple exactly
+ * is the constraint that satisfies both.
+ */
 const WAL_ART = {
   strip: { OUT_W: 375, OUT_H: 123, VIEW_W: 330, VIEW_H: 108 },
+  logo: { OUT_W: 160, OUT_H: 50, VIEW_W: 288, VIEW_H: 90 },
 };
 
 async function loadWalletDesign() {
@@ -4742,7 +4756,10 @@ function walletResolved(kind) {
     program_name: pick('program_name'),
     issuer_name: venue('issuer_name'),
     logo_url: venue('logo_url'),
-    strip_url: String(design.strip_url ?? '').trim(),
+    // This card's own band, then the venue's. Same order artworkFor() uses on
+    // the server, so the preview and the issued card agree about which picture
+    // wins.
+    strip_url: String(design.strip_url ?? '').trim() || venue('photo_url'),
   };
 }
 
@@ -5012,23 +5029,82 @@ document.addEventListener('change', async (e) => {
       return; // cancelled, or not an image
     }
 
-    const body = new FormData();
-    body.append('x1', blobs.x1, 'strip.png');
-    body.append('x2', blobs.x2, 'strip@2x.png');
     try {
-      const res = await fetch('/api/wallet/artwork', {
-        method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        body,
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Upload failed');
-      walletDesignEdit('strip_url', data.url);
+      walletDesignEdit('strip_url', await uploadWalletArt(blobs));
       renderWalletDesignEditor();
     } catch (err) {
       alert(String(err && err.message ? err.message : err));
     }
+    return;
   }
+
+  // ---- The venue's own band and mark, on the Programme tab ----
+  const field = e.target.closest && e.target.closest('.wal-art[data-artfield]');
+  if (field && e.target.type === 'file') {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+
+    let blobs;
+    try {
+      blobs = await cropWalletArt(file, field.dataset.artshape);
+    } catch {
+      return; // cancelled, or not an image
+    }
+    try {
+      walletSetArt(field.dataset.artfield, await uploadWalletArt(blobs));
+    } catch (err) {
+      alert(String(err && err.message ? err.message : err));
+    }
+  }
+});
+
+/** Send both scales, and hand back the address they are served at. */
+async function uploadWalletArt(blobs) {
+  const body = new FormData();
+  body.append('x1', blobs.x1, 'art.png');
+  body.append('x2', blobs.x2, 'art@2x.png');
+  const res = await fetch('/api/wallet/artwork', {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body,
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Upload failed');
+  return data.url;
+}
+
+/**
+ * Hold one of the venue's two pictures.
+ *
+ * Kept on walletState rather than in a hidden input, because there is no input
+ * to keep it in — the control is a thumbnail and two buttons. The Save branding
+ * button reads walletState for exactly these two fields, so an upload is not
+ * live until it is saved, which matches every other field on the tab.
+ */
+function walletSetArt(fieldName, url) {
+  if (!walletState) return;
+  walletState[fieldName] = url || '';
+  renderWalletArt();
+  walletPreview();
+}
+
+/** Draw both venue pictures from whatever walletState currently holds. */
+function renderWalletArt() {
+  for (const box of document.querySelectorAll('.wal-art[data-artfield]')) {
+    const url = walletState ? walletState[box.dataset.artfield] || '' : '';
+    const preview = box.querySelector('.wal-art-preview');
+    preview.innerHTML = url
+      ? `<img src="${esc(url)}" alt="">`
+      : '<span class="muted small">Vesopa artwork</span>';
+    const clear = box.querySelector('[data-artclear]');
+    if (clear) clear.hidden = !url;
+  }
+}
+
+document.addEventListener('click', (e) => {
+  const clear = e.target.closest && e.target.closest('.wal-art [data-artclear]');
+  if (clear) walletSetArt(clear.closest('.wal-art').dataset.artfield, '');
 });
 
 /**
@@ -5041,8 +5117,8 @@ document.addEventListener('change', async (e) => {
  * the browser has already decoded is the one image operation that needs no
  * library and cannot go wrong.
  */
-async function cropWalletArt(file) {
-  const shape = WAL_ART.strip;
+async function cropWalletArt(file, which = 'strip') {
+  const shape = WAL_ART[which] || WAL_ART.strip;
   CROP_SHAPES.wallet_strip = {
     OUT_W: shape.OUT_W * 2, OUT_H: shape.OUT_H * 2,
     VIEW_W: shape.VIEW_W, VIEW_H: shape.VIEW_H,
@@ -5257,6 +5333,12 @@ document.addEventListener('click', async (e) => {
     const body = {};
     for (const el of document.querySelectorAll('[data-wal]')) {
       body[el.dataset.wal] = el.type === 'checkbox' ? el.checked : el.value;
+    }
+    // The two pictures have no input to be read out of — the control is a
+    // thumbnail and two buttons — so they come off walletState, which is where
+    // an upload or a Remove put them.
+    for (const field of ['photo_url', 'logo_url']) {
+      body[field] = (walletState && walletState[field]) || '';
     }
     await api('/wallet/settings', { method: 'PUT', body: JSON.stringify(body) });
     e.target.textContent = 'Saved ✓';
