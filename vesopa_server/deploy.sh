@@ -3,7 +3,7 @@
 # Vesopa EPOS back office — one-command deploy from your Mac to the live server.
 #
 #   ./deploy.sh                 Deploy the server + admin SPA, then restart pm2.
-#   ./deploy.sh --schema        ALSO apply the schema_*.sql migrations to the live DB.
+#   ./deploy.sh --schema        ALSO apply the schema/*.sql migrations to the live DB.
 #                               They are all IF NOT EXISTS / guarded, so this is safe
 #                               to re-run, but it is opt-in because it touches the DB.
 #   ./deploy.sh --db-push       ALSO overwrite the LIVE database with your LOCAL data.
@@ -183,11 +183,22 @@ fi
 
 # ---- Schema migrations (opt-in) ------------------------------------------
 if [[ $DO_SCHEMA -eq 1 ]]; then
-  step "Applying schema_*.sql to the live database…"
+  step "Applying schema/*.sql to the live database…"
   # Ordered so the base schema lands before the files that alter it. Each is
   # guarded (IF NOT EXISTS, or the vesopa_add_column procedure), so re-running is
   # a no-op rather than an error.
-  R "cd '$REMOTE_APP' && for f in schema.sql \$(ls schema_*.sql | sort); do
+  #
+  # They live in schema/ rather than beside the code. Fifty of them at the root
+  # of the project buried deploy.sh, package.json and src/ in a wall of
+  # migrations, and the one thing anybody needs to see about these files -- the
+  # order they run in -- is easier to read as a directory listing than as every
+  # other line of `ls`.
+  #
+  # The filenames did NOT change, and must not: this loop sorts by name, several
+  # files carry a comment explaining which file they must sort after, and the
+  # whole ordering discipline is that sort. Moving them is safe; renaming one is
+  # not.
+  R "cd '$REMOTE_APP/schema' && for f in schema.sql \$(ls schema_*.sql | sort); do
        echo \"  → \$f\";
        mysql '$DB_NAME' < \"\$f\" || echo '    (skipped: already applied or not needed)';
      done"
