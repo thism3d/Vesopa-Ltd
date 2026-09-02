@@ -3919,10 +3919,16 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
    thing and its rendering is not ours to promise; what this shows is the three
    things the venue actually controls -- the artwork, the colours and the words
    -- in the arrangement the pass puts them in. */
+/* A pass, at the size a phone gives it.
+   Apple lays out at 375pt wide; anything wider here is a preview that flatters
+   a design which will not fit. Centred rather than stretched, so the panel can
+   be any width without the card following it. */
 .wal-pass {
+  width: 100%;
+  max-width: 320px;
+  margin: 0 auto 16px;
   border-radius: 14px;
   overflow: hidden;
-  margin-bottom: 14px;
   box-shadow: 0 6px 18px rgba(0, 0, 0, .28);
   font-size: .9rem;
 }
@@ -3931,45 +3937,107 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
   justify-content: space-between;
   align-items: baseline;
   gap: 10px;
-  padding: 12px 14px 10px;
+  padding: 11px 13px 9px;
 }
-.wal-pass-logo { font-weight: 700; letter-spacing: .01em; }
+.wal-pass-logo {
+  font-weight: 700;
+  letter-spacing: .01em;
+  font-size: .82rem;
+  /* A long programme name truncates rather than wrapping the header onto two
+     lines, which is what Wallet itself does with it. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .wal-pass-kind {
-  font-size: .68rem;
+  font-size: .62rem;
   text-transform: uppercase;
   letter-spacing: .12em;
   font-weight: 700;
+  white-space: nowrap;
 }
-/* The band of artwork. Fixed ratio so it crops the way Apple's strip does
-   rather than changing shape with the panel. */
+/* The band of artwork, with the headline value sitting on it — which is where
+   Apple puts a storeCard's primary field, and why the points were missing from
+   this preview before: there was nowhere for them to go. */
 .wal-pass-strip {
+  position: relative;
   aspect-ratio: 375 / 123;
   background-size: cover;
   background-position: center;
 }
-.wal-pass-body { padding: 14px; }
+/* A scrim under the headline value.
+   The strip is a photograph whose brightness is the venue's choice, and the
+   label sits in the brand colour -- lime on a bright gold gradient is
+   unreadable, and no amount of text-shadow fixes a mid-tone. Darkening the
+   bottom third is what Apple does with its own strip layouts, and it is the
+   only approach that works for artwork this code has never seen. */
+.wal-pass-strip::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(0, 0, 0, .72) 0%, rgba(0, 0, 0, .35) 28%, transparent 58%);
+  pointer-events: none;
+}
+.wal-pass-primary {
+  z-index: 1;
+  position: absolute;
+  left: 13px;
+  bottom: 10px;
+  right: 13px;
+  /* The artwork underneath is a photograph and its brightness is the venue's
+     choice, so the text carries its own shadow rather than trusting contrast
+     it cannot check. */
+  text-shadow: 0 1px 4px rgba(0, 0, 0, .75);
+}
 .wal-pass-label {
   display: block;
-  font-size: .62rem;
+  font-size: .58rem;
   text-transform: uppercase;
   letter-spacing: .14em;
   font-weight: 700;
-  margin-bottom: 2px;
+  margin-bottom: 1px;
 }
-.wal-pass-value { font-size: 1.65rem; font-weight: 700; line-height: 1.1; }
+.wal-pass-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.05;
+  display: block;
+}
+/* The secondary row. Wraps rather than scrolling: three fields is what fits on
+   a phone, and a fourth belongs on the back of the card. */
+.wal-pass-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  padding: 11px 13px 4px;
+}
+.wal-pass-field { min-width: 0; }
+.wal-pass-small {
+  font-size: .8rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+}
 .wal-pass-foot {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0 14px 14px;
-  font-size: .72rem;
+  gap: 10px;
+  padding: 10px 13px 13px;
+  font-size: .68rem;
+}
+.wal-pass-venue {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 /* Stands in for the barcode. Deliberately abstract: drawing a fake barcode
    would invite somebody to try scanning the preview. */
 .wal-pass-code {
   flex: 1;
-  height: 26px;
-  margin-right: 12px;
+  height: 24px;
   border-radius: 4px;
   background: repeating-linear-gradient(
     90deg, currentColor 0 2px, transparent 2px 5px);

@@ -4475,6 +4475,18 @@ function normaliseHex(value, fallback) {
  * three things the venue actually controls: the artwork, the colours and the
  * words, in the arrangement the pass puts them in.
  */
+/**
+ * What the customer gets, at the size they get it.
+ *
+ * Apple lays a pass out at 375pt wide and the preview is capped to match: it
+ * was rendering at whatever width the panel happened to be, which made a
+ * loyalty card look like a poster and hid how little room the fields actually
+ * have. A design that only works at 600px wide is a design that does not work.
+ *
+ * The fields shown are the ones buildPassJson() actually writes, in the same
+ * order and the same three tiers, so this stops being decoration and starts
+ * being a rehearsal -- a value that overflows here overflows on the phone.
+ */
 function walletPreview() {
   const read = (name) => {
     const el = document.querySelector(`[data-wal="${name}"]`);
@@ -4490,26 +4502,46 @@ function walletPreview() {
     document.querySelector(`[data-wal="${k.key}_enabled"]`)?.checked
   );
 
+  // One row of "label / value" under the strip, per kind. These mirror the
+  // secondaryFields and auxiliaryFields in src/wallet_apple.js.
+  const DETAIL = {
+    loyalty:  [['Member', 'Sarah Jones'], ['Tier', 'Gold'], ['Member no.', '1']],
+    customer: [['Member no.', '1'], ['Tier', 'Gold'], ['Discount', '10% off']],
+    giftcard: [['For', 'Owen Price'], ['Expires', '14 Jan 2027']],
+    staff:    [['Role', 'Manager'], ['Card', '999900007']],
+    promo:    [['Valid until', '31 Dec']],
+  };
+
   $('wallet-preview').innerHTML = (cards.length ? cards : [WALLET_KINDS[0]])
-    .map(
-      (k) => `
-      <div class="wal-pass" style="background:${esc(background)};color:${esc(foreground)}">
+    .map((k) => {
+      const details = (DETAIL[k.key] || [])
+        .map(([l, v]) => `
+          <div class="wal-pass-field">
+            <span class="wal-pass-label" style="color:${esc(label)}">${esc(l)}</span>
+            <span class="wal-pass-small">${esc(v)}</span>
+          </div>`)
+        .join('');
+
+      return `
+      <figure class="wal-pass" style="background:${esc(background)};color:${esc(foreground)}">
         <div class="wal-pass-head">
           <span class="wal-pass-logo">${esc(programme)}</span>
           <span class="wal-pass-kind" style="color:${esc(label)}">${esc(k.label)}</span>
         </div>
         <div class="wal-pass-strip"
-             style="background-image:url('/assets/wallet/strip_${esc(k.key)}.png')"></div>
-        <div class="wal-pass-body">
-          <span class="wal-pass-label" style="color:${esc(label)}">${esc(k.field)}</span>
-          <span class="wal-pass-value">${esc(k.value)}</span>
+             style="background-image:url('/assets/wallet/strip_${esc(k.key)}.png')">
+          <div class="wal-pass-primary">
+            <span class="wal-pass-label" style="color:${esc(label)}">${esc(k.field)}</span>
+            <span class="wal-pass-value">${esc(k.value)}</span>
+          </div>
         </div>
+        ${details ? `<div class="wal-pass-fields">${details}</div>` : ''}
         <div class="wal-pass-foot">
           <span class="wal-pass-code"></span>
           <span class="wal-pass-venue" style="color:${esc(label)}">${esc(venue)}</span>
         </div>
-      </div>`
-    )
+      </figure>`;
+    })
     .join('');
 }
 

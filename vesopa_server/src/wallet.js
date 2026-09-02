@@ -176,6 +176,135 @@ function walletCore({ pool, secret }) {
     return null;
   }
 
+  // ---- Programmes ---------------------------------------------------------
+  //
+  // One venue runs up to five, and a venue reasonably wants its gift card to
+  // look nothing like its staff pass. epos_wallet_programs holds the
+  // differences; everything it leaves NULL falls back to the venue's own
+  // branding, so a venue that has never opened the screen still has five
+  // programmes that look like its brand.
+
+  /**
+   * The design for one programme: the venue's branding with the programme's
+   * own overrides laid on top.
+   *
+   * Returns the same shape `readBrand` does, so everything downstream --
+   * buildPassJson, the Google class builder, the preview -- takes one kind of
+   * object and does not need to know a programme even exists.
+   */
+  async function readProgramBrand(office, kind, brand) {
+    const base = brand || (await readBrand(office));
+    let row = null;
+    try {
+      const [[found]] = await pool.query(
+        'SELECT * FROM epos_wallet_programs WHERE office = ? AND kind = ?',
+        [office, kind]
+      );
+      row = found || null;
+    } catch {
+      // The migration may not have run. A programme with no overrides is
+      // exactly what the venue's own branding already describes.
+      row = null;
+    }
+    if (!row) return { ...base, kind };
+
+    const merged = { ...base, kind };
+    // Only a value the venue actually set overrides the default. '' is a
+    // cleared field and means "inherit", the same as NULL -- otherwise
+    // emptying a box would paint the card black rather than restoring it.
+    for (const field of [
+      'program_name', 'hex_background', 'hex_foreground', 'hex_label',
+      'strip_url', 'terms', 'change_message',
+    ]) {
+      const value = row[field];
+      if (value !== null && value !== undefined && String(value).trim() !== '') {
+        merged[field] = value;
+      }
+    }
+    merged.program_code = row.code || null;
+    return merged;
+  }
+
+  /** Every programme for a venue, designs resolved, for the back office. */
+  async function readPrograms(office) {
+    const brand = await readBrand(office);
+    const out = [];
+    for (const kind of Object.keys(G.PASS_TYPES)) {
+      const design = await readProgramBrand(office, kind, brand);
+      out.push({
+        kind,
+        label: G.PASS_TYPES[kind].label,
+        apple_type: G.PASS_TYPES[kind].appleType,
+        enabled: Number(brand[`${kind}_enabled`]) ? 1 : 0,
+        code: design.program_code || (await ensureProgramCode(office, kind, brand)),
+        program_name: design.program_name || '',
+        hex_background: design.hex_background || '',
+        hex_foreground: design.hex_foreground || '',
+        hex_label: design.hex_label || '',
+        strip_url: design.strip_url || '',
+        terms: design.terms || '',
+        change_message: design.change_message || '',
+      });
+    }
+    return out;
+  }
+
+  /**
+   * The programme's own code, generated on first ask.
+   *
+   * Shaped `<venue>-<programme>` so it reads as what it is on a poster --
+   * `vesopa-kitchen-giftcard` -- and falls back to random characters for a
+   * venue with no usable name. Uniqueness is settled by the index, not by the
+   * SELECT above it, for the same reason the venue's own code is.
+   */
+  async function ensureProgramCode(office, kind, brand) {
+    try {
+      const [[row]] = await pool.query(
+        'SELECT code FROM epos_wallet_programs WHERE office = ? AND kind = ?',
+        [office, kind]
+      );
+      if (row && row.code) return row.code;
+
+      const base = brand || (await readBrand(office));
+      const venue = base.join_slug || slugFromName(base.issuer_name) || randomSlug();
+      for (let attempt = 0; attempt < 12; attempt += 1) {
+        const candidate = attempt === 0
+          ? `${venue}-${kind}`
+          : `${venue}-${kind}-${randomSlug().slice(0, 3)}`;
+        try {
+          await pool.execute(
+            `INSERT INTO epos_wallet_programs (office, kind, code) VALUES (?, ?, ?)
+             ON DUPLICATE KEY UPDATE code = COALESCE(code, VALUES(code))`,
+            [office, kind, candidate]
+          );
+          const [[saved]] = await pool.query(
+            'SELECT code FROM epos_wallet_programs WHERE office = ? AND kind = ?',
+            [office, kind]
+          );
+          if (saved && saved.code) return saved.code;
+        } catch (e) {
+          if (e.code !== 'ER_DUP_ENTRY') throw e;
+        }
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** The office and kind a programme code belongs to, or null. */
+  async function programForCode(code) {
+    try {
+      const [[row]] = await pool.query(
+        'SELECT office, kind FROM epos_wallet_programs WHERE code = ?',
+        [String(code || '').trim().toLowerCase()]
+      );
+      return row || null;
+    } catch {
+      return null;
+    }
+  }
+
   /**
    * Which office a code in the URL belongs to.
    *
@@ -553,6 +682,10 @@ function walletCore({ pool, secret }) {
     SLUG_RESERVED,
     ensureJoinSlug,
     officeForHandle,
+    readProgramBrand,
+    readPrograms,
+    ensureProgramCode,
+    programForCode,
   };
 }
 
@@ -950,10 +1083,11 @@ function walletPublicRoutes({ pool, secret, core }) {
       const handle = String(req.params.office);
       const office = await officeForHandle(handle);
       const brand = await readBrand(office);
-      if (!Number(brand.enabled) || !Number(brand.loyalty_enabled)) {
-        return res.status(404).type('html').send(page('Not available', 'This venue is not issuing loyalty cards.'));
+      const offered = selfServePrograms(brand);
+      if (!Number(brand.enabled) || !offered.length) {
+        return res.status(404).type('html').send(page('Not available', 'This venue is not issuing cards.'));
       }
-      res.type('html').send(joinPage(brand, handle, null));
+      res.type('html').send(joinPage(brand, handle, null, offered));
     } catch (e) {
       next(e);
     }
@@ -964,9 +1098,16 @@ function walletPublicRoutes({ pool, secret, core }) {
       const handle = String(req.params.office);
       const office = await officeForHandle(handle);
       const brand = await readBrand(office);
-      if (!Number(brand.enabled) || !Number(brand.loyalty_enabled)) {
+      const offered = selfServePrograms(brand);
+      if (!Number(brand.enabled) || !offered.length) {
         return res.status(404).type('html').send(page('Not available', ''));
       }
+
+      // The programme the customer picked, checked against what is actually
+      // offered rather than trusted: this is a public form, and `kind` arriving
+      // as "giftcard" must not mint one.
+      const wanted = String(req.body.kind || '').trim();
+      const kind = offered.some((p) => p.kind === wanted) ? wanted : offered[0].kind;
 
       const name = String(req.body.name || '').trim();
       const phone = String(req.body.phone || '').replace(/\s+/g, '');
@@ -974,7 +1115,7 @@ function walletPublicRoutes({ pool, secret, core }) {
         return res
           .status(400)
           .type('html')
-          .send(joinPage(brand, handle, 'Please enter your name and a valid phone number.'));
+          .send(joinPage(brand, handle, 'Please enter your name and a valid phone number.', offered));
       }
 
       // Scanning the poster twice must not create a second account — the
@@ -995,7 +1136,7 @@ function walletPublicRoutes({ pool, secret, core }) {
         );
       }
 
-      await mint(office, 'loyalty', id);
+      await mint(office, kind, id);
 
       // Both badges, on one page, rather than a redirect to Google.
       //
@@ -1005,7 +1146,7 @@ function walletPublicRoutes({ pool, secret, core }) {
       // fix for that is a page with two buttons on it rather than a cleverer
       // guess.
       const token = jwt.sign(
-        { scope: 'wallet', office, kind: 'loyalty', sub: String(id) },
+        { scope: 'wallet', office, kind, sub: String(id) },
         secret,
         { expiresIn: '365d' }
       );
@@ -1022,6 +1163,8 @@ function walletPublicRoutes({ pool, secret, core }) {
 function page(title, detail) {
   return `<!doctype html><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#111111">
+<link rel="icon" href="/assets/favicon.png">
 <title>${escapeHtml(title)}</title>
 <style>
   body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0b0f14;color:#e6edf3;
@@ -1034,22 +1177,104 @@ function page(title, detail) {
 }
 
 /** The self-enrolment form. Same constraints: one file, no external assets. */
-function joinPage(brand, office, error) {
+/**
+ * The programmes a customer can sign themselves up for.
+ *
+ * Loyalty and membership only. The other three are issued *to* somebody by the
+ * venue and must never be self-serve: a gift card carries a balance somebody
+ * paid for, a staff pass opens a till, and an offer is the venue's to hand out.
+ * A public form that minted any of the three would be a way to help yourself.
+ */
+const SELF_SERVE_KINDS = ['loyalty', 'customer'];
+
+function selfServePrograms(brand) {
+  return SELF_SERVE_KINDS
+    .filter((kind) => Number(brand[`${kind}_enabled`]))
+    .map((kind) => ({
+      kind,
+      label: kind === 'loyalty' ? 'Points card' : 'Membership',
+      hint: kind === 'loyalty'
+        ? 'Collect points on what you spend'
+        : 'Your membership and any standing discount',
+    }));
+}
+
+/**
+ * The head every customer-facing wallet page shares.
+ *
+ * WHY THIS EXISTS
+ *
+ * These links get shared -- pasted into WhatsApp, texted between staff,
+ * dropped in a group chat by the customer who just joined. Without Open Graph
+ * tags that share renders as a bare URL: no name, no logo, nothing that says
+ * which venue it belongs to. With them it renders as the venue's card.
+ *
+ * The image has to be an absolute https:// URL. Every scraper that reads these
+ * -- iMessage, WhatsApp, Slack, Facebook -- fetches it from the open internet
+ * with no session and no relative-path resolution, so a path like
+ * `/assets/logo.png` silently produces a preview with a blank square, which is
+ * indistinguishable from having no tag at all.
+ */
+function socialHead({ title, description, brand, url }) {
+  const base = String(process.env.BACKOFFICE_URL || '').replace(/\/+$/, '');
+  const absolute = (value) => {
+    const v = String(value || '').trim();
+    if (/^https:\/\//i.test(v)) return v;
+    if (!v || !base) return '';
+    return `${base}/${v.replace(/^\/+/, '')}`;
+  };
+
+  // The venue's own logo when it has one, and Vesopa's mark when it does not.
+  // A preview with the wrong logo would be worse; a preview with no logo is
+  // just a link again.
+  const image = absolute(brand.logo_url) || absolute('/assets/wallet/logo@2x.png');
+  const themeColour = /^#[0-9a-f]{6}$/i.test(brand.hex_background || '')
+    ? brand.hex_background
+    : '#111111';
+
+  return `<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${escapeHtml(title)}</title>
+<meta name="description" content="${escapeHtml(description)}">
+<meta name="theme-color" content="${escapeHtml(themeColour)}">
+<link rel="icon" href="${escapeHtml(absolute('/assets/favicon.png'))}">
+<link rel="apple-touch-icon" href="${escapeHtml(image)}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="${escapeHtml(brand.issuer_name || 'Vesopa')}">
+<meta property="og:title" content="${escapeHtml(title)}">
+<meta property="og:description" content="${escapeHtml(description)}">
+${image ? `<meta property="og:image" content="${escapeHtml(image)}">` : ''}
+${url ? `<meta property="og:url" content="${escapeHtml(absolute(url))}">` : ''}
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="${escapeHtml(title)}">
+<meta name="twitter:description" content="${escapeHtml(description)}">
+${image ? `<meta name="twitter:image" content="${escapeHtml(image)}">` : ''}`;
+}
+
+function joinPage(brand, office, error, offered = []) {
   const name = escapeHtml(brand.issuer_name || 'Loyalty');
   const programme = escapeHtml(brand.program_name || 'Rewards');
   const colour = /^#[0-9a-f]{6}$/i.test(brand.hex_background || '')
     ? brand.hex_background
     : '#0f5132';
   const logo = /^https:\/\//i.test(brand.logo_url || '') ? brand.logo_url : '';
-  return `<!doctype html><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${programme}</title>
+  return `<!doctype html>
+${socialHead({
+    title: `${brand.program_name || 'Rewards'} — ${brand.issuer_name || 'Join'}`,
+    description: `Join at ${brand.issuer_name || 'our venue'} and keep your card in Apple Wallet or Google Wallet.`,
+    brand,
+    url: `/wallet/join/${office}`,
+  })}
 <style>
   :root{color-scheme:dark}
   body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0b0f14;color:#e6edf3;
        font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding:24px}
   form{width:min(24rem,100%);background:#121821;border:1px solid #1e2733;border-radius:16px;padding:24px}
-  img{width:72px;height:72px;border-radius:50%;object-fit:cover;display:block;margin:0 auto 16px}
+  /* Contained, and not a circle. A venue's logo is as often a wide wordmark as
+     a round badge, and cover-cropping inside a 72px circle reduces a wordmark
+     to the two letters in the middle of it. */
+  img{max-width:180px;max-height:72px;width:auto;height:auto;object-fit:contain;
+      display:block;margin:0 auto 16px}
   h1{font-size:1.35rem;margin:0 0 .25rem;text-align:center}
   .sub{margin:0 0 20px;text-align:center;color:#9aa7b4;font-size:.95rem}
   label{display:block;font-size:.85rem;color:#9aa7b4;margin:14px 0 6px}
@@ -1058,6 +1283,14 @@ function joinPage(brand, office, error) {
   button{width:100%;margin-top:20px;padding:14px;border:0;border-radius:10px;background:${colour};
          color:#fff;font-size:1rem;font-weight:600;cursor:pointer}
   .err{margin:12px 0 0;color:#ff8f8f;font-size:.9rem}
+  .pick{border:0;padding:0;margin:18px 0 0}
+  .pick legend{font-size:.85rem;color:#9aa7b4;padding:0;margin-bottom:8px}
+  .pick-one{display:flex;gap:10px;align-items:flex-start;padding:11px 12px;margin-bottom:8px;
+            border:1px solid #263244;border-radius:10px;cursor:pointer}
+  .pick-one input{margin:2px 0 0;width:auto;accent-color:${colour}}
+  .pick-one span{display:block;font-size:.92rem}
+  .pick-one em{display:block;font-style:normal;color:#9aa7b4;font-size:.8rem;margin-top:1px}
+  .pick-one:has(input:checked){border-color:${colour};background:rgba(255,255,255,.03)}
   .fine{margin:16px 0 0;color:#6b7889;font-size:.78rem;text-align:center}
 </style>
 <form method="post" action="/wallet/join/${encodeURIComponent(office)}">
@@ -1065,6 +1298,17 @@ function joinPage(brand, office, error) {
   <h1>${programme}</h1>
   <p class="sub">Join at ${name} and add your card to your phone.</p>
   ${error ? `<p class="err">${escapeHtml(error)}</p>` : ''}
+  ${offered.length > 1 ? `
+  <fieldset class="pick">
+    <legend>What would you like?</legend>
+    ${offered.map((p, i) => `
+    <label class="pick-one">
+      <input type="radio" name="kind" value="${escapeHtml(p.kind)}"${i === 0 ? ' checked' : ''}>
+      <span><strong>${escapeHtml(p.label)}</strong><em>${escapeHtml(p.hint)}</em></span>
+    </label>`).join('')}
+  </fieldset>` : offered.length === 1
+    ? `<input type="hidden" name="kind" value="${escapeHtml(offered[0].kind)}">`
+    : ''}
   <label for="name">Your name</label>
   <input id="name" name="name" autocomplete="name" required>
   <label for="phone">Mobile number</label>
@@ -1138,16 +1382,20 @@ function googleWalletBadge() {
  */
 function addPage(brand, token) {
   const logo = /^https:\/\//i.test(brand.logo_url || '') ? brand.logo_url : '';
-  return `<!doctype html><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Add your card</title>
+  return `<!doctype html>
+${socialHead({
+    title: `Your ${brand.issuer_name || ''} card`.replace(/\s+/g, ' ').trim(),
+    description: 'Add it to Apple Wallet or Google Wallet.',
+    brand,
+  })}
 <style>
   :root{color-scheme:dark}
   body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0b0f14;color:#e6edf3;
        font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding:24px}
   .card{width:min(24rem,100%);background:#121821;border:1px solid #1e2733;border-radius:16px;
         padding:24px;text-align:center}
-  .logo{width:64px;height:64px;border-radius:50%;object-fit:cover;display:block;margin:0 auto 16px}
+  .logo{max-width:180px;max-height:64px;width:auto;height:auto;object-fit:contain;
+        display:block;margin:0 auto 16px}
   h1{font-size:1.35rem;margin:0 0 .25rem}
   p{margin:0 0 20px;color:#9aa7b4;font-size:.95rem}
   a{display:block;margin-top:12px;text-decoration:none}
