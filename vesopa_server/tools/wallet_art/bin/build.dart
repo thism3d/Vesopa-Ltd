@@ -16,7 +16,7 @@
 ///
 /// WHY THE STRIPS ARE CROPPED RATHER THAN SQUASHED
 ///
-/// The generated art is 21:9 (2.33:1) and Apple's strip is 375x123 (3.05:1).
+/// The generated art is 21:9 (2.33:1) and Apple's strip is 375x98 (3.83:1).
 /// Fitting one to the other by scaling both axes independently would stretch
 /// the artwork; taking the centre band keeps it. See [_coverCrop].
 library;
@@ -29,9 +29,16 @@ import 'package:image/image.dart' as img;
 /// server root, two levels up from this package.
 const _assets = '../../assets/wallet';
 
-/// Apple's strip, at each scale. 375x123 is the reference; the multiples are
+/// Apple's strip, at each scale. 375x98 is the reference; the multiples are
 /// what iOS actually asks for.
-const _stripSizes = {'': (375, 123), '@2x': (750, 246), '@3x': (1125, 369)};
+///
+/// 98pt, not 123. An `eventTicket` strip is 98pt tall and a `storeCard` one is
+/// 144 — these were rendered at 123 for the old style, and all five passes moved
+/// to `eventTicket` to get `groupingIdentifier` (see PASS_TYPES in
+/// src/wallet_google.js). A strip that is too tall is not rejected; iOS crops it
+/// to fit, off centre, which is a card that looks subtly wrong on a phone and
+/// perfectly fine everywhere it is checked.
+const _stripSizes = {'': (375, 98), '@2x': (750, 196), '@3x': (1125, 294)};
 
 /// Apple's icon. Required — an archive without one is rejected outright, with
 /// no message naming the file.
@@ -39,7 +46,12 @@ const _iconSizes = {'': 29, '@2x': 58, '@3x': 87};
 
 /// Apple's logo, as a maximum. The mark keeps its own proportions inside this
 /// box rather than being fitted to it.
-const _logoHeights = {'': 50, '@2x': 100, '@3x': 150};
+///
+/// 22pt, not 50. At 50 the wordmark filled all 160pt of Apple's logo box, so
+/// every card — whoever issued it — read as an advertisement for Vesopa rather
+/// than as the venue's own card. The chevron at 22pt sits beside the venue's
+/// name instead of instead of it. See [_logo] for which source that is.
+const _logoHeights = {'': 22, '@2x': 44, '@3x': 66};
 
 const _kinds = ['loyalty', 'customer', 'giftcard', 'staff', 'promo'];
 
@@ -141,17 +153,29 @@ void _icon() {
   }
 }
 
-/// The wordmark, on dark — which is what a Vesopa pass is.
+/// The chevron, on dark — a small mark beside the venue's name.
+///
+/// NOT the wordmark any more. `vesopa_logo_on_dark` is 160x43 of lettering, and
+/// at the old 50pt box it filled Apple's logo slot completely: the top-left of
+/// every card, whoever issued it, said VESOPA in full. A customer's loyalty card
+/// belongs to the pub, not to the company that sells the pub its till.
+///
+/// So the source is `mark` — the `v` chevron cropped out of that wordmark, with
+/// transparency around it — and it is drawn at 22pt beside the venue's name,
+/// which `logoText` now carries (see buildPassJson in src/wallet_apple.js).
+///
+/// Falls back to the wordmark if no chevron has been cropped, because a card
+/// with a slightly overbearing logo still works and a card with none looks
+/// broken.
 ///
 /// Trimmed first: the source has transparent margin around it, and Apple gives
 /// the logo a fixed box, so untrimmed padding shows up as a mark that looks too
 /// small and off-centre.
 void _logo() {
-  final source = _find(
-    '../../../vesopa_epos_display/assets/brand/vesopa_logo_on_dark',
-  );
+  final source = _find('$_assets/mark') ??
+      _find('../../../vesopa_epos_display/assets/brand/vesopa_logo_on_dark');
   if (source == null) {
-    stderr.writeln('! no wordmark found; logos not written');
+    stderr.writeln('! no mark or wordmark found; logos not written');
     return;
   }
   var decoded = img.decodeImage(source.readAsBytesSync());
