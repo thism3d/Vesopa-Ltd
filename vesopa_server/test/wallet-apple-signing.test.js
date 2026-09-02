@@ -188,6 +188,39 @@ check('the signature verifies against the manifest', () => {
   }
 });
 
+check('the signature carries the attributes Wallet expects', () => {
+  // The bug this exists to prevent: signing with `-noattr`.
+  //
+  // A signature with no authenticated attributes verifies perfectly under
+  // `openssl smime -verify` — the check above passes — and iOS refuses the
+  // pass in silence. No error on the phone, no error in any log, and the pass
+  // still renders a preview in Messages, so it looks like a delivery problem
+  // rather than a signing one. It cost a day.
+  //
+  // Apple's own `signpass`, and every library that signs passes in
+  // production, emit these three. So must we.
+  const files = unzip(built.loyalty.bytes);
+  const work = fs.mkdtempSync(path.join(os.tmpdir(), 'vesopa-attrs-'));
+  try {
+    fs.writeFileSync(path.join(work, 'signature'), files.signature);
+    const printed = String(
+      execFileSync('openssl', [
+        'pkcs7', '-inform', 'DER', '-in', path.join(work, 'signature'), '-print',
+      ], { stdio: ['pipe', 'pipe', 'pipe'] })
+    );
+
+    for (const attr of ['contentType', 'messageDigest', 'signingTime']) {
+      assert.ok(
+        printed.includes(attr),
+        `the signature is missing the ${attr} authenticated attribute — ` +
+          `this pass will verify with openssl and refuse to install on a phone`
+      );
+    }
+  } finally {
+    fs.rmSync(work, { recursive: true, force: true });
+  }
+});
+
 check('each pass is signed by its own pass type certificate', () => {
   // The mismatch Apple rejects with an error naming no field at all — and the
   // one a single shared key bundle could produce if the certificate were not

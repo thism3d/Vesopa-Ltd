@@ -182,6 +182,35 @@ function findBundle(dir, { certDir, passphrase }) {
   return '';
 }
 
+/**
+ * Whether this openssl understands `-legacy`, worked out once by asking it.
+ *
+ * OpenSSL 3 needs the flag to read a Keychain-exported .p12 (RC2/3DES moved to
+ * the legacy provider). OpenSSL 1.x and LibreSSL -- which is what macOS ships,
+ * and what a developer's machine therefore runs -- have no such flag and fail
+ * the whole command with a usage message when handed it.
+ *
+ * Both are real: OpenSSL 3.0 on the Debian box, 1.0.2/LibreSSL in front of it.
+ * Guessing from `openssl version` means parsing a version string; asking the
+ * binary what it accepts is shorter and cannot be wrong. The answer is cached
+ * because it costs a process and cannot change while this one is running.
+ */
+let legacyFlagSupported = null;
+function pkcs12LegacyArgs() {
+  if (legacyFlagSupported === null) {
+    try {
+      execFileSync('openssl', ['pkcs12', '-help'], { stdio: 'pipe', timeout: 10000 });
+      legacyFlagSupported = false;
+    } catch (e) {
+      // `pkcs12 -help` exits non-zero on every version; the usage text it
+      // prints is what actually says whether the flag exists.
+      const usage = String(e.stderr || '') + String(e.stdout || '');
+      legacyFlagSupported = usage.includes('-legacy');
+    }
+  }
+  return legacyFlagSupported ? ['-legacy'] : [];
+}
+
 /** The public half of one of the pass certificates, as a fingerprint. */
 function certificatePublicKey(certDir) {
   for (const file of Object.values(CER_FILES)) {
@@ -208,15 +237,17 @@ function certificatePublicKey(certDir) {
  * argument is visible in `ps` to every account on the machine for as long as
  * the call runs.
  *
- * `-legacy` because a .p12 exported by macOS Keychain is encrypted with
- * 3DES, which OpenSSL 3 moved out of the default provider. Without it a correct
- * passphrase reads as an unsupported algorithm.
+ * `-legacy` when the local openssl has it: a .p12 exported by macOS Keychain
+ * is encrypted with 3DES, which OpenSSL 3 moved out of the default provider,
+ * and without the flag a correct passphrase reads as an unsupported algorithm.
+ * See pkcs12LegacyArgs() for why it cannot simply always be passed.
  */
 function bundlePublicKey(bundle, passphrase) {
   try {
     const key = execFileSync(
       'openssl',
-      ['pkcs12', '-in', bundle, '-nocerts', '-nodes', '-passin', 'env:VESOPA_P12_PASS', '-legacy'],
+      ['pkcs12', '-in', bundle, '-nocerts', '-nodes', '-passin', 'env:VESOPA_P12_PASS',
+       ...pkcs12LegacyArgs()],
       {
         stdio: 'pipe',
         timeout: 10000,
@@ -593,10 +624,18 @@ function solidPng(width, height, cssRgb) {
  * The detached PKCS#7 over `manifest.json`.
  *
  * `-binary` so the manifest is signed byte for byte rather than as text with
- * line endings normalised, `-outform DER` because Apple will not read PEM here,
- * and `-noattr` to leave out the authenticated attributes Apple does not expect.
- * Getting any of the three wrong produces a pass that fails to install with no
+ * line endings normalised, and `-outform DER` because Apple will not read PEM
+ * here. Getting either wrong produces a pass that fails to install with no
  * message naming the signature.
+ *
+ * There is deliberately NO `-noattr`. An earlier version of this file had it,
+ * on the belief that Apple did not expect authenticated attributes; the
+ * opposite is true. Apple's own `signpass`, and every library that signs passes
+ * in production, emit the signed attributes -- contentType, messageDigest and
+ * signingTime -- and a signature without them verifies perfectly under
+ * `openssl smime -verify` while Wallet refuses the pass in silence. Valid to
+ * openssl, rejected by the phone, no error anywhere: that was the bug, and it
+ * cost a day, so it is worth the paragraph.
  *
  * The manifest goes to a temp file rather than stdin: `openssl smime` reads its
  * input by name, and the alternative is a pipe whose failure mode is a hang.
@@ -626,16 +665,17 @@ function sign(manifest, kind, config) {
     // `openssl smime` takes a PEM certificate and key and not a PKCS#12. Both
     // land in a directory this process created and deletes.
     //
-    // `-legacy` because a .p12 exported by macOS Keychain uses RC2/3DES, which
-    // OpenSSL 3 moved to the legacy provider. Without it the export reads as
-    // "unsupported" and looks like a wrong passphrase.
+    // `-legacy` when this openssl has it -- see pkcs12LegacyArgs(). A .p12
+    // exported by macOS Keychain uses RC2/3DES, which OpenSSL 3 moved to the
+    // legacy provider; without the flag the export reads as "unsupported" and
+    // looks like a wrong passphrase.
     // Through the environment, never as `pass:...` on the argv. An argument
     // is visible in `ps` to every account on the machine for as long as the
     // call runs, and this box is shared with other tenants — so a command
     // line here would leak the Wallet passphrase on every pass signed.
     run(
       ['pkcs12', '-in', bundle, '-nocerts', '-nodes', '-out', keyPath,
-       '-passin', 'env:VESOPA_P12_PASS', '-legacy'],
+       '-passin', 'env:VESOPA_P12_PASS', ...pkcs12LegacyArgs()],
       'read the private key',
       { VESOPA_P12_PASS: config.passphrase || '' }
     );
@@ -663,8 +703,7 @@ function sign(manifest, kind, config) {
          '-inkey', keyPath,
          '-in', manifestPath,
          '-out', signaturePath,
-         '-outform', 'DER',
-         '-noattr'], 'sign the pass');
+         '-outform', 'DER'], 'sign the pass');
 
     return fs.readFileSync(signaturePath);
   } finally {

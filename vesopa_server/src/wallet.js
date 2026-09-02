@@ -585,11 +585,35 @@ function walletRoutes({ pool, broadcast, secret, core }) {
       const office = await tenantEmail(req);
       const kind = String(req.query.kind || '').trim();
       const [rows] = await pool.query(
+        // Every text comparison here is forced to one collation on both sides.
+        // The four tables genuinely disagree on the live database:
+        // epos_wallet_passes.office and .subject_id are utf8mb4_general_ci,
+        // epos_customers.id/.email_key and epos_promotions.office are
+        // utf8mb4_uca1400_ai_ci (MariaDB 11.4's default for a bare utf8mb4),
+        // and bo_clarks.email is utf8mb3. MariaDB will not compare two of
+        // those without being told which collation to use: left alone it
+        // raises ER_CANT_AGGREGATE_2COLLATIONS and this listing 500s for
+        // every venue. It is raised when the statement is prepared, so an
+        // empty table fails just as loudly as a full one.
+        //
+        // Collating in the query rather than converting the columns keeps a
+        // live ALTER off tables the till writes to. epos_customers needs it on
+        // `id` as well as on the office -- that column is CHAR(36) in the same
+        // uca1400 collation. bo_clarks.id and epos_promotions.id are INT, so
+        // those comparisons are numeric and need nothing.
         `SELECT p.*,
                 CASE p.kind
-                  WHEN 'staff' THEN (SELECT clark_name FROM bo_clarks WHERE id = p.subject_id AND email = p.office)
-                  WHEN 'promo' THEN (SELECT name FROM epos_promotions WHERE id = p.subject_id AND office = p.office)
-                  ELSE (SELECT name FROM epos_customers WHERE id = p.subject_id AND email_key = p.office)
+                  WHEN 'staff' THEN (SELECT clark_name FROM bo_clarks WHERE id = p.subject_id
+                                      AND CONVERT(email USING utf8mb4) COLLATE utf8mb4_general_ci
+                                        = CONVERT(p.office USING utf8mb4) COLLATE utf8mb4_general_ci)
+                  WHEN 'promo' THEN (SELECT name FROM epos_promotions WHERE id = p.subject_id
+                                      AND CONVERT(office USING utf8mb4) COLLATE utf8mb4_general_ci
+                                        = CONVERT(p.office USING utf8mb4) COLLATE utf8mb4_general_ci)
+                  ELSE (SELECT name FROM epos_customers
+                         WHERE CONVERT(id USING utf8mb4) COLLATE utf8mb4_general_ci
+                             = CONVERT(p.subject_id USING utf8mb4) COLLATE utf8mb4_general_ci
+                           AND CONVERT(email_key USING utf8mb4) COLLATE utf8mb4_general_ci
+                             = CONVERT(p.office USING utf8mb4) COLLATE utf8mb4_general_ci)
                 END AS subject_name
          FROM epos_wallet_passes p
          WHERE p.office = ? ${kind ? 'AND p.kind = ?' : ''}
