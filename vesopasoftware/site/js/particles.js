@@ -217,7 +217,7 @@ function mark(regions, off, n, r) {
   if (regions) regions.fill(r, off, off + n);
 }
 
-/* ---------- the ten scroll targets ---------- */
+/* ---------- the twelve scroll targets ---------- */
 
 export function fieldShape(count) {                      // S0 dispersed / hero
   const o = new Float32Array(count*3);
@@ -372,6 +372,120 @@ export function visaShape(count, regions) {
     o[k+1] = y * cs - z * sn;
     o[k+2] = y * sn + z * cs;
   }
+  return o;
+}
+
+/* Mastercard: two interlocking circles and the lens where they overlap. Three
+   regions, because the overlap is a third colour and not a blend — #FF5F00 is
+   its own brand value, and additive points cannot produce it by chance.
+
+   Each region is rasterised as its own draw so the point counts can follow the
+   real areas: at equal counts the lens, being the smallest region, comes out
+   three times denser than the discs and reads as a bright bar through the
+   middle of the mark. */
+export const MASTERCARD_PALETTE = ["#EB001B", "#FF5F00", "#F79E1B"];
+export function mastercardShape(count, regions) {
+  const o = new Float32Array(count * 3);
+  // Canvas units, 0..1. The separation is what makes it Mastercard rather than
+  // a Venn diagram: the real mark overlaps by a bit over a quarter of a
+  // diameter, and at half a diameter — where this started — the lens is as
+  // wide as the discs and the whole thing reads as three stripes.
+  const CY = .500, R = .235, LX = .331, RX = .669;
+
+  const disc = (g, s, cx) => {
+    g.beginPath(); g.arc(s * cx, s * CY, s * R, 0, Math.PI * 2); g.fill();
+  };
+  // Areas, so the three regions come out at one density. The lens is
+  // 2r²·acos(d/2r) − (d/2)·√(4r²−d²) with d the distance between centres.
+  const d = RX - LX;
+  const lensA = 2 * R * R * Math.acos(d / (2 * R)) - (d / 2) * Math.sqrt(4 * R * R - d * d);
+  const soloA = Math.PI * R * R - lensA;
+  const total = 2 * soloA + lensA;
+  const nRed = Math.floor(count * soloA / total);
+  const nYel = Math.floor(count * soloA / total);
+  const nLens = count - nRed - nYel;
+
+  // Red: the left disc with the right one cut out of it.
+  glyphInto(o, 0, nRed, (g, s) => {
+    g.fillStyle = "#fff"; disc(g, s, LX);
+    g.globalCompositeOperation = "destination-out"; disc(g, s, RX);
+    g.globalCompositeOperation = "source-over";
+  }, 0, 0, 0, 1.90);
+  mark(regions, 0, nRed, 1);
+
+  // The lens: the left disc kept only where the right one covers it.
+  glyphInto(o, nRed, nLens, (g, s) => {
+    g.fillStyle = "#fff"; disc(g, s, LX);
+    g.globalCompositeOperation = "destination-in"; disc(g, s, RX);
+    g.globalCompositeOperation = "source-over";
+  }, 0, 0, 0, 1.90);
+  mark(regions, nRed, nLens, 2);
+
+  // Yellow: the right disc with the left one cut out of it.
+  glyphInto(o, nRed + nLens, nYel, (g, s) => {
+    g.fillStyle = "#fff"; disc(g, s, RX);
+    g.globalCompositeOperation = "destination-out"; disc(g, s, LX);
+    g.globalCompositeOperation = "source-over";
+  }, 0, 0, 0, 1.90);
+  mark(regions, nRed + nLens, nYel, 3);
+
+  // The same shallow roll the Visa mark takes, so the pair sit in one space.
+  const sn = Math.sin(-.20), cs = Math.cos(-.20);
+  for (let i = 0; i < count; i++) {
+    const k = i * 3, y = o[k+1], z = o[k+2];
+    o[k+1] = y * cs - z * sn;
+    o[k+2] = y * sn + z * cs;
+  }
+  return o;
+}
+
+/* The Apple mark: one silhouette — the two lobes, the notch between them, the
+   leaf and the bite. Monochrome, the way Apple itself draws it, so a single
+   palette entry rather than a set of regions. Near-white, because this target
+   sits on the night half of the page.
+
+   Drawn as one path plus one erase: filling the body and the leaf and then
+   taking the bite out with `destination-out` is what makes the bite a real
+   concave edge. Painting a background-coloured circle over the top instead
+   would leave the points underneath it in the hit list, and the field would
+   draw a whole apple with a suspiciously dense patch on its right. */
+export const APPLE_PALETTE = ["#F5F5F7"];
+export function appleShape(count, regions) {
+  const o = new Float32Array(count * 3);
+  glyphInto(o, 0, count, (g, s) => {
+    g.fillStyle = "#fff";
+
+    // The body. Two lobes that meet in a shallow notch at the top centre —
+    // the notch is the reason this reads as an apple and not as a pear.
+    g.beginPath();
+    g.moveTo(s * .500, s * .335);
+    g.bezierCurveTo(s * .380, s * .245, s * .140, s * .285, s * .118, s * .520);
+    g.bezierCurveTo(s * .098, s * .740, s * .250, s * .960, s * .378, s * .960);
+    g.bezierCurveTo(s * .440, s * .960, s * .455, s * .915, s * .500, s * .915);
+    g.bezierCurveTo(s * .545, s * .915, s * .560, s * .960, s * .622, s * .960);
+    g.bezierCurveTo(s * .750, s * .960, s * .902, s * .740, s * .882, s * .520);
+    g.bezierCurveTo(s * .860, s * .285, s * .620, s * .245, s * .500, s * .335);
+    g.closePath();
+    g.fill();
+
+    // The leaf, leaning right off the stem: a lens made of two arcs, not an
+    // ellipse. An ellipse at this size reads as a full stop above the fruit.
+    g.beginPath();
+    g.moveTo(s * .512, s * .300);
+    g.bezierCurveTo(s * .520, s * .180, s * .600, s * .085, s * .700, s * .062);
+    g.bezierCurveTo(s * .712, s * .170, s * .650, s * .268, s * .548, s * .300);
+    g.closePath();
+    g.fill();
+
+    // The bite. Its centre sits outside the silhouette so the cut is a clean
+    // crescent off the right-hand edge rather than a hole punched in the face.
+    g.globalCompositeOperation = "destination-out";
+    g.beginPath();
+    g.arc(s * .988, s * .430, s * .205, 0, Math.PI * 2);
+    g.fill();
+    g.globalCompositeOperation = "source-over";
+  }, 0, 0, 0, 1.90);
+  mark(regions, 0, count, 1);
   return o;
 }
 
@@ -566,13 +680,15 @@ export function buildShapes(count) {
     mk(fieldShape),                                 // 0 hero
     mk(tillShape),                                  // 1 EPOS
     mk(screenShape),                                // 2 Kitchen
-    mk(windowsShape, WINDOWS_PALETTE),              // 3 Customer Display / Microsoft
-    mk(codeShape),                                  // 4 the story
-    mk(cloudShape),                                 // 5 Cloud
-    mk(envelopeShape),                              // 6 Mail
-    mk(coinShape, COIN_PALETTE),                    // 7 Pay — Bitcoin
-    mk(visaShape, VISA_PALETTE),                    // 8 the build work — Visa
-    mk(markShape, MARK_PALETTE),                    // 9 the V
+    mk(appleShape, APPLE_PALETTE),                  // 3 Customer Display — Apple
+    mk(windowsShape, WINDOWS_PALETTE),              // 4 the strip — Microsoft
+    mk(codeShape),                                  // 5 the story
+    mk(cloudShape),                                 // 6 Cloud
+    mk(envelopeShape),                              // 7 Mail
+    mk(coinShape, COIN_PALETTE),                    // 8 Pay — Bitcoin
+    mk(visaShape, VISA_PALETTE),                    // 9 the build work — Visa
+    mk(mastercardShape, MASTERCARD_PALETTE),        // 10 the quote — Mastercard
+    mk(markShape, MARK_PALETTE),                    // 11 the V — always last
   ];
 
   return {
@@ -589,7 +705,7 @@ export function buildShapes(count) {
 export async function upgradeShapes(shapes, count, base = "assets/particles/") {
   const jobs = [
     [1, "till",  .45],
-    [7, "token", .30],
+    [8, "token", .30],
   ];
   const changed = [];
   await Promise.all(jobs.map(async ([i, slug, d]) => {

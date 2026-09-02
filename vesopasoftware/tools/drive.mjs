@@ -97,7 +97,7 @@ async function shots() {
 /* Each shape belongs to a section now (data-shape), and is fully formed when
    that section is centred — so jumping to a target means finding its act and
    landing on the middle of it, not computing a scroll fraction. */
-const SHAPE_NAMES = ['field','till','screen','window','code','cloud','envelope','coin','visa','mark'];
+const SHAPE_NAMES = ['field','till','screen','apple','window','code','cloud','envelope','coin','visa','mastercard','mark'];
 async function morphTo(i) {
   await page.evaluate(k => {
     const el = document.querySelector(`[data-shape="${k}"]`);

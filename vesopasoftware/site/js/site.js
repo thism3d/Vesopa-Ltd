@@ -1,6 +1,6 @@
 /* Vesopa Software — the scroll spine.
  *
- * One particle field carries the whole page: ten morph targets, one draw call,
+ * One particle field carries the whole page: twelve morph targets, one draw call,
  * no per-frame allocation. Everything else — the video behind it, the
  * screenshots pinned in front of it, the stars over the top — hangs off the
  * same scroll read, in the same frame, so nothing can disagree with anything
@@ -27,7 +27,7 @@ const clamp01 = (v) => Math.min(1, Math.max(0, v));
 
 /* ---------- tier ----------
    Counts are sized to hold 16ms on a Pixel 7. The adaptive cut in frame() is
-   the safety net, not the plan. Ten morph targets rather than the original
+   the safety net, not the plan. Twelve morph targets rather than the original
    seven means the build is ~40% more work up front, which is precisely what
    the loader is covering. */
 const w = innerWidth, coarse = matchMedia("(pointer: coarse)").matches;
@@ -75,6 +75,12 @@ const canvas = document.getElementById("gl");
 const PROBE = location.search.includes("probe");
 // The fps readout is an instrument, not furniture: it only appears when asked.
 if (PROBE) document.body.classList.add("probing");
+
+/* Which platform is under us, for the one case where the *operating system*
+   draws on top of the page and the layout has to make room for it. Only iOS
+   and iPadOS do that in fullscreen; Android and the desktop do not, and a bar
+   shifted to clear a control that was never painted just looks misaligned. */
+if (isIOS()) document.body.classList.add("plat-ios");
 const renderer = new THREE.WebGLRenderer({
   canvas, alpha: true, antialias: false,
   powerPreference: "high-performance",

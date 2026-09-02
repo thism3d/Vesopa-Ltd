@@ -8,7 +8,7 @@ description: Build, serve, drive and screenshot the vesopasoftware.com marketing
 Two halves that share one origin and one server:
 
 - **The marketing site** (`site/`) — scroll-driven, one WebGL particle field
-  (one draw call) morphing through ten targets, and a night→dawn→day colour
+  (one draw call) morphing through twelve targets, and a night→dawn→day colour
   ramp timed to the story section. No build step, no framework.
 - **The portal** (`server/`) — Express + MySQL + EJS at `/portal`: customer
   accounts and teams, project tracking, files, tasks, a live message thread over
@@ -84,7 +84,7 @@ npm start &                          # site + portal + websockets on :5090
 node tools/drive.mjs check           # defaults to :5090/?probe=1
 node tools/drive.mjs shots           # screenshot each section, centred
 node tools/drive.mjs steps           # walk each showcase through its screens
-node tools/drive.mjs morphs          # screenshot each of the 10 particle targets
+node tools/drive.mjs morphs          # screenshot each of the 12 particle targets
 node tools/drive.mjs shots --mobile  # iPhone 12 viewport (flag goes last)
 node tools/drive.mjs video           # decode every clip: dimensions, duration, playable
 node tools/drive.mjs eval "document.title"
@@ -403,6 +403,23 @@ Three things about this endpoint cost real time to discover:
   the answer, it spends the whole budget on reasoning and returns empty content.
 
 ## Gotchas
+
+- **The V must stay the last morph target.** `markness()` in `site.js` asks
+  `idxB === NS - 1` — "are we on the final act" — and that single index drives
+  the lockup crossfade, the dark inner stroke and the finale's colour. Adding a
+  shape means inserting it *before* `markShape` in `buildShapes()`, renumbering
+  every `data-shape` in `index.html` after it, and fixing the two indices in
+  `upgradeShapes()` (the till and the token PNGs are addressed by position).
+  Append a target after the V instead and nothing errors — the finale simply
+  stops arriving, which is a hard fault to trace back to a roster edit.
+- **The fullscreen bar shift is Apple-only.** `body.plat-ios.is-fullscreen
+  .mark` indents the wordmark to clear the exit control Safari paints over the
+  top-left corner on iOS and iPadOS. Nothing else paints there, so the rule is
+  gated on a `plat-ios` class `site.js` sets from `isIOS()` — ungated it left
+  the brand indented from a bar that is flush everywhere else, which is what
+  Android showed. On a phone the chip labels are hidden, so `.ico-fs` swaps to
+  an arrows-in glyph in fullscreen: an arrows-out icon while already fullscreen
+  reads as "no way back", and the Exit control effectively goes missing.
 
 - **The loading screen is markup, not JavaScript.** `#loader` lives in
   `index.html` with its critical CSS inlined ahead of the stylesheet, and

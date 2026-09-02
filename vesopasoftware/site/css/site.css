@@ -601,9 +601,25 @@ body.is-fullscreen #perf{display:none}
 /* In fullscreen, Safari on iPad paints its own exit control over the top-left
    corner — directly on top of the wordmark, which read as "opa Software" with
    the first four letters underneath the button. Nothing can be drawn above
-   that control, so the brand moves out from under it instead. */
-body.is-fullscreen .mark{padding-left:max(5vw, 4.75rem)}
-body.is-fullscreen .mark-home{padding-left:env(safe-area-inset-left,0)}
+   that control, so the brand moves out from under it instead.
+
+   iOS and iPadOS only. Android and the desktop paint nothing there, so on
+   those the shift was clearing an obstacle that does not exist and the
+   wordmark simply sat indented from a bar that is flush everywhere else —
+   which is exactly how it looked: misaligned, for no reason anyone could see.
+   Our own Exit chip is the way out of fullscreen on those platforms, and it
+   is at the other end of the bar. */
+body.plat-ios.is-fullscreen .mark{padding-left:max(5vw, 4.75rem)}
+body.plat-ios.is-fullscreen .mark-home{padding-left:env(safe-area-inset-left,0)}
+
+/* The exit icon, for the one state where it means the opposite of its label.
+   On a phone the chip labels are off and the icon is all there is — an
+   outward-pointing arrows glyph while already fullscreen reads as "there is
+   no way back from here", which is how the Exit control went missing on
+   Android. Arrows in, once fullscreen is on. */
+body.is-fullscreen .ico-fs{
+  -webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 4h2v5H6V7h3V4zm4 0h2v3h3v2h-5V4zM6 15h5v5H9v-3H6v-2zm7 0h5v2h-3v3h-2v-5z'/%3E%3C/svg%3E");
+           mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 4h2v5H6V7h3V4zm4 0h2v3h3v2h-5V4zM6 15h5v5H9v-3H6v-2zm7 0h5v2h-3v3h-2v-5z'/%3E%3C/svg%3E")}
 
 /* ================= forms ================= */
 .form-card{
