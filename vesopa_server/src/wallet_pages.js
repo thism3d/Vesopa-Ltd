@@ -81,26 +81,54 @@ function walletPageRoutes({ pool, secret, core }) {
     return { office: claims.office, kind: claims.kind, brand, subject };
   }
 
-  /** A venue's loyalty rules, which are what make the numbers below mean anything. */
+  /**
+   * A venue's loyalty rules, which are what make the numbers on the page mean
+   * anything.
+   *
+   * THE TWO QUERIES FAIL SEPARATELY, AND THAT IS THE POINT
+   *
+   * They used to share a try/catch. The tiers query named two columns that do
+   * not exist — `epos_loyalty_tiers` has `discount_percent`, not the
+   * `discount_type`/`discount_value` pair `epos_customers` uses — so it threw,
+   * the catch returned "no rules at all", and the page quietly dropped the
+   * progress bar, the points value and the tier list. The card sitting beside
+   * it said "55 to go" from the same database, because it reads the settings by
+   * a different path.
+   *
+   * A page that disagrees with the card in the same wallet is worse than a page
+   * that is missing a section, and it was invisible: nothing threw, nothing
+   * logged, the page returned 200. So each half is caught on its own now and
+   * says so when it fails.
+   */
   async function loyaltyRules(office) {
+    let settings = null;
+    let tiers = [];
+
     try {
       const [[row]] = await pool.query(
         'SELECT * FROM epos_loyalty_settings WHERE office = ?',
         [office]
       );
-      const [tiers] = await pool.query(
-        `SELECT name, min_spend_minor, discount_type, discount_value
+      settings = row || null;
+    } catch (e) {
+      console.error(`[wallet] loyalty settings unreadable for ${office}: ${e.message}`);
+    }
+
+    try {
+      const [rows] = await pool.query(
+        `SELECT name, min_spend_minor, discount_percent, points_multiplier
            FROM epos_loyalty_tiers
           WHERE office = ? AND active = 1
           ORDER BY min_spend_minor ASC`,
         [office]
       );
-      return { settings: row || null, tiers: tiers || [] };
-    } catch {
-      // A venue that predates the loyalty tables still gets a page; it just
-      // shows the balance without the arithmetic around it.
-      return { settings: null, tiers: [] };
+      tiers = rows || [];
+    } catch (e) {
+      // A venue that predates the tiers table still gets the rest of the page.
+      console.error(`[wallet] loyalty tiers unreadable for ${office}: ${e.message}`);
     }
+
+    return { settings, tiers };
   }
 
   // ---------------------------------------------------------------------------
@@ -378,12 +406,14 @@ function tierTable(tiers, current) {
   return `<section><h2>Tiers</h2><ul class="tiers">${tiers
     .map((t) => {
       const mine = current && String(current) === String(t.name);
-      const perk =
-        t.discount_type === 'percent'
-          ? `${t.discount_value}% off`
-          : t.discount_type === 'amount'
-            ? `${money(t.discount_value, 'GBP')} off`
-            : '';
+      // `discount_percent` and `points_multiplier` are what this table actually
+      // holds — it is not the discount_type/discount_value pair that
+      // epos_customers carries, and assuming it was is what broke this page.
+      const perks = [
+        Number(t.discount_percent) ? `${Number(t.discount_percent)}% off` : '',
+        Number(t.points_multiplier) > 1 ? `${Number(t.points_multiplier)}× points` : '',
+      ].filter(Boolean);
+      const perk = perks.join(' · ');
       return `<li${mine ? ' class="mine"' : ''}>
         <strong>${escapeHtml(t.name)}</strong>
         ${perk ? `<span>${escapeHtml(perk)}</span>` : ''}

@@ -212,13 +212,55 @@ async function get(app, path) {
     assert.ok(/Nothing on just now/i.test(res.body), 'an empty page with no explanation');
   });
 
+  // The real column names. epos_loyalty_tiers has discount_percent and
+  // points_multiplier -- NOT the discount_type/discount_value pair that
+  // epos_customers carries. Naming the wrong ones threw, and a shared try/catch
+  // turned that into a page silently missing its progress bar and tier list.
   await check('tiers show which one the holder is on', async () => {
     const tiers = [
-      { name: 'Silver', min_spend_minor: 0, discount_type: 'percent', discount_value: 5 },
-      { name: 'Gold', min_spend_minor: 50000, discount_type: 'percent', discount_value: 10 },
+      { name: 'Silver', min_spend_minor: 0, discount_percent: 5, points_multiplier: 1 },
+      { name: 'Gold', min_spend_minor: 50000, discount_percent: 10, points_multiplier: 2 },
     ];
     const res = await get(harness({ tiers }), `/wallet/rewards/${tokenFor('loyalty')}`);
     assert.ok(res.body.includes('You are here'), 'the holder’s own tier is not marked');
+    assert.ok(res.body.includes('10% off'), 'the tier perk is not shown');
+    assert.ok(res.body.includes('2× points'), 'a points multiplier is not shown');
+  });
+
+  // The bug this pair exists to stop: a tiers query that fails must not take
+  // the reward arithmetic with it. The card beside this page reads the settings
+  // by a different path, so the two disagreeing is worse than a missing section
+  // -- and it returned 200 with nothing in the log.
+  await check('a broken tiers query does not silence the progress bar', async () => {
+    const pool = {
+      async query(sql) {
+        if (sql.includes('epos_loyalty_tiers')) {
+          throw new Error("Unknown column 'discount_type' in 'field list'");
+        }
+        if (sql.includes('epos_loyalty_settings')) {
+          return [[{ min_redeem_points: 200, point_value_minor: 1, points_per_pound: 1 }]];
+        }
+        return [[]];
+      },
+      async execute() { return [{}]; },
+    };
+    const core = {
+      readBrand: async () => ({ ...BRAND }),
+      loadSubject: async (_o, kind) => SUBJECTS[kind] || null,
+    };
+    const app = express();
+    app.use(P.walletPageRoutes({ pool, secret: SECRET, core }));
+
+    const quiet = console.error;
+    console.error = () => {};
+    try {
+      const res = await get(app, `/wallet/rewards/${tokenFor('loyalty')}`);
+      assert.strictEqual(res.status, 200);
+      assert.ok(res.body.includes('40'), 'the progress arithmetic went with the tiers');
+      assert.ok(res.body.includes('£1.60'), 'the points value went with the tiers');
+    } finally {
+      console.error = quiet;
+    }
   });
 
   // ---------------------------------------------------------------------------
