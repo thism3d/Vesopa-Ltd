@@ -47,6 +47,7 @@ const {
 } = require('./report_schedules');
 const { walletCore, walletRoutes, walletPublicRoutes } = require('./wallet');
 const { appleWalletRoutes } = require('./wallet_apple_service');
+const { ensureMemberNumber } = require('./member_numbers');
 
 const PORT = process.env.PORT || 4000;
 
@@ -405,6 +406,9 @@ app.post('/till/customers', async (req, res, next) => {
         c.discount_value ?? 0,
       ]
     );
+    // Every member gets a number, whichever door they came in through. See
+    // src/member_numbers.js for why this is not part of issuing a card.
+    await ensureMemberNumber(pool, c.office, id);
     broadcast({ type: 'customers.updated' });
     res.status(201).json({ id });
   } catch (e) {

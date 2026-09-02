@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const express = require('express');
 const { requireAuth } = require('./auth');
 const applePush = require('./wallet_apple_push');
+const { ensureMemberNumber } = require('./member_numbers');
 
 /**
  * Commerce: gift cards, deposits, loyalty, promotions, rules and tender
@@ -793,6 +794,11 @@ function commerceRoutes({ pool, broadcast, secret }) {
          VALUES (?,?,?,?,?)`,
         [id, office, req.body.name || 'Guest', phone, req.body.email || null]
       );
+      // Awaited, unlike the wallet push below: this is an enrolment rather than
+      // a sale, the row is about to be returned to the till, and a member who
+      // appears on screen without a number would have to be re-fetched to get
+      // one. It cannot throw — see src/member_numbers.js.
+      await ensureMemberNumber(pool, office, id);
       const [[row]] = await pool.query('SELECT * FROM epos_customers WHERE id = ?', [id]);
       broadcast({ type: 'customers' });
       res.status(201).json(row);

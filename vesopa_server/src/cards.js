@@ -1,5 +1,6 @@
 const express = require('express');
 const { requireAuth, requireTerminal } = require('./auth');
+const { ensureMemberNumber } = require('./member_numbers');
 
 /**
  * Magnetic swipe cards: what each prefix means, who holds which card, and the
@@ -291,11 +292,15 @@ function cardRoutes({ pool, broadcast, secret }) {
       // subscription against `membership_expiry` -- and not how the card is
       // recognised.
       if ((kind === 'loyalty' || kind === 'membership') && subjectId) {
+        // The card number only. `member_no` used to be set here too, from this
+        // card's sequence number, which made a member's identity a side effect
+        // of being handed plastic: sign up from a poster and you had none, get
+        // a second card and it changed. It is allocated once at enrolment now —
+        // see src/member_numbers.js — and reused here.
         await conn.execute(
-          `UPDATE epos_customers
-              SET card_number = ?, member_no = ?
+          `UPDATE epos_customers SET card_number = ?
             WHERE id = ? AND email_key = ?`,
-          [cardNumber, number, subjectId, office]
+          [cardNumber, subjectId, office]
         );
       } else if (kind === 'clerk' && subjectId) {
         await conn.execute(
@@ -333,11 +338,25 @@ function cardRoutes({ pool, broadcast, secret }) {
       );
 
       await conn.commit();
+
+      // After the commit, and outside its transaction, because it takes the
+      // member sequence's row lock and this one is already holding the card
+      // sequence's. Taking two counters in one transaction is how two tills
+      // issuing different kinds of card at the same moment deadlock.
+      //
+      // A member who enrolled through any of the four doors already has one, so
+      // this is normally a single SELECT that finds it and stops.
+      let memberNo = null;
+      if ((kind === 'loyalty' || kind === 'membership') && subjectId) {
+        memberNo = await ensureMemberNumber(pool, office, subjectId);
+      }
+
       broadcast({ type: 'cards' });
 
       res.status(201).json({
         kind,
         number,
+        member_no: memberNo,
         card_number: cardNumber,
         // What to hand an encoder: sentinels and all, because that is what a
         // stripe carries and what the reader will type back.

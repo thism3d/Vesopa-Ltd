@@ -8,6 +8,7 @@ const G = require('./wallet_google');
 // worse, refused a card because Google is the half that is broken.
 const A = require('./wallet_apple');
 const { wantsApple } = require('./wallet_apple_service');
+const { ensureMemberNumber } = require('./member_numbers');
 
 /**
  * Google Wallet passes: the back-office routes that configure and mint them,
@@ -1155,6 +1156,12 @@ function walletPublicRoutes({ pool, secret, core }) {
           [id, office, name, phone]
         );
       }
+
+      // Their member number, which the card is about to show. Allocated here
+      // rather than when a piece of plastic is issued, because most of these
+      // people will never hold one — they scanned a poster — and "Member VK ·
+      // 0241" is what they read out on the phone either way.
+      await ensureMemberNumber(pool, office, id);
 
       // Google is minted best-effort, and its failure is not this customer's
       // problem.

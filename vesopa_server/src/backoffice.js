@@ -4,6 +4,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const multer = require('multer');
 const { requireAuth } = require('./auth');
+const { ensureMemberNumber } = require('./member_numbers');
 
 // Product images. Stored on disk under public/uploads and served statically.
 // Capped and type-checked, so an upload cannot fill the disk or smuggle in a
@@ -1190,6 +1191,9 @@ function backofficeRoutes({ pool, broadcast, secret }) {
           c.notes ?? null,
         ]
       );
+      // Every member gets a number, whichever door they came in through. See
+      // src/member_numbers.js for why this is not part of issuing a card.
+      await ensureMemberNumber(pool, await tenantEmail(req), id);
       broadcast({ type: 'customers.updated' });
       res.status(201).json({ id });
     } catch (e) {
