@@ -119,3 +119,77 @@ updating", not as "a certificate expired".
 ## Verifying one
 
     openssl x509 -inform DER -in loyalty_pass.cer -noout -subject -enddate
+
+## Moving to a new server
+
+**Nothing in this folder is deployed.** `deploy.ps1` ships only
+`vesopa_server/`, and this folder sits outside it — so a fresh box has no
+signing material at all, and the back office says so in as many words:
+
+    Apple passes cannot be signed yet.
+    APPLE_WALLET_DIR is not set (the folder holding the .p12)
+    APPLE_WWDR_CERT is not set (Apple's WWDR intermediate, PEM)
+
+That message *is* the failure. The passes are fine; the server was simply never
+told where the key is. Expect to see it on every new server until step 2.
+
+### 1. Put the material on the box
+
+Outside the application directory, so that a deploy cannot overwrite it and a
+loose permission on the app cannot expose it:
+
+    W=/home/vesopa/web/<domain>/private/wallet
+    ssh root@<host> "mkdir -p $W && chmod 700 $W && chown root:root $W"
+
+Then, from this folder:
+
+    scp "Vesopa Software Ltd Pass Key.p12" root@<host>:$W/vesopa_wallet.p12
+    scp loyalty_pass.cer membership_pass.cer giftcard_pass.cer staffcard_pass.cer promotion_pass.cer wwdr.pem root@<host>:$W/
+    ssh root@<host> "chmod 600 $W/*"
+
+The names are not arbitrary. The code looks for `vesopa_wallet.p12` and those
+exact five `.cer` names — `SHARED_P12` and `CER_FILES` in
+`vesopa_server/src/wallet_apple.js`.
+
+### 2. Four lines in the server's .env
+
+Appended to `private/nodeapp/.env`, which a deploy never touches:
+
+    APPLE_WALLET_DIR=<W>
+    APPLE_WALLET_CERT_DIR=<W>
+    APPLE_WWDR_CERT=<W>/wwdr.pem
+    APPLE_WALLET_P12_PASSWORD=<the Pass Key passphrase>
+
+`APPLE_WALLET_CERT_DIR` has to be set explicitly. Its default is this folder
+found relative to the app, which exists on a development machine and never on a
+server. Then restart so pm2 picks the new variables up:
+
+    pm2 restart vesopa_backoffice --update-env && pm2 save
+
+### 3. Check the server, not your laptop
+
+    cd <app>
+    node -e 'require("dotenv").config(); const c = require("./src/wallet_apple").readConfig(process.env); console.log("configured:", c.configured); c.problems.forEach(p => console.log(" -", p));'
+
+`configured: true` with a named bundle means it can sign. Better still, build
+one of each kind — signing is where a wrong passphrase or a missing legacy
+provider actually shows up.
+
+Needs **OpenSSL 3** on the server. The Keychain export is 3DES, which OpenSSL 3
+moved to the legacy provider, and the signing code passes `-legacy`. OpenSSL
+1.1.1 does not recognise that flag and fails with a message about providers
+that reads like a wrong password.
+
+### 4. While you are in there: the app directory
+
+The first server had `private/nodeapp` at **0777**, on a box with nine shell
+accounts. pm2 runs the app as **root**, so any of those accounts could drop a
+`.js` file into an application running as root — they never needed to read
+`.env` to own it. Fixed to `0755 root:root`, and a new server should start
+that way:
+
+    chmod 755 /home/vesopa/web/<domain>/private/nodeapp
+    stat -c '%A %U:%G %n' <app> <app>/.env
+
+`.env` must be `0600`. It holds the database password, the JWT secret, and now
+the Wallet passphrase as well.
