@@ -65,9 +65,16 @@ function readConfig(env = process.env) {
   const passphrase = String(env.APPLE_WALLET_P12_PASSWORD || '');
   const webServiceUrl = String(env.APPLE_WALLET_WEB_SERVICE_URL || '').trim();
 
+  // Where the public certificates live. They are committed, so this defaults to
+  // them and a deployment normally sets only the two secrets above.
+  const certDir = String(
+    env.APPLE_WALLET_CERT_DIR ||
+      path.join(__dirname, '..', '..', 'passes_and_oauth')
+  ).trim();
+
   const problems = [];
   if (!dir) {
-    problems.push('APPLE_WALLET_DIR is not set (the folder holding the .p12 files)');
+    problems.push('APPLE_WALLET_DIR is not set (the folder holding the .p12)');
   } else if (!existsSafely(dir)) {
     problems.push(`APPLE_WALLET_DIR points at ${dir}, which is not there`);
   }
@@ -86,8 +93,31 @@ function readConfig(env = process.env) {
     problems.push('the `openssl` binary is not on PATH, so a pass cannot be signed');
   }
 
+  // A shared bundle, if there is one. Keychain Access exports a certificate and
+  // its key together as a .p12 and offers no way to export a bare private key,
+  // so "one .p12 per pass type" means five exports — and all five CSRs came
+  // from one keypair, which means one export is genuinely enough.
+  //
+  // The private key is taken from whichever bundle is present and paired with
+  // the *public* certificate for the kind being signed, which is already in the
+  // repository. See signingMaterial().
+  const shared = dir
+    ? [SHARED_P12, ...Object.values(P12_FILES)]
+        .map((name) => path.join(dir, name))
+        .find(existsSafely) || ''
+    : '';
+
+  if (dir && existsSafely(dir) && !shared) {
+    problems.push(
+      `no .p12 found in ${dir} — export one from Keychain Access ` +
+        `(any of ${SHARED_P12} or ${Object.values(P12_FILES).join(', ')})`
+    );
+  }
+
   return {
     dir,
+    certDir,
+    shared,
     wwdr,
     passphrase,
     webServiceUrl,
@@ -107,11 +137,26 @@ function existsSafely(target) {
 }
 
 /**
- * The `.p12` for one kind of pass.
- *
- * Named after the certificate it contains, so the folder reads the same way as
- * `passes_and_oauth/` does: `loyalty_pass.p12` beside `loyalty_pass.cer`.
+ * The public certificate for each kind, as committed in `passes_and_oauth/`.
  */
+const CER_FILES = {
+  loyalty: 'loyalty_pass.cer',
+  customer: 'membership_pass.cer',
+  giftcard: 'giftcard_pass.cer',
+  staff: 'staffcard_pass.cer',
+  promo: 'promotion_pass.cer',
+};
+
+/**
+ * The `.p12` for one kind of pass, and the one bundle that covers all five.
+ *
+ * Per-kind names match `passes_and_oauth/` — `loyalty_pass.p12` beside
+ * `loyalty_pass.cer` — and are looked for first. `vesopa_wallet.p12` is the
+ * simpler arrangement: one export from Keychain Access, whose private key signs
+ * every kind because all five certificates were issued from one CSR.
+ */
+const SHARED_P12 = 'vesopa_wallet.p12';
+
 const P12_FILES = {
   loyalty: 'loyalty_pass.p12',
   customer: 'membership_pass.p12',
@@ -447,11 +492,14 @@ function solidPng(width, height, cssRgb) {
  * input by name, and the alternative is a pipe whose failure mode is a hang.
  */
 function sign(manifest, kind, config) {
-  const p12 = path.join(config.dir, P12_FILES[kind]);
-  if (!existsSafely(p12)) {
+  const perKind = path.join(config.dir, P12_FILES[kind]);
+  const bundle = existsSafely(perKind) ? perKind : config.shared;
+
+  if (!bundle || !existsSafely(bundle)) {
     throw new Error(
-      `No signing certificate for a ${kind} pass: expected ${P12_FILES[kind]} ` +
-        `in APPLE_WALLET_DIR. See passes_and_oauth/README.md.`
+      `No signing key for a ${kind} pass. Put ${P12_FILES[kind]} — or a single ` +
+        `${SHARED_P12} covering all five — in APPLE_WALLET_DIR. ` +
+        `See passes_and_oauth/README.md.`
     );
   }
 
@@ -464,30 +512,42 @@ function sign(manifest, kind, config) {
   try {
     fs.writeFileSync(manifestPath, manifest);
 
-    // The .p12 is split rather than handed to `smime` directly, because
-    // `openssl smime` takes a PEM certificate and key and not a PKCS#12
-    // bundle. Both land in a directory this process created and deletes.
-    const pass = `pass:${config.passphrase}`;
-    execFileSync('openssl', [
-      'pkcs12', '-in', p12, '-clcerts', '-nokeys', '-out', certPath,
-      '-passin', pass, '-legacy',
-    ], { timeout: 15000, stdio: 'pipe' });
+    // The bundle is split rather than handed to `smime` directly, because
+    // `openssl smime` takes a PEM certificate and key and not a PKCS#12. Both
+    // land in a directory this process created and deletes.
+    //
+    // `-legacy` because a .p12 exported by macOS Keychain uses RC2/3DES, which
+    // OpenSSL 3 moved to the legacy provider. Without it the export reads as
+    // "unsupported" and looks like a wrong passphrase.
+    const passin = `pass:${config.passphrase}`;
+    run(['pkcs12', '-in', bundle, '-nocerts', '-nodes', '-out', keyPath,
+         '-passin', passin, '-legacy'], 'read the private key');
 
-    execFileSync('openssl', [
-      'pkcs12', '-in', p12, '-nocerts', '-nodes', '-out', keyPath,
-      '-passin', pass, '-legacy',
-    ], { timeout: 15000, stdio: 'pipe' });
+    // The certificate comes from the *public* .cer for this kind, not from the
+    // bundle. A shared bundle carries one certificate and would sign all five
+    // kinds with it — and a .pkpass whose passTypeIdentifier does not match its
+    // signing certificate is rejected by Apple with an error that names no
+    // field at all.
+    const cer = path.join(config.certDir, CER_FILES[kind]);
+    if (!existsSafely(cer)) {
+      throw new Error(`No certificate for a ${kind} pass: expected ${cer}`);
+    }
+    run(['x509', '-inform', 'DER', '-in', cer, '-out', certPath],
+        'read the certificate');
 
-    execFileSync('openssl', [
-      'smime', '-binary', '-sign',
-      '-certfile', config.wwdr,
-      '-signer', certPath,
-      '-inkey', keyPath,
-      '-in', manifestPath,
-      '-out', signaturePath,
-      '-outform', 'DER',
-      '-noattr',
-    ], { timeout: 15000, stdio: 'pipe' });
+    // Refused before anything is signed, because the failure it prevents is the
+    // silent one: a pass signed by a key that does not match its certificate
+    // installs on nobody's phone and reports nothing anywhere.
+    assertKeyMatchesCert(keyPath, certPath, kind);
+
+    run(['smime', '-binary', '-sign',
+         '-certfile', config.wwdr,
+         '-signer', certPath,
+         '-inkey', keyPath,
+         '-in', manifestPath,
+         '-out', signaturePath,
+         '-outform', 'DER',
+         '-noattr'], 'sign the pass');
 
     return fs.readFileSync(signaturePath);
   } finally {
@@ -498,6 +558,49 @@ function sign(manifest, kind, config) {
     } catch {
       // Nothing further to do; the directory is inside the system temp folder.
     }
+  }
+}
+
+/**
+ * Run openssl, and say what was being attempted when it fails.
+ *
+ * openssl's own messages are about providers and store routines. On their own
+ * they send somebody looking in the wrong place — "unsupported" for a Keychain
+ * export means the legacy provider, not a corrupt file.
+ */
+function run(args, what) {
+  try {
+    execFileSync('openssl', args, { timeout: 15000, stdio: 'pipe' });
+  } catch (e) {
+    const detail = String(e.stderr || e.message || '').trim().split('\n')[0];
+    throw new Error(`Could not ${what}: ${detail}`);
+  }
+}
+
+/**
+ * Whether this key actually belongs to this certificate.
+ *
+ * Compared by public key, which is the only thing the two have in common. The
+ * check exists because the arrangement that makes setup easy — one bundle for
+ * five certificates — is also the one where a mismatch is possible, and a
+ * mismatch produces a pass that is perfectly formed and installs on nothing.
+ */
+function assertKeyMatchesCert(keyPath, certPath, kind) {
+  const publicKeyOf = (args) =>
+    crypto
+      .createHash('sha256')
+      .update(String(execFileSync('openssl', args, { stdio: 'pipe' })))
+      .digest('hex');
+
+  const fromKey = publicKeyOf(['pkey', '-in', keyPath, '-pubout']);
+  const fromCert = publicKeyOf(['x509', '-in', certPath, '-pubkey', '-noout']);
+
+  if (fromKey !== fromCert) {
+    throw new Error(
+      `The signing key does not belong to the ${kind} certificate. All five ` +
+        `certificates have to come from the same CSR for one bundle to sign ` +
+        `them all; otherwise use one .p12 per pass type.`
+    );
   }
 }
 
@@ -649,6 +752,8 @@ function buildPkpass({ kind, config, brand, subject, assetsDir, serial, authToke
 module.exports = {
   APPLE_TEAM_ID,
   P12_FILES,
+  CER_FILES,
+  SHARED_P12,
   readConfig,
   buildPassJson,
   buildPkpass,

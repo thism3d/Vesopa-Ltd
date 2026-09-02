@@ -381,10 +381,53 @@ check('the team id can be overridden without editing code', () => {
   assert.strictEqual(A.readConfig({ APPLE_TEAM_ID: 'ABCDE12345' }).teamId, 'ABCDE12345');
 });
 
-check('there is a p12 named for every pass type', () => {
+check('there is a p12 and a certificate named for every pass type', () => {
   for (const kind of Object.keys(G.PASS_TYPES)) {
     assert.ok(A.P12_FILES[kind], `no signing bundle mapped for ${kind}`);
+    assert.ok(A.CER_FILES[kind], `no certificate mapped for ${kind}`);
   }
+});
+
+check('every mapped certificate is actually in the repository', () => {
+  // The public halves are committed, so a missing one is a typo in the map
+  // rather than a deployment problem — and it would present as a pass that
+  // cannot be signed for one kind only.
+  const dir = path.join(__dirname, '..', '..', 'passes_and_oauth');
+  for (const [kind, file] of Object.entries(A.CER_FILES)) {
+    assert.ok(require('fs').existsSync(path.join(dir, file)), `${kind}: ${file}`);
+  }
+});
+
+check('the certificate for each kind carries that pass type identifier', () => {
+  // The one mismatch that produces a pass rejected with no diagnostic. Read off
+  // the certificates themselves rather than trusted from the table.
+  const { execFileSync } = require('child_process');
+  const dir = path.join(__dirname, '..', '..', 'passes_and_oauth');
+  for (const [kind, file] of Object.entries(A.CER_FILES)) {
+    const subject = String(
+      execFileSync('openssl', [
+        'x509', '-inform', 'DER', '-in', path.join(dir, file),
+        '-noout', '-subject',
+      ])
+    );
+    assert.ok(
+      subject.includes(G.PASS_TYPES[kind].appleType),
+      `${file} is not the certificate for ${G.PASS_TYPES[kind].appleType}`
+    );
+  }
+});
+
+check('one shared bundle is an option, so setup is one export not five', () => {
+  assert.strictEqual(A.SHARED_P12, 'vesopa_wallet.p12');
+});
+
+check('a folder with no bundle in it says so', () => {
+  const config = A.readConfig({
+    APPLE_WALLET_DIR: __dirname,
+    APPLE_WWDR_CERT: __filename,
+  });
+  assert.strictEqual(config.configured, false);
+  assert.ok(config.problems.some((p) => p.includes('no .p12 found')));
 });
 
 console.log(`\n${passed} checks passed\n`);
