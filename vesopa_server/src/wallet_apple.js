@@ -65,6 +65,13 @@ function readConfig(env = process.env) {
   const passphrase = String(env.APPLE_WALLET_P12_PASSWORD || '');
   const webServiceUrl = String(env.APPLE_WALLET_WEB_SERVICE_URL || '').trim();
 
+  // The iOS 27 action tiles. On unless explicitly switched off, because they
+  // are ignored by every older iOS — but switchable, because a pass Wallet
+  // dislikes fails with no diagnostic at all and this is the one key here whose
+  // schema has not been checked against a real device. See buildPassJson.
+  const featuredActions =
+    String(env.APPLE_WALLET_FEATURED_ACTIONS ?? '').trim().toLowerCase() !== 'off';
+
   // Where the public certificates live. They are committed, so this defaults to
   // them and a deployment normally sets only the two secrets above.
   const certDir = String(
@@ -120,6 +127,7 @@ function readConfig(env = process.env) {
     wwdr,
     passphrase,
     webServiceUrl,
+    featuredActions,
     openssl,
     teamId: String(env.APPLE_TEAM_ID || APPLE_TEAM_ID).trim(),
     configured: problems.length === 0,
@@ -372,6 +380,7 @@ const BRAND = {
  * field with a forgotten entry should look wrong, not disappear.
  */
 const BACK_ORDER = [
+  'more',
   'history',
   'spend_history',
   'earning',
@@ -455,6 +464,21 @@ function venueInitials(brand) {
  */
 function tierLine(subject) {
   return [subject.tier, subject.discount].filter(Boolean).join(' · ');
+}
+
+/**
+ * "40 to go", or "Ready to spend" once they are over the line.
+ *
+ * Empty when the venue has set no redemption floor, which is the honest answer:
+ * a card cannot say how far off a reward is at a venue that has not said what a
+ * reward costs, and "0 to go" would read as one being available.
+ */
+function nextReward(subject) {
+  const floor = Number(subject.reward_floor) || 0;
+  if (!floor) return '';
+  const points = Number(subject.points) || 0;
+  if (points >= floor) return 'Ready to spend';
+  return `${(floor - points).toLocaleString('en-GB')} to go`;
 }
 
 /** `March 2024`. A joining date needs no day; the day is noise on a card. */
@@ -591,7 +615,7 @@ function groupingFor(brand) {
   return `venue:v.${digest}`;
 }
 
-function buildPassJson({ kind, config, brand, subject, serial, authToken }) {
+function buildPassJson({ kind, config, brand, subject, serial, authToken, link }) {
   const type = G.PASS_TYPES[kind];
   if (!type) throw new Error(`Unknown pass kind "${kind}"`);
 
@@ -668,6 +692,30 @@ function buildPassJson({ kind, config, brand, subject, serial, authToken }) {
     if (value === undefined || value === null || value === '') return;
     list.push({ key, label, value, ...(extra || {}) });
   };
+
+  // Where this card links out to, if it has somewhere to go.
+  //
+  // TWICE, ON PURPOSE
+  //
+  // `featuredActions` draws tiles under the card face and lands in iOS 27. A
+  // back field with a URL in it has been tappable since the format existed. The
+  // same link goes in both, so the page is reachable today on every phone and
+  // becomes a tile on the ones that can draw one — rather than being a feature
+  // nobody can use until they upgrade.
+  //
+  // The tile is also the half that cannot be verified here. Apple's schema for
+  // it is new, and a `.pkpass` that Wallet dislikes fails silently — which this
+  // codebase has already paid for once (see the note above sign()). So it has a
+  // switch: blank APPLE_WALLET_FEATURED_ACTIONS and the tiles stop while the
+  // back-field link, which is not in doubt, keeps working.
+  if (link && link.url) {
+    if (config.featuredActions !== false) {
+      pass.featuredActions = [
+        { identifier: `vesopa.${kind}`, type: link.type, url: link.url },
+      ];
+    }
+    push(back, 'more', link.label, link.url);
+  }
 
   // The venue's own words, on the back.
   //
@@ -761,6 +809,16 @@ function buildPassJson({ kind, config, brand, subject, serial, authToken }) {
 
   switch (kind) {
     case 'loyalty': {
+      // How far off the next reward, from the venue's own redemption floor.
+      //
+      // The single most useful thing a loyalty card can say, and the hardest to
+      // say honestly: "you have 260 points" is a number, "40 more and you can
+      // spend them" is a reason to come back. Both halves come from
+      // epos_loyalty_settings — see rewardRules() in wallet.js — and the field
+      // is dropped entirely when a venue has set no floor, because "0 to go"
+      // reads as an achievement rather than as a missing setting.
+      push(body.headerFields, 'next', 'NEXT REWARD', nextReward(subject));
+
       // `changeMessage` is what turns a silent update into a notification on
       // the lock screen. Wallet substitutes %@ with the new value and shows it
       // only when this field actually moved, so it costs nothing on a rebuild
@@ -1358,7 +1416,7 @@ function zip(files) {
  * Returns the archive bytes plus the serial and token, which the caller records
  * so the pass can be recognised and updated later.
  */
-function buildPkpass({ kind, config, brand, subject, assetsDir, serial, authToken }) {
+function buildPkpass({ kind, config, brand, subject, assetsDir, serial, authToken, link }) {
   const useSerial = serial || crypto.randomUUID();
   const useToken = authToken || crypto.randomBytes(24).toString('hex');
 
@@ -1369,6 +1427,7 @@ function buildPkpass({ kind, config, brand, subject, assetsDir, serial, authToke
     subject,
     serial: useSerial,
     authToken: useToken,
+    link,
   });
 
   const files = {

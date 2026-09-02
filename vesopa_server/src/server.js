@@ -48,6 +48,7 @@ const {
 const { walletCore, walletRoutes, walletPublicRoutes } = require('./wallet');
 const { appleWalletRoutes } = require('./wallet_apple_service');
 const { ensureMemberNumber } = require('./member_numbers');
+const { walletPageRoutes } = require('./wallet_pages');
 
 const PORT = process.env.PORT || 4000;
 
@@ -278,6 +279,12 @@ app.use(walletPublicRoutes({ pool, secret: JWT_SECRET, core: wallet }));
 // customer-facing /wallet/c/:token link -- which serves an iPhone a .pkpass and
 // redirects everything else to the Google half -- and its own /api routes.
 app.use(appleWalletRoutes({ pool, secret: JWT_SECRET, core: wallet }));
+
+// The pages a card links out to — rewards, membership, gift-card balance and
+// what's on. Mounted at the root beside the other customer-facing wallet links
+// and before the static middleware, for the same reason they are: /wallet/...
+// has to resolve here rather than being answered with the back-office SPA.
+app.use(walletPageRoutes({ pool, secret: JWT_SECRET, core: wallet }));
 
 // The pass artwork. Public on purpose and safe to be: it is the same branded
 // bands that go inside every .pkpass, with nothing in them that is not already

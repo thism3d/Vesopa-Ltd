@@ -416,6 +416,34 @@ function walletCore({ pool, secret }) {
     }
   }
 
+  /**
+   * The two numbers that make a points balance mean something.
+   *
+   * Returned as part of the subject rather than looked up again by the pass
+   * builder, because the builder has no pool — it is handed everything it needs
+   * and does no I/O, which is what makes it testable without a database.
+   *
+   * Zeroes when a venue has no loyalty settings row. The pass drops the field
+   * rather than showing "0 to go", which would read as an achievement.
+   */
+  async function rewardRules(office) {
+    try {
+      const [[row]] = await pool.query(
+        `SELECT min_redeem_points, point_value_minor, points_per_pound
+           FROM epos_loyalty_settings WHERE office = ?`,
+        [office]
+      );
+      if (!row) return { reward_floor: 0, point_value_minor: 0, points_per_pound: 0 };
+      return {
+        reward_floor: Number(row.min_redeem_points) || 0,
+        point_value_minor: Number(row.point_value_minor) || 0,
+        points_per_pound: Number(row.points_per_pound) || 0,
+      };
+    } catch {
+      return { reward_floor: 0, point_value_minor: 0, points_per_pound: 0 };
+    }
+  }
+
   async function loadSubject(office, kind, subjectId) {
     if (kind === 'loyalty' || kind === 'customer') {
       const memberNo = (await hasColumn('epos_customers', 'member_no'))
@@ -450,6 +478,12 @@ function walletCore({ pool, secret }) {
         discount,
         member_since: c.created_at ? new Date(c.created_at).toISOString().slice(0, 10) : '',
         history: await pointsHistory(office, c.id),
+        // What the points are *for*. `min_redeem_points` and `point_value_minor`
+        // are the two numbers that turn a balance into a sentence a customer can
+        // act on — "forty more and you can spend them" rather than "you have
+        // 260 points" — and both have been in epos_loyalty_settings since
+        // loyalty existed. The card had no way to reach them until now.
+        ...(await rewardRules(office)),
       };
     }
 

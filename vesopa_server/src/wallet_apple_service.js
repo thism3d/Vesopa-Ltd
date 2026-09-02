@@ -9,6 +9,7 @@ const G = require('./wallet_google');
 const QR = require('./qr');
 const P = require('./wallet_apple_push');
 const { appleWebServiceRoutes } = require('./wallet_apple_webservice');
+const { PAGE_FOR, pageLink } = require('./wallet_pages');
 
 /**
  * Apple Wallet, beside Google Wallet rather than instead of it.
@@ -100,6 +101,28 @@ function appleWalletRoutes({ pool, secret, core }) {
     const authToken =
       (row && row.apple_auth_token) || crypto.randomBytes(24).toString('hex');
 
+    // Where this card links out to. Signed the same way the QR code is — scope
+    // `wallet`, naming this office, kind and subject — so the page can identify
+    // the holder without asking them to sign in to anything.
+    //
+    // A year, matching shortLink(). A card lives in a wallet far longer than any
+    // session, and a tile that stops working in a month is worse than no tile.
+    const page = PAGE_FOR[kind];
+    const link = page
+      ? {
+          url: pageLink(
+            kind,
+            jwt.sign(
+              { scope: 'wallet', office, kind, sub: String(subjectId) },
+              secret,
+              { expiresIn: '365d' }
+            )
+          ),
+          type: page.type,
+          label: page.label,
+        }
+      : null;
+
     const built = A.buildPkpass({
       kind,
       config,
@@ -108,6 +131,7 @@ function appleWalletRoutes({ pool, secret, core }) {
       assetsDir,
       serial,
       authToken,
+      link: link && link.url ? link : null,
     });
 
     // Recorded whether or not a Google object exists. A venue that only ever
