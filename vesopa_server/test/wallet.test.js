@@ -624,6 +624,160 @@ testAsync('a venue is reachable by its sign-up code, and still by its email', as
   }
 });
 
+/**
+ * The bug this exists to stop coming back.
+ *
+ * A live venue had Apple configured and Google not. `mint` raised a 503, the
+ * route handed it to `next(e)`, and the global error handler answered
+ * `res.json({error})` — so a customer on an iPhone who filled in the sign-up
+ * form was handed a **.json file to download** instead of a card. Their account
+ * had already been created, so scanning the poster again produced the same file
+ * every time.
+ *
+ * The rule the fix encodes: the two platforms fail independently. Neither one
+ * being broken may cost the customer the other.
+ */
+testAsync('signing up survives Google being unconfigured', async () => {
+  const express = require('express');
+  const { walletPublicRoutes, walletCore } = require('../src/wallet');
+  const secret = 'test-secret';
+
+  const pool = {
+    query: async (sql, params) => {
+      if (sql.includes('WHERE join_slug = ?')) {
+        return [params[0] === 'vesopa-kitchen' ? [{ office: 'manager@vesopa.co.uk' }] : []];
+      }
+      if (sql.includes('FROM epos_wallet_settings')) {
+        return [[{ office: 'manager@vesopa.co.uk', enabled: 1, loyalty_enabled: 1,
+                   apple_enabled: 1, issuer_name: 'The Vesopa Kitchen' }]];
+      }
+      // No existing customer with this phone number.
+      return [[]];
+    },
+    execute: async () => [[]],
+  };
+
+  // No GOOGLE_WALLET_* anywhere, which is what `mint` throws a 503 on.
+  const app = express();
+  app.use(walletPublicRoutes({ pool, secret, core: walletCore({ pool, secret }) }));
+  // The handler that turned the failure into a downloadable file. Present here
+  // precisely so the test would catch it again.
+  app.use((err, _req, res, _next) => res.status(500).json({ error: 'internal error' }));
+
+  const server = app.listen(0);
+  await new Promise((r) => server.once('listening', r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  const quiet = console.error;
+  console.error = () => {};
+  try {
+    const res = await fetch(`${base}/wallet/join/vesopa-kitchen`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        // An iPhone, which is the whole point: this customer would never have
+        // used the Google half even if it had worked.
+        'User-Agent':
+          'Mozilla/5.0 (iPhone; CPU iPhone OS 15_8_2 like Mac OS X) AppleWebKit/605.1.15',
+      },
+      body: new URLSearchParams({ kind: 'loyalty', name: 'Sarah Jones', phone: '07700900123' }),
+    });
+
+    assert.strictEqual(res.status, 200, 'a Google outage must not fail the sign-up');
+
+    const type = String(res.headers.get('content-type') || '');
+    assert.ok(
+      type.includes('text/html'),
+      `the customer was served ${type} — a JSON body is the file iOS downloads`
+    );
+
+    const html = await res.text();
+    assert.ok(!html.startsWith('{'), 'the response is a JSON document, not a page');
+
+    // Either a card to add, or an honest "you are signed up" — never an error.
+    assert.ok(
+      /wallet\/c\/|signed up/i.test(html),
+      'the page offers neither an Apple card nor confirmation of enrolment'
+    );
+
+    // And no Google badge, because that button would lead to another failure.
+    assert.ok(
+      !html.includes('/wallet/s/'),
+      'a Google button was offered while Google could not mint'
+    );
+  } finally {
+    console.error = quiet;
+    server.close();
+  }
+});
+
+/**
+ * The two routes hand non-matching devices to each other. If both hand off
+ * unconditionally they bounce until the browser gives up, which is how a
+ * "graceful fallback" becomes an outage for every Android customer.
+ */
+testAsync('an Android is never bounced between the two wallet routes', async () => {
+  const express = require('express');
+  const jwt = require('jsonwebtoken');
+  const { walletPublicRoutes, walletCore } = require('../src/wallet');
+  const { appleWalletRoutes } = require('../src/wallet_apple_service');
+  const secret = 'test-secret';
+
+  const pool = {
+    query: async (sql) => {
+      if (sql.includes('FROM epos_wallet_settings')) {
+        return [[{ office: 'manager@vesopa.co.uk', enabled: 1, loyalty_enabled: 1,
+                   apple_enabled: 1, issuer_name: 'The Vesopa Kitchen' }]];
+      }
+      if (sql.includes('FROM epos_customers')) {
+        return [[{ id: 'cust-1', name: 'Sarah Jones', card_number: '999800001',
+                   points_balance: 10 }]];
+      }
+      return [[]];
+    },
+    execute: async () => [[]],
+  };
+
+  const core = walletCore({ pool, secret });
+  const app = express();
+  app.use(walletPublicRoutes({ pool, secret, core }));
+  app.use(appleWalletRoutes({ pool, secret, core }));
+
+  const server = app.listen(0);
+  await new Promise((r) => server.once('listening', r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  const token = jwt.sign(
+    { scope: 'wallet', office: 'manager@vesopa.co.uk', kind: 'loyalty', sub: 'cust-1' },
+    secret
+  );
+
+  const quiet = console.error;
+  console.error = () => {};
+  try {
+    // Follow the chain by hand, so a loop shows up as a repeat rather than as
+    // a timeout twenty redirects deep.
+    const seen = [];
+    let path = `/wallet/s/${token}`;
+    for (let hop = 0; hop < 5 && path; hop++) {
+      assert.ok(!seen.includes(path), `redirect loop: ${seen.join(' -> ')} -> ${path}`);
+      seen.push(path);
+      const res = await fetch(base + path, {
+        redirect: 'manual',
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 Chrome/120',
+        },
+      });
+      const next = res.headers.get('location');
+      path = next && next.startsWith('/') ? next : null;
+    }
+  } finally {
+    console.error = quiet;
+    server.close();
+  }
+});
+
 testAsync('a code that is taken, reserved or malformed is refused', async () => {
   const express = require('express');
   const jwt = require('jsonwebtoken');

@@ -3,6 +3,11 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const { requireAuth } = require('./auth');
 const G = require('./wallet_google');
+// Only ever asked whether this deployment can sign a `.pkpass`, so that a
+// customer on an iPhone is not offered a Google button and nothing else — or,
+// worse, refused a card because Google is the half that is broken.
+const A = require('./wallet_apple');
+const { wantsApple } = require('./wallet_apple_service');
 
 /**
  * Google Wallet passes: the back-office routes that configure and mint them,
@@ -1060,6 +1065,21 @@ function walletPublicRoutes({ pool, secret, core }) {
       const result = await mint(claims.office, claims.kind, claims.sub);
       res.redirect(302, result.save_url);
     } catch (e) {
+      // Google could not issue. Before showing an error, check whether the
+      // other half can — a venue running Apple only would otherwise turn every
+      // QR code it has ever printed into a dead end, including the ones on
+      // receipts and table cards that predate Apple support entirely.
+      //
+      // Only for a device that can actually open a `.pkpass`, and that is not
+      // caution: `/wallet/c/:token` sends everything non-Apple back here, so
+      // redirecting an Android phone to it would bounce the two routes off each
+      // other until the browser gave up.
+      //
+      // 404 is excluded on purpose: that is "no such customer", which no amount
+      // of Apple configuration fixes.
+      if (e.status !== 404 && wantsApple(req) && A.cachedConfig().configured) {
+        return res.redirect(302, `/wallet/c/${encodeURIComponent(req.params.token)}`);
+      }
       res
         .status(e.status === 404 ? 404 : 502)
         .type('html')
@@ -1136,7 +1156,55 @@ function walletPublicRoutes({ pool, secret, core }) {
         );
       }
 
-      await mint(office, kind, id);
+      // Google is minted best-effort, and its failure is not this customer's
+      // problem.
+      //
+      // This threw once, on a live venue with Apple configured and Google not.
+      // `mint` raises a 503, `next(e)` hands it to the global error handler,
+      // and that answers `res.json({error})` — so an iPhone customer who filled
+      // in the form was handed a **.json file to download**. Their account had
+      // already been created two statements earlier, so scanning again gave
+      // them the same file, forever.
+      //
+      // The lesson is not "catch this error". It is that the two platforms must
+      // fail independently: a customer holding an iPhone is not served by a
+      // Google outage, an unconfigured Google project or an expired service
+      // account, and neither is a customer holding an Android when the Wallet
+      // certificates are missing. So each half is attempted, each is allowed to
+      // fail, and the page below offers whichever ones actually worked.
+      let googleReady = false;
+      try {
+        await mint(office, kind, id);
+        googleReady = true;
+      } catch (e) {
+        // Named in the log, because a venue with Google silently off for a
+        // month is a venue losing every Android sign-up.
+        console.error(
+          `[wallet] Google pass not minted for ${office}/${kind}: ${e.message}`
+        );
+      }
+
+      // Apple needs no minting — a `.pkpass` is built on demand — so the
+      // question is only whether this deployment can sign one at all.
+      const appleReady = A.cachedConfig().configured &&
+        Number(brand.apple_enabled ?? 1) === 1;
+
+      if (!googleReady && !appleReady) {
+        // Neither platform can issue. The customer is still enrolled and their
+        // card exists at the till, which is worth saying — they have not wasted
+        // the scan, and staff can look them up by the phone number they just
+        // typed.
+        return res
+          .status(200)
+          .type('html')
+          .send(
+            page(
+              'You’re signed up',
+              'Your card could not be added to this phone just now. ' +
+                'Show your phone number at the till and it will be found.'
+            )
+          );
+      }
 
       // Both badges, on one page, rather than a redirect to Google.
       //
@@ -1145,12 +1213,19 @@ function walletPublicRoutes({ pool, secret, core }) {
       // here means a customer on an iPhone landing in Google Wallet, and the
       // fix for that is a page with two buttons on it rather than a cleverer
       // guess.
+      //
+      // A badge is only shown when the platform behind it can actually deliver.
+      // An "Add to Google Wallet" button that leads to an error page is worse
+      // than no button: the customer believes the venue's card is broken rather
+      // than that their phone is the wrong one.
       const token = jwt.sign(
         { scope: 'wallet', office, kind, sub: String(id) },
         secret,
         { expiresIn: '365d' }
       );
-      res.type('html').send(addPage(brand, token));
+      res.type('html').send(
+        addPage(brand, token, { apple: appleReady, google: googleReady })
+      );
     } catch (e) {
       next(e);
     }
@@ -1380,7 +1455,7 @@ function googleWalletBadge() {
  * The venue's name is deliberately not in the sentence: half of them begin
  * with "The", and "Add your The Crown card" is what that produces.
  */
-function addPage(brand, token) {
+function addPage(brand, token, available = { apple: true, google: true }) {
   const logo = /^https:\/\//i.test(brand.logo_url || '') ? brand.logo_url : '';
   return `<!doctype html>
 ${socialHead({
@@ -1406,8 +1481,8 @@ ${socialHead({
   ${logo ? `<img class="logo" src="${escapeHtml(logo)}" alt="">` : ''}
   <h1>You're in</h1>
   <p>Add your card to your phone.</p>
-  <a href="/wallet/c/${encodeURIComponent(token)}">${appleWalletBadge()}</a>
-  <a href="/wallet/s/${encodeURIComponent(token)}">${googleWalletBadge()}</a>
+  ${available.apple ? `<a href="/wallet/c/${encodeURIComponent(token)}">${appleWalletBadge()}</a>` : ''}
+  ${available.google ? `<a href="/wallet/s/${encodeURIComponent(token)}">${googleWalletBadge()}</a>` : ''}
   <p class="fine">Show the card at the till to collect points.</p>
 </div>`;
 }

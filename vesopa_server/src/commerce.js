@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const express = require('express');
 const { requireAuth } = require('./auth');
+const applePush = require('./wallet_apple_push');
 
 /**
  * Commerce: gift cards, deposits, loyalty, promotions, rules and tender
@@ -306,6 +307,14 @@ function commerceRoutes({ pool, broadcast, secret }) {
       );
 
       await conn.commit();
+
+      // The balance on the front of the card just changed, which for a gift
+      // card is the only thing on it anybody reads. Same fire-and-forget as
+      // the loyalty push above: this runs inside a redemption at a till.
+      applePush
+        .notifyPassChanged({ pool, office, kind: 'giftcard', subjectId: card.id })
+        .catch(() => {});
+
       return { card: { ...card, balance_minor: balanceAfter, status } };
     } catch (e) {
       await conn.rollback();
@@ -904,6 +913,23 @@ function commerceRoutes({ pool, broadcast, secret }) {
       await conn.commit();
 
       broadcast({ type: 'loyalty.points' });
+
+      // Both kinds, because both cards changed. The loyalty card shows the
+      // points; the membership card shows the tier, which a big enough spend
+      // has just moved. Pushing one and not the other leaves a customer whose
+      // wallet disagrees with itself.
+      //
+      // Deliberately not awaited. The response is what a till is waiting on,
+      // and APNs is a network round trip to Apple — a customer's card being a
+      // few seconds behind is nothing, whereas a queue at the counter is real.
+      // notifyPassChanged never throws; the .catch is for the database being
+      // unreachable, which the sale itself has already survived.
+      for (const kind of ['loyalty', 'customer']) {
+        applePush
+          .notifyPassChanged({ pool, office, kind, subjectId: customerId })
+          .catch(() => {});
+      }
+
       res.json({
         customer_id: customerId,
         points: delta,

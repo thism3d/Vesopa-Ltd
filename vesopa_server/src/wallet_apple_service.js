@@ -7,6 +7,8 @@ const { requireAuth, requireTerminal } = require('./auth');
 const A = require('./wallet_apple');
 const G = require('./wallet_google');
 const QR = require('./qr');
+const P = require('./wallet_apple_push');
+const { appleWebServiceRoutes } = require('./wallet_apple_webservice');
 
 /**
  * Apple Wallet, beside Google Wallet rather than instead of it.
@@ -30,47 +32,29 @@ const QR = require('./qr');
  * printed in March hands over a card with today's balance on it — and the
  * alternative, a stored file, would need invalidating on every sale.
  *
- * WHAT IS DELIBERATELY NOT HERE YET
+ * HOW A CARD CHANGES AFTER IT IS ISSUED
  *
- * Push updates. `webServiceURL` is written into the pass when it is configured,
- * and `epos_wallet_devices` is ready for the registrations — but the update
- * endpoints and the APNs client are a separate piece of work with their own
- * certificate. Until then a pass is correct when issued and refreshed by
- * scanning again, which is the honest behaviour and is what the card in a
- * customer's wallet says it is.
+ * A `.pkpass` is still a snapshot, but it is no longer only a snapshot. When
+ * APPLE_WALLET_WEB_SERVICE_URL is set, every pass carries the address of the
+ * update service in wallet_apple_webservice.js, and iOS registers itself there
+ * the moment the card is added. A sale that moves somebody's points then calls
+ * wallet_apple_push.js, which wakes the phone, and Wallet comes back here for a
+ * freshly built card.
+ *
+ * Leave that variable blank and none of it happens: no pass carries the URL, no
+ * device ever registers, and a card is what it always was — correct when issued
+ * and refreshed by scanning again. That is a supported way to run this, not a
+ * broken one, which is why the routes below are mounted either way and simply
+ * have nobody calling them.
  */
 function appleWalletRoutes({ pool, secret, core }) {
   const router = express.Router();
   const auth = requireAuth(secret);
 
-  const config = A.readConfig();
+  const config = A.cachedConfig();
   const assetsDir = path.join(__dirname, '..', 'assets', 'wallet');
 
   const { readBrand, loadSubject, shortLink } = core;
-
-  /**
-   * Whether the request came from something that can open a `.pkpass`.
-   *
-   * User-Agent sniffing, which is normally a mistake — but the question here is
-   * not "which browser" but "does this operating system have Apple Wallet",
-   * and there is no feature test for that. Getting it wrong is also cheap in
-   * one direction: an Android phone wrongly given a `.pkpass` downloads a file
-   * it cannot open, so the check is deliberately narrow and everything it is
-   * unsure about goes to Google.
-   *
-   * A Mac is excluded on purpose. macOS has no Wallet app; a `.pkpass` opens in
-   * Preview and does nothing useful, so a desktop Safari gets the Google link
-   * and can at least read it.
-   */
-  function wantsApple(req) {
-    const ua = String(req.headers['user-agent'] || '');
-    if (/\b(iPhone|iPad|iPod)\b/i.test(ua)) return true;
-    // iPadOS 13+ reports itself as a Mac. The touch-points hint is the usual
-    // way to tell the two apart, and it is not available here — so an explicit
-    // ?apple=1 is offered instead, which is what the "I have an iPhone" link on
-    // the landing page below sets.
-    return String(req.query.apple || '') === '1';
-  }
 
   /**
    * Build one `.pkpass`, and remember the serial it was built with.
@@ -183,6 +167,37 @@ function appleWalletRoutes({ pool, secret, core }) {
       .send(built.bytes);
   }
 
+  /**
+   * The same signing material, plus whether there is anybody to push to.
+   *
+   * Derived from `config` rather than read again: A.readConfig() shells out to
+   * openssl several times to work out which bundle holds the right key, and
+   * doing that twice at start-up to learn the same answer would be pure cost.
+   */
+  const pushConfig = {
+    ...config,
+    host:
+      String(process.env.APPLE_WALLET_APNS_HOST || '').trim() || P.APNS_HOST,
+    pushEnabled: Boolean(config.configured && config.webServiceUrl),
+  };
+
+  // ---------------------------------------------------------------------------
+  // Apple's update service
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Mounted unconditionally, including when push is switched off.
+   *
+   * The temptation is to mount it only when APPLE_WALLET_WEB_SERVICE_URL is
+   * set, on the grounds that nothing can call it otherwise. But passes are
+   * permanent: a card issued while the URL was set carries it forever, and it
+   * will keep calling these paths long after somebody blanks the variable to
+   * turn the feature off. Answering it properly costs nothing; answering 404
+   * would put "the web service returned an invalid pass" in a log nobody is
+   * reading, on a phone nobody can see.
+   */
+  router.use(appleWebServiceRoutes({ pool, config, build }));
+
   // ---------------------------------------------------------------------------
   // The customer-facing link
   // ---------------------------------------------------------------------------
@@ -279,6 +294,20 @@ function appleWalletRoutes({ pool, secret, core }) {
         present: config.configured && certificatePresent(file),
       }));
 
+      // What the update service is actually doing, rather than whether it is
+      // switched on. A venue that has turned push updates on and has zero
+      // registered devices a week later has a problem — most likely a
+      // webServiceURL that was wrong when its cards were issued, which no
+      // amount of fixing the variable now will repair for a pass already in
+      // somebody's pocket. Nothing else in the system would ever say so.
+      const [[devices]] = await pool.query(
+        `SELECT COUNT(*) AS registered,
+                SUM(last_error IS NOT NULL) AS failing,
+                MAX(last_push_at) AS last_push
+           FROM epos_wallet_devices WHERE office = ?`,
+        [office]
+      );
+
       res.json({
         configured: config.configured,
         problems: config.problems,
@@ -286,6 +315,10 @@ function appleWalletRoutes({ pool, secret, core }) {
         team_id: config.teamId,
         web_service_url: config.webServiceUrl || '',
         push_updates: Boolean(config.webServiceUrl),
+        apns_host: pushConfig.host,
+        devices_registered: Number(devices.registered) || 0,
+        devices_failing: Number(devices.failing) || 0,
+        last_push_at: devices.last_push || null,
         apple_enabled: Number(brand.apple_enabled ?? 1) === 1,
         certificates,
       });
@@ -372,6 +405,64 @@ function appleWalletRoutes({ pool, secret, core }) {
     }
   });
 
+  /**
+   * Push this card's update now, and say what happened to each device.
+   *
+   * The only way to find out whether push updates work on a deployment. Every
+   * other path into wallet_apple_push.js is fire-and-forget by design — a sale
+   * must not fail because APNs is unreachable — which means the ordinary
+   * failure is invisible. This route is the same code with the result kept, so
+   * a manager who has just added a card to their own phone can press a button
+   * and be told `BadDeviceToken` rather than watching a card not change.
+   *
+   * Reports rather than throws, for the same reason: `{ pushed: 0, failed: 1 }`
+   * with a reason on the device row is a diagnosis, and a 500 is not.
+   */
+  router.post('/api/wallet/apple/:kind/:subjectId/push', auth, async (req, res, next) => {
+    try {
+      const office = await tenantEmail(req);
+      const kind = String(req.params.kind);
+      const subjectId = String(req.params.subjectId);
+
+      if (!pushConfig.pushEnabled) {
+        return res.status(503).json({
+          error: config.configured
+            ? 'Push updates are off: APPLE_WALLET_WEB_SERVICE_URL is not set, so ' +
+              'no pass carries an address to be updated at.'
+            : `Apple Wallet is not configured: ${config.problems.join('; ')}`,
+        });
+      }
+
+      const [[row]] = await pool.query(
+        `SELECT apple_serial FROM epos_wallet_passes
+          WHERE office = ? AND kind = ? AND subject_id = ?`,
+        [office, kind, subjectId]
+      );
+      if (!row || !row.apple_serial) {
+        return res.status(404).json({
+          error: 'No Apple pass has been issued for this card yet.',
+        });
+      }
+
+      const result = await P.notifySerial({
+        pool,
+        serial: row.apple_serial,
+        config: pushConfig,
+        host: pushConfig.host,
+      });
+
+      const [devices] = await pool.query(
+        `SELECT device_id, last_push_at, last_error FROM epos_wallet_devices
+          WHERE serial_number = ?`,
+        [row.apple_serial]
+      );
+
+      res.json({ ...result, devices });
+    } catch (e) {
+      next(e);
+    }
+  });
+
   // ---------------------------------------------------------------------------
   // The till
   // ---------------------------------------------------------------------------
@@ -434,6 +525,35 @@ function appleWalletRoutes({ pool, secret, core }) {
   return router;
 }
 
+/**
+ * Whether the request came from something that can open a `.pkpass`.
+ *
+ * User-Agent sniffing, which is normally a mistake — but the question here is
+ * not "which browser" but "does this operating system have Apple Wallet", and
+ * there is no feature test for that. Getting it wrong is also cheap in one
+ * direction: an Android phone wrongly given a `.pkpass` downloads a file it
+ * cannot open, so the check is deliberately narrow and everything it is unsure
+ * about goes to Google.
+ *
+ * A Mac is excluded on purpose. macOS has no Wallet app; a `.pkpass` opens in
+ * Preview and does nothing useful, so a desktop Safari gets the Google link and
+ * can at least read it.
+ *
+ * At module scope rather than inside the router because the Google half asks it
+ * too: when Google cannot mint, whether to fall back to Apple or to show an
+ * honest error depends entirely on what the customer is holding. Two copies of
+ * this test would be two answers to that question.
+ */
+function wantsApple(req) {
+  const ua = String(req.headers['user-agent'] || '');
+  if (/\b(iPhone|iPad|iPod)\b/i.test(ua)) return true;
+  // iPadOS 13+ reports itself as a Mac. The touch-points hint is the usual way
+  // to tell the two apart, and it is not available here — so an explicit
+  // ?apple=1 is offered instead, which is what the "I have an iPhone" link on
+  // the landing page sets.
+  return String((req.query || {}).apple || '') === '1';
+}
+
 /** A plain page for the handful of things that can go wrong in a browser. */
 function simplePage(title, detail) {
   const esc = (s) =>
@@ -455,4 +575,4 @@ function simplePage(title, detail) {
 </main></body></html>`;
 }
 
-module.exports = { appleWalletRoutes, simplePage };
+module.exports = { appleWalletRoutes, simplePage, wantsApple };

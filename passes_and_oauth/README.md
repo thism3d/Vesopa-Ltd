@@ -193,3 +193,68 @@ that way:
 
 `.env` must be `0600`. It holds the database password, the JWT secret, and now
 the Wallet passphrase as well.
+
+## Push updates: making a card change in somebody's pocket
+
+There is nothing to add in the developer account for this. A Pass Type ID
+certificate **is** its own APNs client certificate — the same five `.p12`
+bundles that sign a `.pkpass` authenticate the push that updates it. There is no
+`.p8` auth key to create, no Key ID, and no App ID: no app of ours runs on the
+customer's phone, and none is needed. Wallet does all of it.
+
+What turns it on is one variable:
+
+    APPLE_WALLET_WEB_SERVICE_URL=https://backoffice.vesopaepos.com
+
+An **origin, with no path and no trailing slash**. iOS appends `/v1/...` itself,
+and `src/wallet_apple_webservice.js` answers those paths.
+
+### The trap that cannot be fixed afterwards
+
+The address is written *into each pass at the moment it is issued*, and a pass
+in a wallet is permanent. Every card issued while this variable was wrong — or
+blank — will keep asking the wrong URL forever, and the only repair is to
+reissue it to that customer. Get it right before the first card goes out.
+
+The same applies in reverse: blanking the variable later does not stop the cards
+already issued from calling. That is why the update routes are mounted whether
+or not push is switched on.
+
+### Checking it works
+
+After a deploy, add a card to a real iPhone, then:
+
+    curl -s -H "Authorization: Bearer <token>" \
+      https://backoffice.vesopaepos.com/api/wallet/apple/status | jq
+
+`devices_registered` should be 1 within a few seconds of the card being added.
+**Zero is the diagnosis**: iOS never reached the web service. It must be
+publicly reachable over HTTPS with a valid certificate — iOS will not talk to it
+otherwise and says nothing when it will not.
+
+Then change the customer's points and watch the card. Or force it:
+
+    POST /api/wallet/apple/<kind>/<subjectId>/push
+
+which is the same code path a sale takes, with the result kept instead of
+discarded. It reports per device, so `BadDeviceToken` arrives as a sentence
+rather than as a card that quietly never changes.
+
+### Where the reasons show up
+
+This feature's whole failure mode is silence — no app, no client log, no error.
+Three places speak:
+
+| Where | What it tells you |
+|---|---|
+| `POST /v1/log` → server log | iOS's own complaints. "Authentication failed", "invalid pass". The only channel the phone has. |
+| `epos_wallet_devices.last_error` | APNs' rejection for that device, written at the moment it happened. |
+| `/api/wallet/apple/status` | Registered and failing device counts per venue. |
+
+A venue with push on and zero registered devices a week later has a wrong
+`webServiceURL` baked into its cards. Nothing else in the system would say so.
+
+Production APNs always — `api.push.apple.com`. A pass has no sandbox build, so
+its push token is a production token, and sending it to the sandbox host is
+answered `BadDeviceToken`: the same error as a genuinely dead device, which is
+exactly the wrong thing to be confused about.

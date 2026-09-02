@@ -128,6 +128,30 @@ function readConfig(env = process.env) {
 }
 
 /**
+ * The same answer, worked out once.
+ *
+ * [readConfig] opens every `.p12` in the wallet directory and shells out to
+ * openssl twice per file to find the one whose key fits the certificates. That
+ * is right at start-up and wrong on a request, so anything asking mid-flight —
+ * the Google half, deciding whether an "Add to Apple Wallet" button would work
+ * — asks this instead.
+ *
+ * Cached for the life of the process, which matches how the certificates are
+ * treated everywhere else here: they are read when the server starts, and
+ * swapping them is a restart.
+ */
+let cachedConfigValue = null;
+function cachedConfig(env = process.env) {
+  if (!cachedConfigValue) cachedConfigValue = readConfig(env);
+  return cachedConfigValue;
+}
+
+/** Forget it. For tests. */
+function resetConfig() {
+  cachedConfigValue = null;
+}
+
+/**
  * The signing bundle in [dir]: the one whose key actually fits the
  * certificates.
  *
@@ -859,6 +883,116 @@ function assertKeyMatchesCert(keyPath, certPath, kind) {
 }
 
 // ---------------------------------------------------------------------------
+// The same material, for APNs
+// ---------------------------------------------------------------------------
+
+/**
+ * The certificate and key for one pass type, as PEM, in memory.
+ *
+ * WHY THIS EXISTS BESIDE sign() RATHER THAN INSIDE IT
+ *
+ * A Pass Type ID certificate is two things at once: what signs a `.pkpass`, and
+ * the TLS client certificate that authenticates to APNs when telling a phone
+ * that pass has changed. There is no separate push certificate and no `.p8` —
+ * Apple issues one credential and it does both jobs.
+ *
+ * [sign] needs the pair on disk, because `openssl smime` reads its inputs by
+ * name. Node's TLS wants them as strings and will not read a file for you. The
+ * two could be one function with a flag; they are not, deliberately. [sign] is
+ * the code path whose failure mode is a pass that installs on nothing and says
+ * nothing, it took a day to get right once, and it is not worth reopening to
+ * save twenty lines here.
+ *
+ * NOTHING TOUCHES THE DISK
+ *
+ * [sign] writes the key to a temp file for the length of one signature because
+ * openssl leaves it no choice. Here there is a choice, so the key exists only
+ * as a string in this process: a long-lived APNs connection would otherwise
+ * mean a private key sitting in the system temp folder for the life of the
+ * server, on a box shared with about twenty other tenants.
+ *
+ * The passphrase goes through the environment for the same reason it does in
+ * [sign] — an argument is visible in `ps` to every account on the machine.
+ */
+function pemForKind(kind, config) {
+  if (!CER_FILES[kind]) throw new Error(`Unknown pass kind "${kind}"`);
+
+  const perKind = path.join(config.dir, P12_FILES[kind]);
+  const bundle = existsSafely(perKind) ? perKind : config.shared;
+  if (!bundle || !existsSafely(bundle)) {
+    throw new Error(
+      `No signing key for a ${kind} pass, so nothing can authenticate to APNs ` +
+        `for ${CER_FILES[kind]}. Put ${P12_FILES[kind]} — or a single ` +
+        `${SHARED_P12} covering all five — in APPLE_WALLET_DIR.`
+    );
+  }
+
+  const cer = path.join(config.certDir, CER_FILES[kind]);
+  if (!existsSafely(cer)) {
+    throw new Error(`No certificate for a ${kind} pass: expected ${cer}`);
+  }
+
+  // `-legacy` when this openssl has it, for the same Keychain/3DES reason the
+  // rest of this file documents. See pkcs12LegacyArgs().
+  const keyOut = execFileSync(
+    'openssl',
+    ['pkcs12', '-in', bundle, '-nocerts', '-nodes',
+     '-passin', 'env:VESOPA_P12_PASS', ...pkcs12LegacyArgs()],
+    {
+      stdio: 'pipe',
+      timeout: 15000,
+      env: { ...process.env, VESOPA_P12_PASS: config.passphrase || '' },
+    }
+  );
+
+  // `openssl pkcs12` prints the bag attributes — friendly name, local key id —
+  // above the PEM block. Node's TLS rejects the whole string when they are left
+  // on, with an error about the key rather than about the preamble, so only the
+  // block itself is kept.
+  const key = pemBlock(String(keyOut), 'PRIVATE KEY');
+  if (!key) {
+    throw new Error(
+      `Read ${path.basename(bundle)} but found no private key in it — check ` +
+        `APPLE_WALLET_P12_PASSWORD.`
+    );
+  }
+
+  const leaf = String(
+    execFileSync('openssl', ['x509', '-inform', 'DER', '-in', cer], {
+      stdio: 'pipe',
+      timeout: 15000,
+    })
+  );
+
+  // The WWDR intermediate is appended to the leaf rather than passed as a CA.
+  // `ca` in Node's TLS options is what *verifies the server*; APNs' own chain
+  // is public and already trusted, and overriding it here would mean this
+  // connection stopped trusting Apple the day Apple rotated. What APNs needs
+  // from us is the chain for our own certificate, which is what a multi-PEM
+  // `cert` is — leaf first, then the intermediate that issued it.
+  const chain = [pemBlock(leaf, 'CERTIFICATE')];
+  if (config.wwdr && existsSafely(config.wwdr)) {
+    try {
+      const wwdr = pemBlock(fs.readFileSync(config.wwdr, 'utf8'), 'CERTIFICATE');
+      if (wwdr) chain.push(wwdr);
+    } catch {
+      // A missing intermediate is survivable here in a way it is not when
+      // signing: APNs may already hold it. Left out rather than made fatal.
+    }
+  }
+
+  return { cert: chain.join('\n'), key };
+}
+
+/** The first PEM block of a given type, without whatever surrounds it. */
+function pemBlock(text, label) {
+  const match = new RegExp(
+    `-----BEGIN [^-]*${label}-----[\\s\\S]*?-----END [^-]*${label}-----`
+  ).exec(String(text));
+  return match ? match[0] : '';
+}
+
+// ---------------------------------------------------------------------------
 // The archive
 // ---------------------------------------------------------------------------
 
@@ -1010,6 +1144,10 @@ module.exports = {
   SHARED_P12,
   findBundle,
   readConfig,
+  cachedConfig,
+  resetConfig,
+  pemForKind,
+  pemBlock,
   buildPassJson,
   buildPkpass,
   artworkFor,
