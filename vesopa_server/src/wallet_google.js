@@ -59,17 +59,37 @@ const SAFE_JWT_LENGTH = 1800;
  *   classResource / objectResource   the Google Wallet REST resources.
  *   payloadKey  the key this kind takes inside a save JWT.
  *
- * Note where the two platforms disagree, because it is not a mistake:
- * membership and staff are both `storeCard`/`generic` on Apple but both land
- * on Google's `genericClass`, and loyalty and gift card are both `storeCard`
- * on Apple while Google gives each its own resource. Apple models the *shape*
- * of the card; Google models what it is *for*.
+ * Note where the two platforms disagree, because it is not a mistake: Apple
+ * models the *shape* of the card and Google models what it is *for*, so all
+ * five are one Apple style while Google gives most of them their own resource.
+ *
+ * WHY ALL FIVE ARE eventTicket
+ *
+ * They used to be three storeCards, a generic and a coupon — the style that
+ * described each card best. They are all `eventTicket` now, and none of them is
+ * an event.
+ *
+ * iOS honours `groupingIdentifier` on `eventTicket` and `boardingPass` and on
+ * nothing else. Without it a venue's five cards sit as five separate items in
+ * the wallet, and a customer holding cards from three venues has fifteen things
+ * to scroll past looking for the one they want. With it, each venue collapses
+ * into one stack. The only other way to group them would be a pass type ID and
+ * a certificate *per venue*, which is a certificate to issue and renew for
+ * every customer we sign.
+ *
+ * So the style is chosen for the grouping behaviour rather than the semantics,
+ * which is a trade worth naming: `eventTicket` also gives a 98pt strip instead
+ * of a 144pt one, which is what makes a membership card look like a card rather
+ * than a full-screen poster.
+ *
+ * `appleType`, `classResource`, `objectResource` and `payloadKey` are all
+ * unchanged. Nothing is re-issued and no customer re-downloads anything.
  */
 const PASS_TYPES = {
   loyalty: {
     label: 'Loyalty Card',
     appleType: 'pass.com.vesopa.loyalty',
-    appleStyle: 'storeCard',
+    appleStyle: 'eventTicket',
     classResource: 'loyaltyClass',
     objectResource: 'loyaltyObject',
     payloadKey: 'loyaltyObjects',
@@ -80,7 +100,7 @@ const PASS_TYPES = {
   customer: {
     label: 'Membership Card',
     appleType: 'pass.com.vesopa.membership',
-    appleStyle: 'storeCard',
+    appleStyle: 'eventTicket',
     classResource: 'genericClass',
     objectResource: 'genericObject',
     payloadKey: 'genericObjects',
@@ -88,7 +108,7 @@ const PASS_TYPES = {
   giftcard: {
     label: 'Gift Card',
     appleType: 'pass.com.vesopa.giftcard',
-    appleStyle: 'storeCard',
+    appleStyle: 'eventTicket',
     classResource: 'giftCardClass',
     objectResource: 'giftCardObject',
     payloadKey: 'giftCardObjects',
@@ -96,7 +116,7 @@ const PASS_TYPES = {
   staff: {
     label: 'Staff Card',
     appleType: 'pass.com.vesopa.staff',
-    appleStyle: 'generic',
+    appleStyle: 'eventTicket',
     classResource: 'genericClass',
     objectResource: 'genericObject',
     payloadKey: 'genericObjects',
@@ -109,12 +129,33 @@ const PASS_TYPES = {
     // differs from its signing certificate by one letter is rejected with an
     // error that does not name the field.
     appleType: 'pass.com.vesopa.promotions',
-    appleStyle: 'coupon',
+    appleStyle: 'eventTicket',
     classResource: 'offerClass',
     objectResource: 'offerObject',
     payloadKey: 'offerObjects',
   },
 };
+
+/**
+ * The order a venue's cards appear in, top to bottom, inside its stack.
+ *
+ * Ours, not Apple's — iOS has no key for it, so it is applied wherever passes
+ * are listed: the back office, the join page, and the till's list.
+ *
+ * Ordered by how urgently somebody needs the card in their hand. Staff first
+ * because it opens a till at the start of a shift; loyalty last because it is
+ * the one the customer opens deliberately rather than under pressure.
+ */
+const CARD_ORDER = ['staff', 'customer', 'giftcard', 'promo', 'loyalty'];
+
+/** Sort any list of things carrying a `kind` into [CARD_ORDER]. */
+function byCardOrder(a, b) {
+  const rank = (k) => {
+    const at = CARD_ORDER.indexOf(k);
+    return at === -1 ? CARD_ORDER.length : at;
+  };
+  return rank(a) - rank(b);
+}
 
 /** The Google resources behind each kind. Derived, so it cannot disagree. */
 const KINDS = Object.fromEntries(
@@ -721,6 +762,8 @@ function makeClient(config, fetchImpl = fetch) {
 
 module.exports = {
   PASS_TYPES,
+  CARD_ORDER,
+  byCardOrder,
   KINDS,
   PAYLOAD_KEYS,
   SAFE_JWT_LENGTH,

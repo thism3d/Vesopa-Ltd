@@ -68,6 +68,17 @@ const build = (kind, subject) =>
     authToken: 'token-1',
   });
 
+/**
+ * The field body of a built pass, whatever style it is written under.
+ *
+ * Read from PASS_TYPES rather than named, because the style is a decision that
+ * has already changed once: all five moved to `eventTicket` to get
+ * `groupingIdentifier`, which iOS honours on nothing else. A test that spelled
+ * `pass.storeCard` was asserting the layout key rather than the layout, and
+ * broke on a change it had no opinion about.
+ */
+const body = (pass, kind) => pass[G.PASS_TYPES[kind].appleStyle];
+
 // ---------------------------------------------------------------------------
 // Identity
 // ---------------------------------------------------------------------------
@@ -152,7 +163,7 @@ check('a venue that has chosen nothing gets the Vesopa palette', () => {
 
 check('a loyalty card leads with the points', () => {
   const pass = build('loyalty', member);
-  const primary = pass.storeCard.primaryFields[0];
+  const primary = body(pass, 'loyalty').primaryFields[0];
   assert.strictEqual(primary.key, 'points');
   assert.strictEqual(primary.value, 240);
 });
@@ -164,7 +175,7 @@ check('a gift card leads with the balance, as money', () => {
     balance_minor: 2550,
     currency: 'GBP',
   });
-  assert.strictEqual(pass.storeCard.primaryFields[0].value, '£25.50');
+  assert.strictEqual(body(pass, 'giftcard').primaryFields[0].value, '£25.50');
 });
 
 check('a staff card leads with the name', () => {
@@ -174,7 +185,7 @@ check('a staff card leads with the name', () => {
     role: 'Manager',
     card_number: '999900007',
   });
-  assert.strictEqual(pass.generic.primaryFields[0].value, 'Owen Price');
+  assert.strictEqual(body(pass, 'staff').primaryFields[0].value, 'Owen Price');
 });
 
 check('a staff PIN never reaches the card', () => {
@@ -202,8 +213,8 @@ check('an empty field is left out rather than shown blank', () => {
     discount: '',
   });
   const keys = [
-    ...pass.storeCard.secondaryFields,
-    ...pass.storeCard.auxiliaryFields,
+    ...body(pass, 'loyalty').secondaryFields,
+    ...body(pass, 'loyalty').auxiliaryFields,
   ].map((f) => f.key);
   assert.ok(!keys.includes('tier'));
   assert.ok(!keys.includes('number'));
@@ -502,6 +513,225 @@ check('a served pass is inline, not an attachment', () => {
     header.includes('inline'),
     'inline is what hands the bytes straight to Wallet'
   );
+});
+
+// ---------------------------------------------------------------------------
+// Stacking a venue's cards together
+// ---------------------------------------------------------------------------
+
+// iOS honours groupingIdentifier on eventTicket and boardingPass and nothing
+// else. If a kind ever moves back to storeCard, its cards silently stop
+// stacking -- no error, they just scatter across the wallet. This is the test
+// that says why the style is what it is.
+check('every kind is eventTicket, which is what makes grouping work', () => {
+  for (const [kind, type] of Object.entries(G.PASS_TYPES)) {
+    assert.strictEqual(
+      type.appleStyle,
+      'eventTicket',
+      `${kind} is ${type.appleStyle}, so its cards will not stack`
+    );
+  }
+});
+
+check("a venue's five cards all carry the same grouping identifier", () => {
+  const branded = { ...brand, join_slug: 'vesopa-kitchen' };
+  const groups = Object.keys(G.PASS_TYPES).map(
+    (kind) =>
+      A.buildPassJson({
+        kind,
+        config,
+        brand: branded,
+        subject: { id: 'x', name: 'Sarah Jones', card_number: '1', title: 'Offer' },
+        serial: 's',
+        authToken: 't',
+      }).groupingIdentifier
+  );
+
+  assert.strictEqual(new Set(groups).size, 1, 'the five kinds disagree, so they will not stack');
+  assert.strictEqual(groups[0], 'venue:vesopa-kitchen');
+});
+
+check('two venues never share a stack', () => {
+  const one = A.buildPassJson({
+    kind: 'loyalty', config, brand: { ...brand, join_slug: 'crown' },
+    subject: member, serial: 's', authToken: 't',
+  });
+  const two = A.buildPassJson({
+    kind: 'loyalty', config, brand: { ...brand, join_slug: 'kitchen' },
+    subject: member, serial: 's', authToken: 't',
+  });
+  assert.notStrictEqual(one.groupingIdentifier, two.groupingIdentifier);
+});
+
+// The venue's contact email is the primary key of epos_wallet_settings, and
+// pass.json sits unencrypted inside a zip the holder can open. A venue that has
+// not set a sign-up code must still group, and must still not leak its address.
+check('a venue with no sign-up code groups without leaking its email', () => {
+  const office = 'manager@vesopa.co.uk';
+  const built = A.buildPassJson({
+    kind: 'loyalty',
+    config,
+    brand: { ...brand, office, join_slug: '' },
+    subject: member,
+    serial: 's',
+    authToken: 't',
+  });
+
+  assert.ok(built.groupingIdentifier, 'no grouping identifier at all');
+  assert.ok(
+    !JSON.stringify(built).includes(office),
+    "the venue's email address is inside the pass"
+  );
+
+  // Stable, or a rebuild would drop the card out of its own stack.
+  const again = A.buildPassJson({
+    kind: 'giftcard', config, brand: { ...brand, office, join_slug: '' },
+    subject: { id: 'g', card_number: '1', balance_minor: 100 }, serial: 's2', authToken: 't2',
+  });
+  assert.strictEqual(built.groupingIdentifier, again.groupingIdentifier);
+});
+
+// ---------------------------------------------------------------------------
+// The venue owns the card
+// ---------------------------------------------------------------------------
+
+check('the top line is the venue, not the programme', () => {
+  const pass = build('loyalty', member);
+  assert.strictEqual(pass.logoText, 'The Crown');
+  assert.notStrictEqual(pass.logoText, brand.program_name);
+});
+
+check('the programme name is kept on the back rather than dropped', () => {
+  const pass = build('loyalty', member);
+  const programme = body(pass, 'loyalty').backFields.find((f) => f.key === 'programme');
+  assert.ok(programme, 'program_name vanished when it lost the top line');
+  assert.strictEqual(programme.value, brand.program_name);
+});
+
+// ---------------------------------------------------------------------------
+// Member numbers
+// ---------------------------------------------------------------------------
+
+check('a member number is prefixed by the venue and zero padded', () => {
+  const pass = build('loyalty', member);
+  const number = body(pass, 'loyalty').auxiliaryFields.find((f) => f.key === 'number');
+  assert.ok(number, 'the member number is not on the card');
+  // "The Crown" -> C. The article is dropped: it is not what anybody calls it.
+  assert.strictEqual(number.value, 'C · 0001');
+});
+
+check('a member with no number gets no empty row', () => {
+  const pass = build('loyalty', { ...member, member_no: '' });
+  const keys = body(pass, 'loyalty').auxiliaryFields.map((f) => f.key);
+  assert.ok(!keys.includes('number'));
+});
+
+check('the same person has the same number on both their cards', () => {
+  const loyalty = build('loyalty', member);
+  const membership = build('customer', member);
+  const find = (pass, kind) =>
+    body(pass, kind).auxiliaryFields.find((f) => f.key === 'number').value;
+  assert.strictEqual(find(loyalty, 'loyalty'), find(membership, 'customer'));
+});
+
+// ---------------------------------------------------------------------------
+// The back of the card
+// ---------------------------------------------------------------------------
+
+check('back fields come out in the documented order', () => {
+  const pass = build('loyalty', {
+    ...member,
+    history: [{ at: '2026-09-01', kind: 'earn', points: 12, balance_after: 240 }],
+  });
+  const keys = body(pass, 'loyalty').backFields.map((f) => f.key);
+
+  const expected = ['history', 'earning', 'scanfail', 'phone', 'website', 'programme',
+                    'since', 'terms'];
+  const present = expected.filter((k) => keys.includes(k));
+  const actual = keys.filter((k) => present.includes(k));
+  assert.deepStrictEqual(
+    actual, present,
+    `back fields are out of order: ${keys.join(', ')}`
+  );
+});
+
+// A venue that has filled nothing in still gets a working card. That is the
+// rule the whole feature is built on, and eight new nullable columns are eight
+// new ways to break it.
+check('a venue that has filled nothing in still gets a card', () => {
+  const bare = { issuer_name: 'Bare Venue', office: 'bare@example.com' };
+  const pass = A.buildPassJson({
+    kind: 'loyalty', config, brand: bare, subject: member, serial: 's', authToken: 't',
+  });
+  const fields = body(pass, 'loyalty').backFields;
+  assert.ok(fields.every((f) => f.value !== '' && f.value != null), 'a blank row was drawn');
+  assert.ok(pass.groupingIdentifier, 'no grouping without a sign-up code');
+});
+
+// The one field that is about the card itself. A venue that has not thought
+// about a failed scan needs the answer more than one that has.
+check('there is always advice for when the scan fails', () => {
+  const bare = { issuer_name: 'Bare Venue', office: 'bare@example.com' };
+  const pass = A.buildPassJson({
+    kind: 'loyalty', config, brand: bare, subject: member, serial: 's', authToken: 't',
+  });
+  const scanfail = body(pass, 'loyalty').backFields.find((f) => f.key === 'scanfail');
+  assert.ok(scanfail && scanfail.value, 'no advice at all when the QR will not read');
+});
+
+// ---------------------------------------------------------------------------
+// What a push actually says
+// ---------------------------------------------------------------------------
+
+// Wallet shows changeMessage on the lock screen when that field moves. Without
+// one the update is silent, which is the whole feature not working. "Your pass
+// was updated" is why people turn these off, so every message carries the
+// number and what it means.
+check('the field that moves carries a message with the number in it', () => {
+  const cases = {
+    loyalty: ['points', member],
+    giftcard: ['balance', { id: 'g', card_number: '987800001', balance_minor: 2550 }],
+    customer: ['tier', member],
+    promo: ['endsin', { id: 'p', title: 'Two for one', ends_on: '2099-01-01' }],
+  };
+
+  for (const [kind, [key, subject]] of Object.entries(cases)) {
+    const b = body(build(kind, subject), kind);
+    const field = [...b.headerFields, ...b.primaryFields].find((f) => f.key === key);
+    assert.ok(field, `${kind} has no ${key} field to notify through`);
+    assert.ok(field.changeMessage, `${kind}.${key} would update silently`);
+    assert.ok(
+      field.changeMessage.includes('%@'),
+      `${kind}.${key} notifies without saying the new value`
+    );
+  }
+});
+
+check('a staff card never notifies anybody', () => {
+  const pass = build('staff', { id: '7', name: 'Owen Price', role: 'Manager', card_number: '9' });
+  assert.ok(
+    !JSON.stringify(pass).includes('changeMessage'),
+    'an administrative edit would ping a phone on a day off'
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Gift cards are bearer instruments
+// ---------------------------------------------------------------------------
+
+check('only the last four of a gift card number is printed', () => {
+  const pass = build('giftcard', {
+    id: 'g1', card_number: '987800001', balance_minor: 2550, currency: 'GBP',
+  });
+  const header = body(pass, 'giftcard').headerFields.find((f) => f.key === 'last4');
+  assert.ok(header, 'no gift card number on the front at all');
+  assert.ok(header.value.endsWith('0001'), 'the last four are not shown');
+  assert.ok(
+    !header.value.includes('987800001'),
+    'the whole number is readable across a table'
+  );
+  // Still scannable: the full number belongs in the barcode, where it is needed.
+  assert.strictEqual(pass.barcodes[0].message, '987800001');
 });
 
 console.log(`\n${passed} checks passed\n`);

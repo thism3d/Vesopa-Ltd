@@ -356,6 +356,41 @@ const BRAND = {
   label: 'rgb(165, 199, 21)',
 };
 
+/**
+ * The order fields appear in on the back of a card, top to bottom.
+ *
+ * Declared here rather than enforced by the order of the `push` calls, because
+ * the per-kind fields are added inside a switch and the venue-wide ones before
+ * it. Sorting at the end means a field can be written wherever it reads best in
+ * the code and still land where it belongs on the card.
+ *
+ * Ordered by what staff are actually asked. The ledger first, because "why is
+ * my balance that number" is the question; the terms last, because nobody turns
+ * a card over to read them.
+ *
+ * A key not listed here sorts to the end rather than being dropped — a new
+ * field with a forgotten entry should look wrong, not disappear.
+ */
+const BACK_ORDER = [
+  'history',
+  'spend_history',
+  'earning',
+  'redeeming',
+  'tier_benefits',
+  'authorises',
+  'conditions',
+  'scanfail',
+  'address',
+  'hours',
+  'phone',
+  'website',
+  'programme',
+  'since',
+  'issued',
+  'expiry_policy',
+  'terms',
+];
+
 // ---------------------------------------------------------------------------
 // pass.json
 // ---------------------------------------------------------------------------
@@ -365,6 +400,106 @@ const money = (minor, currency) =>
     style: 'currency',
     currency: currency || 'GBP',
   }).format((Number(minor) || 0) / 100);
+
+/**
+ * The member's number, prefixed with the venue's initials.
+ *
+ * `VK · 0241` rather than `241`. Three things come from the prefix: it is
+ * unmistakably *this* venue's number when a customer holds cards from several,
+ * it survives being read aloud down a phone, and it stops a bare integer from
+ * looking like a quantity of something.
+ *
+ * The number itself is `epos_customers.member_no`, which is already unique per
+ * venue — the index is on `(email_key, member_no)`. So one person has one
+ * number at one venue and a different one at the next, which is the right model
+ * for cards that are the venue's to issue.
+ *
+ * Zero-padded to four, because a column of numbers that changes width as a
+ * venue grows past 999 looks like a mistake.
+ */
+function memberNumber(brand, subject) {
+  if (subject.member_no === undefined || subject.member_no === null) return '';
+  const number = String(subject.member_no).trim();
+  if (!number) return '';
+
+  const padded = /^\d+$/.test(number) ? number.padStart(4, '0') : number;
+  const prefix = venueInitials(brand);
+  return prefix ? `${prefix} · ${padded}` : padded;
+}
+
+/**
+ * A venue's initials, for the member number.
+ *
+ * "The Vesopa Kitchen" is `VK`, not `TVK` — the words people actually use to
+ * name a place are the ones that carry it, and an article at the front is not
+ * one of them. Capped at three so a long name does not turn into an acronym
+ * nobody recognises.
+ */
+const NOISE_WORDS = new Set(['the', 'a', 'an', 'of', 'and', 'at', 'on', '&']);
+function venueInitials(brand) {
+  return String(brand.issuer_name || '')
+    .split(/[\s-]+/)
+    .map((word) => word.replace(/[^A-Za-z]/g, ''))
+    .filter((word) => word && !NOISE_WORDS.has(word.toLowerCase()))
+    .slice(0, 3)
+    .map((word) => word[0].toUpperCase())
+    .join('');
+}
+
+/**
+ * Tier and discount as one line: `Gold · 10% off`.
+ *
+ * They are a single fact to the person holding the card — the tier is the
+ * reason and the discount is the consequence — and giving each its own field
+ * spends half a row on labels to say it twice.
+ */
+function tierLine(subject) {
+  return [subject.tier, subject.discount].filter(Boolean).join(' · ');
+}
+
+/** `March 2024`. A joining date needs no day; the day is noise on a card. */
+function monthYear(value) {
+  if (!value) return '';
+  const when = new Date(value);
+  if (Number.isNaN(when.getTime())) return String(value);
+  return when.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+}
+
+/**
+ * The last four of a gift card number, masked.
+ *
+ * A gift card is a bearer instrument: whoever can read the number can spend the
+ * balance. The whole number is already in the barcode, where it needs to be, so
+ * printing it large enough to read across a table only adds a way to lose it to
+ * somebody who photographed the screen.
+ */
+function lastFour(value) {
+  const digits = String(value || '').trim();
+  if (digits.length <= 4) return digits;
+  return `···· ${digits.slice(-4)}`;
+}
+
+/**
+ * How long an offer has left, counted at build time.
+ *
+ * Recomputed on every rebuild rather than stored, so a pass that updates says
+ * what is true now. This is the field the promo notification speaks through, so
+ * the wording is what a customer reads on a lock screen: "Ends in 3 days".
+ *
+ * Empty once it has passed. The pass carries `expirationDate` too, so Wallet
+ * greys the card out — a countdown reading "0 days" beside a greyed card is
+ * saying the same thing twice, and one of them badly.
+ */
+function daysLeft(endsOn) {
+  if (!endsOn) return '';
+  const end = new Date(`${String(endsOn).slice(0, 10)}T23:59:59Z`);
+  if (Number.isNaN(end.getTime())) return '';
+
+  const days = Math.ceil((end.getTime() - Date.now()) / 86400000);
+  if (days < 0) return '';
+  if (days === 0) return 'Today';
+  return days === 1 ? '1 day' : `${days} days`;
+}
 
 /**
  * Build the `pass.json` for one card.
@@ -425,6 +560,37 @@ function relevantLocations(brand) {
   }];
 }
 
+/**
+ * The stack a venue's cards belong to.
+ *
+ * The sign-up code when there is one: it is already unique across the estate,
+ * already stable (a venue changing it is a deliberate act), and already the
+ * thing that identifies a venue publicly.
+ *
+ * WHEN THERE IS NO CODE
+ *
+ * The design asked for `epos_wallet_settings.id` as the fallback. There is no
+ * such column — that table's primary key is `office`, which is the venue's
+ * contact email address. That address is not going in a pass: `pass.json` sits
+ * unencrypted inside a `.pkpass`, which is a zip file the holder can open, and
+ * a venue's email is not the customer's to have.
+ *
+ * So the fallback is a digest of it. Stable for a given venue, meaningless to
+ * anybody who reads it, and it cannot collide with a real sign-up code because
+ * of the prefix — a code may not contain a full stop (see SLUG_ALPHABET in
+ * wallet.js), and every digest here does.
+ */
+function groupingFor(brand) {
+  const slug = String(brand.join_slug || '').trim();
+  if (slug) return `venue:${slug}`;
+  const digest = crypto
+    .createHash('sha256')
+    .update(String(brand.office || ''))
+    .digest('hex')
+    .slice(0, 16);
+  return `venue:v.${digest}`;
+}
+
 function buildPassJson({ kind, config, brand, subject, serial, authToken }) {
   const type = G.PASS_TYPES[kind];
   if (!type) throw new Error(`Unknown pass kind "${kind}"`);
@@ -442,7 +608,25 @@ function buildPassJson({ kind, config, brand, subject, serial, authToken }) {
     serialNumber: serial,
     organizationName: organisation,
     description: `${organisation} ${type.label}`,
-    logoText: brand.program_name || organisation,
+
+    // The venue's name, not the programme's.
+    //
+    // This was `program_name || organisation`, which put "Vesopa Rewards"
+    // across the top of a card belonging to The Crown. The line beside the logo
+    // is the most prominent text on a pass and it belongs to whoever the
+    // customer thinks they are holding a card from. `program_name` is not lost
+    // — it moves to a "Programme" field on the back, where somebody looking for
+    // it will find it and nobody else has to read it.
+    logoText: organisation,
+
+    // What collapses a venue's five cards into one stack in the wallet.
+    //
+    // Only honoured on `eventTicket` and `boardingPass`, which is the entire
+    // reason all five kinds are `eventTicket` — see PASS_TYPES in
+    // wallet_google.js. Two passes group when this string matches exactly, so
+    // it must be per venue and stable forever: change it and every card already
+    // issued falls out of the stack it was in.
+    groupingIdentifier: groupingFor(brand),
 
     backgroundColor: background,
     foregroundColor: foreground,
@@ -485,21 +669,56 @@ function buildPassJson({ kind, config, brand, subject, serial, authToken }) {
     list.push({ key, label, value, ...(extra || {}) });
   };
 
-  if (brand.homepage_url) {
-    push(back, 'website', 'Website', brand.homepage_url);
+  // The venue's own words, on the back.
+  //
+  // Ordered by what staff actually get asked, not by what is easy to fill in:
+  // how the scheme works comes before where the venue is, and the terms come
+  // last because nobody turns a card over to read them.
+  //
+  // Every one is nullable and `push` drops an empty value, so a venue that has
+  // filled nothing in still gets a working card — the rule the whole wallet
+  // feature is built on. The actual ordering is applied after the switch below,
+  // so a per-kind field can be added wherever it reads best and still land in
+  // the right place.
+  const scheme = kind === 'loyalty' || kind === 'customer';
+  if (scheme) {
+    push(back, 'earning', 'Earning', brand.earning_text);
+    push(back, 'redeeming', 'Redeeming', brand.redeeming_text);
+    push(back, 'tier_benefits', 'Your tier', brand.tier_text);
   }
-  if (brand.support_phone) {
-    push(back, 'phone', 'Contact', brand.support_phone);
+  if (kind === 'loyalty') {
+    push(back, 'expiry_policy', 'Points expiry', brand.expiry_text);
   }
-  if (brand.terms) {
-    push(back, 'terms', 'Terms', String(brand.terms));
-  }
+
+  // The one field on the card that is about the card. A QR that will not scan
+  // is the moment this whole feature looks broken to a customer holding up a
+  // queue — and neither they nor the member of staff necessarily knows the
+  // number underneath can simply be typed in. A default is supplied because a
+  // venue that has not thought about it needs the answer more than one that has.
+  push(
+    back,
+    'scanfail',
+    'If the scan fails',
+    brand.scanfail_text ||
+      'Read out the number under the QR. Staff can key it in and nothing is lost.'
+  );
+
+  push(back, 'address', 'Where', brand.address_text);
+  push(back, 'hours', 'Open', brand.hours_text);
+  push(back, 'phone', 'Contact', brand.support_phone);
+  push(back, 'website', 'Website', brand.homepage_url);
+  // Displaced from `logoText` by the venue's own name. Kept, because a customer
+  // who signed up to "Crown Rewards" should still find that name somewhere.
+  push(back, 'programme', 'Programme', brand.program_name);
+  push(back, 'terms', 'Terms', brand.terms ? String(brand.terms) : '');
 
   const body = {
     headerFields: [],
     primaryFields: [],
     secondaryFields: [],
     auxiliaryFields: [],
+    // Sorted into BACK_ORDER at the end of this function, once the per-kind
+    // fields below have been added.
     backFields: back,
   };
 
@@ -542,15 +761,24 @@ function buildPassJson({ kind, config, brand, subject, serial, authToken }) {
 
   switch (kind) {
     case 'loyalty': {
-      push(body.primaryFields, 'points', 'Points', Number(subject.points) || 0);
-      push(body.secondaryFields, 'member', 'Member', subject.name);
-      if (subject.tier) push(body.secondaryFields, 'tier', 'Tier', subject.tier);
-      if (subject.member_no) {
-        push(body.auxiliaryFields, 'number', 'Member no.', subject.member_no);
-      }
-      if (subject.discount) {
-        push(body.auxiliaryFields, 'discount', 'Your discount', subject.discount);
-      }
+      // `changeMessage` is what turns a silent update into a notification on
+      // the lock screen. Wallet substitutes %@ with the new value and shows it
+      // only when this field actually moved, so it costs nothing on a rebuild
+      // that changes something else.
+      //
+      // The message carries the number and what to do with it. "Your pass was
+      // updated" tells a customer nothing they could act on, and is the reason
+      // people turn these off.
+      push(body.primaryFields, 'points', 'POINTS', Number(subject.points) || 0, {
+        changeMessage: '+%@ points. Show the card at the till to spend them.',
+      });
+      push(body.secondaryFields, 'member', 'MEMBER', subject.name);
+      // Tier and discount on one line: they are the same fact to a customer
+      // ("Gold, so 10% off"), and two fields to say it would spend half the
+      // row on labels.
+      push(body.secondaryFields, 'tier', 'TIER', tierLine(subject));
+      push(body.auxiliaryFields, 'number', 'MEMBER NO.', memberNumber(brand, subject));
+
       push(back, 'since', 'Member since', subject.member_since);
       // The ledger behind the number on the front. `PKTextAlignmentLeft` so the
       // columns line up as columns rather than drifting to the middle.
@@ -564,46 +792,64 @@ function buildPassJson({ kind, config, brand, subject, serial, authToken }) {
     }
 
     case 'customer': {
-      push(body.primaryFields, 'member', 'Member', subject.name);
-      if (subject.member_no) {
-        push(body.secondaryFields, 'number', 'Member no.', subject.member_no);
-      }
-      if (subject.tier) push(body.secondaryFields, 'tier', 'Tier', subject.tier);
-      if (subject.discount) {
-        push(body.auxiliaryFields, 'discount', 'Your discount', subject.discount);
-      }
+      // The tier is the header on a membership card because it is the whole
+      // point of holding one — on a loyalty card the points are, and the tier
+      // is a consequence.
+      push(body.headerFields, 'tier', 'TIER', subject.tier, {
+        changeMessage: "You're now %@.",
+      });
+      push(body.primaryFields, 'member', 'MEMBER', subject.name);
+      push(body.secondaryFields, 'discount', 'YOUR DISCOUNT', subject.discount);
+      push(body.secondaryFields, 'since', 'MEMBER SINCE', monthYear(subject.member_since));
+      push(body.auxiliaryFields, 'number', 'MEMBER NO.', memberNumber(brand, subject));
+
       push(back, 'since', 'Member since', subject.member_since);
       break;
     }
 
     case 'giftcard': {
+      // The last four digits, not the whole number: the card number is already
+      // in the barcode, and a gift card is a bearer instrument — printing all
+      // of it large enough to read across a table is how one gets spent by
+      // somebody who only ever saw a photograph of it.
+      push(body.headerFields, 'last4', 'GIFT CARD', lastFour(subject.card_number));
       push(
         body.primaryFields,
         'balance',
-        'Balance',
-        money(subject.balance_minor, subject.currency)
+        'BALANCE',
+        money(subject.balance_minor, subject.currency),
+        { changeMessage: '%@ left on the card.' }
       );
-      if (subject.name) push(body.secondaryFields, 'for', 'For', subject.name);
-      if (subject.expires_on) {
-        push(body.auxiliaryFields, 'expires', 'Expires', subject.expires_on);
-      }
+      push(body.secondaryFields, 'for', 'FOR', subject.name);
+      push(body.secondaryFields, 'expires', 'EXPIRES', subject.expires_on);
+
       push(back, 'issued', 'Issued', subject.issued_on);
       break;
     }
 
     case 'staff': {
-      push(body.primaryFields, 'name', 'Staff', subject.name);
-      push(body.secondaryFields, 'role', 'Role', subject.role || 'Staff');
-      push(body.auxiliaryFields, 'number', 'Card', subject.card_number);
+      push(body.primaryFields, 'name', 'STAFF', subject.name);
+      push(body.secondaryFields, 'role', 'ROLE', subject.role || 'Staff');
+      // Which venue this card opens a till at. A member of staff who works two
+      // sites carries two cards, and they are otherwise identical.
+      push(body.secondaryFields, 'site', 'SITE', organisation);
+      push(body.auxiliaryFields, 'number', 'CARD', subject.card_number);
+      // No changeMessage anywhere on a staff card. These updates are
+      // administrative — a role corrected, a site changed — and none of them is
+      // worth a notification on somebody's lock screen on a day off.
       break;
     }
 
     case 'promo': {
-      push(body.primaryFields, 'offer', 'Offer', subject.title);
-      if (subject.details) push(body.secondaryFields, 'detail', '', subject.details);
-      if (subject.ends_on) {
-        push(body.auxiliaryFields, 'ends', 'Ends', subject.ends_on);
-      }
+      // Counted down server-side on every rebuild, so the number is right at
+      // the moment the card was last updated rather than at the moment it was
+      // issued. This is the field the push notification speaks through.
+      push(body.headerFields, 'endsin', 'ENDS IN', daysLeft(subject.ends_on), {
+        changeMessage: 'Your offer ends in %@.',
+      });
+      push(body.primaryFields, 'offer', 'OFFER', subject.title);
+      push(body.secondaryFields, 'detail', '', subject.details);
+      push(body.secondaryFields, 'ends', 'ENDS', subject.ends_on);
       break;
     }
 
@@ -617,6 +863,18 @@ function buildPassJson({ kind, config, brand, subject, serial, authToken }) {
   if (subject.state && subject.state !== 'ACTIVE') pass.voided = true;
 
   if (subject.expires_on) pass.expirationDate = `${subject.expires_on}T23:59:59Z`;
+
+  // Into the documented order. A stable sort, so two fields sharing a rank —
+  // which only happens for a key missing from BACK_ORDER — keep the order they
+  // were written in rather than swapping about between builds.
+  const rank = (field) => {
+    const at = BACK_ORDER.indexOf(field.key);
+    return at === -1 ? BACK_ORDER.length : at;
+  };
+  body.backFields = back
+    .map((field, index) => ({ field, index }))
+    .sort((a, b) => rank(a.field) - rank(b.field) || a.index - b.index)
+    .map((entry) => entry.field);
 
   pass[type.appleStyle] = body;
   return pass;
