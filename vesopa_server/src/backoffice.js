@@ -4,7 +4,10 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const multer = require('multer');
 const { requireAuth } = require('./auth');
-const { ensureMemberNumber } = require('./member_numbers');
+const {
+  ensureMemberNumber,
+  backfill: backfillMemberNumbers,
+} = require('./member_numbers');
 
 // Product images. Stored on disk under public/uploads and served statically.
 // Capped and type-checked, so an upload cannot fill the disk or smuggle in a
@@ -1196,6 +1199,41 @@ function backofficeRoutes({ pool, broadcast, secret }) {
       await ensureMemberNumber(pool, await tenantEmail(req), id);
       broadcast({ type: 'customers.updated' });
       res.status(201).json({ id });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /**
+   * Give every member who has not got a number one.
+   *
+   * For the venues that already have customers, which is all of them. Member
+   * numbers used to be allocated only when a piece of plastic was issued, so
+   * everybody who signed up from a poster, at the till or in this screen has
+   * none — and their wallet card shows no member number at all until this has
+   * run. See src/member_numbers.js.
+   *
+   * A button rather than something that happens at start-up: it writes a row per
+   * customer, the numbering is permanent once done, and a venue should be able
+   * to see the count before and after rather than have their members silently
+   * renumbered by a deploy.
+   *
+   * Bounded per call, so a venue with twenty thousand customers is several
+   * presses rather than one request that times out. `remaining` says whether to
+   * press it again.
+   */
+  router.post('/customers/member-numbers/backfill', auth, async (req, res, next) => {
+    try {
+      const office = await tenantEmail(req);
+      const filled = await backfillMemberNumbers(pool, office, Number(req.body?.limit) || 500);
+
+      const [[left]] = await pool.query(
+        `SELECT COUNT(*) AS remaining FROM epos_customers
+          WHERE email_key = ? AND member_no IS NULL`,
+        [office]
+      );
+
+      res.json({ filled, remaining: Number(left.remaining) || 0 });
     } catch (e) {
       next(e);
     }
