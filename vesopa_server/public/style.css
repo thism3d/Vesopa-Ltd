@@ -3934,20 +3934,41 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
 }
 .wal-pass-head {
   display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 10px;
-  padding: 11px 13px 9px;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 13px 8px;
+}
+/* The chevron, at the size Apple actually draws it.
+   22pt, against the 160pt wordmark that used to fill the whole logo slot and
+   made every card -- whoever issued it -- read as an advertisement for Vesopa.
+   Fixed height so a venue swapping in its own mark cannot resize the header. */
+.wal-pass-mark {
+  height: 22px;
+  width: auto;
+  flex: none;
+  display: block;
 }
 .wal-pass-logo {
   font-weight: 700;
   letter-spacing: .01em;
   font-size: .82rem;
-  /* A long programme name truncates rather than wrapping the header onto two
-     lines, which is what Wallet itself does with it. */
+  /* The venue's name now, not the programme's. Truncates rather than wrapping
+     the header onto two lines, which is what Wallet itself does with it. */
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* The header field, top right. Right-aligned and pushed there by the margin
+   rather than by justify-content, so the venue name keeps the space it needs
+   and this takes what is left. */
+.wal-pass-header {
+  margin-left: auto;
+  flex: none;
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-width: 45%;
 }
 .wal-pass-kind {
   font-size: .62rem;
@@ -3957,11 +3978,16 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
   white-space: nowrap;
 }
 /* The band of artwork, with the headline value sitting on it — which is where
-   Apple puts a storeCard's primary field, and why the points were missing from
-   this preview before: there was nowhere for them to go. */
+   Apple puts the primary field, and why the points were missing from this
+   preview before: there was nowhere for them to go.
+   375x98, not 375x123. Every card is an eventTicket now — the only style
+   besides boardingPass that honours groupingIdentifier, which is what collapses
+   a venue's five cards into one stack — and an eventTicket strip is 98pt. The
+   shipped artwork is rendered at exactly this ratio by tools/wallet_art, so a
+   preview at the old height would be showing a crop the phone never makes. */
 .wal-pass-strip {
   position: relative;
-  aspect-ratio: 375 / 123;
+  aspect-ratio: 375 / 98;
   background-size: cover;
   background-position: center;
 }

@@ -1779,11 +1779,49 @@
 
               <div class="card rd-card">
                 <h3>On the back of the card</h3>
+                <p class="muted small">
+                  The questions your staff get asked at the counter. Every one of
+                  these is optional — leave it blank and the card simply does not
+                  show that line, rather than showing an empty one.
+                </p>
                 <div class="grid2">
                   <label>Website<input type="url" maxlength="255" data-wal="homepage_url" placeholder="https://…"></label>
                   <label>Contact number<input type="text" maxlength="40" data-wal="support_phone"></label>
                 </div>
+                <div class="grid2">
+                  <label>Where you are<input type="text" maxlength="255" data-wal="address_text" placeholder="1 High Street, Swansea SA1 1AA"></label>
+                  <label>When you're open<input type="text" maxlength="255" data-wal="hours_text" placeholder="Noon till late, every day"></label>
+                </div>
+                <label>How points are earned<textarea rows="2" data-wal="earning_text" placeholder="A point for every £1 you spend."></textarea></label>
+                <label>How points are spent<textarea rows="2" data-wal="redeeming_text" placeholder="Redeem from 200 points — just ask at the till."></textarea></label>
+                <label>What each tier gets<textarea rows="2" data-wal="tier_text" placeholder="Gold members get 10% off food, all week."></textarea></label>
+                <label>When points expire<textarea rows="2" data-wal="expiry_text" placeholder="Points last 24 months from the day you earn them."></textarea></label>
+                <label>If the scan fails
+                  <textarea rows="2" data-wal="scanfail_text"
+                    placeholder="Read out the number under the QR. Staff can key it in and nothing is lost."></textarea>
+                </label>
+                <p class="muted small">
+                  That last one is the only line on the card about the card. A QR
+                  that will not read is the moment this looks broken to somebody
+                  holding up a queue — and neither they nor your staff
+                  necessarily know the number underneath can just be typed in.
+                  Left blank, the card says exactly the sentence in the box above.
+                </p>
                 <label>Terms<textarea rows="3" data-wal="terms" placeholder="Points expire after 24 months."></textarea></label>
+              </div>
+
+              <div class="card rd-card">
+                <h3>Your photograph</h3>
+                <p class="muted small">
+                  The band of artwork across the card. Google fetches this itself,
+                  so a public HTTPS address is all it needs.
+                  <strong>Apple does not use it yet</strong> — a pass needs the
+                  image as bytes at an exact size, and resizing one is a job for
+                  the browser or a codec on the server. Until that is settled,
+                  Apple cards keep the generated artwork and this feeds the
+                  Google card and the preview below.
+                </p>
+                <label>Photo address<input type="url" maxlength="512" data-wal="photo_url" placeholder="https://…/venue.jpg"></label>
               </div>
 
               <div class="card rd-card">

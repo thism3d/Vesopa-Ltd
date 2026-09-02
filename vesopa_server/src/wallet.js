@@ -65,6 +65,20 @@ function walletCore({ pool, secret }) {
     // Atlantic. See schema_wallet_venue.sql.
     latitude: null,
     longitude: null,
+    // What the venue writes on the back of the card, and the photograph behind
+    // the strip. All nullable, and null rather than '' so that "this venue has
+    // not answered" stays distinguishable from "this venue answered with
+    // nothing" — the pass drops an empty field either way, but the back office
+    // shows a placeholder for the first and the venue's own blank for the
+    // second. See schema_wallet_copy.sql.
+    earning_text: null,
+    redeeming_text: null,
+    tier_text: null,
+    scanfail_text: null,
+    expiry_text: null,
+    address_text: null,
+    hours_text: null,
+    photo_url: null,
   };
   const BRAND_FIELDS = Object.keys(BRAND_DEFAULTS);
 

@@ -4502,14 +4502,39 @@ function walletPreview() {
     document.querySelector(`[data-wal="${k.key}_enabled"]`)?.checked
   );
 
+  // The venue's initials, exactly as memberNumber() builds them in
+  // src/wallet_apple.js: articles dropped, capped at three. Shown here so a
+  // venue can see what their members' numbers will actually read as before
+  // anybody is handed one.
+  const NOISE = ['the', 'a', 'an', 'of', 'and', 'at', 'on', '&'];
+  const initials = venue
+    .split(/[\s-]+/)
+    .map((w) => w.replace(/[^A-Za-z]/g, ''))
+    .filter((w) => w && !NOISE.includes(w.toLowerCase()))
+    .slice(0, 3)
+    .map((w) => w[0].toUpperCase())
+    .join('') || 'V';
+
+  // The header field, top right of the card. New: every kind but staff has one
+  // now, and it is the field the push notification speaks through.
+  const HEADER = {
+    loyalty:  ['NEXT REWARD', '40 to go'],
+    customer: ['TIER', 'Gold'],
+    giftcard: ['GIFT CARD', '···· 0001'],
+    promo:    ['ENDS IN', '3 days'],
+    staff:    null,
+  };
+
   // One row of "label / value" under the strip, per kind. These mirror the
   // secondaryFields and auxiliaryFields in src/wallet_apple.js.
   const DETAIL = {
-    loyalty:  [['Member', 'Sarah Jones'], ['Tier', 'Gold'], ['Member no.', '1']],
-    customer: [['Member no.', '1'], ['Tier', 'Gold'], ['Discount', '10% off']],
-    giftcard: [['For', 'Owen Price'], ['Expires', '14 Jan 2027']],
-    staff:    [['Role', 'Manager'], ['Card', '999900007']],
-    promo:    [['Valid until', '31 Dec']],
+    loyalty:  [['MEMBER', 'Sarah Jones'], ['TIER', 'Gold · 10% off'],
+               ['MEMBER NO.', `${initials} · 0241`]],
+    customer: [['YOUR DISCOUNT', '10% off'], ['MEMBER SINCE', 'March 2024'],
+               ['MEMBER NO.', `${initials} · 0241`]],
+    giftcard: [['FOR', 'Owen Price'], ['EXPIRES', '2027-01-14']],
+    staff:    [['ROLE', 'Manager'], ['SITE', venue], ['CARD', '999900007']],
+    promo:    [['', 'Two for one on mains'], ['ENDS', '2026-12-31']],
   };
 
   $('wallet-preview').innerHTML = (cards.length ? cards : [WALLET_KINDS[0]])
@@ -4522,11 +4547,18 @@ function walletPreview() {
           </div>`)
         .join('');
 
+      const header = HEADER[k.key];
+
       return `
       <figure class="wal-pass" style="background:${esc(background)};color:${esc(foreground)}">
         <div class="wal-pass-head">
-          <span class="wal-pass-logo">${esc(programme)}</span>
-          <span class="wal-pass-kind" style="color:${esc(label)}">${esc(k.label)}</span>
+          <img class="wal-pass-mark" src="/assets/wallet/logo@2x.png" alt="">
+          <span class="wal-pass-logo">${esc(venue)}</span>
+          ${header ? `
+          <span class="wal-pass-header">
+            <span class="wal-pass-label" style="color:${esc(label)}">${esc(header[0])}</span>
+            <span class="wal-pass-small">${esc(header[1])}</span>
+          </span>` : ''}
         </div>
         <div class="wal-pass-strip"
              style="background-image:url('/assets/wallet/strip_${esc(k.key)}.png')">
@@ -4538,7 +4570,7 @@ function walletPreview() {
         ${details ? `<div class="wal-pass-fields">${details}</div>` : ''}
         <div class="wal-pass-foot">
           <span class="wal-pass-code"></span>
-          <span class="wal-pass-venue" style="color:${esc(label)}">${esc(venue)}</span>
+          <span class="wal-pass-venue" style="color:${esc(label)}">${esc(programme)}</span>
         </div>
       </figure>`;
     })
