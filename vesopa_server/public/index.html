@@ -189,6 +189,7 @@
           <button class="nav" data-view="screens">Screen programming</button>
           <button class="nav" data-view="program_departments">Departments</button>
           <button class="nav" data-view="program_groups">Sub Departments</button>
+          <button class="nav" data-view="printer_categories">Printer categories</button>
           <button class="nav" data-view="import">Import</button>
           <button class="nav" data-view="modifiers">Modifiers</button>
           <button class="nav" data-view="mix_match">Mix &amp; Match</button>
@@ -204,7 +205,9 @@
 
           <button class="nav-group" data-group="people">People<span class="caret">▼</span></button>
           <button class="nav" data-view="users">Back Office Users</button>
+          <button class="nav" data-view="user_roles">Back Office User Roles</button>
           <button class="nav" data-view="staff">Staff</button>
+          <button class="nav" data-view="permission_groups">Staff Permissions</button>
           <button class="nav" data-view="customers">Customers</button>
           <button class="nav" data-view="vouchers">Vouchers</button>
           <button class="nav" data-view="receipt_designer">Receipt designer</button>
@@ -227,6 +230,8 @@
             <button class="nav" data-view="subscriptions">Subscriptions</button>
           </div>
         </nav>
+
+        <span id="role-badge" hidden></span>
 
         <div class="rail-foot">
           <span id="live-dot" class="dot offline" title="Realtime connection"></span>
@@ -314,10 +319,14 @@
         <section id="view-run_report" class="view" hidden>
           <div class="page-head">
             <div>
-              <h2>Financial Summary</h2>
-              <p class="muted small">
-                Sales by department and sub department for any period, with the discounts,
-                payments and spend per head that have to reconcile against them.
+              <!-- Named by the report chosen below, not fixed. This page runs
+                   five of them now, and a heading that always said "Financial
+                   Summary" over a Voids table is a page that looks broken. -->
+              <h2 id="rr-title">Reports</h2>
+              <p class="muted small" id="rr-blurb">
+                Choose a report and a period. Every one can be viewed here,
+                downloaded as a PDF, CSV or spreadsheet, or scheduled to arrive
+                by email.
               </p>
             </div>
           </div>
@@ -563,6 +572,32 @@
           <div class="card"><table><thead><tr><th class="drag-col"></th><th>Sub Department</th><th>Accounting code</th><th></th></tr></thead><tbody id="groups"></tbody></table></div>
         </section>
 
+        <!-- Printer categories: what order a kitchen ticket prints in.
+             Deliberately not the department — a department is how the takings
+             are broken down and answers to the accountant, and Wine and
+             Draughts are two of those and one printing group. -->
+        <section id="view-printer_categories" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Printer categories</h2>
+              <p class="muted small">
+                Group what the kitchen sees, and set the order it prints in — Breakfast, then Mains,
+                then Desserts. Drag the rows to reorder them, then put each product in a category
+                from the product form. A product in no category prints last, under no heading.
+              </p>
+            </div>
+            <button class="btn primary" data-add="print-categories">Add category</button>
+          </div>
+          <div class="card"><table>
+            <thead><tr><th class="drag-col"></th><th>Category</th><th></th></tr></thead>
+            <tbody id="print-categories"></tbody>
+          </table></div>
+          <p class="muted small" style="margin-top:12px">
+            A ticket comes out grouped and in this order, whatever order the items were rung up in:
+            <code>--- BREAKFAST ---</code> and then the breakfasts.
+          </p>
+        </section>
+
         <!-- Modifiers -->
         <!-- Catalogue import. Three sheets, in dependency order, and a
              preview that writes nothing — see src/imports.js. -->
@@ -693,7 +728,7 @@
             <button class="btn primary" id="add-user">Add user</button>
           </div>
           <div class="card"><table>
-            <thead><tr><th>Name</th><th>Email</th><th>Office</th><th>Role</th><th></th></tr></thead>
+            <thead><tr><th>Name</th><th>Email</th><th>Office</th><th>Role</th><th>Access</th><th></th></tr></thead>
             <tbody id="users"></tbody>
           </table></div>
         </section>
@@ -705,13 +740,13 @@
               <p class="muted small">
                 The people who work the till. They sign on at the terminal with a PIN, not an email —
                 and whoever is signed on is the name that prints as “Served by”.
-                Permissions and rota will be added to this section later.
+                What each of them may do is set under Staff Permissions and chosen here.
               </p>
             </div>
             <button class="btn primary" id="add-staff">Add staff</button>
           </div>
           <div class="card"><table>
-            <thead><tr><th>Name</th><th>ID</th><th>PIN</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>Name</th><th>ID</th><th>PIN</th><th>Permissions</th><th>Status</th><th></th></tr></thead>
             <tbody id="staff"></tbody>
           </table></div>
           <p class="muted small" style="margin-top:12px">
@@ -719,6 +754,49 @@
             someone on the moment the fourth digit lands, so a longer PIN could never be used and
             a shared one would attribute sales to whoever was found first.
           </p>
+        </section>
+
+        <!-- Staff Permissions: the till's roles.
+             Named groups of keys — Staff, Supervisor, Manager — assigned to a
+             member of staff on the Staff page. Checked at the terminal with the
+             broadband down, which is why the switches travel with the PIN. -->
+        <section id="view-permission_groups" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Staff Permissions</h2>
+              <p class="muted small">
+                Set up roles — Staff, Supervisor, Manager — say what each one may do at the till,
+                then assign one to each member of staff on the Staff page.
+                Anyone not in a group keeps every key, which is how the till worked before this page existed.
+              </p>
+            </div>
+            <button class="btn primary" id="add-permission-group">Add group</button>
+          </div>
+          <div class="card"><table>
+            <thead><tr><th>Group</th><th></th><th>Can</th><th></th></tr></thead>
+            <tbody id="permission-groups"></tbody>
+          </table></div>
+        </section>
+
+        <!-- Back Office User Roles: this application's own.
+             What a login may open here, as opposed to what a PIN may do at the
+             counter. An accountant sees the reporting and nothing else. -->
+        <section id="view-user_roles" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Back Office User Roles</h2>
+              <p class="muted small">
+                What each back-office login may see and do. An accountant can be given the reporting
+                and nothing else; a manager everything but the logins.
+                A user with no role sees everything, which is how it worked before this page existed.
+              </p>
+            </div>
+            <button class="btn primary" id="add-user-role">Add role</button>
+          </div>
+          <div class="card"><table>
+            <thead><tr><th>Role</th><th>Description</th><th>Access</th><th>People</th><th></th></tr></thead>
+            <tbody id="user-roles"></tbody>
+          </table></div>
         </section>
 
         <!-- Idle screen: what the terminal shows between customers, and how
@@ -1724,6 +1802,23 @@
         </section>
 
         <!-- Wallet passes: Apple and Google, one set of branding. -->
+        <!--
+          Wallet passes.
+
+          Five tabs rather than one column. What was here was every field this
+          feature has, stacked: the programme, the colours, the five switches,
+          nine boxes of card-back text, a photograph, a map reference, the Apple
+          status and the issued list, in one scroll. Nothing on it was wrong and
+          all of it was in the way of everything else -- a manager who came to
+          change the colour of the gift card scrolled past the sign-up code and
+          the certificate table to get there, and there was no way to change the
+          gift card on its own anyway.
+
+          So the work is split by the question being asked. "Design the cards" is
+          the first tab because it is the one people come here for, and it is the
+          one that did not exist: epos_wallet_programs has held a per-card design
+          since the table was added and nothing was ever routed to it.
+        -->
         <section id="view-wallet" class="view" hidden>
           <div class="page-head">
             <div>
@@ -1738,148 +1833,215 @@
           </div>
           <div class="grid-cards" id="wallet-stats"></div>
 
-          <div class="rd-layout">
-            <div class="rd-editor">
-              <div class="card rd-card">
-                <h3>The programme</h3>
-                <label class="check"><input type="checkbox" data-wal="enabled"> Issue wallet passes</label>
-                <div class="grid2">
-                  <label>Programme name<input type="text" maxlength="120" data-wal="program_name" placeholder="Crown Rewards"></label>
-                  <label>Venue name<input type="text" maxlength="120" data-wal="issuer_name" placeholder="The Crown"></label>
-                </div>
-                <p class="muted small">
-                  The programme name is the big line on the card; the venue name
-                  sits under it. Both fall back to your receipt branding.
-                </p>
-              </div>
+          <div class="wal-tabs" role="tablist">
+            <button class="wal-tab on" data-waltab="design" role="tab">Design the cards</button>
+            <button class="wal-tab" data-waltab="programme" role="tab">Programme &amp; sign-up</button>
+            <button class="wal-tab" data-waltab="back" role="tab">On the back of the card</button>
+            <button class="wal-tab" data-waltab="apple" role="tab">Apple &amp; Google</button>
+            <button class="wal-tab" data-waltab="issued" role="tab">Issued</button>
+          </div>
 
-              <div class="card rd-card">
-                <h3>Colours</h3>
+          <!-- ---- Design one card at a time ---------------------------- -->
+          <div class="wal-panel" data-walpanel="design">
+            <div class="wal-design">
+              <nav class="wal-kinds" id="wal-kinds" aria-label="Which card"></nav>
+              <div class="wal-design-editor" id="wal-design-editor"></div>
+              <div class="wal-design-preview">
+                <div class="rd-preview-head"><span class="small muted">What the customer gets</span></div>
+                <div id="wal-design-card"></div>
                 <p class="muted small">
-                  Apple needs all three and works none of them out. Leave them
-                  blank for the Vesopa palette — a dark card with lime labels —
-                  rather than Apple's default, which is grey on near-black.
+                  Drawn at 375 points wide, which is the width Apple lays a pass
+                  out at. A value that overflows here overflows on the phone.
                 </p>
-                <div class="grid3 wal-colours">
-                  <label>Background<input type="color" data-wal="hex_background" value="#111111"></label>
-                  <label>Text<input type="color" data-wal="hex_foreground" value="#F2F4F0"></label>
-                  <label>Labels<input type="color" data-wal="hex_label" value="#A5C715"></label>
-                </div>
-              </div>
-
-              <div class="card rd-card">
-                <h3>Which cards</h3>
-                <p class="muted small">A venue may want a loyalty card and nothing else.</p>
-                <label class="check"><input type="checkbox" data-wal="loyalty_enabled"> Loyalty card</label>
-                <label class="check"><input type="checkbox" data-wal="customer_enabled"> Membership card</label>
-                <label class="check"><input type="checkbox" data-wal="giftcard_enabled"> Gift card</label>
-                <label class="check"><input type="checkbox" data-wal="staff_enabled"> Staff card</label>
-                <label class="check"><input type="checkbox" data-wal="promo_enabled"> Promotional offer</label>
-              </div>
-
-              <div class="card rd-card">
-                <h3>On the back of the card</h3>
-                <p class="muted small">
-                  The questions your staff get asked at the counter. Every one of
-                  these is optional — leave it blank and the card simply does not
-                  show that line, rather than showing an empty one.
-                </p>
-                <div class="grid2">
-                  <label>Website<input type="url" maxlength="255" data-wal="homepage_url" placeholder="https://…"></label>
-                  <label>Contact number<input type="text" maxlength="40" data-wal="support_phone"></label>
-                </div>
-                <div class="grid2">
-                  <label>Where you are<input type="text" maxlength="255" data-wal="address_text" placeholder="1 High Street, Swansea SA1 1AA"></label>
-                  <label>When you're open<input type="text" maxlength="255" data-wal="hours_text" placeholder="Noon till late, every day"></label>
-                </div>
-                <label>How points are earned<textarea rows="2" data-wal="earning_text" placeholder="A point for every £1 you spend."></textarea></label>
-                <label>How points are spent<textarea rows="2" data-wal="redeeming_text" placeholder="Redeem from 200 points — just ask at the till."></textarea></label>
-                <label>What each tier gets<textarea rows="2" data-wal="tier_text" placeholder="Gold members get 10% off food, all week."></textarea></label>
-                <label>When points expire<textarea rows="2" data-wal="expiry_text" placeholder="Points last 24 months from the day you earn them."></textarea></label>
-                <label>If the scan fails
-                  <textarea rows="2" data-wal="scanfail_text"
-                    placeholder="Read out the number under the QR. Staff can key it in and nothing is lost."></textarea>
-                </label>
-                <p class="muted small">
-                  That last one is the only line on the card about the card. A QR
-                  that will not read is the moment this looks broken to somebody
-                  holding up a queue — and neither they nor your staff
-                  necessarily know the number underneath can just be typed in.
-                  Left blank, the card says exactly the sentence in the box above.
-                </p>
-                <label>Terms<textarea rows="3" data-wal="terms" placeholder="Points expire after 24 months."></textarea></label>
-              </div>
-
-              <div class="card rd-card">
-                <h3>Your photograph</h3>
-                <p class="muted small">
-                  The band of artwork across the card. Google fetches this itself,
-                  so a public HTTPS address is all it needs.
-                  <strong>Apple does not use it yet</strong> — a pass needs the
-                  image as bytes at an exact size, and resizing one is a job for
-                  the browser or a codec on the server. Until that is settled,
-                  Apple cards keep the generated artwork and this feeds the
-                  Google card and the preview below.
-                </p>
-                <label>Photo address<input type="url" maxlength="512" data-wal="photo_url" placeholder="https://…/venue.jpg"></label>
-              </div>
-
-              <div class="card rd-card">
-                <h3>Where you are</h3>
-                <p class="muted small">
-                  Apple puts the card on the customer's lock screen when their
-                  phone is near you, so it is ready before they reach the till.
-                  Right-click your venue in Google Maps and paste the two
-                  numbers it copies. Leave blank and the card still works —
-                  it just waits to be opened.
-                </p>
-                <div class="grid2">
-                  <label>Latitude<input type="text" inputmode="decimal" data-wal="latitude" placeholder="51.621400"></label>
-                  <label>Longitude<input type="text" inputmode="decimal" data-wal="longitude" placeholder="-3.785600"></label>
-                </div>
-              </div>
-
-              <div class="card rd-card">
-                <h3>Apple Wallet</h3>
-                <label class="check"><input type="checkbox" data-wal="apple_enabled"> Issue Apple passes</label>
-                <div id="wallet-apple-status"></div>
-              </div>
-
-              <div class="card rd-card">
-                <h3>Passes issued</h3>
-                <p class="muted small">
-                  Every card handed out. Scan a code to see what the customer
-                  sees — the link works on both an iPhone and an Android phone.
-                </p>
-                <div id="wallet-passes"></div>
               </div>
             </div>
+          </div>
 
-            <div class="rd-preview-pane">
-              <div class="rd-preview-head"><span class="small muted">What the customer gets</span></div>
-              <div class="card rd-card">
-                <div id="wallet-preview"></div>
-              </div>
-              <div class="card rd-card">
-                <h3>Sign-up code</h3>
-                <p class="muted small">
-                  Put this on a table card or a poster. It opens a page where a
-                  customer joins with a name and a phone number, and the card
-                  lands straight in their wallet.
-                </p>
-                <label class="small muted" for="wallet-join-slug">Your code</label>
-                <div class="wal-slug">
-                  <span class="wal-slug-prefix">/wallet/join/</span>
-                  <input id="wallet-join-slug" data-wal="join_slug" type="text"
-                         spellcheck="false" autocapitalize="none" autocomplete="off"
-                         maxlength="64" placeholder="your-venue">
+          <!-- ---- The venue's own look, and how people join ------------- -->
+          <div class="wal-panel" data-walpanel="programme" hidden>
+            <div class="rd-layout">
+              <div class="rd-editor">
+                <div class="card rd-card">
+                  <h3>The programme</h3>
+                  <label class="check"><input type="checkbox" data-wal="enabled"> Issue wallet passes</label>
+                  <div class="grid2">
+                    <label>Programme name<input type="text" maxlength="120" data-wal="program_name" placeholder="Crown Rewards"></label>
+                    <label>Venue name<input type="text" maxlength="120" data-wal="issuer_name" placeholder="The Crown"></label>
+                  </div>
+                  <p class="muted small">
+                    The programme name is the big line on the card; the venue name
+                    sits under it. Both fall back to your receipt branding, and
+                    either can be overridden on one card in Design the cards.
+                  </p>
                 </div>
-                <p class="muted small">
-                  Letters, numbers and hyphens. Change it and the old link stops
-                  working, so reprint anything already on a table.
-                </p>
-                <div id="wallet-join-qr" class="wal-qr"></div>
+
+                <div class="card rd-card">
+                  <h3>Colours</h3>
+                  <p class="muted small">
+                    The look every card starts from. Apple needs all three and
+                    works none of them out. Leave them blank for the Vesopa
+                    palette — a dark card with lime labels — rather than Apple's
+                    default, which is grey on near-black.
+                  </p>
+                  <div class="grid3 wal-colours">
+                    <label>Background<input type="color" data-wal="hex_background" value="#111111"></label>
+                    <label>Text<input type="color" data-wal="hex_foreground" value="#F2F4F0"></label>
+                    <label>Labels<input type="color" data-wal="hex_label" value="#A5C715"></label>
+                  </div>
+                </div>
+
+                <div class="card rd-card">
+                  <h3>Which cards</h3>
+                  <p class="muted small">A venue may want a loyalty card and nothing else.</p>
+                  <label class="check"><input type="checkbox" data-wal="loyalty_enabled"> Loyalty card</label>
+                  <label class="check"><input type="checkbox" data-wal="customer_enabled"> Membership card</label>
+                  <label class="check"><input type="checkbox" data-wal="giftcard_enabled"> Gift card</label>
+                  <label class="check"><input type="checkbox" data-wal="staff_enabled"> Staff card</label>
+                  <label class="check"><input type="checkbox" data-wal="promo_enabled"> Promotional offer</label>
+                </div>
+
+                <div class="card rd-card">
+                  <h3>Pictures</h3>
+                  <p class="muted small">
+                    The band across every card, and the small mark beside your
+                    name. Choose a picture and you get a frame to move and zoom
+                    it in — what you frame is what is saved, at the sizes Apple
+                    needs and the one Google fetches, so both phones show the
+                    same thing. Either can be overridden on a single card in
+                    Design the cards.
+                  </p>
+                  <div class="wal-art" data-artfield="photo_url" data-artshape="strip">
+                    <div class="wal-art-preview"></div>
+                    <div class="wal-art-actions">
+                      <span class="small muted">Band across the card</span>
+                      <label class="btn small">Choose a picture
+                        <input type="file" accept="image/*" hidden>
+                      </label>
+                      <button type="button" class="btn small ghost" data-artclear>Remove</button>
+                    </div>
+                  </div>
+                  <div class="wal-art" data-artfield="logo_url" data-artshape="logo">
+                    <div class="wal-art-preview logo"></div>
+                    <div class="wal-art-actions">
+                      <span class="small muted">Mark beside your name</span>
+                      <label class="btn small">Choose a picture
+                        <input type="file" accept="image/*" hidden>
+                      </label>
+                      <button type="button" class="btn small ghost" data-artclear>Remove</button>
+                    </div>
+                  </div>
+                  <p class="muted small">
+                    Leave both empty and the cards use the artwork Vesopa
+                    generates for each kind, which is branded rather than blank.
+                  </p>
+                </div>
+
+                <div class="card rd-card">
+                  <h3>Where you are</h3>
+                  <p class="muted small">
+                    Apple puts the card on the customer's lock screen when their
+                    phone is near you, so it is ready before they reach the till.
+                    Right-click your venue in Google Maps and paste the two
+                    numbers it copies. Leave blank and the card still works —
+                    it just waits to be opened.
+                  </p>
+                  <div class="grid2">
+                    <label>Latitude<input type="text" inputmode="decimal" data-wal="latitude" placeholder="51.621400"></label>
+                    <label>Longitude<input type="text" inputmode="decimal" data-wal="longitude" placeholder="-3.785600"></label>
+                  </div>
+                </div>
               </div>
+
+              <div class="rd-preview-pane">
+                <!--
+                  The venue's own look, on every card they have switched on.
+                  Restored after the tab split dropped it: the colours above are
+                  edited against this, and a colour picker with nothing to look
+                  at is a colour picker being used blind.
+                -->
+                <div class="rd-preview-head"><span class="small muted">What the customer gets</span></div>
+                <div class="card rd-card">
+                  <div id="wallet-preview"></div>
+                </div>
+                <div class="card rd-card">
+                  <h3>Sign-up code</h3>
+                  <p class="muted small">
+                    Put this on a table card or a poster. It opens a page where a
+                    customer joins with a name and a phone number, and the card
+                    lands straight in their wallet.
+                  </p>
+                  <label class="small muted" for="wallet-join-slug">Your code</label>
+                  <div class="wal-slug">
+                    <span class="wal-slug-prefix">/wallet/join/</span>
+                    <input id="wallet-join-slug" data-wal="join_slug" type="text"
+                           spellcheck="false" autocapitalize="none" autocomplete="off"
+                           maxlength="64" placeholder="your-venue">
+                  </div>
+                  <p class="muted small">
+                    Letters, numbers and hyphens. Change it and the old link stops
+                    working, so reprint anything already on a table.
+                  </p>
+                  <div id="wallet-join-qr" class="wal-qr"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ---- The questions staff get asked at the counter ---------- -->
+          <div class="wal-panel" data-walpanel="back" hidden>
+            <div class="card rd-card">
+              <h3>On the back of the card</h3>
+              <p class="muted small">
+                The questions your staff get asked at the counter. Every one of
+                these is optional — leave it blank and the card simply does not
+                show that line, rather than showing an empty one.
+              </p>
+              <div class="grid2">
+                <label>Website<input type="url" maxlength="255" data-wal="homepage_url" placeholder="https://…"></label>
+                <label>Contact number<input type="text" maxlength="40" data-wal="support_phone"></label>
+              </div>
+              <div class="grid2">
+                <label>Where you are<input type="text" maxlength="255" data-wal="address_text" placeholder="1 High Street, Swansea SA1 1AA"></label>
+                <label>When you're open<input type="text" maxlength="255" data-wal="hours_text" placeholder="Noon till late, every day"></label>
+              </div>
+              <label>How points are earned<textarea rows="2" data-wal="earning_text" placeholder="A point for every £1 you spend."></textarea></label>
+              <label>How points are spent<textarea rows="2" data-wal="redeeming_text" placeholder="Redeem from 200 points — just ask at the till."></textarea></label>
+              <label>What each tier gets<textarea rows="2" data-wal="tier_text" placeholder="Gold members get 10% off food, all week."></textarea></label>
+              <label>When points expire<textarea rows="2" data-wal="expiry_text" placeholder="Points last 24 months from the day you earn them."></textarea></label>
+              <label>If the scan fails
+                <textarea rows="2" data-wal="scanfail_text"
+                  placeholder="Read out the number under the QR. Staff can key it in and nothing is lost."></textarea>
+              </label>
+              <p class="muted small">
+                That last one is the only line on the card about the card. A QR
+                that will not read is the moment this looks broken to somebody
+                holding up a queue — and neither they nor your staff
+                necessarily know the number underneath can just be typed in.
+                Left blank, the card says exactly the sentence in the box above.
+              </p>
+              <label>Terms<textarea rows="3" data-wal="terms" placeholder="Points expire after 24 months."></textarea></label>
+            </div>
+          </div>
+
+          <!-- ---- Whether either phone can actually be handed a card ---- -->
+          <div class="wal-panel" data-walpanel="apple" hidden>
+            <div class="card rd-card">
+              <h3>Apple Wallet</h3>
+              <label class="check"><input type="checkbox" data-wal="apple_enabled"> Issue Apple passes</label>
+              <div id="wallet-apple-status"></div>
+            </div>
+          </div>
+
+          <!-- ---- Every card handed out -------------------------------- -->
+          <div class="wal-panel" data-walpanel="issued" hidden>
+            <div class="card rd-card">
+              <h3>Passes issued</h3>
+              <p class="muted small">
+                Every card handed out, newest first. Scan a code to see what the
+                customer sees — the link works on both an iPhone and an Android
+                phone.
+              </p>
+              <div id="wallet-passes"></div>
             </div>
           </div>
         </section>
@@ -1926,6 +2088,24 @@
                 <p class="muted small">
                   A number is never handed out twice, even after a card is
                   cancelled — the lost card is still out there.
+                </p>
+              </div>
+              <div class="card rd-card">
+                <h3>At the till</h3>
+                <p class="muted small">
+                  The same two buttons the back office puts on a customer, a
+                  member of staff, a gift card and an offer — and whether the
+                  counter gets them. A venue that hands out plastic and never
+                  puts a card on a phone wants one of these; a venue with no card
+                  printer wants the other.
+                </p>
+                <label class="check"><input type="checkbox" data-card="till_wallet_button"> Offer to put a card on the customer's phone</label>
+                <label class="check"><input type="checkbox" data-card="till_print_button"> Offer to print a card</label>
+                <label class="check"><input type="checkbox" data-card="wallet_on_display"> Show the code on the customer's screen, not the till's</label>
+                <p class="muted small">
+                  The last one needs a customer display paired to that till. Where
+                  there is not one, the code appears on the till's own screen
+                  instead rather than nowhere.
                 </p>
               </div>
               <div class="card rd-card">
@@ -2129,6 +2309,9 @@
          rendered, which is always after everything has parsed. -->
     <script src="/charts.js"></script>
     <script src="/screens.js"></script>
+    <!-- Before app.js, like screens.js: it defines functions app.js's render
+         map refers to, and uses app.js's helpers only from inside them. -->
+    <script src="/permissions.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>

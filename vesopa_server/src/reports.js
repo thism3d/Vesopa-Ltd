@@ -36,6 +36,7 @@ const ExcelJS = require('exceljs');
 const PDFDocument = require('pdfkit');
 
 const { requireAuth } = require('./auth');
+const { reportBuilders } = require('./report_builders');
 
 // ---------------------------------------------------------------------------
 // Windows
@@ -676,6 +677,20 @@ const REPORTS = {
       'spend per head — everything that has to reconcile against the takings.',
     build: financialSummary,
   },
+  // The four the venue asked for, in src/report_builders.js. They are handed
+  // this file's `col`, `section`, `money` and `grouped` rather than importing
+  // them back, so there is one definition of what a column is and what a
+  // Summary Total means — a second copy is a copy that drifts, and two reports
+  // whose totals are computed differently is exactly the fault this whole
+  // module's opening note exists to prevent.
+  ...reportBuilders({
+    col,
+    section,
+    money,
+    grouped,
+    sqlDateTime,
+    UNKNOWN_TERMINAL,
+  }),
 };
 
 // ---------------------------------------------------------------------------

@@ -23,9 +23,12 @@
     node_modules, .git, *.log
 
 .PARAMETER Schema
-  Also apply the schema_*.sql migrations to the live database. Every migration
+  Also apply the schema/*.sql migrations to the live database. Every migration
   is guarded (IF NOT EXISTS, or the vesopa_add_column procedure), so this is
   safe to re-run — but it is opt-in because it touches the database.
+
+  They live in schema/, not beside the code, and the deploy fails rather than
+  reporting success if it finds none there.
 
 .PARAMETER RestartOnly
   Just restart pm2. No file changes.
@@ -181,8 +184,26 @@ try {
       # a failure -- and that one line aborted the deploy half way through the
       # migrations, with the code already extracted and pm2 not yet restarted.
       $schemaBlock = @"
-echo '> Applying schema_*.sql to the live database...'
-cd "`$APP"
+echo '> Applying schema/*.sql to the live database...'
+
+# schema/, not the project root. The migrations moved there when there were
+# fifty of them burying deploy.sh, package.json and src/ in a wall of files.
+# deploy.sh was updated and this was not, so `-Schema` spent a release looking
+# for schema_*.sql in a directory that has held none since -- finding nothing,
+# applying nothing, and printing "OK Schema applied" over the top of it.
+#
+# Hence the count and the `exit 1`. A migration step that cannot find its
+# migrations has failed, and the one thing it must never do is say it worked:
+# the deploy then completes, the app restarts, and the missing column is
+# discovered by a customer.
+cd "`$APP/schema" || { echo 'X No schema/ directory on the server'; exit 1; }
+COUNT=`$(ls schema_*.sql 2>/dev/null | wc -l)
+if [ "`$COUNT" -eq 0 ]; then
+  echo 'X No schema_*.sql found in schema/ - nothing was applied'
+  exit 1
+fi
+echo "   `$COUNT migrations"
+
 DB=`$(command -v mariadb || command -v mysql)
 for f in schema.sql `$(ls schema_*.sql | sort); do
   echo "   -> `$f"

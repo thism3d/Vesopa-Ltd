@@ -338,6 +338,42 @@ const P12_FILES = {
   promo: 'promotion_pass.p12',
 };
 
+/**
+ * Which bundle will sign a pass of this kind — the single answer, asked by
+ * everything that needs it.
+ *
+ * WHY THIS IS A FUNCTION AND NOT THREE COPIES OF AN `if`
+ *
+ * The rule is two lines long and was written out three times: in [sign], in
+ * [pemForKind], and — differently — in the back office's status endpoint, which
+ * checked only whether the per-kind file existed. So a server holding one
+ * shared bundle, which is the arrangement `passes_and_oauth/README.md`
+ * recommends and the live server actually uses, signed every pass perfectly
+ * while the Wallet page reported all five certificates missing.
+ *
+ * That is the worst shape a status screen can take: it says the thing is broken
+ * when the thing works, so the next hour goes on the wrong problem. One
+ * function, called by the signer and by the screen that reports on the signer,
+ * is the only arrangement where the two cannot disagree.
+ *
+ * Returns null when nothing can sign this kind, which is the only case the
+ * back office should draw as missing.
+ */
+function signingBundle(kind, config) {
+  if (!P12_FILES[kind] || !config || !config.dir) return null;
+
+  const perKind = path.join(config.dir, P12_FILES[kind]);
+  if (existsSafely(perKind)) {
+    return { path: perKind, file: P12_FILES[kind], shared: false };
+  }
+
+  if (config.shared && existsSafely(config.shared)) {
+    return { path: config.shared, file: path.basename(config.shared), shared: true };
+  }
+
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Colours
 // ---------------------------------------------------------------------------
@@ -1018,12 +1054,28 @@ function buildPassJson({ kind, config, brand, subject, serial, authToken, link }
  * the loyalty strip is the fallback for a kind whose own art is missing: a
  * branded band in the wrong mood beats a flat rectangle.
  *
- * A venue's own artwork is not read here yet — `epos_wallet_settings` holds
- * URLs for Google, which fetches them itself, and Apple needs *bytes* at
- * specific pixel sizes. Sizing an arbitrary upload without an image codec is
- * the missing half, and Node has none. See the note in tools/wallet_art.
+ * A VENUE'S OWN ARTWORK, AND WHY IT WORKS NOW
+ *
+ * It used to be that only Google got the venue's picture. Google fetches a URL
+ * itself and accepts any size; Apple needs *bytes* at exact pixel sizes, and
+ * Node has no image codec to resize an arbitrary upload with. So the back
+ * office said "Apple does not use it yet" and a manager who uploaded their own
+ * band saw it on one phone and not the other, which reads as a broken feature
+ * rather than a documented limit.
+ *
+ * The missing codec is in the browser, and it was already there: the back
+ * office's cropper draws to a <canvas> at whatever size it is told. So the
+ * upload arrives already at Apple's sizes — `x.png` at 375×123 and `x@2x.png`
+ * at 750×246 for a strip — and this reads those bytes straight out of
+ * `public/uploads`. Nothing is resized on the server because nothing needs to
+ * be.
+ *
+ * A venue picture is used only when both scales are on disk. One scale without
+ * the other is a half-finished upload, and Apple renders a missing @2x as a
+ * blurred upscale on every modern phone — the generated band is better than
+ * that, so it stays.
  */
-function artworkFor(kind, brand, assetsDir, progress = null) {
+function artworkFor(kind, brand, assetsDir, progress = null, uploadsDir = null) {
   const files = {};
 
   const read = (name) => {
@@ -1035,6 +1087,48 @@ function artworkFor(kind, brand, assetsDir, progress = null) {
       return null;
     }
   };
+
+  /**
+   * The venue's own upload at one scale, or null.
+   *
+   * `url` is what the back office stored. It is an absolute address —
+   * `https://backoffice…/uploads/<name>.png` — because Google fetches the same
+   * value itself and cannot follow a relative path. A bare `/uploads/…` is
+   * accepted too, for rows written before that was true.
+   *
+   * Only the last path segment is used, and only when it is a plain name:
+   * letters, digits, dot, dash and underscore. Nothing else is fetched,
+   * resolved or joined. This reads files off the server's own disk, so the one
+   * rule that matters is that it can never reach outside the uploads folder —
+   * a `..` or a slash in the name fails the pattern rather than escaping it.
+   */
+  const venue = (url, suffix) => {
+    if (!uploadsDir) return null;
+    const raw = String(url || '').trim();
+    const m = /(?:^|\/)uploads\/([A-Za-z0-9._-]+)\.png(?:[?#].*)?$/.exec(raw);
+    if (!m || m[1].includes('..')) return null;
+    const candidate = path.join(uploadsDir, `${m[1]}${suffix}.png`);
+    if (!existsSafely(candidate)) return null;
+    try {
+      return fs.readFileSync(candidate);
+    } catch {
+      return null;
+    }
+  };
+
+  /** Both scales of one venue upload, or null if either is absent. */
+  const venuePair = (url) => {
+    const one = venue(url, '');
+    const two = venue(url, '@2x');
+    return one && two ? { '': one, '@2x': two } : null;
+  };
+
+  // The strip the venue chose for *this* programme, then the one they chose for
+  // the venue as a whole. `strip_url` comes from epos_wallet_programs and is
+  // already resolved per kind by readProgramBrand(); `photo_url` is the single
+  // picture on the Wallet screen, which a venue with one look sets once.
+  const ownStrip = venuePair(brand.strip_url) || venuePair(brand.photo_url);
+  const ownLogo = venuePair(brand.logo_url);
 
   // The progress bar, chosen rather than drawn.
   //
@@ -1076,8 +1170,14 @@ function artworkFor(kind, brand, assetsDir, progress = null) {
     // beats a flat rectangle. A missing band file falls through to the plain
     // strip rather than to nothing, so a half-run of tools/wallet_art costs a
     // progress bar and not a card.
+    //
+    // The venue's own band wins over all of it, except on a loyalty card that
+    // is drawing a progress bar: that bar IS the artwork there, and replacing
+    // it with a photograph would quietly delete the one thing on the card that
+    // says how close somebody is to a reward.
     const art =
       (band && read(`strip_${kind}${band}${suffix}`)) ||
+      (ownStrip && ownStrip[suffix]) ||
       read(`strip_${kind}${suffix}`) ||
       read(`strip_loyalty${suffix}`);
     if (art) files[target] = art;
@@ -1087,7 +1187,7 @@ function artworkFor(kind, brand, assetsDir, progress = null) {
     ['logo.png', ''],
     ['logo@2x.png', '@2x'],
   ]) {
-    const art = read(`logo${suffix}`);
+    const art = (ownLogo && ownLogo[suffix]) || read(`logo${suffix}`);
     if (art) files[target] = art;
   }
 
@@ -1170,16 +1270,16 @@ function solidPng(width, height, cssRgb) {
  * input by name, and the alternative is a pipe whose failure mode is a hang.
  */
 function sign(manifest, kind, config) {
-  const perKind = path.join(config.dir, P12_FILES[kind]);
-  const bundle = existsSafely(perKind) ? perKind : config.shared;
+  const chosen = signingBundle(kind, config);
 
-  if (!bundle || !existsSafely(bundle)) {
+  if (!chosen) {
     throw new Error(
       `No signing key for a ${kind} pass. Put ${P12_FILES[kind]} — or a single ` +
         `${SHARED_P12} covering all five — in APPLE_WALLET_DIR. ` +
         `See passes_and_oauth/README.md.`
     );
   }
+  const bundle = chosen.path;
 
   const work = fs.mkdtempSync(path.join(require('os').tmpdir(), 'vesopa-pkpass-'));
   const manifestPath = path.join(work, 'manifest.json');
@@ -1331,15 +1431,15 @@ function assertKeyMatchesCert(keyPath, certPath, kind) {
 function pemForKind(kind, config) {
   if (!CER_FILES[kind]) throw new Error(`Unknown pass kind "${kind}"`);
 
-  const perKind = path.join(config.dir, P12_FILES[kind]);
-  const bundle = existsSafely(perKind) ? perKind : config.shared;
-  if (!bundle || !existsSafely(bundle)) {
+  const chosen = signingBundle(kind, config);
+  if (!chosen) {
     throw new Error(
       `No signing key for a ${kind} pass, so nothing can authenticate to APNs ` +
         `for ${CER_FILES[kind]}. Put ${P12_FILES[kind]} — or a single ` +
         `${SHARED_P12} covering all five — in APPLE_WALLET_DIR.`
     );
   }
+  const bundle = chosen.path;
 
   const cer = path.join(config.certDir, CER_FILES[kind]);
   if (!existsSafely(cer)) {
@@ -1514,7 +1614,9 @@ function zip(files) {
  * Returns the archive bytes plus the serial and token, which the caller records
  * so the pass can be recognised and updated later.
  */
-function buildPkpass({ kind, config, brand, subject, assetsDir, serial, authToken, link }) {
+function buildPkpass({
+  kind, config, brand, subject, assetsDir, serial, authToken, link, uploadsDir,
+}) {
   const useSerial = serial || crypto.randomUUID();
   const useToken = authToken || crypto.randomBytes(24).toString('hex');
 
@@ -1537,7 +1639,7 @@ function buildPkpass({ kind, config, brand, subject, assetsDir, serial, authToke
 
   const files = {
     'pass.json': Buffer.from(JSON.stringify(passJson, null, 2), 'utf8'),
-    ...artworkFor(kind, brand, assetsDir, progress),
+    ...artworkFor(kind, brand, assetsDir, progress, uploadsDir),
   };
 
   // SHA-1, and not because it is a good hash. It is what Apple specifies and
@@ -1564,6 +1666,7 @@ module.exports = {
   P12_FILES,
   CER_FILES,
   SHARED_P12,
+  signingBundle,
   findBundle,
   readConfig,
   cachedConfig,

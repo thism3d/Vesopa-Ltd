@@ -70,6 +70,82 @@ class $ProductsTable extends Products with TableInfo<$ProductsTable, Product> {
     type: DriftSqlType.int,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _price2MinorMeta = const VerificationMeta(
+    'price2Minor',
+  );
+  @override
+  late final GeneratedColumn<int> price2Minor = GeneratedColumn<int>(
+    'price2_minor',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _price3MinorMeta = const VerificationMeta(
+    'price3Minor',
+  );
+  @override
+  late final GeneratedColumn<int> price3Minor = GeneratedColumn<int>(
+    'price3_minor',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _price4MinorMeta = const VerificationMeta(
+    'price4Minor',
+  );
+  @override
+  late final GeneratedColumn<int> price4Minor = GeneratedColumn<int>(
+    'price4_minor',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _price5MinorMeta = const VerificationMeta(
+    'price5Minor',
+  );
+  @override
+  late final GeneratedColumn<int> price5Minor = GeneratedColumn<int>(
+    'price5_minor',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _price6MinorMeta = const VerificationMeta(
+    'price6Minor',
+  );
+  @override
+  late final GeneratedColumn<int> price6Minor = GeneratedColumn<int>(
+    'price6_minor',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _printCategoryMeta = const VerificationMeta(
+    'printCategory',
+  );
+  @override
+  late final GeneratedColumn<String> printCategory = GeneratedColumn<String>(
+    'print_category',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _printCategoryOrderMeta =
+      const VerificationMeta('printCategoryOrder');
+  @override
+  late final GeneratedColumn<int> printCategoryOrder = GeneratedColumn<int>(
+    'print_category_order',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _taxPercentageMeta = const VerificationMeta(
     'taxPercentage',
   );
@@ -170,6 +246,13 @@ class $ProductsTable extends Products with TableInfo<$ProductsTable, Product> {
     groupName,
     accountingCode,
     priceMinor,
+    price2Minor,
+    price3Minor,
+    price4Minor,
+    price5Minor,
+    price6Minor,
+    printCategory,
+    printCategoryOrder,
     taxPercentage,
     stockQuantity,
     buttonPosition,
@@ -236,6 +319,69 @@ class $ProductsTable extends Products with TableInfo<$ProductsTable, Product> {
       );
     } else if (isInserting) {
       context.missing(_priceMinorMeta);
+    }
+    if (data.containsKey('price2_minor')) {
+      context.handle(
+        _price2MinorMeta,
+        price2Minor.isAcceptableOrUnknown(
+          data['price2_minor']!,
+          _price2MinorMeta,
+        ),
+      );
+    }
+    if (data.containsKey('price3_minor')) {
+      context.handle(
+        _price3MinorMeta,
+        price3Minor.isAcceptableOrUnknown(
+          data['price3_minor']!,
+          _price3MinorMeta,
+        ),
+      );
+    }
+    if (data.containsKey('price4_minor')) {
+      context.handle(
+        _price4MinorMeta,
+        price4Minor.isAcceptableOrUnknown(
+          data['price4_minor']!,
+          _price4MinorMeta,
+        ),
+      );
+    }
+    if (data.containsKey('price5_minor')) {
+      context.handle(
+        _price5MinorMeta,
+        price5Minor.isAcceptableOrUnknown(
+          data['price5_minor']!,
+          _price5MinorMeta,
+        ),
+      );
+    }
+    if (data.containsKey('price6_minor')) {
+      context.handle(
+        _price6MinorMeta,
+        price6Minor.isAcceptableOrUnknown(
+          data['price6_minor']!,
+          _price6MinorMeta,
+        ),
+      );
+    }
+    if (data.containsKey('print_category')) {
+      context.handle(
+        _printCategoryMeta,
+        printCategory.isAcceptableOrUnknown(
+          data['print_category']!,
+          _printCategoryMeta,
+        ),
+      );
+    }
+    if (data.containsKey('print_category_order')) {
+      context.handle(
+        _printCategoryOrderMeta,
+        printCategoryOrder.isAcceptableOrUnknown(
+          data['print_category_order']!,
+          _printCategoryOrderMeta,
+        ),
+      );
     }
     if (data.containsKey('tax_percentage')) {
       context.handle(
@@ -336,6 +482,34 @@ class $ProductsTable extends Products with TableInfo<$ProductsTable, Product> {
         DriftSqlType.int,
         data['${effectivePrefix}price_minor'],
       )!,
+      price2Minor: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}price2_minor'],
+      ),
+      price3Minor: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}price3_minor'],
+      ),
+      price4Minor: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}price4_minor'],
+      ),
+      price5Minor: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}price5_minor'],
+      ),
+      price6Minor: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}price6_minor'],
+      ),
+      printCategory: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}print_category'],
+      ),
+      printCategoryOrder: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}print_category_order'],
+      ),
       taxPercentage: attachedDatabase.typeMapping.read(
         DriftSqlType.double,
         data['${effectivePrefix}tax_percentage'],
@@ -385,7 +559,33 @@ class Product extends DataClass implements Insertable<Product> {
   final String? accountingCode;
 
   /// Minor units (pence). Money is never stored as a double.
+  ///
+  /// This is Price 1 — the price a venue has always had. See
+  /// `data/price_levels.dart`.
   final int priceMinor;
+
+  /// Prices 2 to 6, or null where the venue has not set one.
+  ///
+  /// Null is "no special price at this level, charge Price 1" and not "free".
+  /// The difference is money: a default of zero would mean a venue switching
+  /// the till to Price 2 started giving away every product nobody had got round
+  /// to filling in — silently, at the counter.
+  final int? price2Minor;
+  final int? price3Minor;
+  final int? price4Minor;
+  final int? price5Minor;
+  final int? price6Minor;
+
+  /// The printing category this product belongs to, and where that category
+  /// prints.
+  ///
+  /// The *name and the order*, not an id: the till prints a heading and sorts
+  /// by a number, and a foreign key would mean holding a second table to render
+  /// a ticket. Null means the product is in no category — it prints last, under
+  /// no heading, exactly as it did before categories existed. See
+  /// `printing/print_categories.dart`.
+  final String? printCategory;
+  final int? printCategoryOrder;
   final double taxPercentage;
   final double stockQuantity;
 
@@ -422,6 +622,13 @@ class Product extends DataClass implements Insertable<Product> {
     this.groupName,
     this.accountingCode,
     required this.priceMinor,
+    this.price2Minor,
+    this.price3Minor,
+    this.price4Minor,
+    this.price5Minor,
+    this.price6Minor,
+    this.printCategory,
+    this.printCategoryOrder,
     required this.taxPercentage,
     required this.stockQuantity,
     this.buttonPosition,
@@ -446,6 +653,27 @@ class Product extends DataClass implements Insertable<Product> {
       map['accounting_code'] = Variable<String>(accountingCode);
     }
     map['price_minor'] = Variable<int>(priceMinor);
+    if (!nullToAbsent || price2Minor != null) {
+      map['price2_minor'] = Variable<int>(price2Minor);
+    }
+    if (!nullToAbsent || price3Minor != null) {
+      map['price3_minor'] = Variable<int>(price3Minor);
+    }
+    if (!nullToAbsent || price4Minor != null) {
+      map['price4_minor'] = Variable<int>(price4Minor);
+    }
+    if (!nullToAbsent || price5Minor != null) {
+      map['price5_minor'] = Variable<int>(price5Minor);
+    }
+    if (!nullToAbsent || price6Minor != null) {
+      map['price6_minor'] = Variable<int>(price6Minor);
+    }
+    if (!nullToAbsent || printCategory != null) {
+      map['print_category'] = Variable<String>(printCategory);
+    }
+    if (!nullToAbsent || printCategoryOrder != null) {
+      map['print_category_order'] = Variable<int>(printCategoryOrder);
+    }
     map['tax_percentage'] = Variable<double>(taxPercentage);
     map['stock_quantity'] = Variable<double>(stockQuantity);
     if (!nullToAbsent || buttonPosition != null) {
@@ -481,6 +709,27 @@ class Product extends DataClass implements Insertable<Product> {
           ? const Value.absent()
           : Value(accountingCode),
       priceMinor: Value(priceMinor),
+      price2Minor: price2Minor == null && nullToAbsent
+          ? const Value.absent()
+          : Value(price2Minor),
+      price3Minor: price3Minor == null && nullToAbsent
+          ? const Value.absent()
+          : Value(price3Minor),
+      price4Minor: price4Minor == null && nullToAbsent
+          ? const Value.absent()
+          : Value(price4Minor),
+      price5Minor: price5Minor == null && nullToAbsent
+          ? const Value.absent()
+          : Value(price5Minor),
+      price6Minor: price6Minor == null && nullToAbsent
+          ? const Value.absent()
+          : Value(price6Minor),
+      printCategory: printCategory == null && nullToAbsent
+          ? const Value.absent()
+          : Value(printCategory),
+      printCategoryOrder: printCategoryOrder == null && nullToAbsent
+          ? const Value.absent()
+          : Value(printCategoryOrder),
       taxPercentage: Value(taxPercentage),
       stockQuantity: Value(stockQuantity),
       buttonPosition: buttonPosition == null && nullToAbsent
@@ -514,6 +763,13 @@ class Product extends DataClass implements Insertable<Product> {
       groupName: serializer.fromJson<String?>(json['groupName']),
       accountingCode: serializer.fromJson<String?>(json['accountingCode']),
       priceMinor: serializer.fromJson<int>(json['priceMinor']),
+      price2Minor: serializer.fromJson<int?>(json['price2Minor']),
+      price3Minor: serializer.fromJson<int?>(json['price3Minor']),
+      price4Minor: serializer.fromJson<int?>(json['price4Minor']),
+      price5Minor: serializer.fromJson<int?>(json['price5Minor']),
+      price6Minor: serializer.fromJson<int?>(json['price6Minor']),
+      printCategory: serializer.fromJson<String?>(json['printCategory']),
+      printCategoryOrder: serializer.fromJson<int?>(json['printCategoryOrder']),
       taxPercentage: serializer.fromJson<double>(json['taxPercentage']),
       stockQuantity: serializer.fromJson<double>(json['stockQuantity']),
       buttonPosition: serializer.fromJson<int?>(json['buttonPosition']),
@@ -534,6 +790,13 @@ class Product extends DataClass implements Insertable<Product> {
       'groupName': serializer.toJson<String?>(groupName),
       'accountingCode': serializer.toJson<String?>(accountingCode),
       'priceMinor': serializer.toJson<int>(priceMinor),
+      'price2Minor': serializer.toJson<int?>(price2Minor),
+      'price3Minor': serializer.toJson<int?>(price3Minor),
+      'price4Minor': serializer.toJson<int?>(price4Minor),
+      'price5Minor': serializer.toJson<int?>(price5Minor),
+      'price6Minor': serializer.toJson<int?>(price6Minor),
+      'printCategory': serializer.toJson<String?>(printCategory),
+      'printCategoryOrder': serializer.toJson<int?>(printCategoryOrder),
       'taxPercentage': serializer.toJson<double>(taxPercentage),
       'stockQuantity': serializer.toJson<double>(stockQuantity),
       'buttonPosition': serializer.toJson<int?>(buttonPosition),
@@ -552,6 +815,13 @@ class Product extends DataClass implements Insertable<Product> {
     Value<String?> groupName = const Value.absent(),
     Value<String?> accountingCode = const Value.absent(),
     int? priceMinor,
+    Value<int?> price2Minor = const Value.absent(),
+    Value<int?> price3Minor = const Value.absent(),
+    Value<int?> price4Minor = const Value.absent(),
+    Value<int?> price5Minor = const Value.absent(),
+    Value<int?> price6Minor = const Value.absent(),
+    Value<String?> printCategory = const Value.absent(),
+    Value<int?> printCategoryOrder = const Value.absent(),
     double? taxPercentage,
     double? stockQuantity,
     Value<int?> buttonPosition = const Value.absent(),
@@ -571,6 +841,17 @@ class Product extends DataClass implements Insertable<Product> {
         ? accountingCode.value
         : this.accountingCode,
     priceMinor: priceMinor ?? this.priceMinor,
+    price2Minor: price2Minor.present ? price2Minor.value : this.price2Minor,
+    price3Minor: price3Minor.present ? price3Minor.value : this.price3Minor,
+    price4Minor: price4Minor.present ? price4Minor.value : this.price4Minor,
+    price5Minor: price5Minor.present ? price5Minor.value : this.price5Minor,
+    price6Minor: price6Minor.present ? price6Minor.value : this.price6Minor,
+    printCategory: printCategory.present
+        ? printCategory.value
+        : this.printCategory,
+    printCategoryOrder: printCategoryOrder.present
+        ? printCategoryOrder.value
+        : this.printCategoryOrder,
     taxPercentage: taxPercentage ?? this.taxPercentage,
     stockQuantity: stockQuantity ?? this.stockQuantity,
     buttonPosition: buttonPosition.present
@@ -598,6 +879,27 @@ class Product extends DataClass implements Insertable<Product> {
       priceMinor: data.priceMinor.present
           ? data.priceMinor.value
           : this.priceMinor,
+      price2Minor: data.price2Minor.present
+          ? data.price2Minor.value
+          : this.price2Minor,
+      price3Minor: data.price3Minor.present
+          ? data.price3Minor.value
+          : this.price3Minor,
+      price4Minor: data.price4Minor.present
+          ? data.price4Minor.value
+          : this.price4Minor,
+      price5Minor: data.price5Minor.present
+          ? data.price5Minor.value
+          : this.price5Minor,
+      price6Minor: data.price6Minor.present
+          ? data.price6Minor.value
+          : this.price6Minor,
+      printCategory: data.printCategory.present
+          ? data.printCategory.value
+          : this.printCategory,
+      printCategoryOrder: data.printCategoryOrder.present
+          ? data.printCategoryOrder.value
+          : this.printCategoryOrder,
       taxPercentage: data.taxPercentage.present
           ? data.taxPercentage.value
           : this.taxPercentage,
@@ -630,6 +932,13 @@ class Product extends DataClass implements Insertable<Product> {
           ..write('groupName: $groupName, ')
           ..write('accountingCode: $accountingCode, ')
           ..write('priceMinor: $priceMinor, ')
+          ..write('price2Minor: $price2Minor, ')
+          ..write('price3Minor: $price3Minor, ')
+          ..write('price4Minor: $price4Minor, ')
+          ..write('price5Minor: $price5Minor, ')
+          ..write('price6Minor: $price6Minor, ')
+          ..write('printCategory: $printCategory, ')
+          ..write('printCategoryOrder: $printCategoryOrder, ')
           ..write('taxPercentage: $taxPercentage, ')
           ..write('stockQuantity: $stockQuantity, ')
           ..write('buttonPosition: $buttonPosition, ')
@@ -643,13 +952,20 @@ class Product extends DataClass implements Insertable<Product> {
   }
 
   @override
-  int get hashCode => Object.hash(
+  int get hashCode => Object.hashAll([
     pluId,
     name,
     departmentName,
     groupName,
     accountingCode,
     priceMinor,
+    price2Minor,
+    price3Minor,
+    price4Minor,
+    price5Minor,
+    price6Minor,
+    printCategory,
+    printCategoryOrder,
     taxPercentage,
     stockQuantity,
     buttonPosition,
@@ -658,7 +974,7 @@ class Product extends DataClass implements Insertable<Product> {
     printToReceipt,
     emoji,
     imageUrl,
-  );
+  ]);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -669,6 +985,13 @@ class Product extends DataClass implements Insertable<Product> {
           other.groupName == this.groupName &&
           other.accountingCode == this.accountingCode &&
           other.priceMinor == this.priceMinor &&
+          other.price2Minor == this.price2Minor &&
+          other.price3Minor == this.price3Minor &&
+          other.price4Minor == this.price4Minor &&
+          other.price5Minor == this.price5Minor &&
+          other.price6Minor == this.price6Minor &&
+          other.printCategory == this.printCategory &&
+          other.printCategoryOrder == this.printCategoryOrder &&
           other.taxPercentage == this.taxPercentage &&
           other.stockQuantity == this.stockQuantity &&
           other.buttonPosition == this.buttonPosition &&
@@ -686,6 +1009,13 @@ class ProductsCompanion extends UpdateCompanion<Product> {
   final Value<String?> groupName;
   final Value<String?> accountingCode;
   final Value<int> priceMinor;
+  final Value<int?> price2Minor;
+  final Value<int?> price3Minor;
+  final Value<int?> price4Minor;
+  final Value<int?> price5Minor;
+  final Value<int?> price6Minor;
+  final Value<String?> printCategory;
+  final Value<int?> printCategoryOrder;
   final Value<double> taxPercentage;
   final Value<double> stockQuantity;
   final Value<int?> buttonPosition;
@@ -701,6 +1031,13 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     this.groupName = const Value.absent(),
     this.accountingCode = const Value.absent(),
     this.priceMinor = const Value.absent(),
+    this.price2Minor = const Value.absent(),
+    this.price3Minor = const Value.absent(),
+    this.price4Minor = const Value.absent(),
+    this.price5Minor = const Value.absent(),
+    this.price6Minor = const Value.absent(),
+    this.printCategory = const Value.absent(),
+    this.printCategoryOrder = const Value.absent(),
     this.taxPercentage = const Value.absent(),
     this.stockQuantity = const Value.absent(),
     this.buttonPosition = const Value.absent(),
@@ -717,6 +1054,13 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     this.groupName = const Value.absent(),
     this.accountingCode = const Value.absent(),
     required int priceMinor,
+    this.price2Minor = const Value.absent(),
+    this.price3Minor = const Value.absent(),
+    this.price4Minor = const Value.absent(),
+    this.price5Minor = const Value.absent(),
+    this.price6Minor = const Value.absent(),
+    this.printCategory = const Value.absent(),
+    this.printCategoryOrder = const Value.absent(),
     this.taxPercentage = const Value.absent(),
     this.stockQuantity = const Value.absent(),
     this.buttonPosition = const Value.absent(),
@@ -734,6 +1078,13 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     Expression<String>? groupName,
     Expression<String>? accountingCode,
     Expression<int>? priceMinor,
+    Expression<int>? price2Minor,
+    Expression<int>? price3Minor,
+    Expression<int>? price4Minor,
+    Expression<int>? price5Minor,
+    Expression<int>? price6Minor,
+    Expression<String>? printCategory,
+    Expression<int>? printCategoryOrder,
     Expression<double>? taxPercentage,
     Expression<double>? stockQuantity,
     Expression<int>? buttonPosition,
@@ -750,6 +1101,14 @@ class ProductsCompanion extends UpdateCompanion<Product> {
       if (groupName != null) 'group_name': groupName,
       if (accountingCode != null) 'accounting_code': accountingCode,
       if (priceMinor != null) 'price_minor': priceMinor,
+      if (price2Minor != null) 'price2_minor': price2Minor,
+      if (price3Minor != null) 'price3_minor': price3Minor,
+      if (price4Minor != null) 'price4_minor': price4Minor,
+      if (price5Minor != null) 'price5_minor': price5Minor,
+      if (price6Minor != null) 'price6_minor': price6Minor,
+      if (printCategory != null) 'print_category': printCategory,
+      if (printCategoryOrder != null)
+        'print_category_order': printCategoryOrder,
       if (taxPercentage != null) 'tax_percentage': taxPercentage,
       if (stockQuantity != null) 'stock_quantity': stockQuantity,
       if (buttonPosition != null) 'button_position': buttonPosition,
@@ -768,6 +1127,13 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     Value<String?>? groupName,
     Value<String?>? accountingCode,
     Value<int>? priceMinor,
+    Value<int?>? price2Minor,
+    Value<int?>? price3Minor,
+    Value<int?>? price4Minor,
+    Value<int?>? price5Minor,
+    Value<int?>? price6Minor,
+    Value<String?>? printCategory,
+    Value<int?>? printCategoryOrder,
     Value<double>? taxPercentage,
     Value<double>? stockQuantity,
     Value<int?>? buttonPosition,
@@ -784,6 +1150,13 @@ class ProductsCompanion extends UpdateCompanion<Product> {
       groupName: groupName ?? this.groupName,
       accountingCode: accountingCode ?? this.accountingCode,
       priceMinor: priceMinor ?? this.priceMinor,
+      price2Minor: price2Minor ?? this.price2Minor,
+      price3Minor: price3Minor ?? this.price3Minor,
+      price4Minor: price4Minor ?? this.price4Minor,
+      price5Minor: price5Minor ?? this.price5Minor,
+      price6Minor: price6Minor ?? this.price6Minor,
+      printCategory: printCategory ?? this.printCategory,
+      printCategoryOrder: printCategoryOrder ?? this.printCategoryOrder,
       taxPercentage: taxPercentage ?? this.taxPercentage,
       stockQuantity: stockQuantity ?? this.stockQuantity,
       buttonPosition: buttonPosition ?? this.buttonPosition,
@@ -815,6 +1188,27 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     }
     if (priceMinor.present) {
       map['price_minor'] = Variable<int>(priceMinor.value);
+    }
+    if (price2Minor.present) {
+      map['price2_minor'] = Variable<int>(price2Minor.value);
+    }
+    if (price3Minor.present) {
+      map['price3_minor'] = Variable<int>(price3Minor.value);
+    }
+    if (price4Minor.present) {
+      map['price4_minor'] = Variable<int>(price4Minor.value);
+    }
+    if (price5Minor.present) {
+      map['price5_minor'] = Variable<int>(price5Minor.value);
+    }
+    if (price6Minor.present) {
+      map['price6_minor'] = Variable<int>(price6Minor.value);
+    }
+    if (printCategory.present) {
+      map['print_category'] = Variable<String>(printCategory.value);
+    }
+    if (printCategoryOrder.present) {
+      map['print_category_order'] = Variable<int>(printCategoryOrder.value);
     }
     if (taxPercentage.present) {
       map['tax_percentage'] = Variable<double>(taxPercentage.value);
@@ -852,6 +1246,13 @@ class ProductsCompanion extends UpdateCompanion<Product> {
           ..write('groupName: $groupName, ')
           ..write('accountingCode: $accountingCode, ')
           ..write('priceMinor: $priceMinor, ')
+          ..write('price2Minor: $price2Minor, ')
+          ..write('price3Minor: $price3Minor, ')
+          ..write('price4Minor: $price4Minor, ')
+          ..write('price5Minor: $price5Minor, ')
+          ..write('price6Minor: $price6Minor, ')
+          ..write('printCategory: $printCategory, ')
+          ..write('printCategoryOrder: $printCategoryOrder, ')
           ..write('taxPercentage: $taxPercentage, ')
           ..write('stockQuantity: $stockQuantity, ')
           ..write('buttonPosition: $buttonPosition, ')
@@ -7403,8 +7804,27 @@ class $StaffTable extends Staff with TableInfo<$StaffTable, StaffData> {
     requiredDuringInsert: false,
     defaultValue: const Constant(''),
   );
+  static const VerificationMeta _permissionsMeta = const VerificationMeta(
+    'permissions',
+  );
   @override
-  List<GeneratedColumn> get $columns => [id, pluid, name, pin, swipeCard];
+  late final GeneratedColumn<String> permissions = GeneratedColumn<String>(
+    'permissions',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    pluid,
+    name,
+    pin,
+    swipeCard,
+    permissions,
+  ];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -7448,6 +7868,15 @@ class $StaffTable extends Staff with TableInfo<$StaffTable, StaffData> {
         swipeCard.isAcceptableOrUnknown(data['swipe_card']!, _swipeCardMeta),
       );
     }
+    if (data.containsKey('permissions')) {
+      context.handle(
+        _permissionsMeta,
+        permissions.isAcceptableOrUnknown(
+          data['permissions']!,
+          _permissionsMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -7476,6 +7905,10 @@ class $StaffTable extends Staff with TableInfo<$StaffTable, StaffData> {
       swipeCard: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}swipe_card'],
+      )!,
+      permissions: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}permissions'],
       )!,
     );
   }
@@ -7508,12 +7941,26 @@ class StaffData extends DataClass implements Insertable<StaffData> {
   /// rather than nullable, so the match below cannot be satisfied by a person
   /// with no card and a reader that sent nothing.
   final String swipeCard;
+
+  /// The permission group's switches, as JSON, or empty for somebody in no
+  /// group.
+  ///
+  /// Cached here for the reason the PIN and the card are: a manager approving a
+  /// void at eight on a Friday cannot wait for the broadband, and a till that
+  /// could only check a permission online would start refusing them at the one
+  /// moment that matters. See `data/till_permissions.dart`.
+  ///
+  /// Empty means every key — not none. Every member of staff at every venue
+  /// trading today has no group, so an empty column has to keep meaning what it
+  /// has always meant.
+  final String permissions;
   const StaffData({
     required this.id,
     required this.pluid,
     required this.name,
     required this.pin,
     required this.swipeCard,
+    required this.permissions,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -7523,6 +7970,7 @@ class StaffData extends DataClass implements Insertable<StaffData> {
     map['name'] = Variable<String>(name);
     map['pin'] = Variable<String>(pin);
     map['swipe_card'] = Variable<String>(swipeCard);
+    map['permissions'] = Variable<String>(permissions);
     return map;
   }
 
@@ -7533,6 +7981,7 @@ class StaffData extends DataClass implements Insertable<StaffData> {
       name: Value(name),
       pin: Value(pin),
       swipeCard: Value(swipeCard),
+      permissions: Value(permissions),
     );
   }
 
@@ -7547,6 +7996,7 @@ class StaffData extends DataClass implements Insertable<StaffData> {
       name: serializer.fromJson<String>(json['name']),
       pin: serializer.fromJson<String>(json['pin']),
       swipeCard: serializer.fromJson<String>(json['swipeCard']),
+      permissions: serializer.fromJson<String>(json['permissions']),
     );
   }
   @override
@@ -7558,6 +8008,7 @@ class StaffData extends DataClass implements Insertable<StaffData> {
       'name': serializer.toJson<String>(name),
       'pin': serializer.toJson<String>(pin),
       'swipeCard': serializer.toJson<String>(swipeCard),
+      'permissions': serializer.toJson<String>(permissions),
     };
   }
 
@@ -7567,12 +8018,14 @@ class StaffData extends DataClass implements Insertable<StaffData> {
     String? name,
     String? pin,
     String? swipeCard,
+    String? permissions,
   }) => StaffData(
     id: id ?? this.id,
     pluid: pluid ?? this.pluid,
     name: name ?? this.name,
     pin: pin ?? this.pin,
     swipeCard: swipeCard ?? this.swipeCard,
+    permissions: permissions ?? this.permissions,
   );
   StaffData copyWithCompanion(StaffCompanion data) {
     return StaffData(
@@ -7581,6 +8034,9 @@ class StaffData extends DataClass implements Insertable<StaffData> {
       name: data.name.present ? data.name.value : this.name,
       pin: data.pin.present ? data.pin.value : this.pin,
       swipeCard: data.swipeCard.present ? data.swipeCard.value : this.swipeCard,
+      permissions: data.permissions.present
+          ? data.permissions.value
+          : this.permissions,
     );
   }
 
@@ -7591,13 +8047,14 @@ class StaffData extends DataClass implements Insertable<StaffData> {
           ..write('pluid: $pluid, ')
           ..write('name: $name, ')
           ..write('pin: $pin, ')
-          ..write('swipeCard: $swipeCard')
+          ..write('swipeCard: $swipeCard, ')
+          ..write('permissions: $permissions')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, pluid, name, pin, swipeCard);
+  int get hashCode => Object.hash(id, pluid, name, pin, swipeCard, permissions);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -7606,7 +8063,8 @@ class StaffData extends DataClass implements Insertable<StaffData> {
           other.pluid == this.pluid &&
           other.name == this.name &&
           other.pin == this.pin &&
-          other.swipeCard == this.swipeCard);
+          other.swipeCard == this.swipeCard &&
+          other.permissions == this.permissions);
 }
 
 class StaffCompanion extends UpdateCompanion<StaffData> {
@@ -7615,12 +8073,14 @@ class StaffCompanion extends UpdateCompanion<StaffData> {
   final Value<String> name;
   final Value<String> pin;
   final Value<String> swipeCard;
+  final Value<String> permissions;
   const StaffCompanion({
     this.id = const Value.absent(),
     this.pluid = const Value.absent(),
     this.name = const Value.absent(),
     this.pin = const Value.absent(),
     this.swipeCard = const Value.absent(),
+    this.permissions = const Value.absent(),
   });
   StaffCompanion.insert({
     this.id = const Value.absent(),
@@ -7628,6 +8088,7 @@ class StaffCompanion extends UpdateCompanion<StaffData> {
     required String name,
     required String pin,
     this.swipeCard = const Value.absent(),
+    this.permissions = const Value.absent(),
   }) : name = Value(name),
        pin = Value(pin);
   static Insertable<StaffData> custom({
@@ -7636,6 +8097,7 @@ class StaffCompanion extends UpdateCompanion<StaffData> {
     Expression<String>? name,
     Expression<String>? pin,
     Expression<String>? swipeCard,
+    Expression<String>? permissions,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -7643,6 +8105,7 @@ class StaffCompanion extends UpdateCompanion<StaffData> {
       if (name != null) 'name': name,
       if (pin != null) 'pin': pin,
       if (swipeCard != null) 'swipe_card': swipeCard,
+      if (permissions != null) 'permissions': permissions,
     });
   }
 
@@ -7652,6 +8115,7 @@ class StaffCompanion extends UpdateCompanion<StaffData> {
     Value<String>? name,
     Value<String>? pin,
     Value<String>? swipeCard,
+    Value<String>? permissions,
   }) {
     return StaffCompanion(
       id: id ?? this.id,
@@ -7659,6 +8123,7 @@ class StaffCompanion extends UpdateCompanion<StaffData> {
       name: name ?? this.name,
       pin: pin ?? this.pin,
       swipeCard: swipeCard ?? this.swipeCard,
+      permissions: permissions ?? this.permissions,
     );
   }
 
@@ -7680,6 +8145,9 @@ class StaffCompanion extends UpdateCompanion<StaffData> {
     if (swipeCard.present) {
       map['swipe_card'] = Variable<String>(swipeCard.value);
     }
+    if (permissions.present) {
+      map['permissions'] = Variable<String>(permissions.value);
+    }
     return map;
   }
 
@@ -7690,7 +8158,8 @@ class StaffCompanion extends UpdateCompanion<StaffData> {
           ..write('pluid: $pluid, ')
           ..write('name: $name, ')
           ..write('pin: $pin, ')
-          ..write('swipeCard: $swipeCard')
+          ..write('swipeCard: $swipeCard, ')
+          ..write('permissions: $permissions')
           ..write(')'))
         .toString();
   }
@@ -7748,6 +8217,13 @@ typedef $$ProductsTableCreateCompanionBuilder =
       Value<String?> groupName,
       Value<String?> accountingCode,
       required int priceMinor,
+      Value<int?> price2Minor,
+      Value<int?> price3Minor,
+      Value<int?> price4Minor,
+      Value<int?> price5Minor,
+      Value<int?> price6Minor,
+      Value<String?> printCategory,
+      Value<int?> printCategoryOrder,
       Value<double> taxPercentage,
       Value<double> stockQuantity,
       Value<int?> buttonPosition,
@@ -7765,6 +8241,13 @@ typedef $$ProductsTableUpdateCompanionBuilder =
       Value<String?> groupName,
       Value<String?> accountingCode,
       Value<int> priceMinor,
+      Value<int?> price2Minor,
+      Value<int?> price3Minor,
+      Value<int?> price4Minor,
+      Value<int?> price5Minor,
+      Value<int?> price6Minor,
+      Value<String?> printCategory,
+      Value<int?> printCategoryOrder,
       Value<double> taxPercentage,
       Value<double> stockQuantity,
       Value<int?> buttonPosition,
@@ -7811,6 +8294,41 @@ class $$ProductsTableFilterComposer
 
   ColumnFilters<int> get priceMinor => $composableBuilder(
     column: $table.priceMinor,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get price2Minor => $composableBuilder(
+    column: $table.price2Minor,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get price3Minor => $composableBuilder(
+    column: $table.price3Minor,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get price4Minor => $composableBuilder(
+    column: $table.price4Minor,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get price5Minor => $composableBuilder(
+    column: $table.price5Minor,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get price6Minor => $composableBuilder(
+    column: $table.price6Minor,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get printCategory => $composableBuilder(
+    column: $table.printCategory,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get printCategoryOrder => $composableBuilder(
+    column: $table.printCategoryOrder,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -7894,6 +8412,41 @@ class $$ProductsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get price2Minor => $composableBuilder(
+    column: $table.price2Minor,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get price3Minor => $composableBuilder(
+    column: $table.price3Minor,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get price4Minor => $composableBuilder(
+    column: $table.price4Minor,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get price5Minor => $composableBuilder(
+    column: $table.price5Minor,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get price6Minor => $composableBuilder(
+    column: $table.price6Minor,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get printCategory => $composableBuilder(
+    column: $table.printCategory,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get printCategoryOrder => $composableBuilder(
+    column: $table.printCategoryOrder,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<double> get taxPercentage => $composableBuilder(
     column: $table.taxPercentage,
     builder: (column) => ColumnOrderings(column),
@@ -7968,6 +8521,41 @@ class $$ProductsTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<int> get price2Minor => $composableBuilder(
+    column: $table.price2Minor,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get price3Minor => $composableBuilder(
+    column: $table.price3Minor,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get price4Minor => $composableBuilder(
+    column: $table.price4Minor,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get price5Minor => $composableBuilder(
+    column: $table.price5Minor,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get price6Minor => $composableBuilder(
+    column: $table.price6Minor,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get printCategory => $composableBuilder(
+    column: $table.printCategory,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get printCategoryOrder => $composableBuilder(
+    column: $table.printCategoryOrder,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<double> get taxPercentage => $composableBuilder(
     column: $table.taxPercentage,
     builder: (column) => column,
@@ -8039,6 +8627,13 @@ class $$ProductsTableTableManager
                 Value<String?> groupName = const Value.absent(),
                 Value<String?> accountingCode = const Value.absent(),
                 Value<int> priceMinor = const Value.absent(),
+                Value<int?> price2Minor = const Value.absent(),
+                Value<int?> price3Minor = const Value.absent(),
+                Value<int?> price4Minor = const Value.absent(),
+                Value<int?> price5Minor = const Value.absent(),
+                Value<int?> price6Minor = const Value.absent(),
+                Value<String?> printCategory = const Value.absent(),
+                Value<int?> printCategoryOrder = const Value.absent(),
                 Value<double> taxPercentage = const Value.absent(),
                 Value<double> stockQuantity = const Value.absent(),
                 Value<int?> buttonPosition = const Value.absent(),
@@ -8054,6 +8649,13 @@ class $$ProductsTableTableManager
                 groupName: groupName,
                 accountingCode: accountingCode,
                 priceMinor: priceMinor,
+                price2Minor: price2Minor,
+                price3Minor: price3Minor,
+                price4Minor: price4Minor,
+                price5Minor: price5Minor,
+                price6Minor: price6Minor,
+                printCategory: printCategory,
+                printCategoryOrder: printCategoryOrder,
                 taxPercentage: taxPercentage,
                 stockQuantity: stockQuantity,
                 buttonPosition: buttonPosition,
@@ -8071,6 +8673,13 @@ class $$ProductsTableTableManager
                 Value<String?> groupName = const Value.absent(),
                 Value<String?> accountingCode = const Value.absent(),
                 required int priceMinor,
+                Value<int?> price2Minor = const Value.absent(),
+                Value<int?> price3Minor = const Value.absent(),
+                Value<int?> price4Minor = const Value.absent(),
+                Value<int?> price5Minor = const Value.absent(),
+                Value<int?> price6Minor = const Value.absent(),
+                Value<String?> printCategory = const Value.absent(),
+                Value<int?> printCategoryOrder = const Value.absent(),
                 Value<double> taxPercentage = const Value.absent(),
                 Value<double> stockQuantity = const Value.absent(),
                 Value<int?> buttonPosition = const Value.absent(),
@@ -8086,6 +8695,13 @@ class $$ProductsTableTableManager
                 groupName: groupName,
                 accountingCode: accountingCode,
                 priceMinor: priceMinor,
+                price2Minor: price2Minor,
+                price3Minor: price3Minor,
+                price4Minor: price4Minor,
+                price5Minor: price5Minor,
+                price6Minor: price6Minor,
+                printCategory: printCategory,
+                printCategoryOrder: printCategoryOrder,
                 taxPercentage: taxPercentage,
                 stockQuantity: stockQuantity,
                 buttonPosition: buttonPosition,
@@ -12024,6 +12640,7 @@ typedef $$StaffTableCreateCompanionBuilder =
       required String name,
       required String pin,
       Value<String> swipeCard,
+      Value<String> permissions,
     });
 typedef $$StaffTableUpdateCompanionBuilder =
     StaffCompanion Function({
@@ -12032,6 +12649,7 @@ typedef $$StaffTableUpdateCompanionBuilder =
       Value<String> name,
       Value<String> pin,
       Value<String> swipeCard,
+      Value<String> permissions,
     });
 
 class $$StaffTableFilterComposer extends Composer<_$AppDatabase, $StaffTable> {
@@ -12064,6 +12682,11 @@ class $$StaffTableFilterComposer extends Composer<_$AppDatabase, $StaffTable> {
 
   ColumnFilters<String> get swipeCard => $composableBuilder(
     column: $table.swipeCard,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get permissions => $composableBuilder(
+    column: $table.permissions,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -12101,6 +12724,11 @@ class $$StaffTableOrderingComposer
     column: $table.swipeCard,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get permissions => $composableBuilder(
+    column: $table.permissions,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$StaffTableAnnotationComposer
@@ -12126,6 +12754,11 @@ class $$StaffTableAnnotationComposer
 
   GeneratedColumn<String> get swipeCard =>
       $composableBuilder(column: $table.swipeCard, builder: (column) => column);
+
+  GeneratedColumn<String> get permissions => $composableBuilder(
+    column: $table.permissions,
+    builder: (column) => column,
+  );
 }
 
 class $$StaffTableTableManager
@@ -12161,12 +12794,14 @@ class $$StaffTableTableManager
                 Value<String> name = const Value.absent(),
                 Value<String> pin = const Value.absent(),
                 Value<String> swipeCard = const Value.absent(),
+                Value<String> permissions = const Value.absent(),
               }) => StaffCompanion(
                 id: id,
                 pluid: pluid,
                 name: name,
                 pin: pin,
                 swipeCard: swipeCard,
+                permissions: permissions,
               ),
           createCompanionCallback:
               ({
@@ -12175,12 +12810,14 @@ class $$StaffTableTableManager
                 required String name,
                 required String pin,
                 Value<String> swipeCard = const Value.absent(),
+                Value<String> permissions = const Value.absent(),
               }) => StaffCompanion.insert(
                 id: id,
                 pluid: pluid,
                 name: name,
                 pin: pin,
                 swipeCard: swipeCard,
+                permissions: permissions,
               ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))

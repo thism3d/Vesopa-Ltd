@@ -37,6 +37,7 @@ class CustomerQr extends StatelessWidget {
     required this.data,
     this.caption = '',
     this.size = 132,
+    this.captionSize = 13,
     super.key,
   });
 
@@ -48,6 +49,11 @@ class CustomerQr extends StatelessWidget {
   final String caption;
 
   final double size;
+
+  /// How large the caption is. The default suits the code tucked under a bill;
+  /// a code that has the panel to itself is read from further away and wants
+  /// its instruction to scale with it.
+  final double captionSize;
 
   @override
   Widget build(BuildContext context) {
@@ -81,8 +87,8 @@ class CustomerQr extends StatelessWidget {
               textAlign: TextAlign.center,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 13,
+              style: TextStyle(
+                fontSize: captionSize,
                 height: 1.25,
                 color: Brand.inkSoft,
               ),

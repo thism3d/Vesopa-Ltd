@@ -3,6 +3,8 @@ import 'package:intl/intl.dart';
 
 import '../data/commerce.dart';
 import '../data/tender_engine.dart';
+import 'widgets/on_screen_keyboard.dart';
+import 'widgets/pos_text_field.dart';
 
 String _money(int minor) =>
     NumberFormat.currency(locale: 'en_GB', symbol: '£').format(minor / 100);
@@ -115,7 +117,7 @@ class _GiftCardDialogState extends State<_GiftCardDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            TextField(
+            PosTextField(
               controller: _code,
               autofocus: true,
               textCapitalization: TextCapitalization.characters,
@@ -250,7 +252,7 @@ class _VoucherDialogState extends State<_VoucherDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            TextField(
+            PosTextField(
               controller: _code,
               autofocus: true,
               textCapitalization: TextCapitalization.characters,
@@ -386,7 +388,7 @@ class _DepositDialogState extends State<_DepositDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            TextField(
+            PosTextField(
               controller: _reference,
               autofocus: true,
               textCapitalization: TextCapitalization.characters,
@@ -622,10 +624,10 @@ class _LoyaltyDialogState extends State<_LoyaltyDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              TextField(
+              PosTextField(
                 controller: _search,
                 autofocus: true,
-                textInputAction: TextInputAction.search,
+                submitLabel: 'Search',
                 decoration: InputDecoration(
                   labelText: 'Phone, name or card number',
                   hintText: 'Search the loyalty scheme',
@@ -681,14 +683,15 @@ class _LoyaltyDialogState extends State<_LoyaltyDialog> {
                   isError: false,
                 ),
                 const SizedBox(height: 10),
-                TextField(
+                PosTextField(
                   controller: _name,
+                  textCapitalization: TextCapitalization.words,
                   decoration: const InputDecoration(labelText: 'Name'),
                 ),
                 const SizedBox(height: 10),
-                TextField(
+                PosTextField(
                   controller: _phone,
-                  keyboardType: TextInputType.phone,
+                  mode: PosKeyboardMode.number,
                   decoration: const InputDecoration(labelText: 'Phone number'),
                 ),
                 const SizedBox(height: 10),
@@ -1081,9 +1084,9 @@ class _GratuityDialogState extends State<_GratuityDialog> {
               ],
             ),
             const SizedBox(height: 14),
-            TextField(
+            PosTextField(
               controller: _custom,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              mode: PosKeyboardMode.decimal,
               decoration: const InputDecoration(
                 labelText: 'Or a set amount (£)',
                 prefixText: '£ ',

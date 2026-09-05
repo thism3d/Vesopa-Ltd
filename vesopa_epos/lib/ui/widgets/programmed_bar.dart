@@ -12,6 +12,7 @@ import '../../main.dart';
 import '../shell.dart' show SyncStatusBadge;
 import '../theme.dart';
 import 'basket_panel.dart' show money;
+import 'clock_punch_button.dart';
 import 'open_bills_strip.dart';
 import 'print_status.dart';
 
@@ -283,6 +284,10 @@ class _BarKey extends ConsumerWidget {
     'open_bills',
     'order_total',
     'clock',
+    // Not a plain function key any more. It reports the signed-on member of
+    // staff's own shift — green with the time they started, red with the time
+    // they finished — which is a thing to draw rather than a label to print.
+    'clock_in_out',
     'venue_name',
     'staff_name',
     'sync_status',
@@ -318,6 +323,7 @@ class _BarKey extends ConsumerWidget {
     'sign_off': Icons.logout,
     'sign_on': Icons.login,
     'clock_in_out': Icons.schedule,
+    'price_level': Icons.sell_outlined,
   };
 
   /// Mirrors the labels the back office offers. A key not in here still draws —
@@ -346,6 +352,7 @@ class _BarKey extends ConsumerWidget {
     'sign_off': 'Sign off',
     'sign_on': 'Sign on',
     'clock_in_out': 'Clock in / out',
+    'price_level': 'Price level',
   };
 
   @override
@@ -405,6 +412,12 @@ class _BarKey extends ConsumerWidget {
         big: true,
       ),
       'clock' => const _Clock(),
+      // Its own colour, its own label and its own tap: see
+      // `widgets/clock_punch_button.dart`. The venue's fill is deliberately not
+      // applied — the whole point of the key is that the colour reports
+      // something, and a fill set in the back office would report the back
+      // office instead.
+      'clock_in_out' => const ClockPunchKey(compact: true),
       'venue_name' => _oneLine(
         button.label ?? ref.watch(brandingProvider).venueName,
         ink,

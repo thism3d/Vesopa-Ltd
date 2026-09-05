@@ -354,4 +354,56 @@ void main() {
       expect(CardSettings.fromJson('nonsense').loyaltyPrefix, '9998');
     });
   });
+
+  group('what the counter is offered', () {
+    test('the venue can switch either button off on its own', () {
+      // Two switches rather than one, because they fail apart: a venue with no
+      // card printer wants the first and not the second.
+      final noPrinter = CardSettings.fromJson({
+        'till_wallet_button': 1,
+        'till_print_button': 0,
+      });
+      expect(noPrinter.tillWalletButton, isTrue);
+      expect(noPrinter.tillPrintButton, isFalse);
+
+      final noWallet = CardSettings.fromJson({
+        'till_wallet_button': 0,
+        'till_print_button': 1,
+      });
+      expect(noWallet.tillWalletButton, isFalse);
+      expect(noWallet.tillPrintButton, isTrue);
+    });
+
+    test('a server that predates the columns leaves both buttons on', () {
+      // The failure this guards against is a till deployed ahead of its server:
+      // an absent field reading as "off" would take both buttons away from
+      // every venue on that server at once, and look like the release broke
+      // them.
+      final old = CardSettings.fromJson({'clerk_prefix': '9999'});
+      expect(old.tillWalletButton, isTrue);
+      expect(old.tillPrintButton, isTrue);
+      expect(old.walletOnDisplay, isTrue);
+    });
+
+    test('the code goes to the customer screen unless the venue says not to', () {
+      expect(CardSettings.fromJson({'wallet_on_display': 0}).walletOnDisplay,
+          isFalse);
+      expect(CardSettings.fromJson({'wallet_on_display': true}).walletOnDisplay,
+          isTrue);
+    });
+
+    test('the three switches survive a round trip through JSON', () {
+      // toJson is what the terminal stores between runs, so a field it forgets
+      // is a setting that resets itself every time the till is switched on.
+      const settings = CardSettings(
+        tillWalletButton: false,
+        tillPrintButton: false,
+        walletOnDisplay: false,
+      );
+      final back = CardSettings.fromJson(settings.toJson());
+      expect(back.tillWalletButton, isFalse);
+      expect(back.tillPrintButton, isFalse);
+      expect(back.walletOnDisplay, isFalse);
+    });
+  });
 }

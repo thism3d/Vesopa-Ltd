@@ -1,5 +1,8 @@
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const express = require('express');
+const multer = require('multer');
 const jwt = require('jsonwebtoken');
 const { requireAuth } = require('./auth');
 const G = require('./wallet_google');
@@ -245,25 +248,61 @@ function walletCore({ pool, secret }) {
     return merged;
   }
 
-  /** Every programme for a venue, designs resolved, for the back office. */
+  /**
+   * Every programme for a venue, for the back office's designer.
+   *
+   * WHAT EACH CARD HAS SET, NOT WHAT IT RESOLVES TO
+   *
+   * This used to return the *merged* design — the venue's branding with the
+   * card's overrides on top — which is right for building a pass and wrong for
+   * editing one, in a way that quietly destroys the thing being edited.
+   *
+   * Every field came back full, because everything falls back to the venue. So
+   * the designer could not tell "inherited" from "deliberately set": it marked
+   * all five cards as having their own look, and it filled every box with the
+   * inherited value. Pressing Save on a card you had not touched then wrote all
+   * of it back as overrides — freezing today's branding into that card, and
+   * silently breaking the promise the whole screen rests on, which is that
+   * changing the venue's look changes the cards with it.
+   *
+   * So: the row's own values, empty where nothing is set. The back office
+   * resolves for its preview, using the same rule readProgramBrand() uses, and
+   * shows the inherited value as a placeholder rather than as content.
+   */
   async function readPrograms(office) {
     const brand = await readBrand(office);
     const out = [];
     for (const kind of Object.keys(G.PASS_TYPES)) {
-      const design = await readProgramBrand(office, kind, brand);
+      let row = null;
+      try {
+        const [[found]] = await pool.query(
+          'SELECT * FROM epos_wallet_programs WHERE office = ? AND kind = ?',
+          [office, kind]
+        );
+        row = found || null;
+      } catch {
+        // The migration may not have run. No overrides is a true answer.
+        row = null;
+      }
+
+      const own = (field) => {
+        const value = row ? row[field] : null;
+        return value === null || value === undefined ? '' : String(value);
+      };
+
       out.push({
         kind,
         label: G.PASS_TYPES[kind].label,
         apple_type: G.PASS_TYPES[kind].appleType,
         enabled: Number(brand[`${kind}_enabled`]) ? 1 : 0,
-        code: design.program_code || (await ensureProgramCode(office, kind, brand)),
-        program_name: design.program_name || '',
-        hex_background: design.hex_background || '',
-        hex_foreground: design.hex_foreground || '',
-        hex_label: design.hex_label || '',
-        strip_url: design.strip_url || '',
-        terms: design.terms || '',
-        change_message: design.change_message || '',
+        code: (row && row.code) || (await ensureProgramCode(office, kind, brand)),
+        program_name: own('program_name'),
+        hex_background: own('hex_background'),
+        hex_foreground: own('hex_foreground'),
+        hex_label: own('hex_label'),
+        strip_url: own('strip_url'),
+        terms: own('terms'),
+        change_message: own('change_message'),
       });
     }
     return out;
@@ -722,7 +761,14 @@ function walletCore({ pool, secret }) {
       );
     }
 
-    const brand = await readBrand(office);
+    // This card's own design, not just the venue's. epos_wallet_programs and
+    // readProgramBrand() have resolved a per-kind look since the table was
+    // added, and every pass ever built went past it to readBrand() -- so a
+    // venue could describe a gift card that looked nothing like its staff card
+    // and be handed two identical ones. Everything the design leaves blank
+    // still falls back to the venue's branding, which is what readProgramBrand
+    // returns, so this is the same object with more of it filled in.
+    const brand = await readProgramBrand(office, kind);
     const subject = await loadSubject(office, kind, subjectId);
     if (!subject) throw new G.WalletError('No such customer, staff member or promotion', 404);
 
@@ -857,12 +903,69 @@ function walletCore({ pool, secret }) {
  * Takes the core rather than building one, so the public QR routes and these
  * share a single OAuth token cache and a single read of the environment.
  */
+/**
+ * Where a venue's card artwork lands.
+ *
+ * Beside every other upload, under `public/uploads`, which is excluded from the
+ * deploy and lives only on the server. PNG only, and that is not fussiness: the
+ * pair is written as `<name>.png` and `<name>@2x.png` and read back by name, so
+ * one JPEG in the middle of that convention is a picture Apple silently drops.
+ * The browser's cropper produces PNG anyway.
+ */
+const artwork = multer({
+  storage: multer.diskStorage({
+    destination: path.join(__dirname, '..', 'public', 'uploads'),
+    filename: (_req, _file, cb) => cb(null, `${crypto.randomUUID()}.png`),
+  }),
+  limits: { fileSize: 4 * 1024 * 1024, files: 2 },
+  fileFilter: (_req, file, cb) => {
+    const ok = file.mimetype === 'image/png';
+    cb(ok ? null : new Error('Card artwork must be a PNG'), ok);
+  },
+});
+
+/**
+ * An absolute address for something this server serves.
+ *
+ * Google fetches artwork itself, from its own machines, so a relative path is a
+ * picture that never appears and never explains why — and neither does Google.
+ *
+ * BACKOFFICE_URL FIRST, AND NOT THE REQUEST'S OWN HOST
+ *
+ * This started out reading the host off the request, which is the obvious thing
+ * and is wrong here. The value is not used to answer this request; it is
+ * *stored*, and read months later by Google's fetcher. So it has to be the
+ * address the venue is reachable at, not the address this particular caller
+ * happened to use — and those differ every time the app is spoken to over
+ * loopback, which is how its own health checks, its tools and anything on the
+ * box reach it. One such call stores `http://127.0.0.1:5060/uploads/…`, which
+ * is a card with no artwork on it and nothing anywhere saying why.
+ *
+ * BACKOFFICE_URL is already the answer to this question everywhere else in this
+ * file — the sign-up links, the short links and the pass web service are all
+ * built from it. The request is the fallback, for a development machine that
+ * has not set it.
+ */
+function publicUrl(req, pathname) {
+  const configured = String(process.env.BACKOFFICE_URL || '').replace(/\/+$/, '');
+  if (configured) return `${configured}${pathname}`;
+
+  const proto = String(req.headers['x-forwarded-proto'] || req.protocol || 'https')
+    .split(',')[0]
+    .trim();
+  const host = String(req.headers['x-forwarded-host'] || req.headers.host || '')
+    .split(',')[0]
+    .trim();
+  return host ? `${proto}://${host}${pathname}` : pathname;
+}
+
 function walletRoutes({ pool, broadcast, secret, core }) {
   const router = express.Router();
   const auth = requireAuth(secret);
   const {
     config, client, BRAND_FIELDS, readBrand, mint,
     SLUG_SHAPE, SLUG_RESERVED, ensureJoinSlug,
+    readPrograms, ensureProgramCode, readProgramBrand, loadSubject, shortLink,
   } = core || walletCore({ pool, secret });
 
   async function tenantEmail(req) {
@@ -1019,6 +1122,211 @@ function walletRoutes({ pool, broadcast, secret, core }) {
     } catch (e) {
       next(e);
     }
+  });
+
+  /**
+   * Everything needed to print one card, for one subject.
+   *
+   * Read-only and idempotent, which is the whole difference between this and
+   * the pass routes: pressing print must not issue anybody anything. A manager
+   * printing a replacement for a lost card is not asking for a second card, and
+   * a route that minted one would quietly give them two.
+   *
+   * The scan target is the same short link the pass carries, so the code on the
+   * printed card and the code on the phone are the same code. A venue that
+   * hands out both has one number, one scan, one person.
+   */
+  router.get('/wallet/card/:kind/:subjectId', auth, async (req, res, next) => {
+    try {
+      const kind = String(req.params.kind);
+      if (!G.PASS_TYPES[kind]) {
+        return res.status(400).json({ error: 'Unknown pass kind' });
+      }
+      const office = await tenantEmail(req);
+      const subjectId = String(req.params.subjectId);
+
+      const subject = await loadSubject(office, kind, subjectId);
+      if (!subject) return res.status(404).json({ error: 'No such record' });
+
+      const design = await readProgramBrand(office, kind);
+      const number = String(subject.card_number || '');
+
+      res.json({
+        kind,
+        name: subject.name || subject.title || '',
+        card_number: number,
+        member_no: subject.member_no || '',
+        // The sentinels belong to the reader, not to the card, but they have to
+        // be encoded on the stripe — so the venue's encoder is shown the exact
+        // string, sentinels included, rather than the bare number it would
+        // otherwise be given and would then have to know to wrap.
+        //
+        // Digits only, and that is the whole point of the guard. A customer who
+        // has never been issued plastic has no card number, and loadSubject()
+        // falls back to their uuid so the QR still identifies them — which is
+        // right for a barcode and wrong for a magnetic stripe, because track 2
+        // is a numeric encoding and a uuid cannot go on one. Offering it anyway
+        // would send somebody to a card writer with a string it will refuse,
+        // and the card writer's error message will not explain why.
+        track: /^\d+$/.test(number) ? `;${number}?` : '',
+        // So the panel can say which of the two it is looking at rather than
+        // showing a uuid in a box labelled "card number".
+        has_plastic: /^\d+$/.test(number),
+        scan_url: shortLink(office, kind, subjectId).replace('/wallet/s/', '/wallet/c/'),
+        program_name: design.program_name || '',
+        issuer_name: design.issuer_name || '',
+      });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // ---- The pass designer --------------------------------------------------
+  //
+  // Five cards, designed one at a time.
+  //
+  // `epos_wallet_programs` and readProgramBrand() have held the per-kind design
+  // since the table was added, and nothing was ever routed to them: the Wallet
+  // screen offered one set of colours for all five cards and a column of
+  // free-text boxes, so a venue that wanted its gift card to look nothing like
+  // its staff card had no way to say so. These are the two routes that were
+  // missing, and the back office draws a card against them.
+  //
+  // Everything left blank inherits. That is the rule the whole screen rests on:
+  // a venue sets its look once on the Wallet screen, opens one card, changes
+  // the two things that should differ, and the other three stay in step for
+  // ever after.
+
+  /** The five designs, venue branding already merged in. */
+  router.get('/wallet/programs', auth, async (req, res, next) => {
+    try {
+      const office = await tenantEmail(req);
+      res.json(await readPrograms(office));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /**
+   * Save one card's design.
+   *
+   * Only the seven fields a design owns. `enabled` is deliberately not among
+   * them — which cards a venue issues is a property of the venue and lives on
+   * the settings row, and having it in two places is how a card ends up
+   * switched on in one screen and off in the other.
+   */
+  const DESIGN_FIELDS = [
+    'program_name', 'hex_background', 'hex_foreground', 'hex_label',
+    'strip_url', 'terms', 'change_message',
+  ];
+
+  router.put('/wallet/programs/:kind', auth, async (req, res, next) => {
+    try {
+      const kind = String(req.params.kind);
+      if (!G.PASS_TYPES[kind]) {
+        return res.status(400).json({ error: 'Unknown pass kind' });
+      }
+      const office = await tenantEmail(req);
+
+      const values = {};
+      for (const field of DESIGN_FIELDS) {
+        if (req.body[field] === undefined) continue;
+        const raw = String(req.body[field] ?? '').trim();
+        // '' is stored as '' rather than refused: on this screen an empty box
+        // means "inherit the venue's own branding", and readProgramBrand()
+        // treats '' and NULL the same way. Clearing a field has to be possible
+        // or the first colour anybody picks is permanent.
+        values[field] = raw;
+      }
+
+      for (const field of ['hex_background', 'hex_foreground', 'hex_label']) {
+        const hex = values[field];
+        if (hex && !/^#[0-9a-f]{6}$/i.test(hex)) {
+          return res.status(400).json({
+            error: 'A colour must be a hex value like #0f5132',
+          });
+        }
+      }
+
+      // Google fetches this address itself and cannot sign in, so a relative
+      // path or an http:// one is a picture that silently never appears. The
+      // uploader returns an absolute https:// URL for exactly this reason.
+      const strip = values.strip_url;
+      if (strip && !/^https:\/\//i.test(strip)) {
+        return res.status(400).json({
+          error: 'Artwork must be a public https:// address — Google fetches it '
+            + 'directly and cannot sign in. Use Upload artwork to get one.',
+        });
+      }
+
+      // The row has to exist before it can be updated, and its `code` is what
+      // the venue's QR links are built from — generated once and never changed.
+      await ensureProgramCode(office, kind, await readBrand(office));
+
+      const cols = Object.keys(values);
+      if (cols.length) {
+        await pool.execute(
+          `UPDATE epos_wallet_programs
+              SET ${cols.map((c) => `\`${c}\` = ?`).join(', ')}
+            WHERE office = ? AND kind = ?`,
+          [...cols.map((c) => values[c]), office, kind]
+        );
+      }
+
+      broadcast({ type: 'wallet.settings' });
+      const all = await readPrograms(office);
+      res.json(all.find((p) => p.kind === kind) || null);
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /**
+   * Artwork for a card, at the sizes Apple insists on.
+   *
+   * WHY TWO FILES AND NOT ONE
+   *
+   * Google fetches a URL and accepts whatever it finds. Apple wants bytes, at
+   * exact pixel sizes, inside the archive — and Node has no image codec to
+   * resize an upload with, which is why this half of the feature sat unbuilt
+   * and the screen said "Apple does not use it yet".
+   *
+   * The codec is the browser. The back office's cropper already draws to a
+   * canvas at whatever size it is told, so it sends the same framing twice:
+   * `x1` at Apple's @1x size and `x2` at @2x. They are stored side by side as
+   * `<name>.png` and `<name>@2x.png`, which is the convention artworkFor()
+   * looks for, and the @1x URL is what gets stored on the row and handed to
+   * Google.
+   *
+   * An absolute URL comes back, not a path. Google cannot follow a relative
+   * one, and a venue pasting the value somewhere else should get something
+   * that works.
+   */
+  router.post('/wallet/artwork', auth, (req, res) => {
+    artwork.fields([{ name: 'x1', maxCount: 1 }, { name: 'x2', maxCount: 1 }])(
+      req,
+      res,
+      (err) => {
+        if (err) return res.status(400).json({ error: err.message });
+        const one = req.files && req.files.x1 && req.files.x1[0];
+        const two = req.files && req.files.x2 && req.files.x2[0];
+        if (!one || !two) {
+          return res.status(400).json({ error: 'Both sizes are required' });
+        }
+
+        // The @2x is renamed to sit beside the @1x. multer has already given
+        // each a random name; this is the only place the pair becomes a pair.
+        const base = path.basename(one.filename, '.png');
+        const dir = path.dirname(one.path);
+        try {
+          fs.renameSync(two.path, path.join(dir, `${base}@2x.png`));
+        } catch (e) {
+          return res.status(500).json({ error: `Could not store the artwork: ${e.message}` });
+        }
+
+        res.status(201).json({ url: publicUrl(req, `/uploads/${base}.png`) });
+      }
+    );
   });
 
   /**

@@ -104,6 +104,9 @@ class CardSettings {
     this.membershipPrefix = '',
     this.numberDigits = 5,
     this.autoEnrol = true,
+    this.tillWalletButton = true,
+    this.tillPrintButton = true,
+    this.walletOnDisplay = true,
   });
 
   /// Whether the till listens to the reader at all.
@@ -138,6 +141,30 @@ class CardSettings {
   /// cards only from the back office wants the till to say "not a member"
   /// rather than open a form at the counter.
   final bool autoEnrol;
+
+  /// The two things the counter can do with a card once it knows whose it is:
+  /// put it on the holder's phone, and print them one.
+  ///
+  /// Two switches rather than one, because they fail apart. A venue with no card
+  /// printer wants the wallet button and not the other; a venue that hands out
+  /// pre-printed plastic and has never set Wallet up wants the reverse — and a
+  /// single "card actions" switch would force one of them to carry a button
+  /// that produces an error.
+  ///
+  /// Both default on, matching the server's defaults. A venue issuing cards at
+  /// all wants both, and a button that has to be found and switched on before it
+  /// appears is a feature nobody discovers.
+  final bool tillWalletButton;
+  final bool tillPrintButton;
+
+  /// Whether the customer's code goes to the screen facing them.
+  ///
+  /// On by default: asking somebody to lean over the counter and scan the
+  /// *operator's* screen is awkward, slow, and shows them a screen with the
+  /// venue's takings on it. Where no display is paired the code falls back to
+  /// the till's own screen rather than going nowhere, so this being on is never
+  /// the reason nothing appears.
+  final bool walletOnDisplay;
 
   /// The prefix for [kind], or empty where the venue does not run it.
   String prefixFor(CardKind kind) => switch (kind) {
@@ -217,6 +244,9 @@ class CardSettings {
     'membership_prefix': membershipPrefix,
     'number_digits': numberDigits,
     'auto_enrol': autoEnrol ? 1 : 0,
+    'till_wallet_button': tillWalletButton ? 1 : 0,
+    'till_print_button': tillPrintButton ? 1 : 0,
+    'wallet_on_display': walletOnDisplay ? 1 : 0,
   };
 
   /// Field by field, never throwing.
@@ -255,6 +285,13 @@ class CardSettings {
         _ => 5,
       },
       autoEnrol: flag(raw['auto_enrol'], fallback: true),
+      // A till talking to a server that predates these columns gets the
+      // defaults, which is both buttons on -- the behaviour that server's
+      // operators already have. An absent field must never read as "off", or a
+      // deploy of the till ahead of the server would take the buttons away.
+      tillWalletButton: flag(raw['till_wallet_button'], fallback: true),
+      tillPrintButton: flag(raw['till_print_button'], fallback: true),
+      walletOnDisplay: flag(raw['wallet_on_display'], fallback: true),
     );
   }
 }

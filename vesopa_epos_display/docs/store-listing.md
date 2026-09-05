@@ -6,7 +6,7 @@ under it is the whole of that field. Character counts are checked by
 
 **Package to upload:**
 `vesopa_epos_display\build\windows\x64\runner\Release\vesopa_epos_display.msix`
-— 33.9 MB, `Version="1.6.1.0"`, x64, capability `runFullTrust` only.
+— 34.0 MB, `Version="1.6.2.0"`, x64, capability `runFullTrust` only.
 
 **Product identity** (matches Partner Center exactly):
 
@@ -26,7 +26,7 @@ no fixing — the identity is not the display name.
 <!-- FIELD short_description 270 350 -->
 ## Short description
 
-The customer-facing second screen for Vesopa EPOS. It shows your customer their bill as it is rung up on the till, and plays your own pictures and video adverts the rest of the time. It installs on the same PC as the till, finds it by itself with nothing to type in, and is set up entirely from the till.
+The customer-facing second screen for Vesopa EPOS. It shows your customer their bill as it is rung up on the till, and plays your own pictures and video adverts the rest of the time. It installs on the same PC as the till and connects to it with a four-digit code, with no paths to type in, and is set up entirely from the till.
 
 <!-- FIELD description 0 5000 -->
 ## Product description
@@ -72,22 +72,24 @@ Sold and supported by Vesopa EPOS Limited.
 <!-- FIELD whats_new 0 1500 -->
 ## What's new in this version
 
-First release.
+Version 1.6.2.0 – Pairing, and the Customer's Card on the Screen
 
-Vesopa Customer Display is the customer-facing second screen for Vesopa EPOS: your customer's bill on one side, your own adverts on the other, and the adverts across the whole screen when the till goes quiet.
+Connecting to the till is now four digits. This screen shows a code, the till puts the request in front of whoever is standing at it, and Connect is the whole setup — no paths, nothing to type in, nothing to browse for. The pairing survives an upgrade or a reinstall of either app, so nobody sets it up a second time.
 
-It finds the till on the same PC by itself, with nothing to type in, and it is set up entirely from Vesopa EPOS under Settings then Customer display — which monitor it uses, whether it fills that screen, where your adverts come from, how the screen is split between the bill and the adverts, and what the customer reads.
+It used to work the till's data folder out for itself, and on a PC that had run more than one till it could attach to a folder nobody writes to and show adverts for ever, with no way to tell that from working normally. That guesswork is gone.
 
-Adverts are simply a folder on the PC. Drop pictures or clips in and they appear, with nothing to upload and nothing to restart. MP4, M4V and MOV play through a decoder built into the app, so a promo cut by an agency plays on the machine under your counter.
+When it is not connected it now says why, in the order worth checking: whether the till is installed on this PC, whether it is running, and whether somebody has signed in. Each answer offers the one thing that helps.
 
-Requires Vesopa EPOS on the same PC.
+The till can also put a customer's own loyalty or gift card on this screen as a code they scan into their phone, so they add it standing where they are rather than leaning across the counter. Whatever was on screen before comes back afterwards.
+
+Requires Vesopa EPOS 1.6.2.0 or later on the same PC.
 
 <!-- FEATURES 5 12 50 -->
 ## Product features
 
 - Shows the customer their bill as it is rung up
 - Plays your own pictures and video adverts
-- Finds the till on the same PC by itself
+- Connects to the till with a four-digit code
 - Set up entirely from Vesopa EPOS settings
 - Pick the monitor and fill it, with no title bar
 - Bill on either side, at the width you choose

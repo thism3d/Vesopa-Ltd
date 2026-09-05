@@ -4,6 +4,7 @@ import '../data/local/database.dart';
 import '../data/printer_settings.dart';
 import '../data/session_repository.dart';
 // Re-exports print_targets.dart, which is where PrintTarget lives.
+import 'print_categories.dart';
 import 'printer_transport.dart';
 import 'receipt_builder.dart';
 
@@ -154,10 +155,15 @@ class PrintService {
   /// Returns one result per station rather than throwing. A dead printer at the
   /// bar must not stop the food reaching the kitchen, and the caller needs to
   /// know exactly which stations to offer a retry for.
+  /// [categoriesByPlu] groups the ticket into the venue's own courses —
+  /// `--- BREAKFAST ---` and then the breakfasts. Empty for a venue that has
+  /// set no categories up, which prints exactly the ticket it printed before
+  /// they existed. See `printing/print_categories.dart`.
   Future<List<StationPrintResult>> printKitchenTickets({
     required Order order,
     required List<OrderLine> lines,
     required Map<String, Set<String>> routesByLine,
+    Map<int, PrintCategory> categoriesByPlu = const {},
     String? headline,
     String? staffName,
     String? roomName,
@@ -200,6 +206,7 @@ class PrintService {
             headline: headline,
             staffName: staffName,
             roomName: roomName,
+            categoryOf: (pluId) => categoriesByPlu[pluId],
           ),
         );
         results.add(StationPrintResult(station: station, label: label));

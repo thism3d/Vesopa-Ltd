@@ -49,6 +49,25 @@ function cardRoutes({ pool, broadcast, secret }) {
     membership_prefix: '',
     number_digits: 5,
     auto_enrol: 1,
+
+    // What the counter is offered when a member, a gift card or a member of
+    // staff is on screen. The back office grew the same two buttons on six of
+    // its lists, and the till has to be able to switch them off independently:
+    // a venue that hands out plastic and never puts a card on a phone wants one
+    // of them, and a venue with no card printer wants the other.
+    //
+    // Both default on. A venue that is issuing cards at all wants both, and a
+    // button that has to be found and switched on before it appears is a
+    // feature nobody discovers.
+    till_wallet_button: 1,
+    till_print_button: 1,
+
+    // Where the customer's code is shown. On the screen facing them, by
+    // default: asking somebody to lean over the counter and scan the operator's
+    // screen is awkward, slow, and shows them a screen with the venue's takings
+    // on it. Off for a counter with no second screen, where it falls back to
+    // the till's own.
+    wallet_on_display: 1,
   };
 
   const KINDS = ['clerk', 'loyalty', 'gift', 'membership'];

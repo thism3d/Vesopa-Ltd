@@ -177,7 +177,7 @@ class VesopaBrand {
   /// plugin and a platform channel for one string — and the customer display
   /// keeps its own copy the same way, so the two are already a pair. Kept in
   /// step with `version:` in pubspec.yaml by hand.
-  static const appVersion = '1.6.1';
+  static const appVersion = '1.6.3';
   static const slogan = 'Vending · Software · Payments';
 
   static const phone = '+441792316282';

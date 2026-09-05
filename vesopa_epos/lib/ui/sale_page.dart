@@ -13,7 +13,6 @@ import '../data/staff_session.dart';
 import '../main.dart';
 import 'layout.dart';
 import 'modifier_prompt.dart';
-import 'clock_sheet.dart';
 import 'customer_picker.dart';
 import 'payment_page.dart';
 import 'sign_on_pad.dart';
@@ -35,6 +34,11 @@ import 'widgets/pos_message.dart';
 import 'widgets/open_bills_strip.dart';
 import 'widgets/programmed_bar.dart';
 import 'widgets/programmed_grid.dart';
+import '../data/till_permissions.dart';
+import 'permission_gate.dart';
+import 'widgets/clock_punch_button.dart';
+import '../data/price_level_controller.dart';
+import 'price_level_sheet.dart';
 
 /// Live catalogue, straight from the local database so the grid renders with
 /// no network at all.
@@ -235,7 +239,12 @@ class SalePage extends ConsumerWidget {
               ModifierSet.empty)
           .forPlu(p.pluId);
       if (groups.isEmpty) {
-        await repo.addLine(orderId, p, addedBy: addedBy);
+        await repo.addLine(
+          orderId,
+          p,
+          addedBy: addedBy,
+          priceLevel: ref.read(currentPriceLevelProvider),
+        );
         return;
       }
 
@@ -251,7 +260,13 @@ class SalePage extends ConsumerWidget {
       // so nothing reaches the bill. See askModifiers.
       if (answers == null) return;
 
-      await repo.addLine(orderId, p, addedBy: addedBy, modifiers: answers);
+      await repo.addLine(
+        orderId,
+        p,
+        addedBy: addedBy,
+        modifiers: answers,
+        priceLevel: ref.read(currentPriceLevelProvider),
+      );
     }
 
     /// Ask one of the venue's questions about a line already on the bill.
@@ -1017,6 +1032,8 @@ class SalePage extends ConsumerWidget {
         );
         return;
       case 'void':
+        if (!await allowed(context, ref, TillPermission.voidLine)) return;
+        if (!context.mounted) return;
         return _voidSelected(
           context,
           ref,
@@ -1024,6 +1041,10 @@ class SalePage extends ConsumerWidget {
           selected: selected,
         );
       case 'cancel':
+        // Cancelling a whole check is a void of every line on it, so it asks
+        // for the same key rather than a weaker one.
+        if (!await allowed(context, ref, TillPermission.voidLine)) return;
+        if (!context.mounted) return;
         return _cancelCheck(context, ref, lines: lines);
       case 'save_table':
         return _saveTable(context, ref, order);
@@ -1087,8 +1108,16 @@ class SalePage extends ConsumerWidget {
       // somebody walks away, and a wage is not paid against either of those.
       case 'clock_in_out':
         if (!context.mounted) return;
-        await showClockSheet(context, ref);
+        // Straight to the signed-on person's own shift. The list of everybody
+        // is under Functions › Staff On Shift, where a manager looks for it.
+        await punchSignedOnStaff(context, ref);
         return;
+
+      // Swapping what the terminal charges. On the bar because a venue that
+      // runs a happy hour switches at the counter, twice a day, and Functions
+      // is two taps further away than that deserves.
+      case 'price_level':
+        return showPriceLevelSheet(context, ref);
 
       case 'covers':
         return _promptCovers(context, ref);
@@ -1097,6 +1126,8 @@ class SalePage extends ConsumerWidget {
       case 'note':
         return _noteSelected(context, ref, lines: lines, selected: selected);
       case 'open_drawer':
+        if (!await allowed(context, ref, TillPermission.noSale)) return;
+        if (!context.mounted) return;
         return TillActions.openCashDrawer(context, ref);
       case 'print_bill':
         return TillActions.printCurrentBill(context, ref, orderId);

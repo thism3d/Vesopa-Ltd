@@ -9,6 +9,7 @@ import '../data/modifier_layout.dart';
 import '../data/session_repository.dart';
 import '../data/cash_tally.dart';
 import '../data/receipt_repository.dart';
+import 'print_categories.dart';
 import 'printer_transport.dart';
 
 // The pound-sign setting lives beside the printer it is a property of, and
@@ -599,6 +600,12 @@ class ReceiptBuilder {
   /// A kitchen ticket. Deliberately plain and large: it is read across a
   /// counter, at speed, and never shows prices — the kitchen does not need
   /// them and they only add noise.
+  /// [categoryOf] says which printing category a PLU belongs to, so the ticket
+  /// prints in courses rather than in the order the customer said them —
+  /// `--- BREAKFAST ---` and then the breakfasts. Null for every product, which
+  /// is what a venue that has set no categories up passes, gives exactly the
+  /// ticket that printed before categories existed. See
+  /// `printing/print_categories.dart`.
   List<int> kitchenTicket({
     required Order order,
     required List<OrderLine> lines,
@@ -606,6 +613,7 @@ class ReceiptBuilder {
     String? headline,
     String? staffName,
     String? roomName,
+    PrintCategory? Function(int pluId)? categoryOf,
   }) {
     final bytes = _begin();
 
@@ -674,26 +682,42 @@ class ReceiptBuilder {
     );
     bytes.addAll(_generator.hr());
 
-    for (final entry in nestModifiers(lines)) {
-      final line = entry.line;
-      if (entry.isModifier) {
-        // Under the dish, indented, and at normal height. Double-height for
-        // "Rare" beside a double-height "Steak" is two things competing to be
-        // read first on a ticket somebody is glancing at over a pass.
-        bytes.addAll(_text('   > ${line.name}', styles: const PosStyles(bold: true)));
-      } else {
+    // Grouped into the venue's own courses, which is the whole of the printer
+    // categories feature. `groupForKitchen` already nests the modifiers, so
+    // this loop reads one group at a time rather than the flat list.
+    for (final group in groupForKitchen(lines, categoryOf ?? (_) => null)) {
+      if (group.heading != null) {
         bytes.addAll(
           _text(
-            '${line.quantity.toStringAsFixed(0)}x  ${line.name}',
-            styles: const PosStyles(
-              height: PosTextSize.size2,
-              bold: true,
-            ),
+            kitchenHeading(group.heading!),
+            styles: const PosStyles(align: PosAlign.center, bold: true),
           ),
         );
       }
-      if (line.notes != null && line.notes!.isNotEmpty) {
-        bytes.addAll(_text('   * ${line.notes}'));
+
+      for (final entry in group.lines) {
+        final line = entry.line;
+        if (entry.isModifier) {
+          // Under the dish, indented, and at normal height. Double-height for
+          // "Rare" beside a double-height "Steak" is two things competing to be
+          // read first on a ticket somebody is glancing at over a pass.
+          bytes.addAll(
+            _text('   > ${line.name}', styles: const PosStyles(bold: true)),
+          );
+        } else {
+          bytes.addAll(
+            _text(
+              '${line.quantity.toStringAsFixed(0)}x  ${line.name}',
+              styles: const PosStyles(
+                height: PosTextSize.size2,
+                bold: true,
+              ),
+            ),
+          );
+        }
+        if (line.notes != null && line.notes!.isNotEmpty) {
+          bytes.addAll(_text('   * ${line.notes}'));
+        }
       }
     }
 

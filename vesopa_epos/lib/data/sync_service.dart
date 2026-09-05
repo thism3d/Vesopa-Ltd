@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'local/database.dart';
+import 'price_levels.dart';
 
 /// A snapshot of the terminal's link to the back office, for the till's
 /// online/offline badge.
@@ -676,6 +677,25 @@ class SyncService {
             // The server stores price as a float; convert to pence once, here,
             // so no rounding drift can reach the money maths.
             priceMinor: ((raw['price'] as num? ?? 0) * 100).round(),
+            // Absent stays absent. A server that predates price levels sends
+            // no field at all, and that has to mean "not set" rather than
+            // "zero" — see `data/price_levels.dart`.
+            price2Minor: Value(ProductPrices.minorFrom(raw, 'price_2')),
+            price3Minor: Value(ProductPrices.minorFrom(raw, 'price_3')),
+            price4Minor: Value(ProductPrices.minorFrom(raw, 'price_4')),
+            price5Minor: Value(ProductPrices.minorFrom(raw, 'price_5')),
+            price6Minor: Value(ProductPrices.minorFrom(raw, 'price_6')),
+            // Absent on a server that has not run schema_print_categories.sql,
+            // and null for a product the venue has not filed. Both mean the
+            // same thing: no heading on the ticket.
+            printCategory: Value(
+              (raw['print_category'] as String?)?.trim().isNotEmpty ?? false
+                  ? (raw['print_category'] as String).trim()
+                  : null,
+            ),
+            printCategoryOrder: Value(
+              (raw['print_category_order'] as num?)?.toInt(),
+            ),
             taxPercentage: Value(
               (raw['tax_percentage'] as num? ?? 0).toDouble(),
             ),

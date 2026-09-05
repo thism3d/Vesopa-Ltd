@@ -4164,3 +4164,327 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
   padding: 10px;
   margin: 10px 0;
 }
+
+/* ---------------------------------------------------------------------------
+   Row actions: a card on a phone, and a card on paper
+   ---------------------------------------------------------------------------
+   These two sit at the end of six different lists, so they are icons rather
+   than words: "Wallet pass" and "Print card" in every row of a customer list
+   pushes the name -- the thing being scanned for -- off the left of a tablet.
+   Icon-only needs the tooltip and the aria-label that rowCardActions() gives
+   them, which is why they are never drawn without one. */
+.icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--muted);
+  cursor: pointer;
+  vertical-align: middle;
+  transition: color .12s, border-color .12s, background .12s;
+}
+.icon-btn + .icon-btn,
+.icon-btn + .btn,
+.btn + .icon-btn { margin-left: 6px; }
+.icon-btn svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.icon-btn:hover:not(:disabled) {
+  color: var(--brand-deep);
+  border-color: var(--brand);
+  background: var(--brand-soft);
+}
+.icon-btn:disabled { opacity: .35; cursor: not-allowed; }
+
+.wal-qr-box {
+  background: #fff;
+  border-radius: 10px;
+  padding: 10px;
+  margin: 10px 0;
+  min-height: 260px;
+  display: grid;
+  place-items: center;
+}
+.wal-qr-box svg { display: block; width: 260px; height: 260px; }
+
+/* The printed card, at the size a card actually is: 85.6 x 54mm, the same
+   rectangle as a bank card, so what comes out of the printer can be held
+   against a blank and cut to it. */
+.print-card-wrap { display: grid; gap: 14px; justify-items: center; }
+.print-card {
+  width: 85.6mm;
+  height: 54mm;
+  box-sizing: border-box;
+  padding: 5mm;
+  border: 1px solid var(--line);
+  border-radius: 3mm;
+  background: #fff;
+  color: #111;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.pc-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.pc-venue { font-weight: 700; font-size: 11pt; }
+.pc-prog { font-size: 8pt; color: #555; }
+.pc-body { display: flex; align-items: center; gap: 5mm; }
+.pc-qr svg { display: block; width: 26mm; height: 26mm; }
+.pc-who { display: flex; flex-direction: column; gap: 2mm; min-width: 0; }
+.pc-name { font-size: 12pt; font-weight: 600; }
+.pc-line { font-size: 8pt; color: #555; }
+.pc-num { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 10pt; letter-spacing: .5px; }
+
+/* A voucher or a deposit receipt: taller than a card, because it is read
+   rather than carried, and the conditions are the point. */
+.print-slip {
+  width: 80mm;
+  box-sizing: border-box;
+  padding: 8mm 6mm;
+  border: 1px solid var(--line);
+  border-radius: 2mm;
+  background: #fff;
+  color: #111;
+  text-align: center;
+}
+.print-slip h4 { margin: 0 0 4mm; font-size: 12pt; letter-spacing: .04em; text-transform: uppercase; }
+.ps-qr svg { display: block; width: 34mm; height: 34mm; margin: 0 auto; }
+.ps-code {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 13pt;
+  letter-spacing: 1px;
+  margin: 3mm 0 5mm;
+}
+.ps-lines {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 1.5mm 4mm;
+  text-align: left;
+  margin: 0;
+  font-size: 9pt;
+}
+.ps-lines dt { color: #666; }
+.ps-lines dd { margin: 0; font-weight: 600; }
+
+/* ---------------------------------------------------------------------------
+   The Wallet screen: five tabs, and a designer inside the first
+   --------------------------------------------------------------------------- */
+.wal-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 18px 0 16px;
+  border-bottom: 1px solid var(--line);
+}
+.wal-tab {
+  border: 0;
+  background: none;
+  padding: 10px 14px;
+  font: inherit;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.wal-tab:hover { color: var(--text); }
+.wal-tab.on { color: var(--brand-deep); border-bottom-color: var(--brand); }
+
+/* Which card, what it is, and the card itself — left to right, because that is
+   the order the question is asked in. */
+.wal-design {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr) 375px;
+  gap: 18px;
+  align-items: start;
+}
+@media (max-width: 1200px) {
+  .wal-design { grid-template-columns: 200px minmax(0, 1fr); }
+  .wal-design-preview { grid-column: 1 / -1; }
+}
+@media (max-width: 780px) {
+  .wal-design { grid-template-columns: minmax(0, 1fr); }
+  .wal-kinds { flex-direction: row; overflow-x: auto; }
+}
+
+.wal-kinds { display: flex; flex-direction: column; gap: 6px; }
+.wal-kind {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+  text-align: left;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.wal-kind:hover { border-color: var(--brand); }
+.wal-kind.on { border-color: var(--brand); background: var(--brand-soft); }
+.wal-kind-name { font-weight: 600; }
+.wal-kind-meta { display: flex; gap: 4px; flex-wrap: wrap; }
+.wal-kind-meta .pill { font-size: 10.5px; }
+
+.wal-colours-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+}
+.wal-colour { display: grid; gap: 4px; }
+.wal-colour .check.small { font-size: 12px; }
+
+.wal-art { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.wal-art-preview {
+  width: 250px;
+  height: 82px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: var(--bg);
+}
+.wal-art-preview img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.wal-art-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+/* A <label> wrapping a hidden file input has to look and behave like the button
+   it is standing in for, including the pointer. */
+.wal-art-actions label.btn { cursor: pointer; }
+
+.wal-design-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.wal-design-editor h4 {
+  margin: 18px 0 8px;
+  font-size: 13px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.pill.amber { background: rgba(247, 127, 0, .14); color: #a35200; }
+.print-card-actions { display: flex; gap: 10px; justify-content: center; }
+
+/* The venue's two pictures, on the Programme tab. A logo is a small mark and
+   is shown at its own shape rather than stretched into the band's frame. */
+.wal-art-preview.logo { width: 160px; height: 50px; }
+.wal-art-preview.logo img { object-fit: contain; }
+.wal-art [data-artclear][hidden] { display: none !important; }
+
+/* The designer's colour swatches. Without a height an <input type="color">
+   collapses to a line, which is a control nobody recognises as one. */
+.wal-colours-grid input[type="color"] {
+  width: 100%;
+  height: 40px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: none;
+  cursor: pointer;
+}
+
+/* ---------------------------------------------------------------------------
+   Permissions: the two screens that are a grid of switches.
+
+   A role in this back office has fifty of them and a till group eleven, which
+   is more than the modal's 440px column can hold without becoming a scroll of
+   single-file checkboxes nobody can scan. So the modal widens and the switches
+   sit in columns that reflow — read down a category, not through one.
+   --------------------------------------------------------------------------- */
+
+.perm-modal {
+  width: min(880px, 94vw);
+}
+
+.perm-category {
+  margin-top: 18px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px 16px;
+  background: var(--surface-2);
+}
+
+/* The category name and its "toggle all" on one line, because they are one
+   thought: this section, and all of it. */
+.perm-category-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.perm-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 8px 18px;
+}
+
+/* Top-aligned: a two-line item next to a one-line item otherwise centres its
+   checkbox against the middle of the text and the column stops reading as a
+   column. */
+.perm-item {
+  align-items: flex-start;
+  color: var(--text);
+  padding: 4px 0;
+}
+
+.perm-item span { display: block; }
+.perm-label { font-size: 14px; }
+
+/* The explanation under a till permission. Present for every one of them: a
+   switch a manager has to guess at is a switch that gets left on. */
+.perm-hint {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+  line-height: 1.35;
+}
+
+/* A named group or role, in a list. */
+.pill {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--brand-soft);
+  color: var(--brand-deep);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* The empty state on both screens: an explanation and the one button that
+   fixes it, rather than a blank table and a hunt for "Add". */
+.empty-cta {
+  text-align: center;
+  padding: 28px 16px;
+}
+.empty-cta p { margin-bottom: 14px; }
+
+/* The signed-in user's role, in the rail. "Why can I not see Products?" should
+   be answerable without ringing anybody. */
+#role-badge {
+  display: block;
+  margin: 8px 22px 0;
+  font-size: 12px;
+  color: var(--rail-text);
+}

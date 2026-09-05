@@ -5,7 +5,7 @@ under it is the whole of that field. Limits are checked by
 `tool/check-store-listing.py` at the repository root.
 
 **Package to upload:** `vesopa_epos\build\store\vesopa-epos-store.msix`
-— 20.2 MB, `Version="1.6.1.0"`, x64.
+— 20.3 MB, `Version="1.6.2.0"`, x64.
 
 **Product identity** (unchanged):
 
@@ -22,19 +22,15 @@ as one product family; take it or leave it.
 <!-- FIELD whats_new 0 1500 -->
 ## What's new in this version
 
-Version 1.6.1.0 – The Customer's Screen, Set Up From the Till
+Version 1.6.2.0 – Cards at the Counter, and a Screen That Pairs Itself
 
-The second screen facing your customer is now yours to set up from the till itself, and it finds the till on its own.
+Staff, Loyalty and Gift Cards: A card reader plugged into this PC is now read by the till itself. One swipe signs a member of staff on, brings up a customer's loyalty account, or puts a gift card against the bill — and it reads the prefixes from your old system, so every card already in a customer's wallet keeps working. Settings then Swipe cards shows exactly what the reader is sending, issues a card to somebody who has not got one, and prints the number to encode onto it. Signing on works with the broadband down.
 
-Set Up From the Till: One new page, under Settings then Customer display. Choose which monitor the customer sees and whether it fills that screen, where your adverts come from and how long each one stays up, how the screen splits between the bill and the adverts, and which side the bill sits on. Every change reaches the screen in a couple of seconds — you set it standing at the till and look up to check it.
+The Same Card on a Phone: A customer who has left their card at home can hold up their phone instead. One link adds it to Apple Wallet or Google Wallet, whichever they carry, and it carries today's balance rather than the day it was issued. The till can put their code on the screen facing them, so nobody leans across the counter.
 
-Nothing to Type In: A customer display on the same PC now finds this till by itself. No paths, no addresses, and it keeps looking until it finds it, so it makes no difference whether the till or the screen is switched on first in the morning.
+Pairing Instead of Guessing: A customer display no longer hunts for the till. The screen shows four digits, the till puts the request in front of whoever is standing at it, and Connect is the whole setup. It stays paired through an upgrade or a reinstall, and a screen that is not connected says which of the reasons it is.
 
-Connected or Not: The page says at a glance whether a display is running, and lists the screens it can see by size — so picking the right monitor is reading a list rather than guessing.
-
-What the Customer Reads: Show a price against every line or only the total, and set the message after payment. When a sale is paid for, the screen shows what was tendered and the change due. Adverts can be pictures or video, and video is silent unless you turn the sound up.
-
-Vesopa Customer Display is a separate download in the Store, and needs this version of the till to be set up from here.
+Every Sale Says Which Till: Sales now record the machine that rang them up, so a venue with more than one counter can split the day's takings between them.
 
 <!-- FIELD short_description 270 350 -->
 ## Short description
@@ -72,7 +68,7 @@ Programme your own keys — what they say, what colour they are, where they sit 
 
 THE CUSTOMER'S SIDE OF THE COUNTER
 
-Vesopa Customer Display is a companion app for a second screen facing the customer: their bill as it is rung up, your own adverts the rest of the time, and what they paid and the change due at the end. It installs on this same PC, finds this till by itself, and is configured entirely from this till's settings.
+Vesopa Customer Display is a companion app for a second screen facing the customer: their bill as it is rung up, your own adverts the rest of the time, and what they paid and the change due at the end. It installs on this same PC, connects to this till with a four-digit code, and is configured entirely from this till's settings.
 
 WHAT YOU NEED
 

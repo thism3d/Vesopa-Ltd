@@ -54,8 +54,12 @@ function appleWalletRoutes({ pool, secret, core }) {
 
   const config = A.cachedConfig();
   const assetsDir = path.join(__dirname, '..', 'assets', 'wallet');
+  // Where a venue's own uploads land. The back office writes them at Apple's
+  // exact pixel sizes -- the cropper is the codec -- so artworkFor() reads them
+  // straight out of here rather than resizing anything.
+  const uploadsDir = path.join(__dirname, '..', 'public', 'uploads');
 
-  const { readBrand, loadSubject, shortLink } = core;
+  const { readBrand, readProgramBrand, loadSubject, shortLink } = core;
 
   /**
    * Build one `.pkpass`, and remember the serial it was built with.
@@ -76,7 +80,14 @@ function appleWalletRoutes({ pool, secret, core }) {
       );
     }
 
-    const brand = await readBrand(office);
+    // This card's own design, with the venue's branding underneath it. The
+    // Apple half read the venue row directly and so never saw a per-kind
+    // design at all -- the colours, the name and the band a venue set on one
+    // card reached the Google pass and not the .pkpass, which is the shape of
+    // bug where two phones at the same counter disagree about what the card
+    // looks like. readProgramBrand() returns the venue row with the overrides
+    // laid on top, so every field this used before is still here.
+    const brand = await readProgramBrand(office, kind);
     if (!Number(brand.apple_enabled ?? 1)) {
       throw Object.assign(new Error('This venue is not issuing Apple passes.'), {
         status: 404,
@@ -129,6 +140,7 @@ function appleWalletRoutes({ pool, secret, core }) {
       brand,
       subject,
       assetsDir,
+      uploadsDir,
       serial,
       authToken,
       link: link && link.url ? link : null,
@@ -139,10 +151,22 @@ function appleWalletRoutes({ pool, secret, core }) {
     // lists and what the till reads back.
     const id = (row && row.id) || crypto.randomUUID();
     await pool.execute(
+      // object_id is NULL, and that is the whole of a nasty bug.
+      //
+      // It is the Google object id, and an Apple-only pass has none. Written as
+      // '' it collided with every other Apple-only pass on the server, because
+      // the column carries UNIQUE KEY uq_wallet_object and MySQL allows exactly
+      // one '' in a unique index while allowing any number of NULLs. The ON
+      // DUPLICATE KEY UPDATE below then overwrote whichever row got there first
+      // -- across venues, since the collision is on object_id alone and knows
+      // nothing about the office.
+      //
+      // One row survived in the entire database. See
+      // schema/schema_wallet_object_null.sql.
       `INSERT INTO epos_wallet_passes
          (id, office, kind, subject_id, object_id, card_number, state,
           apple_serial, apple_auth_token, apple_issued_at)
-       VALUES (?, ?, ?, ?, '', ?, 'active', ?, ?, NOW())
+       VALUES (?, ?, ?, ?, NULL, ?, 'active', ?, ?, NOW())
        ON DUPLICATE KEY UPDATE
          card_number      = VALUES(card_number),
          apple_serial     = VALUES(apple_serial),
@@ -310,13 +334,26 @@ function appleWalletRoutes({ pool, secret, core }) {
       const office = await tenantEmail(req);
       const brand = await readBrand(office);
 
-      const certificates = Object.entries(A.P12_FILES).map(([kind, file]) => ({
-        kind,
-        label: G.PASS_TYPES[kind].label,
-        pass_type_id: G.PASS_TYPES[kind].appleType,
-        file,
-        present: config.configured && certificatePresent(file),
-      }));
+      // Asked of the signer rather than worked out again here. This screen used
+      // to check only whether `loyalty_pass.p12` and its four siblings existed,
+      // so a server holding one shared bundle — the arrangement the README
+      // recommends and this one uses — signed every pass while the page
+      // reported all five certificates missing. See A.signingBundle().
+      const certificates = Object.entries(A.P12_FILES).map(([kind, file]) => {
+        const bundle = config.configured ? A.signingBundle(kind, config) : null;
+        return {
+          kind,
+          label: G.PASS_TYPES[kind].label,
+          pass_type_id: G.PASS_TYPES[kind].appleType,
+          // The name of the file that will actually sign this kind, so the row
+          // says something true either way: which bundle is signing, or which
+          // one is missing.
+          file: bundle ? bundle.file : file,
+          expected_file: file,
+          shared: Boolean(bundle && bundle.shared),
+          present: Boolean(bundle),
+        };
+      });
 
       // What the update service is actually doing, rather than whether it is
       // switched on. A venue that has turned push updates on and has zero
@@ -350,14 +387,6 @@ function appleWalletRoutes({ pool, secret, core }) {
       next(e);
     }
   });
-
-  function certificatePresent(file) {
-    try {
-      return require('fs').existsSync(path.join(config.dir, file));
-    } catch {
-      return false;
-    }
-  }
 
   /**
    * A QR code, as an SVG.

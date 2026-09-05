@@ -13,6 +13,43 @@ function programmingRoutes({ pool, broadcast, secret }) {
   const auth = requireAuth(secret);
 
   /**
+   * The office's contact email, which is the tenant key the catalogue and
+   * trading tables inherited from the PHP schema. Resolved per request rather
+   * than taken from the token, because the token carries the *user's* email and
+   * two managers in one shop must reach the same rows.
+   */
+  async function tenantEmail(req) {
+    if (req.user.officeId) {
+      const [[office]] = await pool.query(
+        'SELECT contact_email FROM offices WHERE id = ?',
+        [req.user.officeId]
+      );
+      if (office) return office.contact_email;
+    }
+    return req.user.email;
+  }
+
+  /**
+   * The office whose trading a report request may read.
+   *
+   * Every report below filters on this. They did not, once — `/sales-explorer`,
+   * `/till-report` and `/bill-report` selected from `epos_orders` with nothing
+   * but `closed_at IS NOT NULL`, so a venue that had never rung up a sale
+   * opened its Till Report and read somebody else's takings, bill by bill. Two
+   * of the three were even written `async (_req, ...)`: the request was not
+   * consulted, which is what let it go unnoticed.
+   *
+   * The platform admin is pinned to whichever office they name, or to their own
+   * address — which owns no trading rows — rather than being handed every
+   * office's bills in one undifferentiated list.
+   */
+  async function reportScope(req) {
+    return req.user.role === 'admin' && req.query.office_email
+      ? req.query.office_email
+      : await tenantEmail(req);
+  }
+
+  /**
    * Small CRUD factory — these tables are all shaped the same way.
    *
    * `sortable` tables carry a `sort_order` column the back office can drag to
@@ -26,23 +63,6 @@ function programmingRoutes({ pool, broadcast, secret }) {
   } = {}) {
     const orderBy = sortable ? 'sort_order, id' : 'id';
     const selectCols = sortable ? [...columns, 'sort_order'] : columns;
-
-    /**
-     * The office's contact email, which is the tenant key the catalogue tables
-     * inherited from the PHP schema. Resolved per request rather than taken
-     * from the token, because the token carries the *user's* email and two
-     * managers in one shop must reach the same rows.
-     */
-    async function tenantEmail(req) {
-      if (req.user.officeId) {
-        const [[office]] = await pool.query(
-          'SELECT contact_email FROM offices WHERE id = ?',
-          [req.user.officeId]
-        );
-        if (office) return office.contact_email;
-      }
-      return req.user.email;
-    }
 
     /**
      * The value this request's rows are owned by, or null when the table is
@@ -218,6 +238,10 @@ function programmingRoutes({ pool, broadcast, secret }) {
   // "can't be null" a manager hit when they gave a category a button image.
   crud('departments', 'bo_product_departments', ['department_name', 'group_name', 'accounting_code', 'emoji', 'image_url', 'button_color'], 'catalogue.updated', { tenantColumn: 'email', tenantBy: 'email' });
   crud('groups', 'bo_product_groups', ['group_name', 'accounting_code'], 'catalogue.updated', { tenantColumn: 'email', tenantBy: 'email' });
+  // Printing categories: the order a kitchen ticket comes out in. Dragged
+  // rather than numbered, which is what `sortable` gives for free — a venue
+  // reorders Breakfast, Mains, Desserts by moving the rows.
+  crud('print-categories', 'bo_print_categories', ['name'], 'catalogue.updated', { tenantColumn: 'email', tenantBy: 'email' });
 
   // ---- Floor plan ---------------------------------------------------------
 
@@ -459,8 +483,9 @@ function programmingRoutes({ pool, broadcast, secret }) {
   router.get('/sales-explorer', auth, async (req, res, next) => {
     const { from, to, department } = req.query;
     try {
-      const where = ['o.closed_at IS NOT NULL'];
-      const params = [];
+      const office = await reportScope(req);
+      const where = ['o.email = ?', 'o.closed_at IS NOT NULL'];
+      const params = [office];
       if (from) { where.push('DATE(o.closed_at) >= ?'); params.push(from); }
       if (to) { where.push('DATE(o.closed_at) <= ?'); params.push(to); }
       if (department) { where.push('pr.department_name = ?'); params.push(department); }
@@ -479,7 +504,8 @@ function programmingRoutes({ pool, broadcast, secret }) {
                 (l.unit_price_minor * l.quantity) AS line_total_minor
          FROM epos_order_lines l
          JOIN epos_orders o ON o.id = l.order_id
-         LEFT JOIN bo_products pr ON pr.pluid = l.plu_id
+         LEFT JOIN bo_products pr
+                ON pr.pluid = l.plu_id AND pr.email = o.email
          WHERE ${where.join(' AND ')}
          ORDER BY o.closed_at DESC, l.id DESC
          LIMIT ${limit} OFFSET ${offset}`,
@@ -495,8 +521,9 @@ function programmingRoutes({ pool, broadcast, secret }) {
   });
 
   /** Till report: a Z/X style summary per trading day. */
-  router.get('/till-report', auth, async (_req, res, next) => {
+  router.get('/till-report', auth, async (req, res, next) => {
     try {
+      const office = await reportScope(req);
       const [rows] = await pool.query(
         `SELECT DATE(o.closed_at)              AS day,
                 COUNT(*)                       AS orders,
@@ -504,10 +531,11 @@ function programmingRoutes({ pool, broadcast, secret }) {
                 SUM(o.tax_minor)               AS tax_minor,
                 SUM(o.discount_minor)          AS discount_minor
          FROM epos_orders o
-         WHERE o.closed_at IS NOT NULL
+         WHERE o.email = ? AND o.closed_at IS NOT NULL
          GROUP BY day
          ORDER BY day DESC
-         LIMIT 60`
+         LIMIT 60`,
+        [office]
       );
       res.json(rows);
     } catch (e) {
@@ -529,6 +557,7 @@ function programmingRoutes({ pool, broadcast, secret }) {
    */
   router.get('/bill-report', auth, async (req, res, next) => {
     try {
+      const office = await reportScope(req);
       const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 200);
       const offset = Math.max(Number(req.query.offset) || 0, 0);
 
@@ -538,14 +567,15 @@ function programmingRoutes({ pool, broadcast, secret }) {
                 GROUP_CONCAT(DISTINCT p.method) AS methods
          FROM epos_orders o
          LEFT JOIN epos_payments p ON p.order_id = o.id
-         WHERE o.closed_at IS NOT NULL
+         WHERE o.email = ? AND o.closed_at IS NOT NULL
          GROUP BY o.id
          -- closed_at alone is not unique: a busy counter settles several bills
          -- in the same second, and LIMIT/OFFSET over an order that is only
          -- partly defined shows one of them twice and another never. The id
          -- breaks the tie.
          ORDER BY o.closed_at DESC, o.id DESC
-         LIMIT ${limit} OFFSET ${offset}`
+         LIMIT ${limit} OFFSET ${offset}`,
+        [office]
       );
       res.json(rows);
     } catch (e) {

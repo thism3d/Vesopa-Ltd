@@ -96,6 +96,20 @@ class _WalletSheetState extends ConsumerState<_WalletSheet> {
         _offer = offer;
         _loading = false;
       });
+
+      // Straight onto the screen facing the customer, when the venue has asked
+      // for that -- which is the default, and is the whole point of having a
+      // second screen. The clerk's move becomes "open the sheet"; without this
+      // it was "open the sheet, then find and press a second button", with the
+      // customer waiting through both.
+      //
+      // Only where there is exactly one card to show. With two or more there is
+      // a choice to be made and making it for them would put the wrong card in
+      // front of the customer half the time.
+      final settings = ref.read(cardRepositoryProvider).settings;
+      if (settings.walletOnDisplay && offer.passes.length == 1) {
+        await _showOnDisplay(offer.passes.first);
+      }
     } on WalletException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -106,7 +120,17 @@ class _WalletSheetState extends ConsumerState<_WalletSheet> {
   }
 
   Future<void> _showOnDisplay(WalletPass pass) async {
-    _displayBefore ??= await readDisplayControl();
+    // Whatever the venue had there, with any code stripped out.
+    //
+    // Without the strip, this restores what it found — and if what it found was
+    // another customer's code, "Take it off their screen" puts that code back
+    // and the screen never clears. That is not hypothetical: a till killed while
+    // a code was up leaves one in the file, and the next sale inherits it.
+    //
+    // A code is never part of the state worth restoring. The venue's own screen
+    // is the adverts and the bill.
+    _displayBefore ??= (await readDisplayControl())
+        .copyWith(customerQr: '', customerQrCaption: '');
     final base = _displayBefore;
     if (base == null || !mounted) return;
 

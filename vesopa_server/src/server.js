@@ -23,6 +23,7 @@ const {
 const { backofficeRoutes } = require('./backoffice');
 const { adminRoutes } = require('./admin');
 const { programmingRoutes } = require('./programming');
+const { permissionRoutes, TILL_COLUMNS } = require('./permissions');
 const { commerceRoutes } = require('./commerce');
 const { analyticsRoutes } = require('./analytics');
 const { templateRoutes } = require('./templates');
@@ -197,6 +198,11 @@ app.use(dojoWebhookRoutes({ pool, broadcast }));
 // mounted at the root alongside /till/products.
 app.use('/api', denominationRoutes({ pool, broadcast, secret: JWT_SECRET }));
 app.use(tillDenominationRoutes({ pool }));
+
+// Roles and permission groups, and the middleware that resolves what the
+// signed-in user may do. Mounted before the routes it guards so that every one
+// of them can read `req.access`.
+app.use('/api', permissionRoutes({ pool, broadcast, secret: JWT_SECRET }));
 
 app.use('/api', backofficeRoutes({ pool, broadcast, secret: JWT_SECRET }));
 app.use('/api', programmingRoutes({ pool, broadcast, secret: JWT_SECRET }));
@@ -564,14 +570,38 @@ app.get('/till/staff', requireTerminal(JWT_SECRET), async (req, res, next) => {
     //
     // A till that gets no swipe_card simply has no staff cards, which is
     // exactly true on a venue that has not run the migration.
+    // PERMISSIONS COME DOWN FOR THE SAME REASON THE PIN DOES
+    //
+    // A manager approving a void at eight on a Friday cannot wait for the
+    // broadband. So the group's switches travel with the staff list and the
+    // till decides locally, exactly as it already does for the PIN and the
+    // staff card.
+    const columns = TILL_COLUMNS.map((c) => `g.${c}`).join(', ');
+
     const WITH_CARD = `
-      SELECT id, pluid, clark_name AS name, pin_code AS pin,
-             COALESCE(swipe_card, '') AS swipe_card
-        FROM bo_clarks
-       WHERE email = ? AND COALESCE(active, 1) = 1
-       ORDER BY pluid, clark_name`;
+      SELECT c.id, c.pluid, c.clark_name AS name, c.pin_code AS pin,
+             COALESCE(c.swipe_card, '') AS swipe_card,
+             c.permission_group_id, g.name AS permission_group, ${columns}
+        FROM bo_clarks c
+        LEFT JOIN epos_permission_groups g
+               ON g.id = c.permission_group_id AND g.email = c.email
+       WHERE c.email = ? AND COALESCE(c.active, 1) = 1
+       ORDER BY c.pluid, c.clark_name`;
 
     const WITHOUT_CARD = `
+      SELECT c.id, c.pluid, c.clark_name AS name, c.pin_code AS pin,
+             c.permission_group_id, g.name AS permission_group, ${columns}
+        FROM bo_clarks c
+        LEFT JOIN epos_permission_groups g
+               ON g.id = c.permission_group_id AND g.email = c.email
+       WHERE c.email = ? AND COALESCE(c.active, 1) = 1
+       ORDER BY c.pluid, c.clark_name`;
+
+    // The oldest shape of all: no card column and no permissions table. A till
+    // talking to a server whose migrations have not been run must still be able
+    // to sign somebody on, so each fallback drops one thing rather than
+    // failing.
+    const PLAIN = `
       SELECT id, pluid, clark_name AS name, pin_code AS pin
         FROM bo_clarks
        WHERE email = ? AND COALESCE(active, 1) = 1
@@ -581,9 +611,30 @@ app.get('/till/staff', requireTerminal(JWT_SECRET), async (req, res, next) => {
     try {
       [rows] = await pool.query(WITH_CARD, [req.office]);
     } catch (e) {
-      if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
-      [rows] = await pool.query(WITHOUT_CARD, [req.office]);
+      if (e.code !== 'ER_BAD_FIELD_ERROR' && e.code !== 'ER_NO_SUCH_TABLE') throw e;
+      try {
+        [rows] = await pool.query(WITHOUT_CARD, [req.office]);
+      } catch (e2) {
+        if (e2.code !== 'ER_BAD_FIELD_ERROR' && e2.code !== 'ER_NO_SUCH_TABLE') throw e2;
+        [rows] = await pool.query(PLAIN, [req.office]);
+      }
     }
+
+    // A clerk in no group is unrestricted, which is what every clerk was before
+    // permission groups existed. Sent as a filled-in object rather than as a
+    // null the till has to interpret: "no group" and "a group with nothing
+    // ticked" are opposite answers, and the till must never have to guess which
+    // one an absent field meant.
+    rows = rows.map((row) => {
+      const grouped = row.permission_group_id != null && row.permission_group;
+      const permissions = {};
+      for (const column of TILL_COLUMNS) {
+        permissions[column] = grouped ? row[column] === 1 : true;
+      }
+      const clean = { ...row };
+      for (const column of TILL_COLUMNS) delete clean[column];
+      return { ...clean, permissions };
+    });
     res.json(rows);
   } catch (e) {
     next(e);
@@ -684,17 +735,47 @@ app.get(['/till/products', '/products.json'], async (req, res, next) => {
       // `printer_route` rides along beside `printer_routes` for terminals on
       // the previous release, which only know the singular field. See
       // schema_product_printing.sql.
-      `SELECT pluid, product_name, department_name, group_name,
-              accounting_code, price, tax_percentage, stock_quantity,
-              button_position, button_color, printer_route, printer_routes,
-              print_to_receipt, emoji, image_url
-       FROM bo_products
-       WHERE email = ?
-       ORDER BY button_position IS NULL, button_position`,
+      // The category's *name and order*, not its id: the till prints a heading
+      // and sorts by a number, and neither is a foreign key it has any use for.
+      // Joined here so a terminal never has to hold a second table to render a
+      // ticket.
+      `SELECT p.pluid, p.product_name, p.department_name, p.group_name,
+              p.accounting_code, p.price, p.tax_percentage, p.stock_quantity,
+              p.button_position, p.button_color, p.printer_route,
+              p.printer_routes, p.print_to_receipt, p.emoji, p.image_url,
+              p.price_2, p.price_3, p.price_4, p.price_5, p.price_6,
+              pc.name AS print_category, pc.sort_order AS print_category_order
+       FROM bo_products p
+       LEFT JOIN bo_print_categories pc
+              ON pc.id = p.print_category_id AND pc.email = p.email
+       WHERE p.email = ?
+       ORDER BY p.button_position IS NULL, p.button_position`,
       [office]
     );
     res.json(rows);
   } catch (err) {
+    if (err.code === 'ER_BAD_FIELD_ERROR') {
+      // The price-level columns arrive with schema_price_levels.sql, and
+      // deploy.sh applies migrations only when it is asked to. A till that
+      // cannot read its catalogue cannot sell, so a missing column costs the
+      // extra prices rather than the whole product list — the same fallback
+      // /till/staff makes for swipe_card, for the same reason.
+      try {
+        const [rows] = await pool.query(
+          `SELECT pluid, product_name, department_name, group_name,
+                  accounting_code, price, tax_percentage, stock_quantity,
+                  button_position, button_color, printer_route, printer_routes,
+                  print_to_receipt, emoji, image_url
+           FROM bo_products
+           WHERE email = ?
+           ORDER BY button_position IS NULL, button_position`,
+          [office]
+        );
+        return res.json(rows);
+      } catch (fallbackError) {
+        return next(fallbackError);
+      }
+    }
     next(err);
   }
 });
@@ -891,8 +972,18 @@ app.post(['/till/orders', '/orders'], async (req, res, next) => {
   }
 });
 
-/** End-of-day figures, computed from what was actually taken. */
+/**
+ * End-of-day figures, computed from what was actually taken.
+ *
+ * `office` is required, exactly as it is on `/till/receipts` above. Both are
+ * open routes a terminal reaches without a token, and this one answered with
+ * the day's takings of every venue on the platform added together — a figure
+ * that was wrong for whoever asked and private to everybody else.
+ */
 app.get('/reports/end-of-day', async (req, res, next) => {
+  const office = req.query.office;
+  if (!office) return res.status(400).json({ error: 'An office is required.' });
+
   const date = req.query.date || new Date().toISOString().slice(0, 10);
   try {
     const [[totals]] = await pool.query(
@@ -900,16 +991,16 @@ app.get('/reports/end-of-day', async (req, res, next) => {
               COALESCE(SUM(total_minor), 0)   AS gross_minor,
               COALESCE(SUM(tax_minor), 0)     AS tax_minor
        FROM epos_orders
-       WHERE DATE(closed_at) = ?`,
-      [date]
+       WHERE email = ? AND DATE(closed_at) = ?`,
+      [office, date]
     );
     const [byMethod] = await pool.query(
       `SELECT p.method, COALESCE(SUM(p.amount_minor), 0) AS amount_minor
        FROM epos_payments p
        JOIN epos_orders o ON o.id = p.order_id
-       WHERE DATE(o.closed_at) = ?
+       WHERE o.email = ? AND DATE(o.closed_at) = ?
        GROUP BY p.method`,
-      [date]
+      [office, date]
     );
     res.json({ date, ...totals, by_method: byMethod });
   } catch (err) {

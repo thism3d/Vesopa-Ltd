@@ -4,6 +4,7 @@ import 'package:drift/drift.dart';
 import 'package:http/http.dart' as http;
 
 import 'local/database.dart';
+import 'till_permissions.dart';
 
 /// Why a staff list could not be pulled, in words a manager standing at the
 /// till can act on.
@@ -116,6 +117,14 @@ class StaffRepository {
                 // here — no card — which is why this is a string and not a
                 // nullable one.
                 swipeCard: (r['swipe_card'] as String?)?.trim() ?? '',
+                // Empty for anybody in no group, and for every row from a
+                // server that predates permission groups. Both mean the same
+                // thing — every key — which is why this is a string and not a
+                // nullable one, exactly as `swipeCard` above.
+                permissions: TillPermissions.encode(
+                  r['permissions'],
+                  grouped: r['permission_group_id'] != null,
+                ),
               ),
               mode: InsertMode.insertOrReplace,
             );

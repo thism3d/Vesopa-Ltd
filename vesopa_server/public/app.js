@@ -272,6 +272,7 @@ const ROUTES = {
   screens: '/screen-programming',
   program_departments: '/program-departments',
   program_groups: '/program-groups',
+  printer_categories: '/printer-categories',
   import: '/import',
   run_report: '/reports/financial-summary',
   report_schedules: '/reports/schedules',
@@ -284,7 +285,9 @@ const ROUTES = {
   kitchen: '/kitchen-screens',
   tables: '/tables',
   users: '/users',
+  user_roles: '/user-roles',
   staff: '/staff',
+  permission_groups: '/permission-groups',
   customers: '/customers',
   vouchers: '/vouchers',
   receipt_designer: '/receipt-designer',
@@ -435,6 +438,20 @@ const CRUD = {
     ],
   },
   /**
+   * Printing categories: the order a kitchen ticket comes out in.
+   *
+   * One field, because one field is all it is — a name. The order is the row
+   * order, dragged, which is why `sortable` matters more here than the form
+   * does: a venue reorders Breakfast, Mains and Desserts by moving them, not by
+   * typing numbers into a column and working out the gaps.
+   */
+  'print-categories': {
+    path: 'print-categories', title: 'printer category', sortable: true,
+    fields: [
+      { name: 'name', label: 'Category', required: true },
+    ],
+  },
+  /**
    * Modifier groups: the questions a product asks before it goes on the bill.
    *
    * The two numbers are the whole behaviour of the prompt on the till, so they
@@ -516,6 +533,17 @@ const CRUD = {
   },
   vouchers: {
     path: 'vouchers', title: 'voucher', sortable: true,
+    // A voucher prints and a voucher does not go in a wallet, and both halves
+    // of that are deliberate. A wallet pass is a card that belongs to one named
+    // person and updates in their pocket; a voucher is a code anybody holding
+    // it can spend once. Putting one on a phone as a "card" would promise a
+    // relationship the voucher does not have -- an offer that should live on a
+    // phone is a Promotion, which has a pass type of its own.
+    rowActions: (r) => printOnlyAction({
+      what: 'voucher', id: r.id, name: r.name || r.code,
+      why: 'A voucher is a code, not a card. Use Promotions for an offer that '
+        + 'goes on a phone.',
+    }),
     fields: [
       { name: 'code', label: 'Code', required: true },
       { name: 'name', label: 'Name' },
@@ -814,13 +842,16 @@ function render() {
     products: loadProducts,
     stock: loadStock,
     users: loadUsers,
+    user_roles: loadUserRoles,
     staff: loadStaff,
+    permission_groups: loadPermissionGroups,
     customers: loadCustomers,
     offices: loadOffices,
     billing: loadBilling,
     tables: loadFloor,
     program_departments: () => loadCrud('departments'),
     program_groups: () => loadCrud('groups'),
+    printer_categories: () => loadCrud('print-categories'),
     import: loadImport,
     run_report: loadRunReport,
     report_schedules: loadReportSchedules,
@@ -1353,22 +1384,73 @@ let productPicks = new Set();
 // catalogue rather than when the form opens, so picking a department is a
 // choice from a list instead of a spelling test — and so the list is on screen
 // the instant the modal is.
-let productRefs = { departments: [], groups: [], tax: [], modifierGroups: [] };
+let productRefs = {
+  departments: [],
+  groups: [],
+  tax: [],
+  modifierGroups: [],
+  printCategories: [],
+};
+
+/** What this venue calls each level, or "Price 2" where it has not said. */
+let priceLevelNames = null;
+
+/**
+ * Read the venue's level names, whatever shape they arrive in.
+ *
+ * Unreadable is "named nothing", which reads as "Price 2" on the form — the
+ * state every venue is in until it names one. A product form that would not
+ * open because a settings blob was malformed would be a much worse failure
+ * than a field labelled with a number.
+ */
+function safeLevelNames(raw) {
+  if (!raw) return null;
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The five optional prices, as form fields.
+ *
+ * Named by the venue where it has named them — a till key labelled "Price 2"
+ * tells a clerk nothing, and "Happy Hour" tells them everything. Set under
+ * Programming › Till & printers.
+ */
+function priceLevelFields(p = {}) {
+  const names = priceLevelNames || {};
+  return [2, 3, 4, 5, 6].map((n) => ({
+    label: `${names[n] || `Price ${n}`} (£) — blank uses Price 1`,
+    name: `price_${n}`,
+    type: 'money',
+    value: p[`price_${n}`] ?? '',
+  }));
+}
 
 async function loadProducts() {
   await ensurePrinterNames();
   // One round of requests, not four in series. The reference lists are small
   // and a failure in any of them must not leave the catalogue unreachable, so
   // each falls back to empty rather than rejecting the lot.
-  const [rows, departments, groups, tax, modifierGroups] = await Promise.all([
-    api('/products'),
-    api('/departments').catch(() => []),
-    api('/groups').catch(() => []),
-    api('/tax').catch(() => []),
-    api('/modifier-groups').catch(() => []),
-  ]);
+  const [rows, departments, groups, tax, modifierGroups, printCategories, till] =
+    await Promise.all([
+      api('/products'),
+      api('/departments').catch(() => []),
+      api('/groups').catch(() => []),
+      api('/tax').catch(() => []),
+      api('/modifier-groups').catch(() => []),
+      api('/print-categories').catch(() => []),
+      // For the price-level labels. A venue that has named none, or a server
+      // that has not run the migration, falls back to "Price 2" — which is
+      // what the field says anyway.
+      api('/till-settings').catch(() => null),
+    ]);
   productRows = rows;
-  productRefs = { departments, groups, tax, modifierGroups };
+  productRefs = { departments, groups, tax, modifierGroups, printCategories };
+  priceLevelNames = safeLevelNames(till?.price_level_names);
   bindProducts();
   renderProducts();
 }
@@ -1784,14 +1866,36 @@ async function loadUsers() {
         <td class="muted small">${esc(u.email)}</td>
         <td>${esc(u.office_name || '—')}</td>
         <td><span class="badge ${u.role === 'admin' ? 'active' : 'archived'}">${u.role}</span></td>
-        <td class="right">
+        <td>${
+          u.role === 'admin'
+            ? '<span class="muted">Platform admin</span>'
+            : u.role_name
+              ? `<span class="pill">${esc(u.role_name)}</span>`
+              // Named, not blank. A login with no role sees everything, and a
+              // column that says nothing for the most permissive state is the
+              // one way this table could mislead somebody.
+              : '<span class="muted">Everything</span>'
+        }</td>
+        <td class="right nowrap">
+          ${u.staff_id
+            // A back-office login and a till operator are two different records
+            // that often describe one person: bo_clarks is who signs on at the
+            // counter, and the staff pass belongs to that row. Where the two are
+            // matched by email, this row can issue and print it; where they are
+            // not, the icons say so rather than going missing.
+            ? rowCardActions({ kind: 'staff', id: u.staff_id, name: u.name })
+            : rowCardActions({ kind: 'staff', id: '', name: u.name, print: false,
+                disabled: 'No staff record matches this email, so there is no '
+                  + 'card to issue. Add them under Staff first.' })}
+          ${u.role !== 'admin'
+            ? `<button class="btn small ghost" data-role-user="${u.id}" data-role-current="${u.role_id ?? ''}">Role</button>` : ''}
           <button class="btn small ghost" data-pw-user="${u.id}">Reset password</button>
           ${u.role !== 'admin'
             ? `<button class="btn small danger" data-del-user="${u.id}">Delete</button>` : ''}
         </td>
       </tr>`
     )
-    .join('') || '<tr><td colspan="5" class="empty">No users.</td></tr>';
+    .join('') || '<tr><td colspan="6" class="empty">No users.</td></tr>';
 }
 
 /**
@@ -1863,6 +1967,59 @@ async function loadStock() {
     '<tr><td colspan="4" class="empty">No products yet.</td></tr>';
 }
 
+/**
+ * The permission-group picker for the staff form.
+ *
+ * "Every key" is the blank option and it is first, because it is what every
+ * existing member of staff has and what a new one gets unless somebody says
+ * otherwise. Naming it rather than leaving the option empty is the difference
+ * between a manager knowing what they are choosing and guessing.
+ *
+ * A venue with no groups gets the picker anyway, pointing at Staff Permissions.
+ * The alternative — hiding the field — leaves the feature invisible to exactly
+ * the people who have not set it up yet.
+ */
+async function staffGroupField(value) {
+  let groups = [];
+  try {
+    groups = await api('/permission-groups');
+  } catch {
+    // A half-migrated server. The field degrades to the only honest option.
+  }
+  return {
+    label: groups.length
+      ? 'Permissions'
+      : 'Permissions (set groups up under Staff Permissions)',
+    name: 'permission_group_id',
+    type: 'select',
+    value: value ?? '',
+    options: [
+      { value: '', label: 'Every key — no restrictions' },
+      ...groups.map((g) => ({ value: g.id, label: g.name })),
+    ],
+  };
+}
+
+/** The role picker for the back-office user form. Same shape, same reasoning. */
+async function userRoleField(value) {
+  let roles = [];
+  try {
+    roles = await api('/user-roles');
+  } catch {
+    // As above.
+  }
+  return {
+    label: roles.length ? 'Role' : 'Role (set roles up under Back Office User Roles)',
+    name: 'role_id',
+    type: 'select',
+    value: value ?? '',
+    options: [
+      { value: '', label: 'Everything — no restrictions' },
+      ...roles.map((r) => ({ value: r.id, label: r.display_name })),
+    ],
+  };
+}
+
 async function loadStaff() {
   const rows = await api('/staff');
   $('staff').innerHTML = rows
@@ -1876,12 +2033,20 @@ async function loadStaff() {
           pluid: c.pluid,
           pin_code: pin,
           active: active ? 1 : 0,
+          permission_group_id: c.permission_group_id ?? '',
         })
       );
       // A PIN that is not four digits cannot be used at the till — the pad
       // submits on the fourth key — so any legacy row like that is called out
       // here rather than leaving a member of staff who silently cannot sign on.
       const badPin = !/^\d{4}$/.test(pin);
+      // "Every key" and not a blank: a clerk in no group is unrestricted, and a
+      // permissions column that says nothing for the most permissive state is
+      // the one way this table could mislead somebody.
+      const group = c.permission_group
+        ? `<span class="pill">${esc(c.permission_group)}</span>`
+        : '<span class="muted">Every key</span>';
+
       return `<tr>
         <td>${esc(c.clark_name)}</td>
         <td>${c.pluid}</td>
@@ -1890,8 +2055,10 @@ async function loadStaff() {
             ? ' <span class="pin-warn" title="The till pad submits after four digits, so this PIN can never sign on. Edit it to a 4-digit PIN.">needs fixing</span>'
             : ''
         }</td>
+        <td>${group}</td>
         <td>${active ? 'Active' : '<span class="muted">Retired</span>'}</td>
         <td class="right nowrap">
+          ${rowCardActions({ kind: 'staff', id: c.id, name: c.clark_name })}
           <button class="btn small ghost" data-edit-staff='${payload}'>Edit</button>
           <button class="btn small danger" data-del-staff="${c.id}">Delete</button>
         </td>
@@ -1946,6 +2113,7 @@ async function loadCustomers() {
           ? `<span class="badge ${lapsed ? 'overdue' : 'active'}">${date(expiry)}</span>`
           : '<span class="muted">—</span>'}</td>
         <td class="right nowrap">
+          ${rowCardActions({ kind: 'loyalty', id: c.id, name: c.name })}
           <button class="btn small ghost" data-edit-customer="${c.id}">Edit</button>
           <button class="btn small danger" data-del-customer="${c.id}">Delete</button>
         </td>
@@ -3095,7 +3263,28 @@ document.addEventListener('click', async (e) => {
     // `money`, not `number`: a bare number input steps in whole units, so the
     // browser rejected £2.05 and offered the two "nearest valid values", 2 and
     // 3. Every price with pence in it was unenterable.
-    { label: 'Price (£)', name: 'price', type: 'money', value: p.price ?? 0 },
+    { label: 'Price 1 (£)', name: 'price', type: 'money', value: p.price ?? 0 },
+    // Five more, and every one of them optional.
+    //
+    // Blank is not zero. A level left empty means "this product has no special
+    // price here, charge Price 1", and the till falls back — so a venue can put
+    // a happy-hour price on the six drinks it applies to and leave the other
+    // four hundred products alone. A default of 0 would mean switching the till
+    // to Price 2 started giving everything away, silently, at the counter.
+    ...priceLevelFields(p),
+    {
+      label: 'Printer category — blank prints last, under no heading',
+      name: 'print_category_id',
+      type: 'select',
+      value: p.print_category_id ?? '',
+      options: [
+        { value: '', label: 'No category' },
+        ...(productRefs.printCategories || []).map((c) => ({
+          value: c.id,
+          label: c.name,
+        })),
+      ],
+    },
     {
       label: 'VAT rate',
       name: 'tax_percentage',
@@ -3260,11 +3449,26 @@ document.addEventListener('click', async (e) => {
     return loadUsers();
   }
 
+  if (t.dataset.roleUser) {
+    return modal(
+      'Role',
+      [await userRoleField(t.dataset.roleCurrent)],
+      async (d) => {
+        await api(`/users/${t.dataset.roleUser}/role`, {
+          method: 'PUT',
+          body: JSON.stringify({ role_id: d.role_id }),
+        });
+        return loadUsers();
+      }
+    );
+  }
+
   if (t.id === 'add-staff') {
     return modal('Add staff', [
       { label: 'Staff name', name: 'clark_name', required: true },
       { label: 'Staff PIN (exactly 4 digits)', name: 'pin_code', required: true },
       { label: 'Staff ID', name: 'pluid', type: 'number', value: '0' },
+      await staffGroupField(''),
       { label: 'Active (can sign on at the till)', name: 'active', type: 'checkbox', value: 1 },
     ], (d) => {
       const bad = staffPinError(d.pin_code, { required: true });
@@ -3281,6 +3485,7 @@ document.addEventListener('click', async (e) => {
       // "keep the old one" is a worse thing to explain than the PIN itself.
       { label: 'Staff PIN (exactly 4 digits)', name: 'pin_code', value: c.pin_code ?? '' },
       { label: 'Staff ID', name: 'pluid', type: 'number', value: c.pluid },
+      await staffGroupField(c.permission_group_id ?? ''),
       { label: 'Active (can sign on at the till)', name: 'active', type: 'checkbox', value: c.active },
     ], (d) => {
       // Blank still means "leave it alone" server-side, so it is only validated
@@ -3528,7 +3733,7 @@ async function verifyResetToken(raw) {
     'This reset link has expired or has already been used. Request a new one.';
 }
 
-function start() {
+async function start() {
   $('login').hidden = true;
   $('app').hidden = false;
 
@@ -3540,6 +3745,12 @@ function start() {
     : `${me?.officeName || ''}`;
 
   connectSocket();
+
+  // What this login's role allows, and the menu trimmed to match. Awaited
+  // before the first view is shown so that a restricted user never sees a
+  // section flash up and vanish — and the server refuses anyway, so a failure
+  // here costs a tidy menu and nothing else.
+  await applyAccess();
 
   // Land on whatever the URL asks for, so a refresh or a bookmarked page
   // reopens where the user left off.
@@ -3986,7 +4197,8 @@ async function loadPromotions() {
         ? `<span class="promo-badge" style="background:${esc(r.badge_colour || '#d81b60')}">${esc(r.badge_text)}</span>`
         : '<span class="muted small">—</span>'}</td>
       <td>${r.active ? '<span class="pill on">Live</span>' : '<span class="pill">Off</span>'}</td>
-      <td class="right">
+      <td class="right nowrap">
+        ${rowCardActions({ kind: 'promo', id: r.id, name: r.name })}
         <button class="btn small" data-promo-edit="${r.id}">Edit</button>
         <button class="btn small danger-ghost" data-promo-del="${r.id}">Delete</button>
       </td>
@@ -4138,7 +4350,13 @@ async function loadGiftCards() {
       <td class="right"><b>£${pounds(r.balance_minor)}</b></td>
       <td class="small muted">${r.expires_on ? new Date(r.expires_on).toLocaleDateString('en-GB') : '—'}</td>
       <td><span class="pill ${r.status === 'active' ? 'on' : ''}">${esc(r.status)}</span></td>
-      <td class="right">
+      <td class="right nowrap">
+        ${rowCardActions({
+          kind: 'giftcard', id: r.id, name: r.recipient_name || r.code,
+          // A voided or spent card still prints and still opens: the holder has
+          // to be able to see that the card was theirs and is empty, which is
+          // the same reason loadSubject() keeps returning it.
+        })}
         ${r.reloadable && r.status === 'active'
           ? `<button class="btn small" data-gift-reload="${r.id}">Top up</button>` : ''}
         <button class="btn small" data-gift-history="${r.id}">History</button>
@@ -4236,7 +4454,14 @@ async function loadDeposits() {
       <td class="right">£${pounds(r.redeemed_minor)}</td>
       <td class="small muted">${r.due_on ? new Date(r.due_on).toLocaleDateString('en-GB') : '—'}</td>
       <td><span class="pill ${r.status === 'held' ? 'on' : ''}">${esc(r.status)}</span></td>
-      <td class="right"><button class="btn small" data-deposit-edit="${r.id}">Edit</button></td>
+      <td class="right nowrap">
+        ${printOnlyAction({
+          what: 'deposit', id: r.id, name: r.customer_name || r.reference,
+          why: 'A deposit is money held against a bill, not a card. It prints as '
+            + 'a receipt.',
+        })}
+        <button class="btn small" data-deposit-edit="${r.id}">Edit</button>
+      </td>
     </tr>`).join('') || '<tr><td colspan="8" class="muted">No deposits taken yet.</td></tr>';
 }
 
@@ -4457,8 +4682,16 @@ async function loadWallet() {
     { label: 'Cards issued', value: '…', tone: '' },
   ]);
 
+  renderWalletArt();
+  walletSaveButton('design');
   walletPreview();
-  await Promise.all([loadWalletApple(), loadWalletPasses(), walletJoinCode()]);
+  await Promise.all([
+    loadWalletDesign(), loadWalletApple(), loadWalletPasses(), walletJoinCode(),
+  ]);
+  // The designer inherits from the form above, which is only filled in once
+  // the settings have arrived -- so the first draw has to come after both.
+  renderWalletKinds();
+  walletDesignPreview();
 }
 
 /** A colour input will not accept an empty value, so blank means "the brand". */
@@ -4468,122 +4701,654 @@ function normaliseHex(value, fallback) {
 }
 
 /**
- * What the card will look like.
+ * The venue's initials, exactly as memberNumber() builds them in
+ * src/wallet_apple.js: articles dropped, capped at three. Shown in the preview
+ * so a venue can see what their members' numbers will actually read as before
+ * anybody is handed one.
+ */
+const WAL_NOISE = ['the', 'a', 'an', 'of', 'and', 'at', 'on', '&'];
+function walletInitials(venue) {
+  return String(venue || '')
+    .split(/[\s-]+/)
+    .map((w) => w.replace(/[^A-Za-z]/g, ''))
+    .filter((w) => w && !WAL_NOISE.includes(w.toLowerCase()))
+    .slice(0, 3)
+    .map((w) => w[0].toUpperCase())
+    .join('') || 'V';
+}
+
+// The header field, top right of the card. Every kind but staff has one, and it
+// is the field the push notification speaks through.
+const WAL_HEADER = {
+  loyalty: ['NEXT REWARD', '40 to go'],
+  customer: ['TIER', 'Gold'],
+  giftcard: ['GIFT CARD', '···· 0001'],
+  promo: ['ENDS IN', '3 days'],
+  staff: null,
+};
+
+// The loyalty strip carries a progress bar, and it is baked into the image
+// rather than drawn by Wallet — PassKit has fields and images and nothing in
+// between, so tools/wallet_art renders eleven states and the server picks one.
+// The preview shows the 40% band so the bar is visible at all; a real card
+// picks the step nearest that customer's balance.
+const WAL_STRIP = { loyalty: 'strip_loyalty_p040' };
+
+/** One row of "label / value" under the strip, per kind. */
+function walletDetails(kind, venue) {
+  const initials = walletInitials(venue);
+  return ({
+    loyalty: [['MEMBER', 'Sarah Jones'], ['TIER', 'Gold · 10% off'],
+              ['MEMBER NO.', `${initials} · 0241`]],
+    customer: [['YOUR DISCOUNT', '10% off'], ['MEMBER SINCE', 'March 2024'],
+               ['MEMBER NO.', `${initials} · 0241`]],
+    giftcard: [['FOR', 'Owen Price'], ['LOADED', 'of £50.00'], ['EXPIRES', '2027-01-14']],
+    staff: [['ROLE', 'Manager'], ['SITE', venue], ['CARD', '999900007']],
+    promo: [['WHEN', 'Mon–Fri, 5pm–7pm'], ['ENDS', '2026-12-31']],
+  })[kind] || [];
+}
+
+/**
+ * One card, drawn.
  *
  * Not a mock-up of Apple's chrome — that would be a promise this page cannot
  * keep, because iOS draws the card and its rendering is not ours. It is the
- * three things the venue actually controls: the artwork, the colours and the
- * words, in the arrangement the pass puts them in.
- */
-/**
- * What the customer gets, at the size they get it.
+ * four things the venue actually controls: the artwork, the colours, the words
+ * and which fields carry them, in the arrangement the pass puts them in.
  *
- * Apple lays a pass out at 375pt wide and the preview is capped to match: it
- * was rendering at whatever width the panel happened to be, which made a
- * loyalty card look like a poster and hid how little room the fields actually
- * have. A design that only works at 600px wide is a design that does not work.
+ * Apple lays a pass out at 375pt wide and this is capped to match. It used to
+ * render at whatever width the panel happened to be, which made a loyalty card
+ * look like a poster and hid how little room the fields actually have. A design
+ * that only works at 600px wide is a design that does not work.
  *
  * The fields shown are the ones buildPassJson() actually writes, in the same
  * order and the same three tiers, so this stops being decoration and starts
- * being a rehearsal -- a value that overflows here overflows on the phone.
+ * being a rehearsal.
+ */
+function walletCardHtml(kind, d) {
+  const meta = WALLET_KINDS.find((k) => k.key === kind) || WALLET_KINDS[0];
+  const background = d.hex_background || '#111111';
+  const foreground = d.hex_foreground || '#F2F4F0';
+  const label = d.hex_label || '#A5C715';
+  const programme = d.program_name || 'Your Rewards';
+  const venue = d.issuer_name || 'Your venue';
+
+  const details = walletDetails(kind, venue)
+    .map(([l, v]) => `
+      <div class="wal-pass-field">
+        <span class="wal-pass-label" style="color:${esc(label)}">${esc(l)}</span>
+        <span class="wal-pass-small">${esc(v)}</span>
+      </div>`)
+    .join('');
+
+  const header = WAL_HEADER[kind];
+
+  // The venue's own band when they have uploaded one, otherwise the artwork
+  // generated for this kind. Same order of preference as artworkFor() on the
+  // server, so the preview and the card agree about which picture wins.
+  const strip = d.strip_url
+    ? esc(d.strip_url)
+    : `/assets/wallet/${esc(WAL_STRIP[kind] || `strip_${kind}`)}.png`;
+
+  return `
+    <figure class="wal-pass" style="background:${esc(background)};color:${esc(foreground)}">
+      <div class="wal-pass-head">
+        <img class="wal-pass-mark" src="${d.logo_url ? esc(d.logo_url) : '/assets/wallet/logo@2x.png'}" alt="">
+        <span class="wal-pass-logo">${esc(venue)}</span>
+        ${header ? `
+        <span class="wal-pass-header">
+          <span class="wal-pass-label" style="color:${esc(label)}">${esc(header[0])}</span>
+          <span class="wal-pass-small">${esc(header[1])}</span>
+        </span>` : ''}
+      </div>
+      <div class="wal-pass-strip" style="background-image:url('${strip}')">
+        <div class="wal-pass-primary">
+          <span class="wal-pass-label" style="color:${esc(label)}">${esc(meta.field)}</span>
+          <span class="wal-pass-value">${esc(meta.value)}</span>
+        </div>
+      </div>
+      ${details ? `<div class="wal-pass-fields">${details}</div>` : ''}
+      <div class="wal-pass-foot">
+        <span class="wal-pass-code"></span>
+        <span class="wal-pass-venue" style="color:${esc(label)}">${esc(programme)}</span>
+      </div>
+    </figure>`;
+}
+
+/**
+ * The venue-wide preview: every card they have switched on, in their colours.
+ *
+ * Reads the form rather than the saved row, so it moves while a colour is being
+ * dragged. Per-card overrides are deliberately not applied here — this tab is
+ * the look everything starts from, and showing five already-overridden cards
+ * would hide the thing being edited.
  */
 function walletPreview() {
   const read = (name) => {
     const el = document.querySelector(`[data-wal="${name}"]`);
     return el ? el.value : '';
   };
-  const background = read('hex_background') || '#111111';
-  const foreground = read('hex_foreground') || '#F2F4F0';
-  const label = read('hex_label') || '#A5C715';
-  const programme = read('program_name') || 'Your Rewards';
-  const venue = read('issuer_name') || 'Your venue';
+  const base = {
+    hex_background: read('hex_background'),
+    hex_foreground: read('hex_foreground'),
+    hex_label: read('hex_label'),
+    program_name: read('program_name'),
+    issuer_name: read('issuer_name'),
+    // The two pictures live on walletState rather than in an input, so they are
+    // taken from there — and the venue's band is `photo_url`, which is what a
+    // card with no design of its own falls back to.
+    strip_url: (walletState && walletState.photo_url) || '',
+    logo_url: (walletState && walletState.logo_url) || '',
+  };
 
   const cards = WALLET_KINDS.filter((k) =>
     document.querySelector(`[data-wal="${k.key}_enabled"]`)?.checked
   );
 
-  // The venue's initials, exactly as memberNumber() builds them in
-  // src/wallet_apple.js: articles dropped, capped at three. Shown here so a
-  // venue can see what their members' numbers will actually read as before
-  // anybody is handed one.
-  const NOISE = ['the', 'a', 'an', 'of', 'and', 'at', 'on', '&'];
-  const initials = venue
-    .split(/[\s-]+/)
-    .map((w) => w.replace(/[^A-Za-z]/g, ''))
-    .filter((w) => w && !NOISE.includes(w.toLowerCase()))
-    .slice(0, 3)
-    .map((w) => w[0].toUpperCase())
-    .join('') || 'V';
+  const box = $('wallet-preview');
+  if (box) {
+    box.innerHTML = (cards.length ? cards : [WALLET_KINDS[0]])
+      .map((k) => walletCardHtml(k.key, base)).join('');
+  }
 
-  // The header field, top right of the card. New: every kind but staff has one
-  // now, and it is the field the push notification speaks through.
-  const HEADER = {
-    loyalty:  ['NEXT REWARD', '40 to go'],
-    customer: ['TIER', 'Gold'],
-    giftcard: ['GIFT CARD', '···· 0001'],
-    promo:    ['ENDS IN', '3 days'],
-    staff:    null,
+  // The designer's card sits on another tab and shows the same venue defaults
+  // under whatever that card overrides, so it has to move too.
+  walletDesignPreview();
+}
+
+
+// ---------------------------------------------------------------------------
+// The pass designer
+// ---------------------------------------------------------------------------
+//
+// Five cards, designed one at a time, each against a live drawing of itself.
+//
+// WHAT WAS WRONG WITH WHAT THIS REPLACED
+//
+// One set of colours for all five cards, and a column of free-text boxes. A
+// venue whose gift card should look nothing like its staff card had no way to
+// say so -- and epos_wallet_programs, which exists precisely to hold that, had
+// no route pointing at it. So the answer to "where do I design the cards" was
+// "you cannot", given by a screen that looked as though you could.
+//
+// THE RULE THE WHOLE SCREEN RESTS ON
+//
+// Blank means inherit. A venue sets its look once on the Programme tab, opens
+// one card, changes the two things that should differ, and the other four stay
+// in step with the venue's brand for ever after. That is why every box here
+// shows the inherited value as its placeholder and why "Use the venue's look"
+// clears rather than copies: copying would freeze today's brand into a card
+// nobody remembers overriding.
+
+/** The five designs as the server resolved them, and which one is open. */
+let walletPrograms = null;
+let walletDesignKind = 'loyalty';
+/** Edits not yet saved, per kind. Cleared when a card is saved or reset. */
+let walletDesignDraft = {};
+
+/**
+ * Apple's own pixel sizes. The browser is the codec; see POST /wallet/artwork.
+ *
+ * OUT_* is @1x and the upload sends @2x alongside it. These are Apple's
+ * published sizes for a storeCard: 375x123 for the strip, 160x50 for the logo.
+ * Google accepts anything and crops to its own ratio, so matching Apple exactly
+ * is the constraint that satisfies both.
+ */
+const WAL_ART = {
+  strip: { OUT_W: 375, OUT_H: 123, VIEW_W: 330, VIEW_H: 108 },
+  logo: { OUT_W: 160, OUT_H: 50, VIEW_W: 288, VIEW_H: 90 },
+};
+
+async function loadWalletDesign() {
+  try {
+    walletPrograms = await api('/wallet/programs');
+  } catch {
+    // A server without the migration. The rest of the Wallet screen works, and
+    // saying so beats an empty panel that reads as a card with no design.
+    $('wal-design-editor').innerHTML =
+      '<p class="muted small">The pass designer is not available on this server yet.</p>';
+    return;
+  }
+  walletDesignDraft = {};
+  renderWalletKinds();
+  renderWalletDesignEditor();
+}
+
+/** The design currently on screen: what was saved, plus anything unsaved. */
+function walletDesignOf(kind) {
+  const saved = (walletPrograms || []).find((p) => p.kind === kind) || { kind };
+  return { ...saved, ...(walletDesignDraft[kind] || {}) };
+}
+
+/**
+ * What the card will actually look like: the venue's own branding with this
+ * card's overrides laid on top.
+ *
+ * The same merge readProgramBrand() does on the server, and it has to stay the
+ * same one — a preview that resolves inheritance differently from the thing
+ * that builds the pass is worse than no preview, because it is believed.
+ */
+function walletResolved(kind) {
+  const design = walletDesignOf(kind);
+  const venue = (name) => {
+    const el = document.querySelector(`[data-wal="${name}"]`);
+    return el ? el.value : (walletState ? walletState[name] : '') || '';
+  };
+  const pick = (field) => {
+    const own = String(design[field] ?? '').trim();
+    return own || venue(field);
+  };
+  return {
+    hex_background: pick('hex_background'),
+    hex_foreground: pick('hex_foreground'),
+    hex_label: pick('hex_label'),
+    program_name: pick('program_name'),
+    issuer_name: venue('issuer_name'),
+    logo_url: venue('logo_url'),
+    // This card's own band, then the venue's. Same order artworkFor() uses on
+    // the server, so the preview and the issued card agree about which picture
+    // wins.
+    strip_url: String(design.strip_url ?? '').trim() || venue('photo_url'),
+  };
+}
+
+function renderWalletKinds() {
+  const nav = $('wal-kinds');
+  if (!nav) return;
+
+  nav.innerHTML = WALLET_KINDS.map((k) => {
+    const design = walletDesignOf(k.key);
+    const on = document.querySelector(`[data-wal="${k.key}_enabled"]`)?.checked;
+    // "Own look" is the honest word for it: the row exists in the table either
+    // way, and what a manager wants to know at a glance is which of the five
+    // they have actually changed.
+    const own = ['program_name', 'hex_background', 'hex_foreground', 'hex_label',
+      'strip_url', 'terms', 'change_message']
+      .some((f) => String(design[f] ?? '').trim());
+    const dirty = Boolean(walletDesignDraft[k.key]);
+    return `
+      <button class="wal-kind${k.key === walletDesignKind ? ' on' : ''}"
+              data-walkind="${esc(k.key)}" role="tab">
+        <span class="wal-kind-name">${esc(k.label)}</span>
+        <span class="wal-kind-meta">
+          ${on ? '' : '<span class="pill">not issued</span>'}
+          ${own ? '<span class="pill on">own look</span>' : ''}
+          ${dirty ? '<span class="pill amber">unsaved</span>' : ''}
+        </span>
+      </button>`;
+  }).join('');
+}
+
+function renderWalletDesignEditor() {
+  const box = $('wal-design-editor');
+  if (!box || !walletPrograms) return;
+
+  const kind = walletDesignKind;
+  const design = walletDesignOf(kind);
+  const meta = WALLET_KINDS.find((k) => k.key === kind) || WALLET_KINDS[0];
+  const venue = (name) => {
+    const el = document.querySelector(`[data-wal="${name}"]`);
+    return el ? el.value : '';
   };
 
-  // One row of "label / value" under the strip, per kind. These mirror the
-  // secondaryFields and auxiliaryFields in src/wallet_apple.js.
-  const DETAIL = {
-    loyalty:  [['MEMBER', 'Sarah Jones'], ['TIER', 'Gold · 10% off'],
-               ['MEMBER NO.', `${initials} · 0241`]],
-    customer: [['YOUR DISCOUNT', '10% off'], ['MEMBER SINCE', 'March 2024'],
-               ['MEMBER NO.', `${initials} · 0241`]],
-    giftcard: [['FOR', 'Owen Price'], ['LOADED', 'of £50.00'], ['EXPIRES', '2027-01-14']],
-    staff:    [['ROLE', 'Manager'], ['SITE', venue], ['CARD', '999900007']],
-    promo:    [['WHEN', 'Mon–Fri, 5pm–7pm'], ['ENDS', '2026-12-31']],
+  // Every colour input needs a value -- a browser will not accept an empty one
+  // -- so an inherited colour shows the venue's, and the switch beside it is
+  // what says whether this card owns it. Without that switch there would be no
+  // way to tell "the same as the venue" from "deliberately this colour", and no
+  // way back to inheriting once anything was touched.
+  const colour = (field, label) => {
+    const own = String(design[field] ?? '').trim();
+    return `
+      <div class="wal-colour">
+        <label>${esc(label)}
+          <input type="color" data-design="${esc(field)}"
+                 value="${esc(normaliseHex(own || venue(field), '#111111'))}">
+        </label>
+        <label class="check small">
+          <input type="checkbox" data-design-own="${esc(field)}" ${own ? 'checked' : ''}>
+          Own colour
+        </label>
+      </div>`;
   };
 
-  // The loyalty strip carries a progress bar, and it is baked into the image
-  // rather than drawn by Wallet — PassKit has fields and images and nothing in
-  // between, so tools/wallet_art renders eleven states and the server picks
-  // one. The preview shows the 40% band so the bar is visible at all; a real
-  // card picks the step nearest that customer's balance.
-  const STRIP = {
-    loyalty: 'strip_loyalty_p040',
+  box.innerHTML = `
+    <div class="card rd-card">
+      <h3>${esc(meta.label)} card</h3>
+      <p class="muted small">
+        Anything left alone here follows the venue's own look, so changing the
+        brand later changes this card with it. Fill something in and this card
+        keeps it.
+      </p>
+
+      <label>Name on the card
+        <input type="text" maxlength="120" data-design="program_name"
+               value="${esc(design.program_name || '')}"
+               placeholder="${esc(venue('program_name') || 'Your Rewards')}">
+      </label>
+
+      <h4>Colours</h4>
+      <div class="wal-colours-grid">
+        ${colour('hex_background', 'Background')}
+        ${colour('hex_foreground', 'Text')}
+        ${colour('hex_label', 'Labels')}
+      </div>
+
+      <h4>Artwork</h4>
+      <p class="muted small">
+        The band across the card. Choose a picture and you get a frame to move
+        and zoom it in — what you frame is what is saved, at the two sizes Apple
+        needs and the one Google fetches. Both phones show the same band.
+      </p>
+      <div class="wal-art">
+        <div class="wal-art-preview">
+          ${design.strip_url
+            ? `<img src="${esc(design.strip_url)}" alt="Card artwork">`
+            : '<span class="muted small">Using the generated artwork</span>'}
+        </div>
+        <div class="wal-art-actions">
+          <label class="btn small">Choose a picture
+            <input type="file" accept="image/*" id="wal-art-file" hidden>
+          </label>
+          ${design.strip_url
+            ? '<button class="btn small ghost" id="wal-art-clear">Use the generated artwork</button>'
+            : ''}
+        </div>
+      </div>
+
+      <h4>Words</h4>
+      <label>What the phone says when this card changes
+        <input type="text" maxlength="255" data-design="change_message"
+               value="${esc(design.change_message || '')}"
+               placeholder="Your balance is now %@">
+      </label>
+      <p class="muted small">
+        <code>%@</code> is replaced by the new value. Leave it blank and the
+        card updates silently.
+      </p>
+      <label>Terms for this card
+        <textarea rows="3" data-design="terms"
+                  placeholder="${esc(venue('terms') || 'Follows the venue’s terms')}">${esc(design.terms || '')}</textarea>
+      </label>
+
+      <div class="wal-design-actions">
+        <button class="btn primary" id="wal-design-save">Save this card</button>
+        <button class="btn ghost" id="wal-design-reset">Use the venue's look</button>
+        <span class="muted small" id="wal-design-note"></span>
+      </div>
+    </div>`;
+
+  walletDesignPreview();
+}
+
+/**
+ * Whether the page's own Save button applies to what is on screen.
+ *
+ * "Save branding" saves the venue's settings, and the Design tab does not have
+ * any: each card has its own Save this card, and pressing the wrong one is the
+ * kind of thing that teaches somebody their changes are not being kept. So the
+ * header button is hidden on the tab it cannot save.
+ */
+function walletSaveButton(tab) {
+  const save = $('wallet-save');
+  if (save) save.hidden = tab === 'design';
+}
+
+function walletDesignPreview() {
+  const box = $('wal-design-card');
+  if (!box || !walletPrograms) return;
+  box.innerHTML = walletCardHtml(walletDesignKind, walletResolved(walletDesignKind));
+}
+
+/** Record one edit without redrawing the editor out from under the cursor. */
+function walletDesignEdit(field, value) {
+  const kind = walletDesignKind;
+  walletDesignDraft[kind] = { ...(walletDesignDraft[kind] || {}), [field]: value };
+  walletDesignPreview();
+  renderWalletKinds();
+}
+
+document.addEventListener('click', async (e) => {
+  // ---- Tabs ----
+  const tab = e.target.closest && e.target.closest('[data-waltab]');
+  if (tab) {
+    const want = tab.dataset.waltab;
+    document.querySelectorAll('[data-waltab]').forEach((t) =>
+      t.classList.toggle('on', t === tab));
+    document.querySelectorAll('[data-walpanel]').forEach((p) => {
+      p.hidden = p.dataset.walpanel !== want;
+    });
+    // The join code draws into a panel that was display:none when it was first
+    // asked for, and an SVG measured at zero stays at zero. Redrawn on arrival.
+    if (want === 'programme') walletJoinCode();
+    walletSaveButton(want);
+    return;
+  }
+
+  // ---- Which card ----
+  const kindBtn = e.target.closest && e.target.closest('[data-walkind]');
+  if (kindBtn) {
+    walletDesignKind = kindBtn.dataset.walkind;
+    renderWalletKinds();
+    renderWalletDesignEditor();
+    return;
+  }
+
+  // ---- Clear the artwork ----
+  if (e.target.id === 'wal-art-clear') {
+    walletDesignEdit('strip_url', '');
+    renderWalletDesignEditor();
+    return;
+  }
+
+  // ---- Save one card ----
+  if (e.target.id === 'wal-design-save') {
+    const kind = walletDesignKind;
+    const body = {};
+    for (const el of document.querySelectorAll('#wal-design-editor [data-design]')) {
+      body[el.dataset.design] = el.value;
+    }
+    // A colour whose "Own colour" box is clear is stored as '' — which the
+    // server and readProgramBrand() both read as "inherit". This is the only
+    // way back to the venue's look once a colour has been picked, because the
+    // input itself can never be empty.
+    for (const el of document.querySelectorAll('#wal-design-editor [data-design-own]')) {
+      if (!el.checked) body[el.dataset.designOwn] = '';
+    }
+    body.strip_url = walletDesignOf(kind).strip_url || '';
+
+    e.target.disabled = true;
+    try {
+      const saved = await api(`/wallet/programs/${encodeURIComponent(kind)}`, {
+        method: 'PUT', body: JSON.stringify(body),
+      });
+      walletPrograms = (walletPrograms || []).map((p) => (p.kind === kind ? saved : p));
+      delete walletDesignDraft[kind];
+      renderWalletKinds();
+      renderWalletDesignEditor();
+      $('wal-design-note').textContent = 'Saved ✓';
+      setTimeout(() => {
+        const note = $('wal-design-note');
+        if (note) note.textContent = '';
+      }, 1500);
+    } catch (err) {
+      alert(String(err && err.message ? err.message : err));
+    } finally {
+      e.target.disabled = false;
+    }
+    return;
+  }
+
+  // ---- Back to the venue's look ----
+  if (e.target.id === 'wal-design-reset') {
+    if (!confirm(
+      'Put this card back to the venue’s own look?\n\n'
+      + 'Its name, colours, artwork and words are cleared, and it follows the '
+      + 'Programme tab again from now on.'
+    )) return;
+    const kind = walletDesignKind;
+    try {
+      const saved = await api(`/wallet/programs/${encodeURIComponent(kind)}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          program_name: '', hex_background: '', hex_foreground: '', hex_label: '',
+          strip_url: '', terms: '', change_message: '',
+        }),
+      });
+      walletPrograms = (walletPrograms || []).map((p) => (p.kind === kind ? saved : p));
+      delete walletDesignDraft[kind];
+      renderWalletKinds();
+      renderWalletDesignEditor();
+    } catch (err) {
+      alert(String(err && err.message ? err.message : err));
+    }
+  }
+});
+
+document.addEventListener('input', (e) => {
+  if (e.target.matches('#wal-design-editor [data-design]')) {
+    walletDesignEdit(e.target.dataset.design, e.target.value);
+  }
+});
+
+document.addEventListener('change', async (e) => {
+  // "Own colour" off means inherit; on means keep what the swatch is showing.
+  if (e.target.matches('#wal-design-editor [data-design-own]')) {
+    const field = e.target.dataset.designOwn;
+    const swatch = document.querySelector(`#wal-design-editor [data-design="${field}"]`);
+    walletDesignEdit(field, e.target.checked && swatch ? swatch.value : '');
+    return;
+  }
+
+  // ---- The artwork ----
+  if (e.target.id === 'wal-art-file') {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+
+    let blobs;
+    try {
+      blobs = await cropWalletArt(file);
+    } catch {
+      return; // cancelled, or not an image
+    }
+
+    try {
+      walletDesignEdit('strip_url', await uploadWalletArt(blobs));
+      renderWalletDesignEditor();
+    } catch (err) {
+      alert(String(err && err.message ? err.message : err));
+    }
+    return;
+  }
+
+  // ---- The venue's own band and mark, on the Programme tab ----
+  const field = e.target.closest && e.target.closest('.wal-art[data-artfield]');
+  if (field && e.target.type === 'file') {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+
+    let blobs;
+    try {
+      blobs = await cropWalletArt(file, field.dataset.artshape);
+    } catch {
+      return; // cancelled, or not an image
+    }
+    try {
+      walletSetArt(field.dataset.artfield, await uploadWalletArt(blobs));
+    } catch (err) {
+      alert(String(err && err.message ? err.message : err));
+    }
+  }
+});
+
+/** Send both scales, and hand back the address they are served at. */
+async function uploadWalletArt(blobs) {
+  const body = new FormData();
+  body.append('x1', blobs.x1, 'art.png');
+  body.append('x2', blobs.x2, 'art@2x.png');
+  const res = await fetch('/api/wallet/artwork', {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body,
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Upload failed');
+  return data.url;
+}
+
+/**
+ * Hold one of the venue's two pictures.
+ *
+ * Kept on walletState rather than in a hidden input, because there is no input
+ * to keep it in — the control is a thumbnail and two buttons. The Save branding
+ * button reads walletState for exactly these two fields, so an upload is not
+ * live until it is saved, which matches every other field on the tab.
+ */
+function walletSetArt(fieldName, url) {
+  if (!walletState) return;
+  walletState[fieldName] = url || '';
+  renderWalletArt();
+  walletPreview();
+}
+
+/** Draw both venue pictures from whatever walletState currently holds. */
+function renderWalletArt() {
+  for (const box of document.querySelectorAll('.wal-art[data-artfield]')) {
+    const url = walletState ? walletState[box.dataset.artfield] || '' : '';
+    const preview = box.querySelector('.wal-art-preview');
+    preview.innerHTML = url
+      ? `<img src="${esc(url)}" alt="">`
+      : '<span class="muted small">Vesopa artwork</span>';
+    const clear = box.querySelector('[data-artclear]');
+    if (clear) clear.hidden = !url;
+  }
+}
+
+document.addEventListener('click', (e) => {
+  const clear = e.target.closest && e.target.closest('.wal-art [data-artclear]');
+  if (clear) walletSetArt(clear.closest('.wal-art').dataset.artfield, '');
+});
+
+/**
+ * Frame one picture, and hand back the two sizes Apple wants.
+ *
+ * openCropper() is the back office's existing zoom/pan/crop frame, already used
+ * for product pictures and already tested. It returns one PNG at the shape it
+ * was given, so this asks it once at @2x -- the larger of the two, so nothing
+ * is upscaled -- and halves that on a canvas for the @1x. Downscaling a picture
+ * the browser has already decoded is the one image operation that needs no
+ * library and cannot go wrong.
+ */
+async function cropWalletArt(file, which = 'strip') {
+  const shape = WAL_ART[which] || WAL_ART.strip;
+  CROP_SHAPES.wallet_strip = {
+    OUT_W: shape.OUT_W * 2, OUT_H: shape.OUT_H * 2,
+    VIEW_W: shape.VIEW_W, VIEW_H: shape.VIEW_H,
   };
+  const x2 = await openCropper(file, 'wallet_strip');
+  if (!x2) throw new Error('cancelled');
+  return { x2, x1: await halveBlob(x2, shape.OUT_W, shape.OUT_H) };
+}
 
-  $('wallet-preview').innerHTML = (cards.length ? cards : [WALLET_KINDS[0]])
-    .map((k) => {
-      const details = (DETAIL[k.key] || [])
-        .map(([l, v]) => `
-          <div class="wal-pass-field">
-            <span class="wal-pass-label" style="color:${esc(label)}">${esc(l)}</span>
-            <span class="wal-pass-small">${esc(v)}</span>
-          </div>`)
-        .join('');
-
-      const header = HEADER[k.key];
-
-      return `
-      <figure class="wal-pass" style="background:${esc(background)};color:${esc(foreground)}">
-        <div class="wal-pass-head">
-          <img class="wal-pass-mark" src="/assets/wallet/logo@2x.png" alt="">
-          <span class="wal-pass-logo">${esc(venue)}</span>
-          ${header ? `
-          <span class="wal-pass-header">
-            <span class="wal-pass-label" style="color:${esc(label)}">${esc(header[0])}</span>
-            <span class="wal-pass-small">${esc(header[1])}</span>
-          </span>` : ''}
-        </div>
-        <div class="wal-pass-strip"
-             style="background-image:url('/assets/wallet/${esc(STRIP[k.key] || `strip_${k.key}`)}.png')">
-          <div class="wal-pass-primary">
-            <span class="wal-pass-label" style="color:${esc(label)}">${esc(k.field)}</span>
-            <span class="wal-pass-value">${esc(k.value)}</span>
-          </div>
-        </div>
-        ${details ? `<div class="wal-pass-fields">${details}</div>` : ''}
-        <div class="wal-pass-foot">
-          <span class="wal-pass-code"></span>
-          <span class="wal-pass-venue" style="color:${esc(label)}">${esc(programme)}</span>
-        </div>
-      </figure>`;
-    })
-    .join('');
+/** The same picture at half the size, as a PNG blob. */
+function halveBlob(blob, width, height) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(img, 0, 0, width, height);
+      URL.revokeObjectURL(url);
+      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('resize failed'))), 'image/png');
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('bad image')); };
+    img.src = url;
+  });
 }
 
 /**
@@ -4610,14 +5375,18 @@ async function loadWalletApple() {
     stat.classList.add(walletApple.configured ? 'green' : 'amber');
   }
 
+  // The third cell names the file that will actually sign, not the file this
+  // page once expected to find. One shared bundle covering all five is the
+  // documented arrangement, and the old wording called that "missing".
   const certs = (walletApple.certificates || [])
     .map(
       (c) => `<tr>
         <td>${esc(c.label)}</td>
         <td class="small muted"><code>${esc(c.pass_type_id)}</code></td>
         <td>${c.present
-          ? '<span class="pill on">signing</span>'
-          : `<span class="pill">${esc(c.file)} missing</span>`}</td>
+          ? `<span class="pill on">signing</span>
+             <span class="muted small">${esc(c.file)}${c.shared ? ' (shared)' : ''}</span>`
+          : `<span class="pill">${esc(c.expected_file || c.file)} missing</span>`}</td>
       </tr>`
     )
     .join('');
@@ -4638,41 +5407,73 @@ async function loadWalletApple() {
       : 'Passes are correct when issued and refresh when the code is scanned again. Automatic updates need a web service URL.'}</p>`;
 }
 
+/**
+ * Every card handed out, and when.
+ *
+ * WHY THE DATES AND THE VENUE ARE ON IT
+ *
+ * This list is per venue, and it said "No passes issued yet" for a venue that
+ * had issued none — while another venue on the same server had. Both are the
+ * same sentence on screen, so the honest reading of an empty list was
+ * ambiguous: nobody has been given a card, or you are looking at the wrong
+ * venue. Naming the venue costs one line and settles it.
+ *
+ * The dates are here for the same reason. "It is issuing passes but I cannot
+ * see them" is answered by a row with a time on it, and by an error column that
+ * says when Google refused one — a pass can exist, be recorded, and still never
+ * have reached anybody, and nothing else in the system would say so.
+ */
 async function loadWalletPasses() {
   let rows = [];
+  const box = $('wallet-passes');
+  const where = walletState && walletState.office
+    ? `<p class="muted small">This is ${esc(walletState.office)}. Cards issued by another venue on this server are not listed here.</p>`
+    : '';
+
   try {
     rows = await api('/wallet/passes');
     const stat = document.querySelectorAll('#wallet-stats .stat-card')[3];
     if (stat) stat.querySelector('.stat-value').textContent = String(rows.length);
   } catch (e) {
-    $('wallet-passes').innerHTML =
+    box.innerHTML =
       '<p class="muted small">No pass record is available on this server yet.</p>';
     return;
   }
 
   if (!rows.length) {
-    $('wallet-passes').innerHTML =
-      '<p class="muted small">No passes issued yet. One is created the first time a customer scans a sign-up code, or when you issue a card at the till.</p>';
+    box.innerHTML =
+      '<p class="muted small">No passes issued yet. One is created the first time '
+      + 'a customer scans a sign-up code, when somebody joins through your sign-up '
+      + 'link, or when you press the wallet button on a customer, a member of '
+      + 'staff, a gift card or an offer.</p>' + where;
     return;
   }
 
-  $('wallet-passes').innerHTML =
+  const when = (v) => (v ? new Date(v).toLocaleString('en-GB') : '—');
+
+  box.innerHTML =
     '<table class="table"><thead><tr><th>Card</th><th>Kind</th>' +
-    '<th>Number</th><th>State</th><th></th></tr></thead><tbody>' +
+    '<th>Number</th><th>Issued</th><th>State</th><th></th></tr></thead><tbody>' +
     rows.map((r) => `<tr>
         <td>${esc(r.subject_name || r.subject_id)}</td>
         <td>${esc(walletKindLabel(r.kind))}</td>
         <td class="small muted"><code>${esc(r.card_number || '—')}</code></td>
+        <td class="small muted">${esc(when(r.apple_issued_at || r.created_at))}</td>
         <td>${r.apple_issued_at
           ? '<span class="pill on">Apple</span> '
           : ''}${r.state === 'active'
             ? '<span class="pill on">Google</span>'
-            : `<span class="pill">${esc(r.state || 'pending')}</span>`}</td>
+            : `<span class="pill">${esc(r.state || 'pending')}</span>`}
+          ${r.last_error
+            // The failure a venue would otherwise never see. A row can exist,
+            // look issued, and have been refused by Google on the way out.
+            ? `<br><span class="pill" title="${esc(r.last_error)}">refused</span>`
+            : ''}</td>
         <td class="right">
           <button class="btn small" data-wallet-qr="${esc(r.kind)}|${esc(r.subject_id)}|${esc(r.subject_name || '')}">Show code</button>
         </td>
       </tr>`).join('') +
-    '</tbody></table>';
+    '</tbody></table>' + where;
 }
 
 const walletKindLabel = (kind) => ({
@@ -4736,6 +5537,12 @@ document.addEventListener('click', async (e) => {
     for (const el of document.querySelectorAll('[data-wal]')) {
       body[el.dataset.wal] = el.type === 'checkbox' ? el.checked : el.value;
     }
+    // The two pictures have no input to be read out of — the control is a
+    // thumbnail and two buttons — so they come off walletState, which is where
+    // an upload or a Remove put them.
+    for (const field of ['photo_url', 'logo_url']) {
+      body[field] = (walletState && walletState[field]) || '';
+    }
     await api('/wallet/settings', { method: 'PUT', body: JSON.stringify(body) });
     e.target.textContent = 'Saved ✓';
     setTimeout(() => { e.target.textContent = 'Save branding'; }, 1500);
@@ -4764,14 +5571,13 @@ document.addEventListener('click', async (e) => {
 });
 
 /** The code, big enough to scan off the screen. */
-function walletShowCode(name, url, cardNumber) {
+async function walletShowCode(name, url, cardNumber) {
   const wrap = document.createElement('div');
   wrap.className = 'wal-modal';
   wrap.innerHTML = `
     <div class="wal-modal-card">
       <h3>${esc(name)}</h3>
-      <img alt="Wallet code" width="260" height="260"
-           src="/api/qr.svg?size=260&text=${encodeURIComponent(url)}">
+      <div class="wal-qr-box">Drawing the code…</div>
       <p class="small muted">Point a phone at this. An iPhone gets an Apple
         pass, anything else gets a Google one.</p>
       ${cardNumber ? `<p class="small"><code>${esc(cardNumber)}</code></p>` : ''}
@@ -4781,7 +5587,321 @@ function walletShowCode(name, url, cardNumber) {
     if (ev.target === wrap || ev.target.hasAttribute('data-wal-close')) wrap.remove();
   });
   document.body.appendChild(wrap);
+
+  // Fetched, not dropped into an <img src>. /api/qr.svg is behind the session,
+  // the session is a bearer token in a header, and an <img> cannot send a
+  // header — so every one of those requests came back 401 and rendered as a
+  // broken image with no error anywhere but the network tab. walletJoinCode()
+  // already learned this; this call site had not.
+  wrap.querySelector('.wal-qr-box').innerHTML =
+    (await qrSvg(url, 260)) || '<p class="small muted">The code could not be drawn.</p>';
 }
+
+// ---------------------------------------------------------------------------
+// Cards and passes, from wherever the person is
+// ---------------------------------------------------------------------------
+//
+// The two things a venue does with a named person, a gift card or an offer are
+// hand them a card and put that card on their phone. Both used to live on one
+// screen each — Swipe cards for the plastic, Wallet passes for the phone — so
+// doing either for the customer in front of you meant leaving the page you
+// found them on, finding them again somewhere else, and coming back.
+//
+// So the two actions travel to the rows instead. Every list that holds a pass
+// subject carries the same pair of icons, they do the same thing everywhere,
+// and they are the same two actions the till offers at the counter — which is
+// what makes them learnable in one place and usable in six.
+
+/** Which pass kind each list issues, and what to call it. */
+const ROW_PASS = {
+  loyalty: { label: 'loyalty card' },
+  customer: { label: 'membership card' },
+  giftcard: { label: 'gift card' },
+  staff: { label: 'staff card' },
+  promo: { label: 'offer' },
+};
+
+/**
+ * A QR code as inline SVG.
+ *
+ * Returns '' rather than throwing: a code that cannot be drawn should leave the
+ * rest of the panel — the number, the link, the print button — perfectly
+ * usable, because the number under the code is the fallback the whole system
+ * already depends on.
+ */
+async function qrSvg(text, size = 240) {
+  try {
+    const res = await fetch(
+      `/api/qr.svg?size=${encodeURIComponent(size)}&text=${encodeURIComponent(text)}`,
+      { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+    );
+    return res.ok ? await res.text() : '';
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * The pair of icon buttons for one row.
+ *
+ * `kind` and `id` name the pass subject. `disabled` carries the reason a row
+ * cannot do this — a back-office user with no staff record, say — and it is put
+ * in the tooltip rather than hidden, because a button that is missing on some
+ * rows and present on others reads as a rendering fault.
+ */
+function rowCardActions({ kind, id, name = '', print = true, disabled = '' }) {
+  const key = esc(`${kind}|${id}|${name}`);
+  const off = disabled ? ' disabled' : '';
+  const why = disabled ? ` title="${esc(disabled)}"` : '';
+
+  return `
+    <button class="icon-btn" data-row-pass="${key}"${off}${why}
+            aria-label="Wallet pass for ${esc(name || id)}"
+            title="${disabled ? esc(disabled) : 'Put this card on a phone'}">
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5z"/>
+        <path d="M4 10h16"/><path d="M15.5 14.5h2"/>
+      </svg>
+    </button>${print ? `
+    <button class="icon-btn" data-row-print="${key}"
+            aria-label="Print a card for ${esc(name || id)}"
+            title="Print the card">
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M7 9V4h10v5"/>
+        <path d="M6.5 9h11A2.5 2.5 0 0 1 20 11.5V16h-3v4H7v-4H4v-4.5A2.5 2.5 0 0 1 6.5 9z"/>
+        <path d="M17 12.5h.01"/>
+      </svg>
+    </button>` : ''}`;
+}
+
+/**
+ * Put a card on somebody's phone.
+ *
+ * Issuing and showing are one action, deliberately. A code that pointed at a
+ * pass which had never been built would fail in the customer's hand rather than
+ * here, and the customer is the worst possible place to find that out.
+ */
+async function openRowPass(kind, id, name) {
+  const out = await api(
+    `/wallet/apple/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`,
+    { method: 'POST' }
+  );
+  await walletShowCode(name || (ROW_PASS[kind] || {}).label || 'Card',
+    out.scan_url, out.card_number);
+}
+
+/**
+ * The printed card.
+ *
+ * A sheet, not a receipt. The till prints the track to encode on a stripe
+ * because that is what a card writer needs; this is the other half — something
+ * to hand over, or to hold against a blank while it is written — so it shows
+ * the card at card size with the code on it, and the track underneath where the
+ * scissors go rather than in the middle of the artwork.
+ *
+ * Printed through a hidden iframe rather than a new window: a pop-up blocker
+ * silently eating the print is indistinguishable from a printer that is off.
+ */
+async function openRowPrint(kind, id, name) {
+  const data = await api(
+    `/wallet/card/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`
+  );
+
+  const svg = await qrSvg(data.scan_url || data.card_number || String(id), 320);
+
+  showPanel(`Print — ${name || data.name || 'card'}`, `
+    <div class="print-card-wrap">
+      <div class="print-card" id="print-card">
+        <div class="pc-head">
+          <span class="pc-venue">${esc(data.issuer_name || '')}</span>
+          <span class="pc-prog">${esc(data.program_name || '')}</span>
+        </div>
+        <div class="pc-body">
+          <div class="pc-qr">${svg || ''}</div>
+          <div class="pc-who">
+            <span class="pc-name">${esc(data.name || name || '')}</span>
+            ${data.member_no ? `<span class="pc-line">Member no. ${esc(data.member_no)}</span>` : ''}
+            ${data.card_number && data.has_plastic
+              ? `<span class="pc-num">${esc(data.card_number)}</span>` : ''}
+          </div>
+        </div>
+      </div>
+      ${data.track ? `
+        <p class="small muted">Encode on track 2: <code>${esc(data.track)}</code><br>
+        The <code>;</code> and <code>?</code> belong to the reader and must be on
+        the stripe, but they are never stored and never appear in the code above.</p>`
+        : `<p class="small muted">This one has no card number yet, so there is
+           nothing to encode on a stripe — the code above identifies them on its
+           own. Issue a card at the till, or from the Cards screen, to give them
+           a number a reader can send.</p>`}
+      <div class="print-card-actions">
+        <button class="btn primary" id="print-card-go">Print</button>
+      </div>
+    </div>`);
+
+  $('print-card-go').addEventListener('click', () => printNode($('print-card')));
+}
+
+/** Print one element on its own page, without leaving this one. */
+function printNode(node) {
+  const frame = document.createElement('iframe');
+  frame.setAttribute('aria-hidden', 'true');
+  frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0';
+  document.body.appendChild(frame);
+
+  const doc = frame.contentDocument;
+  doc.open();
+  doc.write(`<!doctype html><html><head><meta charset="utf-8">
+    <title>Card</title>
+    <link rel="stylesheet" href="/style.css">
+    <style>
+      @page { margin: 12mm; }
+      body { background:#fff; margin:0; display:flex; justify-content:center; }
+    </style></head><body></body></html>`);
+  doc.close();
+
+  const go = () => {
+    doc.body.appendChild(doc.importNode(node, true));
+    // The stylesheet is fetched by the frame and the card is laid out against
+    // it; printing before it lands produces an unstyled rectangle. One frame's
+    // grace after load is enough and costs nothing anybody notices.
+    setTimeout(() => {
+      frame.contentWindow.focus();
+      frame.contentWindow.print();
+      setTimeout(() => frame.remove(), 1000);
+    }, 250);
+  };
+
+  if (doc.readyState === 'complete') go();
+  else frame.addEventListener('load', go, { once: true });
+}
+
+/**
+ * The same pair of icons for a row that prints but has no card on a phone.
+ *
+ * The wallet icon is drawn and disabled rather than left out. A control that is
+ * present on four lists and absent on two reads as a rendering fault and gets
+ * reported as one; a disabled control with the reason in its tooltip answers
+ * the question instead of raising it.
+ */
+function printOnlyAction({ what, id, name = '', why = '' }) {
+  const key = esc(`${what}|${id}|${name}`);
+  return `
+    <button class="icon-btn" disabled title="${esc(why)}"
+            aria-label="${esc(why)}">
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5z"/>
+        <path d="M4 10h16"/><path d="M15.5 14.5h2"/>
+      </svg>
+    </button>
+    <button class="icon-btn" data-row-slip="${key}"
+            aria-label="Print this ${esc(what)}" title="Print it">
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M7 9V4h10v5"/>
+        <path d="M6.5 9h11A2.5 2.5 0 0 1 20 11.5V16h-3v4H7v-4H4v-4.5A2.5 2.5 0 0 1 6.5 9z"/>
+        <path d="M17 12.5h.01"/>
+      </svg>
+    </button>`;
+}
+
+/**
+ * A voucher or a deposit, on paper.
+ *
+ * Both are a code somebody carries back to the counter, so both print the same
+ * shape: the code as something scannable, the code as something readable under
+ * it, and the two or three facts that decide whether it is still good. The
+ * readable line is not decoration — it is what gets used when the print is
+ * creased, and it is why the code is never only a barcode.
+ */
+async function openRowSlip(what, id, name) {
+  const rows = await api(what === 'voucher' ? '/vouchers' : '/deposits');
+  const row = rows.find((r) => String(r.id) === String(id));
+  if (!row) throw new Error('That row is no longer there.');
+
+  const code = String(row.code || row.reference || '');
+  const svg = await qrSvg(code, 280);
+
+  const lines = what === 'voucher'
+    ? [
+        ['Voucher', row.name || ''],
+        ['Worth', row.discount_type === 'percent'
+          ? `${row.value}% off`
+          : `£${pounds(row.value)} off`],
+        ['Minimum spend', row.min_spend_minor ? `£${pounds(row.min_spend_minor)}` : 'None'],
+        ['Valid from', row.starts_on ? date(row.starts_on) : 'Now'],
+        ['Expires', row.expires_on ? date(row.expires_on) : 'No end date'],
+      ]
+    : [
+        ['Customer', row.customer_name || ''],
+        ['For', row.description || ''],
+        ['Deposit paid', `£${pounds(row.amount_minor)}`],
+        ['Already redeemed', `£${pounds(row.redeemed_minor || 0)}`],
+        ['Still held', `£${pounds((row.amount_minor || 0) - (row.redeemed_minor || 0))}`],
+        ['Due', row.due_on ? date(row.due_on) : '—'],
+      ];
+
+  showPanel(`Print — ${name || code}`, `
+    <div class="print-card-wrap">
+      <div class="print-slip" id="print-card">
+        <h4>${what === 'voucher' ? 'Voucher' : 'Deposit receipt'}</h4>
+        <div class="ps-qr">${svg || ''}</div>
+        <div class="ps-code">${esc(code)}</div>
+        <dl class="ps-lines">
+          ${lines.filter(([, v]) => String(v).trim())
+            .map(([l, v]) => `<dt>${esc(l)}</dt><dd>${esc(String(v))}</dd>`)
+            .join('')}
+        </dl>
+      </div>
+      <div class="print-card-actions">
+        <button class="btn primary" id="print-card-go">Print</button>
+      </div>
+    </div>`);
+
+  $('print-card-go').addEventListener('click', () => printNode($('print-card')));
+}
+
+document.addEventListener('click', async (e) => {
+  const slipBtn = e.target.closest && e.target.closest('[data-row-slip]');
+  if (slipBtn && !slipBtn.disabled) {
+    const [what, id, ...rest] = slipBtn.dataset.rowSlip.split('|');
+    slipBtn.disabled = true;
+    try {
+      await openRowSlip(what, id, rest.join('|'));
+    } catch (err) {
+      alert(String(err && err.message ? err.message : err));
+    } finally {
+      slipBtn.disabled = false;
+    }
+    return;
+  }
+
+  const passBtn = e.target.closest && e.target.closest('[data-row-pass]');
+  if (passBtn && !passBtn.disabled) {
+    const [kind, id, ...rest] = passBtn.dataset.rowPass.split('|');
+    passBtn.disabled = true;
+    try {
+      await openRowPass(kind, id, rest.join('|'));
+    } catch (err) {
+      alert(String(err && err.message ? err.message : err));
+    } finally {
+      passBtn.disabled = false;
+    }
+    return;
+  }
+
+  const printBtn = e.target.closest && e.target.closest('[data-row-print]');
+  if (printBtn && !printBtn.disabled) {
+    const [kind, id, ...rest] = printBtn.dataset.rowPrint.split('|');
+    printBtn.disabled = true;
+    try {
+      await openRowPrint(kind, id, rest.join('|'));
+    } catch (err) {
+      alert(String(err && err.message ? err.message : err));
+    } finally {
+      printBtn.disabled = false;
+    }
+  }
+});
 
 // ---- Swipe cards ----------------------------------------------------------
 //
@@ -6620,6 +7740,22 @@ const iconButton = (icon, label, data, extra = '') =>
           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icon}</svg>
    </button>`;
 
+/**
+ * Put the chosen report's own name and description at the top of the page.
+ *
+ * This screen used to run one report and the heading was written into the
+ * markup. It runs five now, and a page headed "Financial Summary" above a table
+ * of voids is one a manager reasonably reports as broken.
+ */
+function rrNameReport() {
+  const chosen = (rrCatalogue?.reports || []).find(
+    (r) => r.key === $('rr-report').value
+  );
+  if (!chosen) return;
+  $('rr-title').textContent = chosen.label;
+  $('rr-blurb').textContent = chosen.description || '';
+}
+
 async function loadRunReport() {
   if (!rrCatalogue) {
     rrCatalogue = await api('/reports/catalogue');
@@ -6639,11 +7775,14 @@ async function loadRunReport() {
     $('rr-period').value = 'yesterday';
 
     $('rr-period').addEventListener('change', rrToggleCustom);
+    $('rr-report').addEventListener('change', rrNameReport);
     $('rr-run').addEventListener('click', rrRun);
     $('rr-export').addEventListener('click', rrExport);
     $('rr-view').addEventListener('click', rrView);
     rrToggleCustom();
   }
+
+  rrNameReport();
 
   // Nothing is run on arrival. A report is a query over the whole ledger, and
   // firing one because somebody clicked a menu item is how a back office comes

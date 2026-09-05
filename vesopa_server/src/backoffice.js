@@ -8,6 +8,7 @@ const {
   ensureMemberNumber,
   backfill: backfillMemberNumbers,
 } = require('./member_numbers');
+const { accessGuard } = require('./permissions');
 
 // Product images. Stored on disk under public/uploads and served statically.
 // Capped and type-checked, so an upload cannot fill the disk or smuggle in a
@@ -37,6 +38,16 @@ const upload = multer({
 function backofficeRoutes({ pool, broadcast, secret }) {
   const router = express.Router();
   const auth = requireAuth(secret);
+
+  /**
+   * Handing somebody a back-office login, or changing what one may do, is
+   * itself a permission.
+   *
+   * A role can only ever subtract, so anyone able to edit users can restore
+   * their own access by taking the role off their own row. Guarding these
+   * routes is what stops the accountant promoting themselves.
+   */
+  const mayEditPeople = accessGuard({ pool, secret })('people.edit');
 
   /**
    * The tenant key. Catalogue rows carry the office's contact email — an
@@ -77,6 +88,43 @@ function backofficeRoutes({ pool, broadcast, secret }) {
    * than in the form.
    */
   const KP_STATIONS = ['kp1', 'kp2', 'kp3', 'kp4', 'kp5', 'kp6'];
+
+  /**
+   * The five extra prices a product can carry. `price` is Price 1.
+   *
+   * Kept as a list rather than spelled out at each call site, because the whole
+   * point of the feature is that all six behave identically and a loop is the
+   * only way to say that once.
+   */
+  const PRICE_LEVELS = ['price_2', 'price_3', 'price_4', 'price_5', 'price_6'];
+
+  /**
+   * A level as it should be stored: a number, or NULL for "not set".
+   *
+   * NULL and 0 are opposite answers and the difference is money. NULL means
+   * "this product has no special price at this level, charge Price 1"; 0 means
+   * "give it away". A blank box in the form is the first of those, so an empty
+   * string must never round to a zero.
+   */
+  /**
+   * The printing category a product belongs to, as a value to store.
+   *
+   * NULL means "no category" — the product prints last on a kitchen ticket,
+   * under no heading, exactly as it did before categories existed. A blank in
+   * the form is that, so an empty string must not become a 0 pointing at a
+   * category that does not exist.
+   */
+  function printCategoryId(value) {
+    if (value === undefined || value === null || value === '') return null;
+    const id = Number(value);
+    return Number.isInteger(id) && id > 0 ? id : null;
+  }
+
+  function priceLevel(value) {
+    if (value === undefined || value === null || value === '') return null;
+    const number = Number(value);
+    return Number.isFinite(number) && number >= 0 ? number : null;
+  }
 
   /**
    * Normalise whatever the form sent into a stored routing string.
@@ -140,7 +188,8 @@ function backofficeRoutes({ pool, broadcast, secret }) {
         `SELECT id, pluid, product_name, department_name, group_name,
                 accounting_code, price, tax_percentage, stock_quantity,
                 low_stock_at, button_position, button_color, printer_routes,
-                print_to_receipt, emoji, image_url
+                print_to_receipt, emoji, image_url, print_category_id,
+                ${PRICE_LEVELS.join(', ')}
          FROM bo_products
          WHERE email = ?
          ORDER BY department_name, button_position IS NULL, button_position,
@@ -215,8 +264,10 @@ function backofficeRoutes({ pool, broadcast, secret }) {
            (email, pluid, product_name, department_name, group_name,
             accounting_code, price, tax_percentage, stock_quantity,
             button_position, button_color, printer_route, printer_routes,
-            print_to_receipt, emoji, image_url)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            print_to_receipt, emoji, image_url, print_category_id,
+            ${PRICE_LEVELS.join(', ')})
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                 ${PRICE_LEVELS.map(() => '?').join(', ')})`,
         [
           // The office's key, not the individual's: two managers in one shop
           // must add to the same catalogue.
@@ -239,6 +290,8 @@ function backofficeRoutes({ pool, broadcast, secret }) {
           flag(p.print_to_receipt),
           p.emoji || null,
           p.image_url || null,
+          printCategoryId(p.print_category_id),
+          ...PRICE_LEVELS.map((level) => priceLevel(p[level])),
         ]
       );
 
@@ -285,7 +338,9 @@ function backofficeRoutes({ pool, broadcast, secret }) {
              button_position = ${keep('button_position')},
              button_color = ${keep('button_color')},
              printer_route = ?, printer_routes = ?, print_to_receipt = ?,
-             emoji = ${keep('emoji')}, image_url = ?
+             emoji = ${keep('emoji')}, image_url = ?,
+             print_category_id = ${keep('print_category_id')},
+             ${PRICE_LEVELS.map((l) => l + ' = ' + keep(l)).join(', ')}
          WHERE id = ? AND email = ?`,
         [
           p.product_name,
@@ -302,6 +357,14 @@ function backofficeRoutes({ pool, broadcast, secret }) {
           flag(p.print_to_receipt),
           ...kept('emoji', p.emoji || null),
           p.image_url || null,
+          ...kept('print_category_id', printCategoryId(p.print_category_id)),
+          // Each level only when the caller sent it — the same rule as
+          // button_position and emoji above. An import that knows nothing about
+          // price levels must not strip a venue's happy-hour prices off every
+          // product it touches.
+          ...PRICE_LEVELS.flatMap((level) =>
+            kept(level, priceLevel(p[level]))
+          ),
           req.params.id,
           // Scoped: editing another office's product must be impossible even if
           // its id is guessed.
@@ -556,9 +619,19 @@ function backofficeRoutes({ pool, broadcast, secret }) {
     'idle_enabled', 'idle_image_url', 'idle_after_sale', 'idle_require_pin',
     'idle_message', 'signoff_seconds', 'change_window_seconds',
     'receipt_auto_print', 'buttons_show_prices', 'font_family',
+    'price_level_names',
     ...PRINTER_NAME_FIELDS,
     ...KITCHEN_MODE_FIELDS,
   ];
+
+  /** JSON.parse that answers null instead of throwing. */
+  function safeJson(text) {
+    try {
+      return JSON.parse(text);
+    } catch {
+      return null;
+    }
+  }
 
   const TILL_DEFAULTS = {
     idle_enabled: 1,
@@ -689,6 +762,26 @@ function backofficeRoutes({ pool, broadcast, secret }) {
           const name = String(v ?? '').trim().slice(0, 40);
           return name || null;
         }
+        // What this venue calls Price 2 to Price 6 — "Happy Hour", "Staff",
+        // "Function Room". Stored as JSON keyed by the level, because a till
+        // key labelled "Price 2" tells a clerk nothing.
+        //
+        // Only levels 2-6 are nameable. Price 1 is the price, and a venue that
+        // renamed it would have a product form whose first field agreed with
+        // nothing else in the system.
+        if (f === 'price_level_names') {
+          if (v === null || v === undefined || v === '') return null;
+          const source = typeof v === 'string' ? safeJson(v) : v;
+          if (!source || typeof source !== 'object') return null;
+          const names = {};
+          for (const level of [2, 3, 4, 5, 6]) {
+            const name = String(source[level] ?? source[`${level}`] ?? '')
+              .trim()
+              .slice(0, 40);
+            if (name) names[level] = name;
+          }
+          return Object.keys(names).length ? JSON.stringify(names) : null;
+        }
         // Anything unrecognised becomes 'printer'. A back office sent a mode
         // it does not know about must leave the kitchen printing, not leave it
         // silent — the failure of the safe default is paper nobody wanted, and
@@ -791,17 +884,55 @@ function backofficeRoutes({ pool, broadcast, secret }) {
    */
   router.get(STAFF_PATHS, auth, async (req, res, next) => {
     try {
-      const [rows] = await pool.query(
-        `SELECT id, pluid, clark_name, pin_code, COALESCE(active, 1) AS active
-         FROM bo_clarks WHERE email = ?
-         ORDER BY pluid, clark_name`,
-        [scope(req, await tenantEmail(req))]
-      );
+      const email = scope(req, await tenantEmail(req));
+
+      // `permission_group_id` arrives with schema_permissions.sql, and
+      // deploy.sh applies migrations only when asked. Tried and fallen back
+      // from rather than assumed, exactly as `member_no` is above: naming a
+      // column that is not there yet takes the whole staff page down for the
+      // sake of one field nobody has filled in.
+      const WITH_GROUP = `
+        SELECT c.id, c.pluid, c.clark_name, c.pin_code,
+               COALESCE(c.active, 1) AS active,
+               c.permission_group_id,
+               g.name AS permission_group
+          FROM bo_clarks c
+          LEFT JOIN epos_permission_groups g
+                 ON g.id = c.permission_group_id AND g.email = c.email
+         WHERE c.email = ?
+         ORDER BY c.pluid, c.clark_name`;
+
+      const WITHOUT_GROUP = `
+        SELECT id, pluid, clark_name, pin_code, COALESCE(active, 1) AS active
+          FROM bo_clarks WHERE email = ?
+         ORDER BY pluid, clark_name`;
+
+      let rows;
+      try {
+        [rows] = await pool.query(WITH_GROUP, [email]);
+      } catch (e) {
+        if (e.code !== 'ER_BAD_FIELD_ERROR' && e.code !== 'ER_NO_SUCH_TABLE') throw e;
+        [rows] = await pool.query(WITHOUT_GROUP, [email]);
+      }
       res.json(rows);
     } catch (e) {
       next(e);
     }
   });
+
+  /**
+   * The permission group a clerk belongs to, as a value to store.
+   *
+   * Null is not "no permissions", it is "as before" — see src/permissions.js.
+   * A blank in the form therefore has to reach the database as NULL and not as
+   * 0, which would be a foreign key to a group that does not exist.
+   */
+  function groupId(body) {
+    const raw = body?.permission_group_id;
+    if (raw === undefined || raw === null || raw === '') return null;
+    const id = Number(raw);
+    return Number.isInteger(id) && id > 0 ? id : null;
+  }
 
   router.post(STAFF_PATHS, auth, async (req, res, next) => {
     const { clark_name, pin_code, pluid, active } = req.body;
@@ -829,11 +960,24 @@ function backofficeRoutes({ pool, broadcast, secret }) {
         });
       }
 
-      const [result] = await pool.execute(
-        `INSERT INTO bo_clarks (email, pluid, clark_name, pin_code, active)
-         VALUES (?, ?, ?, ?, ?)`,
-        [email, pluid ?? 0, clark_name, pin_code, active === 0 ? 0 : 1]
-      );
+      const values = [email, pluid ?? 0, clark_name, pin_code, active === 0 ? 0 : 1];
+
+      let result;
+      try {
+        [result] = await pool.execute(
+          `INSERT INTO bo_clarks
+             (email, pluid, clark_name, pin_code, active, permission_group_id)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [...values, groupId(req.body)]
+        );
+      } catch (e) {
+        if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+        [result] = await pool.execute(
+          `INSERT INTO bo_clarks (email, pluid, clark_name, pin_code, active)
+           VALUES (?, ?, ?, ?, ?)`,
+          values
+        );
+      }
       broadcast({ type: 'staff.updated' });
       res.status(201).json({ id: result.insertId });
     } catch (e) {
@@ -885,12 +1029,33 @@ function backofficeRoutes({ pool, broadcast, secret }) {
         sets.push('active = ?');
         params.push(active ? 1 : 0);
       }
-      params.push(req.params.id, email);
 
-      const [r] = await pool.execute(
-        `UPDATE bo_clarks SET ${sets.join(', ')} WHERE id = ? AND email = ?`,
-        params
-      );
+      // Only when the form sent the field. A caller that does not know about
+      // permission groups — an older browser tab, the import — must not clear
+      // the group off everybody it touches.
+      const setsWithGroup = [...sets];
+      const paramsWithGroup = [...params];
+      if (req.body && 'permission_group_id' in req.body) {
+        setsWithGroup.push('permission_group_id = ?');
+        paramsWithGroup.push(groupId(req.body));
+      }
+
+      params.push(req.params.id, email);
+      paramsWithGroup.push(req.params.id, email);
+
+      let r;
+      try {
+        [r] = await pool.execute(
+          `UPDATE bo_clarks SET ${setsWithGroup.join(', ')} WHERE id = ? AND email = ?`,
+          paramsWithGroup
+        );
+      } catch (e) {
+        if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+        [r] = await pool.execute(
+          `UPDATE bo_clarks SET ${sets.join(', ')} WHERE id = ? AND email = ?`,
+          params
+        );
+      }
       if (r.affectedRows === 0) {
         return res.status(404).json({ error: 'No such staff member' });
       }
@@ -935,15 +1100,50 @@ function backofficeRoutes({ pool, broadcast, secret }) {
   router.get('/users', auth, async (req, res, next) => {
     try {
       const admin = req.user.role === 'admin';
-      const [rows] = await pool.query(
+      const withRole =
+        // `staff_id` is the till operator this login belongs to, when there is
+        // one. Matched on name and not on email, because bo_clarks.email is the
+        // OFFICE key -- the tenant column, shared by every clerk in the venue --
+        // and no personal address is held for a clerk anywhere. So the name is
+        // the only thing the two records have in common, and a venue with two
+        // people of the same name gets the lower id rather than a guess.
+        //
+        // Collated on both sides for the reason wallet.js documents at length:
+        // bo_clarks.email is utf8mb3 and offices.contact_email is utf8mb4, and
+        // MariaDB refuses to compare them when the statement is prepared -- so
+        // leaving this alone would 500 the user list for every venue, empty or
+        // not. Converting in the query keeps a live ALTER off a shared table.
         `SELECT u.id, u.email, u.name, u.approved, u.role, u.office_id,
-                o.name AS office_name
+                u.role_id, r.display_name AS role_name,
+                o.name AS office_name,
+                (SELECT c.id FROM bo_clarks c
+                  WHERE CONVERT(c.email USING utf8mb4) COLLATE utf8mb4_general_ci
+                      = CONVERT(o.contact_email USING utf8mb4) COLLATE utf8mb4_general_ci
+                    AND CONVERT(c.clark_name USING utf8mb4) COLLATE utf8mb4_general_ci
+                      = CONVERT(u.name USING utf8mb4) COLLATE utf8mb4_general_ci
+                  ORDER BY c.id LIMIT 1) AS staff_id
          FROM backoffice_users u
          LEFT JOIN offices o ON o.id = u.office_id
+         LEFT JOIN bo_user_roles r ON r.id = u.role_id
          ${admin ? '' : 'WHERE u.office_id = ?'}
-         ORDER BY o.name, u.name`,
-        admin ? [] : [req.user.officeId]
-      );
+         ORDER BY o.name, u.name`;
+
+      // `role_id` arrives with schema_permissions.sql and deploy.sh applies
+      // migrations only when asked, so this is tried and fallen back from
+      // rather than assumed. The user list is how a locked-out manager gets
+      // back in; it must not be the page that breaks on a half-migrated
+      // database.
+      const WITHOUT_ROLE = withRole
+        .replace('u.role_id, r.display_name AS role_name,\n                ', '')
+        .replace('LEFT JOIN bo_user_roles r ON r.id = u.role_id\n         ', '');
+
+      let rows;
+      try {
+        [rows] = await pool.query(withRole, admin ? [] : [req.user.officeId]);
+      } catch (e) {
+        if (e.code !== 'ER_BAD_FIELD_ERROR' && e.code !== 'ER_NO_SUCH_TABLE') throw e;
+        [rows] = await pool.query(WITHOUT_ROLE, admin ? [] : [req.user.officeId]);
+      }
       res.json(rows);
     } catch (e) {
       next(e);
@@ -967,18 +1167,81 @@ function backofficeRoutes({ pool, broadcast, secret }) {
 
     try {
       const hash = await bcrypt.hash(password, 12);
-      const [r] = await pool.execute(
-        `INSERT INTO backoffice_users
-           (email, password, name, approved, role, office_id)
-         VALUES (?, ?, ?, ?, 'office', ?)`,
-        [email, hash, name, approved === false ? 'N' : 'Y', officeId]
-      );
+      const values = [email, hash, name, approved === false ? 'N' : 'Y', officeId];
+
+      let r;
+      try {
+        [r] = await pool.execute(
+          `INSERT INTO backoffice_users
+             (email, password, name, approved, role, office_id, role_id)
+           VALUES (?, ?, ?, ?, 'office', ?, ?)`,
+          [...values, await roleFor(req, req.body?.role_id)]
+        );
+      } catch (e) {
+        if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+        [r] = await pool.execute(
+          `INSERT INTO backoffice_users
+             (email, password, name, approved, role, office_id)
+           VALUES (?, ?, ?, ?, 'office', ?)`,
+          values
+        );
+      }
       broadcast({ type: 'users.updated' });
       res.status(201).json({ id: r.insertId });
     } catch (e) {
       if (e.code === 'ER_DUP_ENTRY') {
         return res.status(409).json({ error: 'That email is already in use' });
       }
+      next(e);
+    }
+  });
+
+  /**
+   * The role to store, checked against the caller's own office.
+   *
+   * Null for "no role", which means unrestricted — see src/permissions.js. The
+   * office check is the point: without it a manager of one venue could hand
+   * their user a role belonging to another, and roles are the thing that
+   * decides what the back office will show.
+   */
+  async function roleFor(req, raw) {
+    if (raw === undefined || raw === null || raw === '') return null;
+    const id = Number(raw);
+    if (!Number.isInteger(id) || id <= 0) return null;
+
+    const [[role]] = await pool.query(
+      'SELECT id FROM bo_user_roles WHERE id = ? AND email = ?',
+      [id, await tenantEmail(req)]
+    );
+    return role ? id : null;
+  }
+
+  /**
+   * Give somebody a role, or take it away.
+   *
+   * Separate from the rest of the user record because it is the one field that
+   * changes what a person can reach, and a route that only ever touches it is
+   * one whose guard is obvious.
+   */
+  router.put('/users/:id/role', mayEditPeople, async (req, res, next) => {
+    try {
+      const [[target]] = await pool.query(
+        'SELECT office_id FROM backoffice_users WHERE id = ?',
+        [req.params.id]
+      );
+      if (!target) return res.status(404).json({ error: 'No such user' });
+
+      if (req.user.role !== 'admin' && target.office_id !== req.user.officeId) {
+        return res.status(403).json({ error: 'Not your office' });
+      }
+
+      await pool.execute('UPDATE backoffice_users SET role_id = ? WHERE id = ?', [
+        await roleFor(req, req.body?.role_id),
+        req.params.id,
+      ]);
+      broadcast({ type: 'users.updated' });
+      res.json({ ok: true });
+    } catch (e) {
       next(e);
     }
   });
@@ -1050,39 +1313,52 @@ function backofficeRoutes({ pool, broadcast, secret }) {
 
   // ---- Live trading -------------------------------------------------------
 
-  /** Today's takings, for the dashboard. */
-  router.get('/live', auth, async (_req, res, next) => {
+  /**
+   * Today's takings, for the dashboard.
+   *
+   * Scoped, like everything that reads `epos_orders`. This route once selected
+   * the day's orders with no owner at all, so the dashboard of a venue that had
+   * not yet opened showed whatever every other venue on the platform had taken
+   * that morning.
+   */
+  router.get('/live', auth, async (req, res, next) => {
     try {
+      const office = scope(req, await tenantEmail(req));
       const [[totals]] = await pool.query(
         `SELECT COUNT(*) AS orders,
                 COALESCE(SUM(total_minor), 0) AS gross_minor,
                 COALESCE(SUM(tax_minor), 0)   AS tax_minor
          FROM epos_orders
-         WHERE DATE(closed_at) = CURDATE()`
+         WHERE email = ? AND DATE(closed_at) = CURDATE()`,
+        [office]
       );
       const [recent] = await pool.query(
         `SELECT id, table_number, total_minor, closed_at
          FROM epos_orders
-         WHERE closed_at IS NOT NULL
-         ORDER BY closed_at DESC LIMIT 12`
+         WHERE email = ? AND closed_at IS NOT NULL
+         ORDER BY closed_at DESC LIMIT 12`,
+        [office]
       );
       const [byTender] = await pool.query(
         `SELECT p.method AS label, SUM(p.amount_minor) AS amount_minor
          FROM epos_payments p
          JOIN epos_orders o ON o.id = p.order_id
-         WHERE DATE(o.closed_at) = CURDATE()
+         WHERE o.email = ? AND DATE(o.closed_at) = CURDATE()
          GROUP BY p.method
-         ORDER BY amount_minor DESC`
+         ORDER BY amount_minor DESC`,
+        [office]
       );
       const [byDept] = await pool.query(
         `SELECT COALESCE(pr.department_name, 'Other') AS label,
                 SUM(l.unit_price_minor * l.quantity)  AS amount_minor
          FROM epos_order_lines l
          JOIN epos_orders o  ON o.id = l.order_id
-         LEFT JOIN bo_products pr ON pr.pluid = l.plu_id
-         WHERE DATE(o.closed_at) = CURDATE()
+         LEFT JOIN bo_products pr
+                ON pr.pluid = l.plu_id AND pr.email = o.email
+         WHERE o.email = ? AND DATE(o.closed_at) = CURDATE()
          GROUP BY label
-         ORDER BY amount_minor DESC`
+         ORDER BY amount_minor DESC`,
+        [office]
       );
 
       res.json({ ...totals, recent, by_tender: byTender, by_department: byDept });
@@ -1091,37 +1367,49 @@ function backofficeRoutes({ pool, broadcast, secret }) {
     }
   });
 
-  /** The report breakdowns. Not time-boxed to today — this is the history. */
-  router.get('/reports', auth, async (_req, res, next) => {
+  /**
+   * The report breakdowns. Not time-boxed to today — this is the history.
+   *
+   * Every bucket carries the office, including the two joins. `pluid` and
+   * `pin_code` are unique within an office and not across the platform, so a
+   * join on either alone hands one venue another venue's product, group and
+   * staff names — a leak of the catalogue on top of the leak of the takings.
+   */
+  router.get('/reports', auth, async (req, res, next) => {
     try {
+      const office = scope(req, await tenantEmail(req));
       const bucket = (labelExpr, joinProducts) => `
         SELECT ${labelExpr} AS label,
                SUM(l.unit_price_minor * l.quantity) AS amount_minor
         FROM epos_order_lines l
         JOIN epos_orders o ON o.id = l.order_id
-        ${joinProducts ? 'LEFT JOIN bo_products pr ON pr.pluid = l.plu_id' : ''}
-        WHERE o.closed_at IS NOT NULL
+        ${joinProducts
+          ? 'LEFT JOIN bo_products pr ON pr.pluid = l.plu_id AND pr.email = o.email'
+          : ''}
+        WHERE o.email = ? AND o.closed_at IS NOT NULL
         GROUP BY label
         ORDER BY amount_minor DESC
         LIMIT 12`;
 
       const [groups] = await pool.query(
-        bucket("COALESCE(pr.group_name, 'Ungrouped')", true)
+        bucket("COALESCE(pr.group_name, 'Ungrouped')", true), [office]
       );
       const [departments] = await pool.query(
-        bucket("COALESCE(pr.department_name, 'Other')", true)
+        bucket("COALESCE(pr.department_name, 'Other')", true), [office]
       );
-      const [plu] = await pool.query(bucket('l.name', false));
+      const [plu] = await pool.query(bucket('l.name', false), [office]);
 
       const [clerks] = await pool.query(
         `SELECT COALESCE(c.clark_name, CONCAT('PIN ', o.clerk_pin), 'Unassigned') AS label,
                 SUM(o.total_minor) AS amount_minor
          FROM epos_orders o
-         LEFT JOIN bo_clarks c ON c.pin_code = o.clerk_pin
-         WHERE o.closed_at IS NOT NULL
+         LEFT JOIN bo_clarks c
+                ON c.pin_code = o.clerk_pin AND c.email = o.email
+         WHERE o.email = ? AND o.closed_at IS NOT NULL
          GROUP BY label
          ORDER BY amount_minor DESC
-         LIMIT 12`
+         LIMIT 12`,
+        [office]
       );
 
       res.json({ groups, departments, plu, clerks });
@@ -1343,15 +1631,16 @@ function backofficeRoutes({ pool, broadcast, secret }) {
     }
   });
 
-  /** Sales history. */
-  router.get('/sales', auth, async (_req, res, next) => {
+  /** Sales history, for this office and no other. */
+  router.get('/sales', auth, async (req, res, next) => {
     try {
       const [rows] = await pool.query(
         `SELECT id, table_number, tax_minor, total_minor, closed_at
          FROM epos_orders
-         WHERE closed_at IS NOT NULL
+         WHERE email = ? AND closed_at IS NOT NULL
          ORDER BY closed_at DESC
-         LIMIT 100`
+         LIMIT 100`,
+        [scope(req, await tenantEmail(req))]
       );
       res.json(rows);
     } catch (e) {

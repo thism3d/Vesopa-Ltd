@@ -103,7 +103,20 @@ CREATE TABLE IF NOT EXISTS epos_wallet_passes (
   -- The full Google object id, "<issuerId>.<suffix>". Derived from the office,
   -- kind and subject, so re-issuing a pass to the same person updates the card
   -- already in their wallet instead of adding a second one.
-  object_id    VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  --
+  -- NULL, not '', for a pass that has no Google object -- an Apple-only card,
+  -- or one minted before Google was configured. The column is UNIQUE, and MySQL
+  -- lets a unique index hold any number of NULLs and exactly one ''. So while
+  -- this was NOT NULL, the SECOND Apple-only pass issued anywhere on the server
+  -- collided with the first on uq_wallet_object and its ON DUPLICATE KEY UPDATE
+  -- overwrote it -- across venues, because the collision is on object_id alone
+  -- and knows nothing about the office.
+  --
+  -- One row survived in the whole database, belonging to whichever venue issued
+  -- last, which is why "passes are being issued and I cannot see them" was a
+  -- true report from a venue whose row another venue had taken.
+  object_id    VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL
+                            DEFAULT NULL,
 
   -- What the barcode encodes. The same number the swipe card carries, so one
   -- customer scanning a phone and another handing over plastic arrive at the

@@ -362,6 +362,29 @@ Future<bool> writeDisplayControl(
   }
 }
 
+/// Take any customer's code off the screen, leaving everything else alone.
+///
+/// Called when the till starts. The sheet that puts a code up takes it down
+/// again when it closes, which covers every graceful exit and nothing else — a
+/// till that is killed, crashes, or loses power while a code is up leaves that
+/// customer's code on a screen facing the room, and nobody watches a customer
+/// display for faults.
+///
+/// A no-op when there is nothing up, so it costs one read on a machine with no
+/// display attached and never writes a file that did not already exist.
+Future<bool> clearCustomerCode({Directory? override}) async {
+  try {
+    final current = await readDisplayControl(override: override);
+    if (current.customerQr.isEmpty) return true;
+    return await writeDisplayControl(
+      current.copyWith(customerQr: '', customerQrCaption: ''),
+      override: override,
+    );
+  } catch (_) {
+    return false;
+  }
+}
+
 /// Read what the display last said about itself, or null if it has never said
 /// anything — a display that has not been installed, or has never been run.
 Future<DisplayStatus?> readDisplayStatus({Directory? override}) async {

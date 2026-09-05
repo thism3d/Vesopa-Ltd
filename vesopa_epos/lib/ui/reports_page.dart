@@ -10,6 +10,8 @@ import 'layout.dart';
 import 'printers_page.dart' show printerSettingsProvider;
 import 'theme.dart';
 import 'widgets/pos_message.dart';
+import '../data/till_permissions.dart';
+import 'permission_gate.dart';
 import 'widgets/basket_panel.dart' show money;
 
 final xReportProvider = FutureProvider<TillReport>(
@@ -194,6 +196,8 @@ class ReportsPage extends ConsumerWidget {
     WidgetRef ref,
     TillReport report,
   ) async {
+    if (!await _mayPrintX(context, ref)) return;
+    if (!context.mounted) return;
     try {
       await printTillReport(ref, report);
       if (context.mounted) PosMessenger.success(context, 'X report printed.');
@@ -204,9 +208,24 @@ class ReportsPage extends ConsumerWidget {
     }
   }
 
+  /// Whether this clerk may take the X report off the screen and onto paper.
+  ///
+  /// Only the printing is gated, not the figures on screen. A venue that did
+  /// not want its staff seeing the day's takings would not have put the totals
+  /// on the sale screen, and refusing to *draw* a page somebody is already
+  /// looking at would be theatre.
+  Future<bool> _mayPrintX(BuildContext context, WidgetRef ref) =>
+      allowed(context, ref, TillPermission.xReport);
+
   /// A Z is irreversible — it closes the trading period and resets the totals.
   /// Never fire it on a single tap.
   Future<void> _confirmZ(BuildContext context, WidgetRef ref) async {
+    // Asked before the confirmation, not after. Somebody who cannot run a Z
+    // should be told so instead of being walked up to an irreversible button
+    // and refused at the last press.
+    if (!await allowed(context, ref, TillPermission.zReport)) return;
+    if (!context.mounted) return;
+
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(

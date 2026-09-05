@@ -88,6 +88,31 @@ final cardRepositoryProvider = Provider<CardRepository>(
   ),
 );
 
+/// How many times the card rules have been re-read on this till.
+///
+/// WHY A COUNTER AND NOT JUST THE REPOSITORY
+///
+/// [cardRepositoryProvider] hands back one long-lived object and mutates its
+/// settings in place, so watching it rebuilds nothing: the value a widget
+/// compares against is the same instance it had before. That was invisible
+/// while the rules were read once at start-up, and became visible the moment
+/// they could change under a screen that was already open -- the Swipe cards
+/// page would have gone on showing a button the venue had just switched off.
+///
+/// So the shell bumps this after every read and anything that lays itself out
+/// from the rules watches it. An int changes value, which is the one thing
+/// Riverpod needs to push a rebuild through.
+final cardRulesRevisionProvider =
+    NotifierProvider<CardRulesRevision, int>(CardRulesRevision.new);
+
+class CardRulesRevision extends Notifier<int> {
+  @override
+  int build() => 0;
+
+  /// The rules have just been re-read. Called by the shell, from one place.
+  void bump() => state = state + 1;
+}
+
 /// The cards a customer carries on their phone.
 ///
 /// Terminal token rather than the public `?office=` routes: this says which

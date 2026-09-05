@@ -6,6 +6,8 @@ import '../main.dart';
 import '../payments/connect_pac.dart';
 import '../payments/payment_provider.dart';
 import 'theme.dart';
+import '../data/till_permissions.dart';
+import 'permission_gate.dart';
 
 String _money(int minor) =>
     NumberFormat.currency(locale: 'en_GB', symbol: '£').format(minor / 100);
@@ -77,6 +79,11 @@ class _CardMachinePageState extends ConsumerState<CardMachinePage> {
   /// spelled out: this hands money back, and a mis-key here is not recoverable
   /// from the till.
   Future<void> _refund() async {
+    // Money back out of the till, and the key a venue is most likely to
+    // withhold. A manager can approve one without the clerk signing off.
+    if (!await allowed(context, ref, TillPermission.refund)) return;
+    if (!mounted) return;
+
     if (_busy) return;
 
     final amount = await _askAmount();

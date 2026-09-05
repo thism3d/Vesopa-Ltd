@@ -10,6 +10,7 @@ import 'sign_on_pad.dart';
 import 'theme.dart';
 import 'till_actions.dart';
 import 'widgets/pos_message.dart';
+import 'price_level_sheet.dart';
 
 /// Till functions — the actions a clerk reaches for that are not part of ringing
 /// up a sale: park the current bill, reprint, open the drawer for a no-sale, and
@@ -121,6 +122,19 @@ class FunctionsPage extends ConsumerWidget {
           () => TillActions.refreshData(context, ref),
         ),
       ]),
+      _Group('Pricing', [
+        // "…or a setting on the till in functions to swap price levels."
+        // This is that setting, in the place it was asked for.
+        _Function(
+          'Price Level',
+          Icons.sell_outlined,
+          Pos.teal,
+          'Switch this terminal between the six prices a product can carry — a '
+              'happy hour, a function tariff, a staff rate. Bills already open '
+              'keep what they were rung up at.',
+          () => showPriceLevelSheet(context, ref),
+        ),
+      ]),
       _Group('End of day', [
         _Function(
           'X Report',
@@ -178,12 +192,20 @@ class FunctionsPage extends ConsumerWidget {
           // reason it is its own key: signing on says "I am about to ring
           // something up on this machine" and happens twenty times a service;
           // this is what a wage is paid against.
+          //
+          // Two keys, because there are two jobs and they belong to different
+          // people. The bar's Clock key punches whoever is signed on and shows
+          // their own hours in green or red — that is the twenty-times-a-day
+          // case. This is the other one: everybody at the venue, who is on, and
+          // the ability to punch somebody else, which needs their PIN. The
+          // venue asked for exactly this split — "the list you got now would be
+          // good for managers to see a full list in the functions screen".
           _Function(
-            'Clock In / Out',
-            Icons.schedule,
+            'Staff On Shift',
+            Icons.groups_outlined,
             Pos.graphite,
-            'Start or end your shift. Nothing to do with signing on to the '
-                'till — a manager reads these in the back office.',
+            'Everybody at the venue and who is currently clocked in. To start '
+                'or end your own shift, use the Clock key on the bar.',
             () => showClockSheet(context, ref),
           ),
         ]),

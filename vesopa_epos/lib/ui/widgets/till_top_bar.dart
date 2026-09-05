@@ -7,13 +7,13 @@ import '../../data/staff_session.dart';
 import '../../main.dart';
 import '../sale_page.dart' show productsProvider;
 
-import '../clock_sheet.dart';
 import '../shell.dart' show StaffChip, SyncStatusBadge;
 import '../sign_on_pad.dart';
 import '../theme.dart';
 import 'nav_rail.dart';
 import 'programmed_bar.dart';
 import 'print_status.dart';
+import 'clock_punch_button.dart';
 
 /// The one bar the till wears, on every screen.
 ///
@@ -385,7 +385,11 @@ class VenueTopBarBody extends ConsumerWidget {
         }
         if (key == 'clock_in_out') {
           if (!context.mounted) return;
-          return showClockSheet(context, ref);
+          // Straight to the signed-on person's own shift. The venue asked for
+          // the key to clock in "the person that is signed into the till", and
+          // the till knows who that is — the list of everybody moved to
+          // Functions, where a manager looks for it.
+          return punchSignedOnStaff(context, ref);
         }
         const sections = <String, String>{
           'go_sale': 'Sale',

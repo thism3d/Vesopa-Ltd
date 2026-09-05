@@ -285,5 +285,26 @@ CALL vesopa_add_index(
   'epos_customers', 'idx_cust_member_no', '`email_key`, `member_no`');
 
 
+-- ---------------------------------------------------------------------------
+-- What the counter is offered when somebody's card is on screen
+-- ---------------------------------------------------------------------------
+--
+-- The two actions a venue takes with a named person -- put their card on their
+-- phone, and print them one -- now appear on six back-office lists and at the
+-- till. These three switches are how a venue turns off the half it does not do.
+--
+-- Both buttons default on: a venue issuing cards at all wants both, and a
+-- feature that has to be found and switched on before it appears is a feature
+-- nobody discovers. `wallet_on_display` defaults on for the opposite reason --
+-- the code belongs on the screen facing the customer, and a counter without a
+-- second screen falls back to the till's own without being told to.
+CALL vesopa_add_column(
+  'epos_card_settings', 'till_wallet_button', 'TINYINT(1) NOT NULL DEFAULT 1');
+CALL vesopa_add_column(
+  'epos_card_settings', 'till_print_button', 'TINYINT(1) NOT NULL DEFAULT 1');
+CALL vesopa_add_column(
+  'epos_card_settings', 'wallet_on_display', 'TINYINT(1) NOT NULL DEFAULT 1');
+
+
 DROP PROCEDURE IF EXISTS vesopa_add_column;
 DROP PROCEDURE IF EXISTS vesopa_add_index;

@@ -18,7 +18,33 @@ class Products extends Table {
   TextColumn get accountingCode => text().nullable()();
 
   /// Minor units (pence). Money is never stored as a double.
+  ///
+  /// This is Price 1 — the price a venue has always had. See
+  /// `data/price_levels.dart`.
   IntColumn get priceMinor => integer()();
+
+  /// Prices 2 to 6, or null where the venue has not set one.
+  ///
+  /// Null is "no special price at this level, charge Price 1" and not "free".
+  /// The difference is money: a default of zero would mean a venue switching
+  /// the till to Price 2 started giving away every product nobody had got round
+  /// to filling in — silently, at the counter.
+  IntColumn get price2Minor => integer().nullable()();
+  IntColumn get price3Minor => integer().nullable()();
+  IntColumn get price4Minor => integer().nullable()();
+  IntColumn get price5Minor => integer().nullable()();
+  IntColumn get price6Minor => integer().nullable()();
+
+  /// The printing category this product belongs to, and where that category
+  /// prints.
+  ///
+  /// The *name and the order*, not an id: the till prints a heading and sorts
+  /// by a number, and a foreign key would mean holding a second table to render
+  /// a ticket. Null means the product is in no category — it prints last, under
+  /// no heading, exactly as it did before categories existed. See
+  /// `printing/print_categories.dart`.
+  TextColumn get printCategory => text().nullable()();
+  IntColumn get printCategoryOrder => integer().nullable()();
   RealColumn get taxPercentage => real().withDefault(const Constant(0))();
   RealColumn get stockQuantity => real().withDefault(const Constant(0))();
 
@@ -479,6 +505,19 @@ class Staff extends Table {
   /// with no card and a reader that sent nothing.
   TextColumn get swipeCard => text().withDefault(const Constant(''))();
 
+  /// The permission group's switches, as JSON, or empty for somebody in no
+  /// group.
+  ///
+  /// Cached here for the reason the PIN and the card are: a manager approving a
+  /// void at eight on a Friday cannot wait for the broadband, and a till that
+  /// could only check a permission online would start refusing them at the one
+  /// moment that matters. See `data/till_permissions.dart`.
+  ///
+  /// Empty means every key — not none. Every member of staff at every venue
+  /// trading today has no group, so an empty column has to keep meaning what it
+  /// has always meant.
+  TextColumn get permissions => text().withDefault(const Constant(''))();
+
   @override
   Set<Column> get primaryKey => {id};
 }
@@ -508,7 +547,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 17;
+  int get schemaVersion => 20;
 
 
   /// Add a column only if the table has not already got it.
@@ -670,6 +709,29 @@ class AppDatabase extends _$AppDatabase {
             // until the back office says they do, and a till that guessed would
             // be a till where an empty column signs somebody on.
             await _addColumnIfMissing(m, staff, staff.swipeCard);
+          }
+          if (from < 18) {
+            // Permission groups. Empty on every existing row, which is
+            // "unrestricted" — see `data/till_permissions.dart`. A default of
+            // "no keys" here would take the refund key off every member of
+            // staff on the next launch of the till.
+            await _addColumnIfMissing(m, staff, staff.permissions);
+          }
+          if (from < 19) {
+            // Price levels 2 to 6. Null on every existing row, which means
+            // "charge Price 1" — see `data/price_levels.dart`. Nothing a venue
+            // is selling today changes price when this runs.
+            await _addColumnIfMissing(m, products, products.price2Minor);
+            await _addColumnIfMissing(m, products, products.price3Minor);
+            await _addColumnIfMissing(m, products, products.price4Minor);
+            await _addColumnIfMissing(m, products, products.price5Minor);
+            await _addColumnIfMissing(m, products, products.price6Minor);
+          }
+          if (from < 20) {
+            // Printing categories. Null on every existing row, which means the
+            // product prints under no heading — the ticket a venue gets today.
+            await _addColumnIfMissing(m, products, products.printCategory);
+            await _addColumnIfMissing(m, products, products.printCategoryOrder);
           }
         },
       );

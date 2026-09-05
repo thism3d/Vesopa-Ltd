@@ -71,6 +71,38 @@ class _BillPanelState extends State<BillPanel> {
   Widget build(BuildContext context) {
     final basket = widget.basket;
 
+    final qr = widget.customerQr.trim();
+
+    // A code with no bill under it gets the panel to itself, at a size somebody
+    // can actually scan from the customer's side of the counter.
+    //
+    // This is the shape the move is normally in: "I cannot find my loyalty
+    // card" is said before anything is rung up, so there is no bill to sit the
+    // code under. Left as the footer of an empty list it was a postage stamp
+    // stranded at the bottom of half a black screen, which is a code nobody
+    // takes their phone out for.
+    if (qr.isNotEmpty && !basket.hasSale) {
+      return ColoredBox(
+        color: Brand.panel,
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(28),
+            child: LayoutBuilder(
+              builder: (context, box) => CustomerQr(
+                data: qr,
+                caption: widget.customerQrCaption,
+                // As big as the panel allows, within reason. A pole display and
+                // a 27-inch screen are both real, and a code sized for one is
+                // unscannable or absurd on the other.
+                size: (box.biggest.shortestSide * 0.8).clamp(180.0, 380.0),
+                captionSize: 22,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     return ColoredBox(
       color: Brand.panel,
       child: Column(
@@ -191,19 +223,25 @@ class _Totals extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (basket.discountMinor > 0)
+          // A total of nothing is not a total. When the till has put a code up
+          // before anything is rung up -- which is the usual way round, since
+          // the conversation is "I cannot find my card" -- a great big
+          // "Total £0.00" over the code says the wrong thing entirely.
+          if (basket.hasSale) ...[
+            if (basket.discountMinor > 0)
+              _Row(
+                label: 'Discount',
+                value: '-${money(basket.discountMinor)}',
+                size: 20,
+                muted: true,
+              ),
             _Row(
-              label: 'Discount',
-              value: '-${money(basket.discountMinor)}',
-              size: 20,
-              muted: true,
+              label: 'Total',
+              value: money(basket.totalMinor),
+              size: 46,
+              bold: true,
             ),
-          _Row(
-            label: 'Total',
-            value: money(basket.totalMinor),
-            size: 46,
-            bold: true,
-          ),
+          ],
           if (paid) ...[
             const SizedBox(height: 10),
             _Row(label: 'Paid', value: money(basket.paidMinor), size: 24),

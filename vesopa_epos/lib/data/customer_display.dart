@@ -35,18 +35,23 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 
 import 'local/database.dart';
+import 'terminal_identity.dart';
 
 /// The file's own version, so a newer till and an older display can recognise
 /// each other rather than mis-reading a shape that has changed.
 const customerDisplayFormat = 1;
 
-/// Where the file lives, under the till's own application support folder.
+/// The folder the till and the display meet in, under %PROGRAMDATA%\Vesopa.
 ///
-/// Named `display` rather than dropped beside the database on purpose: it is
-/// the one thing in that folder another program is meant to open, and a folder
-/// makes that obvious to whoever is looking at it during a support call.
+/// Named `display` because it is the one part of the till's data another
+/// program is meant to open, and a folder makes that obvious to whoever is
+/// looking at it during a support call.
 const customerDisplayFolder = 'display';
 const customerDisplayFile = 'basket.json';
+
+/// The root both applications can reach. Shared with the pairing handshake,
+/// which already meets here — see `display_pairing.dart`.
+const customerDisplayRootFolder = 'Vesopa';
 
 /// One line as the customer should read it.
 ///
@@ -171,6 +176,40 @@ class DisplaySnapshot {
 ///   * `settings.json` — the till writes, the display reads. How to show it.
 ///   * `status.json`   — the display writes, the till reads. What it is doing.
 ///
+/// WHY THIS MOVED OUT OF THE TILL'S OWN DATA FOLDER
+///
+/// It used to be `getApplicationSupportDirectory()/display`, and the display was
+/// handed that path by the pairing grant. On a machine where both are installed
+/// from the Store that path is a lie the moment it crosses the counter: an MSIX
+/// package's AppData is virtualised into its own package container, so the till
+/// writes to a folder only the till can see. The display would pair — the
+/// handshake is in ProgramData and works — and then follow a basket file that
+/// never changed, showing adverts with "Waiting for the till" in the corner. A
+/// venue reported exactly that on three terminals.
+///
+/// Handing over the path could not fix it, because the problem was never that
+/// the display did not know the path. It was that the file was somewhere the
+/// display is not allowed to look.
+///
+/// So the data moves to where the handshake already is. ProgramData is not
+/// redirected and is reachable by both packages with no shared identity and no
+/// capability declared on either side — which the pairing folder has been
+/// demonstrating for as long as pairing has worked.
+///
+/// PER TILL, NOT PER MACHINE
+///
+/// The path carries the terminal's device id. ProgramData is one folder for the
+/// whole machine, and a venue that runs two tills on one PC would otherwise
+/// have both writing one basket.json — two counters' baskets in one file, each
+/// overwriting the other several times a second. The pairing grant names the
+/// full path, so a display follows its own till and no other.
+///
+/// MOVING IS AUTOMATIC
+///
+/// A display already paired keeps the old path only until the till next starts:
+/// `refreshGrants` rewrites every grant with wherever the till writes *today*,
+/// which is what that function is for. Nobody re-pairs anything.
+///
 /// Created if it is not there, so the till's settings screen can configure a
 /// display that has not been installed yet — which is the order these things
 /// actually happen in on install day.
@@ -179,17 +218,70 @@ class DisplaySnapshot {
 /// treats that as "no customer display", which is the truth.
 Future<Directory?> customerDisplayDirectory({Directory? override}) async {
   try {
-    final base =
-        override ??
-        await getApplicationSupportDirectory().timeout(
-          const Duration(seconds: 5),
-        );
+    if (override != null) {
+      final folder = Directory('${override.path}/$customerDisplayFolder');
+      await folder.create(recursive: true);
+      return folder;
+    }
+
+    final shared = await _sharedDisplayDirectory();
+    if (shared != null) return shared;
+
+    // Not Windows, or a Windows with no ProgramData — neither of which is a
+    // machine a customer display is plugged into. The till's own folder still
+    // works for everything on this side of the boundary, and a display that
+    // cannot reach it was never going to reach anything.
+    final base = await getApplicationSupportDirectory().timeout(
+      const Duration(seconds: 5),
+    );
     final folder = Directory('${base.path}/$customerDisplayFolder');
     await folder.create(recursive: true);
     return folder;
   } catch (_) {
     return null;
   }
+}
+
+/// Where this till publishes, as a path: no disk touched and nothing created.
+///
+/// Separate from the directory below so that it can be asserted on. A test that
+/// had to call the real thing would create `C:\ProgramData\Vesopa\display\...`
+/// on whatever machine ran it, and a suite that leaves folders behind on the
+/// build agent is one nobody runs twice.
+///
+/// [programData] is the machine's ProgramData root and [deviceId] the
+/// terminal's permanent id. Null off Windows and null where ProgramData is
+/// unknown — both of which fall back to the till's own folder rather than
+/// failing.
+String? sharedDisplayPath({
+  required String? programData,
+  required String deviceId,
+  bool windows = true,
+}) {
+  if (!windows) return null;
+  if (programData == null || programData.isEmpty) return null;
+  if (deviceId.trim().isEmpty) return null;
+
+  const sep = r'\';
+  return '$programData$sep$customerDisplayRootFolder$sep'
+      '$customerDisplayFolder$sep${deviceId.trim()}';
+}
+
+/// `%PROGRAMDATA%\Vesopa\display\<terminal device id>`, created.
+Future<Directory?> _sharedDisplayDirectory() async {
+  // The id is a preferences read that has already happened by the time any
+  // basket is published — the shell resolves it on start — so this is a cache
+  // hit in practice rather than a disk seek per bill.
+  final path = sharedDisplayPath(
+    programData: Platform.environment['PROGRAMDATA'],
+    deviceId: await terminalDeviceId(),
+    windows: Platform.isWindows,
+  );
+  if (path == null) return null;
+
+  final folder = Directory(path);
+  await folder.create(recursive: true);
+  return folder;
 }
 
 /// Where the till leaves a note saying where it writes.
