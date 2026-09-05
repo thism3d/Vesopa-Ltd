@@ -14,7 +14,7 @@ All 1920×1080 PNG, which is inside the Store's 1366×768–3840×2160 range.
 | `05-back-office-menu-builder.png` | Building the customer menu out of the catalogue. |
 | `06-back-office-table-codes.png` | Every table's permanent address, with its ordering switch and Print. |
 | `07-back-office-card-designer.png` | Laying out the printed table card, with a live QR preview. |
-| `08-the-customers-phone.png` | What a customer sees after scanning — 390×844, an iPhone viewport. |
+| `08-the-customers-phone.png` | What a customer sees after scanning `vesopaepos.com/t/<code>` — 390×844, an iPhone viewport. |
 | `09-the-customer-follows-their-order.png` | The customer's own order tracker. |
 
 The last two are phone-shaped rather than 16:9, so upload them to the phone

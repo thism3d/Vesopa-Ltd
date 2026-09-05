@@ -39,9 +39,10 @@ it is left in the design and nothing collects.
 Four pages, in the order they are done, because each is useless without the one
 above it.
 
-1. **Your menu page.** Choose the web address — `vesopaepos.com/your-venue` —
-   and fill in the name, the strapline, the phone number, the map link, a logo
-   and a banner. Two switches control everything: *Menu is live* makes it
+1. **Your menu page.** Choose the web address — the menu answers at
+   `vesopaepos.com/m/your-venue`, and each table's own code at
+   `vesopaepos.com/t/<code>` — then fill in the name, the strapline, the phone
+   number, the map link, a logo and a banner. Two switches control everything: *Menu is live* makes it
    readable, *Taking orders* lets a customer send one to the till. They are
    separate because a venue usually wants its menu readable weeks before it is
    ready to have tickets arriving.
@@ -251,6 +252,20 @@ filename, which never carries the version.
 - The till suite is flaky under load on an 8GB machine: a different handful of
   widget tests report "did not complete" on each full run, and every one of them
   passes when run on its own. It is the machine, not the code.
+
+### Serving it from the apex domain
+
+The pages are in the back office application but are served from
+**vesopaepos.com**, because that is what goes on a printed card. Four paths
+cross from the marketing site's vhost — `/t/`, `/m/`, `/o/` and
+`/api/public/dinein/` — and nothing else does; the signed-in back office API is
+not reachable there. `PUBLIC_BASE_URL=https://vesopaepos.com` in the back
+office `.env` is what makes every generated link and printed card agree.
+
+The nginx for it is in `vesopa_server/deploy/`, with a README explaining why it
+lives in HestiaCP's per-domain custom slot rather than in `nodejs-app.conf` —
+the panel rewrites that file, and rules kept there would take every printed code
+in the venue down with them.
 
 ### One thing to watch on a fresh install
 
