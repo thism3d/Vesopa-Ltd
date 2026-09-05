@@ -1068,39 +1068,52 @@ function backofficeRoutes({ pool, broadcast, secret }) {
 
   // ---- Live trading -------------------------------------------------------
 
-  /** Today's takings, for the dashboard. */
-  router.get('/live', auth, async (_req, res, next) => {
+  /**
+   * Today's takings, for the dashboard.
+   *
+   * Scoped, like everything that reads `epos_orders`. This route once selected
+   * the day's orders with no owner at all, so the dashboard of a venue that had
+   * not yet opened showed whatever every other venue on the platform had taken
+   * that morning.
+   */
+  router.get('/live', auth, async (req, res, next) => {
     try {
+      const office = scope(req, await tenantEmail(req));
       const [[totals]] = await pool.query(
         `SELECT COUNT(*) AS orders,
                 COALESCE(SUM(total_minor), 0) AS gross_minor,
                 COALESCE(SUM(tax_minor), 0)   AS tax_minor
          FROM epos_orders
-         WHERE DATE(closed_at) = CURDATE()`
+         WHERE email = ? AND DATE(closed_at) = CURDATE()`,
+        [office]
       );
       const [recent] = await pool.query(
         `SELECT id, table_number, total_minor, closed_at
          FROM epos_orders
-         WHERE closed_at IS NOT NULL
-         ORDER BY closed_at DESC LIMIT 12`
+         WHERE email = ? AND closed_at IS NOT NULL
+         ORDER BY closed_at DESC LIMIT 12`,
+        [office]
       );
       const [byTender] = await pool.query(
         `SELECT p.method AS label, SUM(p.amount_minor) AS amount_minor
          FROM epos_payments p
          JOIN epos_orders o ON o.id = p.order_id
-         WHERE DATE(o.closed_at) = CURDATE()
+         WHERE o.email = ? AND DATE(o.closed_at) = CURDATE()
          GROUP BY p.method
-         ORDER BY amount_minor DESC`
+         ORDER BY amount_minor DESC`,
+        [office]
       );
       const [byDept] = await pool.query(
         `SELECT COALESCE(pr.department_name, 'Other') AS label,
                 SUM(l.unit_price_minor * l.quantity)  AS amount_minor
          FROM epos_order_lines l
          JOIN epos_orders o  ON o.id = l.order_id
-         LEFT JOIN bo_products pr ON pr.pluid = l.plu_id
-         WHERE DATE(o.closed_at) = CURDATE()
+         LEFT JOIN bo_products pr
+                ON pr.pluid = l.plu_id AND pr.email = o.email
+         WHERE o.email = ? AND DATE(o.closed_at) = CURDATE()
          GROUP BY label
-         ORDER BY amount_minor DESC`
+         ORDER BY amount_minor DESC`,
+        [office]
       );
 
       res.json({ ...totals, recent, by_tender: byTender, by_department: byDept });
@@ -1109,37 +1122,49 @@ function backofficeRoutes({ pool, broadcast, secret }) {
     }
   });
 
-  /** The report breakdowns. Not time-boxed to today — this is the history. */
-  router.get('/reports', auth, async (_req, res, next) => {
+  /**
+   * The report breakdowns. Not time-boxed to today — this is the history.
+   *
+   * Every bucket carries the office, including the two joins. `pluid` and
+   * `pin_code` are unique within an office and not across the platform, so a
+   * join on either alone hands one venue another venue's product, group and
+   * staff names — a leak of the catalogue on top of the leak of the takings.
+   */
+  router.get('/reports', auth, async (req, res, next) => {
     try {
+      const office = scope(req, await tenantEmail(req));
       const bucket = (labelExpr, joinProducts) => `
         SELECT ${labelExpr} AS label,
                SUM(l.unit_price_minor * l.quantity) AS amount_minor
         FROM epos_order_lines l
         JOIN epos_orders o ON o.id = l.order_id
-        ${joinProducts ? 'LEFT JOIN bo_products pr ON pr.pluid = l.plu_id' : ''}
-        WHERE o.closed_at IS NOT NULL
+        ${joinProducts
+          ? 'LEFT JOIN bo_products pr ON pr.pluid = l.plu_id AND pr.email = o.email'
+          : ''}
+        WHERE o.email = ? AND o.closed_at IS NOT NULL
         GROUP BY label
         ORDER BY amount_minor DESC
         LIMIT 12`;
 
       const [groups] = await pool.query(
-        bucket("COALESCE(pr.group_name, 'Ungrouped')", true)
+        bucket("COALESCE(pr.group_name, 'Ungrouped')", true), [office]
       );
       const [departments] = await pool.query(
-        bucket("COALESCE(pr.department_name, 'Other')", true)
+        bucket("COALESCE(pr.department_name, 'Other')", true), [office]
       );
-      const [plu] = await pool.query(bucket('l.name', false));
+      const [plu] = await pool.query(bucket('l.name', false), [office]);
 
       const [clerks] = await pool.query(
         `SELECT COALESCE(c.clark_name, CONCAT('PIN ', o.clerk_pin), 'Unassigned') AS label,
                 SUM(o.total_minor) AS amount_minor
          FROM epos_orders o
-         LEFT JOIN bo_clarks c ON c.pin_code = o.clerk_pin
-         WHERE o.closed_at IS NOT NULL
+         LEFT JOIN bo_clarks c
+                ON c.pin_code = o.clerk_pin AND c.email = o.email
+         WHERE o.email = ? AND o.closed_at IS NOT NULL
          GROUP BY label
          ORDER BY amount_minor DESC
-         LIMIT 12`
+         LIMIT 12`,
+        [office]
       );
 
       res.json({ groups, departments, plu, clerks });
@@ -1361,15 +1386,16 @@ function backofficeRoutes({ pool, broadcast, secret }) {
     }
   });
 
-  /** Sales history. */
-  router.get('/sales', auth, async (_req, res, next) => {
+  /** Sales history, for this office and no other. */
+  router.get('/sales', auth, async (req, res, next) => {
     try {
       const [rows] = await pool.query(
         `SELECT id, table_number, tax_minor, total_minor, closed_at
          FROM epos_orders
-         WHERE closed_at IS NOT NULL
+         WHERE email = ? AND closed_at IS NOT NULL
          ORDER BY closed_at DESC
-         LIMIT 100`
+         LIMIT 100`,
+        [scope(req, await tenantEmail(req))]
       );
       res.json(rows);
     } catch (e) {

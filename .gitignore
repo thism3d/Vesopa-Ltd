@@ -173,3 +173,11 @@ ClientAllCredentialsForAllBusinessWeHaveWithExplanation.md
 # correspondence rather than project documentation, and it has already
 # served its purpose as the spec — it stays on this machine.
 Conversation I had with my client regarding this.pdf
+
+# Client task videos (WhatsApp recordings, tens of MB each). Kept locally so
+# the briefs stay next to the work, never pushed.
+tasks/
+
+# Microsoft's driver samples, cloned in to read the MagneticStripeReader POS
+# sample. A vendor tree, not ours to carry.
+windows-driver-samples-main/

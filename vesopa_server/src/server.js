@@ -891,8 +891,18 @@ app.post(['/till/orders', '/orders'], async (req, res, next) => {
   }
 });
 
-/** End-of-day figures, computed from what was actually taken. */
+/**
+ * End-of-day figures, computed from what was actually taken.
+ *
+ * `office` is required, exactly as it is on `/till/receipts` above. Both are
+ * open routes a terminal reaches without a token, and this one answered with
+ * the day's takings of every venue on the platform added together — a figure
+ * that was wrong for whoever asked and private to everybody else.
+ */
 app.get('/reports/end-of-day', async (req, res, next) => {
+  const office = req.query.office;
+  if (!office) return res.status(400).json({ error: 'An office is required.' });
+
   const date = req.query.date || new Date().toISOString().slice(0, 10);
   try {
     const [[totals]] = await pool.query(
@@ -900,16 +910,16 @@ app.get('/reports/end-of-day', async (req, res, next) => {
               COALESCE(SUM(total_minor), 0)   AS gross_minor,
               COALESCE(SUM(tax_minor), 0)     AS tax_minor
        FROM epos_orders
-       WHERE DATE(closed_at) = ?`,
-      [date]
+       WHERE email = ? AND DATE(closed_at) = ?`,
+      [office, date]
     );
     const [byMethod] = await pool.query(
       `SELECT p.method, COALESCE(SUM(p.amount_minor), 0) AS amount_minor
        FROM epos_payments p
        JOIN epos_orders o ON o.id = p.order_id
-       WHERE DATE(o.closed_at) = ?
+       WHERE o.email = ? AND DATE(o.closed_at) = ?
        GROUP BY p.method`,
-      [date]
+      [office, date]
     );
     res.json({ date, ...totals, by_method: byMethod });
   } catch (err) {
