@@ -265,11 +265,15 @@ app.use('/api', importRoutes({ pool, broadcast, secret: JWT_SECRET }));
 
 // Reports a venue hands to its accountant, and the schedules that send them.
 // Dine-in: the QR menu a customer reads on their own phone, the orders they
-// place from it, and everything the back office needs to set it up. Mounted
-// under /api like every other signed-in route set; the pages a customer
-// actually opens are mounted at the root further down, ahead of the static
-// middleware.
-app.use('/api', dineinRoutes({ pool, broadcast, secret: JWT_SECRET }));
+// place from it, and everything the back office needs to set it up.
+//
+// Mounted at the ROOT, and the router states its own full paths — the same
+// shape as cards.js and devices.js, and for the same reason. The back office
+// and the customer's phone are under /api; the till is not, because every
+// other route a till calls is at the root and one that was not simply 404ed.
+// The pages a customer actually opens are mounted further down, ahead of the
+// static middleware.
+app.use(dineinRoutes({ pool, broadcast, secret: JWT_SECRET }));
 
 app.use('/api', reportRoutes({ pool, secret: JWT_SECRET }));
 app.use('/api', reportScheduleRoutes({ pool, secret: JWT_SECRET }));

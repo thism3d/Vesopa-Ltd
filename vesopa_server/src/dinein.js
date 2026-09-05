@@ -36,12 +36,25 @@ const { requireAuth, requireTerminal } = require('./auth');
  *   * `/api/public/dinein/*` — the customer's phone. No credential but the
  *                            table's own id, which is what possession of the
  *                            printed card means.
- *   * `/api/till/dinein/*` — the till. Reads what is waiting and moves it
+ *   * `/till/dinein/*`     — the till. Reads what is waiting and moves it
  *                            through the lifecycle.
  *
  * They are one file because they are one feature and the rules that connect
  * them — what "published" means, what a customer may see, what an order may
  * become — belong next to each other rather than three modules apart.
+ *
+ * WHY THE PATHS ARE WRITTEN OUT IN FULL
+ *
+ * Because two of the three audiences live at different mount points and the
+ * third has to match the platform's existing convention. Every other route a
+ * till calls — `/till/products`, `/till/open-bills`, `/till/clock` — is at the
+ * root, so a till's dine-in route has to be too. Mounted under `/api` with the
+ * rest, it answered `/api/till/dinein/orders`, the till asked for
+ * `/till/dinein/orders`, got the back office's 404 page, and the notification
+ * badge stayed empty on a till with an order waiting on it.
+ *
+ * So this router states its own full paths and is mounted at the root, the same
+ * way `cards.js` and `devices.js` do for the same reason.
  */
 function dineinRoutes({ pool, broadcast, secret }) {
   const router = express.Router();
@@ -158,7 +171,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
   // Back office: the venue's public face
   // -------------------------------------------------------------------------
 
-  router.get('/dinein/venue', auth, async (req, res, next) => {
+  router.get('/api/dinein/venue', auth, async (req, res, next) => {
     try {
       const officeId = await officeOf(req);
       if (officeId == null) {
@@ -181,7 +194,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
     }
   });
 
-  router.put('/dinein/venue', auth, async (req, res, next) => {
+  router.put('/api/dinein/venue', auth, async (req, res, next) => {
     try {
       const officeId = await officeOf(req);
       if (officeId == null) {
@@ -263,7 +276,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
    * outcome is that the address is available *and* is not quite what was typed
    * — and a manager should see "the-bridge" before they save, not after.
    */
-  router.get('/dinein/slug-check', auth, async (req, res, next) => {
+  router.get('/api/dinein/slug-check', auth, async (req, res, next) => {
     try {
       const officeId = await officeOf(req);
       const slug = cleanSlug(req.query.slug);
@@ -290,7 +303,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
   // Back office: the menu
   // -------------------------------------------------------------------------
 
-  router.get('/dinein/menu', auth, async (req, res, next) => {
+  router.get('/api/dinein/menu', auth, async (req, res, next) => {
     try {
       const officeId = await officeOf(req);
       if (officeId == null) {
@@ -315,7 +328,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
     }
   });
 
-  router.post('/dinein/sections', auth, async (req, res, next) => {
+  router.post('/api/dinein/sections', auth, async (req, res, next) => {
     try {
       const officeId = await officeOf(req);
       if (officeId == null) {
@@ -340,7 +353,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
     }
   });
 
-  router.put('/dinein/sections/:id', auth, async (req, res, next) => {
+  router.put('/api/dinein/sections/:id', auth, async (req, res, next) => {
     try {
       const officeId = await officeOf(req);
       const b = req.body || {};
@@ -380,7 +393,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
     }
   });
 
-  router.delete('/dinein/sections/:id', auth, async (req, res, next) => {
+  router.delete('/api/dinein/sections/:id', auth, async (req, res, next) => {
     try {
       const officeId = await officeOf(req);
       const [r] = await pool.execute(
@@ -406,7 +419,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
    * round trips would each be a separate failure to recover from, and the
    * partial result — four starters on the menu — is worse than either outcome.
    */
-  router.post('/dinein/sections/:id/items', auth, async (req, res, next) => {
+  router.post('/api/dinein/sections/:id/items', auth, async (req, res, next) => {
     const conn = await pool.getConnection();
     try {
       const officeId = await officeOf(req);
@@ -474,7 +487,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
     }
   });
 
-  router.put('/dinein/items/:id', auth, async (req, res, next) => {
+  router.put('/api/dinein/items/:id', auth, async (req, res, next) => {
     try {
       const officeId = await officeOf(req);
       const b = req.body || {};
@@ -515,7 +528,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
     }
   });
 
-  router.delete('/dinein/items/:id', auth, async (req, res, next) => {
+  router.delete('/api/dinein/items/:id', auth, async (req, res, next) => {
     try {
       const officeId = await officeOf(req);
       const [r] = await pool.execute(
@@ -542,7 +555,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
    * what a table URL looks like. It is going onto a laminated card; a second
    * opinion about its shape is the last thing this needs.
    */
-  router.get('/dinein/tables', auth, async (req, res, next) => {
+  router.get('/api/dinein/tables', auth, async (req, res, next) => {
     try {
       const officeId = await officeOf(req);
       if (officeId == null) {
@@ -606,7 +619,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
   // Back office: the printed card
   // -------------------------------------------------------------------------
 
-  router.get('/dinein/designs', auth, async (req, res, next) => {
+  router.get('/api/dinein/designs', auth, async (req, res, next) => {
     try {
       const officeId = await officeOf(req);
       if (officeId == null) {
@@ -650,7 +663,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
     ];
   }
 
-  router.post('/dinein/designs', auth, async (req, res, next) => {
+  router.post('/api/dinein/designs', auth, async (req, res, next) => {
     try {
       const officeId = await officeOf(req);
       if (officeId == null) {
@@ -678,7 +691,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
     }
   });
 
-  router.put('/dinein/designs/:id', auth, async (req, res, next) => {
+  router.put('/api/dinein/designs/:id', auth, async (req, res, next) => {
     try {
       const officeId = await officeOf(req);
       const b = req.body || {};
@@ -727,7 +740,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
     }
   });
 
-  router.delete('/dinein/designs/:id', auth, async (req, res, next) => {
+  router.delete('/api/dinein/designs/:id', auth, async (req, res, next) => {
     try {
       const officeId = await officeOf(req);
       const [r] = await pool.execute(
@@ -746,7 +759,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
   // Back office: what has been ordered
   // -------------------------------------------------------------------------
 
-  router.get('/dinein/orders', auth, async (req, res, next) => {
+  router.get('/api/dinein/orders', auth, async (req, res, next) => {
     try {
       const officeId = await officeOf(req);
       if (officeId == null) {
@@ -821,7 +834,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
    * menu. One request rather than three, because this is the first thing that
    * happens after a scan and it is happening on pub wifi.
    */
-  router.get('/public/dinein/table/:publicId', async (req, res, next) => {
+  router.get('/api/public/dinein/table/:publicId', async (req, res, next) => {
     try {
       const [[table]] = await pool.query(
         'SELECT t.id, t.office_id, t.table_number, t.name, t.label, t.qr_enabled,' +
@@ -856,7 +869,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
   });
 
   /** The same menu, reached by the venue's own address rather than a table. */
-  router.get('/public/dinein/venue/:slug', async (req, res, next) => {
+  router.get('/api/public/dinein/venue/:slug', async (req, res, next) => {
     try {
       const [[venue]] = await pool.query(
         'SELECT office_id FROM dinein_venue WHERE slug = ?',
@@ -965,7 +978,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
    * charged — and so a price the venue changed while somebody was reading is
    * the price that applies.
    */
-  router.post('/public/dinein/table/:publicId/order', async (req, res, next) => {
+  router.post('/api/public/dinein/table/:publicId/order', async (req, res, next) => {
     const conn = await pool.getConnection();
     try {
       const [[table]] = await conn.query(
@@ -1116,7 +1129,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
   });
 
   /** Where an order has got to, for the customer watching their own phone. */
-  router.get('/public/dinein/order/:publicId', async (req, res, next) => {
+  router.get('/api/public/dinein/order/:publicId', async (req, res, next) => {
     try {
       const [[order]] = await pool.query(
         'SELECT public_id, table_label, status, status_note, total_minor,' +
@@ -1144,7 +1157,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
    * have it, and a customer cancelling food that is under a grill is a decision
    * for the person standing next to the grill.
    */
-  router.post('/public/dinein/order/:publicId/cancel', async (req, res, next) => {
+  router.post('/api/public/dinein/order/:publicId/cancel', async (req, res, next) => {
     try {
       const [r] = await pool.execute(
         'UPDATE dinein_orders SET status = ?, status_note = ?' +

@@ -75,13 +75,14 @@ async function loadDineIn() {
         This is where a customer lands when they scan a code or follow a link.
         Choose it once and leave it alone — it is printed on things.
       </p>
-      <div class="row" style="align-items:center;gap:8px">
-        <span class="hint" style="white-space:nowrap">${esc(base)}/</span>
+      <div class="row" style="align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-start">
+        <span class="muted small" style="white-space:nowrap">${esc(base)}/</span>
         <input id="di-slug" value="${esc(v.slug || '')}"
-               placeholder="your-venue" style="max-width:280px">
-        <button class="btn" id="di-slug-check" type="button">Check</button>
+               placeholder="your-venue" style="flex:0 1 260px">
+        <button class="btn" id="di-slug-check" type="button"
+                style="flex:0 0 auto">Check</button>
       </div>
-      <div id="di-slug-note" class="hint" style="margin-top:6px"></div>
+      <div id="di-slug-note" class="muted small" style="margin-top:6px;display:block"></div>
     </div>
 
     <div class="card">
@@ -107,7 +108,7 @@ async function loadDineIn() {
         <label style="grid-column:1/-1">Map link
           <input id="di-map" value="${esc(v.map_url || '')}"
                  placeholder="https://maps.google.com/…">
-          <span class="hint">The "Find us" button opens this. Any map will do.</span>
+          <span class="muted small">The "Find us" button opens this. Any map will do.</span>
         </label>
         <label>Logo image URL
           <input id="di-logo" value="${esc(v.logo_url || '')}">
@@ -117,8 +118,9 @@ async function loadDineIn() {
         </label>
         <label>Accent colour
           <input id="di-accent" type="color"
-                 value="${esc(v.accent_colour || '#A5C715')}">
-          <span class="hint">Buttons and highlights take this colour.</span>
+                 value="${esc(v.accent_colour || '#A5C715')}"
+                 style="width:64px;height:38px;padding:3px;border-radius:8px">
+          <span class="muted small">Buttons and highlights take this colour.</span>
         </label>
         <label style="grid-column:1/-1">Notice above the menu
           <input id="di-notice" value="${esc(v.notice || '')}"
@@ -129,7 +131,7 @@ async function loadDineIn() {
 
     <div class="card">
       <h3>Open for business</h3>
-      <p class="hint">
+      <p class="muted small">
         These are separate on purpose. A venue often wants its menu readable
         weeks before it is ready to have tickets arriving at the till.
       </p>
@@ -157,7 +159,7 @@ async function loadDineIn() {
       <a id="di-preview" class="btn" target="_blank" rel="noopener"
          href="${esc(diVenueUrl() || '#')}"
          ${v.slug ? '' : 'hidden'}>Open the menu page</a>
-      <span id="di-saved" class="hint"></span>
+      <span id="di-saved" class="muted small"></span>
     </div>
   `;
 
@@ -314,7 +316,7 @@ function diSectionCard(section) {
              </tr></thead>
              <tbody>${section.items.map(diItemRow).join('')}</tbody>
            </table>`
-        : '<p class="hint" style="margin-top:10px">Nothing in this section yet.</p>'}
+        : '<p class="muted small" style="margin-top:10px">Nothing in this section yet.</p>'}
 
       <button class="btn" data-sec-add="${section.id}" type="button"
               style="margin-top:10px">Add products</button>
@@ -327,7 +329,7 @@ function diItemRow(item) {
       <td>
         <input data-f="name" data-item="${item.id}"
                value="${esc(item.name || '')}" placeholder="PLU ${item.plu_id}">
-        <span class="hint">PLU ${item.plu_id}</span>
+        <span class="muted small">PLU ${item.plu_id}</span>
       </td>
       <td>
         <input data-f="description" data-item="${item.id}"
@@ -470,7 +472,7 @@ async function diPickProducts(sectionId) {
              ${already.has(p.pluid) ? 'disabled' : ''}>
       <span>
         ${esc(p.product_name)}
-        <span class="hint">${esc(p.department_name || '')} · £${Number(p.price || 0).toFixed(2)}${
+        <span class="muted small">${esc(p.department_name || '')} · £${Number(p.price || 0).toFixed(2)}${
           already.has(p.pluid) ? ' · already on the menu' : ''
         }</span>
       </span>
@@ -484,7 +486,7 @@ async function diPickProducts(sectionId) {
                 border-radius:8px;padding:8px">${rows}</div>
     <div class="row" style="margin-top:12px;gap:8px">
       <button class="btn primary" id="di-pick-add" type="button">Add ticked</button>
-      <span id="di-pick-note" class="hint"></span>
+      <span id="di-pick-note" class="muted small"></span>
     </div>
   `);
 
@@ -521,9 +523,10 @@ async function diPickProducts(sectionId) {
 
 async function loadDineInQr() {
   try {
-    [diTables, diDesigns] = await Promise.all([
+    [diTables, diDesigns, diVenue] = await Promise.all([
       api('/dinein/tables'),
       api('/dinein/designs'),
+      api('/dinein/venue'),
     ]);
   } catch (e) {
     return diFail('dinein_qr-body', e);
@@ -566,7 +569,7 @@ async function loadDineInQr() {
                  <td><b>${esc(t.display_name)}</b></td>
                  <td>${esc(t.room_name || '')}</td>
                  <td><a href="${esc(t.url)}" target="_blank" rel="noopener"
-                        class="hint" style="word-break:break-all">${esc(t.url)}</a></td>
+                        class="muted small" style="word-break:break-all">${esc(t.url)}</a></td>
                  <td style="text-align:center">
                    <input type="checkbox" data-qr-on="${t.id}"
                           ${t.qr_enabled ? 'checked' : ''}>
@@ -611,7 +614,9 @@ async function loadDineInQr() {
             <label>Height mm<input id="di-ph" type="number" value="${diDesign.page_h_mm}"></label>
           </div>
           <label>Background
-            <input id="di-bg" type="color" value="${esc(diDesign.background || '#FFFFFF')}">
+            <input id="di-bg" type="color"
+                   value="${esc(diDesign.background || '#FFFFFF')}"
+                   style="width:64px;height:38px;padding:3px;border-radius:8px">
           </label>
 
           <h4 style="margin:16px 0 6px">What is on it</h4>
@@ -623,11 +628,11 @@ async function loadDineInQr() {
           </div>
           <button class="btn primary" id="di-design-save" type="button"
                   style="margin-top:14px">Save the card</button>
-          <span id="di-design-saved" class="hint"></span>
+          <span id="di-design-saved" class="muted small"></span>
         </div>
 
         <div style="flex:1 1 320px">
-          <p class="hint">Preview, with the first table's details filled in.</p>
+          <p class="muted small">Preview, with the first table's details filled in.</p>
           <div id="di-preview-card"></div>
         </div>
       </div>
@@ -698,7 +703,8 @@ function diDrawElements() {
       <div class="row" style="justify-content:space-between;align-items:center">
         <b style="font-size:13px">${esc(DI_ELEMENT_NAMES[el.kind] || el.kind)}</b>
         <button class="btn danger" data-el-del="${i}" type="button"
-                style="padding:2px 8px">×</button>
+                title="Remove"
+                style="padding:2px 10px;flex:0 0 auto;line-height:1.4">×</button>
       </div>
       ${el.kind === 'text'
         ? `<input data-el="${i}" data-k="text" value="${esc(el.text || '')}"
@@ -976,19 +982,19 @@ async function loadDineInOrders() {
       <tbody>${orders.map((o) => {
         const [label, tone] = DI_STATUS[o.status] || [o.status, 'muted'];
         return `<tr>
-          <td class="hint">${new Date(o.placed_at).toLocaleTimeString([], {
+          <td class="muted small">${new Date(o.placed_at).toLocaleTimeString([], {
             hour: '2-digit', minute: '2-digit',
           })}</td>
           <td><b>${esc(o.table_label || '')}</b></td>
           <td>${o.lines.map((l) =>
-            `${l.qty} × ${esc(l.name)}${l.note ? ` <span class="hint">(${esc(l.note)})</span>` : ''}`
+            `${l.qty} × ${esc(l.name)}${l.note ? ` <span class="muted small">(${esc(l.note)})</span>` : ''}`
           ).join('<br>')}
-          ${o.note ? `<div class="hint">Note: ${esc(o.note)}</div>` : ''}</td>
+          ${o.note ? `<div class="muted small">Note: ${esc(o.note)}</div>` : ''}</td>
           <td>${esc(o.customer_name || '—')}
-            ${o.customer_phone ? `<div class="hint">${esc(o.customer_phone)}</div>` : ''}</td>
+            ${o.customer_phone ? `<div class="muted small">${esc(o.customer_phone)}</div>` : ''}</td>
           <td>${diMoney(o.total_minor)}</td>
           <td><span class="pill ${tone}">${esc(label)}</span>
-            ${o.status_note ? `<div class="hint">${esc(o.status_note)}</div>` : ''}</td>
+            ${o.status_note ? `<div class="muted small">${esc(o.status_note)}</div>` : ''}</td>
         </tr>`;
       }).join('')}</tbody>
     </table>`;

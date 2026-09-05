@@ -216,7 +216,12 @@ async function main() {
 
   const app = express();
   app.use(express.json());
-  app.use('/api', dineinRoutes({ pool, broadcast, secret: SECRET }));
+  // Mounted exactly as server.js mounts it — at the root, with the router
+  // stating its own paths. Mounting it under '/api' here, as this test first
+  // did, made every till check pass against an address no till would ever ask
+  // for: the real one 404ed and the badge stayed empty on a till with an order
+  // sitting on it.
+  app.use(dineinRoutes({ pool, broadcast, secret: SECRET }));
   app.use('/api', programmingRoutes({ pool, broadcast, secret: SECRET }));
   app.use(dineinPageRoutes());
   app.use((err, _req, res, _next) => {
@@ -528,8 +533,38 @@ async function main() {
   // The till's side
   // -------------------------------------------------------------------------
 
+  await check("the till routes are where every other till route is", async () => {
+    // Every route a till calls is at the root — /till/products, /till/open-bills,
+    // /till/clock. A dine-in route mounted under /api instead answered nothing
+    // at the address the till asks for, so a till with an order waiting on it
+    // showed no badge at all and the feature looked dead on the one screen it
+    // has to work on.
+    //
+    // Asserted against the source rather than by calling it, because the call
+    // above already goes to the right place — what this pins is the *mount*, so
+    // moving the router back under /api fails here rather than at a counter.
+    const server = fs.readFileSync(
+      path.join(__dirname, '..', 'src', 'server.js'), 'utf8'
+    );
+    assert.ok(
+      /app\.use\(dineinRoutes\(/.test(server),
+      'dine-in must be mounted at the root, not under a prefix'
+    );
+    assert.ok(
+      !/app\.use\(\s*['\"]\/api['\"],\s*dineinRoutes/.test(server),
+      'mounting dine-in under /api puts the till routes where no till looks'
+    );
+
+    const routes = fs.readFileSync(
+      path.join(__dirname, '..', 'src', 'dinein.js'), 'utf8'
+    );
+    for (const wanted of ["'/till/dinein/orders'", "'/till/dinein/orders/:id/:action'"]) {
+      assert.ok(routes.includes(wanted), `${wanted} has moved`);
+    }
+  });
+
   await check('the till sees what is waiting for it', async () => {
-    const res = await call(base, 'GET', '/api/till/dinein/orders', { token: alphaTill });
+    const res = await call(base, 'GET', '/till/dinein/orders', { token: alphaTill });
     assert.strictEqual(res.status, 200);
     const waiting = res.body.filter((o) => o.status === 'placed');
     assert.strictEqual(waiting.length, 1);
@@ -538,20 +573,20 @@ async function main() {
   });
 
   await check('another venue\'s till sees none of it', async () => {
-    const res = await call(base, 'GET', '/api/till/dinein/orders', { token: betaTill });
+    const res = await call(base, 'GET', '/till/dinein/orders', { token: betaTill });
     assert.strictEqual(res.status, 200);
     assert.strictEqual(res.body.length, 0);
   });
 
   await check('accepting twice does not make two kitchen tickets', async () => {
     const first = await call(
-      base, 'POST', '/api/till/dinein/orders/' + orderId + '/accepted',
+      base, 'POST', '/till/dinein/orders/' + orderId + '/accepted',
       { token: alphaTill, body: { order_id: 'SALE-1' } }
     );
     assert.strictEqual(first.status, 200);
 
     const second = await call(
-      base, 'POST', '/api/till/dinein/orders/' + orderId + '/accepted',
+      base, 'POST', '/till/dinein/orders/' + orderId + '/accepted',
       { token: alphaTill, body: { order_id: 'SALE-2' } }
     );
     assert.strictEqual(second.status, 409, 'the second press is refused');
@@ -566,7 +601,7 @@ async function main() {
 
   await check('another venue cannot move this order along', async () => {
     const res = await call(
-      base, 'POST', '/api/till/dinein/orders/' + orderId + '/ready',
+      base, 'POST', '/till/dinein/orders/' + orderId + '/ready',
       { token: betaTill }
     );
     assert.strictEqual(res.status, 409);
@@ -582,7 +617,7 @@ async function main() {
       token: alpha,
       body: { table_number: 21 },
     });
-    const res = await call(base, 'GET', '/api/till/dinein/orders', {
+    const res = await call(base, 'GET', '/till/dinein/orders', {
       token: alphaTill,
     });
     const order = res.body.find((o) => o.id === orderId);
@@ -601,23 +636,23 @@ async function main() {
     // Without this the till routes could quietly have been left on requireAuth,
     // which no real till can satisfy — the failure would have shown up at a
     // counter rather than here.
-    const res = await call(base, 'GET', '/api/till/dinein/orders', { token: alpha });
+    const res = await call(base, 'GET', '/till/dinein/orders', { token: alpha });
     assert.strictEqual(res.status, 401);
   });
 
   await check('and an uncommissioned till is refused rather than served', async () => {
-    const res = await call(base, 'GET', '/api/till/dinein/orders');
+    const res = await call(base, 'GET', '/till/dinein/orders');
     assert.strictEqual(res.status, 401);
   });
 
   await check('an order runs accepted then ready then served', async () => {
     const ready = await call(
-      base, 'POST', '/api/till/dinein/orders/' + orderId + '/ready',
+      base, 'POST', '/till/dinein/orders/' + orderId + '/ready',
       { token: alphaTill }
     );
     assert.strictEqual(ready.status, 200);
     const served = await call(
-      base, 'POST', '/api/till/dinein/orders/' + orderId + '/served',
+      base, 'POST', '/till/dinein/orders/' + orderId + '/served',
       { token: alphaTill }
     );
     assert.strictEqual(served.status, 200);

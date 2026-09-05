@@ -121,12 +121,28 @@ class TillTopBar extends ConsumerWidget {
               onSignOff: onSignOff,
             ),
             Expanded(child: body ?? const SizedBox.shrink()),
+
+            // Orders waiting from customers' phones, on every bar.
+            //
+            // The other three badges step aside for a venue's own bar, because
+            // each of them is a key that venue can place and drawing it as well
+            // would put it on twice. This one does not, and it is the one
+            // exception on purpose:
+            //
+            // A venue that laid out its top bar before dine-in existed cannot
+            // have placed a `dinein_orders` key on it. Left to the same rule,
+            // every one of those venues would upgrade, turn ordering on, and
+            // get nothing at all when an order arrived — a feature that appears
+            // to be broken until somebody thinks to edit their bar. An order
+            // from a table is time-limited and wants acting on; it is not
+            // chrome, and it is not something to make a venue opt into twice.
+            //
+            // It still draws nothing when nothing is waiting, and it is
+            // suppressed when the venue *has* placed the key, so it can never
+            // appear twice. See [_barCarriesDineIn].
+            if (!_barCarriesDineIn(ref)) const DineInBadge(),
+
             if (trailing) ...[
-              // What customers have sent from their tables. First of the three
-              // badges because it is the only one that wants somebody to *do*
-              // something — the other two report a state — and it draws nothing
-              // at all when there is nothing waiting.
-              const DineInBadge(),
               StaffChip(onSignOn: onSignOn, onSignOff: onSignOff),
               // Whether the kitchen actually got the last ticket. Beside the
               // sync badge because it answers the same shape of question —
@@ -147,6 +163,21 @@ class TillTopBar extends ConsumerWidget {
     // when a venue turns their own bar off. A bar with a body is as tall as the
     // body wants to be — a venue's two-row bar is two rows.
     return body == null ? SizedBox(height: 46, child: chrome) : chrome;
+  }
+
+  /// Whether the venue's own top bar already carries the dine-in key.
+  ///
+  /// Read from the same screen [VenueTopBarBody.of] resolves, so the question
+  /// asked here is the same one the bar beside it answered. False for a venue
+  /// with no programmed bar at all, which is the case where the built-in badge
+  /// was always going to be drawn anyway.
+  static bool _barCarriesDineIn(WidgetRef ref) {
+    final bar = VenueTopBarBody.of(ref);
+    if (bar == null) return false;
+    for (final button in bar.buttons) {
+      if (button.functionKey == 'dinein_orders') return true;
+    }
+    return false;
   }
 }
 
