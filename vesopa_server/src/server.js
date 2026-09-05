@@ -23,6 +23,7 @@ const {
 const { backofficeRoutes } = require('./backoffice');
 const { adminRoutes } = require('./admin');
 const { programmingRoutes } = require('./programming');
+const { permissionRoutes, TILL_COLUMNS } = require('./permissions');
 const { commerceRoutes } = require('./commerce');
 const { analyticsRoutes } = require('./analytics');
 const { templateRoutes } = require('./templates');
@@ -197,6 +198,11 @@ app.use(dojoWebhookRoutes({ pool, broadcast }));
 // mounted at the root alongside /till/products.
 app.use('/api', denominationRoutes({ pool, broadcast, secret: JWT_SECRET }));
 app.use(tillDenominationRoutes({ pool }));
+
+// Roles and permission groups, and the middleware that resolves what the
+// signed-in user may do. Mounted before the routes it guards so that every one
+// of them can read `req.access`.
+app.use('/api', permissionRoutes({ pool, broadcast, secret: JWT_SECRET }));
 
 app.use('/api', backofficeRoutes({ pool, broadcast, secret: JWT_SECRET }));
 app.use('/api', programmingRoutes({ pool, broadcast, secret: JWT_SECRET }));
@@ -564,14 +570,38 @@ app.get('/till/staff', requireTerminal(JWT_SECRET), async (req, res, next) => {
     //
     // A till that gets no swipe_card simply has no staff cards, which is
     // exactly true on a venue that has not run the migration.
+    // PERMISSIONS COME DOWN FOR THE SAME REASON THE PIN DOES
+    //
+    // A manager approving a void at eight on a Friday cannot wait for the
+    // broadband. So the group's switches travel with the staff list and the
+    // till decides locally, exactly as it already does for the PIN and the
+    // staff card.
+    const columns = TILL_COLUMNS.map((c) => `g.${c}`).join(', ');
+
     const WITH_CARD = `
-      SELECT id, pluid, clark_name AS name, pin_code AS pin,
-             COALESCE(swipe_card, '') AS swipe_card
-        FROM bo_clarks
-       WHERE email = ? AND COALESCE(active, 1) = 1
-       ORDER BY pluid, clark_name`;
+      SELECT c.id, c.pluid, c.clark_name AS name, c.pin_code AS pin,
+             COALESCE(c.swipe_card, '') AS swipe_card,
+             c.permission_group_id, g.name AS permission_group, ${columns}
+        FROM bo_clarks c
+        LEFT JOIN epos_permission_groups g
+               ON g.id = c.permission_group_id AND g.email = c.email
+       WHERE c.email = ? AND COALESCE(c.active, 1) = 1
+       ORDER BY c.pluid, c.clark_name`;
 
     const WITHOUT_CARD = `
+      SELECT c.id, c.pluid, c.clark_name AS name, c.pin_code AS pin,
+             c.permission_group_id, g.name AS permission_group, ${columns}
+        FROM bo_clarks c
+        LEFT JOIN epos_permission_groups g
+               ON g.id = c.permission_group_id AND g.email = c.email
+       WHERE c.email = ? AND COALESCE(c.active, 1) = 1
+       ORDER BY c.pluid, c.clark_name`;
+
+    // The oldest shape of all: no card column and no permissions table. A till
+    // talking to a server whose migrations have not been run must still be able
+    // to sign somebody on, so each fallback drops one thing rather than
+    // failing.
+    const PLAIN = `
       SELECT id, pluid, clark_name AS name, pin_code AS pin
         FROM bo_clarks
        WHERE email = ? AND COALESCE(active, 1) = 1
@@ -581,9 +611,30 @@ app.get('/till/staff', requireTerminal(JWT_SECRET), async (req, res, next) => {
     try {
       [rows] = await pool.query(WITH_CARD, [req.office]);
     } catch (e) {
-      if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
-      [rows] = await pool.query(WITHOUT_CARD, [req.office]);
+      if (e.code !== 'ER_BAD_FIELD_ERROR' && e.code !== 'ER_NO_SUCH_TABLE') throw e;
+      try {
+        [rows] = await pool.query(WITHOUT_CARD, [req.office]);
+      } catch (e2) {
+        if (e2.code !== 'ER_BAD_FIELD_ERROR' && e2.code !== 'ER_NO_SUCH_TABLE') throw e2;
+        [rows] = await pool.query(PLAIN, [req.office]);
+      }
     }
+
+    // A clerk in no group is unrestricted, which is what every clerk was before
+    // permission groups existed. Sent as a filled-in object rather than as a
+    // null the till has to interpret: "no group" and "a group with nothing
+    // ticked" are opposite answers, and the till must never have to guess which
+    // one an absent field meant.
+    rows = rows.map((row) => {
+      const grouped = row.permission_group_id != null && row.permission_group;
+      const permissions = {};
+      for (const column of TILL_COLUMNS) {
+        permissions[column] = grouped ? row[column] === 1 : true;
+      }
+      const clean = { ...row };
+      for (const column of TILL_COLUMNS) delete clean[column];
+      return { ...clean, permissions };
+    });
     res.json(rows);
   } catch (e) {
     next(e);

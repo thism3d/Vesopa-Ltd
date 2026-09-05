@@ -8,6 +8,7 @@ const {
   ensureMemberNumber,
   backfill: backfillMemberNumbers,
 } = require('./member_numbers');
+const { accessGuard } = require('./permissions');
 
 // Product images. Stored on disk under public/uploads and served statically.
 // Capped and type-checked, so an upload cannot fill the disk or smuggle in a
@@ -37,6 +38,16 @@ const upload = multer({
 function backofficeRoutes({ pool, broadcast, secret }) {
   const router = express.Router();
   const auth = requireAuth(secret);
+
+  /**
+   * Handing somebody a back-office login, or changing what one may do, is
+   * itself a permission.
+   *
+   * A role can only ever subtract, so anyone able to edit users can restore
+   * their own access by taking the role off their own row. Guarding these
+   * routes is what stops the accountant promoting themselves.
+   */
+  const mayEditPeople = accessGuard({ pool, secret })('people.edit');
 
   /**
    * The tenant key. Catalogue rows carry the office's contact email — an
@@ -791,17 +802,55 @@ function backofficeRoutes({ pool, broadcast, secret }) {
    */
   router.get(STAFF_PATHS, auth, async (req, res, next) => {
     try {
-      const [rows] = await pool.query(
-        `SELECT id, pluid, clark_name, pin_code, COALESCE(active, 1) AS active
-         FROM bo_clarks WHERE email = ?
-         ORDER BY pluid, clark_name`,
-        [scope(req, await tenantEmail(req))]
-      );
+      const email = scope(req, await tenantEmail(req));
+
+      // `permission_group_id` arrives with schema_permissions.sql, and
+      // deploy.sh applies migrations only when asked. Tried and fallen back
+      // from rather than assumed, exactly as `member_no` is above: naming a
+      // column that is not there yet takes the whole staff page down for the
+      // sake of one field nobody has filled in.
+      const WITH_GROUP = `
+        SELECT c.id, c.pluid, c.clark_name, c.pin_code,
+               COALESCE(c.active, 1) AS active,
+               c.permission_group_id,
+               g.name AS permission_group
+          FROM bo_clarks c
+          LEFT JOIN epos_permission_groups g
+                 ON g.id = c.permission_group_id AND g.email = c.email
+         WHERE c.email = ?
+         ORDER BY c.pluid, c.clark_name`;
+
+      const WITHOUT_GROUP = `
+        SELECT id, pluid, clark_name, pin_code, COALESCE(active, 1) AS active
+          FROM bo_clarks WHERE email = ?
+         ORDER BY pluid, clark_name`;
+
+      let rows;
+      try {
+        [rows] = await pool.query(WITH_GROUP, [email]);
+      } catch (e) {
+        if (e.code !== 'ER_BAD_FIELD_ERROR' && e.code !== 'ER_NO_SUCH_TABLE') throw e;
+        [rows] = await pool.query(WITHOUT_GROUP, [email]);
+      }
       res.json(rows);
     } catch (e) {
       next(e);
     }
   });
+
+  /**
+   * The permission group a clerk belongs to, as a value to store.
+   *
+   * Null is not "no permissions", it is "as before" — see src/permissions.js.
+   * A blank in the form therefore has to reach the database as NULL and not as
+   * 0, which would be a foreign key to a group that does not exist.
+   */
+  function groupId(body) {
+    const raw = body?.permission_group_id;
+    if (raw === undefined || raw === null || raw === '') return null;
+    const id = Number(raw);
+    return Number.isInteger(id) && id > 0 ? id : null;
+  }
 
   router.post(STAFF_PATHS, auth, async (req, res, next) => {
     const { clark_name, pin_code, pluid, active } = req.body;
@@ -829,11 +878,24 @@ function backofficeRoutes({ pool, broadcast, secret }) {
         });
       }
 
-      const [result] = await pool.execute(
-        `INSERT INTO bo_clarks (email, pluid, clark_name, pin_code, active)
-         VALUES (?, ?, ?, ?, ?)`,
-        [email, pluid ?? 0, clark_name, pin_code, active === 0 ? 0 : 1]
-      );
+      const values = [email, pluid ?? 0, clark_name, pin_code, active === 0 ? 0 : 1];
+
+      let result;
+      try {
+        [result] = await pool.execute(
+          `INSERT INTO bo_clarks
+             (email, pluid, clark_name, pin_code, active, permission_group_id)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [...values, groupId(req.body)]
+        );
+      } catch (e) {
+        if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+        [result] = await pool.execute(
+          `INSERT INTO bo_clarks (email, pluid, clark_name, pin_code, active)
+           VALUES (?, ?, ?, ?, ?)`,
+          values
+        );
+      }
       broadcast({ type: 'staff.updated' });
       res.status(201).json({ id: result.insertId });
     } catch (e) {
@@ -885,12 +947,33 @@ function backofficeRoutes({ pool, broadcast, secret }) {
         sets.push('active = ?');
         params.push(active ? 1 : 0);
       }
-      params.push(req.params.id, email);
 
-      const [r] = await pool.execute(
-        `UPDATE bo_clarks SET ${sets.join(', ')} WHERE id = ? AND email = ?`,
-        params
-      );
+      // Only when the form sent the field. A caller that does not know about
+      // permission groups — an older browser tab, the import — must not clear
+      // the group off everybody it touches.
+      const setsWithGroup = [...sets];
+      const paramsWithGroup = [...params];
+      if (req.body && 'permission_group_id' in req.body) {
+        setsWithGroup.push('permission_group_id = ?');
+        paramsWithGroup.push(groupId(req.body));
+      }
+
+      params.push(req.params.id, email);
+      paramsWithGroup.push(req.params.id, email);
+
+      let r;
+      try {
+        [r] = await pool.execute(
+          `UPDATE bo_clarks SET ${setsWithGroup.join(', ')} WHERE id = ? AND email = ?`,
+          paramsWithGroup
+        );
+      } catch (e) {
+        if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+        [r] = await pool.execute(
+          `UPDATE bo_clarks SET ${sets.join(', ')} WHERE id = ? AND email = ?`,
+          params
+        );
+      }
       if (r.affectedRows === 0) {
         return res.status(404).json({ error: 'No such staff member' });
       }
@@ -935,7 +1018,7 @@ function backofficeRoutes({ pool, broadcast, secret }) {
   router.get('/users', auth, async (req, res, next) => {
     try {
       const admin = req.user.role === 'admin';
-      const [rows] = await pool.query(
+      const withRole =
         // `staff_id` is the till operator this login belongs to, when there is
         // one. Matched on name and not on email, because bo_clarks.email is the
         // OFFICE key -- the tenant column, shared by every clerk in the venue --
@@ -949,6 +1032,7 @@ function backofficeRoutes({ pool, broadcast, secret }) {
         // leaving this alone would 500 the user list for every venue, empty or
         // not. Converting in the query keeps a live ALTER off a shared table.
         `SELECT u.id, u.email, u.name, u.approved, u.role, u.office_id,
+                u.role_id, r.display_name AS role_name,
                 o.name AS office_name,
                 (SELECT c.id FROM bo_clarks c
                   WHERE CONVERT(c.email USING utf8mb4) COLLATE utf8mb4_general_ci
@@ -958,10 +1042,26 @@ function backofficeRoutes({ pool, broadcast, secret }) {
                   ORDER BY c.id LIMIT 1) AS staff_id
          FROM backoffice_users u
          LEFT JOIN offices o ON o.id = u.office_id
+         LEFT JOIN bo_user_roles r ON r.id = u.role_id
          ${admin ? '' : 'WHERE u.office_id = ?'}
-         ORDER BY o.name, u.name`,
-        admin ? [] : [req.user.officeId]
-      );
+         ORDER BY o.name, u.name`;
+
+      // `role_id` arrives with schema_permissions.sql and deploy.sh applies
+      // migrations only when asked, so this is tried and fallen back from
+      // rather than assumed. The user list is how a locked-out manager gets
+      // back in; it must not be the page that breaks on a half-migrated
+      // database.
+      const WITHOUT_ROLE = withRole
+        .replace('u.role_id, r.display_name AS role_name,\n                ', '')
+        .replace('LEFT JOIN bo_user_roles r ON r.id = u.role_id\n         ', '');
+
+      let rows;
+      try {
+        [rows] = await pool.query(withRole, admin ? [] : [req.user.officeId]);
+      } catch (e) {
+        if (e.code !== 'ER_BAD_FIELD_ERROR' && e.code !== 'ER_NO_SUCH_TABLE') throw e;
+        [rows] = await pool.query(WITHOUT_ROLE, admin ? [] : [req.user.officeId]);
+      }
       res.json(rows);
     } catch (e) {
       next(e);
@@ -985,18 +1085,81 @@ function backofficeRoutes({ pool, broadcast, secret }) {
 
     try {
       const hash = await bcrypt.hash(password, 12);
-      const [r] = await pool.execute(
-        `INSERT INTO backoffice_users
-           (email, password, name, approved, role, office_id)
-         VALUES (?, ?, ?, ?, 'office', ?)`,
-        [email, hash, name, approved === false ? 'N' : 'Y', officeId]
-      );
+      const values = [email, hash, name, approved === false ? 'N' : 'Y', officeId];
+
+      let r;
+      try {
+        [r] = await pool.execute(
+          `INSERT INTO backoffice_users
+             (email, password, name, approved, role, office_id, role_id)
+           VALUES (?, ?, ?, ?, 'office', ?, ?)`,
+          [...values, await roleFor(req, req.body?.role_id)]
+        );
+      } catch (e) {
+        if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+        [r] = await pool.execute(
+          `INSERT INTO backoffice_users
+             (email, password, name, approved, role, office_id)
+           VALUES (?, ?, ?, ?, 'office', ?)`,
+          values
+        );
+      }
       broadcast({ type: 'users.updated' });
       res.status(201).json({ id: r.insertId });
     } catch (e) {
       if (e.code === 'ER_DUP_ENTRY') {
         return res.status(409).json({ error: 'That email is already in use' });
       }
+      next(e);
+    }
+  });
+
+  /**
+   * The role to store, checked against the caller's own office.
+   *
+   * Null for "no role", which means unrestricted — see src/permissions.js. The
+   * office check is the point: without it a manager of one venue could hand
+   * their user a role belonging to another, and roles are the thing that
+   * decides what the back office will show.
+   */
+  async function roleFor(req, raw) {
+    if (raw === undefined || raw === null || raw === '') return null;
+    const id = Number(raw);
+    if (!Number.isInteger(id) || id <= 0) return null;
+
+    const [[role]] = await pool.query(
+      'SELECT id FROM bo_user_roles WHERE id = ? AND email = ?',
+      [id, await tenantEmail(req)]
+    );
+    return role ? id : null;
+  }
+
+  /**
+   * Give somebody a role, or take it away.
+   *
+   * Separate from the rest of the user record because it is the one field that
+   * changes what a person can reach, and a route that only ever touches it is
+   * one whose guard is obvious.
+   */
+  router.put('/users/:id/role', mayEditPeople, async (req, res, next) => {
+    try {
+      const [[target]] = await pool.query(
+        'SELECT office_id FROM backoffice_users WHERE id = ?',
+        [req.params.id]
+      );
+      if (!target) return res.status(404).json({ error: 'No such user' });
+
+      if (req.user.role !== 'admin' && target.office_id !== req.user.officeId) {
+        return res.status(403).json({ error: 'Not your office' });
+      }
+
+      await pool.execute('UPDATE backoffice_users SET role_id = ? WHERE id = ?', [
+        await roleFor(req, req.body?.role_id),
+        req.params.id,
+      ]);
+      broadcast({ type: 'users.updated' });
+      res.json({ ok: true });
+    } catch (e) {
       next(e);
     }
   });
