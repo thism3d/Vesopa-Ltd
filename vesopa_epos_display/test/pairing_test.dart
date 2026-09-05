@@ -320,7 +320,7 @@ void main() {
     final live = TillPresence(
       terminalName: 'Bar',
       venueName: 'The Bridge',
-      appVersion: '1.6.3',
+      appVersion: '1.6.4',
       signedIn: true,
       at: DateTime.now(),
     );

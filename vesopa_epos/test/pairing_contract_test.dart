@@ -121,7 +121,7 @@ void main() {
       deviceId: tillDevice,
       terminalName: 'Bar',
       venueName: 'The Bridge Llangennech',
-      appVersion: '1.6.3',
+      appVersion: '1.6.4',
       signedIn: true,
     );
 
@@ -155,7 +155,7 @@ void main() {
         deviceId: displayDevice,
         name: 'Display on TILL-01',
         code: '4821',
-        appVersion: '1.6.3',
+        appVersion: '1.6.4',
         at: DateTime.parse(pairedAt),
       ),
       office: 'the-bridge@vesopa.co.uk',
@@ -198,7 +198,7 @@ void main() {
         deviceId: displayDevice,
         name: 'Display on TILL-01',
         code: '4821',
-        appVersion: '1.6.3',
+        appVersion: '1.6.4',
         at: DateTime.parse(pairedAt),
       ),
       office: '',

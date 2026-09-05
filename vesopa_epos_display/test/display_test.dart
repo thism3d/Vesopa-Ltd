@@ -187,7 +187,7 @@ void main() {
     final quiet = TillPresence(
       terminalName: 'Bar',
       venueName: 'The Bridge',
-      appVersion: '1.6.3',
+      appVersion: '1.6.4',
       signedIn: true,
       // Nothing rung up for an hour, which is an ordinary afternoon.
       at: DateTime.now().subtract(const Duration(hours: 1)),
@@ -201,7 +201,7 @@ void main() {
     final live = TillPresence(
       terminalName: 'Bar',
       venueName: 'The Bridge',
-      appVersion: '1.6.3',
+      appVersion: '1.6.4',
       signedIn: true,
       at: DateTime.now().subtract(const Duration(seconds: 3)),
     );

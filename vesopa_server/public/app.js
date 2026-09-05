@@ -2465,9 +2465,9 @@ function editRoomShape() {
 
   showPanel('Room shape — ' + room.name, `
     <div class="grid-2">
-      <label>Room name<input id="rs-name" value="${esc(room.name || '')}"></label>
+      <label>Room name<input id="shape-name" value="${esc(room.name || '')}"></label>
       <label>Shape
-        <select id="rs-kind">
+        <select id="shape-kind">
           ${Object.entries(ROOM_SHAPES).map(([k, v]) =>
             `<option value="${k}" ${k === kind ? 'selected' : ''}>${esc(v.label)}</option>`
           ).join('')}
@@ -2476,36 +2476,36 @@ function editRoomShape() {
           </option>
         </select>
       </label>
-      <label>Width (grid squares)<input id="rs-w" type="number" min="4" max="60" value="${w}"></label>
-      <label>Depth (grid squares)<input id="rs-h" type="number" min="4" max="60" value="${h}"></label>
-      <label>Cut across<input id="rs-cw" type="number" min="1" max="59" value="${curCw || Math.round(w / 2)}"></label>
-      <label>Cut back<input id="rs-ch" type="number" min="1" max="59" value="${curCh || Math.round(h / 2)}"></label>
+      <label>Width (grid squares)<input id="shape-w" type="number" min="4" max="60" value="${w}"></label>
+      <label>Depth (grid squares)<input id="shape-h" type="number" min="4" max="60" value="${h}"></label>
+      <label>Cut across<input id="shape-cw" type="number" min="1" max="59" value="${curCw || Math.round(w / 2)}"></label>
+      <label>Cut back<input id="shape-ch" type="number" min="1" max="59" value="${curCh || Math.round(h / 2)}"></label>
     </div>
 
-    <label id="rs-points-wrap" ${kind === 'custom' ? '' : 'hidden'}>
+    <label id="shape-points-wrap" ${kind === 'custom' ? '' : 'hidden'}>
       Corners, as x,y pairs — one per line, walked round the room
-      <textarea id="rs-points" rows="6"
+      <textarea id="shape-points" rows="6"
         style="font-family:ui-monospace,Consolas,monospace">${
           esc((roomOutline(room) || []).map((p) => p.join(',')).join('\n'))
         }</textarea>
     </label>
 
     <p class="hint">Preview</p>
-    <div id="rs-preview" style="margin-bottom:10px"></div>
+    <div id="shape-preview" style="margin-bottom:10px"></div>
 
     <div class="row" style="gap:8px">
-      <button class="btn primary" id="rs-save" type="button">Save the room</button>
-      <button class="btn danger" id="rs-del" type="button">Delete this room</button>
+      <button class="btn primary" id="shape-save" type="button">Save the room</button>
+      <button class="btn danger" id="shape-del" type="button">Delete this room</button>
     </div>
   `);
 
   const readPoints = () => {
-    const kind = $('rs-kind').value;
-    const w = Math.max(4, Number($('rs-w').value) || ROOM_COLS);
-    const h = Math.max(4, Number($('rs-h').value) || ROOM_ROWS);
+    const kind = $('shape-kind').value;
+    const w = Math.max(4, Number($('shape-w').value) || ROOM_COLS);
+    const h = Math.max(4, Number($('shape-h').value) || ROOM_ROWS);
     if (kind === 'rect') return { w, h, points: null };
     if (kind === 'custom') {
-      const points = $('rs-points').value
+      const points = $('shape-points').value
         .split(/[\n;]+/)
         .map((line) => line.split(',').map((n) => Number(n.trim())))
         .filter((p) => p.length === 2 && p.every(Number.isFinite));
@@ -2513,8 +2513,8 @@ function editRoomShape() {
     }
     // Clamped so a cut can never be the whole room, which would leave a
     // polygon with no area and a designer with nothing to drop tables onto.
-    const cw = Math.min(w - 1, Math.max(1, Number($('rs-cw').value) || 1));
-    const ch = Math.min(h - 1, Math.max(1, Number($('rs-ch').value) || 1));
+    const cw = Math.min(w - 1, Math.max(1, Number($('shape-cw').value) || 1));
+    const ch = Math.min(h - 1, Math.max(1, Number($('shape-ch').value) || 1));
     return { w, h, points: ROOM_SHAPES[kind].points(w, h, cw, ch) };
   };
 
@@ -2522,29 +2522,29 @@ function editRoomShape() {
     const { w, h, points } = readPoints();
     const scale = Math.min(320 / w, 200 / h);
     const shape = points || [[0, 0], [w, 0], [w, h], [0, h]];
-    $('rs-preview').innerHTML = `
+    $('shape-preview').innerHTML = `
       <svg width="${w * scale}" height="${h * scale}"
            style="border:1px solid var(--line);border-radius:6px;background:var(--bg)">
         <polygon points="${shape.map(([x, y]) => `${x * scale},${y * scale}`).join(' ')}"
                  fill="rgba(165,199,21,.18)" stroke="#A5C715" stroke-width="2"
                  stroke-linejoin="round" />
       </svg>`;
-    $('rs-points-wrap').hidden = $('rs-kind').value !== 'custom';
+    $('shape-points-wrap').hidden = $('shape-kind').value !== 'custom';
   };
 
-  ['rs-kind', 'rs-w', 'rs-h', 'rs-cw', 'rs-ch', 'rs-points'].forEach((id) => {
+  ['shape-kind', 'shape-w', 'shape-h', 'shape-cw', 'shape-ch', 'shape-points'].forEach((id) => {
     const el = $(id);
     if (el) el.addEventListener('input', preview);
   });
   preview();
 
-  $('rs-save').onclick = async () => {
+  $('shape-save').onclick = async () => {
     const { w, h, points } = readPoints();
     try {
       await api('/floor/rooms/' + room.id, {
         method: 'PUT',
         body: JSON.stringify({
-          name: $('rs-name').value.trim() || room.name,
+          name: $('shape-name').value.trim() || room.name,
           cols: w,
           rows: h,
           outline: points,
@@ -2557,7 +2557,7 @@ function editRoomShape() {
     }
   };
 
-  $('rs-del').onclick = async () => {
+  $('shape-del').onclick = async () => {
     const count = room.tables.length;
     if (!confirm(
       count

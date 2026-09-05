@@ -200,7 +200,7 @@ void main() {
     await channel.writeRequest(
       identity: PairingIdentity.forDevice(displayDevice),
       name: 'Display on TILL-01',
-      appVersion: '1.6.3',
+      appVersion: '1.6.4',
     );
 
     final file = File(
