@@ -30,8 +30,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/staff_session.dart';
 import '../data/till_permissions.dart';
-import '../main.dart';
-import 'pin_dialog.dart';
+import 'manager_approval.dart';
 import 'widgets/pos_message.dart';
 
 /// What the signed-on member of staff may do.
@@ -95,16 +94,23 @@ Future<bool> _askAManager(
   );
   if (go != true || !context.mounted) return false;
 
-  final pin = await askForPin(context, "Manager's PIN");
-  if (pin == null || !context.mounted) return false;
-
-  final manager = await ref.read(staffRepositoryProvider).byPin(pin);
+  // PIN or card, whichever the manager reaches for. A manager approving at
+  // somebody else's till has a queue watching them type, and a PIN read over a
+  // shoulder is a PIN that member of staff now has.
+  final approval = await askAManagerToApprove(
+    context,
+    ref,
+    title: "Manager's approval",
+  );
   if (!context.mounted) return false;
 
-  if (manager == null) {
-    PosMessenger.error(context, 'That PIN was not recognised.');
+  if (approval == null) {
+    // Null covers both "cancelled" and "that was nobody", and only one of them
+    // is worth saying out loud. A cancelled prompt is a decision, not a fault.
     return false;
   }
+
+  final manager = approval.staff;
 
   // Either the key itself, or the standing to grant it. Checked against the
   // approver's own group and not against the clerk's.
@@ -119,6 +125,13 @@ Future<bool> _askAManager(
 
   // Named, because an override is a thing a venue will want to ask about later
   // and "somebody approved it" is not an answer.
-  PosMessenger.success(context, 'Approved by ${manager.name}.');
+  // Named, and says how — a venue asking later wants to know whether somebody
+  // typed a PIN or presented a card.
+  PosMessenger.success(
+    context,
+    approval.by == ApprovedBy.card
+        ? 'Approved by ${manager.name}, by card.'
+        : 'Approved by ${manager.name}.',
+  );
   return true;
 }

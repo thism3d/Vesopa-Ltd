@@ -20,6 +20,7 @@ import 'dart:ui';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vesopa_epos_display/data/adverts.dart';
 import 'package:vesopa_epos_display/data/basket_feed.dart';
+import 'package:vesopa_epos_display/data/pairing.dart' show TillPresence;
 import 'package:vesopa_epos_display/data/screens.dart';
 import 'package:vesopa_epos_display/data/settings.dart';
 import 'package:vesopa_epos_display/ui/display_page.dart' show shouldShowAdverts;
@@ -169,6 +170,46 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 150));
 
     expect(feed.isStale, isTrue);
+  });
+
+  // The fault that put "Waiting for the till" on a working counter.
+  //
+  // The badge used to read the basket's age. The till writes the basket only
+  // when the screen would change, so a till that is on, signed in and simply
+  // between customers writes nothing — and after ten minutes of that it was
+  // announced to the customer as missing. Most counters are quiet for most of
+  // the day.
+  //
+  // Presence is a separate file the till rewrites every few seconds, and it is
+  // what answers "is the till there". These two checks hold the distinction:
+  // an old basket alongside a live till is a quiet counter, not a missing one.
+  test('a quiet till is still a present till', () {
+    final quiet = TillPresence(
+      terminalName: 'Bar',
+      venueName: 'The Bridge',
+      appVersion: '1.6.3',
+      signedIn: true,
+      // Nothing rung up for an hour, which is an ordinary afternoon.
+      at: DateTime.now().subtract(const Duration(hours: 1)),
+    );
+    expect(
+      quiet.isRunning,
+      isFalse,
+      reason: 'presence older than its TTL is genuinely gone',
+    );
+
+    final live = TillPresence(
+      terminalName: 'Bar',
+      venueName: 'The Bridge',
+      appVersion: '1.6.3',
+      signedIn: true,
+      at: DateTime.now().subtract(const Duration(seconds: 3)),
+    );
+    expect(
+      live.isRunning,
+      isTrue,
+      reason: 'a till heartbeating three seconds ago is on the counter',
+    );
   });
 
   // -------------------------------------------------------------------------

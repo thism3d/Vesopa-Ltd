@@ -416,7 +416,25 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
           // Said quietly, and only when it is true for long enough to matter.
           // A till that has been switched off at the end of the night should
           // not put an error over the adverts.
-          if (_feed?.isStale ?? false)
+          //
+          // WHY THIS ASKS THE TILL AND NOT THE BASKET
+          //
+          // It used to read the basket file's age, and that answered a
+          // different question from the one being asked. The till writes the
+          // basket only when the screen would change — `publish` returns early
+          // when the new snapshot draws the same thing as the last — so a till
+          // that is switched on, signed in and simply between customers writes
+          // nothing at all. Ten minutes of that and a working till was
+          // announced to the customer as missing. A quiet counter is the normal
+          // state of most counters for most of the day.
+          //
+          // The till already says it is alive somewhere else: it rewrites its
+          // presence file every few seconds, which is what the pairing handshake
+          // has always watched. That is the honest source for "is the till
+          // there", and it is what the badge reads now. The basket's age is
+          // still the right question for "what is on the bill" and is left to
+          // answer it.
+          if (!(pairing.till?.isRunning ?? false))
             const Positioned(
               left: 12,
               bottom: 12,

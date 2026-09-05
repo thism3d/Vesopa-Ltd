@@ -1032,6 +1032,18 @@ class SalePage extends ConsumerWidget {
         );
         return;
       case 'void':
+        // Whether there is anything to void is settled *before* anybody is
+        // asked to approve one. Pressing Void with nothing selected used to put
+        // "Needs approval" up, take a manager's PIN, and then say "tap the
+        // items first" — a manager fetched across the room to authorise
+        // nothing. Cheap checks first, then the one that costs somebody's time.
+        if (selected.isEmpty) {
+          PosMessenger.error(
+            context,
+            'Tap the item(s) on the bill first, then Void.',
+          );
+          return;
+        }
         if (!await allowed(context, ref, TillPermission.voidLine)) return;
         if (!context.mounted) return;
         return _voidSelected(
@@ -1041,6 +1053,11 @@ class SalePage extends ConsumerWidget {
           selected: selected,
         );
       case 'cancel':
+        // Same order, and the same reason: an empty bill is nothing to cancel.
+        if (lines.isEmpty) {
+          PosMessenger.error(context, 'There is nothing on this bill yet.');
+          return;
+        }
         // Cancelling a whole check is a void of every line on it, so it asks
         // for the same key rather than a weaker one.
         if (!await allowed(context, ref, TillPermission.voidLine)) return;

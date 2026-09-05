@@ -44,6 +44,7 @@ import '../data/terminal_identity.dart';
 import '../main.dart';
 import 'cards_page.dart' show lastCardReadProvider;
 import 'staff_handover.dart';
+import 'manager_approval.dart';
 import 'widgets/pos_message.dart';
 import 'widgets/on_screen_keyboard.dart';
 import 'widgets/pos_text_field.dart';
@@ -66,6 +67,15 @@ Future<void> handleSwipedCard(
   // displayed cards the till understood could not tell a dead reader from a
   // prefix that does not match, which is the support call it exists to answer.
   ref.read(lastCardReadProvider.notifier).saw(card);
+
+  // An approval waiting for a card takes it before anything else looks at it.
+  //
+  // Without this, a manager swiping to approve a void would be signed *on* by
+  // the clerk branch below — throwing the clerk off their own bill mid-sale,
+  // which is precisely what the approval flow exists to avoid. The card is
+  // still recorded above first, so the reader test on the Cards page sees every
+  // swipe either way.
+  if (ManagerCardCapture.offer(card)) return;
 
   final settings = ref.read(cardRepositoryProvider).settings;
   if (!settings.enabled) return;
