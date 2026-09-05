@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../printing/print_targets.dart';
+import 'price_levels.dart';
 
 /// How the terminal behaves *between* sales: the idle screen it drops to, and
 /// how long it waits before signing the current member of staff off.
@@ -28,6 +29,7 @@ class TillSettings {
     this.topBarScreenId,
     this.bottomBarScreenId,
     this.fontFamily,
+    this.priceLevelNames = PriceLevelNames.empty,
   });
 
   /// The programmed screen this venue's tills open on, or null.
@@ -58,6 +60,14 @@ class TillSettings {
   /// data/fonts.dart is the one place that turns this into something the engine
   /// can be handed.
   final String? fontFamily;
+
+  /// What this venue calls price levels 2 to 6.
+  ///
+  /// Empty is the ordinary state and reads as "Price 2", "Price 3" and so on —
+  /// a venue that has named no levels has named none. Names matter on the till
+  /// key: "Happy Hour" tells a clerk what they are switching to and "Price 2"
+  /// tells them nothing. See `data/price_levels.dart`.
+  final PriceLevelNames priceLevelNames;
 
   final bool idleEnabled;
 
@@ -242,6 +252,10 @@ class TillSettings {
         '' => null,
         final slug => slug,
       },
+      // Absent on a server that has not run schema_price_levels.sql, which
+      // reads as "nothing named" — the state every venue is in until it names
+      // one.
+      priceLevelNames: PriceLevelNames.parse(j['price_level_names']),
       topBarScreenId: (j['top_bar_screen_id'] as num?)?.toInt(),
       bottomBarScreenId: (j['bottom_bar_screen_id'] as num?)?.toInt(),
       idleEnabled: _flag(j['idle_enabled']),

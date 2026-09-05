@@ -323,6 +323,7 @@ class _BarKey extends ConsumerWidget {
     'sign_off': Icons.logout,
     'sign_on': Icons.login,
     'clock_in_out': Icons.schedule,
+    'price_level': Icons.sell_outlined,
   };
 
   /// Mirrors the labels the back office offers. A key not in here still draws —
@@ -351,6 +352,7 @@ class _BarKey extends ConsumerWidget {
     'sign_off': 'Sign off',
     'sign_on': 'Sign on',
     'clock_in_out': 'Clock in / out',
+    'price_level': 'Price level',
   };
 
   @override

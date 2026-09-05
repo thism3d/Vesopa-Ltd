@@ -206,17 +206,63 @@ function fragmentIsOwned(src, sql) {
   });
 }
 
+/**
+ * Every `pool.query(\`...\`)` in a file, with its whole SQL.
+ *
+ * Written out rather than matched with /`([^`]*)`/, which is what this was and
+ * which is wrong in the one direction that matters. A template literal may
+ * contain another one inside `${...}` — `${cols.map((c) => \`${c} = ?\`)}` — and
+ * a non-greedy match stops at that inner backtick. The sweep then judged a
+ * *fragment* of the statement, and the fragment did not include the WHERE
+ * clause. A genuinely unscoped query written that way would have passed.
+ *
+ * So this walks the string and tracks `${` depth, which is the only way to
+ * find where a template literal actually ends.
+ */
+function statementsIn(src) {
+  const found = [];
+  const opener = /pool\.(?:query|execute)\(\s*`/g;
+  let match;
+
+  while ((match = opener.exec(src)) !== null) {
+    const start = match.index + match[0].length;
+    let depth = 0;
+    let i = start;
+
+    for (; i < src.length; i++) {
+      const ch = src[i];
+      if (ch === '\\') {
+        i++;
+        continue;
+      }
+      if (ch === '$' && src[i + 1] === '{') {
+        depth++;
+        i++;
+        continue;
+      }
+      if (ch === '}' && depth > 0) {
+        depth--;
+        continue;
+      }
+      if (ch === '`' && depth === 0) break;
+    }
+
+    found.push({ sql: src.slice(start, i), index: match.index });
+    opener.lastIndex = i;
+  }
+  return found;
+}
+
 check('every query on a tenant table names an owner', () => {
   const dir = path.join(__dirname, '..', 'src');
   const offenders = [];
 
   for (const name of fs.readdirSync(dir).filter((f) => f.endsWith('.js'))) {
     const src = fs.readFileSync(path.join(dir, name), 'utf8');
-    for (const m of src.matchAll(/pool\.(?:query|execute)\(\s*`([^`]*)`/g)) {
-      const sql = m[1];
+    for (const { sql, index } of statementsIn(src)) {
       if (!TENANT_TABLES.test(sql)) continue;
       if (OWNED.test(sql) || fragmentIsOwned(src, sql)) continue;
-      const line = src.slice(0, m.index).split('\n').length;
+      const line = src.slice(0, index).split('\n').length;
       offenders.push(`${name}:${line}  ${sql.replace(/\s+/g, ' ').trim().slice(0, 120)}`);
     }
   }
@@ -226,6 +272,30 @@ check('every query on a tenant table names an owner', () => {
     [],
     `unscoped tenant queries:\n      ${offenders.join('\n      ')}`
   );
+});
+
+check('and it reads a whole statement, not up to the first nested backtick', () => {
+  // The hole this closes. `${...}` containing another template literal used to
+  // end the match early, so the sweep judged a fragment — and the fragment did
+  // not reach the WHERE clause.
+  const nested = [
+    'const x = 1;',
+    'pool.query(`SELECT id FROM epos_orders',
+    '  SET ${cols.map((c) => `${c} = ?`).join(\', \')}',
+    '  WHERE email = ?`, [office]);',
+  ].join('\n');
+
+  const [statement] = statementsIn(nested);
+  assert.ok(statement, 'the statement was not found at all');
+  assert.ok(
+    OWNED.test(statement.sql),
+    `the sweep stopped early and missed the WHERE:\n      ${statement.sql}`
+  );
+
+  // And the same shape without an owner is still caught.
+  const leaky = nested.replace('WHERE email = ?', 'WHERE closed_at IS NOT NULL');
+  const [bad] = statementsIn(leaky);
+  assert.ok(!OWNED.test(bad.sql));
 });
 
 check('the owner sweep still catches a query that loses its scoping', () => {

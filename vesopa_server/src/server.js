@@ -735,17 +735,47 @@ app.get(['/till/products', '/products.json'], async (req, res, next) => {
       // `printer_route` rides along beside `printer_routes` for terminals on
       // the previous release, which only know the singular field. See
       // schema_product_printing.sql.
-      `SELECT pluid, product_name, department_name, group_name,
-              accounting_code, price, tax_percentage, stock_quantity,
-              button_position, button_color, printer_route, printer_routes,
-              print_to_receipt, emoji, image_url
-       FROM bo_products
-       WHERE email = ?
-       ORDER BY button_position IS NULL, button_position`,
+      // The category's *name and order*, not its id: the till prints a heading
+      // and sorts by a number, and neither is a foreign key it has any use for.
+      // Joined here so a terminal never has to hold a second table to render a
+      // ticket.
+      `SELECT p.pluid, p.product_name, p.department_name, p.group_name,
+              p.accounting_code, p.price, p.tax_percentage, p.stock_quantity,
+              p.button_position, p.button_color, p.printer_route,
+              p.printer_routes, p.print_to_receipt, p.emoji, p.image_url,
+              p.price_2, p.price_3, p.price_4, p.price_5, p.price_6,
+              pc.name AS print_category, pc.sort_order AS print_category_order
+       FROM bo_products p
+       LEFT JOIN bo_print_categories pc
+              ON pc.id = p.print_category_id AND pc.email = p.email
+       WHERE p.email = ?
+       ORDER BY p.button_position IS NULL, p.button_position`,
       [office]
     );
     res.json(rows);
   } catch (err) {
+    if (err.code === 'ER_BAD_FIELD_ERROR') {
+      // The price-level columns arrive with schema_price_levels.sql, and
+      // deploy.sh applies migrations only when it is asked to. A till that
+      // cannot read its catalogue cannot sell, so a missing column costs the
+      // extra prices rather than the whole product list — the same fallback
+      // /till/staff makes for swipe_card, for the same reason.
+      try {
+        const [rows] = await pool.query(
+          `SELECT pluid, product_name, department_name, group_name,
+                  accounting_code, price, tax_percentage, stock_quantity,
+                  button_position, button_color, printer_route, printer_routes,
+                  print_to_receipt, emoji, image_url
+           FROM bo_products
+           WHERE email = ?
+           ORDER BY button_position IS NULL, button_position`,
+          [office]
+        );
+        return res.json(rows);
+      } catch (fallbackError) {
+        return next(fallbackError);
+      }
+    }
     next(err);
   }
 });

@@ -37,6 +37,8 @@ import 'widgets/programmed_grid.dart';
 import '../data/till_permissions.dart';
 import 'permission_gate.dart';
 import 'widgets/clock_punch_button.dart';
+import '../data/price_level_controller.dart';
+import 'price_level_sheet.dart';
 
 /// Live catalogue, straight from the local database so the grid renders with
 /// no network at all.
@@ -237,7 +239,12 @@ class SalePage extends ConsumerWidget {
               ModifierSet.empty)
           .forPlu(p.pluId);
       if (groups.isEmpty) {
-        await repo.addLine(orderId, p, addedBy: addedBy);
+        await repo.addLine(
+          orderId,
+          p,
+          addedBy: addedBy,
+          priceLevel: ref.read(currentPriceLevelProvider),
+        );
         return;
       }
 
@@ -253,7 +260,13 @@ class SalePage extends ConsumerWidget {
       // so nothing reaches the bill. See askModifiers.
       if (answers == null) return;
 
-      await repo.addLine(orderId, p, addedBy: addedBy, modifiers: answers);
+      await repo.addLine(
+        orderId,
+        p,
+        addedBy: addedBy,
+        modifiers: answers,
+        priceLevel: ref.read(currentPriceLevelProvider),
+      );
     }
 
     /// Ask one of the venue's questions about a line already on the bill.
@@ -1099,6 +1112,12 @@ class SalePage extends ConsumerWidget {
         // is under Functions › Staff On Shift, where a manager looks for it.
         await punchSignedOnStaff(context, ref);
         return;
+
+      // Swapping what the terminal charges. On the bar because a venue that
+      // runs a happy hour switches at the counter, twice a day, and Functions
+      // is two taps further away than that deserves.
+      case 'price_level':
+        return showPriceLevelSheet(context, ref);
 
       case 'covers':
         return _promptCovers(context, ref);

@@ -238,6 +238,10 @@ function programmingRoutes({ pool, broadcast, secret }) {
   // "can't be null" a manager hit when they gave a category a button image.
   crud('departments', 'bo_product_departments', ['department_name', 'group_name', 'accounting_code', 'emoji', 'image_url', 'button_color'], 'catalogue.updated', { tenantColumn: 'email', tenantBy: 'email' });
   crud('groups', 'bo_product_groups', ['group_name', 'accounting_code'], 'catalogue.updated', { tenantColumn: 'email', tenantBy: 'email' });
+  // Printing categories: the order a kitchen ticket comes out in. Dragged
+  // rather than numbered, which is what `sortable` gives for free — a venue
+  // reorders Breakfast, Mains, Desserts by moving the rows.
+  crud('print-categories', 'bo_print_categories', ['name'], 'catalogue.updated', { tenantColumn: 'email', tenantBy: 'email' });
 
   // ---- Floor plan ---------------------------------------------------------
 

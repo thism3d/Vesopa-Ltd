@@ -272,6 +272,7 @@ const ROUTES = {
   screens: '/screen-programming',
   program_departments: '/program-departments',
   program_groups: '/program-groups',
+  printer_categories: '/printer-categories',
   import: '/import',
   run_report: '/reports/financial-summary',
   report_schedules: '/reports/schedules',
@@ -434,6 +435,20 @@ const CRUD = {
     fields: [
       { name: 'group_name', label: 'Sub Department', required: true },
       { name: 'accounting_code', label: 'Accounting code' },
+    ],
+  },
+  /**
+   * Printing categories: the order a kitchen ticket comes out in.
+   *
+   * One field, because one field is all it is — a name. The order is the row
+   * order, dragged, which is why `sortable` matters more here than the form
+   * does: a venue reorders Breakfast, Mains and Desserts by moving them, not by
+   * typing numbers into a column and working out the gaps.
+   */
+  'print-categories': {
+    path: 'print-categories', title: 'printer category', sortable: true,
+    fields: [
+      { name: 'name', label: 'Category', required: true },
     ],
   },
   /**
@@ -836,6 +851,7 @@ function render() {
     tables: loadFloor,
     program_departments: () => loadCrud('departments'),
     program_groups: () => loadCrud('groups'),
+    printer_categories: () => loadCrud('print-categories'),
     import: loadImport,
     run_report: loadRunReport,
     report_schedules: loadReportSchedules,
@@ -1368,22 +1384,73 @@ let productPicks = new Set();
 // catalogue rather than when the form opens, so picking a department is a
 // choice from a list instead of a spelling test — and so the list is on screen
 // the instant the modal is.
-let productRefs = { departments: [], groups: [], tax: [], modifierGroups: [] };
+let productRefs = {
+  departments: [],
+  groups: [],
+  tax: [],
+  modifierGroups: [],
+  printCategories: [],
+};
+
+/** What this venue calls each level, or "Price 2" where it has not said. */
+let priceLevelNames = null;
+
+/**
+ * Read the venue's level names, whatever shape they arrive in.
+ *
+ * Unreadable is "named nothing", which reads as "Price 2" on the form — the
+ * state every venue is in until it names one. A product form that would not
+ * open because a settings blob was malformed would be a much worse failure
+ * than a field labelled with a number.
+ */
+function safeLevelNames(raw) {
+  if (!raw) return null;
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The five optional prices, as form fields.
+ *
+ * Named by the venue where it has named them — a till key labelled "Price 2"
+ * tells a clerk nothing, and "Happy Hour" tells them everything. Set under
+ * Programming › Till & printers.
+ */
+function priceLevelFields(p = {}) {
+  const names = priceLevelNames || {};
+  return [2, 3, 4, 5, 6].map((n) => ({
+    label: `${names[n] || `Price ${n}`} (£) — blank uses Price 1`,
+    name: `price_${n}`,
+    type: 'money',
+    value: p[`price_${n}`] ?? '',
+  }));
+}
 
 async function loadProducts() {
   await ensurePrinterNames();
   // One round of requests, not four in series. The reference lists are small
   // and a failure in any of them must not leave the catalogue unreachable, so
   // each falls back to empty rather than rejecting the lot.
-  const [rows, departments, groups, tax, modifierGroups] = await Promise.all([
-    api('/products'),
-    api('/departments').catch(() => []),
-    api('/groups').catch(() => []),
-    api('/tax').catch(() => []),
-    api('/modifier-groups').catch(() => []),
-  ]);
+  const [rows, departments, groups, tax, modifierGroups, printCategories, till] =
+    await Promise.all([
+      api('/products'),
+      api('/departments').catch(() => []),
+      api('/groups').catch(() => []),
+      api('/tax').catch(() => []),
+      api('/modifier-groups').catch(() => []),
+      api('/print-categories').catch(() => []),
+      // For the price-level labels. A venue that has named none, or a server
+      // that has not run the migration, falls back to "Price 2" — which is
+      // what the field says anyway.
+      api('/till-settings').catch(() => null),
+    ]);
   productRows = rows;
-  productRefs = { departments, groups, tax, modifierGroups };
+  productRefs = { departments, groups, tax, modifierGroups, printCategories };
+  priceLevelNames = safeLevelNames(till?.price_level_names);
   bindProducts();
   renderProducts();
 }
@@ -3196,7 +3263,28 @@ document.addEventListener('click', async (e) => {
     // `money`, not `number`: a bare number input steps in whole units, so the
     // browser rejected £2.05 and offered the two "nearest valid values", 2 and
     // 3. Every price with pence in it was unenterable.
-    { label: 'Price (£)', name: 'price', type: 'money', value: p.price ?? 0 },
+    { label: 'Price 1 (£)', name: 'price', type: 'money', value: p.price ?? 0 },
+    // Five more, and every one of them optional.
+    //
+    // Blank is not zero. A level left empty means "this product has no special
+    // price here, charge Price 1", and the till falls back — so a venue can put
+    // a happy-hour price on the six drinks it applies to and leave the other
+    // four hundred products alone. A default of 0 would mean switching the till
+    // to Price 2 started giving everything away, silently, at the counter.
+    ...priceLevelFields(p),
+    {
+      label: 'Printer category — blank prints last, under no heading',
+      name: 'print_category_id',
+      type: 'select',
+      value: p.print_category_id ?? '',
+      options: [
+        { value: '', label: 'No category' },
+        ...(productRefs.printCategories || []).map((c) => ({
+          value: c.id,
+          label: c.name,
+        })),
+      ],
+    },
     {
       label: 'VAT rate',
       name: 'tax_percentage',

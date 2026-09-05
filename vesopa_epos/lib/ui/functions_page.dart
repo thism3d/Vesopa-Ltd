@@ -10,6 +10,7 @@ import 'sign_on_pad.dart';
 import 'theme.dart';
 import 'till_actions.dart';
 import 'widgets/pos_message.dart';
+import 'price_level_sheet.dart';
 
 /// Till functions — the actions a clerk reaches for that are not part of ringing
 /// up a sale: park the current bill, reprint, open the drawer for a no-sale, and
@@ -119,6 +120,19 @@ class FunctionsPage extends ConsumerWidget {
           'Pull the latest products, prices, deals and staff from the back '
               'office, and send anything this till still has queued.',
           () => TillActions.refreshData(context, ref),
+        ),
+      ]),
+      _Group('Pricing', [
+        // "…or a setting on the till in functions to swap price levels."
+        // This is that setting, in the place it was asked for.
+        _Function(
+          'Price Level',
+          Icons.sell_outlined,
+          Pos.teal,
+          'Switch this terminal between the six prices a product can carry — a '
+              'happy hour, a function tariff, a staff rate. Bills already open '
+              'keep what they were rung up at.',
+          () => showPriceLevelSheet(context, ref),
         ),
       ]),
       _Group('End of day', [

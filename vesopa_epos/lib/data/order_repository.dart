@@ -6,10 +6,31 @@ import 'package:uuid/uuid.dart';
 import 'local/database.dart';
 import 'mix_match_engine.dart';
 import 'modifier_layout.dart';
+import 'price_levels.dart';
 
 /// Owns the sale lifecycle. Every write lands in the local database first and
 /// is queued for the server second, both inside one transaction: the till is
 /// authoritative for its own sales and never blocks on the network.
+/// The six prices a catalogue row carries.
+///
+/// An extension rather than a field on [Product], because [Product] is drift's
+/// generated row and every column on it is one the till syncs. This is a way of
+/// *reading* five of those columns together, which is a different thing.
+extension ProductPricing on Product {
+  ProductPrices get prices => ProductPrices(
+    priceMinor: priceMinor,
+    price2Minor: price2Minor,
+    price3Minor: price3Minor,
+    price4Minor: price4Minor,
+    price5Minor: price5Minor,
+    price6Minor: price6Minor,
+  );
+
+  /// What to charge for this product at [level], falling back to Price 1 where
+  /// the venue has not set one. See `data/price_levels.dart`.
+  int priceAt(int level) => prices.at(level);
+}
+
 class OrderRepository {
   OrderRepository(this._db);
 
@@ -51,12 +72,21 @@ class OrderRepository {
   /// taxes, prints and reports as what it is. A product carrying answers is
   /// never merged into an existing line; see below.
   /// See OrderLines.parentLineId.
+  /// [priceLevel] is which of the product's six prices to charge. It is the
+  /// till's current level, or the customer's tier where their tier names one —
+  /// the caller decides, because only the caller knows whose bill this is. See
+  /// `data/price_levels.dart`.
+  ///
+  /// The price is still snapshotted onto the line: what is charged at the
+  /// counter is what the bill says for ever, whatever the room switches to
+  /// afterwards.
   Future<void> addLine(
     String orderId,
     Product product, {
     double qty = 1,
     String? addedBy,
     List<Product> modifiers = const [],
+    int priceLevel = minPriceLevel,
   }) async {
     await _db.transaction(() async {
       final now = DateTime.now();
@@ -86,8 +116,9 @@ class OrderRepository {
               name: product.name,
               quantity: Value(qty),
               // Snapshot the price: a later back-office edit must not restate
-              // takings that have already been rung up.
-              unitPriceMinor: product.priceMinor,
+              // takings that have already been rung up — and neither must a
+              // later change of price level.
+              unitPriceMinor: product.priceAt(priceLevel),
               taxPercentage: Value(product.taxPercentage),
               // Who rang it and when. Null on a venue that does not use staff
               // sign-on, and the check view simply shows no header for it.
@@ -107,7 +138,10 @@ class OrderRepository {
                 // and a kitchen reading "2 Steak / 1 Rare" cannot tell which
                 // steak is which.
                 quantity: Value(qty),
-                unitPriceMinor: choice.priceMinor,
+                // An answer is priced at the same level as the thing it is an
+                // answer to. A gin on happy hour with a full-price mixer would
+                // be a bill nobody could explain.
+                unitPriceMinor: choice.priceAt(priceLevel),
                 taxPercentage: Value(choice.taxPercentage),
                 parentLineId: Value(parentId),
                 addedBy: Value(addedBy),

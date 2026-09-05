@@ -90,6 +90,43 @@ function backofficeRoutes({ pool, broadcast, secret }) {
   const KP_STATIONS = ['kp1', 'kp2', 'kp3', 'kp4', 'kp5', 'kp6'];
 
   /**
+   * The five extra prices a product can carry. `price` is Price 1.
+   *
+   * Kept as a list rather than spelled out at each call site, because the whole
+   * point of the feature is that all six behave identically and a loop is the
+   * only way to say that once.
+   */
+  const PRICE_LEVELS = ['price_2', 'price_3', 'price_4', 'price_5', 'price_6'];
+
+  /**
+   * A level as it should be stored: a number, or NULL for "not set".
+   *
+   * NULL and 0 are opposite answers and the difference is money. NULL means
+   * "this product has no special price at this level, charge Price 1"; 0 means
+   * "give it away". A blank box in the form is the first of those, so an empty
+   * string must never round to a zero.
+   */
+  /**
+   * The printing category a product belongs to, as a value to store.
+   *
+   * NULL means "no category" — the product prints last on a kitchen ticket,
+   * under no heading, exactly as it did before categories existed. A blank in
+   * the form is that, so an empty string must not become a 0 pointing at a
+   * category that does not exist.
+   */
+  function printCategoryId(value) {
+    if (value === undefined || value === null || value === '') return null;
+    const id = Number(value);
+    return Number.isInteger(id) && id > 0 ? id : null;
+  }
+
+  function priceLevel(value) {
+    if (value === undefined || value === null || value === '') return null;
+    const number = Number(value);
+    return Number.isFinite(number) && number >= 0 ? number : null;
+  }
+
+  /**
    * Normalise whatever the form sent into a stored routing string.
    *
    * Accepts an array (what the checkbox form posts) or a comma-separated
@@ -151,7 +188,8 @@ function backofficeRoutes({ pool, broadcast, secret }) {
         `SELECT id, pluid, product_name, department_name, group_name,
                 accounting_code, price, tax_percentage, stock_quantity,
                 low_stock_at, button_position, button_color, printer_routes,
-                print_to_receipt, emoji, image_url
+                print_to_receipt, emoji, image_url, print_category_id,
+                ${PRICE_LEVELS.join(', ')}
          FROM bo_products
          WHERE email = ?
          ORDER BY department_name, button_position IS NULL, button_position,
@@ -226,8 +264,10 @@ function backofficeRoutes({ pool, broadcast, secret }) {
            (email, pluid, product_name, department_name, group_name,
             accounting_code, price, tax_percentage, stock_quantity,
             button_position, button_color, printer_route, printer_routes,
-            print_to_receipt, emoji, image_url)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            print_to_receipt, emoji, image_url, print_category_id,
+            ${PRICE_LEVELS.join(', ')})
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                 ${PRICE_LEVELS.map(() => '?').join(', ')})`,
         [
           // The office's key, not the individual's: two managers in one shop
           // must add to the same catalogue.
@@ -250,6 +290,8 @@ function backofficeRoutes({ pool, broadcast, secret }) {
           flag(p.print_to_receipt),
           p.emoji || null,
           p.image_url || null,
+          printCategoryId(p.print_category_id),
+          ...PRICE_LEVELS.map((level) => priceLevel(p[level])),
         ]
       );
 
@@ -296,7 +338,9 @@ function backofficeRoutes({ pool, broadcast, secret }) {
              button_position = ${keep('button_position')},
              button_color = ${keep('button_color')},
              printer_route = ?, printer_routes = ?, print_to_receipt = ?,
-             emoji = ${keep('emoji')}, image_url = ?
+             emoji = ${keep('emoji')}, image_url = ?,
+             print_category_id = ${keep('print_category_id')},
+             ${PRICE_LEVELS.map((l) => l + ' = ' + keep(l)).join(', ')}
          WHERE id = ? AND email = ?`,
         [
           p.product_name,
@@ -313,6 +357,14 @@ function backofficeRoutes({ pool, broadcast, secret }) {
           flag(p.print_to_receipt),
           ...kept('emoji', p.emoji || null),
           p.image_url || null,
+          ...kept('print_category_id', printCategoryId(p.print_category_id)),
+          // Each level only when the caller sent it — the same rule as
+          // button_position and emoji above. An import that knows nothing about
+          // price levels must not strip a venue's happy-hour prices off every
+          // product it touches.
+          ...PRICE_LEVELS.flatMap((level) =>
+            kept(level, priceLevel(p[level]))
+          ),
           req.params.id,
           // Scoped: editing another office's product must be impossible even if
           // its id is guessed.
@@ -567,9 +619,19 @@ function backofficeRoutes({ pool, broadcast, secret }) {
     'idle_enabled', 'idle_image_url', 'idle_after_sale', 'idle_require_pin',
     'idle_message', 'signoff_seconds', 'change_window_seconds',
     'receipt_auto_print', 'buttons_show_prices', 'font_family',
+    'price_level_names',
     ...PRINTER_NAME_FIELDS,
     ...KITCHEN_MODE_FIELDS,
   ];
+
+  /** JSON.parse that answers null instead of throwing. */
+  function safeJson(text) {
+    try {
+      return JSON.parse(text);
+    } catch {
+      return null;
+    }
+  }
 
   const TILL_DEFAULTS = {
     idle_enabled: 1,
@@ -699,6 +761,26 @@ function backofficeRoutes({ pool, broadcast, secret }) {
         if (f.startsWith('printer_name_')) {
           const name = String(v ?? '').trim().slice(0, 40);
           return name || null;
+        }
+        // What this venue calls Price 2 to Price 6 — "Happy Hour", "Staff",
+        // "Function Room". Stored as JSON keyed by the level, because a till
+        // key labelled "Price 2" tells a clerk nothing.
+        //
+        // Only levels 2-6 are nameable. Price 1 is the price, and a venue that
+        // renamed it would have a product form whose first field agreed with
+        // nothing else in the system.
+        if (f === 'price_level_names') {
+          if (v === null || v === undefined || v === '') return null;
+          const source = typeof v === 'string' ? safeJson(v) : v;
+          if (!source || typeof source !== 'object') return null;
+          const names = {};
+          for (const level of [2, 3, 4, 5, 6]) {
+            const name = String(source[level] ?? source[`${level}`] ?? '')
+              .trim()
+              .slice(0, 40);
+            if (name) names[level] = name;
+          }
+          return Object.keys(names).length ? JSON.stringify(names) : null;
         }
         // Anything unrecognised becomes 'printer'. A back office sent a mode
         // it does not know about must leave the kitchen printing, not leave it

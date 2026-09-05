@@ -189,6 +189,7 @@
           <button class="nav" data-view="screens">Screen programming</button>
           <button class="nav" data-view="program_departments">Departments</button>
           <button class="nav" data-view="program_groups">Sub Departments</button>
+          <button class="nav" data-view="printer_categories">Printer categories</button>
           <button class="nav" data-view="import">Import</button>
           <button class="nav" data-view="modifiers">Modifiers</button>
           <button class="nav" data-view="mix_match">Mix &amp; Match</button>
@@ -569,6 +570,32 @@
         <section id="view-program_groups" class="view" hidden>
           <div class="page-head"><div><h2>Sub Departments</h2><p class="muted small">Drag rows to set the order.</p></div><button class="btn primary" data-add="groups">Add sub department</button></div>
           <div class="card"><table><thead><tr><th class="drag-col"></th><th>Sub Department</th><th>Accounting code</th><th></th></tr></thead><tbody id="groups"></tbody></table></div>
+        </section>
+
+        <!-- Printer categories: what order a kitchen ticket prints in.
+             Deliberately not the department — a department is how the takings
+             are broken down and answers to the accountant, and Wine and
+             Draughts are two of those and one printing group. -->
+        <section id="view-printer_categories" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Printer categories</h2>
+              <p class="muted small">
+                Group what the kitchen sees, and set the order it prints in — Breakfast, then Mains,
+                then Desserts. Drag the rows to reorder them, then put each product in a category
+                from the product form. A product in no category prints last, under no heading.
+              </p>
+            </div>
+            <button class="btn primary" data-add="print-categories">Add category</button>
+          </div>
+          <div class="card"><table>
+            <thead><tr><th class="drag-col"></th><th>Category</th><th></th></tr></thead>
+            <tbody id="print-categories"></tbody>
+          </table></div>
+          <p class="muted small" style="margin-top:12px">
+            A ticket comes out grouped and in this order, whatever order the items were rung up in:
+            <code>--- BREAKFAST ---</code> and then the breakfasts.
+          </p>
         </section>
 
         <!-- Modifiers -->
