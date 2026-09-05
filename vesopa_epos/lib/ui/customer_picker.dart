@@ -5,6 +5,8 @@ import '../data/customer_repository.dart';
 import '../main.dart';
 import 'theme.dart';
 import 'widgets/pos_message.dart';
+import 'widgets/on_screen_keyboard.dart';
+import 'widgets/pos_text_field.dart';
 
 final customerRepoProvider = Provider<CustomerRepository>(
   (ref) => CustomerRepository(
@@ -102,10 +104,11 @@ class _CustomerPickerState extends ConsumerState<_CustomerPicker> {
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: TextField(
+              child: PosTextField(
                 controller: _search,
                 autofocus: true,
                 onChanged: _query,
+                submitLabel: 'Search',
                 decoration: const InputDecoration(
                   hintText: 'Search name, phone or email',
                   prefixIcon: Icon(Icons.search),
@@ -216,19 +219,20 @@ class _NewCustomerDialogState extends ConsumerState<_NewCustomerDialog> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              TextField(
+              PosTextField(
                 controller: _name,
                 autofocus: true,
+                textCapitalization: TextCapitalization.words,
                 decoration: const InputDecoration(labelText: 'Name'),
               ),
-              TextField(
+              PosTextField(
                 controller: _phone,
-                keyboardType: TextInputType.phone,
+                mode: PosKeyboardMode.number,
                 decoration: const InputDecoration(labelText: 'Phone'),
               ),
-              TextField(
+              PosTextField(
                 controller: _email,
-                keyboardType: TextInputType.emailAddress,
+                textCapitalization: TextCapitalization.none,
                 decoration: const InputDecoration(labelText: 'Email'),
               ),
               const SizedBox(height: 12),
@@ -254,10 +258,9 @@ class _NewCustomerDialogState extends ConsumerState<_NewCustomerDialog> {
                     const SizedBox(width: 12),
                     SizedBox(
                       width: 90,
-                      child: TextField(
+                      child: PosTextField(
                         controller: _discount,
-                        keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true),
+                        mode: PosKeyboardMode.decimal,
                         decoration: InputDecoration(
                           labelText: _discountType == 'percent' ? '%' : '£',
                         ),

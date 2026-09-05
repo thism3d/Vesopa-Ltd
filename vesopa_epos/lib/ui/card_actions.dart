@@ -45,6 +45,8 @@ import '../main.dart';
 import 'cards_page.dart' show lastCardReadProvider;
 import 'staff_handover.dart';
 import 'widgets/pos_message.dart';
+import 'widgets/on_screen_keyboard.dart';
+import 'widgets/pos_text_field.dart';
 
 /// Deal with [card].
 ///
@@ -317,16 +319,19 @@ Future<({String name, String phone})?> _askForMember(BuildContext context) {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(
+            PosTextField(
               controller: name,
               autofocus: true,
               textCapitalization: TextCapitalization.words,
               decoration: const InputDecoration(labelText: 'Name'),
+              submitLabel: 'Next',
             ),
             const SizedBox(height: 12),
-            TextField(
+            PosTextField(
               controller: phone,
-              keyboardType: TextInputType.phone,
+              // Digits, because a phone number is digits and a QWERTY under one
+              // is four rows of keys nobody is going to press.
+              mode: PosKeyboardMode.number,
               decoration: const InputDecoration(
                 labelText: 'Phone',
                 helperText: 'How they are found if they forget the card.',

@@ -6,6 +6,8 @@ import '../data/local/database.dart';
 import '../main.dart';
 import 'tables_page.dart' show parkedOrdersProvider;
 import 'theme.dart';
+import 'widgets/on_screen_keyboard.dart';
+import 'widgets/pos_text_field.dart';
 import 'widgets/basket_panel.dart' show money;
 
 /// Pick a table to save the current sale onto, from the actual floor plan
@@ -208,11 +210,11 @@ class _NoPlanFallback extends StatelessWidget {
             style: Theme.of(context).textTheme.bodyMedium,
           ),
           const SizedBox(height: 16),
-          TextField(
+          PosTextField(
             controller: controller,
-            keyboardType: TextInputType.number,
+            mode: PosKeyboardMode.number,
             autofocus: true,
-            textAlign: TextAlign.center,
+            submitLabel: 'Open',
             decoration: const InputDecoration(
               hintText: 'Table number',
               border: OutlineInputBorder(),

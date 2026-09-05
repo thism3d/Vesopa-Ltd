@@ -7403,8 +7403,27 @@ class $StaffTable extends Staff with TableInfo<$StaffTable, StaffData> {
     requiredDuringInsert: false,
     defaultValue: const Constant(''),
   );
+  static const VerificationMeta _permissionsMeta = const VerificationMeta(
+    'permissions',
+  );
   @override
-  List<GeneratedColumn> get $columns => [id, pluid, name, pin, swipeCard];
+  late final GeneratedColumn<String> permissions = GeneratedColumn<String>(
+    'permissions',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    pluid,
+    name,
+    pin,
+    swipeCard,
+    permissions,
+  ];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -7448,6 +7467,15 @@ class $StaffTable extends Staff with TableInfo<$StaffTable, StaffData> {
         swipeCard.isAcceptableOrUnknown(data['swipe_card']!, _swipeCardMeta),
       );
     }
+    if (data.containsKey('permissions')) {
+      context.handle(
+        _permissionsMeta,
+        permissions.isAcceptableOrUnknown(
+          data['permissions']!,
+          _permissionsMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -7476,6 +7504,10 @@ class $StaffTable extends Staff with TableInfo<$StaffTable, StaffData> {
       swipeCard: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}swipe_card'],
+      )!,
+      permissions: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}permissions'],
       )!,
     );
   }
@@ -7508,12 +7540,26 @@ class StaffData extends DataClass implements Insertable<StaffData> {
   /// rather than nullable, so the match below cannot be satisfied by a person
   /// with no card and a reader that sent nothing.
   final String swipeCard;
+
+  /// The permission group's switches, as JSON, or empty for somebody in no
+  /// group.
+  ///
+  /// Cached here for the reason the PIN and the card are: a manager approving a
+  /// void at eight on a Friday cannot wait for the broadband, and a till that
+  /// could only check a permission online would start refusing them at the one
+  /// moment that matters. See `data/till_permissions.dart`.
+  ///
+  /// Empty means every key — not none. Every member of staff at every venue
+  /// trading today has no group, so an empty column has to keep meaning what it
+  /// has always meant.
+  final String permissions;
   const StaffData({
     required this.id,
     required this.pluid,
     required this.name,
     required this.pin,
     required this.swipeCard,
+    required this.permissions,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -7523,6 +7569,7 @@ class StaffData extends DataClass implements Insertable<StaffData> {
     map['name'] = Variable<String>(name);
     map['pin'] = Variable<String>(pin);
     map['swipe_card'] = Variable<String>(swipeCard);
+    map['permissions'] = Variable<String>(permissions);
     return map;
   }
 
@@ -7533,6 +7580,7 @@ class StaffData extends DataClass implements Insertable<StaffData> {
       name: Value(name),
       pin: Value(pin),
       swipeCard: Value(swipeCard),
+      permissions: Value(permissions),
     );
   }
 
@@ -7547,6 +7595,7 @@ class StaffData extends DataClass implements Insertable<StaffData> {
       name: serializer.fromJson<String>(json['name']),
       pin: serializer.fromJson<String>(json['pin']),
       swipeCard: serializer.fromJson<String>(json['swipeCard']),
+      permissions: serializer.fromJson<String>(json['permissions']),
     );
   }
   @override
@@ -7558,6 +7607,7 @@ class StaffData extends DataClass implements Insertable<StaffData> {
       'name': serializer.toJson<String>(name),
       'pin': serializer.toJson<String>(pin),
       'swipeCard': serializer.toJson<String>(swipeCard),
+      'permissions': serializer.toJson<String>(permissions),
     };
   }
 
@@ -7567,12 +7617,14 @@ class StaffData extends DataClass implements Insertable<StaffData> {
     String? name,
     String? pin,
     String? swipeCard,
+    String? permissions,
   }) => StaffData(
     id: id ?? this.id,
     pluid: pluid ?? this.pluid,
     name: name ?? this.name,
     pin: pin ?? this.pin,
     swipeCard: swipeCard ?? this.swipeCard,
+    permissions: permissions ?? this.permissions,
   );
   StaffData copyWithCompanion(StaffCompanion data) {
     return StaffData(
@@ -7581,6 +7633,9 @@ class StaffData extends DataClass implements Insertable<StaffData> {
       name: data.name.present ? data.name.value : this.name,
       pin: data.pin.present ? data.pin.value : this.pin,
       swipeCard: data.swipeCard.present ? data.swipeCard.value : this.swipeCard,
+      permissions: data.permissions.present
+          ? data.permissions.value
+          : this.permissions,
     );
   }
 
@@ -7591,13 +7646,14 @@ class StaffData extends DataClass implements Insertable<StaffData> {
           ..write('pluid: $pluid, ')
           ..write('name: $name, ')
           ..write('pin: $pin, ')
-          ..write('swipeCard: $swipeCard')
+          ..write('swipeCard: $swipeCard, ')
+          ..write('permissions: $permissions')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, pluid, name, pin, swipeCard);
+  int get hashCode => Object.hash(id, pluid, name, pin, swipeCard, permissions);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -7606,7 +7662,8 @@ class StaffData extends DataClass implements Insertable<StaffData> {
           other.pluid == this.pluid &&
           other.name == this.name &&
           other.pin == this.pin &&
-          other.swipeCard == this.swipeCard);
+          other.swipeCard == this.swipeCard &&
+          other.permissions == this.permissions);
 }
 
 class StaffCompanion extends UpdateCompanion<StaffData> {
@@ -7615,12 +7672,14 @@ class StaffCompanion extends UpdateCompanion<StaffData> {
   final Value<String> name;
   final Value<String> pin;
   final Value<String> swipeCard;
+  final Value<String> permissions;
   const StaffCompanion({
     this.id = const Value.absent(),
     this.pluid = const Value.absent(),
     this.name = const Value.absent(),
     this.pin = const Value.absent(),
     this.swipeCard = const Value.absent(),
+    this.permissions = const Value.absent(),
   });
   StaffCompanion.insert({
     this.id = const Value.absent(),
@@ -7628,6 +7687,7 @@ class StaffCompanion extends UpdateCompanion<StaffData> {
     required String name,
     required String pin,
     this.swipeCard = const Value.absent(),
+    this.permissions = const Value.absent(),
   }) : name = Value(name),
        pin = Value(pin);
   static Insertable<StaffData> custom({
@@ -7636,6 +7696,7 @@ class StaffCompanion extends UpdateCompanion<StaffData> {
     Expression<String>? name,
     Expression<String>? pin,
     Expression<String>? swipeCard,
+    Expression<String>? permissions,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -7643,6 +7704,7 @@ class StaffCompanion extends UpdateCompanion<StaffData> {
       if (name != null) 'name': name,
       if (pin != null) 'pin': pin,
       if (swipeCard != null) 'swipe_card': swipeCard,
+      if (permissions != null) 'permissions': permissions,
     });
   }
 
@@ -7652,6 +7714,7 @@ class StaffCompanion extends UpdateCompanion<StaffData> {
     Value<String>? name,
     Value<String>? pin,
     Value<String>? swipeCard,
+    Value<String>? permissions,
   }) {
     return StaffCompanion(
       id: id ?? this.id,
@@ -7659,6 +7722,7 @@ class StaffCompanion extends UpdateCompanion<StaffData> {
       name: name ?? this.name,
       pin: pin ?? this.pin,
       swipeCard: swipeCard ?? this.swipeCard,
+      permissions: permissions ?? this.permissions,
     );
   }
 
@@ -7680,6 +7744,9 @@ class StaffCompanion extends UpdateCompanion<StaffData> {
     if (swipeCard.present) {
       map['swipe_card'] = Variable<String>(swipeCard.value);
     }
+    if (permissions.present) {
+      map['permissions'] = Variable<String>(permissions.value);
+    }
     return map;
   }
 
@@ -7690,7 +7757,8 @@ class StaffCompanion extends UpdateCompanion<StaffData> {
           ..write('pluid: $pluid, ')
           ..write('name: $name, ')
           ..write('pin: $pin, ')
-          ..write('swipeCard: $swipeCard')
+          ..write('swipeCard: $swipeCard, ')
+          ..write('permissions: $permissions')
           ..write(')'))
         .toString();
   }
@@ -12024,6 +12092,7 @@ typedef $$StaffTableCreateCompanionBuilder =
       required String name,
       required String pin,
       Value<String> swipeCard,
+      Value<String> permissions,
     });
 typedef $$StaffTableUpdateCompanionBuilder =
     StaffCompanion Function({
@@ -12032,6 +12101,7 @@ typedef $$StaffTableUpdateCompanionBuilder =
       Value<String> name,
       Value<String> pin,
       Value<String> swipeCard,
+      Value<String> permissions,
     });
 
 class $$StaffTableFilterComposer extends Composer<_$AppDatabase, $StaffTable> {
@@ -12064,6 +12134,11 @@ class $$StaffTableFilterComposer extends Composer<_$AppDatabase, $StaffTable> {
 
   ColumnFilters<String> get swipeCard => $composableBuilder(
     column: $table.swipeCard,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get permissions => $composableBuilder(
+    column: $table.permissions,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -12101,6 +12176,11 @@ class $$StaffTableOrderingComposer
     column: $table.swipeCard,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get permissions => $composableBuilder(
+    column: $table.permissions,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$StaffTableAnnotationComposer
@@ -12126,6 +12206,11 @@ class $$StaffTableAnnotationComposer
 
   GeneratedColumn<String> get swipeCard =>
       $composableBuilder(column: $table.swipeCard, builder: (column) => column);
+
+  GeneratedColumn<String> get permissions => $composableBuilder(
+    column: $table.permissions,
+    builder: (column) => column,
+  );
 }
 
 class $$StaffTableTableManager
@@ -12161,12 +12246,14 @@ class $$StaffTableTableManager
                 Value<String> name = const Value.absent(),
                 Value<String> pin = const Value.absent(),
                 Value<String> swipeCard = const Value.absent(),
+                Value<String> permissions = const Value.absent(),
               }) => StaffCompanion(
                 id: id,
                 pluid: pluid,
                 name: name,
                 pin: pin,
                 swipeCard: swipeCard,
+                permissions: permissions,
               ),
           createCompanionCallback:
               ({
@@ -12175,12 +12262,14 @@ class $$StaffTableTableManager
                 required String name,
                 required String pin,
                 Value<String> swipeCard = const Value.absent(),
+                Value<String> permissions = const Value.absent(),
               }) => StaffCompanion.insert(
                 id: id,
                 pluid: pluid,
                 name: name,
                 pin: pin,
                 swipeCard: swipeCard,
+                permissions: permissions,
               ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))

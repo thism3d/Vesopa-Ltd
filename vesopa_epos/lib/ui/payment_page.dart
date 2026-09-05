@@ -35,6 +35,8 @@ import 'widgets/pos_message.dart';
 import 'widgets/tender_panel.dart';
 import 'receipts_page.dart' show receiptListProvider;
 import 'theme.dart';
+import '../data/till_permissions.dart';
+import 'permission_gate.dart';
 
 /// Private so it does not collide with the basket panel's exported `money`,
 /// which sale_page imports.
@@ -842,6 +844,12 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
   /// common instruction, and making the clerk do that arithmetic at the counter
   /// is where discounts go wrong.
   Future<void> _applyManualDiscount() async {
+    // A goodwill gesture is money off the till, which is why it is a key a
+    // venue can withhold. Asked before the dialog opens rather than after an
+    // amount has been typed into it.
+    if (!await allowed(context, ref, TillPermission.discount)) return;
+    if (!mounted) return;
+
     final base = _tender.totals.grossMinor - _tender.totals.promoMinor;
     final choice = await showDiscountDialog(
       context,

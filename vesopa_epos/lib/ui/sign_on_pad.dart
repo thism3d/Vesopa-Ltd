@@ -33,9 +33,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/local/database.dart';
 import '../main.dart';
-import 'pin_dialog.dart';
+import 'pin_dialog.dart' show pinLength;
 import 'staff_handover.dart';
 import 'widgets/pos_message.dart';
+import 'widgets/staff_pin_pad.dart';
 
 /// Offer the till to somebody else.
 ///
@@ -56,6 +57,11 @@ Future<String?> showSignOnPad(BuildContext context, WidgetRef ref) async {
 
   return showDialog<String>(
     context: context,
+    // Transparent, and dimmed harder than the default. The pad is the idle
+    // screen's — a dark console meant to sit on a dark ground — so it is given
+    // one here rather than being dropped onto a white card where its keys would
+    // read as a hole cut in the dialog.
+    barrierColor: const Color(0xCC000000),
     builder: (_) => const _SignOnPad(),
   );
 }
@@ -75,6 +81,11 @@ class _SignOnPadState extends ConsumerState<_SignOnPad> {
   /// Whether the digits on screen belong to an attempt that has already been
   /// refused. The next digit clears them and starts again — see [_key].
   bool _spent = false;
+
+  /// Bumped on every refusal, so the pad shakes. The lock screen has always
+  /// done this; the Sign On dialog did not, and a refusal there was a line of
+  /// small text on a screen nobody was reading.
+  int _rejections = 0;
 
   void _key(String key) {
     setState(() {
@@ -118,6 +129,7 @@ class _SignOnPadState extends ConsumerState<_SignOnPad> {
       setState(() {
         _checking = false;
         _spent = true;
+        _rejections++;
         _error = 'That PIN was not recognised. Type it again, or correct it.';
       });
       return;
@@ -133,57 +145,35 @@ class _SignOnPadState extends ConsumerState<_SignOnPad> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
-    return AlertDialog(
-      title: const Row(
-        children: [
-          Icon(Icons.login),
-          SizedBox(width: 10),
-          Text('Sign on'),
-        ],
-      ),
-      content: SizedBox(
-        width: 280,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Type your PIN to take the till.',
-              style: TextStyle(color: scheme.onSurfaceVariant),
-            ),
-            const SizedBox(height: 16),
-            PinPad(pin: _pin, onKey: _key, enabled: !_checking),
-            // The height is held whether or not there is a message, so the pad
-            // does not jump under a finger that is already moving to the next
-            // key.
-            SizedBox(
-              height: 38,
-              child: _checking
-                  ? const Center(
-                      child: SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    )
-                  : _error == null
-                  ? null
-                  : Text(
-                      _error!,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: scheme.error, fontSize: 12),
-                    ),
-            ),
-          ],
+    // The idle screen's pad, not one that resembles it.
+    //
+    // The venue asked for these to be identical — "to make it simple for staff"
+    // — and they were not: this dialog had a smaller pad with a blank key where
+    // Clear belongs and a bare backspace beside it, while the lock screen had
+    // big keys with both actions spelled out. Signing on is the most repeated
+    // act on the terminal and staff do it without looking, so two layouts meant
+    // the muscle memory was wrong half the time.
+    //
+    // Sharing the widget rather than restyling this one is what stops that
+    // coming back the next time either screen is touched.
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      insetPadding: const EdgeInsets.all(24),
+      child: SingleChildScrollView(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 380),
+          child: StaffPinPad(
+            pin: _pin,
+            onKey: _key,
+            onCancel: _checking ? () {} : () => Navigator.of(context).pop(),
+            prompt: 'Type your PIN to take the till',
+            error: _error,
+            busy: _checking,
+            rejections: _rejections,
+          ),
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: _checking ? null : () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-      ],
     );
   }
 }

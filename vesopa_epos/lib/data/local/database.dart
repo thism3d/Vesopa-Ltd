@@ -479,6 +479,19 @@ class Staff extends Table {
   /// with no card and a reader that sent nothing.
   TextColumn get swipeCard => text().withDefault(const Constant(''))();
 
+  /// The permission group's switches, as JSON, or empty for somebody in no
+  /// group.
+  ///
+  /// Cached here for the reason the PIN and the card are: a manager approving a
+  /// void at eight on a Friday cannot wait for the broadband, and a till that
+  /// could only check a permission online would start refusing them at the one
+  /// moment that matters. See `data/till_permissions.dart`.
+  ///
+  /// Empty means every key — not none. Every member of staff at every venue
+  /// trading today has no group, so an empty column has to keep meaning what it
+  /// has always meant.
+  TextColumn get permissions => text().withDefault(const Constant(''))();
+
   @override
   Set<Column> get primaryKey => {id};
 }
@@ -508,7 +521,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 17;
+  int get schemaVersion => 18;
 
 
   /// Add a column only if the table has not already got it.
@@ -670,6 +683,13 @@ class AppDatabase extends _$AppDatabase {
             // until the back office says they do, and a till that guessed would
             // be a till where an empty column signs somebody on.
             await _addColumnIfMissing(m, staff, staff.swipeCard);
+          }
+          if (from < 18) {
+            // Permission groups. Empty on every existing row, which is
+            // "unrestricted" — see `data/till_permissions.dart`. A default of
+            // "no keys" here would take the refund key off every member of
+            // staff on the next launch of the till.
+            await _addColumnIfMissing(m, staff, staff.permissions);
           }
         },
       );
