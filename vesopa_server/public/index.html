@@ -204,7 +204,9 @@
 
           <button class="nav-group" data-group="people">People<span class="caret">▼</span></button>
           <button class="nav" data-view="users">Back Office Users</button>
+          <button class="nav" data-view="user_roles">Back Office User Roles</button>
           <button class="nav" data-view="staff">Staff</button>
+          <button class="nav" data-view="permission_groups">Staff Permissions</button>
           <button class="nav" data-view="customers">Customers</button>
           <button class="nav" data-view="vouchers">Vouchers</button>
           <button class="nav" data-view="receipt_designer">Receipt designer</button>
@@ -227,6 +229,8 @@
             <button class="nav" data-view="subscriptions">Subscriptions</button>
           </div>
         </nav>
+
+        <span id="role-badge" hidden></span>
 
         <div class="rail-foot">
           <span id="live-dot" class="dot offline" title="Realtime connection"></span>
@@ -693,7 +697,7 @@
             <button class="btn primary" id="add-user">Add user</button>
           </div>
           <div class="card"><table>
-            <thead><tr><th>Name</th><th>Email</th><th>Office</th><th>Role</th><th></th></tr></thead>
+            <thead><tr><th>Name</th><th>Email</th><th>Office</th><th>Role</th><th>Access</th><th></th></tr></thead>
             <tbody id="users"></tbody>
           </table></div>
         </section>
@@ -705,13 +709,13 @@
               <p class="muted small">
                 The people who work the till. They sign on at the terminal with a PIN, not an email —
                 and whoever is signed on is the name that prints as “Served by”.
-                Permissions and rota will be added to this section later.
+                What each of them may do is set under Staff Permissions and chosen here.
               </p>
             </div>
             <button class="btn primary" id="add-staff">Add staff</button>
           </div>
           <div class="card"><table>
-            <thead><tr><th>Name</th><th>ID</th><th>PIN</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>Name</th><th>ID</th><th>PIN</th><th>Permissions</th><th>Status</th><th></th></tr></thead>
             <tbody id="staff"></tbody>
           </table></div>
           <p class="muted small" style="margin-top:12px">
@@ -719,6 +723,49 @@
             someone on the moment the fourth digit lands, so a longer PIN could never be used and
             a shared one would attribute sales to whoever was found first.
           </p>
+        </section>
+
+        <!-- Staff Permissions: the till's roles.
+             Named groups of keys — Staff, Supervisor, Manager — assigned to a
+             member of staff on the Staff page. Checked at the terminal with the
+             broadband down, which is why the switches travel with the PIN. -->
+        <section id="view-permission_groups" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Staff Permissions</h2>
+              <p class="muted small">
+                Set up roles — Staff, Supervisor, Manager — say what each one may do at the till,
+                then assign one to each member of staff on the Staff page.
+                Anyone not in a group keeps every key, which is how the till worked before this page existed.
+              </p>
+            </div>
+            <button class="btn primary" id="add-permission-group">Add group</button>
+          </div>
+          <div class="card"><table>
+            <thead><tr><th>Group</th><th></th><th>Can</th><th></th></tr></thead>
+            <tbody id="permission-groups"></tbody>
+          </table></div>
+        </section>
+
+        <!-- Back Office User Roles: this application's own.
+             What a login may open here, as opposed to what a PIN may do at the
+             counter. An accountant sees the reporting and nothing else. -->
+        <section id="view-user_roles" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Back Office User Roles</h2>
+              <p class="muted small">
+                What each back-office login may see and do. An accountant can be given the reporting
+                and nothing else; a manager everything but the logins.
+                A user with no role sees everything, which is how it worked before this page existed.
+              </p>
+            </div>
+            <button class="btn primary" id="add-user-role">Add role</button>
+          </div>
+          <div class="card"><table>
+            <thead><tr><th>Role</th><th>Description</th><th>Access</th><th>People</th><th></th></tr></thead>
+            <tbody id="user-roles"></tbody>
+          </table></div>
         </section>
 
         <!-- Idle screen: what the terminal shows between customers, and how
@@ -2231,6 +2278,9 @@
          rendered, which is always after everything has parsed. -->
     <script src="/charts.js"></script>
     <script src="/screens.js"></script>
+    <!-- Before app.js, like screens.js: it defines functions app.js's render
+         map refers to, and uses app.js's helpers only from inside them. -->
+    <script src="/permissions.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>

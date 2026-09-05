@@ -23,3 +23,4 @@ node_modules/
 # macOS Finder droppings. Tracked once by accident; a binary file that
 # changes whenever a folder is opened has no business in a diff.
 .DS_Store
+shots/

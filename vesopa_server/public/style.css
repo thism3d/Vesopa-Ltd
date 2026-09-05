@@ -4398,3 +4398,93 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
   background: none;
   cursor: pointer;
 }
+
+/* ---------------------------------------------------------------------------
+   Permissions: the two screens that are a grid of switches.
+
+   A role in this back office has fifty of them and a till group eleven, which
+   is more than the modal's 440px column can hold without becoming a scroll of
+   single-file checkboxes nobody can scan. So the modal widens and the switches
+   sit in columns that reflow — read down a category, not through one.
+   --------------------------------------------------------------------------- */
+
+.perm-modal {
+  width: min(880px, 94vw);
+}
+
+.perm-category {
+  margin-top: 18px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px 16px;
+  background: var(--surface-2);
+}
+
+/* The category name and its "toggle all" on one line, because they are one
+   thought: this section, and all of it. */
+.perm-category-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.perm-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 8px 18px;
+}
+
+/* Top-aligned: a two-line item next to a one-line item otherwise centres its
+   checkbox against the middle of the text and the column stops reading as a
+   column. */
+.perm-item {
+  align-items: flex-start;
+  color: var(--text);
+  padding: 4px 0;
+}
+
+.perm-item span { display: block; }
+.perm-label { font-size: 14px; }
+
+/* The explanation under a till permission. Present for every one of them: a
+   switch a manager has to guess at is a switch that gets left on. */
+.perm-hint {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+  line-height: 1.35;
+}
+
+/* A named group or role, in a list. */
+.pill {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--brand-soft);
+  color: var(--brand-deep);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* The empty state on both screens: an explanation and the one button that
+   fixes it, rather than a blank table and a hunt for "Add". */
+.empty-cta {
+  text-align: center;
+  padding: 28px 16px;
+}
+.empty-cta p { margin-bottom: 14px; }
+
+/* The signed-in user's role, in the rail. "Why can I not see Products?" should
+   be answerable without ringing anybody. */
+#role-badge {
+  display: block;
+  margin: 8px 22px 0;
+  font-size: 12px;
+  color: var(--rail-text);
+}

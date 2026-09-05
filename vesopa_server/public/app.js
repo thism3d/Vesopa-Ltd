@@ -284,7 +284,9 @@ const ROUTES = {
   kitchen: '/kitchen-screens',
   tables: '/tables',
   users: '/users',
+  user_roles: '/user-roles',
   staff: '/staff',
+  permission_groups: '/permission-groups',
   customers: '/customers',
   vouchers: '/vouchers',
   receipt_designer: '/receipt-designer',
@@ -825,7 +827,9 @@ function render() {
     products: loadProducts,
     stock: loadStock,
     users: loadUsers,
+    user_roles: loadUserRoles,
     staff: loadStaff,
+    permission_groups: loadPermissionGroups,
     customers: loadCustomers,
     offices: loadOffices,
     billing: loadBilling,
@@ -1795,6 +1799,16 @@ async function loadUsers() {
         <td class="muted small">${esc(u.email)}</td>
         <td>${esc(u.office_name || '—')}</td>
         <td><span class="badge ${u.role === 'admin' ? 'active' : 'archived'}">${u.role}</span></td>
+        <td>${
+          u.role === 'admin'
+            ? '<span class="muted">Platform admin</span>'
+            : u.role_name
+              ? `<span class="pill">${esc(u.role_name)}</span>`
+              // Named, not blank. A login with no role sees everything, and a
+              // column that says nothing for the most permissive state is the
+              // one way this table could mislead somebody.
+              : '<span class="muted">Everything</span>'
+        }</td>
         <td class="right nowrap">
           ${u.staff_id
             // A back-office login and a till operator are two different records
@@ -1806,13 +1820,15 @@ async function loadUsers() {
             : rowCardActions({ kind: 'staff', id: '', name: u.name, print: false,
                 disabled: 'No staff record matches this email, so there is no '
                   + 'card to issue. Add them under Staff first.' })}
+          ${u.role !== 'admin'
+            ? `<button class="btn small ghost" data-role-user="${u.id}" data-role-current="${u.role_id ?? ''}">Role</button>` : ''}
           <button class="btn small ghost" data-pw-user="${u.id}">Reset password</button>
           ${u.role !== 'admin'
             ? `<button class="btn small danger" data-del-user="${u.id}">Delete</button>` : ''}
         </td>
       </tr>`
     )
-    .join('') || '<tr><td colspan="5" class="empty">No users.</td></tr>';
+    .join('') || '<tr><td colspan="6" class="empty">No users.</td></tr>';
 }
 
 /**
@@ -1884,6 +1900,59 @@ async function loadStock() {
     '<tr><td colspan="4" class="empty">No products yet.</td></tr>';
 }
 
+/**
+ * The permission-group picker for the staff form.
+ *
+ * "Every key" is the blank option and it is first, because it is what every
+ * existing member of staff has and what a new one gets unless somebody says
+ * otherwise. Naming it rather than leaving the option empty is the difference
+ * between a manager knowing what they are choosing and guessing.
+ *
+ * A venue with no groups gets the picker anyway, pointing at Staff Permissions.
+ * The alternative — hiding the field — leaves the feature invisible to exactly
+ * the people who have not set it up yet.
+ */
+async function staffGroupField(value) {
+  let groups = [];
+  try {
+    groups = await api('/permission-groups');
+  } catch {
+    // A half-migrated server. The field degrades to the only honest option.
+  }
+  return {
+    label: groups.length
+      ? 'Permissions'
+      : 'Permissions (set groups up under Staff Permissions)',
+    name: 'permission_group_id',
+    type: 'select',
+    value: value ?? '',
+    options: [
+      { value: '', label: 'Every key — no restrictions' },
+      ...groups.map((g) => ({ value: g.id, label: g.name })),
+    ],
+  };
+}
+
+/** The role picker for the back-office user form. Same shape, same reasoning. */
+async function userRoleField(value) {
+  let roles = [];
+  try {
+    roles = await api('/user-roles');
+  } catch {
+    // As above.
+  }
+  return {
+    label: roles.length ? 'Role' : 'Role (set roles up under Back Office User Roles)',
+    name: 'role_id',
+    type: 'select',
+    value: value ?? '',
+    options: [
+      { value: '', label: 'Everything — no restrictions' },
+      ...roles.map((r) => ({ value: r.id, label: r.display_name })),
+    ],
+  };
+}
+
 async function loadStaff() {
   const rows = await api('/staff');
   $('staff').innerHTML = rows
@@ -1897,12 +1966,20 @@ async function loadStaff() {
           pluid: c.pluid,
           pin_code: pin,
           active: active ? 1 : 0,
+          permission_group_id: c.permission_group_id ?? '',
         })
       );
       // A PIN that is not four digits cannot be used at the till — the pad
       // submits on the fourth key — so any legacy row like that is called out
       // here rather than leaving a member of staff who silently cannot sign on.
       const badPin = !/^\d{4}$/.test(pin);
+      // "Every key" and not a blank: a clerk in no group is unrestricted, and a
+      // permissions column that says nothing for the most permissive state is
+      // the one way this table could mislead somebody.
+      const group = c.permission_group
+        ? `<span class="pill">${esc(c.permission_group)}</span>`
+        : '<span class="muted">Every key</span>';
+
       return `<tr>
         <td>${esc(c.clark_name)}</td>
         <td>${c.pluid}</td>
@@ -1911,6 +1988,7 @@ async function loadStaff() {
             ? ' <span class="pin-warn" title="The till pad submits after four digits, so this PIN can never sign on. Edit it to a 4-digit PIN.">needs fixing</span>'
             : ''
         }</td>
+        <td>${group}</td>
         <td>${active ? 'Active' : '<span class="muted">Retired</span>'}</td>
         <td class="right nowrap">
           ${rowCardActions({ kind: 'staff', id: c.id, name: c.clark_name })}
@@ -3283,11 +3361,26 @@ document.addEventListener('click', async (e) => {
     return loadUsers();
   }
 
+  if (t.dataset.roleUser) {
+    return modal(
+      'Role',
+      [await userRoleField(t.dataset.roleCurrent)],
+      async (d) => {
+        await api(`/users/${t.dataset.roleUser}/role`, {
+          method: 'PUT',
+          body: JSON.stringify({ role_id: d.role_id }),
+        });
+        return loadUsers();
+      }
+    );
+  }
+
   if (t.id === 'add-staff') {
     return modal('Add staff', [
       { label: 'Staff name', name: 'clark_name', required: true },
       { label: 'Staff PIN (exactly 4 digits)', name: 'pin_code', required: true },
       { label: 'Staff ID', name: 'pluid', type: 'number', value: '0' },
+      await staffGroupField(''),
       { label: 'Active (can sign on at the till)', name: 'active', type: 'checkbox', value: 1 },
     ], (d) => {
       const bad = staffPinError(d.pin_code, { required: true });
@@ -3304,6 +3397,7 @@ document.addEventListener('click', async (e) => {
       // "keep the old one" is a worse thing to explain than the PIN itself.
       { label: 'Staff PIN (exactly 4 digits)', name: 'pin_code', value: c.pin_code ?? '' },
       { label: 'Staff ID', name: 'pluid', type: 'number', value: c.pluid },
+      await staffGroupField(c.permission_group_id ?? ''),
       { label: 'Active (can sign on at the till)', name: 'active', type: 'checkbox', value: c.active },
     ], (d) => {
       // Blank still means "leave it alone" server-side, so it is only validated
@@ -3551,7 +3645,7 @@ async function verifyResetToken(raw) {
     'This reset link has expired or has already been used. Request a new one.';
 }
 
-function start() {
+async function start() {
   $('login').hidden = true;
   $('app').hidden = false;
 
@@ -3563,6 +3657,12 @@ function start() {
     : `${me?.officeName || ''}`;
 
   connectSocket();
+
+  // What this login's role allows, and the menu trimmed to match. Awaited
+  // before the first view is shown so that a restricted user never sees a
+  // section flash up and vanish — and the server refuses anyway, so a failure
+  // here costs a tidy menu and nothing else.
+  await applyAccess();
 
   // Land on whatever the URL asks for, so a refresh or a bookmarked page
   // reopens where the user left off.
