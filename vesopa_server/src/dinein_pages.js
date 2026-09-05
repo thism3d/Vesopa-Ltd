@@ -501,6 +501,12 @@ section .blurb{margin:0 0 6px;color:var(--ink-soft);font-size:14px}
 .add{
   border:0;border-radius:999px;background:var(--accent);color:var(--on-accent);
   width:40px;height:40px;flex:0 0 auto;position:relative;
+  /* font-size:0 is the guard, not the mechanism. The glyph is gone from the
+     markup, but a phone holding a cached copy of the shell would otherwise draw
+     a 16px "+" off-centre underneath these two rules and the button would read
+     as a smudge. currentColor is untouched — the rules below are painted with
+     it. */
+  font-size:0;line-height:0;
   transition:transform .12s ease
 }
 .add:active{transform:scale(.92)}
@@ -786,7 +792,7 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
     var qty = basket[id] ? basket[id].qty : 0;
     if (!qty) {
       return '<button class="add" type="button" data-add="' + id + '" ' +
-             'aria-label="Add">+</button>';
+             'aria-label="Add"></button>';
     }
     return '<div class="qty">' +
       '<button type="button" data-less="' + id + '" aria-label="One fewer">−</button>' +
