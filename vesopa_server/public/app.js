@@ -7652,6 +7652,22 @@ const iconButton = (icon, label, data, extra = '') =>
           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icon}</svg>
    </button>`;
 
+/**
+ * Put the chosen report's own name and description at the top of the page.
+ *
+ * This screen used to run one report and the heading was written into the
+ * markup. It runs five now, and a page headed "Financial Summary" above a table
+ * of voids is one a manager reasonably reports as broken.
+ */
+function rrNameReport() {
+  const chosen = (rrCatalogue?.reports || []).find(
+    (r) => r.key === $('rr-report').value
+  );
+  if (!chosen) return;
+  $('rr-title').textContent = chosen.label;
+  $('rr-blurb').textContent = chosen.description || '';
+}
+
 async function loadRunReport() {
   if (!rrCatalogue) {
     rrCatalogue = await api('/reports/catalogue');
@@ -7671,11 +7687,14 @@ async function loadRunReport() {
     $('rr-period').value = 'yesterday';
 
     $('rr-period').addEventListener('change', rrToggleCustom);
+    $('rr-report').addEventListener('change', rrNameReport);
     $('rr-run').addEventListener('click', rrRun);
     $('rr-export').addEventListener('click', rrExport);
     $('rr-view').addEventListener('click', rrView);
     rrToggleCustom();
   }
+
+  rrNameReport();
 
   // Nothing is run on arrival. A report is a query over the whole ledger, and
   // firing one because somebody clicked a menu item is how a back office comes

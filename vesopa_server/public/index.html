@@ -318,10 +318,14 @@
         <section id="view-run_report" class="view" hidden>
           <div class="page-head">
             <div>
-              <h2>Financial Summary</h2>
-              <p class="muted small">
-                Sales by department and sub department for any period, with the discounts,
-                payments and spend per head that have to reconcile against them.
+              <!-- Named by the report chosen below, not fixed. This page runs
+                   five of them now, and a heading that always said "Financial
+                   Summary" over a Voids table is a page that looks broken. -->
+              <h2 id="rr-title">Reports</h2>
+              <p class="muted small" id="rr-blurb">
+                Choose a report and a period. Every one can be viewed here,
+                downloaded as a PDF, CSV or spreadsheet, or scheduled to arrive
+                by email.
               </p>
             </div>
           </div>
