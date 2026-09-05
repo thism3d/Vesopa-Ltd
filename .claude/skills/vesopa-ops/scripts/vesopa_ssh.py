@@ -59,7 +59,22 @@ def settings():
                 values[key.strip()] = value.strip().strip('"').strip("'")
             break
         root = os.path.dirname(root)
-    values.update({k: v for k, v in os.environ.items() if k.startswith("VESOPA_")})
+    # The file wins over the environment, which is the opposite of the usual
+    # rule and is deliberate.
+    #
+    # Sourcing .env.claude-tools in Git Bash is the ordinary way to get at the
+    # other values in it, and doing so puts a *mangled* VESOPA_REMOTE_APP into
+    # the environment: MSYS rewrites POSIX-looking paths on their way to a
+    # native Windows program, so the remote directory arrives as
+    # `C:/Program Files/Git/home/vesopa/...`. That has a space in it, so `cd`
+    # on the far end got two arguments and every command after it ran in the
+    # wrong directory — while still exiting 0, which is how it produced a test
+    # that passed by finding nothing.
+    #
+    # So the environment only fills in keys the file does not define.
+    for key, value in os.environ.items():
+        if key.startswith("VESOPA_") and key not in values:
+            values[key] = value
     return values
 
 
