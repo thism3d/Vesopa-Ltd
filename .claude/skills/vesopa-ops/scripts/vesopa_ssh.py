@@ -15,6 +15,7 @@ Reads VESOPA_SSH_HOST (user@host) and VESOPA_SSH_PASSWORD from the environment.
 Nothing is written to the server unless the command says to.
 """
 
+import io
 import os
 import posixpath
 import stat
@@ -33,13 +34,43 @@ DEFAULT_EXCLUDES = {
 }
 
 
+def settings():
+    """Read .env.claude-tools directly, not through the shell.
+
+    Git Bash rewrites anything that looks like a POSIX path when it hands the
+    environment to a native Windows program, so a remote path exported from the
+    shell arrives here as `C:/Program Files/Git/home/vesopa/...` and every SFTP
+    call fails with "No such file". Reading the file ourselves sidesteps the
+    conversion entirely — and means the script works whether or not anybody
+    remembered to source it.
+
+    A real environment variable still wins, so a one-off override works.
+    """
+    values = {}
+    root = os.path.dirname(os.path.abspath(__file__))
+    for _ in range(6):  # walk up to the repository root
+        candidate = os.path.join(root, ".env.claude-tools")
+        if os.path.isfile(candidate):
+            for line in io.open(candidate, encoding="utf-8"):
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                values[key.strip()] = value.strip().strip('"').strip("'")
+            break
+        root = os.path.dirname(root)
+    values.update({k: v for k, v in os.environ.items() if k.startswith("VESOPA_")})
+    return values
+
+
 def connect():
-    target = os.environ.get("VESOPA_SSH_HOST", "")
-    password = os.environ.get("VESOPA_SSH_PASSWORD")
+    config = settings()
+    target = config.get("VESOPA_SSH_HOST", "")
+    password = config.get("VESOPA_SSH_PASSWORD")
     if not target or not password:
         raise SystemExit(
-            "VESOPA_SSH_HOST and VESOPA_SSH_PASSWORD must be set "
-            "(source .env.claude-tools)"
+            "VESOPA_SSH_HOST and VESOPA_SSH_PASSWORD not found in "
+            ".env.claude-tools or the environment"
         )
     user, _, host = target.partition("@")
     if not host:
@@ -129,6 +160,16 @@ def get(client, remote, local):
     print(f"downloaded {remote} -> {local}")
 
 
+def _resolve(remote):
+    """Expand a leading `@app` to the deployed application's directory."""
+    if remote == "@app" or remote.startswith("@app/"):
+        base = settings().get("VESOPA_REMOTE_APP")
+        if not base:
+            raise SystemExit("VESOPA_REMOTE_APP is not set")
+        return base if remote == "@app" else posixpath.join(base, remote[5:])
+    return remote
+
+
 def main():
     args = sys.argv[1:]
     if not args:
@@ -144,11 +185,17 @@ def main():
     client = connect()
     try:
         if action == "run":
-            sys.exit(run(client, " ".join(rest)))
+            # `@app` works here too, for the same reason.
+            command = " ".join(rest).replace(
+                "@app", settings().get("VESOPA_REMOTE_APP", "@app")
+            )
+            sys.exit(run(client, command))
         if action == "put":
             if len(rest) != 2:
                 raise SystemExit("put <local-dir> <remote-dir>")
-            put(client, rest[0], rest[1], excludes)
+            # `@app/src` means "under VESOPA_REMOTE_APP", so the remote path
+            # never has to travel through the shell and be rewritten.
+            put(client, rest[0], _resolve(rest[1]), excludes)
             return
         if action == "get":
             if len(rest) != 2:
