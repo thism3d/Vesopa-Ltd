@@ -1,0 +1,63 @@
+# Line endings, settled once for everybody.
+#
+# WHY THIS FILE EXISTS
+#
+# Every text file in this repository is stored with LF, because it was written
+# on a Mac. Windows Git ships with `core.autocrlf=true` as its default, so a
+# fresh clone on Windows gets CRLF in the working tree while the repository
+# itself still holds LF. That is normally invisible — until something reads its
+# own source.
+#
+# Several tests do exactly that. They lift a function out of public/app.js by
+# finding the line containing only its closing brace, spelled as a newline, a
+# brace and a newline. Under CRLF that never matches, and `npm test` stopped on
+# "could not find the end of cropGeometry" before it had run a single check —
+# on a checkout where nothing whatsoever was wrong with the code.
+#
+# Fixing it test by test would mean remembering to normalise in every future
+# test that reads a source file, and the ones that forgot would fail only on
+# Windows and only for whoever cloned rather than copied the folder. Settling it
+# here fixes the class.
+#
+# WHAT ADDING THIS COST, ONCE
+#
+# Almost everything here was already LF, so almost nothing moved. Fourteen files
+# were not: some SCSS, one built CSS bundle and a handful of SVGs under
+# vesopa_web, all third-party assets that arrived with CRLF. Renormalising them
+# is a diff of fifteen thousand lines that changes nothing —
+# `git diff --ignore-cr-at-eol` over that commit is empty — and it is done once,
+# here, rather than surprising whoever next edits one of them.
+
+# Git decides what is text, and every text file is checked out with LF.
+* text=auto eol=lf
+
+# Windows-only files that genuinely want CRLF. A .bat or .ps1 read by an older
+# tool can behave oddly without it, and neither is read by a test.
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+*.ps1  text eol=crlf
+
+# Left exactly as they are. `text=auto` detects most of these on its own, but
+# being explicit costs nothing and a mis-detected certificate or font is a
+# corrupted one.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.ico   binary
+*.pdf   binary
+*.zip   binary
+*.msix  binary
+*.pkpass binary
+*.p12   binary
+*.cer   binary
+*.crt   binary
+*.ttf   binary
+*.otf   binary
+*.woff  binary
+*.woff2 binary
+*.mp4   binary
+*.xlsx  binary
+*.sqlite binary
+*.db    binary
