@@ -203,6 +203,12 @@
           <button class="nav-group" data-group="floor">Floor<span class="caret">▼</span></button>
           <button class="nav" data-view="tables">Table Designer</button>
 
+          <button class="nav-group" data-group="dinein">Dine-in &amp; QR<span class="caret">▼</span></button>
+          <button class="nav" data-view="dinein">Your menu page</button>
+          <button class="nav" data-view="dinein_menu">Menu</button>
+          <button class="nav" data-view="dinein_qr">Table codes</button>
+          <button class="nav" data-view="dinein_orders">Online orders</button>
+
           <button class="nav-group" data-group="people">People<span class="caret">▼</span></button>
           <button class="nav" data-view="users">Back Office Users</button>
           <button class="nav" data-view="user_roles">Back Office User Roles</button>
@@ -688,6 +694,45 @@
         </section>
 
         <!-- Table designer -->
+        <section id="view-dinein" class="view" hidden>
+          <h2>Your menu page</h2>
+          <p class="hint">
+            The page a customer lands on when they scan the code on their table.
+            Set the address once — it goes on printed cards — then fill in what
+            they see and turn it on.
+          </p>
+          <div id="dinein-body"></div>
+        </section>
+
+        <section id="view-dinein_menu" class="view" hidden>
+          <h2>Menu</h2>
+          <p class="hint">
+            What a customer is shown, in the order they scroll through it. This
+            is deliberately not your whole catalogue: bar tabs, deposits and
+            staff meals all live in there, and none of them belong on a phone.
+            Prices always come from the catalogue, so you never keep two lists.
+          </p>
+          <div id="dinein_menu-body"></div>
+        </section>
+
+        <section id="view-dinein_qr" class="view" hidden>
+          <h2>Table codes</h2>
+          <p class="hint">
+            Every table has its own permanent web address and its own code. Lay
+            the card out once and print the set.
+          </p>
+          <div id="dinein_qr-body"></div>
+        </section>
+
+        <section id="view-dinein_orders" class="view" hidden>
+          <h2>Online orders</h2>
+          <p class="hint">
+            Everything that has come in from a phone in the last 24 hours, and
+            what the till did with it.
+          </p>
+          <div id="dinein_orders-body"></div>
+        </section>
+
         <section id="view-tables" class="view" hidden>
           <div class="page-head">
             <div>
@@ -696,6 +741,7 @@
             </div>
             <div style="display:flex;gap:10px">
               <button class="btn ghost" id="add-room">New room</button>
+              <button class="btn ghost" id="room-shape">Room shape</button>
               <button class="btn ghost" id="add-table">Add table</button>
               <button class="btn primary" id="save-floor">Save layout</button>
             </div>
@@ -2312,6 +2358,7 @@
     <!-- Before app.js, like screens.js: it defines functions app.js's render
          map refers to, and uses app.js's helpers only from inside them. -->
     <script src="/permissions.js"></script>
+    <script src="/dinein.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>

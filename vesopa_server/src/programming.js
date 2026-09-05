@@ -654,6 +654,35 @@ function programmingRoutes({ pool, broadcast, secret }) {
   router.put('/floor/tables', auth, async (req, res, next) => {
     const tables = req.body.tables || [];
     const officeId = await floorOfficeId(req);
+
+    // The venue-wide name rule holds here too.
+    //
+    // This route is the designer's Save, and it carries names now — so without
+    // this a manager could do through a drag exactly what PUT /floor/tables/:id
+    // refuses: two tables answering to "Window" in one building, and a plate
+    // going to the wrong people. Checked before the transaction opens, so a
+    // clash costs nothing and reports the name that clashed.
+    //
+    // Both halves are needed: against the database, for the tables not in this
+    // payload, and against the payload itself, for two rows renamed in the same
+    // save — which the database cannot see because neither is written yet.
+    const seen = new Map();
+    for (const t of tables) {
+      if (t.name === undefined) continue;
+      const clean = String(t.name || '').trim();
+      if (!clean) continue;
+      const key = clean.toLowerCase();
+      if (seen.has(key)) {
+        return res.status(409).json({
+          error: 'Two tables in this layout are both called "' + clean + '".',
+        });
+      }
+      seen.set(key, t.id);
+
+      const clash = await nameClash(officeId, clean, t.id);
+      if (clash) return res.status(409).json({ error: clash });
+    }
+
     const conn = await pool.getConnection();
     try {
       await conn.beginTransaction();

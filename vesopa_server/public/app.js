@@ -284,6 +284,10 @@ const ROUTES = {
   idle: '/idle-screen',
   kitchen: '/kitchen-screens',
   tables: '/tables',
+  dinein: '/dine-in',
+  dinein_menu: '/dine-in/menu',
+  dinein_qr: '/dine-in/table-codes',
+  dinein_orders: '/dine-in/orders',
   users: '/users',
   user_roles: '/user-roles',
   staff: '/staff',
@@ -849,6 +853,10 @@ function render() {
     offices: loadOffices,
     billing: loadBilling,
     tables: loadFloor,
+    dinein: loadDineIn,
+    dinein_menu: loadDineInMenu,
+    dinein_qr: loadDineInQr,
+    dinein_orders: loadDineInOrders,
     program_departments: () => loadCrud('departments'),
     program_groups: () => loadCrud('groups'),
     printer_categories: () => loadCrud('print-categories'),
@@ -2198,13 +2206,35 @@ const ROOM_ROWS = 15;
  * already agreed with its staff.
  */
 function roomSize(room) {
-  let cols = ROOM_COLS;
-  let rows = ROOM_ROWS;
+  // The room's own dimensions win, so a manager who has drawn a 20x14 room gets
+  // 20x14 of floor to work on rather than a box that shrinks to whatever is
+  // currently in it. The tables still push it outwards — a table dragged past
+  // the edge must stay reachable — but they can no longer pull it in.
+  let cols = Math.max(ROOM_COLS, (room && room.cols) || 0);
+  let rows = Math.max(ROOM_ROWS, (room && room.rows) || 0);
   for (const t of (room && room.tables) || []) {
     cols = Math.max(cols, (t.pos_x || 0) + (t.width || 1));
     rows = Math.max(rows, (t.pos_y || 0) + (t.height || 1));
   }
   return { cols, rows };
+}
+
+/**
+ * A room's outline as a list of grid points, or null for a plain rectangle.
+ *
+ * The server stores this as JSON text and hands it straight back, so it is
+ * parsed here rather than trusted: a room saved by an older build, or one whose
+ * shape was cleared, comes through as null and must draw as the rectangle every
+ * room used to be.
+ */
+function roomOutline(room) {
+  if (!room || !room.outline) return null;
+  try {
+    const points = JSON.parse(room.outline);
+    return Array.isArray(points) && points.length >= 3 ? points : null;
+  } catch {
+    return null;
+  }
 }
 let floor = [];
 let activeRoom = null;
@@ -2250,13 +2280,33 @@ function drawRoom() {
   canvas.style.setProperty('--room-w', `${cols * GRID}px`);
   canvas.style.setProperty('--room-h', `${rows * GRID}px`);
 
-  canvas.innerHTML = room.tables
+  // The walls, under the tables.
+  //
+  // Real rooms are not boxes: an L wrapping a corner is the commonest floor in
+  // the trade, and a venue forced to draw it as a rectangle either loses the
+  // corner or gains a quarter of the room that is actually the kitchen. The
+  // polygon is drawn as an SVG behind everything and takes no pointer events,
+  // so dragging a table over it is unaffected.
+  const outline = roomOutline(room);
+  const walls = outline
+    ? `<svg class="room-walls" width="${cols * GRID}" height="${rows * GRID}"
+            style="position:absolute;left:0;top:0;pointer-events:none">
+         <polygon points="${outline
+           .map(([x, y]) => `${x * GRID},${y * GRID}`)
+           .join(' ')}"
+           fill="var(--room-fill, rgba(127,127,127,.08))"
+           stroke="var(--room-line, rgba(127,127,127,.55))"
+           stroke-width="2" stroke-linejoin="round" />
+       </svg>`
+    : '';
+
+  canvas.innerHTML = walls + room.tables
     .map(
       (t) => `<div class="tbl ${t.shape === 'circle' ? 'circle' : ''}"
         data-table="${t.id}"
         style="left:${t.pos_x * GRID}px; top:${t.pos_y * GRID}px;
                width:${t.width * GRID}px; height:${t.height * GRID}px;">
-        <span class="num">${t.label ? esc(t.label) : t.table_number}</span>
+        <span class="num">${esc(t.name || t.label || String(t.table_number))}</span>
         <span class="seats">${t.seats} seats</span>
       </div>`
     )
@@ -2335,6 +2385,196 @@ function drawSelection() {
   );
 }
 
+/**
+ * The shapes a room is actually the shape of.
+ *
+ * Offered as a handful of presets rather than a polygon editor, because the
+ * shape of a room is a fact somebody already knows when they sit down to draw
+ * it — and clicking corners onto a grid to describe a rectangle with a bite out
+ * of it is slower and worse than saying "L, twelve by ten, cut six by five".
+ *
+ * Each preset is a function of the room's size and the size of the cut, so the
+ * same four entries cover every L a venue will ever have. Anything genuinely
+ * odd — a bay window, a curved bar — falls through to the points box, which
+ * takes the polygon directly.
+ *
+ * Walked clockwise from the top left in every case, because the fill rule and
+ * the till's renderer both assume one winding.
+ */
+const ROOM_SHAPES = {
+  rect: {
+    label: 'Rectangle',
+    points: (w, h) => [[0, 0], [w, 0], [w, h], [0, h]],
+  },
+  l: {
+    label: 'L — corner cut from the bottom right',
+    points: (w, h, cw, ch) => [
+      [0, 0], [w, 0], [w, h - ch], [w - cw, h - ch], [w - cw, h], [0, h],
+    ],
+  },
+  l_flipped: {
+    label: 'L — corner cut from the bottom left',
+    points: (w, h, cw, ch) => [
+      [0, 0], [w, 0], [w, h], [cw, h], [cw, h - ch], [0, h - ch],
+    ],
+  },
+  t: {
+    label: 'T — narrower at the bottom',
+    points: (w, h, cw, ch) => [
+      [0, 0], [w, 0], [w, h - ch], [w - cw, h - ch], [w - cw, h],
+      [cw, h], [cw, h - ch], [0, h - ch],
+    ],
+  },
+  u: {
+    label: 'U — a gap up the middle',
+    points: (w, h, cw, ch) => [
+      [0, 0], [w, 0], [w, h], [w - cw, h], [w - cw, ch],
+      [cw, ch], [cw, h], [0, h],
+    ],
+  },
+};
+
+/** Which preset a stored outline came from, so reopening the panel is not a
+    blank form. Falls back to the points box for anything hand-edited. */
+function shapeOf(room) {
+  const outline = roomOutline(room);
+  if (!outline) return 'rect';
+  const w = room.cols || ROOM_COLS;
+  const h = room.rows || ROOM_ROWS;
+  for (const [key, shape] of Object.entries(ROOM_SHAPES)) {
+    for (let cw = 1; cw < w; cw++) {
+      for (let ch = 1; ch < h; ch++) {
+        const made = shape.points(w, h, cw, ch);
+        if (JSON.stringify(made) === JSON.stringify(outline)) {
+          return key + ':' + cw + ':' + ch;
+        }
+      }
+    }
+  }
+  return 'custom';
+}
+
+function editRoomShape() {
+  const room = floor.find((r) => r.id === activeRoom);
+  if (!room) return;
+
+  const current = shapeOf(room);
+  const [kind, curCw, curCh] = current.split(':');
+  const w = room.cols || ROOM_COLS;
+  const h = room.rows || ROOM_ROWS;
+
+  showPanel('Room shape — ' + room.name, `
+    <div class="grid-2">
+      <label>Room name<input id="rs-name" value="${esc(room.name || '')}"></label>
+      <label>Shape
+        <select id="rs-kind">
+          ${Object.entries(ROOM_SHAPES).map(([k, v]) =>
+            `<option value="${k}" ${k === kind ? 'selected' : ''}>${esc(v.label)}</option>`
+          ).join('')}
+          <option value="custom" ${kind === 'custom' ? 'selected' : ''}>
+            Custom — give me the corners
+          </option>
+        </select>
+      </label>
+      <label>Width (grid squares)<input id="rs-w" type="number" min="4" max="60" value="${w}"></label>
+      <label>Depth (grid squares)<input id="rs-h" type="number" min="4" max="60" value="${h}"></label>
+      <label>Cut across<input id="rs-cw" type="number" min="1" max="59" value="${curCw || Math.round(w / 2)}"></label>
+      <label>Cut back<input id="rs-ch" type="number" min="1" max="59" value="${curCh || Math.round(h / 2)}"></label>
+    </div>
+
+    <label id="rs-points-wrap" ${kind === 'custom' ? '' : 'hidden'}>
+      Corners, as x,y pairs — one per line, walked round the room
+      <textarea id="rs-points" rows="6"
+        style="font-family:ui-monospace,Consolas,monospace">${
+          esc((roomOutline(room) || []).map((p) => p.join(',')).join('\n'))
+        }</textarea>
+    </label>
+
+    <p class="hint">Preview</p>
+    <div id="rs-preview" style="margin-bottom:10px"></div>
+
+    <div class="row" style="gap:8px">
+      <button class="btn primary" id="rs-save" type="button">Save the room</button>
+      <button class="btn danger" id="rs-del" type="button">Delete this room</button>
+    </div>
+  `);
+
+  const readPoints = () => {
+    const kind = $('rs-kind').value;
+    const w = Math.max(4, Number($('rs-w').value) || ROOM_COLS);
+    const h = Math.max(4, Number($('rs-h').value) || ROOM_ROWS);
+    if (kind === 'rect') return { w, h, points: null };
+    if (kind === 'custom') {
+      const points = $('rs-points').value
+        .split(/[\n;]+/)
+        .map((line) => line.split(',').map((n) => Number(n.trim())))
+        .filter((p) => p.length === 2 && p.every(Number.isFinite));
+      return { w, h, points: points.length >= 3 ? points : null };
+    }
+    // Clamped so a cut can never be the whole room, which would leave a
+    // polygon with no area and a designer with nothing to drop tables onto.
+    const cw = Math.min(w - 1, Math.max(1, Number($('rs-cw').value) || 1));
+    const ch = Math.min(h - 1, Math.max(1, Number($('rs-ch').value) || 1));
+    return { w, h, points: ROOM_SHAPES[kind].points(w, h, cw, ch) };
+  };
+
+  const preview = () => {
+    const { w, h, points } = readPoints();
+    const scale = Math.min(320 / w, 200 / h);
+    const shape = points || [[0, 0], [w, 0], [w, h], [0, h]];
+    $('rs-preview').innerHTML = `
+      <svg width="${w * scale}" height="${h * scale}"
+           style="border:1px solid var(--line);border-radius:6px;background:var(--bg)">
+        <polygon points="${shape.map(([x, y]) => `${x * scale},${y * scale}`).join(' ')}"
+                 fill="rgba(165,199,21,.18)" stroke="#A5C715" stroke-width="2"
+                 stroke-linejoin="round" />
+      </svg>`;
+    $('rs-points-wrap').hidden = $('rs-kind').value !== 'custom';
+  };
+
+  ['rs-kind', 'rs-w', 'rs-h', 'rs-cw', 'rs-ch', 'rs-points'].forEach((id) => {
+    const el = $(id);
+    if (el) el.addEventListener('input', preview);
+  });
+  preview();
+
+  $('rs-save').onclick = async () => {
+    const { w, h, points } = readPoints();
+    try {
+      await api('/floor/rooms/' + room.id, {
+        method: 'PUT',
+        body: JSON.stringify({
+          name: $('rs-name').value.trim() || room.name,
+          cols: w,
+          rows: h,
+          outline: points,
+        }),
+      });
+      $('modal-root').innerHTML = '';
+      await loadFloor();
+    } catch (e) {
+      alert(e.message);
+    }
+  };
+
+  $('rs-del').onclick = async () => {
+    const count = room.tables.length;
+    if (!confirm(
+      count
+        ? `Delete "${room.name}" and its ${count} table${count === 1 ? '' : 's'}?`
+        : `Delete "${room.name}"?`
+    )) return;
+    try {
+      await api('/floor/rooms/' + room.id, { method: 'DELETE' });
+      $('modal-root').innerHTML = '';
+      activeRoom = null;
+      await loadFloor();
+    } catch (e) {
+      alert(e.message);
+    }
+  };
+}
+
 function showInspector() {
   const body = $('inspector-body');
   const room = floor.find((r) => r.id === activeRoom);
@@ -2347,6 +2587,14 @@ function showInspector() {
 
   body.innerHTML = `
     <label>Number<input id="i-num" type="number" value="${table.table_number}" disabled /></label>
+    <label>Name a customer sees
+      <input id="i-name" value="${esc(table.name || '')}"
+             placeholder="Table ${table.table_number}" />
+      <span class="muted small">
+        Shown on the phone that scans this table's code. Must be different from
+        every other table in the venue. Changing it does not change the code.
+      </span>
+    </label>
     <label>Label<input id="i-label" value="${esc(table.label || '')}" /></label>
     <label>Seats<input id="i-seats" type="number" value="${table.seats}" /></label>
     <div class="row">
@@ -2362,6 +2610,7 @@ function showInspector() {
     <button class="btn danger small" id="i-del" style="margin-top:16px">Delete table</button>`;
 
   const apply = () => {
+    table.name = $('i-name').value.trim() || null;
     table.label = $('i-label').value || null;
     table.seats = Number($('i-seats').value) || 4;
     table.width = Math.max(1, Number($('i-w').value) || 2);
@@ -2372,7 +2621,7 @@ function showInspector() {
     drawSelection();
   };
 
-  ['i-label', 'i-seats', 'i-w', 'i-h', 'i-shape'].forEach((id) =>
+  ['i-name', 'i-label', 'i-seats', 'i-w', 'i-h', 'i-shape'].forEach((id) =>
     $(id).addEventListener('change', apply)
   );
 
@@ -2989,6 +3238,10 @@ document.addEventListener('click', async (e) => {
     if (!name) return;
     await api('/floor/rooms', { method: 'POST', body: JSON.stringify({ name }) });
     return loadFloor();
+  }
+  if (t.id === 'room-shape') {
+    if (!activeRoom) return alert('Create a room first.');
+    return editRoomShape();
   }
   if (t.id === 'add-table') {
     if (!activeRoom) return alert('Create a room first.');

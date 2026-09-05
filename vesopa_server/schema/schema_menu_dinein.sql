@@ -185,33 +185,55 @@ CALL vesopa_add_column('floor_tables', 'qr_enabled', 'TINYINT(1) NOT NULL DEFAUL
 
 -- Backfill, and then make it unique.
 --
--- Two runs of this are safe: the UPDATE only touches rows that are still NULL,
--- and the unique key is added only when it is absent. The expression is
--- evaluated per row rather than once — a single scalar would give every table
--- the same value and the unique key would then refuse to be created, which is
--- at least the right kind of failure.
+-- Two runs of this are safe: only rows that are still NULL are touched, and the
+-- unique key is added only when it is absent.
 --
 -- WHY NOT PLAIN UUID()
 --
 -- Because UUID() is version 1: a timestamp and the server's MAC address. Four
--- tables backfilled together come out as four ids sharing a suffix and
--- differing in the fourth byte, so anybody holding one printed card could read
--- off the codes of the tables either side of them and order onto either. That
--- defeats the only thing this column is for.
+-- tables backfilled together came out as four ids sharing a suffix and
+-- differing in one byte near the front, so anybody holding one printed card
+-- could read off the codes of the tables either side of them and order onto
+-- either. That defeats the only thing this column is for.
 --
--- So: SHA2 of the UUID mixed with RAND() and the microsecond clock. The UUID is
--- what guarantees no two rows collide; RAND() is what stops the result being
--- derivable from a neighbouring id. Not RANDOM_BYTES, which would be the
--- obvious answer and needs MySQL 8.0.17 or MariaDB 10.10 — SHA2 has been in
--- both since 5.5, and this file has to apply to whatever the venue is running.
+-- RANDOM_BYTES(16) is the right answer — it is OpenSSL's generator, so a code
+-- tells you nothing about its neighbours. The live server is MariaDB 11.4 and
+-- has it. It is NOT universal: MariaDB gained it in 10.10 and MySQL in 8.0.17,
+-- and this file has to apply to whatever a venue happens to be running.
 --
--- New tables do not come through here at all: the application mints theirs with
+-- So it is attempted through a prepared statement with a handler behind it, and
+-- an older server falls back to SHA2 over a UUID mixed with RAND() and the
+-- microsecond clock — unique because of the UUID, unguessable because of the
+-- RAND. Both fill the same 32 hex characters.
+--
+-- New tables never come through here: the application mints theirs with
 -- crypto.randomUUID(), which is version 4 and properly random. This is only for
--- the rows that already existed.
-UPDATE floor_tables
-   SET public_id = LEFT(
-         SHA2(CONCAT(UUID(), RAND(), NOW(6), CONNECTION_ID(), id), 256), 32)
- WHERE public_id IS NULL OR public_id = '';
+-- rows that already existed.
+DROP PROCEDURE IF EXISTS vesopa_mint_table_ids;
+DELIMITER //
+CREATE PROCEDURE vesopa_mint_table_ids()
+BEGIN
+  DECLARE unsupported INT DEFAULT 0;
+  DECLARE CONTINUE HANDLER FOR SQLEXCEPTION SET unsupported = 1;
+
+  SET @mint = CONCAT(
+    'UPDATE floor_tables SET public_id = LOWER(HEX(RANDOM_BYTES(16)))',
+    ' WHERE public_id IS NULL OR public_id = ', CHAR(39), CHAR(39));
+  PREPARE mint FROM @mint;
+  EXECUTE mint;
+  DEALLOCATE PREPARE mint;
+
+  IF unsupported = 1 THEN
+    UPDATE floor_tables
+       SET public_id = LEFT(
+             SHA2(CONCAT(UUID(), RAND(), NOW(6), CONNECTION_ID(), id), 256), 32)
+     WHERE public_id IS NULL OR public_id = '';
+  END IF;
+END //
+DELIMITER ;
+
+CALL vesopa_mint_table_ids();
+DROP PROCEDURE IF EXISTS vesopa_mint_table_ids;
 
 CALL vesopa_add_index('floor_tables', 'uq_table_public',
                       'UNIQUE KEY uq_table_public (public_id)');
