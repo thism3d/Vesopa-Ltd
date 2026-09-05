@@ -11,7 +11,7 @@ publish_to: 'none'
 # reason the kitchen screen does: the two ship together, and a display and a
 # till on different major versions is a support question nobody can answer over
 # the phone. The build number is this app's own.
-version: 1.6.2+3
+version: 1.6.3+4
 
 environment:
   sdk: ^3.12.2
@@ -120,7 +120,7 @@ msix_config:
 
   # Four parts, and the last must be 0 — the Store reserves the revision field
   # and rejects anything else. Tracks `version:` at the top of this file.
-  msix_version: 1.6.2.0
+  msix_version: 1.6.3.0
 
   logo_path: assets/brand/512x512.png
 
@@ -152,6 +152,21 @@ msix_config:
   # by the packer and rejected by certification, and that is not a thing to
   # leave resting on a default. The till pins it for the same reason.
   windows_build_args: --release
+
+  # WHERE THE PACKAGE LANDS.
+  #
+  # Pinned for the same reason the till pins it. Without these two, msix writes
+  # to build\windows\x64\runner\Release\ — the folder it wipes of every *.msix
+  # at the start of the next run — under a name identical for every version ever
+  # built. Nothing on the file says whether it is 1.6.2.0 or 1.6.3.0, and that
+  # is exactly how a stale package reaches Partner Center and is answered with
+  # "Multiple uploaded files contain the same package".
+  #
+  # The version is deliberately not in the filename: a filename goes stale, the
+  # Identity/Version in the manifest cannot, and that is the one Partner Center
+  # reads. tool/build-store-msix.ps1 prints it at the end of every build.
+  output_path: build/store
+  output_name: vesopa-display-store
 
   # The Store signs the package, so no local certificate is used or needed.
   store: true

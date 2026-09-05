@@ -532,7 +532,7 @@ const _keyDeviceName = 'display.device_name';
 ///
 /// Kept in step with `version:` in pubspec.yaml by hand, the same way
 /// `data/control.dart` keeps its own copy.
-const pairingAppVersion = '1.6.1';
+const pairingAppVersion = '1.6.3';
 
 /// This screen's identity and its pairing, kept current.
 ///

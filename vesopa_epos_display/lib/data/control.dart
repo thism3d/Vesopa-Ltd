@@ -36,7 +36,7 @@ import 'dart:io';
 /// plugin and a platform channel for one string on one line of one settings
 /// screen. Kept in step with `version:` in pubspec.yaml by hand — the release
 /// checklist there mentions it.
-const appVersion = '1.6.1';
+const appVersion = '1.6.3';
 
 /// The shape of both files, matching the till's constant of the same name.
 const displayControlFormat = 1;
