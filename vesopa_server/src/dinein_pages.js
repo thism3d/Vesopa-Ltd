@@ -316,51 +316,73 @@ body{
 img{max-width:100%;display:block}
 button{font:inherit;cursor:pointer}
 
-/* A venue that has not uploaded a banner gets a band of its own accent colour
-   rather than 172px of empty grey. The grey read as a picture that had failed
-   to load, which is the wrong first impression for the first thing a customer
-   sees — and most venues will not have uploaded anything on day one. It is
-   also shorter without a picture, because there is nothing in it to look at. */
-.banner{
-  position:relative;height:104px;overflow:hidden;
+/* THE HERO.
+ *
+ * The venue's own photograph, full width, with its name on it — not a 172px
+ * strip with the name in a white box underneath. A room is the first thing a
+ * customer should see of the place they are sitting in, and a strip of it is a
+ * decoration where a photograph is an introduction.
+ *
+ * It fades and drifts as the page scrolls, so it hands the screen over to the
+ * menu rather than being scrolled past. The fade is driven from JavaScript
+ * through a custom property; the transform is on the picture alone, so the
+ * words stay put while the room moves behind them.
+ */
+.hero{
+  position:relative;
+  height:clamp(240px, 42vw, 380px);
+  overflow:hidden;
   background:
     linear-gradient(135deg,
-      color-mix(in srgb, var(--accent) 78%, #000 0%) 0%,
-      color-mix(in srgb, var(--accent) 42%, var(--page)) 100%);
+      color-mix(in srgb, var(--accent) 82%, #000 0%) 0%,
+      color-mix(in srgb, var(--accent) 45%, var(--page)) 100%);
+  --fade:1;
 }
-.banner.has-image{height:172px;background:var(--sunken)}
-.banner img{width:100%;height:100%;object-fit:cover}
-/* The scrim exists to keep white type legible over a photograph. With no
-   photograph there is nothing to darken, and it only muddies the accent. */
-.banner.has-image::after{
-  content:"";position:absolute;inset:0;
-  background:linear-gradient(180deg,rgba(0,0,0,.05) 40%,rgba(0,0,0,.62) 100%);
+.hero.no-image{height:clamp(170px, 26vw, 240px)}
+
+.hero-img{position:absolute;inset:-8% 0;will-change:transform}
+.hero-img img{
+  width:100%;height:100%;object-fit:cover;display:block;
+  opacity:var(--fade);
 }
-/* The logo laps onto the banner; the name does not.
- *
- * At -34px the whole block was pulled up, and since the name and the logo are
- * bottom-aligned that put the top of the venue's name over the photograph —
- * dark type on a dark bar, on the first line a customer reads. The overlap is
- * now less than the difference between the logo's height and the text's, so
- * only the logo enters the picture. */
-.ident{
-  position:relative;margin:-20px auto 0;z-index:2;
+
+/* Dark at the bottom so white type is legible over any photograph, and a touch
+   at the top so a phone's status bar has something to sit on. */
+.hero::after{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(180deg,
+    rgba(0,0,0,.34) 0%, rgba(0,0,0,0) 34%,
+    rgba(0,0,0,.30) 62%, rgba(0,0,0,.72) 100%);
+  opacity:var(--fade);
+}
+
+.hero-body{
+  position:absolute;left:0;right:0;bottom:0;z-index:2;
+  padding:0 16px 20px;
   display:flex;gap:14px;align-items:flex-end;
-  max-width:680px;padding:0 16px;
+  max-width:680px;margin:0 auto;
+  opacity:var(--fade);
+}
+.hero h1{
+  margin:0;font-size:clamp(23px,5.6vw,31px);line-height:1.12;
+  letter-spacing:-.02em;color:#fff;
+  text-shadow:0 2px 14px rgba(0,0,0,.45);
+}
+.hero .tag{
+  margin:3px 0 0;font-size:14px;color:rgba(255,255,255,.88);
+  text-shadow:0 1px 8px rgba(0,0,0,.4);
 }
 .logo{
-  width:74px;height:74px;border-radius:18px;flex:0 0 auto;
+  width:62px;height:62px;border-radius:16px;flex:0 0 auto;
   background:var(--card);border:2px solid var(--card);
-  box-shadow:0 6px 20px rgba(0,0,0,.22);overflow:hidden;
-  display:grid;place-items:center;font-size:28px;font-weight:800;
-  color:var(--accent);padding:8px
+  box-shadow:0 8px 24px rgba(0,0,0,.35);overflow:hidden;
+  display:grid;place-items:center;font-size:24px;font-weight:800;
+  color:var(--accent);padding:7px
 }
 /* Contain, not cover. A venue's logo is as likely to be a wide wordmark as a
    square badge, and cover on a wordmark crops out the middle two letters and
    presents those as the brand. */
 .logo img{width:100%;height:100%;object-fit:contain}
-.ident h1{margin:0;font-size:24px;line-height:1.15;letter-spacing:-.02em}
-.ident .tag{margin:2px 0 0;color:var(--ink-soft);font-size:13.5px}
 
 .where{
   margin:14px auto 0;max-width:648px;padding:11px 14px;
@@ -435,33 +457,59 @@ section .blurb{margin:0 0 6px;color:var(--ink-soft);font-size:14px}
 .item h3{margin:0 0 3px;font-size:16px;font-weight:650;line-height:1.3}
 .item p{margin:0;color:var(--ink-soft);font-size:14px}
 
-/* Price and button in one column on the right.
+/* The price sits with the dish; the button sits alone.
  *
- * They were apart — the price under the description on the left, the button
- * floating against the right edge — so a customer's eye had to cross the whole
- * row to connect what a thing costs with the way to order it. Together, and
- * right-aligned, they read as one control. */
+ * They were briefly stacked together on the right, which centred the *pair*
+ * against the row and left the button itself fifteen pixels low on every line
+ * down the page. The column is narrow enough now that the price does not need
+ * to chase the button to be read with it — so the price goes back under the
+ * description where a menu puts it, and the button gets the right-hand column
+ * to itself and the exact middle of the row. */
 .item .end{
-  flex:0 0 auto;display:flex;flex-direction:column;align-items:flex-end;
-  gap:8px;padding-left:4px
+  flex:0 0 auto;align-self:stretch;
+  display:flex;align-items:center;justify-content:flex-end;
+  padding-left:10px
 }
-.item .price{font-weight:700;font-size:15px;white-space:nowrap}
+.item .price{
+  display:block;margin-top:6px;
+  font-weight:700;font-size:15px;white-space:nowrap
+}
 .item .thumb{
   width:84px;height:84px;border-radius:12px;flex:0 0 auto;
   background:var(--sunken);overflow:hidden
 }
 .item .thumb img{width:100%;height:100%;object-fit:cover}
+/* A dish with no photograph still holds the space one would take.
+ *
+ * Without this the name of a dish with a picture started 100px further in than
+ * the name of the one under it, and a list where half the items have pictures —
+ * which is most lists — read as two lists interleaved. Invisible rather than a
+ * grey tile: twenty empty tiles down a page is worse than a straight edge. */
+.item .thumb.none{background:none}
 .item.gone{opacity:.55}
 .item .gone-tag{
   display:inline-block;margin-top:6px;font-size:12px;font-weight:700;
   color:#B3261E;text-transform:uppercase;letter-spacing:.04em
 }
 
+/* The plus is drawn, not typed.
+ *
+ * As a text glyph it sits on a baseline with its own ascender and side
+ * bearings, so it is never quite in the middle of a circle however the line
+ * height is set — it reads a pixel or two high, on every row, all the way down
+ * the page. Two rules through the centre cannot be off centre. */
 .add{
   border:0;border-radius:999px;background:var(--accent);color:var(--on-accent);
-  width:40px;height:40px;font-size:22px;font-weight:700;line-height:1;
-  flex:0 0 auto;display:grid;place-items:center
+  width:40px;height:40px;flex:0 0 auto;position:relative;
+  transition:transform .12s ease
 }
+.add:active{transform:scale(.92)}
+.add::before,.add::after{
+  content:"";position:absolute;top:50%;left:50%;
+  background:currentColor;border-radius:1px;
+}
+.add::before{width:15px;height:2.5px;transform:translate(-50%,-50%)}
+.add::after{width:2.5px;height:15px;transform:translate(-50%,-50%)}
 .add[disabled]{background:var(--sunken);color:var(--ink-soft)}
 .qty{display:flex;align-items:center;gap:10px}
 .qty button{
@@ -640,19 +688,25 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
 
     var html = '';
 
-    html += v.banner_url
-      ? '<div class="banner has-image"><img src="' + esc(v.banner_url) + '" alt=""></div>'
-      : '<div class="banner"></div>';
-
-    html += '<div class="ident">' +
-      '<div class="logo">' +
-        (v.logo_url
-          ? '<img src="' + esc(v.logo_url) + '" alt="">'
-          : esc((v.name || '?').trim().charAt(0).toUpperCase())) +
+    // The venue's room, full width, with its name on it. The name lives on the
+    // photograph rather than under it — a strip of a room is a decoration, a
+    // photograph of one is an introduction.
+    html += '<header class="hero' + (v.banner_url ? '' : ' no-image') + '" id="hero">' +
+      (v.banner_url
+        ? '<div class="hero-img" id="heroImg"><img src="' + esc(v.banner_url) +
+          '" alt="" fetchpriority="high"></div>'
+        : '') +
+      '<div class="hero-body">' +
+        '<div class="logo">' +
+          (v.logo_url
+            ? '<img src="' + esc(v.logo_url) + '" alt="">'
+            : esc((v.name || '?').trim().charAt(0).toUpperCase())) +
+        '</div>' +
+        '<div><h1>' + esc(v.name) + '</h1>' +
+        (v.tagline ? '<p class="tag">' + esc(v.tagline) + '</p>' : '') +
+        '</div>' +
       '</div>' +
-      '<div><h1>' + esc(v.name) + '</h1>' +
-      (v.tagline ? '<p class="tag">' + esc(v.tagline) + '</p>' : '') +
-      '</div></div>';
+    '</header>';
 
     if (data.table) {
       html += data.table.ordering
@@ -705,6 +759,7 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
 
     app.innerHTML = html;
     wireTabs(sections);
+    wireHero();
     app.addEventListener('click', onTap);
     paintBasket();
   }
@@ -716,16 +771,14 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
     return '<div class="item' + (it.available ? '' : ' gone') + '" data-item="' + it.id + '">' +
       (it.image_url
         ? '<div class="thumb"><img src="' + esc(it.image_url) + '" alt="" loading="lazy"></div>'
-        : '') +
+        : '<div class="thumb none"></div>') +
       '<div class="body">' +
         '<h3>' + esc(it.name) + '</h3>' +
         (it.description ? '<p>' + esc(it.description) + '</p>' : '') +
         (it.available ? '' : '<span class="gone-tag">Sold out</span>') +
-      '</div>' +
-      '<div class="end">' +
         '<span class="price">' + money(it.price_minor) + '</span>' +
-        (can ? controlsHtml(it.id) : '') +
       '</div>' +
+      '<div class="end">' + (can ? controlsHtml(it.id) : '') + '</div>' +
     '</div>';
   }
 
@@ -876,6 +929,47 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
         btn.disabled = false;
         btn.textContent = 'Send to the kitchen';
       });
+  }
+
+  /**
+   * The hero hands the screen over as you scroll.
+   *
+   * It fades out across its own height and the picture drifts up at a third of
+   * the scroll speed, so the room recedes rather than being yanked off the top.
+   * Everything is written to one custom property and one transform, both read
+   * inside a requestAnimationFrame — a scroll handler that touches layout on
+   * every event is what makes a page feel heavy on the phone this is for.
+   *
+   * Honours "reduce motion": the fade stays, because it is what hands the
+   * screen over, and the parallax goes, because it is the part that moves.
+   */
+  function wireHero(){
+    var hero = document.getElementById('hero');
+    if (!hero) return;
+    var img = document.getElementById('heroImg');
+    var still = window.matchMedia
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var ticking = false;
+
+    function paint(){
+      ticking = false;
+      var h = hero.offsetHeight || 1;
+      var y = window.scrollY || window.pageYOffset || 0;
+      // Never quite to nothing: a hero that vanishes entirely leaves a hard
+      // edge where the photograph was.
+      var fade = Math.max(0, 1 - (y / h) * 1.15);
+      hero.style.setProperty('--fade', fade.toFixed(3));
+      if (img && !still) {
+        img.style.transform = 'translate3d(0,' + (y * 0.32).toFixed(1) + 'px,0)';
+      }
+    }
+
+    window.addEventListener('scroll', function(){
+      if (ticking) return;
+      ticking = true;
+      window.requestAnimationFrame(paint);
+    }, { passive: true });
+    paint();
   }
 
   /**
