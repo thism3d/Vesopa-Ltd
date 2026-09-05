@@ -719,7 +719,7 @@ function importRoutes({ pool, broadcast, secret }) {
           );
         } else {
           summary.departments.created += 1;
-          await run1(
+          const [inserted] = await run1(
             `INSERT INTO bo_product_departments
                (email, department_name, accounting_code, button_color, emoji)
              VALUES (?, ?, ?, ?, ?)`,
@@ -733,7 +733,15 @@ function importRoutes({ pool, broadcast, secret }) {
           );
           // Recorded even in preview, so two rows naming the same new
           // department count as one creation rather than two.
-          departmentsByName.set(key(record.department_name), { id: 0 });
+          //
+          // The id must be the real one. A later row naming this same
+          // department takes the update branch above, and `WHERE id = 0`
+          // matches no row at all — so that row's colour and code would be
+          // dropped in silence while the summary reported them as applied.
+          // In preview there is no insert and no id, and nothing is written.
+          departmentsByName.set(key(record.department_name), {
+            id: inserted?.insertId ?? 0,
+          });
         }
       }
 
@@ -750,12 +758,15 @@ function importRoutes({ pool, broadcast, secret }) {
           );
         } else {
           summary.groups.created += 1;
-          await run1(
+          const [inserted] = await run1(
             `INSERT INTO bo_product_groups (email, group_name, accounting_code)
              VALUES (?, ?, ?)`,
             [email, record.group_name, record.accounting_code]
           );
-          groupsByName.set(key(record.group_name), { id: 0 });
+          // The real id, for the reason given against departments above.
+          groupsByName.set(key(record.group_name), {
+            id: inserted?.insertId ?? 0,
+          });
         }
       }
 
@@ -807,7 +818,7 @@ function importRoutes({ pool, broadcast, secret }) {
         } else {
           summary.products.created += 1;
           const pluid = record.pluid !== null ? record.pluid : nextPlu++;
-          await run1(
+          const [inserted] = await run1(
             `INSERT INTO bo_products
                (email, pluid, product_name, department_name, group_name,
                 accounting_code, price, tax_percentage, stock_quantity,
@@ -831,7 +842,13 @@ function importRoutes({ pool, broadcast, secret }) {
           );
           // Held so a second row with the same PLU in the same file updates
           // this one rather than inserting a duplicate the till cannot reach.
-          const placeholder = { id: 0, pluid };
+          //
+          // It has to carry the real id. With id 0 the update above matched no
+          // row, so the repeated row's price was thrown away without a word
+          // while the summary counted it as applied — a venue whose sheet
+          // lists a product twice, the second time at the corrected price,
+          // would have imported the wrong one of the two.
+          const placeholder = { id: inserted?.insertId ?? 0, pluid };
           productsByPlu.set(pluid, placeholder);
           productsByName.set(
             `${key(record.product_name)} ${key(record.department_name)}`,

@@ -59,9 +59,17 @@ function check(name, fn) {
  */
 function fakePool(script = []) {
   const written = [];
+  // MySQL hands back an auto-increment id for every INSERT, and the import
+  // relies on it: a second row for the same product has to update the row the
+  // first row just created, which it can only do by id. Answering INSERTs with
+  // an empty result — as this stood in for a while — made every such update
+  // target `id = 0`, which is a row that cannot exist, so the test suite could
+  // not see the writes going nowhere.
+  let nextInsertId = 1000;
   const answer = (sql, params) => {
     const flat = sql.replace(/\s+/g, ' ').trim();
     if (/^(INSERT|UPDATE|DELETE)/i.test(flat)) written.push({ sql: flat, params });
+    if (/^INSERT/i.test(flat)) return [{ insertId: nextInsertId++, affectedRows: 1 }, []];
     for (const [pattern, rows] of script) {
       if (flat.includes(pattern)) return [rows, []];
     }
@@ -510,6 +518,44 @@ check('a blank VAT and On receipt take the sensible default', async () => {
       const res = await send(server, '/api/import/catalogue', file);
       assert.strictEqual(res.body.summary.products.created, 1);
       assert.strictEqual(res.body.summary.products.updated, 1);
+    } finally {
+      server.close();
+    }
+  });
+
+  // The half of that promise the count cannot see.
+  //
+  // A venue's sheet listing a product twice, the second time at the corrected
+  // price, was counted as "1 new, 1 to update" — and then imported the *first*
+  // price. The update ran against the placeholder id the create left behind,
+  // which was 0, so it matched no row and threw the second row away in
+  // silence. Nothing in the summary or the log said so.
+  route('the second row for one product is the one that lands', async () => {
+    const pool = fakePool();
+    const server = await listen(appWith(pool));
+    try {
+      const file = await workbookOf({
+        [SHEET_PRODUCTS]: [
+          headersOf(SHEET_PRODUCTS),
+          ['', 'Cola', 'Drink', '', 2.2],
+          ['', 'Cola', 'Drink', '', 2.4],
+        ],
+      });
+      await send(server, '/api/import/catalogue', file);
+
+      const insert = pool.written.find((w) => w.sql.includes('INTO bo_products'));
+      const update = pool.written.find((w) => w.sql.includes('UPDATE bo_products'));
+      assert.ok(insert, 'the first row should have been inserted');
+      assert.ok(update, 'the second row should have been an update');
+
+      // The id the update aims at is the second-to-last parameter.
+      const target = update.params[update.params.length - 2];
+      assert.notStrictEqual(target, 0, 'the update targeted a row that cannot exist');
+      assert.strictEqual(
+        target,
+        1000,
+        'the update should aim at the row the insert just created'
+      );
     } finally {
       server.close();
     }
