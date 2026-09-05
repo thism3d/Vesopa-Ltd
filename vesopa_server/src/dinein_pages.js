@@ -103,14 +103,28 @@ body{
 img{max-width:100%;display:block}
 button{font:inherit;cursor:pointer}
 
-.banner{position:relative;height:172px;background:var(--sunken);overflow:hidden}
+/* A venue that has not uploaded a banner gets a band of its own accent colour
+   rather than 172px of empty grey. The grey read as a picture that had failed
+   to load, which is the wrong first impression for the first thing a customer
+   sees — and most venues will not have uploaded anything on day one. It is
+   also shorter without a picture, because there is nothing in it to look at. */
+.banner{
+  position:relative;height:104px;overflow:hidden;
+  background:
+    linear-gradient(135deg,
+      color-mix(in srgb, var(--accent) 78%, #000 0%) 0%,
+      color-mix(in srgb, var(--accent) 42%, var(--page)) 100%);
+}
+.banner.has-image{height:172px;background:var(--sunken)}
 .banner img{width:100%;height:100%;object-fit:cover}
-.banner::after{
+/* The scrim exists to keep white type legible over a photograph. With no
+   photograph there is nothing to darken, and it only muddies the accent. */
+.banner.has-image::after{
   content:"";position:absolute;inset:0;
   background:linear-gradient(180deg,rgba(0,0,0,.05) 40%,rgba(0,0,0,.62) 100%);
 }
 .ident{
-  position:relative;margin:-46px 16px 0;z-index:2;
+  position:relative;margin:-34px 16px 0;z-index:2;
   display:flex;gap:14px;align-items:flex-end;
 }
 .logo{
@@ -339,11 +353,9 @@ function page({ table, slug }) {
 
     var html = '';
 
-    if (v.banner_url) {
-      html += '<div class="banner"><img src="' + esc(v.banner_url) + '" alt=""></div>';
-    } else {
-      html += '<div class="banner"></div>';
-    }
+    html += v.banner_url
+      ? '<div class="banner has-image"><img src="' + esc(v.banner_url) + '" alt=""></div>'
+      : '<div class="banner"></div>';
 
     html += '<div class="ident">' +
       '<div class="logo">' +
