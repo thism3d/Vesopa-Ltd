@@ -71,6 +71,27 @@ function tokenFor(office) {
   );
 }
 
+/**
+ * The credential a commissioned till actually carries.
+ *
+ * Deliberately a different shape from the one above, and the test has to use
+ * the right one: `requireAuth` refuses a terminal token and `requireTerminal`
+ * refuses a session token, so a test that signed the till in as a manager
+ * would pass against routes no real till could reach.
+ */
+function terminalTokenFor(office) {
+  return jwt.sign(
+    {
+      scope: 'terminal',
+      office: office.email,
+      officeId: office.id,
+      commissionedBy: office.email,
+    },
+    SECRET,
+    { expiresIn: '1h' }
+  );
+}
+
 /** A tiny fetch against the test server, returning status and parsed body. */
 function call(base, method, url, { token, body } = {}) {
   return new Promise((resolve, reject) => {
@@ -209,6 +230,8 @@ async function main() {
 
   const alpha = tokenFor(ALPHA);
   const beta = tokenFor(BETA);
+  const alphaTill = terminalTokenFor(ALPHA);
+  const betaTill = terminalTokenFor(BETA);
 
   // -------------------------------------------------------------------------
   // Setting the venue up
@@ -506,7 +529,7 @@ async function main() {
   // -------------------------------------------------------------------------
 
   await check('the till sees what is waiting for it', async () => {
-    const res = await call(base, 'GET', '/api/till/dinein/orders', { token: alpha });
+    const res = await call(base, 'GET', '/api/till/dinein/orders', { token: alphaTill });
     assert.strictEqual(res.status, 200);
     const waiting = res.body.filter((o) => o.status === 'placed');
     assert.strictEqual(waiting.length, 1);
@@ -515,7 +538,7 @@ async function main() {
   });
 
   await check('another venue\'s till sees none of it', async () => {
-    const res = await call(base, 'GET', '/api/till/dinein/orders', { token: beta });
+    const res = await call(base, 'GET', '/api/till/dinein/orders', { token: betaTill });
     assert.strictEqual(res.status, 200);
     assert.strictEqual(res.body.length, 0);
   });
@@ -523,13 +546,13 @@ async function main() {
   await check('accepting twice does not make two kitchen tickets', async () => {
     const first = await call(
       base, 'POST', '/api/till/dinein/orders/' + orderId + '/accepted',
-      { token: alpha, body: { order_id: 'SALE-1' } }
+      { token: alphaTill, body: { order_id: 'SALE-1' } }
     );
     assert.strictEqual(first.status, 200);
 
     const second = await call(
       base, 'POST', '/api/till/dinein/orders/' + orderId + '/accepted',
-      { token: alpha, body: { order_id: 'SALE-2' } }
+      { token: alphaTill, body: { order_id: 'SALE-2' } }
     );
     assert.strictEqual(second.status, 409, 'the second press is refused');
     assert.match(second.body.error, /already moved on/i);
@@ -544,20 +567,58 @@ async function main() {
   await check('another venue cannot move this order along', async () => {
     const res = await call(
       base, 'POST', '/api/till/dinein/orders/' + orderId + '/ready',
-      { token: beta }
+      { token: betaTill }
     );
     assert.strictEqual(res.status, 409);
+  });
+
+  await check('the till is told where the table is now, not where it was', async () => {
+    // The order stored the table's id and the label it had at the time. If the
+    // number came out of the order rather than off the table, renumbering
+    // between the customer ordering and a clerk accepting would put the food on
+    // somebody else's bill — which is the exact fault the whole ids-not-names
+    // rule exists to prevent, so it is checked from the till's side too.
+    await call(base, 'PUT', '/api/floor/tables/' + tableId, {
+      token: alpha,
+      body: { table_number: 21 },
+    });
+    const res = await call(base, 'GET', '/api/till/dinein/orders', {
+      token: alphaTill,
+    });
+    const order = res.body.find((o) => o.id === orderId);
+    assert.ok(order, 'the order is still there');
+    assert.strictEqual(order.table_number, 21, 'the number tracks the table');
+    assert.strictEqual(
+      order.table_label,
+      'Bay 1',
+      'and the label it was placed against is kept as it was'
+    );
+  });
+
+  await check('a back office session is not a till, and cannot act as one', async () => {
+    // requireTerminal refuses a session token on purpose: the two credentials
+    // authorise different things and a till token sits on a shop-floor machine.
+    // Without this the till routes could quietly have been left on requireAuth,
+    // which no real till can satisfy — the failure would have shown up at a
+    // counter rather than here.
+    const res = await call(base, 'GET', '/api/till/dinein/orders', { token: alpha });
+    assert.strictEqual(res.status, 401);
+  });
+
+  await check('and an uncommissioned till is refused rather than served', async () => {
+    const res = await call(base, 'GET', '/api/till/dinein/orders');
+    assert.strictEqual(res.status, 401);
   });
 
   await check('an order runs accepted then ready then served', async () => {
     const ready = await call(
       base, 'POST', '/api/till/dinein/orders/' + orderId + '/ready',
-      { token: alpha }
+      { token: alphaTill }
     );
     assert.strictEqual(ready.status, 200);
     const served = await call(
       base, 'POST', '/api/till/dinein/orders/' + orderId + '/served',
-      { token: alpha }
+      { token: alphaTill }
     );
     assert.strictEqual(served.status, 200);
 

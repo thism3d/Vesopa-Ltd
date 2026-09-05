@@ -70,6 +70,7 @@ class DisplayControl {
     this.standingMessage = '',
     this.customerQr = '',
     this.customerQrCaption = 'Scan to join',
+    this.childLock = false,
   });
 
   /// A folder of pictures and clips on the display's machine.
@@ -148,6 +149,18 @@ class DisplayControl {
   /// all rather than an empty strip.
   final String standingMessage;
 
+  /// Whether the customer screen ignores being touched.
+  ///
+  /// A customer display sits at hand height on a counter, and the people
+  /// nearest it are queueing children, somebody leaning on it while they find
+  /// their card, and a cloth at the end of the night. Any of those brings its
+  /// status bars up; a determined one gets into its settings and points it at
+  /// an empty folder.
+  ///
+  /// Set from here and only from here. A lock the locked screen can undo is not
+  /// a lock, which is why the display has no switch for it of its own.
+  final bool childLock;
+
   DisplayControl copyWith({
     String? advertFolder,
     int? idleSeconds,
@@ -163,6 +176,7 @@ class DisplayControl {
     String? standingMessage,
     String? customerQr,
     String? customerQrCaption,
+    bool? childLock,
   }) => DisplayControl(
     advertFolder: advertFolder ?? this.advertFolder,
     idleSeconds: idleSeconds ?? this.idleSeconds,
@@ -178,6 +192,7 @@ class DisplayControl {
     standingMessage: standingMessage ?? this.standingMessage,
     customerQr: customerQr ?? this.customerQr,
     customerQrCaption: customerQrCaption ?? this.customerQrCaption,
+    childLock: childLock ?? this.childLock,
   );
 
   Map<String, Object?> toJson() => {
@@ -197,6 +212,7 @@ class DisplayControl {
     'standing_message': standingMessage,
     'customer_qr': customerQr,
     'customer_qr_caption': customerQrCaption,
+    'child_lock': childLock,
   };
 
   /// Null when the file is from a newer till than this build understands.
@@ -224,6 +240,10 @@ class DisplayControl {
       standingMessage: _str(raw['standing_message'], ''),
       customerQr: _str(raw['customer_qr'], ''),
       customerQrCaption: _str(raw['customer_qr_caption'], 'Scan to join'),
+      // Absent means unlocked. A settings file written by an older till has
+      // never heard of this, and the wrong way to read its silence is as
+      // "lock every screen in the building".
+      childLock: _bool(raw['child_lock'], fallback: false),
     );
   }
 }
@@ -259,6 +279,9 @@ class DisplayStatus {
     this.screenKey = '',
     this.fullScreen = false,
     this.advertCount = 0,
+    this.childLock = false,
+    this.width = 0,
+    this.height = 0,
   });
 
   /// By the display's clock. Used only to decide whether it is still running.
@@ -274,6 +297,25 @@ class DisplayStatus {
   final String screenKey;
   final bool fullScreen;
   final int advertCount;
+
+  /// Whether the lock is actually on over there, as opposed to having been
+  /// asked for. The two differ for as long as it takes the file to be picked
+  /// up, and a lock indicator that lies for two seconds is a lock indicator
+  /// nobody trusts.
+  final bool childLock;
+
+  /// The size the display's window is actually running at, in logical pixels.
+  ///
+  /// Not the same question as what its monitor could do: a display left
+  /// windowed on a 4K panel reports 1280x720, and that is the number a manager
+  /// needs to see before they wonder why the bill looks small.
+  final int width;
+  final int height;
+
+  /// What to print beside the screen's name on the till. Empty while the
+  /// display has not reported a size — an older build, or one that has only
+  /// just started — so the till says nothing rather than "0 x 0".
+  String get runningAt => width > 0 && height > 0 ? '$width x $height' : '';
 
   /// Whether the display is running.
   ///
@@ -292,6 +334,9 @@ class DisplayStatus {
     'screen_key': screenKey,
     'full_screen': fullScreen,
     'advert_count': advertCount,
+    'child_lock': childLock,
+    'width': width,
+    'height': height,
   };
 
   static DisplayStatus? fromJson(Object? raw) {
@@ -313,6 +358,9 @@ class DisplayStatus {
       screenKey: _str(raw['screen_key'], ''),
       fullScreen: _bool(raw['full_screen'], fallback: false),
       advertCount: _int(raw['advert_count'], 0),
+      childLock: _bool(raw['child_lock'], fallback: false),
+      width: _int(raw['width'], 0),
+      height: _int(raw['height'], 0),
     );
   }
 }

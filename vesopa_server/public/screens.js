@@ -70,6 +70,7 @@ const SP_FUNCTIONS = [
   ['print_bill', 'Print bill'],
   ['sign_on', 'Sign on — hand the till to somebody else'],
   ['clock_in_out', 'Clock in / out'],
+  ['display_lock', 'Lock / unlock the customer screen'],
 ];
 
 /**
@@ -112,6 +113,12 @@ const SP_BAR_GROUPS = [
   ['Who is on', [
     ['sign_on', 'Sign on — hand the till to somebody else'],
     ['clock_in_out', 'Clock in / out'],
+  ]],
+  ['The customer screen', [
+    ['display_lock', 'Lock / unlock the customer screen'],
+  ]],
+  ['Dine-in', [
+    ['dinein_orders', 'Orders waiting from tables'],
   ]],
   ['Live displays', [
     ['open_bills', 'Open bills — the table strip'],

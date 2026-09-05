@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -11,6 +13,7 @@ import 'theme.dart';
 import 'till_actions.dart';
 import 'widgets/pos_message.dart';
 import 'price_level_sheet.dart';
+import 'dinein_sheet.dart';
 
 /// Till functions — the actions a clerk reaches for that are not part of ringing
 /// up a sale: park the current bill, reprint, open the drawer for a no-sale, and
@@ -69,6 +72,19 @@ class FunctionsPage extends ConsumerWidget {
           Pos.purple,
           'Recall a parked bill, transfer or split it.',
           onGoToTables,
+        ),
+      ]),
+      // Reachable whether or not anything is waiting. The badge on the bar
+      // draws nothing when the list is empty — which is right, a permanent zero
+      // is noise — so without an entry here a clerk who wanted to check would
+      // have nowhere to look.
+      _Group('Dine-in', [
+        _Function(
+          'Table Orders',
+          Icons.qr_code_2,
+          Pos.amber,
+          'What customers have sent from the codes on their tables.',
+          () => unawaited(showDineInOrders(context)),
         ),
       ]),
       _Group('Receipts', [

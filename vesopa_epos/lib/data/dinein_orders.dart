@@ -1,0 +1,320 @@
+/// Orders customers have sent from their own phones.
+///
+/// WHAT THIS IS AND IS NOT
+///
+/// A dine-in order is a *request*, not a sale. It exists in its own tables on
+/// the server (`dinein_orders`, see `vesopa_server/schema/schema_menu_dinein.sql`)
+/// and it stays there until a clerk accepts it. Only then does it become a bill
+/// on this till, print in the kitchen and count towards the day.
+///
+/// That separation is the whole safety of the feature. Writing customer taps
+/// straight into the sales tables would put unaccepted, mistaken and duplicate
+/// orders into the takings, and no amount of status column makes that safe.
+///
+/// HOW IT ARRIVES
+///
+/// Two ways, deliberately:
+///
+///   * **The socket.** The server broadcasts `dinein.order` to the venue's
+///     terminals the moment one is placed, so the notification appears while
+///     the customer is still looking at their phone.
+///   * **A slow poll.** Every thirty seconds regardless. A till that was
+///     offline when the push went out heard nothing, and a customer sitting at
+///     a table waiting for food that never arrives is the failure this feature
+///     would be remembered for. The socket makes it fast; the poll makes it
+///     certain.
+library;
+
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
+
+import '../main.dart';
+import 'sync_service.dart';
+
+/// One line of a customer's order.
+@immutable
+class DineInLine {
+  const DineInLine({
+    required this.pluId,
+    required this.name,
+    required this.qty,
+    required this.unitPriceMinor,
+    this.note,
+  });
+
+  final int pluId;
+  final String name;
+  final int qty;
+  final int unitPriceMinor;
+
+  /// "No onions", "well done". Goes on the kitchen ticket.
+  final String? note;
+
+  int get totalMinor => unitPriceMinor * qty;
+
+  static DineInLine fromJson(Map<String, Object?> raw) => DineInLine(
+    pluId: _int(raw['plu_id']),
+    name: _str(raw['name']),
+    qty: _int(raw['qty'], 1),
+    unitPriceMinor: _int(raw['unit_price_minor']),
+    note: _nullableStr(raw['note']),
+  );
+}
+
+/// One order, as the till sees it.
+@immutable
+class DineInOrder {
+  const DineInOrder({
+    required this.id,
+    required this.publicId,
+    required this.tableLabel,
+    required this.status,
+    required this.totalMinor,
+    required this.placedAt,
+    required this.lines,
+    this.customerName,
+    this.customerPhone,
+    this.note,
+    this.tableNumber,
+  });
+
+  final int id;
+  final String publicId;
+
+  /// What the table was called when the order was placed. A string rather than
+  /// a number because a venue may call its tables "Booth 3" or "The snug".
+  final String tableLabel;
+
+  /// placed | accepted | ready | served | rejected | cancelled.
+  final String status;
+
+  final int totalMinor;
+  final DateTime placedAt;
+  final List<DineInLine> lines;
+
+  final String? customerName;
+  final String? customerPhone;
+  final String? note;
+
+  /// The till's own table number, when the server could give one. What the bill
+  /// is placed against; null means the table has gone since the order, and the
+  /// clerk is asked where to put it.
+  final int? tableNumber;
+
+  /// Waiting for somebody to press Accept.
+  bool get isWaiting => status == 'placed';
+
+  int get itemCount => lines.fold(0, (sum, line) => sum + line.qty);
+
+  static DineInOrder? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final map = raw.cast<String, Object?>();
+    final id = _int(map['id']);
+    if (id == 0) return null;
+
+    return DineInOrder(
+      id: id,
+      publicId: _str(map['public_id']),
+      tableLabel: _str(map['table_label']),
+      status: _str(map['status'], 'placed'),
+      totalMinor: _int(map['total_minor']),
+      // An unparseable time is treated as now rather than as 1970: this drives
+      // "how long has this been waiting", and an order that claims to have been
+      // waiting since 1970 would sit at the top of the list for ever.
+      placedAt: DateTime.tryParse(_str(map['placed_at'])) ?? DateTime.now(),
+      lines: [
+        for (final line in (map['lines'] as List?) ?? const [])
+          if (line is Map) DineInLine.fromJson(line.cast<String, Object?>()),
+      ],
+      customerName: _nullableStr(map['customer_name']),
+      customerPhone: _nullableStr(map['customer_phone']),
+      note: _nullableStr(map['note']),
+      tableNumber: map['table_number'] is num
+          ? (map['table_number']! as num).toInt()
+          : null,
+    );
+  }
+}
+
+String _str(Object? value, [String fallback = '']) =>
+    value is String ? value : fallback;
+
+String? _nullableStr(Object? value) {
+  final text = value is String ? value.trim() : '';
+  return text.isEmpty ? null : text;
+}
+
+int _int(Object? value, [int fallback = 0]) =>
+    value is num ? value.toInt() : fallback;
+
+/// Talking to the server about dine-in orders.
+///
+/// Nothing here throws. A till whose network has gone must carry on selling,
+/// and the notification simply says nothing rather than putting an error in
+/// front of a clerk mid-service.
+class DineInService {
+  DineInService({
+    required this.apiBase,
+    required this.terminalToken,
+    http.Client? client,
+  }) : _client = client ?? http.Client();
+
+  final String apiBase;
+
+  /// Null on a terminal that has never been commissioned. Every call answers
+  /// "nothing" rather than failing.
+  final String? terminalToken;
+
+  final http.Client _client;
+
+  static const _quick = Duration(seconds: 8);
+
+  bool get canAsk => terminalToken != null;
+
+  Map<String, String> get _headers => {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer $terminalToken',
+  };
+
+  /// What is waiting, and what is in the kitchen.
+  ///
+  /// Returns null when the till could not ask at all — offline, or not
+  /// commissioned. Null and "nothing waiting" are deliberately different: the
+  /// first means the badge should say nothing, and the second means it should
+  /// say nothing *and be right*.
+  Future<List<DineInOrder>?> waiting() async {
+    if (!canAsk) return null;
+    try {
+      final res = await _client
+          .get(
+            Uri.parse('$apiBase/till/dinein/orders?status=placed,accepted,ready'),
+            headers: _headers,
+          )
+          .timeout(_quick);
+      if (res.statusCode != 200) return null;
+
+      final decoded = jsonDecode(res.body);
+      if (decoded is! List) return null;
+      return [
+        for (final row in decoded) ?DineInOrder.fromJson(row),
+      ];
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Move an order along. [saleId] attaches the bill this became.
+  ///
+  /// False means it did not move, which is a real answer and not only an error:
+  /// the server refuses a transition from the wrong state, so a clerk pressing
+  /// Accept on an order the till beside them has already taken gets a plain no
+  /// rather than a second kitchen ticket.
+  Future<bool> move(int id, String action, {String? saleId, String? note}) async {
+    if (!canAsk) return false;
+    try {
+      final res = await _client
+          .post(
+            Uri.parse('$apiBase/till/dinein/orders/$id/$action'),
+            headers: _headers,
+            body: jsonEncode({
+              'order_id': ?saleId,
+              'note': ?note,
+            }),
+          )
+          .timeout(_quick);
+      return res.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+}
+
+/// The dine-in service for this terminal.
+final dineInServiceProvider = Provider<DineInService>(
+  (ref) => DineInService(
+    apiBase: ref.watch(apiBaseProvider),
+    terminalToken: ref.watch(sessionProvider).terminalToken,
+  ),
+);
+
+/// What is waiting for the till right now.
+///
+/// Refreshed on two signals, and it needs both:
+///
+///   * `dinein.order` and `dinein.changed` off the socket, which is what makes
+///     the notification appear while the customer is still holding their phone.
+///   * A thirty-second timer, which is what makes it *arrive at all* on a till
+///     that was offline when the push went out. A customer sitting at a table
+///     waiting for food nobody knew about is the failure this feature would be
+///     remembered for.
+///
+/// Never an error state. A till whose network has gone must carry on selling,
+/// so a failed read leaves the previous answer on screen rather than putting a
+/// red panel in front of a clerk mid-service — see [DineInService.waiting],
+/// which answers null rather than throwing.
+class DineInOrdersController extends AsyncNotifier<List<DineInOrder>> {
+  Timer? _poll;
+  StreamSubscription<SyncEvent>? _events;
+
+  @override
+  Future<List<DineInOrder>> build() async {
+    _events?.cancel();
+    _events = ref.watch(syncServiceProvider).events.listen((event) {
+      if (event.type == 'dinein.order' || event.type == 'dinein.changed') {
+        unawaited(refresh());
+      }
+    });
+
+    _poll?.cancel();
+    _poll = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => unawaited(refresh()),
+    );
+
+    ref.onDispose(() {
+      _poll?.cancel();
+      unawaited(_events?.cancel());
+    });
+
+    return await ref.read(dineInServiceProvider).waiting() ?? const [];
+  }
+
+  /// Ask again, keeping what is on screen if the answer does not come.
+  Future<void> refresh() async {
+    final fresh = await ref.read(dineInServiceProvider).waiting();
+    if (fresh == null) return;
+    state = AsyncData(fresh);
+  }
+
+  /// Move an order along and update the list without waiting for a round trip.
+  ///
+  /// Refreshed straight afterwards anyway: the optimistic step is what makes
+  /// the button feel like it worked, and the refresh is what makes the screen
+  /// right when the terminal beside this one got there first.
+  Future<bool> move(int id, String action, {String? saleId, String? note}) async {
+    final ok = await ref
+        .read(dineInServiceProvider)
+        .move(id, action, saleId: saleId, note: note);
+    await refresh();
+    return ok;
+  }
+}
+
+final dineInOrdersProvider =
+    AsyncNotifierProvider<DineInOrdersController, List<DineInOrder>>(
+      DineInOrdersController.new,
+    );
+
+/// How many orders are waiting for somebody to press Accept.
+///
+/// Its own provider so the badge on the bar rebuilds when the *count* changes
+/// rather than on every refresh of the list — a bar that repaints every thirty
+/// seconds on a till nobody has touched is a bar that flickers.
+final dineInWaitingCountProvider = Provider<int>((ref) {
+  final orders = ref.watch(dineInOrdersProvider).value ?? const <DineInOrder>[];
+  return orders.where((o) => o.isWaiting).length;
+});

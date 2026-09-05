@@ -297,6 +297,7 @@ class _Key extends StatelessWidget {
     'print_bill': 'Print bill',
     'sign_on': 'Sign on',
     'clock_in_out': 'Clock in / out',
+    'display_lock': 'Lock screen',
     'price_level': 'Price level',
   };
 

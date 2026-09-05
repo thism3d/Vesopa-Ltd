@@ -39,6 +39,7 @@ import 'permission_gate.dart';
 import 'widgets/clock_punch_button.dart';
 import '../data/price_level_controller.dart';
 import 'price_level_sheet.dart';
+import 'display_lock.dart';
 
 /// Live catalogue, straight from the local database so the grid renders with
 /// no network at all.
@@ -1128,6 +1129,15 @@ class SalePage extends ConsumerWidget {
         // Straight to the signed-on person's own shift. The list of everybody
         // is under Functions › Staff On Shift, where a manager looks for it.
         await punchSignedOnStaff(context, ref);
+        return;
+
+      // The customer screen, locked and unlocked from here.
+      //
+      // A toggle rather than two keys, because it is pressed in pairs — on when
+      // a family arrives at the counter, off when they have gone — and a venue
+      // should not have to find room on a bar for both halves of one thought.
+      case 'display_lock':
+        await toggleCustomerScreenLock(context);
         return;
 
       // Swapping what the terminal charges. On the bar because a venue that

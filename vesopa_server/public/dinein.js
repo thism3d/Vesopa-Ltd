@@ -236,25 +236,36 @@ async function loadDineInMenu() {
   }
 
   const body = $('dinein_menu-body');
-  if (!diMenu.length) {
-    body.innerHTML = `
-      <div class="empty">
-        <p>No sections yet. A section is a heading on the customer's phone —
-           Starters, Mains, Drinks — and the tabs across the top are made from
-           them.</p>
-        <button class="btn primary" id="di-add-section" type="button">
-          Add the first section
-        </button>
-      </div>`;
-    $('di-add-section').onclick = diAddSection;
-    return;
-  }
 
-  body.innerHTML =
-    diMenu.map(diSectionCard).join('') +
-    `<button class="btn" id="di-add-section" type="button">Add a section</button>`;
+  // Named where it is created rather than in a browser prompt(): a prompt is
+  // an unstyled modal that cannot say what a section is for, and the back
+  // office already treats it as something editors do not do.
+  const adder = `
+    <div class="card">
+      <div class="row" style="gap:8px;align-items:flex-end">
+        <label style="flex:1">New section
+          <input id="di-new-section" placeholder="Starters, Mains, Drinks…"
+                 autocomplete="off">
+        </label>
+        <button class="btn primary" id="di-add-section" type="button">Add</button>
+      </div>
+    </div>`;
+
+  body.innerHTML = diMenu.length
+    ? diMenu.map(diSectionCard).join('') + adder
+    : `<div class="empty">
+         <p>No sections yet. A section is a heading on the customer's phone —
+            Starters, Mains, Drinks — and the tabs that scroll across the top
+            are made from them.</p>
+       </div>` + adder;
 
   $('di-add-section').onclick = diAddSection;
+  // Enter adds it, because typing a name and reaching for the mouse is the
+  // slow half of adding six sections in a row.
+  $('di-new-section').onkeydown = (e) => {
+    if (e.key === 'Enter') diAddSection();
+  };
+  if (diMenu.length === 0) $('di-new-section').focus();
   body.querySelectorAll('[data-sec-save]').forEach((b) => {
     b.onclick = () => diSaveSection(Number(b.dataset.secSave));
   });
@@ -341,8 +352,12 @@ function diField(kind, id, field) {
 }
 
 async function diAddSection() {
-  const name = prompt('What is this section called? (Starters, Mains, Drinks…)');
-  if (!name) return;
+  const field = $('di-new-section');
+  const name = field ? field.value.trim() : '';
+  if (!name) {
+    if (field) field.focus();
+    return;
+  }
   try {
     await api('/dinein/sections', {
       method: 'POST',

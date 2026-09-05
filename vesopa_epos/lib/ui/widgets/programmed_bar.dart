@@ -13,6 +13,7 @@ import '../shell.dart' show SyncStatusBadge;
 import '../theme.dart';
 import 'basket_panel.dart' show money;
 import 'clock_punch_button.dart';
+import '../dinein_sheet.dart';
 import 'open_bills_strip.dart';
 import 'print_status.dart';
 
@@ -130,6 +131,9 @@ class ProgrammedBar extends ConsumerWidget {
     // whichever screen the till happens to be showing.
     'sign_on',
     'clock_in_out',
+    // Locking the customer screen acts on a different machine entirely, so it
+    // means the same thing from every section.
+    'display_lock',
   };
 
   /// One row of bar. Matches the built-in action bar's key height closely
@@ -292,6 +296,12 @@ class _BarKey extends ConsumerWidget {
     'staff_name',
     'sync_status',
     'print_status',
+    // Orders waiting from customers' phones. A widget rather than a function
+    // key because it reports a count as well as being pressed — and because a
+    // venue that has laid out its own top bar never sees the built-in badges,
+    // so without this there would be venues with no way to know an order had
+    // arrived.
+    'dinein_orders',
     'screen_name',
     'spacer',
   };
@@ -323,6 +333,7 @@ class _BarKey extends ConsumerWidget {
     'sign_off': Icons.logout,
     'sign_on': Icons.login,
     'clock_in_out': Icons.schedule,
+    'display_lock': Icons.lock_outline,
     'price_level': Icons.sell_outlined,
   };
 
@@ -414,6 +425,7 @@ class _BarKey extends ConsumerWidget {
     // Handled here rather than by making the slab conditional further down, so
     // that adding another self-contained key is one line in one list.
     const bringsItsOwnSurface = <String>{
+      'dinein_orders',
       // Its own colour, its own label and its own tap: see
       // `widgets/clock_punch_button.dart`. The venue's fill is deliberately not
       // applied — the whole point of the key is that the colour reports
@@ -435,6 +447,7 @@ class _BarKey extends ConsumerWidget {
       return switch (key) {
         'clock_in_out' => const ClockPunchKey(compact: true),
         'sync_status' => const Center(child: SyncStatusBadge()),
+        'dinein_orders' => const Center(child: DineInBadge()),
         _ => const Center(child: PrintStatusBadge()),
       };
     }

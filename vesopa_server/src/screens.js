@@ -100,6 +100,10 @@ const FUNCTION_KEYS = [
   // be shown where Settings is first.
   'sign_on',
   'clock_in_out',
+  // Lock and unlock the customer screen. On the sale grid as well as on a bar,
+  // because it is pressed in the two moments a clerk is furthest from Settings:
+  // a family arriving at the counter, and a cloth at the end of the night.
+  'display_lock',
 ];
 
 /**
@@ -163,6 +167,7 @@ const BAR_KEYS = [
   // twenty times a shift, and handing the till over is that thing.
   'sign_on',
   'clock_in_out',
+  'display_lock',
 
   // Widgets — the parts of the bar that draw rather than wait.
   'open_bills',
@@ -175,6 +180,10 @@ const BAR_KEYS = [
   // the till's own top bar can now be turned off in favour of a programmed one,
   // and this was the one thing on it a venue could not otherwise place.
   'print_status',
+  // Orders waiting from customers' phones. Offered on a bar because a venue
+  // that has laid out its own top bar never sees the till's built-in badges,
+  // and would otherwise have no way to know an order had arrived.
+  'dinein_orders',
   'screen_name',
   'spacer',
 ];

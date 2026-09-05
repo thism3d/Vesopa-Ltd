@@ -1,7 +1,7 @@
 const express = require('express');
 const crypto = require('crypto');
 
-const { requireAuth } = require('./auth');
+const { requireAuth, requireTerminal } = require('./auth');
 
 /**
  * Dine-in: the menu a customer reads off their own phone, and the orders they
@@ -46,6 +46,20 @@ const { requireAuth } = require('./auth');
 function dineinRoutes({ pool, broadcast, secret }) {
   const router = express.Router();
   const auth = requireAuth(secret);
+
+  /**
+   * The till's own credential, which is not a session.
+   *
+   * `requireAuth` deliberately refuses a terminal token and `requireTerminal`
+   * refuses a session one — a terminal token sits on a shop-floor machine and
+   * must not open the back office. So the two `/till/dinein/*` routes below
+   * take the terminal credential, and everything else takes a session.
+   *
+   * A terminal token carries `office` (the contact email) and `officeId`, but
+   * not the `user` shape the rest of this file reads, so those routes resolve
+   * their office through [terminalOffice] rather than [officeOf].
+   */
+  const terminal = requireTerminal(secret);
 
   // -------------------------------------------------------------------------
   // Small shared pieces
@@ -768,9 +782,19 @@ function dineinRoutes({ pool, broadcast, secret }) {
     params.push(sinceHours);
 
     const capped = Math.max(1, Math.min(500, Number(limit) || 100));
+    // The table's current number comes along, because that is what the till
+    // places a bill against and it is not what the order stored — the order
+    // holds the table's *id* and the label it had at the time, on purpose (see
+    // schema_menu_dinein.sql). Joined rather than copied so a table renumbered
+    // between the order and the clerk accepting it puts the food on the right
+    // bill. LEFT, so an order whose table has since been deleted still reaches
+    // the till, which then asks the clerk where to put it.
     const [orders] = await pool.query(
-      'SELECT * FROM dinein_orders WHERE ' + filters.join(' AND ') +
-        ' ORDER BY placed_at DESC LIMIT ' + capped,
+      'SELECT o.*, t.table_number' +
+        '  FROM dinein_orders o' +
+        '  LEFT JOIN floor_tables t ON t.id = o.table_id' +
+        ' WHERE ' + filters.map((f) => 'o.' + f).join(' AND ') +
+        ' ORDER BY o.placed_at DESC LIMIT ' + capped,
       params
     );
     if (!orders.length) return [];
@@ -1153,15 +1177,32 @@ function dineinRoutes({ pool, broadcast, secret }) {
   // -------------------------------------------------------------------------
 
   /**
+   * Which office a commissioned terminal belongs to.
+   *
+   * `officeId` has been on the terminal token since it was introduced, but the
+   * email is what a till commissioned on an older build is certain to carry —
+   * so the id is preferred and the email is the fallback, rather than a till
+   * that has not been signed in again since being told it has no orders.
+   */
+  async function terminalOffice(req) {
+    if (req.terminal && req.terminal.officeId) return req.terminal.officeId;
+    if (!req.office) return null;
+    const [[office]] = await pool.query(
+      'SELECT id FROM offices WHERE contact_email = ?',
+      [req.office]
+    );
+    return office ? office.id : null;
+  }
+
+  /**
    * What is waiting, for the till's notification.
    *
-   * Authenticated as the till already is for everything else it reads. The
-   * `status` filter defaults to the two states a clerk can act on, because the
-   * commonest call by far is "is there anything for me".
+   * The `status` filter defaults to the three states a clerk can act on,
+   * because the commonest call by far is "is there anything for me".
    */
-  router.get('/till/dinein/orders', auth, async (req, res, next) => {
+  router.get('/till/dinein/orders', terminal, async (req, res, next) => {
     try {
-      const officeId = await officeOf(req);
+      const officeId = await terminalOffice(req);
       if (officeId == null) {
         return res.status(400).json({ error: 'Unknown office.' });
       }
@@ -1191,9 +1232,9 @@ function dineinRoutes({ pool, broadcast, secret }) {
     rejected: ['placed', 'accepted'],
   };
 
-  router.post('/till/dinein/orders/:id/:action', auth, async (req, res, next) => {
+  router.post('/till/dinein/orders/:id/:action', terminal, async (req, res, next) => {
     try {
-      const officeId = await officeOf(req);
+      const officeId = await terminalOffice(req);
       if (officeId == null) {
         return res.status(400).json({ error: 'Unknown office.' });
       }

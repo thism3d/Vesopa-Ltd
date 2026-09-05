@@ -14,6 +14,8 @@ import 'nav_rail.dart';
 import 'programmed_bar.dart';
 import 'print_status.dart';
 import 'clock_punch_button.dart';
+import '../dinein_sheet.dart';
+import '../display_lock.dart';
 
 /// The one bar the till wears, on every screen.
 ///
@@ -120,6 +122,11 @@ class TillTopBar extends ConsumerWidget {
             ),
             Expanded(child: body ?? const SizedBox.shrink()),
             if (trailing) ...[
+              // What customers have sent from their tables. First of the three
+              // badges because it is the only one that wants somebody to *do*
+              // something — the other two report a state — and it draws nothing
+              // at all when there is nothing waiting.
+              const DineInBadge(),
               StaffChip(onSignOn: onSignOn, onSignOff: onSignOff),
               // Whether the kitchen actually got the last ticket. Beside the
               // sync badge because it answers the same shape of question —
@@ -424,6 +431,10 @@ class VenueTopBarBody extends ConsumerWidget {
         if (key == 'sign_on') {
           await showSignOnPad(context, ref);
           return;
+        }
+        if (key == 'display_lock') {
+          if (!context.mounted) return;
+          return toggleCustomerScreenLock(context);
         }
         if (key == 'clock_in_out') {
           if (!context.mounted) return;

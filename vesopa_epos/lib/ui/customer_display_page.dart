@@ -262,6 +262,58 @@ class _CustomerDisplayPageState extends ConsumerState<CustomerDisplayPage> {
     setState(() => _writeFailed = !written);
   }
 
+  /// What one connected screen is doing, in one line.
+  ///
+  /// A venue can have more than one of these — a screen on the bar and another
+  /// at the door — and the only way to tell them apart from behind the till is
+  /// what they say about themselves. So this leads with the facts that differ
+  /// between two screens (the size it is running at, how many adverts it has,
+  /// whether it is locked) and falls back to when it was connected, which is
+  /// all an older display can report.
+  ///
+  /// The status file is the *current* display's, so these facts are attached
+  /// to whichever paired screen is actually running. With two paired and one
+  /// switched off, the one that is off keeps the connection line and does not
+  /// borrow the other's size — see [_statusBelongsTo].
+  String _describe(PairedDisplay display) {
+    final status = _statusBelongsTo(display) ? _status : null;
+
+    final bits = <String>[
+      if (status != null && status.runningAt.isNotEmpty) status.runningAt,
+      if (status != null)
+        status.advertCount == 0
+            ? 'no adverts'
+            : '${status.advertCount} advert'
+                  '${status.advertCount == 1 ? '' : 's'}',
+      if (status != null && status.childLock) 'locked',
+      if (status != null && status.appVersion.isNotEmpty)
+        'v${status.appVersion}',
+    ];
+
+    if (bits.isEmpty) {
+      return 'Connected ${_when(display.pairedAt)}. This till tells it where '
+          'to look on every start, so it keeps working after an update.';
+    }
+    return '${bits.join('  ·  ')}\nConnected ${_when(display.pairedAt)}';
+  }
+
+  /// Whether the status file on disk is this screen's.
+  ///
+  /// There is one status file per shared folder, and it is written by whichever
+  /// display is currently running. A display that has been switched off leaves
+  /// its last one behind, so a stale file must not be read as a live report
+  /// about a screen that is not there — and with two paired screens the running
+  /// one's report must not be printed under the other one's name.
+  bool _statusBelongsTo(PairedDisplay display) {
+    final status = _status;
+    if (status == null || !status.isLive) return false;
+    // One paired screen and a live status: it can only be that one.
+    if (_paired.length <= 1) return true;
+    // More than one, and the file does not say which wrote it. Report the
+    // shared facts against none of them rather than against the wrong one.
+    return false;
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!_loaded) {
@@ -304,12 +356,18 @@ class _CustomerDisplayPageState extends ConsumerState<CustomerDisplayPage> {
               children: [
                 for (final display in _paired)
                   ListTile(
-                    leading: const Icon(Icons.tv_outlined),
+                    leading: Icon(
+                      _status != null && _status!.childLock
+                          ? Icons.lock_outline
+                          : Icons.tv_outlined,
+                    ),
                     title: Text(display.name),
+                    // What it is actually running, not only when it was
+                    // connected. A manager standing in front of two screens
+                    // needs to tell them apart, and "1920 x 1080, 9 adverts"
+                    // does that where "connected on Tuesday" does not.
                     subtitle: Text(
-                      'Connected ${_when(display.pairedAt)}. This till tells it '
-                      'where to look on every start, so it keeps working after '
-                      'an update.',
+                      _describe(display),
                       style: const TextStyle(fontSize: 12.5),
                     ),
                     trailing: TextButton(
@@ -418,6 +476,59 @@ class _CustomerDisplayPageState extends ConsumerState<CustomerDisplayPage> {
             fullScreen: _control.fullScreen,
             onChosen: (key) => _push(_control.copyWith(screenKey: key)),
             onFullScreen: (on) => _push(_control.copyWith(fullScreen: on)),
+          ),
+        ),
+
+        const SizedBox(height: 28),
+        const _SectionTitle('Lock the customer screen'),
+        Card(
+          margin: EdgeInsets.zero,
+          child: Column(
+            children: [
+              SwitchListTile(
+                value: _control.childLock,
+                title: const Text('Ignore touches on the customer screen'),
+                subtitle: const Text(
+                  'The screen keeps showing the bill and the adverts and stops '
+                  'responding to being touched. For a counter with children '
+                  'at it, and for the end of the night when it gets wiped.',
+                  style: TextStyle(fontSize: 12.5),
+                ),
+                secondary: Icon(
+                  _control.childLock ? Icons.lock : Icons.lock_open,
+                  color: _control.childLock ? Pos.brandDeep : null,
+                ),
+                onChanged: (on) => _push(_control.copyWith(childLock: on)),
+              ),
+              // What the screen says about itself, rather than what it was told.
+              // Between the two there is a two-second gap, and a manager who
+              // pressed the switch and walked off should be able to come back
+              // and see whether it actually took.
+              if (_status != null && _status!.isLive)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+                  child: Row(
+                    children: [
+                      Icon(
+                        _status!.childLock
+                            ? Icons.check_circle_outline
+                            : Icons.radio_button_unchecked,
+                        size: 16,
+                        color: _status!.childLock ? Pos.green : null,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _status!.childLock
+                              ? 'The screen reports that it is locked.'
+                              : 'The screen reports that it is not locked.',
+                          style: const TextStyle(fontSize: 12.5),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
           ),
         ),
 
