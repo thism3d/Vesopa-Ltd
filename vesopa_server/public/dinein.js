@@ -596,78 +596,22 @@ async function loadDineInQr() {
     </div>
 
     <div class="card">
-      <h3>The card</h3>
-      <div class="row" style="gap:14px;align-items:flex-start;flex-wrap:wrap">
-        <div style="flex:0 0 300px">
-          <label>Paper
-            <select id="di-page">
-              ${[
-                ['a4', 'A4 sheet (210 × 297mm)'],
-                ['a5', 'A5 card (148 × 210mm)'],
-                ['a6', 'A6 card (105 × 148mm)'],
-                ['sticker80', 'Square sticker (80 × 80mm)'],
-                ['sticker60', 'Square sticker (60 × 60mm)'],
-                ['custom', 'Custom size'],
-              ].map(([v, label]) =>
-                `<option value="${v}" ${diDesign.page_size === v ? 'selected' : ''}>${label}</option>`
-              ).join('')}
-            </select>
-          </label>
-          <div id="di-custom" class="row" style="gap:8px"
-               ${diDesign.page_size === 'custom' ? '' : 'hidden'}>
-            <label>Width mm<input id="di-pw" type="number" value="${diDesign.page_w_mm}"></label>
-            <label>Height mm<input id="di-ph" type="number" value="${diDesign.page_h_mm}"></label>
-          </div>
-          <label>Background
-            <input id="di-bg" type="color"
-                   value="${esc(diDesign.background || '#FFFFFF')}"
-                   style="width:64px;height:38px;padding:3px;border-radius:8px">
-          </label>
-
-          <h4 style="margin:16px 0 6px">What is on it</h4>
-          <div id="di-elements"></div>
-          <div class="row" style="gap:6px;margin-top:8px;flex-wrap:wrap">
-            <button class="btn" data-add-el="text" type="button">+ Text</button>
-            <button class="btn" data-add-el="image" type="button">+ Image</button>
-            <button class="btn" data-add-el="link" type="button">+ Web address</button>
-          </div>
-          <button class="btn primary" id="di-design-save" type="button"
-                  style="margin-top:14px">Save the card</button>
+      <div class="row" style="justify-content:space-between;align-items:center">
+        <h3 style="margin:0">The card</h3>
+        <div class="row" style="gap:8px">
+          <button class="btn primary" id="di-design-save" type="button">Save the card</button>
           <span id="di-design-saved" class="muted small"></span>
         </div>
-
-        <div style="flex:1 1 320px">
-          <p class="muted small">Preview, with the first table's details filled in.</p>
-          <div id="di-preview-card"></div>
-        </div>
       </div>
+      <p class="muted small">
+        Drag things around, pull a corner to resize, and pick a starting point
+        from the panel. The card prints at whatever paper size you choose, so a
+        layout done once works on an A4 sheet and on a 60mm sticker.
+      </p>
+      <div id="di-card-editor"></div>
     </div>
   `;
 
-  $('di-page').onchange = () => {
-    diDesign.page_size = $('di-page').value;
-    $('di-custom').hidden = diDesign.page_size !== 'custom';
-    diDrawPreview();
-  };
-  $('di-bg').oninput = () => { diDesign.background = $('di-bg').value; diDrawPreview(); };
-  const pw = $('di-pw'); const ph = $('di-ph');
-  if (pw) pw.oninput = () => { diDesign.page_w_mm = Number(pw.value) || 148; diDrawPreview(); };
-  if (ph) ph.oninput = () => { diDesign.page_h_mm = Number(ph.value) || 210; diDrawPreview(); };
-
-  document.querySelectorAll('[data-add-el]').forEach((b) => {
-    b.onclick = () => {
-      diDesign.elements.push(
-        b.dataset.addEl === 'image'
-          ? { kind: 'image', x: 30, y: 4, w: 40, h: 14, url: '' }
-          : b.dataset.addEl === 'link'
-            ? { kind: 'link', x: 10, y: 88, w: 80, h: 6, size: 11, align: 'center' }
-            : { kind: 'text', x: 10, y: 88, w: 80, h: 7, size: 13,
-                align: 'center', text: 'Ask us about allergens' }
-      );
-      diDrawElements();
-      diDrawPreview();
-    };
-  });
   $('di-design-save').onclick = diSaveDesign;
 
   document.querySelectorAll('[data-qr-on]').forEach((c) => {
@@ -689,69 +633,27 @@ async function loadDineInQr() {
   const all = $('di-print-all');
   if (all) all.onclick = () => diPrint(withCodes.map((t) => t.id));
 
-  diDrawElements();
-  diDrawPreview();
+  // The codes have to be in hand before the canvas draws, or the first paint
+  // of the card has an empty square where the QR goes and the venue judges the
+  // design on it.
+  await diCodesFor(diTables.tables.slice(0, 1), diTables.base || location.origin);
+  dcSelected = -1;
+  dcRender();
 }
 
-const DI_ELEMENT_NAMES = {
-  qr: 'The code',
-  venue_name: 'Your venue name',
-  table_name: 'The table name',
-  text: 'Text',
-  image: 'Picture',
-  link: 'Your web address',
-};
-
-function diDrawElements() {
-  $('di-elements').innerHTML = diDesign.elements.map((el, i) => `
-    <div class="card" style="padding:8px;margin:6px 0">
-      <div class="row" style="justify-content:space-between;align-items:center">
-        <b style="font-size:13px">${esc(DI_ELEMENT_NAMES[el.kind] || el.kind)}</b>
-        <button class="btn danger" data-el-del="${i}" type="button"
-                title="Remove"
-                style="padding:2px 10px;flex:0 0 auto;line-height:1.4">×</button>
-      </div>
-      ${el.kind === 'text'
-        ? `<input data-el="${i}" data-k="text" value="${esc(el.text || '')}"
-                  placeholder="What it should say">` : ''}
-      ${el.kind === 'image'
-        ? `<input data-el="${i}" data-k="url" value="${esc(el.url || '')}"
-                  placeholder="Image URL">` : ''}
-      <div class="row" style="gap:6px;margin-top:6px">
-        <label style="flex:1">Left %<input type="number" data-el="${i}" data-k="x" value="${el.x}"></label>
-        <label style="flex:1">Top %<input type="number" data-el="${i}" data-k="y" value="${el.y}"></label>
-        <label style="flex:1">Width %<input type="number" data-el="${i}" data-k="w" value="${el.w}"></label>
-        <label style="flex:1">Height %<input type="number" data-el="${i}" data-k="h" value="${el.h}"></label>
-      </div>
-    </div>`).join('');
-
-  $('di-elements').querySelectorAll('[data-el-del]').forEach((b) => {
-    b.onclick = () => {
-      diDesign.elements.splice(Number(b.dataset.elDel), 1);
-      diDrawElements();
-      diDrawPreview();
-    };
-  });
-  $('di-elements').querySelectorAll('[data-el][data-k]').forEach((input) => {
-    input.oninput = () => {
-      const el = diDesign.elements[Number(input.dataset.el)];
-      const key = input.dataset.k;
-      el[key] = input.type === 'number' ? Number(input.value) : input.value;
-      diDrawPreview();
-    };
-  });
-}
-
-const DI_PAGES = {
-  a4: [210, 297], a5: [148, 210], a6: [105, 148],
-  sticker80: [80, 80], sticker60: [60, 60],
-};
-
+/**
+ * The paper this prints on.
+ *
+ * Read from the editor's own list (DC_PAGES in dinein_card.js) so the two can
+ * never disagree. There used to be a second table here, and a size offered in
+ * the editor but unknown to the printer would have silently printed on A5.
+ */
 function diPageSize(design) {
   if (design.page_size === 'custom') {
     return [design.page_w_mm || 148, design.page_h_mm || 210];
   }
-  return DI_PAGES[design.page_size] || DI_PAGES.a5;
+  const page = DC_PAGES[design.page_size] || DC_PAGES.a5;
+  return [page[0], page[1]];
 }
 
 /**
@@ -770,14 +672,27 @@ function diCardHtml(design, table, base) {
     const box =
       `position:absolute;left:${el.x}%;top:${el.y}%;` +
       `width:${el.w}%;height:${el.h}%;`;
+    // Everything the canvas can set has to come out of the printer, or the
+    // preview is a drawing of a different card. justify-content as well as
+    // text-align, because the box is a flex container and text-align alone
+    // does nothing to a single line inside one.
     const type =
       `font-size:${el.size || 14}pt;` +
       `text-align:${el.align || 'center'};` +
       `font-weight:${el.bold ? '800' : '400'};` +
-      'display:flex;align-items:center;justify-content:center;' +
-      'line-height:1.15;';
+      `font-family:${el.font || 'system-ui, sans-serif'};` +
+      `color:${el.colour || '#14161A'};` +
+      'display:flex;align-items:center;line-height:1.15;overflow:hidden;' +
+      `justify-content:${
+        el.align === 'left' ? 'flex-start'
+          : el.align === 'right' ? 'flex-end' : 'center'
+      };`;
 
     switch (el.kind) {
+      // A flat panel behind everything else — a header band, or a white card
+      // under the code so a dark design still scans.
+      case 'box':
+        return `<div style="${box}background:${esc(el.fill || '#EEEEEE')}"></div>`;
       case 'qr':
         // The SVG markup itself, not an <img src>. /api/qr.svg is behind the
         // session — a plain src would 401 in this page and would have nothing
@@ -797,8 +712,13 @@ function diCardHtml(design, table, base) {
       case 'table_name':
         return `<div style="${box}${type}">${esc(table.display_name)}</div>`;
       case 'link':
+        // The venue's own address, not the table's. Somebody reading a printed
+        // line off a card is going to type it, and nobody types 32 characters
+        // of hex — they type menu.vesopaepos.com/the-bridge. The code beside it
+        // is what carries the table.
         return `<div style="${box}${type}">${esc(
-          base.replace(/^https?:\/\//, '') + '/t/' + table.public_id.slice(0, 8) + '…'
+          base.replace(/^https?:\/\//, '') + '/' +
+          ((diVenue && diVenue.slug) || '')
         )}</div>`;
       case 'image':
         return el.url
@@ -858,24 +778,6 @@ async function diCodesFor(tables, base) {
       diCodes[t.public_id] = '';
     }
   }));
-}
-
-async function diDrawPreview() {
-  const table = diTables.tables.find((t) => t.public_id) || {
-    public_id: '0'.repeat(32),
-    display_name: 'Table 1',
-  };
-  await diCodesFor([table], diTables.base || location.origin);
-  const [w] = diPageSize(diDesign);
-  // Scaled to the panel rather than shown at print size: an A4 card at true
-  // size does not fit beside its own controls on any screen.
-  const scale = Math.min(1, 300 / (w * 3.78));
-  $('di-preview-card').innerHTML = `
-    <div style="transform:scale(${scale});transform-origin:top left;
-                border:1px solid var(--line);display:inline-block;
-                box-shadow:0 4px 18px rgba(0,0,0,.12)">
-      ${diCardHtml(diDesign, table, diTables.base || location.origin)}
-    </div>`;
 }
 
 async function diSaveDesign() {
