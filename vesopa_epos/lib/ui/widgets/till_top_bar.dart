@@ -110,51 +110,63 @@ class TillTopBar extends ConsumerWidget {
               ? null
               : Border(bottom: BorderSide(color: theme.posLine)),
         ),
-        child: Row(
-          children: [
-            PageSelector(
-              onBarCanvas: body != null,
-              section: section,
-              onSelectSection: onSelectSection,
-              onOpenMenu: onOpenMenu,
-              onSignOn: onSignOn,
-              onSignOff: onSignOff,
-            ),
-            Expanded(child: body ?? const SizedBox.shrink()),
+        // IntrinsicHeight, then stretch.
+        //
+        // The selector sized itself to its own text, which on a venue's bar
+        // left a 42px pill beside 58px keys — the one control that is on every
+        // screen, and the one that looked least like it belonged. Stretch
+        // fixes that, but a Row cannot stretch inside an unbounded height and
+        // this bar sits in a Column. IntrinsicHeight gives the Row the tallest
+        // child's height to stretch to. It costs one extra layout pass on one
+        // bar, which is the right price for the alternative being an exception.
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              PageSelector(
+                onBarCanvas: body != null,
+                section: section,
+                onSelectSection: onSelectSection,
+                onOpenMenu: onOpenMenu,
+                onSignOn: onSignOn,
+                onSignOff: onSignOff,
+              ),
+              Expanded(child: body ?? const SizedBox.shrink()),
 
-            // Orders waiting from customers' phones, on every bar.
-            //
-            // The other three badges step aside for a venue's own bar, because
-            // each of them is a key that venue can place and drawing it as well
-            // would put it on twice. This one does not, and it is the one
-            // exception on purpose:
-            //
-            // A venue that laid out its top bar before dine-in existed cannot
-            // have placed a `dinein_orders` key on it. Left to the same rule,
-            // every one of those venues would upgrade, turn ordering on, and
-            // get nothing at all when an order arrived — a feature that appears
-            // to be broken until somebody thinks to edit their bar. An order
-            // from a table is time-limited and wants acting on; it is not
-            // chrome, and it is not something to make a venue opt into twice.
-            //
-            // It still draws nothing when nothing is waiting, and it is
-            // suppressed when the venue *has* placed the key, so it can never
-            // appear twice. See [_barCarriesDineIn].
-            if (!_barCarriesDineIn(ref)) const DineInBadge(),
+              // Orders waiting from customers' phones, on every bar.
+              //
+              // The other three badges step aside for a venue's own bar, because
+              // each of them is a key that venue can place and drawing it as well
+              // would put it on twice. This one does not, and it is the one
+              // exception on purpose:
+              //
+              // A venue that laid out its top bar before dine-in existed cannot
+              // have placed a `dinein_orders` key on it. Left to the same rule,
+              // every one of those venues would upgrade, turn ordering on, and
+              // get nothing at all when an order arrived — a feature that appears
+              // to be broken until somebody thinks to edit their bar. An order
+              // from a table is time-limited and wants acting on; it is not
+              // chrome, and it is not something to make a venue opt into twice.
+              //
+              // It still draws nothing when nothing is waiting, and it is
+              // suppressed when the venue *has* placed the key, so it can never
+              // appear twice. See [_barCarriesDineIn].
+              if (!_barCarriesDineIn(ref)) const DineInBadge(),
 
-            if (trailing) ...[
-              StaffChip(onSignOn: onSignOn, onSignOff: onSignOff),
-              // Whether the kitchen actually got the last ticket. Beside the
-              // sync badge because it answers the same shape of question —
-              // "did what I just did land?" — and draws nothing at all when
-              // there is nothing to report.
-              const PrintStatusBadge(),
-              // The clerk needs to know at a glance whether the till is live
-              // with the back office or working offline with a backlog.
-              const SyncStatusBadge(),
-              const SizedBox(width: 14),
+              if (trailing) ...[
+                StaffChip(onSignOn: onSignOn, onSignOff: onSignOff),
+                // Whether the kitchen actually got the last ticket. Beside the
+                // sync badge because it answers the same shape of question —
+                // "did what I just did land?" — and draws nothing at all when
+                // there is nothing to report.
+                const PrintStatusBadge(),
+                // The clerk needs to know at a glance whether the till is live
+                // with the back office or working offline with a backlog.
+                const SyncStatusBadge(),
+                const SizedBox(width: 14),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
@@ -229,9 +241,7 @@ class PageSelector extends ConsumerWidget {
       // `shape` and `borderRadius` are mutually exclusive on a Material, so the
       // outlined variant states its radius inside the shape.
       child: Material(
-        color: onBarCanvas
-            ? pal.keyFill
-            : Colors.white.withValues(alpha: 0.08),
+        color: onBarCanvas ? pal.keyFill : Colors.white.withValues(alpha: 0.08),
         borderRadius: onBarCanvas ? null : BorderRadius.circular(8),
         shape: onBarCanvas
             ? RoundedRectangleBorder(

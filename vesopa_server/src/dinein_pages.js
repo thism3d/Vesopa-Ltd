@@ -32,6 +32,38 @@ const express = require('express');
  * should be able to get from a camera to a placed order without typing a single
  * character, and that is the whole test this page is written against.
  */
+/**
+ * The host that is nothing but menus.
+ *
+ * `menu.vesopaepos.com` serves the dine-in pages and nothing else, which is
+ * what lets a venue's own address sit at the root of it —
+ * `menu.vesopaepos.com/vesopakitchen`. That is the address a venue wants to
+ * print, and it cannot collide with anything, because there is nothing else on
+ * that host to collide with.
+ *
+ * It has to be a host check and not just a route, because the same application
+ * also serves the back office, where `/products` and `/dashboard` are pages of
+ * a single-page app. A bare `/:slug` route without this would swallow every one
+ * of them.
+ */
+const MENU_HOST = (process.env.MENU_HOST || 'menu.vesopaepos.com')
+  .trim()
+  .toLowerCase();
+
+/** The host this request arrived on, as the customer typed it. */
+function hostOf(req) {
+  const raw = req.headers['x-forwarded-host'] || req.headers.host || '';
+  // A proxy may append; the first is the one the browser asked for. The port
+  // is stripped because `menu.vesopaepos.com:443` is the same host.
+  return String(raw).split(',')[0].trim().toLowerCase().split(':')[0];
+}
+
+/** Whether this request came in on the menu host. */
+function onMenuHost(req) {
+  const host = hostOf(req);
+  return host === MENU_HOST || host === 'www.' + MENU_HOST;
+}
+
 function dineinPageRoutes() {
   const router = express.Router();
 
@@ -59,7 +91,73 @@ function dineinPageRoutes() {
     res.type('html').send(statusPage(req.params.publicId));
   });
 
+  /**
+   * The venue's own address, at the root of the menu host.
+   *
+   * `menu.vesopaepos.com/vesopakitchen`. Guarded by the host, and by the shape
+   * of a slug, so that on every other host this route does nothing at all and
+   * the back office's own routing is untouched.
+   *
+   * Registered last, after /t/, /m/ and /o/, so those three keep their meaning
+   * on this host too — a table code is still `menu.vesopaepos.com/t/<code>`.
+   */
+  router.get('/:slug', (req, res, next) => {
+    if (!onMenuHost(req)) return next();
+    const slug = String(req.params.slug || '').toLowerCase();
+    // Only what a slug can actually be. Anything else — a file, a dotted path,
+    // something with a capital in it — is not a venue and is left alone.
+    if (!/^[a-z0-9][a-z0-9-]{1,63}$/.test(slug)) return next();
+
+    res.setHeader('Cache-Control', 'no-store');
+    res.type('html').send(page({ table: null, slug }));
+  });
+
+  /**
+   * The root of the menu host.
+   *
+   * Somebody has typed the domain without a venue on the end of it, which
+   * happens when a card is read out loud or half-remembered. It says what the
+   * address is for rather than 404ing at them.
+   */
+  router.get('/', (req, res, next) => {
+    if (!onMenuHost(req)) return next();
+    res.setHeader('Cache-Control', 'no-store');
+    res.type('html').send(landingPage());
+  });
+
   return router;
+}
+
+/**
+ * What the bare menu domain says.
+ *
+ * Deliberately not a venue directory. The venues on this platform are separate
+ * businesses, and a page listing all of them puts every one of them next to
+ * their competitors on an address they are printing on their own tables.
+ */
+function landingPage() {
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Vesopa menus</title>
+<style>${STYLE}
+.plain{max-width:520px;margin:0 auto;padding:64px 24px;text-align:center}
+.plain h1{font-size:24px;margin:0 0 10px}
+.plain p{color:var(--ink-soft);margin:0 0 8px}
+.plain code{background:var(--sunken);padding:2px 8px;border-radius:6px;font-size:14px}
+</style>
+</head>
+<body>
+<div class="plain">
+  <h1>Vesopa menus</h1>
+  <p>This address serves the menu for a particular venue.</p>
+  <p>Scan the code on your table, or use the link your venue gave you — it looks
+     like <code>${esc(MENU_HOST)}/their-name</code>.</p>
+</div>
+</body>
+</html>`;
 }
 
 /**

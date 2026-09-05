@@ -59,6 +59,13 @@ class _CustomerDisplayPageState extends ConsumerState<CustomerDisplayPage> {
   List<DisplayPairRequest> _pending = const [];
   List<PairedDisplay> _paired = const [];
 
+  /// Whether the two lists above have actually been read yet.
+  ///
+  /// Empty because nothing is connected and empty because nobody has looked are
+  /// the same empty list and completely different things to say to a manager.
+  /// Without this the page answers the first one before it has done the second.
+  bool _pairingRead = false;
+
   /// Screens that have been told "not now". Still listed, and marked, because
   /// the prompt being off is worth seeing.
   Set<String> _declined = const {};
@@ -107,10 +114,28 @@ class _CustomerDisplayPageState extends ConsumerState<CustomerDisplayPage> {
   Future<void> _load() async {
     final control = await readDisplayControl();
     final status = await readDisplayStatus();
+
+    // The pairing lists are read here as well as on the timer.
+    //
+    // They used to arrive only on the first tick, two seconds after the page
+    // opened — and for those two seconds `_paired` was empty while `_status`
+    // already said a display was connected. So the page opened saying
+    // "Customer display connected · 1 screen attached" at the top and
+    // "No customer display is asking to be connected" underneath it, which is
+    // the page contradicting itself in front of whoever just opened it.
+    final pairing = ref.read(displayPairingProvider);
+    final pending = await pairing.pending(includeDeclined: true);
+    final paired = await pairing.paired();
+    final declined = await pairing.declined();
+
     if (!mounted) return;
     setState(() {
       _control = control;
       _status = status;
+      _pending = pending;
+      _paired = paired;
+      _declined = declined;
+      _pairingRead = true;
       _adverts.text = control.advertFolder;
       _thanks.text = control.thankYou;
       _standing.text = control.standingMessage;
@@ -380,7 +405,8 @@ class _CustomerDisplayPageState extends ConsumerState<CustomerDisplayPage> {
           ),
         ],
 
-        if (_pending.isEmpty && _paired.isEmpty) ...[
+        // Only once the lists have been read. See [_pairingRead].
+        if (_pairingRead && _pending.isEmpty && _paired.isEmpty) ...[
           const SizedBox(height: 28),
           const _SectionTitle('Connecting a screen'),
           Card(
@@ -936,17 +962,27 @@ class _StatusCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final live = status?.isLive ?? false;
+    final theme = Theme.of(context);
 
     return Card(
       margin: EdgeInsets.zero,
-      color: live ? Pos.brandSoft : null,
+      // Theme-aware. A solid pale green with the theme's own ink on it is
+      // near-white on near-white in Night — the card was there, and everything
+      // written in it was not.
+      color: live ? theme.posBrandSoft : null,
       child: ListTile(
         leading: Icon(
           live ? Icons.desktop_windows : Icons.desktop_access_disabled,
-          color: live ? Pos.brandDeep : Pos.graphite,
+          color: live ? theme.posOnBrandSoft : Pos.graphite,
         ),
         title: Text(
           live ? 'Customer display connected' : 'No customer display running',
+          // Stated rather than inherited, so this cannot drift back to
+          // whatever the card's default happens to be next time the theme moves.
+          style: TextStyle(
+            color: theme.colorScheme.onSurface,
+            fontWeight: FontWeight.w600,
+          ),
         ),
         subtitle: Text(
           live
@@ -963,7 +999,10 @@ class _StatusCard extends StatelessWidget {
                     'Anything set here is waiting for it when it starts.'
               : 'It was running, but has not reported in for a while. It has '
                     'been closed, or the PC it is on is off.',
-          style: const TextStyle(fontSize: 12.5),
+          style: TextStyle(
+            fontSize: 12.5,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
         ),
       ),
     );

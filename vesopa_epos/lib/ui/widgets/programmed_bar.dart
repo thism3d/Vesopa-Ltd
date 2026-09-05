@@ -452,7 +452,14 @@ class _BarKey extends ConsumerWidget {
       };
     }
 
-    final fill = button.fill ?? pal.softFill;
+    // The same fill an ordinary key falls back to, not a quieter one.
+    //
+    // It was `pal.softFill`, which in Day is #F7F8F2 on a #EDEEE8 canvas — four
+    // values apart. A `screen_name` key the venue had not coloured therefore
+    // drew as a word floating in a gap, next to a venue_name and an
+    // order_total the venue *had* coloured. Three keys in a row, one of them
+    // apparently missing its button.
+    final fill = button.fill ?? pal.keyFill;
     final ink = button.ink ?? (button.fill == null ? pal.ink : Pos.inkOn(fill));
 
     final Widget body = switch (key) {
@@ -482,6 +489,12 @@ class _BarKey extends ConsumerWidget {
       decoration: BoxDecoration(
         color: fill,
         borderRadius: BorderRadius.circular(10),
+        // And the same hairline. Without it an uncoloured widget key is a
+        // filled rectangle with no edge, beside ordinary keys that all have
+        // one — which is what made the row look like it had a hole in it.
+        // Skipped when the venue chose the colour: they picked a fill that is
+        // meant to stand out, and an outline on top of it is noise.
+        border: button.fill == null ? Border.all(color: pal.keyLine) : null,
       ),
       padding: const EdgeInsets.symmetric(horizontal: 8),
       alignment: Alignment.center,

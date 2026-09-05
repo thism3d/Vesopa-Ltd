@@ -723,18 +723,25 @@ function sendShell(_req, res) {
 
 // Before the static middleware, or `express.static` answers /index.html with
 // the file on disk and the rewrite never runs.
-app.get(['/', '/index.html'], sendShell);
-
 /**
- * The customer-facing dine-in pages: /t/<table>, /m/<venue>, /o/<order>.
+ * The customer-facing dine-in pages: /t/<table>, /m/<venue>, /o/<order>, and —
+ * on the menu host only — /<venue> and / itself.
  *
- * Mounted at the root and ahead of both the static middleware and the back
- * office's catch-all, because these are the addresses printed on cards that get
- * laminated and stood on tables. Anything that could shadow them has to lose,
- * and the three prefixes are short and reserved (see RESERVED in dinein.js) so
- * no venue's chosen address can ever collide with them.
+ * Mounted at the root and ahead of the shell, the static middleware and the
+ * back office's catch-all, because these are the addresses printed on cards
+ * that get laminated and stood on tables. Anything that could shadow them has
+ * to lose.
+ *
+ * Ahead of the `/` shell route specifically: menu.vesopaepos.com/ has its own
+ * page saying what that address is for, and with the shell registered first it
+ * was answered with the back office sign-in instead. Every route in here that
+ * is not host-guarded is a prefix no venue can claim — see RESERVED in
+ * dinein.js — and the host-guarded ones call next() on every other host, so the
+ * back office's own routing is untouched.
  */
 app.use(dineinPageRoutes());
+
+app.get(['/', '/index.html'], sendShell);
 
 app.use(express.static(PUBLIC_DIR, { setHeaders: staticCache }));
 

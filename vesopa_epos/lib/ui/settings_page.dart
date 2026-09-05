@@ -25,6 +25,7 @@ import 'theme.dart';
 import 'theme_controller.dart';
 import 'till_actions.dart';
 import 'widgets/pos_message.dart';
+import '../data/order_alerts.dart';
 
 /// Terminal settings. Anything that belongs to the venue lives in the back
 /// office; what is here is specific to *this* screen — chiefly how it looks in
@@ -184,6 +185,44 @@ class SettingsPage extends ConsumerWidget {
                 ),
               ),
             ],
+          ),
+        ),
+
+        const SizedBox(height: 28),
+        const _SectionTitle('Orders from tables'),
+        Card(
+          margin: EdgeInsets.zero,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'How this till is told when somebody orders from the code on '
+                  'their table. It is set per terminal, not for the venue: a '
+                  'till facing customers all evening and a till by the pass '
+                  'want different answers.',
+                  style: TextStyle(fontSize: 12.5),
+                ),
+                const SizedBox(height: 6),
+                for (final option in OrderAlerts.values)
+                  RadioListTile<OrderAlerts>(
+                    contentPadding: EdgeInsets.zero,
+                    value: option,
+                    // ignore: deprecated_member_use
+                    groupValue: ref.watch(orderAlertsProvider),
+                    // ignore: deprecated_member_use
+                    onChanged: (value) => unawaited(
+                      ref.read(orderAlertsProvider.notifier).set(value!),
+                    ),
+                    title: Text(option.label),
+                    subtitle: Text(
+                      option.blurb,
+                      style: const TextStyle(fontSize: 12.5),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
 

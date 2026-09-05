@@ -34,13 +34,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/dinein_orders.dart';
-import '../data/local/database.dart';
-import '../data/staff_session.dart';
-import '../main.dart';
-import 'sale_page.dart' show productsProvider;
 import 'theme.dart';
 import 'widgets/basket_panel.dart' show money;
 import 'widgets/pos_message.dart';
+import '../data/order_alerts.dart';
+import 'dinein_actions.dart';
 
 /// Open the list of what customers have sent in.
 Future<void> showDineInOrders(BuildContext context) => showModalBottomSheet<void>(
@@ -152,107 +150,22 @@ class _DineInSheetState extends ConsumerState<DineInSheet> {
 
   /// Ring the order onto the table's bill, then tell the server it was taken.
   ///
-  /// In that order, and it matters. If the bill were claimed on the server
-  /// first and the till then failed to ring it up, the customer would be told
-  /// their food was accepted and nothing would exist on this till. Doing the
-  /// local work first means the worst case is an order that is on a bill and
-  /// still showing as waiting — visible, and fixable by pressing Accept again,
-  /// which the server refuses without making a second bill.
+  /// The work itself is in `dinein_actions.dart`, because the notification does
+  /// exactly the same thing and two copies of it would be two copies of the
+  /// ordering that makes it safe — with the second one getting it wrong.
   Future<void> _accept(DineInOrder order) async {
     setState(() => _busy = order.id);
     try {
-      final tableNumber = order.tableNumber;
-      if (tableNumber == null) {
-        _say(
-          'That table has been deleted since the order was placed. Ring it up '
-          'by hand and refuse this one so the customer is told.',
-          error: true,
-        );
-        return;
-      }
-
-      final products = ref.read(productsProvider).value ?? const <Product>[];
-      final byPlu = {for (final p in products) p.pluId: p};
-
-      // Everything the till cannot ring, named. A meal arriving without its
-      // side because a PLU was deleted last week is worse than being told.
-      final missing = [
-        for (final line in order.lines)
-          if (!byPlu.containsKey(line.pluId)) line.name,
-      ];
-      if (missing.length == order.lines.length) {
-        _say(
-          'None of these items are in this till\'s catalogue. Ring the order '
-          'up by hand.',
-          error: true,
-        );
-        return;
-      }
-
-      final tables = ref.read(tableRepositoryProvider);
-      final orders = ref.read(orderRepositoryProvider);
-
-      // Onto the bill already on that table when there is one. A second bill
-      // for a table that is mid-meal is how a customer ends up paying twice.
-      final existing = await tables.orderOn(tableNumber);
-      final saleId = existing?.id ??
-          await orders.openOrder(tableNumber: tableNumber);
-      if (existing == null) {
-        await orders.setTable(saleId, tableNumber);
-      }
-
-      final staff = ref.read(staffSessionProvider).staff;
-      for (final line in order.lines) {
-        final product = byPlu[line.pluId];
-        if (product == null) continue;
-        await orders.addLine(
-          saleId,
-          product,
-          qty: line.qty.toDouble(),
-          addedBy: staff?.name,
-        );
-      }
-
-      final moved = await ref
-          .read(dineInOrdersProvider.notifier)
-          .move(order.id, 'accepted', saleId: saleId);
-
-      if (!moved) {
-        _say(
-          'Another till accepted this one first. The items are on '
-          '${order.tableLabel}\'s bill — check it before ringing them again.',
-          error: true,
-        );
-        return;
-      }
-
-      _say(
-        missing.isEmpty
-            ? 'Accepted onto ${order.tableLabel}.'
-            : 'Accepted onto ${order.tableLabel}, but ${missing.join(', ')} '
-                  'could not be rung up — add it by hand.',
-        error: missing.isNotEmpty,
-      );
+      await acceptAndSay(context, ref, order);
     } finally {
       if (mounted) setState(() => _busy = null);
     }
   }
 
   Future<void> _refuse(DineInOrder order) async {
-    final reason = await _askWhy(context);
-    if (reason == null) return;
-
     setState(() => _busy = order.id);
     try {
-      final moved = await ref
-          .read(dineInOrdersProvider.notifier)
-          .move(order.id, 'rejected', note: reason);
-      _say(
-        moved
-            ? 'Refused. The customer\'s phone will say so.'
-            : 'That order has already moved on.',
-        error: !moved,
-      );
+      await refuseWithReason(context, ref, order);
     } finally {
       if (mounted) setState(() => _busy = null);
     }
@@ -277,40 +190,6 @@ class _DineInSheetState extends ConsumerState<DineInSheet> {
       PosMessenger.success(context, message);
     }
   }
-
-  /// Why the kitchen cannot take it.
-  ///
-  /// Asked rather than assumed, because this line is read by a customer sitting
-  /// at a table who has just been told no. "The kitchen has closed" and "we
-  /// have run out" send them to do completely different things.
-  Future<String?> _askWhy(BuildContext context) => showDialog<String>(
-    context: context,
-    builder: (context) => SimpleDialog(
-      title: const Text('Why can this order not be taken?'),
-      children: [
-        for (final reason in const [
-          'Sorry, the kitchen has closed.',
-          'Sorry, we have run out of one of those.',
-          'Sorry, we are too busy to take this right now.',
-          'Please order at the bar.',
-        ])
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(context, reason),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              child: Text(reason),
-            ),
-          ),
-        SimpleDialogOption(
-          onPressed: () => Navigator.pop(context),
-          child: const Padding(
-            padding: EdgeInsets.symmetric(vertical: 6),
-            child: Text('Cancel'),
-          ),
-        ),
-      ],
-    ),
-  );
 }
 
 class _OrderCard extends StatelessWidget {
@@ -498,6 +377,12 @@ class DineInBadge extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Off unless this terminal asked for a count on the bar. The default is
+    // notifications, which say the same thing better — see
+    // `data/order_alerts.dart`.
+    if (!ref.watch(orderAlertsProvider).showsBadge) {
+      return const SizedBox.shrink();
+    }
     final waiting = ref.watch(dineInWaitingCountProvider);
     if (waiting == 0) return const SizedBox.shrink();
 

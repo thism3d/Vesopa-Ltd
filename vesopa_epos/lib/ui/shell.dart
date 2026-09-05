@@ -34,6 +34,7 @@ import 'theme.dart';
 import 'widgets/pos_message.dart';
 import 'widgets/nav_rail.dart';
 import 'widgets/till_top_bar.dart';
+import 'dinein_toasts.dart';
 
 /// The till frame: fixed nav rail on the left, the selected page beside it.
 class PosShell extends ConsumerStatefulWidget {
@@ -551,7 +552,14 @@ class _PosShellState extends ConsumerState<PosShell> {
   /// signing on to answer the prompt is exactly the sort of thing that happens
   /// on install day.
   Widget _withCounterHardware(Widget child) =>
-      PairRequestOverlay(child: _hearingCards(child));
+      // Orders from tables announce themselves over whatever section is open,
+      // so the layer wraps the shell rather than sitting on the sale screen.
+      // Inside PairRequestOverlay on purpose: a screen asking to be connected
+      // is a full-screen prompt somebody is standing in front of, and an order
+      // notification must not land on top of it.
+      PairRequestOverlay(
+        child: DineInToastLayer(child: _hearingCards(child)),
+      );
 
   Widget _hearingCards(Widget child) => SwipeCardListener(
     enabled: ref.watch(cardRepositoryProvider).settings.enabled,

@@ -31,10 +31,15 @@ let diDesigns = [];
 let diDesign = null;
 let diCatalogue = null;
 
-/** The address a customer would type, as opposed to the one on the card. */
+/** The address a customer would type, as opposed to the one on the card.
+ *
+ * At the root of the menu host — `menu.vesopaepos.com/vesopakitchen` — because
+ * that host serves nothing but menus and there is therefore nothing for a venue
+ * name to collide with. `/m/<slug>` still answers, so any link already printed
+ * or sent keeps working. */
 function diVenueUrl() {
   if (!diVenue || !diVenue.slug) return '';
-  return (diTables.base || location.origin) + '/m/' + diVenue.slug;
+  return (diTables.base || location.origin) + '/' + diVenue.slug;
 }
 
 function diMoney(minor) {
