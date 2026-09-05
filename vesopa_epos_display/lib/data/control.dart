@@ -91,6 +91,7 @@ class TillControl {
     required this.standingMessage,
     required this.customerQr,
     required this.customerQrCaption,
+    required this.childLock,
   });
 
   final String advertFolder;
@@ -112,6 +113,11 @@ class TillControl {
 
   /// The line under it.
   final String customerQrCaption;
+
+  /// Whether this screen should ignore being touched. See
+  /// [DisplaySettings.childLock] — the till is the only thing that sets it,
+  /// because a lock the locked screen can undo is not a lock.
+  final bool childLock;
 
   /// Null when the file is missing, unreadable, or written by a newer till than
   /// this build understands. All three mean the same thing to the caller: carry
@@ -135,6 +141,9 @@ class TillControl {
       standingMessage: _str(raw['standing_message'], ''),
       customerQr: _str(raw['customer_qr'], ''),
       customerQrCaption: _str(raw['customer_qr_caption'], 'Scan to join'),
+      // Absent means unlocked. A till on an older build has never heard of
+      // this, and the wrong way to read its silence is as "lock the screen".
+      childLock: _bool(raw['child_lock'], fallback: false),
     );
   }
 }
@@ -284,6 +293,9 @@ class DisplayStatusReport {
     this.screenKey = '',
     this.fullScreen = false,
     this.advertCount = 0,
+    this.childLock = false,
+    this.width = 0,
+    this.height = 0,
   });
 
   final String appVersion;
@@ -298,6 +310,18 @@ class DisplayStatusReport {
   final bool fullScreen;
   final int advertCount;
 
+  /// Whether the lock is actually on here, as opposed to having been asked
+  /// for. The till shows what the screen reports, not what it last sent — the
+  /// two differ for as long as it takes the file to be picked up, and a lock
+  /// button that lies for two seconds is a lock button nobody trusts.
+  final bool childLock;
+
+  /// The window's size right now, in logical pixels. Reported so the till can
+  /// show what each connected screen is actually running at rather than only
+  /// what its monitor could do.
+  final int width;
+  final int height;
+
   Map<String, Object?> toJson() => {
     'format': displayControlFormat,
     'updated_at': DateTime.now().toIso8601String(),
@@ -310,5 +334,8 @@ class DisplayStatusReport {
     'screen_key': screenKey,
     'full_screen': fullScreen,
     'advert_count': advertCount,
+    'child_lock': childLock,
+    'width': width,
+    'height': height,
   };
 }

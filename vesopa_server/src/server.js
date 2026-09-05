@@ -7,6 +7,9 @@ const mysql = require('mysql2/promise');
 const cors = require('cors');
 const { WebSocketServer } = require('ws');
 
+const { dineinRoutes } = require('./dinein');
+const { dineinPageRoutes } = require('./dinein_pages');
+
 const {
   verifyPassword,
   issueToken,
@@ -261,6 +264,13 @@ app.use(cardRoutes({ pool, broadcast, secret: JWT_SECRET }));
 app.use('/api', importRoutes({ pool, broadcast, secret: JWT_SECRET }));
 
 // Reports a venue hands to its accountant, and the schedules that send them.
+// Dine-in: the QR menu a customer reads on their own phone, the orders they
+// place from it, and everything the back office needs to set it up. Mounted
+// under /api like every other signed-in route set; the pages a customer
+// actually opens are mounted at the root further down, ahead of the static
+// middleware.
+app.use('/api', dineinRoutes({ pool, broadcast, secret: JWT_SECRET }));
+
 app.use('/api', reportRoutes({ pool, secret: JWT_SECRET }));
 app.use('/api', reportScheduleRoutes({ pool, secret: JWT_SECRET }));
 
@@ -710,6 +720,17 @@ function sendShell(_req, res) {
 // Before the static middleware, or `express.static` answers /index.html with
 // the file on disk and the rewrite never runs.
 app.get(['/', '/index.html'], sendShell);
+
+/**
+ * The customer-facing dine-in pages: /t/<table>, /m/<venue>, /o/<order>.
+ *
+ * Mounted at the root and ahead of both the static middleware and the back
+ * office's catch-all, because these are the addresses printed on cards that get
+ * laminated and stood on tables. Anything that could shadow them has to lose,
+ * and the three prefixes are short and reserved (see RESERVED in dinein.js) so
+ * no venue's chosen address can ever collide with them.
+ */
+app.use(dineinPageRoutes());
 
 app.use(express.static(PUBLIC_DIR, { setHeaders: staticCache }));
 

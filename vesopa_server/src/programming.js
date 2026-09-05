@@ -300,6 +300,95 @@ function programmingRoutes({ pool, broadcast, secret }) {
     return null;
   }
 
+  /**
+   * A room's outline, validated into something both designers can trust.
+   *
+   * The back office draws L-shapes, T-shapes and the odd bay window by dropping
+   * points; the till renders the same polygon. Neither may be handed a shape it
+   * cannot draw, so anything that is not a run of at least three finite points
+   * becomes null — which both ends already understand as "a plain rectangle",
+   * the behaviour every existing room has.
+   *
+   * Stored as compact JSON rather than as the object it arrived as: this string
+   * goes into a TEXT column and comes back out to two different clients, and a
+   * shape that round-trips differently on each is a shape that drifts.
+   */
+  function outlineOf(raw) {
+    if (raw == null || raw === '') return null;
+    let points = raw;
+    if (typeof raw === 'string') {
+      try {
+        points = JSON.parse(raw);
+      } catch {
+        return null;
+      }
+    }
+    if (!Array.isArray(points) || points.length < 3) return null;
+
+    const clean = [];
+    for (const point of points) {
+      if (!Array.isArray(point) || point.length < 2) return null;
+      const x = Number(point[0]);
+      const y = Number(point[1]);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+      // Clamped to the grid the designer works in. A point at -4 or at 900 is a
+      // dragging accident, and a room extending off the plan cannot be dragged
+      // back because its handle is off the plan too.
+      clean.push([
+        Math.max(0, Math.min(200, Math.round(x))),
+        Math.max(0, Math.min(200, Math.round(y))),
+      ]);
+    }
+    // A shape with more than a couple of hundred corners is not a room.
+    return clean.length > 200 ? null : JSON.stringify(clean);
+  }
+
+  /**
+   * A table's public address: 32 hex characters, minted once.
+   *
+   * Random rather than a counter or a hash of the table number, because this is
+   * printed on a card that sits in a public room. A predictable one would let
+   * anybody in the building order onto any table by editing a URL — including
+   * a table they are not sitting at, and including one nobody has sat at all
+   * evening.
+   */
+  function newPublicId() {
+    return require('crypto').randomUUID().replace(/-/g, '');
+  }
+
+  /**
+   * Whether a table name is already taken in this venue.
+   *
+   * The venue asked for it plainly: one table name cannot be another table name
+   * in the same kitchen. Enforced here rather than by a unique index, because
+   * the index would have to cover a nullable `office_id` — and MySQL does not
+   * treat NULLs as equal, which is exactly how the duplicate table *numbers*
+   * got in before schema_fix_table_uq.sql. Doing it in code also lets the
+   * manager be told which room the other one is in, which an index cannot.
+   *
+   * Compared trimmed and case-insensitively: "Booth 3" and "booth 3 " are the
+   * same table to everybody except a database.
+   */
+  async function nameClash(officeId, name, exceptId) {
+    const clean = (name == null ? '' : String(name)).trim();
+    if (!clean || officeId == null) return null;
+
+    const [[row]] = await pool.query(
+      'SELECT t.id, r.name AS room' +
+        '  FROM floor_tables t' +
+        '  LEFT JOIN floor_rooms r ON r.id = t.room_id' +
+        ' WHERE t.office_id = ?' +
+        '   AND LOWER(TRIM(t.name)) = LOWER(?)' +
+        (exceptId == null ? '' : ' AND t.id <> ?') +
+        ' LIMIT 1',
+      exceptId == null ? [officeId, clean] : [officeId, clean, exceptId]
+    );
+    if (!row) return null;
+    return row.room
+      ? 'There is already a table called "' + clean + '" in ' + row.room + '.'
+      : 'There is already a table called "' + clean + '" here.';
+  }
+
   /** The whole plan: rooms with their tables. Read by the designer and by the till. */
   router.get('/floor', auth, async (req, res, next) => {
     try {
@@ -310,13 +399,14 @@ function programmingRoutes({ pool, broadcast, secret }) {
       const params = officeId == null ? [] : [officeId];
 
       const [rooms] = await pool.query(
-        `SELECT id, name, sort_order FROM floor_rooms${where}
+        `SELECT id, name, sort_order, outline, cols, \`rows\`
+         FROM floor_rooms${where}
          ORDER BY sort_order, id`,
         params
       );
       const [tables] = await pool.query(
-        `SELECT id, room_id, table_number, label, pos_x, pos_y,
-                width, height, shape, seats
+        `SELECT id, room_id, table_number, label, name, public_id, qr_enabled,
+                pos_x, pos_y, width, height, shape, seats
          FROM floor_tables${where} ORDER BY table_number`,
         params
       );
@@ -341,12 +431,131 @@ function programmingRoutes({ pool, broadcast, secret }) {
         });
       }
       const [r] = await pool.execute(
-        'INSERT INTO floor_rooms (office_id, name, sort_order) VALUES (?, ?, ?)',
-        [officeId, req.body.name, req.body.sort_order ?? 0]
+        `INSERT INTO floor_rooms (office_id, name, sort_order, outline, cols, \`rows\`)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [
+          officeId,
+          req.body.name,
+          req.body.sort_order ?? 0,
+          outlineOf(req.body.outline),
+          Number(req.body.cols) || 12,
+          Number(req.body.rows) || 8,
+        ]
       );
       broadcast({ type: 'floor.updated' });
       res.status(201).json({ id: r.insertId });
     } catch (e) {
+      next(e);
+    }
+  });
+
+  /**
+   * Rename a room, or redraw its outline.
+   *
+   * Separate from the table drag: a room's shape changes when somebody puts a
+   * wall in, which is a deliberate act, and folding it into the handler that
+   * fires on every drag would mean a dropped table could reshape the room.
+   */
+  router.put('/floor/rooms/:id', auth, async (req, res, next) => {
+    try {
+      const officeId = await floorOfficeId(req);
+      const sets = [];
+      const params = [];
+      if (req.body.name !== undefined) {
+        sets.push('name = ?');
+        params.push(String(req.body.name).trim());
+      }
+      if (req.body.outline !== undefined) {
+        sets.push('outline = ?');
+        params.push(outlineOf(req.body.outline));
+      }
+      if (req.body.cols !== undefined) {
+        sets.push('cols = ?');
+        params.push(Math.max(4, Math.min(60, Number(req.body.cols) || 12)));
+      }
+      if (req.body.rows !== undefined) {
+        sets.push('`rows` = ?');
+        params.push(Math.max(4, Math.min(60, Number(req.body.rows) || 8)));
+      }
+      if (req.body.sort_order !== undefined) {
+        sets.push('sort_order = ?');
+        params.push(Number(req.body.sort_order) || 0);
+      }
+      if (!sets.length) return res.json({ ok: true, changed: 0 });
+
+      const [r] = await pool.execute(
+        'UPDATE floor_rooms SET ' + sets.join(', ') + ' WHERE id = ?' +
+          (officeId == null ? '' : ' AND office_id = ?'),
+        officeId == null
+          ? [...params, req.params.id]
+          : [...params, req.params.id, officeId]
+      );
+      if (!r.affectedRows) {
+        return res.status(404).json({ error: 'Room not found.' });
+      }
+      broadcast({ type: 'floor.updated' });
+      res.json({ ok: true, changed: r.affectedRows });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /**
+   * Rename one table, renumber it, or turn its QR code off.
+   *
+   * The name is checked against the whole venue before it is written — see
+   * [nameClash] — so a manager renaming Table 4 to "Window" is told which room
+   * the other Window is in rather than being allowed to create the ambiguity.
+   */
+  router.put('/floor/tables/:id', auth, async (req, res, next) => {
+    try {
+      const officeId = await floorOfficeId(req);
+      const [[table]] = await pool.query(
+        'SELECT id, office_id FROM floor_tables WHERE id = ?',
+        [req.params.id]
+      );
+      if (!table) return res.status(404).json({ error: 'Table not found.' });
+      if (officeId != null && table.office_id !== officeId) {
+        return res.status(403).json({ error: 'That table is not yours.' });
+      }
+
+      if (req.body.name !== undefined) {
+        const clash = await nameClash(table.office_id, req.body.name, table.id);
+        if (clash) return res.status(409).json({ error: clash });
+      }
+
+      const sets = [];
+      const params = [];
+      const changes = [
+        ['name', req.body.name === undefined
+          ? undefined
+          : (String(req.body.name).trim() || null)],
+        ['label', req.body.label],
+        ['table_number', req.body.table_number],
+        ['seats', req.body.seats],
+        ['qr_enabled', req.body.qr_enabled === undefined
+          ? undefined
+          : (req.body.qr_enabled ? 1 : 0)],
+      ];
+      for (const [field, value] of changes) {
+        if (value === undefined) continue;
+        sets.push(field + ' = ?');
+        params.push(value);
+      }
+      if (!sets.length) return res.json({ ok: true, changed: 0 });
+
+      const [r] = await pool.execute(
+        'UPDATE floor_tables SET ' + sets.join(', ') + ' WHERE id = ?',
+        [...params, table.id]
+      );
+      broadcast({ type: 'floor.updated' });
+      res.json({ ok: true, changed: r.affectedRows });
+    } catch (e) {
+      if (e.code === 'ER_DUP_ENTRY') {
+        return res.status(409).json({
+          error: 'Another table already has that number in this room.',
+        });
+      }
       next(e);
     }
   });
@@ -393,16 +602,30 @@ function programmingRoutes({ pool, broadcast, secret }) {
         return res.status(403).json({ error: 'That room is not yours.' });
       }
 
+      // A name has to be unique across the whole venue, not merely within the
+      // room. The customer-facing menu says "Table 12" and a runner carries
+      // food to it; two tables answering to that name in one building is a
+      // plate going to the wrong people, and the rooms they are in does not
+      // help anybody holding it.
+      const clash = await nameClash(officeId, t.name, null);
+      if (clash) return res.status(409).json({ error: clash });
+
       const [r] = await pool.execute(
         `INSERT INTO floor_tables
-           (office_id, room_id, table_number, label, pos_x, pos_y, width,
-            height, shape, seats)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (office_id, room_id, table_number, label, name, public_id,
+            qr_enabled, pos_x, pos_y, width, height, shape, seats)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           officeId,
           t.room_id,
           t.table_number,
           t.label ?? null,
+          (t.name ?? '').trim() || null,
+          // Minted here and never again. See schema_dinein.sql: this is the
+          // address printed on the card that sits on the table, so it must not
+          // change when the table is renamed, renumbered or moved rooms.
+          newPublicId(),
+          t.qr_enabled === false ? 0 : 1,
           t.pos_x ?? 0,
           t.pos_y ?? 0,
           t.width ?? 2,
@@ -440,11 +663,19 @@ function programmingRoutes({ pool, broadcast, secret }) {
         await conn.execute(
           `UPDATE floor_tables
            SET pos_x = ?, pos_y = ?, width = ?, height = ?,
-               shape = ?, seats = ?, label = ?, room_id = ?
+               shape = ?, seats = ?, label = ?, room_id = ?,
+               name = COALESCE(?, name),
+               qr_enabled = COALESCE(?, qr_enabled)
            WHERE id = ?${officeId == null ? '' : ' AND office_id = ?'}`,
           [
             t.pos_x, t.pos_y, t.width, t.height,
-            t.shape, t.seats, t.label ?? null, t.room_id, t.id,
+            t.shape, t.seats, t.label ?? null, t.room_id,
+            // COALESCE rather than a plain assignment: this route is the
+            // designer's drag handler, and a drag that omitted the name must
+            // not blank it. Only a payload that actually carries one changes it.
+            t.name === undefined ? null : (String(t.name).trim() || null),
+            t.qr_enabled === undefined ? null : (t.qr_enabled ? 1 : 0),
+            t.id,
             ...(officeId == null ? [] : [officeId]),
           ]
         );

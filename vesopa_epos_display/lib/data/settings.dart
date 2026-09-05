@@ -47,6 +47,7 @@ class DisplaySettings {
     this.standingMessage = '',
     this.customerQr = '',
     this.customerQrCaption = 'Scan to join',
+    this.childLock = false,
   });
 
   /// The folder of images and clips to play. Empty means none chosen.
@@ -142,6 +143,19 @@ class DisplaySettings {
   final String customerQr;
   final String customerQrCaption;
 
+  /// Whether the screen ignores being touched.
+  ///
+  /// A customer display lives at hand height on a counter, and the people
+  /// nearest it are queueing children, somebody leaning on it while they find
+  /// their card, and a cloth at the end of the night. Any of those brings the
+  /// status bars up, and a determined one gets into Settings and points the
+  /// screen at an empty folder.
+  ///
+  /// Locked, a tap says the screen is locked and does nothing else. It is
+  /// turned on and off from the till — deliberately not from here, because a
+  /// lock the locked screen can undo is not a lock.
+  final bool childLock;
+
   /// The bill's share of the screen, as a usable fraction.
   double get billFraction => (billShare.clamp(20, 80)) / 100;
 
@@ -190,6 +204,7 @@ class DisplaySettings {
     String? standingMessage,
     String? customerQr,
     String? customerQrCaption,
+    bool? childLock,
   }) => DisplaySettings(
     advertFolder: advertFolder ?? this.advertFolder,
     screenKey: screenKey ?? this.screenKey,
@@ -209,6 +224,7 @@ class DisplaySettings {
     standingMessage: standingMessage ?? this.standingMessage,
     customerQr: customerQr ?? this.customerQr,
     customerQrCaption: customerQrCaption ?? this.customerQrCaption,
+    childLock: childLock ?? this.childLock,
   );
 }
 
@@ -241,6 +257,7 @@ const _keyFillVideo = 'display.fill_screen_video';
 const _keyStatusHide = 'display.status_hide_seconds';
 const _keySaleSame = 'display.sale_adverts_same';
 const _keySaleFolder = 'display.sale_advert_folder';
+const _keyChildLock = 'display.child_lock';
 
 class DisplaySettingsController extends AsyncNotifier<DisplaySettings> {
   @override
@@ -265,6 +282,9 @@ class DisplaySettingsController extends AsyncNotifier<DisplaySettings> {
       statusHideSeconds: prefs.getInt(_keyStatusHide) ?? 10,
       saleAdvertsSameFolder: prefs.getBool(_keySaleSame) ?? true,
       saleAdvertFolder: prefs.getString(_keySaleFolder) ?? '',
+      // Remembered across a restart on purpose. A screen that unlocked itself
+      // every time the venue rebooted would be locked in name only.
+      childLock: prefs.getBool(_keyChildLock) ?? false,
     );
   }
 
@@ -293,6 +313,7 @@ class DisplaySettingsController extends AsyncNotifier<DisplaySettings> {
       await prefs.setInt(_keyStatusHide, next.statusHideSeconds);
       await prefs.setBool(_keySaleSame, next.saleAdvertsSameFolder);
       await prefs.setString(_keySaleFolder, next.saleAdvertFolder);
+      await prefs.setBool(_keyChildLock, next.childLock);
     } catch (_) {
       // Nothing to tell the customer standing in front of this.
     }

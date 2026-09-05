@@ -1,0 +1,1243 @@
+const express = require('express');
+const crypto = require('crypto');
+
+const { requireAuth } = require('./auth');
+
+/**
+ * Dine-in: the menu a customer reads off their own phone, and the orders they
+ * place from it.
+ *
+ * THE SHAPE OF THE THING
+ *
+ * A code is printed and stood on a table. A customer points a phone at it and
+ * lands on `/t/<public_id>` — a page that knows which venue and which table it
+ * is without asking. They read the menu, build a basket, optionally leave a
+ * name and a number, and send it. The till is told over the socket it already
+ * holds open, a clerk accepts it, and from that moment it is an ordinary sale
+ * against that table: it prints in the kitchen, it appears on the bill, and it
+ * is settled at the counter like everything else.
+ *
+ * WHAT IS DELIBERATELY NOT HERE
+ *
+ * **Payment.** The venue asked for none yet and there is a good reason to be
+ * glad of that: taking money for food nobody has accepted is the one way this
+ * feature could cost a venue real money rather than a plate. The lifecycle
+ * below leaves the seam for it — an order carries a total from the moment it is
+ * placed — but nothing collects.
+ *
+ * **A customer account.** Name and number are optional and are not a login.
+ * Somebody sitting at a table has already proved the only thing that matters,
+ * which is that they are at the table.
+ *
+ * THREE AUDIENCES, THREE KINDS OF ROUTE
+ *
+ *   * `/api/dinein/*`      — the back office. Signed in, tenanted, and the only
+ *                            place any of this is configured.
+ *   * `/api/public/dinein/*` — the customer's phone. No credential but the
+ *                            table's own id, which is what possession of the
+ *                            printed card means.
+ *   * `/api/till/dinein/*` — the till. Reads what is waiting and moves it
+ *                            through the lifecycle.
+ *
+ * They are one file because they are one feature and the rules that connect
+ * them — what "published" means, what a customer may see, what an order may
+ * become — belong next to each other rather than three modules apart.
+ */
+function dineinRoutes({ pool, broadcast, secret }) {
+  const router = express.Router();
+  const auth = requireAuth(secret);
+
+  // -------------------------------------------------------------------------
+  // Small shared pieces
+  // -------------------------------------------------------------------------
+
+  /** 32 hex characters. The address of a table, or of an order. */
+  const newPublicId = () => crypto.randomUUID().replace(/-/g, '');
+
+  /**
+   * Which office this signed-in request belongs to.
+   *
+   * The same rule the floor plan follows: an office user is pinned to their
+   * own, and an admin has to name one. Returning null for an unnamed admin is
+   * what makes every write below refuse rather than create an orphan row —
+   * which is the fault schema_layout_floor_tenancy.sql exists to clean up.
+   */
+  async function officeOf(req) {
+    if (req.user.officeId) return req.user.officeId;
+    if (req.user.role !== 'admin') return null;
+    if (req.query.office_id) return Number(req.query.office_id);
+    if (req.body && req.body.office_id) return Number(req.body.office_id);
+
+    const email = (req.query.office_email) || (req.body && req.body.office_email);
+    if (email) {
+      const [[office]] = await pool.query(
+        'SELECT id FROM offices WHERE contact_email = ?',
+        [email]
+      );
+      if (office) return office.id;
+    }
+    return null;
+  }
+
+  /** The office's contact email, which is what the catalogue is tenanted on. */
+  async function emailOf(officeId) {
+    const [[office]] = await pool.query(
+      'SELECT contact_email FROM offices WHERE id = ?',
+      [officeId]
+    );
+    return office ? office.contact_email : null;
+  }
+
+  /**
+   * A venue's web address, cleaned into something that can live in a URL.
+   *
+   * Lower case, letters digits and hyphens, no leading or trailing hyphen, no
+   * run of two. Rejected rather than silently mangled when nothing usable is
+   * left: a manager who typed "The Bridge!!" should be told the address will be
+   * `the-bridge`, not discover it later on a printed card.
+   */
+  function cleanSlug(raw) {
+    const slug = String(raw || '')
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 64)
+      .replace(/-+$/g, '');
+    return slug;
+  }
+
+  /**
+   * Addresses the platform needs for itself.
+   *
+   * A venue that claimed `api` or `assets` would shadow a real path the moment
+   * the public router is mounted at the root, and the failure would look like
+   * the back office breaking rather than like a slug being wrong.
+   */
+  const RESERVED = new Set([
+    'api', 'admin', 'assets', 'uploads', 'health', 'ws', 'login', 'logout',
+    'menu', 't', 'm', 'o', 'order', 'orders', 'wallet', 'pass', 'passes',
+    'static', 'public', 'app', 'www', 'help', 'support', 'about', 'terms',
+    'privacy', 'kitchen', 'till', 'display', 'dinein', 'qr',
+  ]);
+
+  /** The venue record, created empty on first read so the editor has a row. */
+  async function venueRow(officeId) {
+    const [[row]] = await pool.query(
+      'SELECT * FROM dinein_venue WHERE office_id = ?',
+      [officeId]
+    );
+    if (row) return row;
+
+    await pool.execute(
+      'INSERT IGNORE INTO dinein_venue (office_id) VALUES (?)',
+      [officeId]
+    );
+    const [[fresh]] = await pool.query(
+      'SELECT * FROM dinein_venue WHERE office_id = ?',
+      [officeId]
+    );
+    return fresh || null;
+  }
+
+  // -------------------------------------------------------------------------
+  // Back office: the venue's public face
+  // -------------------------------------------------------------------------
+
+  router.get('/dinein/venue', auth, async (req, res, next) => {
+    try {
+      const officeId = await officeOf(req);
+      if (officeId == null) {
+        return res.status(400).json({ error: 'Choose an office first.' });
+      }
+      const venue = await venueRow(officeId);
+      const [[office]] = await pool.query(
+        'SELECT name FROM offices WHERE id = ?',
+        [officeId]
+      );
+      res.json({
+        ...venue,
+        // What the page would be called if nothing has been set. Sent rather
+        // than defaulted into the column, so a venue that later renames its
+        // account is not stuck with the old name frozen into its menu.
+        fallback_name: office ? office.name : '',
+      });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.put('/dinein/venue', auth, async (req, res, next) => {
+    try {
+      const officeId = await officeOf(req);
+      if (officeId == null) {
+        return res.status(400).json({ error: 'Choose an office first.' });
+      }
+      await venueRow(officeId);
+
+      const body = req.body || {};
+      const sets = [];
+      const params = [];
+
+      if (body.slug !== undefined) {
+        const slug = cleanSlug(body.slug);
+        if (!slug) {
+          return res.status(400).json({
+            error: 'That address has no letters or numbers in it.',
+          });
+        }
+        if (slug.length < 3) {
+          return res.status(400).json({
+            error: 'A web address needs at least three characters.',
+          });
+        }
+        if (RESERVED.has(slug)) {
+          return res.status(409).json({
+            error: 'That address is reserved. Try adding your town to it.',
+          });
+        }
+        const [[taken]] = await pool.query(
+          'SELECT office_id FROM dinein_venue WHERE slug = ? AND office_id <> ?',
+          [slug, officeId]
+        );
+        if (taken) {
+          return res.status(409).json({
+            error: 'Another venue already uses that address.',
+          });
+        }
+        sets.push('slug = ?');
+        params.push(slug);
+      }
+
+      const plain = [
+        'display_name', 'tagline', 'phone', 'address_line', 'postcode',
+        'map_url', 'logo_url', 'banner_url', 'accent_colour', 'notice',
+      ];
+      for (const field of plain) {
+        if (body[field] === undefined) continue;
+        sets.push(field + ' = ?');
+        const value = String(body[field]).trim();
+        params.push(value === '' ? null : value);
+      }
+
+      const flags = [
+        'is_published', 'ordering_open', 'require_name', 'require_phone',
+      ];
+      for (const field of flags) {
+        if (body[field] === undefined) continue;
+        sets.push(field + ' = ?');
+        params.push(body[field] ? 1 : 0);
+      }
+
+      if (!sets.length) return res.json({ ok: true, changed: 0 });
+
+      await pool.execute(
+        'UPDATE dinein_venue SET ' + sets.join(', ') + ' WHERE office_id = ?',
+        [...params, officeId]
+      );
+      broadcast({ type: 'dinein.updated' });
+      res.json({ ok: true, venue: await venueRow(officeId) });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /**
+   * Whether an address is free, for the editor to ask as it is typed.
+   *
+   * Answers the cleaned form as well as the verdict, because the commonest
+   * outcome is that the address is available *and* is not quite what was typed
+   * — and a manager should see "the-bridge" before they save, not after.
+   */
+  router.get('/dinein/slug-check', auth, async (req, res, next) => {
+    try {
+      const officeId = await officeOf(req);
+      const slug = cleanSlug(req.query.slug);
+      if (!slug || slug.length < 3) {
+        return res.json({ slug, ok: false, reason: 'Too short.' });
+      }
+      if (RESERVED.has(slug)) {
+        return res.json({ slug, ok: false, reason: 'That address is reserved.' });
+      }
+      const [[taken]] = await pool.query(
+        'SELECT office_id FROM dinein_venue WHERE slug = ?',
+        [slug]
+      );
+      if (taken && taken.office_id !== officeId) {
+        return res.json({ slug, ok: false, reason: 'Already taken.' });
+      }
+      res.json({ slug, ok: true });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Back office: the menu
+  // -------------------------------------------------------------------------
+
+  router.get('/dinein/menu', auth, async (req, res, next) => {
+    try {
+      const officeId = await officeOf(req);
+      if (officeId == null) {
+        return res.status(400).json({ error: 'Choose an office first.' });
+      }
+      const [sections] = await pool.query(
+        'SELECT * FROM dinein_sections WHERE office_id = ? ORDER BY sort_order, id',
+        [officeId]
+      );
+      const [items] = await pool.query(
+        'SELECT * FROM dinein_items WHERE office_id = ? ORDER BY sort_order, id',
+        [officeId]
+      );
+      res.json(
+        sections.map((s) => ({
+          ...s,
+          items: items.filter((i) => i.section_id === s.id),
+        }))
+      );
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.post('/dinein/sections', auth, async (req, res, next) => {
+    try {
+      const officeId = await officeOf(req);
+      if (officeId == null) {
+        return res.status(400).json({ error: 'Choose an office first.' });
+      }
+      const b = req.body || {};
+      const [r] = await pool.execute(
+        'INSERT INTO dinein_sections (office_id, name, blurb, image_url, sort_order)' +
+          ' VALUES (?, ?, ?, ?, ?)',
+        [
+          officeId,
+          String(b.name || 'New section').trim().slice(0, 120),
+          b.blurb ? String(b.blurb).slice(0, 300) : null,
+          b.image_url ? String(b.image_url).slice(0, 500) : null,
+          Number(b.sort_order) || 0,
+        ]
+      );
+      broadcast({ type: 'dinein.updated' });
+      res.status(201).json({ id: r.insertId });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.put('/dinein/sections/:id', auth, async (req, res, next) => {
+    try {
+      const officeId = await officeOf(req);
+      const b = req.body || {};
+      const sets = [];
+      const params = [];
+      for (const field of ['name', 'blurb', 'image_url']) {
+        if (b[field] === undefined) continue;
+        sets.push(field + ' = ?');
+        const value = String(b[field]).trim();
+        params.push(value === '' ? null : value);
+      }
+      for (const field of ['sort_order']) {
+        if (b[field] === undefined) continue;
+        sets.push(field + ' = ?');
+        params.push(Number(b[field]) || 0);
+      }
+      if (b.active !== undefined) {
+        sets.push('active = ?');
+        params.push(b.active ? 1 : 0);
+      }
+      if (!sets.length) return res.json({ ok: true, changed: 0 });
+
+      const [r] = await pool.execute(
+        'UPDATE dinein_sections SET ' + sets.join(', ') + ' WHERE id = ?' +
+          (officeId == null ? '' : ' AND office_id = ?'),
+        officeId == null
+          ? [...params, req.params.id]
+          : [...params, req.params.id, officeId]
+      );
+      if (!r.affectedRows) {
+        return res.status(404).json({ error: 'Section not found.' });
+      }
+      broadcast({ type: 'dinein.updated' });
+      res.json({ ok: true });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.delete('/dinein/sections/:id', auth, async (req, res, next) => {
+    try {
+      const officeId = await officeOf(req);
+      const [r] = await pool.execute(
+        'DELETE FROM dinein_sections WHERE id = ?' +
+          (officeId == null ? '' : ' AND office_id = ?'),
+        officeId == null ? [req.params.id] : [req.params.id, officeId]
+      );
+      if (!r.affectedRows) {
+        return res.status(404).json({ error: 'Section not found.' });
+      }
+      broadcast({ type: 'dinein.updated' });
+      res.json({ ok: true });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /**
+   * Put products onto a section, several at a time.
+   *
+   * A batch because that is how the job is actually done: a manager opens the
+   * catalogue beside the section, ticks nine starters and presses Add. Nine
+   * round trips would each be a separate failure to recover from, and the
+   * partial result — four starters on the menu — is worse than either outcome.
+   */
+  router.post('/dinein/sections/:id/items', auth, async (req, res, next) => {
+    const conn = await pool.getConnection();
+    try {
+      const officeId = await officeOf(req);
+      if (officeId == null) {
+        return res.status(400).json({ error: 'Choose an office first.' });
+      }
+      const [[section]] = await conn.query(
+        'SELECT id, office_id FROM dinein_sections WHERE id = ?',
+        [req.params.id]
+      );
+      if (!section || section.office_id !== officeId) {
+        return res.status(404).json({ error: 'Section not found.' });
+      }
+
+      const plus = Array.isArray(req.body.plu_ids)
+        ? req.body.plu_ids
+        : [req.body.plu_id];
+      const wanted = plus
+        .map((n) => Number(n))
+        .filter((n) => Number.isInteger(n) && n > 0);
+      if (!wanted.length) {
+        return res.status(400).json({ error: 'Nothing to add.' });
+      }
+
+      // Only products this venue actually owns. Without this a crafted request
+      // could put another venue's PLU on a menu, and the price the customer
+      // then saw would be read from a catalogue that is not theirs.
+      const email = await emailOf(officeId);
+      const [owned] = await conn.query(
+        'SELECT pluid AS plu_id, product_name FROM bo_products' +
+          ' WHERE email = ? AND pluid IN (' +
+          wanted.map(() => '?').join(',') + ')',
+        [email, ...wanted]
+      );
+      if (!owned.length) {
+        return res.status(400).json({ error: 'None of those products are yours.' });
+      }
+
+      const [[last]] = await conn.query(
+        'SELECT COALESCE(MAX(sort_order), 0) AS top FROM dinein_items WHERE section_id = ?',
+        [section.id]
+      );
+
+      await conn.beginTransaction();
+      let order = last.top;
+      let added = 0;
+      for (const product of owned) {
+        order += 1;
+        const [r] = await conn.execute(
+          'INSERT INTO dinein_items (section_id, office_id, plu_id, name, sort_order)' +
+            ' VALUES (?, ?, ?, ?, ?)',
+          [section.id, officeId, product.plu_id, product.product_name, order]
+        );
+        if (r.affectedRows) added += 1;
+      }
+      await conn.commit();
+
+      broadcast({ type: 'dinein.updated' });
+      res.status(201).json({ ok: true, added });
+    } catch (e) {
+      await conn.rollback().catch(() => {});
+      next(e);
+    } finally {
+      conn.release();
+    }
+  });
+
+  router.put('/dinein/items/:id', auth, async (req, res, next) => {
+    try {
+      const officeId = await officeOf(req);
+      const b = req.body || {};
+      const sets = [];
+      const params = [];
+      for (const field of ['name', 'description', 'image_url']) {
+        if (b[field] === undefined) continue;
+        sets.push(field + ' = ?');
+        const value = String(b[field]).trim();
+        params.push(value === '' ? null : value);
+      }
+      if (b.sort_order !== undefined) {
+        sets.push('sort_order = ?');
+        params.push(Number(b.sort_order) || 0);
+      }
+      if (b.available !== undefined) {
+        sets.push('available = ?');
+        params.push(b.available ? 1 : 0);
+      }
+      if (b.section_id !== undefined) {
+        sets.push('section_id = ?');
+        params.push(Number(b.section_id));
+      }
+      if (!sets.length) return res.json({ ok: true, changed: 0 });
+
+      const [r] = await pool.execute(
+        'UPDATE dinein_items SET ' + sets.join(', ') + ' WHERE id = ?' +
+          (officeId == null ? '' : ' AND office_id = ?'),
+        officeId == null
+          ? [...params, req.params.id]
+          : [...params, req.params.id, officeId]
+      );
+      if (!r.affectedRows) return res.status(404).json({ error: 'Item not found.' });
+      broadcast({ type: 'dinein.updated' });
+      res.json({ ok: true });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.delete('/dinein/items/:id', auth, async (req, res, next) => {
+    try {
+      const officeId = await officeOf(req);
+      const [r] = await pool.execute(
+        'DELETE FROM dinein_items WHERE id = ?' +
+          (officeId == null ? '' : ' AND office_id = ?'),
+        officeId == null ? [req.params.id] : [req.params.id, officeId]
+      );
+      if (!r.affectedRows) return res.status(404).json({ error: 'Item not found.' });
+      broadcast({ type: 'dinein.updated' });
+      res.json({ ok: true });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Back office: the tables, and what to print for them
+  // -------------------------------------------------------------------------
+
+  /**
+   * Every table with a public address, and the link that opens it.
+   *
+   * The link is built here rather than in the browser so that one place decides
+   * what a table URL looks like. It is going onto a laminated card; a second
+   * opinion about its shape is the last thing this needs.
+   */
+  router.get('/dinein/tables', auth, async (req, res, next) => {
+    try {
+      const officeId = await officeOf(req);
+      if (officeId == null) {
+        return res.status(400).json({ error: 'Choose an office first.' });
+      }
+      const venue = await venueRow(officeId);
+      const [tables] = await pool.query(
+        'SELECT t.id, t.room_id, t.table_number, t.name, t.label, t.public_id,' +
+          '       t.qr_enabled, t.seats, r.name AS room_name' +
+          '  FROM floor_tables t' +
+          '  LEFT JOIN floor_rooms r ON r.id = t.room_id' +
+          ' WHERE t.office_id = ?' +
+          ' ORDER BY r.sort_order, r.id, t.table_number',
+        [officeId]
+      );
+      res.json({
+        base: publicBase(req),
+        slug: venue ? venue.slug : null,
+        tables: tables.map((t) => ({
+          ...t,
+          display_name: tableName(t),
+          url: t.public_id ? publicBase(req) + '/t/' + t.public_id : null,
+        })),
+      });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /**
+   * What a table is called on a customer's phone.
+   *
+   * The name if the venue set one, the label if not, and "Table 7" as the last
+   * resort — because a table has to be called *something* on a screen somebody
+   * is about to carry food towards.
+   */
+  function tableName(t) {
+    const name = (t.name || '').trim();
+    if (name) return name;
+    const label = (t.label || '').trim();
+    if (label) return label;
+    return 'Table ' + t.table_number;
+  }
+
+  /**
+   * The address this server is reachable at, from the request that arrived.
+   *
+   * Behind nginx, so `X-Forwarded-Proto` and `X-Forwarded-Host` are what say
+   * how the customer got here; falling back to the socket's own view would
+   * print `http://127.0.0.1:3000` onto a card.
+   */
+  function publicBase(req) {
+    const configured = (process.env.PUBLIC_BASE_URL || '').trim();
+    if (configured) return configured.replace(/\/+$/, '');
+    const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+    const host = req.headers['x-forwarded-host'] || req.headers.host || '';
+    return String(proto).split(',')[0].trim() + '://' + String(host).split(',')[0].trim();
+  }
+
+  // -------------------------------------------------------------------------
+  // Back office: the printed card
+  // -------------------------------------------------------------------------
+
+  router.get('/dinein/designs', auth, async (req, res, next) => {
+    try {
+      const officeId = await officeOf(req);
+      if (officeId == null) {
+        return res.status(400).json({ error: 'Choose an office first.' });
+      }
+      const [rows] = await pool.query(
+        'SELECT * FROM dinein_qr_designs WHERE office_id = ? ORDER BY is_default DESC, id',
+        [officeId]
+      );
+      res.json(rows.map((r) => ({ ...r, elements: parseElements(r.elements) })));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /**
+   * A design's elements, or the starter layout.
+   *
+   * A brand new design is not empty: an empty page is a page nobody knows what
+   * to do with, and every one of these ends up being the same four things — the
+   * venue's name, the code, the table's name and a line telling somebody to
+   * scan it. So that is what a new one arrives as, ready to be moved.
+   */
+  function parseElements(raw) {
+    if (!raw) return defaultElements();
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : defaultElements();
+    } catch {
+      return defaultElements();
+    }
+  }
+
+  function defaultElements() {
+    return [
+      { kind: 'venue_name', x: 10, y: 6, w: 80, h: 10, size: 26, align: 'center', bold: true },
+      { kind: 'qr', x: 22, y: 22, w: 56, h: 40 },
+      { kind: 'table_name', x: 10, y: 66, w: 80, h: 9, size: 22, align: 'center', bold: true },
+      { kind: 'text', x: 10, y: 78, w: 80, h: 8, size: 13, align: 'center',
+        text: 'Scan to see the menu and order' },
+    ];
+  }
+
+  router.post('/dinein/designs', auth, async (req, res, next) => {
+    try {
+      const officeId = await officeOf(req);
+      if (officeId == null) {
+        return res.status(400).json({ error: 'Choose an office first.' });
+      }
+      const b = req.body || {};
+      const [r] = await pool.execute(
+        'INSERT INTO dinein_qr_designs' +
+          ' (office_id, name, page_size, page_w_mm, page_h_mm, background, elements, is_default)' +
+          ' VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [
+          officeId,
+          String(b.name || 'Table card').trim().slice(0, 120),
+          String(b.page_size || 'a5').slice(0, 24),
+          Number(b.page_w_mm) || 148,
+          Number(b.page_h_mm) || 210,
+          String(b.background || '#FFFFFF').slice(0, 16),
+          JSON.stringify(b.elements || defaultElements()),
+          b.is_default ? 1 : 0,
+        ]
+      );
+      res.status(201).json({ id: r.insertId });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.put('/dinein/designs/:id', auth, async (req, res, next) => {
+    try {
+      const officeId = await officeOf(req);
+      const b = req.body || {};
+      const sets = [];
+      const params = [];
+      for (const field of ['name', 'page_size', 'background']) {
+        if (b[field] === undefined) continue;
+        sets.push(field + ' = ?');
+        params.push(String(b[field]).slice(0, 120));
+      }
+      for (const field of ['page_w_mm', 'page_h_mm']) {
+        if (b[field] === undefined) continue;
+        sets.push(field + ' = ?');
+        params.push(Number(b[field]) || 0);
+      }
+      if (b.elements !== undefined) {
+        sets.push('elements = ?');
+        params.push(JSON.stringify(b.elements));
+      }
+      if (b.is_default !== undefined) {
+        sets.push('is_default = ?');
+        params.push(b.is_default ? 1 : 0);
+      }
+      if (!sets.length) return res.json({ ok: true, changed: 0 });
+
+      const [r] = await pool.execute(
+        'UPDATE dinein_qr_designs SET ' + sets.join(', ') + ' WHERE id = ?' +
+          (officeId == null ? '' : ' AND office_id = ?'),
+        officeId == null
+          ? [...params, req.params.id]
+          : [...params, req.params.id, officeId]
+      );
+      if (!r.affectedRows) return res.status(404).json({ error: 'Design not found.' });
+
+      // Only one default. Done after the write rather than before, so a failed
+      // save cannot leave the venue with no default at all.
+      if (b.is_default) {
+        await pool.execute(
+          'UPDATE dinein_qr_designs SET is_default = 0 WHERE office_id = ? AND id <> ?',
+          [officeId, req.params.id]
+        );
+      }
+      res.json({ ok: true });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.delete('/dinein/designs/:id', auth, async (req, res, next) => {
+    try {
+      const officeId = await officeOf(req);
+      const [r] = await pool.execute(
+        'DELETE FROM dinein_qr_designs WHERE id = ?' +
+          (officeId == null ? '' : ' AND office_id = ?'),
+        officeId == null ? [req.params.id] : [req.params.id, officeId]
+      );
+      if (!r.affectedRows) return res.status(404).json({ error: 'Design not found.' });
+      res.json({ ok: true });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Back office: what has been ordered
+  // -------------------------------------------------------------------------
+
+  router.get('/dinein/orders', auth, async (req, res, next) => {
+    try {
+      const officeId = await officeOf(req);
+      if (officeId == null) {
+        return res.status(400).json({ error: 'Choose an office first.' });
+      }
+      const orders = await readOrders(officeId, {
+        status: req.query.status,
+        limit: Number(req.query.limit) || 100,
+      });
+      res.json(orders);
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /**
+   * Orders with their lines, in one pair of queries rather than N+1.
+   *
+   * The till polls the waiting list every few seconds as a backstop to the
+   * socket, so this runs far more often than its size suggests.
+   */
+  async function readOrders(officeId, { status, limit = 100, sinceHours = 24 } = {}) {
+    const filters = ['office_id = ?'];
+    const params = [officeId];
+    if (status) {
+      const wanted = String(status).split(',').map((s) => s.trim()).filter(Boolean);
+      if (wanted.length) {
+        filters.push('status IN (' + wanted.map(() => '?').join(',') + ')');
+        params.push(...wanted);
+      }
+    }
+    filters.push('placed_at >= (NOW() - INTERVAL ? HOUR)');
+    params.push(sinceHours);
+
+    const capped = Math.max(1, Math.min(500, Number(limit) || 100));
+    const [orders] = await pool.query(
+      'SELECT * FROM dinein_orders WHERE ' + filters.join(' AND ') +
+        ' ORDER BY placed_at DESC LIMIT ' + capped,
+      params
+    );
+    if (!orders.length) return [];
+
+    const [lines] = await pool.query(
+      'SELECT * FROM dinein_order_lines WHERE dinein_order_id IN (' +
+        orders.map(() => '?').join(',') + ') ORDER BY id',
+      orders.map((o) => o.id)
+    );
+    return orders.map((o) => ({
+      ...o,
+      lines: lines.filter((l) => l.dinein_order_id === o.id),
+    }));
+  }
+
+  // -------------------------------------------------------------------------
+  // The customer's phone
+  // -------------------------------------------------------------------------
+
+  /**
+   * Open a table by the id printed on its card.
+   *
+   * Everything the phone needs in one reply: the venue, the table, and the
+   * menu. One request rather than three, because this is the first thing that
+   * happens after a scan and it is happening on pub wifi.
+   */
+  router.get('/public/dinein/table/:publicId', async (req, res, next) => {
+    try {
+      const [[table]] = await pool.query(
+        'SELECT t.id, t.office_id, t.table_number, t.name, t.label, t.qr_enabled,' +
+          '       r.name AS room_name' +
+          '  FROM floor_tables t' +
+          '  LEFT JOIN floor_rooms r ON r.id = t.room_id' +
+          ' WHERE t.public_id = ?',
+        [req.params.publicId]
+      );
+      if (!table) {
+        return res.status(404).json({ error: 'That code does not match a table.' });
+      }
+      const payload = await menuFor(table.office_id, req);
+      if (payload.error) return res.status(payload.status || 404).json(payload);
+
+      res.json({
+        ...payload,
+        table: {
+          public_id: req.params.publicId,
+          name: tableName(table),
+          room: table.room_name || null,
+          // A table whose code has been turned off still resolves, and says so.
+          // A dead link is indistinguishable from a broken one to the person
+          // holding the phone, and they will ask a member of staff either way —
+          // better that the screen answers the question first.
+          ordering: !!table.qr_enabled,
+        },
+      });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /** The same menu, reached by the venue's own address rather than a table. */
+  router.get('/public/dinein/venue/:slug', async (req, res, next) => {
+    try {
+      const [[venue]] = await pool.query(
+        'SELECT office_id FROM dinein_venue WHERE slug = ?',
+        [cleanSlug(req.params.slug)]
+      );
+      if (!venue) return res.status(404).json({ error: 'No venue at that address.' });
+      const payload = await menuFor(venue.office_id, req);
+      if (payload.error) return res.status(payload.status || 404).json(payload);
+      // No table, so no ordering: a customer who found the menu on the website
+      // is not sitting anywhere, and food has to go somewhere.
+      res.json({ ...payload, table: null });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /**
+   * The published menu for one office, priced from the live catalogue.
+   *
+   * The price is joined at read time and never stored on the menu row. A menu
+   * carrying its own prices is a second price list, and the one that goes stale
+   * is always the one the customer is reading.
+   */
+  async function menuFor(officeId, req) {
+    const [[venue]] = await pool.query(
+      'SELECT * FROM dinein_venue WHERE office_id = ?',
+      [officeId]
+    );
+    if (!venue || !venue.is_published) {
+      return {
+        error: 'This menu is not open yet.',
+        status: 404,
+      };
+    }
+
+    const [[office]] = await pool.query(
+      'SELECT name FROM offices WHERE id = ?',
+      [officeId]
+    );
+    const email = await emailOf(officeId);
+
+    const [sections] = await pool.query(
+      'SELECT id, name, blurb, image_url FROM dinein_sections' +
+        ' WHERE office_id = ? AND active = 1 ORDER BY sort_order, id',
+      [officeId]
+    );
+
+    let items = [];
+    if (sections.length) {
+      const [rows] = await pool.query(
+        'SELECT i.id, i.section_id, i.plu_id, i.description, i.image_url,' +
+          '       i.available,' +
+          '       COALESCE(NULLIF(TRIM(i.name), ""), p.product_name) AS name,' +
+          '       p.price AS price' +
+          '  FROM dinein_items i' +
+          '  JOIN bo_products p ON p.pluid = i.plu_id AND p.email = ?' +
+          ' WHERE i.section_id IN (' + sections.map(() => '?').join(',') + ')' +
+          ' ORDER BY i.sort_order, i.id',
+        [email, ...sections.map((s) => s.id)]
+      );
+      items = rows;
+    }
+
+    return {
+      venue: {
+        name: (venue.display_name || (office ? office.name : '') || '').trim(),
+        tagline: venue.tagline,
+        phone: venue.phone,
+        address: [venue.address_line, venue.postcode].filter(Boolean).join(', '),
+        map_url: venue.map_url,
+        logo_url: venue.logo_url,
+        banner_url: venue.banner_url,
+        accent: venue.accent_colour || '#A5C715',
+        notice: venue.notice,
+        ordering_open: !!venue.ordering_open,
+        require_name: !!venue.require_name,
+        require_phone: !!venue.require_phone,
+        base: publicBase(req),
+      },
+      sections: sections.map((s) => ({
+        ...s,
+        items: items
+          .filter((i) => i.section_id === s.id)
+          .map((i) => ({
+            id: i.id,
+            plu_id: i.plu_id,
+            name: i.name,
+            description: i.description,
+            image_url: i.image_url,
+            available: !!i.available,
+            price_minor: Math.round(Number(i.price || 0) * 100),
+          })),
+      })),
+    };
+  }
+
+  /**
+   * Place an order.
+   *
+   * PRICED HERE, NOT ON THE PHONE
+   *
+   * The basket that arrives carries menu item ids and quantities, and nothing
+   * else is believed. Every price and every name is read back out of the
+   * catalogue inside the transaction that writes the order, so a customer who
+   * edits the page in front of them changes what they see and not what they are
+   * charged — and so a price the venue changed while somebody was reading is
+   * the price that applies.
+   */
+  router.post('/public/dinein/table/:publicId/order', async (req, res, next) => {
+    const conn = await pool.getConnection();
+    try {
+      const [[table]] = await conn.query(
+        'SELECT t.id, t.office_id, t.table_number, t.name, t.label, t.qr_enabled' +
+          '  FROM floor_tables t WHERE t.public_id = ?',
+        [req.params.publicId]
+      );
+      if (!table) {
+        return res.status(404).json({ error: 'That code does not match a table.' });
+      }
+      if (!table.qr_enabled) {
+        return res.status(403).json({
+          error: 'This table is not taking orders from phones. Please order at the bar.',
+        });
+      }
+
+      const [[venue]] = await conn.query(
+        'SELECT * FROM dinein_venue WHERE office_id = ?',
+        [table.office_id]
+      );
+      if (!venue || !venue.is_published || !venue.ordering_open) {
+        return res.status(403).json({
+          error: 'The kitchen is not taking orders through the app just now.',
+        });
+      }
+
+      const body = req.body || {};
+      const name = String(body.name || '').trim().slice(0, 120);
+      const phone = String(body.phone || '').trim().slice(0, 40);
+      if (venue.require_name && !name) {
+        return res.status(400).json({ error: 'Please leave a name.' });
+      }
+      if (venue.require_phone && !phone) {
+        return res.status(400).json({ error: 'Please leave a phone number.' });
+      }
+
+      const basket = Array.isArray(body.lines) ? body.lines : [];
+      const wanted = new Map();
+      for (const line of basket) {
+        const id = Number(line && line.item_id);
+        const qty = Math.max(1, Math.min(99, Number(line && line.qty) || 1));
+        if (!Number.isInteger(id) || id <= 0) continue;
+        const note = String((line && line.note) || '').trim().slice(0, 300);
+        // Same item twice with different notes is two lines, not one of four.
+        wanted.set(id + '|' + note, { id, qty, note });
+      }
+      if (!wanted.size) {
+        return res.status(400).json({ error: 'There is nothing in the basket.' });
+      }
+
+      const ids = [...new Set([...wanted.values()].map((w) => w.id))];
+      const email = await emailOf(table.office_id);
+      const [rows] = await conn.query(
+        'SELECT i.id, i.plu_id, i.available,' +
+          '       COALESCE(NULLIF(TRIM(i.name), ""), p.product_name) AS name,' +
+          '       p.price AS price' +
+          '  FROM dinein_items i' +
+          '  JOIN bo_products p ON p.pluid = i.plu_id AND p.email = ?' +
+          ' WHERE i.office_id = ? AND i.id IN (' + ids.map(() => '?').join(',') + ')',
+        [email, table.office_id, ...ids]
+      );
+      const priced = new Map(rows.map((r) => [r.id, r]));
+
+      const lines = [];
+      let total = 0;
+      for (const want of wanted.values()) {
+        const item = priced.get(want.id);
+        // Silently dropping an unavailable item would send somebody food they
+        // did not order and leave off the thing they did.
+        if (!item) {
+          return res.status(409).json({
+            error: 'Something on the menu changed while you were ordering. Please check your basket.',
+          });
+        }
+        if (!item.available) {
+          return res.status(409).json({
+            error: 'Sorry, ' + item.name + ' has just sold out.',
+          });
+        }
+        const unit = Math.round(Number(item.price || 0) * 100);
+        total += unit * want.qty;
+        lines.push({
+          plu_id: item.plu_id,
+          name: item.name,
+          qty: want.qty,
+          unit,
+          note: want.note || null,
+        });
+      }
+
+      const publicId = newPublicId();
+      const label = tableName(table);
+
+      await conn.beginTransaction();
+      const [order] = await conn.execute(
+        'INSERT INTO dinein_orders' +
+          ' (public_id, office_id, table_id, table_label, customer_name,' +
+          '  customer_phone, note, status, total_minor)' +
+          ' VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [
+          publicId,
+          table.office_id,
+          table.id,
+          label,
+          name || null,
+          phone || null,
+          String(body.note || '').trim().slice(0, 500) || null,
+          'placed',
+          total,
+        ]
+      );
+      for (const line of lines) {
+        await conn.execute(
+          'INSERT INTO dinein_order_lines' +
+            ' (dinein_order_id, plu_id, name, qty, unit_price_minor, note)' +
+            ' VALUES (?, ?, ?, ?, ?, ?)',
+          [order.insertId, line.plu_id, line.name, line.qty, line.unit, line.note]
+        );
+      }
+      await conn.commit();
+
+      // The till is told immediately. Scoped to the office, so one venue's
+      // socket never sees another's order arrive.
+      broadcast(
+        {
+          type: 'dinein.order',
+          order_id: order.insertId,
+          public_id: publicId,
+          table: label,
+          total_minor: total,
+          lines: lines.length,
+        },
+        { office: email }
+      );
+
+      res.status(201).json({
+        ok: true,
+        public_id: publicId,
+        total_minor: total,
+        status: 'placed',
+      });
+    } catch (e) {
+      await conn.rollback().catch(() => {});
+      next(e);
+    } finally {
+      conn.release();
+    }
+  });
+
+  /** Where an order has got to, for the customer watching their own phone. */
+  router.get('/public/dinein/order/:publicId', async (req, res, next) => {
+    try {
+      const [[order]] = await pool.query(
+        'SELECT public_id, table_label, status, status_note, total_minor,' +
+          '       placed_at, accepted_at, ready_at, served_at' +
+          '  FROM dinein_orders WHERE public_id = ?',
+        [req.params.publicId]
+      );
+      if (!order) return res.status(404).json({ error: 'No such order.' });
+      const [lines] = await pool.query(
+        'SELECT name, qty, unit_price_minor, note FROM dinein_order_lines' +
+          ' WHERE dinein_order_id = (SELECT id FROM dinein_orders WHERE public_id = ?)' +
+          ' ORDER BY id',
+        [req.params.publicId]
+      );
+      res.json({ ...order, lines });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /**
+   * Withdraw an order that nobody has picked up yet.
+   *
+   * Only from `placed`. Once a clerk has accepted it the kitchen may already
+   * have it, and a customer cancelling food that is under a grill is a decision
+   * for the person standing next to the grill.
+   */
+  router.post('/public/dinein/order/:publicId/cancel', async (req, res, next) => {
+    try {
+      const [r] = await pool.execute(
+        'UPDATE dinein_orders SET status = ?, status_note = ?' +
+          ' WHERE public_id = ? AND status = ?',
+        ['cancelled', 'Cancelled by the customer', req.params.publicId, 'placed']
+      );
+      if (!r.affectedRows) {
+        return res.status(409).json({
+          error: 'That order has already been picked up. Please speak to a member of staff.',
+        });
+      }
+      const [[order]] = await pool.query(
+        'SELECT office_id FROM dinein_orders WHERE public_id = ?',
+        [req.params.publicId]
+      );
+      if (order) {
+        broadcast(
+          { type: 'dinein.changed', public_id: req.params.publicId },
+          { office: await emailOf(order.office_id) }
+        );
+      }
+      res.json({ ok: true, status: 'cancelled' });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // The till
+  // -------------------------------------------------------------------------
+
+  /**
+   * What is waiting, for the till's notification.
+   *
+   * Authenticated as the till already is for everything else it reads. The
+   * `status` filter defaults to the two states a clerk can act on, because the
+   * commonest call by far is "is there anything for me".
+   */
+  router.get('/till/dinein/orders', auth, async (req, res, next) => {
+    try {
+      const officeId = await officeOf(req);
+      if (officeId == null) {
+        return res.status(400).json({ error: 'Unknown office.' });
+      }
+      res.json(
+        await readOrders(officeId, {
+          status: req.query.status || 'placed,accepted,ready',
+          limit: Number(req.query.limit) || 50,
+        })
+      );
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /**
+   * Move an order along.
+   *
+   * The transitions are stated rather than implied, so a stale screen cannot
+   * move an order backwards. A clerk pressing Accept on a notification that has
+   * already been accepted by the terminal next to them gets a plain refusal
+   * instead of a second kitchen ticket.
+   */
+  const ALLOWED = {
+    accepted: ['placed'],
+    ready: ['accepted'],
+    served: ['accepted', 'ready'],
+    rejected: ['placed', 'accepted'],
+  };
+
+  router.post('/till/dinein/orders/:id/:action', auth, async (req, res, next) => {
+    try {
+      const officeId = await officeOf(req);
+      if (officeId == null) {
+        return res.status(400).json({ error: 'Unknown office.' });
+      }
+      const action = String(req.params.action);
+      const from = ALLOWED[action];
+      if (!from) return res.status(400).json({ error: 'Unknown action.' });
+
+      const stamp = {
+        accepted: 'accepted_at',
+        ready: 'ready_at',
+        served: 'served_at',
+      }[action];
+
+      const [r] = await pool.execute(
+        'UPDATE dinein_orders SET status = ?, status_note = ?' +
+          (stamp ? ', ' + stamp + ' = NOW()' : '') +
+          (req.body && req.body.order_id ? ', order_id = ?' : '') +
+          ' WHERE id = ? AND office_id = ? AND status IN (' +
+          from.map(() => '?').join(',') + ')',
+        [
+          action,
+          (req.body && req.body.note ? String(req.body.note).slice(0, 300) : null),
+          ...(req.body && req.body.order_id ? [String(req.body.order_id)] : []),
+          req.params.id,
+          officeId,
+          ...from,
+        ]
+      );
+      if (!r.affectedRows) {
+        return res.status(409).json({
+          error: 'That order has already moved on. Refresh to see where it is.',
+        });
+      }
+      broadcast(
+        { type: 'dinein.changed', order_id: Number(req.params.id), status: action },
+        { office: await emailOf(officeId) }
+      );
+      res.json({ ok: true, status: action });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  return router;
+}
+
+module.exports = { dineinRoutes };

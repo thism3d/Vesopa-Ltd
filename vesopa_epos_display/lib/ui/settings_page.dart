@@ -329,8 +329,30 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     _fill(settings);
 
     return Scaffold(
+      // Pinned, never scrolled. Somebody who has just set the advert folder at
+      // the bottom of a long page should not have to flick all the way back up
+      // to leave — and on a display there is no keyboard to press Escape on and
+      // often no title bar to close from, so this bar is the only way out.
       appBar: AppBar(
-        title: const Text('Customer display settings'),
+        automaticallyImplyLeading: false,
+        titleSpacing: 12,
+        title: Row(
+          children: [
+            // Worded, not just an arrow. A bare chevron on a screen mounted on
+            // a bracket is a 24-pixel target that half the people who need it
+            // do not recognise as a way back.
+            TextButton.icon(
+              onPressed: () => Navigator.of(context).maybePop(),
+              icon: const Icon(Icons.arrow_back, size: 20),
+              label: const Text('Back'),
+              style: TextButton.styleFrom(foregroundColor: Brand.ink),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text('Customer display settings', maxLines: 1),
+            ),
+          ],
+        ),
         actions: [
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),

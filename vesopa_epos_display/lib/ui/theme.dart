@@ -52,6 +52,25 @@ ThemeData buildDisplayTheme() {
       displayColor: Brand.ink,
     ),
     dividerColor: Brand.line,
+    // A header has to look like one. Material 3 paints an AppBar in `surface`,
+    // which here is the same byte value as the page behind it — so the bar, its
+    // title and its back arrow were all drawn onto an invisible strip, and
+    // somebody looking for the way out of Settings found nothing to aim at.
+    appBarTheme: const AppBarTheme(
+      backgroundColor: Brand.panelSoft,
+      foregroundColor: Brand.ink,
+      surfaceTintColor: Colors.transparent,
+      // Stays the same colour with content scrolled under it. The default
+      // tints on scroll, which on a dark theme reads as the bar flickering.
+      scrolledUnderElevation: 0,
+      elevation: 0,
+      titleTextStyle: TextStyle(
+        color: Brand.ink,
+        fontSize: 18,
+        fontWeight: FontWeight.w600,
+      ),
+      shape: Border(bottom: BorderSide(color: Brand.line)),
+    ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
         backgroundColor: Brand.lime,

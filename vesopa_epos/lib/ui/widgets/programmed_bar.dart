@@ -401,6 +401,44 @@ class _BarKey extends ConsumerWidget {
       );
     }
 
+    // The same rule, for the three keys that are whole controls rather than
+    // words on a tile.
+    //
+    // Each of these paints its own rounded surface: the clock key is green or
+    // red because that is the entire point of it, and the two badges are
+    // coloured pills. Wrapping any of them in the bar's slab drew a second
+    // rounded rectangle a few pixels outside the first — the doubled background
+    // the venue reported on the clock — and behind the badges it put a grey
+    // block under a pill that is meant to float on the bar.
+    //
+    // Handled here rather than by making the slab conditional further down, so
+    // that adding another self-contained key is one line in one list.
+    const bringsItsOwnSurface = <String>{
+      // Its own colour, its own label and its own tap: see
+      // `widgets/clock_punch_button.dart`. The venue's fill is deliberately not
+      // applied — the whole point of the key is that the colour reports
+      // something, and a fill set in the back office would report the back
+      // office instead.
+      'clock_in_out',
+      'sync_status',
+      // Whether the last kitchen ticket landed. On the bar because the till's
+      // own top bar can be turned off in favour of a programmed one, and this
+      // was the only thing on it a venue could not otherwise place. Draws
+      // nothing at all when there is nothing to report.
+      'print_status',
+    };
+    if (bringsItsOwnSurface.contains(key)) {
+      // The clock key fills its cell exactly as an ordinary key does — it *is*
+      // a key, and one standing a few pixels short of Sign On beside it looks
+      // like a mistake. The two badges are pills that float, so they are
+      // centred in the cell with nothing painted behind them.
+      return switch (key) {
+        'clock_in_out' => const ClockPunchKey(compact: true),
+        'sync_status' => const Center(child: SyncStatusBadge()),
+        _ => const Center(child: PrintStatusBadge()),
+      };
+    }
+
     final fill = button.fill ?? pal.softFill;
     final ink = button.ink ?? (button.fill == null ? pal.ink : Pos.inkOn(fill));
 
@@ -412,12 +450,6 @@ class _BarKey extends ConsumerWidget {
         big: true,
       ),
       'clock' => const _Clock(),
-      // Its own colour, its own label and its own tap: see
-      // `widgets/clock_punch_button.dart`. The venue's fill is deliberately not
-      // applied — the whole point of the key is that the colour reports
-      // something, and a fill set in the back office would report the back
-      // office instead.
-      'clock_in_out' => const ClockPunchKey(compact: true),
       'venue_name' => _oneLine(
         button.label ?? ref.watch(brandingProvider).venueName,
         ink,
@@ -429,13 +461,6 @@ class _BarKey extends ConsumerWidget {
         ink,
         icon: Icons.person,
       ),
-      'sync_status' => const Center(child: SyncStatusBadge()),
-      // Whether the last kitchen ticket landed. On the bar because the till's
-      // own top bar can be turned off in favour of a programmed one, and this
-      // was the only thing on it a venue could not otherwise place. Draws
-      // nothing at all when there is nothing to report, exactly as it does in
-      // the built-in bar.
-      'print_status' => const Center(child: PrintStatusBadge()),
       'screen_name' => _oneLine(button.label ?? live.screenName, ink),
       _ => const SizedBox.shrink(),
     };

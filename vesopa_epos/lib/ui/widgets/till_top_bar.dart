@@ -83,9 +83,23 @@ class TillTopBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final pal = PayPalette.of(context);
 
+    // ONE BAR, ONE BACKGROUND.
+    //
+    // The venue's programmed bar paints its own canvas (#000000 in Night,
+    // #EDEEE8 in Day) across everything to the right of the page selector,
+    // while this Material was painting the chrome colour (#111111 / #F7F8F2)
+    // underneath the lot. The selector therefore sat in a visibly lighter
+    // rectangle that stopped dead where the venue's bar began — a background
+    // inside a background, which is what the venue reported as the left key
+    // having two layers.
+    //
+    // So when there is a body, the strip takes the body's colour and the bar
+    // reads as one surface. A bare bar has no body to match and keeps the
+    // chrome, which is the brand colour it was always meant to be.
     final chrome = Material(
-      color: theme.posChrome,
+      color: body == null ? theme.posChrome : pal.canvas,
       child: DecoratedBox(
         decoration: BoxDecoration(
           // The light bar sits on a white page and needs a hairline to read as
@@ -97,6 +111,7 @@ class TillTopBar extends ConsumerWidget {
         child: Row(
           children: [
             PageSelector(
+              onBarCanvas: body != null,
               section: section,
               onSelectSection: onSelectSection,
               onOpenMenu: onOpenMenu,
@@ -140,12 +155,19 @@ class TillTopBar extends ConsumerWidget {
 class PageSelector extends ConsumerWidget {
   const PageSelector({
     super.key,
+    this.onBarCanvas = false,
     required this.section,
     required this.onSelectSection,
     required this.onOpenMenu,
     required this.onSignOn,
     required this.onSignOff,
   });
+
+  /// Whether this is sitting on a venue's programmed bar rather than on the
+  /// till's own chrome. It changes only what the key is made of: on a
+  /// programmed bar it is styled as one of that bar's keys, so it belongs to
+  /// the row it is in rather than looking like a fragment of a different bar.
+  final bool onBarCanvas;
 
   final NavDestination section;
   final ValueChanged<int> onSelectSection;
@@ -156,22 +178,42 @@ class PageSelector extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final ink = theme.posOnChrome;
+    final pal = PayPalette.of(context);
+    final ink = onBarCanvas ? pal.ink : theme.posOnChrome;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(6, 6, 8, 6),
+      // Matches ProgrammedBar's own outer padding on a programmed bar, so this
+      // key lines up with the row of keys beside it instead of standing a few
+      // pixels proud of them.
+      padding: onBarCanvas
+          ? const EdgeInsets.fromLTRB(8, 8, 6, 8)
+          : const EdgeInsets.fromLTRB(6, 6, 8, 6),
+      // `shape` and `borderRadius` are mutually exclusive on a Material, so the
+      // outlined variant states its radius inside the shape.
       child: Material(
-        color: Colors.white.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(8),
+        color: onBarCanvas
+            ? pal.keyFill
+            : Colors.white.withValues(alpha: 0.08),
+        borderRadius: onBarCanvas ? null : BorderRadius.circular(8),
+        shape: onBarCanvas
+            ? RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+                side: BorderSide(color: pal.keyLine),
+              )
+            : null,
         child: InkWell(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(onBarCanvas ? 10 : 8),
           onTap: () => _open(context, ref),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 9),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(section.icon, color: theme.posBrandOnChrome, size: 18),
+                Icon(
+                  section.icon,
+                  color: onBarCanvas ? pal.accent : theme.posBrandOnChrome,
+                  size: 18,
+                ),
                 const SizedBox(width: 8),
                 // Bounded so the selector cannot grow with the section name and
                 // eat the bar the venue laid out beside it.

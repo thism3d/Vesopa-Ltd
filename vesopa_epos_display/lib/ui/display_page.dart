@@ -105,6 +105,11 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
   bool _statusShowing = false;
   Timer? _statusHide;
 
+  /// True when the bars are up because somebody tapped a locked screen. They
+  /// then say the screen is locked and offer nothing, rather than the usual
+  /// way in — see [_revealStatus].
+  bool _lockRefused = false;
+
   /// When the basket last changed in a way the customer would notice. The idle
   /// countdown is measured from here.
   DateTime _lastChange = DateTime.now();
@@ -289,7 +294,15 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
       customerQrCaption: control.customerQrCaption,
       screenKey: control.screenKey,
       fullScreen: control.fullScreen,
+      childLock: control.childLock,
     );
+
+    // Locking while the bars happen to be up has to take them down, or the
+    // manager who just pressed Lock at the till watches the screen stay open.
+    if (control.childLock && _statusShowing) {
+      _statusHide?.cancel();
+      _statusShowing = false;
+    }
 
     unawaited(ref.read(displaySettingsProvider.notifier).save(next));
 
@@ -315,7 +328,14 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
   void _revealStatus() {
     final settings = ref.read(displaySettingsProvider).value;
     _statusHide?.cancel();
-    setState(() => _statusShowing = true);
+
+    // Locked: say so, briefly, and nothing else. Saying nothing at all would
+    // read as a screen that has frozen, and the person tapping it is usually
+    // staff who need to be told where the switch is.
+    setState(() {
+      _statusShowing = true;
+      _lockRefused = settings?.childLock ?? false;
+    });
 
     final after = settings?.statusHideAfter;
     if (after == null) return;
@@ -336,6 +356,7 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
   Widget build(BuildContext context) {
     final settings = ref.watch(displaySettingsProvider).value;
     final pairing = ref.watch(pairingProvider).value;
+    final size = MediaQuery.sizeOf(context);
     if (settings == null || pairing == null) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
@@ -368,6 +389,13 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
       screenKey: settings.screenKey,
       fullScreen: settings.fullScreen,
       advertCount: _adverts.length,
+      childLock: settings.childLock,
+      // What this window is actually running at, which is not the same question
+      // as what its monitor could do. A display left windowed on a 4K panel
+      // reports 1280x720, and that is the number the manager at the till needs
+      // to see before they wonder why the bill looks small.
+      width: size.width.round(),
+      height: size.height.round(),
     );
 
     _rewire(settings);
@@ -480,83 +508,325 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
             ),
           ),
 
-          if (_statusShowing)
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: _StatusPanel(
-                pairing: pairing,
-                adverts: _adverts.length,
-                onSettings: () {
-                  _statusHide?.cancel();
-                  setState(() => _statusShowing = false);
-                  unawaited(
-                    Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => const SettingsPage(),
-                      ),
+          // The chrome, in the two places the venue asked for it: the controls
+          // in the top right where a hand reaches without crossing the bill,
+          // and what this screen is connected to along the bottom, out of the
+          // way of both. They arrive and leave together — one tap, one thought
+          // — and neither exists at all until that tap.
+          _Chrome(
+            showing: _statusShowing,
+            top: _DisplayTopBar(
+              locked: _lockRefused,
+              volume: settings.advertVolume,
+              onVolume: (value) {
+                _keepStatusUp();
+                unawaited(
+                  ref
+                      .read(displaySettingsProvider.notifier)
+                      .save(settings.copyWith(advertVolume: value)),
+                );
+              },
+              onSettings: () {
+                _hideStatus();
+                unawaited(
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const SettingsPage(),
                     ),
-                  );
-                },
-                onDismiss: () {
-                  _statusHide?.cancel();
-                  setState(() => _statusShowing = false);
-                },
-              ),
+                  ),
+                );
+              },
+              onDismiss: _hideStatus,
             ),
+            bottom: _DisplayStatusBar(
+              pairing: pairing,
+              adverts: _adverts.length,
+              locked: _lockRefused,
+            ),
+          ),
         ],
       ),
     );
   }
+
+  /// Take the bars down now.
+  void _hideStatus() {
+    _statusHide?.cancel();
+    setState(() => _statusShowing = false);
+  }
+
+  /// Restart the countdown without redrawing anything.
+  ///
+  /// For a control that is being used: a volume slider that vanished under the
+  /// finger setting it would be the worst version of this feature.
+  void _keepStatusUp() {
+    final after = ref.read(displaySettingsProvider).value?.statusHideAfter;
+    _statusHide?.cancel();
+    if (after == null) return;
+    _statusHide = Timer(after, () {
+      if (mounted) setState(() => _statusShowing = false);
+    });
+  }
 }
 
-/// What the screen says about itself when somebody taps it.
+/// The top and bottom bars, sliding in and out together.
 ///
-/// Everything a person standing at this display needs and nothing a customer
-/// needs: whether it is connected and to what, how many adverts it is playing,
-/// and the way into Settings. It replaced a permanent cog in the corner and a
-/// permanent "Waiting for the till" along the bottom — one of which a customer
-/// would press and the other of which was usually wrong.
+/// One widget so they cannot disagree about whether they are on screen, and so
+/// the animation is written once. Built even while hidden — an AnimatedSlide of
+/// a widget that does not exist does not animate out, it disappears.
+class _Chrome extends StatelessWidget {
+  const _Chrome({
+    required this.showing,
+    required this.top,
+    required this.bottom,
+  });
+
+  final bool showing;
+  final Widget top;
+  final Widget bottom;
+
+  static const _slide = Duration(milliseconds: 220);
+
+  @override
+  Widget build(BuildContext context) => IgnorePointer(
+    // Nothing behind the bars when they are away, so a customer's tap on the
+    // top right corner of an advert reaches the reveal handler underneath
+    // rather than an invisible Settings button.
+    ignoring: !showing,
+    child: AnimatedOpacity(
+      opacity: showing ? 1 : 0,
+      duration: _slide,
+      child: Stack(
+        children: [
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: AnimatedSlide(
+              offset: showing ? Offset.zero : const Offset(0, -1),
+              duration: _slide,
+              curve: Curves.easeOutCubic,
+              child: top,
+            ),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: AnimatedSlide(
+              offset: showing ? Offset.zero : const Offset(0, 1),
+              duration: _slide,
+              curve: Curves.easeOutCubic,
+              child: bottom,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+/// The controls, in the top right corner.
 ///
-/// The file path is deliberately not here. It was, and it told the person
-/// reading it nothing they could act on: a display either follows its till or
-/// it does not, and if it does not, the answer is to connect it rather than to
-/// read a path back to somebody. Connected means connected.
-class _StatusPanel extends StatelessWidget {
-  const _StatusPanel({
-    required this.pairing,
-    required this.adverts,
+/// The corner is the venue's choice and it is the right one. A customer display
+/// is read from the middle outwards — the bill on one side, a photograph on the
+/// other — and the top right is the one part of it nothing important ever
+/// occupies. It is also where a hand already goes: whoever is setting the
+/// screen up is standing beside the till, reaching across the counter.
+///
+/// Volume sits here rather than only in Settings because it is the one thing on
+/// this screen anybody changes twice a day. A function room at lunchtime and
+/// the same room at nine in the evening want different answers, and neither is
+/// worth walking into a settings page for.
+class _DisplayTopBar extends StatefulWidget {
+  const _DisplayTopBar({
+    required this.locked,
+    required this.volume,
+    required this.onVolume,
     required this.onSettings,
     required this.onDismiss,
   });
 
-  final PairingState pairing;
-  final int adverts;
+  /// Somebody has tapped a locked screen. The bar says so and offers nothing.
+  final bool locked;
+
+  final int volume;
+  final ValueChanged<int> onVolume;
   final VoidCallback onSettings;
   final VoidCallback onDismiss;
 
   @override
+  State<_DisplayTopBar> createState() => _DisplayTopBarState();
+}
+
+class _DisplayTopBarState extends State<_DisplayTopBar> {
+  /// Whether the slider is out. Shut to begin with — the icon alone says the
+  /// state, and a slider that is already open is a slider somebody nudges on
+  /// the way to Settings.
+  bool _slider = false;
+
+  IconData get _speaker {
+    if (widget.volume == 0) return Icons.volume_off_rounded;
+    if (widget.volume < 34) return Icons.volume_mute_rounded;
+    if (widget.volume < 67) return Icons.volume_down_rounded;
+    return Icons.volume_up_rounded;
+  }
+
+  @override
+  Widget build(BuildContext context) => SafeArea(
+    bottom: false,
+    child: Padding(
+      padding: const EdgeInsets.all(14),
+      child: Row(
+        // Hard right. The left of this strip is over the bill on a split
+        // screen, and chrome sitting on a customer's prices is chrome in the
+        // wrong place.
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          Material(
+            color: Brand.panelSoft.withValues(alpha: 0.94),
+            borderRadius: BorderRadius.circular(28),
+            elevation: 8,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              child: widget.locked
+                  ? const Padding(
+                      padding: EdgeInsets.fromLTRB(10, 8, 12, 8),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.lock, size: 18, color: Brand.inkSoft),
+                          SizedBox(width: 8),
+                          Text(
+                            'Screen locked',
+                            style: TextStyle(
+                              color: Brand.inkSoft,
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // The slider grows out of the speaker rather than
+                        // living beside it, so the bar stays two icons wide
+                        // until somebody wants it to be more.
+                        AnimatedSize(
+                          duration: const Duration(milliseconds: 180),
+                          curve: Curves.easeOut,
+                          child: _slider
+                              ? SizedBox(
+                                  width: 210,
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Slider(
+                                          value: widget.volume.toDouble(),
+                                          max: 100,
+                                          divisions: 20,
+                                          label: '${widget.volume}%',
+                                          onChanged: (v) =>
+                                              widget.onVolume(v.round()),
+                                        ),
+                                      ),
+                                      SizedBox(
+                                        width: 44,
+                                        child: Text(
+                                          '${widget.volume}%',
+                                          textAlign: TextAlign.center,
+                                          style: const TextStyle(
+                                            color: Brand.lime,
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              : const SizedBox.shrink(),
+                        ),
+                        IconButton(
+                          tooltip: widget.volume == 0
+                              ? 'Silent'
+                              : '${widget.volume}%',
+                          onPressed: () => setState(() => _slider = !_slider),
+                          icon: Icon(
+                            _speaker,
+                            color: widget.volume == 0
+                                ? Brand.inkSoft
+                                : Brand.lime,
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Settings',
+                          onPressed: widget.onSettings,
+                          icon: const Icon(Icons.tune, color: Brand.ink),
+                        ),
+                        IconButton(
+                          tooltip: 'Hide',
+                          onPressed: widget.onDismiss,
+                          icon: const Icon(Icons.close, color: Brand.inkSoft),
+                        ),
+                      ],
+                    ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+/// What this screen is connected to, along the bottom.
+///
+/// CONNECTED MEANS CONNECTED
+///
+/// This bar reports the pairing and nothing else. It used to report whether the
+/// till process had written a heartbeat in the last twenty seconds, and told
+/// two different lies with it: it said "The till is not running" at a screen
+/// that was at that moment drawing that till's bill, and it said it during
+/// every quiet spell in a working service.
+///
+/// The pairing is the honest answer to "what is this screen connected to",
+/// because it is the thing that would have to be undone for the answer to
+/// change. A till that is merely quiet has not disconnected from anything.
+class _DisplayStatusBar extends StatelessWidget {
+  const _DisplayStatusBar({
+    required this.pairing,
+    required this.adverts,
+    required this.locked,
+  });
+
+  final PairingState pairing;
+  final int adverts;
+  final bool locked;
+
+  @override
   Widget build(BuildContext context) {
-    final till = pairing.till;
-    final connected = till?.isRunning ?? false;
-    final name = pairing.pairing?.terminalName ?? till?.terminalName ?? '';
+    final name =
+        pairing.pairing?.terminalName ?? pairing.till?.terminalName ?? '';
+    final venue = pairing.pairing?.venueName ?? '';
 
     return SafeArea(
+      top: false,
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Material(
-          color: Brand.panelSoft,
+          color: Brand.panelSoft.withValues(alpha: 0.94),
           borderRadius: BorderRadius.circular(14),
           elevation: 8,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 10, 12),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
             child: Row(
               children: [
                 Icon(
-                  connected ? Icons.link : Icons.link_off,
+                  locked ? Icons.lock : Icons.link,
                   size: 20,
-                  color: connected ? Brand.lime : Brand.inkSoft,
+                  color: locked ? Brand.inkSoft : Brand.lime,
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -565,9 +835,9 @@ class _StatusPanel extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        connected
-                            ? (name.isEmpty ? 'Connected' : 'Connected to $name')
-                            : 'The till is not running',
+                        name.isEmpty ? 'Connected' : 'Connected to $name',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           color: Brand.ink,
                           fontSize: 15,
@@ -576,9 +846,16 @@ class _StatusPanel extends StatelessWidget {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        adverts == 0
-                            ? 'No adverts chosen'
-                            : '$adverts advert${adverts == 1 ? '' : 's'} playing',
+                        [
+                          if (venue.isNotEmpty) venue,
+                          if (adverts == 0)
+                            'No adverts chosen'
+                          else
+                            '$adverts advert${adverts == 1 ? '' : 's'} playing',
+                          if (locked) 'Unlock it from the till',
+                        ].join('  ·  '),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           color: Brand.inkSoft,
                           fontSize: 12.5,
@@ -586,16 +863,6 @@ class _StatusPanel extends StatelessWidget {
                       ),
                     ],
                   ),
-                ),
-                TextButton.icon(
-                  onPressed: onSettings,
-                  icon: const Icon(Icons.tune, size: 18),
-                  label: const Text('Settings'),
-                ),
-                IconButton(
-                  tooltip: 'Hide',
-                  onPressed: onDismiss,
-                  icon: const Icon(Icons.close, size: 18, color: Brand.inkSoft),
                 ),
               ],
             ),
