@@ -75,6 +75,15 @@ and does nothing else.
 There is deliberately no switch for it here. A lock the locked screen can undo
 is not a lock.
 
+### Orders from the tables need nothing here
+
+The till's new dine-in feature puts a customer's phone order onto a table's bill.
+Nothing in this application had to change for that, and nothing did: an accepted
+order is an ordinary line on an ordinary bill by the time it reaches this
+screen, and it draws exactly as a keyed one does. It is worth saying plainly
+because it is the point — a feature that needed a special case on the customer
+display would be a feature that had not been finished on the till.
+
 ### Reporting itself properly
 
 The screen now tells the till the size it is actually running at, which is not
@@ -110,6 +119,13 @@ Child Lock: Your till can lock this screen so it ignores being touched, for a co
 - The display suite passes, including a regression test for the staleness bug
   above: "a presence that has gone stale is not still reported as running".
 - The pairing contract test moves with the version, which is what keeps the two
-  applications from being released out of step.
+  applications from being released out of step. `till-presence.json` was
+  regenerated at 1.6.4 and the display's own contract test re-run against it —
+  it had been left reading 1.6.3 after the version bump, which is the exact
+  mistake the file exists to catch.
+- Both store packages were verified by reading `AppxManifest.xml` out of the
+  built `.msix` rather than by trusting the filename, which never carries a
+  version: `MeirionDavies.Vesopa` and `MeirionDavies.VesopaDisplay`, both
+  `1.6.4.0`.
 - The full split-screen behaviour was checked on a real pair of applications
   with a real order: a bill on one side, a full-bleed advert on the other.
