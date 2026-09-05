@@ -71,6 +71,20 @@ function recordingPool() {
     asked,
     query: async (sql, params) => answer(sql, params),
     execute: async (sql, params) => answer(sql, params),
+    // The reorder runs in a transaction, and it now counts the rows it moved.
+    // Reporting none is the truthful answer for ids this office does not own,
+    // which is the case the check is about — so a scoped reorder handed a
+    // neighbour's ids must roll back and refuse rather than answer ok.
+    getConnection: async () => ({
+      execute: async (sql, params) => {
+        answer(sql, params);
+        return [{ affectedRows: 0 }, []];
+      },
+      beginTransaction: async () => {},
+      commit: async () => {},
+      rollback: async () => {},
+      release: () => {},
+    }),
   };
 }
 
@@ -251,6 +265,96 @@ function statementsIn(src) {
     opener.lastIndex = i;
   }
   return found;
+}
+
+// ---- The programming tables, and the drag that skipped the scoping --------
+//
+// Five of these tables carry `office_id` and were registered without telling
+// the CRUD factory so, which left every operation on them unscoped: the list
+// ran `WHERE 1 = 1`, the update and the delete ran `WHERE id = ?`. An office
+// created that morning read three VAT rates and nine void reasons it had never
+// entered, and could have deleted another venue's Cash key.
+//
+// The reorder was worse, and worse everywhere: it never called `scope()` at
+// all, on any table, including the ones that were otherwise tenanted. Handed
+// another venue's row ids it rewrote the order their kitchen tickets print in
+// and answered 200.
+const PROGRAMMING = [
+  ['/api/tax', 'bo_tax_rates'],
+  ['/api/finalise-keys', 'bo_finalise_keys'],
+  ['/api/error-reasons', 'bo_error_reasons'],
+  ['/api/vouchers', 'bo_vouchers'],
+  ['/api/mix-match', 'bo_mix_match'],
+];
+
+for (const [route, table] of PROGRAMMING) {
+  check(`${route} lists only this office's rows`, async () => {
+    const pool = recordingPool();
+    const server = await listen(mount(pool));
+    try {
+      const res = await fetch(`http://127.0.0.1:${server.address().port}${route}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      assert.strictEqual(res.status, 200, `${route} answered ${res.status}`);
+    } finally {
+      server.close();
+    }
+
+    const touching = pool.asked.filter((q) => new RegExp(`\\b${table}\\b`, 'i').test(q.sql));
+    assert.ok(touching.length > 0, `${route} never read ${table}`);
+    for (const q of touching) {
+      assert.ok(
+        /office_id\s*=\s*\?/i.test(q.sql),
+        `${route} read ${table} with no owner in the WHERE:\n      ${q.sql.slice(0, 160)}`
+      );
+      assert.ok(
+        q.params.includes(7),
+        `${route} did not bind the office:\n      params: ${JSON.stringify(q.params)}`
+      );
+    }
+  });
+}
+
+for (const [route, table] of PROGRAMMING) {
+  check(`${route}/reorder will not move another office's rows`, async () => {
+    const pool = recordingPool();
+    const server = await listen(mount(pool));
+    try {
+      const res = await fetch(
+        `http://127.0.0.1:${server.address().port}${route}/reorder`,
+        {
+          method: 'PUT',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ order: [41, 42] }),
+        }
+      );
+      // The recording pool reports no rows affected, which is what a neighbour's
+      // id now does. The caller must be told, not given a 200 for nothing.
+      assert.strictEqual(
+        res.status,
+        404,
+        'a reorder that moved no rows still answered ok'
+      );
+    } finally {
+      server.close();
+    }
+
+    const writes = pool.asked.filter((q) => /UPDATE/i.test(q.sql) && new RegExp(`\\b${table}\\b`, 'i').test(q.sql));
+    assert.ok(writes.length > 0, `${route}/reorder never wrote to ${table}`);
+    for (const q of writes) {
+      assert.ok(
+        /office_id\s*=\s*\?/i.test(q.sql),
+        `reorder wrote ${table} with only an id:\n      ${q.sql.slice(0, 160)}`
+      );
+      assert.ok(
+        q.params.includes(7),
+        `reorder did not bind the office:\n      params: ${JSON.stringify(q.params)}`
+      );
+    }
+  });
 }
 
 check('every query on a tenant table names an owner', () => {

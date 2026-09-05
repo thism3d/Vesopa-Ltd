@@ -107,14 +107,30 @@ function programmingRoutes({ pool, broadcast, secret }) {
     if (sortable) {
       router.put(`/${path}/reorder`, auth, async (req, res, next) => {
         const order = Array.isArray(req.body.order) ? req.body.order : [];
+        // Scoped like every other write here, and it was the one that was not.
+        // `WHERE id = ?` on its own accepted any id from any signed-in office,
+        // so one venue could hand this another venue's rows and rewrite the
+        // order their kitchen tickets print in. It answered 200 while doing it.
+        const { sql, params } = await scope(req);
         const conn = await pool.getConnection();
         try {
           await conn.beginTransaction();
+          let moved = 0;
           for (let i = 0; i < order.length; i++) {
-            await conn.execute(
-              `UPDATE ${table} SET sort_order = ? WHERE id = ?`,
-              [i + 1, order[i]]
+            const [r] = await conn.execute(
+              `UPDATE ${table} SET sort_order = ? WHERE id = ?${sql}`,
+              [i + 1, order[i], ...params]
             );
+            moved += r.affectedRows;
+          }
+          // An id that belongs to somebody else now matches nothing rather than
+          // moving their row, and a caller that sent one is told so instead of
+          // being quietly given a 200 for work that did not happen.
+          if (moved !== order.length) {
+            await conn.rollback();
+            return res
+              .status(404)
+              .json({ error: 'Some of those rows are not yours to reorder.' });
           }
           await conn.commit();
           if (event) broadcast({ type: event });
@@ -213,9 +229,14 @@ function programmingRoutes({ pool, broadcast, secret }) {
 
   // `sort_order` is added automatically by the factory (both column list and
   // ordering), so it is never listed here.
-  crud('tax', 'bo_tax_rates', ['name', 'percentage', 'is_default'], 'programming.updated');
-  crud('finalise-keys', 'bo_finalise_keys', ['name', 'kind', 'opens_drawer'], 'programming.updated');
-  crud('error-reasons', 'bo_error_reasons', ['reason', 'applies_to'], 'programming.updated');
+  // All three carry `office_id` and none of them was told so, which meant the
+  // factory scoped nothing: `WHERE 1 = 1` on the list, `WHERE id = ?` on the
+  // update and the delete. A venue created that morning opened Tax and read
+  // three rates it had never entered, and could have deleted another venue's
+  // Cash key. Tenanted now, like everything else here.
+  crud('tax', 'bo_tax_rates', ['name', 'percentage', 'is_default'], 'programming.updated', { tenantColumn: 'office_id' });
+  crud('finalise-keys', 'bo_finalise_keys', ['name', 'kind', 'opens_drawer'], 'programming.updated', { tenantColumn: 'office_id' });
+  crud('error-reasons', 'bo_error_reasons', ['reason', 'applies_to'], 'programming.updated', { tenantColumn: 'office_id' });
   // Every column the voucher editor shows has to be listed here, or it is
   // silently dropped on save: the factory builds its INSERT and UPDATE from
   // this list alone. It was the six original columns while the form offered
@@ -230,7 +251,7 @@ function programmingRoutes({ pool, broadcast, secret }) {
     'free_product_pluid', 'button_label', 'button_colour', 'button_size',
     'icon',
   ], 'programming.updated', { tenantColumn: 'office_id' });
-  crud('mix-match', 'bo_mix_match', ['name', 'trigger_qty', 'deal_price_minor', 'active'], 'programming.updated');
+  crud('mix-match', 'bo_mix_match', ['name', 'trigger_qty', 'deal_price_minor', 'active'], 'programming.updated', { tenantColumn: 'office_id' });
   // Tenanted on `email`, not `office_id`: these two tables carry the office's
   // contact email as their owner, inherited from the PHP schema, and it is NOT
   // NULL on both. Running them untenanted meant every office read every other
