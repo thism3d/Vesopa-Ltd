@@ -6,7 +6,7 @@ under it is the whole of that field. Character counts are checked by
 
 **Package to upload:**
 `vesopa_epos_display\build\windows\x64\runner\Release\vesopa_epos_display.msix`
-— 34.0 MB, `Version="1.6.2.0"`, x64, capability `runFullTrust` only.
+— 34.0 MB, `Version="1.6.4.0"`, x64, capability `runFullTrust` only.
 
 **Product identity** (matches Partner Center exactly):
 
@@ -72,33 +72,20 @@ Sold and supported by Vesopa EPOS Limited.
 <!-- FIELD whats_new 0 1500 -->
 ## What's new in this version
 
-Version 1.6.2.0 – Pairing, and the Customer's Card on the Screen
+Version 1.6.4.0 - Connected Means Connected
 
-Connecting to the till is now four digits. This screen shows a code, the till puts the request in front of whoever is standing at it, and Connect is the whole setup — no paths, nothing to type in, nothing to browse for. The pairing survives an upgrade or a reinstall of either app, so nobody sets it up a second time.
+No More "Waiting For The Till": A screen showing a live bill no longer reports the till as missing. It says what it is connected to, and stays saying it.
 
-It used to work the till's data folder out for itself, and on a PC that had run more than one till it could attach to a folder nobody writes to and show adverts for ever, with no way to tell that from working normally. That guesswork is gone.
+Controls Where Your Hand Goes: One tap brings up volume and settings in the top corner and the connection along the bottom, and they hide themselves again after a delay you choose - five seconds to five minutes, or never. Nothing sits over the adverts until you ask for it.
 
-When it is not connected it now says why, in the order worth checking: whether the till is installed on this PC, whether it is running, and whether somebody has signed in. Each answer offers the one thing that helps.
+Volume Without A Settings Page: A speaker on the top bar opens a slider and puts it away once you have set it.
 
-The till can also put a customer's own loyalty or gift card on this screen as a code they scan into their phone, so they add it standing where they are rather than leaning across the counter. Whatever was on screen before comes back afterwards.
+A Settings Screen You Can Leave: The header at the top of Settings is now visible, stays put as you scroll, and has a Back button with the word on it.
 
-Requires Vesopa EPOS 1.6.2.0 or later on the same PC.
+Your Settings Are Remembered: Advert volume, which side the bill sits on, how wide it is, whether pictures fill the screen and your standing message are all saved now, instead of resetting overnight.
 
-<!-- FEATURES 5 12 50 -->
-## Product features
+Child Lock: Your till can lock this screen so it ignores being touched, for a counter with children at it or a cloth at the end of the night. It keeps showing the bill throughout.
 
-- Shows the customer their bill as it is rung up
-- Plays your own pictures and video adverts
-- Connects to the till with a four-digit code
-- Set up entirely from Vesopa EPOS settings
-- Pick the monitor and fill it, with no title bar
-- Bill on either side, at the width you choose
-- Adverts take over when the till goes quiet
-- Plays MP4, M4V and MOV with its own decoder
-- Shows what was paid and the change due
-- Add your own line across the adverts
-- Drop new adverts in, nothing to restart
-- No internet access at all, ever
 
 <!-- FIELD license 0 10000 -->
 ## Additional license terms

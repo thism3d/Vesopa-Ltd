@@ -5,7 +5,7 @@ under it is the whole of that field. Limits are checked by
 `tool/check-store-listing.py` at the repository root.
 
 **Package to upload:** `vesopa_epos\build\store\vesopa-epos-store.msix`
-— 20.3 MB, `Version="1.6.2.0"`, x64.
+— `Version="1.6.4.0"`, x64.
 
 **Product identity** (unchanged):
 
@@ -22,15 +22,19 @@ as one product family; take it or leave it.
 <!-- FIELD whats_new 0 1500 -->
 ## What's new in this version
 
-Version 1.6.2.0 – Cards at the Counter, and a Screen That Pairs Itself
+Version 1.6.4.0 - Order From The Table
 
-Staff, Loyalty and Gift Cards: A card reader plugged into this PC is now read by the till itself. One swipe signs a member of staff on, brings up a customer's loyalty account, or puts a gift card against the bill — and it reads the prefixes from your old system, so every card already in a customer's wallet keeps working. Settings then Swipe cards shows exactly what the reader is sending, issues a card to somebody who has not got one, and prints the number to encode onto it. Signing on works with the broadband down.
+QR Menus And Dine-In: Print a code for every table. A customer scans it, reads your menu on their own phone and sends an order straight to the till - no app to install and no account to make. Accept it and it rings onto that table's bill like any other sale, prints in the kitchen and settles at the counter. Refuse it in one tap and their phone says why. Mark it Ready and Served and they can follow it.
 
-The Same Card on a Phone: A customer who has left their card at home can hold up their phone instead. One link adds it to Apple Wallet or Google Wallet, whichever they carry, and it carries today's balance rather than the day it was issued. The till can put their code on the screen facing them, so nobody leans across the counter.
+Build Your Own Menu Page: Give your venue its own web address, add your logo, banner, phone number and map link, and choose which products appear, in which sections, with the wording and pictures a phone deserves. Prices always come from your catalogue, so there is never a second list to keep up to date. Tick a dish off when the kitchen runs out.
 
-Pairing Instead of Guessing: A customer display no longer hunts for the till. The screen shows four digits, the till puts the request in front of whoever is standing at it, and Connect is the whole setup. It stays paired through an upgrade or a reinstall, and a screen that is not connected says which of the reasons it is.
+Design And Print Your Table Cards: Lay the card out once - page size, background, the code, the table name, your own text and pictures - and print the set. A table's code never changes, even when you rename or renumber it.
 
-Every Sale Says Which Till: Sales now record the machine that rang them up, so a venue with more than one counter can split the day's takings between them.
+Rooms That Are Not Boxes: The floor designer now draws L-shaped, T-shaped and U-shaped rooms as well as rectangles, with a live preview.
+
+Lock The Customer Screen: Turn the customer display's controls off from the till, so a counter with children at it stays showing the bill.
+
+Tidier Till Bar: The menu key and the clock key no longer draw two backgrounds.
 
 <!-- FIELD short_description 270 350 -->
 ## Short description

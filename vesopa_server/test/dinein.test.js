@@ -21,6 +21,19 @@
  * other than the default, and DINEIN_TEST_USER / _PASS for credentials. With no
  * server reachable it says so and exits 0 rather than failing a suite that runs
  * on machines without one.
+ *
+ * ON A DEFAULT MARIADB INSTALL, `root` WILL NOT WORK
+ *
+ * The mysql2 driver cannot authenticate as a root account using unix_socket or
+ * the newer auth plugins, and fails with AUTH_SWITCH_PLUGIN_ERROR — which this
+ * file reports as "no database reachable" and then skips, so the whole suite
+ * passes by running nothing. Make it a user it can actually reach:
+ *
+ *     CREATE USER 'vesopa_test'@'127.0.0.1'
+ *       IDENTIFIED VIA mysql_native_password USING PASSWORD('vesopa_test');
+ *     GRANT ALL PRIVILEGES ON *.* TO 'vesopa_test'@'127.0.0.1';
+ *
+ *     DINEIN_TEST_USER=vesopa_test DINEIN_TEST_PASS=vesopa_test npm test
  */
 
 const assert = require('assert');

@@ -542,6 +542,11 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
               pairing: pairing,
               adverts: _adverts.length,
               locked: _lockRefused,
+              // Away from the bill, always. Full width, it sat squarely on the
+              // Total — which is the one number a customer is most likely to
+              // have tapped the screen to look at, so the bar was covering the
+              // thing it had just been asked to reveal something about.
+              awayFromBill: settings.billOnRight,
             ),
           ),
         ],
@@ -799,11 +804,19 @@ class _DisplayStatusBar extends StatelessWidget {
     required this.pairing,
     required this.adverts,
     required this.locked,
+    required this.awayFromBill,
   });
 
   final PairingState pairing;
   final int adverts;
   final bool locked;
+
+  /// Which end of the bottom to sit at.
+  ///
+  /// The opposite end from the bill, so the total is never underneath it. True
+  /// puts it at the left, which is where it belongs when the venue has the bill
+  /// on the right.
+  final bool awayFromBill;
 
   @override
   Widget build(BuildContext context) {
@@ -815,13 +828,25 @@ class _DisplayStatusBar extends StatelessWidget {
       top: false,
       child: Padding(
         padding: const EdgeInsets.all(14),
-        child: Material(
+        // Sized to its own content rather than to the screen, so it is a label
+        // in a corner and not a band across the bottom of somebody's bill.
+        child: Row(
+          mainAxisAlignment:
+              awayFromBill ? MainAxisAlignment.start : MainAxisAlignment.end,
+          children: [
+            Flexible(
+              child: Material(
           color: Brand.panelSoft.withValues(alpha: 0.94),
           borderRadius: BorderRadius.circular(14),
           elevation: 8,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
             child: Row(
+              // Min, and Flexible rather than Expanded — an Expanded child
+              // takes every pixel the constraint allows, which put the bar
+              // straight back across the whole width and defeated the point of
+              // moving it. It now grows to its text and stops.
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
                   locked ? Icons.lock : Icons.link,
@@ -829,7 +854,7 @@ class _DisplayStatusBar extends StatelessWidget {
                   color: locked ? Brand.inkSoft : Brand.lime,
                 ),
                 const SizedBox(width: 12),
-                Expanded(
+                Flexible(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
@@ -867,6 +892,9 @@ class _DisplayStatusBar extends StatelessWidget {
               ],
             ),
           ),
+        ),
+            ),
+          ],
         ),
       ),
     );
