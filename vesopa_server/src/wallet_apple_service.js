@@ -151,10 +151,22 @@ function appleWalletRoutes({ pool, secret, core }) {
     // lists and what the till reads back.
     const id = (row && row.id) || crypto.randomUUID();
     await pool.execute(
+      // object_id is NULL, and that is the whole of a nasty bug.
+      //
+      // It is the Google object id, and an Apple-only pass has none. Written as
+      // '' it collided with every other Apple-only pass on the server, because
+      // the column carries UNIQUE KEY uq_wallet_object and MySQL allows exactly
+      // one '' in a unique index while allowing any number of NULLs. The ON
+      // DUPLICATE KEY UPDATE below then overwrote whichever row got there first
+      // -- across venues, since the collision is on object_id alone and knows
+      // nothing about the office.
+      //
+      // One row survived in the entire database. See
+      // schema/schema_wallet_object_null.sql.
       `INSERT INTO epos_wallet_passes
          (id, office, kind, subject_id, object_id, card_number, state,
           apple_serial, apple_auth_token, apple_issued_at)
-       VALUES (?, ?, ?, ?, '', ?, 'active', ?, ?, NOW())
+       VALUES (?, ?, ?, ?, NULL, ?, 'active', ?, ?, NOW())
        ON DUPLICATE KEY UPDATE
          card_number      = VALUES(card_number),
          apple_serial     = VALUES(apple_serial),

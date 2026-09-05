@@ -84,6 +84,64 @@ const body = (pass, kind) => pass[G.PASS_TYPES[kind].appleStyle];
 // Identity
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// The row an issued pass is recorded in
+// ---------------------------------------------------------------------------
+
+check('an Apple-only pass records no Google object id, and not an empty one', () => {
+  // The bug this guards: object_id carries UNIQUE KEY uq_wallet_object, and
+  // MySQL allows any number of NULLs in a unique index but exactly one ''. An
+  // Apple-only pass has no Google object, so writing '' meant the SECOND one
+  // issued anywhere on the server collided with the first -- and the insert's
+  // ON DUPLICATE KEY UPDATE overwrote it. The collision is on object_id alone,
+  // so it crossed venues: one office's record was taken by another's, along
+  // with the apple_serial the pass on somebody's phone identifies itself by.
+  //
+  // Checked as text because the alternative is a live database. The shape of
+  // the statement is the whole of the fault.
+  const source = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'wallet_apple_service.js'),
+    'utf8'
+  );
+  const insert = /INSERT INTO epos_wallet_passes[\s\S]*?ON DUPLICATE KEY UPDATE/
+    .exec(source);
+  assert.ok(insert, 'the pass insert is not where this test expects it');
+
+  assert.ok(
+    /VALUES \(\?, \?, \?, \?, NULL,/.test(insert[0]),
+    `object_id is not written as NULL:\n${insert[0].slice(-200)}`
+  );
+  assert.ok(
+    !/VALUES \(\?, \?, \?, \?, '',/.test(insert[0]),
+    "object_id is written as '', which collides across every venue on the server"
+  );
+});
+
+check('the column that records it accepts NULL', () => {
+  const schema = fs.readFileSync(
+    path.join(__dirname, '..', 'schema', 'schema_wallet.sql'),
+    'utf8'
+  );
+  const column = /object_id\s+VARCHAR\(255\)[\s\S]*?,\n/.exec(schema);
+  assert.ok(column, 'object_id is not declared where this test expects it');
+  assert.ok(
+    /NULL\s*DEFAULT NULL/.test(column[0]),
+    'object_id is still NOT NULL, so every Apple-only pass shares one row'
+  );
+
+  // And the migration that moves an existing server onto it.
+  const migration = path.join(
+    __dirname, '..', 'schema', 'schema_wallet_object_null.sql'
+  );
+  assert.ok(fs.existsSync(migration), 'no migration for an existing database');
+  const sql = fs.readFileSync(migration, 'utf8');
+  assert.ok(/MODIFY object_id/.test(sql), 'the migration does not widen the column');
+  assert.ok(
+    /SET object_id = NULL WHERE object_id = ''/.test(sql),
+    'the migration does not move the rows already holding an empty string'
+  );
+});
+
 check('the pass type identifier matches the certificate that signs it', () => {
   // The single highest-value assertion in this file. A .pkpass whose
   // passTypeIdentifier differs from its signing certificate by one character is

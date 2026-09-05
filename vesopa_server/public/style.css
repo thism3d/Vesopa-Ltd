@@ -4386,3 +4386,15 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
 .wal-art-preview.logo { width: 160px; height: 50px; }
 .wal-art-preview.logo img { object-fit: contain; }
 .wal-art [data-artclear][hidden] { display: none !important; }
+
+/* The designer's colour swatches. Without a height an <input type="color">
+   collapses to a line, which is a control nobody recognises as one. */
+.wal-colours-grid input[type="color"] {
+  width: 100%;
+  height: 40px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: none;
+  cursor: pointer;
+}

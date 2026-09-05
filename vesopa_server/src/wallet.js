@@ -248,25 +248,61 @@ function walletCore({ pool, secret }) {
     return merged;
   }
 
-  /** Every programme for a venue, designs resolved, for the back office. */
+  /**
+   * Every programme for a venue, for the back office's designer.
+   *
+   * WHAT EACH CARD HAS SET, NOT WHAT IT RESOLVES TO
+   *
+   * This used to return the *merged* design — the venue's branding with the
+   * card's overrides on top — which is right for building a pass and wrong for
+   * editing one, in a way that quietly destroys the thing being edited.
+   *
+   * Every field came back full, because everything falls back to the venue. So
+   * the designer could not tell "inherited" from "deliberately set": it marked
+   * all five cards as having their own look, and it filled every box with the
+   * inherited value. Pressing Save on a card you had not touched then wrote all
+   * of it back as overrides — freezing today's branding into that card, and
+   * silently breaking the promise the whole screen rests on, which is that
+   * changing the venue's look changes the cards with it.
+   *
+   * So: the row's own values, empty where nothing is set. The back office
+   * resolves for its preview, using the same rule readProgramBrand() uses, and
+   * shows the inherited value as a placeholder rather than as content.
+   */
   async function readPrograms(office) {
     const brand = await readBrand(office);
     const out = [];
     for (const kind of Object.keys(G.PASS_TYPES)) {
-      const design = await readProgramBrand(office, kind, brand);
+      let row = null;
+      try {
+        const [[found]] = await pool.query(
+          'SELECT * FROM epos_wallet_programs WHERE office = ? AND kind = ?',
+          [office, kind]
+        );
+        row = found || null;
+      } catch {
+        // The migration may not have run. No overrides is a true answer.
+        row = null;
+      }
+
+      const own = (field) => {
+        const value = row ? row[field] : null;
+        return value === null || value === undefined ? '' : String(value);
+      };
+
       out.push({
         kind,
         label: G.PASS_TYPES[kind].label,
         apple_type: G.PASS_TYPES[kind].appleType,
         enabled: Number(brand[`${kind}_enabled`]) ? 1 : 0,
-        code: design.program_code || (await ensureProgramCode(office, kind, brand)),
-        program_name: design.program_name || '',
-        hex_background: design.hex_background || '',
-        hex_foreground: design.hex_foreground || '',
-        hex_label: design.hex_label || '',
-        strip_url: design.strip_url || '',
-        terms: design.terms || '',
-        change_message: design.change_message || '',
+        code: (row && row.code) || (await ensureProgramCode(office, kind, brand)),
+        program_name: own('program_name'),
+        hex_background: own('hex_background'),
+        hex_foreground: own('hex_foreground'),
+        hex_label: own('hex_label'),
+        strip_url: own('strip_url'),
+        terms: own('terms'),
+        change_message: own('change_message'),
       });
     }
     return out;
