@@ -467,21 +467,43 @@ async function diPickProducts(sectionId) {
   }
 
   const already = new Set();
-  diMenu.forEach((s) => s.items.forEach((i) => already.add(i.plu_id)));
+  // And by name, not only by PLU. A catalogue can carry two products called
+  // the same thing — this venue's carries two Cheeseburgers — and adding both
+  // puts the same dish on a customer's phone twice at the same price. They
+  // pick one at random and the kitchen gets a ticket for whichever PLU
+  // happened to be second.
+  const alreadyNamed = new Set();
+  diMenu.forEach((s) =>
+    s.items.forEach((i) => {
+      already.add(i.plu_id);
+      alreadyNamed.add(String(i.name || '').trim().toLowerCase());
+    })
+  );
 
-  const rows = diCatalogue.map((p) => `
+  const rows = diCatalogue.map((p) => {
+    const onMenu = already.has(p.pluid);
+    // A different PLU with a name already on the menu is not blocked — a venue
+    // may genuinely sell two things called the same — but it is said out loud,
+    // because the usual cause is a duplicate in the catalogue.
+    const sameName =
+      !onMenu && alreadyNamed.has(String(p.product_name || '').trim().toLowerCase());
+    return `
     <label class="check" data-name="${esc(
       (p.product_name + ' ' + (p.department_name || '')).toLowerCase()
     )}">
-      <input type="checkbox" value="${p.pluid}"
-             ${already.has(p.pluid) ? 'disabled' : ''}>
+      <input type="checkbox" value="${p.pluid}" ${onMenu ? 'disabled' : ''}>
       <span>
         ${esc(p.product_name)}
         <span class="muted small">${esc(p.department_name || '')} · £${Number(p.price || 0).toFixed(2)}${
-          already.has(p.pluid) ? ' · already on the menu' : ''
+          onMenu ? ' · already on the menu' : ''
+        }${
+          sameName
+            ? ' · <b>another product with this name is already on the menu</b>'
+            : ''
         }</span>
       </span>
-    </label>`).join('');
+    </label>`;
+  }).join('');
 
   showPanel('Add products to this section', `
     <input id="di-pick-search" placeholder="Search the catalogue"

@@ -64,7 +64,80 @@ function onMenuHost(req) {
   return host === MENU_HOST || host === 'www.' + MENU_HOST;
 }
 
-function dineinPageRoutes() {
+/**
+ * Everything the head of the document needs, resolved before it is rendered.
+ *
+ * WHY THIS IS SERVER-SIDE
+ *
+ * The body of this page is fetched as JSON, which is right: it is the part that
+ * changes, and drawing it client-side is what makes the page arrive fast on pub
+ * wifi. The head is not. A title, a description and a share card have to be in
+ * the document as it leaves the server, because the things that read them —
+ * WhatsApp, Messenger, iMessage, a search engine, the browser tab before the
+ * fetch lands — do not run JavaScript.
+ *
+ * Without this the tab said "Menu", and a venue pasting their own link into a
+ * WhatsApp group got a grey rectangle with no name on it. Which is the first
+ * thing a customer sees of a venue that has just printed cards.
+ */
+async function metaFor(pool, { table, slug }) {
+  const fallback = {
+    name: 'Vesopa',
+    tagline: 'Order from your table',
+    accent: '#A5C715',
+    image: null,
+    icon: null,
+    table: null,
+  };
+  if (!pool) return fallback;
+
+  try {
+    let row = null;
+    if (table) {
+      const [[found]] = await pool.query(
+        'SELECT v.*, o.name AS office_name, t.name AS table_name,' +
+          '       t.label AS table_label, t.table_number' +
+          '  FROM floor_tables t' +
+          '  JOIN dinein_venue v ON v.office_id = t.office_id' +
+          '  LEFT JOIN offices o ON o.id = v.office_id' +
+          ' WHERE t.public_id = ?',
+        [table]
+      );
+      row = found;
+    } else if (slug) {
+      const [[found]] = await pool.query(
+        'SELECT v.*, o.name AS office_name, NULL AS table_name,' +
+          '       NULL AS table_label, NULL AS table_number' +
+          '  FROM dinein_venue v' +
+          '  LEFT JOIN offices o ON o.id = v.office_id' +
+          ' WHERE v.slug = ?',
+        [String(slug).toLowerCase()]
+      );
+      row = found;
+    }
+    if (!row || !row.is_published) return fallback;
+
+    const tableName =
+      (row.table_name || '').trim() ||
+      (row.table_label || '').trim() ||
+      (row.table_number != null ? 'Table ' + row.table_number : '');
+
+    return {
+      name: (row.display_name || row.office_name || 'Menu').trim(),
+      tagline: (row.tagline || '').trim() || 'See the menu and order from your table',
+      accent: row.accent_colour || '#A5C715',
+      image: row.banner_url || row.logo_url || null,
+      icon: row.logo_url || null,
+      table: tableName || null,
+    };
+  } catch {
+    // A page that cannot reach the database still has to render — the menu
+    // itself is fetched separately and will report its own trouble.
+    return fallback;
+  }
+}
+
+function dineinPageRoutes({ pool } = {}) {
   const router = express.Router();
 
   /**
@@ -74,15 +147,17 @@ function dineinPageRoutes() {
    * so the document is identical for every table and can be cached as one thing
    * while the data behind it is not.
    */
-  router.get('/t/:publicId', (req, res) => {
+  router.get('/t/:publicId', async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
-    res.type('html').send(page({ table: req.params.publicId, slug: null }));
+    const meta = await metaFor(pool, { table: req.params.publicId });
+    res.type('html').send(page({ table: req.params.publicId, slug: null, meta }));
   });
 
   /** The same menu at the venue's own address, with nothing to order onto. */
-  router.get('/m/:slug', (req, res) => {
+  router.get('/m/:slug', async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
-    res.type('html').send(page({ table: null, slug: req.params.slug }));
+    const meta = await metaFor(pool, { slug: req.params.slug });
+    res.type('html').send(page({ table: null, slug: req.params.slug, meta }));
   });
 
   /** Where an order has got to. */
@@ -101,7 +176,7 @@ function dineinPageRoutes() {
    * Registered last, after /t/, /m/ and /o/, so those three keep their meaning
    * on this host too — a table code is still `menu.vesopaepos.com/t/<code>`.
    */
-  router.get('/:slug', (req, res, next) => {
+  router.get('/:slug', async (req, res, next) => {
     if (!onMenuHost(req)) return next();
     const slug = String(req.params.slug || '').toLowerCase();
     // Only what a slug can actually be. Anything else — a file, a dotted path,
@@ -109,7 +184,8 @@ function dineinPageRoutes() {
     if (!/^[a-z0-9][a-z0-9-]{1,63}$/.test(slug)) return next();
 
     res.setHeader('Cache-Control', 'no-store');
-    res.type('html').send(page({ table: null, slug }));
+    const meta = await metaFor(pool, { slug });
+    res.type('html').send(page({ table: null, slug, meta }));
   });
 
   /**
@@ -126,6 +202,45 @@ function dineinPageRoutes() {
   });
 
   return router;
+}
+
+/**
+ * The address this page should be known by.
+ *
+ * One canonical per thing, so a menu reached at /vesopakitchen and at
+ * /m/vesopakitchen is one page to a search engine rather than two competing
+ * copies of the same venue.
+ */
+function canonicalFor({ table, slug }) {
+  const base = (process.env.PUBLIC_BASE_URL || 'https://' + MENU_HOST)
+    .trim()
+    .replace(/\/+$/, '');
+  if (table) return base + '/t/' + table;
+  if (slug) return base + '/' + String(slug).toLowerCase();
+  return base;
+}
+
+/**
+ * The icon in the tab, and on a phone's home screen.
+ *
+ * The venue's own logo when they have uploaded one — it is their venue and
+ * their customer. Vesopa's mark when they have not, because the alternative is
+ * the browser's blank page glyph, which reads as a site that is half-built.
+ *
+ * `sizes="any"` on the fallback because it is an SVG-shaped PNG that scales;
+ * the venue's is declared without sizes so the browser picks it up whatever
+ * shape they uploaded.
+ */
+function iconTags(m) {
+  if (m.icon) {
+    return `<link rel="icon" href="${esc(m.icon)}">
+` +
+           `<link rel="apple-touch-icon" href="${esc(m.icon)}">`;
+  }
+  const mark = 'https://backoffice.vesopaepos.com/assets/vesopa_logo.png';
+  return `<link rel="icon" href="${mark}" sizes="any">
+` +
+         `<link rel="apple-touch-icon" href="${mark}">`;
 }
 
 /**
@@ -221,22 +336,35 @@ button{font:inherit;cursor:pointer}
   content:"";position:absolute;inset:0;
   background:linear-gradient(180deg,rgba(0,0,0,.05) 40%,rgba(0,0,0,.62) 100%);
 }
+/* The logo laps onto the banner; the name does not.
+ *
+ * At -34px the whole block was pulled up, and since the name and the logo are
+ * bottom-aligned that put the top of the venue's name over the photograph —
+ * dark type on a dark bar, on the first line a customer reads. The overlap is
+ * now less than the difference between the logo's height and the text's, so
+ * only the logo enters the picture. */
 .ident{
-  position:relative;margin:-34px 16px 0;z-index:2;
+  position:relative;margin:-20px auto 0;z-index:2;
   display:flex;gap:14px;align-items:flex-end;
+  max-width:680px;padding:0 16px;
 }
 .logo{
   width:74px;height:74px;border-radius:18px;flex:0 0 auto;
   background:var(--card);border:2px solid var(--card);
   box-shadow:0 6px 20px rgba(0,0,0,.22);overflow:hidden;
-  display:grid;place-items:center;font-size:28px;font-weight:800;color:var(--accent)
+  display:grid;place-items:center;font-size:28px;font-weight:800;
+  color:var(--accent);padding:8px
 }
-.logo img{width:100%;height:100%;object-fit:cover}
+/* Contain, not cover. A venue's logo is as likely to be a wide wordmark as a
+   square badge, and cover on a wordmark crops out the middle two letters and
+   presents those as the brand. */
+.logo img{width:100%;height:100%;object-fit:contain}
 .ident h1{margin:0;font-size:24px;line-height:1.15;letter-spacing:-.02em}
 .ident .tag{margin:2px 0 0;color:var(--ink-soft);font-size:13.5px}
 
 .where{
-  margin:14px 16px 0;padding:11px 14px;border-radius:var(--radius);
+  margin:14px auto 0;max-width:648px;padding:11px 14px;
+  border-radius:var(--radius);
   background:var(--sunken);display:flex;align-items:center;gap:10px;
   font-size:14px;font-weight:600
 }
@@ -244,24 +372,33 @@ button{font:inherit;cursor:pointer}
 .where.warn{background:#FFF3CD;color:#5C4813}
 @media (prefers-color-scheme: dark){ .where.warn{background:#3A3009;color:#F6E7B4} }
 
-.meta{display:flex;flex-wrap:wrap;gap:8px;margin:10px 16px 0}
+.meta{display:flex;flex-wrap:wrap;gap:8px;margin:10px auto 0;
+       max-width:648px;padding:0}
 .meta a,.meta span{
   font-size:13px;color:var(--ink-soft);text-decoration:none;
   border:1px solid var(--line);border-radius:999px;padding:6px 12px
 }
 
 .notice{
-  margin:14px 16px 0;padding:12px 14px;border-radius:var(--radius);
+  margin:14px auto 0;max-width:648px;padding:12px 14px;
+  border-radius:var(--radius);
   border:1px dashed var(--line);font-size:14px;color:var(--ink-soft)
 }
 
 /* The sideways tab strip. Sticky, so it is reachable from anywhere in a long
    menu without scrolling back to the top. */
+/* Sticky, and full-bleed on purpose: the strip scrolls sideways, and a strip
+   that stopped at the column edge would hide its own overflow behind a margin.
+   The buttons inside it are held to the column. */
 .tabs{
   position:sticky;top:0;z-index:20;margin-top:18px;
   background:var(--page);border-bottom:1px solid var(--line);
   display:flex;gap:8px;overflow-x:auto;padding:10px 16px;
-  scrollbar-width:none;-webkit-overflow-scrolling:touch
+  scrollbar-width:none;-webkit-overflow-scrolling:touch;
+  scroll-padding-inline:16px;
+}
+@media (min-width:712px){
+  .tabs{justify-content:center}
 }
 .tabs::-webkit-scrollbar{display:none}
 .tabs button{
@@ -273,25 +410,48 @@ button{font:inherit;cursor:pointer}
   background:var(--accent);color:var(--on-accent);border-color:var(--accent)
 }
 
-section{padding:22px 16px 4px;scroll-margin-top:64px}
+/* A MENU IS A COLUMN, NOT A SPREADSHEET.
+ *
+ * Everything below the banner is held to a readable width and centred. Without
+ * this the page filled whatever it was given: on a 1280px laptop the dish name
+ * sat at the far left and its "+" at the far right with two feet of nothing
+ * between them, and the description ran to a line length nobody reads. A menu
+ * has the shape it has on paper for a reason.
+ *
+ * The banner is deliberately outside it, so a venue's photograph still runs
+ * edge to edge on a wide screen. */
+.col{max-width:680px;margin:0 auto}
+
+section{padding:24px 16px 4px;scroll-margin-top:72px}
 section h2{margin:0 0 2px;font-size:20px;letter-spacing:-.01em}
-section .blurb{margin:0 0 14px;color:var(--ink-soft);font-size:14px}
+section .blurb{margin:0 0 6px;color:var(--ink-soft);font-size:14px}
 
 .item{
-  display:flex;gap:14px;padding:14px 0;border-bottom:1px solid var(--line);
+  display:flex;gap:14px;padding:16px 0;border-bottom:1px solid var(--line);
   align-items:flex-start
 }
 .item:last-child{border-bottom:0}
 .item .body{flex:1 1 auto;min-width:0}
-.item h3{margin:0 0 3px;font-size:16px;font-weight:650}
+.item h3{margin:0 0 3px;font-size:16px;font-weight:650;line-height:1.3}
 .item p{margin:0;color:var(--ink-soft);font-size:14px}
-.item .price{margin-top:6px;font-weight:700;font-size:15px}
+
+/* Price and button in one column on the right.
+ *
+ * They were apart — the price under the description on the left, the button
+ * floating against the right edge — so a customer's eye had to cross the whole
+ * row to connect what a thing costs with the way to order it. Together, and
+ * right-aligned, they read as one control. */
+.item .end{
+  flex:0 0 auto;display:flex;flex-direction:column;align-items:flex-end;
+  gap:8px;padding-left:4px
+}
+.item .price{font-weight:700;font-size:15px;white-space:nowrap}
 .item .thumb{
-  width:88px;height:88px;border-radius:12px;flex:0 0 auto;
+  width:84px;height:84px;border-radius:12px;flex:0 0 auto;
   background:var(--sunken);overflow:hidden
 }
 .item .thumb img{width:100%;height:100%;object-fit:cover}
-.item.gone{opacity:.5}
+.item.gone{opacity:.55}
 .item .gone-tag{
   display:inline-block;margin-top:6px;font-size:12px;font-weight:700;
   color:#B3261E;text-transform:uppercase;letter-spacing:.04em
@@ -299,13 +459,13 @@ section .blurb{margin:0 0 14px;color:var(--ink-soft);font-size:14px}
 
 .add{
   border:0;border-radius:999px;background:var(--accent);color:var(--on-accent);
-  width:38px;height:38px;font-size:22px;font-weight:700;line-height:1;
-  flex:0 0 auto;align-self:center
+  width:40px;height:40px;font-size:22px;font-weight:700;line-height:1;
+  flex:0 0 auto;display:grid;place-items:center
 }
 .add[disabled]{background:var(--sunken);color:var(--ink-soft)}
-.qty{display:flex;align-items:center;gap:10px;align-self:center}
+.qty{display:flex;align-items:center;gap:10px}
 .qty button{
-  width:32px;height:32px;border-radius:999px;border:1px solid var(--line);
+  width:34px;height:34px;border-radius:999px;border:1px solid var(--line);
   background:var(--card);color:var(--ink);font-size:18px;line-height:1
 }
 .qty b{min-width:18px;text-align:center;font-size:16px}
@@ -319,7 +479,8 @@ section .blurb{margin:0 0 14px;color:var(--ink-soft);font-size:14px}
 }
 .basket.up{transform:none}
 .basket button{
-  width:100%;border:0;border-radius:14px;background:var(--accent);
+  width:100%;max-width:648px;margin:0 auto;
+  border:0;border-radius:14px;background:var(--accent);
   color:var(--on-accent);padding:16px;font-size:16.5px;font-weight:750;
   display:flex;justify-content:space-between;align-items:center;gap:12px
 }
@@ -372,14 +533,42 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
  * script, so the page knows what it is before a single byte of JavaScript runs
  * and a mis-routed URL fails here rather than three functions in.
  */
-function page({ table, slug }) {
+function page({ table, slug, meta }) {
+  const m = meta || {};
+  const name = m.name || 'Menu';
+  // The venue first, Vesopa after. A customer looking at a tab, a share card or
+  // a search result is looking for the place they are sitting in — the platform
+  // that runs the till is the footnote, not the headline.
+  const title = m.table ? `${name} — ${m.table}` : `${name} — Menu`;
+
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#A5C715">
-<title>Menu</title>
+<meta name="theme-color" content="${esc(m.accent || '#A5C715')}">
+<meta name="color-scheme" content="light dark">
+<title>${esc(title)} · Vesopa</title>
+<meta name="description" content="${esc(m.tagline || '')}">
+<meta name="robots" content="index,follow">
+<link rel="canonical" href="${esc(canonicalFor({ table, slug }))}">
+
+${iconTags(m)}
+
+<meta property="og:type" content="restaurant.menu">
+<meta property="og:site_name" content="Vesopa">
+<meta property="og:title" content="${esc(title)}">
+<meta property="og:description" content="${esc(m.tagline || '')}">
+<meta property="og:url" content="${esc(canonicalFor({ table, slug }))}">
+${m.image ? `<meta property="og:image" content="${esc(m.image)}">` : ''}
+<meta name="twitter:card" content="${m.image ? 'summary_large_image' : 'summary'}">
+<meta name="twitter:title" content="${esc(title)}">
+<meta name="twitter:description" content="${esc(m.tagline || '')}">
+${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
+
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="${esc(name)}">
+<meta name="format-detection" content="telephone=no">
 <style>${STYLE}</style>
 </head>
 <body>
@@ -502,6 +691,7 @@ function page({ table, slug }) {
     });
     html += '</nav>';
 
+    html += '<div class="col">';
     sections.forEach(function(s){
       html += '<section id="sec' + s.id + '" data-sec="' + s.id + '">' +
               '<h2>' + esc(s.name) + '</h2>' +
@@ -511,6 +701,7 @@ function page({ table, slug }) {
       });
       html += '</section>';
     });
+    html += '</div>';
 
     app.innerHTML = html;
     wireTabs(sections);
@@ -520,6 +711,8 @@ function page({ table, slug }) {
 
   function itemHtml(it){
     var can = it.available && canOrder();
+    // Price and control in one right-hand column. Apart, a customer's eye had
+    // to cross the row to connect what a thing costs with how to order it.
     return '<div class="item' + (it.available ? '' : ' gone') + '" data-item="' + it.id + '">' +
       (it.image_url
         ? '<div class="thumb"><img src="' + esc(it.image_url) + '" alt="" loading="lazy"></div>'
@@ -527,10 +720,12 @@ function page({ table, slug }) {
       '<div class="body">' +
         '<h3>' + esc(it.name) + '</h3>' +
         (it.description ? '<p>' + esc(it.description) + '</p>' : '') +
-        '<div class="price">' + money(it.price_minor) + '</div>' +
         (it.available ? '' : '<span class="gone-tag">Sold out</span>') +
       '</div>' +
-      (can ? controlsHtml(it.id) : '') +
+      '<div class="end">' +
+        '<span class="price">' + money(it.price_minor) + '</span>' +
+        (can ? controlsHtml(it.id) : '') +
+      '</div>' +
     '</div>';
   }
 
@@ -568,12 +763,17 @@ function page({ table, slug }) {
   function redrawItem(id){
     var row = app.querySelector('[data-item="' + id + '"]');
     if (!row) return;
-    var old = row.querySelector('.add, .qty');
+    // Into the end column, not onto the row. Appended to the row it would land
+    // beside the price instead of under it, and the layout would come apart the
+    // first time somebody added something.
+    var end = row.querySelector('.end');
+    if (!end) return;
+    var old = end.querySelector('.add, .qty');
     var holder = document.createElement('div');
     holder.innerHTML = controlsHtml(id);
     var fresh = holder.firstChild;
-    if (old && fresh) row.replaceChild(fresh, old);
-    else if (fresh) row.appendChild(fresh);
+    if (old && fresh) end.replaceChild(fresh, old);
+    else if (fresh) end.appendChild(fresh);
   }
 
   function eachChosen(fn){

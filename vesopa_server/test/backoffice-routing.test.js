@@ -144,7 +144,7 @@ check('the printed table codes are not swallowed by the fallback', () => {
   assert.ok(fallback.test(card), 'no longer overlapping — check this test');
 
   const at = server.indexOf(found[0]);
-  const pages = server.indexOf('app.use(dineinPageRoutes());');
+  const pages = server.search(/app\.use\(dineinPageRoutes\(/);
   assert.ok(pages > -1, 'the dine-in pages are no longer mounted');
   assert.ok(pages < at, 'a scanned table code would be answered with the back office');
 });
@@ -153,13 +153,13 @@ check('and neither is a venue address or an order link', () => {
   assert.ok(fallback.test('/m/the-bridge'));
   assert.ok(fallback.test('/o/' + 'f'.repeat(32)));
   const at = server.indexOf(found[0]);
-  assert.ok(server.indexOf('app.use(dineinPageRoutes());') < at);
+  assert.ok(server.search(/app\.use\(dineinPageRoutes\(/) < at);
 });
 
 check('the dine-in pages are mounted ahead of the static middleware too', () => {
   // express.static answers before anything after it, and a file that happened
   // to be called `t` would otherwise shadow every table on the estate.
-  const pages = server.indexOf('app.use(dineinPageRoutes());');
+  const pages = server.search(/app\.use\(dineinPageRoutes\(/);
   const statics = server.indexOf('app.use(express.static(PUBLIC_DIR');
   assert.ok(statics > -1, 'the static middleware has moved');
   assert.ok(pages < statics, 'the dine-in pages are behind express.static');

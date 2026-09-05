@@ -739,7 +739,7 @@ function sendShell(_req, res) {
  * dinein.js — and the host-guarded ones call next() on every other host, so the
  * back office's own routing is untouched.
  */
-app.use(dineinPageRoutes());
+app.use(dineinPageRoutes({ pool }));
 
 app.get(['/', '/index.html'], sendShell);
 
