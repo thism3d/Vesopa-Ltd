@@ -194,13 +194,30 @@ filename, which never carries the version.
 
 ## What was tested
 
-- 656 of the till's tests pass. Four do not and none is related to this
-  release: two Dojo tests need live terminal credentials, and two golden images
-  were rendered on a different machine from the one that ran them. The
-  functions-page golden is additionally stale on its own account — that page
-  gained a key and renamed another — and wants regenerating wherever the
-  goldens are owned.
-- 74 of the display's tests pass, with none failing.
+- **The back office suite is fully green.** It had one failure that was
+  reported for a while as pre-existing and unrelated — "the column that records
+  it accepts NULL", in the Apple Wallet tests. It was neither: it was the same
+  line-ending problem described below, and it went with it.
+- **Around 650 of the till's tests pass, with four stable failures**, none
+  related to this release: two Dojo tests need live terminal credentials, and
+  two golden images were rendered on a different machine from the one running
+  them. The functions-page golden is additionally stale on its own account —
+  that page gained a key and renamed another — and wants regenerating wherever
+  the goldens are owned.
+- **A handful of widget tests time out under load** and pass on their own, so
+  the exact pass count moves between runs (650, 652, 644 across three). Which
+  tests are affected changes each time — clock_punch, live_receipt_selection,
+  startup_repair have all appeared — and every one of them passes repeatedly in
+  isolation. It predates this work: the display's control_test did the same
+  thing before anything here was written. Worth chasing separately; it is not a
+  signal about the code under test.
+- 74 of the display's tests pass on a quiet machine.
+- **Line endings are settled repo-wide.** Every text file is LF in the
+  repository, Windows Git checks out CRLF by default, and several tests read
+  their own source — one looks for a line containing only a closing brace,
+  which under CRLF never matches. `npm test` stopped dead on a checkout where
+  nothing was wrong with the code. A `.gitattributes` now pins LF, which is why
+  the server suite passes for the first time.
 - **The pairing contract is now tested across both applications.** The till's
   `pairing_contract_test.dart` drives its real code and commits the files it
   writes to `docs/pairing-contract/`; the display's test of the same name reads

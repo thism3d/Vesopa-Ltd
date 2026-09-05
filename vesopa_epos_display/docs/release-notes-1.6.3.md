@@ -58,7 +58,12 @@ name reads those files with this application's real parser and pairing ladder.
 Putting the old application-data path back into the contract turns this side
 red — which is the check that was missing.
 
-74 of this application's tests pass; none fail.
+74 of this application's tests pass on a quiet machine. Two of them —
+`control_test`'s "a change from the till arrives once" and `display_test`'s
+"a truncated one leaves the last good bill on screen" — time out when the
+machine is busy and pass repeatedly on their own. Both are timing tests over a
+poll loop, both did it before any of this work, and neither is a signal about
+the code under test. Worth chasing separately.
 
 ---
 
