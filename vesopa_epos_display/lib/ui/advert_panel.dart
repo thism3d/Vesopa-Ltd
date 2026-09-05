@@ -23,7 +23,8 @@ class AdvertPanel extends StatefulWidget {
     required this.rotation,
     required this.dwell,
     this.volume = 0,
-    this.fillPanel = false,
+    this.fillPanel = true,
+    this.fillPanelVideo = true,
     this.standingMessage = '',
   });
 
@@ -45,6 +46,11 @@ class AdvertPanel extends StatefulWidget {
   /// cropping the phone number off the bottom to fill an awkward panel is
   /// worse than a letterbox.
   final bool fillPanel;
+
+  /// The same choice for clips, which is kept apart from the stills because
+  /// the material usually is: a promo video arrives cut to 16:9, while a
+  /// venue's photographs are whatever came off somebody's phone.
+  final bool fillPanelVideo;
 
   /// A line the venue sets, drawn across the bottom of the adverts.
   ///
@@ -275,7 +281,7 @@ class _AdvertPanelState extends State<AdvertPanel> {
         // button a customer will press.
         fill: Colors.black,
         controls: NoVideoControls,
-        fit: widget.fillPanel ? BoxFit.cover : BoxFit.contain,
+        fit: widget.fillPanelVideo ? BoxFit.cover : BoxFit.contain,
       );
     }
 
@@ -284,9 +290,10 @@ class _AdvertPanelState extends State<AdvertPanel> {
       child: Image.file(
         File(advert.path),
         key: ValueKey(advert.path),
-        // Contain, not cover. An advert is a designed thing with words on it,
-        // and cropping the words off to fill an awkward panel is worse than a
-        // black band down each side.
+        // Filling by default. A customer display is a poster, and a poster
+        // with grey bars down both sides reads as a broken screen rather than
+        // a careful one. A venue whose artwork has words near the edge can
+        // turn it off in Settings and get the whole frame back.
         fit: widget.fillPanel ? BoxFit.cover : BoxFit.contain,
         width: double.infinity,
         height: double.infinity,

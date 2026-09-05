@@ -32,6 +32,14 @@ dependencies:
   # this device - there is nothing here another machine needs to know.
   shared_preferences: ^2.5.5
 
+  # Choosing the advert folder by pointing at it.
+  #
+  # A manager setting a screen up should not be typing a path, and asking them
+  # to means the one they type is the one that has a space in it. The till
+  # already uses this package for the same job, so the two applications ask
+  # Windows for a folder in the same way.
+  file_selector: ^1.0.3
+
   # Money and clocks, formatted the way the till formats them.
   intl: ^0.20.3
 

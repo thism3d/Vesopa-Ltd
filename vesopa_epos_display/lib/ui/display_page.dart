@@ -89,6 +89,22 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
   Basket _basket = Basket.unknown;
   List<Advert> _adverts = const [];
 
+  /// A second loop, for the folder a venue plays beside a bill. Null whenever
+  /// the same adverts serve both, which is the ordinary setup.
+  AdvertLibrary? _saleLibrary;
+  StreamSubscription<List<Advert>>? _saleAdvertChanges;
+  List<Advert> _saleAdverts = const [];
+  final _saleRotation = AdvertRotation();
+
+  /// Whether the status panel is up, and the timer that takes it away.
+  ///
+  /// A customer display has no menu bar and nothing to press, so the way in has
+  /// to be the screen itself — but a settings cog sitting permanently over the
+  /// adverts is a button a customer will eventually press. Tapping anywhere
+  /// brings the panel up; it goes on its own after the venue's chosen delay.
+  bool _statusShowing = false;
+  Timer? _statusHide;
+
   /// When the basket last changed in a way the customer would notice. The idle
   /// countdown is measured from here.
   DateTime _lastChange = DateTime.now();
@@ -177,21 +193,27 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
     unawaited(_control?.dispose());
     unawaited(_baskets?.cancel());
     unawaited(_advertChanges?.cancel());
+    unawaited(_saleAdvertChanges?.cancel());
     unawaited(_feed?.dispose());
     unawaited(_library?.dispose());
+    unawaited(_saleLibrary?.dispose());
+    _statusHide?.cancel();
     super.dispose();
   }
 
   /// (Re)build the feed and the advert library for [settings].
   void _rewire(DisplaySettings settings) {
-    final signature = '$_basketPath|${settings.advertFolder}';
+    final signature = '$_basketPath|${settings.advertFolder}'
+        '|${settings.saleAdvertsSameFolder}|${settings.saleAdvertFolder}';
     if (_builtFor == signature) return;
     _builtFor = signature;
 
     unawaited(_baskets?.cancel());
     unawaited(_advertChanges?.cancel());
+    unawaited(_saleAdvertChanges?.cancel());
     unawaited(_feed?.dispose());
     unawaited(_library?.dispose());
+    unawaited(_saleLibrary?.dispose());
 
     final feed = BasketFeed(path: _basketPath);
     _feed = feed;
@@ -214,6 +236,22 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
     });
     library.start();
     _adverts = library.adverts;
+
+    // The second loop, only when the venue has actually asked for one. Playing
+    // the same folder twice would be two file watchers on one directory for no
+    // gain.
+    if (settings.saleAdvertsSameFolder) {
+      _saleLibrary = null;
+      _saleAdverts = const [];
+    } else {
+      final beside = AdvertLibrary(folder: settings.saleAdvertDirectory);
+      _saleLibrary = beside;
+      _saleAdvertChanges = beside.changes.listen((adverts) {
+        if (mounted) setState(() => _saleAdverts = adverts);
+      });
+      beside.start();
+      _saleAdverts = beside.adverts;
+    }
 
     // The till's end of the settings, in the same folder as the basket. Rebuilt
     // with the feed because it is derived from the same path — see
@@ -267,6 +305,23 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
         ),
       );
     }
+  }
+
+  /// Put the status panel up, and arrange for it to go again.
+  ///
+  /// Zero seconds means the venue wants it to stay, which is what somebody
+  /// setting a screen up while standing at it wants. Every other value is a
+  /// customer-facing screen, so it takes itself away.
+  void _revealStatus() {
+    final settings = ref.read(displaySettingsProvider).value;
+    _statusHide?.cancel();
+    setState(() => _statusShowing = true);
+
+    final after = settings?.statusHideAfter;
+    if (after == null) return;
+    _statusHide = Timer(after, () {
+      if (mounted) setState(() => _statusShowing = false);
+    });
   }
 
   /// Whether the adverts should have the whole screen.
@@ -323,8 +378,25 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
       dwell: settings.dwell,
       volume: settings.advertVolume,
       fillPanel: settings.fillScreen,
+      fillPanelVideo: settings.fillScreenVideo,
       standingMessage: settings.standingMessage,
     );
+
+    // What plays beside a bill. The same loop unless the venue has chosen a
+    // second folder — and its own rotation either way, so the poster the idle
+    // screen was on is still there when the sale finishes rather than having
+    // been advanced by whatever played next to the bill.
+    final besideTheBill = settings.saleAdvertsSameFolder
+        ? adverts
+        : AdvertPanel(
+            adverts: _saleAdverts,
+            rotation: _saleRotation,
+            dwell: settings.dwell,
+            volume: settings.advertVolume,
+            fillPanel: settings.fillScreen,
+            fillPanelVideo: settings.fillScreenVideo,
+            standingMessage: settings.standingMessage,
+          );
 
     return Scaffold(
       body: Stack(
@@ -353,7 +425,7 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
 
                       final panels = <Widget>[
                         Expanded(flex: billFlex, child: bill),
-                        Expanded(flex: advertFlex, child: adverts),
+                        Expanded(flex: advertFlex, child: besideTheBill),
                       ];
                       if (settings.billOnRight) {
                         panels.insert(0, panels.removeLast());
@@ -390,55 +462,48 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
                   ),
           ),
 
-          // The way back to Settings, on a screen with no menu bar and nothing
-          // else to press. Deliberately small and in a corner a customer does
-          // not look at, and deliberately present: a display that cannot be
-          // reconfigured without a keyboard is one that gets unplugged.
-          Positioned(
-            top: 0,
-            right: 0,
-            child: SafeArea(
-              child: Opacity(
-                opacity: 0.25,
-                child: IconButton(
-                  icon: const Icon(Icons.settings, color: Brand.ink),
-                  tooltip: 'Settings',
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => const SettingsPage(),
-                    ),
-                  ),
-                ),
-              ),
+          // Nothing at all over the adverts until somebody asks for it.
+          //
+          // A customer display has no menu bar, so the way in has to be the
+          // screen itself — but a settings cog sitting permanently in the
+          // corner is a button a customer eventually presses, and a status line
+          // permanently along the bottom is chrome on what is meant to be a
+          // poster. So a tap anywhere brings both up together, and they leave
+          // on their own after the delay the venue chose.
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: _revealStatus,
+              // Absorbs nothing when the panel is up, so the buttons on it are
+              // reachable; the panel itself sits above this in the stack.
+              child: const SizedBox.expand(),
             ),
           ),
 
-          // Said quietly, and only when it is true for long enough to matter.
-          // A till that has been switched off at the end of the night should
-          // not put an error over the adverts.
-          //
-          // WHY THIS ASKS THE TILL AND NOT THE BASKET
-          //
-          // It used to read the basket file's age, and that answered a
-          // different question from the one being asked. The till writes the
-          // basket only when the screen would change — `publish` returns early
-          // when the new snapshot draws the same thing as the last — so a till
-          // that is switched on, signed in and simply between customers writes
-          // nothing at all. Ten minutes of that and a working till was
-          // announced to the customer as missing. A quiet counter is the normal
-          // state of most counters for most of the day.
-          //
-          // The till already says it is alive somewhere else: it rewrites its
-          // presence file every few seconds, which is what the pairing handshake
-          // has always watched. That is the honest source for "is the till
-          // there", and it is what the badge reads now. The basket's age is
-          // still the right question for "what is on the bill" and is left to
-          // answer it.
-          if (!(pairing.till?.isRunning ?? false))
-            const Positioned(
-              left: 12,
-              bottom: 12,
-              child: _StaleBadge(),
+          if (_statusShowing)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: _StatusPanel(
+                pairing: pairing,
+                adverts: _adverts.length,
+                onSettings: () {
+                  _statusHide?.cancel();
+                  setState(() => _statusShowing = false);
+                  unawaited(
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const SettingsPage(),
+                      ),
+                    ),
+                  );
+                },
+                onDismiss: () {
+                  _statusHide?.cancel();
+                  setState(() => _statusShowing = false);
+                },
+              ),
             ),
         ],
       ),
@@ -446,24 +511,99 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
   }
 }
 
-class _StaleBadge extends StatelessWidget {
-  const _StaleBadge();
+/// What the screen says about itself when somebody taps it.
+///
+/// Everything a person standing at this display needs and nothing a customer
+/// needs: whether it is connected and to what, how many adverts it is playing,
+/// and the way into Settings. It replaced a permanent cog in the corner and a
+/// permanent "Waiting for the till" along the bottom — one of which a customer
+/// would press and the other of which was usually wrong.
+///
+/// The file path is deliberately not here. It was, and it told the person
+/// reading it nothing they could act on: a display either follows its till or
+/// it does not, and if it does not, the answer is to connect it rather than to
+/// read a path back to somebody. Connected means connected.
+class _StatusPanel extends StatelessWidget {
+  const _StatusPanel({
+    required this.pairing,
+    required this.adverts,
+    required this.onSettings,
+    required this.onDismiss,
+  });
+
+  final PairingState pairing;
+  final int adverts;
+  final VoidCallback onSettings;
+  final VoidCallback onDismiss;
 
   @override
-  Widget build(BuildContext context) => Opacity(
-    opacity: 0.5,
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: Brand.panelSoft,
-        borderRadius: BorderRadius.circular(6),
+  Widget build(BuildContext context) {
+    final till = pairing.till;
+    final connected = till?.isRunning ?? false;
+    final name = pairing.pairing?.terminalName ?? till?.terminalName ?? '';
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Material(
+          color: Brand.panelSoft,
+          borderRadius: BorderRadius.circular(14),
+          elevation: 8,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 10, 12),
+            child: Row(
+              children: [
+                Icon(
+                  connected ? Icons.link : Icons.link_off,
+                  size: 20,
+                  color: connected ? Brand.lime : Brand.inkSoft,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        connected
+                            ? (name.isEmpty ? 'Connected' : 'Connected to $name')
+                            : 'The till is not running',
+                        style: const TextStyle(
+                          color: Brand.ink,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        adverts == 0
+                            ? 'No adverts chosen'
+                            : '$adverts advert${adverts == 1 ? '' : 's'} playing',
+                        style: const TextStyle(
+                          color: Brand.inkSoft,
+                          fontSize: 12.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: onSettings,
+                  icon: const Icon(Icons.tune, size: 18),
+                  label: const Text('Settings'),
+                ),
+                IconButton(
+                  tooltip: 'Hide',
+                  onPressed: onDismiss,
+                  icon: const Icon(Icons.close, size: 18, color: Brand.inkSoft),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
-      child: const Text(
-        'Waiting for the till',
-        style: TextStyle(fontSize: 12, color: Brand.inkSoft),
-      ),
-    ),
-  );
+    );
+  }
 }
 
 /// A screen that has been mounted and switched on and not yet connected.

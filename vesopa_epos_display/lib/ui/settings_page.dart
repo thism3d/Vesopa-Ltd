@@ -18,6 +18,7 @@ import '../data/control.dart';
 import '../data/pairing.dart';
 import '../data/screens.dart';
 import '../data/settings.dart';
+import 'settings_controls.dart';
 import 'theme.dart';
 
 class SettingsPage extends ConsumerStatefulWidget {
@@ -28,13 +29,22 @@ class SettingsPage extends ConsumerStatefulWidget {
 }
 
 class _SettingsPageState extends ConsumerState<SettingsPage> {
-  final _adverts = TextEditingController();
   final _name = TextEditingController();
   final _thanks = TextEditingController();
   int _idle = 45;
   int _dwell = 12;
   bool _prices = true;
   bool _loaded = false;
+
+  /// The advert folder as a value rather than as typed text: it is chosen from
+  /// a picker now, so there is nothing to edit and nothing to mistype.
+  String _advertFolder = '';
+  String _saleAdvertFolder = '';
+  bool _saleSameFolder = true;
+  bool _fillPictures = true;
+  bool _fillVideos = true;
+  int _volume = 0;
+  int _statusHide = 10;
 
   String _screenKey = '';
   bool _fullScreen = true;
@@ -75,7 +85,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
   @override
   void dispose() {
-    _adverts.dispose();
     _name.dispose();
     _thanks.dispose();
     super.dispose();
@@ -84,7 +93,13 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   void _fill(DisplaySettings settings) {
     if (_loaded) return;
     _loaded = true;
-    _adverts.text = settings.advertFolder;
+    _advertFolder = settings.advertFolder;
+    _saleAdvertFolder = settings.saleAdvertFolder;
+    _saleSameFolder = settings.saleAdvertsSameFolder;
+    _fillPictures = settings.fillScreen;
+    _fillVideos = settings.fillScreenVideo;
+    _volume = settings.advertVolume;
+    _statusHide = settings.statusHideSeconds;
     unawaited(
       ref.read(pairingProvider.notifier).name().then((name) {
         if (mounted && _name.text.isEmpty) _name.text = name;
@@ -143,7 +158,13 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final current = ref.read(displaySettingsProvider).value ?? const DisplaySettings();
     await ref.read(displaySettingsProvider.notifier).save(
       current.copyWith(
-        advertFolder: _adverts.text.trim(),
+        advertFolder: _advertFolder.trim(),
+        saleAdvertFolder: _saleAdvertFolder.trim(),
+        saleAdvertsSameFolder: _saleSameFolder,
+        fillScreen: _fillPictures,
+        fillScreenVideo: _fillVideos,
+        advertVolume: _volume,
+        statusHideSeconds: _statusHide,
         idleSeconds: _idle,
         dwellSeconds: _dwell,
         showPrices: _prices,
@@ -190,29 +211,33 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             'anything.';
 
       case PairingStage.paired:
-        final path = pairing.basketPath;
+        // Connected means connected, and that is the whole of what this says.
+        //
+        // It used to print the basket file's path and how long ago the till
+        // had written it. Neither was something anybody could act on. The path
+        // is the till's business and this screen no longer works it out for
+        // itself; and "last written 34 minutes ago" reads as a fault when it is
+        // an ordinary quiet afternoon — the till writes the basket only when
+        // the bill changes, so a counter between customers writes nothing.
+        //
+        // Whether the till is *there* is a different question with a different
+        // answer: the presence file, rewritten every few seconds, which is what
+        // this reports instead.
         final connected = 'Connected to ${pairing.pairing!.terminalName}'
             '${pairing.pairing!.venueName.isEmpty ? '' : ' at '
                 '${pairing.pairing!.venueName}'}.';
 
-        final file = File(path);
-        if (!file.existsSync()) {
-          return '$connected\n$path\n\nNothing there yet. The till writes it '
-              'when it opens a bill, so this is normal before the first sale '
-              'of the day.';
-        }
-
-        final age = DateTime.now().difference(file.lastModifiedSync());
-        if (age.inMinutes < 2) {
-          return '$connected\n$path\n\nThe till is writing to it now.';
-        }
-        return '$connected\n$path\n\nLast written ${_ago(age)} ago.';
+        return (pairing.till?.isRunning ?? false)
+            ? '$connected\n\nThe till is running.'
+            : '$connected\n\nThe till is not running at the moment. This screen '
+                  'stays connected and picks the bill up again as soon as it '
+                  'starts.';
     }
   }
 
   /// How many adverts the chosen folder actually has.
   String _advertState() {
-    final path = _adverts.text.trim();
+    final path = _advertFolder.trim();
     if (path.isEmpty) {
       return 'No folder chosen, so the screen will show the Vesopa card '
           'instead of adverts.';
@@ -230,11 +255,21 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         'order, so name them 01, 02, 03 to set the order.';
   }
 
-  static String _ago(Duration d) {
-    if (d.inHours >= 24) return '${d.inDays} day${d.inDays == 1 ? '' : 's'}';
-    if (d.inHours >= 1) return '${d.inHours} hour${d.inHours == 1 ? '' : 's'}';
-    return '${d.inMinutes} minute${d.inMinutes == 1 ? '' : 's'}';
+  /// The same count, for the folder that plays beside a bill.
+  String _saleAdvertState() {
+    final path = _saleAdvertFolder.trim();
+    if (path.isEmpty) {
+      return 'No folder chosen, so the adverts above play beside the bill too.';
+    }
+    final found = advertsIn(Directory(path));
+    if (found.isEmpty) {
+      return 'Nothing here this screen can draw yet.';
+    }
+    final videos = found.where((a) => a.kind == AdvertKind.video).length;
+    return '${found.length} advert${found.length == 1 ? '' : 's'} found'
+        '${videos == 0 ? '' : ', $videos of them video'}.';
   }
+
 
   /// Ask before quitting.
   ///
@@ -311,6 +346,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             children: [
               _Section(
                 title: 'The till',
+                  icon: Icons.point_of_sale,
                 blurb:
                     'This screen is connected to a till by pairing the two '
                     'applications, not by pointing at a folder. Whoever is at '
@@ -351,6 +387,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               if (_tillOwnsSettings)
                 _Section(
                   title: 'Set up on the till',
+                  icon: Icons.settings_remote,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: const [
@@ -373,6 +410,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               if (!_tillOwnsSettings)
                 _Section(
                   title: 'Which screen',
+                  icon: Icons.desktop_windows,
                 blurb:
                     'The till and this display are two windows on one PC. This '
                     'is the monitor the customer can see — choosing it moves '
@@ -397,42 +435,125 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               if (!_tillOwnsSettings)
                 _Section(
                   title: 'Adverts',
-                blurb:
-                    'A folder on this machine. Drop pictures or clips into it '
-                    'and they appear here — nothing needs restarting.',
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    TextField(
-                      controller: _adverts,
-                      onChanged: (_) => setState(() {}),
-                      style: const TextStyle(fontFamily: 'Consolas'),
-                      decoration: const InputDecoration(
-                        labelText: 'Advert folder',
-                        hintText: r'D:\Vesopa\Adverts',
+                  icon: Icons.slideshow,
+                  blurb:
+                      'A folder on this machine. Drop pictures or clips into '
+                      'it and they appear here — nothing needs restarting.',
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      FolderField(
+                        label: 'Advert folder',
+                        path: _advertFolder,
+                        note: _advertState(),
+                        onPicked: (path) =>
+                            setState(() => _advertFolder = path),
+                        onCleared: () => setState(() => _advertFolder = ''),
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    _Note(_advertState()),
-                    const SizedBox(height: 18),
-                    _Slider(
-                      label: 'Each picture stays up for',
-                      value: _dwell.toDouble(),
-                      min: 3,
-                      max: 60,
-                      suffix: '$_dwell seconds',
-                      onChanged: (v) => setState(() => _dwell = v.round()),
-                    ),
-                    const _Note(
-                      'A clip always plays to its end, whatever this says.',
-                    ),
-                  ],
+                      const SizedBox(height: 20),
+                      FitChoice(
+                        label: 'Pictures',
+                        fill: _fillPictures,
+                        onChanged: (v) => setState(() => _fillPictures = v),
+                      ),
+                      const SizedBox(height: 10),
+                      FitChoice(
+                        label: 'Clips',
+                        fill: _fillVideos,
+                        onChanged: (v) => setState(() => _fillVideos = v),
+                      ),
+                      const SizedBox(height: 8),
+                      const _Note(
+                        'Fill uses the whole screen and crops whatever will '
+                        'not fit, which is what a customer display usually '
+                        'wants. Fit shows the whole picture with bars around '
+                        'it, for artwork with words near the edge.',
+                      ),
+                      const SizedBox(height: 18),
+                      VolumeControl(
+                        volume: _volume,
+                        onChanged: (v) => setState(() => _volume = v),
+                      ),
+                      const SizedBox(height: 18),
+                      _Slider(
+                        label: 'Each picture stays up for',
+                        value: _dwell.toDouble(),
+                        min: 3,
+                        max: 60,
+                        suffix: '$_dwell seconds',
+                        onChanged: (v) => setState(() => _dwell = v.round()),
+                      ),
+                      const _Note(
+                        'A clip always plays to its end, whatever this says.',
+                      ),
+                    ],
+                  ),
+                ),
+
+              // The second folder, and the switch that reveals it.
+              //
+              // A venue whose idle screen is selling the room — the Sunday
+              // roast, the function suite — may want something quieter beside
+              // a bill somebody is reading their prices off. Off by default,
+              // because one folder is the ordinary answer and a second one
+              // offered to everybody is a setting most venues would have to
+              // think about and then decline.
+              if (!_tillOwnsSettings)
+                _Section(
+                  title: 'While a bill is on screen',
+                  icon: Icons.vertical_split,
+                  blurb:
+                      'With a sale up, the adverts share the screen with the '
+                      'bill. They can be the same ones, or a set of their own.',
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Use the same adverts'),
+                        subtitle: Text(
+                          _saleSameFolder
+                              ? 'One folder, playing whether or not there is a '
+                                    'sale on screen.'
+                              : 'A separate folder plays beside a bill.',
+                        ),
+                        value: _saleSameFolder,
+                        onChanged: (v) => setState(() => _saleSameFolder = v),
+                      ),
+                      if (!_saleSameFolder) ...[
+                        const SizedBox(height: 14),
+                        FolderField(
+                          label: 'Folder to play beside a bill',
+                          path: _saleAdvertFolder,
+                          note: _saleAdvertState(),
+                          onPicked: (path) =>
+                              setState(() => _saleAdvertFolder = path),
+                          onCleared: () =>
+                              setState(() => _saleAdvertFolder = ''),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+
+              // The panel that a tap brings up, and how long it lingers.
+              _Section(
+                title: 'The status panel',
+                icon: Icons.touch_app,
+                blurb:
+                    'There is nothing over the adverts until somebody taps the '
+                    'screen. A tap brings up what this screen is connected to, '
+                    'and the way into these settings.',
+                child: HideAfterChoice(
+                  seconds: _statusHide,
+                  onChanged: (v) => setState(() => _statusHide = v),
                 ),
               ),
 
               if (!_tillOwnsSettings)
                 _Section(
                   title: 'When the till goes quiet',
+                  icon: Icons.hourglass_bottom,
                 blurb:
                     'With a bill on screen and nothing rung up for this long, '
                     'the adverts take the whole screen. The bill comes straight '
@@ -461,6 +582,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               if (!_tillOwnsSettings)
                 _Section(
                   title: 'What the customer reads',
+                  icon: Icons.receipt_long,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -638,7 +760,16 @@ class _ScreenChooser extends StatelessWidget {
 }
 
 class _Section extends StatelessWidget {
-  const _Section({required this.title, required this.child, this.blurb});
+  const _Section({
+    required this.title,
+    required this.child,
+    this.blurb,
+    this.icon,
+  });
+
+  /// Drawn beside the heading. Sections are found by scanning down a long
+  /// page, and a shape is quicker to scan for than a word.
+  final IconData? icon;
 
   final String title;
   final String? blurb;
@@ -656,13 +787,23 @@ class _Section extends StatelessWidget {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          title,
-          style: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-            color: Brand.ink,
-          ),
+        Row(
+          children: [
+            if (icon != null) ...[
+              Icon(icon, size: 20, color: Brand.lime),
+              const SizedBox(width: 10),
+            ],
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: Brand.ink,
+                ),
+              ),
+            ),
+          ],
         ),
         if (blurb != null) ...[
           const SizedBox(height: 6),

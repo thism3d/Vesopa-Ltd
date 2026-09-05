@@ -306,4 +306,48 @@ void main() {
       isNot(PairingIdentity.codeFor('bbbbbbbbbbbbbbbb')),
     );
   });
+
+  // The heartbeat that the publish guard used to swallow.
+  //
+  // A presence file rewritten every few seconds must not rebuild the tree, so
+  // the notifier only republishes when something a screen would draw has
+  // changed. Whether the till is *running* turned out to be one of those
+  // things: suppressing the republish kept the old presence record, timestamp
+  // and all, so anything reading `till.isRunning` was consulting a clock frozen
+  // at the last publish and got false twenty seconds later however fresh the
+  // file was. The status panel announced a working till as not running.
+  test('a presence that has gone stale is not still reported as running', () {
+    final live = TillPresence(
+      terminalName: 'Bar',
+      venueName: 'The Bridge',
+      appVersion: '1.6.3',
+      signedIn: true,
+      at: DateTime.now(),
+    );
+    expect(live.isRunning, isTrue);
+
+    // The same record, read back later without the file having been re-read.
+    // This is precisely what a suppressed republish leaves in the state.
+    final frozen = TillPresence(
+      terminalName: live.terminalName,
+      venueName: live.venueName,
+      appVersion: live.appVersion,
+      signedIn: live.signedIn,
+      at: DateTime.now().subtract(tillPresenceTtl * 2),
+    );
+    expect(
+      frozen.isRunning,
+      isFalse,
+      reason: 'a record this old is not evidence the till is there',
+    );
+
+    // So liveness has to be compared, not carried: two records that differ only
+    // in age are a change the screen must be told about.
+    expect(
+      live.isRunning == frozen.isRunning,
+      isFalse,
+      reason: 'the publish guard has to notice this pair differ',
+    );
+  });
+
 }

@@ -675,11 +675,24 @@ class PairingController extends AsyncNotifier<PairingState> {
     // re-written by the till with the same path in it must not rebuild the feed
     // and restart a playing advert, and a presence file rewritten every five
     // seconds must not rebuild anything at all.
+    //
+    // Whether the till is *running* is part of "something a screen would draw",
+    // and it caught this rule out. Suppressing the republish keeps the old
+    // presence record in the published state, timestamp and all — so anything
+    // asking `till.isRunning` was reading a clock frozen at the last publish,
+    // and got `false` twenty seconds later however fresh the file on disk was.
+    // The status panel duly announced a working till as not running.
+    //
+    // Comparing the liveness rather than the timestamp keeps the original
+    // intent: this flips only when the till actually goes away or comes back,
+    // not on every heartbeat. The advert loop is unaffected either way — the
+    // feed and the library are rebuilt from their own signature, not from this.
     if (next.stage != current.stage ||
         next.basketPath != current.basketPath ||
         next.pairing?.terminalName != current.pairing?.terminalName ||
         next.till?.terminalName != current.till?.terminalName ||
-        next.till?.signedIn != current.till?.signedIn) {
+        next.till?.signedIn != current.till?.signedIn ||
+        (next.till?.isRunning ?? false) != (current.till?.isRunning ?? false)) {
       state = AsyncData(next.copyWith(justConnected: false));
     }
   }
