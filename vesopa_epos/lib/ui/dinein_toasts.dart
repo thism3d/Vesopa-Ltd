@@ -31,11 +31,11 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/dinein_orders.dart';
 import '../data/order_alerts.dart';
-import '../main.dart';
 import 'dinein_actions.dart';
 import 'dinein_sheet.dart' show showDineInOrders;
 import 'theme.dart';
@@ -94,6 +94,35 @@ class _ToastStackState extends ConsumerState<_ToastStack> {
   /// Orders being acted on, so a second press cannot start a second accept.
   final _busy = <int>{};
 
+  /// Every order this terminal has already announced.
+  ///
+  /// So the chime sounds once, when an order arrives, and not again on every
+  /// thirty-second refresh that finds it still sitting there. Kept for the life
+  /// of the shell, which is the life of the till.
+  final _announced = <int>{};
+
+  /// Make the noise, once, for anything new.
+  ///
+  /// The system alert rather than a sound of our own: it is what this machine
+  /// already uses for everything else, the venue has already set its volume in
+  /// Windows, and it needs no audio package and no asset to ship.
+  void _chimeForNew(List<DineInOrder> waiting) {
+    final fresh = [
+      for (final order in waiting)
+        if (!_announced.contains(order.id)) order.id,
+    ];
+    if (fresh.isEmpty) return;
+
+    final first = _announced.isEmpty;
+    _announced.addAll(fresh);
+
+    // Not on the first read after a restart. A till started at nine in the
+    // morning with four orders already waiting should not open with four
+    // chimes, none of which just happened.
+    if (first || !ref.read(orderChimeProvider)) return;
+    unawaited(SystemSound.play(SystemSoundType.alert));
+  }
+
   @override
   Widget build(BuildContext context) {
     final orders = ref.watch(dineInOrdersProvider).value ?? const <DineInOrder>[];
@@ -102,6 +131,7 @@ class _ToastStackState extends ConsumerState<_ToastStack> {
         if (order.isWaiting && !_setAside.contains(order.id)) order,
     ]..sort((a, b) => b.placedAt.compareTo(a.placedAt));
 
+    _chimeForNew(waiting);
     if (waiting.isEmpty) return const SizedBox.shrink();
 
     final shown = waiting.take(_maxVisible).toList();

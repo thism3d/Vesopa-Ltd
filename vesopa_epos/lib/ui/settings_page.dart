@@ -205,6 +205,27 @@ class SettingsPage extends ConsumerWidget {
                   style: TextStyle(fontSize: 12.5),
                 ),
                 const SizedBox(height: 6),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: ref.watch(orderChimeProvider),
+                  title: const Text('Make a sound when one arrives'),
+                  subtitle: const Text(
+                    'The same alert Windows uses for everything else, so its '
+                    'volume is already set. Worth leaving on even where nothing '
+                    'is shown — somebody in the kitchen can listen for it '
+                    'without watching a screen.',
+                    style: TextStyle(fontSize: 12.5),
+                  ),
+                  secondary: Icon(
+                    ref.watch(orderChimeProvider)
+                        ? Icons.notifications_active_outlined
+                        : Icons.notifications_off_outlined,
+                  ),
+                  onChanged: (on) => unawaited(
+                    ref.read(orderChimeProvider.notifier).set(on: on),
+                  ),
+                ),
+                const Divider(height: 24),
                 for (final option in OrderAlerts.values)
                   RadioListTile<OrderAlerts>(
                     contentPadding: EdgeInsets.zero,

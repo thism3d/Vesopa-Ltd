@@ -66,6 +66,55 @@ enum OrderAlerts {
 }
 
 const _key = 'till.order_alerts';
+const _keyChime = 'till.order_chime';
+
+/// Whether an arriving order makes a noise.
+///
+/// Separate from *where* it appears, because they answer different questions. A
+/// till that shows notifications may still want to be silent — a quiet dining
+/// room, a counter with a queue at it — and a till set to show nothing at all
+/// may still want the chime, because somebody in the kitchen is listening for
+/// it rather than watching.
+///
+/// The system alert rather than a sound of our own: it is the noise this
+/// machine already makes for everything else, it is the one the venue has
+/// already set the volume of in Windows, and it needs no audio package and no
+/// asset to ship.
+class OrderChimeController extends Notifier<bool> {
+  SharedPreferences? _prefs;
+
+  @override
+  bool build() {
+    unawaited(_load());
+    return true;
+  }
+
+  Future<void> _load() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _prefs = prefs;
+      state = prefs.getBool(_keyChime) ?? true;
+    } catch (_) {
+      // Default on. A till that cannot read its preferences still tells
+      // somebody an order has arrived.
+    }
+  }
+
+  Future<void> set({required bool on}) async {
+    state = on;
+    try {
+      final prefs = _prefs ?? await SharedPreferences.getInstance();
+      _prefs = prefs;
+      await prefs.setBool(_keyChime, on);
+    } catch (_) {
+      // Applied for this session, which is what the person who pressed it sees.
+    }
+  }
+}
+
+final orderChimeProvider = NotifierProvider<OrderChimeController, bool>(
+  OrderChimeController.new,
+);
 
 /// Reads once at start, writes on change. Small enough that there is no reason
 /// for it to be asynchronous at every call site.
