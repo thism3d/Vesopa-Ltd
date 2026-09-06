@@ -1211,6 +1211,10 @@ function dineinRoutes({ pool, broadcast, secret }) {
         });
       }
 
+      // Signed in or not. A guest order is the ordinary case and carries null.
+      const who = dinerOf(req);
+      const dinerId = who && who.office === table.office_id ? who.id : null;
+
       const body = req.body || {};
       const name = String(body.name || '').trim().slice(0, 120);
       const phone = String(body.phone || '').trim().slice(0, 40);
@@ -1282,8 +1286,8 @@ function dineinRoutes({ pool, broadcast, secret }) {
       const [order] = await conn.execute(
         'INSERT INTO dinein_orders' +
           ' (public_id, office_id, table_id, table_label, customer_name,' +
-          '  customer_phone, note, status, total_minor)' +
-          ' VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          '  customer_phone, note, status, diner_id, total_minor)' +
+          ' VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         [
           publicId,
           table.office_id,
@@ -1293,6 +1297,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
           phone || null,
           String(body.note || '').trim().slice(0, 500) || null,
           'placed',
+          dinerId,
           total,
         ]
       );
@@ -1323,6 +1328,8 @@ function dineinRoutes({ pool, broadcast, secret }) {
       res.status(201).json({
         ok: true,
         public_id: publicId,
+        // The number the tracker shows and the customer says across a bar.
+        number: order.insertId,
         total_minor: total,
         status: 'placed',
       });
@@ -1335,6 +1342,181 @@ function dineinRoutes({ pool, broadcast, secret }) {
   });
 
   /** Where an order has got to, for the customer watching their own phone. */
+  // =========================================================================
+  // OPTIONAL ACCOUNTS
+  // =========================================================================
+  //
+  // Ordering as a guest is the default and stays the default. Somebody sitting
+  // at a table with a plate coming is not going to make an account first, and
+  // asking them to is how a QR menu gets abandoned halfway through a basket.
+  //
+  // An account buys exactly one thing: the orders you have placed, on whatever
+  // phone you are holding. Everything else works identically without one.
+  //
+  // Scoped per venue, like every other table in this system. A single
+  // platform-wide identity would put one venue's customer list within reach of
+  // a bug in another venue's code path, and the venues are separate businesses.
+
+  const DINER_DAYS = 90;
+
+  /** The office behind a slug, or null. */
+  async function officeForSlug(slug) {
+    const [[row]] = await pool.query(
+      'SELECT office_id FROM dinein_venue WHERE slug = ? AND is_published = 1',
+      [cleanSlug(slug)]
+    );
+    return row ? row.office_id : null;
+  }
+
+  /** The office behind a table's printed code, or null. */
+  async function officeForTable(publicId) {
+    const [[row]] = await pool.query(
+      'SELECT office_id FROM floor_tables WHERE public_id = ?',
+      [String(publicId || '')]
+    );
+    return row ? row.office_id : null;
+  }
+
+  function dinerToken(diner) {
+    return jwt.sign(
+      { scope: 'diner', diner: diner.id, office: diner.office_id },
+      secret,
+      { expiresIn: DINER_DAYS + 'd' }
+    );
+  }
+
+  /**
+   * Who is asking, if anybody.
+   *
+   * Never throws and never refuses: an expired or malformed token means a
+   * guest, not an error. A customer whose token has aged out mid-meal should
+   * be able to keep ordering, not be shown a login wall between them and their
+   * chips.
+   */
+  function dinerOf(req) {
+    const header = String(req.headers.authorization || '');
+    if (!header.startsWith('Bearer ')) return null;
+    try {
+      const claims = jwt.verify(header.slice(7), secret);
+      if (claims.scope !== 'diner') return null;
+      return { id: Number(claims.diner), office: Number(claims.office) };
+    } catch {
+      return null;
+    }
+  }
+
+  const EMAIL = /^[^@\s]+@[^@\s.]+\.[^@\s]+$/;
+
+  router.post('/api/public/dinein/account/register', async (req, res, next) => {
+    try {
+      const body = req.body || {};
+      const officeId = body.table
+        ? await officeForTable(body.table)
+        : await officeForSlug(body.slug);
+      if (officeId == null) {
+        return res.status(404).json({ error: 'No venue at that address.' });
+      }
+
+      const email = String(body.email || '').trim().toLowerCase().slice(0, 190);
+      const password = String(body.password || '');
+      if (!EMAIL.test(email)) {
+        return res.status(400).json({ error: 'That does not look like an email address.' });
+      }
+      // Length, and nothing else. Composition rules push people towards
+      // Passw0rd! and away from three words they will remember.
+      if (password.length < 8) {
+        return res.status(400).json({ error: 'Use at least eight characters.' });
+      }
+
+      const [[existing]] = await pool.query(
+        'SELECT id FROM dinein_diners WHERE office_id = ? AND email = ?',
+        [officeId, email]
+      );
+      if (existing) {
+        return res.status(409).json({
+          error: 'There is already an account with that address here. Sign in instead.',
+        });
+      }
+
+      const hash = await bcrypt.hash(password, 10);
+      const [r] = await pool.execute(
+        'INSERT INTO dinein_diners (office_id, email, pass_hash, name, phone, last_seen)' +
+          ' VALUES (?, ?, ?, ?, ?, NOW())',
+        [
+          officeId, email, hash,
+          String(body.name || '').trim().slice(0, 120) || null,
+          String(body.phone || '').trim().slice(0, 40) || null,
+        ]
+      );
+      const diner = { id: r.insertId, office_id: officeId };
+      res.json({
+        ok: true,
+        token: dinerToken(diner),
+        account: { email, name: body.name || null, phone: body.phone || null },
+      });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.post('/api/public/dinein/account/login', async (req, res, next) => {
+    try {
+      const body = req.body || {};
+      const officeId = body.table
+        ? await officeForTable(body.table)
+        : await officeForSlug(body.slug);
+      if (officeId == null) {
+        return res.status(404).json({ error: 'No venue at that address.' });
+      }
+
+      const email = String(body.email || '').trim().toLowerCase();
+      const [[diner]] = await pool.query(
+        'SELECT * FROM dinein_diners WHERE office_id = ? AND email = ?',
+        [officeId, email]
+      );
+
+      // The same answer either way. Telling somebody an address is not
+      // registered here tells anybody who asks which of a venue's customers
+      // have accounts.
+      const wrong = { error: 'That email and password do not match.' };
+      if (!diner) {
+        // Still spend the time, so that a missing account is not detectably
+        // faster than a wrong password.
+        await bcrypt.compare(String(body.password || ''), '$2a$10$' + 'x'.repeat(53));
+        return res.status(401).json(wrong);
+      }
+      const ok = await bcrypt.compare(String(body.password || ''), diner.pass_hash);
+      if (!ok) return res.status(401).json(wrong);
+
+      await pool.execute('UPDATE dinein_diners SET last_seen = NOW() WHERE id = ?', [diner.id]);
+      res.json({
+        ok: true,
+        token: dinerToken(diner),
+        account: { email: diner.email, name: diner.name, phone: diner.phone },
+      });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /** Everything this account has ordered here, newest first. */
+  router.get('/api/public/dinein/account/orders', async (req, res, next) => {
+    try {
+      const who = dinerOf(req);
+      if (!who) return res.status(401).json({ error: 'Sign in to see your orders.' });
+      const [rows] = await pool.query(
+        'SELECT id AS number, public_id, table_label, status, total_minor, placed_at' +
+          '  FROM dinein_orders' +
+          ' WHERE diner_id = ? AND office_id = ?' +
+          ' ORDER BY placed_at DESC LIMIT 50',
+        [who.id, who.office]
+      );
+      res.json({ orders: rows });
+    } catch (e) {
+      next(e);
+    }
+  });
+
   router.get('/api/public/dinein/order/:publicId', async (req, res, next) => {
     try {
       const [[order]] = await pool.query(

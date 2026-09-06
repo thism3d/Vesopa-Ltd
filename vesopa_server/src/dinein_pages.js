@@ -628,6 +628,85 @@ button{font:inherit;cursor:pointer}
   .tk-state.done .ring svg path{stroke-dashoffset:0}
 }
 
+/* THE ACCOUNT STRIP, and the sheets it opens. */
+.who{
+  position:absolute;top:calc(env(safe-area-inset-top,0px) + 10px);right:12px;
+  z-index:6;display:flex;gap:8px
+}
+.who button{
+  border:0;border-radius:999px;cursor:pointer;
+  background:rgba(0,0,0,.42);color:#fff;
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+  display:inline-flex;align-items:center;gap:7px;
+  padding:9px 14px;font-size:13px;font-weight:600;
+  transition:background .15s ease,transform .12s ease
+}
+.who button:active{transform:scale(.96)}
+.who svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.9;
+         stroke-linecap:round;stroke-linejoin:round}
+
+/* A sheet with a head: a title, and a way out that looks like a way out. */
+.pop .sheet.tall{max-height:82vh;display:flex;flex-direction:column;padding-top:14px}
+.pop .sheethead{
+  display:flex;align-items:center;gap:10px;margin:0 0 14px;flex:0 0 auto
+}
+.pop .sheethead h3{margin:0;flex:1;font-size:18px}
+.pop .icobtn{
+  width:38px;height:38px;border-radius:999px;border:0;flex:0 0 auto;
+  background:var(--sunken);color:var(--ink);cursor:pointer;
+  display:grid;place-items:center;transition:transform .12s ease
+}
+.pop .icobtn:active{transform:scale(.92)}
+.pop .icobtn svg{width:19px;height:19px;stroke:currentColor;fill:none;
+                 stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.pop .sheetbody{overflow:auto;-webkit-overflow-scrolling:touch;flex:1 1 auto}
+.pop label{display:block;font-size:13px;color:var(--ink-soft);margin:12px 0 5px}
+.pop input{
+  width:100%;box-sizing:border-box;border:1px solid var(--line);
+  border-radius:12px;padding:13px 14px;font-size:16px;   /* 16px: iOS zooms below it */
+  background:var(--card);color:var(--ink)
+}
+.pop .err{
+  margin:12px 0 0;padding:11px 13px;border-radius:12px;font-size:14px;
+  background:color-mix(in srgb,#B3261E 12%,var(--card));color:#B3261E
+}
+.pop .swap{
+  margin:14px 0 0;text-align:center;font-size:14px;color:var(--ink-soft)
+}
+.pop .swap button{
+  background:none;border:0;padding:0;color:var(--accent);font:inherit;
+  font-weight:650;cursor:pointer;text-decoration:underline
+}
+
+/* Order history rows. */
+.hist{list-style:none;margin:0;padding:0}
+.hist li{border-bottom:1px solid var(--line)}
+.hist li:last-child{border-bottom:0}
+.hist a{
+  display:flex;align-items:center;gap:12px;padding:13px 2px;
+  color:inherit;text-decoration:none
+}
+.hist .n{font-weight:700;min-width:52px}
+.hist .m{flex:1;min-width:0}
+.hist .m b{display:block;font-weight:600;font-size:15px}
+.hist .m span{color:var(--ink-soft);font-size:13px}
+.hist .tag{
+  font-size:12px;font-weight:700;padding:4px 9px;border-radius:999px;
+  background:var(--sunken);color:var(--ink-soft);white-space:nowrap
+}
+.hist .tag.live{background:color-mix(in srgb,var(--accent) 26%,var(--card));color:var(--ink)}
+
+/* Guest or account, at checkout. Guest is chosen, always. */
+.asme{display:flex;gap:8px;margin:14px 0 4px}
+.asme button{
+  flex:1;border:1px solid var(--line);border-radius:12px;background:var(--card);
+  color:var(--ink-soft);padding:11px;font-size:14px;font-weight:600;cursor:pointer
+}
+.asme button[aria-pressed="true"]{
+  border-color:var(--accent);color:var(--ink);
+  background:color-mix(in srgb,var(--accent) 16%,var(--card))
+}
+
 .notice{
   margin:14px auto 0;max-width:648px;padding:12px 14px;
   border-radius:var(--radius);
@@ -929,7 +1008,11 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
     phone: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 3h3l1.5 4-2 1.5a12 12 0 0 0 5.5 5.5L16 12l4 1.5v3a2 2 0 0 1-2.2 2A17 17 0 0 1 4.5 5.2 2 2 0 0 1 6.5 3z"/></svg>',
     pin:   '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s7-5.3 7-10.5a7 7 0 1 0-14 0C5 15.7 12 21 12 21z"/><circle cx="12" cy="10.5" r="2.6"/></svg>',
     map:   '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3.5 3.5 6v14.5L9 18l6 2.5 5.5-2.5V3.5L15 6z"/><path d="M9 3.5V18M15 6v14.5"/></svg>',
-    clock: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5.2l3.2 2"/></svg>'
+    clock: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5.2l3.2 2"/></svg>',
+    user: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.6"/><path d="M5 20a7 7 0 0 1 14 0"/></svg>',
+    receipt: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>',
+    x: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg>',
+    chev: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg>'
   };
 
   function esc(s){
@@ -983,6 +1066,10 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
         ? '<div class="hero-img" id="heroImg"><img src="' + esc(v.banner_url) +
           '" alt="" fetchpriority="high"></div>'
         : '') +
+      // Sitting on the photograph rather than under it: the top right of a
+      // hero is the one place on this page nothing else wants, and it is where
+      // a thumb already is on a phone held one-handed.
+      '<div class="who" id="who"></div>' +
       '<div class="hero-body">' +
         '<div class="logo">' +
           (v.logo_url
@@ -1059,6 +1146,7 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
     wireTabs(sections);
     wireHero();
     markLastRow();
+    paintWho();
     app.addEventListener('click', onTap);
     paintBasket();
   }
@@ -1177,6 +1265,260 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
         ' at ' + pretty(sched.next.at) + '.';
     }
     return 'Please order at the bar, or ask a member of staff.';
+  }
+
+  // =========================================================================
+  // WHO IS ORDERING
+  // =========================================================================
+  //
+  // Nobody has to answer this. Guest is the default, it is preselected, and
+  // every part of this page works without ever touching it. An account buys one
+  // thing: the orders you placed, on whatever phone you are holding.
+
+  var TOKEN_KEY = 'vesopa.dinein.token';
+  var ACCT_KEY  = 'vesopa.dinein.account';
+  var MINE_KEY  = 'vesopa.dinein.orders';
+
+  /** localStorage that cannot throw. Private mode and locked-down browsers
+   *  both make it throw on access, and a menu must not go blank over it. */
+  function store(key, value){
+    try {
+      if (value === undefined) return window.localStorage.getItem(key);
+      if (value === null) { window.localStorage.removeItem(key); return null; }
+      window.localStorage.setItem(key, value);
+      return value;
+    } catch (e) { return null; }
+  }
+
+  function token(){ return store(TOKEN_KEY) || null; }
+  function account(){
+    try { return JSON.parse(store(ACCT_KEY) || 'null'); } catch (e) { return null; }
+  }
+
+  /**
+   * Orders placed on this phone, whether or not anybody signed in.
+   *
+   * A guest who closes the tab has otherwise lost the only link to the food
+   * they are waiting for. Kept to the last twenty, oldest dropped.
+   */
+  function mine(){
+    try { return JSON.parse(store(MINE_KEY) || '[]') || []; } catch (e) { return []; }
+  }
+  function remember(order){
+    var list = mine().filter(function(o){ return o.public_id !== order.public_id; });
+    list.unshift(order);
+    store(MINE_KEY, JSON.stringify(list.slice(0, 20)));
+  }
+
+  function paintWho(){
+    var host = document.getElementById('who');
+    if (!host) return;
+    var acct = account();
+    var seen = mine().length;
+    var html = '';
+    if (seen) {
+      html += '<button type="button" data-mine>' + ICON.receipt + 'My orders</button>';
+    }
+    html += acct
+      ? '<button type="button" data-acct>' + ICON.user + esc(firstName(acct)) + '</button>'
+      : '<button type="button" data-signin>' + ICON.user + 'Sign in</button>';
+    host.innerHTML = html;
+
+    var m = host.querySelector('[data-mine]');
+    if (m) m.addEventListener('click', showMine);
+    var si = host.querySelector('[data-signin]');
+    if (si) si.addEventListener('click', function(){ showAuth('login'); });
+    var ac = host.querySelector('[data-acct]');
+    if (ac) ac.addEventListener('click', showAccount);
+  }
+
+  function firstName(acct){
+    var n = (acct && (acct.name || acct.email) || '').trim();
+    if (!n) return 'Account';
+    // A space or an @, spelled out. \s inside this template literal arrives as
+    // a plain "s" and would split "Rhys" into "Rhy".
+    return n.split(/[ @]/)[0].slice(0, 14);
+  }
+
+  /** A sheet with a head, a body and a way out. Returns the body element. */
+  function sheet(title, opts){
+    var back = document.createElement('div');
+    back.className = 'pop';
+    back.innerHTML =
+      '<div class="sheet tall" role="dialog" aria-modal="true">' +
+        '<div class="sheethead">' +
+          ((opts && opts.back)
+            ? '<button class="icobtn" data-back aria-label="Back">' + ICON.chev + '</button>'
+            : '') +
+          '<h3>' + esc(title) + '</h3>' +
+          '<button class="icobtn" data-close aria-label="Close">' + ICON.x + '</button>' +
+        '</div>' +
+        '<div class="sheetbody"></div>' +
+      '</div>';
+    document.body.appendChild(back);
+    requestAnimationFrame(function(){ back.classList.add('in'); });
+
+    function shut(){
+      back.classList.remove('in');
+      setTimeout(function(){ back.remove(); }, 260);
+    }
+    back.querySelector('[data-close]').addEventListener('click', shut);
+    var b = back.querySelector('[data-back]');
+    if (b) b.addEventListener('click', function(){ shut(); if (opts.back) opts.back(); });
+    back.addEventListener('click', function(e){ if (e.target === back) shut(); });
+
+    var body = back.querySelector('.sheetbody');
+    body.close = shut;
+    return body;
+  }
+
+  function showAuth(mode, after){
+    var join = mode === 'join';
+    var body = sheet(join ? 'Create an account' : 'Sign in');
+    body.innerHTML =
+      '<p style="margin:0;color:var(--ink-soft);font-size:14px;line-height:1.5">' +
+        'Only so you can see what you have ordered here before. You never need ' +
+        'one to order.</p>' +
+      (join ? '<label for="aname">Your name (optional)</label>' +
+              '<input id="aname" autocomplete="name">' : '') +
+      '<label for="aemail">Email</label>' +
+      '<input id="aemail" type="email" autocomplete="email" inputmode="email">' +
+      '<label for="apass">Password</label>' +
+      '<input id="apass" type="password" autocomplete="' +
+        (join ? 'new-password' : 'current-password') + '">' +
+      '<div class="err" id="aerr" hidden></div>' +
+      '<button class="send" id="ago" type="button" style="margin-top:16px">' +
+        (join ? 'Create account' : 'Sign in') + '</button>' +
+      '<p class="swap">' + (join ? 'Already have one? ' : 'No account yet? ') +
+        '<button type="button" id="aswap">' +
+        (join ? 'Sign in' : 'Create one') + '</button></p>';
+
+    document.getElementById('aswap').addEventListener('click', function(){
+      body.close();
+      setTimeout(function(){ showAuth(join ? 'login' : 'join', after); }, 200);
+    });
+
+    document.getElementById('ago').addEventListener('click', function(){
+      var btn = document.getElementById('ago');
+      var err = document.getElementById('aerr');
+      err.hidden = true;
+      btn.disabled = true;
+      var was = btn.textContent;
+      btn.textContent = 'Just a moment…';
+
+      var payload = {
+        email: document.getElementById('aemail').value,
+        password: document.getElementById('apass').value
+      };
+      if (TABLE) payload.table = TABLE; else payload.slug = SLUG;
+      if (join) payload.name = (document.getElementById('aname') || {}).value || '';
+
+      fetch('/api/public/dinein/account/' + (join ? 'register' : 'login'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+        .then(function(r){ return r.json().then(function(j){ return { ok: r.ok, body: j }; }); })
+        .then(function(res){
+          if (!res.ok) {
+            err.textContent = (res.body && res.body.error) || 'That did not work.';
+            err.hidden = false;
+            btn.disabled = false;
+            btn.textContent = was;
+            return;
+          }
+          store(TOKEN_KEY, res.body.token);
+          store(ACCT_KEY, JSON.stringify(res.body.account || {}));
+          paintWho();
+          body.close();
+          if (after) after();
+        })
+        .catch(function(){
+          err.textContent = 'We could not reach the kitchen. Check your signal.';
+          err.hidden = false;
+          btn.disabled = false;
+          btn.textContent = was;
+        });
+    });
+  }
+
+  function showAccount(){
+    var acct = account() || {};
+    var body = sheet('Your account');
+    body.innerHTML =
+      '<p style="margin:0 0 4px;font-size:15px"><b>' + esc(acct.email || '') + '</b></p>' +
+      '<p style="margin:0;color:var(--ink-soft);font-size:14px">' +
+        'Your orders here are kept against this account.</p>' +
+      '<button class="send" id="seeorders" type="button" style="margin-top:18px">' +
+        'See my orders</button>' +
+      '<button class="shut" id="signout" type="button">Sign out</button>';
+    document.getElementById('seeorders').addEventListener('click', function(){
+      body.close();
+      setTimeout(showMine, 200);
+    });
+    document.getElementById('signout').addEventListener('click', function(){
+      store(TOKEN_KEY, null);
+      store(ACCT_KEY, null);
+      paintWho();
+      body.close();
+    });
+  }
+
+  var STATUS_WORD = {
+    placed:'Sent', accepted:'Being made', ready:'Ready',
+    served:'Served', rejected:'Not taken', cancelled:'Cancelled'
+  };
+
+  function showMine(){
+    var body = sheet('Your orders');
+    body.innerHTML = '<p style="color:var(--ink-soft)">Looking…</p>';
+
+    var local = mine();
+
+    function paint(list){
+      if (!list.length) {
+        body.innerHTML =
+          '<p style="color:var(--ink-soft);line-height:1.55">Nothing yet. ' +
+          'Anything you order here will show up on this list.</p>';
+        return;
+      }
+      var html = '<ul class="hist">';
+      list.forEach(function(o){
+        var live = o.status === 'placed' || o.status === 'accepted' || o.status === 'ready';
+        html += '<li><a href="/o/' + esc(o.public_id) + '">' +
+          '<span class="n">#' + esc(o.number == null ? '' : o.number) + '</span>' +
+          '<span class="m"><b>' + esc(o.table_label || 'Your order') + '</b>' +
+          '<span>' + money(o.total_minor || 0) + '</span></span>' +
+          '<span class="tag' + (live ? ' live' : '') + '">' +
+            esc(STATUS_WORD[o.status] || o.status || '') + '</span>' +
+        '</a></li>';
+      });
+      html += '</ul>';
+      if (!token()) {
+        html += '<p class="swap" style="margin-top:16px">Kept on this phone only. ' +
+          '<button type="button" id="minejoin">Create an account</button> to keep them.</p>';
+      }
+      body.innerHTML = html;
+      var j = document.getElementById('minejoin');
+      if (j) j.addEventListener('click', function(){
+        body.close();
+        setTimeout(function(){ showAuth('join', showMine); }, 200);
+      });
+    }
+
+    if (!token()) { paint(local); return; }
+
+    fetch('/api/public/dinein/account/orders', {
+      headers: { Authorization: 'Bearer ' + token() }
+    })
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(d){
+        // The account's list where there is one, and this phone's where the
+        // network is not answering. Never an empty screen when there is
+        // something on the device that would have filled it.
+        paint((d && d.orders && d.orders.length) ? d.orders : local);
+      })
+      .catch(function(){ paint(local); });
   }
 
   function itemHtml(it){
@@ -1313,12 +1655,30 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
       '<input id="cphone" type="tel" autocomplete="tel" enterkeyhint="next">' +
       '<label for="cnote">Anything the kitchen should know? (optional)</label>' +
       '<textarea id="cnote" rows="2" placeholder="Allergies, no onions…"></textarea>' +
+      // Guest is pressed. Somebody with a basket ready to go should never have
+      // to make an account to send it, and should not have to notice that they
+      // could.
+      (account()
+        ? '<p class="muted" style="margin:14px 0 0;color:var(--ink-soft);font-size:14px">' +
+            'Ordering as <b>' + esc(firstName(account())) + '</b>.</p>'
+        : '<div class="asme">' +
+            '<button type="button" data-as="guest" aria-pressed="true">Order as guest</button>' +
+            '<button type="button" data-as="in" aria-pressed="false">Sign in first</button>' +
+          '</div>') +
       '<div class="err" id="cerr" hidden></div>' +
       '<button class="send" id="csend" type="button">Send to the kitchen</button>' +
       '<button class="shut" id="cshut" type="button">Keep looking</button>';
 
     document.getElementById('cshut').addEventListener('click', function(){ dlg.close(); });
     document.getElementById('csend').addEventListener('click', send);
+
+    var signIn = document.querySelector('[data-as="in"]');
+    if (signIn) signIn.addEventListener('click', function(){
+      dlg.close();
+      // Straight back to the basket afterwards, with the account applied.
+      setTimeout(function(){ showAuth('login', openCheckout); }, 200);
+    });
+
     dlg.showModal();
   }
 
@@ -1332,9 +1692,15 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
     var lines = [];
     eachChosen(function(item, qty){ lines.push({ item_id: item.id, qty: qty }); });
 
+    var headers = { 'Content-Type': 'application/json' };
+    // Sent when there is one. The endpoint treats a missing, expired or
+    // unreadable token as a guest rather than as an error, so nothing here
+    // depends on it being valid.
+    if (token()) headers.Authorization = 'Bearer ' + token();
+
     fetch('/api/public/dinein/table/' + encodeURIComponent(TABLE) + '/order', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: headers,
       body: JSON.stringify({
         lines: lines,
         name: document.getElementById('cname').value,
@@ -1353,6 +1719,15 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
           btn.textContent = 'Send to the kitchen';
           return;
         }
+        // Kept on the phone before we leave the page: a guest who closes the
+        // tab has otherwise lost the only link to the food they are waiting for.
+        remember({
+          public_id: res.body.public_id,
+          number: res.body.number || null,
+          table_label: data.table ? data.table.name : null,
+          total_minor: totals().sum,
+          status: 'placed'
+        });
         location.href = '/o/' + res.body.public_id;
       })
       .catch(function(){
