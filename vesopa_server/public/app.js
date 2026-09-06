@@ -45,6 +45,9 @@ function applyTheme(choice) {
 
   document.querySelectorAll('[data-theme-set]').forEach((b) => {
     b.setAttribute('aria-pressed', String(b.dataset.themeSet === choice));
+    // The menu items are radios in a menu rather than pressed buttons; both
+    // attributes are set so the control reads correctly whichever it is.
+    b.setAttribute('aria-checked', String(b.dataset.themeSet === choice));
   });
 }
 
@@ -60,9 +63,21 @@ function setTheme(choice) {
 
 applyTheme(readTheme());
 
+// The rail and the theme corner, once the document has a body to hang them on.
+// This file runs before </body> in some paths and after it in others, so both
+// cases are covered rather than assuming either.
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => wireShell());
+} else {
+  wireShell();
+}
+
 document.addEventListener('click', (e) => {
   const key = e.target.closest?.('[data-theme-set]');
-  if (key) setTheme(key.dataset.themeSet);
+  if (key) {
+    setTheme(key.dataset.themeSet);
+    closeThemeMenu();
+  }
 });
 
 // ---- Session --------------------------------------------------------------
@@ -3220,6 +3235,99 @@ function modal(title, fields, onSubmit) {
       toast(err.message, 'error');
     }
   };
+}
+
+// ---------------------------------------------------------------------------
+// The shell: folding the rail, and the theme corner
+// ---------------------------------------------------------------------------
+
+const RAIL_FOLD_KEY = 'vesopa.rail.folded';
+
+/**
+ * Fold the rail down to its icons, or open it again.
+ *
+ * Remembered per browser, like the theme. A manager who folds it is telling us
+ * something about their screen, and that is still true tomorrow.
+ *
+ * Desktop only. Below 960px the rail is already a drawer over the page, and a
+ * fold control inside a drawer is a button for making the thing you just
+ * opened smaller.
+ */
+function setRailFolded(folded) {
+  const app = document.getElementById('app');
+  const btn = document.getElementById('rail-fold');
+  if (!app) return;
+  app.classList.toggle('rail-folded', !!folded);
+  if (btn) {
+    btn.setAttribute('aria-expanded', String(!folded));
+    btn.setAttribute('aria-label', folded ? 'Expand the menu' : 'Collapse the menu');
+    btn.title = folded ? 'Expand the menu' : 'Collapse the menu';
+  }
+  try { localStorage.setItem(RAIL_FOLD_KEY, folded ? '1' : '0'); } catch { /* private mode */ }
+}
+
+/**
+ * The name of each view, on the button itself.
+ *
+ * A folded rail is icons, and an icon with no name is a puzzle. The label is
+ * read off the text the button already has rather than kept in a second list
+ * that would drift out of step with it, and the text is wrapped so it can be
+ * hidden without losing it.
+ */
+function labelNavForFolding() {
+  document.querySelectorAll('.rail .nav').forEach((btn) => {
+    if (btn.dataset.label) return;
+    const words = btn.textContent.trim();
+    if (!words) return;
+    btn.dataset.label = words;
+    // Wrap the bare text node so CSS can hide the words and keep the icon.
+    [...btn.childNodes].forEach((node) => {
+      if (node.nodeType !== 3 || !node.textContent.trim()) return;
+      const span = document.createElement('span');
+      span.className = 'nav-word';
+      span.textContent = node.textContent;
+      node.replaceWith(span);
+    });
+  });
+}
+
+function closeThemeMenu() {
+  const menu = document.getElementById('theme-menu');
+  const btn = document.getElementById('theme-btn');
+  if (menu) menu.hidden = true;
+  if (btn) btn.setAttribute('aria-expanded', 'false');
+}
+
+function wireShell() {
+  const fold = document.getElementById('rail-fold');
+  if (fold) {
+    let folded = false;
+    try { folded = localStorage.getItem(RAIL_FOLD_KEY) === '1'; } catch { /* private mode */ }
+    setRailFolded(folded);
+    fold.addEventListener('click', () => {
+      setRailFolded(!document.getElementById('app').classList.contains('rail-folded'));
+    });
+  }
+  labelNavForFolding();
+
+  const btn = document.getElementById('theme-btn');
+  const menu = document.getElementById('theme-menu');
+  if (btn && menu) {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const open = menu.hidden;
+      menu.hidden = !open;
+      btn.setAttribute('aria-expanded', String(open));
+    });
+    // Anywhere else, and Escape. A popover that can only be closed by the
+    // button that opened it is a trap on a touchscreen.
+    document.addEventListener('click', (e) => {
+      if (!menu.hidden && !e.target.closest('#theme-corner')) closeThemeMenu();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeThemeMenu();
+    });
+  }
 }
 
 // ---- Receipt viewer -------------------------------------------------------

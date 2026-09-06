@@ -1,9 +1,21 @@
 /* Vesopa Back Office — dark rail, light canvas, generous whitespace. */
 
 :root {
-  --rail: #111111;
-  --rail-text: #9c9c9a;
-  --rail-active: #ffffff;
+  /* THE RAIL FOLLOWS THE THEME.
+   *
+   * These were #111111 in :root and overridden nowhere, so Day mode painted a
+   * light page against a black sidebar and a black top bar — which is not a
+   * light theme, it is a dark theme with a light hole in the middle. Reported
+   * as "day mode should actually be day rather than black".
+   *
+   * The dark values move to the two dark blocks further down, unchanged. */
+  --rail: #ffffff;
+  --rail-text: #4b4753;
+  --rail-active: #17141c;
+  --rail-line: rgba(20, 18, 26, .10);
+  --rail-hover: rgba(20, 18, 26, .05);
+  --rail-group: #8a8494;
+  --rail-scroll: rgba(20, 18, 26, .18);
   --bg: #f5f4f7;
   --card: #ffffff;
   --line: #e6e3ea;
@@ -417,7 +429,7 @@ input:focus, select:focus {
   flex-direction: column;
   padding: 22px 0;
 }
-.rail .logo { padding: 0 22px 22px; color: #fff; font-size: 20px; }
+.rail .logo { padding: 0 22px 22px; color: var(--rail-active); font-size: 20px; }
 
 .rail nav { display: flex; flex-direction: column; gap: 2px; padding: 0 12px; }
 .nav-group {
@@ -425,7 +437,10 @@ input:focus, select:focus {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: .08em;
-  color: #5f596b;
+  /* Was #5f596b, which is a dark-theme grey. On a white rail it was invisible,
+     and the sections read as gaps rather than as headings. */
+  color: var(--rail-group);
+  font-weight: 700;
 }
 .nav {
   display: flex;
@@ -441,13 +456,13 @@ input:focus, select:focus {
   font-size: 14.5px;
   cursor: pointer;
 }
-.nav:hover { background: rgba(255, 255, 255, .05); color: #fff; }
+.nav:hover { background: var(--rail-hover); color: var(--rail-active); }
 .nav.active { background: var(--brand); color: var(--on-brand); font-weight: 600; }
 
 .rail-foot {
   margin-top: auto;
   padding: 18px 22px 0;
-  border-top: 1px solid rgba(255, 255, 255, .07);
+  border-top: 1px solid var(--rail-line);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -875,11 +890,11 @@ tr.new { animation: flash 1.6s ease-out; }
   overflow-y: auto;
   /* A thin scrollbar that does not draw attention on the dark rail. */
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, .18) transparent;
+  scrollbar-color: var(--rail-scroll) transparent;
 }
 .rail nav::-webkit-scrollbar { width: 6px; }
 .rail nav::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, .18);
+  background: var(--rail-scroll);
   border-radius: 3px;
 }
 
@@ -3043,6 +3058,14 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
    below it, which is guarded so an explicit "light" always wins.
 */
 :root[data-theme="dark"] {
+  --rail: #111111;
+  --rail-text: #9c9c9a;
+  --rail-active: #ffffff;
+  --rail-line: rgba(255, 255, 255, .07);
+  --rail-hover: rgba(255, 255, 255, .05);
+  --rail-group: #5f596b;
+  --rail-scroll: rgba(255, 255, 255, .18);
+
   --bg: #0d1014;
   --card: #151a20;
   --panel: #151a20;
@@ -3082,6 +3105,14 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
    set to dark. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
+    --rail: #111111;
+    --rail-text: #9c9c9a;
+    --rail-active: #ffffff;
+    --rail-line: rgba(255, 255, 255, .07);
+    --rail-hover: rgba(255, 255, 255, .05);
+    --rail-group: #5f596b;
+    --rail-scroll: rgba(255, 255, 255, .18);
+
     --bg: #0d1014;
     --card: #151a20;
     --panel: #151a20;
@@ -4794,4 +4825,335 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
   .di-hour-row input[type="time"] { grid-column: 1; }
   .di-hour-row .di-to { display: none; }
   .di-hour-row input[data-hclose] { grid-column: 2; }
+}
+
+
+/* ===========================================================================
+   THE SHELL: a rail that folds, a theme corner, and lockups per theme
+   =========================================================================== */
+
+/* ---------------------------------------------------------------------------
+   One lockup per theme
+   ---------------------------------------------------------------------------
+   The wordmark exists in two colourways and only one of them is legible in a
+   given room. Both are in the document and CSS chooses, rather than JavaScript
+   swapping a src — because under "Auto" the system can change while the page
+   is open, and a media query notices that on its own.
+   --------------------------------------------------------------------------- */
+/* Both carry the same cap the sizing classes do. The lockup is 900x130 — nearly
+   seven to one — so anything that can hold it must refuse to let it exceed its
+   column; `backoffice-layout.test.js` checks every class the mark is drawn
+   with, and it is right to, because these sit alongside .brand-logo and
+   .topbar-logo and would otherwise be the one way round the rule. */
+.lockup-dark { display: none; max-width: 100%; height: auto; }
+.lockup-light { display: block; max-width: 100%; height: auto; }
+:root[data-theme="dark"] .lockup-dark { display: block; }
+:root[data-theme="dark"] .lockup-light { display: none; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .lockup-dark { display: block; }
+  :root:not([data-theme="light"]) .lockup-light { display: none; }
+}
+
+/* The rail keeps a visible edge against the page in Day mode; in Night the two
+   are different enough not to need one. */
+.rail { border-right: 1px solid var(--rail-line); }
+
+/* ---------------------------------------------------------------------------
+   Folding the rail
+   ---------------------------------------------------------------------------
+   Asked for on bigger screens: a way to give the page its 236px back without
+   losing the menu. Folded, the rail is 68px of icons — every view is still one
+   press away, which a hidden rail cannot claim.
+   --------------------------------------------------------------------------- */
+.brand-mark { display: none; width: 34px; height: 34px; border-radius: 9px; }
+
+.rail-fold {
+  display: none;                 /* desktop only; see the media query below */
+  align-items: center;
+  gap: 9px;
+  margin: 10px 12px 0;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--rail-group);
+  font-size: 13px;
+  cursor: pointer;
+}
+.rail-fold:hover { background: var(--rail-hover); color: var(--rail-active); }
+.rail-fold-icon {
+  width: 18px; height: 18px; flex: 0 0 auto;
+  stroke: currentColor; fill: none; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+  transition: transform .18s ease;
+}
+
+@media (min-width: 961px) {
+  .rail-fold { display: flex; }
+
+  #app.rail-folded .rail { width: 68px; }
+  #app.rail-folded .rail nav { padding: 0 10px; }
+
+  /* The wordmark cannot be read at 68px; the mark can. */
+  #app.rail-folded .brand-logo { display: none; }
+  #app.rail-folded .brand-mark { display: block; }
+  #app.rail-folded .rail .logo { padding: 0 0 18px; display: grid; place-items: center; }
+
+  /* Section headings are words, and there is no room for words. The rule that
+     replaces them keeps the grouping visible, which is the part that was doing
+     the work. */
+  #app.rail-folded .nav-group {
+    padding: 10px 6px 4px;
+    justify-content: center;
+    font-size: 0;
+  }
+  #app.rail-folded .nav-group::after {
+    content: "";
+    display: block;
+    width: 22px;
+    height: 1px;
+    background: var(--rail-line);
+  }
+  #app.rail-folded .nav-group .caret { display: none; }
+
+  #app.rail-folded .nav {
+    justify-content: center;
+    padding: 11px 0;
+    position: relative;
+  }
+  #app.rail-folded .nav .nav-word { display: none; }
+
+  /* The name, on hover, because an icon-only rail that cannot be read is a
+     puzzle rather than a menu. */
+  #app.rail-folded .nav::after {
+    content: attr(data-label);
+    position: absolute;
+    left: calc(100% + 10px);
+    top: 50%;
+    transform: translateY(-50%);
+    background: var(--rail-active);
+    color: var(--rail);
+    padding: 6px 10px;
+    border-radius: 7px;
+    font-size: 12.5px;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .12s ease;
+    z-index: 60;
+  }
+  #app.rail-folded .nav:hover::after { opacity: 1; }
+
+  #app.rail-folded .rail-fold { justify-content: center; margin: 10px 8px 0; }
+  #app.rail-folded .rail-fold-word { display: none; }
+  #app.rail-folded .rail-fold-icon { transform: rotate(180deg); }
+
+  #app.rail-folded .rail-foot {
+    padding: 14px 8px 0;
+    flex-direction: column;
+    gap: 10px;
+  }
+  #app.rail-folded .rail-foot #live-text,
+  #app.rail-folded .rail-foot .link { display: none; }
+}
+
+/* ---------------------------------------------------------------------------
+   The theme corner
+   --------------------------------------------------------------------------- */
+.theme-corner { position: fixed; top: 14px; right: 16px; z-index: 70; }
+
+.theme-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--text);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  box-shadow: var(--shadow);
+  transition: transform .12s ease, border-color .15s ease;
+}
+.theme-btn:hover { border-color: var(--brand); }
+.theme-btn:active { transform: scale(.94); }
+.theme-btn svg {
+  width: 19px; height: 19px;
+  stroke: currentColor; fill: none; stroke-width: 1.8;
+  stroke-linecap: round; stroke-linejoin: round;
+  grid-area: 1 / 1;
+}
+
+/* Which of the three shows is the choice, not the resolved theme: somebody on
+   Auto wants to see that they are on Auto. */
+.theme-btn .ic-sun, .theme-btn .ic-moon, .theme-btn .ic-auto { display: none; }
+:root[data-theme="light"] .theme-btn .ic-sun { display: block; }
+:root[data-theme="dark"] .theme-btn .ic-moon { display: block; }
+:root:not([data-theme]) .theme-btn .ic-auto { display: block; }
+
+.theme-menu {
+  position: absolute;
+  top: 48px;
+  right: 0;
+  min-width: 168px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, .18);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  transform-origin: top right;
+  animation: theme-pop .16s cubic-bezier(.2, .9, .3, 1);
+}
+@keyframes theme-pop {
+  from { opacity: 0; transform: scale(.94) translateY(-4px); }
+  to   { opacity: 1; transform: none; }
+}
+.theme-menu button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  color: var(--text);
+  padding: 10px 11px;
+  font-size: 14px;
+  cursor: pointer;
+  text-align: left;
+}
+.theme-menu button:hover { background: var(--hover); }
+.theme-menu button[aria-checked="true"] {
+  background: var(--brand-soft);
+  color: var(--brand-deep);
+  font-weight: 600;
+}
+.theme-menu svg {
+  width: 17px; height: 17px; flex: 0 0 auto;
+  stroke: currentColor; fill: none; stroke-width: 1.8;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+
+@media (max-width: 960px) {
+  /* Clear of the fixed top bar rather than on top of its logo. */
+  .theme-corner { top: 8px; right: 10px; }
+  .theme-btn {
+    background: transparent;
+    border-color: var(--rail-line);
+    color: var(--rail-text);
+    box-shadow: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-menu { animation: none; }
+}
+
+/* ===========================================================================
+   FORM CONTROLS THAT LOOK THE SAME ON EVERY DEVICE
+   ===========================================================================
+   iOS draws its own select, date and time fields: its own height, its own
+   font, its own inset chevron, its own centred text, and a blue tint that
+   belongs to Safari rather than to this application. Beside a text input
+   styled here they were visibly a different control from a different program.
+
+   `-webkit-appearance: none` is what stops that, and everything below is what
+   has to be supplied once the platform stops supplying it.
+   --------------------------------------------------------------------------- */
+select,
+input[type="date"],
+input[type="time"],
+input[type="datetime-local"],
+input[type="month"],
+input[type="week"] {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-color: var(--input-bg);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 11px 13px;
+  font: inherit;
+  font-size: 16px;          /* iOS zooms the page in on anything smaller */
+  line-height: 1.2;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 44px;         /* a finger, not a mouse */
+}
+
+/* The chevron the platform stopped drawing. An inline SVG in a data: URI, so
+   there is no request for it and it cannot arrive late. */
+select {
+  padding-right: 38px;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2378717f' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 17px;
+}
+:root[data-theme="dark"] select {
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394a2ae' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) select {
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394a2ae' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  }
+}
+
+/* Safari centres the value in a date field and leaves a gap where its own
+   chrome used to be; these put it back on the left with everything else. */
+input[type="date"],
+input[type="time"],
+input[type="datetime-local"],
+input[type="month"],
+input[type="week"] {
+  text-align: left;
+  -webkit-text-fill-color: var(--text);   /* an empty date is grey otherwise */
+}
+input[type="date"]::-webkit-date-and-time-value,
+input[type="time"]::-webkit-date-and-time-value,
+input[type="datetime-local"]::-webkit-date-and-time-value {
+  text-align: left;
+  margin: 0;
+}
+input[type="date"]::-webkit-datetime-edit,
+input[type="time"]::-webkit-datetime-edit,
+input[type="datetime-local"]::-webkit-datetime-edit { padding: 0; }
+
+/* The picker button: Safari's is a blue glyph in its own accent colour, which
+   is the one part of these fields that still announced the browser. */
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  opacity: .55;
+  cursor: pointer;
+  filter: none;
+}
+:root[data-theme="dark"] input::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) input::-webkit-calendar-picker-indicator {
+    filter: invert(1);
+  }
+}
+
+select:focus,
+input[type="date"]:focus,
+input[type="time"]:focus,
+input[type="datetime-local"]:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-soft);
+}
+select:disabled,
+input[type="date"]:disabled,
+input[type="time"]:disabled { opacity: .55; cursor: not-allowed; }
+
+/* A select inside a row that sizes itself must not be forced to 100%. */
+.row select, .seg select, .dc-panel select, .di-hour-row input[type="time"] {
+  width: 100%;
 }

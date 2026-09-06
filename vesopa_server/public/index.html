@@ -171,8 +171,14 @@
                 aria-label="Open menu" aria-expanded="false" aria-controls="rail">
           <span class="rail-toggle-bars" aria-hidden="true"></span>
         </button>
-        <!-- Reversed lockup: the top bar is the same near-black as the rail. -->
-        <img src="/assets/vesopa_logo_on_dark.png" alt="Vesopa" class="topbar-logo" />
+        <!-- Two lockups, one per theme. The white wordmark is invisible on a
+             white bar, and Day mode now reaches this bar. CSS picks; doing it
+             in JavaScript would miss the "Auto" case where the system changes
+             under a running page. -->
+        <img src="/assets/vesopa_logo_on_dark.png" alt="Vesopa"
+             class="topbar-logo lockup-dark" />
+        <img src="/assets/vesopa_logo.png" alt="Vesopa"
+             class="topbar-logo lockup-light" />
         <span id="live-dot-m" class="dot offline" title="Realtime connection"></span>
       </header>
       <div id="rail-scrim" class="rail-scrim" hidden></div>
@@ -182,7 +188,13 @@
           <!-- The on-dark lockup, not a filtered copy of the light one:
                brightness(0) invert(1) flattens the lime tail to white and
                throws the brand accent away. -->
-          <img src="/assets/vesopa_logo_on_dark.png" alt="Vesopa" class="brand-logo" />
+          <img src="/assets/vesopa_logo_on_dark.png" alt="Vesopa"
+               class="brand-logo lockup-dark" />
+          <img src="/assets/vesopa_logo.png" alt="Vesopa"
+               class="brand-logo lockup-light" />
+          <!-- Shown only when the rail is folded: a wordmark squeezed into
+               64px is unreadable, and the mark is what a folded rail wants. -->
+          <img src="/assets/favicon.png" alt="Vesopa" class="brand-mark" />
         </div>
 
         <nav>
@@ -255,23 +267,63 @@
 
         <span id="role-badge" hidden></span>
 
+        <!-- Folding the rail. Desktop only: below 960px the rail is already a
+             drawer, and a fold button inside a drawer is a control for making
+             a thing you just opened smaller. -->
+        <button id="rail-fold" class="rail-fold" type="button"
+                aria-label="Collapse the menu" aria-expanded="true"
+                title="Collapse the menu">
+          <svg viewBox="0 0 24 24" aria-hidden="true" class="rail-fold-icon">
+            <path d="m14 7-5 5 5 5" />
+          </svg>
+          <span class="rail-fold-word">Collapse</span>
+        </button>
+
         <div class="rail-foot">
           <span id="live-dot" class="dot offline" title="Realtime connection"></span>
           <span id="live-text" class="small">connecting…</span>
           <button id="logout" class="link">Sign out</button>
         </div>
 
-        <!-- Day or Night. An office and a bar are not the same room, so the
-             choice is the manager's and it is remembered on this computer;
-             leaving it alone follows whatever the machine is set to. -->
-        <div class="rail-theme">
-          <div class="theme-switch" role="group" aria-label="Appearance">
-            <button type="button" data-theme-set="light" aria-pressed="false">Day</button>
-            <button type="button" data-theme-set="dark" aria-pressed="false">Night</button>
-            <button type="button" data-theme-set="system" aria-pressed="false">Auto</button>
-          </div>
-        </div>
       </aside>
+
+      <!-- Day or Night, in the top right corner where every application on
+           this manager's machine puts it. An office and a bar are not the same
+           room, so the choice is theirs and it is remembered on this computer;
+           leaving it on Auto follows the machine.
+
+           Outside the rail, because the rail folds and this must not fold with
+           it, and outside <main>, because main scrolls and this must not. -->
+      <div class="theme-corner" id="theme-corner">
+        <button type="button" id="theme-btn" class="theme-btn"
+                aria-haspopup="true" aria-expanded="false" aria-label="Appearance">
+          <svg class="ic-sun" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="4.2" />
+            <path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.2 5.2l1.6 1.6M17.2 17.2l1.6 1.6M18.8 5.2l-1.6 1.6M6.8 17.2l-1.6 1.6" />
+          </svg>
+          <svg class="ic-moon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M20 14.2A8.2 8.2 0 0 1 9.8 4a8.4 8.4 0 1 0 10.2 10.2z" />
+          </svg>
+          <svg class="ic-auto" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="8.4" />
+            <path d="M12 3.6v16.8a8.4 8.4 0 0 0 0-16.8z" fill="currentColor" stroke="none" />
+          </svg>
+        </button>
+        <div class="theme-menu" id="theme-menu" role="menu" hidden>
+          <button type="button" data-theme-set="light" role="menuitemradio" aria-checked="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2" /><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.2 5.2l1.6 1.6M17.2 17.2l1.6 1.6M18.8 5.2l-1.6 1.6M6.8 17.2l-1.6 1.6" /></svg>
+            <span>Day</span>
+          </button>
+          <button type="button" data-theme-set="dark" role="menuitemradio" aria-checked="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.2A8.2 8.2 0 0 1 9.8 4a8.4 8.4 0 1 0 10.2 10.2z" /></svg>
+            <span>Night</span>
+          </button>
+          <button type="button" data-theme-set="system" role="menuitemradio" aria-checked="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.4" /><path d="M12 3.6v16.8a8.4 8.4 0 0 0 0-16.8z" fill="currentColor" stroke="none" /></svg>
+            <span>Auto</span>
+          </button>
+        </div>
+      </div>
 
       <main>
         <!-- Dashboard -->
