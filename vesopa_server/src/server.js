@@ -960,6 +960,54 @@ app.post(['/till/orders', '/orders'], async (req, res, next) => {
       );
     }
 
+    // ----------------------------------------------------------------------
+    // Take what was sold off the shelf
+    // ----------------------------------------------------------------------
+    //
+    // Nothing did this. `stock_quantity` was written by the product editor and
+    // by the importer, read by the reports, and never moved by a sale — so a
+    // venue counting stock in and then selling all week saw the same number it
+    // typed on Monday. Reported as "order completed, stock should decrease.
+    // Why not decreasing?", and the answer was that no code anywhere did it.
+    //
+    // WHY IT IS HERE
+    //
+    // Inside the same transaction as the lines, and after the duplicate check
+    // above. That check returns early on a sale we already hold, so a till
+    // retrying a sync cannot take the same items off twice — which is the one
+    // way an automatic stock movement does real damage.
+    //
+    // WHAT IT LEAVES ALONE
+    //
+    //   * Products with a NULL stock_quantity. Null means "not counted" and is
+    //     the default for most of a catalogue: a pub does not track pints of
+    //     lager as units. Only a product somebody has actually put a number on
+    //     is moved.
+    //   * Modifier lines. "Extra sausage" is a line on the bill and generally
+    //     not a product with its own shelf; when it is, it has its own PLU and
+    //     is rung as an item.
+    //
+    // It is allowed to go negative rather than clamping at zero. A negative
+    // count is how a venue finds out the shelf was wrong, and silently
+    // stopping at zero hides exactly the discrepancy this exists to surface.
+    //
+    // The same account the sale was filed under. `order.email` is the venue,
+    // and 'default' is what a till on an older build sends — both are already
+    // used for the order row above, and stock has to be scoped identically or
+    // one venue's sale moves another venue's shelf.
+    const stockOwner = order.email || 'default';
+    for (const line of order.lines || []) {
+      if (line.is_modifier) continue;
+      const qty = Number(line.quantity ?? 1);
+      if (!Number.isFinite(qty) || qty <= 0) continue;
+      await conn.execute(
+        `UPDATE bo_products
+            SET stock_quantity = stock_quantity - ?
+          WHERE email = ? AND pluid = ? AND stock_quantity IS NOT NULL`,
+        [qty, stockOwner, line.plu_id]
+      );
+    }
+
     for (const payment of order.payments || []) {
       await conn.execute(
         `INSERT INTO epos_payments

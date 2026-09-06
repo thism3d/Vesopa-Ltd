@@ -463,6 +463,9 @@ button{font:inherit;cursor:pointer}
 /* The week, folded away. A customer wants "are you open"; the seven rows are
    for the one person in ten who wants to know about Tuesday. */
 .hoursbox{margin:14px auto 0;max-width:648px}
+/* The week is folded, always. A customer wants "are you open", which the
+   summary already answers; the seven rows are for the one person in ten who
+   wants to know about Tuesday, and they can open it. */
 .hoursbox summary{
   list-style:none;cursor:pointer;padding:11px 15px;
   border:1px solid var(--line);border-radius:var(--radius);
@@ -787,7 +790,10 @@ button{font:inherit;cursor:pointer}
 /* The venue's offer, said once at the top. */
 .offerbox{
   margin:14px auto 0;max-width:648px;
-  display:flex;align-items:center;gap:12px;
+  /* Centred. An offer is an announcement, not a form field, and left-aligning
+     it against a page whose headings are centred made it read as a stray row. */
+  display:flex;align-items:center;justify-content:center;text-align:center;
+  gap:12px;
   padding:13px 15px;border-radius:var(--radius);
   background:color-mix(in srgb, var(--offer) 10%, var(--card));
   border:1px solid color-mix(in srgb, var(--offer) 32%, var(--line));
@@ -832,13 +838,10 @@ button{font:inherit;cursor:pointer}
    the dishes the venue wants somebody to look at rather than read. */
 .pop-grid{
   display:grid;grid-template-columns:1fr 1fr;gap:16px 14px;
-  padding:4px 16px 8px
+  padding:4px 0 8px
 }
 @media (min-width:720px){
-  .pop-grid{
-    grid-template-columns:repeat(auto-fill,minmax(220px,1fr));
-    max-width:1120px;margin:0 auto;padding-left:20px;padding-right:20px
-  }
+  .pop-grid{grid-template-columns:repeat(auto-fill,minmax(220px,1fr))}
 }
 .pcard{position:relative;min-width:0}
 .pcard .shot{
@@ -932,7 +935,52 @@ html{scroll-behavior:smooth;scroll-padding-top:70px}
  *
  * The banner is deliberately outside it, so a venue's photograph still runs
  * edge to edge on a wide screen. */
-.col{max-width:680px;margin:0 auto}
+/* THE MENU KEEPS ITS MARGINS.
+ *
+ * The column ran to the edge of the phone on the narrowest screens, so a dish
+ * name started and a price ended flush against the glass. 18 either side is
+ * enough to read against without spending a ninth of a 360px screen on nothing.
+ */
+.col{max-width:680px;margin:0 auto;padding:0 4px}
+section{padding-left:18px;padding-right:18px}
+
+/* Looking for one thing.
+ *
+ * Above the tabs, because it answers the same question they do — where is the
+ * thing I want — and somebody who knows what they want should not have to find
+ * which section it lives in first. */
+.finder{
+  position:relative;margin:16px auto 0;max-width:648px;padding:0 18px
+}
+.finder input{
+  width:100%;box-sizing:border-box;
+  border:1px solid var(--line);border-radius:999px;
+  background:var(--card);color:var(--ink);
+  padding:13px 42px 13px 42px;font-size:16px   /* 16px: iOS zooms below it */
+}
+.finder input:focus{
+  outline:none;border-color:var(--accent);
+  box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 26%, transparent)
+}
+.finder .mag{
+  position:absolute;left:32px;top:50%;transform:translateY(-50%);
+  width:17px;height:17px;stroke:var(--ink-soft);fill:none;stroke-width:2;
+  stroke-linecap:round;stroke-linejoin:round;pointer-events:none
+}
+.finder .clear{
+  position:absolute;right:26px;top:50%;transform:translateY(-50%);
+  width:26px;height:26px;border:0;border-radius:999px;cursor:pointer;
+  background:var(--sunken);color:var(--ink-soft);display:none;
+  align-items:center;justify-content:center;font-size:15px;line-height:1
+}
+.finder.has .clear{display:flex}
+
+/* What is left when a search matches nothing. */
+.nohits{
+  max-width:648px;margin:26px auto;padding:0 18px;text-align:center;
+  color:var(--ink-soft)
+}
+.item.hid,.pcard.hid,section.hid,.promos.hid{display:none}
 
 /* TWO OR THREE ACROSS, ONCE THERE IS ROOM FOR THEM.
  *
@@ -1334,14 +1382,19 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
       grids.push({ id: 'popular', title: v.popular_title || 'Popular',
                    blurb: 'What this kitchen is known for.', items: popular });
     }
-    grids.forEach(function(g){
-      html += '<section id="sec' + g.id + '" data-sec="' + g.id + '">' +
-        '<h2 style="padding:0 16px">' + esc(g.title) + '</h2>' +
-        '<p class="blurb" style="padding:0 16px">' + esc(g.blurb) + '</p>' +
-        '<div class="pop-grid">';
-      g.items.slice(0, 8).forEach(function(it){ html += popCardHtml(it); });
-      html += '</div></section>';
-    });
+
+    // The search, then the tabs, then anything the venue is pushing, then the
+    // menu itself. The tabs come first because they are the map: a customer
+    // scrolling past two grids of pictures to find out what sections exist has
+    // been shown the shop window before the shop.
+    html += '<div class="finder" id="finder">' +
+      '<svg class="mag" viewBox="0 0 24 24" aria-hidden="true">' +
+        '<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>' +
+      '<input id="find" type="search" enterkeyhint="search" ' +
+        'autocomplete="off" autocorrect="off" spellcheck="false" ' +
+        'placeholder="Search the menu" aria-label="Search the menu">' +
+      '<button class="clear" id="findClear" type="button" aria-label="Clear">×</button>' +
+    '</div>';
 
     html += '<nav class="tabs" id="tabs">';
     grids.forEach(function(g, i){
@@ -1357,6 +1410,18 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
     html += '</nav>';
 
     html += '<div class="col">';
+
+    // Featured and Popular sit inside the column, under the tabs, so the tabs
+    // are the first thing under the venue's own details.
+    grids.forEach(function(g){
+      html += '<section id="sec' + g.id + '" data-sec="' + g.id + '">' +
+        '<h2>' + esc(g.title) + '</h2>' +
+        '<p class="blurb">' + esc(g.blurb) + '</p>' +
+        '<div class="pop-grid">';
+      g.items.slice(0, 8).forEach(function(it){ html += popCardHtml(it); });
+      html += '</div></section>';
+    });
+
     sections.forEach(function(s){
       html += '<section id="sec' + s.id + '" data-sec="' + s.id + '">' +
               '<h2>' + esc(s.name) + '</h2>' +
@@ -1371,11 +1436,79 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
 
     app.innerHTML = html;
     wireTabs(grids.map(function(g){ return { id: g.id }; }).concat(sections));
+    wireFinder();
     wireHero();
     markLastRow();
     paintWho();
     app.addEventListener('click', onTap);
     paintBasket();
+  }
+
+  /**
+   * Searching the menu.
+   *
+   * Everything is already in hand — the whole menu arrived in one response —
+   * so this filters what is on the page rather than asking the server per
+   * keystroke. On pub wifi a round trip per letter is slower than the list.
+   *
+   * Matches the name first and then the description, because somebody typing
+   * "chips" wants Chips before they want everything that comes with chips.
+   * Sections with nothing left in them are folded away, and so are the picture
+   * grids: a Popular grid that still shows six things while the list below it
+   * shows one is a page arguing with itself.
+   */
+  function wireFinder(){
+    var box = document.getElementById('finder');
+    var input = document.getElementById('find');
+    if (!box || !input) return;
+
+    function apply(){
+      var q = input.value.trim().toLowerCase();
+      box.classList.toggle('has', q.length > 0);
+
+      var tabs = document.getElementById('tabs');
+      var promos = document.querySelector('.promos');
+      if (tabs) tabs.hidden = q.length > 0;
+      if (promos) promos.classList.toggle('hid', q.length > 0);
+
+      var hits = 0;
+      document.querySelectorAll('.item, .pcard').forEach(function(el){
+        if (!q) { el.classList.remove('hid'); return; }
+        var name = (el.querySelector('h3') || {}).textContent || '';
+        var desc = (el.querySelector('p') || {}).textContent || '';
+        var on = (name + ' ' + desc).toLowerCase().indexOf(q) !== -1;
+        el.classList.toggle('hid', !on);
+        if (on && el.classList.contains('item')) hits += 1;
+      });
+
+      // A section with nothing left in it is a heading over a gap.
+      document.querySelectorAll('.col section').forEach(function(sec){
+        var live = sec.querySelectorAll('.item:not(.hid), .pcard:not(.hid)').length;
+        sec.classList.toggle('hid', !!q && !live);
+      });
+
+      var none = document.getElementById('nohits');
+      if (q && !document.querySelectorAll('.col section:not(.hid)').length) {
+        if (!none) {
+          none = document.createElement('p');
+          none.id = 'nohits';
+          none.className = 'nohits';
+          document.querySelector('.col').appendChild(none);
+        }
+        none.textContent = 'Nothing on the menu matches “' + input.value.trim() + '”.';
+      } else if (none) {
+        none.remove();
+      }
+    }
+
+    input.addEventListener('input', apply);
+    input.addEventListener('search', apply);
+    var clear = document.getElementById('findClear');
+    if (clear) clear.addEventListener('click', function(){
+      input.value = '';
+      apply();
+      input.focus();
+    });
   }
 
   /** Half past eleven, not 11:30, because that is how a sign says it. */
@@ -1423,7 +1556,10 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
         (sched.next ? ' · opens ' + (sched.next.today ? 'today' : sched.next.day) +
           ' at ' + pretty(sched.next.at) : '');
 
-    html += '<details class="hoursbox"' + (sched.open ? '' : ' open') + '>' +
+    // Folded, always. The summary line already answers "are you open"; the
+    // seven rows are for somebody who wants to know about Tuesday, and they
+    // can ask.
+    html += '<details class="hoursbox">' +
       '<summary>' + ICON.clock + summary +
         '<svg class="chev" viewBox="0 0 24 24" aria-hidden="true"' +
         ' stroke="currentColor" fill="none" stroke-width="2"' +

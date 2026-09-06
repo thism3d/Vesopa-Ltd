@@ -562,7 +562,7 @@ const CRUD = {
     ],
     rowActions: (r) =>
       r.screen_id
-        ? `<button class="btn small ghost" data-edit-answers="${r.screen_id}">Edit answers</button>`
+        ? iconBtn('tune', 'Edit the answers', `data-edit-answers="${r.screen_id}"`)
         : '',
   },
   'mix-match': {
@@ -788,8 +788,8 @@ async function loadCrud(key) {
         ${extras.map((c) => `<td>${c.cell(r)}</td>`).join('')}
         <td class="right nowrap row-actions-cell">
           ${cfg.rowActions ? cfg.rowActions(r) : ''}
-          <button class="btn small ghost" data-edit="${key}" data-id="${r.id}">Edit</button>
-          <button class="btn small danger" data-del="${cfg.path}" data-id="${r.id}">Delete</button>
+          ${iconBtn('edit', 'Edit', `data-edit="${key}" data-id="${r.id}"`)}
+          ${iconBtn('del', 'Delete', `data-del="${cfg.path}" data-id="${r.id}"`, 'danger')}
         </td>
       </tr>`
     )
@@ -1048,7 +1048,12 @@ async function exNextPage() {
   if (exFeed.loading || exFeed.done) return;
   const mine = exFeed.token;
   exFeed.loading = true;
-  if (exFeed.offset) exSay('Loading more…', true);
+  // Deliberately silent. A "Loading more…" line that appears and vanishes
+  // under a list somebody is reading is the loading *becoming* visible; the
+  // fetch runs far enough ahead (see FEED_MARGIN) that there is nothing to
+  // wait for, and a message about it is only a chance to notice a wait that
+  // did not happen. The first page still shows the skeleton, and the end of
+  // the list still says how many there were.
 
   const params = new URLSearchParams();
   if ($('ex-from').value) params.set('from', $('ex-from').value);
@@ -1117,7 +1122,14 @@ function exWatch() {
    --------------------------------------------------------------------------- */
 
 /** How much warning the foot of a list gets, in pixels of scroll. */
-const FEED_MARGIN = 500;
+// How far ahead of the fold the next page is fetched.
+//
+// 500 meant the request went out as the last row arrived on screen, so on a
+// slow connection somebody scrolling steadily hit the bottom and waited. At
+// 1400 the page after this one is usually already in hand by the time it is
+// needed, and the list simply never ends — which is the whole point of loading
+// as you scroll rather than paging.
+const FEED_MARGIN = 1400;
 
 /**
  * Load until the foot of the list is off the bottom of the screen.
@@ -1265,7 +1277,7 @@ async function loadTimesheets() {
             '</td>' +
             '<td class="right">' +
             '<button class="btn small ghost" data-edit-shift="' + r.id + '">Correct</button> ' +
-            '<button class="btn small danger-ghost" data-del-shift="' + r.id + '">Delete</button>' +
+            iconBtn('del', 'Delete this shift', 'data-del-shift="' + r.id + '"', 'danger') +
             '</td></tr>'
         )
         .join('')
@@ -1319,7 +1331,7 @@ async function brNextPage() {
   if (brFeed.loading || brFeed.done) return;
   const mine = brFeed.token;
   brFeed.loading = true;
-  if (brFeed.offset) feedSay('br-more', 'Loading more…', true);
+  // Silent, for the same reason as the Sales Explorer above.
 
   const params = new URLSearchParams();
   params.set('limit', String(BR_PAGE));
@@ -1963,9 +1975,9 @@ function renderProducts() {
         <td class="right">${p.tax_percentage || 0}%</td>
         <td>${routeChips(p)}</td>
         <td class="right">
-          <button class="btn small ghost" data-edit-product="${p.id}">Edit</button>
-          <button class="btn small ghost" data-dup-product="${p.id}">Duplicate</button>
-          <button class="btn small danger" data-del-product="${p.id}">Delete</button>
+          ${iconBtn('edit', 'Edit', `data-edit-product="${p.id}"`)}
+          ${iconBtn('copy', 'Duplicate', `data-dup-product="${p.id}"`)}
+          ${iconBtn('del', 'Delete', `data-del-product="${p.id}"`, 'danger')}
         </td>
       </tr>`
     )
@@ -2009,7 +2021,7 @@ async function loadUsers() {
             ? `<button class="btn small ghost" data-role-user="${u.id}" data-role-current="${u.role_id ?? ''}">Role</button>` : ''}
           <button class="btn small ghost" data-pw-user="${u.id}">Reset password</button>
           ${u.role !== 'admin'
-            ? `<button class="btn small danger" data-del-user="${u.id}">Delete</button>` : ''}
+            ? iconBtn('del', 'Delete', `data-del-user="${u.id}"`, 'danger') : ''}
         </td>
       </tr>`
     )
@@ -2079,10 +2091,80 @@ async function loadStock() {
         <td>${esc(p.product_name)}</td>
         <td>${esc(p.department_name || '—')}</td>
         <td class="right nowrap">${cell(p)}</td>
+        <td class="right nowrap row-actions-cell">
+          ${iconBtn('topup', 'Count some in',
+            `data-stock-in="${p.id}" data-stock-name="${esc(p.product_name)}"`)}
+          ${iconBtn('edit', 'Set the count',
+            `data-stock-set="${p.id}" data-stock-name="${esc(p.product_name)}"`)}
+        </td>
       </tr>`
       )
       .join('') ||
-    '<tr><td colspan="4" class="empty">No products yet.</td></tr>';
+    '<tr><td colspan="5" class="empty">No products yet.</td></tr>';
+}
+
+/**
+ * Counting stock in, from the page that told you it had run out.
+ *
+ * Two actions rather than one field, because they answer two different
+ * questions. **Count some in** is a delivery: twelve arrived, add twelve to
+ * whatever is there, and the answer does not depend on the count being right
+ * beforehand. **Set the count** is a stocktake: whatever the system thought,
+ * there are nine on the shelf now.
+ *
+ * Adding is the one offered first. It is the one that happens weekly, and it is
+ * the one that is safe when the current number is already wrong.
+ */
+async function stockAdjust(id, name, mode) {
+  // By row id, not by PLU: PUT /products/:id keys on the row, and a PLU is
+  // only unique within one venue's catalogue. Fetched fresh rather than read
+  // off the rendered table, so a count typed here is applied to whatever the
+  // shelf figure actually is now.
+  let product;
+  try {
+    product = await api(`/products/${encodeURIComponent(id)}`);
+  } catch {
+    return toast('That product has gone.', 'error');
+  }
+  if (!product) return toast('That product has gone.', 'error');
+
+  const now = product.stock_quantity;
+  const tracked = now !== null && now !== undefined && Number.isFinite(Number(now));
+  const adding = mode === 'in';
+
+  return modal(
+    adding ? `Count in — ${name}` : `Set the count — ${name}`,
+    [
+      {
+        name: 'qty',
+        label: adding
+          ? `How many arrived?${tracked ? ` (there are ${now} now)` : ''}`
+          : 'How many are on the shelf?',
+        type: 'number',
+        value: adding ? '' : (tracked ? now : 0),
+      },
+    ],
+    async (d) => {
+      const n = Number(d.qty);
+      if (!Number.isFinite(n)) throw new Error('Give a number.');
+      if (adding && n === 0) throw new Error('Nothing to count in.');
+
+      // The whole product is sent because that is the shape this route takes;
+      // only the count changes. Anything else on the row is passed back exactly
+      // as it arrived, so saving a stock figure cannot quietly rewrite a price.
+      const next = adding ? (tracked ? Number(now) + n : n) : n;
+      await api(`/products/${encodeURIComponent(id)}`, {
+        method: 'PUT',
+        body: JSON.stringify({ ...product, stock_quantity: next }),
+      });
+      await loadStock();
+      toast(
+        adding
+          ? `${name}: ${n > 0 ? 'added ' + n : 'removed ' + Math.abs(n)}, now ${next}.`
+          : `${name}: set to ${next}.`
+      );
+    }
+  );
 }
 
 /**
@@ -2177,8 +2259,8 @@ async function loadStaff() {
         <td>${active ? 'Active' : '<span class="muted">Retired</span>'}</td>
         <td class="right nowrap">
           ${rowCardActions({ kind: 'staff', id: c.id, name: c.clark_name })}
-          <button class="btn small ghost" data-edit-staff='${payload}'>Edit</button>
-          <button class="btn small danger" data-del-staff="${c.id}">Delete</button>
+          ${iconBtn('edit', 'Edit', `data-edit-staff='${payload}'`)}
+          ${iconBtn('del', 'Delete', `data-del-staff="${c.id}"`, 'danger')}
         </td>
       </tr>`;
     })
@@ -2232,8 +2314,8 @@ async function loadCustomers() {
           : '<span class="muted">—</span>'}</td>
         <td class="right nowrap">
           ${rowCardActions({ kind: 'loyalty', id: c.id, name: c.name })}
-          <button class="btn small ghost" data-edit-customer="${c.id}">Edit</button>
-          <button class="btn small danger" data-del-customer="${c.id}">Delete</button>
+          ${iconBtn('edit', 'Edit', `data-edit-customer="${c.id}"`)}
+          ${iconBtn('del', 'Delete', `data-del-customer="${c.id}"`, 'danger')}
         </td>
       </tr>`;
     })
@@ -3509,17 +3591,65 @@ function showSkeleton(hostId, kind) {
 // second copy of a bin somewhere else is how two pages end up disagreeing about
 // what a bin means.
 
+/**
+ * Material Symbols, from fonts.google.com/icons.
+ *
+ * WHY A LIBRARY AND NOT HAND-DRAWN PATHS
+ *
+ * The first version of this file drew its own bin, its own pencil and its own
+ * printer. They were legible but they were not a set: different stroke weights,
+ * different optical sizes, and a printer nobody recognised as one. An icon has
+ * one job — to be recognised before it is read — and a mark somebody has seen
+ * ten thousand times in other software does that job better than anything
+ * drawn here.
+ *
+ * These are the filled 24dp Material Symbols, taken as paths rather than loaded
+ * as a font: the font is 200KB for the dozen marks used here, it arrives after
+ * the first paint, and until it does every button shows the ligature's text.
+ *
+ * The viewBox is Google's own `0 -960 960 960`, kept exactly as exported so a
+ * replacement can be pasted in from the site without re-drawing anything. They
+ * are filled shapes, so they take `fill: currentColor` and no stroke.
+ */
 const ICONS = {
-  edit: '<path d="M4 20h4l10-10a2.1 2.1 0 0 0-3-3L5 17z"/><path d="M13.5 6.5 17.5 10.5"/>',
-  save: '<path d="M5 4h11l3 3v13H5z"/><path d="M9 4v5h6V4"/><path d="M8 20v-5h8v5"/>',
-  del: '<path d="M4 7h16"/><path d="M9.5 7V5h5v2"/><path d="M6.5 7l1 13h9l1-13"/><path d="M10.5 11v5M13.5 11v5"/>',
-  copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5h10"/>',
-  add: '<path d="M12 5v14M5 12h14"/>',
-  up: '<path d="m6 14 6-6 6 6"/>',
-  down: '<path d="m6 10 6 6 6-6"/>',
-  print: '<path d="M7 9V4h10v5"/><rect x="4" y="9" width="16" height="7" rx="2"/><path d="M7 14h10v6H7z"/>',
-  eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>',
-  link: '<path d="M10 13a4 4 0 0 0 5.7.4l2.6-2.6a4 4 0 1 0-5.7-5.7L11 6.7"/><path d="M14 11a4 4 0 0 0-5.7-.4L5.7 13.2a4 4 0 1 0 5.7 5.7l1.6-1.6"/>',
+  // edit
+  edit: '<path d="M200-200h57l391-391-57-57-391 391v57Zm-80 80v-170l528-527q12-11 26.5-17t30.5-6q16 0 31 6t26 18l55 56q12 11 17.5 26t5.5 30q0 16-5.5 30.5T817-647L290-120H120Zm640-584-56-56 56 56Zm-141 85-28-29 57 57-29-28Z"/>',
+  // delete
+  del: '<path d="M280-120q-33 0-56.5-23.5T200-200v-520h-40v-80h200v-40h240v40h200v80h-40v520q0 33-23.5 56.5T680-120H280Zm400-600H280v520h400v-520ZM360-280h80v-360h-80v360Zm160 0h80v-360h-80v360ZM280-720v520-520Z"/>',
+  // content_copy
+  copy: '<path d="M360-240q-33 0-56.5-23.5T280-320v-480q0-33 23.5-56.5T360-880h360q33 0 56.5 23.5T800-800v480q0 33-23.5 56.5T720-240H360Zm0-80h360v-480H360v480ZM200-80q-33 0-56.5-23.5T120-160v-560h80v560h440v80H200Zm160-240v-480 480Z"/>',
+  // save
+  save: '<path d="M840-680v480q0 33-23.5 56.5T760-120H200q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h480l160 160Zm-80 34L646-760H200v560h560v-446ZM480-240q50 0 85-35t35-85q0-50-35-85t-85-35q-50 0-85 35t-35 85q0 50 35 85t85 35ZM240-560h360v-160H240v160Zm-40-86v446-560 114Z"/>',
+  // add
+  add: '<path d="M440-440H200v-80h240v-240h80v240h240v80H520v240h-80v-240Z"/>',
+  // print — the file supplied for this
+  print: '<path d="M640-640v-120H320v120h-80v-200h480v200h-80Zm-480 80h640-640Zm560 100q17 0 28.5-11.5T760-500q0-17-11.5-28.5T720-540q-17 0-28.5 11.5T680-500q0 17 11.5 28.5T720-460Zm-80 260v-160H320v160h320Zm80 80H240v-160H80v-240q0-51 35-85.5t85-34.5h560q51 0 85.5 34.5T880-520v240H720v160Zm80-240v-160q0-17-11.5-28.5T760-560H200q-17 0-28.5 11.5T160-520v160h80v-80h480v80h80Z"/>',
+  // visibility
+  eye: '<path d="M480-320q75 0 127.5-52.5T660-500q0-75-52.5-127.5T480-680q-75 0-127.5 52.5T300-500q0 75 52.5 127.5T480-320Zm0-72q-45 0-76.5-31.5T372-500q0-45 31.5-76.5T480-608q45 0 76.5 31.5T588-500q0 45-31.5 76.5T480-392Zm0 192q-146 0-266-81.5T40-500q54-137 174-218.5T480-800q146 0 266 81.5T920-500q-54 137-174 218.5T480-200Zm0-300Zm0 220q113 0 207.5-59.5T832-500q-50-101-144.5-160.5T480-720q-113 0-207.5 59.5T128-500q50 101 144.5 160.5T480-280Z"/>',
+  // link
+  link: '<path d="M440-280H280q-83 0-141.5-58.5T80-480q0-83 58.5-141.5T280-680h160v80H280q-50 0-85 35t-35 85q0 50 35 85t85 35h160v80ZM320-440v-80h320v80H320Zm200 160v-80h160q50 0 85-35t35-85q0-50-35-85t-85-35H520v-80h160q83 0 141.5 58.5T880-480q0 83-58.5 141.5T680-280H520Z"/>',
+  // keyboard_arrow_up
+  up: '<path d="M480-528 296-344l-56-56 240-240 240 240-56 56-184-184Z"/>',
+  // keyboard_arrow_down
+  down: '<path d="M480-344 240-584l56-56 184 184 184-184 56 56-240 240Z"/>',
+  // payments — topping a gift card up
+  topup: '<path d="M560-440q-50 0-85-35t-35-85q0-50 35-85t85-35q50 0 85 35t35 85q0 50-35 85t-85 35ZM280-320q-33 0-56.5-23.5T200-400v-320q0-33 23.5-56.5T280-800h560q33 0 56.5 23.5T920-720v320q0 33-23.5 56.5T840-320H280Zm80-80h400q0-33 23.5-56.5T840-480v-160q-33 0-56.5-23.5T760-720H360q0 33-23.5 56.5T280-640v160q33 0 56.5 23.5T360-400Zm440 240H120q-33 0-56.5-23.5T40-240v-440h80v440h680v80ZM280-400v-320 320Z"/>',
+  // history
+  history: '<path d="M480-120q-138 0-240.5-91.5T122-440h82q14 104 92.5 172T480-200q117 0 198.5-81.5T760-480q0-117-81.5-198.5T480-760q-69 0-129 32t-101 88h110v80H120v-240h80v94q51-64 124.5-99T480-840q75 0 140.5 28.5t114 77q48.5 48.5 77 114T840-480q0 75-28.5 140.5t-77 114q-48.5 48.5-114 77T480-120Zm112-192L440-464v-216h80v184l128 128-56 56Z"/>',
+  // block — voiding a card
+  block: '<path d="M480-80q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q54 0 104-17.5t92-50.5L228-676q-33 42-50.5 92T160-480q0 134 93 227t227 93Zm252-124q33-42 50.5-92T800-480q0-134-93-227t-227-93q-54 0-104 17.5T284-732l448 448Z"/>',
+  // tune — editing the answers on a modifier group
+  tune: '<path d="M440-120v-240h80v80h320v80H520v80h-80Zm-320-80v-80h240v80H120Zm160-160v-80H120v-80h160v-80h80v240h-80Zm160-80v-80h400v80H440Zm160-160v-240h80v80h160v80H680v80h-80Zm-480-80v-80h400v80H120Z"/>',
+  // check_circle
+  check: '<path d="m424-296 282-282-56-56-226 226-114-114-56 56 170 170Zm56 216q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z"/>',
+  // download
+  download: '<path d="M480-320 280-520l56-58 104 104v-326h80v326l104-104 56 58-200 200ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z"/>',
+  // send
+  send: '<path d="M120-160v-640l760 320-760 320Zm80-120 474-200-474-200v140l240 60-240 60v140Zm0 0v-400 400Z"/>',
+  // wallet — putting a card on a phone
+  wallet: '<path d="M200-160q-33 0-56.5-23.5T120-240v-480q0-33 23.5-56.5T200-800h560q33 0 56.5 23.5T840-720v480q0 33-23.5 56.5T760-160H200Zm0-80h560v-480H200v480Zm0 0v-480 480Zm360-120h120q17 0 28.5-11.5T720-400v-160q0-17-11.5-28.5T680-600H560q-17 0-28.5 11.5T520-560v160q0 17 11.5 28.5T560-360Zm40-60v-120h40v120h-40Z"/>',
+  // person_remove / delete for a user row uses `del`; groups use `folder`
+  folder: '<path d="M160-160q-33 0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800h240l80 80h320q33 0 56.5 23.5T880-640v400q0 33-23.5 56.5T800-160H160Zm0-80h640v-400H447l-80-80H160v480Zm0 0v-480 480Z"/>',
 };
 
 /**
@@ -3531,13 +3661,13 @@ const ICONS = {
 function iconBtn(icon, tip, attrs = '', kind = '') {
   return `<button type="button" class="ibtn${kind ? ' ' + kind : ''}" ` +
     `data-tip="${esc(tip)}" aria-label="${esc(tip)}" title="${esc(tip)}" ${attrs}>` +
-    `<svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[icon] || ''}</svg></button>`;
+    `<svg viewBox="0 -960 960 960" aria-hidden="true">${ICONS[icon] || ''}</svg></button>`;
 }
 
 /** The legend that goes under a table of them. */
 function iconKey(pairs) {
   return '<div class="ibtn-key">' + pairs.map(([icon, label]) =>
-    `<span><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[icon] || ''}</svg>` +
+    `<span><svg viewBox="0 -960 960 960" aria-hidden="true">${ICONS[icon] || ''}</svg>` +
     `${esc(label)}</span>`).join('') + '</div>';
 }
 
@@ -3706,6 +3836,16 @@ document.addEventListener('click', async (e) => {
     // This is a press, which is what lets the screen editor open a window of
     // its own — see spEnterView. A deep link or the back button is not.
     return show(navBtn.dataset.view, { userInitiated: true });
+  }
+
+  // ---- Stock ----
+  const stockIn = t.closest?.('[data-stock-in]');
+  if (stockIn) {
+    return stockAdjust(stockIn.dataset.stockIn, stockIn.dataset.stockName, 'in');
+  }
+  const stockSet = t.closest?.('[data-stock-set]');
+  if (stockSet) {
+    return stockAdjust(stockSet.dataset.stockSet, stockSet.dataset.stockName, 'set');
   }
 
   // ---- Floor designer ----
@@ -4983,8 +5123,8 @@ async function loadPromotions() {
       <td>${r.active ? '<span class="pill on">Live</span>' : '<span class="pill">Off</span>'}</td>
       <td class="right nowrap">
         ${rowCardActions({ kind: 'promo', id: r.id, name: r.name })}
-        <button class="btn small" data-promo-edit="${r.id}">Edit</button>
-        <button class="btn small danger-ghost" data-promo-del="${r.id}">Delete</button>
+        ${iconBtn('edit', 'Edit', `data-promo-edit="${r.id}"`)}
+        ${iconBtn('del', 'Delete', `data-promo-del="${r.id}"`, 'danger')}
       </td>
     </tr>`).join('') || '<tr><td colspan="8" class="muted">No promotions yet.</td></tr>';
 
@@ -5142,10 +5282,10 @@ async function loadGiftCards() {
           // the same reason loadSubject() keeps returning it.
         })}
         ${r.reloadable && r.status === 'active'
-          ? `<button class="btn small" data-gift-reload="${r.id}">Top up</button>` : ''}
-        <button class="btn small" data-gift-history="${r.id}">History</button>
+          ? iconBtn('topup', 'Top up', `data-gift-reload="${r.id}"`) : ''}
+        ${iconBtn('history', 'History', `data-gift-history="${r.id}"`)}
         ${r.status === 'active'
-          ? `<button class="btn small danger-ghost" data-gift-void="${r.id}">Void</button>` : ''}
+          ? iconBtn('block', 'Void this card', `data-gift-void="${r.id}"`, 'danger') : ''}
       </td>
     </tr>`).join('') || '<tr><td colspan="8" class="muted">No gift cards issued yet.</td></tr>';
 }
@@ -5244,7 +5384,7 @@ async function loadDeposits() {
           why: 'A deposit is money held against a bill, not a card. It prints as '
             + 'a receipt.',
         })}
-        <button class="btn small" data-deposit-edit="${r.id}">Edit</button>
+        ${iconBtn('edit', 'Edit', `data-deposit-edit="${r.id}"`)}
       </td>
     </tr>`).join('') || '<tr><td colspan="8" class="muted">No deposits taken yet.</td></tr>';
 }
@@ -5362,7 +5502,7 @@ function renderTiers() {
       <label class="tier-field">×pts<input type="number" step="0.1" class="tier-mult"
         value="${Number(t.points_multiplier || 1)}"></label>
       <input type="color" class="tier-colour" value="${esc(t.colour || '#8e8e93')}">
-      <button class="btn small danger-ghost" data-tier-del="${i}">Remove</button>
+      ${iconBtn('del', 'Remove this tier', `data-tier-del="${i}"`, 'danger')}
     </div>`).join('') || '<p class="muted small">No tiers. Everyone earns at the base rate.</p>';
 }
 
@@ -6438,24 +6578,13 @@ function rowCardActions({ kind, id, name = '', print = true, disabled = '' }) {
   const off = disabled ? ' disabled' : '';
   const why = disabled ? ` title="${esc(disabled)}"` : '';
 
-  return `
-    <button class="icon-btn" data-row-pass="${key}"${off}${why}
-            aria-label="Wallet pass for ${esc(name || id)}"
-            title="${disabled ? esc(disabled) : 'Put this card on a phone'}">
-      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-        <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5z"/>
-        <path d="M4 10h16"/><path d="M15.5 14.5h2"/>
-      </svg>
-    </button>${print ? `
-    <button class="icon-btn" data-row-print="${key}"
-            aria-label="Print a card for ${esc(name || id)}"
-            title="Print the card">
-      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-        <path d="M7 9V4h10v5"/>
-        <path d="M6.5 9h11A2.5 2.5 0 0 1 20 11.5V16h-3v4H7v-4H4v-4.5A2.5 2.5 0 0 1 6.5 9z"/>
-        <path d="M17 12.5h.01"/>
-      </svg>
-    </button>` : ''}`;
+  return iconBtn(
+    'wallet',
+    disabled ? disabled : 'Put this card on a phone',
+    `data-row-pass="${key}"${off}${why}`
+  ) + (print
+    ? iconBtn('print', 'Print the card', `data-row-print="${key}"`)
+    : '');
 }
 
 /**
@@ -6570,22 +6699,8 @@ function printNode(node) {
  */
 function printOnlyAction({ what, id, name = '', why = '' }) {
   const key = esc(`${what}|${id}|${name}`);
-  return `
-    <button class="icon-btn" disabled title="${esc(why)}"
-            aria-label="${esc(why)}">
-      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-        <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5z"/>
-        <path d="M4 10h16"/><path d="M15.5 14.5h2"/>
-      </svg>
-    </button>
-    <button class="icon-btn" data-row-slip="${key}"
-            aria-label="Print this ${esc(what)}" title="Print it">
-      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-        <path d="M7 9V4h10v5"/>
-        <path d="M6.5 9h11A2.5 2.5 0 0 1 20 11.5V16h-3v4H7v-4H4v-4.5A2.5 2.5 0 0 1 6.5 9z"/>
-        <path d="M17 12.5h.01"/>
-      </svg>
-    </button>`;
+  return iconBtn('wallet', why, 'disabled')
+    + iconBtn('print', 'Print this ' + what, `data-row-slip="${key}"`);
 }
 
 /**
@@ -7312,8 +7427,8 @@ async function loadRules() {
       <td>${r.priority}</td>
       <td>${r.active ? '<span class="pill on">On</span>' : '<span class="pill">Off</span>'}</td>
       <td class="right">
-        <button class="btn small" data-rule-edit="${r.id}">Edit</button>
-        <button class="btn small danger-ghost" data-rule-del="${r.id}">Delete</button>
+        ${iconBtn('edit', 'Edit', `data-rule-edit="${r.id}"`)}
+        ${iconBtn('del', 'Delete', `data-rule-del="${r.id}"`, 'danger')}
       </td>
     </tr>`).join('') || '<tr><td colspan="6" class="muted">No rules yet.</td></tr>';
 }
@@ -7389,8 +7504,8 @@ async function loadTemplates() {
       <td>${r.is_default ? '<span class="pill on">Default</span>' : ''}</td>
       <td>${r.active ? '<span class="pill on">Active</span>' : '<span class="pill">Off</span>'}</td>
       <td class="right">
-        <button class="btn small" data-template-edit="${r.id}">Edit</button>
-        <button class="btn small danger-ghost" data-template-del="${r.id}">Delete</button>
+        ${iconBtn('edit', 'Edit', `data-template-edit="${r.id}"`)}
+        ${iconBtn('del', 'Delete', `data-template-del="${r.id}"`, 'danger')}
       </td>
     </tr>`;
   }).join('') || '<tr><td colspan="6" class="muted">No templates yet.</td></tr>';
@@ -7722,10 +7837,8 @@ function renderKitchenUsers() {
           (u.last_seen_at ? date(u.last_seen_at) : 'Never') + '</td>' +
         '<td>' + (u.active ? 'Yes' : 'No') + '</td>' +
         '<td class="right">' +
-          '<button class="btn ghost small" data-kds-user-edit="' + u.id +
-            '">Edit</button> ' +
-          '<button class="btn ghost small" data-kds-user-del="' + u.id +
-            '">Delete</button>' +
+          iconBtn('edit', 'Edit', 'data-kds-user-edit="' + u.id + '"') +
+          iconBtn('del', 'Delete', 'data-kds-user-del="' + u.id + '"', 'danger') +
         '</td>' +
       '</tr>'
     ).join('') +
@@ -8313,6 +8426,7 @@ function loadImport() {
       // A new file has not been checked, whatever the last one's result was.
       apply.disabled = true;
       result.hidden = true;
+      showPickedFile(file, 'import-picked');
     });
 
     check.addEventListener('click', () => importRun(false));
@@ -8322,6 +8436,31 @@ function loadImport() {
   check.disabled = !file.files.length;
   apply.disabled = true;
   result.hidden = true;
+  showPickedFile(file, 'import-picked');
+}
+
+/**
+ * Say which file was chosen, with its extension and its size.
+ *
+ * The platform's own control says "No file chosen" and then the bare name in
+ * its own font, and on some browsers nothing at all. Somebody about to rewrite
+ * a whole catalogue should be able to read back what they picked before they
+ * press the button that does it.
+ */
+function showPickedFile(input, targetId) {
+  const out = document.getElementById(targetId);
+  if (!out) return;
+  const f = input.files && input.files[0];
+  if (!f) { out.textContent = ''; return; }
+  const kb = f.size / 1024;
+  const size = kb >= 1024
+    ? (kb / 1024).toFixed(1) + ' MB'
+    : Math.max(1, Math.round(kb)) + ' KB';
+  out.innerHTML = ICONS.check
+    ? `<svg viewBox="0 -960 960 960" aria-hidden="true"
+            style="width:16px;height:16px;fill:var(--green);flex:0 0 auto">${ICONS.check}</svg>`
+      + `<b>${esc(f.name)}</b><span class="size">${esc(size)}</span>`
+    : `<b>${esc(f.name)}</b><span class="size">${esc(size)}</span>`;
 }
 
 /**
@@ -8495,40 +8634,25 @@ function importRender(body, commit) {
  */
 let rrCatalogue = null;
 
-/**
- * The icons the row actions are drawn with.
+/*
+ * The scheduled-reports row used to carry its own icon set and its own button
+ * component — a second `ICON` and a second `iconButton`, drawn at a different
+ * weight from the ones every other row used. Two components doing one job is
+ * how a screen ends up with two kinds of Delete.
  *
- * Inline rather than a font or a sprite: there are six of them, they never
- * change, and a webfont that has not loaded yet turns a row of actions into a
- * row of empty boxes. Every one is a 24-unit stroked path, so they all sit at
- * the same weight beside each other.
+ * Both now come from ICONS and iconBtn at the top of this file. `iconButton`
+ * survives as a thin shim because its call sites pass a mark rather than a
+ * name; the shim maps one to the other so those sites did not all have to move
+ * at once.
  */
 const ICON = {
-  eye:
-    '<path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/>' +
-    '<circle cx="12" cy="12" r="3"/>',
-  download:
-    '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>' +
-    '<polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
-  send: '<line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>',
-  history:
-    '<path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/>' +
-    '<path d="M12 7v5l4 2"/>',
-  edit:
-    '<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>' +
-    '<path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z"/>',
-  trash:
-    '<polyline points="3 6 5 6 21 6"/>' +
-    '<path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+  eye: 'eye', download: 'download', send: 'send',
+  history: 'history', edit: 'edit', trash: 'del',
 };
 
-/** An icon button: a picture, a tooltip, and a name a screen reader can read. */
+/** The old signature, answered by the one component. */
 const iconButton = (icon, label, data, extra = '') =>
-  `<button type="button" class="icon-btn ${extra}" ${data} title="${esc(label)}"
-           aria-label="${esc(label)}">
-     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icon}</svg>
-   </button>`;
+  iconBtn(icon, label, data, extra);
 
 /**
  * Put the chosen report's own name and description at the top of the page.

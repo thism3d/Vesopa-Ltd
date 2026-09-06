@@ -673,7 +673,7 @@
         <section id="view-stock" class="view" hidden>
           <div class="page-head"><div><h2>Stock</h2><p class="muted small">How many of each product remain, and the department it sells under.</p></div></div>
           <div class="card"><table>
-            <thead><tr><th>PLU</th><th>Product</th><th>Department</th><th class="right">In stock</th></tr></thead>
+            <thead><tr><th>PLU</th><th>Product</th><th>Department</th><th class="right">In stock</th><th></th></tr></thead>
             <tbody id="stock"></tbody>
           </table></div>
         </section>
@@ -749,8 +749,21 @@
                 An .xlsx workbook. Sheets you leave out are simply not imported — to change
                 only your prices, upload a workbook with just the Products sheet in it.
               </p>
-              <input type="file" id="import-file"
-                     accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+              <!-- A label styled as one of our buttons, with the real input
+                   hidden inside it. The platform's own file control is a grey
+                   button in the platform's font that says "No file chosen" and
+                   never says what was chosen afterwards. -->
+              <div class="filepick" id="import-pick">
+                <input type="file" id="import-file"
+                       accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+                <label for="import-file">
+                  <svg viewBox="0 -960 960 960" aria-hidden="true">
+                    <path d="M440-320h80v-168l64 64 56-56-160-160-160 160 56 56 64-64v168ZM240-80q-33 0-56.5-23.5T160-160v-640q0-33 23.5-56.5T240-880h320l240 240v480q0 33-23.5 56.5T720-80H240Zm280-520v-200H240v640h480v-440H520ZM240-800v200-200 640-640Z"/>
+                  </svg>
+                  Choose a workbook
+                </label>
+                <span class="picked" id="import-picked"></span>
+              </div>
               <div class="denom-actions" style="margin-top:12px">
                 <button type="button" class="btn ghost" id="import-check" disabled>
                   Check the file

@@ -236,8 +236,8 @@ async function loadPermissionGroups() {
               : 'Nothing — this group can ring up sales and no more.'
           }</td>
           <td>
-            <button class="btn small" data-edit-group="${g.id}">Edit</button>
-            <button class="btn small danger" data-del-group="${g.id}">Delete</button>
+            ${iconBtn('edit', 'Edit', `data-edit-group="${g.id}"`)}
+            ${iconBtn('del', 'Delete', `data-del-group="${g.id}"`, 'danger')}
           </td>
         </tr>`;
     })
@@ -336,8 +336,8 @@ async function loadUserRoles() {
         <td class="muted small">${r.permissions.length} of ${total}</td>
         <td class="muted small">${r.users || 0}</td>
         <td>
-          <button class="btn small" data-edit-role="${r.id}">Edit</button>
-          <button class="btn small danger" data-del-role="${r.id}">Delete</button>
+          ${iconBtn('edit', 'Edit', `data-edit-role="${r.id}"`)}
+          ${iconBtn('del', 'Delete', `data-del-role="${r.id}"`, 'danger')}
         </td>
       </tr>`
     )

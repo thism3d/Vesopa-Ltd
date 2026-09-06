@@ -5262,7 +5262,8 @@ input[type="time"]:disabled { opacity: .55; cursor: not-allowed; }
    aria-label, so there is one place to write it and no way for the two to
    disagree.
    --------------------------------------------------------------------------- */
-.ibtn {
+.ibtn,
+.icon-btn {
   position: relative;
   width: 34px;
   height: 34px;
@@ -5277,26 +5278,38 @@ input[type="time"]:disabled { opacity: .55; cursor: not-allowed; }
   vertical-align: middle;
   transition: color .14s ease, border-color .14s ease, background .14s ease;
 }
-.ibtn + .ibtn { margin-left: 6px; }
-.ibtn svg {
-  width: 17px; height: 17px;
-  stroke: currentColor; fill: none; stroke-width: 1.9;
-  stroke-linecap: round; stroke-linejoin: round;
+.ibtn + .ibtn,
+.icon-btn + .icon-btn { margin-left: 6px; }
+/* Material Symbols are filled shapes on a 0 -960 960 960 canvas, not stroked
+   outlines. Left as `fill: none; stroke: currentColor` — which is what the
+   hand-drawn marks needed — every button rendered as an empty box: present,
+   pressable, and showing nothing at all. */
+.ibtn svg,
+.icon-btn svg {
+  width: 19px; height: 19px;
+  fill: currentColor; stroke: none;
   pointer-events: none;                 /* so the click target is the button */
 }
-.ibtn:hover { color: var(--text); border-color: var(--brand); background: var(--hover); }
-.ibtn:active { transform: scale(.93); }
-.ibtn:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
-.ibtn[disabled] { opacity: .4; cursor: not-allowed; }
+.ibtn:hover,
+.icon-btn:hover { color: var(--text); border-color: var(--brand); background: var(--hover); }
+.ibtn:active,
+.icon-btn:active { transform: scale(.93); }
+.ibtn:focus-visible,
+.icon-btn:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.ibtn[disabled],
+.icon-btn[disabled] { opacity: .4; cursor: not-allowed; }
 
 /* Destructive actions are the one kind worth colouring, and only on approach —
    a row of red buttons reads as a row of errors. */
-.ibtn.danger:hover { color: #fff; background: var(--red); border-color: var(--red); }
-.ibtn.go:hover { color: var(--on-brand); background: var(--brand); border-color: var(--brand); }
+.ibtn.danger:hover,
+.icon-btn.danger:hover { color: #fff; background: var(--red); border-color: var(--red); }
+.ibtn.go:hover,
+.icon-btn.go:hover { color: var(--on-brand); background: var(--brand); border-color: var(--brand); }
 
 /* The name, on hover or on a long press. Drawn from the attribute, so there is
    no second element to keep in step and nothing to clean up. */
-.ibtn::after {
+.ibtn::after,
+.icon-btn::after {
   content: attr(data-tip);
   position: absolute;
   bottom: calc(100% + 7px);
@@ -5315,28 +5328,39 @@ input[type="time"]:disabled { opacity: .55; cursor: not-allowed; }
   transition: opacity .13s ease, transform .13s ease;
   z-index: 60;
 }
-.ibtn:hover::after,
-.ibtn:focus-visible::after,
-.ibtn.tip-open::after { opacity: 1; transform: translateX(-50%); }
+.ibtn:hover::after,,
+.icon-btn:hover::after,
+.ibtn:focus-visible::after,,
+.icon-btn:focus-visible::after,
+.ibtn.tip-open::after,
+.icon-btn.tip-open::after { opacity: 1; transform: translateX(-50%); }
 
 /* A tooltip on the last button in a row would otherwise be cut off by the
    edge of the card it sits in. */
-.ibtn:last-child::after { left: auto; right: 0; transform: translateY(3px); }
-.ibtn:last-child:hover::after,
-.ibtn:last-child:focus-visible::after,
-.ibtn:last-child.tip-open::after { transform: none; }
+.ibtn:last-child::after,
+.icon-btn:last-child::after { left: auto; right: 0; transform: translateY(3px); }
+.ibtn:last-child:hover::after,,
+.icon-btn:last-child:hover::after,
+.ibtn:last-child:focus-visible::after,,
+.icon-btn:last-child:focus-visible::after,
+.ibtn:last-child.tip-open::after,
+.icon-btn:last-child.tip-open::after { transform: none; }
 
 @media (pointer: coarse) {
   /* Nothing hovers on a touchscreen, and what :hover does there is stick on
      after the finger has gone. Long press opens it; see wireTips in app.js. */
-  .ibtn:hover::after { opacity: 0; }
-  .ibtn.tip-open::after { opacity: 1; }
-  .ibtn { width: 40px; height: 40px; }
+  .ibtn:hover::after,
+  .icon-btn:hover::after { opacity: 0; }
+  .ibtn.tip-open::after,
+  .icon-btn.tip-open::after { opacity: 1; }
+  .ibtn,
+  .icon-btn { width: 40px; height: 40px; }
 }
 
 /* The legend. Under the table it belongs to, so somebody who has not touched
    anything yet can still read what the column of buttons is for. */
-.ibtn-key {
+.ibtn-key,
+.icon-btn-key {
   display: flex;
   flex-wrap: wrap;
   gap: 6px 18px;
@@ -5346,15 +5370,17 @@ input[type="time"]:disabled { opacity: .55; cursor: not-allowed; }
   font-size: 12.5px;
   color: var(--muted);
 }
-.ibtn-key span { display: inline-flex; align-items: center; gap: 6px; }
-.ibtn-key svg {
-  width: 15px; height: 15px;
-  stroke: currentColor; fill: none; stroke-width: 1.9;
-  stroke-linecap: round; stroke-linejoin: round;
+.ibtn-key span,
+.icon-btn-key span { display: inline-flex; align-items: center; gap: 6px; }
+.ibtn-key svg,
+.icon-btn-key svg {
+  width: 16px; height: 16px;
+  fill: currentColor; stroke: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ibtn, .ibtn::after { transition: none; }
+  .ibtn, .ibtn::after,
+  .icon-btn, .icon-btn::after { transition: none; }
 }
 
 
@@ -5377,7 +5403,8 @@ input[type="time"]:disabled { opacity: .55; cursor: not-allowed; }
 .nav,
 .nav-group,
 .btn,
-.ibtn,
+.ibtn,,
+.icon-btn,
 .theme-btn,
 .rail-show,
 .rail-fold,
@@ -5472,3 +5499,236 @@ button {
   /* The control moves into the top bar there, so the lane is not needed. */
   .page-head { padding-right: 0; }
 }
+
+
+/* ===========================================================================
+   ONE HEIGHT FOR EVERY CONTROL ON A ROW
+   ===========================================================================
+   A select is drawn by the platform and a button is drawn by us, so left alone
+   they never match: on Financial Summary the PDF/CSV/XLS picker sat two pixels
+   proud of Run report, and on Sales Explorer and Screen programming the same
+   thing again beside every button next to it.
+
+   The fix is one number in one place. --control-h is what a button, a select,
+   a text input and a file picker are all set to, so a row of them is a row of
+   one height whatever it is made of.
+   --------------------------------------------------------------------------- */
+:root { --control-h: 40px; }
+
+.btn,
+select,
+input[type="text"], input[type="search"], input[type="email"],
+input[type="password"], input[type="number"], input[type="tel"],
+input[type="url"], input[type="date"], input[type="time"],
+input[type="datetime-local"], input[type="month"], input[type="week"] {
+  height: var(--control-h);
+  min-height: var(--control-h);
+  box-sizing: border-box;
+  /* Vertically centred against each other rather than sitting on their own
+     baselines, which is the other half of why they looked mismatched. */
+  vertical-align: middle;
+}
+
+/* Anything that grows with its content keeps its own height. */
+textarea, select[multiple], select[size] { height: auto; min-height: 0; }
+
+/* The small variant is small for all of them, not just for buttons.
+ *
+ * 36 rather than 34: backoffice-tablet.test.js presses everything on a 1366px
+ * tablet and refuses anything under 36px, which is the right refusal — 34px is
+ * a thumb's width of miss. On a touchscreen they go to 40. */
+.btn.small, .seg-btn, .row.compact select, .row.compact .btn {
+  height: 36px;
+  min-height: 36px;
+}
+@media (pointer: coarse) {
+  .btn.small, .seg-btn, .row.compact select, .row.compact .btn {
+    height: 40px;
+    min-height: 40px;
+  }
+}
+
+/* A row of controls lines up on their middles. Several toolbars set
+   `align-items: flex-end`, which is right for a label-above-a-field and wrong
+   for a picker beside a button.
+
+   Only classes the markup actually carries — backoffice-layout.test.js fails a
+   rule written for a class nothing uses, and it is right to: a stylesheet full
+   of selectors for markup that was renamed years ago is a stylesheet nobody
+   can safely change. */
+.tbl-bar, .dash-toolbar, .sp-bar, .page-head .row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+/* A select that sits beside a button sizes to its content, not to the row. */
+.tbl-bar select, .dash-toolbar select, .sp-bar select, .page-head select {
+  width: auto;
+  min-width: 8.5rem;
+}
+
+/* Kitchen screens: Upload logo and Remove sat in a column of their own beside
+   Save branding and Revert, at whatever height their text gave them. The two
+   buttons share a row now and the note goes under both, and all four buttons on
+   the page are the one height --control-h gives every .btn. */
+.rd-logo-actions {
+  display: flex;
+  flex-wrap: wrap;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+.rd-logo-actions > p { flex: 1 0 100%; margin: 2px 0 0; }
+
+/* ===========================================================================
+   ONE ICON BUTTON
+   ===========================================================================
+   `.icon-btn` was a second component with its own size, border and marks. It
+   is the same thing as `.ibtn`, so the old name is now written into every rule
+   the new one has rather than carrying a second definition.
+   --------------------------------------------------------------------------- */
+
+/* ===========================================================================
+   SCROLLBARS
+   ===========================================================================
+   The default horizontal bar under a wide table is fifteen pixels of grey
+   furniture across a card that is mostly white — on Scheduled reports and
+   Timesheets it read as part of the design. Thin, in the brand, and only
+   where there is a pointer: a touchscreen has no scrollbar to style and
+   overlay bars on a Mac already behave.
+   --------------------------------------------------------------------------- */
+@media (pointer: fine) {
+  .card:has(> table),
+  .panel-body,
+  .rr-scroll,
+  .rail nav,
+  .dc-panel,
+  .sp-scroll,
+  main,
+  .modal {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--brand) 62%, var(--muted)) transparent;
+  }
+
+  .card:has(> table)::-webkit-scrollbar,
+  .panel-body::-webkit-scrollbar,
+  .rr-scroll::-webkit-scrollbar,
+  .rail nav::-webkit-scrollbar,
+  .dc-panel::-webkit-scrollbar,
+  .sp-scroll::-webkit-scrollbar,
+  main::-webkit-scrollbar,
+  .modal::-webkit-scrollbar { width: 8px; height: 8px; }
+
+  .card:has(> table)::-webkit-scrollbar-track,
+  .panel-body::-webkit-scrollbar-track,
+  .rr-scroll::-webkit-scrollbar-track,
+  .dc-panel::-webkit-scrollbar-track,
+  .sp-scroll::-webkit-scrollbar-track,
+  main::-webkit-scrollbar-track,
+  .modal::-webkit-scrollbar-track { background: transparent; }
+
+  .card:has(> table)::-webkit-scrollbar-thumb,
+  .panel-body::-webkit-scrollbar-thumb,
+  .rr-scroll::-webkit-scrollbar-thumb,
+  .dc-panel::-webkit-scrollbar-thumb,
+  .sp-scroll::-webkit-scrollbar-thumb,
+  main::-webkit-scrollbar-thumb,
+  .modal::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--brand) 55%, var(--muted));
+    border-radius: 999px;
+  }
+  .card:has(> table):hover::-webkit-scrollbar-thumb,
+  .panel-body:hover::-webkit-scrollbar-thumb,
+  .rr-scroll:hover::-webkit-scrollbar-thumb,
+  main:hover::-webkit-scrollbar-thumb { background: var(--brand-deep); }
+
+  /* The corner where two bars meet, which otherwise stays default grey. */
+  ::-webkit-scrollbar-corner { background: transparent; }
+}
+
+/* ===========================================================================
+   THE IDLE SCREEN
+   ===========================================================================
+   Its sections were laid out as whatever each happened to be — one a grid, one
+   a bare stack, one a row — so on a desk they stepped in and out against each
+   other down the page. One column, one gap, and each section its own card.
+   --------------------------------------------------------------------------- */
+/* The view is #view-idle. Its cards sit in a .rd-editor column, and the two
+   things that made them step in and out against each other on a desk were:
+   cards that did not all start their content at the same place, and a
+   two-column pass that let a short card and a tall card share a row with
+   different top edges.
+
+   `align-items: start` on the column, one padding on every card, and headings
+   that all take the same space, so a section under a section lines up with it. */
+#view-idle .rd-editor { align-items: start; }
+#view-idle .rd-editor > .card { width: 100%; padding: var(--card-pad); margin: 0; }
+#view-idle .rd-card > h3 { margin: 0 0 12px; min-height: 20px; }
+#view-idle .rd-card > p.muted { margin-top: 0; }
+
+/* The last control in a card should not sit hard against its bottom edge while
+   the card beside it has room to spare. */
+#view-idle .rd-card > *:last-child { margin-bottom: 0; }
+
+@media (min-width: 1101px) {
+  /* Where the cards do share a row, they share a top edge. */
+  #view-idle .rd-layout:not(:has(> * + *)) .rd-editor { align-items: start; }
+}
+
+/* ===========================================================================
+   CHOOSING A FILE
+   ===========================================================================
+   The platform's own file input is a grey button with "No file chosen" beside
+   it, in the platform's font, and it says nothing afterwards about what was
+   picked. This is a label styled as one of our buttons with the input hidden
+   inside it, and the name of the file goes next to it once there is one.
+   --------------------------------------------------------------------------- */
+.filepick { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.filepick input[type="file"] {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+.filepick label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  height: var(--control-h);
+  padding: 0 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 550;
+  cursor: pointer;
+}
+.filepick label:hover { border-color: var(--brand); background: var(--hover); }
+.filepick input[type="file"]:focus-visible + label {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+.filepick label svg {
+  width: 18px; height: 18px; fill: currentColor;
+}
+.filepick .picked {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13.5px;
+  color: var(--muted);
+}
+.filepick .picked b {
+  color: var(--text);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 22rem;
+}
+.filepick .picked .size { flex: 0 0 auto; }
