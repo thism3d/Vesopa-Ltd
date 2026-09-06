@@ -574,6 +574,22 @@ button{font:inherit;cursor:pointer}
   background:var(--sunken);border:1px solid var(--line);
   overflow:hidden
 }
+/* A room whose own shape has been drawn does not need a box drawn round it as
+   well — the walls are the boundary, and a rectangle behind an L makes the L
+   look like a mistake. */
+.floor.shaped{background:transparent;border-color:transparent}
+.fwalls{
+  position:absolute;inset:0;width:100%;height:100%;
+  pointer-events:none
+}
+.fwalls polygon{
+  fill:var(--sunken);
+  stroke:var(--ink-soft);
+  stroke-width:.6;
+  stroke-linejoin:round;
+  vector-effect:non-scaling-stroke;
+  opacity:.85
+}
 
 .fseat{
   position:absolute;box-sizing:border-box;
@@ -2875,8 +2891,33 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
    */
   function shortName(name){
     var text = String(name || '').trim();
-    var bare = text.replace(/^tables?\s+/i, '');
+    // A character class, not an escape. This whole page is one template
+    // literal, so a backslash in it is eaten before the regex is ever built:
+    // this read /^tables?s+/i on the served page and matched nothing, which is
+    // why every seat still said "Table 2" and still truncated to "Tabl...".
+    var bare = text.replace(/^tables?[ ]+/i, '');
     return bare.length && bare.length < text.length ? bare : text;
+  }
+
+  /**
+   * The room's own shape, as a list of corners, or null.
+   *
+   * The venue draws this in the back office by walking the corners of the
+   * actual room — an L round the bar, a bay at the front. It arrives as JSON
+   * text and is parsed rather than trusted: a room saved before there was a
+   * shape, or one whose shape was cleared, comes through as null and draws as
+   * the plain box it always did.
+   */
+  function outlineOf(room){
+    if (!room || !room.outline) return null;
+    try {
+      var pts = typeof room.outline === 'string'
+        ? JSON.parse(room.outline)
+        : room.outline;
+      return (pts && pts.length >= 3) ? pts : null;
+    } catch (e) {
+      return null;
+    }
   }
 
   function planHtml(room, tables){
@@ -2885,17 +2926,43 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
       return '<p class="floor-empty">No tables in here take orders from phones.</p>';
     }
 
+    var walls = outlineOf(room);
+
     // The extent of what is actually there, not the extent of the grid. A room
     // laid out as twelve by eight with four tables in one corner should fill
     // the screen with those four tables.
+    //
+    // The walls count towards it when the venue has drawn them. Without that,
+    // an L-shaped room would be cropped to whichever part of it happens to have
+    // tables in — and the shape a customer is looking for their own seat in is
+    // the shape of the room they are sitting in.
     var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     mine.forEach(function(t){
       minX = Math.min(minX, t.x); minY = Math.min(minY, t.y);
       maxX = Math.max(maxX, t.x + (t.w || 1)); maxY = Math.max(maxY, t.y + (t.h || 1));
     });
+    if (walls) {
+      walls.forEach(function(p){
+        minX = Math.min(minX, p[0]); minY = Math.min(minY, p[1]);
+        maxX = Math.max(maxX, p[0]); maxY = Math.max(maxY, p[1]);
+      });
+    }
     var w = Math.max(1, maxX - minX), h = Math.max(1, maxY - minY);
 
-    var html = '<div class="floor" style="aspect-ratio:' + w + '/' + h + '">';
+    var html = '<div class="floor' + (walls ? ' shaped' : '') +
+      '" style="aspect-ratio:' + w + '/' + h + '">';
+
+    // The walls, behind the tables and taking no taps. Drawn in the same
+    // fractions of the box the seats are, so the corner table is in the corner
+    // of the actual corner.
+    if (walls) {
+      html += '<svg class="fwalls" viewBox="0 0 100 100" preserveAspectRatio="none"' +
+        ' aria-hidden="true">' +
+        '<polygon points="' + walls.map(function(p){
+          return (((p[0] - minX) / w) * 100).toFixed(2) + ',' +
+                 (((p[1] - minY) / h) * 100).toFixed(2);
+        }).join(' ') + '" /></svg>';
+    }
     mine.forEach(function(t){
       var left = ((t.x - minX) / w) * 100;
       var top = ((t.y - minY) / h) * 100;

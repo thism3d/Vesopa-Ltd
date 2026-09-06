@@ -186,6 +186,47 @@ check('nothing in the page script contains a backtick either', () => {
 // is a class the stylesheet knows about — a renamed rule leaves the plan on the
 // page as a stack of unpositioned buttons, which still works and looks broken.
 
+check('no code in the page relies on a backslash escape', () => {
+  // THE TRAP THIS PAGE KEEPS FALLING INTO.
+  //
+  // The whole customer page — markup, stylesheet and script — is one template
+  // literal in dinein_pages.js. A backslash inside a template literal is an
+  // escape, so a backslash-s written in the source arrives at the browser as a
+  // bare "s" and a backslash-d as a bare "d". The regex still compiles. It just
+  // quietly matches something else, on the served page only, where nothing in
+  // this repository is looking.
+  //
+  // Three bugs so far:
+  //   * times rendered as "11:00" once the digit class became a literal d,
+  //   * "Rhys" shortened to "Rhy" once the space class became a literal s,
+  //   * every seat on the floor plan labelled "Table 2" and clipped to
+  //     "Tabl..." once /^tables?\s+/ became /^tables?s+/ and matched nothing.
+  //
+  // Character classes carry no backslash and cannot be eaten: [0-9] for a
+  // digit, [ ] for a space, [A-Za-z0-9_] for a word character. Use those.
+  //
+  // Comments are stripped first, because the comments above — and the ones on
+  // the page itself — necessarily name the very sequences being banned.
+  const from = source.indexOf('<script>', source.indexOf('</style>'));
+  const to = source.indexOf('</' + 'script>', from);
+  assert.ok(from > 0 && to > from, 'the page script could not be located');
+
+  const code = source
+    .slice(from, to)
+    .replace(/\/\*[\s\S]*?\*\//g, '')   // block comments
+    .replace(/^\s*\/\/.*$/gm, '')       // whole-line comments
+    .replace(/([^:])\/\/.*$/gm, '$1');  // trailing comments, sparing http://
+
+  const banned = [...code.matchAll(/\\[dswbDSWB]/g)].map((m) => {
+    const at = code.slice(0, m.index).split('\n').length;
+    const line = code.split('\n')[at - 1].trim();
+    return `line ${at}: ${line.slice(0, 70)}`;
+  });
+
+  assert.deepStrictEqual(banned, [],
+    'these lose their backslash inside the template literal — use a character class');
+});
+
 check('every class the floor plan draws has a rule behind it', () => {
   const drawn = [
     'floor', 'fseat', 'round', 'busy', 'picked', 'fname', 'fseats',
