@@ -1159,16 +1159,14 @@ html{scroll-behavior:smooth;scroll-padding-top:70px}
   position:relative;z-index:auto;margin-top:10px;
   background:var(--page);border-bottom:1px solid var(--line);
   display:flex;gap:8px;overflow-x:auto;
-  /* Lined up with the search box above it, at every width.
-     The column is capped at 676px and centred, so on anything wider than that
-     the gutter is whatever is left over on each side; on anything narrower it
-     is the page's own 16px. Without this the first tab sat at 16px while the
-     field above it started at 31, and two things in one bar were visibly not
-     the same width. */
-  padding:10px max(16px, calc((100% - 676px) / 2));
+  /* No gutter of its own: the column around it is the same one the search
+     field sits in, so the two line up by construction rather than by two
+     numbers that have to be kept equal. Cut off at the right, the strip
+     scrolls — that is what the sections are, a strip you push along. */
+  padding:10px 0;
   scrollbar-width:none;-webkit-overflow-scrolling:touch;
   overscroll-behavior-x:contain;
-  scroll-padding-inline:max(16px, calc((100% - 676px) / 2));
+  scroll-padding-inline:0;
 }
 @media (min-width:712px){
   /* A SAFE centre, not a plain one.
@@ -1226,6 +1224,16 @@ section{padding-left:18px;padding-right:18px}
   padding-bottom:2px;
   transition:box-shadow .2s ease;
 }
+/* One column for both, so the sections are exactly as wide as the field above
+   them and start and end on the same pixels. The bar behind stays full width,
+   because that is what stops the menu showing at the edges as it scrolls under. */
+.menubar-in{
+  width:min(100% - 32px, 676px);
+  margin-inline:auto;
+}
+/* Inside the bar the column is supplied by .menubar-in, so the field simply
+   fills it. */
+.menubar-in .finder{width:100%;max-width:none;margin-inline:0}
 /* Only once it is genuinely floating over something. */
 .menubar.stuck{box-shadow:0 8px 20px -16px rgba(0,0,0,.55)}
 
@@ -1306,6 +1314,22 @@ section{padding-left:18px;padding-right:18px}
   color:var(--ink-soft)
 }
 .item.hid,.pcard.hid,section.hid,.promos.hid{display:none}
+
+/* THE BROWSER MUST NOT HELPFULLY SCROLL WHILE SOMEBODY IS TYPING.
+ *
+ * Chrome anchors the scroll to a node it picks in the visible content and, when
+ * something above that node changes size, moves the scroll to keep the node
+ * still. For ordinary page loads that is exactly right. For a menu being
+ * filtered on every keystroke it is the shake: hiding a dish above the anchor
+ * makes the browser scroll up by its height, the pinned bar comes away from the
+ * top of the window, and the whole page appears to lurch.
+ *
+ * Traced by wrapping scrollTo and scrollIntoView and watching the scroll move
+ * 785 to 737 with neither of them called — nothing in this page asked for it.
+ *
+ * Turned off only on the list that filters. The rest of the document keeps
+ * anchoring, which is still the behaviour anybody would want. */
+html, body, .col, .col section, .item, .pcard{overflow-anchor:none}
 
 /* TWO OR THREE ACROSS, ONCE THERE IS ROOM FOR THEM.
  *
@@ -1733,7 +1757,7 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
     // page showed through — a heading sliding up behind the gap, which is what
     // "users see nothing behind the search and nav menu bar" was asking for.
     // One wrapper pins once, paints once, and needs no measuring.
-    html += '<div class="menubar" id="menubar">';
+    html += '<div class="menubar" id="menubar"><div class="menubar-in">';
 
     html += '<div class="finder" id="finder">' +
       '<svg class="mag" viewBox="0 0 24 24" aria-hidden="true">' +
@@ -1757,7 +1781,7 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
               esc(s.name) + '</button>';
     });
     html += '</nav>';
-    html += '</div>';   // .menubar
+    html += '</div></div>';   // .menubar-in, .menubar
 
     html += '<div class="col">';
 
@@ -1812,14 +1836,122 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
     var input = document.getElementById('find');
     if (!box || !input) return;
 
+    // Looked up here rather than further down, so apply() does not depend on
+    // which statement in this function has run yet.
+    var bar = document.getElementById('menubar');
+
+    /**
+     * Where an element sits in the document, by layout rather than by paint.
+     *
+     * getBoundingClientRect is no use for the bar: it is position:sticky, so
+     * once pinned its top reads 0 whatever the page does, and rect.top plus the
+     * scroll comes out the same number before and after a reflow. Measuring it
+     * that way said nothing had moved while the page was visibly moving.
+     *
+     * offsetTop is the position the element was laid out at, which is exactly
+     * the thing that changes when something above it grows or shrinks.
+     */
+    function layoutTop(el){
+      var top = 0;
+      while (el) { top += el.offsetTop; el = el.offsetParent; }
+      return top;
+    }
+
+    /**
+     * Put the page back where it was looking, instantly.
+     *
+     * Not through the smooth behaviour this page sets for its own anchors: a
+     * correction that animates is the very lurch it is correcting.
+     */
+    function hold(y){
+      var target = Math.max(0, Math.round(y));
+      if (Math.abs(window.pageYOffset - target) < 1) return;
+      var was = document.documentElement.style.scrollBehavior;
+      document.documentElement.style.scrollBehavior = 'auto';
+      window.scrollTo(0, target);
+      document.documentElement.style.scrollBehavior = was;
+    }
+
+    /**
+     * Filter the menu without the page moving under the person typing.
+     *
+     * Hiding items changes the height of the document, and any of that height
+     * which is above the viewport drags everything visible up or down with it.
+     * On a menu of any size that happens on every keystroke, and it reads as
+     * the screen shaking.
+     *
+     * Two things keep it still. The document is not allowed to get shorter than
+     * it was when the search began, so the browser never clamps the scroll to a
+     * new maximum. And the bar's own position in the document is measured
+     * before and after the filtering, with the scroll moved by the difference —
+     * so whatever reflowed above it, what somebody is looking at stays exactly
+     * where it was.
+     *
+     * The second is the belt to the first's braces, and it is the one that
+     * holds: it does not care *what* changed size, only that something did.
+     */
     function apply(){
       var q = input.value.trim().toLowerCase();
       box.classList.toggle('has', q.length > 0);
 
-      var tabs = document.getElementById('tabs');
-      var promos = document.querySelector('.promos');
-      if (tabs) tabs.hidden = q.length > 0;
-      if (promos) promos.classList.toggle('hid', q.length > 0);
+      // Where the bar sits in the document, and where the page is looking.
+      //
+      // Both are needed. The first catches the page above the bar changing
+      // size; the second catches the browser moving the scroll on its own,
+      // which it does through scroll anchoring — traced by wrapping scrollTo
+      // and scrollIntoView and watching the scroll go from 785 to 737 with
+      // neither of them called.
+      var barBefore = bar ? layoutTop(bar) : null;
+      var scrollBefore = window.pageYOffset;
+
+      // THE PAGE MUST NOT SHRINK UNDER THE SCROLL POSITION — AND NO FURTHER.
+      //
+      // Filtering hides most of a long menu, so the document becomes far
+      // shorter than it was; the browser then clamps the scroll to the new
+      // maximum, and no amount of putting the scroll back afterwards can
+      // exceed a maximum that has already moved.
+      //
+      // So the list is held tall enough for the view to stay where it is, and
+      // not one pixel further. Reserving the height the page had before the
+      // search — which is what this did at first — leaves the results sitting
+      // above nine thousand pixels of nothing, and somebody who searched for
+      // chips scrolls through an empty screen looking for more.
+      //
+      // Recomputed on every keystroke rather than latched once, so it shrinks
+      // back as the results grow, and cleared entirely when the box is empty.
+      var col = document.querySelector('.col');
+      if (col) {
+        if (q) {
+          var need = window.pageYOffset + window.innerHeight - layoutTop(col);
+          col.style.minHeight = Math.max(0, Math.ceil(need)) + 'px';
+        } else {
+          col.style.minHeight = '';
+        }
+      }
+
+      // THE PROMOTIONS STAY TOO.
+      //
+      // They sit above the search bar, so hiding them took 139 pixels out of
+      // the page above the viewport and everything below jumped up by that
+      // much — measured, on the first keystroke, every time.
+      //
+      // There was never much reason to hide them. They are above the bar, which
+      // means they are already out of the way of the results; all the hiding
+      // achieved was the jump.
+
+      // THE TABS STAY.
+      //
+      // They used to be hidden on the first keystroke, which took about fifty
+      // pixels out of a bar that is pinned to the top of the window — so the
+      // whole page jumped upwards as the first letter landed, and again as the
+      // last one was deleted. That is the shake.
+      //
+      // There is no reason to hide them anyway. They are how somebody gets back
+      // to the menu after a search, and taking them away at the moment a search
+      // starts removes the way out of it.
+      //
+      // Keeping the page still while typing is the whole point: the results
+      // change, the furniture does not.
 
       var hits = 0;
       document.querySelectorAll('.item, .pcard').forEach(function(el){
@@ -1849,6 +1981,22 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
       } else if (none) {
         none.remove();
       }
+
+      // And put the view back. If the bar has moved in the document, the page
+      // above it changed size, so the scroll is moved by exactly the same
+      // amount and nothing on screen appears to move at all.
+      // Put the view back where it was.
+      //
+      // The target is where the page should be looking: where it was, plus however
+      // far the content above the bar moved. Applied now and again on the next
+      // frame, because the browser's own anchoring adjustment lands after this
+      // function has returned — correcting only here would be undone a
+      // millisecond later, which is exactly what the first two attempts did.
+      var want = scrollBefore + (bar && barBefore !== null
+        ? layoutTop(bar) - barBefore
+        : 0);
+      hold(want);
+      requestAnimationFrame(function(){ hold(want); });
     }
 
     input.addEventListener('input', apply);
@@ -1870,7 +2018,6 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
     // A sentinel rather than a scroll handler: a handler that reads layout on
     // every frame is the one thing guaranteed to make a long menu stutter on a
     // cheap phone.
-    var bar = document.getElementById('menubar');
     if (bar) {
       var mark = document.createElement('div');
       mark.setAttribute('aria-hidden', 'true');
