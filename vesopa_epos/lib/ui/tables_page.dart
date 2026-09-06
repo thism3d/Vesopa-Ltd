@@ -5,6 +5,7 @@ import '../data/floor_repository.dart';
 import '../data/local/database.dart';
 import '../data/terminal_service.dart';
 import '../main.dart';
+import 'floor_editor_page.dart';
 import 'payment_page.dart';
 import 'placeholder_page.dart';
 import 'theme.dart';
@@ -112,6 +113,15 @@ class TablesPage extends ConsumerWidget {
                       tooltip: 'Refresh plan',
                       icon: const Icon(Icons.refresh),
                       onPressed: () => ref.invalidate(floorPlanProvider),
+                    ),
+                    // Editing is a mode entered on purpose, not something this
+                    // screen slips into: a clerk crossing it mid-service is
+                    // parking bills, and a plan a stray finger could rearrange
+                    // is a plan that will be rearranged by one.
+                    IconButton(
+                      tooltip: 'Lay out the room',
+                      icon: const Icon(Icons.edit_location_alt_outlined),
+                      onPressed: () => openFloorEditor(context, ref),
                     ),
                   ],
                 ),

@@ -218,14 +218,29 @@ final floorPlanProvider = FutureProvider<List<FloorRoom>>((ref) async {
     }
   });
 
+  final repo = await ref.watch(floorRepositoryProvider.future);
+  return repo.load();
+});
+
+/// The floor plan repository, which can now write as well as read.
+///
+/// Split out of floorPlanProvider so the editor reaches the same instance — and
+/// the same terminal token — rather than building a second one that would have
+/// to be kept in step with this one.
+///
+/// A FutureProvider because the cache it wraps needs SharedPreferences, which
+/// only arrives asynchronously.
+final floorRepositoryProvider = FutureProvider<FloorRepository>((ref) async {
   final prefs = await SharedPreferences.getInstance();
   final office = ref.watch(officeProvider);
-  final repo = FloorRepository(
+  return FloorRepository(
     apiBase: ref.watch(apiBaseProvider),
     cache: PrefsFloorCache(prefs, office: office),
     office: office,
+    // Reading a plan needs no credential; changing one does. A till that has
+    // not been commissioned is simply not offered the editor.
+    terminalToken: ref.watch(sessionControllerProvider).value?.terminalToken,
   );
-  return repo.load();
 });
 
 /// The REST client for whichever acquirer this till is configured against.

@@ -668,8 +668,15 @@ app.get(['/till/floor', '/floor.json'], async (req, res, next) => {
 
   try {
     // Scoped: a till must show its own venue's rooms, not every venue's.
+    //
+    // The shape of the room and the colours come with it. This route used to
+    // select the name and nothing else, so a venue that had drawn an L in the
+    // designer saw it in the back office and on a customer's phone, and the
+    // till — the one screen staff actually work from — went on showing a plain
+    // rectangle. The till knew how to draw the walls; the walls were simply
+    // never sent to it.
     const [rooms] = await pool.query(
-      `SELECT r.id, r.name
+      `SELECT r.id, r.name, r.outline, r.floor_colour, r.wall_colour
        FROM floor_rooms r
        JOIN offices o ON o.id = r.office_id
        WHERE o.contact_email = ?
@@ -678,7 +685,7 @@ app.get(['/till/floor', '/floor.json'], async (req, res, next) => {
     );
     const [tables] = await pool.query(
       `SELECT t.id, t.room_id, t.table_number, t.label, t.pos_x, t.pos_y,
-              t.width, t.height, t.shape, t.seats
+              t.width, t.height, t.shape, t.seats, t.colour
        FROM floor_tables t
        JOIN offices o ON o.id = t.office_id
        WHERE o.contact_email = ?
@@ -691,6 +698,255 @@ app.get(['/till/floor', '/floor.json'], async (req, res, next) => {
         tables: tables.filter((t) => t.room_id === r.id),
       }))
     );
+  } catch (e) {
+    next(e);
+  }
+});
+
+/* ---------------------------------------------------------------------------
+   LAYING OUT THE FLOOR FROM THE TILL
+
+   The designer has always been a back-office screen, which means arranging a
+   room happens on a laptop in an office, from memory, about a room the person
+   is not standing in. The obvious place to do it is on the till, on the floor,
+   looking at the tables — so these are the same three writes the designer
+   makes, reachable by a commissioned terminal.
+
+   WHAT MAKES THIS SAFE ENOUGH TO EXPOSE
+
+   The office comes from the terminal's own token and never from the request.
+   requireTerminal puts it there after verifying the signature, so a till can
+   only ever rewrite its own venue's plan; passing somebody else's office in the
+   body changes nothing, because the body is not consulted for it.
+
+   Every row touched is matched on office_id as well as on id. That is belt and
+   braces over the first rule, and it is the rule that actually held the day the
+   designer's own reads were unscoped and one venue could see another's layout.
+
+   These do not replace the back office. A venue that would rather arrange its
+   floor on a big screen still can, and both write the same rows.
+   --------------------------------------------------------------------------- */
+
+/**
+ * A table's permanent public address.
+ *
+ * The same shape the designer mints, and for the same reason: this is what is
+ * printed on the card that sits on the table, so it is generated once and never
+ * again — a rename, a renumber or a move to another room must not invalidate a
+ * card somebody has already laminated.
+ *
+ * Spelled out here rather than shared with programming.js, where it is a
+ * closure inside the route factory. Exporting it would mean either widening
+ * that module's surface or restructuring it, and this is one line of crypto
+ * whose only requirement is that it does not collide.
+ */
+function newPublicId() {
+  return require('crypto').randomUUID().replace(/-/g, '');
+}
+
+/** The office id behind the email a terminal token carries. */
+async function terminalOfficeId(office) {
+  const [[row]] = await pool.query(
+    'SELECT id FROM offices WHERE contact_email = ?',
+    [office]
+  );
+  return row ? row.id : null;
+}
+
+/**
+ * A colour a picker wrote, or null.
+ *
+ * Six hex digits and a hash. Refused rather than corrected: this ends up in a
+ * style attribute on a page other people read, and a "colour" that is really a
+ * string of CSS is a way of styling somebody else's screen.
+ */
+function tillColour(raw) {
+  if (raw == null || raw === '') return null;
+  const text = String(raw).trim();
+  return /^#[0-9a-fA-F]{6}$/.test(text) ? text.toUpperCase() : null;
+}
+
+/** Corners in grid squares, clamped, as JSON text — or null for a rectangle. */
+function tillOutline(raw) {
+  if (raw == null || raw === '') return null;
+  let points = raw;
+  if (typeof raw === 'string') {
+    try {
+      points = JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+  if (!Array.isArray(points) || points.length < 3) return null;
+
+  const clean = [];
+  for (const point of points) {
+    if (!Array.isArray(point) || point.length < 2) return null;
+    const x = Number(point[0]);
+    const y = Number(point[1]);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    // A corner at -4 or at 900 is a dragging accident, and a room drawn off the
+    // plan cannot be dragged back because its handles are off the plan too.
+    clean.push([
+      Math.max(0, Math.min(200, Math.round(x))),
+      Math.max(0, Math.min(200, Math.round(y))),
+    ]);
+  }
+  return JSON.stringify(clean);
+}
+
+/** Where the tables are, after a drag. */
+app.put('/till/floor/tables', requireTerminal(JWT_SECRET), async (req, res, next) => {
+  const tables = Array.isArray(req.body && req.body.tables) ? req.body.tables : [];
+  if (!tables.length) return res.json({ ok: true, saved: 0 });
+
+  let conn;
+  try {
+    const officeId = await terminalOfficeId(req.office);
+    if (officeId == null) {
+      return res.status(400).json({ error: 'This terminal has no venue.' });
+    }
+
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+    for (const t of tables) {
+      // Matched on the office as well as the id, so a drag on one venue's till
+      // can never move a table belonging to another.
+      await conn.execute(
+        'UPDATE floor_tables' +
+          '   SET pos_x = ?, pos_y = ?, width = ?, height = ?,' +
+          '       shape = ?, seats = ?, colour = ?' +
+          ' WHERE id = ? AND office_id = ?',
+        [
+          Math.max(0, Math.min(200, Number(t.pos_x) || 0)),
+          Math.max(0, Math.min(200, Number(t.pos_y) || 0)),
+          Math.max(1, Math.min(20, Number(t.width) || 2)),
+          Math.max(1, Math.min(20, Number(t.height) || 2)),
+          t.shape === 'circle' ? 'circle' : 'rect',
+          Math.max(0, Math.min(99, Number(t.seats) || 4)),
+          tillColour(t.colour),
+          Number(t.id),
+          officeId,
+        ]
+      );
+    }
+    await conn.commit();
+
+    // Every other till in the venue, and the back office, at once.
+    broadcast({ type: 'floor.updated' });
+    res.json({ ok: true, saved: tables.length });
+  } catch (e) {
+    if (conn) await conn.rollback();
+    next(e);
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+/** A new table, put down on the floor somebody is standing on. */
+app.post('/till/floor/tables', requireTerminal(JWT_SECRET), async (req, res, next) => {
+  const body = req.body || {};
+  try {
+    const officeId = await terminalOfficeId(req.office);
+    if (officeId == null) {
+      return res.status(400).json({ error: 'This terminal has no venue.' });
+    }
+
+    const roomId = Number(body.room_id);
+    const [[room]] = await pool.query(
+      'SELECT id FROM floor_rooms WHERE id = ? AND office_id = ?',
+      [roomId, officeId]
+    );
+    if (!room) return res.status(400).json({ error: 'That room is not yours.' });
+
+    const number = Number(body.table_number);
+    if (!Number.isInteger(number) || number < 1) {
+      return res.status(400).json({ error: 'Give the table a number.' });
+    }
+
+    // A name has to be unique across the venue and not merely within the room:
+    // a runner carrying food to "Window" is not helped by being told there are
+    // two of them in different rooms.
+    const name = String(body.name || '').trim() || null;
+    if (name) {
+      const [[clash]] = await pool.query(
+        'SELECT id FROM floor_tables WHERE office_id = ? AND LOWER(name) = LOWER(?)',
+        [officeId, name]
+      );
+      if (clash) {
+        return res.status(409).json({
+          error: 'There is already a table called "' + name + '".',
+        });
+      }
+    }
+
+    const [r] = await pool.execute(
+      'INSERT INTO floor_tables' +
+        ' (office_id, room_id, table_number, name, public_id, qr_enabled,' +
+        '  pos_x, pos_y, width, height, shape, seats, colour)' +
+        ' VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        officeId,
+        roomId,
+        number,
+        name,
+        // Minted here and never again: this is the address printed on the card
+        // that sits on the table, so it has to survive every rename and move.
+        newPublicId(),
+        Math.max(0, Math.min(200, Number(body.pos_x) || 0)),
+        Math.max(0, Math.min(200, Number(body.pos_y) || 0)),
+        Math.max(1, Math.min(20, Number(body.width) || 2)),
+        Math.max(1, Math.min(20, Number(body.height) || 2)),
+        body.shape === 'circle' ? 'circle' : 'rect',
+        Math.max(0, Math.min(99, Number(body.seats) || 4)),
+        tillColour(body.colour),
+      ]
+    );
+
+    broadcast({ type: 'floor.updated' });
+    res.status(201).json({ id: r.insertId });
+  } catch (e) {
+    if (e.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({
+        error: 'Table ' + body.table_number + ' already exists.',
+      });
+    }
+    next(e);
+  }
+});
+
+/** The shape of the room, walked out on the floor it describes. */
+app.put('/till/floor/rooms/:id', requireTerminal(JWT_SECRET), async (req, res, next) => {
+  const body = req.body || {};
+  try {
+    const officeId = await terminalOfficeId(req.office);
+    if (officeId == null) {
+      return res.status(400).json({ error: 'This terminal has no venue.' });
+    }
+
+    const sets = [];
+    const params = [];
+    if (body.outline !== undefined) {
+      sets.push('outline = ?');
+      params.push(tillOutline(body.outline));
+    }
+    for (const field of ['floor_colour', 'wall_colour']) {
+      if (body[field] === undefined) continue;
+      sets.push(field + ' = ?');
+      params.push(tillColour(body[field]));
+    }
+    if (!sets.length) return res.json({ ok: true, changed: 0 });
+
+    const [r] = await pool.execute(
+      'UPDATE floor_rooms SET ' + sets.join(', ') + ' WHERE id = ? AND office_id = ?',
+      [...params, Number(req.params.id), officeId]
+    );
+    if (!r.affectedRows) {
+      return res.status(404).json({ error: 'That room is not yours.' });
+    }
+
+    broadcast({ type: 'floor.updated' });
+    res.json({ ok: true, changed: r.affectedRows });
   } catch (e) {
     next(e);
   }
