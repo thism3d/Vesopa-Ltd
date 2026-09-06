@@ -1,7 +1,165 @@
 const express = require('express');
 const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 
 const { requireAuth, requireTerminal } = require('./auth');
+
+// ---------------------------------------------------------------------------
+// Opening hours
+// ---------------------------------------------------------------------------
+
+const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday',
+  'Saturday', 'Sunday'];
+
+/** A day with no usable hours in it. */
+const SHUT = Object.freeze({ closed: true, open: '09:00', close: '17:00' });
+
+function cleanTime(value, fallback) {
+  const m = /^\s*(\d{1,2}):(\d{2})\s*$/.exec(String(value == null ? '' : value));
+  if (!m) return fallback;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (h > 23 || min > 59) return fallback;
+  return String(h).padStart(2, '0') + ':' + m[2];
+}
+
+/**
+ * Seven days, Monday first, whatever was stored.
+ *
+ * Anything unreadable becomes "open all week", never "closed all week". A
+ * venue whose hours JSON has been corrupted should keep taking orders and look
+ * wrong, rather than stop taking orders and look fine — the first is noticed in
+ * minutes and the second is noticed in a week of missing covers.
+ */
+function parseHours(raw) {
+  let list = null;
+  if (Array.isArray(raw)) list = raw;
+  else if (typeof raw === 'string' && raw.trim()) {
+    try { list = JSON.parse(raw); } catch { list = null; }
+  }
+  const out = [];
+  for (let d = 0; d < 7; d += 1) {
+    const row = (Array.isArray(list) && list[d]) || null;
+    if (!row) {
+      out.push({ closed: false, open: '09:00', close: '23:00' });
+      continue;
+    }
+    out.push({
+      closed: !!row.closed,
+      open: cleanTime(row.open, '09:00'),
+      close: cleanTime(row.close, '23:00'),
+    });
+  }
+  return out;
+}
+
+/** Minutes since midnight, or null. */
+function minutesOf(hhmm) {
+  const m = /^(\d{2}):(\d{2})$/.exec(String(hhmm || ''));
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+}
+
+/**
+ * The venue's own wall clock.
+ *
+ * Computed on the server on purpose. A phone in a pub can be an hour out, on
+ * the wrong timezone, or deliberately set forward, and "are you open" is a
+ * question the venue answers rather than the customer's device.
+ */
+function venueNow(timeZone) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: timeZone || 'Europe/London',
+    weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false,
+  }).formatToParts(new Date());
+  const get = (type) => (parts.find((x) => x.type === type) || {}).value;
+  const short = { Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5, Sun: 6 };
+  // 24 is what en-GB calls midnight in hour12:false.
+  const hour = Number(get('hour')) % 24;
+  return {
+    day: short[get('weekday')] ?? 0,
+    minutes: hour * 60 + Number(get('minute')),
+  };
+}
+
+/**
+ * Is this venue open, and if not, when is it next.
+ *
+ * A close earlier than an open means the venue runs past midnight — 18:00 to
+ * 01:00 is one shift, not a nineteen-hour closure — so that day's window is
+ * read as running into the next.
+ */
+function openState(venue) {
+  const hours = parseHours(venue && venue.opening_hours);
+  const enabled = !venue || venue.schedule_enabled == null
+    ? true
+    : !!venue.schedule_enabled;
+
+  if (!enabled) {
+    return { enforced: false, open: true, hours, today: null, next: null };
+  }
+
+  const now = venueNow(venue && venue.timezone);
+  const within = (dayIndex, atMinutes) => {
+    const day = hours[dayIndex];
+    if (!day || day.closed) return false;
+    const from = minutesOf(day.open);
+    const to = minutesOf(day.close);
+    if (from == null || to == null) return false;
+    if (to > from) return atMinutes >= from && atMinutes < to;
+    // Runs past midnight, and only the evening half of it belongs to this day.
+    //
+    // The tail — midnight to the close — is the *previous* day's shift still
+    // running, and it is `spill` below that owns it. Answering true for both
+    // halves here counted it twice: a venue open Wednesday 18:00-01:00 was
+    // reported open at half past midnight on Wednesday *morning*, sixteen hours
+    // before that shift starts, even when Tuesday was marked closed.
+    return atMinutes >= from;
+  };
+
+  // Yesterday's late shift can still be running: at 00:30 on Saturday the
+  // thing that is open is Friday's 18:00-01:00, and Saturday's own window has
+  // not started. Checked directly rather than by feeding tomorrow's clock into
+  // `within`, which happened to give the right answer for the wrong reason.
+  const yesterday = (now.day + 6) % 7;
+  const spill = (() => {
+    const day = hours[yesterday];
+    if (!day || day.closed) return false;
+    const from = minutesOf(day.open);
+    const to = minutesOf(day.close);
+    if (from == null || to == null) return false;
+    if (to > from) return false;          // did not run past midnight
+    return now.minutes < to;              // still inside the tail of it
+  })();
+
+  const openNow = within(now.day, now.minutes) || spill;
+
+  let next = null;
+  if (!openNow) {
+    for (let ahead = 0; ahead < 8 && !next; ahead += 1) {
+      const d = (now.day + ahead) % 7;
+      const day = hours[d];
+      if (!day || day.closed) continue;
+      const from = minutesOf(day.open);
+      if (from == null) continue;
+      if (ahead === 0 && from <= now.minutes) continue;
+      next = { day: DAYS[d], today: ahead === 0, at: day.open };
+    }
+  }
+
+  return {
+    enforced: true,
+    open: !!openNow,
+    hours,
+    today: {
+      day: DAYS[now.day],
+      closed: !!hours[now.day].closed,
+      open: hours[now.day].open,
+      close: hours[now.day].close,
+    },
+    next,
+  };
+}
 
 /**
  * Dine-in: the menu a customer reads off their own phone, and the orders they
@@ -184,6 +342,10 @@ function dineinRoutes({ pool, broadcast, secret }) {
       );
       res.json({
         ...venue,
+        // Always seven days in a known shape, so the editor never has to think
+        // about a venue that has not set any hours yet.
+        opening_hours: parseHours(venue.opening_hours),
+        open_state: openState(venue),
         // What the page would be called if nothing has been set. Sent rather
         // than defaulted into the column, so a venue that later renames its
         // account is not stuck with the old name frozen into its menu.
@@ -239,6 +401,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
       const plain = [
         'display_name', 'tagline', 'phone', 'address_line', 'postcode',
         'map_url', 'logo_url', 'banner_url', 'accent_colour', 'notice',
+        'closed_message',
       ];
       for (const field of plain) {
         if (body[field] === undefined) continue;
@@ -249,11 +412,27 @@ function dineinRoutes({ pool, broadcast, secret }) {
 
       const flags = [
         'is_published', 'ordering_open', 'require_name', 'require_phone',
+        'schedule_enabled',
       ];
       for (const field of flags) {
         if (body[field] === undefined) continue;
         sets.push(field + ' = ?');
         params.push(body[field] ? 1 : 0);
+      }
+
+      if (body.eta_minutes !== undefined) {
+        // Half an hour either side of sensible. Zero means "we do not say",
+        // and four hours is somebody who has typed the wrong box.
+        const eta = Math.max(0, Math.min(240, parseInt(body.eta_minutes, 10) || 0));
+        sets.push('eta_minutes = ?');
+        params.push(eta);
+      }
+
+      if (body.opening_hours !== undefined) {
+        // Normalised on the way in, so that whatever is read back out is seven
+        // days in a known shape whoever wrote it.
+        sets.push('opening_hours = ?');
+        params.push(JSON.stringify(parseHours(body.opening_hours)));
       }
 
       if (!sets.length) return res.json({ ok: true, changed: 0 });
@@ -951,6 +1130,11 @@ function dineinRoutes({ pool, broadcast, secret }) {
         ordering_open: !!venue.ordering_open,
         require_name: !!venue.require_name,
         require_phone: !!venue.require_phone,
+        // The hours, and the venue's own answer to "are you open" — worked out
+        // here rather than on the phone, whose clock is not evidence.
+        schedule: openState(venue),
+        closed_message: venue.closed_message || null,
+        eta_minutes: Number(venue.eta_minutes) || 25,
         base: publicBase(req),
       },
       sections: sections.map((s) => ({
@@ -1006,6 +1190,24 @@ function dineinRoutes({ pool, broadcast, secret }) {
       if (!venue || !venue.is_published || !venue.ordering_open) {
         return res.status(403).json({
           error: 'The kitchen is not taking orders through the app just now.',
+        });
+      }
+
+      // Outside the venue's own hours nothing is taken. The page knows this and
+      // says so before anybody fills a basket, but the page is not the
+      // authority: a tab left open since lunchtime, a cached copy, or anybody
+      // calling this endpoint directly all arrive here, and the kitchen closing
+      // has to mean the same thing to all of them.
+      const state = openState(venue);
+      if (state.enforced && !state.open) {
+        return res.status(409).json({
+          error: venue.closed_message
+            || (state.next
+              ? 'The kitchen is closed. It opens ' +
+                (state.next.today ? 'today' : state.next.day) + ' at ' + state.next.at + '.'
+              : 'The kitchen is closed just now.'),
+          closed: true,
+          schedule: state,
         });
       }
 
@@ -1136,8 +1338,8 @@ function dineinRoutes({ pool, broadcast, secret }) {
   router.get('/api/public/dinein/order/:publicId', async (req, res, next) => {
     try {
       const [[order]] = await pool.query(
-        'SELECT public_id, table_label, status, status_note, total_minor,' +
-          '       placed_at, accepted_at, ready_at, served_at' +
+        'SELECT id, public_id, table_label, status, status_note, total_minor,' +
+          '       eta_minutes, placed_at, accepted_at, ready_at, served_at' +
           '  FROM dinein_orders WHERE public_id = ?',
         [req.params.publicId]
       );
@@ -1148,7 +1350,12 @@ function dineinRoutes({ pool, broadcast, secret }) {
           ' ORDER BY id',
         [req.params.publicId]
       );
-      res.json({ ...order, lines });
+      // A number somebody can say across a bar. The public_id is 32 random
+      // characters because it has to be unguessable; that is the opposite of
+      // what you want when a customer is trying to tell a member of staff which
+      // order is theirs. The row id is already unique and already sequential.
+      const { id, ...rest } = order;
+      res.json({ ...rest, number: id, lines });
     } catch (e) {
       next(e);
     }
@@ -1265,15 +1472,31 @@ function dineinRoutes({ pool, broadcast, secret }) {
         served: 'served_at',
       }[action];
 
+      // Accepting is the moment a customer is promised a time, so the venue's
+      // current setting is copied onto the order rather than read back from the
+      // venue when the tracker draws. Otherwise a landlord changing the default
+      // from twenty minutes to forty at eight o'clock would silently move the
+      // clock on everybody already waiting.
+      let eta = null;
+      if (action === 'accepted') {
+        const [[venue]] = await pool.query(
+          'SELECT eta_minutes FROM dinein_venue WHERE office_id = ?',
+          [officeId]
+        );
+        eta = venue && venue.eta_minutes != null ? Number(venue.eta_minutes) : 25;
+      }
+
       const [r] = await pool.execute(
         'UPDATE dinein_orders SET status = ?, status_note = ?' +
           (stamp ? ', ' + stamp + ' = NOW()' : '') +
+          (eta != null ? ', eta_minutes = ?' : '') +
           (req.body && req.body.order_id ? ', order_id = ?' : '') +
           ' WHERE id = ? AND office_id = ? AND status IN (' +
           from.map(() => '?').join(',') + ')',
         [
           action,
           (req.body && req.body.note ? String(req.body.note).slice(0, 300) : null),
+          ...(eta != null ? [eta] : []),
           ...(req.body && req.body.order_id ? [String(req.body.order_id)] : []),
           req.params.id,
           officeId,
@@ -1298,4 +1521,8 @@ function dineinRoutes({ pool, broadcast, secret }) {
   return router;
 }
 
-module.exports = { dineinRoutes };
+// `openState` and `parseHours` are exported for the test that drives them
+// directly. They are pure functions of a venue row and the clock, and the
+// alternative — asserting on them through an HTTP route — would mean standing
+// up a venue for every one of a dozen cases about midnight.
+module.exports = { dineinRoutes, openState, parseHours, cleanTime };

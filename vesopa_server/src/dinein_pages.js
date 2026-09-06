@@ -435,6 +435,199 @@ button{font:inherit;cursor:pointer}
   border:1px solid var(--line);border-radius:999px;padding:6px 12px
 }
 
+/* WHEN THE KITCHEN IS SHUT.
+ *
+ * After the venue's own description and before the menu itself, as asked: it
+ * is a fact about the place, so it belongs with the other facts about the
+ * place, and a customer should meet it before they meet the food rather than
+ * after they have chosen a pudding. */
+.shutbox{
+  margin:14px auto 0;max-width:648px;
+  border-radius:var(--radius);overflow:hidden;
+  border:1px solid color-mix(in srgb, #B3261E 34%, var(--line));
+  background:color-mix(in srgb, #B3261E 9%, var(--card));
+}
+.shutbox .head{
+  display:flex;align-items:center;gap:10px;
+  padding:13px 15px;font-weight:700;color:#B3261E;
+}
+.shutbox .head svg{width:18px;height:18px;stroke:currentColor;fill:none;
+                   stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.shutbox p{margin:0;padding:0 15px 13px;color:var(--ink-soft);font-size:14px;line-height:1.5}
+
+/* The week, folded away. A customer wants "are you open"; the seven rows are
+   for the one person in ten who wants to know about Tuesday. */
+.hoursbox{margin:14px auto 0;max-width:648px}
+.hoursbox summary{
+  list-style:none;cursor:pointer;padding:11px 15px;
+  border:1px solid var(--line);border-radius:var(--radius);
+  display:flex;align-items:center;gap:9px;font-size:14px;
+  color:var(--ink-soft);background:var(--card);
+}
+.hoursbox summary::-webkit-details-marker{display:none}
+.hoursbox summary svg{width:15px;height:15px;stroke:currentColor;fill:none;
+                      stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;opacity:.75}
+.hoursbox summary .now{font-weight:700;color:var(--ink)}
+.hoursbox summary .chev{margin-left:auto;transition:transform .2s ease}
+.hoursbox[open] summary .chev{transform:rotate(180deg)}
+.hoursbox .week{
+  border:1px solid var(--line);border-top:0;
+  border-radius:0 0 var(--radius) var(--radius);
+  padding:6px 15px 12px;background:var(--card);
+}
+.hoursbox .wk{display:flex;justify-content:space-between;gap:12px;
+              padding:6px 0;font-size:14px}
+.hoursbox .wk.today{font-weight:700}
+.hoursbox .wk .shut{color:#B3261E}
+
+/* ANYTHING THAT APPEARS, APPEARS. Every sheet and every message on this page
+   arrives and leaves under its own animation, because something that is simply
+   there on the next frame beside what you were already reading is easy to miss
+   entirely — which on a phone in a dark pub means pressing the button twice. */
+.pop{
+  position:fixed;inset:0;z-index:80;display:flex;align-items:flex-end;
+  justify-content:center;background:rgba(0,0,0,.45);
+  opacity:0;transition:opacity .2s ease;
+  padding:0 12px env(safe-area-inset-bottom,12px);
+}
+.pop.in{opacity:1}
+.pop .sheet{
+  width:100%;max-width:460px;background:var(--card);color:var(--ink);
+  border-radius:20px 20px 14px 14px;padding:22px 20px 18px;
+  box-shadow:0 -8px 40px rgba(0,0,0,.3);
+  transform:translateY(16px) scale(.98);
+  transition:transform .24s cubic-bezier(.2,.9,.3,1);
+  margin-bottom:12px;
+}
+.pop.in .sheet{transform:none}
+.pop h3{margin:0 0 8px;font-size:19px}
+.pop p{margin:0 0 16px;color:var(--ink-soft);line-height:1.5}
+.pop .acts{display:flex;gap:10px}
+.pop .acts button{
+  flex:1;border:0;border-radius:13px;padding:14px;font-size:15px;
+  font-weight:650;cursor:pointer
+}
+.pop .acts .go{background:var(--accent);color:var(--on-accent)}
+.pop .acts .no{background:var(--sunken);color:var(--ink)}
+
+@media (prefers-reduced-motion:reduce){
+  .pop,.pop .sheet{transition:none}
+}
+
+/* ===========================================================================
+   THE TRACKER
+   ===========================================================================
+   Somebody watching this screen is waiting for food, and a page that does not
+   move is a page they cannot tell is still working. So each stage has its own
+   colour and its own motion: the one that is happening breathes, the ones that
+   have happened are ticked and still, and the ones to come are grey.
+   ------------------------------------------------------------------------ */
+.tk-head{padding:26px 20px 6px;max-width:520px;margin:0 auto}
+.tk-num{
+  display:inline-flex;align-items:baseline;gap:8px;
+  font-size:13px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink-soft)
+}
+.tk-num b{font-size:26px;letter-spacing:-.01em;color:var(--ink)}
+.tk-where{margin:8px 0 0;color:var(--ink-soft)}
+
+/* The headline state, in the colour of that state. */
+.tk-state{
+  max-width:520px;margin:18px auto 0;padding:18px 20px;
+  border-radius:18px;display:flex;gap:15px;align-items:center;
+  background:color-mix(in srgb, var(--tk) 12%, var(--card));
+  border:1px solid color-mix(in srgb, var(--tk) 34%, var(--line));
+}
+.tk-state .ring{
+  width:52px;height:52px;border-radius:50%;flex:0 0 auto;
+  display:grid;place-items:center;color:#fff;background:var(--tk);
+  position:relative
+}
+.tk-state .ring svg{width:26px;height:26px;stroke:currentColor;fill:none;
+  stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.tk-state h2{margin:0;font-size:19px}
+.tk-state p{margin:3px 0 0;color:var(--ink-soft);font-size:14px}
+
+/* Working: a soft pulse behind the mark. Not a spinner — nothing here is
+   loading, something is being cooked. */
+.tk-state.busy .ring::after{
+  content:"";position:absolute;inset:-6px;border-radius:50%;
+  border:2px solid var(--tk);opacity:.5;
+  animation:tk-pulse 2.1s ease-out infinite;
+}
+@keyframes tk-pulse{
+  0%{transform:scale(.92);opacity:.55}
+  70%{transform:scale(1.22);opacity:0}
+  100%{opacity:0}
+}
+/* Arriving: the tick draws itself once. */
+.tk-state.done .ring svg path{
+  stroke-dasharray:30;stroke-dashoffset:30;
+  animation:tk-draw .5s .1s ease forwards;
+}
+@keyframes tk-draw{to{stroke-dashoffset:0}}
+/* Refused: one shake, then still. Repeating it would be nagging. */
+.tk-state.bad{animation:tk-shake .4s ease}
+@keyframes tk-shake{
+  20%{transform:translateX(-5px)} 40%{transform:translateX(5px)}
+  60%{transform:translateX(-3px)} 80%{transform:translateX(3px)}
+}
+
+.tk-eta{
+  max-width:520px;margin:12px auto 0;padding:13px 18px;
+  border:1px dashed var(--line);border-radius:14px;
+  display:flex;align-items:center;gap:10px;color:var(--ink-soft);font-size:14px
+}
+.tk-eta b{color:var(--ink);font-size:16px}
+.tk-eta svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.9;
+  stroke-linecap:round;stroke-linejoin:round;opacity:.8}
+
+/* The rail of stages. */
+.tk-rail{max-width:520px;margin:22px auto 0;padding:0 20px}
+.tk-step{display:flex;gap:14px;padding:0 0 4px;position:relative}
+.tk-step .pip{
+  width:26px;height:26px;border-radius:50%;flex:0 0 auto;z-index:1;
+  display:grid;place-items:center;font-size:12px;font-weight:700;
+  background:var(--sunken);color:var(--ink-soft);
+  transition:background .3s ease,color .3s ease
+}
+.tk-step.done .pip{background:var(--tk-done);color:#fff}
+.tk-step.now .pip{background:var(--tk);color:#fff;transform:scale(1.12)}
+/* The line between the pips, filled as far as the order has got. */
+.tk-step::before{
+  content:"";position:absolute;left:12.5px;top:24px;bottom:-4px;width:2px;
+  background:var(--line)
+}
+.tk-step:last-child::before{display:none}
+.tk-step.done::before{background:var(--tk-done)}
+.tk-step .t{padding-bottom:20px}
+.tk-step h3{margin:0;font-size:15px;font-weight:650}
+.tk-step p{margin:2px 0 0;color:var(--ink-soft);font-size:13px}
+.tk-step.todo h3,.tk-step.todo p{opacity:.5}
+
+.tk-lines{max-width:520px;margin:6px auto 0;padding:16px 20px 0;
+  border-top:1px solid var(--line)}
+.tk-line{display:flex;justify-content:space-between;gap:14px;padding:7px 0}
+.tk-foot{max-width:520px;margin:0 auto;padding:16px 20px 40px}
+.tk-link{
+  display:flex;gap:10px;align-items:center;width:100%;
+  border:1px solid var(--line);border-radius:14px;background:var(--card);
+  color:var(--ink-soft);padding:13px 15px;font-size:13px;cursor:pointer;
+  text-align:left
+}
+.tk-link span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.tk-cancel{
+  width:100%;margin-top:10px;border:1px solid var(--line);border-radius:14px;
+  background:none;color:var(--ink-soft);padding:14px;cursor:pointer
+}
+
+@media (prefers-reduced-motion:reduce){
+  .tk-state.busy .ring::after,.tk-state.done .ring svg path,.tk-state.bad{
+    animation:none
+  }
+  .tk-state.done .ring svg path{stroke-dashoffset:0}
+}
+
 .notice{
   margin:14px auto 0;max-width:648px;padding:12px 14px;
   border-radius:var(--radius);
@@ -827,6 +1020,10 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
 
     if (v.notice) html += '<div class="notice">' + esc(v.notice) + '</div>';
 
+    // The venue's hours, and — when it is shut — a plain statement of it,
+    // after the description and before the menu.
+    html += hoursHtml(v);
+
     var sections = (data.sections || []).filter(function(s){
       return s.items && s.items.length;
     });
@@ -866,7 +1063,127 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
     paintBasket();
   }
 
+  /** Half past eleven, not 11:30, because that is how a sign says it. */
+  function pretty(hhmm){
+    // [0-9] rather than \d on purpose. This whole document is built inside a
+    // template literal, and a template literal drops the backslash from an
+    // unrecognised escape - so \d reaches the browser as a plain d, the
+    // pattern matches nothing, every time renders as "11:00" instead of
+    // "11am", and nothing anywhere reports an error.
+    var m = /^([0-9]{2}):([0-9]{2})$/.exec(String(hhmm || ''));
+    if (!m) return String(hhmm || '');
+    var h = Number(m[1]);
+    var suffix = h < 12 ? 'am' : 'pm';
+    var hour = h % 12 === 0 ? 12 : h % 12;
+    return m[2] === '00' ? hour + suffix : hour + '.' + m[2] + suffix;
+  }
+
+  var WEEKDAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday',
+                  'Saturday','Sunday'];
+
+  function hoursHtml(v){
+    var sched = v.schedule;
+    if (!sched || !sched.enforced) return '';
+
+    var html = '';
+
+    if (!sched.open) {
+      var line = v.closed_message
+        || (sched.next
+            ? 'We open ' + (sched.next.today ? 'today' : sched.next.day) +
+              ' at ' + pretty(sched.next.at) + '.'
+            : 'Please check back soon.');
+      html += '<div class="shutbox">' +
+        '<div class="head">' + ICON.clock + 'The kitchen is closed just now</div>' +
+        '<p>' + esc(line) + ' You can still read the menu.</p>' +
+      '</div>';
+    }
+
+    // The week, collapsed. Open only when the venue is shut, because that is
+    // when somebody actually wants to know about Tuesday.
+    var today = sched.today ? sched.today.day : '';
+    var summary = sched.open && sched.today && !sched.today.closed
+      ? '<span class="now">Open now</span> · until ' + pretty(sched.today.close)
+      : '<span class="now">Closed</span>' +
+        (sched.next ? ' · opens ' + (sched.next.today ? 'today' : sched.next.day) +
+          ' at ' + pretty(sched.next.at) : '');
+
+    html += '<details class="hoursbox"' + (sched.open ? '' : ' open') + '>' +
+      '<summary>' + ICON.clock + summary +
+        '<svg class="chev" viewBox="0 0 24 24" aria-hidden="true"' +
+        ' stroke="currentColor" fill="none" stroke-width="2"' +
+        ' stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>' +
+      '</summary><div class="week">';
+    (sched.hours || []).forEach(function(d, i){
+      html += '<div class="wk' + (WEEKDAYS[i] === today ? ' today' : '') + '">' +
+        '<span>' + WEEKDAYS[i] + '</span>' +
+        (d.closed
+          ? '<span class="shut">Closed</span>'
+          : '<span>' + pretty(d.open) + ' – ' + pretty(d.close) + '</span>') +
+      '</div>';
+    });
+    html += '</div></details>';
+    return html;
+  }
+
+  /**
+   * A sheet that slides up, and goes away again.
+   *
+   * Returns a promise for whether the confirming button was pressed, so that a
+   * caller can await an answer without a callback.
+   */
+  function pop(opts){
+    return new Promise(function(resolve){
+      var back = document.createElement('div');
+      back.className = 'pop';
+      back.innerHTML =
+        '<div class="sheet" role="dialog" aria-modal="true">' +
+          '<h3>' + esc(opts.title) + '</h3>' +
+          '<p>' + esc(opts.body) + '</p>' +
+          '<div class="acts">' +
+            (opts.cancel ? '<button type="button" class="no">' + esc(opts.cancel) + '</button>' : '') +
+            '<button type="button" class="go">' + esc(opts.ok || 'OK') + '</button>' +
+          '</div>' +
+        '</div>';
+      document.body.appendChild(back);
+      requestAnimationFrame(function(){ back.classList.add('in'); });
+
+      function done(answer){
+        back.classList.remove('in');
+        setTimeout(function(){ back.remove(); }, 260);
+        resolve(answer);
+      }
+      var no = back.querySelector('.no');
+      if (no) no.addEventListener('click', function(){ done(false); });
+      back.querySelector('.go').addEventListener('click', function(){ done(true); });
+      back.addEventListener('click', function(e){ if (e.target === back) done(false); });
+    });
+  }
+
+  /** Whether the kitchen's own clock says it is taking orders. */
+  function kitchenOpen(){
+    var sched = data && data.venue && data.venue.schedule;
+    return !sched || !sched.enforced || sched.open;
+  }
+
+  /** What to say when somebody presses Add and the kitchen is shut. */
+  function shutMessage(){
+    var v = (data && data.venue) || {};
+    var sched = v.schedule || {};
+    if (v.closed_message) return v.closed_message;
+    if (sched.next) {
+      return 'We start taking orders ' +
+        (sched.next.today ? 'today' : 'on ' + sched.next.day) +
+        ' at ' + pretty(sched.next.at) + '.';
+    }
+    return 'Please order at the bar, or ask a member of staff.';
+  }
+
   function itemHtml(it){
+    // The controls are drawn whenever the venue takes orders at all, even
+    // outside its hours. A button that is simply missing reads as a broken
+    // page; a button that answers reads as a closed kitchen. Pressing one
+    // outside hours says when they open — see onTap.
     var can = it.available && canOrder();
     // No placeholder box where there is no photograph — see the note on
     // .item .thumb in the stylesheet above.
@@ -905,6 +1222,19 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
     var add = e.target.closest('[data-add]');
     var less = e.target.closest('[data-less]');
     if (!add && !less) return;
+
+    // Adding outside the venue's hours explains itself rather than doing
+    // nothing. Taking things back out is always allowed: somebody emptying a
+    // basket they filled before the kitchen shut should not be argued with.
+    if (add && !kitchenOpen()) {
+      pop({
+        title: 'The kitchen is closed',
+        body: shutMessage(),
+        ok: 'I see'
+      });
+      return;
+    }
+
     var id = Number((add || less).getAttribute(add ? 'data-add' : 'data-less'));
     var entry = basket[id] || (basket[id] = { qty: 0 });
     entry.qty += add ? 1 : -1;
@@ -1202,7 +1532,11 @@ function statusPage(publicId) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#A5C715">
-<title>Your order</title>
+<meta name="color-scheme" content="light dark">
+<meta name="robots" content="noindex,nofollow">
+<title>Your order · Vesopa</title>
+<link rel="icon" type="image/png" href="/assets/favicon.png">
+<link rel="apple-touch-icon" href="/assets/favicon.png">
 <style>${STYLE}</style>
 </head>
 <body>
@@ -1212,6 +1546,7 @@ function statusPage(publicId) {
   "use strict";
   var ID = "${esc(publicId)}";
   var track = document.getElementById('track');
+  var ticker = null;
 
   function money(minor){ return '£' + (minor/100).toFixed(2); }
   function esc(s){
@@ -1219,53 +1554,130 @@ function statusPage(publicId) {
       .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
+  var I = {
+    sent:  '<svg viewBox="0 0 24 24"><path d="m4 12 16-8-6 16-2.5-6.5z"/></svg>',
+    pan:   '<svg viewBox="0 0 24 24"><path d="M4 13h13a3 3 0 0 1 0 6H8a4 4 0 0 1-4-4z"/><path d="M17 14h3"/><path d="M8 4v3M12 3v4"/></svg>',
+    bell:  '<svg viewBox="0 0 24 24"><path d="M6 9a6 6 0 1 1 12 0c0 4 1.5 5.5 2 6H4c.5-.5 2-2 2-6z"/><path d="M10 19a2 2 0 0 0 4 0"/></svg>',
+    tick:  '<svg viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7"/></svg>',
+    cross: '<svg viewBox="0 0 24 24"><path d="m7 7 10 10M17 7 7 17"/></svg>',
+    clock: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5.2l3.2 2"/></svg>',
+    link:  '<svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;flex:0 0 auto;opacity:.7"><path d="M10 13a4 4 0 0 0 5.7.4l2.6-2.6a4 4 0 1 0-5.7-5.7L11 6.7"/><path d="M14 11a4 4 0 0 0-5.7-.4L5.7 13.2a4 4 0 1 0 5.7 5.7l1.6-1.6"/></svg>'
+  };
+
+  // Each stage carries its own colour, so the page is a different page at a
+  // glance from across a table.
   var STEPS = [
-    { key:'placed',   title:'Sent',     line:'The till has your order.' },
-    { key:'accepted', title:'Accepted', line:'The kitchen is making it.' },
-    { key:'ready',    title:'Ready',    line:'It is up and on its way over.' },
-    { key:'served',   title:'Served',   line:'Enjoy your meal.' }
+    { key:'placed',   title:'Sent',     line:'The till has your order.',        tone:'#3B82F6', icon:I.sent, verb:'Waiting for the till' },
+    { key:'accepted', title:'Accepted', line:'The kitchen is making it.',       tone:'#F59E0B', icon:I.pan,  verb:'Being made' },
+    { key:'ready',    title:'Ready',    line:'It is up and on its way over.',   tone:'#8B5CF6', icon:I.bell, verb:'Ready' },
+    { key:'served',   title:'Served',   line:'Enjoy your meal.',                tone:'#16A34A', icon:I.tick, verb:'Served' }
   ];
 
+  function headline(order, at){
+    if (order.status === 'rejected') {
+      return { tone:'#B3261E', icon:I.cross, cls:'bad',
+               title:'The kitchen could not take this',
+               line: order.status_note || 'Please speak to a member of staff.' };
+    }
+    if (order.status === 'cancelled') {
+      return { tone:'#6B7280', icon:I.cross, cls:'',
+               title:'Order cancelled',
+               line: order.status_note || 'Nothing has been sent to the kitchen.' };
+    }
+    var step = STEPS[at] || STEPS[0];
+    return {
+      tone: step.tone, icon: step.icon,
+      cls: order.status === 'served' ? 'done' : 'busy',
+      title: step.verb, line: step.line
+    };
+  }
+
+  /** Minutes left of what the venue promised when it accepted. */
+  function etaLeft(order){
+    if (order.status !== 'accepted') return null;
+    if (!order.eta_minutes || !order.accepted_at) return null;
+    var from = new Date(String(order.accepted_at).replace(' ', 'T') + 'Z');
+    if (isNaN(from.getTime())) return null;
+    var due = from.getTime() + order.eta_minutes * 60000;
+    return Math.round((due - Date.now()) / 60000);
+  }
+
   function draw(order){
-    if (order.status === 'rejected' || order.status === 'cancelled') {
-      track.innerHTML =
-        '<div class="state"><h2>' +
-        (order.status === 'rejected' ? 'The kitchen could not take this order' : 'Order cancelled') +
-        '</h2><p>' + esc(order.status_note || 'Please speak to a member of staff.') +
-        '</p></div>';
-      return;
+    if (ticker) { clearInterval(ticker); ticker = null; }
+
+    var at = -1;
+    STEPS.forEach(function(s, i){ if (s.key === order.status) at = i; });
+    var head = headline(order, at);
+    var over = order.status === 'rejected' || order.status === 'cancelled';
+
+    var html = '<div class="tk-head">' +
+      '<span class="tk-num">Order <b>#' + esc(order.number || '') + '</b></span>' +
+      '<p class="tk-where">' + esc(order.table_label || '') +
+        ' · ' + money(order.total_minor) + '</p>' +
+    '</div>';
+
+    html += '<div class="tk-state ' + head.cls + '" style="--tk:' + head.tone + '">' +
+      '<div class="ring">' + head.icon + '</div>' +
+      '<div><h2>' + esc(head.title) + '</h2>' +
+      '<p>' + esc(head.line) + '</p></div>' +
+    '</div>';
+
+    var left = etaLeft(order);
+    if (left !== null) {
+      html += '<div class="tk-eta" id="eta">' + I.clock +
+        (left > 0
+          ? '<span>Usually about <b>' + left + ' min</b> from here.</span>'
+          : '<span>It should be with you any moment.</span>') +
+      '</div>';
     }
 
-    var at = STEPS.findIndex(function(s){ return s.key === order.status; });
-    var html = '<h1 style="font-size:22px;margin:0 0 2px">Your order</h1>' +
-      '<p style="color:var(--ink-soft);margin:0 0 18px">' +
-      esc(order.table_label || '') + ' · ' + money(order.total_minor) + '</p>';
+    if (!over) {
+      html += '<div class="tk-rail">';
+      STEPS.forEach(function(s, i){
+        var cls = i < at ? 'done' : (i === at ? 'now' : 'todo');
+        html += '<div class="tk-step ' + cls + '"' +
+          ' style="--tk:' + s.tone + ';--tk-done:' + STEPS[3].tone + '">' +
+          '<div class="pip">' + (i < at ? '✓' : (i + 1)) + '</div>' +
+          '<div class="t"><h3>' + esc(s.title) + '</h3>' +
+          '<p>' + esc(s.line) + '</p></div></div>';
+      });
+      html += '</div>';
+    }
 
-    STEPS.forEach(function(s, i){
-      var cls = i < at ? 'done' : (i === at ? 'now' : '');
-      html += '<div class="step ' + cls + '">' +
-        '<div class="pip">' + (i < at ? '✓' : (i + 1)) + '</div>' +
-        '<div><h3>' + esc(s.title) + '</h3><p>' + esc(s.line) + '</p></div></div>';
-    });
-
-    html += '<div style="margin-top:22px;border-top:1px solid var(--line);padding-top:14px">';
+    html += '<div class="tk-lines">';
     (order.lines || []).forEach(function(l){
-      html += '<div class="row" style="display:flex;justify-content:space-between;padding:7px 0">' +
-        '<span>' + l.qty + ' × ' + esc(l.name) + '</span>' +
+      html += '<div class="tk-line"><span>' + l.qty + ' × ' + esc(l.name) + '</span>' +
         '<span>' + money(l.unit_price_minor * l.qty) + '</span></div>';
     });
     html += '</div>';
 
-    // Only while nobody has picked it up. Once a clerk has accepted it the
-    // kitchen may already have it, and withdrawing it is a conversation.
+    html += '<div class="tk-foot">' +
+      '<button class="tk-link" type="button" id="share">' + I.link +
+        '<span>' + esc(location.href) + '</span>' +
+        '<b id="sharelabel" style="flex:0 0 auto;color:var(--accent)">Copy</b>' +
+      '</button>';
     if (order.status === 'placed') {
-      html += '<button class="shut" id="cancel" type="button" ' +
-        'style="width:100%;margin-top:18px;border:1px solid var(--line);' +
-        'border-radius:14px;background:none;color:var(--ink-soft);padding:14px">' +
-        'Cancel this order</button>';
+      html += '<button class="tk-cancel" id="cancel" type="button">Cancel this order</button>';
     }
+    html += '</div>';
 
     track.innerHTML = html;
+
+    var share = document.getElementById('share');
+    if (share) share.addEventListener('click', function(){
+      var label = document.getElementById('sharelabel');
+      // The share sheet where there is one, the clipboard where there is not.
+      if (navigator.share) {
+        navigator.share({ title: 'My order', url: location.href }).catch(function(){});
+        return;
+      }
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(location.href).then(function(){
+          if (label) { label.textContent = 'Copied'; setTimeout(function(){ label.textContent = 'Copy'; }, 1800); }
+        }).catch(function(){});
+      }
+    });
+
     var btn = document.getElementById('cancel');
     if (btn) btn.addEventListener('click', function(){
       btn.disabled = true;
@@ -1273,6 +1685,20 @@ function statusPage(publicId) {
         .then(poll)
         .catch(function(){ btn.disabled = false; });
     });
+
+    // Count the promised wait down between polls, so the number moves even
+    // though the server is only asked every few seconds.
+    if (order.status === 'accepted' && left !== null) {
+      ticker = setInterval(function(){
+        var box = document.getElementById('eta');
+        if (!box) return;
+        var now = etaLeft(order);
+        if (now === null) return;
+        box.innerHTML = I.clock + (now > 0
+          ? '<span>Usually about <b>' + now + ' min</b> from here.</span>'
+          : '<span>It should be with you any moment.</span>');
+      }, 30000);
+    }
   }
 
   function poll(){

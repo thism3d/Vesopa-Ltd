@@ -4764,3 +4764,34 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
 @media (prefers-reduced-motion: reduce) {
   .toast, .confirm-back, .confirm-back .confirm-modal { transition: none; }
 }
+
+/* Opening hours: seven rows that have to stay readable on a phone held in one
+   hand at the end of a shift, which is when a landlord actually changes them. */
+.di-hours { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.di-hour-row {
+  display: grid;
+  grid-template-columns: 108px 104px 1fr auto 1fr;
+  align-items: center;
+  gap: 10px;
+}
+.di-hour-row .di-day { font-weight: 600; }
+.di-hour-row input[type="time"] { width: 100%; min-width: 0; }
+.di-hour-row .di-shut { margin: 0; }
+.di-hour-row input:disabled { opacity: .45; }
+
+@media (max-width: 700px) {
+  /* The day and the switch on one line, the two times on the next. Squeezing
+     five controls onto a 360px line gives time fields too narrow to show the
+     minutes, which is the one thing they exist to show. */
+  .di-hour-row {
+    grid-template-columns: 1fr auto;
+    row-gap: 6px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--line);
+  }
+  .di-hour-row .di-day { grid-column: 1; }
+  .di-hour-row .di-shut { grid-column: 2; justify-self: end; }
+  .di-hour-row input[type="time"] { grid-column: 1; }
+  .di-hour-row .di-to { display: none; }
+  .di-hour-row input[data-hclose] { grid-column: 2; }
+}

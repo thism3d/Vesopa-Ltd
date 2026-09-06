@@ -159,6 +159,34 @@ async function loadDineIn() {
       </label>
     </div>
 
+    <div class="card">
+      <h3>When you are open</h3>
+      <p class="muted small">
+        Outside these hours the menu still reads, and the Add buttons are still
+        there — a customer who presses one is told when you open rather than
+        finding a button that does nothing. Nothing reaches the till.
+      </p>
+      <label class="check">
+        <input type="checkbox" id="di-sched-on" ${v.schedule_enabled ? 'checked' : ''}>
+        <span><b>Use these hours.</b> Turn this off to take orders whenever the
+          menu is live.</span>
+      </label>
+      <div id="di-hours" class="di-hours">${diHoursRows(v.opening_hours)}</div>
+      <div class="grid-2" style="margin-top:14px">
+        <label>What to say when you are closed
+          <input id="di-closed-msg" value="${esc(v.closed_message || '')}"
+                 placeholder="The kitchen is closed. We open at 11.">
+        </label>
+        <label>Usual wait once an order is accepted
+          <span class="row" style="align-items:center;gap:8px">
+            <input id="di-eta" type="number" min="0" max="240"
+                   value="${Number(v.eta_minutes) || 25}" style="flex:0 1 110px">
+            <span class="muted small" style="flex:0 0 auto">minutes</span>
+          </span>
+        </label>
+      </div>
+    </div>
+
     <div class="row" style="gap:10px;align-items:center">
       <button class="btn primary" id="di-save" type="button">Save</button>
       <a id="di-preview" class="btn" target="_blank" rel="noopener"
@@ -170,9 +198,59 @@ async function loadDineIn() {
 
   $('di-slug-check').onclick = diCheckSlug;
   $('di-save').onclick = diSaveVenue;
+  diWireHours();
   // Also on blur: the commonest way to find out the address is taken should not
   // be pressing Save.
   $('di-slug').onblur = diCheckSlug;
+}
+
+/** Monday first, because a week of trading starts on a Monday. */
+const DI_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday',
+  'Saturday', 'Sunday'];
+
+function diHoursRows(hours) {
+  const list = Array.isArray(hours) ? hours : [];
+  return DI_DAYS.map((day, i) => {
+    const h = list[i] || { closed: false, open: '11:00', close: '23:00' };
+    return `
+      <div class="di-hour-row" data-day="${i}">
+        <span class="di-day">${day}</span>
+        <label class="check di-shut">
+          <input type="checkbox" data-hclosed="${i}" ${h.closed ? 'checked' : ''}>
+          <span>Closed</span>
+        </label>
+        <input type="time" data-hopen="${i}" value="${esc(h.open || '11:00')}"
+               ${h.closed ? 'disabled' : ''}>
+        <span class="muted small di-to">to</span>
+        <input type="time" data-hclose="${i}" value="${esc(h.close || '23:00')}"
+               ${h.closed ? 'disabled' : ''}>
+      </div>`;
+  }).join('');
+}
+
+/** What the seven rows currently say. */
+function diReadHours() {
+  return DI_DAYS.map((_, i) => {
+    const closed = !!(document.querySelector(`[data-hclosed="${i}"]`) || {}).checked;
+    const open = ((document.querySelector(`[data-hopen="${i}"]`) || {}).value) || '11:00';
+    const close = ((document.querySelector(`[data-hclose="${i}"]`) || {}).value) || '23:00';
+    return { closed, open, close };
+  });
+}
+
+/** Grey out the times on a day that is marked closed. */
+function diWireHours() {
+  const host = $('di-hours');
+  if (!host) return;
+  host.addEventListener('change', (e) => {
+    const box = e.target.closest('[data-hclosed]');
+    if (!box) return;
+    const i = box.getAttribute('data-hclosed');
+    [`[data-hopen="${i}"]`, `[data-hclose="${i}"]`].forEach((sel) => {
+      const el = host.querySelector(sel);
+      if (el) el.disabled = box.checked;
+    });
+  });
 }
 
 async function diCheckSlug() {
@@ -208,6 +286,10 @@ async function diSaveVenue() {
     ordering_open: $('di-ordering').checked,
     require_name: $('di-req-name').checked,
     require_phone: $('di-req-phone').checked,
+    schedule_enabled: $('di-sched-on').checked,
+    opening_hours: diReadHours(),
+    closed_message: $('di-closed-msg').value,
+    eta_minutes: $('di-eta').value,
   };
   // An empty address is not a change to the address, it is somebody who has
   // not chosen one yet. Sending it would fail validation and lose the rest.
