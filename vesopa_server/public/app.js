@@ -3359,7 +3359,7 @@ function setRailFolded(folded) {
   const btn = document.getElementById('rail-fold');
   if (!app) return;
   app.classList.toggle('rail-folded', !!folded);
-  const opener = document.getElementById('rail-open');
+  const opener = document.getElementById('rail-show');
   if (opener) opener.setAttribute('aria-expanded', String(!folded));
   if (btn) {
     btn.setAttribute('aria-expanded', String(!folded));
@@ -3402,7 +3402,7 @@ function wireShell() {
   }
   wireTips();
 
-  const opener = document.getElementById('rail-open');
+  const opener = document.getElementById('rail-show');
   if (opener) opener.addEventListener('click', () => setRailFolded(false));
 
   // Two of these now: one on the sign-in page and one in the application. They

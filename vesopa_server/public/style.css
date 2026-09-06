@@ -944,16 +944,36 @@ tr.new { animation: flash 1.6s ease-out; }
     background: var(--rail);
     z-index: 45;
   }
-  /* Caps at the size it has always looked, and shrinks below it on a phone
-     narrow enough that the menu button and the connection dot would otherwise
-     be pushed off the end of the bar. */
-  .topbar-logo {
+  /* THE LOCKUP IS CENTRED, AND IT IS 147px.
+   *
+   * `max-width: 220px` here was being beaten by `max-width: 100%` on the
+   * .lockup-light / .lockup-dark classes further down the stylesheet — same
+   * specificity, later in the file, so the later one won. The wordmark came out
+   * 294px wide in a 390px bar, ran under the theme button and had its last
+   * letter cut off.
+   *
+   * Centred between the menu button and whatever is on the right, rather than
+   * pushed left, so the bar reads as a bar and not as a logo with things
+   * hanging off it. The two auto margins are what centre it; the min-width:0
+   * is what lets it shrink rather than push the buttons off the end.
+   */
+  /* Sizing only. `display` belongs to .lockup-light / .lockup-dark, which pick
+     the legible wordmark for the theme — setting it here outranked them and put
+     both lockups on the bar at once. */
+  .topbar-logo,
+  .topbar-logo.lockup-light,
+  .topbar-logo.lockup-dark {
     width: 100%;
-    max-width: 220px;
+    max-width: 147px;
     height: auto;
     min-width: 0;
+    margin-left: auto;
     margin-right: auto;
   }
+
+  /* The theme control sits in this bar rather than over it, and the bar keeps
+     a lane for it so the lockup stays centred against the space that is left. */
+  .topbar { padding-right: 58px; }
 
   .rail-toggle {
     width: 40px;
@@ -963,7 +983,11 @@ tr.new { animation: flash 1.6s ease-out; }
     place-items: center;
     border: 0;
     border-radius: 9px;
-    background: rgba(255, 255, 255, .08);
+    /* Was rgba(255,255,255,.08) — invisible now that Day mode paints this bar
+       white. The bar is --rail, so its furniture has to come from the same
+       place. */
+    background: var(--rail-hover);
+    color: var(--rail-active);
     cursor: pointer;
     /* Comfortably past the 44px touch target once the padding is counted. */
     margin: 0 -2px;
@@ -978,7 +1002,9 @@ tr.new { animation: flash 1.6s ease-out; }
     width: 18px;
     height: 2px;
     border-radius: 2px;
-    background: #fff;
+    /* Three white bars on a bar that Day mode paints white is no hamburger at
+       all — which is why the menu could not be opened. */
+    background: currentColor;
     transition: transform .2s ease, opacity .2s ease;
   }
   .rail-toggle-bars { position: relative; }
@@ -4942,7 +4968,7 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
 
 /* The button that brings it back. Fixed in the opposite corner from the theme
    control and built the same way, so the two corners of the chrome match. */
-.rail-open {
+.rail-show {
   position: fixed;
   top: 14px;
   left: 16px;
@@ -4962,8 +4988,8 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
   transition: opacity .18s ease .12s, transform .18s cubic-bezier(.2,.9,.3,1) .12s,
               border-color .15s ease;
 }
-.rail-open:hover { border-color: var(--brand); }
-.rail-open svg {
+.rail-show:hover { border-color: var(--brand); }
+.rail-show svg {
   width: 19px; height: 19px;
   stroke: currentColor; fill: none; stroke-width: 2;
   stroke-linecap: round; stroke-linejoin: round;
@@ -4987,14 +5013,21 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
     visibility: hidden;
     border-right: 0;
   }
-  #app.rail-folded .rail-open { display: grid; opacity: 1; transform: none; }
+  #app.rail-folded .rail-show { display: grid; opacity: 1; transform: none; }
 
   /* The theme control keeps its corner; the page simply has more of the middle. */
-  #app.rail-folded main { padding-left: 68px; }
+  /* The page keeps the same inset on both sides once the rail is gone.
+   *
+   * It was 68px on the left against 36px on the right, to clear the hamburger —
+   * which put every page permanently off-centre for the sake of one button in
+   * one corner. The button only overlaps the heading row, so the heading row is
+   * what makes room for it, exactly as it already does on the right for the
+   * theme control. */
+  #app.rail-folded .page-head { padding-left: 56px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .rail, .rail-open { transition: none; }
+  .rail, .rail-show { transition: none; }
 }
 
 /* ---------------------------------------------------------------------------
@@ -5346,7 +5379,7 @@ input[type="time"]:disabled { opacity: .55; cursor: not-allowed; }
 .btn,
 .ibtn,
 .theme-btn,
-.rail-open,
+.rail-show,
 .rail-fold,
 .rail-toggle,
 .seg-btn,
