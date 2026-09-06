@@ -2780,9 +2780,112 @@ function fieldHtml(f) {
   // `money` is a pounds amount entered as a decimal number.
   const htmlType = f.type === 'money' ? 'number' : (f.type || 'text');
   const step = f.type === 'money' ? ' step="0.01"' : '';
-  return `<input name="${f.name}" type="${htmlType}"${step} ${
+  const placeholder = f.placeholder
+    ? ` placeholder="${esc(f.placeholder)}"`
+    : '';
+  return `<input name="${f.name}" type="${htmlType}"${step}${placeholder} ${
     f.required ? 'required' : ''
   } value="${esc(String(f.value ?? ''))}" />`;
+}
+
+// ---------------------------------------------------------------------------
+// Saying something, and asking something, without the browser's own dialogs
+// ---------------------------------------------------------------------------
+//
+// WHY THESE EXIST
+//
+// iOS Safari adds a third button — "Suppress dialogs" — as soon as a page puts
+// up two dialogs in a row. Once anybody presses it, every `alert`, `confirm`
+// and `prompt` on that origin is dead for the rest of the browsing session:
+// `alert` shows nothing, `confirm` returns false, `prompt` returns null. No
+// error, nothing in the console, and it survives a reload.
+//
+// So on an iPad the Add table button silently did nothing, Delete silently did
+// nothing, and every error message this application reports was swallowed. It
+// was reported as "I cannot add any tables from my iPad", which is the only
+// symptom a person can see.
+//
+// A dialog drawn in the page cannot be suppressed by the browser, works the
+// same everywhere, and can say more than one line.
+
+/**
+ * A short message that appears, waits, and leaves. Never blocks.
+ *
+ * @param {string} message
+ * @param {'ok'|'warn'|'error'} [kind]
+ */
+function toast(message, kind) {
+  let host = document.getElementById('toast-host');
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'toast-host';
+    document.body.appendChild(host);
+  }
+  const el = document.createElement('div');
+  el.className = 'toast toast-' + (kind || 'ok');
+  el.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+  el.textContent = String(message == null ? '' : message);
+  host.appendChild(el);
+  // Next frame, so the browser has a start state to animate away from.
+  requestAnimationFrame(() => el.classList.add('in'));
+
+  // An error stays long enough to be read twice; an acknowledgement does not
+  // need to be read at all.
+  const life = kind === 'error' ? 6000 : 3200;
+  const close = () => {
+    el.classList.remove('in');
+    el.addEventListener('transitionend', () => el.remove(), { once: true });
+    // A transition that never runs — reduced motion, a backgrounded tab —
+    // must not leave the message on screen for ever.
+    setTimeout(() => el.remove(), 500);
+  };
+  const timer = setTimeout(close, life);
+  el.addEventListener('click', () => { clearTimeout(timer); close(); });
+  return el;
+}
+
+/**
+ * Ask a yes/no question. Resolves true only if the person pressed the
+ * confirming button.
+ *
+ * @returns {Promise<boolean>}
+ */
+function confirmDialog(message, { title, confirmLabel, danger } = {}) {
+  return new Promise((resolve) => {
+    const back = document.createElement('div');
+    back.className = 'modal-back confirm-back';
+    back.innerHTML = `
+      <div class="modal confirm-modal" role="alertdialog" aria-modal="true">
+        <h3>${esc(title || 'Are you sure?')}</h3>
+        <p class="confirm-body">${esc(message)}</p>
+        <div class="modal-actions">
+          <button type="button" class="btn ghost" data-no>Cancel</button>
+          <button type="button" class="btn ${danger ? 'danger' : 'primary'}" data-yes>
+            ${esc(confirmLabel || 'Yes')}
+          </button>
+        </div>
+      </div>`;
+    document.body.appendChild(back);
+    requestAnimationFrame(() => back.classList.add('in'));
+
+    const done = (answer) => {
+      back.classList.remove('in');
+      setTimeout(() => back.remove(), 220);
+      document.removeEventListener('keydown', onKey);
+      resolve(answer);
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') done(false);
+      if (e.key === 'Enter') done(true);
+    };
+    document.addEventListener('keydown', onKey);
+    back.querySelector('[data-no]').onclick = () => done(false);
+    back.querySelector('[data-yes]').onclick = () => done(true);
+    // The backdrop is a Cancel, which is what every other dialog in this
+    // application does and what a thumb expects.
+    back.onclick = (e) => { if (e.target === back) done(false); };
+    back.querySelector('[data-yes]').focus();
+  });
 }
 
 // Crop-frame shapes, matched to how each picture actually renders on the
@@ -3112,7 +3215,9 @@ function modal(title, fields, onSubmit) {
       root.innerHTML = '';
       render();
     } catch (err) {
-      alert(err.message);
+      // In the dialog, not behind it: a message about the form belongs where
+      // the form is, and on iOS an alert here would not have appeared at all.
+      toast(err.message, 'error');
     }
   };
 }
@@ -3226,7 +3331,10 @@ document.addEventListener('click', async (e) => {
 
   // ---- Floor designer ----
   if (t.dataset.room) {
-    if (dirty && !confirm('Discard unsaved layout changes?')) return;
+    if (dirty && !(await confirmDialog(
+      'This room has changes that have not been saved.',
+      { title: 'Leave without saving?', confirmLabel: 'Discard changes', danger: true }
+    ))) return;
     activeRoom = Number(t.dataset.room);
     selected = null;
     markDirty(false);
@@ -3234,36 +3342,69 @@ document.addEventListener('click', async (e) => {
   }
   if (t.id === 'save-floor') return saveFloor();
   if (t.id === 'add-room') {
-    const name = prompt('Room name (e.g. Main Floor, Terrace)');
-    if (!name) return;
-    await api('/floor/rooms', { method: 'POST', body: JSON.stringify({ name }) });
-    return loadFloor();
+    return modal(
+      'New room',
+      [{ name: 'name', label: 'Room name', placeholder: 'Main Floor, Terrace, Snug' }],
+      async (d) => {
+        const name = String(d.name || '').trim();
+        if (!name) throw new Error('A room needs a name.');
+        await api('/floor/rooms', { method: 'POST', body: JSON.stringify({ name }) });
+        await loadFloor();
+        toast('Room added.');
+      }
+    );
   }
   if (t.id === 'room-shape') {
-    if (!activeRoom) return alert('Create a room first.');
+    if (!activeRoom) return toast('Create a room first.', 'warn');
     return editRoomShape();
   }
   if (t.id === 'add-table') {
-    if (!activeRoom) return alert('Create a room first.');
-    const num = parseInt(prompt('Table number') || '', 10);
-    if (!num) return;
-    try {
-      await api('/floor/tables', {
-        method: 'POST',
-        body: JSON.stringify({
-          room_id: activeRoom, table_number: num,
-          pos_x: 1, pos_y: 1, width: 2, height: 2, seats: 4, shape: 'rect',
-        }),
-      });
-      return loadFloor();
-    } catch (err) {
-      return alert(err.message);
-    }
+    if (!activeRoom) return toast('Create a room first.', 'warn');
+
+    // The next free number across the whole venue, not just this room: table
+    // numbers are unique per venue, so suggesting "1" in a second room only
+    // produces a rejection.
+    const used = new Set();
+    floor.forEach((r) => (r.tables || []).forEach((tb) => used.add(Number(tb.table_number))));
+    let suggested = 1;
+    while (used.has(suggested)) suggested += 1;
+
+    return modal(
+      'Add a table',
+      [
+        { name: 'table_number', label: 'Table number', type: 'number', value: suggested },
+        {
+          name: 'name',
+          label: 'Name a customer sees (optional)',
+          placeholder: 'Window, Snug 2, Booth A',
+        },
+        { name: 'seats', label: 'Seats', type: 'number', value: 4 },
+      ],
+      async (d) => {
+        const num = parseInt(d.table_number, 10);
+        if (!num || num < 1) throw new Error('Give the table a number.');
+        const name = String(d.name || '').trim();
+        await api('/floor/tables', {
+          method: 'POST',
+          body: JSON.stringify({
+            room_id: activeRoom,
+            table_number: num,
+            name: name || null,
+            pos_x: 1, pos_y: 1, width: 2, height: 2,
+            seats: Math.max(1, parseInt(d.seats, 10) || 4),
+            shape: 'rect',
+          }),
+        });
+        await loadFloor();
+        toast('Table ' + num + ' added.');
+      }
+    );
   }
 
   // ---- Generic programming CRUD ----
   if (t.dataset.del && t.dataset.id) {
-    if (!confirm('Delete this?')) return;
+    if (!(await confirmDialog('This cannot be undone.',
+      { title: 'Delete this?', confirmLabel: 'Delete', danger: true }))) return;
     await api(`/${t.dataset.del}/${t.dataset.id}`, { method: 'DELETE' });
     return render();
   }

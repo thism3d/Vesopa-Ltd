@@ -35,15 +35,15 @@ const express = require('express');
 /**
  * The host that is nothing but menus.
  *
- * `menu.vesopaepos.com` serves the dine-in pages and nothing else, which is
+ * menu.vesopaepos.com serves the dine-in pages and nothing else, which is
  * what lets a venue's own address sit at the root of it —
- * `menu.vesopaepos.com/vesopakitchen`. That is the address a venue wants to
+ * menu.vesopaepos.com/vesopakitchen. That is the address a venue wants to
  * print, and it cannot collide with anything, because there is nothing else on
  * that host to collide with.
  *
  * It has to be a host check and not just a route, because the same application
- * also serves the back office, where `/products` and `/dashboard` are pages of
- * a single-page app. A bare `/:slug` route without this would swallow every one
+ * also serves the back office, where /products and /dashboard are pages of
+ * a single-page app. A bare /:slug route without this would swallow every one
  * of them.
  */
 const MENU_HOST = (process.env.MENU_HOST || 'menu.vesopaepos.com')
@@ -54,7 +54,7 @@ const MENU_HOST = (process.env.MENU_HOST || 'menu.vesopaepos.com')
 function hostOf(req) {
   const raw = req.headers['x-forwarded-host'] || req.headers.host || '';
   // A proxy may append; the first is the one the browser asked for. The port
-  // is stripped because `menu.vesopaepos.com:443` is the same host.
+  // is stripped because menu.vesopaepos.com:443 is the same host.
   return String(raw).split(',')[0].trim().toLowerCase().split(':')[0];
 }
 
@@ -169,12 +169,12 @@ function dineinPageRoutes({ pool } = {}) {
   /**
    * The venue's own address, at the root of the menu host.
    *
-   * `menu.vesopaepos.com/vesopakitchen`. Guarded by the host, and by the shape
+   * menu.vesopaepos.com/vesopakitchen. Guarded by the host, and by the shape
    * of a slug, so that on every other host this route does nothing at all and
    * the back office's own routing is untouched.
    *
    * Registered last, after /t/, /m/ and /o/, so those three keep their meaning
-   * on this host too — a table code is still `menu.vesopaepos.com/t/<code>`.
+   * on this host too — a table code is still menu.vesopaepos.com/t/<code>.
    */
   router.get('/:slug', async (req, res, next) => {
     if (!onMenuHost(req)) return next();
@@ -227,20 +227,34 @@ function canonicalFor({ table, slug }) {
  * their customer. Vesopa's mark when they have not, because the alternative is
  * the browser's blank page glyph, which reads as a site that is half-built.
  *
- * `sizes="any"` on the fallback because it is an SVG-shaped PNG that scales;
+ * sizes="any" on the fallback because it is an SVG-shaped PNG that scales;
  * the venue's is declared without sizes so the browser picks it up whatever
  * shape they uploaded.
  */
+/**
+ * The icons for a venue's page.
+ *
+ * A tab icon is drawn into a square about sixteen pixels across, and whatever
+ * is handed to it is squashed to fit. The fallback here used to be
+ * vesopa_logo.png, which is 900x130 — the wordmark — so every venue that had
+ * not uploaded a logo got eleven letters compressed into an illegible smear in
+ * the tab, on the home screen and in the bookmark list. favicon.png is the
+ * 512x512 mark and is the only one of the two that is an icon.
+ *
+ * A venue's own logo is still preferred when it has one, because it is theirs.
+ * It is served relative so that it works on whichever host answered.
+ */
 function iconTags(m) {
-  if (m.icon) {
-    return `<link rel="icon" href="${esc(m.icon)}">
-` +
-           `<link rel="apple-touch-icon" href="${esc(m.icon)}">`;
-  }
-  const mark = 'https://backoffice.vesopaepos.com/assets/vesopa_logo.png';
-  return `<link rel="icon" href="${mark}" sizes="any">
-` +
-         `<link rel="apple-touch-icon" href="${mark}">`;
+  const mark = '/assets/favicon.png';
+  const icon = m.icon || mark;
+  return [
+    `<link rel="icon" type="image/png" href="${esc(icon)}">`,
+    `<link rel="apple-touch-icon" href="${esc(icon)}">`,
+    // A shortcut saved to a home screen shows this, and a venue whose logo is
+    // a wide wordmark is better served by the square mark there than by their
+    // own name cropped to its middle two letters.
+    `<link rel="mask-icon" href="${mark}" color="${esc(m.accent || '#A5C715')}">`,
+  ].join('\n');
 }
 
 /**
@@ -372,12 +386,24 @@ button{font:inherit;cursor:pointer}
   margin:3px 0 0;font-size:14px;color:rgba(255,255,255,.88);
   text-shadow:0 1px 8px rgba(0,0,0,.4);
 }
+/* THE LOGO TILE IS ALWAYS LIGHT.
+ *
+ * It was background:var(--card), which follows the theme — so in dark mode
+ * the tile went near-black, and a logo drawn in dark ink on a transparent
+ * background (which is what almost every venue uploads, and what the Vesopa
+ * mark is) disappeared into it completely. Reported from an iPad in dark mode:
+ * the tile was there and the logo inside it was not.
+ *
+ * A logo tile is a physical thing — a sign, a badge on a menu — and it does not
+ * change colour with the room. Fixing the surface instead of the logo also
+ * means it works for a venue whose logo is light-on-transparent, because the
+ * one thing both kinds need is a light, opaque, predictable ground. */
 .logo{
   width:62px;height:62px;border-radius:16px;flex:0 0 auto;
-  background:var(--card);border:2px solid var(--card);
+  background:#fff;border:2px solid #fff;
   box-shadow:0 8px 24px rgba(0,0,0,.35);overflow:hidden;
   display:grid;place-items:center;font-size:24px;font-weight:800;
-  color:var(--accent);padding:7px
+  color:#10130A;padding:7px
 }
 /* Contain, not cover. A venue's logo is as likely to be a wide wordmark as a
    square badge, and cover on a wordmark crops out the middle two letters and
@@ -396,6 +422,14 @@ button{font:inherit;cursor:pointer}
 
 .meta{display:flex;flex-wrap:wrap;gap:8px;margin:10px auto 0;
        max-width:648px;padding:0}
+/* Each chip leads with a mark of what it is, because a phone number, a street
+   and a map link are three different actions and they were three identical
+   grey pills. The icons are inline SVG — a menu on pub wifi should not wait on
+   an icon font to find out what its own buttons do. */
+.meta a,.meta span{display:inline-flex;align-items:center;gap:7px}
+.meta svg{width:15px;height:15px;flex:0 0 auto;stroke:currentColor;
+          fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;
+          opacity:.75}
 .meta a,.meta span{
   font-size:13px;color:var(--ink-soft);text-decoration:none;
   border:1px solid var(--line);border-radius:999px;padding:6px 12px
@@ -412,6 +446,12 @@ button{font:inherit;cursor:pointer}
 /* Sticky, and full-bleed on purpose: the strip scrolls sideways, and a strip
    that stopped at the column edge would hide its own overflow behind a margin.
    The buttons inside it are held to the column. */
+/* scroll-padding-top is what makes a jump to a section land under the
+   sticky strip rather than behind it, and it belongs on the scrolling element
+   rather than on every target. */
+html{scroll-behavior:smooth;scroll-padding-top:70px}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+
 .tabs{
   position:sticky;top:0;z-index:20;margin-top:18px;
   background:var(--page);border-bottom:1px solid var(--line);
@@ -443,6 +483,32 @@ button{font:inherit;cursor:pointer}
  * The banner is deliberately outside it, so a venue's photograph still runs
  * edge to edge on a wide screen. */
 .col{max-width:680px;margin:0 auto}
+
+/* TWO OR THREE ACROSS, ONCE THERE IS ROOM FOR THEM.
+ *
+ * One dish per line is right on a phone and wasteful on a tablet: an iPad in
+ * portrait showed four dishes on a screen that had room for nine, so ordering a
+ * pudding meant scrolling past every main. The wrapper is a grid whose columns
+ * are sized rather than counted, so the same rule gives two across on an iPad
+ * in portrait and three on a laptop without either number being written down.
+ *
+ * The rows lose their dividing lines when they become cards — a border under
+ * something that has a neighbour to its right reads as a mistake. */
+.items{display:block}
+@media (min-width:720px){
+  .col{max-width:1120px}
+  .items{
+    display:grid;
+    grid-template-columns:repeat(auto-fill,minmax(320px,1fr));
+    gap:6px 26px;
+  }
+  .items .item{border-bottom:1px solid var(--line)}
+  /* :last-child only clears the final row's line in a single column. In a
+     grid the last two or three items are all on the bottom row, and each of
+     them needs it. */
+  .items .item.last-row{border-bottom:0}
+  section{padding-left:20px;padding-right:20px}
+}
 
 section{padding:24px 16px 4px;scroll-margin-top:72px}
 section h2{margin:0 0 2px;font-size:20px;letter-spacing:-.01em}
@@ -485,7 +551,17 @@ section .blurb{margin:0 0 6px;color:var(--ink-soft);font-size:14px}
  * the name of the one under it, and a list where half the items have pictures —
  * which is most lists — read as two lists interleaved. Invisible rather than a
  * grey tile: twenty empty tiles down a page is worse than a straight edge. */
-.item .thumb.none{background:none}
+/* No spacer where there is no picture.
+ *
+ * An invisible 84px box was held in front of dishes that had no photograph, so
+ * that their names lined up with the names of dishes that did. It made the
+ * column of text tidy and it made every plain dish start a third of the way
+ * across an otherwise empty row, which is what was reported: a name floating in
+ * the middle of nothing.
+ *
+ * A dish with no picture now starts where the picture would have started. The
+ * left edge of the row is the thing that is constant, and it is the edge the
+ * eye actually runs down. */
 .item.gone{opacity:.55}
 .item .gone-tag{
   display:inline-block;margin-top:6px;font-size:12px;font-weight:700;
@@ -583,7 +659,7 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
 /**
  * The menu document.
  *
- * `table` and `slug` are baked in rather than parsed out of `location` by the
+ * table and slug are baked in rather than parsed out of location by the
  * script, so the page knows what it is before a single byte of JavaScript runs
  * and a mis-routed URL fails here rather than three functions in.
  */
@@ -654,6 +730,15 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
 
   function money(minor){ return '£' + (minor/100).toFixed(2); }
 
+  /* Inline, so a menu on pub wifi never waits on an icon font to find out what
+     its own buttons do, and so they inherit the venue's colours for free. */
+  var ICON = {
+    phone: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 3h3l1.5 4-2 1.5a12 12 0 0 0 5.5 5.5L16 12l4 1.5v3a2 2 0 0 1-2.2 2A17 17 0 0 1 4.5 5.2 2 2 0 0 1 6.5 3z"/></svg>',
+    pin:   '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s7-5.3 7-10.5a7 7 0 1 0-14 0C5 15.7 12 21 12 21z"/><circle cx="12" cy="10.5" r="2.6"/></svg>',
+    map:   '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3.5 3.5 6v14.5L9 18l6 2.5 5.5-2.5V3.5L15 6z"/><path d="M9 3.5V18M15 6v14.5"/></svg>',
+    clock: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5.2l3.2 2"/></svg>'
+  };
+
   function esc(s){
     return String(s == null ? '' : s)
       .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
@@ -684,7 +769,10 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
 
   function draw(){
     var v = data.venue;
-    document.title = v.name || 'Menu';
+    // The title is set by the server, which knows the table as well as the
+    // venue and puts them in the right order. Overwriting it here threw the
+    // table name and the platform suffix away the moment the menu finished
+    // loading, so a customer with four tabs open saw four identical ones.
     if (v.accent) {
       document.documentElement.style.setProperty('--accent', v.accent);
       // Pick legible ink for whatever colour the venue chose. A venue that
@@ -726,9 +814,15 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
     }
 
     var meta = '';
-    if (v.phone) meta += '<a href="tel:' + esc(v.phone) + '">' + esc(v.phone) + '</a>';
-    if (v.address) meta += '<span>' + esc(v.address) + '</span>';
-    if (v.map_url) meta += '<a href="' + esc(v.map_url) + '" target="_blank" rel="noopener">Find us</a>';
+    if (v.phone) {
+      meta += '<a href="tel:' + esc(v.phone) + '">' + ICON.phone +
+              esc(v.phone) + '</a>';
+    }
+    if (v.address) meta += '<span>' + ICON.pin + esc(v.address) + '</span>';
+    if (v.map_url) {
+      meta += '<a href="' + esc(v.map_url) + '" target="_blank" rel="noopener">' +
+              ICON.map + 'Find us</a>';
+    }
     if (meta) html += '<div class="meta">' + meta + '</div>';
 
     if (v.notice) html += '<div class="notice">' + esc(v.notice) + '</div>';
@@ -755,29 +849,31 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
     sections.forEach(function(s){
       html += '<section id="sec' + s.id + '" data-sec="' + s.id + '">' +
               '<h2>' + esc(s.name) + '</h2>' +
-              (s.blurb ? '<p class="blurb">' + esc(s.blurb) + '</p>' : '');
+              (s.blurb ? '<p class="blurb">' + esc(s.blurb) + '</p>' : '') +
+              '<div class="items">';
       s.items.forEach(function(it){
         html += itemHtml(it);
       });
-      html += '</section>';
+      html += '</div></section>';
     });
     html += '</div>';
 
     app.innerHTML = html;
     wireTabs(sections);
     wireHero();
+    markLastRow();
     app.addEventListener('click', onTap);
     paintBasket();
   }
 
   function itemHtml(it){
     var can = it.available && canOrder();
-    // Price and control in one right-hand column. Apart, a customer's eye had
-    // to cross the row to connect what a thing costs with how to order it.
+    // No placeholder box where there is no photograph — see the note on
+    // .item .thumb in the stylesheet above.
     return '<div class="item' + (it.available ? '' : ' gone') + '" data-item="' + it.id + '">' +
       (it.image_url
         ? '<div class="thumb"><img src="' + esc(it.image_url) + '" alt="" loading="lazy"></div>'
-        : '<div class="thumb none"></div>') +
+        : '') +
       '<div class="body">' +
         '<h3>' + esc(it.name) + '</h3>' +
         (it.description ? '<p>' + esc(it.description) + '</p>' : '') +
@@ -949,6 +1045,12 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
    * Honours "reduce motion": the fade stays, because it is what hands the
    * screen over, and the parallax goes, because it is the part that moves.
    */
+  var reflow;
+  window.addEventListener('resize', function(){
+    clearTimeout(reflow);
+    reflow = setTimeout(markLastRow, 150);
+  });
+
   function wireHero(){
     var hero = document.getElementById('hero');
     if (!hero) return;
@@ -1006,7 +1108,7 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
           var live = btn.getAttribute('data-go') === id;
           if (live) {
             btn.setAttribute('aria-current', 'true');
-            btn.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+            centreTab(tabs, btn);
           } else {
             btn.removeAttribute('aria-current');
           }
@@ -1021,6 +1123,49 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
     sections.forEach(function(s){
       var el = document.getElementById('sec' + s.id);
       if (el) seen.observe(el);
+    });
+  }
+
+  /**
+   * Slide the strip so the live tab is in the middle of it.
+   *
+   * WHY NOT scrollIntoView
+   *
+   * This runs from an IntersectionObserver, which fires while the customer's
+   * thumb is still on the glass. scrollIntoView scrolls every scrollable
+   * ancestor that needs to move — including the page — and block:'nearest'
+   * does not prevent that, it only decides where it stops. So each time a new
+   * section came into view the browser started its own smooth scroll against
+   * the one the customer was doing, and the page stalled. That is the "sticky
+   * header makes me stop every time" reported from Android.
+   *
+   * Setting scrollLeft on the strip moves the strip and nothing else. There is
+   * no ancestor walk and nothing for the page scroll to fight.
+   */
+  function centreTab(tabs, btn){
+    var want = btn.offsetLeft - (tabs.clientWidth - btn.offsetWidth) / 2;
+    var most = tabs.scrollWidth - tabs.clientWidth;
+    want = Math.max(0, Math.min(want, most));
+    // Two pixels is not worth an animation, and asking for one every time the
+    // observer fires is its own kind of jitter.
+    if (Math.abs(tabs.scrollLeft - want) < 4) return;
+    if (tabs.scrollTo) tabs.scrollTo({ left: want, behavior: 'smooth' });
+    else tabs.scrollLeft = want;
+  }
+
+  /**
+   * Which items are on the bottom row of their grid, and so should not draw a
+   * line under themselves. Measured rather than counted, because how many
+   * columns there are depends on the width of the screen.
+   */
+  function markLastRow(){
+    document.querySelectorAll('.items').forEach(function(grid){
+      var kids = grid.querySelectorAll('.item');
+      if (!kids.length) return;
+      var last = kids[kids.length - 1].offsetTop;
+      Array.prototype.forEach.call(kids, function(el){
+        el.classList.toggle('last-row', el.offsetTop === last);
+      });
     });
   }
 

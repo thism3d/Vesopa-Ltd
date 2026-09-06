@@ -4579,3 +4579,188 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
   border: 1px solid var(--line); border-radius: 8px; background: none;
 }
 .dc-library img { width: 100%; height: 100%; object-fit: contain; }
+
+
+/* ===========================================================================
+   DINE-IN, IN THE BACK OFFICE
+   ===========================================================================
+
+   `.card` carries a background, a border and a shadow and no padding at all —
+   the padding lives in `.panel`, and everywhere else in this application the
+   two are written together as `class="card panel"`. The four dine-in views
+   were written with `class="card"` alone, so every one of them drew its
+   heading, its hint and its inputs hard against the border on all four sides,
+   with no gap at all between one card and the next. On a desktop that read as
+   cramped. On an iPad it read as broken, which is where it was reported.
+
+   Fixed here rather than by editing seven template strings, because the same
+   fault would come back the next time a card is added, and because the
+   responsive rules below want a scope to hang off anyway.
+   ---------------------------------------------------------------------------
+*/
+#dinein-body > .card,
+#dinein_menu-body > .card,
+#dinein_qr-body > .card,
+#dinein_orders-body > .card,
+#dinein_menu-body .di-card {
+  padding: var(--card-pad);
+  margin-bottom: var(--stack, 20px);
+}
+
+/* These cards hold a heading and a hint above their table, so the card keeps
+   its padding and the table simply fills what is left. Zeroing the card to let
+   the table reach the border would put the heading on the border instead,
+   which is the fault being fixed.
+
+   The first and last cells lose their own side padding so the columns line up
+   with the heading above them rather than sitting 12px further in. */
+#dinein_qr-body > .card > table,
+#dinein_orders-body > .card > table { width: 100%; }
+#dinein_qr-body > .card > table th:first-child,
+#dinein_qr-body > .card > table td:first-child,
+#dinein_orders-body > .card > table th:first-child,
+#dinein_orders-body > .card > table td:first-child { padding-left: 0; }
+#dinein_qr-body > .card > table th:last-child,
+#dinein_qr-body > .card > table td:last-child,
+#dinein_orders-body > .card > table th:last-child,
+#dinein_orders-body > .card > table td:last-child { padding-right: 0; }
+
+/* A heading immediately followed by a hint had 14px above the hint and nothing
+   above the heading, so the heading sat on the border. */
+#dinein-body .card > h3:first-child,
+#dinein_menu-body .card > h3:first-child,
+#dinein_qr-body .card > h3:first-child,
+#dinein_orders-body .card > h3:first-child { margin-top: 0; }
+
+/* The web-address row: a fixed 260px field and a Check button beside a prefix
+   that can be forty characters long. Below a certain width the three cannot
+   share a line, and `flex:1` on every child was squeezing the button to the
+   width of its own text minus the padding. */
+#dinein-body .row { flex-wrap: wrap; row-gap: 10px; }
+#dinein-body .row > * { flex: 0 1 auto; }
+#dinein-body #di-slug { flex: 1 1 240px; min-width: 0; }
+
+/* A printed table code is 32 characters with no spaces in it, so it cannot
+   wrap at a word boundary and it was pushing the Ordering and Print columns
+   off the right of the page. */
+#dinein_qr-body td a { word-break: break-all; }
+
+/* ---------------------------------------------------------------------------
+   Tablet and below
+   ---------------------------------------------------------------------------
+   An iPad in portrait is 1024 CSS pixels — wider than most phones and narrower
+   than the desk this was designed on, which is exactly the width that gets
+   skipped. */
+@media (max-width: 1180px) {
+  /* The card designer is a canvas beside a panel of controls. Side by side it
+     leaves the canvas about 300px, which is too small to drag anything in. */
+  .dc-body { flex-direction: column; }
+  .dc-stage { flex: 1 1 auto; width: 100%; }
+  .dc-panel { width: 100%; max-width: none; }
+  .dc-layers { max-height: 180px; }
+}
+
+@media (max-width: 820px) {
+  /* Below this a table of tables is a worse way to read a list than a list is.
+     Each row becomes a block with its column names in front of its values. */
+  #dinein_qr-body > .card > table,
+  #dinein_qr-body > .card > table tbody,
+  #dinein_qr-body > .card > table tr,
+  #dinein_qr-body > .card > table td { display: block; width: auto; }
+  #dinein_qr-body > .card > table thead { display: none; }
+  #dinein_qr-body > .card > table tr {
+    padding: 14px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  #dinein_qr-body > .card > table tr:last-child { border-bottom: 0; }
+  #dinein_qr-body > .card > table td {
+    padding: 3px 0;
+    border: 0;
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+  #dinein_qr-body > .card > table td::before {
+    content: attr(data-label);
+    color: var(--muted);
+    font-size: 12px;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    flex: 0 0 auto;
+  }
+  #dinein_qr-body > .card > table td > * { min-width: 0; text-align: right; }
+}
+
+/* Fingers, not mice. A 22px checkbox is a miss more often than a hit, and the
+   Ordering column on Table codes is a column of them. */
+@media (pointer: coarse) {
+  #dinein-body input[type="checkbox"],
+  #dinein_qr-body input[type="checkbox"],
+  #dinein_menu-body input[type="checkbox"] {
+    width: 26px;
+    height: 26px;
+  }
+  #dinein-body .btn,
+  #dinein_menu-body .btn,
+  #dinein_qr-body .btn,
+  #dinein_orders-body .btn { min-height: 44px; }
+}
+
+
+/* ===========================================================================
+   IN-PAGE MESSAGES AND QUESTIONS
+   ===========================================================================
+   Replacing window.alert and window.confirm, which iOS lets a person switch
+   off permanently — see the note above `toast` in app.js. These animate in and
+   out, because something that appears instantly next to what you were reading
+   is harder to notice than something that arrives.
+   ---------------------------------------------------------------------------
+*/
+#toast-host {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 900;
+  display: flex;
+  flex-direction: column-reverse;   /* newest nearest the thumb */
+  gap: 10px;
+  pointer-events: none;
+  max-width: min(380px, calc(100vw - 36px));
+}
+.toast {
+  pointer-events: auto;
+  cursor: pointer;
+  background: var(--card);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--brand);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .18);
+  padding: 12px 15px;
+  font-size: 14px;
+  line-height: 1.4;
+  opacity: 0;
+  transform: translateY(10px) scale(.98);
+  transition: opacity .18s ease, transform .18s cubic-bezier(.2, .8, .3, 1);
+}
+.toast.in { opacity: 1; transform: none; }
+.toast-warn { border-left-color: var(--amber); }
+.toast-error { border-left-color: var(--red); }
+
+.confirm-back {
+  opacity: 0;
+  transition: opacity .18s ease;
+}
+.confirm-back.in { opacity: 1; }
+.confirm-back .confirm-modal {
+  max-width: 420px;
+  transform: translateY(12px) scale(.97);
+  transition: transform .22s cubic-bezier(.2, .8, .3, 1);
+}
+.confirm-back.in .confirm-modal { transform: none; }
+.confirm-body { margin: 0 0 18px; color: var(--muted); line-height: 1.5; }
+
+@media (prefers-reduced-motion: reduce) {
+  .toast, .confirm-back, .confirm-back .confirm-modal { transition: none; }
+}

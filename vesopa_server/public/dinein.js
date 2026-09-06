@@ -227,7 +227,7 @@ async function diSaveVenue() {
       link.href = diVenueUrl();
     }
   } catch (e) {
-    alert(e.message);
+    toast(e.message, 'error');
   }
 }
 
@@ -372,7 +372,7 @@ async function diAddSection() {
     });
     await loadDineInMenu();
   } catch (e) {
-    alert(e.message);
+    toast(e.message, 'error');
   }
 }
 
@@ -387,23 +387,24 @@ async function diSaveSection(id) {
     });
     await loadDineInMenu();
   } catch (e) {
-    alert(e.message);
+    toast(e.message, 'error');
   }
 }
 
 async function diDeleteSection(id) {
   const section = diMenu.find((s) => s.id === id);
   const count = section ? section.items.length : 0;
-  if (!confirm(
+  if (!(await confirmDialog(
     count
-      ? `Delete "${section.name}" and take its ${count} item${count === 1 ? '' : 's'} off the menu?`
-      : 'Delete this section?'
-  )) return;
+      ? `"${section.name}" and its ${count} item${count === 1 ? '' : 's'} come off the menu. The products themselves are not touched.`
+      : 'This section comes off the menu.',
+    { title: 'Delete this section?', confirmLabel: 'Delete', danger: true }
+  ))) return;
   try {
     await api('/dinein/sections/' + id, { method: 'DELETE' });
     await loadDineInMenu();
   } catch (e) {
-    alert(e.message);
+    toast(e.message, 'error');
   }
 }
 
@@ -418,7 +419,7 @@ async function diSaveItem(id) {
     });
     await loadDineInMenu();
   } catch (e) {
-    alert(e.message);
+    toast(e.message, 'error');
   }
 }
 
@@ -436,7 +437,7 @@ async function diSetAvailable(id, available) {
       body: JSON.stringify({ available }),
     });
   } catch (e) {
-    alert(e.message);
+    toast(e.message, 'error');
     await loadDineInMenu();
   }
 }
@@ -446,7 +447,7 @@ async function diDeleteItem(id) {
     await api('/dinein/items/' + id, { method: 'DELETE' });
     await loadDineInMenu();
   } catch (e) {
-    alert(e.message);
+    toast(e.message, 'error');
   }
 }
 
@@ -462,7 +463,7 @@ async function diPickProducts(sectionId) {
     try {
       diCatalogue = await api('/products');
     } catch (e) {
-      return alert(e.message);
+      return toast(e.message, 'error');
     }
   }
 
@@ -539,7 +540,7 @@ async function diPickProducts(sectionId) {
       closePanel();
       await loadDineInMenu();
     } catch (e) {
-      alert(e.message);
+      toast(e.message, 'error');
     }
   };
 }
@@ -644,7 +645,7 @@ async function loadDineInQr() {
           body: JSON.stringify({ qr_enabled: c.checked }),
         });
       } catch (e) {
-        alert(e.message);
+        toast(e.message, 'error');
         c.checked = !c.checked;
       }
     };
@@ -820,7 +821,7 @@ async function diSaveDesign() {
       if (s) s.textContent = '';
     }, 2500);
   } catch (e) {
-    alert(e.message);
+    toast(e.message, 'error');
   }
 }
 
@@ -843,7 +844,7 @@ async function diPrint(tableIds) {
   // browser blocks: it is no longer attributable to the click.
   const win = window.open('', '_blank');
   if (!win) {
-    return alert('Your browser blocked the print window. Allow pop-ups for this site.');
+    return toast('Your browser blocked the print window. Allow pop-ups for this site.', 'error');
   }
   win.document.write('<!doctype html><title>Table cards</title>' +
     '<p style="font:15px system-ui;padding:24px">Drawing the codes…</p>');
