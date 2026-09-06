@@ -1155,14 +1155,29 @@ html{scroll-behavior:smooth;scroll-padding-top:70px}
 @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
 
 .tabs{
-  position:sticky;top:var(--finder-h, 0px);z-index:20;margin-top:18px;
+  /* Not sticky itself any more — the bar it lives in does that. */
+  position:relative;z-index:auto;margin-top:10px;
   background:var(--page);border-bottom:1px solid var(--line);
-  display:flex;gap:8px;overflow-x:auto;padding:10px 16px;
+  display:flex;gap:8px;overflow-x:auto;
+  /* Lined up with the search box above it, at every width.
+     The column is capped at 676px and centred, so on anything wider than that
+     the gutter is whatever is left over on each side; on anything narrower it
+     is the page's own 16px. Without this the first tab sat at 16px while the
+     field above it started at 31, and two things in one bar were visibly not
+     the same width. */
+  padding:10px max(16px, calc((100% - 676px) / 2));
   scrollbar-width:none;-webkit-overflow-scrolling:touch;
-  scroll-padding-inline:16px;
+  overscroll-behavior-x:contain;
+  scroll-padding-inline:max(16px, calc((100% - 676px) / 2));
 }
 @media (min-width:712px){
-  .tabs{justify-content:center}
+  /* A SAFE centre, not a plain one.
+     A plain centre on a row that scrolls puts half the overflow off each end,
+     and the half off the *left* cannot be scrolled back to — so at 737px the
+     first sections, Popular among them, were unreachable. The safe keyword
+     packs from the start the moment the content is too wide, which is exactly
+     when centring stops being a good idea. */
+  .tabs{justify-content:safe center}
 }
 .tabs::-webkit-scrollbar{display:none}
 .tabs button{
@@ -1198,20 +1213,24 @@ section{padding-left:18px;padding-right:18px}
  * Above the tabs, because it answers the same question they do — where is the
  * thing I want — and somebody who knows what they want should not have to find
  * which section it lives in first. */
-/* Sticky, and above the tabs in the stack.
+/* The search and the sections, pinned together.
  *
- * The tabs pin to the top of the window as you scroll; the search pins above
- * them, because a search finds a dish anywhere in the menu and a tab only takes
- * you to a section. So the order down the screen is the order of usefulness:
- * search, then sections, then food.
- *
- * The --finder-h property is written by the page once the bar is laid out, and
- * tabs are offset by it. Measured rather than assumed: the bar is one line of
- * 16px text on a phone and the same on a desktop, but a browser with a larger
- * default text size makes it taller, and a hard-coded offset would tuck the
- * tabs underneath it. */
+ * One sticky element rather than two, so there is no seam between them for the
+ * page to show through and no measured offset to keep in step. Opaque, because
+ * the whole job of a pinned bar is that the content goes behind it and stays
+ * there — a translucent one lets a heading slide up underneath and read as part
+ * of the bar. */
+.menubar{
+  position:sticky;top:0;z-index:24;
+  background:var(--page);
+  padding-bottom:2px;
+  transition:box-shadow .2s ease;
+}
+/* Only once it is genuinely floating over something. */
+.menubar.stuck{box-shadow:0 8px 20px -16px rgba(0,0,0,.55)}
+
 .finder{
-  position:sticky;top:0;z-index:22;
+  position:relative;top:auto;z-index:auto;
   /* No side padding. The bar sits in the same column as everything else and
      the box it draws is that column — measured on a phone, the field came out
      322px against 358 for the offer above it and the notice below, so the one
@@ -1224,22 +1243,29 @@ section{padding-left:18px;padding-right:18px}
 }
 /* Only once it is actually pinned, so the shadow is a sign that something is
    floating over the page rather than a permanent border. */
-.finder.stuck{
-  box-shadow:0 6px 18px -14px rgba(0,0,0,.5)
-}
+/* The bar above it carries the shadow now. */
 .finder input{
   width:100%;box-sizing:border-box;
-  border:1px solid var(--line);border-radius:999px;
+  /* A quiet, slightly transparent grey rather than the page's own line colour:
+     this sits on an opaque bar and wants to read as a field without drawing a
+     hard rule across the top of the menu. */
+  border:1px solid color-mix(in srgb, var(--ink-soft) 34%, transparent);
+  border-radius:999px;
+  /* Opaque. The bar is pinned and the menu scrolls under it, so a translucent
+     field shows dishes sliding along behind the words somebody is typing. */
   background:var(--card);color:var(--ink);
-  padding:13px 42px 13px 42px;font-size:16px   /* 16px: iOS zooms below it */
+  padding:13px 44px;font-size:16px   /* 16px: iOS zooms below it */
 }
 .finder input:focus{
   outline:none;border-color:var(--accent);
   box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 26%, transparent)
 }
 .finder .mag{
-  position:absolute;left:16px;top:50%;transform:translateY(-50%);
-  width:17px;height:17px;stroke:var(--ink-soft);fill:none;stroke-width:2;
+  /* Centred on the field's own middle, which is what top:50% of a
+     position:relative .finder gives once the finder has no padding of its own
+     to shift it. */
+  position:absolute;left:15px;top:50%;transform:translateY(-50%);
+  width:18px;height:18px;stroke:var(--ink-soft);fill:none;stroke-width:2;
   stroke-linecap:round;stroke-linejoin:round;pointer-events:none
 }
 .finder .clear{
@@ -1700,6 +1726,15 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
     // menu itself. The tabs come first because they are the map: a customer
     // scrolling past two grids of pictures to find out what sections exist has
     // been shown the shop window before the shop.
+    // The search and the sections are one bar.
+    //
+    // They were two sticky elements, the tabs offset by a height measured from
+    // the search box. That is two things to keep in step, and between them the
+    // page showed through — a heading sliding up behind the gap, which is what
+    // "users see nothing behind the search and nav menu bar" was asking for.
+    // One wrapper pins once, paints once, and needs no measuring.
+    html += '<div class="menubar" id="menubar">';
+
     html += '<div class="finder" id="finder">' +
       '<svg class="mag" viewBox="0 0 24 24" aria-hidden="true">' +
         '<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>' +
@@ -1722,6 +1757,7 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
               esc(s.name) + '</button>';
     });
     html += '</nav>';
+    html += '</div>';   // .menubar
 
     html += '<div class="col">';
 
@@ -1824,33 +1860,27 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
       input.focus();
     });
 
-    // ---- The bar is sticky, and the tabs stick underneath it --------------
+    // ---- Whether the bar is currently pinned ------------------------------
     //
-    // Both are pinned, so the tabs have to know how tall the bar is or they
-    // pin underneath it and half of them are never seen. Measured rather than
-    // assumed: the same one line of text is taller in a browser set to a large
-    // default size, and a hard-coded offset would be wrong on exactly the
-    // devices where it matters most.
-    function measure(){
-      document.documentElement.style.setProperty(
-        '--finder-h', Math.round(box.getBoundingClientRect().height) + 'px');
-    }
-    measure();
-    if (typeof ResizeObserver === 'function') new ResizeObserver(measure).observe(box);
-    else window.addEventListener('resize', measure);
-
-    // Whether it is currently pinned, so the shadow only appears when it is
-    // genuinely floating over the page. A sentinel of its own rather than a
-    // scroll handler: a scroll handler that reads layout on every frame is the
-    // one thing guaranteed to make a long menu stutter on a cheap phone.
-    var mark = document.createElement('div');
-    mark.setAttribute('aria-hidden', 'true');
-    mark.style.cssText = 'position:absolute;height:1px;width:1px;opacity:0';
-    box.parentNode.insertBefore(mark, box);
-    if (typeof IntersectionObserver === 'function') {
-      new IntersectionObserver(function(e){
-        box.classList.toggle('stuck', !e[0].isIntersecting);
-      }, { threshold: 1 }).observe(mark);
+    // The search and the sections are one sticky element now, so there is no
+    // height to measure and nothing to keep in step — only the shadow, which
+    // should appear when the bar is genuinely floating over the menu and not
+    // while it is still sitting in the page.
+    //
+    // A sentinel rather than a scroll handler: a handler that reads layout on
+    // every frame is the one thing guaranteed to make a long menu stutter on a
+    // cheap phone.
+    var bar = document.getElementById('menubar');
+    if (bar) {
+      var mark = document.createElement('div');
+      mark.setAttribute('aria-hidden', 'true');
+      mark.style.cssText = 'position:absolute;height:1px;width:1px;opacity:0';
+      bar.parentNode.insertBefore(mark, bar);
+      if (typeof IntersectionObserver === 'function') {
+        new IntersectionObserver(function(e){
+          bar.classList.toggle('stuck', !e[0].isIntersecting);
+        }, { threshold: 1 }).observe(mark);
+      }
     }
 
     // ---- Using it takes the top of the screen ----------------------------
@@ -1862,7 +1892,11 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
     // jumping.
     input.addEventListener('focus', function(){
       box.classList.add('searching');
-      var to = window.pageYOffset + box.getBoundingClientRect().top;
+      // The bar's top, not the field's: the field sits inside the bar, and
+      // scrolling the field to y=0 would leave the sections hanging above the
+      // fold.
+      var pin = bar || box;
+      var to = window.pageYOffset + pin.getBoundingClientRect().top;
       if (to <= 1) return;
       try {
         window.scrollTo({ top: to, behavior: 'smooth' });
@@ -1885,9 +1919,9 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
         || document.getElementById('tabs');
       if (!results) return;
       setTimeout(function(){
+        var barHeight = bar ? bar.getBoundingClientRect().height : 0;
         var to = window.pageYOffset + results.getBoundingClientRect().top
-          - (parseInt(getComputedStyle(document.documentElement)
-              .getPropertyValue('--finder-h'), 10) || 0) - 12;
+          - barHeight - 12;
         try {
           window.scrollTo({ top: Math.max(0, to), behavior: 'smooth' });
         } catch (err) {

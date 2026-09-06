@@ -927,13 +927,21 @@ function diSectionCard(section) {
       ${count
         ? `<div class="di-scroll"><table class="grid di-items">
              <thead><tr>
-               <th style="width:24%">Shown as</th>
+               <th style="width:23%">Shown as</th>
                <th style="width:auto">Description</th>
                <th class="mid" style="width:52px">On</th>
-               <th class="mid" style="width:58px">Popular</th>
-               <th class="mid" style="width:62px">Featured</th>
-               <th style="width:92px">Diet</th>
-               <th style="width:116px"></th>
+               <!-- Wide enough for the word. At 58 and 62 these two clipped
+                    their own headings, and the header row read
+                    "POPULARFEATUREDDIET" as one string. -->
+               <th class="mid" style="width:74px">Popular</th>
+               <th class="mid" style="width:80px">Featured</th>
+               <th style="width:88px">Diet</th>
+               <!-- Three 40px buttons and the gaps between them. At 116 the
+                    third one — delete — was drawn 26px outside the cell and
+                    clipped by the scroll box, which could not scroll because
+                    the table itself fitted. It was on the page, and it could
+                    not be reached by any means. -->
+               <th style="width:150px"></th>
              </tr></thead>
              <tbody>${section.items.map(diItemRow).join('')}</tbody>
            </table></div>`
@@ -1190,15 +1198,20 @@ async function diPickProducts(sectionId) {
     </label>`;
   }).join('');
 
+  // A column that fits the window, with only the list scrolling inside it.
+  // The list used to carry its own max-height as well as sitting in a panel
+  // that scrolled, so the dialog had two scrollbars side by side — and the
+  // outer one moved by the seventeen pixels the heading and footer overran.
   showPanel('Add products to this section', `
-    <input id="di-pick-search" placeholder="Search the catalogue"
-           style="width:100%;margin-bottom:10px">
-    <div id="di-pick-list"
-         style="max-height:52vh;overflow:auto;border:1px solid var(--line);
-                border-radius:8px;padding:8px">${rows}</div>
-    <div class="row" style="margin-top:12px;gap:8px">
-      <button class="btn primary" id="di-pick-add" type="button">Add ticked</button>
-      <span id="di-pick-note" class="muted small"></span>
+    <div class="di-pick-panel">
+      <input id="di-pick-search" placeholder="Search the catalogue"
+             style="width:100%;margin-bottom:10px">
+      <div id="di-pick-list" class="di-pick-list"
+           style="border:1px solid var(--line);border-radius:8px;padding:8px">${rows}</div>
+      <div class="row" style="margin-top:12px;gap:8px">
+        <button class="btn primary" id="di-pick-add" type="button">Add ticked</button>
+        <span id="di-pick-note" class="muted small"></span>
+      </div>
     </div>
   `);
 

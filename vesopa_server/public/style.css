@@ -5225,7 +5225,9 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
    icons: they are as wide as an icon. */
 .di-sec-fields {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  /* `auto` sized itself to the narrowest the buttons could be squeezed to,
+     which was one of them; the pair needs room to sit in a row. */
+  grid-template-columns: minmax(0, 1fr) max-content;
   gap: 4px 10px;
   align-items: start;
 }
@@ -5235,19 +5237,49 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
 .di-sec-fields > label:first-child { margin-top: 0; }
 .di-sec-fields > .float:first-child { grid-column: 1; }
 .di-sec-fields > .float:nth-child(2) { grid-column: 1; }
+/* Save and delete, side by side and level with the field they belong to.
+   Stacked in a 40px column they took two lines to say what fits on one, and
+   the pair straddled the two fields rather than sitting against either. */
 .di-sec-acts {
   grid-column: 2;
   grid-row: 1 / span 2;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: flex-start;
   gap: 8px;
   flex: 0 0 auto;
+  /* Level with the first input rather than with the label above it. */
+  padding-top: 22px;
 }
 .di-sec-acts .ibtn, .di-sec-acts .icon-btn { flex: 0 0 auto; }
 
 /* The dishes. Six columns do not fit a tablet, so the table scrolls inside its
    own box rather than pushing the page sideways — which would take the name,
    the one column that says which dish the row is, off the left edge. */
+/* The product picker scrolls its list and nothing else.
+   It had two bars: the list's own, and the panel around it scrolling by the
+   seventeen pixels its heading and footer overran. Two scrollbars side by side
+   is a dialog that looks broken, and the outer one moves almost nothing. The
+   panel is a column that fits the window; the list is the part that flexes. */
+/* The panel around it stops scrolling; the list inside it does the scrolling.
+   Without this both scroll, which is the two bars that were reported. */
+.panel-body:has(> .di-pick-panel) {
+  max-height: none;
+  overflow: visible;
+}
+.di-pick-panel {
+  display: flex;
+  flex-direction: column;
+  max-height: min(78vh, 640px);
+  overflow: hidden;
+}
+.di-pick-panel > .di-pick-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 .di-scroll {
   margin-top: 12px;
   overflow-x: auto;
@@ -5272,6 +5304,21 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
 .di-items { min-width: 700px; table-layout: fixed; }
 .di-items td { overflow: hidden; }
 .di-items th.mid, .di-items td.mid { text-align: center; }
+
+/* Tight cells, wrapping headings.
+   These columns are deliberately narrow — they hold a tick — and the padding a
+   normal table cell carries was taking more of them than the tick did, so
+   "Popular" and "Featured" were clipped and the header row read as one word.
+   Letting the heading wrap costs a few pixels of height once, at the top of
+   the table, and nothing else. */
+.di-items th, .di-items td { padding-left: 6px; padding-right: 6px; }
+.di-items th { white-space: normal; line-height: 1.15; vertical-align: bottom; }
+
+/* Room for three buttons and the gaps between them.
+   Measured: the third — delete — was drawn outside its cell and clipped by the
+   scroll box, which could not scroll because the table itself fitted. It was on
+   the page and unreachable by any means. */
+.di-items td.di-row-acts { padding-left: 2px; padding-right: 2px; }
 .di-items td.di-row-acts {
   text-align: right;
   white-space: nowrap;
