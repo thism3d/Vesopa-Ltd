@@ -9,6 +9,7 @@ const { WebSocketServer } = require('ws');
 
 const { dineinRoutes } = require('./dinein');
 const { dineinPageRoutes } = require('./dinein_pages');
+const { dineinOtpRoutes } = require('./dinein_otp');
 
 const {
   verifyPassword,
@@ -274,6 +275,10 @@ app.use('/api', importRoutes({ pool, broadcast, secret: JWT_SECRET }));
 // The pages a customer actually opens are mounted further down, ahead of the
 // static middleware.
 app.use(dineinRoutes({ pool, broadcast, secret: JWT_SECRET }));
+// Signing in to a menu with a code. Mounted at the root like the rest of
+// dine-in, and beside it rather than inside it because it is a self-contained
+// piece with its own outside dependency.
+app.use(dineinOtpRoutes({ pool, secret: JWT_SECRET }));
 
 app.use('/api', reportRoutes({ pool, secret: JWT_SECRET }));
 app.use('/api', reportScheduleRoutes({ pool, secret: JWT_SECRET }));

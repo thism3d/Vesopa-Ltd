@@ -3369,30 +3369,17 @@ function setRailFolded(folded) {
   try { localStorage.setItem(RAIL_FOLD_KEY, folded ? '1' : '0'); } catch { /* private mode */ }
 }
 
-/**
- * Wrap each view's name so it can be styled apart from its icon.
+/*
+ * `labelNavForFolding` used to live here.
  *
- * Left from the icon-rail version of collapsing, and kept because it is what
- * lets a nav button's words be addressed on their own. The label attribute
- * comes off the text the button already has rather than a second list that
- * would drift out of step with it.
+ * It wrapped each nav button's text in a <span> so the words could be hidden
+ * while the icon stayed, for the version of collapsing that kept a 68px strip
+ * of icons. That design was replaced by hiding the rail outright, so the span
+ * had no job left — and it had quietly broken the nav, because the click
+ * handler read data-view off the clicked element and the span does not carry
+ * it. Removed rather than left in place unused.
  */
-function labelNavForFolding() {
-  document.querySelectorAll('.rail .nav').forEach((btn) => {
-    if (btn.dataset.label) return;
-    const words = btn.textContent.trim();
-    if (!words) return;
-    btn.dataset.label = words;
-    // Wrap the bare text node so CSS can hide the words and keep the icon.
-    [...btn.childNodes].forEach((node) => {
-      if (node.nodeType !== 3 || !node.textContent.trim()) return;
-      const span = document.createElement('span');
-      span.className = 'nav-word';
-      span.textContent = node.textContent;
-      node.replaceWith(span);
-    });
-  });
-}
+
 
 function closeThemeMenu() {
   document.querySelectorAll('.theme-corner').forEach((corner) => {
@@ -3413,7 +3400,6 @@ function wireShell() {
       setRailFolded(!document.getElementById('app').classList.contains('rail-folded'));
     });
   }
-  labelNavForFolding();
   wireTips();
 
   const opener = document.getElementById('rail-open');
@@ -3705,12 +3691,21 @@ document.addEventListener('click', async (e) => {
   const group = t.closest?.('.nav-group');
   if (group) return toggleGroup(group);
 
-  if (t.dataset.view) {
+  // `closest`, not `t` itself.
+  //
+  // This read `t.dataset.view` off the clicked element, which worked only while
+  // a nav button contained nothing but a bare text node. The moment anything
+  // was put inside one — a span, an icon — clicking the words hit the child,
+  // which has no data-view, and the press did nothing; clicking the padding
+  // around them still worked. That is a nav that responds about one press in
+  // three, which is exactly how it was reported.
+  const navBtn = t.closest?.('[data-view]');
+  if (navBtn) {
     // Picking a view is the end of the errand the drawer was opened for.
     setRailOpen(false);
     // This is a press, which is what lets the screen editor open a window of
     // its own — see spEnterView. A deep link or the back button is not.
-    return show(t.dataset.view, { userInitiated: true });
+    return show(navBtn.dataset.view, { userInitiated: true });
   }
 
   // ---- Floor designer ----

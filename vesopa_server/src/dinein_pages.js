@@ -633,6 +633,61 @@ button{font:inherit;cursor:pointer}
   .tk-state.done .ring svg path{stroke-dashoffset:0}
 }
 
+/* ---------------------------------------------------------------------------
+   SIGNING IN
+   --------------------------------------------------------------------------- */
+
+/* Email or phone. Email is pressed to start with, because most people know
+   their own address and not everybody has signal in a cellar. */
+.chan{display:flex;gap:8px;margin:4px 0 2px}
+.chan button{
+  flex:1;border:1px solid var(--line);border-radius:12px;background:var(--card);
+  color:var(--ink-soft);padding:11px;font-size:14px;font-weight:600;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;gap:7px
+}
+.chan button[aria-pressed="true"]{
+  border-color:var(--accent);color:var(--ink);
+  background:color-mix(in srgb, var(--accent) 16%, var(--card))
+}
+.chan svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.9;
+          stroke-linecap:round;stroke-linejoin:round}
+
+/* The country, and then the number. One control that reads as one field. */
+.telrow{display:flex;gap:8px;align-items:stretch}
+.telrow .cc{
+  position:relative;flex:0 0 auto;display:flex;align-items:center;gap:6px;
+  border:1px solid var(--line);border-radius:12px;background:var(--card);
+  padding:0 10px;font-size:16px;cursor:pointer
+}
+.telrow .cc select{
+  position:absolute;inset:0;width:100%;height:100%;
+  opacity:0;cursor:pointer;font-size:16px
+}
+.telrow .cc .flag{font-size:19px;line-height:1}
+.telrow .cc .dial{font-variant-numeric:tabular-nums}
+.telrow .cc .chev{width:13px;height:13px;stroke:currentColor;fill:none;
+                  stroke-width:2;stroke-linecap:round;stroke-linejoin:round;opacity:.6}
+.telrow input{flex:1;min-width:0}
+
+/* The code itself: big, spaced, and numeric so a phone shows the number pad. */
+.codebox{
+  width:100%;box-sizing:border-box;text-align:center;
+  font-size:30px;font-weight:700;letter-spacing:.36em;
+  padding:16px 10px 16px 22px;   /* the tracking pushes the last digit right */
+  border:1px solid var(--line);border-radius:14px;
+  background:var(--card);color:var(--ink);font-variant-numeric:tabular-nums
+}
+.codebox:focus{outline:none;border-color:var(--accent);
+  box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent)}
+.sent-to{margin:0 0 4px;color:var(--ink-soft);font-size:14px;line-height:1.5}
+.sent-to b{color:var(--ink)}
+.resend{
+  display:block;margin:14px auto 0;background:none;border:0;padding:6px;
+  color:var(--accent);font:inherit;font-weight:650;cursor:pointer;
+  text-decoration:underline
+}
+.resend[disabled]{color:var(--ink-soft);text-decoration:none;cursor:default}
+
 /* THE ACCOUNT STRIP, and the sheets it opens. */
 .who{
   position:absolute;top:calc(env(safe-area-inset-top,0px) + 10px);right:12px;
@@ -1143,7 +1198,8 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
     user: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.6"/><path d="M5 20a7 7 0 0 1 14 0"/></svg>',
     receipt: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>',
     x: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg>',
-    chev: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg>'
+    chev: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg>',
+    mail: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5.5" width="18" height="13" rx="2.5"/><path d="m3.6 7 8.4 6 8.4-6"/></svg>'
   };
 
   function esc(s){
@@ -1498,7 +1554,7 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
     var m = host.querySelector('[data-mine]');
     if (m) m.addEventListener('click', showMine);
     var si = host.querySelector('[data-signin]');
-    if (si) si.addEventListener('click', function(){ showAuth('login'); });
+    if (si) si.addEventListener('click', function(){ showSignIn(); });
     var ac = host.querySelector('[data-acct]');
     if (ac) ac.addEventListener('click', showAccount);
   }
@@ -1541,6 +1597,345 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
     var body = back.querySelector('.sheetbody');
     body.close = shut;
     return body;
+  }
+
+  // =========================================================================
+  // SIGNING IN WITH A CODE
+  // =========================================================================
+  //
+  // Three steps, and the second and third are both skippable:
+  //
+  //   1. an address or a number,
+  //   2. the code that arrives at it,
+  //   3. a password, offered once, to somebody who has just proved who they
+  //      are and has not got one.
+  //
+  // Nobody has to do any of it. Guest ordering is untouched and always will be.
+
+  var GEO = null;
+
+  /** The country list and which one to start on, fetched once. */
+  function geo(){
+    if (GEO) return Promise.resolve(GEO);
+    return fetch('/api/public/dinein/geo')
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(d){
+        GEO = d || { country: 'GB', countries: [
+          { code: 'GB', dial: '44', name: 'United Kingdom', flag: '\uD83C\uDDEC\uD83C\uDDE7' }
+        ], sms_countries: ['GB'] };
+        return GEO;
+      })
+      .catch(function(){
+        GEO = { country: 'GB', countries: [
+          { code: 'GB', dial: '44', name: 'United Kingdom', flag: '\uD83C\uDDEC\uD83C\uDDE7' }
+        ], sms_countries: ['GB'] };
+        return GEO;
+      });
+  }
+
+  function showSignIn(after){
+    geo().then(function(g){ drawSignIn(g, after); });
+  }
+
+  function drawSignIn(g, after){
+    var body = sheet('Sign in');
+    var channel = 'email';          // email is pressed to start with, as asked
+    var country = g.country || 'GB';
+
+    function countryOf(code){
+      var hit = null;
+      (g.countries || []).forEach(function(c){ if (c.code === code) hit = c; });
+      return hit || (g.countries || [])[0] || { code: 'GB', dial: '44', flag: '' };
+    }
+
+    function paint(){
+      var c = countryOf(country);
+      var smsHere = (g.sms_countries || []).indexOf(country) !== -1;
+      body.innerHTML =
+        '<p style="margin:0 0 14px;color:var(--ink-soft);font-size:14px;line-height:1.5">' +
+          'We will send you a code. There is no password to remember, and you ' +
+          'never need an account to order.</p>' +
+
+        '<div class="chan">' +
+          '<button type="button" data-ch="email" aria-pressed="' +
+            (channel === 'email') + '">' + ICON.mail + 'Email</button>' +
+          '<button type="button" data-ch="phone" aria-pressed="' +
+            (channel === 'phone') + '">' + ICON.phone + 'Phone</button>' +
+        '</div>' +
+
+        (channel === 'email'
+          ? '<label for="siEmail">Your email</label>' +
+            '<input id="siEmail" type="email" inputmode="email" ' +
+              'autocomplete="email" autocapitalize="off" spellcheck="false">'
+          : '<label for="siTel">Your mobile number</label>' +
+            '<div class="telrow">' +
+              '<span class="cc">' +
+                '<span class="flag">' + c.flag + '</span>' +
+                '<span class="dial">+' + esc(c.dial) + '</span>' +
+                '<svg class="chev" viewBox="0 0 24 24" aria-hidden="true">' +
+                  '<path d="m6 9 6 6 6-6"/></svg>' +
+                '<select id="siCountry" aria-label="Country">' +
+                  (g.countries || []).map(function(x){
+                    return '<option value="' + x.code + '"' +
+                      (x.code === country ? ' selected' : '') + '>' +
+                      x.flag + ' ' + esc(x.name) + ' +' + esc(x.dial) + '</option>';
+                  }).join('') +
+                '</select>' +
+              '</span>' +
+              '<input id="siTel" type="tel" inputmode="tel" autocomplete="tel">' +
+            '</div>' +
+            (smsHere ? '' :
+              '<p class="muted" style="margin:8px 0 0;color:var(--ink-soft);font-size:13px;' +
+              'line-height:1.5">We can only text UK mobiles at the moment. ' +
+              'For ' + esc(c.name) + ', please use your email address.</p>')
+        ) +
+
+        '<label for="siName">Your name (optional)</label>' +
+        '<input id="siName" autocomplete="name">' +
+
+        '<div class="err" id="siErr" hidden></div>' +
+        '<button class="send" id="siGo" type="button" style="margin-top:16px">' +
+          'Send me a code</button>';
+
+      body.querySelectorAll('[data-ch]').forEach(function(b){
+        b.addEventListener('click', function(){
+          channel = b.getAttribute('data-ch');
+          paint();
+        });
+      });
+      var picker = document.getElementById('siCountry');
+      if (picker) picker.addEventListener('change', function(){
+        country = picker.value;
+        // Keep what they have typed; only the flag and the prefix change.
+        var typed = (document.getElementById('siTel') || {}).value || '';
+        var name = (document.getElementById('siName') || {}).value || '';
+        paint();
+        if (document.getElementById('siTel')) document.getElementById('siTel').value = typed;
+        if (document.getElementById('siName')) document.getElementById('siName').value = name;
+      });
+      document.getElementById('siGo').addEventListener('click', send);
+    }
+
+    function send(){
+      var btn = document.getElementById('siGo');
+      var err = document.getElementById('siErr');
+      err.hidden = true;
+      btn.disabled = true;
+      btn.textContent = 'Sending…';
+
+      var payload = { channel: channel, country: country,
+                      name: (document.getElementById('siName') || {}).value || '' };
+      if (TABLE) payload.table = TABLE; else payload.slug = SLUG;
+      if (channel === 'email') payload.email = document.getElementById('siEmail').value;
+      else payload.phone = document.getElementById('siTel').value;
+
+      fetch('/api/public/dinein/otp/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+        .then(function(r){ return r.json().then(function(j){ return { ok: r.ok, body: j }; }); })
+        .then(function(res){
+          if (!res.ok) {
+            err.textContent = (res.body && res.body.error) || 'That did not work.';
+            err.hidden = false;
+            btn.disabled = false;
+            btn.textContent = 'Send me a code';
+            // A number we cannot text is a reason to move them to email rather
+            // than leave them pressing a button that will not work.
+            if (res.body && res.body.use_email) { channel = 'email'; paint(); }
+            return;
+          }
+          body.close();
+          setTimeout(function(){
+            showCode(res.body, payload, after);
+          }, 200);
+        })
+        .catch(function(){
+          err.textContent = 'We could not reach the kitchen. Check your signal.';
+          err.hidden = false;
+          btn.disabled = false;
+          btn.textContent = 'Send me a code';
+        });
+    }
+
+    paint();
+  }
+
+  function showCode(challenge, payload, after){
+    var body = sheet('Enter your code', { back: function(){ showSignIn(after); } });
+    var since = Date.now();
+
+    body.innerHTML =
+      '<p class="sent-to">We sent a code to <b>' + esc(challenge.masked) + '</b>. ' +
+        'It works for ten minutes.</p>' +
+      '<input class="codebox" id="siCode" inputmode="numeric" ' +
+        'autocomplete="one-time-code" maxlength="6" placeholder="000000" ' +
+        'aria-label="Your six-digit code">' +
+      '<div class="err" id="siErr" hidden></div>' +
+      '<button class="send" id="siCheck" type="button" style="margin-top:16px" disabled>' +
+        'Sign me in</button>' +
+      '<button class="resend" id="siAgain" type="button" disabled>' +
+        'Send it again</button>';
+
+    var input = document.getElementById('siCode');
+    var go = document.getElementById('siCheck');
+    var again = document.getElementById('siAgain');
+    input.focus();
+
+    // Six digits and nothing else, and it submits itself once it has them —
+    // which is what somebody who has just read a code off a lock screen
+    // expects, and one press fewer with a phone in one hand.
+    input.addEventListener('input', function(){
+      input.value = input.value.replace(/[^0-9]/g, '').slice(0, 6);
+      go.disabled = input.value.length !== 6;
+      if (input.value.length === 6) check();
+    });
+    go.addEventListener('click', check);
+
+    // Not immediately: the commonest reason a code has not arrived is that it
+    // has been four seconds.
+    var wait = 30;
+    var tick = setInterval(function(){
+      wait -= 1;
+      if (wait <= 0) {
+        clearInterval(tick);
+        again.disabled = false;
+        again.textContent = 'Send it again';
+      } else {
+        again.textContent = 'Send it again in ' + wait + 's';
+      }
+    }, 1000);
+    again.textContent = 'Send it again in ' + wait + 's';
+    again.addEventListener('click', function(){
+      if (again.disabled) return;
+      clearInterval(tick);
+      body.close();
+      setTimeout(function(){ showSignIn(after); }, 200);
+    });
+
+    function check(){
+      var err = document.getElementById('siErr');
+      err.hidden = true;
+      go.disabled = true;
+      go.textContent = 'Checking…';
+
+      fetch('/api/public/dinein/otp/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          challenge: challenge.challenge,
+          code: input.value,
+          name: payload.name,
+          country: payload.country
+        })
+      })
+        .then(function(r){ return r.json().then(function(j){ return { ok: r.ok, body: j }; }); })
+        .then(function(res){
+          if (!res.ok) {
+            err.textContent = (res.body && res.body.error) || 'That code is not right.';
+            err.hidden = false;
+            go.textContent = 'Sign me in';
+            go.disabled = input.value.length !== 6;
+            input.select();
+            return;
+          }
+          clearInterval(tick);
+          store(TOKEN_KEY, res.body.token);
+          store(ACCT_KEY, JSON.stringify(res.body.account || {}));
+          paintWho();
+          body.close();
+          setTimeout(function(){
+            if (res.body.offer_password) showPasswordOffer(after);
+            else if (after) after();
+          }, 220);
+        })
+        .catch(function(){
+          err.textContent = 'We could not reach the kitchen. Check your signal.';
+          err.hidden = false;
+          go.textContent = 'Sign me in';
+          go.disabled = false;
+        });
+    }
+  }
+
+  /**
+   * A password, offered once.
+   *
+   * Behind a press rather than a field on the screen: somebody who does not
+   * want one should see a sentence and a way past it, not an empty box that
+   * looks like it has to be filled in. Asked for after they are already signed
+   * in, so refusing costs them nothing.
+   */
+  function showPasswordOffer(after){
+    var body = sheet('You are in');
+    var opened = false;
+
+    function paint(){
+      body.innerHTML =
+        '<p style="margin:0 0 6px;color:var(--ink-soft);font-size:14px;line-height:1.55">' +
+          'That is you signed in on this phone for the next month. ' +
+          'A code will get you in again any time.</p>' +
+        (opened
+          ? '<label for="siPw">Choose a password</label>' +
+            '<input id="siPw" type="password" autocomplete="new-password">' +
+            '<p style="margin:8px 0 0;color:var(--ink-soft);font-size:13px">' +
+              'Eight characters or more. Three words you will remember beats ' +
+              'one word with a number after it.</p>' +
+            '<div class="err" id="siErr" hidden></div>' +
+            '<button class="send" id="siSave" type="button" style="margin-top:16px">' +
+              'Save it</button>' +
+            '<button class="shut" id="siSkip" type="button">Not now</button>'
+          : '<button class="send" id="siOpen" type="button" style="margin-top:16px">' +
+              'Set a password as well</button>' +
+            '<button class="shut" id="siSkip" type="button">No thanks</button>');
+
+      var open = document.getElementById('siOpen');
+      if (open) open.addEventListener('click', function(){ opened = true; paint(); });
+
+      var skip = document.getElementById('siSkip');
+      if (skip) skip.addEventListener('click', function(){
+        body.close();
+        if (after) setTimeout(after, 200);
+      });
+
+      var save = document.getElementById('siSave');
+      if (save) save.addEventListener('click', function(){
+        var err = document.getElementById('siErr');
+        var pw = document.getElementById('siPw').value;
+        err.hidden = true;
+        save.disabled = true;
+        save.textContent = 'Saving…';
+        fetch('/api/public/dinein/account/password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json',
+                     Authorization: 'Bearer ' + token() },
+          body: JSON.stringify({ password: pw })
+        })
+          .then(function(r){ return r.json().then(function(j){ return { ok: r.ok, body: j }; }); })
+          .then(function(res){
+            if (!res.ok) {
+              err.textContent = (res.body && res.body.error) || 'That did not work.';
+              err.hidden = false;
+              save.disabled = false;
+              save.textContent = 'Save it';
+              return;
+            }
+            var acct = account() || {};
+            acct.has_password = true;
+            store(ACCT_KEY, JSON.stringify(acct));
+            body.close();
+            if (after) setTimeout(after, 200);
+          })
+          .catch(function(){
+            err.textContent = 'We could not reach the kitchen. Check your signal.';
+            err.hidden = false;
+            save.disabled = false;
+            save.textContent = 'Save it';
+          });
+      });
+    }
+    paint();
   }
 
   function showAuth(mode, after){
@@ -1673,7 +2068,7 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
       var j = document.getElementById('minejoin');
       if (j) j.addEventListener('click', function(){
         body.close();
-        setTimeout(function(){ showAuth('join', showMine); }, 200);
+        setTimeout(function(){ showSignIn(showMine); }, 200);
       });
     }
 
@@ -2082,7 +2477,7 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
     if (signIn) signIn.addEventListener('click', function(){
       dlg.close();
       // Straight back to the basket afterwards, with the account applied.
-      setTimeout(function(){ showAuth('login', openCheckout); }, 200);
+      setTimeout(function(){ showSignIn(openCheckout); }, 200);
     });
 
     dlg.showModal();

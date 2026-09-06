@@ -165,4 +165,31 @@ check('the dine-in pages are mounted ahead of the static middleware too', () => 
   assert.ok(pages < statics, 'the dine-in pages are behind express.static');
 });
 
+check('a nav press works wherever inside the button it lands', () => {
+  // This read data-view off the clicked element, which worked only while a nav
+  // button held nothing but a bare text node. A <span> was put inside them for
+  // an icon-only rail; from then on clicking the words hit the span, which
+  // carries no data-view, and the press did nothing — while clicking the
+  // padding around them still worked. A nav that answers about one press in
+  // three, which is how it was reported.
+  //
+  // closest() is what makes it survive anything being put inside a button, and
+  // sooner or later something will be.
+  assert.ok(
+    app.includes("t.closest?.('[data-view]')"),
+    'the nav branch reads the clicked element rather than the button around it'
+  );
+  assert.ok(
+    !app.includes('if (t.dataset.view)'),
+    'the old element-only test is back'
+  );
+});
+
+check('nothing wraps a nav button’s text any more', () => {
+  // The span that caused it belonged to a design that was replaced. Comments
+  // are stripped first, because the note explaining all this names it.
+  const code = app.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+  assert.ok(!code.includes('nav-word'), 'nav-word is back in the code');
+});
+
 console.log(`\n${passed} checks passed`);

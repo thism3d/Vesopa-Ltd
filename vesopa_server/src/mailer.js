@@ -12,6 +12,25 @@ const nodemailer = require('nodemailer');
 const FROM_NAME = process.env.MAIL_FROM_NAME || 'Vesopa EPOS';
 const FROM = process.env.MAIL_FROM || 'support@vesopaepos.com';
 
+/**
+ * More than one mailbox.
+ *
+ * `support@` is right for a password reset from the back office, which is a
+ * message to a colleague about their own account. It is wrong for a sign-in
+ * code sent to somebody sitting in a pub, who has never heard of Vesopa support
+ * and whose mail client will file a first message from an address like that
+ * next to the invoices.
+ *
+ * So `menu@` sends the codes. Two transports rather than one with a rewritten
+ * From, because SPF and DMARC check the envelope against the authenticated
+ * sender, and a From that does not match the mailbox that sent it is the
+ * shortest route into a spam folder.
+ *
+ * Keyed by name; an unknown name falls back to the default, so a caller can
+ * always ask and nothing breaks if the second mailbox is not configured.
+ */
+const transports = new Map();
+
 let transport = null;
 
 /**
@@ -35,6 +54,33 @@ function getTransport() {
   return transport;
 }
 
+/**
+ * The transport for a named mailbox, or the default when it has none.
+ *
+ * Falls back deliberately: a venue whose MENU_SMTP_* are unset should still be
+ * able to send sign-in codes, from support@, rather than not send them.
+ */
+function accountTransport(name) {
+  if (!name || name === 'default') return getTransport();
+  if (transports.has(name)) return transports.get(name);
+
+  const prefix = name.toUpperCase();
+  const user = process.env[`${prefix}_SMTP_USER`];
+  const pass = process.env[`${prefix}_SMTP_PASSWORD`];
+  if (!user || !pass || !process.env.SMTP_HOST) {
+    transports.set(name, null);
+    return null;
+  }
+  const tx = nodemailer.createTransport({
+    host: process.env[`${prefix}_SMTP_HOST`] || process.env.SMTP_HOST,
+    port: Number(process.env[`${prefix}_SMTP_PORT`] || process.env.SMTP_PORT) || 465,
+    secure: String(process.env[`${prefix}_SMTP_SECURE`] || process.env.SMTP_SECURE || 'true') === 'true',
+    auth: { user, pass },
+  });
+  transports.set(name, tx);
+  return tx;
+}
+
 /** True when mail can actually be sent, so callers can log the difference. */
 function mailEnabled() {
   return getTransport() !== null;
@@ -51,16 +97,27 @@ function mailEnabled() {
  * inventing a second vocabulary for "a file with a name" would only be
  * something to translate back again.
  */
-async function sendMail({ to, subject, html, text, attachments }) {
-  const tx = getTransport();
+async function sendMail({ to, subject, html, text, attachments, account }) {
+  // A named mailbox where one is asked for and configured, the default
+  // otherwise — see the note on `transports` above.
+  const named = account ? accountTransport(account) : null;
+  const tx = named || getTransport();
   if (!tx) {
     console.warn(`[mail] SMTP not configured — skipped "${subject}" to ${to}`);
     return false;
   }
 
+  const prefix = account ? account.toUpperCase() : '';
+  const fromAddress = named
+    ? (process.env[`${prefix}_MAIL_FROM`] || process.env[`${prefix}_SMTP_USER`])
+    : FROM;
+  const fromName = named
+    ? (process.env[`${prefix}_MAIL_FROM_NAME`] || FROM_NAME)
+    : FROM_NAME;
+
   try {
     await tx.sendMail({
-      from: `"${FROM_NAME}" <${FROM}>`,
+      from: `"${fromName}" <${fromAddress}>`,
       to,
       subject,
       html,
