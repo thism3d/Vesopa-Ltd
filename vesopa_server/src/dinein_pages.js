@@ -1182,14 +1182,16 @@ html{scroll-behavior:smooth;scroll-padding-top:70px}
 
 .tabs{
   /* Not sticky itself any more — the bar it lives in does that. */
-  position:relative;z-index:auto;margin-top:10px;
+  position:relative;z-index:auto;margin-top:0;
   background:var(--page);border-bottom:1px solid var(--line);
   display:flex;gap:8px;overflow-x:auto;
   /* No gutter of its own: the column around it is the same one the search
      field sits in, so the two line up by construction rather than by two
      numbers that have to be kept equal. Cut off at the right, the strip
-     scrolls — that is what the sections are, a strip you push along. */
-  padding:10px 0;
+     scrolls — that is what the sections are, a strip you push along.
+     Six above and ten below: the pills sit close under the field they belong
+     with, and clear of the menu they sit over. */
+  padding:6px 0 10px;
   scrollbar-width:none;-webkit-overflow-scrolling:touch;
   overscroll-behavior-x:contain;
   scroll-padding-inline:0;
@@ -1271,7 +1273,11 @@ section{padding-left:18px;padding-right:18px}
      control somebody types into was the narrowest thing on the page. The
      vertical padding stays; it is what lifts the bar off the content while it
      is pinned. */
-  margin:16px auto 0;padding:8px 0;
+  /* Four pixels under the field, not eight. Measured: from the bottom of the
+     field to the top of the first section pill was 28px — eight here, ten of
+     margin on the strip and ten of padding inside it. They are one bar and
+     should read as one, so the total is now ten. */
+  margin:16px auto 0;padding:8px 0 4px;
   background:var(--page);
   transition:box-shadow .2s ease;
 }
@@ -1341,6 +1347,87 @@ section{padding-left:18px;padding-right:18px}
 }
 .item.hid,.pcard.hid,section.hid,.promos.hid{display:none}
 
+/* ---- What this table has out --------------------------------------------
+   A button that is only there while something is. Bottom right, above the
+   basket bar, because a basket sliding up must not bury the one control that
+   says where the food has got to. */
+.live-fab{
+  position:fixed;right:16px;z-index:45;
+  /* Clear of the basket bar when it is up, and of the home indicator always.
+     The basket is 84px of button plus its own padding. */
+  bottom:calc(16px + env(safe-area-inset-bottom));
+  width:58px;height:58px;border:0;border-radius:999px;cursor:pointer;
+  background:var(--fab,#3B82F6);color:#fff;
+  display:grid;place-items:center;
+  /* The hidden attribute must win over that display.
+     A UA stylesheet sets [hidden]{display:none}, which is a bare element
+     selector and loses to a class — so setting .hidden on this button did
+     nothing at all and it sat in the corner showing a count of 0 with nothing
+     outstanding. Caught in a screenshot, not by the code. */
+  box-shadow:0 10px 26px -8px color-mix(in srgb, var(--fab,#3B82F6) 70%, transparent);
+  transition:transform .18s cubic-bezier(.2,.8,.3,1), background .3s ease
+}
+.basket.up ~ .live-fab,
+body:has(.basket.up) .live-fab{
+  bottom:calc(104px + env(safe-area-inset-bottom))
+}
+.live-fab[hidden]{display:none}
+.live-fab:active{transform:scale(.92)}
+.live-fab svg{
+  width:25px;height:25px;stroke:currentColor;fill:none;stroke-width:1.9;
+  stroke-linecap:round;stroke-linejoin:round;position:relative;z-index:1
+}
+/* How many rounds are out. */
+.live-fab .n{
+  position:absolute;top:-2px;right:-2px;min-width:22px;height:22px;
+  padding:0 6px;border-radius:999px;
+  background:var(--page);color:var(--ink);
+  border:2px solid var(--fab,#3B82F6);
+  font-size:12px;font-weight:800;line-height:18px;
+  display:grid;place-items:center
+}
+/* One turn when something moves. Not a loop: a button that pulses for ever is
+   a button people stop seeing. */
+.live-fab .ring{
+  position:absolute;inset:0;border-radius:999px;
+  border:2px solid var(--fab,#3B82F6);opacity:0;pointer-events:none
+}
+.live-fab.ping .ring{animation:fabring .9s ease-out 2}
+@keyframes fabring{
+  0%{opacity:.65;transform:scale(1)}
+  100%{opacity:0;transform:scale(1.75)}
+}
+@media (prefers-reduced-motion:reduce){
+  .live-fab.ping .ring{animation:none}
+}
+
+/* ---- What just happened -------------------------------------------------
+   A line that says an order moved, tappable to go and look, and gone by
+   itself. Above the button so the two do not sit on top of each other. */
+.toasts{
+  position:fixed;right:16px;left:16px;z-index:46;
+  bottom:calc(86px + env(safe-area-inset-bottom));
+  display:flex;flex-direction:column;align-items:flex-end;gap:8px;
+  pointer-events:none
+}
+body:has(.basket.up) .toasts{bottom:calc(174px + env(safe-area-inset-bottom))}
+.toast{
+  pointer-events:auto;max-width:min(100%,340px);
+  display:flex;align-items:center;gap:10px;
+  padding:12px 15px;border:0;border-radius:999px;cursor:pointer;
+  background:var(--ink);color:var(--page);
+  font:inherit;font-size:14px;text-align:left;
+  box-shadow:0 12px 30px -12px rgba(0,0,0,.6);
+  opacity:0;transform:translateY(10px);
+  transition:opacity .24s ease, transform .24s cubic-bezier(.2,.8,.3,1)
+}
+.toast.in{opacity:1;transform:none}
+.toast .dot{
+  flex:0 0 auto;width:9px;height:9px;border-radius:999px;background:var(--fab)
+}
+.toast .w{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.toast b{font-weight:750}
+
 /* ---- The order page ------------------------------------------------------ */
 
 /* The way back. Top left, where a back control belongs, and naming the place
@@ -1408,6 +1495,11 @@ section{padding-left:18px;padding-right:18px}
   font-weight:700;color:var(--tk);
   background:color-mix(in srgb, var(--tk) 15%, transparent)
 }
+
+/* The same panel, saying what to do rather than offering a button — there is
+   no button to offer until the page is on the home screen. */
+.tk-notify.as-note{cursor:default}
+.tk-notify.as-note .t b{display:inline}
 
 @media (max-width:420px){
   .tk-notify{flex-wrap:wrap}
@@ -1666,6 +1758,20 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
 
 <dialog id="checkout"><div class="sheet" id="checkoutBody"></div></dialog>
 
+<!-- What this table has out.
+     Only ever on screen while something is actually being made, and it sits
+     above the basket bar rather than under it, because a basket that slides up
+     must not bury the one control that says where the food is. -->
+<button class="live-fab" id="liveFab" type="button" hidden
+        aria-label="Your orders in progress">
+  <span class="ring"></span>
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M6 9a6 6 0 1 1 12 0c0 4 1.5 5.5 2 6H4c.5-.5 2-2 2-6z"/>
+    <path d="M10 19a2 2 0 0 0 4 0"/>
+  </svg>
+  <span class="n" id="liveFabCount">0</span>
+</button>
+
 <script>
 (function(){
   "use strict";
@@ -1922,6 +2028,7 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
     paintWho();
     app.addEventListener('click', onTap);
     paintBasket();
+    wireLiveFab();
   }
 
   /**
@@ -2193,6 +2300,166 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
         }
       }, 180);
     });
+  }
+
+  // =========================================================================
+  // WHAT THIS TABLE HAS OUT
+  // =========================================================================
+  //
+  // A table orders in rounds and each round is its own order with its own page.
+  // Once the menu has been returned to, there is nothing on it that says a
+  // round is still coming — so this is a button that appears while anything is
+  // outstanding, carries the count, and rings when one of them moves.
+  //
+  // It reads the same list of orders the phone already keeps, and asks the
+  // server where each has got to. Nothing is stored that was not stored before.
+
+  var LIVE_STATUS = { placed: 1, accepted: 1, ready: 1 };
+  var STATUS_TONE = {
+    placed: '#3B82F6', accepted: '#F59E0B', ready: '#8B5CF6', served: '#16A34A'
+  };
+  var liveTimer = null;
+
+  /** The orders this phone is still waiting on. */
+  function liveOrders(){
+    return mine().filter(function(o){ return LIVE_STATUS[o.status]; });
+  }
+
+  function paintLiveFab(){
+    var fab = document.getElementById('liveFab');
+    if (!fab) return;
+    var live = liveOrders();
+    fab.hidden = live.length === 0;
+    var n = document.getElementById('liveFabCount');
+    if (n) n.textContent = String(live.length);
+
+    // The colour of the furthest-along order, so "ready" reads across a table
+    // without opening anything.
+    var tone = '#3B82F6';
+    live.forEach(function(o){
+      if (o.status === 'ready') tone = STATUS_TONE.ready;
+      else if (o.status === 'accepted' && tone !== STATUS_TONE.ready) tone = STATUS_TONE.accepted;
+    });
+    fab.style.setProperty('--fab', tone);
+  }
+
+  /**
+   * Ask where each outstanding order has got to.
+   *
+   * Anything that has moved since this phone last looked gets a toast naming
+   * the order and where it is, and the button rings once. Quiet when nothing
+   * has changed, which is most of the time — a button that pulses every ten
+   * seconds is a button people stop looking at.
+   */
+  function pollLive(){
+    var live = liveOrders();
+    if (!live.length) { paintLiveFab(); return; }
+
+    live.forEach(function(o){
+      fetch('/api/public/dinein/order/' + encodeURIComponent(o.public_id))
+        .then(function(r){ return r.ok ? r.json() : null; })
+        .then(function(fresh){
+          if (!fresh || fresh.status === o.status) return;
+
+          remember({
+            public_id: o.public_id,
+            number: fresh.number || o.number || null,
+            table_label: fresh.table_label || o.table_label || null,
+            total_minor: fresh.total_minor || o.total_minor || 0,
+            status: fresh.status
+          });
+          paintLiveFab();
+          ringFab();
+          orderToast(fresh);
+        })
+        .catch(function(){ /* a poll that fails is a poll that tries again */ });
+    });
+  }
+
+  /** One turn of the ring, so a change is noticed without being shouted. */
+  function ringFab(){
+    var fab = document.getElementById('liveFab');
+    if (!fab) return;
+    fab.classList.remove('ping');
+    // Reading offsetWidth restarts the animation; without it a second change
+    // inside the same few seconds would not play at all.
+    void fab.offsetWidth;
+    fab.classList.add('ping');
+  }
+
+  var LIVE_WORD = {
+    placed: 'is with the till', accepted: 'is being made',
+    ready: 'is ready', served: 'has been served',
+    rejected: 'was not accepted', cancelled: 'was cancelled'
+  };
+
+  /** A line that says what happened, and goes away by itself. */
+  function orderToast(order){
+    var host = document.getElementById('toasts') || (function(){
+      var d = document.createElement('div');
+      d.id = 'toasts';
+      d.className = 'toasts';
+      document.body.appendChild(d);
+      return d;
+    })();
+
+    var el = document.createElement('button');
+    el.type = 'button';
+    el.className = 'toast';
+    el.style.setProperty('--fab', STATUS_TONE[order.status] || '#6B7280');
+    el.innerHTML =
+      '<span class="dot"></span>' +
+      '<span class="w"><b>Order #' + esc(order.number || '') + '</b> ' +
+        esc(LIVE_WORD[order.status] || order.status) + '</span>';
+    // Tapping it goes to that order, which is the only thing anybody wants to
+    // do with a message about an order.
+    el.addEventListener('click', function(){
+      location.href = '/o/' + order.public_id;
+    });
+
+    host.appendChild(el);
+    requestAnimationFrame(function(){ el.classList.add('in'); });
+    setTimeout(function(){
+      el.classList.remove('in');
+      setTimeout(function(){ el.remove(); }, 300);
+    }, 6000);
+  }
+
+  /** The sheet the button opens: every round, and where each has got to. */
+  function showLive(){
+    var body = sheet('Your orders');
+    var live = liveOrders();
+
+    if (!live.length) {
+      body.innerHTML = '<p class="floor-empty">Nothing is outstanding.</p>';
+      return;
+    }
+
+    body.innerHTML = '<ul class="hist">' + live.map(function(o){
+      return '<li><a href="/o/' + esc(o.public_id) + '">' +
+        '<span class="n">#' + esc(o.number == null ? '' : o.number) + '</span>' +
+        '<span class="m"><b>' + esc(o.table_label || 'Your order') + '</b>' +
+        '<span>' + money(o.total_minor || 0) + '</span></span>' +
+        '<span class="tag live" style="--tk:' +
+          (STATUS_TONE[o.status] || '#6B7280') + '">' +
+          esc(STATUS_WORD[o.status] || o.status || '') + '</span>' +
+      '</a></li>';
+    }).join('') + '</ul>' +
+    '<p class="muted" style="margin:14px 0 0;color:var(--ink-soft);font-size:13.5px;' +
+      'line-height:1.5">This updates on its own while the menu is open. Tap one ' +
+      'to see every step.</p>';
+  }
+
+  function wireLiveFab(){
+    var fab = document.getElementById('liveFab');
+    if (!fab) return;
+    fab.addEventListener('click', showLive);
+    paintLiveFab();
+    if (liveTimer) clearInterval(liveTimer);
+    // Ten seconds. A kitchen does not move faster than that, and a phone on a
+    // table should not be woken more often than it needs to be.
+    liveTimer = setInterval(pollLive, 10000);
+    pollLive();
   }
 
   /** Half past eleven, not 11:30, because that is how a sign says it. */
@@ -3949,10 +4216,49 @@ function statusPage(publicId) {
    * remembered by the browser itself and asking again does nothing except take
    * up the top of the page.
    */
+  /** Already living on the home screen, where iOS allows notifications. */
+  function installed(){
+    return window.matchMedia('(display-mode: standalone)').matches
+      || window.navigator.standalone === true;
+  }
+
+  /** An iPhone or an iPad, including the iPads that claim to be a Mac. */
+  function isApple(){
+    return /iPad|iPhone|iPod/.test(navigator.userAgent)
+      || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  }
+
+  /**
+   * Offer to tell them, once there is something to tell.
+   *
+   * THE CASE THAT WAS MISSING
+   *
+   * Safari on an iPhone or iPad does not define Notification at all until the
+   * page has been added to the home screen. So on the device this was reported
+   * from, the offer simply was not there — the code checked for the API, did
+   * not find it, and rendered nothing at all.
+   *
+   * There is something useful to say in that case: adding it to the home screen
+   * is what turns alerts on, and it is two taps. Saying so is better than
+   * saying nothing, and far better than a button that does nothing when
+   * pressed.
+   */
   function notifyBanner(){
-    if (!('Notification' in window)) return '';
+    var can = ('Notification' in window);
+
+    if (!can && isApple() && !installed()) {
+      return '<div class="tk-notify as-note">' +
+        '<span class="ic">' + I.ring + '</span>' +
+        '<span class="t"><b>Get told when it is ready</b>' +
+        '<span>On an iPhone or iPad this needs the menu on your home screen. ' +
+        'Tap Share, then <b>Add to Home Screen</b>, and open it from there.</span>' +
+        '</span></div>';
+    }
+
+    if (!can) return '';
     if (Notification.permission === 'granted') return '';
     if (Notification.permission === 'denied') return '';
+
     return '<button class="tk-notify" id="notify" type="button">' +
       '<span class="ic">' + I.ring + '</span>' +
       '<span class="t"><b>Tell me when it is ready</b>' +
