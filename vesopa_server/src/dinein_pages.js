@@ -65,6 +65,73 @@ function onMenuHost(req) {
 }
 
 /**
+ * The venue that owns the hostname this request arrived on, or null.
+ *
+ * A venue can point a domain of its own at this server — menu.theirpub.co.uk —
+ * and print that on its cards instead of ours. On that hostname there is only
+ * ever one venue, so the slug is not needed and `/` is its menu.
+ *
+ * Two things this does not do:
+ *
+ *   * It does not trust the Host header for anything but a lookup. The name has
+ *     to already be in the column, claimed by exactly one venue, and the unique
+ *     index is what makes that true — a header saying `menu.someoneelse.co.uk`
+ *     finds their row or finds nothing.
+ *   * It does not answer for an unpublished venue. A domain pointed here before
+ *     the menu was ready gets the same nothing as any other unknown host.
+ *
+ * The first time a hostname actually arrives, it is marked verified. That is
+ * the only honest test of a DNS record: not that somebody typed it into a form,
+ * but that a request for it reached this server. Until then, printed cards keep
+ * using the Vesopa address — a card printed against a domain whose DNS was
+ * never pointed here is a table that cannot order.
+ */
+/** Whether a slug is a published venue. The row, not the shape of the path. */
+async function venueExists(pool, slug) {
+  if (!pool) return false;
+  try {
+    const [[row]] = await pool.query(
+      'SELECT 1 AS ok FROM dinein_venue WHERE slug = ? AND is_published = 1',
+      [String(slug || '').toLowerCase()]
+    );
+    return !!row;
+  } catch {
+    // A database that is away is not evidence the venue is gone. Render the
+    // page and let it report its own trouble, rather than telling a customer
+    // standing at a table that their venue does not exist.
+    return true;
+  }
+}
+
+async function venueForHost(pool, req) {
+  if (!pool) return null;
+  const host = hostOf(req);
+  if (!host || host === MENU_HOST || host === 'www.' + MENU_HOST) return null;
+
+  const names = host.startsWith('www.') ? [host, host.slice(4)] : [host, 'www.' + host];
+  try {
+    const [[row]] = await pool.query(
+      'SELECT office_id, slug, custom_domain, domain_verified FROM dinein_venue' +
+        ' WHERE custom_domain IN (?, ?) AND is_published = 1 LIMIT 1',
+      names
+    );
+    if (!row) return null;
+    if (!row.domain_verified) {
+      // Seen for real. Not awaited by the render — a page must not wait on a
+      // bookkeeping write — and failing it changes nothing but the flag.
+      pool.execute(
+        'UPDATE dinein_venue SET domain_verified = 1, domain_checked_at = NOW()' +
+          ' WHERE office_id = ?',
+        [row.office_id]
+      ).catch(() => {});
+    }
+    return row;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Everything the head of the document needs, resolved before it is rendered.
  *
  * WHY THIS IS SERVER-SIDE
@@ -176,14 +243,43 @@ function dineinPageRoutes({ pool } = {}) {
    * Registered last, after /t/, /m/ and /o/, so those three keep their meaning
    * on this host too — a table code is still menu.vesopaepos.com/t/<code>.
    */
+  /**
+   * The root of a venue's own domain.
+   *
+   * Registered before the slug route below, because on a custom domain `/` is
+   * the menu rather than a directory of them — there is only one venue on that
+   * hostname and asking somebody to type its name after its own address is
+   * asking them to say it twice.
+   */
+  router.get('/', async (req, res, next) => {
+    const owner = await venueForHost(pool, req);
+    if (!owner || !owner.slug) return next();
+    res.setHeader('Cache-Control', 'no-store');
+    const meta = await metaFor(pool, { slug: owner.slug });
+    res.type('html').send(page({ table: null, slug: owner.slug, meta }));
+  });
+
   router.get('/:slug', async (req, res, next) => {
-    if (!onMenuHost(req)) return next();
+    // The menu host, or a venue's own domain. On the latter a slug still works,
+    // so a link already printed or sent keeps resolving after a venue moves to
+    // its own address.
+    if (!onMenuHost(req) && !(await venueForHost(pool, req))) return next();
     const slug = String(req.params.slug || '').toLowerCase();
     // Only what a slug can actually be. Anything else — a file, a dotted path,
     // something with a capital in it — is not a venue and is left alone.
     if (!/^[a-z0-9][a-z0-9-]{1,63}$/.test(slug)) return next();
 
+    // An address that is not a venue is not a page.
+    //
+    // Every slug-shaped path answered 200 with a menu shell that then said
+    // "this menu is not available" — so /dashboard, /products and any other
+    // word were each a real page as far as a crawler was concerned, and an
+    // infinite number of them were indexable. The shape of the path is not
+    // evidence that a venue exists; the row is.
+    const known = await venueExists(pool, slug);
     res.setHeader('Cache-Control', 'no-store');
+    if (!known) return next();
+
     const meta = await metaFor(pool, { slug });
     res.type('html').send(page({ table: null, slug, meta }));
   });
@@ -3030,4 +3126,19 @@ function statusPage(publicId) {
 </html>`;
 }
 
-module.exports = { dineinPageRoutes };
+/**
+ * Whether this request arrived on an address that serves menus.
+ *
+ * The menu host, or a venue's own domain. Exported so server.js can keep the
+ * back office bundle off those addresses without repeating the host rules —
+ * two places deciding what counts as a menu host is two places to get it wrong.
+ *
+ * Asynchronous because a custom domain is a lookup. The menu host itself is
+ * answered without touching the database, which is the common case.
+ */
+async function isMenuAddress(pool, req) {
+  if (onMenuHost(req)) return true;
+  return !!(await venueForHost(pool, req));
+}
+
+module.exports = { dineinPageRoutes, isMenuAddress, onMenuHost };

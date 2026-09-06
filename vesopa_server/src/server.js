@@ -8,7 +8,7 @@ const cors = require('cors');
 const { WebSocketServer } = require('ws');
 
 const { dineinRoutes } = require('./dinein');
-const { dineinPageRoutes } = require('./dinein_pages');
+const { dineinPageRoutes, isMenuAddress } = require('./dinein_pages');
 const { dineinOtpRoutes } = require('./dinein_otp');
 
 const {
@@ -745,6 +745,39 @@ function sendShell(_req, res) {
  * back office's own routing is untouched.
  */
 app.use(dineinPageRoutes({ pool }));
+
+/**
+ * The back office does not exist on a customer's menu address.
+ *
+ * `express.static` served the whole of public/ on every hostname, so
+ * menu.vesopaepos.com and a venue's own domain both handed out index.html,
+ * app.js and style.css — the entire back office bundle, on an address printed
+ * on a card and given to the public. No data leaked, because every API route
+ * behind it still refused without a token, but it is a hundred kilobytes of
+ * somebody else's application on a venue's own domain, and a sign-in page
+ * where a menu should be.
+ *
+ * Two prefixes stay, because the menu itself uses them: /assets for the marks
+ * and the icons, and /uploads for the venue's own photographs.
+ */
+const MENU_ONLY_PREFIXES = ['/assets/', '/uploads/'];
+app.use(async (req, res, next) => {
+  try {
+    if (!(await isMenuAddress(pool, req))) return next();
+  } catch (e) {
+    // A lookup that failed is not a reason to stop serving anything — but it
+    // is a reason to say so. This catch silently swallowed a ReferenceError
+    // for an import that was never added, which turned the whole guard into a
+    // no-op that looked deployed and tested clean.
+    console.warn('[menu-host] could not decide the host, serving anyway:', e.message);
+    return next();
+  }
+  if (MENU_ONLY_PREFIXES.some((prefix) => req.path.startsWith(prefix))) return next();
+  // Anything else here is the back office, and it is not what this address is
+  // for. Answered rather than passed on: there is nothing at this address to
+  // send anybody to.
+  return res.status(404).type('txt').send('Not found');
+});
 
 app.get(['/', '/index.html'], sendShell);
 
