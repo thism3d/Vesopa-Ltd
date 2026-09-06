@@ -98,6 +98,58 @@
 </div>
 
 <%#
+  Vesopa Display, in a band of its own for the same reason Vesopa Kitchen has
+  one: it is a second Store listing rather than a second platform, and a third
+  tile up in .dl-platforms would read as "Vesopa EPOS for a second screen".
+  It is the screen the customer reads, and on its own it does nothing.
+
+  It sits above Kitchen because every venue has a counter and only some have a
+  pass, and because a display is included in the price — see the pricing page.
+%>
+<div class="kds-band cds-band">
+    <div class="kds-band-inner">
+        <div class="kds-band-copy">
+            <p class="kds-eyebrow">Also from Vesopa</p>
+            <h2 class="kds-title">Vesopa Customer Display</h2>
+            <p class="kds-lede">The screen your customer reads while you serve them. Every item appears as it is rung up, the total is never in doubt, and between sales it shows whatever you want it to.</p>
+
+            <ul class="kds-points">
+                <li><b>The bill as it is built.</b> Each line lands the moment it is keyed, so a customer can see what they are being charged for before they pay for it.</li>
+                <li><b>Your own adverts between sales.</b> Pictures and clips from a folder you choose &mdash; and a separate folder for what shows while a sale is going on.</li>
+                <li><b>Locked from the till.</b> One switch and the screen ignores being touched, for a counter with children at it and a cloth at the end of the night.</li>
+                <li><b>One display is included</b> with every Vesopa EPOS till.</li>
+            </ul>
+
+            <div class="kds-cta">
+                <a class="download_brief_store"
+                   href="https://apps.microsoft.com/detail/9p8jclq5m3sq"
+                   target="_blank" rel="noopener">
+                    <img class="download_brief_image_windows"
+                         src="/assets/icons/microsoft_store.png"
+                         alt="Get Vesopa Customer Display from the Microsoft Store">
+                </a>
+                <p class="dl-apk-note dl-note-good"><i class="fa fa-shield"></i> Pairs with the Vesopa EPOS till on the same counter &mdash; nothing to configure</p>
+            </div>
+        </div>
+
+        <%# Drawn, not screenshotted, for the same reason as the pass board
+            below it: a capture of a real counter is either a customer's basket
+            or an invented one, and this says what the app is in a fraction of
+            the bytes. %>
+        <div class="cds-screen" aria-hidden="true">
+            <div class="cds-bill">
+                <p class="cds-line"><span class="cds-q">2</span> Fish &amp; Chips<span class="cds-p">£29.00</span></p>
+                <p class="cds-line"><span class="cds-q">1</span> Chips<span class="cds-p">£4.00</span></p>
+                <p class="cds-line"><span class="cds-q">2</span> Sticky Toffee<span class="cds-p">£14.00</span></p>
+                <p class="cds-line cds-new"><span class="cds-q">2</span> IPA Pint<span class="cds-p">£6.00</span></p>
+                <div class="cds-total"><span>Total</span><span>£53.00</span></div>
+            </div>
+            <div class="cds-advert"><span class="cds-advert-tag">Your advert</span></div>
+        </div>
+    </div>
+</div>
+
+<%#
   Vesopa Kitchen is a second Store listing, not a second platform, so it gets a
   band of its own rather than a third tile in .dl-platforms — a tile there would
   read as "Vesopa EPOS for kitchens", which is the wrong idea. It is the screen

@@ -151,6 +151,11 @@ app.use((req, res, next) => {
   // PRICING_PLANS is the keyed-by-term map the checkout page still indexes into.
   res.locals.PLANS = planList();
   res.locals.PRICING_PLANS = pricingPlans();
+  // What every plan includes, and the per-month lines that attach on top of
+  // whichever term a venue is on. Not plans: nobody buys a term of them, and
+  // putting them in web_plans would land them in the checkout's period picker.
+  res.locals.PLAN_INCLUDES = config.PLAN_INCLUDES;
+  res.locals.ADD_ONS = config.ADD_ONS;
   res.locals.money = config.money;
   res.locals.APP_VERSION = config.APP_VERSION;
 

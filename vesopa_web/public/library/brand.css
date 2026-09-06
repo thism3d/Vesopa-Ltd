@@ -2422,3 +2422,160 @@ a.bl-chip:hover { background: rgba(165, 199, 21, .2); color: var(--vp-green, #a5
   }
   .vh-stage { background-position: 60% 50%; }
 }
+
+
+/* ---------------------------------------------------------------------------
+   Vesopa Customer Display, on the download page
+   ---------------------------------------------------------------------------
+   The band reuses .kds-band; only the picture beside the copy is different.
+   A customer display is a split screen — the bill on one side, an advert
+   filling the other edge to edge — so that is what is drawn.
+   --------------------------------------------------------------------------- */
+.cds-band { background: #0E1116; }
+
+.cds-screen {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #12161C;
+  border: 1px solid rgba(255, 255, 255, .09);
+  box-shadow: 0 26px 60px rgba(0, 0, 0, .42);
+  min-height: 290px;
+}
+
+.cds-bill { padding: 22px 20px 18px; display: flex; flex-direction: column; }
+.cds-line {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0 0 12px;
+  color: #E8EDF1;
+  font-size: 15px;
+}
+.cds-q { color: #A5C715; font-weight: 700; min-width: 14px; }
+.cds-p { margin-left: auto; font-variant-numeric: tabular-nums; }
+
+/* The line that has just been rung up arrives, once. It is the whole point of
+   the product: a customer watches the bill being built rather than being handed
+   a finished one. */
+.cds-new { animation: cds-land .5s ease both; animation-delay: .3s; }
+@keyframes cds-land {
+  from { opacity: 0; transform: translateY(-7px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.cds-total {
+  margin-top: auto;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, .12);
+  display: flex;
+  justify-content: space-between;
+  color: #fff;
+  font-size: 21px;
+  font-weight: 700;
+}
+
+.cds-advert {
+  position: relative;
+  background:
+    radial-gradient(120% 90% at 70% 20%, rgba(165, 199, 21, .30), transparent 60%),
+    linear-gradient(150deg, #1B2430 0%, #0B0E12 100%);
+  display: grid;
+  place-items: center;
+}
+.cds-advert-tag {
+  font-size: 12px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, .5);
+  border: 1px dashed rgba(255, 255, 255, .28);
+  border-radius: 999px;
+  padding: 7px 14px;
+}
+
+@media (max-width: 860px) {
+  /* Side by side below this the bill is too narrow to read a price in, which
+     is the one thing the picture is there to show. */
+  .cds-screen { grid-template-columns: 1fr; min-height: 0; }
+  .cds-advert { min-height: 116px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cds-new { animation: none; }
+}
+
+
+/* ---------------------------------------------------------------------------
+   What a plan includes, and what costs extra
+   ---------------------------------------------------------------------------
+   Under the plan cards, on both the home page and /pricing, because it is the
+   same for every term. Two columns on a desk, one on a phone.
+   --------------------------------------------------------------------------- */
+.plan_extras {
+  max-width: 1080px;
+  margin: 34px auto 0;
+  padding: 0 20px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr);
+  gap: 26px 44px;
+  align-items: start;
+}
+
+.plan_extras_title {
+  margin: 0 0 14px;
+  font-size: 15px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+  font-weight: 700;
+}
+
+.plan_includes { list-style: none; margin: 0; padding: 0; }
+.plan_includes li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 7px 0;
+  font-size: 16px;
+  line-height: 1.45;
+}
+.plan_includes .fa-check {
+  color: var(--brand, #a5c715);
+  margin-top: 4px;
+  flex: 0 0 auto;
+  font-size: 13px;
+}
+
+.plan_addons { list-style: none; margin: 0; padding: 0; }
+.plan_addons li {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+.plan_addons li:last-child { border-bottom: 0; }
+.plan_addon_copy { flex: 1; min-width: 0; }
+.plan_addon_copy b { display: block; font-size: 16px; }
+.plan_addon_copy span { color: var(--text-mute); font-size: 14px; line-height: 1.45; }
+.plan_addon_price { text-align: right; flex: 0 0 auto; }
+.plan_addon_price b { display: block; font-size: 19px; white-space: nowrap; }
+.plan_addon_price span {
+  color: var(--text-mute);
+  font-size: 12px;
+  letter-spacing: .03em;
+  white-space: nowrap;
+}
+.plan_addon_foot { margin: 14px 0 0; color: var(--text-mute); font-size: 14px; }
+
+@media (max-width: 860px) {
+  .plan_extras { grid-template-columns: 1fr; gap: 26px; margin-top: 26px; }
+  /* The price under the name rather than beside it: side by side on a narrow
+     screen, "Extra customer display" wraps to three lines to leave room for
+     four characters. */
+  .plan_addons li { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .plan_addon_price { text-align: left; }
+  .plan_addon_price b { display: inline; }
+  .plan_addon_price span { display: inline; margin-left: 8px; }
+}

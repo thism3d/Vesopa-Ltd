@@ -18,12 +18,16 @@ const BACKOFFICE_URL = process.env.BACKOFFICE_URL || 'https://backoffice.vesopae
 const PRICING_PLANS = {
   1: {
     name: 'Starter Plan',
-    price_per_month: 80.0,
-    total_price: 80.0,
-    discounted_price: 75.0,
-    save_percentage: 6,
-    vat: 15.0,
-    total_with_vat: 90.0,
+    price_per_month: 85.0,
+    total_price: 85.0,
+    // No introductory price on the monthly plan. A discount that applies to
+    // the first month of a rolling monthly contract is a discount on the only
+    // month anybody has committed to, which is a different product from the
+    // one the longer terms are selling.
+    discounted_price: 85.0,
+    save_percentage: 0,
+    vat: 17.0,
+    total_with_vat: 102.0,
     interval: 'Month',
     interval_count: 1,
     paypal_image: 'https://vesopa.com/assets/paypal/paypal_starter_plan.png',
@@ -53,6 +57,38 @@ const PRICING_PLANS = {
     paypal_image: 'https://vesopa.com/assets/paypal/paypal_enterprise_plan.png',
   },
 };
+
+/**
+ * What every plan includes, and what is charged on top.
+ *
+ * Held here rather than in web_plans because these are not things anybody buys
+ * a term of — they are per-month lines that attach to whatever term the venue
+ * is already on, and modelling them as plans would put them in the checkout's
+ * period picker, where they make no sense.
+ *
+ * Prices in pounds per month, matching PRICING_PLANS above.
+ */
+const PLAN_INCLUDES = [
+  'One Vesopa EPOS till',
+  'One customer display, included',
+  'Back Office, reports and programming',
+  'Updates and support',
+];
+
+const ADD_ONS = [
+  {
+    name: 'Extra customer display',
+    price_per_month: 15.0,
+    blurb: 'Your first display is included. Each screen after that.',
+    note: 'Per screen, per month',
+  },
+  {
+    name: 'Vesopa Kitchen',
+    price_per_month: 15.0,
+    blurb: 'The screen that replaces the kitchen printer. As many stations as you need.',
+    note: 'Per venue, per month',
+  },
+];
 
 /** Only these three periods exist; anything else falls back to the popular one. */
 const VALID_PERIODS = ['1', '12', '24'];
@@ -107,6 +143,8 @@ module.exports = {
   SITE_URL,
   BACKOFFICE_URL,
   PRICING_PLANS,
+  PLAN_INCLUDES,
+  ADD_ONS,
   VALID_PERIODS,
   DEFAULT_PERIOD,
   resolvePeriod,
