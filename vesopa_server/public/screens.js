@@ -869,7 +869,7 @@ async function spRemoveFont(slug) {
   const font = spFonts.find((f) => f.slug === slug);
   if (!font) return;
   if (
-    !confirm(
+    !await confirmDialog(
       `Remove ${font.family}? Any key lettered in it goes back to your tills’ ` +
         'font. Nothing else changes.'
     )
@@ -879,7 +879,7 @@ async function spRemoveFont(slug) {
   try {
     await api(`/fonts/${encodeURIComponent(slug)}`, { method: 'DELETE' });
   } catch (err) {
-    alert(err.message);
+    toast(err.message, 'error');
     return;
   }
   if (spTillFont === slug) spTillFont = null;
@@ -927,7 +927,7 @@ async function spSetTillFont(slug) {
     spTillFont = was;
     spRenderFontsCard();
     spRenderGrid();
-    alert(err.message);
+    toast(err.message, 'error');
   }
 }
 
@@ -1806,7 +1806,10 @@ function spPasteClipboard() {
  * the twenty minutes went with it. Now it is an edit like any other: undoable,
  * and saved with the rest.
  */
-function spResizeGrid(rows, cols) {
+// Async because the "these buttons will be removed" question is now an in-page
+// dialog rather than window.confirm — see the note on confirmDialog in app.js.
+// Its only caller is a change listener that ignores the return value.
+async function spResizeGrid(rows, cols) {
   if (!spCurrent) return;
   const max = spLimits(spCurrentSurface());
   const wanted = {
@@ -1820,7 +1823,7 @@ function spResizeGrid(rows, cols) {
   );
   if (
     lost.length &&
-    !confirm(
+    !await confirmDialog(
       `${lost.length} button${lost.length === 1 ? '' : 's'} fall outside a ` +
         `${wanted.rows} × ${wanted.cols} grid and will be removed. Continue?`
     )
@@ -3633,8 +3636,8 @@ function spBind() {
   $('sp-redo').addEventListener('click', spRedo);
   $('sp-up').addEventListener('click', () => spReorder(-1));
   $('sp-down').addEventListener('click', () => spReorder(1));
-  $('sp-revert').addEventListener('click', () => {
-    if (spDirty() && !confirm('Throw away the changes on this screen?')) return;
+  $('sp-revert').addEventListener('click', async () => {
+    if (spDirty() && !await confirmDialog('Throw away the changes on this screen?')) return;
     spSelect(spCurrent ? spCurrent.id : null);
     spRenderChrome();
   });
@@ -4082,13 +4085,13 @@ function spAsk(title, message, choices) {
       root.innerHTML = '';
       resolve(value);
     };
-    const onKey = (e) => {
+    const onKey = async (e) => {
       if (e.key !== 'Escape') return;
       e.preventDefault();
       e.stopPropagation();
       done('cancel');
     };
-    const onClick = (e) => {
+    const onClick = async (e) => {
       const key = e.target.closest('[data-choice]');
       if (key) return done(key.dataset.choice);
       if (e.target.classList.contains('modal-back')) done('cancel');
@@ -4103,9 +4106,9 @@ function spAsk(title, message, choices) {
 /**
  * Ask before unsaved work is left behind. Resolves true to go ahead.
  *
- * A drawn modal, not `confirm()`, and that is the whole of a reported bug:
+ * A drawn modal, not `await confirmDialog()`, and that is the whole of a reported bug:
  * Chrome offers "prevent this page from creating additional dialogs" on the
- * second native dialog in a row, and once it is ticked every `confirm()` on the
+ * second native dialog in a row, and once it is ticked every `await confirmDialog()` on the
  * page returns **false** without drawing anything. This guard reads that as
  * "stay put", the picker is re-rendered back to the screen already open, and
  * the editor silently refuses to change page — which is exactly what "swapping
@@ -4153,7 +4156,7 @@ async function spGuardUnsaved() {
  * The same trap the kitchen editors were rewritten out of: Chrome offers "stop
  * showing dialogs" on the *second* dialog in a row, so a chained
  * prompt-then-confirm returns null from everything after it. The function bails
- * at its first null check and does nothing, and the alert() that would have
+ * at its first null check and does nothing, and the toast() that would have
  * explained is suppressed by the same tick box. One form, one submit.
  */
 async function spNewScreen() {
@@ -4245,7 +4248,7 @@ function spRenameScreen() {
  */
 async function spDuplicateScreen() {
   if (!spCurrent) return;
-  if (spDirty() && !confirm('Save this screen first, then copy it?')) return;
+  if (spDirty() && !await confirmDialog('Save this screen first, then copy it?')) return;
   if (spDirty()) await spSaveLayout({ quiet: true });
 
   // Unique on this surface, which is what the database's key is: (office,
@@ -4268,7 +4271,7 @@ async function spDuplicateScreen() {
     spSavedShape = spShape(created);
     await loadScreens();
   } catch (e) {
-    alert(e.message);
+    toast(e.message, 'error');
   }
 }
 
@@ -4294,14 +4297,14 @@ async function spReorder(direction) {
     }
     await loadScreens();
   } catch (e) {
-    alert(e.message);
+    toast(e.message, 'error');
   }
 }
 
 async function spDeleteScreen() {
   if (!spCurrent) return;
   if (
-    !confirm(
+    !await confirmDialog(
       `Delete "${spCurrent.name}"?\n\n` +
         (spIsBar(spCurrentSurface())
           ? 'Any till or screen wearing it goes back to the built-in bar.'
@@ -4317,7 +4320,7 @@ async function spDeleteScreen() {
     spSavedShape = '';
     await loadScreens();
   } catch (e) {
-    alert(e.message);
+    toast(e.message, 'error');
   }
 }
 
@@ -4352,7 +4355,7 @@ async function spSetDefault(surface, id) {
     else spDefaults.home = id;
     spRenderChrome();
   } catch (err) {
-    alert(err.message);
+    toast(err.message, 'error');
     spRenderChrome();
   }
 }
@@ -4376,7 +4379,7 @@ async function spSetScreenBar(field, id) {
     if (stored) stored[field] = id;
     spRenderChrome();
   } catch (err) {
-    alert(err.message);
+    toast(err.message, 'error');
     spRenderChrome();
   }
 }
@@ -4418,7 +4421,7 @@ async function spUploadKeyImage(e) {
     if (!spGallery.includes(body.url)) spGallery.unshift(body.url);
     spRenderInspector();
   } catch (err) {
-    alert(err.message);
+    toast(err.message, 'error');
   } finally {
     button.disabled = false;
     button.textContent = was;
@@ -4436,7 +4439,7 @@ async function spUploadKeyImage(e) {
  * for the bottom, and _OpenOrdersBar for the top. They are a starting point,
  * not a contract — a venue is expected to change them, which is the point.
  */
-function spLayOutBuiltInBar() {
+async function spLayOutBuiltInBar() {
   if (!spCurrent || !spIsBar(spCurrentSurface())) return;
   const top = spCurrentSurface() === 'topbar';
 
@@ -4467,7 +4470,7 @@ function spLayOutBuiltInBar() {
       'this bar is replaced.'
     : 'This lays in the bottom bar your tills show today, key for key, ending with a ' +
       'wide green Pay.\n\nAnything already on this bar is replaced.';
-  if (spCurrent.buttons.length && !confirm(message)) return;
+  if (spCurrent.buttons.length && !await confirmDialog(message)) return;
 
   spEdit(() => {
     spCurrent.rows = 1;
@@ -4526,7 +4529,7 @@ async function spSaveLayout({ quiet = false } = {}) {
     }
     await loadScreens();
   } catch (e) {
-    alert(e.message);
+    toast(e.message, 'error');
   } finally {
     button.disabled = false;
   }
@@ -4542,7 +4545,7 @@ async function spSaveLayout({ quiet = false } = {}) {
  */
 async function spFillFromDepartment() {
   if (!spCurrent || !spSelection.size) {
-    alert('Select some buttons on the left first.');
+    toast('Select some buttons on the left first.');
     return;
   }
 
@@ -4553,11 +4556,12 @@ async function spFillFromDepartment() {
     // Two different answers, because they need two different actions: an empty
     // shelf is a catalogue problem and an empty tick list is one press away
     // from being fixed.
-    alert(
+    toast(
       scope.length
         ? `Nothing in ${where} is ticked. Tick the products you want laid out, ` +
             'or press All.'
-        : `There are no products in ${where}.`
+        : `There are no products in ${where}.`,
+      'warn'
     );
     return;
   }
@@ -4568,7 +4572,7 @@ async function spFillFromDepartment() {
 
   // One question, not two, and drawn rather than asked of the browser.
   //
-  // This used to be a pair of confirm() calls back to back — replacing
+  // This used to be a pair of await confirmDialog() calls back to back — replacing
   // programmed keys, then not enough room — which is exactly the chain Chrome
   // offers "prevent this page from creating additional dialogs" on. Once
   // ticked, the second returned false without drawing anything and the fill

@@ -72,6 +72,9 @@ async function loadDineIn() {
   const v = diVenue;
   const name = v.display_name || v.fallback_name || '';
   const base = (diTables.base || location.origin);
+  // Always a full palette: the server fills in whatever the venue has not set,
+  // so the editor never has to think about a half-configured theme.
+  const theme = v.theme || {};
 
   $('dinein-body').innerHTML = `
     <div class="card">
@@ -160,6 +163,151 @@ async function loadDineIn() {
     </div>
 
     <div class="card">
+      <h3>Popular and Featured</h3>
+      <p class="muted small">
+        Two grids above your menu, and they answer two different questions.
+        <b>Popular</b> is what people order here. <b>Featured</b> is what you
+        would like them to try — the new dish, the special that is on this week.
+        Tick dishes for either on the <b>Menu</b> page.
+      </p>
+      <label class="check">
+        <input type="checkbox" id="di-show-popular" ${v.show_popular ? 'checked' : ''}>
+        <span>Show the Popular grid</span>
+      </label>
+      <label class="check">
+        <input type="checkbox" id="di-show-featured" ${v.show_featured ? 'checked' : ''}>
+        <span>Show the Featured grid</span>
+      </label>
+      <div class="grid-2" style="margin-top:12px">
+        <label>Call the first one
+          <input id="di-popular-title" value="${esc(v.popular_title || '')}"
+                 placeholder="Popular">
+        </label>
+        <label>Call the second one
+          <input id="di-featured-title" value="${esc(v.featured_title || '')}"
+                 placeholder="Featured">
+        </label>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Your offer</h3>
+      <p class="muted small">
+        One offer, taken off the whole order once it reaches your minimum.
+        Every dish shows its new price against its old one, and the basket
+        bar tells a customer how far off it they are.
+      </p>
+      <label class="check">
+        <input type="checkbox" id="di-offer-on" ${v.offer_active ? 'checked' : ''}>
+        <span><b>Run an offer</b> on the menu</span>
+      </label>
+      <div class="grid-2" style="margin-top:12px">
+        <label>Percentage off
+          <input id="di-offer-pct" type="number" min="0" max="90"
+                 value="${Number(v.offer_percent) || 0}">
+        </label>
+        <label>Minimum spend
+          <input id="di-offer-min" type="number" min="0" step="0.01"
+                 value="${((Number(v.offer_min_spend_minor) || 0) / 100).toFixed(2)}">
+        </label>
+        <label style="grid-column:1/-1">What to call it (optional)
+          <input id="di-offer-label" value="${esc(v.offer_label || '')}"
+                 placeholder="Leave blank and we write it for you">
+        </label>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Promotions</h3>
+      <p class="muted small">
+        Not a discount — something you want to say. A quiz night, a new
+        supplier, a roast that needs booking. Up to six, shown as cards a
+        customer can swipe through above the menu.
+      </p>
+      <div id="di-promos"></div>
+      <button class="btn" id="di-promo-add" type="button" style="margin-top:10px">
+        Add a promotion
+      </button>
+    </div>
+
+    <div class="card">
+      <h3>Your colours</h3>
+      <p class="muted small">
+        The menu takes these, not Vesopa's. Changes show in the preview as you
+        make them and reach customers only when you press Save.
+      </p>
+      <div class="di-brand">
+        <div class="di-brand-fields">
+          <div class="grid-2">
+            <label>Buttons and highlights
+              <input id="di-t-accent" type="color" value="${esc(theme.accent)}">
+            </label>
+            <label>Text on those buttons
+              <input id="di-t-onaccent" type="color" value="${esc(theme.onAccent)}">
+            </label>
+            <label>Page background
+              <input id="di-t-page" type="color" value="${esc(theme.page)}">
+            </label>
+            <label>Cards and panels
+              <input id="di-t-card" type="color" value="${esc(theme.card)}">
+            </label>
+            <label>Text
+              <input id="di-t-ink" type="color" value="${esc(theme.ink)}">
+            </label>
+            <label>Quieter text
+              <input id="di-t-inksoft" type="color" value="${esc(theme.inkSoft)}">
+            </label>
+            <label>Corners
+              <input id="di-t-radius" type="range" min="0" max="28"
+                     value="${Number(theme.radius)}">
+            </label>
+            <label>Lettering
+              <select id="di-t-font">
+                ${['system', 'serif', 'rounded', 'mono'].map((f) => `
+                  <option value="${f}"${theme.font === f ? ' selected' : ''}>
+                    ${f === 'system' ? 'Standard' : f[0].toUpperCase() + f.slice(1)}
+                  </option>`).join('')}
+              </select>
+            </label>
+          </div>
+          <div class="row" style="gap:8px;margin-top:12px;flex-wrap:wrap">
+            <button class="btn" id="di-t-reset" type="button">Back to Vesopa's colours</button>
+            <button class="btn" id="di-draft-save" type="button">Save as a draft</button>
+            <span id="di-draft-note" class="muted small"></span>
+          </div>
+        </div>
+        <div class="di-brand-preview">
+          <span class="muted small">Preview</span>
+          <div class="di-phone"><iframe id="di-preview-frame" title="Menu preview"></iframe></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Your own web address</h3>
+      <p class="muted small">
+        Point a domain you own at this server and your menu answers on it, and
+        your printed cards carry it instead of ours. Leave it blank to stay on
+        ${esc((diTables.base || 'menu.vesopaepos.com').replace(/^https?:\/\//, ''))}.
+      </p>
+      <div class="row" style="align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-start">
+        <input id="di-domain" value="${esc(v.custom_domain || '')}"
+               placeholder="menu.yourpub.co.uk" style="flex:1 1 260px">
+        <span id="di-domain-state" class="muted small" style="flex:0 0 auto">
+          ${v.custom_domain
+            ? (v.domain_verified
+                ? '<b style="color:var(--green)">Answering</b>'
+                : 'Not answering yet')
+            : ''}
+        </span>
+      </div>
+      <p class="muted small" style="margin-top:10px">
+        Point a CNAME at <code>menu.vesopaepos.com</code>. The certificate is
+        issued once the name reaches us, which is usually within the hour.
+      </p>
+    </div>
+
+    <div class="card">
       <h3>When you are open</h3>
       <p class="muted small">
         Outside these hours the menu still reads, and the Add buttons are still
@@ -187,6 +335,11 @@ async function loadDineIn() {
       </div>
     </div>
 
+    <datalist id="di-diets">
+      <option value="Vegetarian"><option value="Vegan"><option value="Gluten free">
+      <option value="Spicy"><option value="Halal"><option value="Contains nuts">
+    </datalist>
+
     <div class="row" style="gap:10px;align-items:center">
       <button class="btn primary" id="di-save" type="button">Save</button>
       <a id="di-preview" class="btn" target="_blank" rel="noopener"
@@ -199,6 +352,41 @@ async function loadDineIn() {
   $('di-slug-check').onclick = diCheckSlug;
   $('di-save').onclick = diSaveVenue;
   diWireHours();
+
+  // A draft, if one was left, is what the editor opens on — otherwise a venue
+  // comes back tomorrow to find yesterday's work gone.
+  diPromos = (v.draft && Array.isArray(v.draft.promotions))
+    ? v.draft.promotions
+    : (v.promotions || []);
+  diPaintPromos();
+  $('di-promos').addEventListener('click', (e) => {
+    const del = e.target.closest('[data-promo-del]');
+    if (!del) return;
+    diPromos = diReadPromos();
+    diPromos.splice(Number(del.dataset.promoDel), 1);
+    diPaintPromos();
+  });
+  $('di-promo-add').onclick = () => {
+    diPromos = diReadPromos();
+    if (diPromos.length >= 6) return;
+    diPromos.push({ title: '', body: '', image_url: '', until: '' });
+    diPaintPromos();
+  };
+
+  if (v.draft && v.draft.theme) {
+    // Show the draft's colours, and say so, rather than silently applying them.
+    Object.entries({
+      'di-t-accent': v.draft.theme.accent, 'di-t-onaccent': v.draft.theme.onAccent,
+      'di-t-page': v.draft.theme.page, 'di-t-card': v.draft.theme.card,
+      'di-t-ink': v.draft.theme.ink, 'di-t-inksoft': v.draft.theme.inkSoft,
+      'di-t-radius': v.draft.theme.radius, 'di-t-font': v.draft.theme.font,
+    }).forEach(([id, value]) => { const el = $(id); if (el && value != null) el.value = value; });
+    const note = $('di-draft-note');
+    if (note) note.textContent = 'Showing your unsaved draft.';
+  }
+
+  diWireBranding();
+  $('di-draft-save').onclick = diSaveDraft;
   // Also on blur: the commonest way to find out the address is taken should not
   // be pressing Save.
   $('di-slug').onblur = diCheckSlug;
@@ -253,6 +441,174 @@ function diWireHours() {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Promotions
+// ---------------------------------------------------------------------------
+
+let diPromos = [];
+
+function diPromoRow(p, i) {
+  return `
+    <div class="di-promo" data-promo="${i}">
+      <div class="grid-2">
+        <label>Title
+          <input data-p="title" data-promo="${i}" value="${esc(p.title || '')}"
+                 placeholder="Quiz night, every Thursday">
+        </label>
+        <label>Runs until (optional)
+          <input data-p="until" data-promo="${i}" type="date" value="${esc(p.until || '')}">
+        </label>
+        <label style="grid-column:1/-1">What it says
+          <input data-p="body" data-promo="${i}" value="${esc(p.body || '')}"
+                 placeholder="Teams of up to six. Starts at eight.">
+        </label>
+        <label style="grid-column:1/-1">Picture URL (optional)
+          <input data-p="image_url" data-promo="${i}" value="${esc(p.image_url || '')}">
+        </label>
+      </div>
+      ${iconBtn('del', 'Remove this promotion', `data-promo-del="${i}"`, 'danger')}
+    </div>`;
+}
+
+function diPaintPromos() {
+  const host = $('di-promos');
+  if (!host) return;
+  host.innerHTML = diPromos.length
+    ? diPromos.map(diPromoRow).join('')
+    : '<p class="muted small">Nothing on at the moment.</p>';
+  const add = $('di-promo-add');
+  if (add) add.disabled = diPromos.length >= 6;
+}
+
+/** What the rows currently say, read back in order. */
+function diReadPromos() {
+  return diPromos.map((_, i) => {
+    const get = (f) => {
+      const el = document.querySelector(`[data-p="${f}"][data-promo="${i}"]`);
+      return el ? el.value : '';
+    };
+    return {
+      title: get('title'), body: get('body'),
+      image_url: get('image_url'), until: get('until'),
+    };
+  }).filter((p) => p.title.trim());
+}
+
+// ---------------------------------------------------------------------------
+// Branding
+// ---------------------------------------------------------------------------
+
+const DI_THEME_DEFAULT = {
+  accent: '#A5C715', onAccent: '#10130A', page: '#FFFFFF', card: '#FFFFFF',
+  ink: '#14171C', inkSoft: '#5C6470', radius: 16, font: 'system',
+};
+
+function diReadTheme() {
+  const val = (id, fallback) => {
+    const el = $(id);
+    return el ? el.value : fallback;
+  };
+  return {
+    accent: val('di-t-accent', DI_THEME_DEFAULT.accent),
+    onAccent: val('di-t-onaccent', DI_THEME_DEFAULT.onAccent),
+    page: val('di-t-page', DI_THEME_DEFAULT.page),
+    card: val('di-t-card', DI_THEME_DEFAULT.card),
+    ink: val('di-t-ink', DI_THEME_DEFAULT.ink),
+    inkSoft: val('di-t-inksoft', DI_THEME_DEFAULT.inkSoft),
+    radius: Number(val('di-t-radius', DI_THEME_DEFAULT.radius)),
+    font: val('di-t-font', DI_THEME_DEFAULT.font),
+  };
+}
+
+/**
+ * The preview, driven straight from the controls.
+ *
+ * The frame loads the real menu page, and the colours are pushed into it as
+ * custom properties rather than by reloading it with different data. A reload
+ * per keystroke on a colour picker is a request per keystroke, and the picker
+ * fires continuously while a thumb is moving.
+ *
+ * Cross-origin would make this impossible; the preview is served from the same
+ * origin as the back office for exactly that reason.
+ */
+function diPaintPreview() {
+  const frame = $('di-preview-frame');
+  if (!frame || !frame.contentDocument) return;
+  const doc = frame.contentDocument;
+  const t = diReadTheme();
+  const root = doc.documentElement;
+  if (!root || !root.style) return;
+  root.style.setProperty('--accent', t.accent);
+  root.style.setProperty('--on-accent', t.onAccent);
+  root.style.setProperty('--page', t.page);
+  root.style.setProperty('--card', t.card);
+  root.style.setProperty('--ink', t.ink);
+  root.style.setProperty('--ink-soft', t.inkSoft);
+  root.style.setProperty('--radius', t.radius + 'px');
+  const fonts = {
+    system: '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif',
+    serif: 'Georgia,"Times New Roman",serif',
+    rounded: 'ui-rounded,"SF Pro Rounded",system-ui,"Segoe UI",sans-serif',
+    mono: 'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace',
+  };
+  if (doc.body) doc.body.style.fontFamily = fonts[t.font] || fonts.system;
+}
+
+function diWireBranding() {
+  const ids = ['di-t-accent', 'di-t-onaccent', 'di-t-page', 'di-t-card',
+    'di-t-ink', 'di-t-inksoft', 'di-t-radius', 'di-t-font'];
+  ids.forEach((id) => {
+    const el = $(id);
+    if (!el) return;
+    el.oninput = diPaintPreview;
+    el.onchange = diPaintPreview;
+  });
+
+  const reset = $('di-t-reset');
+  if (reset) reset.onclick = () => {
+    Object.entries({
+      'di-t-accent': DI_THEME_DEFAULT.accent,
+      'di-t-onaccent': DI_THEME_DEFAULT.onAccent,
+      'di-t-page': DI_THEME_DEFAULT.page,
+      'di-t-card': DI_THEME_DEFAULT.card,
+      'di-t-ink': DI_THEME_DEFAULT.ink,
+      'di-t-inksoft': DI_THEME_DEFAULT.inkSoft,
+      'di-t-radius': DI_THEME_DEFAULT.radius,
+      'di-t-font': DI_THEME_DEFAULT.font,
+    }).forEach(([id, value]) => { const el = $(id); if (el) el.value = value; });
+    diPaintPreview();
+  };
+
+  const frame = $('di-preview-frame');
+  if (frame && diVenue && diVenue.slug) {
+    frame.src = (diTables.base || location.origin) + '/' + diVenue.slug;
+    frame.onload = diPaintPreview;
+  }
+}
+
+/**
+ * Keep what is on screen without publishing it.
+ *
+ * The live row is what somebody standing at a table is reading right now, so a
+ * venue trying a new colour at four in the afternoon has somewhere to put it
+ * that is not in front of a customer.
+ */
+async function diSaveDraft() {
+  const note = $('di-draft-note');
+  try {
+    await api('/dinein/draft', {
+      method: 'PUT',
+      body: JSON.stringify({ theme: diReadTheme(), promotions: diReadPromos() }),
+    });
+    if (note) {
+      note.textContent = 'Draft kept.';
+      setTimeout(() => { if (note) note.textContent = ''; }, 2600);
+    }
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
 async function diCheckSlug() {
   const note = $('di-slug-note');
   const raw = $('di-slug').value.trim();
@@ -290,6 +646,21 @@ async function diSaveVenue() {
     opening_hours: diReadHours(),
     closed_message: $('di-closed-msg').value,
     eta_minutes: $('di-eta').value,
+
+    offer_active: $('di-offer-on').checked,
+    offer_percent: $('di-offer-pct').value,
+    // Entered in pounds, stored in pence, like every other price here.
+    offer_min_spend_minor: Math.round((Number($('di-offer-min').value) || 0) * 100),
+    offer_label: $('di-offer-label').value,
+    promotions: diReadPromos(),
+
+    show_popular: $('di-show-popular').checked,
+    show_featured: $('di-show-featured').checked,
+    popular_title: $('di-popular-title').value,
+    featured_title: $('di-featured-title').value,
+
+    theme: diReadTheme(),
+    custom_domain: $('di-domain').value,
   };
   // An empty address is not a change to the address, it is somebody who has
   // not chosen one yet. Sending it would fail validation and lose the rest.
@@ -370,6 +741,9 @@ async function loadDineInMenu() {
   body.querySelectorAll('[data-item-save]').forEach((b) => {
     b.onclick = () => diSaveItem(Number(b.dataset.itemSave));
   });
+  body.querySelectorAll('[data-item-copy]').forEach((b) => {
+    b.onclick = () => diCopyItem(Number(b.dataset.itemCopy));
+  });
   body.querySelectorAll('[data-item-avail]').forEach((c) => {
     c.onchange = () =>
       diSetAvailable(Number(c.dataset.itemAvail), c.checked);
@@ -389,8 +763,8 @@ function diSectionCard(section) {
                  value="${esc(section.blurb || '')}"
                  placeholder="Served 12 til 3">
         </label>
-        <button class="btn" data-sec-save="${section.id}" type="button">Save</button>
-        <button class="btn danger" data-sec-del="${section.id}" type="button">Delete</button>
+        ${iconBtn('save', 'Save this section', `data-sec-save="${section.id}"`, 'go')}
+        ${iconBtn('del', 'Delete this section', `data-sec-del="${section.id}"`, 'danger')}
       </div>
 
       ${section.items.length
@@ -428,9 +802,20 @@ function diItemRow(item) {
                ${item.available ? 'checked' : ''}
                title="Uncheck when the kitchen runs out">
       </td>
+      <td style="text-align:center">
+        <input type="checkbox" data-f="is_popular" data-item="${item.id}"
+               ${item.is_popular ? 'checked' : ''}
+               title="Show this in the Popular grid at the top of the menu">
+      </td>
+      <td>
+        <input data-f="diet_tag" data-item="${item.id}" list="di-diets"
+               value="${esc(item.diet_tag || '')}" placeholder="—"
+               style="max-width:130px">
+      </td>
       <td style="text-align:right;white-space:nowrap">
-        <button class="btn" data-item-save="${item.id}" type="button">Save</button>
-        <button class="btn danger" data-item-del="${item.id}" type="button">Remove</button>
+        ${iconBtn('save', 'Save', `data-item-save="${item.id}"`, 'go')}
+        ${iconBtn('copy', 'Duplicate', `data-item-copy="${item.id}"`)}
+        ${iconBtn('del', 'Take off the menu', `data-item-del="${item.id}"`, 'danger')}
       </td>
     </tr>`;
 }
@@ -521,6 +906,58 @@ async function diSetAvailable(id, available) {
   } catch (e) {
     toast(e.message, 'error');
     await loadDineInMenu();
+  }
+}
+
+/**
+ * The same dish again, in the same section.
+ *
+ * For a venue with a Small and a Large of something, or the same product on
+ * both a lunch and an evening menu. The copy carries the wording and the
+ * picture, because retyping those is the work the button exists to avoid, and
+ * it is not marked Popular or Featured — two identical cards in one grid is not
+ * what anybody meant.
+ */
+async function diCopyItem(id) {
+  let item = null;
+  diMenu.forEach((sec) => (sec.items || []).forEach((it) => {
+    if (it.id === id) item = it;
+  }));
+  if (!item) return;
+  try {
+    // The add route names a new row from the catalogue, which is right when a
+    // product is being put on a menu for the first time and wrong here — the
+    // wording is the work this button exists to avoid retyping. So it is
+    // copied over afterwards, onto whichever row was just created.
+    await api(`/dinein/sections/${item.section_id}/items`, {
+      method: 'POST',
+      body: JSON.stringify({ plu_ids: [item.plu_id] }),
+    });
+    const fresh = await api('/dinein/menu');
+    const section = fresh.find((sec) => sec.id === item.section_id);
+    const made = section
+      ? (section.items || []).filter((it) => it.plu_id === item.plu_id)
+          .sort((a, b) => b.id - a.id)[0]
+      : null;
+    if (made && made.id !== item.id) {
+      await api(`/dinein/items/${made.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          name: item.name || '',
+          description: item.description || '',
+          image_url: item.image_url || '',
+          diet_tag: item.diet_tag || '',
+          // Not Popular and not Featured: two identical cards in one grid is
+          // not what anybody meant by Duplicate.
+          is_popular: false,
+          is_featured: false,
+        }),
+      });
+    }
+    await loadDineInMenu();
+    toast('Copied. Change whatever is different about it.');
+  } catch (e) {
+    toast(e.message, 'error');
   }
 }
 
@@ -685,11 +1122,13 @@ async function loadDineInQr() {
                           ${t.qr_enabled ? 'checked' : ''}>
                  </td>
                  <td style="text-align:right">
-                   <button class="btn" data-qr-print="${t.id}" type="button">Print</button>
+                   ${iconBtn('print', 'Print this card', `data-qr-print="${t.id}"`)}
+                   ${iconBtn('link', 'Open this menu', `data-qr-open="${t.id}"`)}
                  </td>
                </tr>`).join('')}
              </tbody>
            </table>
+           ${iconKey([['print', 'Print this card'], ['link', 'Open this menu']])}
            <div class="row" style="margin-top:12px;gap:8px">
              <button class="btn primary" id="di-print-all" type="button">
                Print a card for every table
@@ -730,6 +1169,12 @@ async function loadDineInQr() {
         toast(e.message, 'error');
         c.checked = !c.checked;
       }
+    };
+  });
+  document.querySelectorAll('[data-qr-open]').forEach((b) => {
+    b.onclick = () => {
+      const t = (diTables.tables || []).find((x) => x.id === Number(b.dataset.qrOpen));
+      if (t && t.url) window.open(t.url, '_blank', 'noopener');
     };
   });
   document.querySelectorAll('[data-qr-print]').forEach((b) => {

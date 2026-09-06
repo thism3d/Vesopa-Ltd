@@ -355,7 +355,35 @@ check('paged sales are ordered by something unique', () => {
 
 check('sending a schedule by email asks first', () => {
   const fn = app.slice(app.indexOf('if (data.rsSend) {'), app.indexOf('if (data.rsDelete) {'));
-  assert.match(fn, /confirm\(/, 'one click still mails the whole recipient list');
+  // confirmDialog, not window.confirm. iOS lets a person switch the browser's
+  // own dialogs off for the session, after which confirm() returns false for
+  // ever — so a guard written that way stops being a guard and starts being a
+  // button that never works. Naming the in-page one here is what keeps this
+  // check honest: matching /confirm\(/ would pass on either.
+  assert.match(fn, /await confirmDialog\(/,
+    'one click still mails the whole recipient list');
+});
+
+check('no back office code asks the browser for a dialog', () => {
+  // window.alert, confirm and prompt are all switched off together by iOS
+  // after two of them in a row, silently and for the rest of the session. A
+  // Delete that quietly does nothing is the bug that started this.
+  const files = { app };
+  const bad = [];
+  for (const [name, src] of Object.entries(files)) {
+    src.split(/\r?\n/).forEach((line, i) => {
+      // Prose about these functions is not a call to them, and the note
+      // explaining why they were removed necessarily names all three.
+      const trimmed = line.trim();
+      if (trimmed.startsWith('*') || trimmed.startsWith('/*')) return;
+      const code = line.replace(/\/\/.*$/, '');
+      if (/(^|[^.\w])(alert|confirm|prompt)\s*\(/.test(code)
+          && !/confirmDialog/.test(code)) {
+        bad.push(`${name}:${i + 1} ${line.trim().slice(0, 70)}`);
+      }
+    });
+  }
+  assert.deepStrictEqual(bad, []);
 });
 
 console.log(`\n${passed} checks passed`);

@@ -507,7 +507,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
       const plain = [
         'display_name', 'tagline', 'phone', 'address_line', 'postcode',
         'map_url', 'logo_url', 'banner_url', 'accent_colour', 'notice',
-        'closed_message', 'offer_label',
+        'closed_message', 'offer_label', 'popular_title', 'featured_title',
       ];
       for (const field of plain) {
         if (body[field] === undefined) continue;
@@ -518,7 +518,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
 
       const flags = [
         'is_published', 'ordering_open', 'require_name', 'require_phone',
-        'schedule_enabled', 'offer_active',
+        'schedule_enabled', 'offer_active', 'show_popular', 'show_featured',
       ];
       for (const field of flags) {
         if (body[field] === undefined) continue;
@@ -872,9 +872,10 @@ function dineinRoutes({ pool, broadcast, secret }) {
         const value = String(b[field]).trim();
         params.push(value === '' ? null : value);
       }
-      if (b.is_popular !== undefined) {
-        sets.push('is_popular = ?');
-        params.push(b.is_popular ? 1 : 0);
+      for (const flag of ['is_popular', 'is_featured']) {
+        if (b[flag] === undefined) continue;
+        sets.push(flag + ' = ?');
+        params.push(b[flag] ? 1 : 0);
       }
       if (b.sort_order !== undefined) {
         sets.push('sort_order = ?');
@@ -1302,7 +1303,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
     if (sections.length) {
       const [rows] = await pool.query(
         'SELECT i.id, i.section_id, i.plu_id, i.description, i.image_url,' +
-          '       i.available, i.is_popular, i.diet_tag,' +
+          '       i.available, i.is_popular, i.is_featured, i.diet_tag,' +
           '       COALESCE(NULLIF(TRIM(i.name), ""), p.product_name) AS name,' +
           '       p.price AS price' +
           '  FROM dinein_items i' +
@@ -1333,6 +1334,12 @@ function dineinRoutes({ pool, broadcast, secret }) {
         theme: cleanTheme(venue.theme_json),
         offer: offerOf(venue),
         promotions: cleanPromotions(venue.promotions),
+        // Two lists, and whether the venue wants either shown. A venue with
+        // eight dishes does not want two grids of them above its own menu.
+        show_popular: venue.show_popular == null ? true : !!venue.show_popular,
+        show_featured: venue.show_featured == null ? true : !!venue.show_featured,
+        popular_title: (venue.popular_title || '').trim() || 'Popular',
+        featured_title: (venue.featured_title || '').trim() || 'Featured',
         // The hours, and the venue's own answer to "are you open" — worked out
         // here rather than on the phone, whose clock is not evidence.
         schedule: openState(venue),
@@ -1352,6 +1359,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
             image_url: i.image_url,
             available: !!i.available,
             popular: !!i.is_popular,
+            featured: !!i.is_featured,
             diet: i.diet_tag || null,
             price_minor: Math.round(Number(i.price || 0) * 100),
           })),

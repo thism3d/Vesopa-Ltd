@@ -1256,26 +1256,46 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
     // proper. Not counted from orders: a "most ordered" list computed from a
     // menu that has been live a week is a list of whatever was at the top of
     // it. The venue knows what it wants to sell.
-    var popular = [];
+    // Two grids, and each is shown only if the venue wants it and has put
+    // something in it. Featured leads: it is what the venue is choosing to
+    // push, and Popular is what will be found anyway.
+    var featured = [], popular = [];
     sections.forEach(function(sec){
-      (sec.items || []).forEach(function(it){ if (it.popular) popular.push(it); });
+      (sec.items || []).forEach(function(it){
+        if (it.featured) featured.push(it);
+        if (it.popular) popular.push(it);
+      });
     });
-    if (popular.length) {
-      html += '<section id="secpopular" data-sec="popular">' +
-        '<h2 style="padding:0 16px">Popular</h2>' +
-        '<p class="blurb" style="padding:0 16px">What this kitchen is known for.</p>' +
-        '<div class="pop-grid">';
-      popular.slice(0, 8).forEach(function(it){ html += popCardHtml(it); });
-      html += '</div></section>';
+    if (!v.show_featured) featured = [];
+    if (!v.show_popular) popular = [];
+
+    var grids = [];
+    if (featured.length) {
+      grids.push({ id: 'featured', title: v.featured_title || 'Featured',
+                   blurb: 'What we would like you to try.', items: featured });
     }
+    if (popular.length) {
+      grids.push({ id: 'popular', title: v.popular_title || 'Popular',
+                   blurb: 'What this kitchen is known for.', items: popular });
+    }
+    grids.forEach(function(g){
+      html += '<section id="sec' + g.id + '" data-sec="' + g.id + '">' +
+        '<h2 style="padding:0 16px">' + esc(g.title) + '</h2>' +
+        '<p class="blurb" style="padding:0 16px">' + esc(g.blurb) + '</p>' +
+        '<div class="pop-grid">';
+      g.items.slice(0, 8).forEach(function(it){ html += popCardHtml(it); });
+      html += '</div></section>';
+    });
 
     html += '<nav class="tabs" id="tabs">';
-    if (popular.length) {
-      html += '<button type="button" data-go="secpopular" aria-current="true">Popular</button>';
-    }
+    grids.forEach(function(g, i){
+      html += '<button type="button" data-go="sec' + g.id + '"' +
+              (i === 0 ? ' aria-current="true"' : '') + '>' +
+              esc(g.title) + '</button>';
+    });
     sections.forEach(function(s, i){
       html += '<button type="button" data-go="sec' + s.id + '"' +
-              (i === 0 && !popular.length ? ' aria-current="true"' : '') + '>' +
+              (i === 0 && !grids.length ? ' aria-current="true"' : '') + '>' +
               esc(s.name) + '</button>';
     });
     html += '</nav>';
@@ -1294,7 +1314,7 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
     html += '</div>';
 
     app.innerHTML = html;
-    wireTabs(popular.length ? [{ id: 'popular' }].concat(sections) : sections);
+    wireTabs(grids.map(function(g){ return { id: g.id }; }).concat(sections));
     wireHero();
     markLastRow();
     paintWho();

@@ -98,8 +98,8 @@ const DC_THEMES = {
       { kind: 'venue_name', x: 8, y: 7, w: 84, h: 9, size: 26, align: 'center', bold: true, colour: '#14161A' },
       { kind: 'qr', x: 25, y: 21, w: 50, h: 36 },
       { kind: 'table_name', x: 8, y: 61, w: 84, h: 8, size: 22, align: 'center', bold: true, colour: '#14161A' },
-      { kind: 'text', x: 8, y: 71, w: 84, h: 6, size: 13, align: 'center', text: 'Scan to see the menu and order', colour: '#63696F' },
-      { kind: 'link', x: 8, y: 89, w: 84, h: 5, size: 10, align: 'center', colour: '#9AA0A6' },
+      { kind: 'text', x: 8, y: 71, w: 84, h: 6, size: 13, align: 'center', text: 'Scan to see the menu and order', colour: '#4A5058' },
+      { kind: 'link', x: 8, y: 89, w: 84, h: 5, size: 10, align: 'center', colour: '#5A6068' },
     ],
   },
   banner: {
@@ -110,7 +110,7 @@ const DC_THEMES = {
       { kind: 'venue_name', x: 6, y: 4, w: 88, h: 10, size: 26, align: 'center', bold: true, colour: '#10130A' },
       { kind: 'qr', x: 26, y: 25, w: 48, h: 34 },
       { kind: 'table_name', x: 6, y: 63, w: 88, h: 8, size: 24, align: 'center', bold: true, colour: '#14161A' },
-      { kind: 'text', x: 6, y: 73, w: 88, h: 6, size: 13, align: 'center', text: 'Order from your phone — no app needed', colour: '#63696F' },
+      { kind: 'text', x: 6, y: 73, w: 88, h: 6, size: 13, align: 'center', text: 'Order from your phone — no app needed', colour: '#4A5058' },
       { kind: 'box', x: 0, y: 94, w: 100, h: 6, fill: '#A5C715' },
     ],
   },
@@ -122,7 +122,7 @@ const DC_THEMES = {
       { kind: 'box', x: 24, y: 21, w: 52, h: 38, fill: '#FFFFFF' },
       { kind: 'qr', x: 26, y: 23, w: 48, h: 34 },
       { kind: 'table_name', x: 8, y: 63, w: 84, h: 8, size: 22, align: 'center', bold: true, colour: '#A5C715' },
-      { kind: 'text', x: 8, y: 73, w: 84, h: 6, size: 13, align: 'center', text: 'Scan to see the menu and order', colour: '#9AA0A6' },
+      { kind: 'text', x: 8, y: 73, w: 84, h: 6, size: 13, align: 'center', text: 'Scan to see the menu and order', colour: '#5A6068' },
     ],
   },
   minimal: {
@@ -213,6 +213,11 @@ function dcRender() {
           </div>
           <p class="muted small" style="text-align:center;margin-top:8px">
             ${w} × ${h} mm — drag to move, pull a corner to resize
+          </p>
+          <p class="dc-paper-note">
+            This is the paper, so it stays the colour it will print. Night mode
+            changes the panel around it, not the card. Set the paper and the ink
+            below if you want a dark card.
           </p>
         </div>
 
@@ -447,10 +452,18 @@ function dcWirePanel() {
         <label style="flex:1">Width mm<input id="dc-pw" type="number" value="${diDesign.page_w_mm}"></label>
         <label style="flex:1">Height mm<input id="dc-ph" type="number" value="${diDesign.page_h_mm}"></label>
       </div>
-      <label>Background
+      <label>Paper
         <input id="dc-bg" type="color" value="${esc(diDesign.background || '#FFFFFF')}"
                style="width:64px;height:38px;padding:3px;border-radius:8px">
       </label>
+      <div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap">
+        <button class="btn" id="dc-paper-light" type="button">White card</button>
+        <button class="btn" id="dc-paper-dark" type="button">Dark card</button>
+      </div>
+      <p class="muted small">
+        A dark card re-inks every word on it so it stays readable — and costs a
+        great deal more to print.
+      </p>
 
       <h4 style="margin-top:18px">Start from</h4>
       <div class="dc-themes">
@@ -484,6 +497,31 @@ function dcWirePanel() {
       const page = $('dc-page');
       if (page) page.style.background = e.target.value;
     };
+
+    /**
+     * Paper and ink together.
+     *
+     * Changing the paper alone is how a card ends up black on black: the
+     * elements carry their own colours, and none of them move when the
+     * background does. These two set both ends of the contrast at once, which
+     * is the only way the result is guaranteed to be readable.
+     */
+    const repaper = (paper, ink, quiet) => {
+      dcPushHistory();
+      diDesign.background = paper;
+      diDesign.elements.forEach((el) => {
+        if (el.kind === 'qr') return;      // a QR code is read by a camera
+        if (el.kind === 'image') return;   // and a picture is the venue's own
+        if (el.kind === 'box') { el.fill = quiet; return; }
+        // The two quiet lines stay quiet, and everything else takes the ink.
+        el.colour = (el.kind === 'link' || el.kind === 'text') ? quiet : ink;
+      });
+      dcRender();
+    };
+    const light = $('dc-paper-light');
+    const dark = $('dc-paper-dark');
+    if (light) light.onclick = () => repaper('#FFFFFF', '#14161A', '#4A5058');
+    if (dark) dark.onclick = () => repaper('#14161A', '#FFFFFF', '#C7CCD2');
     panel.querySelectorAll('[data-theme]').forEach((b) => {
       b.onclick = () => {
         const theme = DC_THEMES[b.dataset.theme];
@@ -669,10 +707,11 @@ function dcUpload(el) {
     const file = input.files && input.files[0];
     if (!file) return;
     if (file.size > 1_500_000) {
-      alert(
+      toast(
         'That picture is ' + Math.round(file.size / 1024) + 'KB. Cards hold ' +
         'pictures up to about 1.5MB — resize it, or paste a web address ' +
-        'instead.'
+        'instead.',
+        'error'
       );
       return;
     }

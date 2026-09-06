@@ -133,6 +133,25 @@ CALL vesopa_add_column('dinein_items', 'is_popular', 'TINYINT(1) NOT NULL DEFAUL
 -- a menu.
 CALL vesopa_add_column('dinein_items', 'diet_tag', 'VARCHAR(24) NULL');
 
+-- ---------------------------------------------------------------------------
+-- Featured, alongside Popular
+-- ---------------------------------------------------------------------------
+--
+-- Two lists, because they answer two different questions. Popular is "what do
+-- people order here"; Featured is "what would we like you to try" — the new
+-- dish, the thing with the best margin, the special that is on this week. One
+-- list doing both jobs is a list a venue cannot use for either.
+--
+-- Both are shown or hidden by the venue: a venue with eight dishes does not
+-- want two grids of them above its menu.
+CALL vesopa_add_column('dinein_items', 'is_featured', 'TINYINT(1) NOT NULL DEFAULT 0');
+CALL vesopa_add_column('dinein_venue', 'show_popular', 'TINYINT(1) NOT NULL DEFAULT 1');
+CALL vesopa_add_column('dinein_venue', 'show_featured', 'TINYINT(1) NOT NULL DEFAULT 1');
+
+-- What the venue calls them, if not these.
+CALL vesopa_add_column('dinein_venue', 'popular_title', 'VARCHAR(60) NULL');
+CALL vesopa_add_column('dinein_venue', 'featured_title', 'VARCHAR(60) NULL');
+
 DROP PROCEDURE IF EXISTS vesopa_add_index;
 DELIMITER //
 CREATE PROCEDURE vesopa_add_index(

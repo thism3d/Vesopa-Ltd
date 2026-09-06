@@ -194,7 +194,7 @@ function switchModal({ title, subtitle, body, onSave }) {
       await onSave(form);
       close();
     } catch (err) {
-      alert(err.message || 'Could not save.');
+      toast(err.message || 'Could not save.', 'error');
     }
   });
 }
@@ -422,7 +422,7 @@ document.addEventListener('click', async (e) => {
       return openGroupEditor(groups.find((g) => String(g.id) === t.dataset.editGroup));
     }
     if (t.dataset.delGroup) {
-      if (!confirm('Delete this group? Staff in it go back to having every key.')) return;
+      if (!await confirmDialog('Delete this group? Staff in it go back to having every key.')) return;
       await api(`/permission-groups/${t.dataset.delGroup}`, { method: 'DELETE' });
       return loadPermissionGroups();
     }
@@ -437,11 +437,11 @@ document.addEventListener('click', async (e) => {
       return openRoleEditor(roles.find((r) => String(r.id) === t.dataset.editRole));
     }
     if (t.dataset.delRole) {
-      if (!confirm('Delete this role? Anyone using it goes back to seeing everything.')) return;
+      if (!await confirmDialog('Delete this role? Anyone using it goes back to seeing everything.')) return;
       await api(`/user-roles/${t.dataset.delRole}`, { method: 'DELETE' });
       return loadUserRoles();
     }
   } catch (err) {
-    alert(err.message || 'Something went wrong.');
+    toast(err.message || 'Something went wrong.', 'error');
   }
 });

@@ -7,7 +7,10 @@
     <meta name="description" content="Vesopa EPOS back office: catalogue, programming, floor plans, dine-in menus and reports." />
     <!-- The back office is signed-in and has nothing to say to a crawler. -->
     <meta name="robots" content="noindex,nofollow" />
-    <meta name="theme-color" content="#A5C715" />
+    <!-- Kept in step with the chosen theme by applyTheme() in app.js, so the
+         browser chrome on a phone matches the page rather than staying lime. -->
+    <meta name="theme-color" content="#A5C715" id="theme-colour" />
+    <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="color-scheme" content="light dark" />
 
     <!-- The mark, not the wordmark.
@@ -29,10 +32,39 @@
          wordmark appears exactly once (above the form) — the stage carries the
          cropped product shot, which has no lockup baked into it, so the two
          never compete. -->
+    <!-- The same corner control the signed-in application has. Somebody who
+         works nights sets this once, and being made to sign in on a white page
+         first is the one moment it matters most. -->
+    <div class="theme-corner" id="theme-corner-login">
+      <button type="button" class="theme-btn" data-theme-toggle
+              aria-haspopup="true" aria-expanded="false" aria-label="Appearance">
+        <svg class="ic-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2" /><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.2 5.2l1.6 1.6M17.2 17.2l1.6 1.6M18.8 5.2l-1.6 1.6M6.8 17.2l-1.6 1.6" /></svg>
+        <svg class="ic-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.2A8.2 8.2 0 0 1 9.8 4a8.4 8.4 0 1 0 10.2 10.2z" /></svg>
+        <svg class="ic-auto" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.4" /><path d="M12 3.6v16.8a8.4 8.4 0 0 0 0-16.8z" fill="currentColor" stroke="none" /></svg>
+      </button>
+      <div class="theme-menu" role="menu" hidden>
+        <button type="button" data-theme-set="light" role="menuitemradio" aria-checked="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2" /><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.2 5.2l1.6 1.6M17.2 17.2l1.6 1.6M18.8 5.2l-1.6 1.6M6.8 17.2l-1.6 1.6" /></svg>
+          <span>Day</span>
+        </button>
+        <button type="button" data-theme-set="dark" role="menuitemradio" aria-checked="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.2A8.2 8.2 0 0 1 9.8 4a8.4 8.4 0 1 0 10.2 10.2z" /></svg>
+          <span>Night</span>
+        </button>
+        <button type="button" data-theme-set="system" role="menuitemradio" aria-checked="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.4" /><path d="M12 3.6v16.8a8.4 8.4 0 0 0 0-16.8z" fill="currentColor" stroke="none" /></svg>
+          <span>Auto</span>
+        </button>
+      </div>
+    </div>
+
     <div id="login" class="login-wrap">
       <div class="login-side">
         <form id="login-form" class="login-card" novalidate>
-          <img src="/assets/vesopa_logo.png" alt="Vesopa" class="login-logo" />
+          <img src="/assets/vesopa_logo.png" alt="Vesopa"
+               class="login-logo lockup-light" />
+          <img src="/assets/vesopa_logo_on_dark.png" alt="Vesopa"
+               class="login-logo lockup-dark" />
 
           <h1>Sign in to Back Office</h1>
           <p class="login-sub">Manage your tills, catalogue and reporting.</p>
@@ -79,7 +111,10 @@
         <!-- Step 2: ask for the link. Swapped in place of the sign-in form so
              the column never changes width or jumps. -->
         <form id="forgot-form" class="login-card" hidden novalidate>
-          <img src="/assets/vesopa_logo.png" alt="Vesopa" class="login-logo" />
+          <img src="/assets/vesopa_logo.png" alt="Vesopa"
+               class="login-logo lockup-light" />
+          <img src="/assets/vesopa_logo_on_dark.png" alt="Vesopa"
+               class="login-logo lockup-dark" />
 
           <h1>Reset your password</h1>
           <p class="login-sub">
@@ -108,7 +143,10 @@
 
         <!-- Step 3: shown when the page is opened as /reset?token=… -->
         <form id="reset-form" class="login-card" hidden novalidate>
-          <img src="/assets/vesopa_logo.png" alt="Vesopa" class="login-logo" />
+          <img src="/assets/vesopa_logo.png" alt="Vesopa"
+               class="login-logo lockup-light" />
+          <img src="/assets/vesopa_logo_on_dark.png" alt="Vesopa"
+               class="login-logo lockup-dark" />
 
           <h1>Choose a new password</h1>
           <p class="login-sub" id="reset-sub">
@@ -276,7 +314,7 @@
           <svg viewBox="0 0 24 24" aria-hidden="true" class="rail-fold-icon">
             <path d="m14 7-5 5 5 5" />
           </svg>
-          <span class="rail-fold-word">Collapse</span>
+          <span class="rail-fold-word">Hide menu</span>
         </button>
 
         <div class="rail-foot">
@@ -286,6 +324,15 @@
         </div>
 
       </aside>
+
+      <!-- Brings the rail back once it has been folded away. Only rendered
+           into view when it is: see .rail-open in the stylesheet. -->
+      <button type="button" id="rail-open" class="rail-open"
+              aria-label="Show the menu" aria-expanded="false" title="Show the menu">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 7h16M4 12h16M4 17h16" />
+        </svg>
+      </button>
 
       <!-- Day or Night, in the top right corner where every application on
            this manager's machine puts it. An office and a bar are not the same

@@ -43,6 +43,17 @@ function applyTheme(choice) {
   if (choice === 'system') root.removeAttribute('data-theme');
   else root.setAttribute('data-theme', choice);
 
+  // The address bar and the task switcher on a phone read theme-color, and it
+  // was a fixed lime — so a manager in Night mode got a bright green bar over a
+  // near-black page. Read back from the rail rather than hardcoded twice: the
+  // stylesheet already knows what colour the chrome is, and two lists of
+  // colours are two lists to keep in step.
+  const meta = document.getElementById('theme-colour');
+  if (meta) {
+    const rail = getComputedStyle(root).getPropertyValue('--rail').trim();
+    if (rail) meta.setAttribute('content', rail);
+  }
+
   document.querySelectorAll('[data-theme-set]').forEach((b) => {
     b.setAttribute('aria-pressed', String(b.dataset.themeSet === choice));
     // The menu items are radios in a menu rather than pressed buttons; both
@@ -341,8 +352,21 @@ function show(view, { push = true, userInitiated = false } = {}) {
     view !== 'screens' &&
     typeof spDirty === 'function' &&
     spDirty() &&
-    !confirm('This screen has changes that have not been saved. Leave them behind?')
+    // Not window.confirm: iOS lets a person switch those off for the session,
+    // after which this returns false for ever and the editor cannot be left at
+    // all. This is a synchronous decision — show() cannot await — so the guard
+    // is a flag the dialog sets, and the dialog re-runs the navigation itself.
+    !spLeaveConfirmed
   ) {
+    confirmDialog(
+      'This screen has changes that have not been saved.',
+      { title: 'Leave without saving?', confirmLabel: 'Discard changes', danger: true }
+    ).then((yes) => {
+      if (!yes) return;
+      spLeaveConfirmed = true;
+      show(view, { push, userInitiated });
+      spLeaveConfirmed = false;
+    });
     if (!push) history.pushState({ view: 'screens' }, '', ROUTES.screens);
     return;
   }
@@ -353,6 +377,11 @@ function show(view, { push = true, userInitiated = false } = {}) {
   document.querySelectorAll('.nav').forEach((b) =>
     b.classList.toggle('active', b.dataset.view === view)
   );
+
+  // Before anything is asked for. The gap between a press and the first change
+  // on screen is the whole of "it did not respond" on a slow connection, and
+  // this closes it whatever the network then does.
+  loadbar.start();
 
   const path = ROUTES[view] || '/dashboard';
   if (push && location.pathname !== path) {
@@ -829,7 +858,7 @@ function makeSortable(tbody, path) {
           body: JSON.stringify({ order }),
         });
       } catch (err) {
-        alert(err.message);
+        toast(err.message, 'error');
         render();
       }
     });
@@ -904,7 +933,12 @@ function render() {
   if (load) {
     Promise.resolve(load())
       .then(cardsInView)
-      .catch((e) => console.error(e));
+      .catch((e) => console.error(e))
+      .finally(() => loadbar.done());
+  } else {
+    // A view with nothing to fetch still has to finish the bar, or it creeps
+    // towards the end for ever on every page that is already drawn.
+    loadbar.done();
   }
 }
 
@@ -1525,7 +1559,7 @@ function bindProducts() {
       setTimeout(() => input.classList.remove('saved'), 900);
     } catch (err) {
       input.classList.remove('saving');
-      alert(err.message);
+      toast(err.message, 'error');
       // Put back what is actually stored, rather than leaving a value on screen
       // that the catalogue does not have.
       input.value = field === 'price'
@@ -1783,7 +1817,7 @@ async function bulkEditProducts() {
       });
       productPicks.clear();
       renderBulkBar();
-      alert(`Updated ${res.updated} product${res.updated === 1 ? '' : 's'}.`);
+      toast(`Updated ${res.updated} product${res.updated === 1 ? '' : 's'}.`);
     }
   );
 }
@@ -2251,6 +2285,9 @@ function roomOutline(room) {
     return null;
   }
 }
+/** Set for the length of one re-entry into show() — see the note there. */
+let spLeaveConfirmed = false;
+
 let floor = [];
 let activeRoom = null;
 let selected = null;
@@ -2568,13 +2605,13 @@ function editRoomShape() {
       $('modal-root').innerHTML = '';
       await loadFloor();
     } catch (e) {
-      alert(e.message);
+      toast(e.message, 'error');
     }
   };
 
   $('shape-del').onclick = async () => {
     const count = room.tables.length;
-    if (!confirm(
+    if (!await confirmDialog(
       count
         ? `Delete "${room.name}" and its ${count} table${count === 1 ? '' : 's'}?`
         : `Delete "${room.name}"?`
@@ -2585,7 +2622,7 @@ function editRoomShape() {
       activeRoom = null;
       await loadFloor();
     } catch (e) {
-      alert(e.message);
+      toast(e.message, 'error');
     }
   };
 }
@@ -2641,7 +2678,7 @@ function showInspector() {
   );
 
   $('i-del').onclick = async () => {
-    if (!confirm(`Delete table ${table.table_number}?`)) return;
+    if (!await confirmDialog(`Delete table ${table.table_number}?`)) return;
     await api(`/floor/tables/${table.id}`, { method: 'DELETE' });
     selected = null;
     loadFloor();
@@ -3157,7 +3194,7 @@ function modal(title, fields, onSubmit) {
         img.src = data.url;
         wrap.prepend(img);
       } catch (err) {
-        alert(err.message);
+        toast(err.message, 'error');
       } finally {
         input.value = '';
       }
@@ -3244,35 +3281,40 @@ function modal(title, fields, onSubmit) {
 const RAIL_FOLD_KEY = 'vesopa.rail.folded';
 
 /**
- * Fold the rail down to its icons, or open it again.
+ * Hide the rail, or slide it back.
  *
- * Remembered per browser, like the theme. A manager who folds it is telling us
+ * Collapsed means gone, not narrow. The point of collapsing is to give the page
+ * its width back, and a strip of unlabelled icons charges 68px for a menu you
+ * still have to decode — so it leaves entirely and one press on the corner
+ * brings the whole thing back with its words on.
+ *
+ * Remembered per browser, like the theme. A manager who hides it is telling us
  * something about their screen, and that is still true tomorrow.
  *
- * Desktop only. Below 960px the rail is already a drawer over the page, and a
- * fold control inside a drawer is a button for making the thing you just
- * opened smaller.
+ * Desktop only. Below 960px the rail is already a drawer over the page.
  */
 function setRailFolded(folded) {
   const app = document.getElementById('app');
   const btn = document.getElementById('rail-fold');
   if (!app) return;
   app.classList.toggle('rail-folded', !!folded);
+  const opener = document.getElementById('rail-open');
+  if (opener) opener.setAttribute('aria-expanded', String(!folded));
   if (btn) {
     btn.setAttribute('aria-expanded', String(!folded));
-    btn.setAttribute('aria-label', folded ? 'Expand the menu' : 'Collapse the menu');
-    btn.title = folded ? 'Expand the menu' : 'Collapse the menu';
+    btn.setAttribute('aria-label', folded ? 'Show the menu' : 'Hide the menu');
+    btn.title = folded ? 'Show the menu' : 'Hide the menu';
   }
   try { localStorage.setItem(RAIL_FOLD_KEY, folded ? '1' : '0'); } catch { /* private mode */ }
 }
 
 /**
- * The name of each view, on the button itself.
+ * Wrap each view's name so it can be styled apart from its icon.
  *
- * A folded rail is icons, and an icon with no name is a puzzle. The label is
- * read off the text the button already has rather than kept in a second list
- * that would drift out of step with it, and the text is wrapped so it can be
- * hidden without losing it.
+ * Left from the icon-rail version of collapsing, and kept because it is what
+ * lets a nav button's words be addressed on their own. The label attribute
+ * comes off the text the button already has rather than a second list that
+ * would drift out of step with it.
  */
 function labelNavForFolding() {
   document.querySelectorAll('.rail .nav').forEach((btn) => {
@@ -3292,10 +3334,12 @@ function labelNavForFolding() {
 }
 
 function closeThemeMenu() {
-  const menu = document.getElementById('theme-menu');
-  const btn = document.getElementById('theme-btn');
-  if (menu) menu.hidden = true;
-  if (btn) btn.setAttribute('aria-expanded', 'false');
+  document.querySelectorAll('.theme-corner').forEach((corner) => {
+    const menu = corner.querySelector('.theme-menu');
+    const btn = corner.querySelector('.theme-btn');
+    if (menu) menu.hidden = true;
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+  });
 }
 
 function wireShell() {
@@ -3309,25 +3353,196 @@ function wireShell() {
     });
   }
   labelNavForFolding();
+  wireTips();
 
-  const btn = document.getElementById('theme-btn');
-  const menu = document.getElementById('theme-menu');
-  if (btn && menu) {
+  const opener = document.getElementById('rail-open');
+  if (opener) opener.addEventListener('click', () => setRailFolded(false));
+
+  // Two of these now: one on the sign-in page and one in the application. They
+  // behave identically, so they are wired identically rather than by id.
+  document.querySelectorAll('.theme-corner').forEach((corner) => {
+    const btn = corner.querySelector('.theme-btn');
+    const menu = corner.querySelector('.theme-menu');
+    if (!btn || !menu) return;
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const open = menu.hidden;
       menu.hidden = !open;
       btn.setAttribute('aria-expanded', String(open));
     });
-    // Anywhere else, and Escape. A popover that can only be closed by the
-    // button that opened it is a trap on a touchscreen.
-    document.addEventListener('click', (e) => {
-      if (!menu.hidden && !e.target.closest('#theme-corner')) closeThemeMenu();
-    });
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') closeThemeMenu();
-    });
-  }
+  });
+
+  // Anywhere else, and Escape. A popover that can only be closed by the button
+  // that opened it is a trap on a touchscreen.
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.theme-corner')) closeThemeMenu();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeThemeMenu();
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Saying that something is happening
+// ---------------------------------------------------------------------------
+
+/**
+ * The line across the top.
+ *
+ * It creeps rather than reporting a percentage, because there is no percentage
+ * to report — the server has not said how much there is. What it is actually
+ * for is the first 200ms: the gap between a press and anything changing, which
+ * is the whole of "it did not respond" on a slow connection.
+ */
+const loadbar = {
+  el: null,
+  timer: null,
+  at: 0,
+
+  node() {
+    if (!this.el) {
+      this.el = document.getElementById('loadbar');
+      if (!this.el) {
+        this.el = document.createElement('div');
+        this.el.id = 'loadbar';
+        document.body.appendChild(this.el);
+      }
+    }
+    return this.el;
+  },
+
+  start() {
+    const el = this.node();
+    clearInterval(this.timer);
+    this.at = 8;
+    el.classList.add('on');
+    el.style.width = '8%';
+    // Slower the further it gets, so it never reaches the end on its own and
+    // never has to go backwards.
+    this.timer = setInterval(() => {
+      this.at += Math.max(0.4, (92 - this.at) / 14);
+      if (this.at > 92) this.at = 92;
+      el.style.width = this.at + '%';
+    }, 220);
+  },
+
+  done() {
+    const el = this.node();
+    clearInterval(this.timer);
+    el.style.width = '100%';
+    setTimeout(() => {
+      el.classList.remove('on');
+      // Reset only once it has faded, or the next start jumps from the right.
+      setTimeout(() => { el.style.width = '0'; }, 260);
+    }, 160);
+  },
+};
+
+/** The shape of what is coming, in the place it will come. */
+const SKELETONS = {
+  stats: '<div class="sk"><div class="sk-row">' +
+    '<div class="sk-stat"></div><div class="sk-stat"></div>' +
+    '<div class="sk-stat"></div><div class="sk-stat"></div></div>' +
+    '<div class="sk-card"></div></div>',
+  list: '<div class="sk">' +
+    '<div class="sk-line w40"></div><div class="sk-card"></div>' +
+    '<div class="sk-line w70"></div><div class="sk-card"></div></div>',
+};
+
+function showSkeleton(hostId, kind) {
+  const host = document.getElementById(hostId);
+  if (host) host.innerHTML = SKELETONS[kind] || SKELETONS.list;
+}
+
+// ---------------------------------------------------------------------------
+// Icon buttons
+// ---------------------------------------------------------------------------
+//
+// One place for the marks, so that Delete is the same shape on every page. A
+// second copy of a bin somewhere else is how two pages end up disagreeing about
+// what a bin means.
+
+const ICONS = {
+  edit: '<path d="M4 20h4l10-10a2.1 2.1 0 0 0-3-3L5 17z"/><path d="M13.5 6.5 17.5 10.5"/>',
+  save: '<path d="M5 4h11l3 3v13H5z"/><path d="M9 4v5h6V4"/><path d="M8 20v-5h8v5"/>',
+  del: '<path d="M4 7h16"/><path d="M9.5 7V5h5v2"/><path d="M6.5 7l1 13h9l1-13"/><path d="M10.5 11v5M13.5 11v5"/>',
+  copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5h10"/>',
+  add: '<path d="M12 5v14M5 12h14"/>',
+  up: '<path d="m6 14 6-6 6 6"/>',
+  down: '<path d="m6 10 6 6 6-6"/>',
+  print: '<path d="M7 9V4h10v5"/><rect x="4" y="9" width="16" height="7" rx="2"/><path d="M7 14h10v6H7z"/>',
+  eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>',
+  link: '<path d="M10 13a4 4 0 0 0 5.7.4l2.6-2.6a4 4 0 1 0-5.7-5.7L11 6.7"/><path d="M14 11a4 4 0 0 0-5.7-.4L5.7 13.2a4 4 0 1 0 5.7 5.7l1.6-1.6"/>',
+};
+
+/**
+ * One icon button.
+ *
+ * `tip` is both the tooltip and the accessible name, so there is one string to
+ * write and no way for the two to fall out of step.
+ */
+function iconBtn(icon, tip, attrs = '', kind = '') {
+  return `<button type="button" class="ibtn${kind ? ' ' + kind : ''}" ` +
+    `data-tip="${esc(tip)}" aria-label="${esc(tip)}" title="${esc(tip)}" ${attrs}>` +
+    `<svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[icon] || ''}</svg></button>`;
+}
+
+/** The legend that goes under a table of them. */
+function iconKey(pairs) {
+  return '<div class="ibtn-key">' + pairs.map(([icon, label]) =>
+    `<span><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[icon] || ''}</svg>` +
+    `${esc(label)}</span>`).join('') + '</div>';
+}
+
+/**
+ * Press and hold to see what a button does.
+ *
+ * On a touchscreen :hover either never fires or fires and then sticks on after
+ * the finger has gone, so the tooltip would either never appear or never leave.
+ * A long press is the gesture people already use to interrogate something they
+ * are not sure about.
+ *
+ * The press must not also activate the button, so a press that has opened a
+ * tooltip swallows the click that follows it.
+ */
+function wireTips() {
+  let timer = null;
+  let opened = null;
+
+  const close = () => {
+    if (opened) opened.classList.remove('tip-open');
+    opened = null;
+  };
+
+  document.addEventListener('pointerdown', (e) => {
+    const btn = e.target.closest?.('.ibtn');
+    if (!btn || e.pointerType === 'mouse') return;
+    timer = setTimeout(() => {
+      close();
+      btn.classList.add('tip-open');
+      opened = btn;
+      timer = null;
+    }, 450);
+  }, { passive: true });
+
+  const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } };
+  document.addEventListener('pointerup', cancel, { passive: true });
+  document.addEventListener('pointercancel', cancel, { passive: true });
+  document.addEventListener('pointermove', cancel, { passive: true });
+
+  // A press that opened a tooltip has answered the question; it must not also
+  // delete the row.
+  document.addEventListener('click', (e) => {
+    if (opened && e.target.closest?.('.ibtn') === opened) {
+      e.stopPropagation();
+      e.preventDefault();
+      close();
+    } else if (opened) {
+      close();
+    }
+  }, true);
+
+  document.addEventListener('scroll', close, { passive: true, capture: true });
 }
 
 // ---- Receipt viewer -------------------------------------------------------
@@ -3344,7 +3559,7 @@ async function showReceipt(id) {
   try {
     data = await api(`/receipts/${id}`);
   } catch (err) {
-    return alert(err.message);
+    return toast(err.message, 'error');
   }
   const { order, lines, payments } = data;
 
@@ -3607,12 +3822,12 @@ document.addEventListener('click', async (e) => {
     );
   }
 
-  if (t.dataset.delShift && confirm('Delete this shift? The hours go with it.')) {
+  if (t.dataset.delShift && await confirmDialog('Delete this shift? The hours go with it.')) {
     await api('/timesheets/' + t.dataset.delShift, { method: 'DELETE' });
     return loadTimesheets();
   }
 
-  if (t.dataset.delProduct && confirm('Delete this product?')) {
+  if (t.dataset.delProduct && await confirmDialog('Delete this product?')) {
     await api(`/products/${t.dataset.delProduct}`, { method: 'DELETE' });
     return loadProducts();
   }
@@ -3621,7 +3836,7 @@ document.addEventListener('click', async (e) => {
   // prompt says so, because this is the button a manager reaches for first.
   if (
     t.dataset.delStaff &&
-    confirm(
+    await confirmDialog(
       'Delete this staff member?\n\n' +
         'Their PIN stops working immediately. Sales they have already rung up ' +
         'keep their name. To stop them signing on but keep the record tidy, ' +
@@ -3633,13 +3848,20 @@ document.addEventListener('click', async (e) => {
   }
 
   if (t.dataset.pause) {
-    const reason = prompt('Reason for pausing (shown to the office):', 'Non-payment');
-    if (reason === null) return;
-    await api(`/admin/offices/${t.dataset.pause}/status`, {
-      method: 'POST',
-      body: JSON.stringify({ status: 'paused', reason }),
-    });
-    return loadOffices();
+    const office = t.dataset.pause;
+    return modal(
+      'Pause this office',
+      [{ name: 'reason', label: 'Reason (shown to the office)', value: 'Non-payment' }],
+      async (d) => {
+        const reason = String(d.reason || '').trim();
+        if (!reason) throw new Error('Say why, so the office can be told.');
+        await api(`/admin/offices/${office}/status`, {
+          method: 'POST',
+          body: JSON.stringify({ status: 'paused', reason }),
+        });
+        await loadOffices();
+      }
+    );
   }
   if (t.dataset.resume) {
     await api(`/admin/offices/${t.dataset.resume}/status`, {
@@ -3655,7 +3877,7 @@ document.addEventListener('click', async (e) => {
 
   if (t.id === 'sweep') {
     const r = await api('/admin/invoices/sweep-overdue', { method: 'POST' });
-    alert(`${r.marked_overdue} invoice(s) flagged overdue.`);
+    toast(`${r.marked_overdue} invoice(s) flagged overdue.`);
     return loadBilling();
   }
 
@@ -3929,24 +4151,28 @@ document.addEventListener('click', async (e) => {
     });
   }
   if (t.dataset.pwUser) {
-    const pw = prompt('New password (at least 6 characters)');
-    if (!pw) return;
-    try {
-      await api(`/users/${t.dataset.pwUser}/password`, {
-        method: 'POST',
-        body: JSON.stringify({ password: pw }),
-      });
-      alert('Password reset.');
-    } catch (err) {
-      alert(err.message);
-    }
-    return;
+    const who = t.dataset.pwUser;
+    return modal(
+      'Set a new password',
+      [{ name: 'password', label: 'New password', type: 'password' }],
+      async (d) => {
+        const pw = String(d.password || '');
+        if (pw.length < 6) throw new Error('Use at least six characters.');
+        await api(`/users/${who}/password`, {
+          method: 'POST',
+          body: JSON.stringify({ password: pw }),
+        });
+        // The modal reports its own failures, so a thrown error from api()
+        // lands in the dialog rather than behind it.
+        toast('Password reset.');
+      }
+    );
   }
-  if (t.dataset.delUser && confirm('Delete this user?')) {
+  if (t.dataset.delUser && await confirmDialog('Delete this user?')) {
     try {
       await api(`/users/${t.dataset.delUser}`, { method: 'DELETE' });
     } catch (err) {
-      alert(err.message);
+      toast(err.message, 'error');
     }
     return loadUsers();
   }
@@ -3998,7 +4224,7 @@ document.addEventListener('click', async (e) => {
     });
   }
 
-  if (t.dataset.delCustomer && confirm('Delete this customer?')) {
+  if (t.dataset.delCustomer && await confirmDialog('Delete this customer?')) {
     await api(`/customers/${t.dataset.delCustomer}`, { method: 'DELETE' });
     return loadCustomers();
   }
@@ -4375,7 +4601,7 @@ async function rdUploadLogo(event) {
     rdFillForm();
     rdRenderPreview();
   } catch (err) {
-    alert(err.message);
+    toast(err.message, 'error');
   } finally {
     // Let the same file be picked again after a failure.
     event.target.value = '';
@@ -4398,7 +4624,7 @@ async function rdSave() {
     button.textContent = 'Saved ✓';
     setTimeout(() => { button.textContent = 'Save receipt'; }, 1600);
   } catch (err) {
-    alert(err.message);
+    toast(err.message, 'error');
     button.textContent = 'Save receipt';
   } finally {
     button.disabled = false;
@@ -4821,7 +5047,7 @@ document.addEventListener('click', async (e) => {
     }
   }
   const del = e.target.dataset?.promoDel;
-  if (del && confirm('Delete this promotion?')) {
+  if (del && await confirmDialog('Delete this promotion?')) {
     await api(`/promotions/${del}`, { method: 'DELETE' });
     loadPromotions();
   }
@@ -4925,7 +5151,7 @@ document.addEventListener('click', async (e) => {
   }
 
   const voidId = e.target.dataset?.giftVoid;
-  if (voidId && confirm('Void this gift card? Its balance will no longer be redeemable.')) {
+  if (voidId && await confirmDialog('Void this gift card? Its balance will no longer be redeemable.')) {
     await api(`/gift-cards/${voidId}/void`, { method: 'PUT' });
     loadGiftCards();
   }
@@ -5673,7 +5899,7 @@ document.addEventListener('click', async (e) => {
         if (note) note.textContent = '';
       }, 1500);
     } catch (err) {
-      alert(String(err && err.message ? err.message : err));
+      toast(String(err && err.message ? err.message : err), 'error');
     } finally {
       e.target.disabled = false;
     }
@@ -5682,7 +5908,7 @@ document.addEventListener('click', async (e) => {
 
   // ---- Back to the venue's look ----
   if (e.target.id === 'wal-design-reset') {
-    if (!confirm(
+    if (!await confirmDialog(
       'Put this card back to the venue’s own look?\n\n'
       + 'Its name, colours, artwork and words are cleared, and it follows the '
       + 'Programme tab again from now on.'
@@ -5701,7 +5927,7 @@ document.addEventListener('click', async (e) => {
       renderWalletKinds();
       renderWalletDesignEditor();
     } catch (err) {
-      alert(String(err && err.message ? err.message : err));
+      toast(String(err && err.message ? err.message : err), 'error');
     }
   }
 });
@@ -5738,7 +5964,7 @@ document.addEventListener('change', async (e) => {
       walletDesignEdit('strip_url', await uploadWalletArt(blobs));
       renderWalletDesignEditor();
     } catch (err) {
-      alert(String(err && err.message ? err.message : err));
+      toast(String(err && err.message ? err.message : err), 'error');
     }
     return;
   }
@@ -5759,7 +5985,7 @@ document.addEventListener('change', async (e) => {
     try {
       walletSetArt(field.dataset.artfield, await uploadWalletArt(blobs));
     } catch (err) {
-      alert(String(err && err.message ? err.message : err));
+      toast(String(err && err.message ? err.message : err), 'error');
     }
   }
 });
@@ -6065,7 +6291,7 @@ document.addEventListener('click', async (e) => {
       );
       walletShowCode(name || subjectId, out.scan_url, out.card_number);
     } catch (err) {
-      alert(String(err && err.message ? err.message : err));
+      toast(String(err && err.message ? err.message : err), 'error');
     } finally {
       e.target.disabled = false;
     }
@@ -6370,7 +6596,7 @@ document.addEventListener('click', async (e) => {
     try {
       await openRowSlip(what, id, rest.join('|'));
     } catch (err) {
-      alert(String(err && err.message ? err.message : err));
+      toast(String(err && err.message ? err.message : err), 'error');
     } finally {
       slipBtn.disabled = false;
     }
@@ -6384,7 +6610,7 @@ document.addEventListener('click', async (e) => {
     try {
       await openRowPass(kind, id, rest.join('|'));
     } catch (err) {
-      alert(String(err && err.message ? err.message : err));
+      toast(String(err && err.message ? err.message : err), 'error');
     } finally {
       passBtn.disabled = false;
     }
@@ -6398,7 +6624,7 @@ document.addEventListener('click', async (e) => {
     try {
       await openRowPrint(kind, id, rest.join('|'));
     } catch (err) {
-      alert(String(err && err.message ? err.message : err));
+      toast(String(err && err.message ? err.message : err), 'error');
     } finally {
       printBtn.disabled = false;
     }
@@ -6550,17 +6776,23 @@ document.addEventListener('click', async (e) => {
   if (voidId) {
     // Spelled out, because this is the one destructive thing on the page and
     // what it does to the person holding the card is not obvious from "cancel".
-    if (!confirm(
+    if (!await confirmDialog(
       'Cancel this card?\n\n'
       + 'It stops working at the till immediately and is detached from whoever '
       + 'held it. The number is never reissued — the card itself is still out '
       + 'there.'
     )) return;
-    const reason = prompt('Why? (kept on the record)', 'Lost') || 'Cancelled';
-    await api('/cards/issues/' + voidId + '/void', {
-      method: 'POST', body: JSON.stringify({ reason }),
-    });
-    loadCards();
+    return modal(
+      'Void this card',
+      [{ name: 'reason', label: 'Why? (kept on the record)', value: 'Lost' }],
+      async (d) => {
+        await api('/cards/issues/' + voidId + '/void', {
+          method: 'POST',
+          body: JSON.stringify({ reason: String(d.reason || '').trim() || 'Cancelled' }),
+        });
+        await loadCards();
+      }
+    );
   }
 });
 
@@ -6643,7 +6875,7 @@ document.addEventListener('click', async (e) => {
 
   const forget = e.target.dataset && e.target.dataset.deviceForget;
   if (forget) {
-    if (!confirm(
+    if (!await confirmDialog(
       'Forget this machine?\n\n'
       + 'It disappears from this list. If it is still running it will register '
       + 'again the next time it starts — this is for a screen that has been '
@@ -6734,7 +6966,7 @@ async function idleUploadImage(event) {
     idleState.idle_image_url = url;
     renderIdlePreview();
   } catch (err) {
-    alert(err.message);
+    toast(err.message, 'error');
   } finally {
     // Let the same file be picked again after a failure.
     event.target.value = '';
@@ -6770,7 +7002,7 @@ document.addEventListener('click', async (e) => {
     button.textContent = 'Saved ✓';
     setTimeout(() => { button.textContent = 'Save settings'; }, 1500);
   } catch (err) {
-    alert(err.message);
+    toast(err.message, 'error');
   } finally {
     button.disabled = false;
   }
@@ -6868,7 +7100,7 @@ document.addEventListener('click', async (e) => {
   }
 
   if (e.target.id === 'denom-reset') {
-    if (!confirm('Drop this office\'s note keys and go back to the Vesopa specimen notes?')) {
+    if (!await confirmDialog('Drop this office\'s note keys and go back to the Vesopa specimen notes?')) {
       return;
     }
     $('denom-error').textContent = '';
@@ -7078,7 +7310,7 @@ document.addEventListener('click', async (e) => {
     }
   }
   const del = e.target.dataset?.ruleDel;
-  if (del && confirm('Delete this rule?')) {
+  if (del && await confirmDialog('Delete this rule?')) {
     await api(`/rules/${del}`, { method: 'DELETE' });
     loadRules();
   }
@@ -7147,7 +7379,7 @@ document.addEventListener('click', async (e) => {
   }
 
   const del = e.target.dataset?.templateDel;
-  if (del && confirm('Delete this template? Offices already created from it are unaffected.')) {
+  if (del && await confirmDialog('Delete this template? Offices already created from it are unaffected.')) {
     await api(`/admin/templates/${del}`, { method: 'DELETE' });
     loadTemplates();
   }
@@ -7230,7 +7462,7 @@ document.addEventListener('click', async (e) => {
           replace: ticked(data.replace),
         }),
       });
-      alert(`Applied: ${Object.entries(res.applied || {})
+      toast(`Applied: ${Object.entries(res.applied || {})
         .map(([k, v]) => `${v} ${k}`).join(', ')}`);
       loadSubscriptions();
     });
@@ -7252,7 +7484,7 @@ document.addEventListener('click', async (e) => {
         method: 'POST',
         body: JSON.stringify({ scope: data.scope, confirm: data.confirm }),
       });
-      alert(`Removed ${res.removed.orders} sales.`);
+      toast(`Removed ${res.removed.orders} sales.`);
       loadSubscriptions();
     });
   }
@@ -7708,7 +7940,7 @@ async function kdsUploadLogo(event) {
     kdsBranding.logoUrl = url;
     kdsFillBranding();
   } catch (err) {
-    alert(err.message);
+    toast(err.message, 'error');
   } finally {
     // Cleared so choosing the same file twice in a row still fires a change.
     event.target.value = '';
@@ -7741,7 +7973,7 @@ async function kdsSaveBranding() {
     button.textContent = 'Saved ✓';
     setTimeout(() => { button.textContent = 'Save branding'; }, 1500);
   } catch (err) {
-    alert(err.message);
+    toast(err.message, 'error');
   } finally {
     button.disabled = false;
   }
@@ -7778,7 +8010,7 @@ document.addEventListener('click', async (e) => {
       button.textContent = 'Saved ✓';
       setTimeout(() => { button.textContent = 'Save delivery'; }, 1500);
     } catch (err) {
-      alert(err.message);
+      toast(err.message, 'error');
     } finally {
       button.disabled = false;
     }
@@ -7798,7 +8030,7 @@ document.addEventListener('click', async (e) => {
     if (!user) return;
     // Named in the prompt, because these are short and similar and deleting
     // the wrong one blinds a kitchen mid-service.
-    if (!confirm('Delete the kitchen login "' + user.username + '"? ' +
+    if (!await confirmDialog('Delete the kitchen login "' + user.username + '"? ' +
         'Any screen signed in with it stops working.')) return;
     await api('/kitchen/users/' + user.id, { method: 'DELETE' });
     return loadKitchen();
@@ -7815,7 +8047,7 @@ document.addEventListener('click', async (e) => {
     const id = e.target.dataset.kdsScreenDel;
     const screen = kdsScreens.find((s) => String(s.id) === id);
     if (!screen) return;
-    if (!confirm('Delete the screen "' + screen.name + '"? Any machine set ' +
+    if (!await confirmDialog('Delete the screen "' + screen.name + '"? Any machine set ' +
         'to it falls back to showing every station.')) return;
     await api('/kitchen/screens/' + screen.id, { method: 'DELETE' });
     return loadKitchen();
@@ -7831,7 +8063,7 @@ document.addEventListener('click', async (e) => {
  * tick box on the *second* one, which is exactly where a three-prompt chain
  * puts it — makes every later `prompt()` return null instantly. The function
  * then returned at its first `if (x === null) return;` and did nothing at all,
- * and the `alert()` that would have explained was suppressed by the same
+ * and the `toast()` that would have explained was suppressed by the same
  * setting. Silent, permanent, and un-recoverable without clearing site data.
  *
  * The username is settable only on create. It is what somebody types into a
@@ -8065,7 +8297,7 @@ async function importTemplate() {
     // beat the click in some browsers and download nothing at all.
     setTimeout(() => URL.revokeObjectURL(url), 0);
   } catch (e) {
-    alert(e.message || 'The template could not be downloaded.');
+    toast(e.message || 'The template could not be downloaded.', 'error');
   } finally {
     button.disabled = false;
   }
@@ -8116,7 +8348,7 @@ async function importRun(commit) {
       apply.disabled = body.blocked;
     }
   } catch (e) {
-    alert(e.message);
+    toast(e.message, 'error');
     apply.disabled = true;
   } finally {
     check.disabled = !input.files.length;
@@ -8537,7 +8769,7 @@ async function rrExport() {
     });
     if (file) saveBlob(file.blob, file.filename);
   } catch (e) {
-    alert(e.message);
+    toast(e.message, 'error');
   } finally {
     button.textContent = label;
     button.disabled = false;
@@ -8758,7 +8990,7 @@ async function rsAction(e, rows) {
       );
       if (file) saveBlob(file.blob, file.filename);
     } catch (err) {
-      alert(err.message);
+      toast(err.message, 'error');
     } finally {
       button.disabled = false;
     }
@@ -8772,21 +9004,22 @@ async function rsAction(e, rows) {
     // office got the test.
     const schedule = row(data.rsSend);
     const to = schedule ? schedule.recipients : 'its recipients';
-    if (!confirm(`Email this report now to ${to}?`)) return;
+    if (!await confirmDialog(`Email this report now to ${to}?`)) return;
 
     button.disabled = true;
     try {
       const outcome = await api(`/reports/schedules/${data.rsSend}/run`, {
         method: 'POST',
       });
-      alert(
+      toast(
         outcome.status === 'sent'
           ? outcome.detail
-          : `Not sent: ${outcome.detail || outcome.status}`
+          : `Not sent: ${outcome.detail || outcome.status}`,
+        outcome.status === 'sent' ? 'ok' : 'error'
       );
       render();
     } catch (err) {
-      alert(err.message);
+      toast(err.message, 'error');
     } finally {
       button.disabled = false;
     }
@@ -8795,7 +9028,7 @@ async function rsAction(e, rows) {
 
   if (data.rsDelete) {
     const schedule = row(data.rsDelete);
-    if (!confirm(`Delete "${schedule.name}"? It will stop sending.`)) return;
+    if (!await confirmDialog(`Delete "${schedule.name}"? It will stop sending.`)) return;
     await api(`/reports/schedules/${data.rsDelete}`, { method: 'DELETE' });
     render();
   }

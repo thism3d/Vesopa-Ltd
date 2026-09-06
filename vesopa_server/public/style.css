@@ -949,7 +949,7 @@ tr.new { animation: flash 1.6s ease-out; }
      be pushed off the end of the bar. */
   .topbar-logo {
     width: 100%;
-    max-width: 160px;
+    max-width: 220px;
     height: auto;
     min-width: 0;
     margin-right: auto;
@@ -4537,6 +4537,19 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
 
 /* The card itself. `position: relative` is what every element is placed
    against, and the shadow is what makes it read as a piece of paper. */
+/* THE CANVAS IS PAPER, NOT A PANEL.
+ *
+ * It inherited `color` from the application, so in Night mode every element
+ * that had not been given a colour of its own was drawn in near-white — on a
+ * white card. The card looked blank and nothing was wrong with the data.
+ *
+ * It does not follow the theme, and it should not: this is a preview of
+ * something that is about to come out of a printer, and a preview that changes
+ * with the room the manager is sitting in is not a preview. The paper colour is
+ * the design's own — the venue can set it to anything, including black — and
+ * the ink defaults to something that survives being printed.
+ *
+ * The chrome around it follows the theme as usual. */
 .dc-page {
   position: relative;
   overflow: hidden;
@@ -4546,6 +4559,39 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
   touch-action: none;          /* or a drag scrolls the page on a tablet */
   user-select: none;
   cursor: default;
+  /* Explicit, so nothing inside can inherit a colour from the page around it. */
+  color: #14161A;
+  color-scheme: light;
+}
+
+/* In Night mode a white card on a near-black panel needs an edge and a lighter
+   shadow, or it reads as a hole cut in the page. The card itself does not
+   change — it is paper — but what it sits on does. */
+:root[data-theme="dark"] .dc-page,
+:root[data-theme="dark"] .dc-stage .dc-page {
+  box-shadow: 0 12px 34px rgba(0, 0, 0, .55);
+  border-color: rgba(255, 255, 255, .22);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .dc-page {
+    box-shadow: 0 12px 34px rgba(0, 0, 0, .55);
+    border-color: rgba(255, 255, 255, .22);
+  }
+}
+.dc-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* What it is, said next to it, so nobody wonders why it stayed white when they
+   turned the lights off. */
+.dc-paper-note {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+  max-width: 100%;
 }
 
 .dc-el { position: absolute; cursor: move; }
@@ -4861,12 +4907,19 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
 /* ---------------------------------------------------------------------------
    Folding the rail
    ---------------------------------------------------------------------------
-   Asked for on bigger screens: a way to give the page its 236px back without
-   losing the menu. Folded, the rail is 68px of icons — every view is still one
-   press away, which a hidden rail cannot claim.
-   --------------------------------------------------------------------------- */
-.brand-mark { display: none; width: 34px; height: 34px; border-radius: 9px; }
+   Collapsed means gone, not narrow.
 
+   The first version of this kept a 68px strip of icons, on the reasoning that
+   every view stayed one press away. That was the wrong trade: the point of
+   collapsing is to give the page its width back, and a strip of unlabelled
+   glyphs charges 68px for a menu you still have to decode. Hidden entirely, the
+   page gets all of it, and one press on the corner brings the whole rail back
+   with its words on.
+
+   It slides rather than blinks. A panel that appears instantly beside what you
+   were reading is easy to miss; one that arrives from the edge tells you where
+   it came from and where it will go.
+   --------------------------------------------------------------------------- */
 .rail-fold {
   display: none;                 /* desktop only; see the media query below */
   align-items: center;
@@ -4885,76 +4938,63 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
   width: 18px; height: 18px; flex: 0 0 auto;
   stroke: currentColor; fill: none; stroke-width: 2;
   stroke-linecap: round; stroke-linejoin: round;
-  transition: transform .18s ease;
+}
+
+/* The button that brings it back. Fixed in the opposite corner from the theme
+   control and built the same way, so the two corners of the chrome match. */
+.rail-open {
+  position: fixed;
+  top: 14px;
+  left: 16px;
+  z-index: 70;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--text);
+  cursor: pointer;
+  display: none;
+  place-items: center;
+  box-shadow: var(--shadow);
+  opacity: 0;
+  transform: scale(.8);
+  transition: opacity .18s ease .12s, transform .18s cubic-bezier(.2,.9,.3,1) .12s,
+              border-color .15s ease;
+}
+.rail-open:hover { border-color: var(--brand); }
+.rail-open svg {
+  width: 19px; height: 19px;
+  stroke: currentColor; fill: none; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
 }
 
 @media (min-width: 961px) {
   .rail-fold { display: flex; }
 
-  #app.rail-folded .rail { width: 68px; }
-  #app.rail-folded .rail nav { padding: 0 10px; }
-
-  /* The wordmark cannot be read at 68px; the mark can. */
-  #app.rail-folded .brand-logo { display: none; }
-  #app.rail-folded .brand-mark { display: block; }
-  #app.rail-folded .rail .logo { padding: 0 0 18px; display: grid; place-items: center; }
-
-  /* Section headings are words, and there is no room for words. The rule that
-     replaces them keeps the grouping visible, which is the part that was doing
-     the work. */
-  #app.rail-folded .nav-group {
-    padding: 10px 6px 4px;
-    justify-content: center;
-    font-size: 0;
+  /* The rail is a flex child of #app, so its width is what gives the page its
+     room back. Animating width and transform together is what makes it look
+     like it is leaving rather than being deleted. */
+  .rail {
+    transition: width .26s cubic-bezier(.4, 0, .2, 1),
+                transform .26s cubic-bezier(.4, 0, .2, 1);
   }
-  #app.rail-folded .nav-group::after {
-    content: "";
-    display: block;
-    width: 22px;
-    height: 1px;
-    background: var(--rail-line);
-  }
-  #app.rail-folded .nav-group .caret { display: none; }
-
-  #app.rail-folded .nav {
-    justify-content: center;
-    padding: 11px 0;
-    position: relative;
-  }
-  #app.rail-folded .nav .nav-word { display: none; }
-
-  /* The name, on hover, because an icon-only rail that cannot be read is a
-     puzzle rather than a menu. */
-  #app.rail-folded .nav::after {
-    content: attr(data-label);
-    position: absolute;
-    left: calc(100% + 10px);
-    top: 50%;
-    transform: translateY(-50%);
-    background: var(--rail-active);
-    color: var(--rail);
-    padding: 6px 10px;
-    border-radius: 7px;
-    font-size: 12.5px;
-    white-space: nowrap;
-    opacity: 0;
+  #app.rail-folded .rail {
+    width: 0;
+    transform: translateX(-100%);
+    /* Nothing inside may be reached or read while it is away. */
     pointer-events: none;
-    transition: opacity .12s ease;
-    z-index: 60;
+    visibility: hidden;
+    border-right: 0;
   }
-  #app.rail-folded .nav:hover::after { opacity: 1; }
+  #app.rail-folded .rail-open { display: grid; opacity: 1; transform: none; }
 
-  #app.rail-folded .rail-fold { justify-content: center; margin: 10px 8px 0; }
-  #app.rail-folded .rail-fold-word { display: none; }
-  #app.rail-folded .rail-fold-icon { transform: rotate(180deg); }
+  /* The theme control keeps its corner; the page simply has more of the middle. */
+  #app.rail-folded main { padding-left: 68px; }
+}
 
-  #app.rail-folded .rail-foot {
-    padding: 14px 8px 0;
-    flex-direction: column;
-    gap: 10px;
-  }
-  #app.rail-folded .rail-foot #live-text,
-  #app.rail-folded .rail-foot .link { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .rail, .rail-open { transition: none; }
 }
 
 /* ---------------------------------------------------------------------------
@@ -5156,4 +5196,224 @@ input[type="time"]:disabled { opacity: .55; cursor: not-allowed; }
 /* A select inside a row that sizes itself must not be forced to 100%. */
 .row select, .seg select, .dc-panel select, .di-hour-row input[type="time"] {
   width: 100%;
+}
+
+
+/* The sign-in page's copy of the theme control. Same component, and it has to
+   clear the card rather than sit on it on a narrow screen. */
+#theme-corner-login { z-index: 80; }
+@media (max-width: 640px) {
+  #theme-corner-login { top: 10px; right: 10px; }
+  #theme-corner-login .theme-btn { background: var(--card); border-color: var(--line); }
+}
+
+
+/* ===========================================================================
+   ICON BUTTONS
+   ===========================================================================
+   A row of actions written out in words — Save, Remove, Duplicate — is three
+   buttons' worth of text in a column that has to hold a dish name as well, and
+   on a tablet it pushes the whole table sideways.
+
+   HOW ANYBODY KNOWS WHAT THEY DO
+
+   Three ways, because no single one covers everybody:
+
+     * hovering, on a machine with a pointer;
+     * pressing and holding, on a touchscreen, where :hover either never fires
+       or sticks on after the finger has gone;
+     * and a legend under the table, which needs no discovery at all and is the
+       only one that works for somebody who has not yet touched anything.
+
+   The name is on the button as `data-tip`, and the same string is the
+   aria-label, so there is one place to write it and no way for the two to
+   disagree.
+   --------------------------------------------------------------------------- */
+.ibtn {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--muted);
+  cursor: pointer;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  vertical-align: middle;
+  transition: color .14s ease, border-color .14s ease, background .14s ease;
+}
+.ibtn + .ibtn { margin-left: 6px; }
+.ibtn svg {
+  width: 17px; height: 17px;
+  stroke: currentColor; fill: none; stroke-width: 1.9;
+  stroke-linecap: round; stroke-linejoin: round;
+  pointer-events: none;                 /* so the click target is the button */
+}
+.ibtn:hover { color: var(--text); border-color: var(--brand); background: var(--hover); }
+.ibtn:active { transform: scale(.93); }
+.ibtn:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.ibtn[disabled] { opacity: .4; cursor: not-allowed; }
+
+/* Destructive actions are the one kind worth colouring, and only on approach —
+   a row of red buttons reads as a row of errors. */
+.ibtn.danger:hover { color: #fff; background: var(--red); border-color: var(--red); }
+.ibtn.go:hover { color: var(--on-brand); background: var(--brand); border-color: var(--brand); }
+
+/* The name, on hover or on a long press. Drawn from the attribute, so there is
+   no second element to keep in step and nothing to clean up. */
+.ibtn::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 7px);
+  left: 50%;
+  transform: translateX(-50%) translateY(3px);
+  background: var(--text);
+  color: var(--card);
+  padding: 5px 9px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .13s ease, transform .13s ease;
+  z-index: 60;
+}
+.ibtn:hover::after,
+.ibtn:focus-visible::after,
+.ibtn.tip-open::after { opacity: 1; transform: translateX(-50%); }
+
+/* A tooltip on the last button in a row would otherwise be cut off by the
+   edge of the card it sits in. */
+.ibtn:last-child::after { left: auto; right: 0; transform: translateY(3px); }
+.ibtn:last-child:hover::after,
+.ibtn:last-child:focus-visible::after,
+.ibtn:last-child.tip-open::after { transform: none; }
+
+@media (pointer: coarse) {
+  /* Nothing hovers on a touchscreen, and what :hover does there is stick on
+     after the finger has gone. Long press opens it; see wireTips in app.js. */
+  .ibtn:hover::after { opacity: 0; }
+  .ibtn.tip-open::after { opacity: 1; }
+  .ibtn { width: 40px; height: 40px; }
+}
+
+/* The legend. Under the table it belongs to, so somebody who has not touched
+   anything yet can still read what the column of buttons is for. */
+.ibtn-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.ibtn-key span { display: inline-flex; align-items: center; gap: 6px; }
+.ibtn-key svg {
+  width: 15px; height: 15px;
+  stroke: currentColor; fill: none; stroke-width: 1.9;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ibtn, .ibtn::after { transition: none; }
+}
+
+
+/* ===========================================================================
+   TAPS THAT LAND, AND A PAGE THAT SAYS IT IS WORKING
+   =========================================================================== */
+
+/* WHY THE RAIL FELT SLOW ON AN IPAD
+ *
+ * Safari holds a tap for about 300ms on any element it thinks might be
+ * double-tapped to zoom, and it decides that from the layout rather than from
+ * the element. A nav button in a fixed column qualifies. The press had already
+ * happened and the browser was waiting to find out whether a second one was
+ * coming — which reads exactly as "sometimes it does not respond".
+ *
+ * `touch-action: manipulation` says this element is never double-tapped, and
+ * the delay goes. The tap highlight goes with it because a 300ms grey flash
+ * arriving after the view has changed looks like a second, late press.
+ */
+.nav,
+.nav-group,
+.btn,
+.ibtn,
+.theme-btn,
+.rail-open,
+.rail-fold,
+.rail-toggle,
+.seg-btn,
+.room-tab,
+button {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* A pressed state that is instant, so the first tap is acknowledged before any
+   data has been asked for. Waiting for the view to load before showing that
+   anything happened is what makes a fast page feel slow. */
+.nav:active { background: var(--rail-hover); }
+.nav.is-going { background: var(--brand); color: var(--on-brand); }
+
+/* ---------------------------------------------------------------------------
+   The progress bar
+   ---------------------------------------------------------------------------
+   A thin line across the top, the way a browser or YouTube does it. It creeps
+   towards the end while the request is out and finishes when it lands, because
+   a bar that reports a real percentage cannot: the server has not said how much
+   there is.
+   --------------------------------------------------------------------------- */
+#loadbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 3px;
+  width: 0;
+  z-index: 100;
+  background: linear-gradient(90deg, var(--brand), var(--brand-deep));
+  box-shadow: 0 0 8px var(--brand);
+  opacity: 0;
+  transition: width .2s ease, opacity .25s ease;
+  pointer-events: none;
+}
+#loadbar.on { opacity: 1; }
+
+/* ---------------------------------------------------------------------------
+   Skeletons
+   ---------------------------------------------------------------------------
+   The shape of what is coming, in the place it will come. A spinner in the
+   middle of an empty page says "wait"; this says "cards, here, shortly" — and
+   when the real thing lands nothing jumps, because it is already the right
+   size.
+   --------------------------------------------------------------------------- */
+.sk { display: grid; gap: 14px; }
+.sk-line, .sk-card, .sk-stat {
+  border-radius: 10px;
+  background: linear-gradient(90deg,
+    var(--track) 0%, var(--hover) 40%, var(--track) 80%);
+  background-size: 300% 100%;
+  animation: sk-sweep 1.25s ease-in-out infinite;
+}
+.sk-line { height: 13px; }
+.sk-line.w40 { width: 40%; }
+.sk-line.w70 { width: 70%; }
+.sk-card { height: 128px; border-radius: var(--radius); }
+.sk-stat { height: 92px; border-radius: var(--radius); }
+.sk-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 16px; }
+
+@keyframes sk-sweep {
+  from { background-position: 130% 0; }
+  to   { background-position: -30% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sk-line, .sk-card, .sk-stat { animation: none; }
+  #loadbar { transition: opacity .25s ease; }
 }
