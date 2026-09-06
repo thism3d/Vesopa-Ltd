@@ -367,6 +367,32 @@ function landingPage() {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Vesopa menus</title>
+<script>
+(function(){
+  "use strict";
+  // BACK TO WHERE YOU WERE.
+  //
+  // Somebody scans a code, reads a menu, orders, and then presses home — and
+  // lands here, on a page that knows nothing about where they are sitting. The
+  // menu page notes which venue it showed, so this can put them back into it,
+  // and keeps doing so until a different code is scanned or a different address
+  // is typed.
+  //
+  // Decided on the phone and not by the server, because the server has no idea
+  // who is asking: this address is one page shared by every venue.
+  //
+  // In the head, before the body has painted, so nobody about to be sent onward
+  // reads a flash of "scan the code on your table" first — and so a browser
+  // with no script renders the page below exactly as it always did.
+  //
+  // Replaced rather than pushed, so the back button does not bounce between
+  // this page and the menu.
+  try {
+    var slug = window.localStorage.getItem('vesopa.dinein.lastvenue');
+    if (slug && /^[a-z0-9][a-z0-9-]{1,63}$/.test(slug)) location.replace('/' + slug);
+  } catch (e) { /* a browser that will not answer keeps the page below */ }
+})();
+</script>
 <style>${STYLE}
 .plain{max-width:520px;margin:0 auto;padding:64px 24px;text-align:center}
 .plain h1{font-size:24px;margin:0 0 10px}
@@ -1315,6 +1341,79 @@ section{padding-left:18px;padding-right:18px}
 }
 .item.hid,.pcard.hid,section.hid,.promos.hid{display:none}
 
+/* ---- The order page ------------------------------------------------------ */
+
+/* The way back. Top left, where a back control belongs, and naming the place
+   it returns to rather than saying "back" — this page is often the first thing
+   somebody sees after scanning, so "back" would mean nothing to them. */
+.tk-back{
+  display:inline-flex;align-items:center;gap:6px;
+  margin:0 0 14px;padding:8px 14px 8px 8px;
+  border-radius:999px;background:var(--sunken);color:var(--ink);
+  text-decoration:none;font-size:14px;font-weight:600;
+  max-width:100%;
+}
+.tk-back svg{
+  width:18px;height:18px;flex:0 0 auto;
+  stroke:currentColor;fill:none;stroke-width:2;
+  stroke-linecap:round;stroke-linejoin:round
+}
+.tk-back span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* Offering to tell them. Only ever shown once there is an order to tell them
+   about, and never again once the browser has an answer either way. */
+.tk-notify{
+  display:flex;align-items:center;gap:12px;width:100%;
+  margin:0 0 16px;padding:14px;text-align:left;
+  border:1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  border-radius:var(--radius);
+  background:color-mix(in srgb, var(--accent) 12%, var(--card));
+  color:var(--ink);font:inherit;cursor:pointer
+}
+.tk-notify .ic{
+  flex:0 0 auto;width:38px;height:38px;border-radius:999px;
+  display:grid;place-items:center;background:var(--accent)
+}
+.tk-notify .ic svg{
+  width:20px;height:20px;stroke:var(--on-accent);fill:none;stroke-width:1.9;
+  stroke-linecap:round;stroke-linejoin:round
+}
+.tk-notify .t{display:flex;flex-direction:column;gap:3px;min-width:0}
+.tk-notify .t b{font-size:14.5px}
+.tk-notify .t span{font-size:13px;color:var(--ink-soft);line-height:1.45}
+.tk-notify .go{
+  margin-left:auto;flex:0 0 auto;padding:8px 14px;border-radius:999px;
+  background:var(--accent);color:var(--on-accent);font-size:13.5px;font-weight:700
+}
+
+/* The other rounds this table has in. */
+.tk-others{margin:22px 0 0}
+.tk-others h3{
+  margin:0 0 10px;font-size:13px;font-weight:700;letter-spacing:.04em;
+  text-transform:uppercase;color:var(--ink-soft)
+}
+.tk-other{
+  display:flex;align-items:center;gap:12px;
+  padding:12px 14px;margin-bottom:8px;
+  border:1px solid var(--line);border-radius:var(--radius);
+  background:var(--card);color:var(--ink);text-decoration:none
+}
+.tk-other .n{font-weight:700;font-size:14px;flex:0 0 auto}
+.tk-other .m{
+  flex:1 1 auto;min-width:0;font-size:14px;color:var(--ink-soft);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap
+}
+.tk-other .s{
+  flex:0 0 auto;padding:5px 11px;border-radius:999px;font-size:12.5px;
+  font-weight:700;color:var(--tk);
+  background:color-mix(in srgb, var(--tk) 15%, transparent)
+}
+
+@media (max-width:420px){
+  .tk-notify{flex-wrap:wrap}
+  .tk-notify .go{margin-left:50px}
+}
+
 /* THE BROWSER MUST NOT HELPFULLY SCROLL WHILE SOMEBODY IS TYPING.
  *
  * Chrome anchors the scroll to a node it picks in the visible content and, when
@@ -1614,6 +1713,13 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
       .then(function(res){
         if (!res.ok) return fail(res.body && res.body.error);
         data = res.body;
+
+        // Noted on arrival rather than on ordering: somebody who scans a code
+        // and only reads the menu is still in that venue, and pressing home
+        // should bring them back to it.
+        if (data.venue && data.venue.slug) store(SEEN_KEY, data.venue.slug);
+        else if (SLUG) store(SEEN_KEY, SLUG);
+
         draw();
         // Somebody who arrived without scanning may still be sitting in the
         // room. Fetching the floor now — after the menu is on screen, so it
@@ -2219,6 +2325,16 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
   var TOKEN_KEY = 'vesopa.dinein.token';
   var ACCT_KEY  = 'vesopa.dinein.account';
   var MINE_KEY  = 'vesopa.dinein.orders';
+  /**
+   * The venue this phone was last in.
+   *
+   * Somebody scans a code, reads the menu, orders, and then presses home or
+   * back — and lands on a page that knows nothing about where they are. This
+   * is what lets them be put back where they were, until they scan a different
+   * code or type a different address, which is the only thing that should
+   * change it.
+   */
+  var SEEN_KEY  = 'vesopa.dinein.lastvenue';
 
   /** localStorage that cannot throw. Private mode and locked-down browsers
    *  both make it throw on access, and a menu must not go blank over it. */
@@ -3763,6 +3879,32 @@ function statusPage(publicId) {
   var track = document.getElementById('track');
   var ticker = null;
 
+  // Where this phone keeps things. The same two keys the menu uses, so an
+  // order placed there is an order listed here.
+  var MINE_KEY = 'vesopa.dinein.orders';
+  var SEEN_KEY = 'vesopa.dinein.lastvenue';
+  var ASKED_KEY = 'vesopa.dinein.notify.asked';
+
+  function store(key, value){
+    try {
+      if (value === undefined) return window.localStorage.getItem(key);
+      if (value === null) { window.localStorage.removeItem(key); return null; }
+      window.localStorage.setItem(key, value);
+      return value;
+    } catch (e) { return null; }
+  }
+  function mine(){
+    try { return JSON.parse(store(MINE_KEY) || '[]') || []; } catch (e) { return []; }
+  }
+  function remember(order){
+    var list = mine().filter(function(o){ return o.public_id !== order.public_id; });
+    list.unshift(order);
+    store(MINE_KEY, JSON.stringify(list.slice(0, 20)));
+  }
+
+  /** The status this page last drew, so a change can be noticed. */
+  var lastStatus = null;
+
   function money(minor){ return '£' + (minor/100).toFixed(2); }
   function esc(s){
     return String(s == null ? '' : s)
@@ -3776,8 +3918,48 @@ function statusPage(publicId) {
     tick:  '<svg viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7"/></svg>',
     cross: '<svg viewBox="0 0 24 24"><path d="m7 7 10 10M17 7 7 17"/></svg>',
     clock: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5.2l3.2 2"/></svg>',
-    link:  '<svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;flex:0 0 auto;opacity:.7"><path d="M10 13a4 4 0 0 0 5.7.4l2.6-2.6a4 4 0 1 0-5.7-5.7L11 6.7"/><path d="M14 11a4 4 0 0 0-5.7-.4L5.7 13.2a4 4 0 1 0 5.7 5.7l1.6-1.6"/></svg>'
+    link:  '<svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;flex:0 0 auto;opacity:.7"><path d="M10 13a4 4 0 0 0 5.7.4l2.6-2.6a4 4 0 1 0-5.7-5.7L11 6.7"/><path d="M14 11a4 4 0 0 0-5.7-.4L5.7 13.2a4 4 0 1 0 5.7 5.7l1.6-1.6"/></svg>',
+    chev:  '<svg viewBox="0 0 24 24"><path d="m15 5-7 7 7 7"/></svg>',
+    ring:  '<svg viewBox="0 0 24 24"><path d="M6 9a6 6 0 1 1 12 0c0 4 1.5 5.5 2 6H4c.5-.5 2-2 2-6z"/><path d="M10 19a2 2 0 0 0 4 0"/></svg>'
   };
+
+  /** Which orders are still worth watching, and how each one reads. */
+  var LIVE = { placed: 1, accepted: 1, ready: 1 };
+  var WORD = {
+    placed: 'Sent', accepted: 'Being made', ready: 'Ready',
+    served: 'Served', rejected: 'Not accepted', cancelled: 'Cancelled'
+  };
+  var TONE = {
+    placed: '#3B82F6', accepted: '#F59E0B', ready: '#8B5CF6', served: '#16A34A'
+  };
+
+  /** Where a status sits on the rail, or -1 for one that is not on it. */
+  function indexOf(status){
+    for (var i = 0; i < STEPS.length; i++) {
+      if (STEPS[i].key === status) return i;
+    }
+    return -1;
+  }
+
+  /**
+   * Offer to tell them, once there is something to tell.
+   *
+   * Three states, and only one of them is a question. A browser that has
+   * already been asked and said no is not asked again — that answer is
+   * remembered by the browser itself and asking again does nothing except take
+   * up the top of the page.
+   */
+  function notifyBanner(){
+    if (!('Notification' in window)) return '';
+    if (Notification.permission === 'granted') return '';
+    if (Notification.permission === 'denied') return '';
+    return '<button class="tk-notify" id="notify" type="button">' +
+      '<span class="ic">' + I.ring + '</span>' +
+      '<span class="t"><b>Tell me when it is ready</b>' +
+      '<span>Your phone will let you know when the kitchen takes it and when ' +
+      'it is on its way over.</span></span>' +
+      '<span class="go">Turn on</span></button>';
+  }
 
   // Each stage carries its own colour, so the page is a different page at a
   // glance from across a table.
@@ -3825,11 +4007,32 @@ function statusPage(publicId) {
     var head = headline(order, at);
     var over = order.status === 'rejected' || order.status === 'cancelled';
 
-    var html = '<div class="tk-head">' +
+    // A way back to the menu.
+    //
+    // This page is reached by being sent to it, and its address is 32 random
+    // characters that say nothing about where the customer is. Without this
+    // there is no way back to the menu they just ordered from except the
+    // browser's own back button — which, after a redirect, goes to the checkout
+    // they have already completed.
+    var back = order.venue && order.venue.slug ? '/' + order.venue.slug : null;
+    var html = '';
+    if (back) {
+      html += '<a class="tk-back" href="' + esc(back) + '">' + I.chev +
+        '<span>' + esc(order.venue.name || 'Back to the menu') + '</span></a>';
+    }
+
+    html += '<div class="tk-head">' +
       '<span class="tk-num">Order <b>#' + esc(order.number || '') + '</b></span>' +
       '<p class="tk-where">' + esc(order.table_label || '') +
         ' · ' + money(order.total_minor) + '</p>' +
     '</div>';
+
+    // Being told when it changes.
+    //
+    // Offered here rather than on the menu, and only once an order has actually
+    // been placed: asking a browser for permission to notify before there is
+    // anything to notify about is how somebody gets a permanent no.
+    html += notifyBanner();
 
     html += '<div class="tk-state ' + head.cls + '" style="--tk:' + head.tone + '">' +
       '<div class="ring">' + head.icon + '</div>' +
@@ -3866,6 +4069,28 @@ function statusPage(publicId) {
     });
     html += '</div>';
 
+    // Everything else this phone has ordered and is still waiting for.
+    //
+    // A table orders in rounds — drinks, then food, then puddings — and each
+    // round is its own order with its own page. Without this the only way to
+    // check the round before is to go back and find it, so this lists them with
+    // where they have got to, and refreshes as this page polls.
+    var others = mine().filter(function(o){
+      return o.public_id !== ID && LIVE[o.status];
+    });
+    if (others.length) {
+      html += '<div class="tk-others"><h3>Your other orders</h3>';
+      others.slice(0, 4).forEach(function(o){
+        html += '<a class="tk-other" href="/o/' + esc(o.public_id) + '">' +
+          '<span class="n">#' + esc(o.number == null ? '' : o.number) + '</span>' +
+          '<span class="m">' + esc(o.table_label || 'Your order') + '</span>' +
+          '<span class="s" style="--tk:' + (TONE[o.status] || '#6B7280') + '">' +
+            esc(WORD[o.status] || o.status || '') + '</span>' +
+        '</a>';
+      });
+      html += '</div>';
+    }
+
     html += '<div class="tk-foot">' +
       '<button class="tk-link" type="button" id="share">' + I.link +
         '<span>' + esc(location.href) + '</span>' +
@@ -3877,6 +4102,20 @@ function statusPage(publicId) {
     html += '</div>';
 
     track.innerHTML = html;
+
+    var ask = document.getElementById('notify');
+    if (ask) ask.addEventListener('click', function(){
+      // Asked from a real tap, which is the only way a browser will consider
+      // the request at all.
+      try {
+        Notification.requestPermission().then(function(){
+          store(ASKED_KEY, '1');
+          // Redrawn so the banner goes when the answer is yes, and stays gone
+          // when it is no.
+          poll();
+        });
+      } catch (e) { /* older browsers take a callback; not worth the branch */ }
+    });
 
     var share = document.getElementById('share');
     if (share) share.addEventListener('click', function(){
@@ -3916,11 +4155,59 @@ function statusPage(publicId) {
     }
   }
 
+  /**
+   * Tell the phone when the kitchen has moved.
+   *
+   * WHAT THIS DOES AND DOES NOT DO
+   *
+   * It raises a notification when the status changes while this page is open,
+   * including when it is in the background — which is the case that matters,
+   * because a customer puts the phone face down on the table and talks to the
+   * person opposite.
+   *
+   * It is not server-sent push. That needs a service worker, a VAPID key pair
+   * and a subscription stored against the order, and it would deliver with the
+   * browser closed entirely. This delivers while the page is alive, which is
+   * where somebody waiting for food actually leaves it, and it needs nothing
+   * installed.
+   */
+  function tell(order){
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    var head = headline(order, indexOf(order.status));
+    try {
+      new Notification(head.title + ' · order #' + (order.number || ''), {
+        body: head.line,
+        icon: '/assets/favicon.png',
+        tag: 'vesopa-order-' + ID,   // one notification per order, replaced
+        renotify: true
+      });
+    } catch (e) { /* a browser that refuses is not a page that breaks */ }
+  }
+
   function poll(){
     fetch('/api/public/dinein/order/' + ID)
       .then(function(r){ return r.ok ? r.json() : null; })
       .then(function(order){
-        if (order) draw(order);
+        if (!order) return;
+
+        // A status this phone has not seen before is worth telling somebody
+        // about. The first draw is not: they are looking at the page.
+        if (lastStatus !== null && order.status !== lastStatus) tell(order);
+        lastStatus = order.status;
+
+        // Keep this phone's own list current, so the menu's "My orders" and the
+        // other-orders list here both show where things have got to rather than
+        // where they were when the order was placed.
+        remember({
+          public_id: ID,
+          number: order.number || null,
+          table_label: order.table_label || null,
+          total_minor: order.total_minor || 0,
+          status: order.status
+        });
+        if (order.venue && order.venue.slug) store(SEEN_KEY, order.venue.slug);
+
+        draw(order);
       })
       .catch(function(){});
   }

@@ -1439,6 +1439,10 @@ function dineinRoutes({ pool, broadcast, secret }) {
 
     return {
       venue: {
+        // Its own address, so a page reached by a table code — which carries no
+        // slug in its URL — still knows which venue it is showing, and can be
+        // returned to later.
+        slug: venue.slug || null,
         name: (venue.display_name || (office ? office.name : '') || '').trim(),
         tagline: venue.tagline,
         phone: venue.phone,
@@ -1868,10 +1872,20 @@ function dineinRoutes({ pool, broadcast, secret }) {
 
   router.get('/api/public/dinein/order/:publicId', async (req, res, next) => {
     try {
+      // The venue comes with it.
+      //
+      // Somebody who has just ordered is on a page with no way back to the menu
+      // they ordered from — and the address they arrived at, /o/<32 characters>,
+      // says nothing about where they are. Joining the venue here is what lets
+      // that page offer a way back, and name the place while it is at it.
       const [[order]] = await pool.query(
-        'SELECT id, public_id, table_label, status, status_note, total_minor,' +
-          '       eta_minutes, placed_at, accepted_at, ready_at, served_at' +
-          '  FROM dinein_orders WHERE public_id = ?',
+        'SELECT o.id, o.public_id, o.table_label, o.status, o.status_note,' +
+          '       o.total_minor, o.eta_minutes, o.placed_at, o.accepted_at,' +
+          '       o.ready_at, o.served_at,' +
+          '       v.slug AS venue_slug, v.display_name AS venue_name' +
+          '  FROM dinein_orders o' +
+          '  LEFT JOIN dinein_venue v ON v.office_id = o.office_id' +
+          ' WHERE o.public_id = ?',
         [req.params.publicId]
       );
       if (!order) return res.status(404).json({ error: 'No such order.' });
@@ -1885,8 +1899,16 @@ function dineinRoutes({ pool, broadcast, secret }) {
       // characters because it has to be unguessable; that is the opposite of
       // what you want when a customer is trying to tell a member of staff which
       // order is theirs. The row id is already unique and already sequential.
-      const { id, ...rest } = order;
-      res.json({ ...rest, number: id, lines });
+      const { id, venue_slug: slug, venue_name: name, ...rest } = order;
+      res.json({
+        ...rest,
+        number: id,
+        lines,
+        // Null on a venue that has since been unpublished or renamed away. The
+        // page checks before it offers a link, rather than sending somebody to
+        // an address that answers 404.
+        venue: slug ? { slug, name: (name || '').trim() || null } : null,
+      });
     } catch (e) {
       next(e);
     }

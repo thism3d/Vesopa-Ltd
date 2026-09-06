@@ -4746,8 +4746,21 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
    responsive rules below want a scope to hang off anyway.
    ---------------------------------------------------------------------------
 */
+/*
+   The two-column layout broke this once already.
+   These were direct-child selectors, and the settings page later grew a
+   `.di-layout > .di-secs` wrapper around its panels — at which point every
+   section on /dine-in silently lost its padding again and sat hard against its
+   own border, which is exactly the fault the rule was written for. Measured:
+   padding 0px on every section where a card elsewhere has 20.
+   The wrapper is named here so the panels keep their padding wherever they are
+   nested, and the preview beside them gets it too.
+*/
 #dinein-body > .card,
+#dinein-body .di-secs > .card,
+#dinein-body .di-side > .card,
 #dinein_menu-body > .card,
+#dinein_menu-body .di-secs > .card,
 #dinein_qr-body > .card,
 #dinein_orders-body > .card,
 #dinein_menu-body .di-card {
