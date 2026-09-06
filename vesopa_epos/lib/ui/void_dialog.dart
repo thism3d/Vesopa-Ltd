@@ -20,8 +20,16 @@ final voidReasonsProvider = FutureProvider<List<String>>((ref) async {
     'Other',
   ];
   try {
+    // Named, or the back office cannot tell whose reasons to send. Without it
+    // this till was being handed every venue on the platform's — sixty-one
+    // rows where this venue has nine, the same wording over and over, and
+    // other people's private wording among them.
+    final office = ref.watch(officeProvider);
     final res = await http
-        .get(Uri.parse('${ref.watch(apiBaseProvider)}/till/void-reasons'))
+        .get(Uri.parse(
+          '${ref.watch(apiBaseProvider)}/till/void-reasons'
+          '?office=${Uri.encodeComponent(office)}',
+        ))
         .timeout(const Duration(seconds: 5));
     if (res.statusCode != 200) return fallback;
     final reasons = (jsonDecode(res.body) as List<dynamic>).cast<String>();

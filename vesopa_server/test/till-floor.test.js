@@ -116,4 +116,53 @@ check('an office is required before anything is read', () => {
   );
 });
 
+// ---------------------------------------------------------------------------
+// And the endpoint beside it, which had no office on it at all
+// ---------------------------------------------------------------------------
+
+const voidReasons = (() => {
+  const at = source.indexOf("app.get('/till/void-reasons'");
+  assert.ok(at > 0, 'the /till/void-reasons route has moved or been renamed');
+  let depth = 0;
+  for (let i = at; i < source.length; i++) {
+    if (source[i] === '{') depth++;
+    else if (source[i] === '}') {
+      depth--;
+      if (depth === 0) return source.slice(at, i + 1);
+    }
+  }
+  throw new Error('the route never closes');
+})();
+
+check("a till is only offered its own venue's void reasons", () => {
+  // REPORTED AS THE SAME REASON LISTED OVER AND OVER ON THE VOID DIALOG.
+  //
+  // It was not duplicated data — the table holds nine rows per venue. This read
+  // had no office on it whatsoever, and the handler took `_req`, so the request
+  // was never even looked at. Measured on live: 61 reasons returned where a
+  // venue has nine, with every default appearing once per office on the
+  // platform.
+  //
+  // A reason is free text a manager types, so this was also one venue reading
+  // another's wording off its own till.
+  assert.ok(
+    voidReasons.includes('req.query.office'),
+    'the route does not ask which venue is calling'
+  );
+  assert.ok(
+    voidReasons.includes('o.contact_email = ?'),
+    'the reasons are not scoped to a venue'
+  );
+});
+
+check("a till that names no venue gets the defaults, not everybody's", () => {
+  // Not an empty list: an older till that has not been updated would then have
+  // a void dialog with nothing in it, and a clerk who cannot void is a clerk
+  // who cannot serve. Not everybody's either, which is the bug.
+  assert.ok(
+    voidReasons.includes('office_id IS NULL'),
+    'a till with no office is not given the platform defaults'
+  );
+});
+
 console.log(`\n${passed} checks passed\n`);

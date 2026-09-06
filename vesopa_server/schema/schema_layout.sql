@@ -107,20 +107,50 @@ CREATE TABLE IF NOT EXISTS bo_vouchers (
   UNIQUE KEY uq_voucher_code (office_id, code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Seed the defaults a UK venue needs on day one, rather than shipping empty
--- programming screens.
-INSERT IGNORE INTO bo_tax_rates (id, name, percentage, is_default) VALUES
-  (1, 'Standard VAT', 20, 1),
-  (2, 'Reduced VAT', 5, 0),
-  (3, 'Zero rated', 0, 0);
+-- ---------------------------------------------------------------------------
+-- The defaults a UK venue needs on day one, rather than empty programming
+-- screens.
+--
+-- ONLY ON A TABLE THAT HAS NEVER BEEN SEEDED.
+--
+-- These were `INSERT IGNORE ... VALUES (1, …)`, keyed on the primary key, and
+-- that is not the guard it looks like. schema_tenant_programming.sql copies
+-- every unowned row out to each venue and then deletes the unowned ones — so by
+-- the next deploy ids 1..4 are free again, IGNORE ignores nothing, and the four
+-- template rows are recreated and copied out once more.
+--
+-- In steady state that is merely wasteful. What makes it wrong is a venue that
+-- deletes a default it does not want: "Customer changed their mind" comes back
+-- on the next deploy, and comes back every deploy, and nobody can make it stop.
+-- That is the "same data being manipulated again and again" that was reported.
+--
+-- Guarded on the table being empty instead. A fresh install seeds; an
+-- established platform is left alone, including the deletions it has made.
+-- Re-runnable, which the deploy requires: every schema file is replayed on
+-- every deploy and failures are swallowed, so a guard that throws would be a
+-- guard nobody hears about.
+-- ---------------------------------------------------------------------------
+INSERT INTO bo_tax_rates (id, name, percentage, is_default)
+SELECT * FROM (
+  SELECT 1 AS id, 'Standard VAT' AS name, 20 AS percentage, 1 AS is_default
+  UNION ALL SELECT 2, 'Reduced VAT', 5, 0
+  UNION ALL SELECT 3, 'Zero rated', 0, 0
+) AS seed
+WHERE NOT EXISTS (SELECT 1 FROM bo_tax_rates);
 
-INSERT IGNORE INTO bo_finalise_keys (id, name, kind, opens_drawer, sort_order) VALUES
-  (1, 'Cash', 'cash', 1, 1),
-  (2, 'Card', 'card', 0, 2),
-  (3, 'Voucher', 'voucher', 0, 3);
+INSERT INTO bo_finalise_keys (id, name, kind, opens_drawer, sort_order)
+SELECT * FROM (
+  SELECT 1 AS id, 'Cash' AS name, 'cash' AS kind, 1 AS opens_drawer, 1 AS sort_order
+  UNION ALL SELECT 2, 'Card', 'card', 0, 2
+  UNION ALL SELECT 3, 'Voucher', 'voucher', 0, 3
+) AS seed
+WHERE NOT EXISTS (SELECT 1 FROM bo_finalise_keys);
 
-INSERT IGNORE INTO bo_error_reasons (id, reason, applies_to) VALUES
-  (1, 'Customer changed their mind', 'void'),
-  (2, 'Rung up in error', 'void'),
-  (3, 'Item returned', 'refund'),
-  (4, 'Manager discount', 'discount');
+INSERT INTO bo_error_reasons (id, reason, applies_to)
+SELECT * FROM (
+  SELECT 1 AS id, 'Customer changed their mind' AS reason, 'void' AS applies_to
+  UNION ALL SELECT 2, 'Rung up in error', 'void'
+  UNION ALL SELECT 3, 'Item returned', 'refund'
+  UNION ALL SELECT 4, 'Manager discount', 'discount'
+) AS seed
+WHERE NOT EXISTS (SELECT 1 FROM bo_error_reasons);

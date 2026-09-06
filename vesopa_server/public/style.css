@@ -5587,7 +5587,7 @@ input[type="week"] {
   color: var(--text);
   border: 1px solid var(--line);
   border-radius: 10px;
-  padding: 11px 13px;
+  padding: 3px 13px;
   font-family: inherit;
   /* `font: inherit` was the whole of it, and it takes the weight of whatever
      the field sits inside — which in a filter bar is a 600-weight label, so the

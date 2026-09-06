@@ -677,11 +677,37 @@ function importRoutes({ pool, broadcast, secret }) {
     let nextPlu =
       productRows.reduce((max, r) => Math.max(max, Number(r.pluid) || 0), 0) + 1;
 
+    /**
+     * What happened to each row, in three buckets rather than two.
+     *
+     * `updated` used to mean both "this already existed in your catalogue" and
+     * "this row appears twice in your file", because the second case is served
+     * by putting the newly created row into the lookup maps so a repeat updates
+     * it instead of inserting a duplicate the till cannot reach. That is the
+     * right thing to *do* and the wrong thing to *say*.
+     *
+     * It was reported from a brand-new venue: 510 new, 17 to update, in a
+     * catalogue with nothing in it. Checked against the live database — the
+     * venue had zero products — so all seventeen were rows the spreadsheet
+     * listed twice. "17 to update" told a manager their empty venue already
+     * held seventeen products, which is alarming and untrue.
+     *
+     * Counted apart so each can be said in its own words.
+     */
     const summary = {
-      departments: { created: 0, updated: 0 },
-      groups: { created: 0, updated: 0 },
-      products: { created: 0, updated: 0 },
+      departments: { created: 0, updated: 0, repeated: 0 },
+      groups: { created: 0, updated: 0, repeated: 0 },
+      products: { created: 0, updated: 0, repeated: 0 },
     };
+
+    /**
+     * Whether a match came out of the database or out of this file.
+     *
+     * Everything loaded above existed before the import began. Anything added
+     * to those maps during the pass is a row this file created a moment ago,
+     * and a later row matching it is the file repeating itself.
+     */
+    const fromThisFile = new Set();
 
     const blocking = parsed.sheets.some((sheet) => sheet.errors.length > 0);
     // A file with errors is never partially applied. Half a catalogue is worse
@@ -699,7 +725,8 @@ function importRoutes({ pool, broadcast, secret }) {
       for (const record of parsed.departments) {
         const existing = departmentsByName.get(key(record.department_name));
         if (existing) {
-          summary.departments.updated += 1;
+          if (fromThisFile.has(existing)) summary.departments.repeated += 1;
+          else summary.departments.updated += 1;
           // COALESCE on the incoming value, not the stored one: a blank cell
           // means "leave this alone", not "clear it". A venue correcting one
           // department's colour must not blank the other twelve's codes.
@@ -739,9 +766,9 @@ function importRoutes({ pool, broadcast, secret }) {
           // matches no row at all — so that row's colour and code would be
           // dropped in silence while the summary reported them as applied.
           // In preview there is no insert and no id, and nothing is written.
-          departmentsByName.set(key(record.department_name), {
-            id: inserted?.insertId ?? 0,
-          });
+          const made = { id: inserted?.insertId ?? 0 };
+          fromThisFile.add(made);
+          departmentsByName.set(key(record.department_name), made);
         }
       }
 
@@ -749,7 +776,8 @@ function importRoutes({ pool, broadcast, secret }) {
       for (const record of parsed.groups) {
         const existing = groupsByName.get(key(record.group_name));
         if (existing) {
-          summary.groups.updated += 1;
+          if (fromThisFile.has(existing)) summary.groups.repeated += 1;
+          else summary.groups.updated += 1;
           await run1(
             `UPDATE bo_product_groups
                 SET accounting_code = COALESCE(?, accounting_code)
@@ -764,9 +792,9 @@ function importRoutes({ pool, broadcast, secret }) {
             [email, record.group_name, record.accounting_code]
           );
           // The real id, for the reason given against departments above.
-          groupsByName.set(key(record.group_name), {
-            id: inserted?.insertId ?? 0,
-          });
+          const made = { id: inserted?.insertId ?? 0 };
+          fromThisFile.add(made);
+          groupsByName.set(key(record.group_name), made);
         }
       }
 
@@ -784,7 +812,8 @@ function importRoutes({ pool, broadcast, secret }) {
               );
 
         if (existing) {
-          summary.products.updated += 1;
+          if (fromThisFile.has(existing)) summary.products.repeated += 1;
+          else summary.products.updated += 1;
           await run1(
             `UPDATE bo_products
                 SET product_name    = ?,
@@ -849,6 +878,7 @@ function importRoutes({ pool, broadcast, secret }) {
           // lists a product twice, the second time at the corrected price,
           // would have imported the wrong one of the two.
           const placeholder = { id: inserted?.insertId ?? 0, pluid };
+          fromThisFile.add(placeholder);
           productsByPlu.set(pluid, placeholder);
           productsByName.set(
             `${key(record.product_name)} ${key(record.department_name)}`,

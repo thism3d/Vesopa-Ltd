@@ -449,10 +449,47 @@ app.post('/till/customers', async (req, res, next) => {
 });
 
 /** Void reasons for the till's confirmation dialog. */
-app.get('/till/void-reasons', async (_req, res, next) => {
+/**
+ * The void reasons a till offers.
+ *
+ * SCOPED, LIKE EVERY OTHER TILL ENDPOINT, AND IT WAS NOT
+ *
+ * This read had no office on it at all — the handler took `_req`, so the
+ * request was never even looked at — and it therefore returned every reason
+ * belonging to every venue on the platform. Measured on live: 61 rows where a
+ * venue has nine, with "Customer changed their mind" appearing once per office.
+ *
+ * That is what was reported as the same reason listed over and over on the void
+ * dialog. It is not duplicated data — the table is clean, nine rows per venue —
+ * it is one venue being shown everybody's.
+ *
+ * And it is a leak as well as a mess: a reason is free text a manager types, so
+ * anything one venue called a reason was being read off every other venue's
+ * till.
+ *
+ * An office is required, as it is on /till/receipts, /till/customers,
+ * /till/deals and /till/departments. A till that names none gets the platform
+ * defaults rather than everybody's, because the alternative is a void dialog
+ * with nothing in it on a till that has not been updated yet — and a clerk who
+ * cannot void is a clerk who cannot serve.
+ */
+app.get('/till/void-reasons', async (req, res, next) => {
+  const office = req.query.office;
   try {
+    if (!office) {
+      const [rows] = await pool.query(
+        "SELECT reason FROM bo_error_reasons" +
+          " WHERE applies_to = 'void' AND office_id IS NULL ORDER BY sort_order, id"
+      );
+      return res.json(rows.map((r) => r.reason));
+    }
+
     const [rows] = await pool.query(
-      "SELECT reason FROM bo_error_reasons WHERE applies_to = 'void' ORDER BY id"
+      "SELECT e.reason FROM bo_error_reasons e" +
+        "  JOIN offices o ON o.id = e.office_id" +
+        " WHERE e.applies_to = 'void' AND o.contact_email = ?" +
+        " ORDER BY e.sort_order, e.id",
+      [office]
     );
     res.json(rows.map((r) => r.reason));
   } catch (e) {

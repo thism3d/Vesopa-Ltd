@@ -9137,13 +9137,30 @@ function importRender(body, commit) {
 
   const past = body.applied;
   const line = (what, counts) => {
-    if (!counts.created && !counts.updated) return '';
+    const repeated = counts.repeated || 0;
+    if (!counts.created && !counts.updated && !repeated) return '';
     const parts = [];
     if (counts.created) {
       parts.push(`${counts.created} new`);
     }
     if (counts.updated) {
       parts.push(`${counts.updated} ${past ? 'updated' : 'to update'}`);
+    }
+    // Said in its own words, because it is a different thing.
+    //
+    // A row that repeats one earlier in the same file used to be counted as
+    // "to update", which reads as "your catalogue already has these". It was
+    // reported from a venue whose catalogue was empty: 510 new, 17 to update,
+    // nothing in the database at all. All seventeen were products the
+    // spreadsheet listed twice.
+    //
+    // The later row still wins — that is deliberate, and it is what somebody
+    // correcting a price halfway down a sheet means — but the summary now says
+    // so rather than inventing seventeen products the venue does not have.
+    if (repeated) {
+      parts.push(
+        `${repeated} listed twice in the file${past ? '' : ' — the later row wins'}`
+      );
     }
     return `<li><strong>${esc(what)}</strong> — ${esc(parts.join(', '))}</li>`;
   };

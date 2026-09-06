@@ -441,6 +441,123 @@ check('a blank VAT and On receipt take the sensible default', async () => {
     }
   });
 
+  route('a row the file lists twice is not called an update', async () => {
+    // REPORTED FROM A BRAND-NEW VENUE.
+    //
+    // "Products — 510 new, 17 to update", in a catalogue with nothing in it.
+    // Checked against the live database at the time: that venue had zero
+    // products, so every one of the seventeen was a row the spreadsheet listed
+    // twice.
+    //
+    // The cause is a deliberate piece of behaviour saying the wrong thing. A
+    // product created earlier in the pass is put into the lookup maps so that a
+    // later row with the same PLU updates it rather than inserting a duplicate
+    // the till cannot reach — which is right, and is what somebody correcting a
+    // price halfway down a sheet means. It was then counted as an update, and
+    // "17 to update" tells a manager their empty venue already holds seventeen
+    // products.
+    const pool = fakePool([['FROM bo_products', []]]);
+    const server = await listen(appWith(pool));
+    try {
+      const file = await workbookOf({
+        [SHEET_PRODUCTS]: [
+          headersOf(SHEET_PRODUCTS),
+          [10, 'Cola', 'Drink', '', 2.2],
+          [11, 'Lemonade', 'Drink', '', 2.2],
+          // The same PLU again, at a corrected price.
+          [10, 'Cola', 'Drink', '', 2.5],
+        ],
+      });
+      const res = await send(server, '/api/import/catalogue', file);
+      const products = res.body.summary.products;
+
+      assert.strictEqual(products.created, 2);
+      assert.strictEqual(
+        products.updated,
+        0,
+        'an empty catalogue can have nothing to update'
+      );
+      assert.strictEqual(products.repeated, 1, 'the repeat was not counted');
+    } finally {
+      server.close();
+    }
+  });
+
+  route('a product that really is in the catalogue is still an update', async () => {
+    // The other half, so the fix above cannot have been made by calling every
+    // match a repeat.
+    const pool = fakePool([
+      [
+        'FROM bo_products',
+        [{ id: 3, pluid: 10, product_name: 'Cola', department_name: 'Drink' }],
+      ],
+    ]);
+    const server = await listen(appWith(pool));
+    try {
+      const file = await workbookOf({
+        [SHEET_PRODUCTS]: [
+          headersOf(SHEET_PRODUCTS),
+          [10, 'Cola', 'Drink', '', 2.5],
+        ],
+      });
+      const res = await send(server, '/api/import/catalogue', file);
+      assert.strictEqual(res.body.summary.products.updated, 1);
+      assert.strictEqual(res.body.summary.products.repeated, 0);
+      assert.strictEqual(res.body.summary.products.created, 0);
+    } finally {
+      server.close();
+    }
+  });
+
+  route('a department the file lists twice is not called an update', async () => {
+    const pool = fakePool([['FROM bo_product_departments', []]]);
+    const server = await listen(appWith(pool));
+    try {
+      const file = await workbookOf({
+        [SHEET_DEPARTMENTS]: [
+          headersOf(SHEET_DEPARTMENTS),
+          ['Drink', '4000'],
+          ['Drink', '4001'],
+        ],
+      });
+      const res = await send(server, '/api/import/catalogue', file);
+      assert.strictEqual(res.body.summary.departments.created, 1);
+      assert.strictEqual(res.body.summary.departments.updated, 0);
+      assert.strictEqual(res.body.summary.departments.repeated, 1);
+    } finally {
+      server.close();
+    }
+  });
+
+  route('the repeat still wins, whatever it is called', async () => {
+    // The counting changed; the behaviour must not. The second row is the one
+    // that ends up stored, because a sheet that lists a product twice is
+    // usually a sheet somebody corrected further down.
+    const pool = fakePool([['FROM bo_products', []]]);
+    const server = await listen(appWith(pool));
+    try {
+      const file = await workbookOf({
+        [SHEET_PRODUCTS]: [
+          headersOf(SHEET_PRODUCTS),
+          [10, 'Cola', 'Drink', '', 2.2],
+          [10, 'Cola', 'Drink', '', 2.5],
+        ],
+      });
+      // This path applies; /preview is the one that does not.
+      await send(server, '/api/import/catalogue', file);
+      const updates = pool.written.filter(
+        (w) => w.sql.includes('bo_products') && w.sql.trim().startsWith('UPDATE')
+      );
+      assert.strictEqual(updates.length, 1, 'the repeat did not update the first row');
+      assert.ok(
+        updates[0].params.includes(2.5),
+        'the corrected price is not what was stored'
+      );
+    } finally {
+      server.close();
+    }
+  });
+
   route('a blank cell leaves the stored value alone', async () => {
     const pool = fakePool([
       ['FROM bo_product_departments', [{ id: 7, department_name: 'Drink' }]],
@@ -517,7 +634,13 @@ check('a blank VAT and On receipt take the sensible default', async () => {
       });
       const res = await send(server, '/api/import/catalogue', file);
       assert.strictEqual(res.body.summary.products.created, 1);
-      assert.strictEqual(res.body.summary.products.updated, 1);
+      // Counted as a repeat rather than an update since the report from the new
+      // venue: it is one product either way, and the second row still wins, but
+      // "to update" told a manager with an empty catalogue that it already held
+      // seventeen products. The behaviour is unchanged — see the test below,
+      // which checks the second row is the one that lands.
+      assert.strictEqual(res.body.summary.products.updated, 0);
+      assert.strictEqual(res.body.summary.products.repeated, 1);
     } finally {
       server.close();
     }
