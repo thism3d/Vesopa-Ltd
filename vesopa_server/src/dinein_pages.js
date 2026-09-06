@@ -311,6 +311,11 @@ const STYLE = `
   --ink:#14161A; --ink-soft:#63696F; --line:#E6E8E3;
   --page:#FFFFFF; --card:#FFFFFF; --sunken:#F4F5F1;
   --radius:14px;
+  /* Money that has come down is its own colour, and it is not the venue's
+     accent: an accent is used for buttons a customer is meant to press, and a
+     saving is not a button. Kept as a token so a venue whose brand is close to
+     this red can move it. */
+  --offer:#D81B60;
 }
 @media (prefers-color-scheme: dark){
   :root{
@@ -707,6 +712,124 @@ button{font:inherit;cursor:pointer}
   background:color-mix(in srgb,var(--accent) 16%,var(--card))
 }
 
+/* ===========================================================================
+   OFFERS, POPULAR DISHES AND PROMOTIONS
+   =========================================================================== */
+
+/* An offer, on the dish it applies to. The old price stays visible: a price
+   with nothing to compare it against is just a price. */
+.money{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-top:6px}
+.money .was{
+  color:var(--ink-soft);text-decoration:line-through;
+  font-size:14px;font-weight:500
+}
+.money .now{font-weight:700;font-size:15px;color:var(--offer)}
+.money .flat{font-weight:700;font-size:15px}
+.offer-line{
+  display:block;margin-top:3px;font-size:13px;font-weight:600;color:var(--offer)
+}
+
+/* The venue's offer, said once at the top. */
+.offerbox{
+  margin:14px auto 0;max-width:648px;
+  display:flex;align-items:center;gap:12px;
+  padding:13px 15px;border-radius:var(--radius);
+  background:color-mix(in srgb, var(--offer) 10%, var(--card));
+  border:1px solid color-mix(in srgb, var(--offer) 32%, var(--line));
+}
+.offerbox .mark{
+  width:34px;height:34px;border-radius:50%;flex:0 0 auto;
+  display:grid;place-items:center;background:var(--offer);color:#fff
+}
+.offerbox .mark svg{width:19px;height:19px;stroke:currentColor;fill:none;
+  stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.offerbox b{display:block;font-size:15px}
+.offerbox span{color:var(--ink-soft);font-size:13.5px}
+
+/* Promotions: what the venue wants to say, which is a different thing from
+   what it wants to charge. Sideways, because there may be three and none of
+   them is worth a screen. */
+.promos{
+  display:flex;gap:12px;overflow-x:auto;padding:16px 16px 4px;
+  scrollbar-width:none;-webkit-overflow-scrolling:touch;
+  scroll-snap-type:x mandatory;
+}
+.promos::-webkit-scrollbar{display:none}
+.promo{
+  flex:0 0 78%;max-width:320px;scroll-snap-align:start;
+  border:1px solid var(--line);border-radius:var(--radius);
+  background:var(--card);overflow:hidden
+}
+.promo img{width:100%;height:104px;object-fit:cover}
+.promo .t{padding:12px 14px}
+.promo h4{margin:0 0 3px;font-size:15px}
+.promo p{margin:0;color:var(--ink-soft);font-size:13.5px;line-height:1.45}
+.promo .until{
+  display:inline-block;margin-top:8px;font-size:12px;font-weight:600;
+  color:var(--offer)
+}
+@media (min-width:720px){
+  .promos{max-width:1120px;margin:0 auto;padding-left:20px;padding-right:20px}
+  .promo{flex:0 0 300px}
+}
+
+/* Popular: a grid of pictures rather than a list of rows, because these are
+   the dishes the venue wants somebody to look at rather than read. */
+.pop-grid{
+  display:grid;grid-template-columns:1fr 1fr;gap:16px 14px;
+  padding:4px 16px 8px
+}
+@media (min-width:720px){
+  .pop-grid{
+    grid-template-columns:repeat(auto-fill,minmax(220px,1fr));
+    max-width:1120px;margin:0 auto;padding-left:20px;padding-right:20px
+  }
+}
+.pcard{position:relative;min-width:0}
+.pcard .shot{
+  position:relative;border-radius:var(--radius);overflow:hidden;
+  background:var(--sunken);aspect-ratio:1/1
+}
+.pcard .shot img{width:100%;height:100%;object-fit:cover}
+.pcard .shot .none{
+  width:100%;height:100%;display:grid;place-items:center;
+  color:var(--ink-soft);font-size:26px;font-weight:700;opacity:.35
+}
+.pcard .add{position:absolute;right:8px;bottom:8px;box-shadow:0 4px 14px rgba(0,0,0,.22)}
+.pcard h3{margin:9px 0 0;font-size:15px;font-weight:650;line-height:1.3}
+.pcard .money{margin-top:4px}
+.pcard.gone{opacity:.55}
+
+/* A dish that has sold out keeps its button, and the button says so. Removing
+   it makes the row look broken; a button that answers reads as a kitchen that
+   has run out. */
+.add.off{background:var(--sunken)}
+.add.off::before,.add.off::after{background:var(--ink-soft)}
+.gone-tag{
+  display:inline-block;margin-top:6px;font-size:12px;font-weight:700;
+  color:#B3261E;text-transform:uppercase;letter-spacing:.04em
+}
+.diet{
+  display:inline-flex;align-items:center;gap:5px;margin-top:6px;
+  padding:3px 8px;border-radius:999px;font-size:12px;font-weight:600;
+  background:color-mix(in srgb, #2E7D32 12%, var(--card));color:#2E7D32
+}
+
+/* How far off the offer the basket is. Shown in the bar, because that is
+   where somebody looks when they are deciding whether to stop. */
+.basket .toward{
+  display:flex;align-items:center;gap:9px;
+  margin:0 auto 8px;max-width:648px;
+  font-size:13px;color:var(--ink-soft)
+}
+.basket .toward .bar{
+  flex:1;height:5px;border-radius:3px;background:var(--sunken);overflow:hidden
+}
+.basket .toward .bar i{
+  display:block;height:100%;background:var(--offer);
+  transition:width .35s cubic-bezier(.2,.8,.3,1)
+}
+
 .notice{
   margin:14px auto 0;max-width:648px;padding:12px 14px;
   border-radius:var(--radius);
@@ -775,65 +898,69 @@ html{scroll-behavior:smooth;scroll-padding-top:70px}
     gap:6px 26px;
   }
   .items .item{border-bottom:1px solid var(--line)}
-  /* :last-child only clears the final row's line in a single column. In a
-     grid the last two or three items are all on the bottom row, and each of
-     them needs it. */
+  /* :last-child only clears the final row's line in a single column. In a grid
+     the last two or three items are all on the bottom row, and each of them
+     needs it. */
   .items .item.last-row{border-bottom:0}
   section{padding-left:20px;padding-right:20px}
 }
 
-section{padding:24px 16px 4px;scroll-margin-top:72px}
-section h2{margin:0 0 2px;font-size:20px;letter-spacing:-.01em}
-section .blurb{margin:0 0 6px;color:var(--ink-soft);font-size:14px}
-
+/* ---------------------------------------------------------------------------
+   ONE DISH, AS A ROW
+   ---------------------------------------------------------------------------
+   Text on the left, picture on the right, button on the corner of the picture.
+   Every row has its control in the same place whether or not there is a
+   photograph, which is what makes a column of them scannable — and it is where
+   a thumb already is on a phone held one-handed.
+   --------------------------------------------------------------------------- */
 .item{
   display:flex;gap:14px;padding:16px 0;border-bottom:1px solid var(--line);
   align-items:flex-start
 }
 .item:last-child{border-bottom:0}
 .item .body{flex:1 1 auto;min-width:0}
-.item h3{margin:0 0 3px;font-size:16px;font-weight:650;line-height:1.3}
-.item p{margin:0;color:var(--ink-soft);font-size:14px}
+.item h3{margin:0 0 2px;font-size:16px;font-weight:650;line-height:1.3}
+/* The description sits under the price, and stops before it becomes an essay:
+   three lines is a description, six is a paragraph nobody reads standing up. */
+.item p{
+  margin:6px 0 0;color:var(--ink-soft);font-size:14px;line-height:1.45;
+  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;
+  overflow:hidden
+}
 
-/* The price sits with the dish; the button sits alone.
+/* The picture, and the button on the corner of it. */
+.item .thumb{
+  position:relative;
+  width:104px;height:104px;border-radius:var(--radius);flex:0 0 auto;
+  background:var(--sunken)
+}
+.item .thumb img{
+  width:100%;height:100%;object-fit:cover;
+  border-radius:var(--radius);display:block
+}
+/* Inside the picture, not hanging off it.
  *
- * They were briefly stacked together on the right, which centred the *pair*
- * against the row and left the button itself fifteen pixels low on every line
- * down the page. The column is narrow enough now that the price does not need
- * to chase the button to be read with it — so the price goes back under the
- * description where a menu puts it, and the button gets the right-hand column
- * to itself and the exact middle of the row. */
+ * At -8px the button sat outside its row, and on a screen where the column
+ * reaches the edge of the page that is eight pixels of horizontal scroll on
+ * every row - which is the whole document scrolling sideways, on a menu. */
+.item .thumb .add{
+  position:absolute;right:8px;bottom:8px;
+  box-shadow:0 3px 12px rgba(0,0,0,.28)
+}
+
+/* No picture: the button takes the right-hand edge and centres against the
+   row, which is what it did before there were pictures at all. */
 .item .end{
   flex:0 0 auto;align-self:stretch;
   display:flex;align-items:center;justify-content:flex-end;
   padding-left:10px
 }
-.item .price{
-  display:block;margin-top:6px;
-  font-weight:700;font-size:15px;white-space:nowrap
+
+@media (max-width:400px){
+  /* A 104px picture and a 40px button leave under 200px for a dish name on the
+     narrowest phones still in service. */
+  .item .thumb{width:88px;height:88px}
 }
-.item .thumb{
-  width:84px;height:84px;border-radius:12px;flex:0 0 auto;
-  background:var(--sunken);overflow:hidden
-}
-.item .thumb img{width:100%;height:100%;object-fit:cover}
-/* A dish with no photograph still holds the space one would take.
- *
- * Without this the name of a dish with a picture started 100px further in than
- * the name of the one under it, and a list where half the items have pictures —
- * which is most lists — read as two lists interleaved. Invisible rather than a
- * grey tile: twenty empty tiles down a page is worse than a straight edge. */
-/* No spacer where there is no picture.
- *
- * An invisible 84px box was held in front of dishes that had no photograph, so
- * that their names lined up with the names of dishes that did. It made the
- * column of text tidy and it made every plain dish start a third of the way
- * across an otherwise empty row, which is what was reported: a name floating in
- * the middle of nothing.
- *
- * A dish with no picture now starts where the picture would have started. The
- * left edge of the row is the thing that is constant, and it is the edge the
- * eye actually runs down. */
 .item.gone{opacity:.55}
 .item .gone-tag{
   display:inline-block;margin-top:6px;font-size:12px;font-weight:700;
@@ -977,6 +1104,9 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
 <div id="app"><div class="state"><h2>Loading the menu…</h2><p>One moment.</p></div></div>
 
 <div class="basket" id="basketBar">
+  <!-- How far off the offer the basket is. Above the button rather than inside
+       it: it is a fact about the basket, not a thing to press. -->
+  <div class="toward" id="toward"></div>
   <button id="basketBtn" type="button">
     <span id="basketCount">0 items</span>
     <span id="basketTotal">£0.00</span>
@@ -1009,6 +1139,7 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
     pin:   '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s7-5.3 7-10.5a7 7 0 1 0-14 0C5 15.7 12 21 12 21z"/><circle cx="12" cy="10.5" r="2.6"/></svg>',
     map:   '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3.5 3.5 6v14.5L9 18l6 2.5 5.5-2.5V3.5L15 6z"/><path d="M9 3.5V18M15 6v14.5"/></svg>',
     clock: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5.2l3.2 2"/></svg>',
+    tag: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 12.4V4.6a1 1 0 0 1 1-1h7.8a1 1 0 0 1 .7.3l7 7a1 1 0 0 1 0 1.4l-7.8 7.8a1 1 0 0 1-1.4 0l-7-7a1 1 0 0 1-.3-.7z"/><circle cx="8" cy="8" r="1.4"/></svg>',
     user: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.6"/><path d="M5 20a7 7 0 0 1 14 0"/></svg>',
     receipt: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>',
     x: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg>',
@@ -1049,12 +1180,7 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
     // venue and puts them in the right order. Overwriting it here threw the
     // table name and the platform suffix away the moment the menu finished
     // loading, so a customer with four tabs open saw four identical ones.
-    if (v.accent) {
-      document.documentElement.style.setProperty('--accent', v.accent);
-      // Pick legible ink for whatever colour the venue chose. A venue that
-      // sets a pale yellow accent would otherwise get white-on-yellow buttons.
-      document.documentElement.style.setProperty('--on-accent', inkOn(v.accent));
-    }
+    applyTheme(v);
 
     var html = '';
 
@@ -1111,6 +1237,10 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
     // after the description and before the menu.
     html += hoursHtml(v);
 
+    // What is on, said once, before anybody has chosen anything.
+    html += offerBoxHtml();
+    html += promosHtml(v);
+
     var sections = (data.sections || []).filter(function(s){
       return s.items && s.items.length;
     });
@@ -1122,10 +1252,31 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
       return;
     }
 
+    // The dishes the venue wants looked at, as pictures, above the menu
+    // proper. Not counted from orders: a "most ordered" list computed from a
+    // menu that has been live a week is a list of whatever was at the top of
+    // it. The venue knows what it wants to sell.
+    var popular = [];
+    sections.forEach(function(sec){
+      (sec.items || []).forEach(function(it){ if (it.popular) popular.push(it); });
+    });
+    if (popular.length) {
+      html += '<section id="secpopular" data-sec="popular">' +
+        '<h2 style="padding:0 16px">Popular</h2>' +
+        '<p class="blurb" style="padding:0 16px">What this kitchen is known for.</p>' +
+        '<div class="pop-grid">';
+      popular.slice(0, 8).forEach(function(it){ html += popCardHtml(it); });
+      html += '</div></section>';
+    }
+
     html += '<nav class="tabs" id="tabs">';
+    if (popular.length) {
+      html += '<button type="button" data-go="secpopular" aria-current="true">Popular</button>';
+    }
     sections.forEach(function(s, i){
       html += '<button type="button" data-go="sec' + s.id + '"' +
-              (i === 0 ? ' aria-current="true"' : '') + '>' + esc(s.name) + '</button>';
+              (i === 0 && !popular.length ? ' aria-current="true"' : '') + '>' +
+              esc(s.name) + '</button>';
     });
     html += '</nav>';
 
@@ -1143,7 +1294,7 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
     html += '</div>';
 
     app.innerHTML = html;
-    wireTabs(sections);
+    wireTabs(popular.length ? [{ id: 'popular' }].concat(sections) : sections);
     wireHero();
     markLastRow();
     paintWho();
@@ -1521,33 +1672,209 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
       .catch(function(){ paint(local); });
   }
 
-  function itemHtml(it){
-    // The controls are drawn whenever the venue takes orders at all, even
-    // outside its hours. A button that is simply missing reads as a broken
-    // page; a button that answers reads as a closed kitchen. Pressing one
-    // outside hours says when they open — see onTap.
-    var can = it.available && canOrder();
-    // No placeholder box where there is no photograph — see the note on
-    // .item .thumb in the stylesheet above.
-    return '<div class="item' + (it.available ? '' : ' gone') + '" data-item="' + it.id + '">' +
-      (it.image_url
-        ? '<div class="thumb"><img src="' + esc(it.image_url) + '" alt="" loading="lazy"></div>'
-        : '') +
-      '<div class="body">' +
-        '<h3>' + esc(it.name) + '</h3>' +
-        (it.description ? '<p>' + esc(it.description) + '</p>' : '') +
-        (it.available ? '' : '<span class="gone-tag">Sold out</span>') +
-        '<span class="price">' + money(it.price_minor) + '</span>' +
-      '</div>' +
-      '<div class="end">' + (can ? controlsHtml(it.id) : '') + '</div>' +
+  /**
+   * The venue's colours, not ours.
+   *
+   * Every value has already been checked server-side against a six-digit hex —
+   * see cleanTheme in src/dinein.js — because these go straight into a style
+   * declaration and anything that is not a colour is a way out of it.
+   *
+   * A venue that has chosen a page colour has chosen it for both schemes; the
+   * dark-mode media query in the stylesheet is a default for venues that have
+   * not, so an explicit choice sets the variables directly and wins.
+   */
+  function applyTheme(v){
+    var t = v.theme || {};
+    var root = document.documentElement.style;
+    var accent = t.accent || v.accent;
+    if (accent) {
+      root.setProperty('--accent', accent);
+      // Legible ink on whatever they chose. A venue setting a pale yellow
+      // accent would otherwise get white on yellow.
+      root.setProperty('--on-accent', t.onAccent || inkOn(accent));
+    }
+    if (t.page) root.setProperty('--page', t.page);
+    if (t.card) root.setProperty('--card', t.card);
+    if (t.ink) root.setProperty('--ink', t.ink);
+    if (t.inkSoft) root.setProperty('--ink-soft', t.inkSoft);
+    if (t.radius != null) root.setProperty('--radius', t.radius + 'px');
+    if (t.font && t.font !== 'system') {
+      root.setProperty('--font', FONTS[t.font] || FONTS.system);
+      document.body.style.fontFamily = FONTS[t.font] || FONTS.system;
+    }
+    // A page colour a venue chose is theirs in both schemes; the sunken tone
+    // has to follow it or a cream page gets grey wells in it.
+    if (t.page) {
+      root.setProperty('--sunken', mix(t.page, t.ink || '#14161A', 5));
+      root.setProperty('--line', mix(t.page, t.ink || '#14161A', 12));
+    }
+  }
+
+  var FONTS = {
+    system: '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif',
+    serif: 'Georgia,"Times New Roman",serif',
+    rounded: 'ui-rounded,"SF Pro Rounded",system-ui,"Segoe UI",sans-serif',
+    mono: 'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace'
+  };
+
+  /** percent of b, mixed into a. Both must be six-digit hex. */
+  function mix(a, b, percent){
+    function n(h){ return parseInt(h.slice(1), 16); }
+    if (!/^#[0-9a-fA-F]{6}$/.test(a) || !/^#[0-9a-fA-F]{6}$/.test(b)) return a;
+    var x = n(a), y = n(b), k = percent / 100, out = '#';
+    for (var shift = 16; shift >= 0; shift -= 8) {
+      var av = (x >> shift) & 255, bv = (y >> shift) & 255;
+      var v = Math.round(av + (bv - av) * k);
+      out += ('0' + v.toString(16)).slice(-2);
+    }
+    return out;
+  }
+
+  // =========================================================================
+  // THE OFFER
+  // =========================================================================
+  //
+  // The percentage is the venue's; the arithmetic below is only a display of
+  // it. The server applies the discount again from its own copy when the order
+  // is placed, so nothing here can decide what anybody pays — see the note on
+  // discountFor in src/dinein.js.
+
+  function offer(){
+    return (data && data.venue && data.venue.offer) || null;
+  }
+
+  /** What a dish costs once the offer is on, in minor units. */
+  function afterOffer(minor){
+    var o = offer();
+    if (!o) return minor;
+    return minor - Math.floor((minor * o.percent) / 100);
+  }
+
+  /** How the venue's offer reads in a sentence. */
+  function offerWords(){
+    var o = offer();
+    if (!o) return '';
+    if (o.label) return o.label;
+    return o.min_spend_minor
+      ? o.percent + '% off with ' + money(o.min_spend_minor) + ' spend'
+      : o.percent + '% off';
+  }
+
+  /** Price, struck through when there is something to strike. */
+  function priceHtml(minor){
+    var o = offer();
+    if (!o) return '<span class="money"><span class="flat">' + money(minor) + '</span></span>';
+    return '<span class="money">' +
+      '<span class="now">' + money(afterOffer(minor)) + '</span>' +
+      '<span class="was">' + money(minor) + '</span>' +
+    '</span>' +
+    '<span class="offer-line">' + esc(offerWords()) + '</span>';
+  }
+
+  function offerBoxHtml(){
+    var o = offer();
+    if (!o) return '';
+    var line = o.min_spend_minor
+      ? 'Spend ' + money(o.min_spend_minor) + ' and ' + o.percent +
+        '% comes off the whole order.'
+      : o.percent + '% comes off the whole order.';
+    return '<div class="offerbox">' +
+      '<span class="mark">' + ICON.tag + '</span>' +
+      '<span><b>' + esc(offerWords()) + '</b>' +
+      '<span>' + esc(line) + '</span></span>' +
     '</div>';
   }
 
-  function controlsHtml(id){
+  function promosHtml(v){
+    var list = v.promotions || [];
+    if (!list.length) return '';
+    var html = '<div class="promos">';
+    list.forEach(function(p){
+      html += '<article class="promo">' +
+        (p.image_url ? '<img src="' + esc(p.image_url) + '" alt="" loading="lazy">' : '') +
+        '<div class="t"><h4>' + esc(p.title) + '</h4>' +
+        (p.body ? '<p>' + esc(p.body) + '</p>' : '') +
+        (p.until ? '<span class="until">Until ' + esc(prettyDate(p.until)) + '</span>' : '') +
+        '</div></article>';
+    });
+    return html + '</div>';
+  }
+
+  /** 2026-12-24 as "24 December", because that is how a sign says it. */
+  function prettyDate(iso){
+    var m = /^([0-9]{4})-([0-9]{2})-([0-9]{2})$/.exec(String(iso || ''));
+    if (!m) return String(iso || '');
+    var months = ['January','February','March','April','May','June','July',
+                  'August','September','October','November','December'];
+    return Number(m[3]) + ' ' + months[Number(m[2]) - 1];
+  }
+
+  /**
+   * One dish, as a row.
+   *
+   * READING ORDER
+   *
+   * Name, then price, then what is off it, then what is in it. The price is
+   * second because it is the second question anybody asks, and because a price
+   * printed under three lines of description cannot be scanned down a page —
+   * which is the whole reason a menu is a column.
+   *
+   * The picture is on the right and the button sits on the corner of it, so
+   * every row has its control in the same place whether or not there is a
+   * photograph. Where there is none, the button takes the right-hand edge on
+   * its own and is centred against the row.
+   */
+  function itemHtml(it){
+    var shot = it.image_url
+      ? '<div class="thumb">' +
+          '<img src="' + esc(it.image_url) + '" alt="" loading="lazy">' +
+          controlsHtml(it.id, it) +
+        '</div>'
+      : '<div class="end">' + controlsHtml(it.id, it) + '</div>';
+
+    return '<div class="item' + (it.available ? '' : ' gone') +
+             (it.image_url ? '' : ' bare') + '" data-item="' + it.id + '">' +
+      '<div class="body">' +
+        '<h3>' + esc(it.name) + '</h3>' +
+        priceHtml(it.price_minor) +
+        (it.description ? '<p>' + esc(it.description) + '</p>' : '') +
+        (it.diet ? '<span class="diet">' + esc(it.diet) + '</span>' : '') +
+        (it.available ? '' : '<span class="gone-tag">Currently unavailable</span>') +
+      '</div>' +
+      shot +
+    '</div>';
+  }
+
+  /** One dish as a picture, for the Popular grid. */
+  function popCardHtml(it){
+    return '<div class="pcard' + (it.available ? '' : ' gone') +
+             '" data-item="' + it.id + '">' +
+      '<div class="shot">' +
+        (it.image_url
+          ? '<img src="' + esc(it.image_url) + '" alt="" loading="lazy">'
+          : '<div class="none">' + esc((it.name || '?').charAt(0).toUpperCase()) + '</div>') +
+        controlsHtml(it.id, it) +
+      '</div>' +
+      '<h3>' + esc(it.name) + '</h3>' +
+      priceHtml(it.price_minor) +
+      (it.available ? '' : '<span class="gone-tag">Sold out</span>') +
+    '</div>';
+  }
+
+  /**
+   * The plus, always.
+   *
+   * A button that disappears when a dish sells out or the kitchen shuts makes
+   * the row look broken, and somebody presses where it used to be. A button
+   * that is there and answers reads as a kitchen that has run out. What it says
+   * is decided in onTap, which is the only place that knows why.
+   */
+  function controlsHtml(id, it){
+    var out = it && it.available === false;
     var qty = basket[id] ? basket[id].qty : 0;
     if (!qty) {
-      return '<button class="add" type="button" data-add="' + id + '" ' +
-             'aria-label="Add"></button>';
+      return '<button class="add' + (out ? ' off' : '') + '" type="button" ' +
+             'data-add="' + id + '" aria-label="Add"></button>';
     }
     return '<div class="qty">' +
       '<button type="button" data-less="' + id + '" aria-label="One fewer">−</button>' +
@@ -1565,6 +1892,31 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
     var less = e.target.closest('[data-less]');
     if (!add && !less) return;
 
+    var itemId = Number((add || less).getAttribute(add ? 'data-add' : 'data-less'));
+
+    // A dish that has sold out says so. Taking one back out is always allowed.
+    if (add) {
+      var dish = itemById(itemId);
+      if (dish && dish.available === false) {
+        pop({
+          title: dish.name,
+          body: 'Sorry — the kitchen has run out of this one today.',
+          ok: 'I see'
+        });
+        return;
+      }
+      if (!canOrder()) {
+        pop({
+          title: 'Not taking orders',
+          body: data && data.table
+            ? 'This table is not taking orders from phones just now. Please order at the bar.'
+            : 'Scan the code on your table to order.',
+          ok: 'I see'
+        });
+        return;
+      }
+    }
+
     // Adding outside the venue's hours explains itself rather than doing
     // nothing. Taking things back out is always allowed: somebody emptying a
     // basket they filled before the kitchen shut should not be argued with.
@@ -1577,7 +1929,7 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
       return;
     }
 
-    var id = Number((add || less).getAttribute(add ? 'data-add' : 'data-less'));
+    var id = itemId;
     var entry = basket[id] || (basket[id] = { qty: 0 });
     entry.qty += add ? 1 : -1;
     if (entry.qty <= 0) delete basket[id];
@@ -1610,6 +1962,9 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
     });
   }
 
+  /** The dish behind an id, wherever it sits. */
+  function itemById(id){ return find(id); }
+
   function find(id){
     var hit = null;
     (data.sections || []).forEach(function(s){
@@ -1628,8 +1983,39 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
     var t = totals();
     document.getElementById('basketCount').textContent =
       t.count + (t.count === 1 ? ' item' : ' items');
-    document.getElementById('basketTotal').textContent = money(t.sum);
+
+    // The figure on the bar is what they will actually pay.
+    var o = offer();
+    var off = (o && t.sum >= o.min_spend_minor)
+      ? Math.floor((t.sum * o.percent) / 100) : 0;
+    document.getElementById('basketTotal').textContent = money(t.sum - off);
+
+    paintToward(t.sum, o, off);
     bar.classList.toggle('up', t.count > 0);
+  }
+
+  /**
+   * How far off the offer the basket is.
+   *
+   * In the bar rather than at the top of the page, because this is a fact about
+   * the basket and it changes every time somebody adds to it — and the bar is
+   * where they are looking when they are deciding whether to stop.
+   */
+  function paintToward(sum, o, off){
+    var host = document.getElementById('toward');
+    if (!host) return;
+    if (!o || !o.min_spend_minor) { host.innerHTML = ''; return; }
+
+    if (off > 0) {
+      host.innerHTML = '<span>' + esc(o.percent + '% off — you are saving ' +
+        money(off)) + '</span>';
+      return;
+    }
+    var needed = o.min_spend_minor - sum;
+    var pct = Math.max(0, Math.min(100, Math.round((sum / o.min_spend_minor) * 100)));
+    host.innerHTML =
+      '<span>Add ' + money(needed) + ' for ' + o.percent + '% off</span>' +
+      '<span class="bar"><i style="width:' + pct + '%"></i></span>';
   }
 
   document.getElementById('basketBtn').addEventListener('click', openCheckout);

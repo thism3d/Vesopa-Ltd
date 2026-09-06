@@ -6,6 +6,106 @@ const jwt = require('jsonwebtoken');
 const { requireAuth, requireTerminal } = require('./auth');
 
 // ---------------------------------------------------------------------------
+// Branding, offers and promotions
+// ---------------------------------------------------------------------------
+
+/** Vesopa's own colours, and what a venue that has set nothing gets. */
+const THEME_DEFAULT = Object.freeze({
+  accent: '#A5C715',
+  onAccent: '#10130A',
+  page: '#FFFFFF',
+  card: '#FFFFFF',
+  ink: '#14171C',
+  inkSoft: '#5C6470',
+  radius: 16,
+  font: 'system',
+});
+
+/** JSON that never throws. A corrupt draft must not take the editor down. */
+function safeJson(raw) {
+  try { return JSON.parse(raw); } catch { return null; }
+}
+
+const HEX = /^#[0-9a-fA-F]{6}$/;
+const FONTS = new Set(['system', 'serif', 'rounded', 'mono']);
+
+/**
+ * A palette that is safe to put in a stylesheet.
+ *
+ * Every colour is checked against a six-digit hex and thrown away if it is not
+ * one. These values are interpolated into a <style> block on a public page, so
+ * anything that is not a colour is a way of writing CSS into somebody else's
+ * menu — and the venue that types it is not necessarily the venue that ends up
+ * reading it.
+ */
+function cleanTheme(raw) {
+  let given = raw;
+  if (typeof given === 'string' && given.trim()) {
+    try { given = JSON.parse(given); } catch { given = null; }
+  }
+  if (!given || typeof given !== 'object') return { ...THEME_DEFAULT };
+
+  const out = { ...THEME_DEFAULT };
+  for (const key of ['accent', 'onAccent', 'page', 'card', 'ink', 'inkSoft']) {
+    if (HEX.test(String(given[key] || ''))) out[key] = String(given[key]).toUpperCase();
+  }
+  const radius = Number(given.radius);
+  if (Number.isFinite(radius)) out.radius = Math.max(0, Math.min(28, Math.round(radius)));
+  if (FONTS.has(String(given.font))) out.font = String(given.font);
+  return out;
+}
+
+/** At most six, each with a title. A promotion with no title is a gap. */
+function cleanPromotions(raw) {
+  let given = raw;
+  if (typeof given === 'string' && given.trim()) {
+    try { given = JSON.parse(given); } catch { given = null; }
+  }
+  if (!Array.isArray(given)) return [];
+  return given
+    .map((p) => ({
+      title: String((p && p.title) || '').trim().slice(0, 80),
+      body: String((p && p.body) || '').trim().slice(0, 240),
+      image_url: String((p && p.image_url) || '').trim().slice(0, 500),
+      until: /^\d{4}-\d{2}-\d{2}$/.test(String((p && p.until) || '')) ? p.until : null,
+    }))
+    .filter((p) => p.title)
+    .slice(0, 6);
+}
+
+/**
+ * The venue's offer, as the page needs to state it.
+ *
+ * Returns null when there is nothing on, so the page can ask one question
+ * rather than three.
+ */
+function offerOf(venue) {
+  if (!venue || !venue.offer_active) return null;
+  const percent = Math.max(0, Math.min(90, Number(venue.offer_percent) || 0));
+  if (!percent) return null;
+  const min = Math.max(0, Number(venue.offer_min_spend_minor) || 0);
+  return {
+    percent,
+    min_spend_minor: min,
+    label: (venue.offer_label || '').trim() || null,
+  };
+}
+
+/**
+ * What an offer takes off a basket.
+ *
+ * Rounded down to the penny, and only once the basket has reached the minimum.
+ * Computed in one place because the page quotes it and the order stores it, and
+ * those two disagreeing is a customer being charged something they were not
+ * shown.
+ */
+function discountFor(offer, subtotalMinor) {
+  if (!offer) return 0;
+  if (subtotalMinor < offer.min_spend_minor) return 0;
+  return Math.floor((subtotalMinor * offer.percent) / 100);
+}
+
+// ---------------------------------------------------------------------------
 // Opening hours
 // ---------------------------------------------------------------------------
 
@@ -342,6 +442,12 @@ function dineinRoutes({ pool, broadcast, secret }) {
       );
       res.json({
         ...venue,
+        // Always in a known shape, so the editor never has to think about a
+        // venue that has set none of this yet.
+        theme: cleanTheme(venue.theme_json),
+        promotions: cleanPromotions(venue.promotions),
+        offer: offerOf(venue),
+        draft: venue.draft_json ? safeJson(venue.draft_json) : null,
         // Always seven days in a known shape, so the editor never has to think
         // about a venue that has not set any hours yet.
         opening_hours: parseHours(venue.opening_hours),
@@ -401,7 +507,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
       const plain = [
         'display_name', 'tagline', 'phone', 'address_line', 'postcode',
         'map_url', 'logo_url', 'banner_url', 'accent_colour', 'notice',
-        'closed_message',
+        'closed_message', 'offer_label',
       ];
       for (const field of plain) {
         if (body[field] === undefined) continue;
@@ -412,7 +518,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
 
       const flags = [
         'is_published', 'ordering_open', 'require_name', 'require_phone',
-        'schedule_enabled',
+        'schedule_enabled', 'offer_active',
       ];
       for (const field of flags) {
         if (body[field] === undefined) continue;
@@ -426,6 +532,53 @@ function dineinRoutes({ pool, broadcast, secret }) {
         const eta = Math.max(0, Math.min(240, parseInt(body.eta_minutes, 10) || 0));
         sets.push('eta_minutes = ?');
         params.push(eta);
+      }
+
+      if (body.offer_percent !== undefined) {
+        // Ninety per cent is where a discount stops being a discount and
+        // becomes a mistake somebody made with a keyboard.
+        sets.push('offer_percent = ?');
+        params.push(Math.max(0, Math.min(90, parseInt(body.offer_percent, 10) || 0)));
+      }
+      if (body.offer_min_spend_minor !== undefined) {
+        sets.push('offer_min_spend_minor = ?');
+        params.push(Math.max(0, parseInt(body.offer_min_spend_minor, 10) || 0));
+      }
+      if (body.promotions !== undefined) {
+        sets.push('promotions = ?');
+        params.push(JSON.stringify(cleanPromotions(body.promotions)));
+      }
+      if (body.theme !== undefined) {
+        sets.push('theme_json = ?');
+        params.push(JSON.stringify(cleanTheme(body.theme)));
+      }
+
+      if (body.custom_domain !== undefined) {
+        // Host headers carry no scheme, no port and no path, and that is what
+        // this is matched against — so anything of that shape is stripped
+        // rather than stored and quietly never matching.
+        const host = String(body.custom_domain || '')
+          .trim().toLowerCase()
+          .replace(/^https?:\/\//, '')
+          .replace(/[/?#].*$/, '')
+          .replace(/:\d+$/, '')
+          .replace(/\.$/, '');
+        if (host && !/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(host)) {
+          return res.status(400).json({ error: 'That does not look like a domain name.' });
+        }
+        if (host) {
+          const [[taken]] = await pool.query(
+            'SELECT office_id FROM dinein_venue WHERE custom_domain = ? AND office_id <> ?',
+            [host, officeId]
+          );
+          if (taken) {
+            return res.status(409).json({
+              error: 'Another venue has already claimed that domain.',
+            });
+          }
+        }
+        sets.push('custom_domain = ?', 'domain_verified = ?');
+        params.push(host || null, 0);
       }
 
       if (body.opening_hours !== undefined) {
@@ -455,6 +608,47 @@ function dineinRoutes({ pool, broadcast, secret }) {
    * outcome is that the address is available *and* is not quite what was typed
    * — and a manager should see "the-bridge" before they save, not after.
    */
+  /**
+   * Keep a draft of the menu page without publishing it.
+   *
+   * A separate column from the live row, because the live row is what somebody
+   * standing at a table is reading right now. A venue trying a new colour at
+   * four in the afternoon must not be able to publish it by pressing the wrong
+   * button, and must be able to come back to it tomorrow.
+   */
+  router.put('/api/dinein/draft', auth, async (req, res, next) => {
+    try {
+      const officeId = await officeOf(req);
+      if (officeId == null) {
+        return res.status(400).json({ error: 'Choose an office first.' });
+      }
+      await venueRow(officeId);
+      await pool.execute(
+        'UPDATE dinein_venue SET draft_json = ?, draft_saved_at = NOW() WHERE office_id = ?',
+        [JSON.stringify(req.body || {}), officeId]
+      );
+      res.json({ ok: true, saved_at: new Date().toISOString() });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.delete('/api/dinein/draft', auth, async (req, res, next) => {
+    try {
+      const officeId = await officeOf(req);
+      if (officeId == null) {
+        return res.status(400).json({ error: 'Choose an office first.' });
+      }
+      await pool.execute(
+        'UPDATE dinein_venue SET draft_json = NULL, draft_saved_at = NULL WHERE office_id = ?',
+        [officeId]
+      );
+      res.json({ ok: true });
+    } catch (e) {
+      next(e);
+    }
+  });
+
   router.get('/api/dinein/slug-check', auth, async (req, res, next) => {
     try {
       const officeId = await officeOf(req);
@@ -672,11 +866,15 @@ function dineinRoutes({ pool, broadcast, secret }) {
       const b = req.body || {};
       const sets = [];
       const params = [];
-      for (const field of ['name', 'description', 'image_url']) {
+      for (const field of ['name', 'description', 'image_url', 'diet_tag']) {
         if (b[field] === undefined) continue;
         sets.push(field + ' = ?');
         const value = String(b[field]).trim();
         params.push(value === '' ? null : value);
+      }
+      if (b.is_popular !== undefined) {
+        sets.push('is_popular = ?');
+        params.push(b.is_popular ? 1 : 0);
       }
       if (b.sort_order !== undefined) {
         sets.push('sort_order = ?');
@@ -1104,7 +1302,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
     if (sections.length) {
       const [rows] = await pool.query(
         'SELECT i.id, i.section_id, i.plu_id, i.description, i.image_url,' +
-          '       i.available,' +
+          '       i.available, i.is_popular, i.diet_tag,' +
           '       COALESCE(NULLIF(TRIM(i.name), ""), p.product_name) AS name,' +
           '       p.price AS price' +
           '  FROM dinein_items i' +
@@ -1130,6 +1328,11 @@ function dineinRoutes({ pool, broadcast, secret }) {
         ordering_open: !!venue.ordering_open,
         require_name: !!venue.require_name,
         require_phone: !!venue.require_phone,
+        // The venue's own colours, not Vesopa's. Cleaned server-side: these
+        // end up in a <style> block on a public page.
+        theme: cleanTheme(venue.theme_json),
+        offer: offerOf(venue),
+        promotions: cleanPromotions(venue.promotions),
         // The hours, and the venue's own answer to "are you open" — worked out
         // here rather than on the phone, whose clock is not evidence.
         schedule: openState(venue),
@@ -1148,6 +1351,8 @@ function dineinRoutes({ pool, broadcast, secret }) {
             description: i.description,
             image_url: i.image_url,
             available: !!i.available,
+            popular: !!i.is_popular,
+            diet: i.diet_tag || null,
             price_minor: Math.round(Number(i.price || 0) * 100),
           })),
       })),
@@ -1210,6 +1415,8 @@ function dineinRoutes({ pool, broadcast, secret }) {
           schedule: state,
         });
       }
+
+      const offer = offerOf(venue);
 
       // Signed in or not. A guest order is the ordinary case and carries null.
       const who = dinerOf(req);
@@ -1279,6 +1486,16 @@ function dineinRoutes({ pool, broadcast, secret }) {
         });
       }
 
+      // The offer, applied here and nowhere else.
+      //
+      // The page quotes a discount and this stores one, and those two
+      // disagreeing is somebody being charged a figure they were never shown.
+      // So the page's arithmetic is treated as a display of this, never as an
+      // input to it: nothing about the discount is read from the request.
+      const subtotal = total;
+      const discount = discountFor(offer, subtotal);
+      total = subtotal - discount;
+
       const publicId = newPublicId();
       const label = tableName(table);
 
@@ -1330,6 +1547,8 @@ function dineinRoutes({ pool, broadcast, secret }) {
         public_id: publicId,
         // The number the tracker shows and the customer says across a bar.
         number: order.insertId,
+        subtotal_minor: subtotal,
+        discount_minor: discount,
         total_minor: total,
         status: 'placed',
       });
@@ -1707,4 +1926,11 @@ function dineinRoutes({ pool, broadcast, secret }) {
 // directly. They are pure functions of a venue row and the clock, and the
 // alternative — asserting on them through an HTTP route — would mean standing
 // up a venue for every one of a dozen cases about midnight.
-module.exports = { dineinRoutes, openState, parseHours, cleanTime };
+module.exports = {
+  dineinRoutes,
+  openState, parseHours, cleanTime,
+  // cleanTheme is interpolated into a <style> block on a public page and
+  // discountFor decides what somebody pays. Both are pure and both are driven
+  // directly by dinein-offers.test.js.
+  cleanTheme, cleanPromotions, offerOf, discountFor,
+};
