@@ -313,6 +313,24 @@ function programmingRoutes({ pool, broadcast, secret }) {
    * goes into a TEXT column and comes back out to two different clients, and a
    * shape that round-trips differently on each is a shape that drifts.
    */
+  /**
+   * A colour written by a colour picker, or null.
+   *
+   * Six hex digits with a hash, which is exactly what `input[type=color]`
+   * produces and exactly what goes back into CSS. Anything else is refused
+   * rather than corrected: this value is interpolated into a style attribute on
+   * a page other people read, and a "colour" that is really a string of CSS is
+   * a way of styling somebody else's screen.
+   *
+   * Empty means "no colour of its own" — the theme's, which is what every room
+   * and every table had before there was a picker at all.
+   */
+  function colourOf(raw) {
+    if (raw == null || raw === '') return null;
+    const text = String(raw).trim();
+    return /^#[0-9a-fA-F]{6}$/.test(text) ? text.toUpperCase() : null;
+  }
+
   function outlineOf(raw) {
     if (raw == null || raw === '') return null;
     let points = raw;
@@ -399,14 +417,15 @@ function programmingRoutes({ pool, broadcast, secret }) {
       const params = officeId == null ? [] : [officeId];
 
       const [rooms] = await pool.query(
-        `SELECT id, name, sort_order, outline, cols, \`rows\`
+        `SELECT id, name, sort_order, outline, cols, \`rows\`,
+                floor_colour, wall_colour
          FROM floor_rooms${where}
          ORDER BY sort_order, id`,
         params
       );
       const [tables] = await pool.query(
         `SELECT id, room_id, table_number, label, name, public_id, qr_enabled,
-                pos_x, pos_y, width, height, shape, seats
+                pos_x, pos_y, width, height, shape, seats, colour
          FROM floor_tables${where} ORDER BY table_number`,
         params
       );
@@ -481,6 +500,11 @@ function programmingRoutes({ pool, broadcast, secret }) {
         sets.push('sort_order = ?');
         params.push(Number(req.body.sort_order) || 0);
       }
+      for (const field of ['floor_colour', 'wall_colour']) {
+        if (req.body[field] === undefined) continue;
+        sets.push(field + ' = ?');
+        params.push(colourOf(req.body[field]));
+      }
       if (!sets.length) return res.json({ ok: true, changed: 0 });
 
       const [r] = await pool.execute(
@@ -536,6 +560,22 @@ function programmingRoutes({ pool, broadcast, secret }) {
         ['qr_enabled', req.body.qr_enabled === undefined
           ? undefined
           : (req.body.qr_enabled ? 1 : 0)],
+        // Shape and size are laid out in the designer rather than typed, and
+        // until now only position came back from it — so a table dropped from
+        // the palette as a six-seat round was saved as the default rectangle
+        // the moment anything else about it was edited.
+        ['shape', req.body.shape === undefined
+          ? undefined
+          : (req.body.shape === 'circle' ? 'circle' : 'rect')],
+        ['width', req.body.width === undefined
+          ? undefined
+          : Math.max(1, Math.min(20, Number(req.body.width) || 2))],
+        ['height', req.body.height === undefined
+          ? undefined
+          : Math.max(1, Math.min(20, Number(req.body.height) || 2))],
+        ['colour', req.body.colour === undefined
+          ? undefined
+          : colourOf(req.body.colour)],
       ];
       for (const [field, value] of changes) {
         if (value === undefined) continue;
@@ -694,7 +734,8 @@ function programmingRoutes({ pool, broadcast, secret }) {
            SET pos_x = ?, pos_y = ?, width = ?, height = ?,
                shape = ?, seats = ?, label = ?, room_id = ?,
                name = COALESCE(?, name),
-               qr_enabled = COALESCE(?, qr_enabled)
+               qr_enabled = COALESCE(?, qr_enabled),
+               colour = ?
            WHERE id = ?${officeId == null ? '' : ' AND office_id = ?'}`,
           [
             t.pos_x, t.pos_y, t.width, t.height,
@@ -704,6 +745,10 @@ function programmingRoutes({ pool, broadcast, secret }) {
             // not blank it. Only a payload that actually carries one changes it.
             t.name === undefined ? null : (String(t.name).trim() || null),
             t.qr_enabled === undefined ? null : (t.qr_enabled ? 1 : 0),
+            // Plainly assigned, not coalesced: null here means "no colour of
+            // its own", which is a real choice somebody makes by clearing the
+            // picker, and COALESCE would make that choice impossible to save.
+            colourOf(t.colour),
             t.id,
             ...(officeId == null ? [] : [officeId]),
           ]

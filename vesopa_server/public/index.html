@@ -865,15 +865,32 @@
               <h2>Table Designer</h2>
               <p class="muted small">Drag tables to lay out the room. <span id="dirty"></span></p>
             </div>
-            <div style="display:flex;gap:10px">
+            <div class="fd-tools">
               <button class="btn ghost" id="add-room">New room</button>
-              <button class="btn ghost" id="room-shape">Room shape</button>
+              <button class="btn ghost" id="draw-room">Draw the room</button>
+              <button class="btn ghost" id="room-shape">Size &amp; colours</button>
               <button class="btn ghost" id="add-table">Add table</button>
               <button class="btn primary" id="save-floor">Save layout</button>
             </div>
           </div>
 
           <div class="room-tabs" id="room-tabs"></div>
+
+          <!-- The furniture. A room is two-tops along the window and four-tops
+               in the middle, not a stack of identical squares — so the tables
+               are laid out from a strip of real shapes, dragged onto the spot
+               they go or clicked to drop one in. -->
+          <div class="fd-palette" id="table-palette" aria-label="Table shapes"></div>
+
+          <!-- Only while the room is being drawn: a bar of its own so the
+               instruction and the way out of the mode are next to the plan
+               being drawn on, rather than up in the page heading. -->
+          <div class="fd-drawbar" id="draw-bar" hidden>
+            <span>Click each corner of the room. Click the first corner again to close it.</span>
+            <button class="btn small ghost" id="draw-undo" type="button">Undo corner</button>
+            <button class="btn small ghost" id="draw-cancel" type="button">Cancel</button>
+            <button class="btn small primary" id="draw-room-done" type="button">Done</button>
+          </div>
 
           <div class="designer">
             <div id="canvas"></div>

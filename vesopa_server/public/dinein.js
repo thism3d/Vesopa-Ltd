@@ -899,8 +899,8 @@ function diSectionCard(section) {
       ${count
         ? `<div class="di-scroll"><table class="grid di-items">
              <thead><tr>
-               <th style="width:30%">Shown as</th>
-               <th>Description</th>
+               <th style="width:23%">Shown as</th>
+               <th style="width:auto">Description</th>
                <th class="mid" style="width:64px">On</th>
                <th class="mid" style="width:74px">Popular</th>
                <th class="mid" style="width:74px">Featured</th>

@@ -2580,6 +2580,281 @@ let activeRoom = null;
 let selected = null;
 let dirty = false;
 
+/**
+ * The furniture.
+ *
+ * A room is not made of "tables": it is made of two-tops along the window,
+ * four-tops in the middle, a long six for the party, a couple of high stools at
+ * the bar. Adding one used to be a form asking for a number and a seat count,
+ * after which a 2x2 rectangle appeared in the corner and had to be dragged and
+ * resized into whatever was meant — so every table on every floor started as
+ * the same square, and most of them stayed that way.
+ *
+ * Sizes are in grid squares, and they are the proportions of the real thing: a
+ * two-top is square, a six is long, a round table is round. Dropping one is a
+ * drag from this strip onto the spot it goes.
+ */
+const TABLE_PRESETS = [
+  { key: 'two',    label: 'Two',    seats: 2, w: 2, h: 2, shape: 'rect' },
+  { key: 'round2', label: 'Round 2', seats: 2, w: 2, h: 2, shape: 'circle' },
+  { key: 'four',   label: 'Four',   seats: 4, w: 3, h: 2, shape: 'rect' },
+  { key: 'round4', label: 'Round 4', seats: 4, w: 3, h: 3, shape: 'circle' },
+  { key: 'six',    label: 'Six',    seats: 6, w: 4, h: 2, shape: 'rect' },
+  { key: 'round6', label: 'Round 6', seats: 6, w: 4, h: 4, shape: 'circle' },
+  { key: 'eight',  label: 'Eight',  seats: 8, w: 5, h: 3, shape: 'rect' },
+  { key: 'booth',  label: 'Booth',  seats: 4, w: 4, h: 3, shape: 'rect' },
+  { key: 'stool',  label: 'Stool',  seats: 1, w: 1, h: 1, shape: 'circle' },
+];
+
+/** The lowest table number this venue is not already using. */
+function nextTableNumber() {
+  const used = new Set();
+  floor.forEach((r) => (r.tables || []).forEach((t) => used.add(Number(t.table_number))));
+  let n = 1;
+  while (used.has(n)) n += 1;
+  return n;
+}
+
+/**
+ * Put one of the presets down.
+ *
+ * Saved immediately rather than held in the layout: adding a table mints the
+ * code that goes on the card sitting on it, and that has to come from the
+ * server. Everything after — where it sits, how big it is — is a drag, and
+ * drags are saved together when the manager presses Save.
+ */
+async function dropPreset(preset, gridX, gridY) {
+  if (!activeRoom) return toast('Create a room first.', 'warn');
+  const room = floor.find((r) => r.id === activeRoom);
+  const size = roomSize(room);
+
+  try {
+    await api('/floor/tables', {
+      method: 'POST',
+      body: JSON.stringify({
+        room_id: activeRoom,
+        table_number: nextTableNumber(),
+        seats: preset.seats,
+        width: preset.w,
+        height: preset.h,
+        shape: preset.shape,
+        // Clamped so a table dropped near the edge lands whole inside the room
+        // rather than half outside it, where it cannot be dragged back.
+        pos_x: Math.max(0, Math.min(size.cols - preset.w, gridX)),
+        pos_y: Math.max(0, Math.min(size.rows - preset.h, gridY)),
+      }),
+    });
+    await loadFloor();
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+// =========================================================================
+// DRAWING THE ROOM
+// =========================================================================
+//
+// A real room is an L round a corner, a bar cutting across, a bay at the front.
+// The shape panel offers four presets and, for everything else, a box to type
+// x,y pairs into — which is asking a publican to describe their own dining room
+// in coordinates. This draws it instead: click each corner, click the first one
+// again to close it, drag any corner afterwards to nudge it.
+//
+// It writes the same array of grid points the presets do, so nothing downstream
+// knows the difference and a room drawn today can still be edited as a preset
+// tomorrow.
+
+let lasso = null;   // { points: [[x,y], …] } while drawing, else null
+
+/** Is the plan currently being drawn on rather than arranged? */
+function drawing() {
+  return !!lasso;
+}
+
+function startLasso() {
+  const room = floor.find((r) => r.id === activeRoom);
+  if (!room) return toast('Create a room first.', 'warn');
+  // Opens on whatever shape the room already has, so adjusting an L is moving
+  // six corners rather than drawing it again from nothing.
+  lasso = { points: (roomOutline(room) || []).map(([x, y]) => [x, y]) };
+  $('canvas').classList.add('drawing');
+  $('draw-bar').hidden = false;
+  $('draw-room').textContent = 'Done drawing';
+  drawRoom();
+}
+
+function stopLasso(save) {
+  const room = floor.find((r) => r.id === activeRoom);
+  const points = lasso ? lasso.points : null;
+  lasso = null;
+  $('canvas').classList.remove('drawing');
+  $('draw-bar').hidden = true;
+  $('draw-room').textContent = 'Draw the room';
+
+  if (!save || !room) return drawRoom();
+  // Fewer than three corners is not a room. Cleared rather than refused: a
+  // manager who drew two points and pressed done meant "no custom shape", and
+  // that is a rectangle.
+  const outline = points && points.length >= 3 ? points : null;
+  api('/floor/rooms/' + room.id, {
+    method: 'PUT',
+    body: JSON.stringify({ outline }),
+  })
+    .then(() => loadFloor())
+    .then(() => toast(outline ? 'Room shape saved.' : 'Back to a plain rectangle.'))
+    .catch((e) => toast(e.message, 'error'));
+}
+
+/**
+ * A click on the plan while drawing.
+ *
+ * Snapped to the grid, because a wall between two grid squares is a wall no
+ * table can be aligned to — and everything else in this designer is on the
+ * grid already.
+ */
+function lassoClick(e) {
+  const canvas = $('canvas');
+  const box = canvas.getBoundingClientRect();
+  const room = floor.find((r) => r.id === activeRoom);
+  const size = roomSize(room);
+
+  const x = Math.max(0, Math.min(size.cols, Math.round((e.clientX - box.left) / GRID)));
+  const y = Math.max(0, Math.min(size.rows, Math.round((e.clientY - box.top) / GRID)));
+
+  // Back on the first corner closes the shape, which is how every drawing tool
+  // this resembles behaves and what the instruction says to do.
+  const first = lasso.points[0];
+  if (first && lasso.points.length >= 3
+      && Math.abs(first[0] - x) <= 1 && Math.abs(first[1] - y) <= 1) {
+    return stopLasso(true);
+  }
+
+  lasso.points.push([x, y]);
+  drawRoom();
+}
+
+/** The shape as it stands, with a handle on every corner. */
+function lassoLayer(size) {
+  const w = size.cols * GRID;
+  const h = size.rows * GRID;
+  const pts = lasso.points;
+
+  const line = pts.map(([x, y]) => `${x * GRID},${y * GRID}`).join(' ');
+  const handles = pts.map(([x, y], i) => `
+    <circle class="lasso-pt" data-pt="${i}" cx="${x * GRID}" cy="${y * GRID}"
+            r="7" />`).join('');
+
+  return `
+    <svg class="lasso" width="${w}" height="${h}"
+         style="position:absolute;left:0;top:0">
+      ${pts.length >= 3
+        ? `<polygon points="${line}" fill="rgba(165,199,21,.16)"
+                    stroke="#A5C715" stroke-width="2" stroke-linejoin="round" />`
+        : `<polyline points="${line}" fill="none"
+                     stroke="#A5C715" stroke-width="2" stroke-linejoin="round" />`}
+      ${handles}
+    </svg>`;
+}
+
+/** Drag a corner. */
+function wireLassoHandles() {
+  $('canvas').querySelectorAll('.lasso-pt').forEach((dot) => {
+    dot.addEventListener('pointerdown', (e) => {
+      // Not a new corner: this is moving one that is already there.
+      e.stopPropagation();
+      e.preventDefault();
+      const index = Number(dot.dataset.pt);
+      const canvas = $('canvas');
+      const box = canvas.getBoundingClientRect();
+      const room = floor.find((r) => r.id === activeRoom);
+      const size = roomSize(room);
+      dot.setPointerCapture(e.pointerId);
+
+      const move = (ev) => {
+        lasso.points[index] = [
+          Math.max(0, Math.min(size.cols, Math.round((ev.clientX - box.left) / GRID))),
+          Math.max(0, Math.min(size.rows, Math.round((ev.clientY - box.top) / GRID))),
+        ];
+        drawRoom();
+      };
+      const up = () => {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+      };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+    });
+  });
+}
+
+/** The strip of presets, and the drag that carries one onto the plan. */
+function paintPalette() {
+  const strip = $('table-palette');
+  if (!strip) return;
+
+  strip.innerHTML = TABLE_PRESETS.map((t) => `
+    <button type="button" class="preset" draggable="true" data-preset="${t.key}"
+            title="Drag onto the plan, or click to drop one in">
+      <span class="preset-art ${t.shape}"
+            style="--pw:${t.w};--ph:${t.h}"></span>
+      <span class="preset-name">${esc(t.label)}</span>
+    </button>`).join('');
+
+  strip.querySelectorAll('[data-preset]').forEach((btn) => {
+    const preset = TABLE_PRESETS.find((t) => t.key === btn.dataset.preset);
+
+    btn.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('text/plain', preset.key);
+      e.dataTransfer.effectAllowed = 'copy';
+    });
+
+    // Clicking drops one in the middle, because a click is what a finger does
+    // and dragging on a touchscreen fights the page's own scrolling.
+    btn.addEventListener('click', () => {
+      const room = floor.find((r) => r.id === activeRoom);
+      if (!room) return toast('Create a room first.', 'warn');
+      const size = roomSize(room);
+      dropPreset(preset,
+        Math.max(0, Math.round(size.cols / 2 - preset.w / 2)),
+        Math.max(0, Math.round(size.rows / 2 - preset.h / 2)));
+    });
+  });
+}
+
+/** Let the canvas take one. */
+function wireCanvasDrop() {
+  const canvas = $('canvas');
+  if (!canvas || canvas.dataset.dropWired) return;
+  canvas.dataset.dropWired = '1';
+
+  // Corners, while the room is being drawn. Bound once here rather than added
+  // and removed with the mode, because a listener added on every redraw is a
+  // listener added a hundred times over an afternoon.
+  canvas.addEventListener('click', (e) => {
+    if (!drawing()) return;
+    if (e.target.closest('.lasso-pt')) return;   // that is a handle, not a corner
+    lassoClick(e);
+  });
+
+  canvas.addEventListener('dragover', (e) => {
+    if (!activeRoom) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  });
+
+  canvas.addEventListener('drop', (e) => {
+    e.preventDefault();
+    const preset = TABLE_PRESETS.find((t) => t.key === e.dataTransfer.getData('text/plain'));
+    if (!preset) return;
+    const box = canvas.getBoundingClientRect();
+    // Dropped by its middle, which is where the pointer is and where somebody
+    // aiming at a spot on the floor thinks the table is going.
+    dropPreset(preset,
+      Math.round((e.clientX - box.left) / GRID - preset.w / 2),
+      Math.round((e.clientY - box.top) / GRID - preset.h / 2));
+  });
+}
+
 function markDirty(on) {
   dirty = on;
   $('dirty').innerHTML = on ? '<span class="unsaved">Unsaved changes</span>' : '';
@@ -2619,6 +2894,14 @@ function drawRoom() {
   canvas.style.setProperty('--room-w', `${cols * GRID}px`);
   canvas.style.setProperty('--room-h', `${rows * GRID}px`);
 
+  // The venue's own floor, if it has chosen one. Set as properties rather than
+  // written into the SVG so the same two values also tint the grid behind a
+  // plain rectangular room, which has no polygon to fill.
+  if (room.floor_colour) canvas.style.setProperty('--room-fill', room.floor_colour);
+  else canvas.style.removeProperty('--room-fill');
+  if (room.wall_colour) canvas.style.setProperty('--room-line', room.wall_colour);
+  else canvas.style.removeProperty('--room-line');
+
   // The walls, under the tables.
   //
   // Real rooms are not boxes: an L wrapping a corner is the commonest floor in
@@ -2644,14 +2927,22 @@ function drawRoom() {
       (t) => `<div class="tbl ${t.shape === 'circle' ? 'circle' : ''}"
         data-table="${t.id}"
         style="left:${t.pos_x * GRID}px; top:${t.pos_y * GRID}px;
-               width:${t.width * GRID}px; height:${t.height * GRID}px;">
+               width:${t.width * GRID}px; height:${t.height * GRID}px;
+               ${t.colour ? `--tbl-colour:${esc(t.colour)}` : ''}">
         <span class="num">${esc(t.name || t.label || String(t.table_number))}</span>
         <span class="seats">${t.seats} seats</span>
       </div>`
     )
-    .join('');
+    .join('') + (drawing() ? lassoLayer({ cols, rows }) : '');
 
-  canvas.querySelectorAll('.tbl').forEach(makeDraggable);
+  // Not while the room is being drawn. A pointerdown on a table would start a
+  // drag instead of dropping a corner, and the corner somebody was aiming at is
+  // usually the one a table is sitting on.
+  if (!drawing()) canvas.querySelectorAll('.tbl').forEach(makeDraggable);
+  else wireLassoHandles();
+
+  wireCanvasDrop();
+  paintPalette();
   showInspector();
 }
 
@@ -2819,7 +3110,19 @@ function editRoomShape() {
       <label>Depth (grid squares)<input id="shape-h" type="number" min="4" max="60" value="${h}"></label>
       <label>Cut across<input id="shape-cw" type="number" min="1" max="59" value="${curCw || Math.round(w / 2)}"></label>
       <label>Cut back<input id="shape-ch" type="number" min="1" max="59" value="${curCh || Math.round(h / 2)}"></label>
+      <label>The floor
+        <input id="shape-fill" type="color" value="${esc(room.floor_colour || '#F4F5F1')}">
+        <span class="muted small">The carpet, behind the tables.</span>
+      </label>
+      <label>The walls
+        <input id="shape-line" type="color" value="${esc(room.wall_colour || '#8A8F98')}">
+        <span class="muted small">The line drawn round it.</span>
+      </label>
     </div>
+    <label class="check">
+      <input type="checkbox" id="shape-plain" ${room.floor_colour ? '' : 'checked'}>
+      <span>Use the theme's own colours instead</span>
+    </label>
 
     <label id="shape-points-wrap" ${kind === 'custom' ? '' : 'hidden'}>
       Corners, as x,y pairs — one per line, walked round the room
@@ -2887,6 +3190,12 @@ function editRoomShape() {
           cols: w,
           rows: h,
           outline: points,
+          // Empty means "no colour of its own", which the server stores as
+          // null and the designer reads as the theme's — a real choice, and one
+          // a venue makes by ticking the box rather than by hunting for the
+          // grey it started with.
+          floor_colour: $('shape-plain').checked ? '' : $('shape-fill').value,
+          wall_colour: $('shape-plain').checked ? '' : $('shape-line').value,
         }),
       });
       $('modal-root').innerHTML = '';
@@ -2946,6 +3255,30 @@ function showInspector() {
         <option value="circle" ${table.shape === 'circle' ? 'selected' : ''}>Circle</option>
       </select>
     </label>
+    <label>Colour
+      <span class="i-colour">
+        <input id="i-colour" type="color" value="${esc(table.colour || '#A5C715')}" />
+        <button type="button" class="btn small ghost" id="i-colour-clear"
+                ${table.colour ? '' : 'hidden'}>Use the default</button>
+      </span>
+      <span class="muted small">
+        For the tables worth picking out — the window seats, the booths.
+      </span>
+    </label>
+
+    <div class="i-code">
+      <b>Its code</b>
+      <p class="muted small">
+        Minted when the table was added and never changed since, so a card
+        printed today keeps working through every rename and every move. Print
+        the set under <b>Table codes</b>.
+      </p>
+      <label class="check">
+        <input type="checkbox" id="i-qr" ${table.qr_enabled ? 'checked' : ''}>
+        <span>Phones can order from this table</span>
+      </label>
+    </div>
+
     <button class="btn danger small" id="i-del" style="margin-top:16px">Delete table</button>`;
 
   const apply = () => {
@@ -2955,14 +3288,31 @@ function showInspector() {
     table.width = Math.max(1, Number($('i-w').value) || 2);
     table.height = Math.max(1, Number($('i-h').value) || 2);
     table.shape = $('i-shape').value;
+    table.qr_enabled = $('i-qr').checked ? 1 : 0;
     markDirty(true);
     drawRoom();
     drawSelection();
   };
 
-  ['i-name', 'i-label', 'i-seats', 'i-w', 'i-h', 'i-shape'].forEach((id) =>
+  ['i-name', 'i-label', 'i-seats', 'i-w', 'i-h', 'i-shape', 'i-qr'].forEach((id) =>
     $(id).addEventListener('change', apply)
   );
+
+  // The colour is live: picking one and having to guess until Save is picking
+  // blind, and the whole point of a colour is what it looks like on the plan.
+  $('i-colour').addEventListener('input', () => {
+    table.colour = $('i-colour').value.toUpperCase();
+    $('i-colour-clear').hidden = false;
+    markDirty(true);
+    drawRoom();
+    drawSelection();
+  });
+  $('i-colour-clear').onclick = () => {
+    table.colour = null;
+    markDirty(true);
+    drawRoom();
+    drawSelection();
+  };
 
   $('i-del').onclick = async () => {
     if (!await confirmDialog(`Delete table ${table.table_number}?`)) return;
@@ -3973,6 +4323,20 @@ document.addEventListener('click', async (e) => {
       }
     );
   }
+  if (t.id === 'draw-room') {
+    if (drawing()) return stopLasso(true);
+    return startLasso();
+  }
+
+  if (t.id === 'draw-room-done') return stopLasso(true);
+  if (t.id === 'draw-cancel') return stopLasso(false);
+
+  if (t.id === 'draw-undo') {
+    if (!drawing() || !lasso.points.length) return;
+    lasso.points.pop();
+    return drawRoom();
+  }
+
   if (t.id === 'room-shape') {
     if (!activeRoom) return toast('Create a room first.', 'warn');
     return editRoomShape();

@@ -4916,6 +4916,131 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
 /* Opening hours: seven rows that have to stay readable on a phone held in one
    hand at the end of a shift, which is when a landlord actually changes them. */
 /* ===========================================================================
+   THE FLOOR DESIGNER
+   ===========================================================================
+   A room is drawn and furnished here, not described. The strip along the top is
+   the furniture; the plan below is the room; and while the room is being drawn
+   the plan takes clicks as corners rather than as drags.
+   --------------------------------------------------------------------------- */
+
+.fd-tools { display: flex; flex-wrap: wrap; gap: 10px; }
+
+/* ---- The furniture -------------------------------------------------------
+   Scrolls sideways rather than wrapping: nine presets wrapped onto three rows
+   push the plan — the thing the page is for — off the bottom of a laptop. */
+.fd-palette {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding: 10px 12px;
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  scrollbar-width: thin;
+  scrollbar-color: var(--brand) transparent;
+}
+.fd-palette::-webkit-scrollbar { height: 8px; }
+.fd-palette::-webkit-scrollbar-thumb {
+  background: var(--brand);
+  border-radius: 999px;
+}
+
+.preset {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  width: 74px;
+  padding: 8px 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: grab;
+}
+.preset:hover { border-color: var(--brand); }
+.preset:active { cursor: grabbing; transform: scale(.97); }
+
+/* A drawing of the table, in its own proportions, so a six reads as long and a
+   round four reads as round before the word underneath is read at all. */
+.preset-art {
+  display: block;
+  width: calc(var(--pw) * 9px);
+  height: calc(var(--ph) * 9px);
+  border: 2px solid var(--brand);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--brand) 16%, transparent);
+}
+.preset-art.circle { border-radius: 50%; }
+.preset-name { white-space: nowrap; }
+
+/* ---- While the room is being drawn --------------------------------------- */
+.fd-drawbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 10px 14px;
+  border: 1px solid var(--brand);
+  border-radius: 10px;
+  background: var(--brand-soft, rgba(165, 199, 21, .14));
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.fd-drawbar > span { flex: 1 1 260px; }
+
+/* The plan says what it is for. A crosshair rather than an arrow, because the
+   click lands on a point and not on a thing. */
+#canvas.drawing { cursor: crosshair; }
+#canvas.drawing .tbl { pointer-events: none; opacity: .5; }
+
+.lasso { pointer-events: none; }
+.lasso .lasso-pt {
+  pointer-events: auto;
+  cursor: grab;
+  fill: var(--panel);
+  stroke: var(--brand);
+  stroke-width: 3;
+}
+.lasso .lasso-pt:hover { fill: var(--brand); }
+
+/* ---- A table that has been given a colour -------------------------------- */
+.tbl { --tbl-colour: var(--brand); }
+.tbl[style*="--tbl-colour"] {
+  border-color: var(--tbl-colour);
+  background: color-mix(in srgb, var(--tbl-colour) 20%, var(--panel));
+}
+
+.i-colour { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+.i-colour input[type="color"] {
+  width: 46px;
+  height: 34px;
+  min-height: 0;
+  padding: 3px;
+  margin: 0;
+  border-radius: 8px;
+  flex: 0 0 auto;
+}
+
+.i-code {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.i-code p { margin: 4px 0 8px; }
+
+@media (max-width: 720px) {
+  .preset { width: 66px; }
+}
+
+/* ===========================================================================
    THE MENU-PAGE EDITOR
    ===========================================================================
    Nine panels and a preview. The panels fold, because a venue that set its
@@ -5075,31 +5200,45 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
 .float > input {
   width: 100%;
   margin: 0;
-  padding: 20px 13px 8px;
+  /* Room above the value for the label to sit in. The field is taller than a
+     plain one by exactly that much — without the extra height the label and the
+     value are laid out in the same place and overlap, which is what happened:
+     "Section" was drawn through "Starters". */
+  height: auto;
+  min-height: 54px;
+  padding: 23px 13px 7px;
   box-sizing: border-box;
+  line-height: 1.35;
 }
 .float > span {
   position: absolute;
   left: 14px;
-  top: 13px;
-  font-size: 12px;
+  top: 8px;
+  /* Its own line height, not the page's. Inheriting 20px of line box on an
+     11px label gives it a box nearly twice its own height, and the bottom of
+     that box is where the value starts. */
+  line-height: 1;
+  font-size: 11px;
   font-weight: 600;
+  letter-spacing: .02em;
   color: var(--muted);
   pointer-events: none;
   transform-origin: 0 0;
   transition: transform .14s ease, color .14s ease;
 }
-/* Empty and not being typed into: the label sits where the text will go, at
-   text size, so it reads as a prompt rather than as a caption. */
+/* Empty and not being typed into: the label drops to where the text will go,
+   at text size, so it reads as a prompt rather than as a caption over a gap. */
 .float > input:placeholder-shown:not(:focus) + span {
-  transform: translateY(6px) scale(1.22);
+  transform: translate(0, 13px) scale(1.36);
 }
 .float > input:focus + span { color: var(--brand); }
 
 /* ---- A section of the menu ----------------------------------------------- */
 .di-menu-sec > summary { justify-content: flex-start; }
 .di-menu-sec > summary h3 { flex: 0 1 auto; min-width: 0; }
-.di-sec-count { margin-left: auto; padding-right: 10px; white-space: nowrap; }
+/* Clear of the fold arrow, which is drawn at the summary's right edge. At
+   10px the count sat under it and the two read as one smudged glyph. */
+.di-sec-count { margin-left: auto; padding-right: 22px; white-space: nowrap; }
 
 /* The name, the line underneath, and the two buttons.
    The buttons were flex items in a row of flexible fields and were being
@@ -5128,7 +5267,12 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
    own box rather than pushing the page sideways — which would take the name,
    the one column that says which dish the row is, off the left edge. */
 .di-scroll { margin-top: 12px; overflow-x: auto; }
-.di-items { min-width: 720px; }
+/* Fixed, so the percentages on the headings are what the columns get. Left to
+   the browser, the three tick columns and the three action buttons took the
+   width they wanted and the two columns that actually hold writing were
+   squeezed to about 170px each — every dish on the menu reading "Garlic Bre".*/
+.di-items { min-width: 860px; table-layout: fixed; }
+.di-items td { overflow: hidden; }
 .di-items th.mid, .di-items td.mid { text-align: center; }
 .di-items td.di-row-acts {
   text-align: right;
