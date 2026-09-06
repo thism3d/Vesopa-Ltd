@@ -5093,16 +5093,15 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
    than the window — a sticky element taller than its viewport stops sticking
    and simply scrolls away, which looks like the feature breaking. */
 .di-side { position: sticky; top: 16px; min-width: 0; }
-.di-side-inner {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 14px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--panel);
-}
-.di-side-note { margin: 0; }
+/* The preview is a folding section like every other panel on this page, so it
+   brings its own card styling with it and needs no wrapper of its own. */
+.di-preview .di-phone { margin-top: 4px; }
+.di-side-note { margin: 8px 0 0; }
+
+/* The preview, where it folds. It keeps the section styling the rest of the
+   page uses, so the disclosure arrow and the heading read the same. */
+.di-preview > summary h3 { margin: 0; }
+.di-preview[open] > summary { margin-bottom: 12px; }
 
 /* A phone, drawn around the preview so what is inside it reads as a phone
    screen rather than as part of the form. The aspect ratio is a real handset's
@@ -5133,9 +5132,11 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
 }
 
 @media (max-width: 1100px) {
-  /* No room for a phone beside a form. The preview goes above the panels,
-     where it is still the first thing seen, and stops being sticky — two
-     sticky things on one narrow screen is most of the screen gone. */
+  /* No room for a phone beside a form.
+     The preview stays at the top — it is the first thing a venue wants to see
+     when it opens this page — but folded, because open it is a 708px block and
+     every setting on the page starts below it. app.js opens it again as soon
+     as there is room for two columns. */
   .di-layout { grid-template-columns: minmax(0, 1fr); }
   .di-side { position: static; order: -1; }
   .di-phone { max-width: 320px; margin: 0 auto; }
@@ -5247,12 +5248,28 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
 /* The dishes. Six columns do not fit a tablet, so the table scrolls inside its
    own box rather than pushing the page sideways — which would take the name,
    the one column that says which dish the row is, off the left edge. */
-.di-scroll { margin-top: 12px; overflow-x: auto; }
+.di-scroll {
+  margin-top: 12px;
+  overflow-x: auto;
+  /* Keep the sideways gesture in this box rather than handing it to the page
+     once the end is reached. Without it iOS passes the overscroll outward and
+     the swipe that should bring the first column back instead rubber-bands the
+     whole view, which is what "the x axis scroll is blocked" felt like. */
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+}
 /* Fixed, so the percentages on the headings are what the columns get. Left to
    the browser, the three tick columns and the three action buttons took the
    width they wanted and the two columns that actually hold writing were
    squeezed to about 170px each — every dish on the menu reading "Garlic Bre".*/
-.di-items { min-width: 860px; table-layout: fixed; }
+/* Narrow enough to fit a tablet with the rail open.
+   Measured there: the scroll box is 734px and the table was 860, so it scrolled
+   — and a horizontal scroller full of text inputs is a trap, because tapping
+   one makes the browser scroll it into view and a finger then has to find its
+   way back to a first column that is off the left edge. That is what "cannot
+   scroll to the left" was. Fitting removes the gesture rather than fixing it;
+   the overflow rule stays for genuinely small screens. */
+.di-items { min-width: 700px; table-layout: fixed; }
 .di-items td { overflow: hidden; }
 .di-items th.mid, .di-items td.mid { text-align: center; }
 .di-items td.di-row-acts {

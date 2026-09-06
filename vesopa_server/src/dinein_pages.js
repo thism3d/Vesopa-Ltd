@@ -1212,9 +1212,15 @@ section{padding-left:18px;padding-right:18px}
  * tabs underneath it. */
 .finder{
   position:sticky;top:0;z-index:22;
-  margin:16px auto 0;padding:8px 18px;
+  /* No side padding. The bar sits in the same column as everything else and
+     the box it draws is that column — measured on a phone, the field came out
+     322px against 358 for the offer above it and the notice below, so the one
+     control somebody types into was the narrowest thing on the page. The
+     vertical padding stays; it is what lifts the bar off the content while it
+     is pinned. */
+  margin:16px auto 0;padding:8px 0;
   background:var(--page);
-  transition:box-shadow .2s ease, padding .2s ease;
+  transition:box-shadow .2s ease;
 }
 /* Only once it is actually pinned, so the shadow is a sign that something is
    floating over the page rather than a permanent border. */
@@ -1232,12 +1238,12 @@ section{padding-left:18px;padding-right:18px}
   box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 26%, transparent)
 }
 .finder .mag{
-  position:absolute;left:32px;top:50%;transform:translateY(-50%);
+  position:absolute;left:16px;top:50%;transform:translateY(-50%);
   width:17px;height:17px;stroke:var(--ink-soft);fill:none;stroke-width:2;
   stroke-linecap:round;stroke-linejoin:round;pointer-events:none
 }
 .finder .clear{
-  position:absolute;right:26px;top:50%;transform:translateY(-50%);
+  position:absolute;right:12px;top:50%;transform:translateY(-50%);
   width:26px;height:26px;border:0;border-radius:999px;cursor:pointer;
   background:var(--sunken);color:var(--ink-soft);display:none;
   align-items:center;justify-content:center;font-size:15px;line-height:1
@@ -1256,7 +1262,7 @@ section{padding-left:18px;padding-right:18px}
  * clearing it here would undo the thing the button is supposed to finish —
  * that is what the x is for. */
 .finder .done{
-  position:absolute;right:26px;top:50%;transform:translateY(-50%);
+  position:absolute;right:12px;top:50%;transform:translateY(-50%);
   height:30px;padding:0 12px;border:0;border-radius:999px;cursor:pointer;
   background:var(--accent);color:var(--on-accent);
   font:inherit;font-size:13.5px;font-weight:700;line-height:1;
@@ -1266,7 +1272,7 @@ section{padding-left:18px;padding-right:18px}
 /* Both cannot share the right edge. While the bar is in use the x moves in
    behind the button, which is also the moment it is least wanted: somebody
    typing is not usually trying to empty the box. */
-.finder.searching .clear{right:84px}
+.finder.searching .clear{right:70px}
 
 /* What is left when a search matches nothing. */
 .nohits{

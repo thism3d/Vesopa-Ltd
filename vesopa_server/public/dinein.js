@@ -399,14 +399,14 @@ async function loadDineIn() {
     </div>
     </div>
     <aside class="di-side">
-      <div class="di-side-inner">
-        <span class="muted small">Preview</span>
+      <details class="card di-sec di-preview" id="di-preview-box">
+        <summary><h3>Preview</h3></summary>
         <div class="di-phone"><iframe id="di-preview-frame" title="Menu preview"></iframe></div>
         <p class="muted small di-side-note">
           What a customer sees, updating as you type. Nothing here reaches them
           until you press Save.
         </p>
-      </div>
+      </details>
     </aside>
     </div>
   `;
@@ -419,6 +419,7 @@ async function loadDineIn() {
   wireImagePickers($('dinein-body'));
   diWireSwatches($('dinein-body'));
   diFitPhone();
+  diPreviewFold();
 
   // A draft, if one was left, is what the editor opens on — otherwise a venue
   // comes back tomorrow to find yesterday's work gone.
@@ -638,6 +639,30 @@ function diPaintPreview() {
  * scale has to be computed, because the column is 340px on a laptop, wider on
  * a large screen, and the full width of the page below 1100px.
  */
+/**
+ * Whether the preview starts open.
+ *
+ * Open beside the form where there is room for two columns, because a preview
+ * you have to ask for is a preview nobody looks at. Folded where there is not,
+ * because there it is stacked *above* the settings — and measured on an iPad it
+ * is a 708px block, so the page opened on a phone-shaped picture with every
+ * control below the fold and the venue scrolling past its own menu to reach the
+ * form.
+ *
+ * Driven from the same 1100px the stylesheet switches the layout at. A details
+ * element cannot be opened by CSS, so the width is asked here.
+ */
+function diPreviewFold() {
+  const box = $('di-preview-box');
+  if (!box) return;
+  const wide = window.matchMedia('(min-width: 1101px)');
+  const apply = () => { box.open = wide.matches; };
+  apply();
+  // Rotating an iPad crosses this line, and a preview that stayed folded on a
+  // screen with room for it would look like the feature had gone.
+  wide.addEventListener('change', apply);
+}
+
 function diFitPhone() {
   const shell = document.querySelector('.di-phone');
   if (!shell) return;
@@ -902,13 +927,13 @@ function diSectionCard(section) {
       ${count
         ? `<div class="di-scroll"><table class="grid di-items">
              <thead><tr>
-               <th style="width:23%">Shown as</th>
+               <th style="width:24%">Shown as</th>
                <th style="width:auto">Description</th>
-               <th class="mid" style="width:64px">On</th>
-               <th class="mid" style="width:74px">Popular</th>
-               <th class="mid" style="width:74px">Featured</th>
-               <th style="width:130px">Diet</th>
-               <th style="width:132px"></th>
+               <th class="mid" style="width:52px">On</th>
+               <th class="mid" style="width:58px">Popular</th>
+               <th class="mid" style="width:62px">Featured</th>
+               <th style="width:92px">Diet</th>
+               <th style="width:116px"></th>
              </tr></thead>
              <tbody>${section.items.map(diItemRow).join('')}</tbody>
            </table></div>`
