@@ -371,23 +371,41 @@ function show(view, { push = true, userInitiated = false } = {}) {
     return;
   }
 
+  // EVERYTHING VISIBLE HAPPENS BEFORE ANYTHING IS ASKED FOR.
+  //
+  // The address, the highlighted nav item, the heading, the progress bar and
+  // the skeleton are all settled in this synchronous block, so the browser
+  // paints the new page on the same frame as the press. The data arrives when
+  // it arrives and drops into a page that is already there.
+  //
+  // Before this, a press changed nothing at all until the response landed —
+  // which on a slow connection is a button that appears not to work, and which
+  // is exactly what was reported.
   currentView = view;
-  document.querySelectorAll('.view').forEach((v) => (v.hidden = true));
-  $(`view-${view}`).hidden = false;
-  document.querySelectorAll('.nav').forEach((b) =>
-    b.classList.toggle('active', b.dataset.view === view)
-  );
-
-  // Before anything is asked for. The gap between a press and the first change
-  // on screen is the whole of "it did not respond" on a slow connection, and
-  // this closes it whatever the network then does.
-  loadbar.start();
 
   const path = ROUTES[view] || '/dashboard';
   if (push && location.pathname !== path) {
     history.pushState({ view }, '', path);
   }
   document.title = `Vesopa EPOS — ${view.replace(/_/g, ' ')}`;
+
+  document.querySelectorAll('.view').forEach((v) => (v.hidden = true));
+  $(`view-${view}`).hidden = false;
+  document.querySelectorAll('.nav').forEach((b) =>
+    b.classList.toggle('active', b.dataset.view === view)
+  );
+
+  // Only where something is actually coming. A view that fetches nothing is
+  // already complete, and a skeleton over it would be a lie that never
+  // resolves.
+  if (VIEW_LOADERS[view]) {
+    paintSkeleton(view);
+    loadbar.start();
+  }
+
+  // The page starts at the top, as it would on a real navigation. Without this
+  // a long list left the next view scrolled halfway down its own skeleton.
+  window.scrollTo({ top: 0, behavior: 'auto' });
 
   // The screen editor opens in a window of its own, and this tab draws a card
   // saying where it went. Asked here rather than inside loadScreens because it
@@ -875,12 +893,14 @@ function makeSortable(tbody, path) {
   });
 }
 
-function render() {
-  if (CRUD[currentView.replace('program_', '').replace('_', '-')]) {
-    // handled below by the map
-  }
-
-  const load = {
+/**
+ * Which views fetch something when they open.
+ *
+ * Lifted out of render() so that show() can consult it as well. It has to know
+ * whether the view it is about to display will be filled in later, because that
+ * is the difference between drawing a skeleton and drawing nothing.
+ */
+const VIEW_LOADERS = {
     dashboard: loadDashboard,
     report: loadReports,
     sales_explorer: loadExplorer,
@@ -928,20 +948,61 @@ function render() {
     rules: loadRules,
     templates: loadTemplates,
     subscriptions: loadSubscriptions,
-  }[currentView];
+  };
+
+/**
+ * Nothing to look at, in the shape of what is coming.
+ *
+ * A view keeps its heading — that is already correct and switching it out for
+ * a grey bar would be a step backwards — and everything below it is replaced
+ * until the data lands. Done by adding a class rather than by emptying the
+ * view, so no loader has to cooperate and nothing is destroyed: when the class
+ * comes off, whatever the loader wrote is underneath.
+ */
+function paintSkeleton(view) {
+  const section = $(`view-${view}`);
+  if (!section) return;
+  section.classList.add('is-loading');
+  if (section.querySelector(':scope > .view-skeleton')) return;
+
+  const sk = document.createElement('div');
+  sk.className = 'view-skeleton';
+  sk.setAttribute('aria-hidden', 'true');
+  // Two shapes: pages that lead with figures, and pages that lead with a list.
+  const figures = ['dashboard', 'report', 'financial', 'till_report', 'bill_report'];
+  sk.innerHTML = figures.includes(view) ? SKELETONS.stats : SKELETONS.list;
+
+  const head = section.querySelector(':scope > .page-head');
+  if (head && head.nextSibling) section.insertBefore(sk, head.nextSibling);
+  else section.appendChild(sk);
+}
+
+function clearSkeleton(view) {
+  const section = $(`view-${view}`);
+  if (!section) return;
+  section.classList.remove('is-loading');
+  section.querySelectorAll(':scope > .view-skeleton').forEach((el) => el.remove());
+}
+
+function render() {
+  const view = currentView;
+  const load = VIEW_LOADERS[view];
 
   if (load) {
     Promise.resolve(load())
       .then(cardsInView)
       .catch((e) => console.error(e))
-      .finally(() => loadbar.done());
+      .finally(() => {
+        clearSkeleton(view);
+        loadbar.done();
+      });
   } else {
     // A view with nothing to fetch still has to finish the bar, or it creeps
     // towards the end for ever on every page that is already drawn.
+    clearSkeleton(view);
     loadbar.done();
   }
 }
-
 // ---- New reports ----------------------------------------------------------
 
 /**

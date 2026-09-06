@@ -5417,3 +5417,25 @@ button {
   .sk-line, .sk-card, .sk-stat { animation: none; }
   #loadbar { transition: opacity .25s ease; }
 }
+
+
+/* A view that is waiting for its data.
+ *
+ * The heading stays — it is already correct, and replacing it with a grey bar
+ * would be a step backwards. Everything below it is hidden and the skeleton
+ * stands in, by adding a class rather than by emptying the view: no loader has
+ * to cooperate, nothing is destroyed, and when the class comes off whatever the
+ * loader wrote is already underneath. */
+.view.is-loading > *:not(.page-head):not(.view-skeleton) { display: none !important; }
+.view-skeleton { margin-top: 4px; }
+
+
+/* The corner control is fixed, so it sits over whatever the page puts in its
+   top right — which on most pages is the primary button. The heading row keeps
+   a lane clear for it rather than the control moving, because the control has
+   to be in the same place on every page to be found at all. */
+.page-head { padding-right: 56px; }
+@media (max-width: 960px) {
+  /* The control moves into the top bar there, so the lane is not needed. */
+  .page-head { padding-right: 0; }
+}
