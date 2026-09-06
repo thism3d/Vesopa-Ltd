@@ -42,6 +42,50 @@ function diVenueUrl() {
   return (diTables.base || location.origin) + '/' + diVenue.slug;
 }
 
+/**
+ * A colour, shown as one.
+ *
+ * `input[type=color]` on its own is a small grey rectangle with a hairline of
+ * the colour inside it — on the Windows build it is barely readable at a
+ * glance, and the whole point of this panel is glancing at eight colours at
+ * once and seeing whether they go together. So the swatch is the control: a
+ * round well of the colour itself, the size of a button, with the native picker
+ * lying invisibly on top of it so a tap still opens the operating system's own
+ * colour wheel. The hex sits beside it for anybody who has a brand guide with
+ * numbers in it.
+ *
+ * The swatch and the readout follow the input, so the panel says what it is set
+ * to while the picker is still open — which is also what feeds the preview.
+ */
+function diSwatch(id, value) {
+  const hex = String(value || '#000000').toUpperCase();
+  return `
+    <span class="di-swatch" data-swatch-for="${esc(id)}">
+      <span class="di-swatch-well" style="background:${esc(hex)}">
+        <input id="${esc(id)}" type="color" value="${esc(hex)}"
+               aria-label="Pick a colour">
+      </span>
+      <code class="di-swatch-hex">${esc(hex)}</code>
+    </span>`;
+}
+
+/** Keep every swatch showing what its picker is set to. */
+function diWireSwatches(root) {
+  (root || document).querySelectorAll('.di-swatch').forEach((sw) => {
+    const input = sw.querySelector('input[type="color"]');
+    if (!input || input.dataset.swatchWired) return;
+    input.dataset.swatchWired = '1';
+    const paint = () => {
+      const hex = String(input.value || '').toUpperCase();
+      sw.querySelector('.di-swatch-well').style.background = hex;
+      sw.querySelector('.di-swatch-hex').textContent = hex;
+    };
+    input.addEventListener('input', paint);
+    input.addEventListener('change', paint);
+    paint();
+  });
+}
+
 function diMoney(minor) {
   return '£' + (Number(minor || 0) / 100).toFixed(2);
 }
@@ -71,14 +115,24 @@ async function loadDineIn() {
 
   const v = diVenue;
   const name = v.display_name || v.fallback_name || '';
-  const base = (diTables.base || location.origin);
+  // From the venue itself, not from whichever page was open last. `diTables` is
+  // filled in by the Table codes page, so on a fresh visit here it was empty
+  // and every address on this page fell back to the back office's own origin.
+  if (v.base) diTables.base = v.base;
+  const base = (v.base || diTables.base || location.origin);
   // Always a full palette: the server fills in whatever the venue has not set,
   // so the editor never has to think about a half-configured theme.
   const theme = v.theme || {};
 
+  // Two columns where there is room for two: the settings on the left, and the
+  // menu as it will look on the right, watching every change. Below 1100px
+  // there is not room for a phone beside a form, so the preview folds up to the
+  // top where it can still be opened and looked at.
   $('dinein-body').innerHTML = `
-    <div class="card">
-      <h3>Your web address</h3>
+    <div class="di-layout">
+    <div class="di-secs">
+    <details class="card di-sec">
+      <summary><h3>Your web address</h3></summary>
       <p class="hint">
         This is where a customer lands when they scan a code or follow a link.
         Choose it once and leave it alone — it is printed on things.
@@ -91,10 +145,10 @@ async function loadDineIn() {
                 style="flex:0 0 auto">Check</button>
       </div>
       <div id="di-slug-note" class="muted small" style="margin-top:6px;display:block"></div>
-    </div>
+    </details>
 
-    <div class="card">
-      <h3>What a customer sees</h3>
+    <details class="card di-sec" open>
+      <summary><h3>What a customer sees</h3></summary>
       <div class="grid-2">
         <label>Name
           <input id="di-name" value="${esc(v.display_name || '')}"
@@ -118,16 +172,16 @@ async function loadDineIn() {
                  placeholder="https://maps.google.com/…">
           <span class="muted small">The "Find us" button opens this. Any map will do.</span>
         </label>
-        <label>Logo image URL
-          <input id="di-logo" value="${esc(v.logo_url || '')}">
+        <label>Your logo
+          ${imagePicker('di-logo', v.logo_url, { crop: 'square', label: 'Choose a logo' })}
+          <span class="muted small">Drawn on the banner, at the top of the menu.</span>
         </label>
-        <label>Banner image URL
-          <input id="di-banner" value="${esc(v.banner_url || '')}">
+        <label>Banner photograph
+          ${imagePicker('di-banner', v.banner_url, { crop: 'landscape', label: 'Choose a photograph' })}
+          <span class="muted small">The room, across the top of the page.</span>
         </label>
-        <label>Accent colour
-          <input id="di-accent" type="color"
-                 value="${esc(v.accent_colour || '#A5C715')}"
-                 style="width:64px;height:38px;padding:3px;border-radius:8px">
+        <label style="grid-column:1/-1">Accent colour
+          ${diSwatch('di-accent', v.accent_colour || '#A5C715')}
           <span class="muted small">Buttons and highlights take this colour.</span>
         </label>
         <label style="grid-column:1/-1">Notice above the menu
@@ -135,10 +189,10 @@ async function loadDineIn() {
                  placeholder="Kitchen closes at 9pm">
         </label>
       </div>
-    </div>
+    </details>
 
-    <div class="card">
-      <h3>Open for business</h3>
+    <details class="card di-sec" open>
+      <summary><h3>Open for business</h3></summary>
       <p class="muted small">
         These are separate on purpose. A venue often wants its menu readable
         weeks before it is ready to have tickets arriving at the till.
@@ -160,10 +214,10 @@ async function loadDineIn() {
         <input type="checkbox" id="di-req-phone" ${v.require_phone ? 'checked' : ''}>
         <span>A phone number is required to order</span>
       </label>
-    </div>
+    </details>
 
-    <div class="card">
-      <h3>Popular and Featured</h3>
+    <details class="card di-sec">
+      <summary><h3>Popular and Featured</h3></summary>
       <p class="muted small">
         Two grids above your menu, and they answer two different questions.
         <b>Popular</b> is what people order here. <b>Featured</b> is what you
@@ -188,10 +242,10 @@ async function loadDineIn() {
                  placeholder="Featured">
         </label>
       </div>
-    </div>
+    </details>
 
-    <div class="card">
-      <h3>Your offer</h3>
+    <details class="card di-sec">
+      <summary><h3>Your offer</h3></summary>
       <p class="muted small">
         One offer, taken off the whole order once it reaches your minimum.
         Every dish shows its new price against its old one, and the basket
@@ -215,10 +269,10 @@ async function loadDineIn() {
                  placeholder="Leave blank and we write it for you">
         </label>
       </div>
-    </div>
+    </details>
 
-    <div class="card">
-      <h3>Promotions</h3>
+    <details class="card di-sec">
+      <summary><h3>Promotions</h3></summary>
       <p class="muted small">
         Not a discount — something you want to say. A quiz night, a new
         supplier, a roast that needs booking. Up to six, shown as cards a
@@ -228,10 +282,10 @@ async function loadDineIn() {
       <button class="btn" id="di-promo-add" type="button" style="margin-top:10px">
         Add a promotion
       </button>
-    </div>
+    </details>
 
-    <div class="card">
-      <h3>Your colours</h3>
+    <details class="card di-sec">
+      <summary><h3>Your colours</h3></summary>
       <p class="muted small">
         The menu takes these, not Vesopa's. Changes show in the preview as you
         make them and reach customers only when you press Save.
@@ -240,22 +294,22 @@ async function loadDineIn() {
         <div class="di-brand-fields">
           <div class="grid-2">
             <label>Buttons and highlights
-              <input id="di-t-accent" type="color" value="${esc(theme.accent)}">
+              ${diSwatch('di-t-accent', theme.accent)}
             </label>
             <label>Text on those buttons
-              <input id="di-t-onaccent" type="color" value="${esc(theme.onAccent)}">
+              ${diSwatch('di-t-onaccent', theme.onAccent)}
             </label>
             <label>Page background
-              <input id="di-t-page" type="color" value="${esc(theme.page)}">
+              ${diSwatch('di-t-page', theme.page)}
             </label>
             <label>Cards and panels
-              <input id="di-t-card" type="color" value="${esc(theme.card)}">
+              ${diSwatch('di-t-card', theme.card)}
             </label>
             <label>Text
-              <input id="di-t-ink" type="color" value="${esc(theme.ink)}">
+              ${diSwatch('di-t-ink', theme.ink)}
             </label>
             <label>Quieter text
-              <input id="di-t-inksoft" type="color" value="${esc(theme.inkSoft)}">
+              ${diSwatch('di-t-inksoft', theme.inkSoft)}
             </label>
             <label>Corners
               <input id="di-t-radius" type="range" min="0" max="28"
@@ -276,15 +330,11 @@ async function loadDineIn() {
             <span id="di-draft-note" class="muted small"></span>
           </div>
         </div>
-        <div class="di-brand-preview">
-          <span class="muted small">Preview</span>
-          <div class="di-phone"><iframe id="di-preview-frame" title="Menu preview"></iframe></div>
-        </div>
       </div>
-    </div>
+    </details>
 
-    <div class="card">
-      <h3>Your own web address</h3>
+    <details class="card di-sec">
+      <summary><h3>Your own web address</h3></summary>
       <p class="muted small">
         Point a domain you own at this server and your menu answers on it, and
         your printed cards carry it instead of ours. Leave it blank to stay on
@@ -305,10 +355,10 @@ async function loadDineIn() {
         Point a CNAME at <code>menu.vesopaepos.com</code>. The certificate is
         issued once the name reaches us, which is usually within the hour.
       </p>
-    </div>
+    </details>
 
-    <div class="card">
-      <h3>When you are open</h3>
+    <details class="card di-sec">
+      <summary><h3>When you are open</h3></summary>
       <p class="muted small">
         Outside these hours the menu still reads, and the Add buttons are still
         there — a customer who presses one is told when you open rather than
@@ -333,7 +383,7 @@ async function loadDineIn() {
           </span>
         </label>
       </div>
-    </div>
+    </details>
 
     <datalist id="di-diets">
       <option value="Vegetarian"><option value="Vegan"><option value="Gluten free">
@@ -347,11 +397,28 @@ async function loadDineIn() {
          ${v.slug ? '' : 'hidden'}>Open the menu page</a>
       <span id="di-saved" class="muted small"></span>
     </div>
+    </div>
+    <aside class="di-side">
+      <div class="di-side-inner">
+        <span class="muted small">Preview</span>
+        <div class="di-phone"><iframe id="di-preview-frame" title="Menu preview"></iframe></div>
+        <p class="muted small di-side-note">
+          What a customer sees, updating as you type. Nothing here reaches them
+          until you press Save.
+        </p>
+      </div>
+    </aside>
+    </div>
   `;
 
   $('di-slug-check').onclick = diCheckSlug;
   $('di-save').onclick = diSaveVenue;
   diWireHours();
+  // The logo, the banner and every colour on the page. Both are drawn straight
+  // into the HTML above, so nothing listens to them until this runs.
+  wireImagePickers($('dinein-body'));
+  diWireSwatches($('dinein-body'));
+  diFitPhone();
 
   // A draft, if one was left, is what the editor opens on — otherwise a venue
   // comes back tomorrow to find yesterday's work gone.
@@ -462,8 +529,10 @@ function diPromoRow(p, i) {
           <input data-p="body" data-promo="${i}" value="${esc(p.body || '')}"
                  placeholder="Teams of up to six. Starts at eight.">
         </label>
-        <label style="grid-column:1/-1">Picture URL (optional)
-          <input data-p="image_url" data-promo="${i}" value="${esc(p.image_url || '')}">
+        <label style="grid-column:1/-1">Picture (optional)
+          ${imagePicker(`di-promo-img-${i}`, p.image_url, {
+            crop: 'landscape', label: 'Choose a picture',
+          })}
         </label>
       </div>
       ${iconBtn('del', 'Remove this promotion', `data-promo-del="${i}"`, 'danger')}
@@ -476,6 +545,9 @@ function diPaintPromos() {
   host.innerHTML = diPromos.length
     ? diPromos.map(diPromoRow).join('')
     : '<p class="muted small">Nothing on at the moment.</p>';
+  // Every repaint draws new file inputs, and an input nothing listens to is a
+  // button that does nothing when pressed.
+  wireImagePickers(host);
   const add = $('di-promo-add');
   if (add) add.disabled = diPromos.length >= 6;
 }
@@ -489,7 +561,10 @@ function diReadPromos() {
     };
     return {
       title: get('title'), body: get('body'),
-      image_url: get('image_url'), until: get('until'),
+      // The picture is a picker now, so it is read off its hidden field by id
+      // rather than off a data-attribute — there is no text box to read.
+      image_url: (document.getElementById(`di-promo-img-${i}`) || {}).value || '',
+      until: get('until'),
     };
   }).filter((p) => p.title.trim());
 }
@@ -554,6 +629,28 @@ function diPaintPreview() {
   if (doc.body) doc.body.style.fontFamily = fonts[t.font] || fonts.system;
 }
 
+/**
+ * Fit the phone to the column it is in.
+ *
+ * The preview frame is 390px wide because that is a phone, and the column it
+ * sits in is whatever is left over. Scaling it is what makes the page inside
+ * lay itself out as a phone rather than as a very narrow desktop — but the
+ * scale has to be computed, because the column is 340px on a laptop, wider on
+ * a large screen, and the full width of the page below 1100px.
+ */
+function diFitPhone() {
+  const shell = document.querySelector('.di-phone');
+  if (!shell) return;
+  const fit = () => {
+    const w = shell.clientWidth;
+    if (!w) return;
+    shell.style.setProperty('--di-phone-scale', (w / 390).toFixed(4));
+  };
+  fit();
+  if (typeof ResizeObserver === 'function') new ResizeObserver(fit).observe(shell);
+  else window.addEventListener('resize', fit);
+}
+
 function diWireBranding() {
   const ids = ['di-t-accent', 'di-t-onaccent', 'di-t-page', 'di-t-card',
     'di-t-ink', 'di-t-inksoft', 'di-t-radius', 'di-t-font'];
@@ -576,6 +673,12 @@ function diWireBranding() {
       'di-t-radius': DI_THEME_DEFAULT.radius,
       'di-t-font': DI_THEME_DEFAULT.font,
     }).forEach(([id, value]) => { const el = $(id); if (el) el.value = value; });
+    // The wells are painted from the inputs, and setting `.value` fires no
+    // event — so without this the colours would go back to Vesopa's in the
+    // preview while the swatches went on showing the venue's own.
+    document.querySelectorAll('.di-swatch input[type="color"]').forEach((el) => {
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    });
     diPaintPreview();
   };
 
@@ -750,38 +853,67 @@ async function loadDineInMenu() {
   });
 }
 
+/**
+ * One section of the menu.
+ *
+ * Folded, and folded to begin with: a venue with nine sections wants to see the
+ * nine, not the first one's forty dishes. The summary is the section as a
+ * customer meets it: its name, the line under it, and how many dishes are in
+ * it. A venue with nine sections was
+ * scrolling through nine open tables to reach the one it wanted, and the thing
+ * it was looking for — which section is which — was the one thing not visible
+ * without reading a form field.
+ *
+ * The two fields are stacked, in the order they appear on the phone: the name,
+ * and then the line that goes underneath it. Side by side they read as two
+ * unrelated boxes; stacked, the form is a small picture of the result.
+ */
 function diSectionCard(section) {
+  const count = section.items.length;
   return `
-    <div class="card" data-section="${section.id}">
-      <div class="row" style="gap:8px;align-items:flex-end">
-        <label style="flex:1">Section
-          <input data-f="name" data-sec="${section.id}"
+    <details class="card di-sec di-menu-sec" data-section="${section.id}">
+      <summary>
+        <h3>${esc(section.name || 'Untitled section')}</h3>
+        <span class="muted small di-sec-count">
+          ${count === 1 ? '1 dish' : `${count} dishes`}
+        </span>
+      </summary>
+
+      <div class="di-sec-fields">
+        <label class="float">
+          <input data-f="name" data-sec="${section.id}" placeholder=" "
                  value="${esc(section.name || '')}">
+          <span>Section</span>
         </label>
-        <label style="flex:2">Line underneath
-          <input data-f="blurb" data-sec="${section.id}"
-                 value="${esc(section.blurb || '')}"
-                 placeholder="Served 12 til 3">
+        <label class="float">
+          <input data-f="blurb" data-sec="${section.id}" placeholder=" "
+                 value="${esc(section.blurb || '')}">
+          <span>Line underneath</span>
         </label>
-        ${iconBtn('save', 'Save this section', `data-sec-save="${section.id}"`, 'go')}
-        ${iconBtn('del', 'Delete this section', `data-sec-del="${section.id}"`, 'danger')}
+        <span class="di-sec-acts">
+          ${iconBtn('save', 'Save this section', `data-sec-save="${section.id}"`, 'go')}
+          ${iconBtn('del', 'Delete this section', `data-sec-del="${section.id}"`, 'danger')}
+        </span>
       </div>
 
-      ${section.items.length
-        ? `<table class="grid" style="margin-top:12px">
+      ${count
+        ? `<div class="di-scroll"><table class="grid di-items">
              <thead><tr>
-               <th style="width:34%">Shown as</th>
+               <th style="width:30%">Shown as</th>
                <th>Description</th>
-               <th style="width:80px">On</th>
-               <th style="width:150px"></th>
+               <th class="mid" style="width:64px">On</th>
+               <th class="mid" style="width:74px">Popular</th>
+               <th class="mid" style="width:74px">Featured</th>
+               <th style="width:130px">Diet</th>
+               <th style="width:132px"></th>
              </tr></thead>
              <tbody>${section.items.map(diItemRow).join('')}</tbody>
-           </table>`
+           </table></div>`
         : '<p class="muted small" style="margin-top:10px">Nothing in this section yet.</p>'}
 
       <button class="btn" data-sec-add="${section.id}" type="button"
               style="margin-top:10px">Add products</button>
-    </div>`;
+    </details>`;
 }
 
 function diItemRow(item) {
@@ -789,30 +921,35 @@ function diItemRow(item) {
     <tr data-item="${item.id}">
       <td>
         <input data-f="name" data-item="${item.id}"
-               value="${esc(item.name || '')}" placeholder="PLU ${item.plu_id}">
-        <span class="muted small">PLU ${item.plu_id}</span>
+               value="${esc(item.name || '')}"
+               placeholder="${esc(item.catalogue_name || 'Name it for the menu')}">
       </td>
       <td>
         <input data-f="description" data-item="${item.id}"
                value="${esc(item.description || '')}"
                placeholder="What is in it, and what it comes with">
       </td>
-      <td style="text-align:center">
+      <td class="mid">
         <input type="checkbox" data-item-avail="${item.id}"
                ${item.available ? 'checked' : ''}
                title="Uncheck when the kitchen runs out">
       </td>
-      <td style="text-align:center">
+      <td class="mid">
         <input type="checkbox" data-f="is_popular" data-item="${item.id}"
                ${item.is_popular ? 'checked' : ''}
                title="Show this in the Popular grid at the top of the menu">
+      </td>
+      <td class="mid">
+        <input type="checkbox" data-f="is_featured" data-item="${item.id}"
+               ${item.is_featured ? 'checked' : ''}
+               title="Show this in the Featured grid at the top of the menu">
       </td>
       <td>
         <input data-f="diet_tag" data-item="${item.id}" list="di-diets"
                value="${esc(item.diet_tag || '')}" placeholder="—"
                style="max-width:130px">
       </td>
-      <td style="text-align:right;white-space:nowrap">
+      <td class="di-row-acts">
         ${iconBtn('save', 'Save', `data-item-save="${item.id}"`, 'go')}
         ${iconBtn('copy', 'Duplicate', `data-item-copy="${item.id}"`)}
         ${iconBtn('del', 'Take off the menu', `data-item-del="${item.id}"`, 'danger')}
@@ -1098,8 +1235,8 @@ async function loadDineInQr() {
   const withCodes = diTables.tables.filter((t) => t.public_id);
 
   $('dinein_qr-body').innerHTML = `
-    <div class="card">
-      <h3>Every table has its own address</h3>
+    <details class="card di-sec">
+      <summary><h3>Every table has its own address</h3></summary>
       <p class="hint">
         A table's code never changes, even when you rename or renumber it — so a
         card you print today keeps working. Untick a table to stop phones
@@ -1137,7 +1274,7 @@ async function loadDineInQr() {
         : `<div class="empty">No tables yet. Draw your floor in
              <b>Table Designer</b> first — every table you add gets a code
              automatically.</div>`}
-    </div>
+    </details>
 
     <div class="card">
       <div class="row" style="justify-content:space-between;align-items:center">

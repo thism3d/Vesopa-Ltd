@@ -381,12 +381,23 @@ label {
   font-weight: 550;
   color: var(--muted);
 }
-input, select {
+input, select, textarea {
   width: 100%;
   margin-top: 6px;
   padding: 11px 13px;
   border: 1px solid var(--line);
   border-radius: 9px;
+  /* Stated, not left to the browser and not inherited.
+     A form control does not inherit type: left alone, a text box is drawn in
+     the browser's own default — Arial on Windows — while a date field, which
+     has `font: inherit` further down so that iOS stops styling it, took the
+     weight of the label it sits inside. Measured on the live site: text inputs
+     at 400 in Arial, date inputs at 550 and 600 in the page's own stack. Two
+     kinds of control in one form, in two typefaces, one of them bold.
+
+     The value somebody typed is body text, wherever it is typed. */
+  font-family: inherit;
+  font-weight: 400;
   font-size: 15px;
   background: var(--input-bg);
   color: var(--text);
@@ -3371,7 +3382,41 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
   margin-left: auto;
 }
 
-.rr-format-field select { min-width: 92px; }
+/* The label around the format select carries only a screen-reader name, so it
+   has no visible text to make room for — but it was still being laid out as a
+   block with a line box in it, which made it 44px against the buttons' 40 and
+   dropped the select six pixels below Run report, View PDF and Download.
+   Measured at 280-320 against 274-314.
+
+   A flex box takes its height from its child, so the label becomes exactly as
+   tall as the select inside it and all four controls share one line. */
+/* `.rd-card label` — one class and one type — outranks a single class, and the
+   report panel carries `rd-card`. So this rule was losing to a rule written for
+   a different card entirely: the label stayed `display: block` with 10px under
+   it, which is where the group's extra height came from and why the select sat
+   five pixels above the three buttons beside it. Named through the card it is
+   in, so it wins on specificity rather than on being written later. */
+.rd-card .rr-format-field,
+.rr-format-field {
+  display: flex;
+  align-items: center;
+  margin: 0;
+}
+.rr-format-field select {
+  min-width: 92px;
+  /* Both, because `min-height: 44px` is set on every select further down for
+     touch and a min-height always beats a height — so stating the height alone
+     left this one 44px tall among 40px buttons, which is the mismatch this rule
+     exists to remove. */
+  height: var(--control-h);
+  min-height: var(--control-h);
+  /* And no margin. `input, select, textarea` gives every control `margin-top:
+     6px` so that it clears the word above it — but this label has no visible
+     word, only a screen-reader one, so the six pixels were pure height: the
+     label came out 46px against 40px buttons and the select sat three pixels
+     high of the line. Measured on the live site at 262-302 against 265-305. */
+  margin: 0;
+}
 
 @media (max-width: 720px) {
   /* Nothing is pushed right on a phone: `margin-left:auto` there means the
@@ -4870,6 +4915,252 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
 
 /* Opening hours: seven rows that have to stay readable on a phone held in one
    hand at the end of a shift, which is when a landlord actually changes them. */
+/* ===========================================================================
+   THE MENU-PAGE EDITOR
+   ===========================================================================
+   Nine panels and a preview. The panels fold, because a venue that set its
+   colours in March should not scroll past them in June to reach its opening
+   hours; the preview stays beside them, because every one of those panels
+   changes what it shows and a preview you have to scroll to find is a preview
+   nobody looks at.
+   --------------------------------------------------------------------------- */
+
+.di-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 18px;
+  align-items: start;
+}
+
+.di-secs { display: flex; flex-direction: column; gap: var(--stack, 16px); min-width: 0; }
+
+/* The preview travels with the scroll rather than sitting at the top of a page
+   that is four screens long. Its own height is capped so it can never be taller
+   than the window — a sticky element taller than its viewport stops sticking
+   and simply scrolls away, which looks like the feature breaking. */
+.di-side { position: sticky; top: 16px; min-width: 0; }
+.di-side-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+.di-side-note { margin: 0; }
+
+/* A phone, drawn around the preview so what is inside it reads as a phone
+   screen rather than as part of the form. The aspect ratio is a real handset's
+   and the iframe is scaled into it, so the preview shows the layout a customer
+   gets rather than a squeezed desktop one. */
+.di-phone {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 390 / 760;
+  border: 8px solid var(--rail, #17141c);
+  border-radius: 26px;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 10px 30px -18px rgba(0, 0, 0, .6);
+}
+.di-phone iframe {
+  position: absolute;
+  inset: 0;
+  width: 390px;
+  height: 760px;
+  border: 0;
+  /* Rendered at a phone's own width and then scaled down, so the page inside
+     lays itself out the way it would on a phone. An iframe simply given the
+     panel's width would be a 320px desktop, which is a layout no customer
+     ever sees. */
+  transform-origin: 0 0;
+  transform: scale(var(--di-phone-scale, .78));
+}
+
+@media (max-width: 1100px) {
+  /* No room for a phone beside a form. The preview goes above the panels,
+     where it is still the first thing seen, and stops being sticky — two
+     sticky things on one narrow screen is most of the screen gone. */
+  .di-layout { grid-template-columns: minmax(0, 1fr); }
+  .di-side { position: static; order: -1; }
+  .di-phone { max-width: 320px; margin: 0 auto; }
+}
+
+/* ---- A panel that folds --------------------------------------------------
+   The heading is the control, so there is nothing extra to aim at, and the
+   marker is drawn rather than left to the browser: the default triangle is a
+   different shape, size and colour in every browser this is used in. */
+.di-sec > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  list-style: none;
+  margin: -2px 0 0;
+  padding-right: 26px;
+  position: relative;
+}
+.di-sec > summary::-webkit-details-marker { display: none; }
+.di-sec > summary h3 { margin: 0; }
+.di-sec > summary::after {
+  content: "";
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: translateY(-70%) rotate(45deg);
+  transition: transform .18s ease;
+}
+.di-sec[open] > summary::after { transform: translateY(-20%) rotate(-135deg); }
+.di-sec > summary:hover::after { border-color: var(--text); }
+.di-sec[open] > summary { margin-bottom: 12px; }
+
+/* ---- A colour, shown as a colour ----------------------------------------
+   The native control is a small grey rectangle with a hairline of colour in
+   it. Here the swatch is the control: a round well of the colour itself, with
+   the real input lying invisibly over it so a tap still opens the operating
+   system's own picker and keyboard users still reach it by tab. */
+.di-swatch { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+.di-swatch-well {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  box-shadow: inset 0 0 0 2px var(--panel);
+  overflow: hidden;
+}
+.di-swatch-well input[type="color"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.di-swatch-well:focus-within {
+  box-shadow: inset 0 0 0 2px var(--panel), 0 0 0 3px var(--brand-soft);
+}
+.di-swatch-hex {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  color: var(--muted);
+  letter-spacing: .04em;
+}
+
+/* ---- A label that starts inside the field --------------------------------
+
+   The hint and the label were two separate things: a word above the box saying
+   "Section", and grey placeholder text inside it saying something else. Once
+   anything is typed the placeholder is gone and the only label left is the one
+   above, so the form is at its most helpful when it is empty and least helpful
+   when it is full.
+
+   One label instead, sitting inside the empty field and rising to its top-left
+   corner when there is something in it — so the field says what it is whether
+   it is empty, being typed into, or full.
+
+   `placeholder=" "` in the markup, a single space, is what makes this work
+   without any JavaScript: `:placeholder-shown` is true only while the field is
+   empty, and a real placeholder would be visible underneath the label. */
+.float { position: relative; display: block; margin: 0; }
+.float > input {
+  width: 100%;
+  margin: 0;
+  padding: 20px 13px 8px;
+  box-sizing: border-box;
+}
+.float > span {
+  position: absolute;
+  left: 14px;
+  top: 13px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  pointer-events: none;
+  transform-origin: 0 0;
+  transition: transform .14s ease, color .14s ease;
+}
+/* Empty and not being typed into: the label sits where the text will go, at
+   text size, so it reads as a prompt rather than as a caption. */
+.float > input:placeholder-shown:not(:focus) + span {
+  transform: translateY(6px) scale(1.22);
+}
+.float > input:focus + span { color: var(--brand); }
+
+/* ---- A section of the menu ----------------------------------------------- */
+.di-menu-sec > summary { justify-content: flex-start; }
+.di-menu-sec > summary h3 { flex: 0 1 auto; min-width: 0; }
+.di-sec-count { margin-left: auto; padding-right: 10px; white-space: nowrap; }
+
+/* The name, the line underneath, and the two buttons.
+   The buttons were flex items in a row of flexible fields and were being
+   stretched with them — a save icon two hundred pixels wide beside a delete
+   icon the same, which is what "too much width, not friendly" was. They are
+   icons: they are as wide as an icon. */
+.di-sec-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+}
+.di-sec-fields > .float:first-child { grid-column: 1; }
+.di-sec-fields > .float:nth-child(2) { grid-column: 1; }
+.di-sec-acts {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+.di-sec-acts .ibtn, .di-sec-acts .icon-btn { flex: 0 0 auto; }
+
+/* The dishes. Six columns do not fit a tablet, so the table scrolls inside its
+   own box rather than pushing the page sideways — which would take the name,
+   the one column that says which dish the row is, off the left edge. */
+.di-scroll { margin-top: 12px; overflow-x: auto; }
+.di-items { min-width: 720px; }
+.di-items th.mid, .di-items td.mid { text-align: center; }
+.di-items td.di-row-acts {
+  text-align: right;
+  white-space: nowrap;
+}
+.di-items input[type="text"], .di-items input:not([type]) { margin-top: 0; }
+
+@media (max-width: 720px) {
+  /* Room for the fields rather than for the buttons, which go under them. */
+  .di-sec-fields { grid-template-columns: minmax(0, 1fr); }
+  .di-sec-acts { grid-column: 1; grid-row: auto; flex-direction: row; }
+}
+
+/* ---- Choosing a picture --------------------------------------------------
+   The file input is invisible and the label is the button, because a browser's
+   own file input cannot be styled and says "No file chosen" in the middle of a
+   form that has nothing else in that voice. */
+.img-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.filepick-btn { position: relative; overflow: hidden; cursor: pointer; }
+.filepick-btn input[type="file"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+.filepick-btn:focus-within {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--brand-soft);
+}
+
 .di-hours { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
 .di-hour-row {
   display: grid;
@@ -5111,8 +5402,13 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
 }
 
 @media (max-width: 960px) {
-  /* Clear of the fixed top bar rather than on top of its logo. */
-  .theme-corner { top: 8px; right: 10px; }
+  /* On the bar's own centre line, and inset the same as the control opposite.
+     The top bar is 56px and the button is 40, so 8px of it above and 8 below
+     puts its middle on 28 — where the hamburger's middle, the wordmark's and
+     the live dot's already are. Ten pixels from the right against the
+     hamburger's twelve from the left made a bar that was symmetrical
+     everywhere except its two ends. */
+  .theme-corner { top: 8px; right: 12px; }
   .theme-btn {
     background: transparent;
     border-color: var(--rail-line);
@@ -5150,12 +5446,32 @@ input[type="week"] {
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 11px 13px;
-  font: inherit;
-  font-size: 16px;          /* iOS zooms the page in on anything smaller */
+  font-family: inherit;
+  /* `font: inherit` was the whole of it, and it takes the weight of whatever
+     the field sits inside — which in a filter bar is a 600-weight label, so the
+     date read bolder than the text box beside it. The family is worth
+     inheriting; the weight is not. */
+  font-weight: 400;
+  font-size: 15px;
   line-height: 1.2;
   width: 100%;
   box-sizing: border-box;
   min-height: 44px;         /* a finger, not a mouse */
+}
+
+/* Sixteen pixels, but only where it buys something.
+   Safari zooms the page in when a field it is focusing is under 16px, and that
+   zoom does not come back out — which is why this was 16 everywhere. But it is
+   only touch Safari that does it, and at 16 these fields were a pixel larger
+   than every other input on a desktop, which is exactly the mismatch being
+   fixed here. */
+@media (pointer: coarse) {
+  select,
+  input[type="date"],
+  input[type="time"],
+  input[type="datetime-local"],
+  input[type="month"],
+  input[type="week"] { font-size: 16px; }
 }
 
 /* The chevron the platform stopped drawing. An inline SVG in a data: URI, so
@@ -5567,6 +5883,65 @@ textarea, select[multiple], select[size] { height: auto; min-height: 0; }
 .tbl-bar select, .dash-toolbar select, .sp-bar select, .page-head select {
   width: auto;
   min-width: 8.5rem;
+}
+
+/* ---- Two shapes in one bar -----------------------------------------------
+
+   A filter bar holds two kinds of thing: a `.sp-pick` — a label with its
+   control underneath, about 69px tall — and a bare button, 40px. Centring both
+   in the bar puts the button's middle level with the *stack's* middle, which is
+   in the gap between the label text and the field. Measured on the live site:
+   Search sat at 165-205 while the three fields it searches sat at 180-220, so
+   it was drawn fifteen pixels above the line it belongs on. Products' Clear was
+   the same, at 167-203 against 180-220.
+
+   A button in one of these bars is an action on the fields beside it, so it
+   lines up with the fields — their bottom edge, which is where a control's own
+   line is — and not with the whole stack. Written as `align-self` on the button
+   rather than `align-items` on the bar, because the bar also holds a row count
+   and a bulk-edit strip that are text and do want centring, and because it then
+   holds however the bar itself is aligned. */
+.tbl-bar > .btn,
+.tbl-bar > button,
+.sp-bar > .btn,
+.sp-bar > button { align-self: flex-end; }
+
+/* A wrapper that only holds buttons is a button as far as the row is
+   concerned, and lines up the same way. */
+.tbl-bar > .sp-order,
+.sp-bar > .sp-order,
+.sp-bar > .sp-surfaces { align-self: flex-end; }
+
+/* ---- One height per bar, taken from the buttons in it --------------------
+
+   Every control in a toolbar should be as tall as the buttons beside it, and
+   the two toolbars do not agree on how tall that is: a filter bar above a table
+   holds full-size buttons, and the screen editor's bar holds small ones because
+   it has eleven controls to fit across a 1000px window. So the height is a
+   property of the bar, and the controls read it, rather than every control
+   being told a number that is right on one page and wrong on the other.
+
+   Left as it was, Chrome gave a date input 40px and a plain text input 44 under
+   the same `min-height` — Department sat two pixels below From and To on the
+   Sales Explorer, which is small enough to look like a rendering fault rather
+   than a layout one, which is worse. On screen programming the gap was eight:
+   Screen, Top bar and Bottom bar were 44px selects against 36px buttons. */
+.tbl-bar { --bar-control-h: var(--control-h); }
+.sp-bar { --bar-control-h: 36px; }
+
+.tbl-bar .sp-pick > select,
+.tbl-bar .sp-pick > input,
+.sp-bar .sp-pick > select,
+.sp-bar .sp-pick > input {
+  height: var(--bar-control-h);
+  min-height: var(--bar-control-h);
+}
+
+/* A finger is not a mouse pointer, and 36px is a small target for one. Where
+   the pointer is coarse every button on the page is already lifted to 40, and
+   the controls beside them go with it. */
+@media (pointer: coarse) {
+  .sp-bar { --bar-control-h: 40px; }
 }
 
 /* Kitchen screens: Upload logo and Remove sat in a column of their own beside

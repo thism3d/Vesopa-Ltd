@@ -521,6 +521,106 @@ button{font:inherit;cursor:pointer}
 .where.warn{background:#FFF3CD;color:#5C4813}
 @media (prefers-color-scheme: dark){ .where.warn{background:#3A3009;color:#F6E7B4} }
 
+/* The same line, but there is something to do about it. A button, so it is
+   reachable by keyboard and announced as pressable, and full width so a thumb
+   does not have to find it. */
+.where.pick{
+  border:1px dashed var(--line);
+  color:var(--ink);text-align:left;cursor:pointer;
+  font:inherit;font-size:14px;font-weight:600;
+  transition:background .16s ease, border-color .16s ease
+}
+.where.pick:hover{border-color:var(--accent)}
+.where.pick:active{transform:scale(.995)}
+
+/* ---- The floor plan ---------------------------------------------------- */
+
+.totable{
+  display:flex;align-items:center;gap:10px;
+  margin:0 0 10px;color:var(--ink-soft);font-size:14px
+}
+.totable button{
+  margin-left:auto;padding:6px 12px;border-radius:999px;
+  border:1px solid var(--line);background:transparent;color:var(--ink);
+  font:inherit;font-size:13px;font-weight:700;cursor:pointer
+}
+.totable button:active{transform:scale(.96)}
+
+.floor-say{margin:0 0 12px;color:var(--ink-soft);font-size:14px;line-height:1.5}
+.floor-wait,.floor-empty{
+  margin:24px 0;text-align:center;color:var(--ink-soft);font-size:14px
+}
+
+/* Rooms. Scrolls sideways rather than wrapping: a venue with five rooms should
+   not push the plan itself off the bottom of a phone. */
+.floor-tabs{
+  display:flex;gap:8px;overflow-x:auto;margin:0 0 12px;padding-bottom:2px;
+  scrollbar-width:none
+}
+.floor-tabs::-webkit-scrollbar{display:none}
+.floor-tabs button{
+  flex:0 0 auto;padding:8px 14px;border-radius:999px;
+  border:1px solid var(--line);background:var(--card);color:var(--ink-soft);
+  font:inherit;font-size:14px;font-weight:600;cursor:pointer
+}
+.floor-tabs button.on{
+  background:var(--accent);border-color:var(--accent);color:var(--on-accent)
+}
+
+/* The room. Positioned children inside a box that keeps the plan's own
+   proportions, so a long narrow room stays long and narrow. */
+.floor{
+  position:relative;width:100%;border-radius:var(--radius);
+  background:var(--sunken);border:1px solid var(--line);
+  overflow:hidden
+}
+
+.fseat{
+  position:absolute;box-sizing:border-box;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:2px;padding:2px;
+  border:2px solid var(--accent);border-radius:8px;
+  background:var(--card);color:var(--ink);
+  font:inherit;font-size:12px;font-weight:700;line-height:1.1;
+  cursor:pointer;overflow:hidden;
+  transition:transform .14s ease, box-shadow .14s ease
+}
+.fseat.round{border-radius:50%}
+.fseat:active{transform:scale(.94)}
+.fseat:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+
+/* In use. Still pressable, and deliberately not greyed into looking disabled:
+   the table somebody is sitting at is the likeliest one they will pick, and a
+   second round belongs on the bill that is already open. */
+.fseat.busy{
+  border-style:dashed;border-color:var(--ink-soft);color:var(--ink-soft);
+  background:repeating-linear-gradient(
+    45deg, var(--sunken), var(--sunken) 5px, transparent 5px, transparent 10px)
+}
+.fseat.picked{box-shadow:0 0 0 3px var(--accent)}
+
+.fname{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fseats{font-weight:600;font-size:10px;opacity:.7}
+
+.floor-key{
+  display:flex;align-items:center;gap:6px;margin:12px 0 0;
+  color:var(--ink-soft);font-size:13px;font-weight:600
+}
+.floor-key .k{
+  width:14px;height:14px;border-radius:4px;border:2px solid var(--accent);
+  display:inline-block
+}
+.floor-key .k.busy{border-style:dashed;border-color:var(--ink-soft);margin-left:10px}
+.floor-key .floor-count{margin-left:auto;font-weight:700;color:var(--ink)}
+
+/* A plan drawn for a desktop grid, read on a phone. Below this width the seats
+   get too small to hit before they get too small to read, so the whole plan is
+   given more height to work with. */
+@media (max-width:420px){
+  .fseat{font-size:11px}
+  .fseats{display:none}
+}
+
 .meta{display:flex;flex-wrap:wrap;gap:8px;margin:10px auto 0;
        max-width:648px;padding:0}
 /* Each chip leads with a mark of what it is, because a phone number, a street
@@ -926,7 +1026,17 @@ button{font:inherit;cursor:pointer}
   color:var(--offer)
 }
 @media (min-width:720px){
-  .promos{max-width:1120px;margin:0 auto;padding-left:20px;padding-right:20px}
+  /* In the column with everything else. It used to be given 1120px of its own
+     while the offer band above it and the search below were 676 — so two cards
+     that fitted comfortably sat left of centre in a box nothing else shared,
+     and read as having come loose from the page.
+
+     A safe centre and not a plain one: a row that scrolls sideways and is
+     centred puts its overflow half off each end, and the half off the left end
+     cannot be scrolled back to. The safe keyword falls back to packing from the
+     start the moment the content is too wide, which is exactly when centring
+     stops being a good idea. */
+  .promos{justify-content:safe center}
   .promo{flex:0 0 300px}
 }
 
@@ -990,6 +1100,33 @@ button{font:inherit;cursor:pointer}
   border:1px dashed var(--line);font-size:14px;color:var(--ink-soft)
 }
 
+/* ---- The column everything above the menu sits in ------------------------
+
+   Each of these blocks set a max-width of 648px and auto margins for itself, which
+   centres it on a wide screen and does nothing at all on a narrow one: below
+   648px the box simply fills the viewport and its border is drawn against the
+   edge of the glass. On a phone the whole page — the where-line, the phone
+   number, the closing time, the offer — ran edge to edge with no gutter.
+
+   Stated once, for all of them: never wider than the column, and never nearer
+   the edge than 16px. A min() does both in one value, and border-box makes the
+   number mean the outside of the box rather than the inside. */
+.where,
+.meta,
+.notice,
+.shutbox,
+.hoursbox,
+.offerbox,
+.promos,
+.finder,
+.nohits{
+  box-sizing:border-box;
+  width:min(100% - 32px, 676px);
+  max-width:none;
+  margin-left:auto;
+  margin-right:auto;
+}
+
 /* The sideways tab strip. Sticky, so it is reachable from anywhere in a long
    menu without scrolling back to the top. */
 /* Sticky, and full-bleed on purpose: the strip scrolls sideways, and a strip
@@ -1002,7 +1139,7 @@ html{scroll-behavior:smooth;scroll-padding-top:70px}
 @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
 
 .tabs{
-  position:sticky;top:0;z-index:20;margin-top:18px;
+  position:sticky;top:var(--finder-h, 0px);z-index:20;margin-top:18px;
   background:var(--page);border-bottom:1px solid var(--line);
   display:flex;gap:8px;overflow-x:auto;padding:10px 16px;
   scrollbar-width:none;-webkit-overflow-scrolling:touch;
@@ -1045,8 +1182,28 @@ section{padding-left:18px;padding-right:18px}
  * Above the tabs, because it answers the same question they do — where is the
  * thing I want — and somebody who knows what they want should not have to find
  * which section it lives in first. */
+/* Sticky, and above the tabs in the stack.
+ *
+ * The tabs pin to the top of the window as you scroll; the search pins above
+ * them, because a search finds a dish anywhere in the menu and a tab only takes
+ * you to a section. So the order down the screen is the order of usefulness:
+ * search, then sections, then food.
+ *
+ * The --finder-h property is written by the page once the bar is laid out, and
+ * tabs are offset by it. Measured rather than assumed: the bar is one line of
+ * 16px text on a phone and the same on a desktop, but a browser with a larger
+ * default text size makes it taller, and a hard-coded offset would tuck the
+ * tabs underneath it. */
 .finder{
-  position:relative;margin:16px auto 0;max-width:648px;padding:0 18px
+  position:sticky;top:0;z-index:22;
+  margin:16px auto 0;padding:8px 18px;
+  background:var(--page);
+  transition:box-shadow .2s ease, padding .2s ease;
+}
+/* Only once it is actually pinned, so the shadow is a sign that something is
+   floating over the page rather than a permanent border. */
+.finder.stuck{
+  box-shadow:0 6px 18px -14px rgba(0,0,0,.5)
 }
 .finder input{
   width:100%;box-sizing:border-box;
@@ -1070,6 +1227,30 @@ section{padding-left:18px;padding-right:18px}
   align-items:center;justify-content:center;font-size:15px;line-height:1
 }
 .finder.has .clear{display:flex}
+
+/* Finished searching.
+ *
+ * A search on a phone pins the bar to the top and puts a keyboard over the
+ * bottom half of the screen, which leaves about a third of it to read results
+ * in. This gives that back in one tap: the keyboard goes, and the page moves
+ * down to where the results are, rather than leaving somebody to dismiss a
+ * keyboard and then work out where they were.
+ *
+ * The text stays. The search is the reason the results are on screen, and
+ * clearing it here would undo the thing the button is supposed to finish —
+ * that is what the x is for. */
+.finder .done{
+  position:absolute;right:26px;top:50%;transform:translateY(-50%);
+  height:30px;padding:0 12px;border:0;border-radius:999px;cursor:pointer;
+  background:var(--accent);color:var(--on-accent);
+  font:inherit;font-size:13.5px;font-weight:700;line-height:1;
+  display:none;align-items:center
+}
+.finder.searching .done{display:flex}
+/* Both cannot share the right edge. While the bar is in use the x moves in
+   behind the button, which is also the moment it is least wanted: somebody
+   typing is not usually trying to empty the box. */
+.finder.searching .clear{right:84px}
 
 /* What is left when a search matches nothing. */
 .nohits{
@@ -1362,6 +1543,13 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
         if (!res.ok) return fail(res.body && res.body.error);
         data = res.body;
         draw();
+        // Somebody who arrived without scanning may still be sitting in the
+        // room. Fetching the floor now — after the menu is on screen, so it
+        // costs nobody a moment — is what lets the line under the hero offer to
+        // ask, instead of telling them to go and find a code.
+        if (!TABLE && SLUG) {
+          loadFloor().then(function(floor){ if (floor.tables.length) draw(); });
+        }
       })
       .catch(function(){
         fail('We could not reach the kitchen. Check your signal and try again.');
@@ -1416,7 +1604,14 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
         : '<div class="where warn">This table is not taking orders from phones — ' +
             'please order at the bar.</div>';
     } else {
-      html += '<div class="where">Viewing the menu. Scan the code on your table to order.</div>';
+      // Two ways to be here without a table, and they want different words. A
+      // venue with a floor of its own can be sat at, so the line is an offer; a
+      // venue without one can only be read.
+      html += (FLOOR && FLOOR.tables.length)
+        ? '<button type="button" class="where pick" id="pickTable">' +
+            '<span class="dot"></span>Tap to say which table you are at' +
+          '</button>'
+        : '<div class="where">Viewing the menu. Scan the code on your table to order.</div>';
     }
 
     var meta = '';
@@ -1490,6 +1685,7 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
         'autocomplete="off" autocorrect="off" spellcheck="false" ' +
         'placeholder="Search the menu" aria-label="Search the menu">' +
       '<button class="clear" id="findClear" type="button" aria-label="Clear">×</button>' +
+      '<button class="done" id="findDone" type="button">Done</button>' +
     '</div>';
 
     html += '<nav class="tabs" id="tabs">';
@@ -1604,6 +1800,89 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
       input.value = '';
       apply();
       input.focus();
+    });
+
+    // ---- The bar is sticky, and the tabs stick underneath it --------------
+    //
+    // Both are pinned, so the tabs have to know how tall the bar is or they
+    // pin underneath it and half of them are never seen. Measured rather than
+    // assumed: the same one line of text is taller in a browser set to a large
+    // default size, and a hard-coded offset would be wrong on exactly the
+    // devices where it matters most.
+    function measure(){
+      document.documentElement.style.setProperty(
+        '--finder-h', Math.round(box.getBoundingClientRect().height) + 'px');
+    }
+    measure();
+    if (typeof ResizeObserver === 'function') new ResizeObserver(measure).observe(box);
+    else window.addEventListener('resize', measure);
+
+    // Whether it is currently pinned, so the shadow only appears when it is
+    // genuinely floating over the page. A sentinel of its own rather than a
+    // scroll handler: a scroll handler that reads layout on every frame is the
+    // one thing guaranteed to make a long menu stutter on a cheap phone.
+    var mark = document.createElement('div');
+    mark.setAttribute('aria-hidden', 'true');
+    mark.style.cssText = 'position:absolute;height:1px;width:1px;opacity:0';
+    box.parentNode.insertBefore(mark, box);
+    if (typeof IntersectionObserver === 'function') {
+      new IntersectionObserver(function(e){
+        box.classList.toggle('stuck', !e[0].isIntersecting);
+      }, { threshold: 1 }).observe(mark);
+    }
+
+    // ---- Using it takes the top of the screen ----------------------------
+    //
+    // Tapping the bar halfway down a menu leaves it halfway down the menu with
+    // a keyboard over the bottom half of the screen — a search box in a letter
+    // box. This carries the page up so the bar lands where it is going to pin
+    // anyway, which reads as the bar rising to the top rather than the page
+    // jumping.
+    input.addEventListener('focus', function(){
+      box.classList.add('searching');
+      var to = window.pageYOffset + box.getBoundingClientRect().top;
+      if (to <= 1) return;
+      try {
+        window.scrollTo({ top: to, behavior: 'smooth' });
+      } catch (err) {
+        // Older Safari takes two numbers and no options object.
+        window.scrollTo(0, to);
+      }
+    });
+
+    // ---- And gives it back -----------------------------------------------
+    var done = document.getElementById('findDone');
+    if (done) done.addEventListener('click', function(){
+      box.classList.remove('searching');
+      // The keyboard goes first. Scrolling while it is still up moves the page
+      // under a viewport that is about to grow by half its height, and lands
+      // somewhere nobody asked for.
+      input.blur();
+      var results = document.getElementById('nohits')
+        || document.querySelector('.col section:not(.hid)')
+        || document.getElementById('tabs');
+      if (!results) return;
+      setTimeout(function(){
+        var to = window.pageYOffset + results.getBoundingClientRect().top
+          - (parseInt(getComputedStyle(document.documentElement)
+              .getPropertyValue('--finder-h'), 10) || 0) - 12;
+        try {
+          window.scrollTo({ top: Math.max(0, to), behavior: 'smooth' });
+        } catch (err) {
+          window.scrollTo(0, Math.max(0, to));
+        }
+      }, 60);
+    });
+
+    // Leaving the field without pressing Done is the same intention, but it
+    // must not fight the button: a tap on Done blurs the input first, and
+    // hiding the button on blur would move it out from under the finger.
+    input.addEventListener('blur', function(){
+      setTimeout(function(){
+        if (document.activeElement !== input && !input.value.trim()) {
+          box.classList.remove('searching');
+        }
+      }, 180);
     });
   }
 
@@ -2530,11 +2809,263 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
     '</div>';
   }
 
+  // =========================================================================
+  // WHICH TABLE ARE YOU AT
+  // =========================================================================
+  //
+  // Scanning the code on a table answers this without anybody being asked, and
+  // that is still the way in. This is for the other arrival: a link off the
+  // venue's website, or forwarded by a friend, which lands on the menu with no
+  // table attached and — until now — no way to order at all.
+  //
+  // The question is asked once, at checkout, with a full basket in hand. Asking
+  // it at the door would be asking somebody to commit to a seat before they had
+  // decided whether they wanted anything.
+
+  var FLOOR = null;         // rooms and tables, once fetched
+  var floorWanted = null;   // the in-flight request, so two taps make one call
+
+  function loadFloor(){
+    if (FLOOR) return Promise.resolve(FLOOR);
+    if (floorWanted) return floorWanted;
+    floorWanted = fetch('/api/public/dinein/floor/' + encodeURIComponent(SLUG),
+      { headers: { 'Accept': 'application/json' } })
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(j){
+        floorWanted = null;
+        FLOOR = j && j.tables ? j : { rooms: [], tables: [] };
+        return FLOOR;
+      })
+      .catch(function(){
+        floorWanted = null;
+        // A floor we could not fetch is not a floor with no tables in it. FLOOR
+        // is left null so the next tap tries again, rather than deciding for
+        // good that this venue cannot be ordered from.
+        return { rooms: [], tables: [] };
+      });
+    return floorWanted;
+  }
+
+  /** Just the occupancy again, for a plan that is already on screen. */
+  function refreshFloor(){
+    return fetch('/api/public/dinein/floor/' + encodeURIComponent(SLUG),
+      { headers: { 'Accept': 'application/json' } })
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(j){ if (j && j.tables) FLOOR = j; return FLOOR; })
+      .catch(function(){ return FLOOR; });
+  }
+
+  /**
+   * The plan, drawn the way the venue drew it.
+   *
+   * Positions come off the same rows the till reads, so the room on the phone
+   * is the room on the floor and the corner table is in the corner. Everything
+   * is scaled into a box rather than given fixed pixels: the plan was laid out
+   * on a desktop grid and is being read on a phone held in one hand.
+   */
+  /**
+   * What to write inside a seat.
+   *
+   * A seat on a plan is about forty pixels across on a phone, and "Table 4" in
+   * it came out as "Ta..." — every table on the floor labelled identically and
+   * none of them legible. On a plan of tables, the word "Table" is the one part
+   * that carries no information: the number is the name. The full name stays on
+   * the button as its accessible label, so a screen reader still says "Table 4"
+   * and a long press still shows it.
+   */
+  function shortName(name){
+    var text = String(name || '').trim();
+    var bare = text.replace(/^tables?\s+/i, '');
+    return bare.length && bare.length < text.length ? bare : text;
+  }
+
+  function planHtml(room, tables){
+    var mine = tables.filter(function(t){ return t.room_id === room.id; });
+    if (!mine.length) {
+      return '<p class="floor-empty">No tables in here take orders from phones.</p>';
+    }
+
+    // The extent of what is actually there, not the extent of the grid. A room
+    // laid out as twelve by eight with four tables in one corner should fill
+    // the screen with those four tables.
+    var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    mine.forEach(function(t){
+      minX = Math.min(minX, t.x); minY = Math.min(minY, t.y);
+      maxX = Math.max(maxX, t.x + (t.w || 1)); maxY = Math.max(maxY, t.y + (t.h || 1));
+    });
+    var w = Math.max(1, maxX - minX), h = Math.max(1, maxY - minY);
+
+    var html = '<div class="floor" style="aspect-ratio:' + w + '/' + h + '">';
+    mine.forEach(function(t){
+      var left = ((t.x - minX) / w) * 100;
+      var top = ((t.y - minY) / h) * 100;
+      var wide = ((t.w || 1) / w) * 100;
+      var high = ((t.h || 1) / h) * 100;
+      html += '<button type="button" class="fseat' +
+        (t.shape === 'circle' ? ' round' : '') +
+        (t.busy ? ' busy' : '') +
+        (TABLE === t.public_id ? ' picked' : '') + '"' +
+        ' data-pick="' + esc(t.public_id) + '"' +
+        ' style="left:' + left.toFixed(3) + '%;top:' + top.toFixed(3) + '%;' +
+                'width:' + wide.toFixed(3) + '%;height:' + high.toFixed(3) + '%"' +
+        ' aria-label="' + esc(t.name) + (t.busy ? ', in use' : ', free') + '">' +
+        '<span class="fname">' + esc(shortName(t.name)) + '</span>' +
+        (t.seats ? '<span class="fseats">' + t.seats + '</span>' : '') +
+      '</button>';
+    });
+    return html + '</div>';
+  }
+
+  /**
+   * Ask which table, and carry on afterwards.
+   *
+   * The callback runs only once a table has been chosen. Closing the sheet
+   * is a real answer — somebody who is only reading the menu is allowed to put it down —
+   * and it leaves the basket exactly as it was.
+   */
+  function askTable(after){
+    var body = sheet('Which table are you at?', {});
+    var timer = null;
+
+    body.innerHTML = '<p class="floor-wait">Reading the floor…</p>';
+
+    loadFloor().then(function(floor){
+      if (!floor.tables.length) {
+        body.innerHTML =
+          '<p class="floor-empty">This venue is not taking orders from phones ' +
+          'just now. Please order at the bar.</p>';
+        return;
+      }
+      paint(floor);
+      // The till moves while somebody is looking at this. A table that filled
+      // up ten seconds ago should say so, and a plan that never changes is a
+      // plan nobody trusts the second time they see it.
+      timer = setInterval(function(){
+        if (!body.isConnected) { clearInterval(timer); return; }
+        refreshFloor().then(function(f){
+          if (!f || !body.isConnected) return;
+          // Only when the floor actually moved. Repainting on a timer regardless
+          // would rebuild the plan under somebody's thumb every twelve seconds,
+          // which is how a tap lands on the wrong table.
+          var now = f.tables.map(function(t){
+            return t.public_id + (t.busy ? '1' : '0');
+          }).join(',');
+          if (now === seen) return;
+          seen = now;
+          paint(f, true);
+        });
+      }, 12000);
+    });
+
+    // Stop polling the moment the sheet goes, however it goes.
+    var shut = body.close;
+    body.close = function(){ if (timer) clearInterval(timer); shut(); };
+
+    var roomId = null;
+    var seen = null;   // the floor as it was last drawn, to spot a real change
+
+    function paint(floor, keepRoom){
+      seen = floor.tables.map(function(t){
+        return t.public_id + (t.busy ? '1' : '0');
+      }).join(',');
+      var rooms = floor.rooms.filter(function(r){
+        return floor.tables.some(function(t){ return t.room_id === r.id; });
+      });
+      if (!keepRoom || roomId == null) roomId = rooms.length ? rooms[0].id : null;
+      var room = rooms.filter(function(r){ return r.id === roomId; })[0] || rooms[0];
+
+      var free = floor.tables.filter(function(t){ return !t.busy; }).length;
+
+      body.innerHTML =
+        '<p class="floor-say">Pick the table you are sitting at. The ones already ' +
+          'in use are marked — if that is yours, choose it and your order joins ' +
+          'the bill.</p>' +
+        (rooms.length > 1
+          ? '<div class="floor-tabs">' + rooms.map(function(r){
+              return '<button type="button" data-room="' + r.id + '"' +
+                (r.id === room.id ? ' class="on"' : '') + '>' + esc(r.name) + '</button>';
+            }).join('') + '</div>'
+          : '') +
+        (room ? planHtml(room, floor.tables) : '') +
+        '<p class="floor-key"><span class="k free"></span>Free' +
+          '<span class="k busy"></span>In use' +
+          '<span class="floor-count">' + free + ' free</span></p>';
+
+      body.querySelectorAll('[data-room]').forEach(function(b){
+        b.addEventListener('click', function(){
+          roomId = Number(b.getAttribute('data-room'));
+          paint(floor, true);
+        });
+      });
+    }
+
+    body.addEventListener('click', function(e){
+      var seat = e.target.closest('[data-pick]');
+      if (!seat) return;
+      body.close();
+      chooseTable(seat.getAttribute('data-pick'), after);
+    });
+  }
+
+  /**
+   * Take a chosen table on as if it had been scanned.
+   *
+   * The menu is re-read through the table's own endpoint rather than patched in
+   * place, because that endpoint is what decides whether this table takes
+   * orders at all — a table can be on the plan and switched off — and because
+   * everything downstream already trusts the table that load() put on the page.
+   *
+   * The address bar comes along too. A phone that reloads, or a link passed
+   * across the table, then lands exactly where scanning would have.
+   */
+  function chooseTable(publicId, after){
+    fetch('/api/public/dinein/table/' + encodeURIComponent(publicId),
+      { headers: { 'Accept': 'application/json' } })
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(fresh){
+        if (!fresh || !fresh.table) {
+          return pop({
+            title: 'That table has gone',
+            body: 'It is not taking orders any more. Please pick another, or ask ' +
+                  'a member of staff.',
+            ok: 'I see'
+          });
+        }
+        TABLE = publicId;
+        data = fresh;
+        try {
+          history.replaceState(null, '', '/t/' + encodeURIComponent(publicId));
+        } catch (err) {
+          // A history entry a browser will not write is not worth failing over.
+        }
+        draw();
+        paintBasket();
+        if (after) setTimeout(after, 60);
+      })
+      .catch(function(){
+        pop({
+          title: 'We could not reach the kitchen',
+          body: 'Check your signal and try again.',
+          ok: 'I see'
+        });
+      });
+  }
+
   function canOrder(){
-    return !!(data && data.table && data.table.ordering && data.venue.ordering_open);
+    if (!data || !data.venue.ordering_open) return false;
+    if (data.table) return !!data.table.ordering;
+    // No table yet, on a venue's own address. The basket can still be filled:
+    // which table it goes to is a question worth asking once, at the end, with
+    // something in hand — not a gate in front of a menu somebody is still
+    // reading. Only offered where there is actually a floor to choose from.
+    return !!(SLUG && FLOOR && FLOOR.tables.length);
   }
 
   function onTap(e){
+    // The line under the hero, when there is no table yet. It is a button
+    // rather than a notice because there is something to do about it.
+    if (e.target.closest('#pickTable')) { askTable(null); return; }
+
     var add = e.target.closest('[data-add]');
     var less = e.target.closest('[data-less]');
     if (!add && !less) return;
@@ -2668,6 +3199,10 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
   document.getElementById('basketBtn').addEventListener('click', openCheckout);
 
   function openCheckout(){
+    // The one place the question is asked. Not at the door, and not on every
+    // tap of a plus — here, with a basket ready to send and a reason to answer.
+    if (!TABLE) { askTable(openCheckout); return; }
+
     var v = data.venue;
     var t = totals();
     var rows = '';
@@ -2678,8 +3213,13 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
 
     document.getElementById('checkoutBody').innerHTML =
       '<h2>Your order</h2>' +
-      '<p class="tag" style="margin:0 0 10px;color:var(--ink-soft);font-size:14px">' +
-        esc(data.table ? data.table.name : '') + '</p>' +
+      // Where it is going, and a way to say that is wrong. Somebody who moved
+      // tables between filling the basket and sending it should not have to
+      // start again to say so.
+      '<p class="tag totable">' +
+        '<span>' + esc(data.table ? data.table.name : '') + '</span>' +
+        (SLUG ? '<button type="button" id="cwhere">Change</button>' : '') +
+      '</p>' +
       rows +
       '<div class="row total"><span>Total</span><span>' + money(t.sum) + '</span></div>' +
       '<label for="cname">Your name' + (v.require_name ? '' : ' (optional)') + '</label>' +
@@ -2703,6 +3243,14 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
       '<button class="shut" id="cshut" type="button">Keep looking</button>';
 
     document.getElementById('cshut').addEventListener('click', function(){ dlg.close(); });
+
+    var where = document.getElementById('cwhere');
+    if (where) where.addEventListener('click', function(){
+      dlg.close();
+      // Back into the basket once a table has been chosen, so changing where
+      // the food goes costs one tap and not a rebuilt order.
+      setTimeout(function(){ askTable(openCheckout); }, 200);
+    });
     document.getElementById('csend').addEventListener('click', send);
 
     var signIn = document.querySelector('[data-as="in"]');
@@ -2716,6 +3264,11 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
   }
 
   function send(){
+    // Belt and braces. openCheckout will not open the sheet without a table, so
+    // this cannot normally fire — but the endpoint is addressed by table, and
+    // an order posted to nowhere is an order that vanishes.
+    if (!TABLE) { askTable(openCheckout); return; }
+
     var btn = document.getElementById('csend');
     var err = document.getElementById('cerr');
     btn.disabled = true;

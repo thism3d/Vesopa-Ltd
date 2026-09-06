@@ -152,4 +152,101 @@ check('no CSS comment contains a backtick', () => {
   assert.deepStrictEqual(bad, []);
 });
 
+check('nothing in the page script contains a backtick either', () => {
+  // The same trap, and the more likely half of it: the entire customer-facing
+  // script is in that literal too, so one backtick in one JSDoc comment ends
+  // the literal hundreds of lines early. The file then either fails to parse or
+  // — worse — parses into something that serves a truncated page.
+  const from = source.indexOf('<script>', source.indexOf('</style>'));
+  const to = source.indexOf('</' + 'script>', from);
+  assert.ok(from > 0 && to > from, 'the page script could not be located');
+  // Everything inside a ${...} hole is ordinary JavaScript, evaluated while the
+  // page is being built, so a backtick there is a nested literal and perfectly
+  // safe. It is a backtick in the *text* of the page that ends it early.
+  //
+  // Holes nest — ${table ? `"${esc(table)}"` : 'null'} — so they come out from
+  // the inside first, a layer at a time, until none is left.
+  let script = source.slice(from, to);
+  for (let i = 0; i < 20 && /\$\{[^{}]*\}/.test(script); i++) {
+    script = script.replace(/\$\{[^{}]*\}/g, '');
+  }
+  const bad = script
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.includes('`'));
+  assert.deepStrictEqual(bad, [], 'a backtick would end the page');
+});
+
+// ---------------------------------------------------------------------------
+// The table picker
+// ---------------------------------------------------------------------------
+//
+// The plan is built by string concatenation and styled by a stylesheet written
+// a thousand lines away from it. Nothing checks that a class the markup emits
+// is a class the stylesheet knows about — a renamed rule leaves the plan on the
+// page as a stack of unpositioned buttons, which still works and looks broken.
+
+check('every class the floor plan draws has a rule behind it', () => {
+  const drawn = [
+    'floor', 'fseat', 'round', 'busy', 'picked', 'fname', 'fseats',
+    'floor-tabs', 'floor-key', 'floor-say', 'floor-wait', 'floor-empty',
+    'floor-count', 'totable',
+  ];
+  const missing = drawn.filter((c) => !new RegExp('\\.' + c + '[\\s,{:.]').test(CSS));
+  assert.deepStrictEqual(missing, [], 'the plan draws classes nothing styles');
+});
+
+check('a seat is positioned, or the plan is a pile of buttons', () => {
+  // Every seat is placed by a percentage into a box that holds the room's
+  // proportions. Without position:absolute on the seat and position:relative on
+  // the room, all of them stack at the top left and the plan means nothing.
+  assert.match(CSS, /\.floor\{[^}]*position:relative/, 'the room is not a containing block');
+  assert.match(CSS, /\.fseat\{[^}]*position:absolute/, 'seats are not placed');
+});
+
+check('a table in use is marked but never disabled', () => {
+  // The commonest table for somebody to pick is the one they are already
+  // sitting at, and a second round belongs on the bill that is open on it. A
+  // busy seat is drawn differently and stays pressable.
+  const seats = source.slice(source.indexOf('function planHtml('));
+  const body = seats.slice(0, seats.indexOf('\n  }'));
+  assert.ok(body.includes("' busy'"), 'a table in use is not marked at all');
+  assert.ok(!/disabled/.test(body), 'a table in use was made unpressable');
+});
+
+check('the question is asked once, at the end', () => {
+  // Not at the door. Somebody reading a menu has not decided they want anything
+  // yet, and a venue's own web address is a perfectly good place to just read.
+  const checkout = source.slice(source.indexOf('function openCheckout(){'));
+  const head = checkout.slice(0, checkout.indexOf('var v = data.venue;'));
+  assert.match(head, /if \(!TABLE\) \{ askTable\(openCheckout\); return; \}/,
+    'checkout no longer asks which table');
+});
+
+check('an order is never posted to nowhere', () => {
+  // The order endpoint is addressed by a table's public id. Sending without one
+  // builds a URL with `undefined` in it, which is a customer watching a
+  // spinner while their dinner goes to a route that does not exist.
+  // Two functions on this page are called send() — the sign-in code and the
+  // order. Anchored past openCheckout so this is unambiguously the order, which
+  // is the one with somewhere to go wrong.
+  const send = source.slice(
+    source.indexOf('function send(){', source.indexOf('function openCheckout(){'))
+  );
+  const head = send.slice(0, send.indexOf('var btn ='));
+  assert.match(head, /if \(!TABLE\)/, 'send lost its guard');
+});
+
+check('choosing a table re-reads the menu through that table', () => {
+  // A table can be on the plan and switched off for phone orders. Patching
+  // `data.table` in place from the floor payload would skip the one endpoint
+  // that knows that, and the refusal would arrive at send time instead.
+  const choose = source.slice(source.indexOf('function chooseTable('));
+  const body = choose.slice(0, choose.indexOf('\n  }'));
+  assert.ok(body.includes("'/api/public/dinein/table/'"),
+    'the chosen table is not verified against its own endpoint');
+  assert.ok(body.includes('history.replaceState'),
+    'a reload would lose the table that was just chosen');
+});
+
 console.log(`\n${passed} checks passed\n`);

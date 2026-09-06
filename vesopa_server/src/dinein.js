@@ -456,6 +456,15 @@ function dineinRoutes({ pool, broadcast, secret }) {
         // than defaulted into the column, so a venue that later renames its
         // account is not stuck with the old name frozen into its menu.
         fallback_name: office ? office.name : '',
+        // The address a customer would reach this menu at.
+        //
+        // The editor used to take this off whatever page happened to have
+        // loaded it last, which in practice was the Table codes page — so on a
+        // fresh visit to the settings page the address shown under "Your web
+        // address", the preview frame and the "Open the menu page" link were
+        // all built from the back office's own origin. A manager reading the
+        // hint was told to print backoffice.vesopaepos.com on their cards.
+        base: publicBase(req, venue),
       });
     } catch (e) {
       next(e);
@@ -686,9 +695,17 @@ function dineinRoutes({ pool, broadcast, secret }) {
         'SELECT * FROM dinein_sections WHERE office_id = ? ORDER BY sort_order, id',
         [officeId]
       );
+      // The catalogue's own name comes with each dish, as a placeholder for the
+      // menu name. The editor used to show the PLU there — "PLU 1042" — which
+      // is what the till calls it and means nothing to somebody writing a menu.
+      // What they want to see is what the product is already called.
+      const email = await emailOf(officeId);
       const [items] = await pool.query(
-        'SELECT * FROM dinein_items WHERE office_id = ? ORDER BY sort_order, id',
-        [officeId]
+        'SELECT i.*, p.product_name AS catalogue_name' +
+          '  FROM dinein_items i' +
+          '  LEFT JOIN bo_products p ON p.email = ? AND p.pluid = i.plu_id' +
+          ' WHERE i.office_id = ? ORDER BY i.sort_order, i.id',
+        [email, officeId]
       );
       res.json(
         sections.map((s) => ({
@@ -1259,6 +1276,96 @@ function dineinRoutes({ pool, broadcast, secret }) {
           // better that the screen answers the question first.
           ordering: !!table.qr_enabled,
         },
+      });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /**
+   * The floor, for somebody who opened the menu without scanning a table.
+   *
+   * WHY THERE IS A PICKER AT ALL
+   *
+   * A code on a table answers "where do I take this" without anybody being
+   * asked, and that stays the way in. Somebody who followed a link instead —
+   * off the venue's website, or from a friend — has no code, and until now
+   * simply could not order at all. This is the fallback, and it is deliberately
+   * the fallback: scanning is one action, choosing off a plan is three.
+   *
+   * WHAT IS AND IS NOT SENT
+   *
+   * The rooms, and the tables that take orders, with their positions — so the
+   * plan a customer sees is the plan the venue drew rather than a list of
+   * numbers. Each table's printed code comes with it, because choosing a table
+   * here has to place an order by exactly the route scanning it would.
+   *
+   * `busy` says a bill is already open on that table, read from the till's own
+   * open bills rather than from anything the menu remembers. It is shown, and
+   * it is still selectable: a table with a bill on it is the commonest table to
+   * be sitting at, and a second round belongs on that same bill. What the flag
+   * is for is the other case — somebody about to pick an empty table they are
+   * not actually sitting at gets to see that it is empty.
+   *
+   * Nothing about the bill itself is sent. What is on it, what it comes to and
+   * who is on it are none of a stranger's business, and "busy" is the whole of
+   * what a picker needs to know.
+   */
+  router.get('/api/public/dinein/floor/:slug', async (req, res, next) => {
+    try {
+      const [[venue]] = await pool.query(
+        'SELECT office_id, display_name, is_published FROM dinein_venue WHERE slug = ?',
+        [cleanSlug(req.params.slug)]
+      );
+      if (!venue || !venue.is_published) {
+        return res.status(404).json({ error: 'No venue at that address.' });
+      }
+
+      const [rooms] = await pool.query(
+        'SELECT id, name, sort_order, outline, cols, `rows` FROM floor_rooms' +
+          ' WHERE office_id = ? ORDER BY sort_order, id',
+        [venue.office_id]
+      );
+      const [tables] = await pool.query(
+        'SELECT id, room_id, table_number, label, name, public_id,' +
+          ' pos_x, pos_y, width, height, shape, seats FROM floor_tables' +
+          ' WHERE office_id = ? AND qr_enabled = 1 AND public_id IS NOT NULL' +
+          ' ORDER BY table_number',
+        [venue.office_id]
+      );
+
+      // The till tenants its open bills on the office's contact email, the same
+      // way the catalogue is tenanted. Without a match here every table would
+      // read as free, which is worse than not showing the state at all.
+      const email = await emailOf(venue.office_id);
+      let busy = new Set();
+      if (email) {
+        const [open] = await pool.query(
+          "SELECT DISTINCT table_number, room_id FROM epos_open_bills" +
+            " WHERE office = ? AND status <> 'closed'",
+          [email]
+        );
+        busy = new Set(open.map((o) => String(o.table_number)));
+      }
+
+      res.json({
+        venue: { name: (venue.display_name || '').trim() || null },
+        rooms: rooms.map((r) => ({
+          id: r.id,
+          name: r.name,
+          cols: r.cols || 12,
+          rows: r.rows || 8,
+          outline: r.outline || null,
+        })),
+        tables: tables.map((t) => ({
+          public_id: t.public_id,
+          room_id: t.room_id,
+          name: tableName(t),
+          seats: t.seats || null,
+          x: t.pos_x, y: t.pos_y, w: t.width, h: t.height,
+          shape: t.shape || 'rect',
+          busy: busy.has(String(t.table_number)),
+        })),
       });
     } catch (e) {
       next(e);

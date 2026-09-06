@@ -654,6 +654,133 @@ function cellText(field, value) {
 }
 
 /**
+ * Choose a picture: the preview, the button, and the value that gets saved.
+ *
+ * WHY THIS IS A FUNCTION AND NOT A TEXT BOX
+ *
+ * Half the picture fields in the back office were an input labelled "Image
+ * URL", which asks a publican to go and find a web address for a photograph of
+ * their own dining room. There is nowhere for them to get one: the photograph
+ * is on their phone. The only people who could fill those boxes in were people
+ * who had already uploaded the picture somewhere else.
+ *
+ * The upload path already existed — crop, resize, post to /api/product-image —
+ * but only inside the modal form builder. This is that same path, extracted, so
+ * a page that is not a modal can use it too.
+ *
+ * WHAT IT RENDERS
+ *
+ * A hidden input carrying the URL, which is what gets read on save, so an
+ * untouched field keeps the picture it already had; a preview beside it,
+ * because a filename is not a picture and the whole question here is whether it
+ * looks right; and a button to remove one, because a venue that took the wrong
+ * photograph has no other way back to none.
+ *
+ * `wireImagePickers` has to be called on whatever contains it.
+ */
+function imagePicker(name, value, { crop = 'square', label = 'Choose a picture' } = {}) {
+  const has = !!(value && String(value).trim());
+  return `
+    <input type="hidden" name="${esc(name)}" id="${esc(name)}" value="${esc(value ?? '')}" />
+    <div class="img-field" data-img-for="${esc(name)}">
+      ${has ? `<img class="img-preview" src="${esc(value)}" alt="" />` : ''}
+      <div class="img-acts">
+        <label class="btn small filepick-btn">
+          <span>${esc(has ? 'Replace' : label)}</span>
+          <input type="file" accept="image/*"
+                 data-upload-for="${esc(name)}" data-crop-shape="${esc(crop)}" />
+        </label>
+        <button type="button" class="btn small ghost" data-img-clear="${esc(name)}"
+                ${has ? '' : 'hidden'}>Remove</button>
+      </div>
+    </div>`;
+}
+
+/**
+ * Make every picker inside `root` work.
+ *
+ * Idempotent: a page that redraws part of itself can call this again without
+ * binding the same input twice, which would upload the same photograph twice
+ * and race the two replies.
+ */
+function wireImagePickers(root) {
+  if (!root) return;
+
+  root.querySelectorAll('[data-upload-for]').forEach((input) => {
+    if (input.dataset.wired) return;
+    input.dataset.wired = '1';
+
+    input.addEventListener('change', async () => {
+      const file = input.files[0];
+      if (!file) return;
+
+      let blob;
+      try {
+        // Zoom, pan and crop, so what is stored is the shape the page will draw
+        // it in rather than whatever came off a camera.
+        blob = await openCropper(file, input.dataset.cropShape);
+      } catch {
+        input.value = '';
+        return; // cancelled, which is not a failure
+      }
+      if (!blob) return;
+
+      const name = input.dataset.uploadFor;
+      const wrap = input.closest('.img-field');
+      const button = input.closest('.filepick-btn');
+      const say = button?.querySelector('span');
+      const was = say?.textContent;
+      if (say) say.textContent = 'Uploading…';
+
+      const body = new FormData();
+      body.append('image', blob, 'image.png');
+      try {
+        const res = await fetch('/api/product-image', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body,
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Upload failed');
+
+        const hidden = root.querySelector(`[name="${CSS.escape(name)}"]`)
+          || document.getElementById(name);
+        if (hidden) hidden.value = data.url;
+
+        wrap?.querySelector('.img-preview')?.remove();
+        const img = document.createElement('img');
+        img.className = 'img-preview';
+        img.src = data.url;
+        wrap?.prepend(img);
+        wrap?.querySelector('[data-img-clear]')?.removeAttribute('hidden');
+        if (say) say.textContent = 'Replace';
+      } catch (err) {
+        toast(err.message, 'error');
+        if (say) say.textContent = was || 'Choose a picture';
+      } finally {
+        input.value = '';
+      }
+    });
+  });
+
+  root.querySelectorAll('[data-img-clear]').forEach((btn) => {
+    if (btn.dataset.wired) return;
+    btn.dataset.wired = '1';
+    btn.addEventListener('click', () => {
+      const name = btn.dataset.imgClear;
+      const hidden = root.querySelector(`[name="${CSS.escape(name)}"]`)
+        || document.getElementById(name);
+      if (hidden) hidden.value = '';
+      const wrap = btn.closest('.img-field');
+      wrap?.querySelector('.img-preview')?.remove();
+      const say = wrap?.querySelector('.filepick-btn span');
+      if (say) say.textContent = 'Choose a picture';
+      btn.hidden = true;
+    });
+  });
+}
+
+/**
  * Let a table become a stack of cards on a phone.
  *
  * Below 760px `.table-cards` drops the heading row, so every cell has to carry
@@ -1025,7 +1152,7 @@ function render() {
  * afterwards and appends yesterday's lines under today's heading. Each search
  * takes a number, and a reply carrying the wrong one is dropped.
  */
-const EX_PAGE = 60;
+const EX_PAGE = 100;
 let exFeed = { token: 0, offset: 0, done: false, loading: false, watcher: null };
 
 async function loadExplorer() {
@@ -1152,6 +1279,23 @@ async function feedFill(footId, feed, nextPage) {
 
   for (let guard = 0; guard < 40; guard++) {
     if (feed.done) return;
+
+    // A view that is still under its skeleton has `display: none` on everything
+    // below the heading, so the sentinel has no box at all — and a box of no
+    // size reports top 0, which reads here as "the foot of the list is at the
+    // top of the screen, keep filling". It did: the Sales Explorer fetched
+    // every line it had, a page at a time, before the skeleton came off. Three
+    // hundred and seventy-seven rows on a first paint that should have drawn a
+    // hundred.
+    //
+    // One page, then stop. The observer is already watching the sentinel, so
+    // the moment the skeleton clears and the foot is genuinely in view, filling
+    // resumes on its own with the real measurements.
+    if (!sentinel.getClientRects().length) {
+      if (!feed.offset) await nextPage();
+      return;
+    }
+
     const box = sentinel.getBoundingClientRect();
     // The same margin the observer is given, asked directly.
     const fold = window.innerHeight || document.documentElement.clientHeight;
@@ -1314,7 +1458,7 @@ async function loadTillReport() {
  * anywhere in the back office, and nothing on the screen said so. Nobody
  * scrolls two hundred rows to discover a limit.
  */
-const BR_PAGE = 60;
+const BR_PAGE = 100;
 let brFeed = { token: 0, offset: 0, done: false, loading: false, watcher: null };
 
 async function loadBillReport() {
@@ -2891,14 +3035,7 @@ function fieldHtml(f) {
     </span>`;
   }
   if (f.type === 'image') {
-    // A file picker plus a hidden field holding the uploaded URL, so an
-    // unchanged image keeps its existing value on edit.
-    return `
-      <input type="hidden" name="${f.name}" value="${esc(f.value ?? '')}" />
-      <div class="img-field" data-img-for="${f.name}">
-        ${f.value ? `<img class="img-preview" src="${esc(f.value)}" alt="" />` : ''}
-        <input type="file" accept="image/*" data-upload-for="${f.name}" data-crop-shape="${f.crop || 'square'}" />
-      </div>`;
+    return imagePicker(f.name, f.value, { crop: f.crop || 'square' });
   }
   if (f.type === 'modifiers') {
     // An ordered list, not a set of tick boxes, because the order is the
@@ -3302,47 +3439,10 @@ function modal(title, fields, onSubmit) {
       </form>
     </div>`;
 
-  // On file select, open the cropper (zoom / pan / crop). What it returns is
-  // a resized PNG in the shape that field displays on the till — never the
-  // raw camera image — so till buttons all get a consistent, small picture.
-  root.querySelectorAll('[data-upload-for]').forEach((input) => {
-    input.addEventListener('change', async () => {
-      const file = input.files[0];
-      if (!file) return;
-      let blob;
-      try {
-        blob = await openCropper(file, input.dataset.cropShape);
-      } catch {
-        input.value = '';
-        return; // cancelled
-      }
-      if (!blob) return;
-
-      const body = new FormData();
-      body.append('image', blob, 'product.png');
-      try {
-        const res = await fetch('/api/product-image', {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
-          body,
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Upload failed');
-        const hidden = root.querySelector(`input[name="${input.dataset.uploadFor}"]`);
-        hidden.value = data.url;
-        const wrap = input.closest('.img-field');
-        wrap.querySelector('.img-preview')?.remove();
-        const img = document.createElement('img');
-        img.className = 'img-preview';
-        img.src = data.url;
-        wrap.prepend(img);
-      } catch (err) {
-        toast(err.message, 'error');
-      } finally {
-        input.value = '';
-      }
-    });
-  });
+  // Crop, upload, preview — the same component the rest of the back office
+  // uses. It used to be written out here, which is why nothing outside a modal
+  // form could offer a picture and half the pages asked for a URL instead.
+  wireImagePickers(root);
 
   // The ordered modifier picker: add, reorder, remove. Everything it does is a
   // move of one <li>, because the list *is* the value — each row carries the
@@ -4482,6 +4582,7 @@ function signOut() {
   if (socket) socket.close();
   $('app').hidden = true;
   $('login').hidden = false;
+  $('theme-corner-login').hidden = false;
   $('login-note').hidden = true;
   showLoginPanel('login-form');
   history.replaceState({}, '', '/');
@@ -4660,6 +4761,13 @@ async function verifyResetToken(raw) {
 async function start() {
   $('login').hidden = true;
   $('app').hidden = false;
+  // The sign-in page has a theme control of its own, outside #login so that it
+  // is reachable on a white page before anybody has signed in. It was never put
+  // away afterwards: it is `position: fixed` with a higher z-index than the
+  // application's, so on a phone it sat directly on top of the real one, two
+  // pixels off and with a solid white background the real one does not have.
+  // Two controls, one visible, and the visible one was the wrong one.
+  $('theme-corner-login').hidden = true;
 
   // Administration is only shown to the platform admin. The server enforces
   // this too — hiding the buttons alone would not stop anyone.

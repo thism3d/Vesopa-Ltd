@@ -1,3 +1,4 @@
+# Fix 1
 All backoffice buttons or similar type of buttons use the same css class selector, htps://fonts.google.com/icons (use google fonts icons svg or maybe another fonts library's svg rather than building your own svg icon).
 
 https://backoffice.vesopaepos.com/reports/financial-summary - select (PDF, CSV, XLS) button not properly matched the height with other buttons i.e. run report, view pdf and download buttons. https://backoffice.vesopaepos.com/sales-explorer here also the select option is not aligned with the button height.
@@ -42,4 +43,25 @@ THese are simple but necesary fixes. Fix quickly and deploy. No need to build an
 
 
 Every long page or infinity scroll page loads with the page scroll like https://backoffice.vesopaepos.com/sales-explorer - load few and on scroll to the bottom loads and loads but do it silently behind the screen so that client never saves loading issues.
+
+
+
+
+# Fix 2
+
+
+https://backoffice.vesopaepos.com/reports/financial-summary button size fixed, but buttons are not aligned with each other means not in the same line now. Fix it.
+
+
+https://backoffice.vesopaepos.com/sales-explorer search button is not aligned with the From - To - Department input fields. Match it.
+https://backoffice.vesopaepos.com/products Clear button is not aligned with input fields to it's left.
+
+https://backoffice.vesopaepos.com/sales-explorer, https://backoffice.vesopaepos.com/bill-report why loading 100+ products, load 100 first, before it ends load another 100 before scroll ends and again loads another and like that finishes as goes.
+
+https://backoffice.vesopaepos.com/screen-programming?popup=1 after bottom bars there is a select picker input which has extensive height, fix that height maintaining the right adjacent buttons. Top bar, bottom bar select picker also fix their height maintaining the buttons on adjacents.
+
+https://backoffice.vesopaepos.com/dine-in - Collapsible options and preview at the right side until the screen is too low. Picture URL (optional) why url - no url, interactive image picker which we already have in our system. All the image and logo must not set url, set the image picker and preview beside. Why you set the domain qr.vesopaepos.com/(ktichenurl) it's wrong. menu.vesopaepos.com/(ktichenurl) was right. menu.vesopaepos.com/(ktichenurl) this will be our main url to offer whereas users can pick their own domain. Can skip that now. But set menu.vesopa.com for now on. Your colours should show my color in circle box and picker and change to preview and save to permanantly added.
+
+https://backoffice.vesopaepos.com/dine-in/menu collapsible each sections. Section then line underneath it's below. Two fields, input hint inside or inline text than goes to the top left side of the inpur field like material input, buttons after the input save and delete too much width, not friendly. Redesign needed of this page. Suggestions given. Don't have to show the PLU 144
+
 
