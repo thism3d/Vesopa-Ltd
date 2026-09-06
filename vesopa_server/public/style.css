@@ -5002,14 +5002,43 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
 #canvas.drawing .tbl { pointer-events: none; opacity: .5; }
 
 .lasso { pointer-events: none; }
-.lasso .lasso-pt {
-  pointer-events: auto;
-  cursor: grab;
+
+/* A corner. Numbered, so it is obvious how many there are and which order the
+   walls were walked in — and big enough to be hit by a finger rather than by a
+   mouse, since this is drawn on a tablet standing in the room being drawn. */
+.lasso .lasso-pt { pointer-events: auto; cursor: grab; touch-action: none; }
+.lasso .lasso-pt circle {
   fill: var(--panel);
   stroke: var(--brand);
   stroke-width: 3;
 }
-.lasso .lasso-pt:hover { fill: var(--brand); }
+.lasso .lasso-pt text {
+  fill: var(--text);
+  font-size: 10px;
+  font-weight: 700;
+  pointer-events: none;
+  user-select: none;
+}
+.lasso .lasso-pt:hover circle { fill: color-mix(in srgb, var(--brand) 35%, var(--panel)); }
+.lasso .lasso-pt:active { cursor: grabbing; }
+
+/* The one that closes the room. Filled and pulsing, because "tap the first
+   corner again" is only an instruction if the first corner is findable — on a
+   plan that has been scrolled twice it otherwise means "remember where you
+   started". */
+.lasso .lasso-pt.first circle {
+  fill: var(--brand);
+  stroke: var(--panel);
+  animation: lasso-pulse 1.6s ease-in-out infinite;
+}
+.lasso .lasso-pt.first text { fill: #10130A; font-size: 14px; }
+@keyframes lasso-pulse {
+  0%, 100% { stroke-width: 3; }
+  50%      { stroke-width: 6; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lasso .lasso-pt.first circle { animation: none; }
+}
 
 /* ---- A table that has been given a colour -------------------------------- */
 .tbl { --tbl-colour: var(--brand); }
@@ -5181,58 +5210,6 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
   letter-spacing: .04em;
 }
 
-/* ---- A label that starts inside the field --------------------------------
-
-   The hint and the label were two separate things: a word above the box saying
-   "Section", and grey placeholder text inside it saying something else. Once
-   anything is typed the placeholder is gone and the only label left is the one
-   above, so the form is at its most helpful when it is empty and least helpful
-   when it is full.
-
-   One label instead, sitting inside the empty field and rising to its top-left
-   corner when there is something in it — so the field says what it is whether
-   it is empty, being typed into, or full.
-
-   `placeholder=" "` in the markup, a single space, is what makes this work
-   without any JavaScript: `:placeholder-shown` is true only while the field is
-   empty, and a real placeholder would be visible underneath the label. */
-.float { position: relative; display: block; margin: 0; }
-.float > input {
-  width: 100%;
-  margin: 0;
-  /* Room above the value for the label to sit in. The field is taller than a
-     plain one by exactly that much — without the extra height the label and the
-     value are laid out in the same place and overlap, which is what happened:
-     "Section" was drawn through "Starters". */
-  height: auto;
-  min-height: 54px;
-  padding: 23px 13px 7px;
-  box-sizing: border-box;
-  line-height: 1.35;
-}
-.float > span {
-  position: absolute;
-  left: 14px;
-  top: 8px;
-  /* Its own line height, not the page's. Inheriting 20px of line box on an
-     11px label gives it a box nearly twice its own height, and the bottom of
-     that box is where the value starts. */
-  line-height: 1;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: .02em;
-  color: var(--muted);
-  pointer-events: none;
-  transform-origin: 0 0;
-  transition: transform .14s ease, color .14s ease;
-}
-/* Empty and not being typed into: the label drops to where the text will go,
-   at text size, so it reads as a prompt rather than as a caption over a gap. */
-.float > input:placeholder-shown:not(:focus) + span {
-  transform: translate(0, 13px) scale(1.36);
-}
-.float > input:focus + span { color: var(--brand); }
-
 /* ---- A section of the menu ----------------------------------------------- */
 .di-menu-sec > summary { justify-content: flex-start; }
 .di-menu-sec > summary h3 { flex: 0 1 auto; min-width: 0; }
@@ -5248,9 +5225,13 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
 .di-sec-fields {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
+  gap: 4px 10px;
   align-items: start;
 }
+/* The label supplies its own top margin, so the grid gap only has to separate
+   the second field from the first. */
+.di-sec-fields > label { margin: 0; }
+.di-sec-fields > label:first-child { margin-top: 0; }
 .di-sec-fields > .float:first-child { grid-column: 1; }
 .di-sec-fields > .float:nth-child(2) { grid-column: 1; }
 .di-sec-acts {

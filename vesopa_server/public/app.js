@@ -2666,6 +2666,31 @@ async function dropPreset(preset, gridX, gridY) {
 
 let lasso = null;   // { points: [[x,y], …] } while drawing, else null
 
+/**
+ * Where a pointer is, in grid squares.
+ *
+ * THE PLAN SCROLLS. #canvas is `overflow: auto` and a room is routinely wider
+ * and taller than the box it is shown in, so `getBoundingClientRect()` gives
+ * the *window's* view of the canvas and not the plan's own origin. Every corner
+ * dropped on a scrolled plan therefore landed short by exactly however far it
+ * had been scrolled — which on a tablet, where the plan almost never fits, is
+ * every corner. It looked like the tool ignoring where you tapped.
+ *
+ * Adding the scroll offsets is the whole fix, and it belongs in one function
+ * because three separate places were computing this and all three were wrong
+ * in the same way.
+ */
+function canvasPoint(e, size) {
+  const canvas = $('canvas');
+  const box = canvas.getBoundingClientRect();
+  const x = (e.clientX - box.left + canvas.scrollLeft) / GRID;
+  const y = (e.clientY - box.top + canvas.scrollTop) / GRID;
+  return [
+    Math.max(0, Math.min(size.cols, Math.round(x))),
+    Math.max(0, Math.min(size.rows, Math.round(y))),
+  ];
+}
+
 /** Is the plan currently being drawn on rather than arranged? */
 function drawing() {
   return !!lasso;
@@ -2713,48 +2738,105 @@ function stopLasso(save) {
  * grid already.
  */
 function lassoClick(e) {
-  const canvas = $('canvas');
-  const box = canvas.getBoundingClientRect();
   const room = floor.find((r) => r.id === activeRoom);
   const size = roomSize(room);
+  const [x, y] = canvasPoint(e, size);
 
-  const x = Math.max(0, Math.min(size.cols, Math.round((e.clientX - box.left) / GRID)));
-  const y = Math.max(0, Math.min(size.rows, Math.round((e.clientY - box.top) / GRID)));
-
-  // Back on the first corner closes the shape, which is how every drawing tool
-  // this resembles behaves and what the instruction says to do.
+  // Back on the first corner closes the shape — which is what the instruction
+  // says to do and what every drawing tool this resembles does.
+  //
+  // Two squares of slack, not none. The first corner is a 14px dot and a
+  // fingertip is nearer 40px across, so demanding the exact square would mean
+  // a shape that cannot be closed by the person it was drawn by. Two squares
+  // is generous enough to hit and still far short of the next corner.
   const first = lasso.points[0];
   if (first && lasso.points.length >= 3
-      && Math.abs(first[0] - x) <= 1 && Math.abs(first[1] - y) <= 1) {
+      && Math.abs(first[0] - x) <= 2 && Math.abs(first[1] - y) <= 2) {
     return stopLasso(true);
   }
+
+  // Tapping the same square twice is a double tap, not two corners in one
+  // place — and a repeated point makes a polygon the server refuses to store.
+  const last = lasso.points[lasso.points.length - 1];
+  if (last && last[0] === x && last[1] === y) return;
 
   lasso.points.push([x, y]);
   drawRoom();
 }
 
-/** The shape as it stands, with a handle on every corner. */
+/** What the drawing bar says, which changes with every corner. */
+function lassoSay() {
+  const bar = $('draw-say');
+  if (!bar || !lasso) return;
+  const n = lasso.points.length;
+  bar.textContent =
+    n === 0 ? 'Tap the first corner of the room.'
+      : n < 3 ? `Corner ${n} down. Keep tapping round the walls.`
+        : `${n} corners. Tap the first one again — the ✓ — to close the room.`;
+}
+
+/**
+ * The shape as it stands.
+ *
+ * Three things have to be visible at once: the wall drawn so far, every corner
+ * so it can be moved, and — once there are three — which corner closes the
+ * shape. Without the last of those the instruction "click the first corner
+ * again" is asking somebody to remember where they started, on a plan they may
+ * have scrolled twice since.
+ */
 function lassoLayer(size) {
   const w = size.cols * GRID;
   const h = size.rows * GRID;
   const pts = lasso.points;
+  const closable = pts.length >= 3;
 
   const line = pts.map(([x, y]) => `${x * GRID},${y * GRID}`).join(' ');
-  const handles = pts.map(([x, y], i) => `
-    <circle class="lasso-pt" data-pt="${i}" cx="${x * GRID}" cy="${y * GRID}"
-            r="7" />`).join('');
+
+  const handles = pts.map(([x, y], i) => {
+    const first = i === 0;
+    // The first corner grows into a target once closing is possible, and says
+    // so. Everything else is a small dot to be dragged.
+    return `
+      <g class="lasso-pt ${first && closable ? 'first' : ''}" data-pt="${i}">
+        <circle cx="${x * GRID}" cy="${y * GRID}"
+                r="${first && closable ? 14 : 8}" />
+        ${first && closable
+          ? `<text x="${x * GRID}" y="${y * GRID + 4}" text-anchor="middle">✓</text>`
+          : `<text x="${x * GRID}" y="${y * GRID + 3}" text-anchor="middle">${i + 1}</text>`}
+      </g>`;
+  }).join('');
+
+  // The wall back to the start, dashed, so a shape three corners in already
+  // reads as the room it is about to become.
+  const closing = closable
+    ? `<line x1="${pts[pts.length - 1][0] * GRID}" y1="${pts[pts.length - 1][1] * GRID}"
+             x2="${pts[0][0] * GRID}" y2="${pts[0][1] * GRID}"
+             stroke="#A5C715" stroke-width="2" stroke-dasharray="6 5" />`
+    : '';
 
   return `
     <svg class="lasso" width="${w}" height="${h}"
          style="position:absolute;left:0;top:0">
-      ${pts.length >= 3
+      ${closable
         ? `<polygon points="${line}" fill="rgba(165,199,21,.16)"
-                    stroke="#A5C715" stroke-width="2" stroke-linejoin="round" />`
-        : `<polyline points="${line}" fill="none"
-                     stroke="#A5C715" stroke-width="2" stroke-linejoin="round" />`}
+                    stroke="none" />`
+        : ''}
+      <polyline points="${line}" fill="none"
+                stroke="#A5C715" stroke-width="2.5"
+                stroke-linejoin="round" stroke-linecap="round" />
+      ${closing}
       ${handles}
     </svg>`;
 }
+
+/**
+ * Set for one tick after a corner is dragged.
+ *
+ * A drag that ends over the plan also produces a click, and that click would
+ * be read as "drop another corner" — so nudging a corner added one beside it
+ * every time.
+ */
+let movedAPoint = false;
 
 /** Drag a corner. */
 function wireLassoHandles() {
@@ -2764,25 +2846,28 @@ function wireLassoHandles() {
       e.stopPropagation();
       e.preventDefault();
       const index = Number(dot.dataset.pt);
-      const canvas = $('canvas');
-      const box = canvas.getBoundingClientRect();
       const room = floor.find((r) => r.id === activeRoom);
       const size = roomSize(room);
       dot.setPointerCapture(e.pointerId);
+      // A finger dragging a corner must not also scroll the plan under it.
+      dot.style.touchAction = 'none';
 
       const move = (ev) => {
-        lasso.points[index] = [
-          Math.max(0, Math.min(size.cols, Math.round((ev.clientX - box.left) / GRID))),
-          Math.max(0, Math.min(size.rows, Math.round((ev.clientY - box.top) / GRID))),
-        ];
+        ev.preventDefault();
+        lasso.points[index] = canvasPoint(ev, size);
         drawRoom();
       };
       const up = () => {
         window.removeEventListener('pointermove', move);
         window.removeEventListener('pointerup', up);
+        window.removeEventListener('pointercancel', up);
+        // The corner has moved; a click would otherwise land as a new one.
+        movedAPoint = true;
+        setTimeout(() => { movedAPoint = false; }, 0);
       };
-      window.addEventListener('pointermove', move);
+      window.addEventListener('pointermove', move, { passive: false });
       window.addEventListener('pointerup', up);
+      window.addEventListener('pointercancel', up);
     });
   });
 }
@@ -2832,7 +2917,22 @@ function wireCanvasDrop() {
   // listener added a hundred times over an afternoon.
   canvas.addEventListener('click', (e) => {
     if (!drawing()) return;
-    if (e.target.closest('.lasso-pt')) return;   // that is a handle, not a corner
+    if (movedAPoint) return;   // that was a corner being moved, not a new one
+
+    const onHandle = e.target.closest('.lasso-pt');
+    if (onHandle) {
+      // The first corner is the way out of the mode — "tap the first point
+      // again and the room is drawn" — and it is also a handle you can drag.
+      // The handle guard was swallowing the tap that closes the shape, so the
+      // one gesture the whole tool is built around did nothing at all. A clean
+      // tap on it closes; a drag moves it, and sets movedAPoint so the click
+      // that follows a drag is not read as closing.
+      if (Number(onHandle.dataset.pt) === 0 && lasso.points.length >= 3) {
+        return stopLasso(true);
+      }
+      return;   // any other corner: it is being aimed at, not added to
+    }
+
     lassoClick(e);
   });
 
@@ -2846,12 +2946,14 @@ function wireCanvasDrop() {
     e.preventDefault();
     const preset = TABLE_PRESETS.find((t) => t.key === e.dataTransfer.getData('text/plain'));
     if (!preset) return;
-    const box = canvas.getBoundingClientRect();
     // Dropped by its middle, which is where the pointer is and where somebody
-    // aiming at a spot on the floor thinks the table is going.
+    // aiming at a spot on the floor thinks the table is going. Through
+    // canvasPoint, so a drop onto a scrolled plan lands where it was aimed.
+    const room = floor.find((r) => r.id === activeRoom);
+    const [gx, gy] = canvasPoint(e, roomSize(room));
     dropPreset(preset,
-      Math.round((e.clientX - box.left) / GRID - preset.w / 2),
-      Math.round((e.clientY - box.top) / GRID - preset.h / 2));
+      Math.round(gx - preset.w / 2),
+      Math.round(gy - preset.h / 2));
   });
 }
 
@@ -2939,7 +3041,7 @@ function drawRoom() {
   // drag instead of dropping a corner, and the corner somebody was aiming at is
   // usually the one a table is sitting on.
   if (!drawing()) canvas.querySelectorAll('.tbl').forEach(makeDraggable);
-  else wireLassoHandles();
+  else { wireLassoHandles(); lassoSay(); }
 
   wireCanvasDrop();
   paintPalette();

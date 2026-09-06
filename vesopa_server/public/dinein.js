@@ -867,6 +867,10 @@ async function loadDineInMenu() {
  * The two fields are stacked, in the order they appear on the phone: the name,
  * and then the line that goes underneath it. Side by side they read as two
  * unrelated boxes; stacked, the form is a small picture of the result.
+ *
+ * A plain label above a plain field. They were briefly labels that floated into
+ * the box, which made every field half as tall again to hold both — a lot of
+ * furniture for two words. The wording above the box was already right.
  */
 function diSectionCard(section) {
   const count = section.items.length;
@@ -880,15 +884,14 @@ function diSectionCard(section) {
       </summary>
 
       <div class="di-sec-fields">
-        <label class="float">
-          <input data-f="name" data-sec="${section.id}" placeholder=" "
+        <label>Section
+          <input data-f="name" data-sec="${section.id}"
                  value="${esc(section.name || '')}">
-          <span>Section</span>
         </label>
-        <label class="float">
-          <input data-f="blurb" data-sec="${section.id}" placeholder=" "
-                 value="${esc(section.blurb || '')}">
-          <span>Line underneath</span>
+        <label>Line underneath
+          <input data-f="blurb" data-sec="${section.id}"
+                 value="${esc(section.blurb || '')}"
+                 placeholder="Served 12 til 3">
         </label>
         <span class="di-sec-acts">
           ${iconBtn('save', 'Save this section', `data-sec-save="${section.id}"`, 'go')}
