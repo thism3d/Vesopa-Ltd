@@ -476,6 +476,9 @@ class _FloorEditorPageState extends ConsumerState<FloorEditorPage> {
                         width: table.width * unit - 4,
                         height: table.height * unit - 4,
                         child: _DraggableTable(
+                          // Named, so a test can take hold of one table rather
+                          // than guessing which Material in the tree it is.
+                          key: ValueKey('floor-table-${table.id}'),
                           table: table,
                           unit: unit,
                           // Not while the room is being drawn: a drag would
@@ -670,6 +673,7 @@ class _PresetButton extends StatelessWidget {
 /// One table, draggable by the grid square.
 class _DraggableTable extends StatefulWidget {
   const _DraggableTable({
+    super.key,
     required this.table,
     required this.unit,
     required this.frozen,

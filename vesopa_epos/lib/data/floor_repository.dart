@@ -189,7 +189,19 @@ class FloorRepository {
     required this.cache,
     required this.office,
     this.terminalToken,
-  });
+    http.Client? client,
+  }) : _client = client ?? http.Client();
+
+  /// The client every request goes through.
+  ///
+  /// Held rather than using the package-level http functions, which build a new
+  /// client per call. That matters for testing: a widget test runs its body in
+  /// a zone where dart:io is stubbed to answer 400 without opening a socket, so
+  /// a client built inside that zone can never reach anything. One built
+  /// outside it and passed in can — which is what lets the editor be driven
+  /// against the real back office. StaffRepository holds its client for the
+  /// same reason.
+  final http.Client _client;
 
   final String apiBase;
   final FloorCache cache;
@@ -212,7 +224,7 @@ class FloorRepository {
 
   Future<List<FloorRoom>> load() async {
     try {
-      final res = await http
+      final res = await _client
           .get(
             Uri.parse(
               '$apiBase/till/floor?office=${Uri.encodeComponent(office)}',
@@ -271,7 +283,7 @@ class FloorRepository {
   /// puts them in a transaction for the same reason.
   Future<void> saveTables(List<FloorTable> tables) async {
     if (tables.isEmpty) return;
-    final res = await http
+    final res = await _client
         .put(
           Uri.parse('$apiBase/till/floor/tables'),
           headers: _headers,
@@ -310,7 +322,7 @@ class FloorRepository {
     required int seats,
     String? name,
   }) async {
-    final res = await http
+    final res = await _client
         .post(
           Uri.parse('$apiBase/till/floor/tables'),
           headers: _headers,
@@ -337,7 +349,7 @@ class FloorRepository {
   /// of its own", which is the plain rectangle every room was before any of
   /// this existed. So it is sent explicitly rather than omitted.
   Future<void> saveRoomShape(int roomId, List<List<int>>? outline) async {
-    final res = await http
+    final res = await _client
         .put(
           Uri.parse('$apiBase/till/floor/rooms/$roomId'),
           headers: _headers,
