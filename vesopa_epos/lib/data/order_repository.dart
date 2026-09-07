@@ -80,6 +80,11 @@ class OrderRepository {
   /// The price is still snapshotted onto the line: what is charged at the
   /// counter is what the bill says for ever, whatever the room switches to
   /// afterwards.
+  /// [consolidate] is the venue's answer to "3 x Carling, or Carling three
+  /// times". True is what every till has always done and what most venues
+  /// want. False writes a line per tap, which some venues ask for because the
+  /// bill then reads as the order was called — and because a line each is a
+  /// line each to void, rather than editing a quantity.
   Future<void> addLine(
     String orderId,
     Product product, {
@@ -87,6 +92,7 @@ class OrderRepository {
     String? addedBy,
     List<Product> modifiers = const [],
     int priceLevel = minPriceLevel,
+    bool consolidate = true,
   }) async {
     await _db.transaction(() async {
       final now = DateTime.now();
@@ -96,7 +102,9 @@ class OrderRepository {
       // tonic are two different things that happen to share a PLU, and adding
       // the second to the first would quietly change what the first customer
       // ordered.
-      final line = modifiers.isEmpty
+      //
+      // Nor is anything merged when the venue has turned consolidation off.
+      final line = modifiers.isEmpty && consolidate
           ? await _mergeableLine(orderId, product.pluId)
           : null;
 

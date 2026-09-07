@@ -60,6 +60,51 @@ void main() {
     expect(order.totalMinor, 500);
   });
 
+  test('a venue can turn consolidation off and get a line each', () async {
+    // Some venues ask for this, and the reason is not aesthetic: the bill then
+    // reads the way the order was called back to the table, and each line is a
+    // line to void on its own rather than a quantity to edit down.
+    final id = await repo.openOrder();
+    await repo.addLine(id, coffee, consolidate: false);
+    await repo.addLine(id, coffee, consolidate: false);
+
+    final lines = await repo.watchLines(id).first;
+    expect(lines, hasLength(2));
+    expect(lines.every((l) => l.quantity == 1), isTrue);
+
+    // And the money is the same either way, which is the thing that must not
+    // change: this is a display choice, not a pricing one.
+    final order = await repo.watchOrder(id).first;
+    expect(order.totalMinor, 500);
+  });
+
+  test('a price override changes what the line costs, not the discount',
+      () async {
+    // The reports are why they are different. A discount records "this cost
+    // £4.00 and £1.00 came off"; an override records "this cost £3.00", which
+    // is what a venue honouring a wrong shelf label actually means.
+    final id = await repo.openOrder();
+    await repo.addLine(id, coffee, qty: 2);
+    final line = (await repo.watchLines(id).first).single;
+
+    await repo.setLinePrice(id, line.id, 100);
+    final after = await repo.watchOrder(id).first;
+    expect(after.totalMinor, 200);
+    expect(after.discountMinor, 0);
+  });
+
+  test('a line cannot be given a negative price', () async {
+    // The arithmetic below it would balance perfectly, all the way to a drawer
+    // that is short.
+    final id = await repo.openOrder();
+    await repo.addLine(id, coffee);
+    final line = (await repo.watchLines(id).first).single;
+
+    await repo.setLinePrice(id, line.id, -500);
+    expect((await repo.watchLines(id).first).single.unitPriceMinor,
+        line.unitPriceMinor);
+  });
+
   test('discount reduces the total and the VAT with it', () async {
     final id = await repo.openOrder();
     await repo.addLine(id, coffee); // £2.50

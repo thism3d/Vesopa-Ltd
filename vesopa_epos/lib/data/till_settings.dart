@@ -28,6 +28,8 @@ class TillSettings {
     this.homeScreenId,
     this.topBarScreenId,
     this.bottomBarScreenId,
+    this.consolidateLines = true,
+    this.cashDeclaration = CashDeclaration.off,
     this.payTopBarScreenId,
     this.payBottomBarScreenId,
     this.fontFamily,
@@ -59,6 +61,17 @@ class TillSettings {
   /// different jobs. A sale bar carries Void, Save Table and Covers; none of
   /// those mean anything once the bill is being settled, and offering them
   /// there would be a bar of keys that do nothing.
+  /// Whether the check adds repeats up, or lists them.
+  ///
+  /// True is what every till has always done — tap Carling three times and the
+  /// bill says "3  Carling". False writes a line per tap, which some venues ask
+  /// for because the bill then reads as the order was called, and because a
+  /// line each is a line each to void rather than a quantity to edit down.
+  final bool consolidateLines;
+
+  /// Whether the till counts the drawer before a Z report, and how.
+  final CashDeclaration cashDeclaration;
+
   final int? payTopBarScreenId;
   final int? payBottomBarScreenId;
 
@@ -185,6 +198,8 @@ class TillSettings {
           other.homeScreenId == homeScreenId &&
           other.topBarScreenId == topBarScreenId &&
           other.bottomBarScreenId == bottomBarScreenId &&
+          other.consolidateLines == consolidateLines &&
+          other.cashDeclaration == cashDeclaration &&
           other.payTopBarScreenId == payTopBarScreenId &&
           other.payBottomBarScreenId == payBottomBarScreenId &&
           other.fontFamily == fontFamily &&
@@ -228,6 +243,8 @@ class TillSettings {
         homeScreenId,
         topBarScreenId,
         bottomBarScreenId,
+        consolidateLines,
+        cashDeclaration,
         payTopBarScreenId,
         payBottomBarScreenId,
         idleEnabled,
@@ -276,6 +293,16 @@ class TillSettings {
       // Absent on a server that has not run schema_till_pay_bars.sql, which
       // reads as null — the payment screen's built-in bars, which is what
       // every venue has today.
+      // Absent means "as it has always been": consolidated, and never asking
+      // for a cash declaration. A server that has not run the migration must
+      // not change how a venue's tills behave.
+      // Absent means true, which _flag cannot express: it answers false for
+      // anything it does not recognise, and that is right for every other flag
+      // here. A server without the migration must not switch consolidation off
+      // for every venue on it.
+      consolidateLines:
+          j['consolidate_lines'] == null || _flag(j['consolidate_lines']),
+      cashDeclaration: CashDeclaration.parse(j['cash_declaration']),
       payTopBarScreenId: (j['pay_top_bar_screen_id'] as num?)?.toInt(),
       payBottomBarScreenId: (j['pay_bottom_bar_screen_id'] as num?)?.toInt(),
       idleEnabled: _flag(j['idle_enabled']),
@@ -455,4 +482,36 @@ class KitchenDeliveryClient {
     }
     return 'The back office refused the change (HTTP $status).';
   }
+}
+
+/// Whether the till counts the drawer before a Z report, and how.
+///
+/// The venue chooses, which is the answer they gave when asked. Venues differ
+/// on how much they trust a fast close, and a setting is cheaper than being
+/// wrong for half of them.
+enum CashDeclaration {
+  /// Never ask. What every till does today.
+  off,
+
+  /// One figure typed in. Fast at close — and when the till is down, there is
+  /// nothing on the Z to say where.
+  total,
+
+  /// The denomination grid the venue already has, so a miscount shows up as a
+  /// wrong denomination rather than a wrong total. See CashNotesPanel.
+  count;
+
+  bool get asks => this != CashDeclaration.off;
+
+  static CashDeclaration parse(Object? raw) => switch (raw) {
+        'total' => CashDeclaration.total,
+        'count' => CashDeclaration.count,
+        // Anything else, including a value from a newer back office than this
+        // build knows, means do not ask. A till that invented a way of counting
+        // money it did not understand would be worse than one that asked
+        // nothing.
+        _ => CashDeclaration.off,
+      };
+
+  String get wire => name;
 }

@@ -1109,6 +1109,42 @@
                   them. The price still shows on the bill as soon as the item is rung up.
                 </p>
               </div>
+
+              <div class="card rd-card">
+                <h3>The bill</h3>
+                <label class="check">
+                  <input type="checkbox" data-idle="consolidate_lines">
+                  <span>Add repeated items up on the bill</span>
+                </label>
+                <p class="muted small" style="margin:6px 0 0">
+                  On by default, and what every Vesopa till has always done: tap Carling three
+                  times and the bill says <em>3&nbsp;&nbsp;Carling</em>. Turn it off and it says
+                  <em>Carling, Carling, Carling</em> — which some venues prefer, because the bill
+                  then reads the way the order was called back to the table, and because each line
+                  is a line to void on its own rather than a quantity to edit down.
+                </p>
+              </div>
+
+              <div class="card rd-card">
+                <h3>Cash declaration</h3>
+                <label class="field">
+                  <span>Before a Z report, ask what is in the drawer</span>
+                  <select data-idle="cash_declaration">
+                    <option value="off">Do not ask</option>
+                    <option value="total">Ask for a total</option>
+                    <option value="count">Count it note by note</option>
+                  </select>
+                </label>
+                <p class="muted small" style="margin:6px 0 0">
+                  The Z then prints what was counted and whether the till is up or down against
+                  what it expected — the float plus everything taken in cash. <em>Ask for a
+                  total</em> is one figure and fast at close, but when the till is down there is
+                  nothing to say where. <em>Count it note by note</em> uses the denominations you
+                  have already set up, so a miscount shows as a wrong denomination rather than a
+                  wrong total. Backing out of the count cancels the Z rather than running it
+                  without one.
+                </p>
+              </div>
             </div>
           </div>
         </section>

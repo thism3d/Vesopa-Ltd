@@ -315,6 +315,7 @@ class SalePage extends ConsumerWidget {
           p,
           addedBy: addedBy,
           priceLevel: ref.read(currentPriceLevelProvider),
+          consolidate: ref.read(tillSettingsProvider).consolidateLines,
         );
         return;
       }
@@ -337,6 +338,9 @@ class SalePage extends ConsumerWidget {
         addedBy: addedBy,
         modifiers: answers,
         priceLevel: ref.read(currentPriceLevelProvider),
+        // Moot on this path — a product carrying answers is never merged
+        // anyway — but passed so the two calls cannot drift apart.
+        consolidate: ref.read(tillSettingsProvider).consolidateLines,
       );
     }
 

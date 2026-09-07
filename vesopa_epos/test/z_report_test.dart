@@ -182,6 +182,67 @@ void main() {
     expect(r.noSales.count, 1, reason: 'only this period is counted');
   });
 
+  test('a float can be counted in, and the Z expects it back', () async {
+    // The float has been printed on the Z since sessions existed and there was
+    // never a way to enter it, so it was always zero — which meant "cash
+    // expected" was always the takings rather than what should be in the
+    // drawer.
+    await stock([beer]);
+    await sessions.setOpeningFloat(15000);
+    await sell(beer);
+
+    final z = await sessions.zReport();
+    expect(z.openingFloatMinor, 15000);
+    expect(z.expectedCashMinor, 15500);
+  });
+
+  test('a drawer cannot start owing money', () async {
+    await sessions.setOpeningFloat(-500);
+    expect((await sessions.current()).openingFloatMinor, 0);
+  });
+
+  group('the cash declaration', () {
+    // £100 float and one £5 beer in cash: the till expects £105 in the drawer.
+    Future<TillReport> zWith(int? declared) async {
+      await stock([beer]);
+      await sessions.setOpeningFloat(10000);
+      await sell(beer);
+      return sessions.zReport(declaredCashMinor: declared);
+    }
+
+    test('nothing counted says nothing, rather than saying down', () async {
+      // "Not counted" and "counted, and the drawer was empty" are different
+      // facts. A Z printing SHORT £105.00 because the venue has the
+      // declaration switched off would be worse than one that says nothing.
+      final z = await zWith(null);
+      expect(z.declaredCashMinor, isNull);
+      expect(z.cashDifferenceMinor, isNull);
+    });
+
+    test('a drawer that matches is balanced', () async {
+      final z = await zWith(10500);
+      expect(z.expectedCashMinor, 10500);
+      expect(z.cashDifferenceMinor, 0);
+    });
+
+    test('too much in the drawer is over', () async {
+      final z = await zWith(11000);
+      expect(z.cashDifferenceMinor, 500);
+    });
+
+    test('too little is short, and negative says which way', () async {
+      final z = await zWith(10000);
+      expect(z.cashDifferenceMinor, -500);
+    });
+
+    test('an empty drawer that was counted is counted', () async {
+      // Zero is a real answer, and it must not read as "nobody counted".
+      final z = await zWith(0);
+      expect(z.declaredCashMinor, 0);
+      expect(z.cashDifferenceMinor, -10500);
+    });
+  });
+
   test('the float carries into the next period and cash expected follows', () async {
     await sell(beer, qty: 2); // £10 cash
     final r = await sessions.xReport();

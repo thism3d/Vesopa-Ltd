@@ -6,11 +6,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/staff_session.dart';
 import '../main.dart';
 import 'card_machine_page.dart';
+import 'cash_drawer_sheets.dart';
 import 'clock_sheet.dart';
 import 'reprint_z_sheet.dart';
 import 'layout.dart';
 import 'sign_on_pad.dart';
 import 'theme.dart';
+import 'widgets/basket_panel.dart' show money;
 import 'till_actions.dart';
 import 'widgets/pos_message.dart';
 import 'price_level_sheet.dart';
@@ -105,6 +107,17 @@ class FunctionsPage extends ConsumerWidget {
         ),
       ]),
       _Group('Cash & card', [
+        // The float has been on the session and printed on the Z since sessions
+        // existed, and there has never been a way to enter it. It was always
+        // zero, so "cash expected" was always the takings rather than what
+        // should actually be in the drawer.
+        _Function(
+          'Float',
+          Icons.savings_outlined,
+          Pos.teal,
+          'What is being put in the drawer to start the shift.',
+          () => unawaited(_setFloat(context, ref)),
+        ),
         _Function(
           'No Sale',
           Icons.point_of_sale,
@@ -315,6 +328,12 @@ class FunctionsPage extends ConsumerWidget {
 
   /// "Save Memory" — park the current bill against a table number so the clerk
   /// can begin a fresh sale and come back to this one from Tables.
+  Future<void> _setFloat(BuildContext context, WidgetRef ref) async {
+    final minor = await showFloatSheet(context, ref);
+    if (minor == null || !context.mounted) return;
+    PosMessenger.success(context, 'Float set to ${money(minor)}.');
+  }
+
   Future<void> _saveToTable(BuildContext context, WidgetRef ref) async {
     final lines = await ref.read(orderRepositoryProvider).watchLines(orderId).first;
     if (!context.mounted) return;

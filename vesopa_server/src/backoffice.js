@@ -627,7 +627,7 @@ function backofficeRoutes({ pool, broadcast, secret }) {
     'idle_enabled', 'idle_image_url', 'idle_after_sale', 'idle_require_pin',
     'idle_message', 'signoff_seconds', 'change_window_seconds',
     'receipt_auto_print', 'buttons_show_prices', 'font_family',
-    'price_level_names',
+    'price_level_names', 'consolidate_lines', 'cash_declaration',
     ...PRINTER_NAME_FIELDS,
     ...KITCHEN_MODE_FIELDS,
   ];
@@ -654,6 +654,12 @@ function backofficeRoutes({ pool, broadcast, secret }) {
     // that upgrades start printing paper for every sale without being asked.
     // A venue that wants one every time switches it on once.
     receipt_auto_print: 0,
+    // What every till has always done: tap Carling three times and the bill
+    // says "3  Carling". A venue that wants a line each turns it off.
+    consolidate_lines: 1,
+    // Never ask, which is what every till does today. See
+    // schema_till_consolidate.sql for what the other two values mean.
+    cash_declaration: 'off',
     buttons_show_prices: 1,
     // Null means the app's own typeface, which is what every till wears today.
     // A venue picks one once and every terminal follows; see src/fonts.js.
@@ -749,8 +755,20 @@ function backofficeRoutes({ pool, broadcast, secret }) {
           if (url && !/^\/(uploads|assets)\//.test(url)) return null;
           return url;
         }
-        if (f === 'receipt_auto_print' || f === 'buttons_show_prices') {
+        if (
+          f === 'receipt_auto_print' ||
+          f === 'buttons_show_prices' ||
+          f === 'consolidate_lines'
+        ) {
           return v ? 1 : 0;
+        }
+        // One of three ways of counting the drawer, and nothing else. Anything
+        // unrecognised is 'off' rather than stored: a till reading a value it
+        // does not understand would either invent a way of counting money or
+        // refuse to close the day, and both are worse than not asking.
+        if (f === 'cash_declaration') {
+          const mode = String(v ?? '').trim().toLowerCase();
+          return ['off', 'total', 'count'].includes(mode) ? mode : 'off';
         }
         // A font slug, or null for the app's own. Not checked against the
         // catalogue here for the same reason a button's is not — see

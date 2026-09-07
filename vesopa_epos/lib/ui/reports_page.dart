@@ -11,6 +11,7 @@ import 'printers_page.dart' show printerSettingsProvider;
 import 'theme.dart';
 import 'widgets/pos_message.dart';
 import '../data/till_permissions.dart';
+import 'cash_drawer_sheets.dart';
 import 'permission_gate.dart';
 import 'widgets/basket_panel.dart' show money;
 
@@ -251,9 +252,27 @@ class ReportsPage extends ConsumerWidget {
 
     if (ok != true || !context.mounted) return;
 
-    final z = await ref
-        .read(sessionRepositoryProvider)
-        .zReport(staffName: ref.read(servedByProvider));
+    // Count the drawer first, where the venue asks for it.
+    //
+    // Before the period is closed, and that order matters: the count is a fact
+    // about the shift that is ending, and asking afterwards would mean asking
+    // about a drawer that has already been declared balanced.
+    //
+    // Backing out of the count abandons the Z rather than running it without
+    // one. A declaration started and cancelled is not a declaration of zero,
+    // and a manager who changed their mind halfway through counting has not
+    // asked to close the day.
+    final declaration = ref.read(tillSettingsProvider).cashDeclaration;
+    int? declared;
+    if (declaration.asks) {
+      declared = await showCashDeclaration(context, ref, mode: declaration);
+      if (declared == null || !context.mounted) return;
+    }
+
+    final z = await ref.read(sessionRepositoryProvider).zReport(
+          staffName: ref.read(servedByProvider),
+          declaredCashMinor: declared,
+        );
     ref.invalidate(xReportProvider);
     // Held before the printing is attempted, not after. The period is closed
     // either way, and this reprint key is the only thing standing between a
@@ -400,6 +419,22 @@ class _ReportBody extends StatelessWidget {
           value: money(report.expectedCashMinor),
           bold: true,
         ),
+        // Only where somebody was asked. See TillReport.declaredCashMinor.
+        if (report.declaredCashMinor != null) ...[
+          _Stat(
+            label: 'Counted',
+            value: money(report.declaredCashMinor!),
+          ),
+          _Stat(
+            label: switch (report.cashDifferenceMinor!) {
+              0 => 'Balanced',
+              final d when d > 0 => 'Over',
+              _ => 'Short',
+            },
+            value: money(report.cashDifferenceMinor!.abs()),
+            bold: true,
+          ),
+        ],
       ],
     );
   }

@@ -54,6 +54,7 @@ class TillReport {
     this.refunds = const ReportTally(),
     this.discounts = const ReportTally(),
     this.gratuityMinor = 0,
+    this.declaredCashMinor,
     this.terminalName,
     this.staffName,
   });
@@ -95,10 +96,28 @@ class TillReport {
   /// Who was signed on when the report was taken.
   final String? staffName;
 
+  /// What was counted in the drawer before this Z was run, when the venue asks.
+  ///
+  /// Null means nobody was asked — the venue has the declaration switched off,
+  /// or this is an X report. Deliberately nullable rather than zero: "not
+  /// counted" and "counted, and the drawer was empty" are different facts, and
+  /// a Z that printed "down £240.00" because nobody was asked would be worse
+  /// than one that says nothing.
+  final int? declaredCashMinor;
+
   /// What should physically be in the drawer: the float plus everything taken
   /// in cash.
   int get expectedCashMinor =>
       openingFloatMinor + (byMethod['cash']?.amountMinor ?? 0);
+
+  /// Counted minus expected. Positive is over, negative is short.
+  ///
+  /// Null when nothing was counted, so the caller prints nothing rather than
+  /// printing a difference against a figure nobody supplied.
+  int? get cashDifferenceMinor {
+    final counted = declaredCashMinor;
+    return counted == null ? null : counted - expectedCashMinor;
+  }
 
   /// Takings divided by bills. Zero rather than a division by zero on a till
   /// that has not traded.
@@ -140,6 +159,29 @@ class SessionRepository {
           ),
         );
     return (_db.select(_db.tillSessions)..where((s) => s.id.equals(id)))
+        .getSingle();
+  }
+
+  /// Set the cash counted into the drawer for the period that is open.
+  ///
+  /// The float has been on the session and printed on the Z since sessions
+  /// existed — as "Opening float" — and there has never been a way to enter it.
+  /// It was always zero, so "cash expected" was always the takings and never
+  /// what should actually be in the drawer.
+  ///
+  /// Applies to the open period, not the next one. A float is counted in at the
+  /// start of a shift and that is when somebody presses this; carrying it
+  /// forward to a period nobody has opened yet would put it on the wrong Z.
+  ///
+  /// Negative is refused. A drawer cannot start owing money, and the arithmetic
+  /// below it would balance perfectly all the way to a Z that says the till is
+  /// up when it is down.
+  Future<TillSession> setOpeningFloat(int minor) async {
+    final session = await current();
+    if (minor < 0) return session;
+    await (_db.update(_db.tillSessions)..where((s) => s.id.equals(session.id)))
+        .write(TillSessionsCompanion(openingFloatMinor: Value(minor)));
+    return (_db.select(_db.tillSessions)..where((s) => s.id.equals(session.id)))
         .getSingle();
   }
 
@@ -207,7 +249,11 @@ class SessionRepository {
   /// the report is generating cannot land in the closed session after it has
   /// been totalled — it falls into the new one instead. Without that, the
   /// printed Z and the stored Z would disagree.
-  Future<TillReport> zReport({String? terminalName, String? staffName}) async {
+  Future<TillReport> zReport({
+    String? terminalName,
+    String? staffName,
+    int? declaredCashMinor,
+  }) async {
     return _db.transaction(() async {
       final session = await current();
       final report = await _report(
@@ -251,6 +297,7 @@ class SessionRepository {
         refunds: report.refunds,
         discounts: report.discounts,
         gratuityMinor: report.gratuityMinor,
+        declaredCashMinor: declaredCashMinor,
         terminalName: report.terminalName,
         staffName: report.staffName,
       );

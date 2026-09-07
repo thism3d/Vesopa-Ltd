@@ -871,6 +871,40 @@ class ReceiptBuilder {
       ]),
     );
 
+    // What was actually counted, and by how much it missed.
+    //
+    // Only when somebody was asked. Null is "not counted", which is a different
+    // fact from "counted, and the drawer was empty" — a Z printing
+    // "SHORT £240.00" because the venue has the declaration switched off would
+    // be worse than one that says nothing.
+    //
+    // The word first, then the money, because it is read across a counter at
+    // the end of a long night: UP and SHORT are the two things anybody is
+    // looking for, and a signed figure makes them work it out.
+    final counted = report.declaredCashMinor;
+    final difference = report.cashDifferenceMinor;
+    if (counted != null && difference != null) {
+      bytes.addAll(_row('Counted', _money(counted)));
+      bytes.addAll(
+        _generator.row([
+          _col(
+            text: difference == 0
+                ? 'BALANCED'
+                : difference > 0
+                    ? 'OVER'
+                    : 'SHORT',
+            width: 7,
+            styles: const PosStyles(bold: true),
+          ),
+          _col(
+            text: _money(difference.abs()),
+            width: 5,
+            styles: const PosStyles(align: PosAlign.right, bold: true),
+          ),
+        ]),
+      );
+    }
+
     if (report.isZ) {
       bytes.addAll(_generator.feed(1));
       bytes.addAll(
