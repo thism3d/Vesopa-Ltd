@@ -104,6 +104,17 @@ const FUNCTION_KEYS = [
   // because it is pressed in the two moments a clerk is furthest from Settings:
   // a family arriving at the counter, and a cloth at the end of the night.
   'display_lock',
+
+  // Three the venue asked for by name, each described as "added to the top and
+  // bottom bars if a customer requests it" — but each is equally a sale-grid
+  // key, and a venue running one screen with no bars at all would otherwise be
+  // unable to reach any of them.
+  //
+  // `table_plan` is deliberately NOT here: it leaves the sale screen, and this
+  // list carries no navigation for the reason `go_*` is absent from it.
+  'price_check',
+  'product_search',
+  'price_override',
 ];
 
 /**
@@ -161,6 +172,15 @@ const BAR_KEYS = [
   'go_products',
   'go_functions',
   'go_settings',
+  // The floor plan, as a key in its own right.
+  //
+  // Not the same thing as `go_tables`, which opens the Tables *section*, and
+  // deliberately not the same as `save_table`. Save Table on a bill that
+  // already has a table saves to it silently and only opens the plan when it
+  // does not — which is the right behaviour for saving and the wrong one for
+  // "show me the floor", and the venue said their customers find it confusing.
+  // This one always opens the plan, so a bill can be moved to another table.
+  'table_plan',
   'sign_off',
   // The other half of sign_off, and the reason it is here rather than only in
   // the list above: a bar is where a venue puts the thing a clerk presses
@@ -168,6 +188,9 @@ const BAR_KEYS = [
   'sign_on',
   'clock_in_out',
   'display_lock',
+  'price_check',
+  'product_search',
+  'price_override',
 
   // Widgets — the parts of the bar that draw rather than wait.
   'open_bills',

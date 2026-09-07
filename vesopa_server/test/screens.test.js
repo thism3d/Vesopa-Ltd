@@ -14,6 +14,8 @@
  */
 
 const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
 const express = require('express');
 const jwt = require('jsonwebtoken');
 
@@ -642,6 +644,84 @@ async function check(name, fn) {
     assert.strictEqual(res.status, 400);
     assert.match(res.body.error, /bottombar/);
   });
+
+  await check('the keys the venue asked for are on offer', async () => {
+    const bar = functionKeysFor('bottombar');
+    const grid = functionKeysFor('sale');
+
+    // Four requests, each described as "added to the top and bottom bars if a
+    // customer requests it".
+    for (const key of [
+      'table_plan',
+      'price_check',
+      'product_search',
+      'price_override',
+    ]) {
+      assert.ok(bar.includes(key), `${key} is not offered on a bar`);
+    }
+
+    // Three of them are equally sale-grid keys: a venue running one screen
+    // with no bars at all would otherwise be unable to reach any of them.
+    for (const key of ['price_check', 'product_search', 'price_override']) {
+      assert.ok(grid.includes(key), `${key} is not offered on the sale grid`);
+    }
+
+    // table_plan leaves the sale screen, and the grid list carries no
+    // navigation — which is the same reason go_* is absent from it.
+    assert.ok(!grid.includes('table_plan'), 'the grid took a navigation key');
+
+    // Already there, and the venue asked for it: "can the functions page have a
+    // function setup so it can be added to the top and bottom bars".
+    assert.ok(bar.includes('go_functions'), 'Functions cannot be put on a bar');
+  });
+
+  await check('every key the server accepts has a name in the back office',
+    async () => {
+      // These two lists are edited in different files and drift silently: a key
+      // the server accepts with no label in the editor is a key a manager can
+      // never place, and nothing fails to tell them so.
+      //
+      // Checked *per surface*, not "labelled somewhere in the file". The first
+      // version of this test sliced every ['key', 'Label'] pair out of the
+      // whole editor and passed happily when the bar labels were deleted —
+      // because the same two keys were still labelled in the sale-grid list.
+      // A test that cannot fail is worse than no test, so the two lists are
+      // read separately.
+      const editor = fs.readFileSync(
+        path.join(__dirname, '..', 'public', 'screens.js'),
+        'utf8'
+      );
+
+      /** The keys inside one `const NAME = [ … ];` block. */
+      const keysIn = (name) => {
+        const at = editor.indexOf(`const ${name} = [`);
+        assert.notStrictEqual(at, -1, `${name} is gone from the editor`);
+        // `];` and not a newline-anchored marker, because no entry inside
+        // a block ends that way: the rows end `],` and the groups `]],`.
+        const close = editor.indexOf('];', at);
+        assert.notStrictEqual(close, -1, `${name} is not terminated`);
+        const block = editor.slice(at, close);
+        return new Set(
+          [...block.matchAll(/\['([a-z_]+)',\s*'/g)].map((m) => m[1])
+        );
+      };
+
+      const gridLabels = keysIn('SP_FUNCTIONS');
+      const barLabels = keysIn('SP_BAR_GROUPS');
+
+      assert.deepStrictEqual(
+        functionKeysFor('sale').filter((k) => !gridLabels.has(k)),
+        [],
+        'sale-grid keys with no label in the editor'
+      );
+      for (const surface of ['topbar', 'bottombar']) {
+        assert.deepStrictEqual(
+          functionKeysFor(surface).filter((k) => !barLabels.has(k)),
+          [],
+          `${surface} keys with no label in the editor`
+        );
+      }
+    });
 
   // -------------------------------------------------------------------------
   // What the tills wear

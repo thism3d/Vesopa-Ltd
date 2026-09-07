@@ -69,6 +69,13 @@ const SP_FUNCTIONS = [
   ['sign_on', 'Sign on — hand the till to somebody else'],
   ['clock_in_out', 'Clock in / out'],
   ['display_lock', 'Lock / unlock the customer screen'],
+  // Offered on the grid as well as on a bar, because a venue running one
+  // screen with no bars at all would otherwise be unable to reach them.
+  // `table_plan` is not here: it leaves the sale screen, and this list carries
+  // no navigation. Mirrors FUNCTION_KEYS in vesopa_server/src/screens.js.
+  ['price_check', 'Price check — what does this cost?'],
+  ['product_search', 'Product search — find and ring an item'],
+  ['price_override', 'Price override — change a line’s price'],
 ];
 
 /**
@@ -92,6 +99,11 @@ const SP_BAR_GROUPS = [
     ['note', 'Note'],
     ['covers', 'Covers'],
     ['customer', 'Customer'],
+    ['price_override', 'Price override — change a line’s price'],
+  ]],
+  ['Looking things up', [
+    ['price_check', 'Price check — what does this cost?'],
+    ['product_search', 'Product search — find and ring an item'],
   ]],
   ['Paper and cash', [
     ['print_bill', 'Print bill'],
@@ -106,6 +118,7 @@ const SP_BAR_GROUPS = [
     ['go_products', 'Products'],
     ['go_functions', 'Functions'],
     ['go_settings', 'Settings'],
+    ['table_plan', 'Table plan — open the floor'],
     ['sign_off', 'Sign off'],
   ]],
   ['Who is on', [

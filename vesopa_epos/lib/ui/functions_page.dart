@@ -7,6 +7,7 @@ import '../data/staff_session.dart';
 import '../main.dart';
 import 'card_machine_page.dart';
 import 'clock_sheet.dart';
+import 'reprint_z_sheet.dart';
 import 'layout.dart';
 import 'sign_on_pad.dart';
 import 'theme.dart';
@@ -165,6 +166,18 @@ class FunctionsPage extends ConsumerWidget {
           Pos.red,
           'Close the trading period and reset the totals.',
           onGoToReports,
+        ),
+        // A Z is the document a venue hands their accountant, and it is printed
+        // once on thermal paper beside a cash drawer. "The printer had no
+        // paper", "it printed and somebody binned it" and "we need last
+        // Tuesday's again" are all ordinary Monday mornings, and until now none
+        // of them had an answer.
+        _Function(
+          'Reprint Z',
+          Icons.print,
+          Pos.indigo,
+          'Another copy of a Z report from the last few days.',
+          () => showReprintZSheet(context, ref),
         ),
       ]),
     ];

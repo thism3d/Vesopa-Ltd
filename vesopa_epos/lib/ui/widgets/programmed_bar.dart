@@ -335,6 +335,10 @@ class _BarKey extends ConsumerWidget {
     'clock_in_out': Icons.schedule,
     'display_lock': Icons.lock_outline,
     'price_level': Icons.sell_outlined,
+    'table_plan': Icons.table_bar,
+    'price_check': Icons.search,
+    'product_search': Icons.manage_search,
+    'price_override': Icons.price_change,
   };
 
   /// Mirrors the labels the back office offers. A key not in here still draws —
@@ -364,6 +368,10 @@ class _BarKey extends ConsumerWidget {
     'sign_on': 'Sign on',
     'clock_in_out': 'Clock in / out',
     'price_level': 'Price level',
+    'table_plan': 'Table Plan',
+    'price_check': 'Price Check',
+    'product_search': 'Search',
+    'price_override': 'Override',
   };
 
   @override

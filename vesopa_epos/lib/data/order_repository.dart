@@ -577,6 +577,32 @@ class OrderRepository {
       (_db.update(_db.orderLines)..where((l) => l.id.equals(lineId)))
           .write(OrderLinesCompanion(notes: Value(note)));
 
+  /// Charge a different price for one line.
+  ///
+  /// A price override, not a discount, and the difference is what the reports
+  /// say afterwards. A discount records "this cost £4.00 and £1.00 came off";
+  /// an override records "this cost £3.00". A venue price-matching a
+  /// competitor, or honouring a shelf label that is wrong, means the second —
+  /// and putting it through as a discount would show up in the discount
+  /// column all week and be queried.
+  ///
+  /// Guarded by TillPermission.setPrice at the call site, because this is
+  /// somebody deciding what the till charges.
+  ///
+  /// Refuses a negative price. Zero is allowed and is a real thing — a comped
+  /// item goes on the bill at nothing so the kitchen still makes it and the
+  /// stock still moves — but a line that pays the customer is never what was
+  /// meant, and the arithmetic below it would balance perfectly all the way to
+  /// the drawer being short.
+  Future<void> setLinePrice(String orderId, String lineId, int minor) async {
+    if (minor < 0) return;
+    await _db.transaction(() async {
+      await (_db.update(_db.orderLines)..where((l) => l.id.equals(lineId)))
+          .write(OrderLinesCompanion(unitPriceMinor: Value(minor)));
+      await recalculate(orderId);
+    });
+  }
+
   Future<void> setLineDiscount(String orderId, String lineId, int minor) async {
     await _db.transaction(() async {
       await (_db.update(_db.orderLines)..where((l) => l.id.equals(lineId)))

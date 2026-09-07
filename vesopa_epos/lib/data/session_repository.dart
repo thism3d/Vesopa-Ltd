@@ -143,6 +143,52 @@ class SessionRepository {
         .getSingle();
   }
 
+  /// The Z reports this till has already run, newest first.
+  ///
+  /// For the reprint key on the Functions page. A Z is the document a venue
+  /// hands their accountant, and it is printed once on thermal paper next to a
+  /// cash drawer — so "the printer had no paper", "it printed and somebody
+  /// binned it" and "we need last Tuesday's again" are all ordinary Monday
+  /// mornings, and none of them used to have an answer.
+  ///
+  /// [days] back rather than everything, because that is what was asked for and
+  /// because the list is a thing somebody scrolls at a counter. A closed
+  /// session with no z_number is not a Z — it cannot happen through zReport,
+  /// but a session closed by some future path would show up as a report with
+  /// no number on it, and a report nobody can name is worse than absent.
+  Future<List<TillSession>> recentZs({int days = 7}) {
+    final from = DateTime.now().subtract(Duration(days: days));
+    return (_db.select(_db.tillSessions)
+          ..where((s) =>
+              s.closedAt.isNotNull() &
+              s.zNumber.isNotNull() &
+              s.closedAt.isBiggerOrEqualValue(from))
+          ..orderBy([(s) => OrderingTerm.desc(s.closedAt)]))
+        .get();
+  }
+
+  /// Rebuild a Z that has already been run.
+  ///
+  /// Recomputed from the orders rather than stored, and that is deliberate:
+  /// the sales are still in the till's own database keyed by session, so the
+  /// figures come out identical to the paper — and there is no second copy of
+  /// the totals to drift from the first.
+  ///
+  /// The consequence worth knowing is that this is a *reprint*, not an
+  /// archive: a till whose local database is wiped and re-synced has no orders
+  /// to rebuild from, and the reprint list will be empty rather than wrong.
+  Future<TillReport> reprintZ(
+    TillSession session, {
+    String? terminalName,
+    String? staffName,
+  }) =>
+      _report(
+        session,
+        isZ: true,
+        terminalName: terminalName,
+        staffName: staffName,
+      );
+
   /// X report: read the open session without changing anything. Safe to run as
   /// often as the manager likes, mid-service included.
   Future<TillReport> xReport({String? terminalName, String? staffName}) async {

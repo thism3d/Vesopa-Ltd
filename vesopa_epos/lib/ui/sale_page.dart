@@ -26,6 +26,8 @@ import '../data/commerce.dart';
 import '../data/fonts.dart';
 import '../data/pricing_engine.dart';
 import 'widgets/basket_panel.dart';
+import 'price_override_dialog.dart';
+import 'product_lookup_sheet.dart';
 import 'widgets/customer_card.dart';
 import 'widgets/live_receipt.dart';
 import 'widgets/line_editor.dart';
@@ -490,6 +492,7 @@ class SalePage extends ConsumerWidget {
                             lines: lines,
                             selected: selectedLines,
                             order: order,
+                            onRing: ring,
                           ),
                         ),
                       ),
@@ -558,6 +561,7 @@ class SalePage extends ConsumerWidget {
                         lines: lines,
                         selected: selectedLines,
                         order: order,
+                        onRing: ring,
                       ),
                       ),
                     ),
@@ -774,6 +778,7 @@ class SalePage extends ConsumerWidget {
                         lines: lines,
                         selected: selectedLines,
                         order: order,
+                        onRing: ring,
                       ),
                     )
                   else
@@ -1033,6 +1038,14 @@ class SalePage extends ConsumerWidget {
     required List<OrderLine> lines,
     required Set<String> selected,
     Order? order,
+    // How this screen rings an item up.
+    //
+    // Passed in rather than rebuilt here, and that is the point: `ring` asks a
+    // product's modifier questions before the line lands. A second path that
+    // called addLine directly would be a Product Search key that skips "which
+    // mixer?" — working, and quietly wrong, on exactly the products where the
+    // question matters most.
+    Future<void> Function(Product)? onRing,
   }) async {
     switch (key) {
       // ---- The keys a bar carries ----------------------------------------
@@ -1163,6 +1176,79 @@ class SalePage extends ConsumerWidget {
       // is two taps further away than that deserves.
       case 'price_level':
         return showPriceLevelSheet(context, ref);
+
+      // ---- The four the venue asked for by name ---------------------------
+
+      // The floor plan, always.
+      //
+      // Deliberately not `save_table`, which saves silently when the bill
+      // already has a table and only shows the plan when it does not. That is
+      // right for saving and wrong for "show me the floor", and the venue said
+      // their customers find the one key doing both confusing. This one always
+      // opens the plan, so a bill can also be moved to a different table.
+      case 'table_plan':
+        return _promptTable(context, ref);
+
+      // "How much is the Malbec?", asked across the bar. Adds nothing to the
+      // bill whatever is tapped — see ProductLookupSheet.
+      case 'price_check':
+        await showProductLookup(
+          context,
+          ref,
+          mode: LookupMode.priceCheck,
+          products: ref.read(productsProvider).value ?? const [],
+        );
+        return;
+
+      // The same list, where a tap rings the item up. For the catalogue of five
+      // hundred where nobody knows which page the item is on.
+      case 'product_search':
+        final found = await showProductLookup(
+          context,
+          ref,
+          mode: LookupMode.ring,
+          products: ref.read(productsProvider).value ?? const [],
+        );
+        if (found == null) return;
+        if (onRing == null) {
+          // No way to ring from here. Said plainly rather than silently
+          // dropping the item the clerk just went looking for.
+          if (context.mounted) {
+            PosMessenger.info(context, 'Items cannot be rung up from here.');
+          }
+          return;
+        }
+        await onRing(found);
+        return;
+
+      // Charge something else for a line already on the bill.
+      //
+      // The order of the checks is the same one Void follows and for the same
+      // reason: cheap checks first, then the one that costs somebody's time. A
+      // manager fetched across the room to authorise nothing is the failure
+      // being avoided.
+      case 'price_override':
+        if (selected.isEmpty) {
+          PosMessenger.info(context, 'Pick a line on the bill first.');
+          return;
+        }
+        if (selected.length > 1) {
+          PosMessenger.info(
+            context,
+            'One line at a time — a price override is a price, not a rule.',
+          );
+          return;
+        }
+        final line = lines.where((l) => l.id == selected.first).firstOrNull;
+        if (line == null) return;
+        if (!await allowed(context, ref, TillPermission.setPrice)) return;
+        if (!context.mounted) return;
+        final priced = await showPriceOverride(context, line);
+        if (priced == null) return;
+        await ref
+            .read(orderRepositoryProvider)
+            .setLinePrice(orderId, line.id, priced);
+        return;
 
       case 'covers':
         return _promptCovers(context, ref);
