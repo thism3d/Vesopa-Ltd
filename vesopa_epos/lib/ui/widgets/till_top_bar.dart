@@ -432,6 +432,29 @@ class VenueTopBarBody extends ConsumerWidget {
     );
   }
 
+  /// The pair the *payment* screen wears, or nulls for its built-in ones.
+  ///
+  /// Its own settings rather than the sale screen's, and no per-page fallback:
+  /// the payment screen is not a page a venue lays products out on, so there is
+  /// no screen for it to inherit a bar from. Either the venue has arranged one
+  /// for taking money or it has not.
+  ///
+  /// A sale bar would be the wrong answer even as a default. It carries Void,
+  /// Save Table and Covers, and a bill that is being settled has no use for
+  /// any of them.
+  static (TillScreen?, TillScreen?) paymentBars(WidgetRef ref) {
+    final screens = ref.watch(screensProvider).value;
+    if (screens == null) return (null, null);
+    final settings = ref.watch(tillSettingsProvider);
+    return (
+      screens.surfaceById(settings.payTopBarScreenId, ScreenSurface.topBar),
+      screens.surfaceById(
+        settings.payBottomBarScreenId,
+        ScreenSurface.bottomBar,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final screens = ref.watch(screensProvider).value ?? ScreenSet.empty;

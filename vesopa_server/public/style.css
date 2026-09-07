@@ -2161,6 +2161,19 @@ table.plain th { color: var(--muted, #7a828c); font-weight: 600; font-size: 11px
   min-width: 0;
 }
 
+/* The payment screen's pair, on their own row under a rule.
+   Placed explicitly rather than left to auto-flow: the till drawing lives in
+   the fourth column, and a heading allowed to flow would land on top of it. */
+.sp-defaults-split {
+  grid-column: 1 / 4;
+  border-top: 1px solid var(--line, rgba(255, 255, 255, .1));
+  padding-top: 10px;
+  margin-top: 2px;
+}
+@media (max-width: 1100px) {
+  .sp-defaults-split { grid-column: 1; }
+}
+
 /* A drawing of a till, not a list of names. Which of three layouts is the
    bottom one is a question a picture answers and a dropdown does not — and each
    part of it is the way in to editing that part. */
@@ -2172,7 +2185,13 @@ table.plain th { color: var(--muted, #7a828c); font-weight: 600; font-size: 11px
   border-radius: 10px;
   background: #1b1f27;
   border: 1px solid rgba(255, 255, 255, .1);
-  grid-row: span 1;
+  /* Down the side of all three rows: the sale screen's choices, the rule, and
+     the payment screen's. */
+  grid-column: 4;
+  grid-row: 1 / span 3;
+}
+@media (max-width: 1100px) {
+  .sp-till { grid-column: 1; grid-row: auto; }
 }
 .sp-till-body { display: flex; gap: 3px; flex: 1 1 auto; min-height: 38px; }
 .sp-till-bill {

@@ -28,6 +28,8 @@ class TillSettings {
     this.homeScreenId,
     this.topBarScreenId,
     this.bottomBarScreenId,
+    this.payTopBarScreenId,
+    this.payBottomBarScreenId,
     this.fontFamily,
     this.priceLevelNames = PriceLevelNames.empty,
   });
@@ -50,6 +52,15 @@ class TillSettings {
   /// a venue gets back the moment it deletes the bar it made.
   final int? topBarScreenId;
   final int? bottomBarScreenId;
+
+  /// The bars the *payment* screen wears, or null for its built-in ones.
+  ///
+  /// A separate pair rather than the sale screen's, because the two screens are
+  /// different jobs. A sale bar carries Void, Save Table and Covers; none of
+  /// those mean anything once the bill is being settled, and offering them
+  /// there would be a bar of keys that do nothing.
+  final int? payTopBarScreenId;
+  final int? payBottomBarScreenId;
 
   /// The slug of the font this venue's tills letter everything in, or null for
   /// the app's own typeface.
@@ -174,6 +185,8 @@ class TillSettings {
           other.homeScreenId == homeScreenId &&
           other.topBarScreenId == topBarScreenId &&
           other.bottomBarScreenId == bottomBarScreenId &&
+          other.payTopBarScreenId == payTopBarScreenId &&
+          other.payBottomBarScreenId == payBottomBarScreenId &&
           other.fontFamily == fontFamily &&
           other.idleEnabled == idleEnabled &&
           other.idleImageUrl == idleImageUrl &&
@@ -215,6 +228,8 @@ class TillSettings {
         homeScreenId,
         topBarScreenId,
         bottomBarScreenId,
+        payTopBarScreenId,
+        payBottomBarScreenId,
         idleEnabled,
         idleImageUrl,
         idleAfterSale,
@@ -258,6 +273,11 @@ class TillSettings {
       priceLevelNames: PriceLevelNames.parse(j['price_level_names']),
       topBarScreenId: (j['top_bar_screen_id'] as num?)?.toInt(),
       bottomBarScreenId: (j['bottom_bar_screen_id'] as num?)?.toInt(),
+      // Absent on a server that has not run schema_till_pay_bars.sql, which
+      // reads as null — the payment screen's built-in bars, which is what
+      // every venue has today.
+      payTopBarScreenId: (j['pay_top_bar_screen_id'] as num?)?.toInt(),
+      payBottomBarScreenId: (j['pay_bottom_bar_screen_id'] as num?)?.toInt(),
       idleEnabled: _flag(j['idle_enabled']),
       idleImageUrl: url == null || url.isEmpty ? null : url,
       idleAfterSale: _flag(j['idle_after_sale']),

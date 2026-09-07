@@ -727,6 +727,61 @@ async function check(name, fn) {
     assert.strictEqual(res.status, 404);
   });
 
+  await check('the payment screen wears its own bars', async () => {
+    // Its own pair, not the sale screen's. A sale bar carries Void, Save Table
+    // and Covers, and none of those mean anything once the bill is being
+    // settled — so a venue that arranges one for the payment screen must be
+    // able to arrange a different one.
+    const pool = fakePool([OFFICE, BAR]);
+    const server = await listen(appWith(pool));
+    const res = await call(server, 'PUT', '/api/screens/defaults', {
+      token: sessionToken,
+      body: { payBottomBarScreenId: 9 },
+    });
+    server.close();
+
+    assert.strictEqual(res.status, 200);
+    const write = pool.asked.find((a) =>
+      a.sql.includes('INSERT INTO epos_till_settings')
+    );
+    assert.ok(
+      write.sql.includes('pay_bottom_bar_screen_id'),
+      'the payment bottom bar was never written'
+    );
+    assert.deepStrictEqual(write.params, ['venue@example.com', 9]);
+  });
+
+  await check('the payment bars are held to the same surfaces', async () => {
+    // The check is per slot now rather than per surface, and this is what
+    // proves the table did not lose the surface each slot demands.
+    const pool = fakePool([OFFICE, SCREEN]);
+    const server = await listen(appWith(pool));
+    const res = await call(server, 'PUT', '/api/screens/defaults', {
+      token: sessionToken,
+      body: { payTopBarScreenId: 3 },
+    });
+    server.close();
+
+    assert.strictEqual(res.status, 400);
+    assert.match(res.body.error, /not a topbar one/);
+  });
+
+  await check('the sale bars and the payment bars are set independently',
+    async () => {
+      const pool = fakePool([OFFICE, BAR]);
+      const server = await listen(appWith(pool));
+      await call(server, 'PUT', '/api/screens/defaults', {
+        token: sessionToken,
+        body: { bottomBarScreenId: 9, payBottomBarScreenId: null },
+      });
+      server.close();
+
+      const write = pool.asked.find((a) =>
+        a.sql.includes('INSERT INTO epos_till_settings')
+      );
+      assert.deepStrictEqual(write.params, ['venue@example.com', 9, null]);
+    });
+
   await check('a deleted bar stops being worn', async () => {
     // Without this a venue that deletes the bar it was wearing gets tills
     // pointing at a row that is not there — and no foreign key to catch it,
@@ -741,6 +796,13 @@ async function check(name, fn) {
       a.sql.includes('top_bar_screen_id = IF')
     );
     assert.strictEqual(cleared.length, 1, 'the tills still wear a deleted bar');
+    // And on the payment screen. A bar released from the sale screen but left
+    // attached to the payment screen is a till drawing a row that is gone.
+    assert.ok(
+      cleared[0].sql.includes('pay_top_bar_screen_id = IF') &&
+        cleared[0].sql.includes('pay_bottom_bar_screen_id = IF'),
+      'the payment screen still wears a deleted bar'
+    );
     const pages = pool.asked.filter((a) => a.sql.includes('top_bar_id = IF'));
     assert.strictEqual(pages.length, 1, 'a page still asks for a deleted bar');
   });

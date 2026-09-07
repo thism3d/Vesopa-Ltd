@@ -1353,6 +1353,22 @@
               <label>Bottom bar
                 <select id="sp-def-bottom"></select>
               </label>
+              <!-- The payment screen's own pair.
+                   Deliberately its own row with its own heading rather than two
+                   more entries in the list above, because they are not more of
+                   the same thing: a sale bar carries Void, Save Table and
+                   Covers, and none of those mean anything once the bill is
+                   being settled. A manager choosing between five dropdowns in
+                   one column would pick the wrong one. -->
+              <div class="sp-defaults-split">
+                <span class="muted small">On the payment screen</span>
+              </div>
+              <label>Payment top bar
+                <select id="sp-def-pay-top"></select>
+              </label>
+              <label>Payment bottom bar
+                <select id="sp-def-pay-bottom"></select>
+              </label>
               <!-- A drawing of the till, not a list of names. Which of three
                    layouts is the bottom one is a question a picture answers and
                    a dropdown does not. -->

@@ -32,7 +32,11 @@ import '../data/cash_tally.dart';
 import 'till_actions.dart';
 import 'void_dialog.dart';
 import 'widgets/cash_notes_panel.dart';
+import '../data/screens.dart';
+import 'sale_page.dart' show productsProvider;
 import 'widgets/pay_check_panel.dart';
+import 'widgets/programmed_bar.dart';
+import 'widgets/till_top_bar.dart' show VenueTopBarBody;
 import 'widgets/pos_message.dart';
 import 'widgets/tender_panel.dart';
 import 'receipts_page.dart' show receiptListProvider;
@@ -1412,6 +1416,24 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
               onTender: _take,
             );
 
+            // The venue's own chrome for this screen, when it has arranged
+            // any. Both null for every venue that has not, and then the board
+            // is drawn exactly as it always was.
+            final (payTopBar, payBottomBar) =
+                VenueTopBarBody.paymentBars(ref);
+
+            Widget barOf(TillScreen bar) => _PayBar(
+                  bar: bar,
+                  orderId: widget.orderId,
+                  order: order,
+                  totalMinor: totals.totalMinor,
+                  onVoid: _canAmend
+                      ? () => _voidSelected(lines: lines, selected: selected)
+                      : null,
+                  onCancel:
+                      _canAmend ? () => _cancelCheck(lines: lines) : null,
+                );
+
             return Scaffold(
               backgroundColor: pay.canvas,
               body: SafeArea(
@@ -1434,7 +1456,13 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
                           : null,
                       onCancel:
                           _canAmend ? () => _cancelCheck(lines: lines) : null,
+                      bar: payTopBar == null ? null : barOf(payTopBar),
                     ),
+                    // Expanded, so the board gives the bars their room rather
+                    // than the bars overflowing it. The venue asked for the
+                    // keys to "scale down slightly" and this is where that
+                    // happens: _board is proportional, so it simply gets a
+                    // shorter box and draws itself into it.
                     Expanded(
                       child: _board(
                         context,
@@ -1444,6 +1472,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
                         keypad: keypad,
                       ),
                     ),
+                    if (payBottomBar != null) barOf(payBottomBar),
                   ],
                 ),
               ),
@@ -1814,6 +1843,82 @@ class _ChangeWindowState extends State<_ChangeWindow> {
 
 /// The bar across the top of the payment board.
 ///
+/// A venue's own bar, drawn on the payment screen.
+///
+/// [ProgrammedBar] with `onSaleScreen: true`, and that is the right answer even
+/// though this is not the sale screen: the flag means "is there a bill in front
+/// of the clerk", and here there very much is. Void, Cancel, Pay and the total
+/// all mean exactly what they mean on the sale screen.
+///
+/// What does *not* mean anything here is ringing something up. A product key, a
+/// page key or a modifier key on a bill that is being settled would either
+/// silently change a total the customer has already been quoted, or move the
+/// clerk off the screen the money is on. Those three say so and do nothing —
+/// stated rather than silent, because a key that appears to do nothing is a key
+/// a clerk presses four more times.
+class _PayBar extends ConsumerWidget {
+  const _PayBar({
+    required this.bar,
+    required this.orderId,
+    required this.order,
+    required this.totalMinor,
+    this.onVoid,
+    this.onCancel,
+  });
+
+  final TillScreen bar;
+  final String orderId;
+  final Order? order;
+  final int totalMinor;
+  final VoidCallback? onVoid;
+  final VoidCallback? onCancel;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final screens = ref.watch(screensProvider).value ?? ScreenSet.empty;
+    final settings = ref.watch(tillSettingsProvider);
+    final products = ref.watch(productsProvider).value ?? const <Product>[];
+
+    void notHere(String what) => PosMessenger.info(
+          context,
+          '$what cannot be done while the bill is being paid.',
+        );
+
+    return ProgrammedBar(
+      bar: bar,
+      screens: screens,
+      products: {for (final p in products) p.pluId: p},
+      showPrices: settings.buttonsShowPrices,
+      live: BarLive(
+        currentOrderId: orderId,
+        currentOrder: order,
+        totalMinor: totalMinor,
+        screenName: 'Payment',
+        // Switching bill from the payment screen would leave the clerk taking
+        // money against a bill they are no longer looking at.
+        onSwitchOrder: (_) => notHere('Changing bill'),
+      ),
+      onProduct: (_) => notHere('Ringing items up'),
+      onPage: (_) => notHere('Opening a page of products'),
+      onModifier: (_) => notHere('Changing an item'),
+      onFunction: (key) {
+        switch (key) {
+          case 'void':
+            (onVoid ?? () => notHere('Voiding'))();
+          case 'cancel':
+            (onCancel ?? () => notHere('Cancelling'))();
+          case 'go_sale':
+            Navigator.of(context).pop();
+          default:
+            // Everything else on a bar is either a widget that draws itself or
+            // a key whose home is the sale screen. Deliberately not silent.
+            notHere('That');
+        }
+      },
+    );
+  }
+}
+
 /// A plain [AppBar] would put this screen back inside the till's ordinary
 /// chrome, which is exactly what the board is not: it is a surface the terminal
 /// gives over entirely to taking money, and the bar is part of the surface
@@ -1830,11 +1935,26 @@ class _PayHeader extends StatelessWidget {
     this.clerkName,
     this.onVoid,
     this.onCancel,
+    this.bar,
   });
 
   final int? tableNumber;
   final int? covers;
   final String? clerkName;
+
+  /// The venue's own top bar, when it has laid one out for this screen.
+  ///
+  /// It takes the place of everything after the `Payment |` divider — the
+  /// table and covers chips, the clerk's name, Void and Cancel. That is the
+  /// same rule the sale screen follows: a bar the venue arranged says what goes
+  /// on it, so the till does not draw its own furniture beside it. Void and
+  /// Cancel are both keys a venue can place, so nothing is lost that was not
+  /// given away deliberately.
+  ///
+  /// The back button and the word Payment are left alone, at the venue's
+  /// request: they are how a clerk gets off this screen, and a bar cannot be
+  /// allowed to take that away.
+  final Widget? bar;
 
   /// Null once money has been taken: the bill may no longer be amended, and a
   /// live key that refuses is worse than a dead one that explains itself by
@@ -1878,6 +1998,12 @@ class _PayHeader extends StatelessWidget {
               color: pay.ink,
             ),
           ),
+          if (bar != null) ...[
+            const SizedBox(width: 22),
+            Container(width: 1, height: 30, color: pay.panelLine),
+            const SizedBox(width: 16),
+            Expanded(child: bar!),
+          ] else ...[
           if (facts.isNotEmpty && !compact) ...[
             const SizedBox(width: 22),
             Container(width: 1, height: 30, color: pay.panelLine),
@@ -1932,6 +2058,7 @@ class _PayHeader extends StatelessWidget {
             onTap: onCancel,
             child: Text(compact ? 'Cancel' : 'Cancel sale'),
           ),
+          ],
         ],
       ),
     );

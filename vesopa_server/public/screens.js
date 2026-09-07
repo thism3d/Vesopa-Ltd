@@ -250,7 +250,7 @@ let spFillChosen = null;
  * decision — "this is what my tills look like" — and the page now draws them
  * as one.
  */
-let spDefaults = { home: null, top: null, bottom: null };
+let spDefaults = { home: null, top: null, bottom: null, payTop: null, payBottom: null };
 
 /**
  * The venue's modifier questions, for the keys that ask one.
@@ -1203,6 +1203,10 @@ async function loadScreens() {
     home: settings.home_screen_id ?? null,
     top: settings.top_bar_screen_id ?? null,
     bottom: settings.bottom_bar_screen_id ?? null,
+    // Undefined on a server that has not run schema_till_pay_bars.sql, which
+    // reads as null — the payment screen's built-in bars.
+    payTop: settings.pay_top_bar_screen_id ?? null,
+    payBottom: settings.pay_bottom_bar_screen_id ?? null,
   };
   spTillFont = settings.font_family ?? null;
   spProductOptionsSig = '';
@@ -2161,6 +2165,16 @@ function spRenderDefaults() {
     'bottombar',
     spDefaults.bottom,
     'Built-in — Void, Cancel … Pay'
+  );
+  $('sp-def-pay-top').innerHTML = spLayoutOptions(
+    'topbar',
+    spDefaults.payTop,
+    'Built-in — table, covers, Void, Cancel'
+  );
+  $('sp-def-pay-bottom').innerHTML = spLayoutOptions(
+    'bottombar',
+    spDefaults.payBottom,
+    'Built-in — none'
   );
 
   const named = (surface, fallback) => {
@@ -3570,13 +3584,15 @@ function spBind() {
   }
 
   // ---- What the tills wear ----
-  for (const [id, surface] of [
-    ['sp-def-home', 'sale'],
-    ['sp-def-top', 'topbar'],
-    ['sp-def-bottom', 'bottombar'],
+  for (const [id, slot] of [
+    ['sp-def-home', 'home'],
+    ['sp-def-top', 'top'],
+    ['sp-def-bottom', 'bottom'],
+    ['sp-def-pay-top', 'payTop'],
+    ['sp-def-pay-bottom', 'payBottom'],
   ]) {
     $(id).addEventListener('change', (e) =>
-      spSetDefault(surface, e.target.value ? Number(e.target.value) : null)
+      spSetDefault(slot, e.target.value ? Number(e.target.value) : null)
     );
   }
 
@@ -4327,7 +4343,8 @@ async function spDeleteScreen() {
 /** The tick box beside the screen picker: "my tills wear this one". */
 async function spSetHome(e) {
   if (!spCurrent) return;
-  await spSetDefault(spCurrentSurface(), e.target.checked ? spCurrent.id : null);
+  const slot = { topbar: 'top', bottombar: 'bottom' }[spCurrentSurface()] || 'home';
+  await spSetDefault(slot, e.target.checked ? spCurrent.id : null);
 }
 
 /**
@@ -4338,21 +4355,26 @@ async function spSetHome(e) {
  * asked to un-set their home screen — and it is the one setting on this page
  * that every till in the building acts on.
  */
-async function spSetDefault(surface, id) {
-  const field =
-    surface === 'topbar'
-      ? 'topBarScreenId'
-      : surface === 'bottombar'
-        ? 'bottomBarScreenId'
-        : 'homeScreenId';
+/** Which request field each slot writes. Keyed by slot, not by surface: two
+ *  slots are 'topbar' layouts now, and keying by surface would make the sale
+ *  screen's top bar and the payment screen's the same setting. */
+const SP_DEFAULT_FIELDS = {
+  home: 'homeScreenId',
+  top: 'topBarScreenId',
+  bottom: 'bottomBarScreenId',
+  payTop: 'payTopBarScreenId',
+  payBottom: 'payBottomBarScreenId',
+};
+
+async function spSetDefault(slot, id) {
+  const field = SP_DEFAULT_FIELDS[slot];
+  if (!field) return;
   try {
     await api('/screens/defaults', {
       method: 'PUT',
       body: JSON.stringify({ [field]: id }),
     });
-    if (surface === 'topbar') spDefaults.top = id;
-    else if (surface === 'bottombar') spDefaults.bottom = id;
-    else spDefaults.home = id;
+    spDefaults[slot] = id;
     spRenderChrome();
   } catch (err) {
     toast(err.message, 'error');

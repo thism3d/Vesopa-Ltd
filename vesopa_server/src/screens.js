@@ -623,10 +623,18 @@ function screensRoutes({ pool, broadcast, secret }) {
       const office = await tenantEmail(req);
       const body = req.body || {};
 
+      // What each key sets, and what surface the screen it names has to be.
+      //
+      // One table rather than a chain of ternaries, because this list grew: the
+      // payment screen wears its own pair, separate from the sale screen's. A
+      // sale bar carries Void, Save Table and Covers, and none of those mean
+      // anything once the bill is being settled.
       const columns = {
-        homeScreenId: 'home_screen_id',
-        topBarScreenId: 'top_bar_screen_id',
-        bottomBarScreenId: 'bottom_bar_screen_id',
+        homeScreenId: ['home_screen_id', 'sale'],
+        topBarScreenId: ['top_bar_screen_id', 'topbar'],
+        bottomBarScreenId: ['bottom_bar_screen_id', 'bottombar'],
+        payTopBarScreenId: ['pay_top_bar_screen_id', 'topbar'],
+        payBottomBarScreenId: ['pay_bottom_bar_screen_id', 'bottombar'],
       };
 
       const sent = Object.keys(columns).filter((k) =>
@@ -636,6 +644,7 @@ function screensRoutes({ pool, broadcast, secret }) {
 
       const values = {};
       for (const key of sent) {
+        const [column, wants] = columns[key];
         const id = body[key] === null || body[key] === '' ? null : body[key];
         if (id !== null) {
           const screen = await screenFor(office, id);
@@ -645,19 +654,13 @@ function screensRoutes({ pool, broadcast, secret }) {
           // a sale page. Refused rather than accepted-and-ignored: a manager who
           // picks the wrong one from a list has to be told at the moment they
           // pick it, not by walking to a till.
-          const wants =
-            key === 'homeScreenId'
-              ? 'sale'
-              : key === 'topBarScreenId'
-                ? 'topbar'
-                : 'bottombar';
           if (screen.surface !== wants) {
             return res.status(400).json({
               error: `"${screen.name}" is a ${screen.surface} layout, not a ${wants} one.`,
             });
           }
         }
-        values[columns[key]] = id;
+        values[column] = id;
       }
 
       const cols = Object.keys(values);
@@ -928,15 +931,22 @@ function screensRoutes({ pool, broadcast, secret }) {
           WHERE office = ? AND home_screen_id = ?`,
         [office, screen.id]
       );
-      // The same, for a bar. Both columns in one statement: a bar deleted while
-      // it was the venue's top bar has to leave the tills wearing the built-in
-      // one, not wearing a row that is no longer there.
+      // The same, for a bar. Every column in one statement: a bar deleted
+      // while it was the venue's top bar has to leave the tills wearing the
+      // built-in one, not wearing a row that is no longer there. The payment
+      // screen's pair is in here for exactly the same reason — a bar released
+      // from the sale screen and left attached to the payment screen would be
+      // a till drawing a bar that no longer exists.
       await pool.execute(
         `UPDATE epos_till_settings
             SET top_bar_screen_id = IF(top_bar_screen_id = ?, NULL, top_bar_screen_id),
-                bottom_bar_screen_id = IF(bottom_bar_screen_id = ?, NULL, bottom_bar_screen_id)
+                bottom_bar_screen_id = IF(bottom_bar_screen_id = ?, NULL, bottom_bar_screen_id),
+                pay_top_bar_screen_id =
+                  IF(pay_top_bar_screen_id = ?, NULL, pay_top_bar_screen_id),
+                pay_bottom_bar_screen_id =
+                  IF(pay_bottom_bar_screen_id = ?, NULL, pay_bottom_bar_screen_id)
           WHERE office = ?`,
-        [screen.id, screen.id, office]
+        [screen.id, screen.id, screen.id, screen.id, office]
       );
       // And any single page that had asked for it.
       await pool.execute(
