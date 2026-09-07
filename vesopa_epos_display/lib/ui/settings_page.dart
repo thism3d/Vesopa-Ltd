@@ -32,6 +32,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   final _name = TextEditingController();
   final _thanks = TextEditingController();
   int _idle = 45;
+  int _thanksFor = 20;
   int _dwell = 12;
   bool _prices = true;
   bool _loaded = false;
@@ -107,6 +108,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     );
     _thanks.text = settings.thankYou;
     _idle = settings.idleSeconds;
+    _thanksFor = settings.thankYouSeconds;
     _dwell = settings.dwellSeconds;
     _prices = settings.showPrices;
     _screenKey = settings.screenKey;
@@ -166,6 +168,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         advertVolume: _volume,
         statusHideSeconds: _statusHide,
         idleSeconds: _idle,
+        thankYouSeconds: _thanksFor,
         dwellSeconds: _dwell,
         showPrices: _prices,
         screenKey: _screenKey,
@@ -624,6 +627,25 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                       decoration: const InputDecoration(
                         labelText: 'Message after a sale is paid for',
                       ),
+                    ),
+                    const SizedBox(height: 12),
+                    // Its own number rather than the idle one above, and the
+                    // blurb says why: a bill nobody is adding to is a live
+                    // conversation, a paid one is somebody checking their
+                    // change and walking away.
+                    _Slider(
+                      label: 'Keep the finished sale up for',
+                      value: _thanksFor.toDouble(),
+                      min: 0,
+                      max: 120,
+                      suffix: _thanksFor == 0
+                          ? 'until the next sale'
+                          : '$_thanksFor seconds',
+                      onChanged: (v) => setState(() => _thanksFor = v.round()),
+                    ),
+                    const _Note(
+                      'Ringing anything up before then shows the new sale '
+                      'straight away.',
                     ),
                   ],
                 ),

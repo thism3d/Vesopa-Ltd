@@ -780,6 +780,34 @@ class _CustomerDisplayPageState extends ConsumerState<CustomerDisplayPage> {
                   ),
                 ),
               ),
+              // How long that message stays up.
+              //
+              // Its own number rather than the idle slider above, because they
+              // answer different questions: a bill nobody is adding to is a
+              // conversation still going on, a paid one is somebody checking
+              // their change and walking away.
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+                child: _Slider(
+                  label: 'Keep the finished sale up for',
+                  value: _control.thankYouSeconds.toDouble(),
+                  min: 0,
+                  max: 120,
+                  suffix: _control.thankYouSeconds == 0
+                      ? 'until the next sale'
+                      : '${_control.thankYouSeconds} seconds',
+                  onChanged: (v) =>
+                      _push(_control.copyWith(thankYouSeconds: v.round())),
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: Text(
+                  'Ringing anything up before then shows the new sale straight '
+                  'away.',
+                  style: TextStyle(fontSize: 12.5, color: Pos.graphite),
+                ),
+              ),
             ],
           ),
         ),

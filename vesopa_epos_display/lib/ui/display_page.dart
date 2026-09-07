@@ -62,12 +62,33 @@ bool shouldShowAdverts({
   required String customerQr,
   required int idleSeconds,
   required Duration sinceChange,
+  bool paid = false,
+  int thankYouSeconds = 20,
 }) {
   if (customerQr.isNotEmpty) return false;
 
   // Nothing rung up is not a quiet moment in a sale, it is no sale. Adverts
   // take the screen immediately rather than after the countdown.
   if (!hasSale) return true;
+
+  // A finished sale holds for its own time, not the idle time.
+  //
+  // The two are different questions and used to share one answer. `idleSeconds`
+  // asks "how long does a bill nobody is adding to stay up" — a minute or so,
+  // because the clerk is talking to the customer and the bill is still live.
+  // This asks "how long does the total and the thank-you stay up after the
+  // money has changed hands", which is a customer checking their change and
+  // then walking away: twenty seconds, not forty-five.
+  //
+  // Ringing something up before it expires needs no rule of its own. A new
+  // basket resets the clock this measures and is no longer `paid`, so the next
+  // customer's items appear at once — which is exactly what was asked for.
+  //
+  // Zero holds for ever, matching what zero already means below.
+  if (paid) {
+    if (thankYouSeconds <= 0) return false;
+    return sinceChange >= Duration(seconds: thankYouSeconds);
+  }
 
   // Zero means never: a screen beside a busy bar may want the bill up
   // permanently, and that is an answer rather than a mistake.
@@ -285,6 +306,7 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
       dwellSeconds: control.dwellSeconds,
       showPrices: control.showPrices,
       thankYou: control.thankYou,
+      thankYouSeconds: control.thankYouSeconds,
       advertVolume: control.advertVolume,
       billOnRight: control.billOnRight,
       billShare: control.billShare,
@@ -350,6 +372,8 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
     customerQr: settings.customerQr,
     idleSeconds: settings.idleSeconds,
     sinceChange: DateTime.now().difference(_lastChange),
+    paid: _basket.state == 'paid',
+    thankYouSeconds: settings.thankYouSeconds,
   );
 
   @override

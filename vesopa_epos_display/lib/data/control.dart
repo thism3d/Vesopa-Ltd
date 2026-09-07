@@ -82,6 +82,7 @@ class TillControl {
     required this.dwellSeconds,
     required this.showPrices,
     required this.thankYou,
+    required this.thankYouSeconds,
     required this.screenKey,
     required this.fullScreen,
     required this.advertVolume,
@@ -99,6 +100,9 @@ class TillControl {
   final int dwellSeconds;
   final bool showPrices;
   final String thankYou;
+
+  /// How long that message stays up. See DisplaySettings.thankYouSeconds.
+  final int thankYouSeconds;
   final String screenKey;
   final bool fullScreen;
   final int advertVolume;
@@ -132,6 +136,10 @@ class TillControl {
       dwellSeconds: _int(raw['dwell_seconds'], 12),
       showPrices: _bool(raw['show_prices'], fallback: true),
       thankYou: _str(raw['thank_you'], 'Thank you'),
+      // Absent on a till that predates this, which reads as the venue's
+      // twenty seconds rather than zero — zero would hold the thank-you on
+      // screen for ever and look like the display had frozen.
+      thankYouSeconds: _int(raw['thank_you_seconds'], 20),
       screenKey: _str(raw['screen_key'], ''),
       fullScreen: _bool(raw['full_screen'], fallback: true),
       advertVolume: _int(raw['advert_volume'], 0),

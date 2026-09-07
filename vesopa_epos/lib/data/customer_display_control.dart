@@ -61,6 +61,7 @@ class DisplayControl {
     this.dwellSeconds = 12,
     this.showPrices = true,
     this.thankYou = 'Thank you',
+    this.thankYouSeconds = 20,
     this.screenKey = '',
     this.fullScreen = true,
     this.advertVolume = 0,
@@ -88,6 +89,19 @@ class DisplayControl {
 
   /// What the screen says once a sale has been paid for.
   final String thankYou;
+
+  /// How long that message stays up before the adverts take the screen back.
+  ///
+  /// Its own number rather than [idleSeconds]. Idle asks how long a bill nobody
+  /// is adding to stays up — generously, because the clerk is mid-conversation
+  /// and the bill is still live. This asks how long the total stays up after
+  /// the money has changed hands, which is a customer checking their change and
+  /// then walking away: the venue's answer is twenty seconds, not forty-five.
+  ///
+  /// Zero holds it until the next sale. Ringing anything up before it expires
+  /// shows the new sale at once and needs no rule of its own — the basket the
+  /// display is reading has changed, and is no longer paid.
+  final int thankYouSeconds;
 
   /// Which monitor, by the key the display reported in its status. Empty means
   /// "wherever the window opens" — see the display's `data/screens.dart`.
@@ -167,6 +181,7 @@ class DisplayControl {
     int? dwellSeconds,
     bool? showPrices,
     String? thankYou,
+    int? thankYouSeconds,
     String? screenKey,
     bool? fullScreen,
     int? advertVolume,
@@ -183,6 +198,7 @@ class DisplayControl {
     dwellSeconds: dwellSeconds ?? this.dwellSeconds,
     showPrices: showPrices ?? this.showPrices,
     thankYou: thankYou ?? this.thankYou,
+    thankYouSeconds: thankYouSeconds ?? this.thankYouSeconds,
     screenKey: screenKey ?? this.screenKey,
     fullScreen: fullScreen ?? this.fullScreen,
     advertVolume: advertVolume ?? this.advertVolume,
@@ -203,6 +219,7 @@ class DisplayControl {
     'dwell_seconds': dwellSeconds,
     'show_prices': showPrices,
     'thank_you': thankYou,
+    'thank_you_seconds': thankYouSeconds,
     'screen_key': screenKey,
     'full_screen': fullScreen,
     'advert_volume': advertVolume,
@@ -231,6 +248,7 @@ class DisplayControl {
       dwellSeconds: _int(raw['dwell_seconds'], 12),
       showPrices: _bool(raw['show_prices'], fallback: true),
       thankYou: _str(raw['thank_you'], 'Thank you'),
+      thankYouSeconds: _int(raw['thank_you_seconds'], 20),
       screenKey: _str(raw['screen_key'], ''),
       fullScreen: _bool(raw['full_screen'], fallback: true),
       advertVolume: _int(raw['advert_volume'], 0),

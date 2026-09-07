@@ -36,6 +36,7 @@ class DisplaySettings {
     this.dwellSeconds = 12,
     this.showPrices = true,
     this.thankYou = 'Thank you',
+    this.thankYouSeconds = 20,
     this.advertVolume = 0,
     this.billOnRight = false,
     this.billShare = 50,
@@ -85,6 +86,18 @@ class DisplaySettings {
 
   /// What the screen says when a sale has just been paid for.
   final String thankYou;
+
+  /// How long the finished sale and the thank-you stay up before the adverts
+  /// take the screen back.
+  ///
+  /// Its own number rather than [idleSeconds], because they answer different
+  /// questions. Idle asks how long a bill nobody is adding to stays up, and the
+  /// answer is generous — the clerk is mid-conversation and the bill is live.
+  /// This asks how long the total stays up after the money has changed hands,
+  /// which is a customer checking their change and then walking away.
+  ///
+  /// Twenty seconds is the venue's own figure. Zero holds for ever.
+  final int thankYouSeconds;
 
   /// How loud video adverts play, 0 to 100. Silent by default.
   final int advertVolume;
@@ -193,6 +206,7 @@ class DisplaySettings {
     int? dwellSeconds,
     bool? showPrices,
     String? thankYou,
+    int? thankYouSeconds,
     int? advertVolume,
     bool? billOnRight,
     int? billShare,
@@ -213,6 +227,7 @@ class DisplaySettings {
     dwellSeconds: dwellSeconds ?? this.dwellSeconds,
     showPrices: showPrices ?? this.showPrices,
     thankYou: thankYou ?? this.thankYou,
+    thankYouSeconds: thankYouSeconds ?? this.thankYouSeconds,
     advertVolume: advertVolume ?? this.advertVolume,
     billOnRight: billOnRight ?? this.billOnRight,
     billShare: billShare ?? this.billShare,
@@ -240,6 +255,7 @@ const _keyIdle = 'display.idle_seconds';
 const _keyDwell = 'display.dwell_seconds';
 const _keyPrices = 'display.show_prices';
 const _keyThanks = 'display.thank_you';
+const _keyThanksSeconds = 'display.thank_you_seconds';
 const _keyQr = 'display.customer_qr';
 const _keyQrCaption = 'display.customer_qr_caption';
 
@@ -271,6 +287,7 @@ class DisplaySettingsController extends AsyncNotifier<DisplaySettings> {
       dwellSeconds: prefs.getInt(_keyDwell) ?? 12,
       showPrices: prefs.getBool(_keyPrices) ?? true,
       thankYou: prefs.getString(_keyThanks) ?? 'Thank you',
+      thankYouSeconds: prefs.getInt(_keyThanksSeconds) ?? 20,
       customerQr: prefs.getString(_keyQr) ?? '',
       customerQrCaption: prefs.getString(_keyQrCaption) ?? 'Scan to join',
       advertVolume: prefs.getInt(_keyVolume) ?? 0,
@@ -302,6 +319,7 @@ class DisplaySettingsController extends AsyncNotifier<DisplaySettings> {
       await prefs.setInt(_keyDwell, next.dwellSeconds);
       await prefs.setBool(_keyPrices, next.showPrices);
       await prefs.setString(_keyThanks, next.thankYou);
+      await prefs.setInt(_keyThanksSeconds, next.thankYouSeconds);
       await prefs.setString(_keyQr, next.customerQr);
       await prefs.setString(_keyQrCaption, next.customerQrCaption);
       await prefs.setInt(_keyVolume, next.advertVolume);

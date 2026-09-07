@@ -426,6 +426,67 @@ void main() {
       );
     });
 
+    test('a finished sale holds for its own time, not the idle time', () {
+      // Twenty seconds after the money changed hands, not forty-five. The two
+      // used to share one number and they answer different questions: a bill
+      // nobody is adding to is a conversation still going on; a paid one is
+      // somebody checking their change and walking away.
+      expect(
+        shouldShowAdverts(
+          hasSale: true, customerQr: '', idleSeconds: 45,
+          sinceChange: const Duration(seconds: 19),
+          paid: true, thankYouSeconds: 20,
+        ),
+        isFalse,
+        reason: 'the thank-you went before its twenty seconds were up',
+      );
+      expect(
+        shouldShowAdverts(
+          hasSale: true, customerQr: '', idleSeconds: 45,
+          sinceChange: const Duration(seconds: 20),
+          paid: true, thankYouSeconds: 20,
+        ),
+        isTrue,
+        reason: 'the thank-you sat there for the full idle time instead',
+      );
+    });
+
+    test('a live bill is unaffected by the thank-you time', () {
+      // Twenty seconds into a bill somebody is still ringing up, the screen
+      // must not clear. This is the regression the two numbers exist to avoid.
+      expect(
+        shouldShowAdverts(
+          hasSale: true, customerQr: '', idleSeconds: 45,
+          sinceChange: const Duration(seconds: 25),
+          paid: false, thankYouSeconds: 20,
+        ),
+        isFalse,
+      );
+    });
+
+    test('zero holds the finished sale until the next one', () {
+      expect(
+        shouldShowAdverts(
+          hasSale: true, customerQr: '', idleSeconds: 45,
+          sinceChange: const Duration(hours: 2),
+          paid: true, thankYouSeconds: 0,
+        ),
+        isFalse,
+      );
+    });
+
+    test('a till that has never heard of this behaves as it always did', () {
+      // The defaults are what an older call site gets. A paid sale is only
+      // held differently when something says it is paid.
+      expect(
+        shouldShowAdverts(
+          hasSale: true, customerQr: '', idleSeconds: 45,
+          sinceChange: const Duration(seconds: 44),
+        ),
+        isFalse,
+      );
+    });
+
     test('a code the till put up beats an empty basket', () {
       // The bug this is here for: the customer asking for their card has not
       // bought anything yet, so the screen was idle and the code went to a
