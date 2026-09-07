@@ -563,8 +563,23 @@ class _PosShellState extends ConsumerState<PosShell> {
 
   Widget _hearingCards(Widget child) => SwipeCardListener(
     enabled: ref.watch(cardRepositoryProvider).settings.enabled,
-    onCard: (card) =>
-        handleSwipedCard(context, ref, card, orderId: _orderId),
+    onCard: (card) => handleSwipedCard(
+      context,
+      ref,
+      card,
+      orderId: _orderId,
+      // A scan that turned out to be a product. Handed to the sale screen
+      // rather than rung here — see pendingScanProvider — and the till moves
+      // there, because a clerk who scanned a bottle from the Reports page
+      // wanted it on the bill, not a message about where the bill is.
+      onScannedProduct: (product) async {
+        ref.read(pendingScanProvider.notifier).found(product);
+        final sale = navDestinations.indexWhere((d) => d.label == 'Sale');
+        if (sale >= 0 && _index != sale && mounted) {
+          setState(() => _index = sale);
+        }
+      },
+    ),
     child: child,
   );
 

@@ -47,6 +47,34 @@ import 'display_lock.dart';
 
 /// Live catalogue, straight from the local database so the grid renders with
 /// no network at all.
+/// A product a barcode scan found, waiting to be rung up.
+///
+/// The scanner is heard by the shell — it wraps the whole till, because a code
+/// is scanned whenever somebody holds one out and a listener on the sale screen
+/// would be a reader that works only when nobody needed it. But *ringing* an
+/// item is the sale screen's job: `ring` asks a product's modifier questions and
+/// honours the venue's consolidation setting, and a second path in the shell
+/// that did neither would be a scanner behaving differently from a key.
+///
+/// So the shell puts the product here and shows the sale screen, and the sale
+/// screen rings it with the same closure a button press uses. One path, and a
+/// scan from the Reports page takes the clerk where the bill is rather than
+/// telling them to walk there.
+class PendingScan extends Notifier<Product?> {
+  @override
+  Product? build() => null;
+
+  void found(Product product) => state = product;
+
+  /// Cleared by the sale screen the moment it has rung it, so a rebuild does
+  /// not ring the same bottle twice.
+  void taken() => state = null;
+}
+
+final pendingScanProvider = NotifierProvider<PendingScan, Product?>(
+  PendingScan.new,
+);
+
 final productsProvider = StreamProvider<List<Product>>((ref) {
   final db = ref.watch(databaseProvider);
   return db.select(db.products).watch();
@@ -343,6 +371,17 @@ class SalePage extends ConsumerWidget {
         consolidate: ref.read(tillSettingsProvider).consolidateLines,
       );
     }
+
+    // A scan the shell heard, rung here so it goes through `ring` like a key.
+    //
+    // ref.listen and not a watch: this is an event, not state to draw from, and
+    // watching it would ring the same product again on every rebuild until
+    // something cleared it.
+    ref.listen<Product?>(pendingScanProvider, (_, scanned) {
+      if (scanned == null) return;
+      ref.read(pendingScanProvider.notifier).taken();
+      unawaited(ring(scanned));
+    });
 
     /// Ask one of the venue's questions about a line already on the bill.
     ///

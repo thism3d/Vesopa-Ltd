@@ -92,6 +92,19 @@ class Products extends Table {
   /// was sellable on its own.
   BoolColumn get isModifier => boolean().withDefault(const Constant(false))();
 
+  /// The barcode on the packet, or null.
+  ///
+  /// Nullable and not blank-by-default: "has no barcode" is a question worth
+  /// being able to ask, and a blank string is an answer that cannot be
+  /// distinguished from an empty one.
+  ///
+  /// Scanners are keyboards (see `data/swipe_cards.dart`), so this arrives the
+  /// same way a loyalty card does — a run of characters and a Return. What
+  /// tells them apart is the prefix: a code that matches none of the venue's
+  /// card programmes is looked for here before the till says it does not
+  /// recognise it.
+  TextColumn get barcode => text().nullable()();
+
   @override
   Set<Column> get primaryKey => {pluId};
 }
@@ -583,7 +596,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 22;
+  int get schemaVersion => 23;
 
 
   /// Add a column only if the table has not already got it.
@@ -768,6 +781,11 @@ class AppDatabase extends _$AppDatabase {
             // product prints under no heading — the ticket a venue gets today.
             await _addColumnIfMissing(m, products, products.printCategory);
             await _addColumnIfMissing(m, products, products.printCategoryOrder);
+          }
+          if (from < 23) {
+            // The barcode on the packet. Null everywhere until a catalogue
+            // that carries one arrives.
+            await _addColumnIfMissing(m, products, products.barcode);
           }
           if (from < 22) {
             // Products that can only be sold attached to another. False on

@@ -189,7 +189,7 @@ function backofficeRoutes({ pool, broadcast, secret }) {
                 accounting_code, price, tax_percentage, stock_quantity,
                 low_stock_at, button_position, button_color, printer_routes,
                 print_to_receipt, emoji, image_url, print_category_id,
-                is_modifier,
+                is_modifier, barcode,
                 ${PRICE_LEVELS.join(', ')}
          FROM bo_products
          WHERE email = ?
@@ -266,9 +266,9 @@ function backofficeRoutes({ pool, broadcast, secret }) {
             accounting_code, price, tax_percentage, stock_quantity,
             button_position, button_color, printer_route, printer_routes,
             print_to_receipt, emoji, image_url, print_category_id,
-            is_modifier,
+            is_modifier, barcode,
             ${PRICE_LEVELS.join(', ')})
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                  ${PRICE_LEVELS.map(() => '?').join(', ')})`,
         [
           // The office's key, not the individual's: two managers in one shop
@@ -294,6 +294,7 @@ function backofficeRoutes({ pool, broadcast, secret }) {
           p.image_url || null,
           printCategoryId(p.print_category_id),
           flag(p.is_modifier),
+          barcode(p.barcode),
           ...PRICE_LEVELS.map((level) => priceLevel(p[level])),
         ]
       );
@@ -344,6 +345,7 @@ function backofficeRoutes({ pool, broadcast, secret }) {
              emoji = ${keep('emoji')}, image_url = ?,
              print_category_id = ${keep('print_category_id')},
              is_modifier = ${keep('is_modifier')},
+             barcode = ${keep('barcode')},
              ${PRICE_LEVELS.map((l) => l + ' = ' + keep(l)).join(', ')}
          WHERE id = ? AND email = ?`,
         [
@@ -366,6 +368,7 @@ function backofficeRoutes({ pool, broadcast, secret }) {
           // levels above: an import that knows nothing about modifiers must
           // not un-flag every one a venue has set.
           ...kept('is_modifier', flag(p.is_modifier)),
+          ...kept('barcode', barcode(p.barcode)),
           // Each level only when the caller sent it — the same rule as
           // button_position and emoji above. An import that knows nothing about
           // price levels must not strip a venue's happy-hour prices off every
@@ -622,6 +625,23 @@ function backofficeRoutes({ pool, broadcast, secret }) {
     .map((s) => `kitchen_mode_${s}`);
 
   const KITCHEN_MODES = ['printer', 'screen', 'both'];
+
+  /**
+   * A product's barcode, or null.
+   *
+   * Trimmed and stripped of everything a scanner would not type. A wedge
+   * scanner sends the code and a Return, and the Return is not part of the
+   * code — a barcode stored with trailing whitespace matches nothing at the
+   * counter and there is no way to see why by looking at it.
+   *
+   * Blank is null and not an empty string, so a second product with no barcode
+   * does not collide with the first under any future unique key, and so
+   * "has a barcode" is a question the database can answer.
+   */
+  function barcode(value) {
+    const code = String(value ?? '').replace(/[^0-9A-Za-z-]/g, '').slice(0, 64);
+    return code || null;
+  }
 
   const TILL_FIELDS = [
     'idle_enabled', 'idle_image_url', 'idle_after_sale', 'idle_require_pin',

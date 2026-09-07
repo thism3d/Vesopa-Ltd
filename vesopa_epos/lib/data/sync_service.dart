@@ -735,6 +735,14 @@ class SyncService {
                 _ => false,
               },
             ),
+            // Blank is null, so "has no barcode" stays a question the till can
+            // answer, and a scan never matches a product by matching nothing.
+            barcode: Value(
+              switch ((raw['barcode'] as String?)?.trim()) {
+                null || '' => null,
+                final code => code,
+              },
+            ),
             emoji: Value(raw['emoji'] as String?),
             // Uploaded images are served relative to the server; store the
             // absolute URL so the till can load it directly.

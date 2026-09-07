@@ -92,8 +92,9 @@ class _ProductLookupSheetState extends ConsumerState<ProductLookupSheet> {
 
   /// What the query finds, best match first.
   ///
-  /// Name and PLU, because those are the two things a clerk has in hand: a
-  /// word the customer said, and a number off a shelf label.
+  /// Name, PLU and barcode, because those are the three things a clerk has in
+  /// hand: a word the customer said, a number off a shelf label, and a code off
+  /// a packet that would not scan.
   ///
   /// A name *starting* with the query sorts above one merely containing it, so
   /// typing "cok" puts Coca-Cola above "Diet Coke, no ice" — otherwise the
@@ -109,7 +110,9 @@ class _ProductLookupSheetState extends ConsumerState<ProductLookupSheet> {
       final name = p.name.toLowerCase();
       if (name.startsWith(q)) {
         starts.add(p);
-      } else if (name.contains(q) || p.pluId.toString() == q) {
+      } else if (name.contains(q) ||
+          p.pluId.toString() == q ||
+          p.barcode?.toLowerCase() == q) {
         contains.add(p);
       }
     }
@@ -167,7 +170,7 @@ class _ProductLookupSheetState extends ConsumerState<ProductLookupSheet> {
                 textInputAction: TextInputAction.search,
                 decoration: InputDecoration(
                   prefixIcon: const Icon(Icons.search),
-                  hintText: 'Name or PLU',
+                  hintText: 'Name, PLU or barcode',
                   border: const OutlineInputBorder(),
                   suffixIcon: _search.text.isEmpty
                       ? null

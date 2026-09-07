@@ -833,6 +833,102 @@ function tillOutline(raw) {
 }
 
 /** Where the tables are, after a drag. */
+/**
+ * Create a product from the till, for a barcode nobody has met before.
+ *
+ * The venue's request: "if a new barcode is scanned on the till ask if you want
+ * to create a new product asking for product name, price, tax rate, sub
+ * department and department."
+ *
+ * WHY THIS ROUTE EXISTS AT ALL
+ *
+ * The till can already edit a product, but only in its own database — the
+ * Products screen says "updated on this terminal" and means it. That is fine
+ * for a stock adjustment nobody else needs. It is useless here: a product
+ * created only on the terminal that scanned it is wiped by the next catalogue
+ * sync, and does not exist on the till at the other end of the bar. A new
+ * product has to reach the back office or it is not a product.
+ *
+ * Terminal token, not a session: nobody is signed into a back office at the
+ * counter with a case of stock in front of them. `req.office` is the venue's
+ * contact email, which is exactly the key bo_products is scoped by — see
+ * terminalOfficeId for the one place that is not true.
+ *
+ * The PLU is allocated the same way the back office allocates one, and
+ * deliberately not accepted from the till: a terminal choosing its own numbers
+ * would collide with the next product a manager adds, and the collision would
+ * surface as two different things ringing up as each other.
+ */
+app.post('/till/products', requireTerminal(JWT_SECRET), async (req, res, next) => {
+  const body = req.body || {};
+  try {
+    const office = req.office;
+
+    const name = String(body.product_name ?? '').trim().slice(0, 190);
+    if (!name) return res.status(400).json({ error: 'Give the product a name.' });
+
+    // Digits and letters only, and never blank here: this route exists because
+    // a barcode was scanned, and a product created without one would be a
+    // product the scan that prompted it still cannot find.
+    const barcode = String(body.barcode ?? '')
+      .replace(/[^0-9A-Za-z-]/g, '')
+      .slice(0, 64);
+    if (!barcode) return res.status(400).json({ error: 'No barcode.' });
+
+    // Already known is not an error — two tills scanning the same new case at
+    // once is an ordinary Tuesday. Answer with the product that exists so the
+    // till rings it up instead of showing a failure nobody can act on.
+    const [[existing]] = await pool.query(
+      'SELECT pluid, product_name FROM bo_products WHERE email = ? AND barcode = ? LIMIT 1',
+      [office, barcode]
+    );
+    if (existing) {
+      return res.json({
+        pluid: existing.pluid,
+        product_name: existing.product_name,
+        already: true,
+      });
+    }
+
+    const price = Number(body.price);
+    if (!Number.isFinite(price) || price < 0) {
+      return res.status(400).json({ error: 'Give the product a price.' });
+    }
+    const tax = Number(body.tax_percentage);
+
+    const [[row]] = await pool.query(
+      'SELECT COALESCE(MAX(pluid), 0) + 1 AS next FROM bo_products WHERE email = ?',
+      [office]
+    );
+    const pluid = row.next;
+
+    await pool.execute(
+      `INSERT INTO bo_products
+         (email, pluid, product_name, department_name, group_name,
+          price, tax_percentage, stock_quantity, print_to_receipt, barcode)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1, ?)`,
+      [
+        office,
+        pluid,
+        name,
+        String(body.department_name ?? '').trim().slice(0, 190) || null,
+        String(body.group_name ?? '').trim().slice(0, 190) || null,
+        price,
+        Number.isFinite(tax) && tax >= 0 ? tax : 0,
+        barcode,
+      ]
+    );
+
+    // Every till, not just this one. The terminal that scanned it will pick the
+    // product up on the same refresh as the rest of them, so there is no path
+    // where one till has it and the others do not.
+    broadcast({ type: 'catalogue.updated' });
+    res.status(201).json({ pluid, product_name: name, already: false });
+  } catch (e) {
+    next(e);
+  }
+});
+
 app.put('/till/floor/tables', requireTerminal(JWT_SECRET), async (req, res, next) => {
   const tables = Array.isArray(req.body && req.body.tables) ? req.body.tables : [];
   if (!tables.length) return res.json({ ok: true, saved: 0 });
@@ -1106,7 +1202,7 @@ app.get(['/till/products', '/products.json'], async (req, res, next) => {
               p.accounting_code, p.price, p.tax_percentage, p.stock_quantity,
               p.button_position, p.button_color, p.printer_route,
               p.printer_routes, p.print_to_receipt, p.emoji, p.image_url,
-              p.is_modifier,
+              p.is_modifier, p.barcode,
               p.price_2, p.price_3, p.price_4, p.price_5, p.price_6,
               pc.name AS print_category, pc.sort_order AS print_category_order
        FROM bo_products p

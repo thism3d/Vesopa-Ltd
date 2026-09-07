@@ -39,7 +39,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/commerce.dart';
 import '../data/staff_session.dart';
+import '../data/local/database.dart';
 import '../data/swipe_cards.dart';
+import 'barcode_actions.dart';
 import '../data/terminal_identity.dart';
 import '../main.dart';
 import 'cards_page.dart' show lastCardReadProvider;
@@ -60,6 +62,15 @@ Future<void> handleSwipedCard(
   WidgetRef ref,
   SwipedCard card, {
   String? orderId,
+  /// How to ring a product a scan found.
+  ///
+  /// Passed in rather than done here, because ringing an item is the sale
+  /// screen's own `ring` — it asks a product's modifier questions and honours
+  /// the venue's consolidation setting, and a second path that did neither
+  /// would be a scanner that behaves differently from a key.
+  ///
+  /// Null on a screen with no bill in front of the clerk.
+  Future<void> Function(Product product)? onScannedProduct,
 }) async {
   // Recorded before anything is decided, and recorded even for cards this
   // venue has never heard of. The reader test on the Cards page reads this, and
@@ -94,15 +105,39 @@ Future<void> handleSwipedCard(
       // decides from the row it gets back.
       await _loyaltyCard(context, ref, card, orderId: orderId);
     case null:
+      // Not one of the venue's cards. Before saying so, look for a product:
+      // the same reader reads a bottle as reads a loyalty card, and "not a
+      // card this venue uses" is true and useless when the thing in the
+      // clerk's hand is a bottle. See ui/barcode_actions.dart.
+      if (!context.mounted) return;
+      final product = await handleScannedBarcode(context, ref, card.number);
+      if (product != null) {
+        final ring = onScannedProduct;
+        if (ring != null) {
+          await ring(product);
+        } else if (context.mounted) {
+          // Scanned from a screen with no bill on it — Reports, Settings. The
+          // product is real and was found; there is simply nothing to put it
+          // on, and saying so beats a scan that appears to do nothing.
+          PosMessenger.info(
+            context,
+            '${product.name} — go to the sale screen to ring it up.',
+          );
+        }
+        return;
+      }
+      // handleScannedBarcode has already had its say wherever it offered to
+      // create the product. Only a scan that is neither a card nor a product,
+      // and that the clerk declined to add, reaches here.
       if (!context.mounted) return;
       await _explain(
         context,
-        title: 'Not a card this venue uses',
+        title: 'Not a card or a product',
         message:
-            'That card reads ${card.number}, which does not start with any of '
-            'this venue\'s prefixes. The reader is working — the card belongs '
-            'to somewhere else.\n\nPrefixes are set in the back office, under '
-            'Cards.',
+            'That reads ${card.number}. It does not start with any of this '
+            'venue\'s card prefixes and no product carries it as a barcode. '
+            'The reader is working.\n\nCard prefixes are set in the back '
+            'office under Cards; a barcode is set on the product itself.',
       );
   }
 }

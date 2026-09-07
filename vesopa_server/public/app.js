@@ -4848,6 +4848,15 @@ document.addEventListener('click', async (e) => {
       value: p.print_to_receipt === undefined ? 1 : p.print_to_receipt,
     },
     {
+      label: 'Barcode',
+      name: 'barcode',
+      hint:
+        'Scan the packet into this box, or type the number. On the till, ' +
+        'scanning it rings the product up; scanning one nothing carries ' +
+        'offers to add it.',
+      value: p.barcode || '',
+    },
+    {
       // Deliberately worded as what it *does* rather than what it is called.
       // "Is a modifier" is the venue's phrase and means nothing to the person
       // who has to tick it eighteen months from now, and the field above it is
