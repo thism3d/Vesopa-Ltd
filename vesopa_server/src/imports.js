@@ -935,6 +935,27 @@ function importRoutes({ pool, broadcast, secret }) {
       try {
         await run(req, res, true);
       } catch (e) {
+        // AN IMPORT THAT FAILS SAYS WHY.
+        //
+        // This is the first thing a new venue does, often with somebody from
+        // Vesopa on the phone, and it used to answer "internal error" — which
+        // says nothing about whether the file is wrong, the catalogue is
+        // wrong, or the platform is. The one that actually happened was a
+        // sub department called "Soft Drinks" colliding with another venue's,
+        // and there was no way to know that from the browser.
+        //
+        // The database's own message is the useful part and is safe to show:
+        // it names a value out of the file that was just uploaded by the person
+        // reading it, not anybody else's data.
+        if (e && e.code && String(e.code).startsWith('ER_')) {
+          console.error('[import] refused by the database:', e.sqlMessage || e.message);
+          return res.status(409).json({
+            error:
+              'The catalogue could not be written: ' +
+              (e.sqlMessage || e.message) +
+              '. Nothing was imported.',
+          });
+        }
         next(e);
       }
     }
