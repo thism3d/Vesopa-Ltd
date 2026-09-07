@@ -232,3 +232,57 @@ pick a round. Resolution: headings appear only when the bill has more than one
 round. A single-round bill gets the clean stripped check that item 5 asked for;
 a table with two rounds keeps the headings, because there they are doing a job
 rather than adding clutter. Venue name, address and time go in both cases.
+
+---
+
+# What shipped
+
+All nineteen, 2026-09-07. Server side is live and driven against the real
+server; the till, display and kitchen changes are committed and green but reach
+a venue only when the apps are next built and released. Store release 1.6.5.0
+predates all of this.
+
+| # | Item | Where it lives |
+|---|------|----------------|
+| 1 | Customer display holds the finished sale | display + till settings |
+| 2 | "Is a Modifier" on a product | `bo_products.is_modifier`, till attach rule |
+| 3 | Itemised split bill | `split_bill_sheet.dart` |
+| 4 | Check view on a 4:3 till | `PosLayoutX.checkWidth` |
+| 5 | Payment screen header stripped | `pay_check_panel.dart` |
+| 6 | Payment screen top and bottom bars | `schema_till_pay_bars.sql` |
+| 7 | Table Plan key | `BAR_KEYS` |
+| 8 | Price Check | `product_lookup_sheet.dart` |
+| 9 | Product Search | the same sheet |
+| 10 | Price Override | `price_override_dialog.dart` |
+| 11 | Refund mode | `refund_page.dart` |
+| 12 | Reprint Z reports | `reprint_z_sheet.dart` |
+| 13 | Barcodes, and add from a scan | `POST /till/products` |
+| 14 | Float | `SessionRepository.setOpeningFloat` |
+| 15 | Cash declaration | `schema_till_consolidate.sql` |
+| 16 | Consolidation off | the same file |
+| 17 | Functions on a bar | already existed; now tested |
+| 18 | Pay one round or both | `bill_rounds.dart` |
+| 19 | The customer on the bill | `customer_card.dart` |
+
+## Three things worth knowing afterwards
+
+**Item 17 needed nothing.** `go_functions` was already in `BAR_KEYS` and
+already routed. It is now covered by a test so it stays that way.
+
+**Item 2 needed nothing in the kitchen or display apps**, and that is a fact
+rather than an omission: a modifier line is one with a `parentLineId`, the till
+already sends `is_modifier` as `parentLineId != null`, and the kitchen ticket
+sets its own flag the same way. Attaching through `addModifiersTo` means all of
+them were already correct.
+
+**Item 3's screen has not been checked against the Newbridge video**, which had
+not arrived. The engine, the defaults and the pro-rata are settled; how the
+screen itself compares to how Newbridge do it is still open.
+
+## Still outstanding, unrelated to this list
+
+* `/till/floor` has no authentication — anyone knowing a venue's contact email
+  can read its floor plan. Pre-existing, flagged, deliberately untouched.
+* `programmed_grid_golden_test.dart` fails by 0.43%, and did so before any of
+  this work. Left failing rather than regenerated, because regenerating it
+  would hide whatever caused it.
