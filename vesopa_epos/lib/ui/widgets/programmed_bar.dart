@@ -340,6 +340,7 @@ class _BarKey extends ConsumerWidget {
     'product_search': Icons.manage_search,
     'price_override': Icons.price_change,
     'refund': Icons.undo,
+    'split': Icons.call_split,
   };
 
   /// Mirrors the labels the back office offers. A key not in here still draws —
@@ -374,6 +375,7 @@ class _BarKey extends ConsumerWidget {
     'product_search': 'Search',
     'price_override': 'Override',
     'refund': 'Refund',
+    'split': 'Split',
   };
 
   @override

@@ -100,6 +100,7 @@ const SP_BAR_GROUPS = [
     ['covers', 'Covers'],
     ['customer', 'Customer'],
     ['price_override', 'Price override — change a line’s price'],
+    ['split', 'Split the bill'],
     ['refund', 'Refund — give money back'],
   ]],
   ['Looking things up', [

@@ -1306,6 +1306,26 @@ class SalePage extends ConsumerWidget {
       case 'refund':
         return showRefund(context, ref);
 
+      // Divide the bill before anybody pays, which is what a restaurant table
+      // asks for. The board is where the split is applied, so this goes there
+      // and opens it — rather than splitting here and handing a half-made
+      // decision across a screen boundary.
+      case 'split':
+        if (order == null || order.totalMinor == 0) {
+          PosMessenger.info(context, 'There is nothing on this bill to split.');
+          return;
+        }
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => PaymentPage(
+              orderId: orderId,
+              onSettled: onNewOrder,
+              openSplit: true,
+            ),
+          ),
+        );
+        return;
+
       // "How much is the Malbec?", asked across the bar. Adds nothing to the
       // bill whatever is tapped — see ProductLookupSheet.
       case 'price_check':

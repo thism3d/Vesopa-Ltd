@@ -191,6 +191,15 @@ const BAR_KEYS = [
   'price_check',
   'product_search',
   'price_override',
+  // Splitting the bill, from the sale screen.
+  //
+  // The Split key has lived on the payment board, which is right for "we will
+  // pay separately" said at the counter and wrong for the case a restaurant
+  // actually has: the table asks for separate bills *before* anybody goes to
+  // pay, and the operator wants to divide it and print three slips. That is
+  // where the venue's reference till puts it, and this is what lets a venue
+  // put it there too.
+  'split',
   // Money out of the drawer. On a bar because a venue that hides the nav rail
   // has no other way to reach it, and because a refund is asked for at the
   // counter with somebody standing there.

@@ -293,18 +293,41 @@ abstract final class TillActions {
   /// This is the customer's bill on a restaurant table, not a receipt: the
   /// money has not been taken, so it is marked as a request for payment rather
   /// than proof of one.
+  /// [onlyLines] limits the bill to those line ids — one share of a split.
+  ///
+  /// The whole point of splitting a bill in a restaurant is that each party
+  /// gets a piece of paper with their own items on it, and asks for it before
+  /// anybody pays. A split that could only be paid and not printed would send
+  /// three people to the counter to argue about one slip.
+  ///
+  /// [title] and [totalMinor] are supplied for a share because neither can be
+  /// worked out from the order: the order's own total is the whole table, and
+  /// a share's total carries its portion of any bill-wide offer, which only the
+  /// tender engine knows. Passing them in keeps the figure on the paper the
+  /// same as the figure on the screen and the figure that gets charged.
   static Future<void> printCurrentBill(
     BuildContext context,
     WidgetRef ref,
-    String orderId,
-  ) async {
+    String orderId, {
+    Set<String>? onlyLines,
+    String? title,
+    int? totalMinor,
+  }) async {
     final repo = ref.read(orderRepositoryProvider);
     final order = await repo.watchOrder(orderId).first;
-    final lines = await repo.watchLines(orderId).first;
+    final all = await repo.watchLines(orderId).first;
+    final lines = onlyLines == null
+        ? all
+        : [for (final l in all) if (onlyLines.contains(l.id)) l];
     if (!context.mounted) return;
 
     if (lines.isEmpty) {
-      _toast(context, 'Nothing on this bill yet.');
+      _toast(
+        context,
+        onlyLines == null
+            ? 'Nothing on this bill yet.'
+            : 'Nothing on that share yet.',
+      );
       return;
     }
 
@@ -312,7 +335,7 @@ abstract final class TillActions {
     final detail = ReceiptDetail(
       summary: ReceiptSummary(
         id: order.id,
-        totalMinor: order.totalMinor,
+        totalMinor: totalMinor ?? order.totalMinor,
         taxMinor: order.taxMinor,
         discountMinor: order.discountMinor,
         tableNumber: order.tableNumber,
@@ -344,7 +367,7 @@ abstract final class TillActions {
       venueName: session.venueName,
       branding: ref.read(brandingProvider),
       isBill: true,
-      title: 'Customer bill',
+      title: title ?? 'Customer bill',
       showKitchenOption: order.tableNumber != null,
     );
   }

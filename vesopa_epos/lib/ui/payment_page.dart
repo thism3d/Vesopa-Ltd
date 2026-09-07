@@ -57,6 +57,7 @@ class PaymentPage extends ConsumerStatefulWidget {
     required this.orderId,
     required this.onSettled,
     this.initialSplitWays = 0,
+    this.openSplit = false,
   });
 
   final String orderId;
@@ -65,6 +66,13 @@ class PaymentPage extends ConsumerStatefulWidget {
   /// Open with the bill already divided this many ways — how the tables screen
   /// hands over a "split evenly" request. 0 means no split.
   final int initialSplitWays;
+
+  /// Open the split screen as soon as the bill has priced.
+  ///
+  /// For the Split key on the sale screen. A restaurant table asks to be
+  /// divided *before* anybody comes to pay, so the key that says so should land
+  /// on the split screen rather than on the payment board with Split to find.
+  final bool openSplit;
 
   @override
   ConsumerState<PaymentPage> createState() => _PaymentPageState();
@@ -483,6 +491,9 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
   /// rebuild — re-splitting each frame would keep resetting the shares and
   /// throw away payments already credited to them.
   bool _initialSplitApplied = false;
+
+  /// The same guard for [PaymentPage.openSplit].
+  bool _splitOpened = false;
 
   /// Lines picked out for Void, exactly as on the sale screen.
   final Set<String> _selected = {};
@@ -1066,15 +1077,36 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
   }
 
   Future<void> _chooseSplit() async {
-    final choice = await showSplitDialog(context, state: _tender);
+    final choice = await showSplitDialog(
+      context,
+      state: _tender,
+      // Each share can be printed as its own bill, which is the whole point of
+      // splitting one in a restaurant: three people want three slips before
+      // anybody pays. The total is passed in because only the tender engine
+      // knows a share's portion of a bill-wide offer — so the figure on the
+      // paper is the figure on the card is the figure charged.
+      onPrintShare: (lineIds, title, totalMinor) =>
+          TillActions.printCurrentBill(
+        context,
+        ref,
+        widget.orderId,
+        onlyLines: lineIds,
+        title: title,
+        totalMinor: totalMinor,
+      ),
+    );
     if (choice == null || !mounted) return;
 
     setState(() {
-      _tender = switch (choice.mode) {
+      final split = switch (choice.mode) {
         SplitMode.equally => _tender.splitEqually(choice.ways),
         SplitMode.byItem => _tender.splitByItems(choice.groups ?? const []),
         _ => _tender.clearSplit(),
       };
+      // Pay Now on a card means "this one, now" — so the board comes back
+      // already asking for that share rather than for share one.
+      final wanted = choice.payShare;
+      _tender = wanted == null ? split : split.selectShare(wanted);
     });
   }
 
@@ -1328,6 +1360,17 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
                 totals.totalMinor > 0) {
               _initialSplitApplied = true;
               _tender = _tender.splitEqually(widget.initialSplitWays);
+            }
+
+            // The Split key on the sale screen. Same guard and the same
+            // reason: once the bill has priced, once only, and after the frame
+            // rather than during it — a dialog opened inside build is a dialog
+            // opened during a layout.
+            if (!_splitOpened && widget.openSplit && totals.totalMinor > 0) {
+              _splitOpened = true;
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) unawaited(_chooseSplit());
+              });
             }
 
             final denominations =
