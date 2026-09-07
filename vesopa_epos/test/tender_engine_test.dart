@@ -6,7 +6,11 @@ import 'package:vesopa_epos/data/tender_engine.dart';
 /// Partial payments and split bills. The invariant under all of it: the shares
 /// must always add up to the bill, and money taken must never exceed what was
 /// owed without that surplus being reported as change.
-TenderState stateFor(int totalMinor, {List<PricedLine> lines = const []}) =>
+TenderState stateFor(
+  int totalMinor, {
+  List<PricedLine> lines = const [],
+  int discountMinor = 0,
+}) =>
     TenderState(
       totals: const PricingEngine().price(
         lines.isNotEmpty
@@ -21,6 +25,7 @@ TenderState stateFor(int totalMinor, {List<PricedLine> lines = const []}) =>
                   taxPercentage: 0,
                 ),
               ],
+        manualDiscountMinor: discountMinor,
       ),
     );
 
@@ -175,14 +180,64 @@ void main() {
       expect(s.shares.fold<int>(0, (a, b) => a + b.amountMinor), 6000);
     });
 
-    test('unallocated money goes onto the first share', () {
-      // 'c' is left out, so its £22 must not vanish from the bill.
+    test('unallocated money is spread in proportion, not dumped on share 1', () {
+      // 'c' is left out, so its £22 belongs to nobody in particular and must
+      // not vanish from the bill. Under the old rule the whole £22 landed on
+      // share 1; now it is shared out by what each share is worth.
+      //
+      //   share 1  £24.00 of £38.00 covered -> 63.2% of £22.00 = £13.90
+      //   share 2  £14.00 of £38.00 covered -> 36.8% of £22.00 =  £8.10
       final s = stateFor(0, lines: lines).splitByItems([
         ['a'],
         ['b'],
       ]);
+      expect(s.shares[0].amountMinor, 3790);
+      expect(s.shares[1].amountMinor, 2210);
       expect(s.shares.fold<int>(0, (a, b) => a + b.amountMinor), 6000);
-      expect(s.shares[0].amountMinor, 2400 + 2200);
+    });
+
+    test('a bill-wide discount is shared out, not given to whoever pays first',
+        () {
+      // The case from the venue: Table 1, -£6.05 of offers across the bill.
+      // Two people splitting it must not pay £24.20 and £30.25 for the same
+      // half each, which is what the old rule did.
+      final s = stateFor(0, lines: lines, discountMinor: 600).splitByItems([
+        ['a'],
+        ['b', 'c'],
+      ]);
+      // £24 of £60 is 40% of the bill, so 40% of the £6 discount.
+      expect(s.shares[0].amountMinor, 2400 - 240);
+      expect(s.shares[1].amountMinor, 3600 - 360);
+      expect(s.shares.fold<int>(0, (a, b) => a + b.amountMinor), 5400);
+    });
+
+    test('the odd penny is placed, so a split always adds up', () {
+      // £10.01 of discount across three shares divides into thirds that do
+      // not exist. Whatever the engine does with the stray penny, the shares
+      // must still come to the bill.
+      final s = stateFor(0, lines: lines, discountMinor: 1001).splitByItems([
+        ['a'],
+        ['b'],
+        ['c'],
+      ]);
+      expect(s.shares.fold<int>(0, (a, b) => a + b.amountMinor), 6000 - 1001);
+    });
+
+    test('shares worth nothing still add up to the bill', () {
+      // Two comped items on their own shares, and a £22 wine on neither. The
+      // shares are worth nothing, so there is no ratio to be proportional
+      // with — it has to place the money rather than divide by zero.
+      final s = stateFor(0, lines: [
+        const PricedLine(id: 'x', pluid: 9, name: 'Comp', quantity: 1,
+            unitPriceMinor: 0, taxPercentage: 0),
+        const PricedLine(id: 'y', pluid: 10, name: 'Comp', quantity: 1,
+            unitPriceMinor: 0, taxPercentage: 0),
+        lines[2],
+      ]).splitByItems([
+        ['x'],
+        ['y'],
+      ]);
+      expect(s.shares.fold<int>(0, (a, b) => a + b.amountMinor), 2200);
     });
 
     test('one group is not a split', () {

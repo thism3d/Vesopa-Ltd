@@ -127,6 +127,65 @@ Map<String, Set<String>> routesByLine(
   return out;
 }
 
+/// A selection of lines, closed over the modifier relation.
+///
+/// Every line picked brings its modifiers with it, and a modifier picked on its
+/// own brings back the item it belongs to.
+///
+/// This exists because of splitting a bill. A share is a set of line ids, and a
+/// set of line ids is exactly the shape that lets "Dash Coke" be paid for by
+/// one person and the gin it went into by another. That is not a rounding
+/// argument — a priced modifier ("Extra shot", "Double up") carries real money,
+/// and a bill where the shot is on one card and the drink on another is a bill
+/// nobody at the table agreed to.
+///
+/// So the rule that already governs the receipt, the kitchen ticket and the
+/// customer display governs the money too, and it lives here with the others: a
+/// modifier goes where its parent goes.
+///
+/// Pulling the *parent* back for an orphaned child is deliberate rather than
+/// symmetric-for-its-own-sake. The UI does not offer a modifier as a separate
+/// tap, so it should never happen — but if some future screen does, the failure
+/// this guards against is a share containing "No ice" and nothing else, and the
+/// customer being asked to pay for it.
+///
+/// A modifier whose parent is not in [lines] stands on its own, exactly as it
+/// does in [orderWithModifiers]: it is the re-fire case, and it is a line in
+/// its own right there.
+Set<String> withModifiersOf<T>(
+  Set<String> selected,
+  List<T> lines, {
+  required String Function(T) idOf,
+  required String? Function(T) parentOf,
+}) {
+  if (selected.isEmpty || lines.isEmpty) return selected;
+
+  final present = {for (final l in lines) idOf(l)};
+  final out = {...selected};
+
+  // Two passes, in this order, and it has to be this way round.
+  //
+  // Upwards first: a picked modifier names its parent. Then downwards, by which
+  // time every parent that is going to be in the set is in it, so it collects
+  // *all* of that parent's modifiers — including ones that sit earlier in the
+  // list than the modifier that pulled the parent in. A single pass gets that
+  // case wrong, and gets it wrong silently, on a share that is merely a few
+  // pence light.
+  for (final line in lines) {
+    final parent = parentOf(line);
+    if (parent == null || !present.contains(parent)) continue;
+    if (out.contains(idOf(line))) out.add(parent);
+  }
+
+  for (final line in lines) {
+    final parent = parentOf(line);
+    if (parent == null || !present.contains(parent)) continue;
+    if (out.contains(parent)) out.add(idOf(line));
+  }
+
+  return out;
+}
+
 /// Just the items, with their modifiers left out.
 ///
 /// For the places that count things rather than list them — "how many items on

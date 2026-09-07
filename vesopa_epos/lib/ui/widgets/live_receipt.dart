@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../../data/bill_rounds.dart';
 import '../../data/branding.dart';
 import '../../data/modifier_layout.dart';
 import '../../data/pricing_engine.dart';
@@ -95,12 +96,43 @@ class LiveReceipt extends StatelessWidget {
   /// The clamp floor is the old 14pt, so this can only ever make the check
   /// *bigger* than it was, never smaller on a cramped screen — it would rather
   /// scroll at 14pt than shrink to 11pt to avoid scrolling.
-  static double _bodySizeFor(double listHeight) {
+  ///
+  /// Width matters as much as height, and used not to be asked.
+  ///
+  /// Height alone answers "how many items fit". It says nothing about whether
+  /// the item's *name* fits, and on a 768px-tall panel the height rule pins the
+  /// type at the 22pt ceiling — which was survivable only because the box was a
+  /// fixed 420px. Now that the check narrows on a square till
+  /// (PosLayoutX.checkWidth), 22pt in a 287px box would truncate half the
+  /// product names, which is exactly the regression the note on the sale
+  /// screen's SizedBox warns about.
+  ///
+  /// So both demands are computed and the smaller wins. Nothing changes on a
+  /// wide till: at 420px the width rule returns about 28pt, well over the
+  /// ceiling, so height goes on deciding as it always did.
+  static double _bodySizeFor(double listHeight, double listWidth) {
     // Vertical padding (3 top + 3 bottom) plus the line-height multiplier.
     const chromePerRow = 6.0;
     const lineHeight = 1.35;
-    final perRow = listHeight / _targetVisibleLines;
-    return ((perRow - chromePerRow) / lineHeight).clamp(14.0, 22.0);
+    final fromHeight = (listHeight / _targetVisibleLines - chromePerRow) /
+        lineHeight;
+
+    // The row is a quantity, a name and a price. The quantity and the price are
+    // near enough fixed — "12" and "£1,234.56" at the sizes in play — so they
+    // are reserved as one number and the name gets the rest.
+    const reservedForQtyAndPrice = 120.0;
+    // Monospace advance is close enough to 0.6em across Menlo, Consolas and
+    // Courier New for sizing a column of type.
+    const advance = 0.6;
+    // Sixteen characters of product name before it wraps. "Sticky Toffee
+    // Pudding" wraps at any size worth reading, and that is fine — what is not
+    // fine is "Chicken Wings" wrapping.
+    const targetNameChars = 16;
+    final fromWidth =
+        (listWidth - reservedForQtyAndPrice) / (targetNameChars * advance);
+
+    final size = fromHeight < fromWidth ? fromHeight : fromWidth;
+    return size.clamp(14.0, 22.0);
   }
 
   @override
@@ -132,7 +164,10 @@ class LiveReceipt extends StatelessWidget {
           // Those are measured as fractions rather than pixels because both grow
           // with the type inside them.
           final listHeight = box.maxHeight * (showHeader ? 0.62 : 0.74);
-          final size = _bodySizeFor(listHeight);
+          final size = _bodySizeFor(listHeight, box.maxWidth);
+
+          final rounds = _roundsOfBill();
+          final showHeadings = hasRounds(rounds);
 
           final body = theme.textTheme.bodyMedium?.copyWith(
             fontFamily: 'monospace',
@@ -177,16 +212,15 @@ class LiveReceipt extends StatelessWidget {
                             style: small,
                           ),
                           const SizedBox(height: 4),
-                          for (final entry in _blocks(
-                            orderWithModifiers(
-                              totals.lines,
-                              idOf: (l) => l.id,
-                              parentOf: (l) => l.parentLineId,
-                            ),
-                          )) ...[
-                            if (entry.header != null)
+                          for (final entry in rounds) ...[
+                            // A single-author bill — every walk-in sale — is
+                            // one run with no heading, so the ordinary case
+                            // looks exactly as it did. A heading appears only
+                            // where there is something to tell apart: a table
+                            // two people have served.
+                            if (showHeadings && entry.label != null)
                               _StaffHeading(
-                                label: entry.header!,
+                                label: entry.label!,
                                 style: small,
                               ),
                             for (final line in entry.lines)
@@ -218,63 +252,19 @@ class LiveReceipt extends StatelessWidget {
     );
   }
 
-  /// Group the bill into runs of items added by the same person.
+  /// The bill, cut into the rounds it was rung in.
   ///
-  /// A single-author bill — which is every walk-in sale — gets one block with no
-  /// header, so the ordinary case looks exactly as it did before. A header only
-  /// appears where there is genuinely something to distinguish: a table that two
-  /// people have served, which is the case the venue asked about.
-  ///
-  /// Runs, not a grouping: items stay in the order they were rung up. Sorting a
-  /// bill by who rang it would reorder a kitchen ticket, and the order items were
-  /// called in is information in its own right.
-  static List<_Block> _blocks(List<PricedLine> lines) {
-    final blocks = <_Block>[];
-
-    for (final line in lines) {
-      final who = line.addedBy?.trim();
-      final open = blocks.isEmpty ? null : blocks.last;
-
-      if (open != null && open.who == who) {
-        open.lines.add(line);
-      } else {
-        blocks.add(_Block(who: who, at: line.addedAt, lines: [line]));
-      }
-    }
-
-    // One block covering the whole bill needs no heading — there is nothing to
-    // tell it apart from.
-    final attributed = blocks.where((b) => b.who?.isNotEmpty ?? false).length;
-    if (blocks.length <= 1 || attributed == 0) {
-      for (final b in blocks) {
-        b.header = null;
-      }
-      return blocks;
-    }
-
-    for (final b in blocks) {
-      final who = b.who;
-      if (who == null || who.isEmpty) {
-        b.header = null;
-        continue;
-      }
-      final at = b.at;
-      b.header = at == null ? who : '$who  ·  ${DateFormat('HH:mm').format(at)}';
-    }
-    return blocks;
-  }
-}
-
-/// A run of items on the check, and the staff heading above it.
-class _Block {
-  _Block({required this.who, required this.at, required this.lines});
-
-  final String? who;
-  final DateTime? at;
-  final List<PricedLine> lines;
-
-  /// The line drawn above the run, or null when there is nothing worth saying.
-  String? header;
+  /// The rule used to live here as a private `_blocks`, and moved to
+  /// `data/bill_rounds.dart` when the payment screen needed to split a bill by
+  /// round: a bill that groups one way on screen and another way when it is
+  /// paid is worse than either. See that file for what counts as a round.
+  List<BillRound> _roundsOfBill() => roundsOf(
+        orderWithModifiers(
+          totals.lines,
+          idOf: (l) => l.id,
+          parentOf: (l) => l.parentLineId,
+        ),
+      );
 }
 
 /// `Sam · 19:42` above the items that person put on the bill.

@@ -26,6 +26,7 @@ import 'card_payment_dialog.dart';
 import 'confirm_tender_dialog.dart';
 import 'discount_dialog.dart';
 import 'redemption_dialogs.dart';
+import 'split_bill_sheet.dart';
 import '../data/cash_tally.dart';
 import 'till_actions.dart';
 import 'void_dialog.dart';
@@ -1296,7 +1297,6 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
   Widget build(BuildContext context) {
     final repo = ref.watch(orderRepositoryProvider);
     final settings = ref.watch(tenderSettingsProvider);
-    final branding = ref.watch(brandingProvider);
     final pay = PayPalette.of(context);
     final width = MediaQuery.sizeOf(context).width;
 
@@ -1337,10 +1337,8 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
 
             final check = PayCheckPanel(
               totals: totals,
-              branding: branding,
               tableNumber: order?.tableNumber,
               covers: order?.covers,
-              clerkName: ref.read(servedByProvider),
               customerName: _customer?.name ?? order?.customerName,
               selectedLineIds: selected,
               // Same gesture as the sale screen, so Void behaves identically on

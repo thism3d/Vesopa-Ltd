@@ -241,37 +241,83 @@ class TenderState {
     }
 
     final byId = {for (final l in totals.lines) l.id: l};
-    final shares = <SplitShare>[];
+    final itemised = <int>[
+      for (final group in groups)
+        group
+            .map((id) => byId[id]?.netMinor ?? 0)
+            .fold<int>(0, (s, v) => s + v),
+    ];
 
-    for (var i = 0; i < groups.length; i++) {
-      final amount = groups[i]
-          .map((id) => byId[id]?.netMinor ?? 0)
-          .fold<int>(0, (s, v) => s + v);
-      shares.add(SplitShare(
-        index: i,
-        amountMinor: amount,
-        lineIds: groups[i],
-      ));
-    }
-
-    // Service and any bill-level reductions are not attached to a line, so
-    // whatever the item shares do not cover is added to the first share. This
-    // keeps the shares summing to the bill.
-    final covered = shares.fold<int>(0, (s, x) => s + x.amountMinor);
-    final unallocated = outstandingMinor - covered;
-    if (unallocated != 0 && shares.isNotEmpty) {
-      shares[0] = SplitShare(
-        index: 0,
-        amountMinor: shares[0].amountMinor + unallocated,
-        lineIds: shares[0].lineIds,
-      );
-    }
+    // Service, and any reduction taken against the bill rather than a line, is
+    // attached to nothing — so it has to be placed, and the shares have to go
+    // on summing to the bill either way.
+    final covered = itemised.fold<int>(0, (s, v) => s + v);
+    final amounts = _apportion(itemised, outstandingMinor - covered, covered);
 
     return copyWith(
       splitMode: SplitMode.byItem,
       activeShare: 0,
-      shares: shares,
+      shares: [
+        for (var i = 0; i < groups.length; i++)
+          SplitShare(index: i, amountMinor: amounts[i], lineIds: groups[i]),
+      ],
     );
+  }
+
+  /// Spread [extra] across shares in proportion to what each is worth.
+  ///
+  /// This used to put the whole of it on share 1, which is wrong in the case
+  /// that actually turns up: a table with a bill-wide offer. Table 1 carrying
+  /// −£6.05 across £60.50 gave the entire discount to whoever paid first, so
+  /// two people splitting the same bill down the middle paid £24.20 and
+  /// £30.25 — and the till gave no reason why.
+  ///
+  /// Pro-rata by share value instead, decided with the venue on 2026-09-07:
+  /// each share carries its portion of the offer in proportion to what it is
+  /// worth. Nobody is asked to make a judgement with a table waiting, and the
+  /// shares always add back to the bill.
+  ///
+  /// [extra] is routinely negative — a discount is the common case — and every
+  /// step below is written to hold for both signs.
+  static List<int> _apportion(List<int> itemised, int extra, int covered) {
+    final out = [...itemised];
+    if (extra == 0 || out.isEmpty) return out;
+
+    // Nothing to be proportional *to*. Every share is worth nothing — a bill of
+    // zero-priced items carrying a service charge — so there is no ratio to be
+    // fair with, and it goes on the first share as it always did.
+    if (covered == 0) {
+      out[0] += extra;
+      return out;
+    }
+
+    var handed = 0;
+    for (var i = 0; i < out.length; i++) {
+      // Truncating towards zero, deliberately and in both directions: this can
+      // only ever hand out less than [extra] in magnitude, never more, so what
+      // is left below is a remainder to place rather than an overdraft to claw
+      // back off somebody who has already been quoted a figure.
+      final portion = (extra * itemised[i]) ~/ covered;
+      out[i] += portion;
+      handed += portion;
+    }
+
+    // The pennies that would not divide, onto the largest share.
+    //
+    // They have to go somewhere or the split stops adding up to the bill, and
+    // the largest share is where a penny is least likely to be noticed against
+    // the figure it is attached to. At most one penny per share can be at
+    // stake, so this is a rounding decision, not a fairness one.
+    final remainder = extra - handed;
+    if (remainder != 0) {
+      var largest = 0;
+      for (var i = 1; i < itemised.length; i++) {
+        if (itemised[i] > itemised[largest]) largest = i;
+      }
+      out[largest] += remainder;
+    }
+
+    return out;
   }
 
   /// Abandon a split and go back to one bill.

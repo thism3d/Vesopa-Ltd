@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-import '../../data/branding.dart';
+import '../../data/bill_rounds.dart';
+import '../../data/modifier_layout.dart';
 import '../../data/pricing_engine.dart';
 import '../theme.dart';
 
@@ -29,21 +30,17 @@ class PayCheckPanel extends StatelessWidget {
   const PayCheckPanel({
     super.key,
     required this.totals,
-    required this.branding,
     this.tableNumber,
     this.covers,
-    this.clerkName,
     this.customerName,
     this.selectedLineIds = const {},
     this.onTapLine,
   });
 
   final BasketTotals totals;
-  final Branding branding;
 
   final int? tableNumber;
   final int? covers;
-  final String? clerkName;
   final String? customerName;
 
   /// Lines picked out for Void. A picked line is what the Void key acts on, so
@@ -63,8 +60,6 @@ class PayCheckPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final pay = PayPalette.of(context);
-    final venue =
-        branding.venueName.isNotEmpty ? branding.venueName : 'VESOPA';
 
     return Container(
       decoration: BoxDecoration(
@@ -80,7 +75,7 @@ class PayCheckPanel extends StatelessWidget {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _header(context, pay, s, venue),
+              _header(context, pay, s),
               Expanded(child: _lines(context, pay, s)),
               _footer(context, pay, s),
             ],
@@ -90,57 +85,62 @@ class PayCheckPanel extends StatelessWidget {
     );
   }
 
-  Widget _header(
-    BuildContext context,
-    PayPalette pay,
-    double s,
-    String venue,
-  ) {
-    // Which bill this is, on one line under the venue.
-    //
-    // The header bar carries the same facts on a wide till — but only there.
-    // Below 1100px it drops the chips for room, and the check moves to a tab of
-    // its own, so this is the only place a clerk on a handheld can confirm they
-    // are reading table 12's bill and not table 2's. It has to be on the bill.
+  /// Which bill this is, and nothing else.
+  ///
+  /// This block used to open with the venue's name in caps, then a line reading
+  /// `Table 4 · 2 covers · Nicky · 12 High Street · 19:08`. All of it went in
+  /// v1.6.6 except the table and the covers, at the venue's request, and the
+  /// reasoning is worth keeping because it is not "less is more":
+  ///
+  ///   * the **venue name and address** are the top of a *printed receipt*.
+  ///     Nobody standing at the till needs telling which building they are in,
+  ///     and the printed receipt and the PDF still carry both. This is the same
+  ///     judgement LiveReceipt.showHeader made, arriving late at this screen.
+  ///   * the **clerk's name** is in the top bar, three inches away, all shift.
+  ///   * the **time** is on the wall, on the receipt and in the top bar.
+  ///
+  /// What survives is the pair a clerk genuinely cannot get anywhere else on a
+  /// handheld, where the header bar drops its chips below 1100px and the check
+  /// moves to a tab of its own: whether this is table 12's bill or table 2's.
+  ///
+  /// Note the staff *headings inside the list* are a different thing and stay —
+  /// they are how a round is picked out to be paid on its own. See
+  /// [_showRoundHeadings].
+  Widget _header(BuildContext context, PayPalette pay, double s) {
     final where = <String>[
       if (tableNumber != null) 'Table $tableNumber',
       if (covers != null && covers! > 0) '$covers covers',
-      if (clerkName?.isNotEmpty ?? false) clerkName!,
-      if (branding.addressLines.isNotEmpty && tableNumber == null)
-        branding.addressLines.first,
-      DateFormat('HH:mm').format(DateTime.now()),
     ].join('  ·  ');
 
+    final customer = customerName?.trim() ?? '';
+
+    // A counter sale with no customer has nothing left to say, and an empty bar
+    // with a rule under it is worse than no bar at all.
+    if (where.isEmpty && customer.isEmpty) return const SizedBox.shrink();
+
     return Container(
-      padding: EdgeInsets.symmetric(vertical: 22 * s, horizontal: 24 * s),
+      padding: EdgeInsets.symmetric(vertical: 16 * s, horizontal: 24 * s),
       decoration: BoxDecoration(
         border: Border(bottom: BorderSide(color: pay.panelLine)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            venue.toUpperCase(),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 17 * s,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.4 * s,
-              color: pay.ink,
-            ),
-          ),
-          SizedBox(height: 5 * s),
-          Text(
-            where,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontSize: 14 * s, color: pay.inkMuted),
-          ),
-          if (customerName?.isNotEmpty ?? false) ...[
-            SizedBox(height: 5 * s),
+          if (where.isNotEmpty)
             Text(
-              customerName!,
+              where,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 17 * s,
+                fontWeight: FontWeight.w700,
+                color: pay.ink,
+              ),
+            ),
+          if (customer.isNotEmpty) ...[
+            if (where.isNotEmpty) SizedBox(height: 5 * s),
+            Text(
+              customer,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
@@ -155,6 +155,18 @@ class PayCheckPanel extends StatelessWidget {
     );
   }
 
+  /// Whether to head each run of items with who rang it and when.
+  ///
+  /// This is the resolution of a genuine conflict between two of the venue's
+  /// requests. One asked for the staff name to come off this screen; the other
+  /// asked to be able to pay Nicky's round without paying Muzahid's, and the
+  /// heading is what tells the two rounds apart.
+  ///
+  /// So: gone on an ordinary sale, where a heading over the whole bill names
+  /// something there is nothing to distinguish; kept on a table two people have
+  /// served, where it is doing a job. The rule itself is [hasRounds], shared
+  /// with the sale screen's check so a bill cannot group one way while it is
+  /// being rung and another way while it is being paid.
   Widget _lines(BuildContext context, PayPalette pay, double s) {
     if (totals.lines.isEmpty) {
       return Center(
@@ -165,21 +177,45 @@ class PayCheckPanel extends StatelessWidget {
       );
     }
 
-    return ListView.builder(
-      padding: EdgeInsets.symmetric(vertical: 8 * s, horizontal: 10 * s),
-      itemCount: totals.lines.length,
-      itemBuilder: (context, i) {
-        final line = totals.lines[i];
-        return _CheckRow(
-          line: line,
-          scale: s,
-          // Banded on alternate rows rather than ruled: a rule between every
-          // item on a twenty-line bill is twenty more things to read past.
-          striped: i.isOdd,
-          selected: selectedLineIds.contains(line.id),
-          onTap: onTapLine == null ? null : () => onTapLine!(line),
+    final ordered = orderWithModifiers(
+      totals.lines,
+      idOf: (l) => l.id,
+      parentOf: (l) => l.parentLineId,
+    );
+    final rounds = roundsOf(ordered);
+    final headed = hasRounds(rounds);
+
+    // Flattened to rows so the list keeps scrolling as one thing rather than
+    // becoming a column of nested lists on a long table bill.
+    final rows = <Widget>[];
+    var striped = false;
+    for (final round in rounds) {
+      final label = round.label;
+      if (headed && label != null) {
+        rows.add(_RoundHeading(label: label, scale: s));
+        // Banding restarts under each heading, so a round always opens on the
+        // same footing rather than inheriting the stripe of the round above.
+        striped = false;
+      }
+      for (final line in round.lines) {
+        rows.add(
+          _CheckRow(
+            line: line,
+            scale: s,
+            // Banded on alternate rows rather than ruled: a rule between every
+            // item on a twenty-line bill is twenty more things to read past.
+            striped: striped,
+            selected: selectedLineIds.contains(line.id),
+            onTap: onTapLine == null ? null : () => onTapLine!(line),
+          ),
         );
-      },
+        striped = !striped;
+      }
+    }
+
+    return ListView(
+      padding: EdgeInsets.symmetric(vertical: 8 * s, horizontal: 10 * s),
+      children: rows,
     );
   }
 
@@ -415,6 +451,42 @@ class _CheckRow extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// `Nicky · 19:08` over the run of items that person rang.
+///
+/// The one thing left on this screen that names a member of staff, and it earns
+/// it: this is what a clerk taps past to see whose round is whose before
+/// splitting the bill by round.
+class _RoundHeading extends StatelessWidget {
+  const _RoundHeading({required this.label, required this.scale});
+
+  final String label;
+  final double scale;
+
+  @override
+  Widget build(BuildContext context) {
+    final pay = PayPalette.of(context);
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(8 * scale, 12 * scale, 8 * scale, 4 * scale),
+      child: Row(
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 13 * scale,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.6 * scale,
+              color: pay.inkMuted,
+            ),
+          ),
+          SizedBox(width: 10 * scale),
+          Expanded(child: Container(height: 1, color: pay.panelLine)),
+        ],
       ),
     );
   }

@@ -597,8 +597,18 @@ class SalePage extends ConsumerWidget {
                               // 15-inch panel, and bigger type in the old width
                               // truncated half the product names — the two changes
                               // only work together.
+                              //
+                              // A share of the width since v1.6.6, not a
+                              // constant: 420px is a fifth of a widescreen till
+                              // and two fifths of a square one. See
+                              // PosLayoutX.checkWidth — and note that the same
+                              // release taught LiveReceipt to size its type from
+                              // the width as well as the height, because
+                              // narrowing this box without that would truncate
+                              // the product names all over again. Still the two
+                              // changes only work together.
                               SizedBox(
-                                width: 420,
+                                width: context.checkWidth,
                                 child: Padding(
                                   padding: const EdgeInsets.fromLTRB(
                                     10,
