@@ -1496,6 +1496,39 @@ class $OrdersTable extends Orders with TableInfo<$OrdersTable, Order> {
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _customerPhoneMeta = const VerificationMeta(
+    'customerPhone',
+  );
+  @override
+  late final GeneratedColumn<String> customerPhone = GeneratedColumn<String>(
+    'customer_phone',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _customerEmailMeta = const VerificationMeta(
+    'customerEmail',
+  );
+  @override
+  late final GeneratedColumn<String> customerEmail = GeneratedColumn<String>(
+    'customer_email',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _customerCardNumberMeta =
+      const VerificationMeta('customerCardNumber');
+  @override
+  late final GeneratedColumn<String> customerCardNumber =
+      GeneratedColumn<String>(
+        'customer_card_number',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -1553,6 +1586,9 @@ class $OrdersTable extends Orders with TableInfo<$OrdersTable, Order> {
     customerName,
     customerDiscountType,
     customerDiscountValue,
+    customerPhone,
+    customerEmail,
+    customerCardNumber,
     createdAt,
     closedAt,
     syncedAt,
@@ -1718,6 +1754,33 @@ class $OrdersTable extends Orders with TableInfo<$OrdersTable, Order> {
         ),
       );
     }
+    if (data.containsKey('customer_phone')) {
+      context.handle(
+        _customerPhoneMeta,
+        customerPhone.isAcceptableOrUnknown(
+          data['customer_phone']!,
+          _customerPhoneMeta,
+        ),
+      );
+    }
+    if (data.containsKey('customer_email')) {
+      context.handle(
+        _customerEmailMeta,
+        customerEmail.isAcceptableOrUnknown(
+          data['customer_email']!,
+          _customerEmailMeta,
+        ),
+      );
+    }
+    if (data.containsKey('customer_card_number')) {
+      context.handle(
+        _customerCardNumberMeta,
+        customerCardNumber.isAcceptableOrUnknown(
+          data['customer_card_number']!,
+          _customerCardNumberMeta,
+        ),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -1829,6 +1892,18 @@ class $OrdersTable extends Orders with TableInfo<$OrdersTable, Order> {
         DriftSqlType.int,
         data['${effectivePrefix}customer_discount_value'],
       )!,
+      customerPhone: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}customer_phone'],
+      ),
+      customerEmail: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}customer_email'],
+      ),
+      customerCardNumber: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}customer_card_number'],
+      ),
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}created_at'],
@@ -1935,6 +2010,26 @@ class Order extends DataClass implements Insertable<Order> {
   /// or pence depending on the type.
   final String customerDiscountType;
   final int customerDiscountValue;
+
+  /// The attached customer's contact details, copied onto the order.
+  ///
+  /// Denormalised for the same reason [customerName] and the discount are, and
+  /// for one more that is specific to these: **the till has nowhere to look
+  /// them up.** Customers are server-backed (`/till/customers`), the server
+  /// offers search and create and nothing by id, and none of it is cached
+  /// locally — so a bill saved to a table at seven o'clock has no way to say
+  /// who it is for at nine, on a line that may by then be down.
+  ///
+  /// Copying also gets the semantics right. A bill records the customer as they
+  /// were when the sale was made; a number changed next month does not
+  /// retrospectively change who was standing at the counter.
+  ///
+  /// Points are deliberately *not* here. A balance moves, and a figure frozen
+  /// onto a parked bill would be quoted back to a customer as though it were
+  /// current. It is shown only where the till has it live.
+  final String? customerPhone;
+  final String? customerEmail;
+  final String? customerCardNumber;
   final DateTime createdAt;
   final DateTime? closedAt;
   final DateTime? syncedAt;
@@ -1960,6 +2055,9 @@ class Order extends DataClass implements Insertable<Order> {
     this.customerName,
     required this.customerDiscountType,
     required this.customerDiscountValue,
+    this.customerPhone,
+    this.customerEmail,
+    this.customerCardNumber,
     required this.createdAt,
     this.closedAt,
     this.syncedAt,
@@ -2012,6 +2110,15 @@ class Order extends DataClass implements Insertable<Order> {
     }
     map['customer_discount_type'] = Variable<String>(customerDiscountType);
     map['customer_discount_value'] = Variable<int>(customerDiscountValue);
+    if (!nullToAbsent || customerPhone != null) {
+      map['customer_phone'] = Variable<String>(customerPhone);
+    }
+    if (!nullToAbsent || customerEmail != null) {
+      map['customer_email'] = Variable<String>(customerEmail);
+    }
+    if (!nullToAbsent || customerCardNumber != null) {
+      map['customer_card_number'] = Variable<String>(customerCardNumber);
+    }
     map['created_at'] = Variable<DateTime>(createdAt);
     if (!nullToAbsent || closedAt != null) {
       map['closed_at'] = Variable<DateTime>(closedAt);
@@ -2069,6 +2176,15 @@ class Order extends DataClass implements Insertable<Order> {
           : Value(customerName),
       customerDiscountType: Value(customerDiscountType),
       customerDiscountValue: Value(customerDiscountValue),
+      customerPhone: customerPhone == null && nullToAbsent
+          ? const Value.absent()
+          : Value(customerPhone),
+      customerEmail: customerEmail == null && nullToAbsent
+          ? const Value.absent()
+          : Value(customerEmail),
+      customerCardNumber: customerCardNumber == null && nullToAbsent
+          ? const Value.absent()
+          : Value(customerCardNumber),
       createdAt: Value(createdAt),
       closedAt: closedAt == null && nullToAbsent
           ? const Value.absent()
@@ -2112,6 +2228,11 @@ class Order extends DataClass implements Insertable<Order> {
       customerDiscountValue: serializer.fromJson<int>(
         json['customerDiscountValue'],
       ),
+      customerPhone: serializer.fromJson<String?>(json['customerPhone']),
+      customerEmail: serializer.fromJson<String?>(json['customerEmail']),
+      customerCardNumber: serializer.fromJson<String?>(
+        json['customerCardNumber'],
+      ),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       closedAt: serializer.fromJson<DateTime?>(json['closedAt']),
       syncedAt: serializer.fromJson<DateTime?>(json['syncedAt']),
@@ -2142,6 +2263,9 @@ class Order extends DataClass implements Insertable<Order> {
       'customerName': serializer.toJson<String?>(customerName),
       'customerDiscountType': serializer.toJson<String>(customerDiscountType),
       'customerDiscountValue': serializer.toJson<int>(customerDiscountValue),
+      'customerPhone': serializer.toJson<String?>(customerPhone),
+      'customerEmail': serializer.toJson<String?>(customerEmail),
+      'customerCardNumber': serializer.toJson<String?>(customerCardNumber),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'closedAt': serializer.toJson<DateTime?>(closedAt),
       'syncedAt': serializer.toJson<DateTime?>(syncedAt),
@@ -2170,6 +2294,9 @@ class Order extends DataClass implements Insertable<Order> {
     Value<String?> customerName = const Value.absent(),
     String? customerDiscountType,
     int? customerDiscountValue,
+    Value<String?> customerPhone = const Value.absent(),
+    Value<String?> customerEmail = const Value.absent(),
+    Value<String?> customerCardNumber = const Value.absent(),
     DateTime? createdAt,
     Value<DateTime?> closedAt = const Value.absent(),
     Value<DateTime?> syncedAt = const Value.absent(),
@@ -2197,6 +2324,15 @@ class Order extends DataClass implements Insertable<Order> {
     customerName: customerName.present ? customerName.value : this.customerName,
     customerDiscountType: customerDiscountType ?? this.customerDiscountType,
     customerDiscountValue: customerDiscountValue ?? this.customerDiscountValue,
+    customerPhone: customerPhone.present
+        ? customerPhone.value
+        : this.customerPhone,
+    customerEmail: customerEmail.present
+        ? customerEmail.value
+        : this.customerEmail,
+    customerCardNumber: customerCardNumber.present
+        ? customerCardNumber.value
+        : this.customerCardNumber,
     createdAt: createdAt ?? this.createdAt,
     closedAt: closedAt.present ? closedAt.value : this.closedAt,
     syncedAt: syncedAt.present ? syncedAt.value : this.syncedAt,
@@ -2244,6 +2380,15 @@ class Order extends DataClass implements Insertable<Order> {
       customerDiscountValue: data.customerDiscountValue.present
           ? data.customerDiscountValue.value
           : this.customerDiscountValue,
+      customerPhone: data.customerPhone.present
+          ? data.customerPhone.value
+          : this.customerPhone,
+      customerEmail: data.customerEmail.present
+          ? data.customerEmail.value
+          : this.customerEmail,
+      customerCardNumber: data.customerCardNumber.present
+          ? data.customerCardNumber.value
+          : this.customerCardNumber,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       closedAt: data.closedAt.present ? data.closedAt.value : this.closedAt,
       syncedAt: data.syncedAt.present ? data.syncedAt.value : this.syncedAt,
@@ -2274,6 +2419,9 @@ class Order extends DataClass implements Insertable<Order> {
           ..write('customerName: $customerName, ')
           ..write('customerDiscountType: $customerDiscountType, ')
           ..write('customerDiscountValue: $customerDiscountValue, ')
+          ..write('customerPhone: $customerPhone, ')
+          ..write('customerEmail: $customerEmail, ')
+          ..write('customerCardNumber: $customerCardNumber, ')
           ..write('createdAt: $createdAt, ')
           ..write('closedAt: $closedAt, ')
           ..write('syncedAt: $syncedAt')
@@ -2304,6 +2452,9 @@ class Order extends DataClass implements Insertable<Order> {
     customerName,
     customerDiscountType,
     customerDiscountValue,
+    customerPhone,
+    customerEmail,
+    customerCardNumber,
     createdAt,
     closedAt,
     syncedAt,
@@ -2333,6 +2484,9 @@ class Order extends DataClass implements Insertable<Order> {
           other.customerName == this.customerName &&
           other.customerDiscountType == this.customerDiscountType &&
           other.customerDiscountValue == this.customerDiscountValue &&
+          other.customerPhone == this.customerPhone &&
+          other.customerEmail == this.customerEmail &&
+          other.customerCardNumber == this.customerCardNumber &&
           other.createdAt == this.createdAt &&
           other.closedAt == this.closedAt &&
           other.syncedAt == this.syncedAt);
@@ -2360,6 +2514,9 @@ class OrdersCompanion extends UpdateCompanion<Order> {
   final Value<String?> customerName;
   final Value<String> customerDiscountType;
   final Value<int> customerDiscountValue;
+  final Value<String?> customerPhone;
+  final Value<String?> customerEmail;
+  final Value<String?> customerCardNumber;
   final Value<DateTime> createdAt;
   final Value<DateTime?> closedAt;
   final Value<DateTime?> syncedAt;
@@ -2386,6 +2543,9 @@ class OrdersCompanion extends UpdateCompanion<Order> {
     this.customerName = const Value.absent(),
     this.customerDiscountType = const Value.absent(),
     this.customerDiscountValue = const Value.absent(),
+    this.customerPhone = const Value.absent(),
+    this.customerEmail = const Value.absent(),
+    this.customerCardNumber = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.closedAt = const Value.absent(),
     this.syncedAt = const Value.absent(),
@@ -2413,6 +2573,9 @@ class OrdersCompanion extends UpdateCompanion<Order> {
     this.customerName = const Value.absent(),
     this.customerDiscountType = const Value.absent(),
     this.customerDiscountValue = const Value.absent(),
+    this.customerPhone = const Value.absent(),
+    this.customerEmail = const Value.absent(),
+    this.customerCardNumber = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.closedAt = const Value.absent(),
     this.syncedAt = const Value.absent(),
@@ -2440,6 +2603,9 @@ class OrdersCompanion extends UpdateCompanion<Order> {
     Expression<String>? customerName,
     Expression<String>? customerDiscountType,
     Expression<int>? customerDiscountValue,
+    Expression<String>? customerPhone,
+    Expression<String>? customerEmail,
+    Expression<String>? customerCardNumber,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? closedAt,
     Expression<DateTime>? syncedAt,
@@ -2470,6 +2636,10 @@ class OrdersCompanion extends UpdateCompanion<Order> {
         'customer_discount_type': customerDiscountType,
       if (customerDiscountValue != null)
         'customer_discount_value': customerDiscountValue,
+      if (customerPhone != null) 'customer_phone': customerPhone,
+      if (customerEmail != null) 'customer_email': customerEmail,
+      if (customerCardNumber != null)
+        'customer_card_number': customerCardNumber,
       if (createdAt != null) 'created_at': createdAt,
       if (closedAt != null) 'closed_at': closedAt,
       if (syncedAt != null) 'synced_at': syncedAt,
@@ -2499,6 +2669,9 @@ class OrdersCompanion extends UpdateCompanion<Order> {
     Value<String?>? customerName,
     Value<String>? customerDiscountType,
     Value<int>? customerDiscountValue,
+    Value<String?>? customerPhone,
+    Value<String?>? customerEmail,
+    Value<String?>? customerCardNumber,
     Value<DateTime>? createdAt,
     Value<DateTime?>? closedAt,
     Value<DateTime?>? syncedAt,
@@ -2527,6 +2700,9 @@ class OrdersCompanion extends UpdateCompanion<Order> {
       customerDiscountType: customerDiscountType ?? this.customerDiscountType,
       customerDiscountValue:
           customerDiscountValue ?? this.customerDiscountValue,
+      customerPhone: customerPhone ?? this.customerPhone,
+      customerEmail: customerEmail ?? this.customerEmail,
+      customerCardNumber: customerCardNumber ?? this.customerCardNumber,
       createdAt: createdAt ?? this.createdAt,
       closedAt: closedAt ?? this.closedAt,
       syncedAt: syncedAt ?? this.syncedAt,
@@ -2604,6 +2780,15 @@ class OrdersCompanion extends UpdateCompanion<Order> {
         customerDiscountValue.value,
       );
     }
+    if (customerPhone.present) {
+      map['customer_phone'] = Variable<String>(customerPhone.value);
+    }
+    if (customerEmail.present) {
+      map['customer_email'] = Variable<String>(customerEmail.value);
+    }
+    if (customerCardNumber.present) {
+      map['customer_card_number'] = Variable<String>(customerCardNumber.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
@@ -2643,6 +2828,9 @@ class OrdersCompanion extends UpdateCompanion<Order> {
           ..write('customerName: $customerName, ')
           ..write('customerDiscountType: $customerDiscountType, ')
           ..write('customerDiscountValue: $customerDiscountValue, ')
+          ..write('customerPhone: $customerPhone, ')
+          ..write('customerEmail: $customerEmail, ')
+          ..write('customerCardNumber: $customerCardNumber, ')
           ..write('createdAt: $createdAt, ')
           ..write('closedAt: $closedAt, ')
           ..write('syncedAt: $syncedAt, ')
@@ -8756,6 +8944,9 @@ typedef $$OrdersTableCreateCompanionBuilder =
       Value<String?> customerName,
       Value<String> customerDiscountType,
       Value<int> customerDiscountValue,
+      Value<String?> customerPhone,
+      Value<String?> customerEmail,
+      Value<String?> customerCardNumber,
       Value<DateTime> createdAt,
       Value<DateTime?> closedAt,
       Value<DateTime?> syncedAt,
@@ -8784,6 +8975,9 @@ typedef $$OrdersTableUpdateCompanionBuilder =
       Value<String?> customerName,
       Value<String> customerDiscountType,
       Value<int> customerDiscountValue,
+      Value<String?> customerPhone,
+      Value<String?> customerEmail,
+      Value<String?> customerCardNumber,
       Value<DateTime> createdAt,
       Value<DateTime?> closedAt,
       Value<DateTime?> syncedAt,
@@ -8943,6 +9137,21 @@ class $$OrdersTableFilterComposer
 
   ColumnFilters<int> get customerDiscountValue => $composableBuilder(
     column: $table.customerDiscountValue,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get customerPhone => $composableBuilder(
+    column: $table.customerPhone,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get customerEmail => $composableBuilder(
+    column: $table.customerEmail,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get customerCardNumber => $composableBuilder(
+    column: $table.customerCardNumber,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -9126,6 +9335,21 @@ class $$OrdersTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get customerPhone => $composableBuilder(
+    column: $table.customerPhone,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get customerEmail => $composableBuilder(
+    column: $table.customerEmail,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get customerCardNumber => $composableBuilder(
+    column: $table.customerCardNumber,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -9231,6 +9455,21 @@ class $$OrdersTableAnnotationComposer
 
   GeneratedColumn<int> get customerDiscountValue => $composableBuilder(
     column: $table.customerDiscountValue,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get customerPhone => $composableBuilder(
+    column: $table.customerPhone,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get customerEmail => $composableBuilder(
+    column: $table.customerEmail,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get customerCardNumber => $composableBuilder(
+    column: $table.customerCardNumber,
     builder: (column) => column,
   );
 
@@ -9343,6 +9582,9 @@ class $$OrdersTableTableManager
                 Value<String?> customerName = const Value.absent(),
                 Value<String> customerDiscountType = const Value.absent(),
                 Value<int> customerDiscountValue = const Value.absent(),
+                Value<String?> customerPhone = const Value.absent(),
+                Value<String?> customerEmail = const Value.absent(),
+                Value<String?> customerCardNumber = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime?> closedAt = const Value.absent(),
                 Value<DateTime?> syncedAt = const Value.absent(),
@@ -9369,6 +9611,9 @@ class $$OrdersTableTableManager
                 customerName: customerName,
                 customerDiscountType: customerDiscountType,
                 customerDiscountValue: customerDiscountValue,
+                customerPhone: customerPhone,
+                customerEmail: customerEmail,
+                customerCardNumber: customerCardNumber,
                 createdAt: createdAt,
                 closedAt: closedAt,
                 syncedAt: syncedAt,
@@ -9397,6 +9642,9 @@ class $$OrdersTableTableManager
                 Value<String?> customerName = const Value.absent(),
                 Value<String> customerDiscountType = const Value.absent(),
                 Value<int> customerDiscountValue = const Value.absent(),
+                Value<String?> customerPhone = const Value.absent(),
+                Value<String?> customerEmail = const Value.absent(),
+                Value<String?> customerCardNumber = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime?> closedAt = const Value.absent(),
                 Value<DateTime?> syncedAt = const Value.absent(),
@@ -9423,6 +9671,9 @@ class $$OrdersTableTableManager
                 customerName: customerName,
                 customerDiscountType: customerDiscountType,
                 customerDiscountValue: customerDiscountValue,
+                customerPhone: customerPhone,
+                customerEmail: customerEmail,
+                customerCardNumber: customerCardNumber,
                 createdAt: createdAt,
                 closedAt: closedAt,
                 syncedAt: syncedAt,

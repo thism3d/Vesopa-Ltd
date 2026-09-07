@@ -26,6 +26,7 @@ import '../data/commerce.dart';
 import '../data/fonts.dart';
 import '../data/pricing_engine.dart';
 import 'widgets/basket_panel.dart';
+import 'widgets/customer_card.dart';
 import 'widgets/live_receipt.dart';
 import 'widgets/line_editor.dart';
 import '../data/screens.dart';
@@ -667,7 +668,14 @@ class SalePage extends ConsumerWidget {
                                     branding: ref.watch(brandingProvider),
                                     tableNumber: order?.tableNumber,
                                     covers: order?.covers,
-                                    customerName: order?.customerName,
+                                    customer: BillCustomer.of(order),
+                                    onChangeCustomer: () =>
+                                        _promptCustomer(context, ref),
+                                    onRemoveCustomer: () => _removeCustomer(
+                                      context,
+                                      ref,
+                                      order?.customerName,
+                                    ),
                                     emptyMessage: 'Ring up an item to start',
                                     selectedLineIds: selectedLines,
                                     // Tap picks the line out for Void; tap it
@@ -1216,12 +1224,56 @@ class SalePage extends ConsumerWidget {
           name: customer.name,
           discountType: customer.discountType,
           discountValue: customer.discountValue,
+          phone: customer.phone,
+          email: customer.email,
+          cardNumber: customer.cardNumber,
         );
     if (context.mounted && customer.hasDiscount) {
       PosMessenger.success(
         context,
         '${customer.name} attached — ${customer.discountLabel} applied.',
       );
+    }
+  }
+
+  /// Take the customer off the bill, and their standing discount with them.
+  ///
+  /// Confirmed, because the total moves when it happens: a mis-tap that
+  /// silently put £6 back onto a bill a customer has already been quoted is
+  /// worse than one more press.
+  Future<void> _removeCustomer(
+    BuildContext context,
+    WidgetRef ref,
+    String? customerName,
+  ) async {
+    final name = (customerName ?? '').trim().isEmpty
+        ? 'The customer'
+        : customerName!.trim();
+
+    final yes = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Take the customer off this bill?'),
+        content: Text(
+          '$name comes off, and any discount they carry goes with them.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Keep'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Take off'),
+          ),
+        ],
+      ),
+    );
+    if (yes != true) return;
+
+    await ref.read(orderRepositoryProvider).clearCustomer(orderId);
+    if (context.mounted) {
+      PosMessenger.success(context, 'Customer taken off the bill.');
     }
   }
 

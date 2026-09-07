@@ -321,6 +321,26 @@ class Orders extends Table {
   IntColumn get customerDiscountValue =>
       integer().withDefault(const Constant(0))();
 
+  /// The attached customer's contact details, copied onto the order.
+  ///
+  /// Denormalised for the same reason [customerName] and the discount are, and
+  /// for one more that is specific to these: **the till has nowhere to look
+  /// them up.** Customers are server-backed (`/till/customers`), the server
+  /// offers search and create and nothing by id, and none of it is cached
+  /// locally — so a bill saved to a table at seven o'clock has no way to say
+  /// who it is for at nine, on a line that may by then be down.
+  ///
+  /// Copying also gets the semantics right. A bill records the customer as they
+  /// were when the sale was made; a number changed next month does not
+  /// retrospectively change who was standing at the counter.
+  ///
+  /// Points are deliberately *not* here. A balance moves, and a figure frozen
+  /// onto a parked bill would be quoted back to a customer as though it were
+  /// current. It is shown only where the till has it live.
+  TextColumn get customerPhone => text().nullable()();
+  TextColumn get customerEmail => text().nullable()();
+  TextColumn get customerCardNumber => text().nullable()();
+
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
   DateTimeColumn get closedAt => dateTime().nullable()();
   DateTimeColumn get syncedAt => dateTime().nullable()();
@@ -547,7 +567,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 20;
+  int get schemaVersion => 21;
 
 
   /// Add a column only if the table has not already got it.
@@ -732,6 +752,16 @@ class AppDatabase extends _$AppDatabase {
             // product prints under no heading — the ticket a venue gets today.
             await _addColumnIfMissing(m, products, products.printCategory);
             await _addColumnIfMissing(m, products, products.printCategoryOrder);
+          }
+          if (from < 21) {
+            // The customer's contact details on the bill. Null on every
+            // existing order, including ones with a customer attached: the
+            // details were never captured, and there is nowhere to fetch them
+            // from now. Those bills go on showing the name and the discount,
+            // which is what they always showed.
+            await _addColumnIfMissing(m, orders, orders.customerPhone);
+            await _addColumnIfMissing(m, orders, orders.customerEmail);
+            await _addColumnIfMissing(m, orders, orders.customerCardNumber);
           }
         },
       );

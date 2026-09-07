@@ -7,6 +7,7 @@ import '../../data/modifier_layout.dart';
 import '../../data/pricing_engine.dart';
 import '../../data/tender_engine.dart';
 import '../theme.dart';
+import 'customer_card.dart';
 
 String _money(int minor) =>
     NumberFormat.currency(locale: 'en_GB', symbol: '£').format(minor / 100);
@@ -30,7 +31,9 @@ class LiveReceipt extends StatelessWidget {
     required this.totals,
     this.branding = const Branding(),
     this.tender,
-    this.customerName,
+    this.customer,
+    this.onChangeCustomer,
+    this.onRemoveCustomer,
     this.tableNumber,
     this.covers,
     this.clerkName,
@@ -54,7 +57,14 @@ class LiveReceipt extends StatelessWidget {
   /// screen, where nothing has been tendered yet.
   final TenderState? tender;
 
-  final String? customerName;
+  /// Who the bill is for, drawn as a card above the items. Null on the
+  /// ordinary walk-in sale, and then nothing is drawn at all.
+  final BillCustomer? customer;
+
+  /// Attach a different customer, and take the current one off.
+  final VoidCallback? onChangeCustomer;
+  final VoidCallback? onRemoveCustomer;
+
   final int? tableNumber;
   final int? covers;
   final String? clerkName;
@@ -208,9 +218,16 @@ class LiveReceipt extends StatelessWidget {
                             tableNumber: tableNumber,
                             covers: covers,
                             clerkName: clerkName,
-                            customerName: customerName,
                             style: small,
                           ),
+                          if (customer != null) ...[
+                            CustomerCard(
+                              customer: customer!,
+                              onChange: onChangeCustomer,
+                              onRemove: onRemoveCustomer,
+                            ),
+                            const SizedBox(height: 8),
+                          ],
                           const SizedBox(height: 4),
                           for (final entry in rounds) ...[
                             // A single-author bill — every walk-in sale — is
@@ -345,14 +362,12 @@ class _Context extends StatelessWidget {
     this.tableNumber,
     this.covers,
     this.clerkName,
-    this.customerName,
     this.style,
   });
 
   final int? tableNumber;
   final int? covers;
   final String? clerkName;
-  final String? customerName;
   final TextStyle? style;
 
   @override
@@ -367,13 +382,13 @@ class _Context extends StatelessWidget {
       // the staff heading above them.
     ];
 
+    // The customer used to be a bold line here. It is a card now — see
+    // CustomerCard — because a name in the same type as "Table 4" was the only
+    // sign that a discount had come off the bill.
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(bits.join('  ·  '), style: style),
-        if (customerName?.isNotEmpty ?? false)
-          Text(customerName!,
-              style: style?.copyWith(fontWeight: FontWeight.bold)),
         const Divider(height: 12),
       ],
     );

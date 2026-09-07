@@ -5,6 +5,7 @@ import '../../data/bill_rounds.dart';
 import '../../data/modifier_layout.dart';
 import '../../data/pricing_engine.dart';
 import '../theme.dart';
+import 'customer_card.dart';
 
 String _money(int minor) =>
     NumberFormat.currency(locale: 'en_GB', symbol: '£').format(minor / 100);
@@ -32,16 +33,21 @@ class PayCheckPanel extends StatelessWidget {
     required this.totals,
     this.tableNumber,
     this.covers,
-    this.customerName,
+    this.customer,
     this.selectedLineIds = const {},
     this.onTapLine,
+    this.onChangeCustomer,
+    this.onRemoveCustomer,
   });
 
   final BasketTotals totals;
 
   final int? tableNumber;
   final int? covers;
-  final String? customerName;
+
+  /// Who the bill is for. Null on the ordinary walk-in sale, and then nothing
+  /// is drawn — see [CustomerCard].
+  final BillCustomer? customer;
 
   /// Lines picked out for Void. A picked line is what the Void key acts on, so
   /// it is drawn as a filled band with a lime edge rather than a tint — it has
@@ -51,6 +57,11 @@ class PayCheckPanel extends StatelessWidget {
   /// Picks a line out, or puts it back. Null once money has been taken, when
   /// the bill may no longer be amended.
   final void Function(PricedLine line)? onTapLine;
+
+  /// Attach a different customer, and take the current one off. Both null once
+  /// money has been taken.
+  final VoidCallback? onChangeCustomer;
+  final VoidCallback? onRemoveCustomer;
 
   /// The width the design was drawn at. Everything scales off this, so the
   /// panel keeps its proportions on a 1280px till as well as a 1920px one
@@ -112,11 +123,11 @@ class PayCheckPanel extends StatelessWidget {
       if (covers != null && covers! > 0) '$covers covers',
     ].join('  ·  ');
 
-    final customer = customerName?.trim() ?? '';
+    final person = customer;
 
     // A counter sale with no customer has nothing left to say, and an empty bar
     // with a rule under it is worse than no bar at all.
-    if (where.isEmpty && customer.isEmpty) return const SizedBox.shrink();
+    if (where.isEmpty && person == null) return const SizedBox.shrink();
 
     return Container(
       padding: EdgeInsets.symmetric(vertical: 16 * s, horizontal: 24 * s),
@@ -137,17 +148,13 @@ class PayCheckPanel extends StatelessWidget {
                 color: pay.ink,
               ),
             ),
-          if (customer.isNotEmpty) ...[
-            if (where.isNotEmpty) SizedBox(height: 5 * s),
-            Text(
-              customer,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 14 * s,
-                fontWeight: FontWeight.w700,
-                color: pay.accent,
-              ),
+          if (person != null) ...[
+            if (where.isNotEmpty) SizedBox(height: 9 * s),
+            CustomerCard(
+              customer: person,
+              scale: s,
+              onChange: onChangeCustomer,
+              onRemove: onRemoveCustomer,
             ),
           ],
         ],

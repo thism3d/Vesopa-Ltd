@@ -479,6 +479,9 @@ class OrderRepository {
     required String name,
     String discountType = 'none',
     int discountValue = 0,
+    String? phone,
+    String? email,
+    String? cardNumber,
   }) async {
     await _db.transaction(() async {
       await (_db.update(_db.orders)..where((o) => o.id.equals(orderId))).write(
@@ -487,6 +490,11 @@ class OrderRepository {
           customerName: Value(name),
           customerDiscountType: Value(discountType),
           customerDiscountValue: Value(discountValue),
+          // Copied down with the name, because the till has nowhere to look
+          // them up again — see Orders.customerPhone.
+          customerPhone: Value(phone),
+          customerEmail: Value(email),
+          customerCardNumber: Value(cardNumber),
         ),
       );
       await recalculate(orderId);
@@ -502,6 +510,11 @@ class OrderRepository {
           customerName: Value(null),
           customerDiscountType: Value('none'),
           customerDiscountValue: Value(0),
+          // Every column attachCustomer writes, or taking a customer off a bill
+          // leaves their phone number and email address on it.
+          customerPhone: Value(null),
+          customerEmail: Value(null),
+          customerCardNumber: Value(null),
         ),
       );
       await recalculate(orderId);

@@ -25,6 +25,20 @@ class LoyaltyRepository {
         .get();
   }
 
+  /// The customer attached to a bill, watched so the card on the check keeps up.
+  ///
+  /// A stream rather than a one-off read because points move *during* a sale —
+  /// redeeming against this bill changes the balance being shown two inches
+  /// away, and a card quoting the old figure is the kind of thing a customer
+  /// notices and a clerk cannot explain.
+  ///
+  /// Reads the till's own table, not the server, so the card is as available as
+  /// the sale is: a venue whose line is down still has to be able to see who
+  /// the bill is for.
+  Stream<Customer?> watchById(String id) =>
+      (_db.select(_db.customers)..where((c) => c.id.equals(id)))
+          .watchSingleOrNull();
+
   Future<Customer?> byCard(String cardNumber) async {
     final rows = await (_db.select(_db.customers)
           ..where((c) => c.cardNumber.equals(cardNumber))

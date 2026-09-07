@@ -27,6 +27,7 @@ import 'confirm_tender_dialog.dart';
 import 'discount_dialog.dart';
 import 'redemption_dialogs.dart';
 import 'split_bill_sheet.dart';
+import 'widgets/customer_card.dart';
 import '../data/cash_tally.dart';
 import 'till_actions.dart';
 import 'void_dialog.dart';
@@ -1335,11 +1336,25 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
                 .where((id) => lines.any((l) => l.id == id))
                 .toSet();
 
+            // The loyalty flow on this screen is the one place the till holds
+            // a live points balance, so it is the one place the card can quote
+            // one. Everywhere else the balance is absent rather than stale.
+            final billCustomer = BillCustomer.of(
+              order,
+              pointsBalance: _customer?.pointsBalance ?? 0,
+            );
+
             final check = PayCheckPanel(
               totals: totals,
               tableNumber: order?.tableNumber,
               covers: order?.covers,
-              customerName: _customer?.name ?? order?.customerName,
+              customer: billCustomer,
+              // Who the bill is for stops being a choice the moment money has
+              // been taken against it — see _canAmend.
+              onChangeCustomer: _canAmend ? _attachCustomer : null,
+              onRemoveCustomer: _canAmend && billCustomer != null
+                  ? () => _removeCustomer(order?.customerName)
+                  : null,
               selectedLineIds: selected,
               // Same gesture as the sale screen, so Void behaves identically on
               // both. Only offered while nothing has been tendered — see
@@ -1564,6 +1579,37 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
 
   /// Attach a customer without redeeming anything, so the sale still earns
   /// them points.
+  /// Take the customer off the bill, and their standing discount with them.
+  Future<void> _removeCustomer(String? customerName) async {
+    final name = (customerName ?? '').trim().isEmpty
+        ? 'The customer'
+        : customerName!.trim();
+
+    final yes = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Take the customer off this bill?'),
+        content: Text(
+          '$name comes off, and any discount they carry goes with them.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Keep'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Take off'),
+          ),
+        ],
+      ),
+    );
+    if (yes != true || !mounted) return;
+
+    await ref.read(orderRepositoryProvider).clearCustomer(widget.orderId);
+    if (mounted) setState(() => _customer = null);
+  }
+
   Future<void> _attachCustomer() async {
     final result = await showLoyaltyDialog(
       context,
@@ -1571,9 +1617,27 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
       outstandingMinor: _tender.dueNowMinor,
       redeem: false,
     );
-    if (result?.customer != null && mounted) {
-      setState(() => _customer = result!.customer);
-    }
+    final picked = result?.customer;
+    if (picked == null || !mounted) return;
+
+    setState(() => _customer = picked);
+
+    // And onto the order, which is where the check reads it from.
+    //
+    // This used to set _customer alone. The customer was then real enough to
+    // earn points at the end of the sale and invisible everywhere else — the
+    // bill did not name them, the receipt did not, and a bill saved back to a
+    // table forgot them entirely. Attaching to the order is what makes the
+    // customer a fact about the bill rather than a fact about this screen.
+    await ref.read(orderRepositoryProvider).attachCustomer(
+          widget.orderId,
+          id: picked.id,
+          name: picked.name,
+          discountType: picked.discountType,
+          discountValue: picked.discountValue,
+          phone: picked.phone,
+          cardNumber: picked.cardNumber,
+        );
   }
 }
 
