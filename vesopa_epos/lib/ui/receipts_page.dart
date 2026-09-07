@@ -9,7 +9,10 @@ import 'receipt_pdf.dart';
 import 'theme.dart';
 import 'widgets/basket_panel.dart' show money;
 
-final _receiptRepoProvider = Provider<ReceiptRepository>(
+/// Public because the refund screen reads the same receipts. One repository
+/// and one filter, so "the sale I can see" and "the sale I can refund" are the
+/// same list rather than two that can disagree.
+final receiptRepoProvider = Provider<ReceiptRepository>(
   (ref) => ReceiptRepository(
     apiBase: ref.watch(apiBaseProvider),
     office: ref.watch(officeProvider),
@@ -36,7 +39,7 @@ class ReceiptFilterNotifier extends Notifier<ReceiptFilter> {
 final receiptListProvider = FutureProvider<List<ReceiptSummary>>((ref) {
   final filter = ref.watch(receiptFilterProvider);
   return ref
-      .watch(_receiptRepoProvider)
+      .watch(receiptRepoProvider)
       .list(from: filter.from, to: filter.to);
 });
 
@@ -257,7 +260,7 @@ class _ReceiptDialog extends ConsumerWidget {
 }
 
 final _detailProvider = FutureProvider.family<ReceiptDetail, String>(
-  (ref, id) => ref.watch(_receiptRepoProvider).detail(id),
+  (ref, id) => ref.watch(receiptRepoProvider).detail(id),
 );
 
 class _Chip extends StatelessWidget {

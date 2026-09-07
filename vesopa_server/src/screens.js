@@ -191,6 +191,10 @@ const BAR_KEYS = [
   'price_check',
   'product_search',
   'price_override',
+  // Money out of the drawer. On a bar because a venue that hides the nav rail
+  // has no other way to reach it, and because a refund is asked for at the
+  // counter with somebody standing there.
+  'refund',
 
   // Widgets — the parts of the bar that draw rather than wait.
   'open_bills',

@@ -29,6 +29,7 @@ import '../data/pricing_engine.dart';
 import 'widgets/basket_panel.dart';
 import 'price_override_dialog.dart';
 import 'product_lookup_sheet.dart';
+import 'refund_page.dart';
 import 'widgets/customer_card.dart';
 import 'widgets/live_receipt.dart';
 import 'widgets/line_editor.dart';
@@ -1299,6 +1300,11 @@ class SalePage extends ConsumerWidget {
       // opens the plan, so a bill can also be moved to a different table.
       case 'table_plan':
         return _promptTable(context, ref);
+
+      // Money out of the drawer. The key itself is gated inside showRefund, so
+      // a venue can place it anywhere without placing the permission with it.
+      case 'refund':
+        return showRefund(context, ref);
 
       // "How much is the Malbec?", asked across the bar. Adds nothing to the
       // bill whatever is tapped — see ProductLookupSheet.

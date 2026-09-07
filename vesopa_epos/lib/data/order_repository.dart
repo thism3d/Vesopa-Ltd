@@ -273,6 +273,37 @@ class OrderRepository {
   Future<void> logNoSale({required String sessionId, String? staffName}) =>
       _logEvent(kind: 'no_sale', sessionId: sessionId, staffName: staffName);
 
+  /// Record money handed back.
+  ///
+  /// A refund is not a negative sale and is deliberately not stored as one. It
+  /// goes on the Z beside the voids and the no-sales, where a manager reads it,
+  /// and it does not touch the takings for the period: a bill settled last
+  /// Tuesday was taken last Tuesday, and rewriting today's gross to account for
+  /// it would make two days both wrong.
+  ///
+  /// [note] carries what was refunded and why — the receipt it came off where
+  /// there is one, or the reason where there is not. It is the whole audit
+  /// trail for the one operation on this till that takes money out of the
+  /// drawer without a customer standing over it, so it is not optional in
+  /// practice even though the column allows null.
+  ///
+  /// [amountMinor] is positive. The sign belongs to the report, which knows a
+  /// refund is money out; storing it negative would mean every reader had to
+  /// know that too, and one of them would not.
+  Future<void> logRefund({
+    required String sessionId,
+    required int amountMinor,
+    String? note,
+    String? staffName,
+  }) =>
+      _logEvent(
+        kind: 'refund',
+        sessionId: sessionId,
+        amountMinor: amountMinor.abs(),
+        note: note,
+        staffName: staffName,
+      );
+
   /// Record something that is not a sale but belongs on the Z report.
   ///
   /// Kept locally and never deleted by the sync, unlike the outbox entry beside

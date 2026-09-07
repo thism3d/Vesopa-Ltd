@@ -8,6 +8,7 @@ import '../main.dart';
 import 'card_machine_page.dart';
 import 'cash_drawer_sheets.dart';
 import 'clock_sheet.dart';
+import 'refund_page.dart';
 import 'reprint_z_sheet.dart';
 import 'layout.dart';
 import 'sign_on_pad.dart';
@@ -117,6 +118,15 @@ class FunctionsPage extends ConsumerWidget {
           Pos.teal,
           'What is being put in the drawer to start the shift.',
           () => unawaited(_setFloat(context, ref)),
+        ),
+        // Money out of the drawer. Under the refund key, and the no-receipt
+        // path under a manager's on top of it — see RefundPage.
+        _Function(
+          'Refund',
+          Icons.undo,
+          Pos.red,
+          'Give money back, off a receipt or without one.',
+          () => unawaited(showRefund(context, ref)),
         ),
         _Function(
           'No Sale',

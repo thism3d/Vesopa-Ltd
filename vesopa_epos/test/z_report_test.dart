@@ -201,6 +201,60 @@ void main() {
     expect((await sessions.current()).openingFloatMinor, 0);
   });
 
+  group('refunds', () {
+    test('a refund is counted and valued on the Z', () async {
+      await orders.logRefund(
+        sessionId: (await sessions.current()).id,
+        amountMinor: 1250,
+        note: 'Receipt abc123 · Fish & Chips',
+        staffName: 'Nicky',
+      );
+
+      final z = await sessions.zReport();
+      expect(z.refunds.count, 1);
+      expect(z.refunds.amountMinor, 1250);
+    });
+
+    test('it is stored positive, whatever sign the caller used', () async {
+      // The sign belongs to the report, which knows a refund is money out.
+      // Storing it negative would mean every reader had to know that too, and
+      // one of them would not.
+      await orders.logRefund(
+        sessionId: (await sessions.current()).id,
+        amountMinor: -800,
+      );
+      final z = await sessions.zReport();
+      expect(z.refunds.amountMinor, 800);
+    });
+
+    test('it does not touch the takings for the period', () async {
+      // A bill settled last Tuesday was taken last Tuesday. Rewriting today's
+      // gross to account for money handed back would make two days wrong.
+      await stock([beer]);
+      await sell(beer);
+      await orders.logRefund(
+        sessionId: (await sessions.current()).id,
+        amountMinor: 500,
+      );
+
+      final z = await sessions.zReport();
+      expect(z.grossMinor, 500, reason: 'the refund changed the takings');
+      expect(z.refunds.amountMinor, 500);
+    });
+
+    test("one period's refunds never leak into the next", () async {
+      await orders.logRefund(
+        sessionId: (await sessions.current()).id,
+        amountMinor: 400,
+      );
+      await sessions.zReport();
+
+      final next = await sessions.zReport();
+      expect(next.refunds.count, 0);
+      expect(next.refunds.amountMinor, 0);
+    });
+  });
+
   group('the cash declaration', () {
     // £100 float and one £5 beer in cash: the till expects £105 in the drawer.
     Future<TillReport> zWith(int? declared) async {
