@@ -43,7 +43,7 @@
  */
 
 /**
- * What a screen lays out.
+ * What a screen lays out: 'sale', 'topbar' or 'bottombar'.
  *
  * A bar is a screen. The strip of open tables along the top of the till and the
  * strip of keys along the bottom are one or two rows of the same buttons the
@@ -51,13 +51,11 @@
  * colour, the whole-grid save — works on them without knowing they are bars.
  * Only three things differ: the ceilings, the list of functions on offer, and
  * the shape the editor draws them in.
+ *
+ * A surface is not the same thing as a *slot*. There are five slots a venue can
+ * fill — the sale screen, its two bars, and the payment screen's two — and two
+ * of those slots take a 'topbar' layout. See SP_DEFAULT_FIELDS.
  */
-const SP_SURFACES = [
-  ['sale', 'Sale screens'],
-  ['topbar', 'Top bars'],
-  ['bottombar', 'Bottom bars'],
-];
-
 const spIsBar = (surface) => surface === 'topbar' || surface === 'bottombar';
 
 /** The till functions a button on a sale screen may be bound to. */
@@ -2197,12 +2195,17 @@ function spRenderDefaults() {
     el.classList.toggle('editing', surface === spSurface);
   }
 
-  const set = SP_SURFACES.filter(([k]) => spDefaultFor(k) != null).length;
+  // Counted over the slots, not the surfaces. There are five settings on this
+  // card now — the sale screen's three and the payment screen's two — and two
+  // of them are topbar layouts, so counting by surface would say "3" for ever.
+  const slots = Object.keys(SP_DEFAULT_FIELDS);
+  const set = slots.filter((slot) => spDefaults[slot] != null).length;
   const flag = $('sp-defaults-state');
   flag.hidden = set === 0;
   flag.className = 'sp-flag ok';
-  flag.textContent =
-    set === 3 ? 'All three are yours' : `${set} of 3 set to your own`;
+  flag.textContent = set === slots.length
+    ? 'All of it is yours'
+    : `${set} of ${slots.length} set to your own`;
 }
 
 /**
