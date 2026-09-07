@@ -1106,6 +1106,7 @@ app.get(['/till/products', '/products.json'], async (req, res, next) => {
               p.accounting_code, p.price, p.tax_percentage, p.stock_quantity,
               p.button_position, p.button_color, p.printer_route,
               p.printer_routes, p.print_to_receipt, p.emoji, p.image_url,
+              p.is_modifier,
               p.price_2, p.price_3, p.price_4, p.price_5, p.price_6,
               pc.name AS print_category, pc.sort_order AS print_category_order
        FROM bo_products p

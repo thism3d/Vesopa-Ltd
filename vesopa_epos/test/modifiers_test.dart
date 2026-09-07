@@ -37,6 +37,7 @@ void main() {
     taxPercentage: 20,
     stockQuantity: 0,
     printToReceipt: true,
+    isModifier: false,
   );
   const coke = Product(
     pluId: 11,
@@ -45,6 +46,7 @@ void main() {
     taxPercentage: 20,
     stockQuantity: 0,
     printToReceipt: true,
+    isModifier: false,
   );
   const tonic = Product(
     pluId: 12,
@@ -53,6 +55,7 @@ void main() {
     taxPercentage: 20,
     stockQuantity: 0,
     printToReceipt: true,
+    isModifier: false,
   );
 
   Future<List<OrderLine>> linesOf(String orderId) =>

@@ -6331,3 +6331,15 @@ textarea, select[multiple], select[size] { height: auto; min-height: 0; }
   max-width: 22rem;
 }
 .filepick .picked .size { flex: 0 0 auto; }
+
+/* A line under a form control, for a field whose label cannot carry the whole
+   answer. Quiet on purpose: it is there for the person meeting the field for
+   the first time, and it must not compete with the label above it. */
+.field-hint {
+  display: block;
+  margin-top: 5px;
+  font-size: 12px;
+  line-height: 1.45;
+  font-weight: 400;
+  color: var(--muted, #8b93a1);
+}

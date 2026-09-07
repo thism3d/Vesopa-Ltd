@@ -32,6 +32,7 @@ void main() {
     taxPercentage: 20,
     stockQuantity: 0,
     printToReceipt: true,
+    isModifier: false,
   );
 
   test('table 1 upstairs is not table 1 on the terrace', () async {

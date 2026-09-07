@@ -13,6 +13,7 @@ Product product(int plu, String name, int price, {String? department}) => Produc
       taxPercentage: 0,
       stockQuantity: 0,
       printToReceipt: true,
+      isModifier: false,
     );
 
 final _catalogue = [

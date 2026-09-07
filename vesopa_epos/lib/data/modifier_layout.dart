@@ -186,6 +186,40 @@ Set<String> withModifiersOf<T>(
   return out;
 }
 
+/// Which line a modifier lands on.
+///
+/// Two keys arrive at this question from different directions — a MIXERS key
+/// asking one of the venue's questions, and a product flagged "can only be sold
+/// attached to another item" being tapped — and they must answer it the same
+/// way, or a venue finds "No ice" going onto one line and "Dash Coke" onto
+/// another.
+///
+/// The rule: **the selected line, or the last item when nothing is selected.**
+///
+/// The fallback is the important half. "Gin, then no ice" is the order somebody
+/// actually presses the two keys in, and requiring the gin to be selected first
+/// would add a step to the common case in order to disambiguate the rare one.
+/// Selecting a line stays the way to say "not that one, this one".
+///
+/// [items] must already exclude modifiers — a modifier cannot carry another
+/// modifier, and `addModifiersTo` refuses it anyway. Null when there is nothing
+/// on the bill, which the caller has to say out loud rather than swallow:
+/// ringing "No ice" onto nothing is always a mistake.
+T? modifierTarget<T>(
+  List<T> items,
+  Set<String> selectedIds, {
+  required String Function(T) idOf,
+}) {
+  if (items.isEmpty) return null;
+  // Last, not first, among the selected. Two lines picked out is not a thing
+  // this question has an answer for, and the most recent is the one the clerk
+  // was looking at.
+  for (var i = items.length - 1; i >= 0; i--) {
+    if (selectedIds.contains(idOf(items[i]))) return items[i];
+  }
+  return items.last;
+}
+
 /// Just the items, with their modifiers left out.
 ///
 /// For the places that count things rather than list them — "how many items on

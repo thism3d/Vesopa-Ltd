@@ -724,6 +724,17 @@ class SyncService {
                 _ => true,
               },
             ),
+            isModifier: Value(
+              // Absent means no. A server that has never heard of this field
+              // must not be read as "nothing can be sold on its own".
+              switch (raw['is_modifier']) {
+                null => false,
+                final num n => n != 0,
+                final bool b => b,
+                final String s => s == '1' || s.toLowerCase() == 'true',
+                _ => false,
+              },
+            ),
             emoji: Value(raw['emoji'] as String?),
             // Uploaded images are served relative to the server; store the
             // absolute URL so the till can load it directly.

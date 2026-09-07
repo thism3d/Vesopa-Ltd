@@ -189,6 +189,7 @@ function backofficeRoutes({ pool, broadcast, secret }) {
                 accounting_code, price, tax_percentage, stock_quantity,
                 low_stock_at, button_position, button_color, printer_routes,
                 print_to_receipt, emoji, image_url, print_category_id,
+                is_modifier,
                 ${PRICE_LEVELS.join(', ')}
          FROM bo_products
          WHERE email = ?
@@ -265,8 +266,9 @@ function backofficeRoutes({ pool, broadcast, secret }) {
             accounting_code, price, tax_percentage, stock_quantity,
             button_position, button_color, printer_route, printer_routes,
             print_to_receipt, emoji, image_url, print_category_id,
+            is_modifier,
             ${PRICE_LEVELS.join(', ')})
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                  ${PRICE_LEVELS.map(() => '?').join(', ')})`,
         [
           // The office's key, not the individual's: two managers in one shop
@@ -291,6 +293,7 @@ function backofficeRoutes({ pool, broadcast, secret }) {
           p.emoji || null,
           p.image_url || null,
           printCategoryId(p.print_category_id),
+          flag(p.is_modifier),
           ...PRICE_LEVELS.map((level) => priceLevel(p[level])),
         ]
       );
@@ -340,6 +343,7 @@ function backofficeRoutes({ pool, broadcast, secret }) {
              printer_route = ?, printer_routes = ?, print_to_receipt = ?,
              emoji = ${keep('emoji')}, image_url = ?,
              print_category_id = ${keep('print_category_id')},
+             is_modifier = ${keep('is_modifier')},
              ${PRICE_LEVELS.map((l) => l + ' = ' + keep(l)).join(', ')}
          WHERE id = ? AND email = ?`,
         [
@@ -358,6 +362,10 @@ function backofficeRoutes({ pool, broadcast, secret }) {
           ...kept('emoji', p.emoji || null),
           p.image_url || null,
           ...kept('print_category_id', printCategoryId(p.print_category_id)),
+          // Only when the caller sent it, same rule as emoji and the price
+          // levels above: an import that knows nothing about modifiers must
+          // not un-flag every one a venue has set.
+          ...kept('is_modifier', flag(p.is_modifier)),
           // Each level only when the caller sent it — the same rule as
           // button_position and emoji above. An import that knows nothing about
           // price levels must not strip a venue's happy-hour prices off every

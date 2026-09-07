@@ -76,6 +76,22 @@ class Products extends Table {
   TextColumn get emoji => text().nullable()();
   TextColumn get imageUrl => text().nullable()();
 
+  /// Whether this product may only be sold attached to another one.
+  ///
+  /// "No ice", "Extra shot", "Well done" — real products with real PLUs and
+  /// sometimes a real price, but never a sale on their own. Ringing one onto an
+  /// empty bill is always a mistake, and the till refuses it and says why.
+  ///
+  /// Not the same feature as `epos_modifier_groups`, which is a *question a
+  /// product asks* when it is rung. This is the other half, and the venue
+  /// described it exactly: pick a line already on the bill, then tap the thing
+  /// you want to say about it. Nothing was asked, and it can be said about any
+  /// product after the fact. Both exist; neither replaces the other.
+  ///
+  /// False for every existing row, which is true: before this, every product
+  /// was sellable on its own.
+  BoolColumn get isModifier => boolean().withDefault(const Constant(false))();
+
   @override
   Set<Column> get primaryKey => {pluId};
 }
@@ -567,7 +583,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 21;
+  int get schemaVersion => 22;
 
 
   /// Add a column only if the table has not already got it.
@@ -752,6 +768,11 @@ class AppDatabase extends _$AppDatabase {
             // product prints under no heading — the ticket a venue gets today.
             await _addColumnIfMissing(m, products, products.printCategory);
             await _addColumnIfMissing(m, products, products.printCategoryOrder);
+          }
+          if (from < 22) {
+            // Products that can only be sold attached to another. False on
+            // every existing row: before this, everything was sellable alone.
+            await _addColumnIfMissing(m, products, products.isModifier);
           }
           if (from < 21) {
             // The customer's contact details on the bill. Null on every

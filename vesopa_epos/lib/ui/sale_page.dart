@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/kitchen_printing.dart';
 import '../data/local/database.dart';
 import '../data/mix_match_engine.dart';
+import '../data/modifier_layout.dart';
 import '../data/modifiers.dart';
 import '../data/order_repository.dart';
 import '../data/staff_session.dart';
@@ -223,6 +224,60 @@ class SalePage extends ConsumerWidget {
         g.id: g,
     };
 
+    /// Put a modifier product onto a line that is already on the bill.
+    ///
+    /// The venue's own description: "you would select say Vodka & Coke and then
+    /// tap this in the check view and click no ice for it to attach to this
+    /// product."
+    ///
+    /// Which line, and why it is not simply "the last one": a modifier attaches
+    /// to the **selected** line when there is one, and to the last item when
+    /// there is not. That is the same rule [askAbout] follows, and it is worth
+    /// holding in both places — "gin, then no ice" is the order somebody
+    /// actually presses the two keys in, and making them select the gin first
+    /// would be a step for the common case in order to disambiguate the rare
+    /// one. Selecting a line stays the way to say "not that one, this one".
+    ///
+    /// An empty bill is refused, out loud. Ringing "No ice" onto nothing is
+    /// always a mistake, and a key that silently does nothing is a key a clerk
+    /// presses four more times and then asks somebody about.
+    Future<void> attachModifier(Product p, String? addedBy) async {
+      final lines = await repo.linesOnce(orderId);
+      final items = lines.where((l) => l.parentLineId == null).toList();
+      if (items.isEmpty) {
+        if (context.mounted) {
+          PosMessenger.info(
+            context,
+            '${p.name} goes onto an item. Ring the item up first.',
+          );
+        }
+        return;
+      }
+
+      // Only a selection made against *this* bill counts, for the reason
+      // askAbout gives: ids left over from the bill before would pick a line
+      // that is not on screen.
+      final picked = ref.read(selectedLinesProvider);
+      final ids = picked.orderId == orderId ? picked.ids : const <String>{};
+      final target = modifierTarget(items, ids, idOf: (l) => l.id);
+      if (target == null) return;
+
+      final ok = await repo.addModifiersTo(
+        orderId,
+        target.id,
+        [p],
+        addedBy: addedBy,
+      );
+      if (!context.mounted) return;
+      if (!ok) {
+        PosMessenger.error(context, 'That line is no longer on the bill.');
+        return;
+      }
+      // Said out loud because the item lands *under* the line rather than at
+      // the bottom of the bill, which is not where a clerk's eye is.
+      PosMessenger.success(context, '${p.name} added to ${target.name}.');
+    }
+
     /// Ring an item — the one way onto the bill, whichever grid the key was
     /// pressed on.
     ///
@@ -238,6 +293,18 @@ class SalePage extends ConsumerWidget {
       // against its sales, as it always has.
       final addedBy = ref.read(staffSessionProvider).name ??
           ref.read(sessionProvider).name;
+
+      // A product that is only ever an answer goes onto a line, not onto the
+      // bill. "No ice", "Extra shot", "Well done" — see Products.isModifier.
+      //
+      // Handled here rather than at the key, so it holds however the product
+      // was reached: the catalogue grid, a programmed screen, a bar key, or
+      // Product Search. A rule enforced at one of four doors is a rule a venue
+      // discovers is missing at the counter.
+      if (p.isModifier) {
+        await attachModifier(p, addedBy);
+        return;
+      }
 
       final groups = (ref.read(modifiersProvider).value ??
               ModifierSet.empty)
@@ -301,10 +368,11 @@ class SalePage extends ConsumerWidget {
       // bill before would otherwise pick a line that is not on screen.
       final picked = ref.read(selectedLinesProvider);
       final ids = picked.orderId == orderId ? picked.ids : const <String>{};
-      final target = items.lastWhere(
-        (l) => ids.contains(l.id),
-        orElse: () => items.last,
-      );
+      // The same rule the attach above follows, stated once — see
+      // modifierTarget. Two keys asking the same question must not answer it
+      // two ways.
+      final target = modifierTarget(items, ids, idOf: (l) => l.id);
+      if (target == null) return;
 
       if (!context.mounted) return;
       final answers = await askModifiers(

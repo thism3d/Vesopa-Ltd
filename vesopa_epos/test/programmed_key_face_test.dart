@@ -38,6 +38,7 @@ void main() {
     taxPercentage: 20,
     stockQuantity: 0,
     printToReceipt: true,
+    isModifier: false,
     imageUrl: imageUrl,
   );
 

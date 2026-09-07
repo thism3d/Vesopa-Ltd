@@ -33,6 +33,7 @@ void main() {
     taxPercentage: 20,
     stockQuantity: 0,
     printToReceipt: true,
+    isModifier: false,
     departmentName: 'Drink',
   );
   const pie = Product(
@@ -42,6 +43,7 @@ void main() {
     taxPercentage: 20,
     stockQuantity: 0,
     printToReceipt: true,
+    isModifier: false,
     departmentName: 'Food',
   );
 

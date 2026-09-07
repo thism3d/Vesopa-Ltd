@@ -1611,6 +1611,9 @@ function routeChips(p) {
   if (Number(p.print_to_receipt) === 0) {
     chips.push('<span class="chip warn">Not on receipt</span>');
   }
+  if (Number(p.is_modifier) === 1) {
+    chips.push('<span class="chip">Attaches to an item</span>');
+  }
   return chips.length ? chips.join(' ') : '<span class="muted">—</span>';
 }
 
@@ -3882,7 +3885,17 @@ function modal(title, fields, onSubmit) {
       <form class="modal" id="modal-form">
         <h3>${esc(title)}</h3>
         ${fields
-          .map((f) => `<label>${esc(f.label)}${fieldHtml(f)}</label>`)
+          .map(
+            (f) =>
+              `<label>${esc(f.label)}${fieldHtml(f)}` +
+              // A line under the control, for the fields whose label cannot
+              // carry the whole answer on its own. Added for "can only be sold
+              // attached to another item", which sits directly beneath a
+              // *different* feature also called modifiers — two things by one
+              // name on one form need the sentence.
+              (f.hint ? `<span class="field-hint">${esc(f.hint)}</span>` : '') +
+              `</label>`
+          )
           .join('')}
         <div class="modal-actions">
           <button type="button" class="btn ghost" id="modal-cancel">Cancel</button>
@@ -4833,6 +4846,21 @@ document.addEventListener('click', async (e) => {
       // New products default to on. Only an explicit 0 turns it off, so a
       // catalogue imported without the field is not hidden from every bill.
       value: p.print_to_receipt === undefined ? 1 : p.print_to_receipt,
+    },
+    {
+      // Deliberately worded as what it *does* rather than what it is called.
+      // "Is a modifier" is the venue's phrase and means nothing to the person
+      // who has to tick it eighteen months from now, and the field above it is
+      // the other, different modifier feature — the questions a product asks.
+      // Two things called "modifier" on one form need the sentence.
+      label: 'Can only be sold attached to another item',
+      name: 'is_modifier',
+      type: 'checkbox',
+      hint:
+        'For things like “No ice” or “Extra shot”. On the till, pick the item ' +
+        'on the bill first, then tap this — it goes underneath it. It cannot ' +
+        'be rung up on its own.',
+      value: p.is_modifier === undefined ? 0 : p.is_modifier,
     },
   ];
 
