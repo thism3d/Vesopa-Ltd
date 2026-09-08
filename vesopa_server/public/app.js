@@ -6250,11 +6250,18 @@ async function loadDashboardAnalytics() {
     { label: 'Gross takings', value: `£${pounds(t.gross_minor)}`,
       hint: trendHint(t.gross_minor, p.gross_minor), tone: 'primary' },
     { label: 'Net of VAT', value: `£${pounds(net)}` },
+    // Three accents across eight tiles, not five.
+    //
+    // Every figure used to carry one — a royal blue on Sales, a mint on
+    // Gratuity — and a row where everything is highlighted is a row where
+    // nothing is. The stripe means something now: green is the takings, amber
+    // is money owed to somebody else, red is money given away. The rest are
+    // plain, which is what lets the three that are not stand out.
     { label: 'VAT', value: `£${pounds(t.tax_minor)}`, tone: 'amber' },
     { label: 'Sales', value: String(t.sales || 0),
-      hint: trendHint(t.sales, p.sales), tone: 'blue' },
+      hint: trendHint(t.sales, p.sales) },
     { label: 'Average sale', value: `£${pounds(t.average_minor)}` },
-    { label: 'Gratuity', value: `£${pounds(t.gratuity_minor)}`, tone: 'green' },
+    { label: 'Gratuity', value: `£${pounds(t.gratuity_minor)}` },
     { label: 'Discounts',
       value: `£${pounds(num(t.discount_minor) + num(t.promo_minor) + num(t.voucher_minor))}`,
       tone: 'red' },
@@ -6275,7 +6282,7 @@ async function loadDashboardAnalytics() {
   Charts.bar($('dash-hourly'), (data.hourly || []).map((h) => ({
     label: `${String(h.hour).padStart(2, '0')}`,
     value: h.gross_minor,
-  })), { colour: 'var(--chart-2)' });
+  })));
 
   Charts.donut($('dash-tenders'), (data.tenders || []).map((x) => ({
     label: tenderLabel(x.method),
@@ -6291,14 +6298,14 @@ async function loadDashboardAnalytics() {
   Charts.ranked($('dash-departments'), (data.departments || []).map((x) => ({
     label: x.department,
     value: x.gross_minor,
-  })), { colour: 'var(--chart-4)' });
+  })));
 
   // MySQL DAYOFWEEK is 1=Sunday.
   const DOW = ['', 'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   Charts.bar($('dash-weekday'), (data.weekday || []).map((w) => ({
     label: DOW[w.dow] || String(w.dow),
     value: w.gross_minor,
-  })), { colour: 'var(--chart-5)' });
+  })));
 
   const l = data.liabilities || {};
   const s = data.stock || {};
@@ -6394,7 +6401,7 @@ async function loadPromotions() {
       label: p.name,
       value: p.discount_minor,
       meta: `${p.uses} uses`,
-    })), { colour: 'var(--chart-6)' });
+    })));
   } catch { /* chart is a nicety; the table is the page */ }
 }
 
@@ -6720,13 +6727,13 @@ async function loadLoyalty() {
       Object.entries(byDay).map(([day, v]) => ({
         label: shortDate(day), value: v.earn,
       })),
-      { colour: 'var(--chart-4)', format: (v) => `${v} pts` });
+      { format: (v) => `${v} pts` });
 
     Charts.ranked($('loyalty-top'), (stats.top_customers || []).map((c) => ({
       label: c.name || 'Guest',
       value: c.lifetime_spend_minor,
       meta: `${c.points_balance} pts${c.tier_name ? ` · ${c.tier_name}` : ''}`,
-    })), { limit: 8, colour: 'var(--chart-2)' });
+    })), { limit: 8 });
 
     const totals = (stats.tiers || []).reduce((s, t) => s + Number(t.customers || 0), 0);
     const points = (stats.tiers || []).reduce((s, t) => s + Number(t.points || 0), 0);
