@@ -9,6 +9,51 @@ This is more than one sitting. It touches one schema, one server, one 4,544-line
 - Phases E, F, G change the Flutter apps and require msix builds.
 - Phase H is the release. Only stop mid-phase if a task is fully done; never stop halfway through a task that edits `dinein_pages.js`.
 
+## Progress
+
+Updated as work lands, so a later session can pick this up without re-reading
+the whole document.
+
+**PHASE A — done, deployed, verified live.**
+
+| Task | State | Note |
+|---|---|---|
+| T1 order-line add-on + availability columns | done | `schema_menu_dinein_ordering.sql`, applied 3x on live |
+| T2 allergen columns + shared list + route | done | `src/allergens.js`, `GET /api/allergens` live, 14 unit checks |
+| T3 venue meta columns | done | same migration as T1 |
+| T4 notification settings | done | `schema_till_notifications.sql`; NOTIFY_FIELDS in TILL_FIELDS/DEFAULTS |
+| T5 add-ons read API | done | `addOnsFor()` in dinein.js; folded into `menuFor` rather than a separate route, because the page takes its menu in one payload |
+| T6 order placement with add-ons | done | parent + child rows, priced by PLU; verified with a real order |
+| T7 menu payload allergens + images | part | allergens and add-ons land; image quality is a page concern, see T14 |
+| T8 live order events | not started | |
+| T9 accept/reject route | not started | |
+
+**Two corrections to this plan, found while executing it:**
+
+1. The repo has **no numeric schema prefixes**. Files sort by name, and each
+   must sort after the file that creates the table it alters. `schema_menu_dinein_ordering.sql`
+   sorts between `_offers` and `_otp`; `schema_product_allergens.sql` starts
+   "p" so it clears both `schema_kitchen.sql` and `schema_menu_dinein.sql`.
+2. **Add-ons must be priced by PLU against `bo_products`, never through
+   `dinein_items`.** An answer to a modifier question is a till product
+   ("Lemonade") and those are almost never menu items. Resolving them like
+   parents silently dropped every add-on and undercharged the order — £6.00
+   where £7.60 was owed. The payload looked perfect; only a real order showed
+   it. T6 now restricts add-ons to PLUs the menu actually offers, so a crafted
+   request cannot attach an arbitrary product.
+
+**Phone OTP** — sent live to the client's number on 2026-09-08 05:52 UTC.
+Postcoder accepted it (`provider_ref OTP69-FFD82-FD3AE-498C9`), challenge
+`69d7550ad2447e783ea54cf60bfcc9bb`, ten-minute expiry. The code is never stored
+here — verification goes back to Postcoder — so only the client can complete
+the second half. The send path is proven; ask them whether the text arrived.
+
+**PHASES B–H — not started.** B back office, C/D the QR menu page, E/F/G the
+three Flutter apps, H the release. Phase A changed no app, so nothing needs a
+Store build yet.
+
+---
+
 ## Order of work
 
 A → B → C → D → deploy server → E, F, G (independent of each other, any order) → H.
