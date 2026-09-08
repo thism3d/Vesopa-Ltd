@@ -1,3 +1,7 @@
 node_modules/
 .env
 *.zip
+
+# Release-note text staged for a submission. Generated from
+# vesopa_epos/docs/store-listing-<version>.md, which is the copy that is kept.
+notes-*.txt
