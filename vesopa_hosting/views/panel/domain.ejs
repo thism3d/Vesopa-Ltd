@@ -232,10 +232,48 @@
           <li>Click the confirmation link inside it. That is the whole process.</li>
         </ol>
 
+        <%#
+          THREE BUTTONS, AND THE MIDDLE ONE IS THE POINT.
+
+          This card used to end with a paragraph telling the customer to open a
+          ticket, and that was the whole of its interactivity — which is how
+          arpi.site came to show a red countdown for an address the registrar
+          had already verified, with nothing on the page that could clear it.
+
+          "I have already confirmed this" is taken at the customer's word
+          because there is nobody else to ask: the gateway has no verification
+          endpoint (probed, all 404) and the registry only tells us anything by
+          suspending the domain. It applies to the ADDRESS, so it settles every
+          other domain they hold on it too.
+        %>
+        <div class="row mb-2" style="gap:8px;flex-wrap:wrap">
+          <form method="post" action="/panel/domains/<%= domain.id %>/verification/confirm" data-guard>
+            <input type="hidden" name="_csrf" value="<%= csrf %>">
+            <button class="btn btn-sm" type="submit" data-busy="Recording…">
+              <%- icon('check', 15) %> I have already confirmed this
+            </button>
+          </form>
+          <form method="post" action="/panel/domains/<%= domain.id %>/verification/resend" data-guard>
+            <input type="hidden" name="_csrf" value="<%= csrf %>">
+            <button class="btn btn-sm btn-ghost" type="submit" data-busy="Sending…">
+              <%- icon('mail', 15) %> Send the email again
+            </button>
+          </form>
+          <form method="post" action="/panel/domains/<%= domain.id %>/verification/check" data-guard>
+            <input type="hidden" name="_csrf" value="<%= csrf %>">
+            <button class="btn btn-sm btn-ghost" type="submit" data-busy="Checking…">
+              <%- icon('refresh', 15) %> Check with the registry
+            </button>
+          </form>
+        </div>
+
         <p class="tiny muted mb-0">
-          Confirmed it already? It can take a few minutes to reach us. If it is still showing
-          here tomorrow, <a href="/panel/tickets/new">open a ticket</a> and we will chase the
-          registrar for you.
+          <% if (verification.sent_at) { %>
+            We last sent a reminder on <%= new Date(verification.sent_at).toLocaleString('en-GB') %>.
+          <% } %>
+          The confirmation link itself comes from the <b>registrar</b>, so we cannot click it for you.
+          If none of this shifts it, <a href="/panel/tickets/new">open a ticket</a> and we will chase
+          the registrar directly.
         </p>
       </div>
     <% } %>

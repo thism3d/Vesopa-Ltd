@@ -34,6 +34,8 @@ const registrar = require('./integrations/domainnameapi');
 const linking = require('./domain-linking');
 const notify = require('./notifications');
 const nameservers = require('./nameservers');
+const registrantVerification = require('./registrant-verification');
+const hestia = require('./integrations/hestia');
 const {
   JOB_INTERVAL_MINUTES, PAYMENT_SESSION_MINUTES, DOMAIN_NS_GRACE_DAYS, NAMESERVERS,
 } = require('./config');
@@ -63,6 +65,15 @@ const DOMAIN_RECHECK_MINUTES = Number(process.env.DOMAIN_RECHECK_MINUTES || 15);
  * life. The panel's own "check now" button always works.
  */
 const DOMAIN_PROBE_DAYS = Number(process.env.DOMAIN_PROBE_DAYS || 45);
+
+/**
+ * How often our record of a certificate is checked against the node.
+ *
+ * Six hours, not minutes: a certificate changes when it is issued or renewed,
+ * both of which we do ourselves, and the only thing this pass is really here to
+ * catch is our record having drifted. Every row is one Hestia call.
+ */
+const SSL_RECHECK_HOURS = Number(process.env.SSL_RECHECK_HOURS || 6);
 
 // ---------------------------------------------------------------------------
 // Payments
@@ -443,7 +454,150 @@ async function sweepDomains() {
     }
   }
 
-  return { checked: rows.length, verified, dropped };
+  const registrants = await sweepRegistrantVerifications().catch((err) => {
+    console.error('[jobs] registrant verification sweep failed:', err.message);
+    return 0;
+  });
+
+  const certificates = await sweepCertificates().catch((err) => {
+    console.error('[jobs] certificate sweep failed:', err.message);
+    return 0;
+  });
+
+  return {
+    checked: rows.length, verified, dropped, registrants, certificates,
+  };
+}
+
+/**
+ * Reconcile what we think about certificates against what the node has.
+ *
+ * `linking.refreshSsl` does this properly and has always existed — but the ONLY
+ * caller was the domain page, so our record was corrected exactly when somebody
+ * happened to look at it, and stayed wrong until they did.
+ *
+ * The consequence is not cosmetic, because `notifications.collect` reads the
+ * stored column. Measured on 2026-09-08: panel.vesopa.com and test.vesopa.com
+ * both carried `ssl_status = 'failed'` from 30 August with the error "That
+ * object does not exist", and both had been serving a valid Let's Encrypt
+ * certificate for a week. Two accounts were being told their site had no
+ * certificate while the padlock was right there in the browser — and the "Try
+ * again" button on that warning would have spent a Let's Encrypt attempt
+ * replacing a certificate with eleven weeks left on it.
+ *
+ * Only domains that are actually built (`pointed_at`), only on accounts with
+ * hosting, oldest check first, a few at a time. Nothing is issued here — this
+ * pass only reads.
+ */
+async function sweepCertificates() {
+  if (!hestia.isLive()) return 0;
+
+  const rows = await db.query(
+    `SELECT d.*, c.hestia_user
+       FROM domains d
+       JOIN customers c ON c.id = d.customer_id
+      WHERE d.status = 'active'
+        AND d.pointed_at IS NOT NULL
+        AND c.hestia_user IS NOT NULL AND c.hestia_user <> ''
+        AND (d.ssl_checked_at IS NULL
+             OR d.ssl_checked_at < DATE_SUB(NOW(), INTERVAL ? HOUR))
+      ORDER BY d.ssl_checked_at IS NOT NULL, d.ssl_checked_at ASC, d.id ASC
+      LIMIT ?`,
+    [SSL_RECHECK_HOURS, BATCH],
+  );
+
+  let corrected = 0;
+  for (const row of rows) {
+    try {
+      const before = row.ssl_status || 'none';
+      // eslint-disable-next-line no-await-in-loop -- one Hestia call at a time
+      const after = await linking.refreshSsl(row, { hestia_user: row.hestia_user });
+      if (after.status !== before) {
+        corrected += 1;
+        console.log(`[jobs] ${row.domain} certificate is ${after.status}, not ${before}`);
+        /*
+         * A warning that is no longer true has to be taken down. Re-raising is
+         * left to the next page render, which builds the live list anyway —
+         * this only clears what the node has just disproved.
+         */
+        if (after.status === 'active') {
+          await notify.resolve(row.customer_id, `domain:${row.id}:ssl_failed`).catch(() => {});
+        }
+      }
+    } catch (err) {
+      console.error(`[jobs] certificate check failed for ${row.domain}:`, err.message);
+    }
+  }
+  return corrected;
+}
+
+/**
+ * Clear registrant verifications that have quietly completed.
+ *
+ * The registrar has no verification endpoint — see registrant-verification.js
+ * for the probe that established that — so there is exactly one thing the
+ * registry will tell us, and it tells it by NOT suspending the domain. A
+ * registrar is obliged to put an unverified registrant on hold; a domain still
+ * answering after its deadline has therefore been verified.
+ *
+ * Which means this pass is the thing that eventually takes the banner down on
+ * its own, without anybody pressing anything. Without it, `registrant_verified_at`
+ * is a column nothing ever writes and the countdown runs past zero into
+ * "may be suspended" forever — which is precisely what arpi.site did.
+ *
+ * A handful at a time, oldest check first, and only past the deadline: inside
+ * the fifteen days the registry cannot distinguish verified from waiting, so
+ * asking it is a round trip that can only return "do not know".
+ */
+async function sweepRegistrantVerifications() {
+  if (!registrar.isConnected()) return 0;
+
+  const rows = await db.query(
+    `SELECT * FROM domains
+      WHERE status = 'active'
+        AND source IN ('registered','transfer')
+        AND registrant_verified_at IS NULL
+        AND verification_deadline IS NOT NULL
+        AND verification_deadline < NOW()
+        AND (verification_checked_at IS NULL
+             OR verification_checked_at < DATE_SUB(NOW(), INTERVAL 6 HOUR))
+      ORDER BY verification_checked_at IS NOT NULL, verification_checked_at ASC
+      LIMIT 5`,
+  );
+
+  let cleared = 0;
+  for (const row of rows) {
+    try {
+      // eslint-disable-next-line no-await-in-loop -- the gateway 429s on concurrency
+      const state = await registrantVerification.check(row);
+      if (!state.outstanding) {
+        cleared += 1;
+        console.log(`[jobs] ${row.domain} — registrant address ${state.email} confirmed (${state.source})`);
+        await notify.resolve(row.customer_id, `domain:${row.id}:registrant_verification`).catch(() => {});
+      } else if (state.state === 'suspended') {
+        /*
+         * The failure the countdown was warning about has happened. Said as an
+         * error with the registry's own status codes in it, because "verify
+         * your email" is the wrong sentence for a domain that is already off.
+         */
+        await notify.raise({
+          customerId: row.customer_id,
+          level: 'error',
+          area: 'domain',
+          title: `${row.domain} has been suspended by the registry`,
+          body: `The registry has it on hold (${state.registry.codes.join(', ')}) because the owner's `
+            + `email address, ${state.email}, was never confirmed. Confirming it puts the domain back. `
+            + 'Open the domain and send the confirmation email again.',
+          fixUrl: `/panel/domains/${row.id}#verification`,
+          fixLabel: 'Fix it',
+          dedupeKey: `domain:${row.id}:registrant_suspended`,
+        }).catch(() => {});
+      }
+    } catch (err) {
+      console.error(`[jobs] verification check failed for ${row.domain}:`, err.message);
+    }
+  }
+  return cleared;
 }
 
 // ---------------------------------------------------------------------------
@@ -486,7 +640,8 @@ async function runOnce({ quiet = false } = {}) {
     const noise =
       (results.payments?.settled || 0) + (results.payments?.expired || 0)
       + (results.orders?.built || 0)
-      + (results.domains?.verified || 0) + (results.domains?.dropped || 0);
+      + (results.domains?.verified || 0) + (results.domains?.dropped || 0)
+      + (results.domains?.registrants || 0) + (results.domains?.certificates || 0);
     if (noise && !quiet) {
       console.log(
         `[jobs] pass done in ${Date.now() - started}ms — `
@@ -494,7 +649,9 @@ async function runOnce({ quiet = false } = {}) {
         + `${results.payments?.expired || 0} expired, `
         + `${results.orders?.built || 0} order(s) activated, `
         + `${results.domains?.verified || 0} domain(s) verified, `
-        + `${results.domains?.dropped || 0} removed`,
+        + `${results.domains?.dropped || 0} removed, `
+        + `${results.domains?.registrants || 0} registrant(s) confirmed, `
+        + `${results.domains?.certificates || 0} certificate record(s) corrected`,
       );
     }
     return results;

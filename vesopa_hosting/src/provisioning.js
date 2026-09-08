@@ -36,6 +36,7 @@ const registrar = require('./integrations/domainnameapi');
 const auth = require('./auth');
 const linking = require('./domain-linking');
 const nameservers = require('./nameservers');
+const registrantVerification = require('./registrant-verification');
 const { sendMail, shell, detailTable, escapeHtml } = require('./mailer');
 const notify = require('./notifications');
 const { SITE_URL, NAMESERVERS } = require('./config');
@@ -641,7 +642,25 @@ async function provisionDomain(domainRow, customer) {
    * to ignore the ones that matter.
    */
   const { tld } = registrar.splitDomain(domainRow.domain);
-  const needsVerification = !CCTLDS_WITHOUT_RAA.has(String(tld || '').toLowerCase());
+  const carriesObligation = !CCTLDS_WITHOUT_RAA.has(String(tld || '').toLowerCase());
+
+  /*
+   * AND ONLY IF THIS ADDRESS HAS NOT ALREADY BEEN CONFIRMED.
+   *
+   * The obligation is on the registrant's EMAIL ADDRESS and it is discharged
+   * once — every gTLD afterwards registered to the same address is covered by
+   * that one confirmation, and the registrar sends no second email. So a
+   * customer buying their second domain would be shown a fifteen-day countdown
+   * for a verification that has already happened and for an email that is never
+   * going to arrive, which is the fastest way to teach somebody that this
+   * warning means nothing. See registrant-verification.js.
+   */
+  const alreadyVerified = carriesObligation
+    ? (await registrantVerification.verifiedAddresses([customer.email]).catch(() => new Map()))
+      .get(registrantVerification.normaliseEmail(customer.email)) || null
+    : null;
+
+  const needsVerification = carriesObligation && !alreadyVerified;
   const deadline = needsVerification
     ? new Date(Date.now() + RAA_VERIFY_DAYS * 864e5).toISOString().slice(0, 19).replace('T', ' ')
     : null;
@@ -651,11 +670,13 @@ async function provisionDomain(domainRow, customer) {
         SET status = 'active', registered_at = CURDATE(), expires_at = ?,
             registrar_ref = ?, ns1 = ?, ns2 = ?,
             registrant_email = ?, verification_deadline = ?,
+            registrant_verified_at = ?,
             contacts_verified = ?, contacts_warning = ?
       WHERE id = ?`,
     [
       result.expires_at || null, result.registrar_ref || '', NAMESERVERS[0], NAMESERVERS[1],
       customer.email || '', deadline,
+      alreadyVerified ? alreadyVerified.verified_at : null,
       result.contacts_verified ? 1 : 0,
       String(result.contacts_warning || '').slice(0, 300),
       domainRow.id,

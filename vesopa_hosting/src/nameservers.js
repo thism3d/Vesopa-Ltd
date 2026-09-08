@@ -14,6 +14,7 @@
  */
 
 const dns = require('node:dns');
+const registry = require('./dns-registry');
 const { NAMESERVERS } = require('./config');
 
 /**
@@ -91,72 +92,147 @@ function extrasIn(list) {
   return (list || []).map(normalise).filter((ns) => ns && !OURS.includes(ns));
 }
 
-/**
- * Look up a domain's delegation.
- *
- * Never throws. A domain that does not resolve, a registry that is slow, a
- * resolver that is unreachable — all of them are "not verified yet, here is
- * why", because every caller of this treats an error the same way it treats a
- * mismatch: wait, and ask again later.
- *
- * @returns {Promise<{matched: boolean, nameservers: string[], extras: string[], error: string}>}
- */
-async function check(domain) {
-  const name = normalise(domain);
-  if (!name || !name.includes('.')) {
-    return {
-      matched: false, nameservers: [], extras: [], error: 'Not a domain name.', serverFailure: false, code: '',
-    };
-  }
-
+/** The recursive half: what a resolver on the internet answers today. */
+async function resolverAnswer(name) {
   try {
     const found = await makeResolver().resolveNs(name);
-    return {
-      matched: matchesOurs(found),
-      serverFailure: false,
-      code: '',
-      nameservers: found.map(normalise).sort(),
-      // Present but not blocking — a registrar's verification record, or a
-      // leftover delegation the customer has not cleaned up yet.
-      extras: extrasIn(found).sort(),
-      error: '',
-    };
+    return { nameservers: found.map(normalise).filter(Boolean), code: '', error: '' };
   } catch (err) {
+    const code = String(err.code || '');
     /*
      * NXDOMAIN is worth saying plainly. It usually means the name was mistyped
      * or has not been registered at all, and "we could not check" would send a
      * customer off looking at their registrar's nameserver form for a domain
      * that does not exist.
      */
-    const message = err.code === 'ENOTFOUND' || err.code === 'ENODATA'
+    const error = code === 'ENOTFOUND' || code === 'ENODATA'
       ? 'That domain does not resolve yet.'
-      : `Could not read the nameservers (${err.code || err.message}).`;
-    /*
-     * SERVFAIL IS ITS OWN ANSWER, and telling it apart from the others is what
-     * breaks the deadlock this whole module used to sit in.
-     *
-     * A domain delegated to ns1/ns2.vesopa.com that we do not yet have a zone
-     * for is REFUSED by our own nameserver, which every recursive resolver on
-     * the internet then reports as SERVFAIL. So the check fails — and the thing
-     * that would fix it is creating the zone, which the old code would only do
-     * AFTER the check passed. vesopa.site sat in exactly that state: correct
-     * delegation at the registry, nothing on the node, "could not read the
-     * nameservers (ESERVFAIL)" forever, and no button anywhere that helped.
-     *
-     * A flag rather than a decision. `servedByUs()` below settles whether we
-     * are the ones failing to answer, and domain-linking decides what to do
-     * about it.
-     */
-    const code = String(err.code || '');
+      : `Could not read the nameservers (${code || err.message}).`;
+    return { nameservers: [], code, error };
+  }
+}
+
+/**
+ * Look up a domain's delegation.
+ *
+ * ## THE REGISTRY IS ASKED FIRST, and it is the one that decides.
+ *
+ * `resolveNs` does not answer the question this is for. It returns the NS
+ * records held by whichever server ends up answering for the name, and that
+ * comes apart from the delegation recorded at the registry in BOTH directions —
+ * each of which has cost a real customer a real afternoon:
+ *
+ *   FALSE NEGATIVE. A domain delegated to ns1/ns2.vesopa.com that we have no
+ *   zone for is REFUSED by our own nameserver, so every recursive resolver
+ *   reports SERVFAIL, so the check fails — and the fix for it is creating the
+ *   zone, which only happened AFTER the check passed. Measured 2026-09-08:
+ *   sheve.site and muzahid.com.bd both ESERVFAIL, both delegated to us
+ *   perfectly. That is the "Not yet — Could not read the nameservers
+ *   (ESERVFAIL)" a customer sees on a domain they set up correctly.
+ *
+ *   FALSE POSITIVE. heat6.com was delegated at the registry to ns1.onzep.uk,
+ *   whose copy of the zone named ns1/ns2.vesopa.com — so `resolveNs` returned
+ *   OUR nameservers and the domain read as verified while every visitor was
+ *   being served by the old box. Measured on the same day, still true.
+ *
+ * The registry's delegation has neither failure mode. It is the record that
+ * decides which servers the internet asks, it is written by whoever controls
+ * the domain, and it is visible the moment they change it rather than after a
+ * cache expires. See dns-registry.js for why node:dns cannot read it.
+ *
+ * The recursive lookup still runs, in parallel, and what it saw is reported as
+ * `resolved` — it is the difference between "delegated to us, propagating" and
+ * "delegated to us and serving", which is worth being able to say.
+ *
+ * Never throws. A registry that is slow, a resolver that is unreachable — all
+ * of them are "not verified yet, here is why", because every caller treats an
+ * error the same way it treats a mismatch: wait, and ask again later.
+ *
+ * @returns {Promise<{matched: boolean, nameservers: string[], extras: string[],
+ *                    resolved: string[], via: string, error: string}>}
+ */
+async function check(domain) {
+  const name = normalise(domain);
+  if (!name || !name.includes('.')) {
     return {
       matched: false,
       nameservers: [],
       extras: [],
-      error: message,
-      serverFailure: ['ESERVFAIL', 'ETIMEOUT', 'ECONNREFUSED', 'EREFUSED', 'ENOTIMP'].includes(code),
-      code,
+      resolved: [],
+      via: '',
+      error: 'Not a domain name.',
+      serverFailure: false,
+      unregistered: false,
+      code: '',
     };
   }
+
+  const [live, atRegistry] = await Promise.all([
+    resolverAnswer(name),
+    registry.delegation(name).catch(() => ({ ok: false, nameservers: [], error: 'lookup failed' })),
+  ]);
+
+  // The registry answered and named somebody. That is the delegation.
+  if (atRegistry.ok && atRegistry.nameservers.length) {
+    const matched = matchesOurs(atRegistry.nameservers);
+    return {
+      matched,
+      via: 'registry',
+      nameservers: atRegistry.nameservers.slice().sort(),
+      // Present but not blocking — a registrar's verification record, or a
+      // leftover delegation the customer has not cleaned up yet.
+      extras: extrasIn(atRegistry.nameservers).sort(),
+      resolved: live.nameservers.slice().sort(),
+      /*
+       * DELEGATED TO US AND NOT ANSWERING is the state worth naming, because
+       * it is the one with a fix and the fix is ours. It means the registry
+       * sends the internet to our nameservers and our nameservers do not hold
+       * the zone yet — so `domain-linking.verify()` builds it.
+       */
+      serverFailure: matched && !live.nameservers.length,
+      unregistered: false,
+      code: live.code,
+      error: matched && !live.nameservers.length
+        ? 'Delegated to us at the registry; our nameservers are not answering for it yet.'
+        : '',
+    };
+  }
+
+  /*
+   * The registry answered and the name is not delegated anywhere — which for a
+   * TLD server means it is not registered. Said plainly, because "could not
+   * check" sends somebody to their registrar's nameserver form for a domain
+   * that does not exist.
+   */
+  if (atRegistry.ok && !atRegistry.nameservers.length && !live.nameservers.length) {
+    return {
+      matched: false,
+      via: 'registry',
+      nameservers: [],
+      extras: [],
+      resolved: [],
+      serverFailure: false,
+      unregistered: Boolean(atRegistry.nxdomain),
+      code: live.code,
+      error: atRegistry.nxdomain
+        ? 'That domain is not registered.'
+        : 'That domain has no nameservers set at its registry yet.',
+    };
+  }
+
+  // No usable registry answer: fall back to whatever the resolver said, which
+  // is exactly the behaviour this had before the registry lookup existed.
+  return {
+    matched: matchesOurs(live.nameservers),
+    via: live.nameservers.length ? 'resolver' : '',
+    nameservers: live.nameservers.slice().sort(),
+    extras: extrasIn(live.nameservers).sort(),
+    resolved: live.nameservers.slice().sort(),
+    serverFailure: ['ESERVFAIL', 'ETIMEOUT', 'ECONNREFUSED', 'EREFUSED', 'ENOTIMP'].includes(live.code),
+    unregistered: false,
+    code: live.code,
+    error: live.error,
+  };
 }
 
 /**
@@ -336,5 +412,6 @@ async function servedByUs(domain) {
 module.exports = {
   ourAddresses,
   servedByUs,
+  registryDelegation: registry.delegation,
   check, matchesOurs, extrasIn, pointsAtUs, normalise, ourNameserversResolve, OURS, RESOLVERS,
 };
