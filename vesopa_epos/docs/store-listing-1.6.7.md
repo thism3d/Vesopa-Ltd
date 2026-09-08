@@ -94,6 +94,29 @@ somebody to tell.
 
 ---
 
+## What is staged in Partner Center
+
+Uploaded and waiting for somebody to press Submit. Nothing has been committed,
+so nothing is in front of Microsoft's certification queue.
+
+| App | Store ID | Submission | Package |
+|---|---|---|---|
+| Vesopa EPOS | 9PDMNJXNFZCW | 1152921505701834601 | vesopa-epos-store-1.6.7.0.msix |
+| Vesopa Kitchen | 9P29NN3R5PGS | 1152921505701834417 | vesopa_epos_kitchen-1.6.7.0.msix |
+| Vesopa Display | 9P8JCLQ5M3SQ | 1152921505701834742 | vesopa-display-store-1.6.7.0.msix |
+
+**The package file name now carries the version, and it has to.** The first
+attempt at staging these named the new package exactly what the old one was
+called — both msix files come out of the same config — so each submission
+listed one name twice, once PendingDelete and once PendingUpload. That is
+ambiguous to the Store and the submission read as having no package in it.
+
+**A package does not show its version in Partner Center until the submission
+is committed.** The Store does not open the uploaded zip before then, so the
+new package appears as PendingUpload with no version against it. That is
+normal and is not a sign the upload failed — the upload can be checked by
+reading the blob back, which `stage-1670.js` now does and prints.
+
 ## Order of submission
 
 The till first, then the kitchen, then the display. Nothing breaks if a venue

@@ -65,7 +65,18 @@ if (app.pendingApplicationSubmission) {
 const submission = await client.createSubmission(storeId);
 console.log(`Created draft submission ${submission.id} for ${storeId}`);
 
-const fileName = path.basename(packageArg);
+// The name the package is uploaded under, stamped with its version.
+//
+// NOT the plain basename. A submission that replaces a package lists the old
+// one as PendingDelete and the new one as PendingUpload — and both of ours
+// are produced by the same msix config, so both had the SAME file name. Two
+// entries with one name, one being deleted and one arriving, is ambiguous to
+// the Store and it showed as a submission with no package in it. The version
+// is in the name now, so the two entries can never collide again.
+const version = process.env.STAGE_VERSION || "";
+const base = path.basename(packageArg, path.extname(packageArg));
+const ext = path.extname(packageArg);
+const fileName = version ? `${base}-${version}${ext}` : path.basename(packageArg);
 
 // The new package goes on; the ones it replaces come off. Same identity, same
 // architecture, higher version — leaving the old one would put two builds in
@@ -73,6 +84,15 @@ const fileName = path.basename(packageArg);
 const keep = (submission.applicationPackages ?? []).filter(
   (p) => p.fileStatus !== "PendingDelete"
 );
+if (keep.some((p) => p.fileName === fileName)) {
+  console.error(
+    `The package already in this submission is also called ${fileName}. ` +
+      `Bump the version or change the name — two entries under one name is ` +
+      `what produced an empty submission last time.`
+  );
+  await client.deleteSubmission(storeId, submission.id);
+  process.exit(1);
+}
 submission.applicationPackages = [
   ...keep.map((p) => ({ ...p, fileStatus: "PendingDelete" })),
   { fileName, fileStatus: "PendingUpload" },
@@ -105,7 +125,26 @@ await client.zipAndUploadFiles(
   [{ path: packageArg, nameInZip: fileName }],
   zipPath
 );
+const zipped = fs.statSync(zipPath).size;
 fs.rmSync(zipPath, { force: true });
+
+// Read the blob back. The upload is a PUT to a URL nobody sees the result of,
+// and "it did not throw" is not the same as "it is there" — the whole reason
+// this step is being done a second time is that nothing here proved it.
+let blob = "could not be checked";
+try {
+  const head = await fetch(submission.fileUploadUrl, { method: "HEAD" });
+  const size = Number(head.headers.get("content-length") ?? 0);
+  blob = `${head.status} ${head.statusText}, ${size} bytes`;
+  if (!head.ok || size !== zipped) {
+    console.error(`Uploaded ${zipped} bytes but the blob reads back as ${blob}.`);
+    process.exit(1);
+  }
+} catch (e) {
+  console.error(`Could not read the upload back: ${e.message}`);
+  process.exit(1);
+}
+console.log(`Uploaded ${fileName} (${zipped} bytes zipped); blob reads ${blob}`);
 
 const after = await client.getSubmission(storeId, submission.id);
 console.log(
