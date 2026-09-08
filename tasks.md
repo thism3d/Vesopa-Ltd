@@ -56,7 +56,7 @@ values: `Not started`, `In progress`, `Done`, `Blocked`.
 | T14 | Customer photo picker UI | 2 | Done | a square crop posted to `/api/customer-photo`; a face or initials in the table |
 | T15 | Shift-click range select on Products | 2 | Done | shift-click over `visibleProducts()`, on `click` not `change` |
 | T16 | Back-office polish list | 2 | Done | sort-arrow gap, rail bottom padding, and a Find a page box — see correction 6 |
-| T17 | British English pass | 2 | In progress | extraction and the audit script are in `tool/extract_copy.py`; two findings so far, one applied, one a false positive |
+| T17 | British English pass | 2 | Done | 780 strings read in six batches; three real findings, one false positive from the extractor — see correction 10 |
 | T18 | Drift: customer `photoUrl` column + migration | 3 | Not needed | the till reads the photo off the loyalty payload it already fetches; no local column, no Drift migration |
 | T19 | Till: refuse expired memberships | 3 | Done | `LoyaltyCustomer.membershipExpired`; the expiry day itself still works |
 | T20 | Till: take renewal fee and renew | 3 | Done | the fee is a line, the date moves at settle; `membership_plu` decides the VAT |
@@ -150,6 +150,24 @@ or measuring the running site rather than by thinking harder about the brief.
    read by the loyalty tier editor to colour a new tier. Making the palette a
    function per theme would have thrown there on Add tier — caught by grep
    rather than by anything failing, which is the argument for grepping.
+
+10. **The copy was already in good British English, and the audit is worth
+    keeping anyway.** All 780 user-facing strings were extracted with
+    `tool/extract_copy.py` and read in six batches. Three real findings across
+    the lot: "sign into" where the sign-in page itself says "Sign in to"; a
+    line still sending people to a section called **Clerks**, which was renamed
+    to Staff some time ago and which nothing had noticed; and "Paper
+    certificates redeem once", which wants the passive. No Americanisms
+    survived — the product already writes catalogue, colour, finalise and
+    programme correctly, and the `color` hits in a grep are all HTML attributes.
+
+    One finding was a **false positive caused by the extractor**, not by the
+    copy: pulling text out from between tags splits a sentence at every
+    `<strong>`, so "**Shift** extends the box, **Ctrl** adds one at a time"
+    arrived as a fragment beginning "adds one at a time" and was reported as a
+    tense error. Every finding was read back in context before anything was
+    changed, which is the only reason that one did not get "corrected" into a
+    mistake.
 
 ## Decisions taken for the client
 
