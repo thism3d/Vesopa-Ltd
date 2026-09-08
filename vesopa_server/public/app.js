@@ -6786,6 +6786,21 @@ let loyaltyState = null;
 
 async function loadLoyalty() {
   loyaltyState = await api('/loyalty');
+
+  // The catalogue, so the membership note can name the product a renewal is
+  // rung up as rather than quoting a number back. Without it the note said
+  // "no product with that PLU" about a product that exists, because it was
+  // looking in a list only the Products page fills.
+  //
+  // Awaited but not required: a venue that cannot load its catalogue should
+  // still be able to set its points rules, so a failure here costs the
+  // product's name and nothing else.
+  try {
+    crudProductChoices = await api('/products');
+  } catch {
+    crudProductChoices = [];
+  }
+
   fillLoyaltyForm();
   renderTiers();
   loyaltyExample();
@@ -6849,9 +6864,16 @@ function membershipNote() {
        || crudProductChoices.find((p) => Number(p.pluid) === Number(plu)))
     : null;
 
+  // A PLU nobody has is said out loud — that is a setting pointing at nothing
+  // and the till would fall back silently — but only when the catalogue is
+  // actually in hand. Claiming "no product with that PLU" because the list has
+  // not loaded would be the same sentence about a product that exists.
+  const known = crudProductChoices.length > 0;
   el.textContent = plu
     ? `Renewing at the till rings up PLU ${plu}`
-      + (product ? ` (${product.product_name})` : ' — no product with that PLU')
+      + (product
+        ? ` (${product.product_name})`
+        : known ? ' — no product with that PLU' : '')
       + `, and moves the expiry on ${months} month${months === 1 ? '' : 's'}.`
     : `Renewing at the till rings up a plain “Membership renewal” line at `
       + `£${pounds(fee)} with no VAT on it, and moves the expiry on ${months} `
