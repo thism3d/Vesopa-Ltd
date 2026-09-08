@@ -367,6 +367,11 @@ class LoyaltyCustomer {
     this.pointValueMinor = 1,
     this.pointsPerPound = 1,
     this.minSpendMinor = 0,
+    this.membershipExpiry,
+    this.photoUrl,
+    this.membershipTermMonths = 12,
+    this.membershipFeeMinor = 0,
+    this.membershipPlu,
   });
 
   final String id;
@@ -403,6 +408,45 @@ class LoyaltyCustomer {
 
   /// Spend below this earns nothing.
   final int minSpendMinor;
+
+  /// The last day this member's card works, or null for a member with no
+  /// membership — an ordinary points customer, who never expires.
+  final DateTime? membershipExpiry;
+
+  /// A photograph of the member, as a path under the back office.
+  ///
+  /// "Ability to upload a photo of a customer that would display on the till
+  /// when scanned to confirm it's the right person." A membership card is a
+  /// bearer token: without a face, the only check a venue has at the counter is
+  /// whether the person holding it knows the name on it.
+  final String? photoUrl;
+
+  /// How long a renewal runs for, and what it costs — the venue's settings,
+  /// carried on the member so a swipe produces one lookup rather than two.
+  final int membershipTermMonths;
+  final int membershipFeeMinor;
+
+  /// The product a renewal is rung up as, or null to ring a plain line.
+  final int? membershipPlu;
+
+  /// Whether the card still works, as of the till's own clock.
+  ///
+  /// The expiry day itself counts: a card that says 31 March works all of the
+  /// 31st. Decided against the alternative deliberately — a member told at the
+  /// counter that their card ran out today, on the day it says, is an argument
+  /// no clerk should have to have.
+  ///
+  /// A member with no expiry is not expired. Points customers and members share
+  /// this table, and null means "not a membership scheme" rather than "expired
+  /// at the beginning of time".
+  bool get membershipExpired {
+    final expiry = membershipExpiry;
+    if (expiry == null) return false;
+    final now = DateTime.now();
+    return expiry.isBefore(DateTime(now.year, now.month, now.day));
+  }
+
+  bool get isMember => membershipExpiry != null;
 
   int get _step => redeemStepPoints > 0 ? redeemStepPoints : 1;
 
@@ -482,6 +526,24 @@ class LoyaltyCustomer {
       pointValueMinor: (settings['point_value_minor'] as num?)?.toInt() ?? 1,
       pointsPerPound: (settings['points_per_pound'] as num?)?.toInt() ?? 1,
       minSpendMinor: (settings['min_spend_minor'] as num?)?.toInt() ?? 0,
+      // The server sends a DATE, which arrives either as `2027-03-31` from a
+      // DATE_FORMAT or as a full ISO timestamp from a raw column, depending on
+      // which route answered. Both parse; anything else is treated as no
+      // membership rather than as an expired one, because guessing wrong in
+      // that direction turns a member away at the counter.
+      membershipExpiry: switch (j['membership_expiry']) {
+        final String s when s.isNotEmpty => DateTime.tryParse(s),
+        _ => null,
+      },
+      photoUrl: switch (j['photo_url']) {
+        final String s when s.trim().isNotEmpty => s,
+        _ => null,
+      },
+      membershipTermMonths:
+          (settings['membership_term_months'] as num?)?.toInt() ?? 12,
+      membershipFeeMinor:
+          (settings['membership_fee_minor'] as num?)?.toInt() ?? 0,
+      membershipPlu: (settings['membership_plu'] as num?)?.toInt(),
     );
   }
 }
@@ -706,6 +768,68 @@ class CommerceRepository {
     if (res.statusCode != 200) {
       throw CommerceException(
         body['error'] as String? ?? 'Could not look that card up',
+      );
+    }
+    return LoyaltyCustomer.fromJson(body);
+  }
+
+  /// The venue's membership settings, cached for the life of the till session.
+  ///
+  /// Needed at settle time, when there may be no member on screen to read them
+  /// off: the bill knows it carries a renewal line, and this is what says which
+  /// PLU that line would have been rung under. Cached because it is the same
+  /// three numbers all day and the settle path is the worst moment to add a
+  /// round trip to.
+  ///
+  /// Answers the defaults when the server cannot be reached. A till that
+  /// refused to settle a sale because it could not read a setting would be a
+  /// till that stops selling when the broadband does.
+  Future<({int termMonths, int feeMinor, int? plu})> membershipSettings() async {
+    if (_membership != null) return _membership!;
+    try {
+      final res = await _client
+          .get(Uri.parse('$apiBase/api/loyalty/public?$_officeParam'))
+          .timeout(_timeout);
+      if (res.statusCode == 200) {
+        final j = jsonDecode(res.body) as Map<String, dynamic>;
+        _membership = (
+          termMonths: (j['membership_term_months'] as num?)?.toInt() ?? 12,
+          feeMinor: (j['membership_fee_minor'] as num?)?.toInt() ?? 0,
+          plu: (j['membership_plu'] as num?)?.toInt(),
+        );
+        return _membership!;
+      }
+    } catch (_) {
+      // Falls through to the defaults below.
+    }
+    return (termMonths: 12, feeMinor: 0, plu: null);
+  }
+
+  ({int termMonths, int feeMinor, int? plu})? _membership;
+
+  /// Renew a membership, and say what it now runs to.
+  ///
+  /// The date is computed by the server, not here. Two tills and a back office
+  /// would otherwise each add a term to whatever they last synced, on whatever
+  /// their own clock said, and a member would end up with a different expiry
+  /// depending on which terminal took the money.
+  ///
+  /// Not cached and not queued, like every other write in this class: a
+  /// renewal is a change to what somebody has paid for, and a till that says
+  /// "renewed" on a request that never arrived has told a customer something
+  /// untrue.
+  Future<LoyaltyCustomer> renewMembership(String customerId) async {
+    final res = await _client
+        .post(
+          Uri.parse('$apiBase/api/loyalty/renew'),
+          headers: const {'Content-Type': 'application/json'},
+          body: jsonEncode({'office': office, 'customer_id': customerId}),
+        )
+        .timeout(_timeout);
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    if (res.statusCode != 200) {
+      throw CommerceException(
+        body['error'] as String? ?? 'Could not renew that membership',
       );
     }
     return LoyaltyCustomer.fromJson(body);

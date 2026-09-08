@@ -132,6 +132,110 @@ class StaffRepository {
     });
   }
 
+  /// The roles a new member of staff can be given.
+  ///
+  /// Permission groups by name. The switches inside one already travel with the
+  /// staff list, so there is nothing here worth a second copy of them — this is
+  /// only what fills the picker on the form.
+  ///
+  /// An empty list is a real answer: a venue whose back office predates
+  /// permission groups has no roles, and everybody it employs is unrestricted.
+  /// The form draws without the field rather than refusing to open.
+  Future<List<({int id, String name})>> permissionGroups({
+    Duration timeout = const Duration(seconds: 10),
+  }) async {
+    final token = terminalToken;
+    if (token == null) return const [];
+    try {
+      final res = await _client
+          .get(
+            Uri.parse('$apiBase/till/permission-groups'),
+            headers: {'Authorization': 'Bearer $token'},
+          )
+          .timeout(timeout);
+      if (res.statusCode != 200) return const [];
+      return (jsonDecode(res.body) as List)
+          .cast<Map<String, dynamic>>()
+          .map((r) => (id: (r['id'] as num).toInt(), name: r['name'] as String))
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// Take somebody on, from the till.
+  ///
+  /// "Ability to add staff members from the function screen." A new starter
+  /// arrives at four on a Friday and cannot ring anything up until somebody
+  /// with a back-office login has been found, which in a venue with one manager
+  /// and no office computer means they cannot start.
+  ///
+  /// **Refused with no network, never queued.** A member of staff created
+  /// locally would be somebody the other till has never heard of, holding a PIN
+  /// nothing has checked for uniqueness against the venue — so they could sign
+  /// on at the bar and not at the counter, and two people could end up sharing
+  /// four digits with every sale attributed to whichever row was found first.
+  /// Being told to wait is a worse minute and a better afternoon.
+  ///
+  /// Returns the new row's id, which the caller needs to hand a card to.
+  Future<int> create({
+    required String name,
+    int? permissionGroupId,
+    String? pin,
+    Duration timeout = const Duration(seconds: 10),
+  }) async {
+    final token = terminalToken;
+    if (token == null) {
+      throw StaffSyncFailed(
+        'This terminal was set up before staff sign-on existed. Sign the till '
+        'in again from Settings to add staff here.',
+      );
+    }
+
+    final http.Response res;
+    try {
+      res = await _client
+          .post(
+            Uri.parse('$apiBase/till/staff'),
+            headers: {
+              'Authorization': 'Bearer $token',
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode({
+              'name': name,
+              'permission_group_id': permissionGroupId,
+              'pin': pin,
+            }),
+          )
+          .timeout(timeout);
+    } catch (e) {
+      throw StaffSyncFailed(
+        'Could not reach the back office, so nobody was added. Staff have to '
+        'be created where the whole venue can see them — otherwise they could '
+        'sign on at this till and nowhere else.\n\n$e',
+      );
+    }
+
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    if (res.statusCode != 201) {
+      // The server's own words. It is the one that knows whose PIN this
+      // already is, and naming them is the whole use of the message.
+      throw StaffSyncFailed(
+        body['error'] as String? ?? 'The back office refused that.',
+      );
+    }
+
+    // Pull the list straight away, so the person who has just been added can
+    // sign on without waiting for whatever would have refreshed it next.
+    try {
+      await sync(timeout: timeout);
+    } on StaffSyncFailed {
+      // They exist in the back office, which is what matters. The next sync
+      // will bring them down.
+    }
+    return (body['id'] as num).toInt();
+  }
+
   /// Who this PIN belongs to, or null if it belongs to nobody.
   ///
   /// Cache first, server second — and only on a miss.

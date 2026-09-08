@@ -9,6 +9,7 @@ import '../data/local/database.dart';
 import '../data/order_repository.dart';
 import '../data/pricing_engine.dart';
 import '../data/staff_session.dart';
+import '../data/membership.dart';
 import '../data/tender_engine.dart';
 import '../data/customer_display.dart';
 import '../data/customer_display_control.dart';
@@ -1086,7 +1087,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
       // anybody pays. The total is passed in because only the tender engine
       // knows a share's portion of a bill-wide offer — so the figure on the
       // paper is the figure on the card is the figure charged.
-      onPrintShare: (lineIds, title, totalMinor) =>
+      onPrintShare: (lineIds, title, totalMinor, quantities) =>
           TillActions.printCurrentBill(
         context,
         ref,
@@ -1094,6 +1095,9 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
         onlyLines: lineIds,
         title: title,
         totalMinor: totalMinor,
+        // Only ever non-empty when a line was divided. See
+        // `data/split_portions.dart`.
+        lineQuantities: quantities,
       ),
     );
     if (choice == null || !mounted) return;
@@ -1192,6 +1196,49 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
       } catch (_) {
         // Points are a loyalty nicety; failing to award them must never block
         // handing the customer their receipt.
+      }
+    }
+
+    // ---- The membership, if this bill renewed one ------------------------
+    //
+    // Here, beside the points, and for the same reason: the fee has just been
+    // taken. Doing it when the clerk pressed Renew would have meant a voided
+    // bill leaving a card working for another year — the member walks away,
+    // the sale is cancelled, and nothing was paid.
+    //
+    // Read off the ORDER rather than off `_customer`, because the two are not
+    // the same thing. A bill can be started on one terminal, parked on a
+    // table, picked up on another and paid an hour later; the line carrying the
+    // renewal travels with it and a variable on this page does not.
+    try {
+      final order = await repo.watchOrder(widget.orderId).first;
+      final renewFor = order.customerId;
+      if (renewFor != null && renewFor.isNotEmpty) {
+        final lines = await repo.watchLines(widget.orderId).first;
+        final settings = await commerce.membershipSettings();
+        if (billRenewsMembership(lines, plu: settings.plu)) {
+          final renewed = await commerce.renewMembership(renewFor);
+          if (mounted && renewed.membershipExpiry != null) {
+            PosMessenger.success(
+              context,
+              'Membership renewed to '
+              '${_shortDay(renewed.membershipExpiry!)}.',
+            );
+          }
+        }
+      }
+    } catch (e) {
+      // The money is taken and the customer is holding a receipt. A renewal
+      // that could not be posted is a date to correct in the back office, not
+      // a reason to stop the sale — but it is said out loud rather than
+      // swallowed, because a clerk who is told can write it down and a clerk
+      // who is not cannot.
+      if (mounted) {
+        PosMessenger.error(
+          context,
+          'The fee was taken but the membership date could not be updated. '
+          'Renew it in the back office. ($e)',
+        );
       }
     }
 
@@ -2232,4 +2279,13 @@ class _HeaderKey extends StatelessWidget {
       ),
     );
   }
+}
+
+/// A date as a clerk would read it off a screen at a counter.
+String _shortDay(DateTime d) {
+  const months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+  return '${d.day} ${months[d.month - 1]} ${d.year}';
 }

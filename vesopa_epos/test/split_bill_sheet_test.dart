@@ -8,6 +8,7 @@ PricedLine line(
   String id, {
   String name = 'Item',
   int price = 100,
+  double qty = 1,
   String? by,
   DateTime? at,
   String? parent,
@@ -16,7 +17,7 @@ PricedLine line(
       id: id,
       pluid: 1,
       name: name,
-      quantity: 1,
+      quantity: qty,
       unitPriceMinor: price,
       taxPercentage: 0,
       addedBy: by,
@@ -47,11 +48,18 @@ final _breakfast = [
   line('b', name: 'Breakfast Wrap', price: 795),
 ];
 
+/// A round of drinks rung up as one line — the fault the venue reported.
+final _round = [
+  line('p', name: 'Prosecco', price: 700, qty: 3),
+  line('n', name: 'Peanuts', price: 250),
+];
+
 Future<void> _open(
   WidgetTester tester,
   TenderState state, {
   void Function(SplitChoice?)? into,
-  Future<void> Function(Set<String>, String, int)? onPrintShare,
+  Future<void> Function(Set<String>, String, int, Map<String, double>)?
+      onPrintShare,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -264,6 +272,178 @@ void main() {
     });
   });
 
+  group('a round rung up as one line', () {
+    // "There's also a bug on split bill. If there is 3 x Prosecco you can't
+    // split them off, someone must pay for the 3 glasses if you get what i
+    // mean." Before this, the pool had one row for the round and the whole of
+    // it went onto whichever card took it.
+    testWidgets('offers to take the round apart', (tester) async {
+      await _open(tester, stateOf(_round));
+      expect(find.text('3 × Prosecco'), findsOneWidget);
+      expect(find.byTooltip('Split these 3 up'), findsOneWidget);
+      // And offers nothing of the sort on a single item.
+      expect(find.byTooltip('Split these 1 up'), findsNothing);
+    });
+
+    testWidgets('taking it apart makes three glasses', (tester) async {
+      await _open(tester, stateOf(_round));
+      await tester.tap(find.byTooltip('Split these 3 up'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('3 × Prosecco'), findsNothing);
+      expect(find.text('Prosecco'), findsNWidgets(3));
+      // Numbered, so the clerk can tell which glass is going where.
+      expect(find.text('1 of 3'), findsOneWidget);
+      expect(find.text('3 of 3'), findsOneWidget);
+    });
+
+    testWidgets('one glass can be split off on its own', (tester) async {
+      SplitChoice? choice;
+      await _open(tester, stateOf(_round), into: (c) => choice = c);
+      await tester.tap(find.byTooltip('Split these 3 up'));
+      await tester.pumpAndSettle();
+
+      // The first glass, and nothing else.
+      await tester.tap(find.text('Prosecco').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.textContaining('Split off 1 item'));
+      await tester.pumpAndSettle();
+
+      // £7.00 on the card, and the other two glasses and the nuts left over.
+      expect(find.text('£7.00'), findsWidgets);
+
+      await tester.tap(find.widgetWithText(FilledButton, 'Done'));
+      await tester.pumpAndSettle();
+
+      expect(choice!.mode, SplitMode.byItem);
+      expect(choice!.groups!.first, ['p#1']);
+      expect(choice!.groups!.last.length, 3); // two glasses and the peanuts
+    });
+
+    testWidgets('and the shares still add up to the bill', (tester) async {
+      final state = stateOf(_round);
+      SplitChoice? choice;
+      await _open(tester, state, into: (c) => choice = c);
+      await tester.tap(find.byTooltip('Split these 3 up'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Prosecco').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.textContaining('Split off 1 item'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Done'));
+      await tester.pumpAndSettle();
+
+      final split = state.splitByItems(choice!.groups!);
+      expect(
+        split.shares.fold<int>(0, (s, x) => s + x.amountMinor),
+        state.outstandingMinor,
+      );
+    });
+
+    testWidgets('a round can be put back together', (tester) async {
+      await _open(tester, stateOf(_round));
+      await tester.tap(find.byTooltip('Split these 3 up'));
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('Put these back together'), findsNWidgets(3));
+
+      await tester.tap(find.byTooltip('Put these back together').first);
+      await tester.pumpAndSettle();
+      expect(find.text('3 × Prosecco'), findsOneWidget);
+      expect(find.text('1 of 3'), findsNothing);
+    });
+
+    testWidgets('but not once a glass is on somebody’s card', (tester) async {
+      await _open(tester, stateOf(_round));
+      await tester.tap(find.byTooltip('Split these 3 up'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Prosecco').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.textContaining('Split off 1 item'));
+      await tester.pumpAndSettle();
+
+      expect(find.byTooltip('Put these back together'), findsNothing);
+    });
+
+    // A share paying for one glass must not be handed a bill that says three.
+    testWidgets('a share’s bill says how many it is paying for',
+        (tester) async {
+      Set<String>? printed;
+      Map<String, double>? quantities;
+      await _open(
+        tester,
+        stateOf(_round),
+        onPrintShare: (ids, title, minor, q) async {
+          printed = ids;
+          quantities = q;
+        },
+      );
+      await tester.tap(find.byTooltip('Split these 3 up'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Prosecco').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.textContaining('Split off 1 item'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Bill').first);
+      await tester.pumpAndSettle();
+
+      // The real line id, because that is what the order holds…
+      expect(printed, {'p'});
+      // …and one, not three.
+      expect(quantities, {'p': 1.0});
+    });
+
+    // A round of three with three extra shots is three drinks that each had a
+    // shot. Refusing to divide anything carrying a modifier — which is what
+    // the venue's previous system does — would only move this same complaint
+    // onto every dish with an option on it.
+    testWidgets('a modifier is divided with the drink it belongs to',
+        (tester) async {
+      final withShots = [
+        line('p', name: 'Prosecco', price: 700, qty: 3),
+        line('s', name: 'Extra shot', price: 150, qty: 3, parent: 'p'),
+      ];
+      final state = stateOf(withShots);
+      SplitChoice? choice;
+      await _open(tester, state, into: (c) => choice = c);
+
+      await tester.tap(find.byTooltip('Split these 3 up'));
+      await tester.pumpAndSettle();
+      // Each glass now carries one shot rather than all three.
+      expect(find.text('Extra shot'), findsNWidgets(3));
+
+      await tester.tap(find.text('Prosecco').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.textContaining('Split off 1 item'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Done'));
+      await tester.pumpAndSettle();
+
+      // The shot goes with the glass, never onto somebody else's card.
+      expect(choice!.groups!.first.toSet(), {'p#1', 's#1'});
+      final split = state.splitByItems(choice!.groups!);
+      expect(split.shares.first.amountMinor, 850);
+      expect(
+        split.shares.fold<int>(0, (s, x) => s + x.amountMinor),
+        state.outstandingMinor,
+      );
+    });
+
+    testWidgets('undoing the split puts the round back', (tester) async {
+      await _open(tester, stateOf(_round));
+      await tester.tap(find.byTooltip('Split these 3 up'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Prosecco').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.textContaining('Split off 1 item'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.widgetWithText(TextButton, 'Undo split'));
+      await tester.pumpAndSettle();
+      expect(find.text('3 × Prosecco'), findsOneWidget);
+    });
+  });
+
   group('printing a share', () {
     testWidgets('a card prints its own bill, with its own total',
         (tester) async {
@@ -275,7 +455,7 @@ void main() {
       await _open(
         tester,
         stateOf(_breakfast),
-        onPrintShare: (ids, title, minor) async {
+        onPrintShare: (ids, title, minor, quantities) async {
           printed = ids;
           total = minor;
         },

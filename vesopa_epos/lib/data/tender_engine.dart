@@ -1,5 +1,6 @@
 import 'commerce.dart';
 import 'pricing_engine.dart';
+import 'split_portions.dart';
 
 /// One payment taken against a bill.
 class TenderEntry {
@@ -234,7 +235,35 @@ class TenderState {
     );
   }
 
+  /// What one id on a share is worth.
+  ///
+  /// A whole line is its own net. A **portion** — `<lineId>#2`, one glass out
+  /// of a round of three — is that line's net divided by its quantity, with the
+  /// odd penny placed deterministically. See `split_portions.dart` for the
+  /// arithmetic and for why the remainder goes where it does.
+  ///
+  /// Resolved here rather than in the split screen because this is the one
+  /// place that decides what a share costs, and a second implementation of
+  /// "what is a portion worth" is a second answer waiting to disagree with this
+  /// one in front of a table.
+  int valueOfId(String id, Map<String, PricedLine> byId) {
+    final line = byId[baseLineId(id)];
+    if (line == null) return 0;
+    final index = portionIndex(id);
+    if (index == 0) return line.netMinor;
+    // Quantities are held as doubles because a line can be 1.5 kg; a portion is
+    // only ever offered on a whole number, so rounding here is reading the
+    // count rather than changing it.
+    final count = line.quantity.round();
+    return portionValue(line.netMinor, count < 1 ? 1 : count, index);
+  }
+
   /// Split by putting named lines on their own shares.
+  ///
+  /// An id in a group may be a whole line or one portion of one — see
+  /// [valueOfId]. Whichever it is, the portions of a line always add back to
+  /// the line, so the shares still sum to the bill to the penny and
+  /// [_apportion] needs to know nothing about any of this.
   TenderState splitByItems(List<List<String>> groups) {
     if (groups.length < 2) {
       return copyWith(splitMode: SplitMode.none, shares: const []);
@@ -244,7 +273,7 @@ class TenderState {
     final itemised = <int>[
       for (final group in groups)
         group
-            .map((id) => byId[id]?.netMinor ?? 0)
+            .map((id) => valueOfId(id, byId))
             .fold<int>(0, (s, v) => s + v),
     ];
 

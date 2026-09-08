@@ -40,6 +40,7 @@ import 'package:intl/intl.dart';
 import '../data/bill_rounds.dart';
 import '../data/modifier_layout.dart';
 import '../data/pricing_engine.dart';
+import '../data/split_portions.dart';
 import '../data/tender_engine.dart';
 
 String _money(int minor) =>
@@ -78,8 +79,17 @@ Future<SplitChoice?> showSplitDialog(
   required TenderState state,
   /// Print one share's bill. Null where there is no printer path — a widget
   /// test, or a screen with no order behind it.
-  Future<void> Function(Set<String> lineIds, String title, int totalMinor)?
-      onPrintShare,
+  ///
+  /// `quantities` says how many of a line this share is paying for, and is
+  /// only non-empty when a line has been divided: the order still holds one
+  /// `3 × Prosecco` row, and a share paying for one of them must not be handed
+  /// a bill that says three.
+  Future<void> Function(
+    Set<String> lineIds,
+    String title,
+    int totalMinor,
+    Map<String, double> quantities,
+  )? onPrintShare,
 }) =>
     showDialog<SplitChoice>(
       context: context,
@@ -91,25 +101,42 @@ class SplitBillSheet extends StatefulWidget {
   const SplitBillSheet({super.key, required this.state, this.onPrintShare});
 
   final TenderState state;
-  final Future<void> Function(Set<String> lineIds, String title, int totalMinor)?
-      onPrintShare;
+  final Future<void> Function(
+    Set<String> lineIds,
+    String title,
+    int totalMinor,
+    Map<String, double> quantities,
+  )? onPrintShare;
 
   @override
   State<SplitBillSheet> createState() => SplitBillSheetState();
 }
 
 class SplitBillSheetState extends State<SplitBillSheet> {
-  late final List<PricedLine> _lines;
+  /// The bill as this screen works with it.
+  ///
+  /// Not `final`, and not the sale's own lines: dividing a round of three
+  /// replaces one line here with three of one each. The order itself is never
+  /// touched — see `data/split_portions.dart` — so a clerk who takes a round
+  /// apart and then closes this screen has changed nothing.
+  late List<PricedLine> _lines;
   late final List<BillRound> _rounds;
 
   SplitMethod _method = SplitMethod.items;
   int _ways = 2;
 
-  /// The shares, in the order they were made. Each is a set of line ids.
+  /// The shares, in the order they were made. Each is a set of line ids, and
+  /// an id in one may name a whole line or one unit of a divided one.
   final List<Set<String>> _shares = [];
 
   /// What the clerk has picked out of the pool but not yet split off.
   final Set<String> _picked = {};
+
+  /// Lines that have been taken apart, and into how many.
+  ///
+  /// Kept so a divided line can be put back together, and so the printed bill
+  /// can be told to say "1 × Prosecco" on a share that is paying for one.
+  final Map<String, int> _divided = {};
 
   @override
   void initState() {
@@ -121,7 +148,134 @@ class SplitBillSheetState extends State<SplitBillSheet> {
       idOf: (l) => l.id,
       parentOf: (l) => l.parentLineId,
     );
+    // Taken from the bill as rung, not from the working lines: a round is what
+    // was ordered together, and dividing a line afterwards does not change what
+    // was ordered together.
     _rounds = roundsOf(_lines);
+  }
+
+  // ---------------------------------------------------------------------
+  // Taking a line apart
+  // ---------------------------------------------------------------------
+
+  /// Whether this line can be divided: more than one of it, a whole number of
+  /// them, and not already in pieces.
+  ///
+  /// A fractional quantity is deliberately refused. A line rung up as 1.5 kg of
+  /// something has no units to divide into, and offering "split into 1.5" would
+  /// be offering nonsense; that bill is split by picking the line whole, which
+  /// is what it always was.
+  bool canDivide(PricedLine line) =>
+      line.parentLineId == null &&
+      !isPortion(line.id) &&
+      line.quantity > 1 &&
+      line.quantity == line.quantity.roundToDouble();
+
+  /// Replace a line with one line per unit of it.
+  ///
+  /// Modifiers go with it. A round of three proseccos with three extra shots is
+  /// three drinks that each had a shot, so each portion carries its own copy of
+  /// each modifier, divided by the same rule. The alternative — refusing to
+  /// divide anything that carries a modifier, which is what the venue's
+  /// previous system does — would move this same complaint onto every dish with
+  /// an option on it.
+  void divide(String lineId) {
+    final line = _lines.firstWhere((l) => l.id == lineId);
+    if (!canDivide(line)) return;
+    final count = line.quantity.round();
+
+    final children = [for (final l in _lines) if (l.parentLineId == lineId) l];
+
+    final replacement = <PricedLine>[];
+    for (var i = 1; i <= count; i++) {
+      replacement.add(_unit(line, count, i, parentId: null));
+      for (final child in children) {
+        replacement.add(
+          _unit(child, count, i, parentId: portionId(lineId, i)),
+        );
+      }
+    }
+
+    setState(() {
+      final at = _lines.indexWhere((l) => l.id == lineId);
+      _lines = [
+        ..._lines.sublist(0, at),
+        ...replacement,
+        // Everything after the line, minus the children that have just been
+        // replaced by their own portions.
+        for (final l in _lines.sublist(at + 1))
+          if (l.parentLineId != lineId) l,
+      ];
+      _divided[lineId] = count;
+      // A line that was picked is no longer a line. Its units start unpicked,
+      // because "I meant these three" and "I meant one of these three" are
+      // different instructions and the clerk has just said which.
+      _picked.remove(lineId);
+    });
+  }
+
+  /// One unit of [line], as a line in its own right.
+  PricedLine _unit(
+    PricedLine line,
+    int count,
+    int index, {
+    required String? parentId,
+  }) {
+    final net = portionValue(line.netMinor, count, index);
+    final gross = portionValue(line.grossMinor, count, index);
+    return PricedLine(
+      id: portionId(line.id, index),
+      pluid: line.pluid,
+      name: line.name,
+      quantity: line.quantity / count,
+      // Priced from the portion's own gross rather than from the line's unit
+      // price, so `grossMinor` on the portion comes back to exactly what was
+      // apportioned to it — including the odd penny.
+      unitPriceMinor: gross,
+      taxPercentage: line.taxPercentage,
+      department: line.department,
+      group: line.group,
+      note: line.note,
+      discountMinor: gross - net,
+      promotionName: line.promotionName,
+      promotionId: line.promotionId,
+      addedBy: line.addedBy,
+      addedAt: line.addedAt,
+      parentLineId: parentId,
+    );
+  }
+
+  /// Whether every unit of a divided line is still in the pool, which is the
+  /// only state in which putting it back together means anything.
+  bool canRejoin(String baseId) {
+    if (!_divided.containsKey(baseId)) return false;
+    final taken = <String>{for (final share in _shares) ...share};
+    return !taken.any((id) => baseLineId(id) == baseId);
+  }
+
+  /// Put a divided line back together.
+  void rejoin(String baseId) {
+    if (!canRejoin(baseId)) return;
+    final original = orderWithModifiers(
+      widget.state.totals.lines,
+      idOf: (l) => l.id,
+      parentOf: (l) => l.parentLineId,
+    );
+    setState(() {
+      final at = _lines.indexWhere((l) => baseLineId(l.id) == baseId);
+      final restored = [
+        for (final l in original)
+          if (l.id == baseId || l.parentLineId == baseId) l,
+      ];
+      _lines = [
+        for (final l in _lines.sublist(0, at)) l,
+        ...restored,
+        for (final l in _lines.sublist(at))
+          if (baseLineId(l.id) != baseId) l,
+      ];
+      _divided.remove(baseId);
+      _picked.removeWhere((id) => baseLineId(id) == baseId);
+    });
   }
 
   // ---------------------------------------------------------------------
@@ -169,6 +323,16 @@ class SplitBillSheetState extends State<SplitBillSheet> {
   /// Fill the shares from the rounds the bill was rung in, in one press.
   void _splitByRounds() {
     setState(() {
+      // Rounds are groups of whole lines, so the divisions go first: filling
+      // the cards from the rounds while three portions were loose would put
+      // some of the bill on a card and leave the rest of the same drink in the
+      // pool, which is not what "by round" means.
+      _divided.clear();
+      _lines = orderWithModifiers(
+        widget.state.totals.lines,
+        idOf: (l) => l.id,
+        parentOf: (l) => l.parentLineId,
+      );
       _shares
         ..clear()
         ..addAll([
@@ -183,6 +347,15 @@ class SplitBillSheetState extends State<SplitBillSheet> {
     setState(() {
       _shares.clear();
       _picked.clear();
+      // The divisions go back as well. "Undo split" means the bill as it was,
+      // and a screen that returned every share but left three separate glasses
+      // in the pool would have undone half of what it says it undoes.
+      _divided.clear();
+      _lines = orderWithModifiers(
+        widget.state.totals.lines,
+        idOf: (l) => l.id,
+        parentOf: (l) => l.parentLineId,
+      );
     });
   }
 
@@ -249,13 +422,32 @@ class SplitBillSheetState extends State<SplitBillSheet> {
 
   void _payShare(int index) => Navigator.pop(context, _asChoice(payShare: index));
 
+  /// How many of each real line a share holds.
+  ///
+  /// A share paying for one of three proseccos must not be handed a bill that
+  /// says `3 × Prosecco`. The printer works from the order's own lines — the
+  /// undivided ones — so it is told the quantity to print instead: one per
+  /// portion held.
+  Map<String, double> shareQuantities(int index) {
+    final counts = <String, double>{};
+    for (final id in _shares[index]) {
+      if (!isPortion(id)) continue;
+      counts[baseLineId(id)] = (counts[baseLineId(id)] ?? 0) + 1;
+    }
+    return counts;
+  }
+
   Future<void> _printShare(int index) async {
     final print = widget.onPrintShare;
     if (print == null) return;
     await print(
-      _shares[index],
+      // The real line ids, because that is what the order holds. Two portions
+      // of one line collapse to one id, and the quantity map below is what
+      // says there were two.
+      {for (final id in _shares[index]) baseLineId(id)},
       'Share ${index + 1} of ${groups.length}',
       _shareTotal(index),
+      shareQuantities(index),
     );
   }
 
@@ -379,6 +571,23 @@ class SplitBillSheetState extends State<SplitBillSheet> {
                                 _picked.add(line.id);
                               }
                             }),
+                            // Offered on a round of more than one, and on
+                            // nothing else: a single glass has nothing to
+                            // divide, and the key would only be a question
+                            // with no answer.
+                            onDivide: canDivide(line)
+                                ? () => divide(line.id)
+                                : null,
+                            onRejoin: canRejoin(baseLineId(line.id))
+                                ? () => rejoin(baseLineId(line.id))
+                                : null,
+                            // "2 of 3", so the clerk can see which glass is
+                            // going where. Without it three identical rows
+                            // appear out of one and nothing says why.
+                            ofLabel: isPortion(line.id)
+                                ? '${portionIndex(line.id)} of '
+                                    '${_divided[baseLineId(line.id)] ?? 0}'
+                                : null,
                           ),
                     ],
                   ),
@@ -572,12 +781,25 @@ class _PoolRow extends StatelessWidget {
     required this.modifiers,
     required this.picked,
     required this.onTap,
+    this.onDivide,
+    this.onRejoin,
+    this.ofLabel,
   });
 
   final PricedLine line;
   final List<PricedLine> modifiers;
   final bool picked;
   final VoidCallback onTap;
+
+  /// Take this line apart, one row per unit. Null when there is nothing to
+  /// take apart.
+  final VoidCallback? onDivide;
+
+  /// Put the units back together. Null unless every one of them is still here.
+  final VoidCallback? onRejoin;
+
+  /// "2 of 3" on a unit of a divided line; null on a whole one.
+  final String? ofLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -605,11 +827,27 @@ class _PoolRow extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      line.quantity == 1
-                          ? line.name
-                          : '${_qty(line.quantity)} × ${line.name}',
-                      style: const TextStyle(fontSize: 14.5),
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            line.quantity == 1
+                                ? line.name
+                                : '${_qty(line.quantity)} × ${line.name}',
+                            style: const TextStyle(fontSize: 14.5),
+                          ),
+                        ),
+                        if (ofLabel != null) ...[
+                          const SizedBox(width: 6),
+                          Text(
+                            ofLabel!,
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                     if (modifiers.isNotEmpty)
                       Text(
@@ -624,6 +862,27 @@ class _PoolRow extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Text(_money(total), style: const TextStyle(fontSize: 14.5)),
+              // The key that answers "3 x Prosecco and you can't split them
+              // off". Small, and only present on the rows it means anything
+              // for, so the pool still reads as a list rather than a toolbar.
+              if (onDivide != null)
+                IconButton(
+                  onPressed: onDivide,
+                  visualDensity: VisualDensity.compact,
+                  iconSize: 19,
+                  tooltip: 'Split these ${_qty(line.quantity)} up',
+                  icon: const Icon(Icons.call_split),
+                )
+              else if (onRejoin != null)
+                IconButton(
+                  onPressed: onRejoin,
+                  visualDensity: VisualDensity.compact,
+                  iconSize: 19,
+                  tooltip: 'Put these back together',
+                  icon: const Icon(Icons.merge),
+                )
+              else
+                const SizedBox(width: 40),
             ],
           ),
         ),

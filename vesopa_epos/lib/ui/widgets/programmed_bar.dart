@@ -727,6 +727,18 @@ class _BarKey extends ConsumerWidget {
     // sliver, and a word crammed under a photograph in it is neither.
     final words = picture == null || button.showLabel;
 
+    /// The amount on the Pay key, when there is one — and null on every other
+    /// key, which is what keeps the ordinary note treatment exactly as it was.
+    ///
+    /// Read off the key rather than off the resolved note, because two other
+    /// kinds of key also carry a note that happens to be money: a product key
+    /// with prices switched on, and nothing else. Those are prices on a grid of
+    /// forty, and stacking them is right there.
+    final money = button.kind == ScreenButtonKind.function &&
+            button.functionKey == 'pay'
+        ? r.note
+        : null;
+
     return Opacity(
       opacity: enabled ? 1 : 0.55,
       child: Material(
@@ -751,54 +763,119 @@ class _BarKey extends ConsumerWidget {
                   ),
                 ),
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    if (picture == null)
-                      if (emoji != null && emoji.isNotEmpty)
-                        Text(emoji, style: const TextStyle(fontSize: 17))
-                      else if (r.icon != null)
-                        Icon(r.icon, size: 18, color: ink),
-                    if (words)
-                      Flexible(
-                        child: Text(
-                          r.label,
-                          textAlign: TextAlign.center,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: picture != null ? Colors.white : ink,
-                            fontFamily: fontFamily,
-                            // Capped harder than a sale key, and against a fixed
-                            // ceiling rather than the key's height: a bar is one or
-                            // two rows tall whatever the terminal is, and a 40pt
-                            // label on it does not overflow so much as push Pay off
-                            // the end of the strip.
-                            fontSize: (button.fontSize?.toDouble() ?? 12).clamp(
-                              8.0,
-                              20.0,
+                child: money == null
+                    ? Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          if (picture == null)
+                            if (emoji != null && emoji.isNotEmpty)
+                              Text(emoji, style: const TextStyle(fontSize: 17))
+                            else if (r.icon != null)
+                              Icon(r.icon, size: 18, color: ink),
+                          if (words)
+                            Flexible(
+                              child: Text(
+                                r.label,
+                                textAlign: TextAlign.center,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: picture != null ? Colors.white : ink,
+                                  fontFamily: fontFamily,
+                                  // Capped harder than a sale key, and against a
+                                  // fixed ceiling rather than the key's height: a
+                                  // bar is one or two rows tall whatever the
+                                  // terminal is, and a 40pt label on it does not
+                                  // overflow so much as push Pay off the end of
+                                  // the strip.
+                                  fontSize: (button.fontSize?.toDouble() ?? 12)
+                                      .clamp(8.0, 20.0),
+                                  fontWeight: FontWeight.w700,
+                                  height: 1.1,
+                                ),
+                              ),
                             ),
-                            fontWeight: FontWeight.w700,
-                            height: 1.1,
+                          if (words && r.note != null)
+                            Text(
+                              r.note!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: picture != null
+                                    ? Colors.white
+                                    : ink.withValues(alpha: 0.85),
+                                fontFamily: fontFamily,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                        ],
+                      )
+                    // ---- The Pay key ---------------------------------------
+                    //
+                    // "Pay button can the amount be on the side of the button
+                    // not underneath so it's bigger and easier to read."
+                    //
+                    // The figure was a 12pt note stacked under the word, which
+                    // is the treatment every other note on this bar gets — and
+                    // for "Not in the catalogue" or "Screen removed" that is
+                    // right, because those are asides. The amount is not an
+                    // aside. It is the number the clerk reads off the key they
+                    // are about to charge with, in front of a customer, and on
+                    // a two-row bar there was room for twelve points of it.
+                    //
+                    // Beside the word it gets the whole height of the key. The
+                    // built-in bar (`widgets/action_bar.dart`) has always drawn
+                    // it this way; this is the programmable bar catching up
+                    // with it, which matters because the venue laid out its own
+                    // bar and so has never seen the good one.
+                    //
+                    // FittedBox rather than a fixed size: a bar key can be
+                    // 88px wide, and the amount growing to 20pt must shrink the
+                    // whole row rather than overflow it. Everything scales
+                    // together, so the amount stays visibly larger than the
+                    // word at every width.
+                    : Center(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (picture == null && r.icon != null) ...[
+                                Icon(r.icon, size: 18, color: ink),
+                                const SizedBox(width: 7),
+                              ],
+                              if (words) ...[
+                                Text(
+                                  r.label,
+                                  maxLines: 1,
+                                  style: TextStyle(
+                                    color: picture != null ? Colors.white : ink,
+                                    fontFamily: fontFamily,
+                                    fontSize: (button.fontSize?.toDouble() ?? 13)
+                                        .clamp(8.0, 20.0),
+                                    fontWeight: FontWeight.w700,
+                                    height: 1.1,
+                                  ),
+                                ),
+                                const SizedBox(width: 9),
+                              ],
+                              Text(
+                                money,
+                                maxLines: 1,
+                                style: TextStyle(
+                                  color: picture != null ? Colors.white : ink,
+                                  fontFamily: fontFamily,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: -0.4,
+                                  height: 1.1,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
-                    if (words && r.note != null)
-                      Text(
-                        r.note!,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: picture != null
-                              ? Colors.white
-                              : ink.withValues(alpha: 0.85),
-                          fontFamily: fontFamily,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                  ],
-                ),
               ),
             ],
           ),

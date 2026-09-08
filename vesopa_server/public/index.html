@@ -2120,6 +2120,26 @@
                 </div>
                 <p class="muted small" id="loyalty-example"></p>
               </div>
+              <!-- Membership is a different thing from points and shares this
+                   page because it is the same scheme from the venue's side: one
+                   card, one member, one renewal. A term rather than a date, so
+                   it is right for everybody whatever day they join. -->
+              <div class="card rd-card">
+                <h3>Membership</h3>
+                <p class="muted small">
+                  A membership card stops working at the till once it has
+                  expired. Staff can take the fee and renew it there, and the
+                  new date is worked out from the term below.
+                </p>
+                <div class="grid2">
+                  <label>Membership runs for (months)<input type="number" min="1" max="60" data-loy="membership_term_months"></label>
+                  <label>Membership fee (pence)<input type="number" min="0" data-loy="membership_fee_minor"></label>
+                </div>
+                <label>Ring the fee up as this product (PLU)
+                  <input type="number" min="0" data-loy="membership_plu">
+                </label>
+                <p class="muted small" id="loyalty-membership-note"></p>
+              </div>
               <div class="card rd-card">
                 <h3>Tiers</h3>
                 <p class="muted small">Customers move up automatically as their lifetime spend grows.</p>

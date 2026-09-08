@@ -181,6 +181,61 @@ void main() {
       expect(find.text('£32.85'), findsOneWidget);
     });
 
+    // "Pay button can the amount be on the side of the button not underneath so
+    // it's bigger and easier to read." Both halves are pinned, because both
+    // halves were the complaint: the figure was under the word, and it was the
+    // same twelve points every other note on this bar gets.
+    testWidgets('and wears it beside the word, not under it', (tester) async {
+      await tester.pumpWidget(host(bar([key('pay')]), total: 3285));
+
+      final word = tester.getRect(find.text('Pay'));
+      final amount = tester.getRect(find.text('£32.85'));
+
+      expect(
+        amount.left,
+        greaterThan(word.right),
+        reason: 'the amount is meant to sit to the right of the word',
+      );
+      // Sharing a line, rather than merely being to the right of a word that
+      // has moved up. Centres within a couple of pixels of each other.
+      expect((amount.center.dy - word.center.dy).abs(), lessThan(3));
+    });
+
+    testWidgets('and reads larger than the word beside it', (tester) async {
+      await tester.pumpWidget(host(bar([key('pay')]), total: 3285));
+
+      double size(String text) =>
+          tester.widget<Text>(find.text(text)).style!.fontSize!;
+
+      expect(size('£32.85'), greaterThan(size('Pay')));
+    });
+
+    // The other keys keep the stacked note. "Not in the catalogue" under a
+    // dead product key is an aside and belongs under the word; the amount is
+    // not an aside, which is the whole distinction this change draws.
+    testWidgets('a note that is not an amount still sits underneath', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        host(
+          bar([
+            ScreenButton(
+              row: 0,
+              col: 0,
+              colSpan: 1,
+              kind: ScreenButtonKind.product,
+              pluId: 999999,
+              label: 'Ghost',
+            ),
+          ]),
+        ),
+      );
+
+      final word = tester.getRect(find.text('Ghost'));
+      final note = tester.getRect(find.text('Not in the catalogue'));
+      expect(note.top, greaterThan(word.top));
+    });
+
     testWidgets('and refuses the press on an empty bill', (tester) async {
       final pressed = <String>[];
       await tester.pumpWidget(

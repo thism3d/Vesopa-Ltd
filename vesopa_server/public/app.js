@@ -6752,8 +6752,37 @@ function fillLoyaltyForm() {
   document.querySelectorAll('[data-loy]').forEach((el) => {
     const v = loyaltyState[el.dataset.loy];
     if (el.type === 'checkbox') el.checked = !!Number(v);
+    // Blank is a real answer for the membership product, and it is not the
+    // same answer as zero: empty means "no product, ring a plain line", and 0
+    // would be a PLU no venue has, which the till would look up, fail to find,
+    // and fall back from silently for ever.
+    else if (el.dataset.loy === 'membership_plu') el.value = v ?? '';
     else el.value = v ?? 0;
   });
+  membershipNote();
+}
+
+/// Say in words what the till will actually do, because the two fields do not
+/// say it on their own.
+function membershipNote() {
+  const el = $('loyalty-membership-note');
+  if (!el || !loyaltyState) return;
+  const months = Number(loyaltyState.membership_term_months) || 12;
+  const fee = Number(loyaltyState.membership_fee_minor) || 0;
+  const plu = loyaltyState.membership_plu;
+  const product = plu
+    ? (productRows.find((p) => Number(p.pluid) === Number(plu))
+       || crudProductChoices.find((p) => Number(p.pluid) === Number(plu)))
+    : null;
+
+  el.textContent = plu
+    ? `Renewing at the till rings up PLU ${plu}`
+      + (product ? ` (${product.product_name})` : ' — no product with that PLU')
+      + `, and moves the expiry on ${months} month${months === 1 ? '' : 's'}.`
+    : `Renewing at the till rings up a plain “Membership renewal” line at `
+      + `£${pounds(fee)} with no VAT on it, and moves the expiry on ${months} `
+      + `month${months === 1 ? '' : 's'}. Name a product above to give the fee `
+      + `a VAT rate and a department.`;
 }
 
 function renderTiers() {
@@ -6785,10 +6814,16 @@ function loyaltyExample() {
 document.addEventListener('input', (e) => {
   if (!loyaltyState || !e.target.dataset?.loy) return;
   const key = e.target.dataset.loy;
-  loyaltyState[key] = e.target.type === 'checkbox'
-    ? (e.target.checked ? 1 : 0)
-    : Number(e.target.value) || 0;
+  if (key === 'membership_plu') {
+    const raw = e.target.value.trim();
+    loyaltyState[key] = raw === '' ? null : Number(raw) || null;
+  } else {
+    loyaltyState[key] = e.target.type === 'checkbox'
+      ? (e.target.checked ? 1 : 0)
+      : Number(e.target.value) || 0;
+  }
   loyaltyExample();
+  membershipNote();
 });
 
 document.addEventListener('click', async (e) => {
@@ -6797,7 +6832,13 @@ document.addEventListener('click', async (e) => {
     loyaltyState.tiers.push({
       name: `Tier ${loyaltyState.tiers.length + 1}`,
       min_spend_minor: 0, discount_percent: 0, points_multiplier: 1,
-      colour: Charts.PALETTE[loyaltyState.tiers.length % Charts.PALETTE.length],
+      colour: (() => {
+        // A tier's colour is stored, so it is resolved to a real value
+        // here rather than kept as a `var()` — the swatch beside it is
+        // an <input type="color">, which cannot hold one.
+        const series = Charts.palette();
+        return series[loyaltyState.tiers.length % series.length];
+      })(),
     });
     renderTiers();
   }

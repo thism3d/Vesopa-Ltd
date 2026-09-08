@@ -38,6 +38,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/commerce.dart';
+import '../data/membership.dart';
 import '../data/staff_session.dart';
 import '../data/local/database.dart';
 import '../data/swipe_cards.dart';
@@ -45,6 +46,8 @@ import 'barcode_actions.dart';
 import '../data/terminal_identity.dart';
 import '../main.dart';
 import 'cards_page.dart' show lastCardReadProvider;
+import 'membership_prompt.dart';
+import 'staff_admin.dart' show StaffCardCapture;
 import 'staff_handover.dart';
 import 'manager_approval.dart';
 import 'widgets/pos_message.dart';
@@ -87,6 +90,12 @@ Future<void> handleSwipedCard(
   // still recorded above first, so the reader test on the Cards page sees every
   // swipe either way.
   if (ManagerCardCapture.offer(card)) return;
+
+  // And the staff sheet, when it is waiting to hand a card to somebody. Second,
+  // so a manager approving something over the top of it still wins — and for
+  // the same reason as the manager's: without this, swiping a new card to give
+  // to a starter would sign whoever last held it on to this terminal.
+  if (StaffCardCapture.offer(card)) return;
 
   final settings = ref.read(cardRepositoryProvider).settings;
   if (!settings.enabled) return;
@@ -213,18 +222,71 @@ Future<void> _loyaltyCard(
     return;
   }
 
+  final apiBase = ref.read(apiBaseProvider);
+
   if (orderId == null) {
-    await _explain(
+    // The face, even with no bill open. A clerk swiping a card at a locked
+    // till is usually answering "is this yours?", and the photograph is the
+    // whole answer.
+    await showMemberOnBill(
       context,
-      title: member.name,
-      message:
-          '${member.pointsBalance} point'
-          '${member.pointsBalance == 1 ? '' : 's'}'
-          '${member.pointsValueMinor > 0 ? ', worth '
-              '${_money(member.pointsValueMinor)}' : ''}.'
-          '\n\nOpen a bill and swipe again to put them on it.',
+      member: member,
+      apiBase: apiBase,
+      footnote: member.membershipExpired
+          ? 'This membership has run out. Open a bill and swipe again to '
+                'renew it.'
+          : 'Open a bill and swipe again to put them on it.',
     );
     return;
+  }
+
+  // ---- An expired card cannot be used ------------------------------------
+  //
+  // "Please allow a function on the till that is the customer have expired
+  // they card can't be used." Refused by offering: the useful thing to do with
+  // somebody at the counter holding a card that ran out in March is to take
+  // the fee off them. Declining leaves nobody on the bill, which is the refusal.
+  if (member.membershipExpired) {
+    final choice = await showExpiredMembership(
+      context,
+      member: member,
+      apiBase: apiBase,
+    );
+    if (!context.mounted) return;
+    if (choice != MembershipChoice.renew) {
+      PosMessenger.info(
+        context,
+        '${member.name} was not put on this bill — their membership has run '
+        'out.',
+      );
+      return;
+    }
+
+    // The fee goes on the bill and is taken with the rest of it. The date does
+    // not move until the money is in: see `data/membership.dart`.
+    if (member.membershipFeeMinor > 0 || member.membershipPlu != null) {
+      final named = member.membershipPlu == null
+          ? null
+          : await ref
+                .read(databaseProvider)
+                .managers
+                .products
+                .filter((p) => p.pluId.equals(member!.membershipPlu!))
+                .getSingleOrNull();
+      if (!context.mounted) return;
+      await ref
+          .read(orderRepositoryProvider)
+          .addLine(
+            orderId,
+            membershipProduct(
+              feeMinor: member.membershipFeeMinor,
+              plu: member.membershipPlu,
+              named: named,
+            ),
+            addedBy: ref.read(servedByProvider),
+          );
+      if (!context.mounted) return;
+    }
   }
 
   await ref
@@ -240,9 +302,44 @@ Future<void> _loyaltyCard(
       );
 
   if (!context.mounted) return;
+
+  if (member.membershipExpired) {
+    PosMessenger.success(
+      context,
+      '${member.name} is on this bill. Their membership renews for '
+      '${member.membershipTermMonths} month'
+      '${member.membershipTermMonths == 1 ? '' : 's'} once this is paid.',
+    );
+    return;
+  }
   // PosMessenger rather than a SnackBar. A bar rises from the bottom of the
   // screen, which on this till is where PAY and the action strip are — see
   // widgets/pos_message.dart for the tap it swallowed.
+  // A face, where the venue has taken one.
+  //
+  // "Ability to upload a photo of a customer that would display on the till
+  // when scanned to confirm it's the right person." Shown as a card the clerk
+  // dismisses rather than a toast that fades, because the whole point is that
+  // somebody looks at it and decides — a photograph that has gone by the time
+  // you have looked up has confirmed nothing.
+  //
+  // Only where there IS one. A venue that has photographed nobody gets exactly
+  // what it got before: a line along the bottom and no interruption. Uploading
+  // a photograph is how a venue opts into being asked to check.
+  if (member.photoUrl != null) {
+    await showMemberOnBill(
+      context,
+      member: member,
+      apiBase: apiBase,
+      footnote:
+          'On this bill'
+          '${member.discountType != 'none' && member.discountValue > 0
+              ? ' with ${_discount(member)}'
+              : ''}.',
+    );
+    return;
+  }
+
   PosMessenger.success(
     context,
     '${member.name} is on this bill — '

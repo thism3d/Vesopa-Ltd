@@ -565,6 +565,11 @@ function commerceRoutes({ pool, broadcast, secret }) {
     // months added to the day the fee is taken is the same promise and needs
     // setting once. £10 is the venue's own figure.
     membership_term_months: 12, membership_fee_minor: 1000,
+    // The product a renewal is rung up as, so the fee carries a VAT treatment,
+    // a department and a line in the Z report rather than being a bare number.
+    // Null is a real answer — the till then rings a plain line at the fee above
+    // with no VAT on it, and the settings form says so.
+    membership_plu: null,
   };
 
   async function readLoyalty(office) {
@@ -624,6 +629,17 @@ function commerceRoutes({ pool, broadcast, secret }) {
       if (fields.length) {
         const values = fields.map((f) => {
           const v = req.body[f];
+          // `membership_plu` is the one nullable setting here, and null is a
+          // real answer: it means "no product, ring a plain line". Everything
+          // else goes through `money`, which turns null into 0 — and a PLU of
+          // 0 is a product nobody has, so the till would look one up, fail to
+          // find it, and fall back silently for ever.
+          if (f === 'membership_plu') {
+            const plu = Number(v);
+            return v === null || v === '' || !Number.isFinite(plu) || plu <= 0
+              ? null
+              : Math.round(plu);
+          }
           return typeof v === 'boolean' ? (v ? 1 : 0) : money(v);
         });
         const cols = ['office', ...fields];

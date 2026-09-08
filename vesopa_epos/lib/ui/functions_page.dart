@@ -12,6 +12,7 @@ import 'refund_page.dart';
 import 'reprint_z_sheet.dart';
 import 'layout.dart';
 import 'sign_on_pad.dart';
+import 'staff_admin.dart';
 import 'theme.dart';
 import 'widgets/basket_panel.dart' show money;
 import 'till_actions.dart';
@@ -259,6 +260,19 @@ class FunctionsPage extends ConsumerWidget {
             'Everybody at the venue and who is currently clocked in. To start '
                 'or end your own shift, use the Clock key on the bar.',
             () => showClockSheet(context, ref),
+          ),
+          // Taking somebody on, from the counter. Asked for by name: "ability
+          // to add staff members from the function screen". It sits in this
+          // group because it is the same subject as the two keys above it, and
+          // it needs a manager for the same reason a void does.
+          _Function(
+            'Add Staff',
+            Icons.person_add_alt,
+            Pos.brandDeep,
+            'Take somebody on and give them a PIN or a card, without walking '
+                'to the back office. A card that has been lost can be '
+                'replaced here too.',
+            () => unawaited(showStaffAdmin(context, ref)),
           ),
         ]),
       );

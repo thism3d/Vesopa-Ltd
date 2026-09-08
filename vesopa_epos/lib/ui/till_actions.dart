@@ -305,6 +305,13 @@ abstract final class TillActions {
   /// a share's total carries its portion of any bill-wide offer, which only the
   /// tender engine knows. Passing them in keeps the figure on the paper the
   /// same as the figure on the screen and the figure that gets charged.
+  /// [lineQuantities] overrides how many of a line to print, by line id.
+  ///
+  /// One line of a bill can now be divided between shares — three glasses of
+  /// prosecco rung up together, one on each of three cards. The order still
+  /// holds a single `3 × Prosecco` row, because dividing is something the split
+  /// screen does rather than something the sale does, so a share's bill would
+  /// otherwise be handed to somebody paying for one glass with a three on it.
   static Future<void> printCurrentBill(
     BuildContext context,
     WidgetRef ref,
@@ -312,6 +319,7 @@ abstract final class TillActions {
     Set<String>? onlyLines,
     String? title,
     int? totalMinor,
+    Map<String, double> lineQuantities = const {},
   }) async {
     final repo = ref.read(orderRepositoryProvider);
     final order = await repo.watchOrder(orderId).first;
@@ -350,7 +358,7 @@ abstract final class TillActions {
         for (final l in lines)
           ReceiptLine(
             name: l.name,
-            quantity: l.quantity,
+            quantity: lineQuantities[l.id] ?? l.quantity,
             unitPriceMinor: l.unitPriceMinor,
             taxPercentage: l.taxPercentage,
             note: l.notes,
