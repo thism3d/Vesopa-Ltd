@@ -667,11 +667,32 @@ function backofficeRoutes({ pool, broadcast, secret }) {
     return code || null;
   }
 
+  /**
+   * Which app may interrupt somebody, and whether it may make a noise.
+   *
+   * Named once and spread into both the whitelist and the defaults, so a
+   * column added here cannot be accepted by the save and then missing from the
+   * read — which is how a switch ends up appearing to reset itself.
+   *
+   * See schema_till_notifications.sql for what each one governs and for the
+   * rule that combines them with each app's local toggle.
+   */
+  const NOTIFY_FIELDS = [
+    'notify_master',
+    'notify_till_dinein_new',
+    'notify_kitchen_dinein_new',
+    'notify_kitchen_ticket_new',
+    'notify_till_sound',
+    'notify_kitchen_sound',
+    'notify_display_enabled',
+  ];
+
   const TILL_FIELDS = [
     'idle_enabled', 'idle_image_url', 'idle_after_sale', 'idle_require_pin',
     'idle_message', 'signoff_seconds', 'change_window_seconds',
     'receipt_auto_print', 'buttons_show_prices', 'font_family',
     'price_level_names', 'consolidate_lines', 'cash_declaration',
+    ...NOTIFY_FIELDS,
     ...PRINTER_NAME_FIELDS,
     ...KITCHEN_MODE_FIELDS,
   ];
@@ -704,6 +725,15 @@ function backofficeRoutes({ pool, broadcast, secret }) {
     // Never ask, which is what every till does today. See
     // schema_till_consolidate.sql for what the other two values mean.
     cash_declaration: 'off',
+    // On, except the customer display — it faces a queue, and the person who
+    // needs to know a QR order has landed is behind the counter.
+    notify_master: 1,
+    notify_till_dinein_new: 1,
+    notify_kitchen_dinein_new: 1,
+    notify_kitchen_ticket_new: 1,
+    notify_till_sound: 1,
+    notify_kitchen_sound: 1,
+    notify_display_enabled: 0,
     buttons_show_prices: 1,
     // Null means the app's own typeface, which is what every till wears today.
     // A venue picks one once and every terminal follows; see src/fonts.js.
@@ -802,7 +832,8 @@ function backofficeRoutes({ pool, broadcast, secret }) {
         if (
           f === 'receipt_auto_print' ||
           f === 'buttons_show_prices' ||
-          f === 'consolidate_lines'
+          f === 'consolidate_lines' ||
+          NOTIFY_FIELDS.includes(f)
         ) {
           return v ? 1 : 0;
         }

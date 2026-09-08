@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
 const { requireAuth, requireTerminal } = require('./auth');
+const { readAllergens, effectiveAllergens } = require('./allergens');
 
 // ---------------------------------------------------------------------------
 // Branding, offers and promotions
@@ -1397,6 +1398,103 @@ function dineinRoutes({ pool, broadcast, secret }) {
    * carrying its own prices is a second price list, and the one that goes stale
    * is always the one the customer is reading.
    */
+  /**
+   * The add-ons each of these PLUs offers, priced.
+   *
+   * WHY THIS REUSES THE TILL'S MODIFIERS RATHER THAN A TABLE OF ITS OWN
+   *
+   * A venue already answers "which mixer with that gin?" once, in the back
+   * office, and the till already sells the answer as a child line that prices,
+   * taxes, prints and reports as what it is. Giving the QR menu a parallel
+   * add-on table would mean the same venue maintaining the same list twice and
+   * discovering the difference when a customer is charged one price at the bar
+   * and another on their phone.
+   *
+   * So this reads the same wiring the till reads:
+   *
+   *   epos_product_modifiers   which questions a product asks, in order
+   *   epos_modifier_groups     the question, and how many answers it takes
+   *   epos_screen_buttons      the answers — a group owns a screen of them
+   *   bo_products              what each answer costs
+   *
+   * The till fetches the screens themselves and lays the buttons out; a phone
+   * has no use for a grid, so the answers are flattened to a list here.
+   *
+   * Returns {} for a venue that has never made a modifier group, which is most
+   * of them — and an item with no groups is one that goes straight into the
+   * basket with no sheet in the way.
+   */
+  async function addOnsFor(email, pluIds) {
+    if (!email || !pluIds.length) return {};
+
+    const [links] = await pool.query(
+      'SELECT plu_id, group_id FROM epos_product_modifiers' +
+        ' WHERE office = ? AND plu_id IN (' + pluIds.map(() => '?').join(',') + ')' +
+        ' ORDER BY plu_id, sort_order',
+      [email, ...pluIds]
+    );
+    if (!links.length) return {};
+
+    const groupIds = [...new Set(links.map((l) => l.group_id))];
+    const [groups] = await pool.query(
+      'SELECT id, name, min_select, max_select, screen_id' +
+        '  FROM epos_modifier_groups' +
+        ' WHERE office = ? AND id IN (' + groupIds.map(() => '?').join(',') + ')',
+      [email, ...groupIds]
+    );
+
+    // The answers. A button that names no product, or names one that has since
+    // been deleted, is dropped rather than shown as an option that cannot be
+    // priced — a customer must never be offered something the kitchen has no
+    // record of.
+    const screenIds = groups.map((g) => g.screen_id).filter(Boolean);
+    let answers = [];
+    if (screenIds.length) {
+      const [rows] = await pool.query(
+        'SELECT b.screen_id, b.plu_id, b.label,' +
+          '       COALESCE(NULLIF(TRIM(b.label), ""), p.product_name) AS name,' +
+          '       p.price AS price, p.allergens AS allergens' +
+          '  FROM epos_screen_buttons b' +
+          '  JOIN bo_products p ON p.pluid = b.plu_id AND p.email = ?' +
+          ' WHERE b.office = ? AND b.kind = "product"' +
+          '   AND b.screen_id IN (' + screenIds.map(() => '?').join(',') + ')' +
+          ' ORDER BY b.screen_id, b.grid_row, b.grid_col',
+        [email, email, ...screenIds]
+      );
+      answers = rows;
+    }
+
+    const byGroup = new Map(groups.map((g) => [g.id, g]));
+    const out = {};
+    for (const link of links) {
+      const group = byGroup.get(link.group_id);
+      if (!group) continue;
+      const options = answers
+        .filter((a) => a.screen_id === group.screen_id)
+        .map((a) => ({
+          // The menu item the phone will send back. Answers are products, and
+          // the order route prices them from the catalogue by PLU — nothing
+          // the page sends about money is trusted.
+          plu_id: a.plu_id,
+          name: a.name,
+          price_minor: Math.round(Number(a.price || 0) * 100),
+          allergens: readAllergens(a.allergens),
+        }));
+      // A group nobody has laid out yet is a question with no answers. The
+      // till treats that as nothing to ask and moves on; so does this, rather
+      // than showing an empty sheet the customer cannot get past.
+      if (!options.length) continue;
+      (out[link.plu_id] ||= []).push({
+        id: group.id,
+        name: group.name,
+        min_select: Number(group.min_select) || 0,
+        max_select: Number(group.max_select) || 1,
+        options,
+      });
+    }
+    return out;
+  }
+
   async function menuFor(officeId, req) {
     const [[venue]] = await pool.query(
       'SELECT * FROM dinein_venue WHERE office_id = ?',
@@ -1427,6 +1525,8 @@ function dineinRoutes({ pool, broadcast, secret }) {
         'SELECT i.id, i.section_id, i.plu_id, i.description, i.image_url,' +
           '       i.available, i.is_popular, i.is_featured, i.diet_tag,' +
           '       COALESCE(NULLIF(TRIM(i.name), ""), p.product_name) AS name,' +
+          '       i.allergens AS item_allergens,' +
+          '       p.allergens AS product_allergens,' +
           '       p.price AS price' +
           '  FROM dinein_items i' +
           '  JOIN bo_products p ON p.pluid = i.plu_id AND p.email = ?' +
@@ -1436,6 +1536,15 @@ function dineinRoutes({ pool, broadcast, secret }) {
       );
       items = rows;
     }
+
+    // The questions each product asks, and the answers with their prices.
+    //
+    // Resolved here rather than on the phone because the answers live in the
+    // till's screen machinery — a group owns a screen of buttons, each button
+    // names a PLU — and a menu page has none of that. The alternative would be
+    // shipping the venue's whole screen layout to a customer's browser so it
+    // could work out that "Extra shot" costs £1.
+    const addOns = await addOnsFor(email, [...new Set(items.map((i) => i.plu_id))]);
 
     return {
       venue: {
@@ -1487,6 +1596,14 @@ function dineinRoutes({ pool, broadcast, secret }) {
             popular: !!i.is_popular,
             featured: !!i.is_featured,
             diet: i.diet_tag || null,
+            // What the item declares, or what its product does. NULL on the
+            // item means inherit; [] means somebody looked and it contains
+            // none of the fourteen. See src/allergens.js.
+            allergens: effectiveAllergens(i.item_allergens, i.product_allergens),
+            // The questions this item asks before it goes in the basket, with
+            // their answers priced. An empty array is an item that goes
+            // straight in, which is most of them.
+            add_ons: addOns[i.plu_id] || [],
             price_minor: Math.round(Number(i.price || 0) * 100),
           })),
       })),
@@ -1573,8 +1690,36 @@ function dineinRoutes({ pool, broadcast, secret }) {
         const qty = Math.max(1, Math.min(99, Number(line && line.qty) || 1));
         if (!Number.isInteger(id) || id <= 0) continue;
         const note = String((line && line.note) || '').trim().slice(0, 300);
-        // Same item twice with different notes is two lines, not one of four.
-        wanted.set(id + '|' + note, { id, qty, note });
+
+        // What to do if the kitchen cannot make it. Per line, because a
+        // customer who would lose the side but wants a call about the main
+        // course is the ordinary case. Anything unrecognised is 'remove' —
+        // the answer that needs nobody to be reachable. See
+        // schema_menu_dinein_ordering.sql.
+        const action = String((line && line.unavailable_action) || '')
+          .trim()
+          .toLowerCase();
+        const unavailable = ['remove', 'call', 'refund'].includes(action)
+          ? action
+          : 'remove';
+
+        // The add-ons chosen against this line, by menu item id. Priced from
+        // the catalogue below, never from what the page sent — see the note on
+        // the offer further down, which is the same argument about the same
+        // risk.
+        const addOns = Array.isArray(line && line.add_ons)
+          ? [...new Set(
+              line.add_ons
+                .map((a) => Number(a && a.item_id !== undefined ? a.item_id : a))
+                .filter((n) => Number.isInteger(n) && n > 0)
+            )]
+          : [];
+
+        // Two of the same item differing in note, add-ons or what to do when
+        // it is off are two lines, not one of quantity four. The key carries
+        // everything that makes them different.
+        const key = [id, note, unavailable, addOns.join('+')].join('|');
+        wanted.set(key, { id, qty, note, unavailable, addOns });
       }
       if (!wanted.size) {
         return res.status(400).json({ error: 'There is nothing in the basket.' });
@@ -1585,6 +1730,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
       const [rows] = await conn.query(
         'SELECT i.id, i.plu_id, i.available,' +
           '       COALESCE(NULLIF(TRIM(i.name), ""), p.product_name) AS name,' +
+          '       i.allergens AS item_allergens, p.allergens AS product_allergens,' +
           '       p.price AS price' +
           '  FROM dinein_items i' +
           '  JOIN bo_products p ON p.pluid = i.plu_id AND p.email = ?' +
@@ -1592,6 +1738,38 @@ function dineinRoutes({ pool, broadcast, secret }) {
         [email, table.office_id, ...ids]
       );
       const priced = new Map(rows.map((r) => [r.id, r]));
+
+      // Add-ons are priced against the CATALOGUE, by PLU — not against
+      // dinein_items.
+      //
+      // This is the difference that matters and it is easy to get wrong: an
+      // answer to a modifier question is a till product ("Lemonade", "Extra
+      // shot"), and those are almost never on the QR menu as items of their
+      // own. Resolving them the way parents are resolved silently dropped
+      // every add-on and undercharged the order — which is exactly what a
+      // first pass at this did, and what a live order caught.
+      //
+      // Restricted to PLUs the menu actually offers as answers, so a crafted
+      // request cannot attach an arbitrary product at a price of its choosing.
+      const wantedAddOns = [
+        ...new Set([...wanted.values()].flatMap((w) => w.addOns)),
+      ];
+      const offered = new Set();
+      for (const groups of Object.values(await addOnsFor(email, [
+        ...new Set(rows.map((r) => r.plu_id)),
+      ]))) {
+        for (const g of groups) for (const o of g.options) offered.add(o.plu_id);
+      }
+      const addOnPrices = new Map();
+      const allowed = wantedAddOns.filter((plu) => offered.has(plu));
+      if (allowed.length) {
+        const [addRows] = await conn.query(
+          'SELECT pluid, product_name, price, allergens FROM bo_products' +
+            ' WHERE email = ? AND pluid IN (' + allowed.map(() => '?').join(',') + ')',
+          [email, ...allowed]
+        );
+        for (const r of addRows) addOnPrices.set(r.pluid, r);
+      }
 
       const lines = [];
       let total = 0;
@@ -1617,7 +1795,39 @@ function dineinRoutes({ pool, broadcast, secret }) {
           qty: want.qty,
           unit,
           note: want.note || null,
+          unavailable: want.unavailable,
+          isModifier: false,
+          // Filled in after the parent row exists, since a child names it.
+          parentIndex: null,
         });
+        const parentIndex = lines.length - 1;
+
+        // The add-ons, as child lines naming the parent — the same shape the
+        // till uses, which is why the kitchen ticket and the receipt already
+        // indent them.
+        for (const addOnPlu of want.addOns) {
+          const chosen = addOnPrices.get(addOnPlu);
+          // An add-on the menu does not offer, or a product that has since
+          // gone, is dropped rather than failing the whole order. The customer
+          // loses the extra shot; they do not lose their dinner, and the
+          // kitchen sees exactly what is being made.
+          if (!chosen) continue;
+          const addUnit = Math.round(Number(chosen.price || 0) * 100);
+          // Quantity follows the parent, as it does on the till: two double
+          // gins want two dashes of coke, and a kitchen reading "2 Gin /
+          // 1 Dash" cannot tell which gin is which.
+          total += addUnit * want.qty;
+          lines.push({
+            plu_id: chosen.pluid,
+            name: chosen.product_name,
+            qty: want.qty,
+            unit: addUnit,
+            note: null,
+            unavailable: want.unavailable,
+            isModifier: true,
+            parentIndex,
+          });
+        }
       }
 
       // The offer, applied here and nowhere else.
@@ -1652,13 +1862,32 @@ function dineinRoutes({ pool, broadcast, secret }) {
           total,
         ]
       );
+      // Parents first, then their add-ons, so a child always has a real id to
+      // name. The rows are inserted in basket order, which is also reading
+      // order — a modifier immediately follows the item it belongs to, which
+      // is what every reader downstream relies on to indent it.
+      const rowIds = [];
       for (const line of lines) {
-        await conn.execute(
+        const parentRowId =
+          line.parentIndex === null ? null : rowIds[line.parentIndex] ?? null;
+        const [written] = await conn.execute(
           'INSERT INTO dinein_order_lines' +
-            ' (dinein_order_id, plu_id, name, qty, unit_price_minor, note)' +
-            ' VALUES (?, ?, ?, ?, ?, ?)',
-          [order.insertId, line.plu_id, line.name, line.qty, line.unit, line.note]
+            ' (dinein_order_id, plu_id, name, qty, unit_price_minor, note,' +
+            '  parent_line_id, is_modifier, unavailable_action)' +
+            ' VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          [
+            order.insertId,
+            line.plu_id,
+            line.name,
+            line.qty,
+            line.unit,
+            line.note,
+            parentRowId,
+            line.isModifier ? 1 : 0,
+            line.unavailable,
+          ]
         );
+        rowIds.push(written.insertId);
       }
       await conn.commit();
 
