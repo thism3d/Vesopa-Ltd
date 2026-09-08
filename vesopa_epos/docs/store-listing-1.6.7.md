@@ -5,9 +5,27 @@ Three submissions this time. All three apps changed, and all three are at
 which is the point of the number: a venue on the phone to support should be
 able to say one version for the whole building.
 
-Paste each block into Partner Center → Submission → **Release notes**. The
-character counts are the text inside the fence, and the Store's limit is
-1,500.
+Paste each block into Partner Center → Submission → **Release notes**, or let
+`ms-store-submission-client` upload it. The character counts are the text
+inside the fence, and the Store's limit is 1,500.
+
+## The format, from 1.6.7.0 onwards
+
+    Version 1.6.7.0 - Short title of the update
+
+    First paragraph, on ONE line however long it runs.
+
+    Second paragraph, also one line.
+
+**One paragraph per line. Never hard-wrap the prose.** Partner Center renders
+every newline in this field as a real line break, so text wrapped at 78
+characters — which is exactly what it looks like drafted inside a fence like
+the ones below — reaches the public Store page broken mid-sentence, on every
+line. That is what happened to the first cut of these notes.
+
+The Vesopa EPOS block below is kept as it was submitted, wrapping and all: it
+was already in certification when the format was settled and it is not worth a
+resubmission. Kitchen and Display carry the new shape.
 
 ---
 
@@ -42,30 +60,18 @@ rather than the order being taken twice.
 
 ## Vesopa Kitchen 1.6.7.0
 
-1,212 characters.
+1,224 characters.
 
 ```
-Accept an order from the kitchen. Orders customers send from the code on their
-table now appear in a strip across the top of the board, with what was ordered,
-anything they asked for, and Accept and Turn down on buttons big enough for a
-hand that has been holding a pan. Until now only the till could take one, which
-is a walk in a venue where the kitchen is the room watching.
+Version 1.6.7.0 - Accept orders from the kitchen
 
-Whichever room presses first wins. The other is told, rather than the order
-being cooked twice.
+Orders customers send from the code on their table now appear in a strip across the top of the board, with what was ordered, anything they asked for, and Accept and Turn down on buttons big enough for a hand that has been holding a pan. Until now only the till could take one, which is a walk in a venue where the kitchen is the room watching. Whichever room presses first wins; the other is told, rather than the order being cooked twice.
 
-Add-ons chosen on a phone are drawn under the dish they belong to, exactly as
-a modifier from the till already is.
+Add-ons chosen on a phone are drawn under the dish they belong to, exactly as a modifier from the till already is.
 
-Allergens on the board. What a venue has declared against a product appears
-under the item, in the words the law uses, in amber so it never competes with
-the red that means "read this, it changes what you cook". It is taken when the
-ticket is fired, so it keeps saying the same thing if a product is edited
-mid-service or the screen loses its network.
+Allergens on the board. What a venue has declared against a product appears under the item, in the words the law uses, in amber so it never competes with the red that means read this, it changes what you cook. It is taken when the ticket is fired, so it keeps saying the same thing if a product is edited mid-service or the screen loses its network.
 
-Windows notifications when an order arrives, with the sound and the pop-up as
-separate switches — a kitchen that cannot hear over an extractor and a bar with
-music on want opposite answers.
+Windows notifications when an order arrives, with the sound and the pop-up as separate switches: a kitchen that cannot hear over an extractor and a bar with music on want opposite answers.
 
 And the password box no longer opens the keyboard on top of half the screen.
 ```
@@ -74,22 +80,16 @@ And the password box no longer opens the keyboard on top of half the screen.
 
 ## Vesopa Customer Display 1.6.7.0
 
-707 characters.
+735 characters.
 
 ```
-Allergens on the bill. What the venue has declared against a product now
-appears under the item on the customer's own screen, in the words the law uses.
-It is the one screen in the building a customer can read for themselves, and
-asking across a counter is exactly what somebody with an allergy would rather
-not have to do.
+Version 1.6.7.0 - Allergens on the customer's bill
 
-A product nobody has filled in shows nothing at all. This screen never claims a
-dish is free of something that was never checked.
+What the venue has declared against a product now appears under the item on the customer's own screen, in the words the law uses. It is the one screen in the building a customer can read for themselves, and asking across a counter is exactly what somebody with an allergy would rather not have to do.
 
-New, and off unless you turn it on: a Windows notification when the till stops
-sending. It is off by default because a pop-up over somebody's bill is aimed at
-nobody — it is there for a screen mounted in a back office, where there is
-somebody to tell.
+A product nobody has filled in shows nothing at all. This screen never claims a dish is free of something that was never checked.
+
+New, and off unless you turn it on: a Windows notification when the till stops sending. It is off by default because a pop-up over somebody's bill is aimed at nobody. It is there for a screen mounted in a back office, where there is somebody to tell.
 ```
 
 ---
