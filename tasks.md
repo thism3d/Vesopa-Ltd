@@ -91,7 +91,48 @@ a coeliac is looking for, cut off mid-word, is the worst outcome this form has.
    as a block: the radio on its own line and the name and price jammed
    together underneath. Only visible in a screenshot.
 
-**PHASES E–H — not started.** E/F/G the three Flutter apps, H the release.
+**PHASE E — kitchen app, done. Analyzed, unit-tested, proven against live.**
+
+| Task | State | Note |
+|---|---|---|
+| T22 remove autofocus | done | one site, `ui/widgets/password_prompt.dart`. The on-screen keyboard writes into the controller, so nothing needed focus to work |
+| T23 QR orders, allergens, modifiers | done | `DineInStrip` above the board; allergen chips in amber on ticket lines |
+| T24 notifications and sound | done | `local_notifier`, the two-layer rule, and a local toggle beside the existing chime |
+
+**PHASE F — till, done.**
+
+| Task | State | Note |
+|---|---|---|
+| T25 QR orders inbox with accept | already existed | `ui/dinein_sheet.dart` had Accept and Reject. What was missing was the SHAPE: add-ons, the per-dish note, the per-line "if it is off" answer and allergens are now drawn on the card |
+| T26 notifications, sound, allergens to the display | done | a Windows toast beside the in-app card, gated by the venue's row AND the two settings this till already had |
+
+**PHASE G — display, done.**
+
+| Task | State | Note |
+|---|---|---|
+| T27 allergens on lines; notifications default off | done | the till resolves the WORDS before writing the file — see the correction below |
+
+**PHASES A–G are complete. H is the release.**
+
+**Three more corrections to the plan, found while executing it:**
+
+5. **T8 and T9 were already built.** Placement already broadcast `dinein.order`
+   scoped to the office, status changes already broadcast `dinein.changed`, and
+   `/till/dinein/orders/:id/:action` already existed with the transitions and
+   the ETA. The only work was widening the credential: one middleware that
+   takes a terminal OR a kitchen token, and the same handlers registered at
+   `/api/kitchen/dinein/orders`. A parallel route would have been two copies of
+   the rule about who may accept, and they would have drifted.
+6. **The customer display cannot resolve allergen codes.** It is offline by
+   design — it reads a file the till writes and has no HTTP client at all — so
+   the plan's "labels from the shared list" could not happen on that side. The
+   till resolves them and sends the words; it caches the list on disk so a
+   terminal that has lost its line still has them. Everywhere else still sends
+   codes.
+7. **`redrawItem` in the menu page only ever looked at `.end`**, which only
+   rows WITHOUT a picture have. On any menu with photographs, pressing the plus
+   changed the basket and left the button showing a plus. Found by driving the
+   page rather than reading it.
 
 ---
 
