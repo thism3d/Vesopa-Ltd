@@ -48,9 +48,22 @@ Postcoder accepted it (`provider_ref OTP69-FFD82-FD3AE-498C9`), challenge
 here — verification goes back to Postcoder — so only the client can complete
 the second half. The send path is proven; ask them whether the text arrived.
 
-**PHASES B–H — not started.** B back office, C/D the QR menu page, E/F/G the
-three Flutter apps, H the release. Phase A changed no app, so nothing needs a
-Store build yet.
+**PHASE B — done, deployed, verified in a browser.**
+
+| Task | State | Note |
+|---|---|---|
+| T10 allergen editors | done | new `allergens` field type on the product form; a per-row chooser on the dine-in item form, because fourteen tick boxes in a table row is unusable |
+| T11 add-on hint | done | the modifier field now says it drives the QR menu too |
+| T12 venue meta fields | done | three fields on `/dine-in`, saved; blank stores NULL so the page goes back to deriving |
+| T13 notification matrix | done | on `/idle-screen` with the other till settings, not `/settings` |
+
+Found by measuring the live page rather than trusting the markup:
+"Cereals containing gluten" was being clipped at two columns. It is the FSA's
+own wording, so the label wraps rather than being shortened — the one allergen
+a coeliac is looking for, cut off mid-word, is the worst outcome this form has.
+
+**PHASES C–H — not started.** C/D the QR menu page, E/F/G the three Flutter
+apps, H the release. Nothing needs a Store build yet: A and B changed no app.
 
 ---
 

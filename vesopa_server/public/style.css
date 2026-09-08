@@ -6343,3 +6343,44 @@ textarea, select[multiple], select[size] { height: auto; min-height: 0; }
   font-weight: 400;
   color: var(--muted, #8b93a1);
 }
+
+/* The fourteen allergens, ticked.
+
+   Two columns because fourteen in one column is a scroll inside a modal that
+   already scrolls, and the labels are short enough to sit side by side. Falls
+   to one column on a narrow screen rather than truncating a label — "Cereals
+   containing gluten" clipped to "Cereals containi" is worse than a taller
+   form. */
+.allergen-field {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 14px;
+  margin-top: 4px;
+}
+@media (max-width: 560px) {
+  .allergen-field { grid-template-columns: 1fr; }
+}
+.allergen-field .allergen-tick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 400;
+  min-width: 0;
+}
+.allergen-field .allergen-tick span {
+  /* Wraps rather than truncating.
+
+     "Cereals containing gluten" does not fit one column of a 388px modal, and
+     it is the FSA's own wording — shortening it to make it fit would be
+     rewriting a legal label to suit a layout. An ellipsis is worse still: the
+     one allergen a coeliac is looking for, cut off mid-word. So the row grows
+     to two lines and the grid absorbs it. */
+  overflow-wrap: anywhere;
+  line-height: 1.3;
+}
+.allergen-field .allergen-tick input {
+  /* Stops the box shrinking when its label takes two lines. */
+  flex: 0 0 auto;
+}

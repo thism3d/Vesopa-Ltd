@@ -1145,6 +1145,71 @@
                   without one.
                 </p>
               </div>
+
+              <!-- Which app may interrupt somebody, decided once for the
+                   building. Each app keeps its own switch as well; the two
+                   combine as AND, so a device can opt out of what it is
+                   allowed but cannot switch on what has been turned off here.
+                   That is what makes this page authoritative rather than
+                   advisory. See schema_till_notifications.sql. -->
+              <div class="card rd-card">
+                <h3>Notifications</h3>
+                <label class="check">
+                  <input type="checkbox" data-idle="notify_master">
+                  <span>Windows notifications in all apps</span>
+                </label>
+                <p class="muted small" style="margin:6px 0 14px">
+                  The master switch. Turn this off and no Vesopa app pops a notification on any
+                  machine in this venue, whatever the boxes below say. Each app also has its own
+                  switch in its settings, so a quiet terminal can opt out of something allowed
+                  here — but nothing can turn back on what you switch off.
+                </p>
+
+                <p class="muted small" style="margin:0 0 6px"><strong>Events</strong></p>
+                <label class="check">
+                  <input type="checkbox" data-idle="notify_till_dinein_new">
+                  <span>A customer orders from a QR code — notify the till</span>
+                </label>
+                <label class="check">
+                  <input type="checkbox" data-idle="notify_kitchen_dinein_new">
+                  <span>A customer orders from a QR code — notify the kitchen</span>
+                </label>
+                <label class="check">
+                  <input type="checkbox" data-idle="notify_kitchen_ticket_new">
+                  <span>A till sends food to the pass — notify the kitchen</span>
+                </label>
+                <p class="muted small" style="margin:6px 0 14px">
+                  A QR order is two separate switches on purpose: which screen somebody is
+                  actually watching differs by venue. A bar watches the till; a kitchen watches
+                  the board. One combined setting would be wrong for half of them.
+                </p>
+
+                <p class="muted small" style="margin:0 0 6px"><strong>Sound</strong></p>
+                <label class="check">
+                  <input type="checkbox" data-idle="notify_till_sound">
+                  <span>Till notifications make a sound</span>
+                </label>
+                <label class="check">
+                  <input type="checkbox" data-idle="notify_kitchen_sound">
+                  <span>Kitchen notifications make a sound</span>
+                </label>
+                <p class="muted small" style="margin:6px 0 14px">
+                  Separate from the notification itself. A bar loud enough that a chime is just
+                  noise still wants the light on the screen, and a kitchen that cannot hear over
+                  an extractor wants the opposite.
+                </p>
+
+                <p class="muted small" style="margin:0 0 6px"><strong>Customer display</strong></p>
+                <label class="check">
+                  <input type="checkbox" data-idle="notify_display_enabled">
+                  <span>Notifications on the customer display</span>
+                </label>
+                <p class="muted small" style="margin:6px 0 0">
+                  Off by default, and it should usually stay off: that screen faces a queue, and
+                  the person who needs to know is behind the counter. Switch it on for a display
+                  mounted somewhere staff actually stand.
+                </p>
+              </div>
             </div>
           </div>
         </section>

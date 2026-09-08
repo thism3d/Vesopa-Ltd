@@ -4,7 +4,9 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
 const { requireAuth, requireTerminal } = require('./auth');
-const { readAllergens, effectiveAllergens } = require('./allergens');
+const {
+  readAllergens, effectiveAllergens, cleanAllergens,
+} = require('./allergens');
 
 // ---------------------------------------------------------------------------
 // Branding, offers and promotions
@@ -591,6 +593,23 @@ function dineinRoutes({ pool, broadcast, secret }) {
         params.push(host || null, 0);
       }
 
+      // The tags the menu page presents itself with.
+      //
+      // Blank stores NULL rather than an empty string, because NULL is what
+      // makes the page carry on deriving them — the venue name, the tagline,
+      // the banner. A venue that clears the box goes back to the default
+      // rather than to a page that describes itself as nothing.
+      for (const [field, column, cap] of [
+        ['meta_title', 'meta_title', 255],
+        ['meta_description', 'meta_description', 500],
+        ['meta_image_url', 'meta_image_url', 500],
+      ]) {
+        if (body[field] === undefined) continue;
+        const value = String(body[field] || '').trim().slice(0, cap);
+        sets.push(column + ' = ?');
+        params.push(value || null);
+      }
+
       if (body.opening_hours !== undefined) {
         // Normalised on the way in, so that whatever is read back out is seven
         // days in a known shape whoever wrote it.
@@ -702,7 +721,11 @@ function dineinRoutes({ pool, broadcast, secret }) {
       // What they want to see is what the product is already called.
       const email = await emailOf(officeId);
       const [items] = await pool.query(
-        'SELECT i.*, p.product_name AS catalogue_name' +
+        'SELECT i.*, p.product_name AS catalogue_name,' +
+          // What this item would show if it overrode nothing, so the editor can
+          // say "Inherits: Milk, Gluten" rather than just "Inherits" and leave
+          // somebody to go and look.
+          '       p.allergens AS product_allergens' +
           '  FROM dinein_items i' +
           '  LEFT JOIN bo_products p ON p.email = ? AND p.pluid = i.plu_id' +
           ' WHERE i.office_id = ? ORDER BY i.sort_order, i.id',
@@ -894,6 +917,16 @@ function dineinRoutes({ pool, broadcast, secret }) {
         if (b[flag] === undefined) continue;
         sets.push(flag + ' = ?');
         params.push(b[flag] ? 1 : 0);
+      }
+      // The menu's override of what the catalogue says.
+      //
+      // Absent leaves the column alone. Null clears it back to "inherit from
+      // the product", which is what nearly every item wants. An array — even
+      // an empty one — is this menu entry answering for itself. See
+      // src/allergens.js; the three-way distinction is the whole design.
+      if (b.allergens !== undefined) {
+        sets.push('allergens = ?');
+        params.push(b.allergens === null ? null : cleanAllergens(b.allergens));
       }
       if (b.sort_order !== undefined) {
         sets.push('sort_order = ?');

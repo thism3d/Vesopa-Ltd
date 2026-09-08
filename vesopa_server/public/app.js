@@ -950,6 +950,13 @@ function crudPayload(cfg, data) {
   for (const f of cfg.fields) {
     if (f.type === 'money') out[f.name] = Math.round(parseFloat(out[f.name] || '0') * 100);
     if (f.type === 'checkbox') out[f.name] = out[f.name] ? 1 : 0;
+    // The sentinel comes off and what is left is the answer — an array, which
+    // may legitimately be empty. See the field renderer for why it is needed.
+    if (f.type === 'allergens') {
+      const raw = out[f.name];
+      const values = raw === undefined ? [] : [].concat(raw).map(String);
+      out[f.name] = values.filter((v) => v !== '__answered__');
+    }
     // A blank number means "none", which for a NOT NULL DEFAULT 0 column is 0,
     // not NULL — MySQL rejects NULL there under strict mode, so leaving
     // "minimum spend" empty would fail the entire save with a 500. Columns that
@@ -1667,6 +1674,10 @@ let productRefs = {
   tax: [],
   modifierGroups: [],
   printCategories: [],
+  // The statutory fourteen, fetched once and shared by the product form and
+  // the dine-in menu item form. Served from src/allergens.js so that no screen
+  // spells them for itself — see the header of that file.
+  allergens: [],
 };
 
 /** What this venue calls each level, or "Price 2" where it has not said. */
@@ -1712,21 +1723,29 @@ async function loadProducts() {
   // One round of requests, not four in series. The reference lists are small
   // and a failure in any of them must not leave the catalogue unreachable, so
   // each falls back to empty rather than rejecting the lot.
-  const [rows, departments, groups, tax, modifierGroups, printCategories, till] =
-    await Promise.all([
+  const [
+    rows, departments, groups, tax, modifierGroups, printCategories,
+    allergens, till,
+  ] = await Promise.all([
       api('/products'),
       api('/departments').catch(() => []),
       api('/groups').catch(() => []),
       api('/tax').catch(() => []),
       api('/modifier-groups').catch(() => []),
       api('/print-categories').catch(() => []),
+      // Falls back to empty like the rest: a server that has not been
+      // redeployed yet shows the form without the allergen block rather than
+      // making the catalogue unreachable.
+      api('/allergens').then((r) => r.allergens || []).catch(() => []),
       // For the price-level labels. A venue that has named none, or a server
       // that has not run the migration, falls back to "Price 2" — which is
       // what the field says anyway.
       api('/till-settings').catch(() => null),
     ]);
   productRows = rows;
-  productRefs = { departments, groups, tax, modifierGroups, printCategories };
+  productRefs = {
+    departments, groups, tax, modifierGroups, printCategories, allergens,
+  };
   priceLevelNames = safeLevelNames(till?.price_level_names);
   bindProducts();
   renderProducts();
@@ -3539,6 +3558,52 @@ function fieldHtml(f) {
       <template data-mod-template>${f.options.map((o) => rowFor(o.id)).join('')}</template>
     </div>`;
   }
+  if (f.type === 'allergens') {
+    // The statutory fourteen, ticked.
+    //
+    // THE HIDDEN SENTINEL IS THE WHOLE TRICK, so it is worth explaining. The
+    // modal collects repeated names with FormData.getAll, and a set of tick
+    // boxes with none ticked submits *nothing at all* — the key is simply
+    // absent. Every other field here treats absent as "the caller did not
+    // mention it, leave it alone", which is exactly the guard that stops an
+    // import wiping a venue's allergens.
+    //
+    // But "none of the fourteen" is a real answer and has to be storable, and
+    // it looks identical to "not mentioned" over the wire. So the field always
+    // submits one marker value; crudPayload strips it and hands the server a
+    // real array, empty or not. Absent still means untouched; present-and-empty
+    // means somebody looked and said none.
+    //
+    // See src/allergens.js — the NULL / [] distinction is the point of it.
+    const chosen = new Set(
+      Array.isArray(f.value)
+        ? f.value.map(String)
+        : (() => {
+            try {
+              const parsed = JSON.parse(f.value || 'null');
+              return Array.isArray(parsed) ? parsed.map(String) : [];
+            } catch {
+              return [];
+            }
+          })()
+    );
+    const list = Array.isArray(f.options) ? f.options : [];
+    if (!list.length) {
+      return '<p class="muted small">Allergen list unavailable — reload the page.</p>';
+    }
+    return `<div class="allergen-field">
+      <input type="hidden" name="${f.name}" value="__answered__" />
+      ${list
+        .map(
+          (a) => `<label class="check allergen-tick">
+            <input type="checkbox" name="${f.name}" value="${esc(a.code)}"
+                   ${chosen.has(a.code) ? 'checked' : ''} />
+            <span>${esc(a.label)}</span>
+          </label>`
+        )
+        .join('')}
+    </div>`;
+  }
   if (f.type === 'stations') {
     // Every station gets a box, including the ones this venue has not set up:
     // the back office does not know which printers are plugged into which
@@ -4837,6 +4902,10 @@ document.addEventListener('click', async (e) => {
       name: 'modifier_group_ids',
       type: 'modifiers',
       options: productRefs.modifierGroups,
+      hint:
+        'These are the QR menu’s Add Ons too, asked before the item goes ' +
+        'in the basket. Prices come from the products on the modifier screen, ' +
+        'so one setup serves the till and the menu.',
       value: p.modifier_group_ids || [],
     },
     {
@@ -4846,6 +4915,18 @@ document.addEventListener('click', async (e) => {
       // New products default to on. Only an explicit 0 turns it off, so a
       // catalogue imported without the field is not hidden from every bill.
       value: p.print_to_receipt === undefined ? 1 : p.print_to_receipt,
+    },
+    {
+      label: 'Allergens',
+      name: 'allergens',
+      type: 'allergens',
+      options: productRefs.allergens,
+      hint:
+        'The fourteen a UK venue has to declare. Shown on the QR menu, on ' +
+        'kitchen tickets and on the customer display. Leave every box clear ' +
+        'and save to record that this contains none of them — which is a ' +
+        'different answer from never having been asked.',
+      value: p.allergens || null,
     },
     {
       label: 'Barcode',

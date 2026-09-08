@@ -172,6 +172,31 @@ async function loadDineIn() {
                  placeholder="https://maps.google.com/…">
           <span class="muted small">The "Find us" button opens this. Any map will do.</span>
         </label>
+
+        <!-- How the menu reads when somebody pastes the link somewhere.
+             All three were already being produced, from the venue name, the
+             strapline and the banner. These override that; leave one blank and
+             it goes back to deriving it. -->
+        <label style="grid-column:1/-1">Link title
+          <input id="di-meta-title" value="${esc(v.meta_title || '')}"
+                 maxlength="255"
+                 placeholder="${esc(v.display_name || 'Your venue')}">
+          <span class="muted small">The heading in a search result or a
+            WhatsApp preview. Blank uses the venue name.</span>
+        </label>
+        <label style="grid-column:1/-1">Link description
+          <input id="di-meta-desc" value="${esc(v.meta_description || '')}"
+                 maxlength="500"
+                 placeholder="${esc(v.tagline || 'Fresh, local, all day')}">
+          <span class="muted small">The sentence under it. Blank uses the
+            strapline. Around 150 characters is what most sites show.</span>
+        </label>
+        <label style="grid-column:1/-1">Link image
+          <input id="di-meta-image" value="${esc(v.meta_image_url || '')}"
+                 placeholder="Blank uses your banner, then your logo">
+          <span class="muted small">The picture in the preview. Wide images
+            read better than square ones here.</span>
+        </label>
         <label>Your logo
           ${imagePicker('di-logo', v.logo_url, { crop: 'square', label: 'Choose a logo' })}
           <span class="muted small">Drawn on the banner, at the top of the menu.</span>
@@ -762,6 +787,9 @@ async function diSaveVenue() {
     address_line: $('di-address').value,
     postcode: $('di-postcode').value,
     map_url: $('di-map').value,
+    meta_title: $('di-meta-title').value,
+    meta_description: $('di-meta-desc').value,
+    meta_image_url: $('di-meta-image').value,
     logo_url: $('di-logo').value,
     banner_url: $('di-banner').value,
     accent_colour: $('di-accent').value,
@@ -823,6 +851,15 @@ async function loadDineInMenu() {
     return diFail('dinein_menu-body', e);
   }
 
+  // The statutory fourteen, once. Falls back to empty rather than failing the
+  // menu: a server that has not been redeployed shows the rows without the
+  // allergen column instead of an unreachable page.
+  if (!diAllergens.length) {
+    diAllergens = await api('/allergens')
+      .then((r) => r.allergens || [])
+      .catch(() => []);
+  }
+
   const body = $('dinein_menu-body');
 
   // Named where it is created rather than in a browser prompt(): a prompt is
@@ -865,6 +902,9 @@ async function loadDineInMenu() {
   });
   body.querySelectorAll('[data-item-del]').forEach((b) => {
     b.onclick = () => diDeleteItem(Number(b.dataset.itemDel));
+  });
+  body.querySelectorAll('[data-item-allergens]').forEach((b) => {
+    b.onclick = () => diEditAllergens(b.dataset.itemAllergens);
   });
   body.querySelectorAll('[data-item-save]').forEach((b) => {
     b.onclick = () => diSaveItem(Number(b.dataset.itemSave));
@@ -936,6 +976,11 @@ function diSectionCard(section) {
                <th class="mid" style="width:74px">Popular</th>
                <th class="mid" style="width:80px">Featured</th>
                <th style="width:88px">Diet</th>
+               <!-- One button, not fourteen tick boxes. Nearly every item
+                    inherits what its product declares, so the common case is a
+                    word rather than a form, and the rare override opens a
+                    chooser. -->
+               <th style="width:120px">Allergens</th>
                <!-- Three 40px buttons and the gaps between them. At 116 the
                     third one — delete — was drawn 26px outside the cell and
                     clipped by the scroll box, which could not scroll because
@@ -985,12 +1030,185 @@ function diItemRow(item) {
                value="${esc(item.diet_tag || '')}" placeholder="—"
                style="max-width:130px">
       </td>
+      <td>${diAllergenCell(item)}</td>
       <td class="di-row-acts">
         ${iconBtn('save', 'Save', `data-item-save="${item.id}"`, 'go')}
         ${iconBtn('copy', 'Duplicate', `data-item-copy="${item.id}"`)}
         ${iconBtn('del', 'Take off the menu', `data-item-del="${item.id}"`, 'danger')}
       </td>
     </tr>`;
+}
+
+/** The fourteen, fetched once and shared by every row. */
+let diAllergens = [];
+
+/** The item behind a row, out of the loaded menu. */
+function diFindItem(id) {
+  for (const section of diMenu) {
+    const found = (section.items || []).find((i) => String(i.id) === String(id));
+    if (found) return found;
+  }
+  return null;
+}
+
+/**
+ * A dialog holding arbitrary markup, answering with the chosen allergens.
+ *
+ * Built on the same backdrop the rest of the back office uses rather than a
+ * new one, so Escape, the backdrop click and the animation all behave the way
+ * they do everywhere else.
+ *
+ * Resolves undefined for Cancel, null for "inherit from the product", and an
+ * array — possibly empty — for an answer this item gives itself.
+ */
+function diAllergenPrompt(title, bodyHtml) {
+  return new Promise((resolve) => {
+    const back = document.createElement('div');
+    back.className = 'modal-back confirm-back';
+    back.innerHTML = `
+      <div class="modal" role="dialog" aria-modal="true" style="max-width:520px">
+        <h3>${esc(title)}</h3>
+        ${bodyHtml}
+        <div class="modal-actions">
+          <button type="button" class="btn ghost" data-no>Cancel</button>
+          <button type="button" class="btn primary" data-yes>Save</button>
+        </div>
+      </div>`;
+    document.body.appendChild(back);
+    requestAnimationFrame(() => back.classList.add('in'));
+
+    const list = back.querySelector('#di-al-list');
+    const inherit = back.querySelector('#di-al-inherit');
+    // Ticking Inherit greys the fourteen rather than hiding them: a box that
+    // vanishes reads as a bug, and seeing what would be overridden is the
+    // point of having them on screen at all.
+    const sync = () => {
+      list.style.opacity = inherit.checked ? '0.45' : '1';
+      list.querySelectorAll('input').forEach((el) => {
+        el.disabled = inherit.checked;
+      });
+    };
+    inherit.onchange = sync;
+    sync();
+
+    const done = (answer) => {
+      back.classList.remove('in');
+      setTimeout(() => back.remove(), 220);
+      document.removeEventListener('keydown', onKey);
+      resolve(answer);
+    };
+    const onKey = (e) => { if (e.key === 'Escape') done(undefined); };
+    document.addEventListener('keydown', onKey);
+    back.querySelector('[data-no]').onclick = () => done(undefined);
+    back.querySelector('[data-yes]').onclick = () => done(
+      inherit.checked
+        ? null
+        : [...list.querySelectorAll('input:checked')].map((el) => el.value)
+    );
+    back.onclick = (e) => { if (e.target === back) done(undefined); };
+  });
+}
+
+/** Codes to labels, for the summary on a row. */
+function diAllergenLabels(codes) {
+  const by = new Map(diAllergens.map((a) => [a.code, a.label]));
+  return codes.map((c) => by.get(c)).filter(Boolean);
+}
+
+/** Whatever a column holds, as an array. */
+function diAllergenList(stored) {
+  if (stored === null || stored === undefined || stored === '') return null;
+  try {
+    const parsed = typeof stored === 'string' ? JSON.parse(stored) : stored;
+    return Array.isArray(parsed) ? parsed.map(String) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * What this item says about allergens, in a word.
+ *
+ * Three states, and the middle one is the reason this is not a tick box:
+ *
+ *   Inherits   the item says nothing, so the product answers. Nearly all of
+ *              them, and the label names what is being inherited so nobody has
+ *              to open the catalogue to find out.
+ *   None       this menu entry has been asked and contains none of the
+ *              fourteen. A real answer, not an absence of one.
+ *   Milk +2    this entry answers for itself.
+ */
+function diAllergenCell(item) {
+  const own = diAllergenList(item.allergens);
+  const inherited = diAllergenList(item.product_allergens) || [];
+  let label;
+  let tone = 'ghost';
+  if (own === null) {
+    const names = diAllergenLabels(inherited);
+    label = names.length ? 'Inherits ' + names.length : 'Inherits';
+  } else if (!own.length) {
+    label = 'None';
+    tone = 'ghost';
+  } else {
+    const names = diAllergenLabels(own);
+    label = names.length > 1 ? names[0] + ' +' + (names.length - 1) : names[0];
+    tone = '';
+  }
+  const title = own === null
+    ? 'Follows the product: ' + (diAllergenLabels(inherited).join(', ') || 'none set')
+    : own.length
+      ? 'This item: ' + diAllergenLabels(own).join(', ')
+      : 'This item declares none of the fourteen';
+  return `<button type="button" class="btn small ${tone}"
+            data-item-allergens="${item.id}"
+            title="${esc(title)}"
+            style="max-width:112px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(label)}</button>`;
+}
+
+/** The chooser. Saves straight away — it is not part of the row's Save. */
+async function diEditAllergens(itemId) {
+  const item = diFindItem(itemId);
+  if (!item) return;
+  const own = diAllergenList(item.allergens);
+  const inherited = diAllergenLabels(diAllergenList(item.product_allergens) || []);
+
+  const ticked = new Set(own || []);
+  const body = `
+    <p class="muted small" style="margin:0 0 10px">
+      Leave this on <b>Inherit</b> and the item shows whatever its product
+      declares${inherited.length ? ' — currently ' + esc(inherited.join(', ')) : ''}.
+      Override it only where this menu entry genuinely differs.
+    </p>
+    <label class="check" style="margin-bottom:10px">
+      <input type="checkbox" id="di-al-inherit" ${own === null ? 'checked' : ''}>
+      <span>Inherit from the product</span>
+    </label>
+    <div class="allergen-field" id="di-al-list">
+      ${diAllergens.map((a) => `<label class="check allergen-tick">
+        <input type="checkbox" value="${esc(a.code)}" ${ticked.has(a.code) ? 'checked' : ''}>
+        <span>${esc(a.label)}</span>
+      </label>`).join('')}
+    </div>
+    <p class="muted small" style="margin:10px 0 0">
+      Untick <b>Inherit</b> and leave every box clear to record that this
+      contains none of the fourteen — which is a different answer from never
+      having been asked.
+    </p>`;
+
+  const chosen = await diAllergenPrompt(
+    'Allergens — ' + (item.name || item.catalogue_name || 'item'),
+    body
+  );
+  // undefined is Cancel. null is "inherit". An array — possibly empty — is an
+  // answer this item is giving for itself.
+  if (chosen === undefined) return;
+
+  await api('/dine-in/items/' + itemId, {
+    method: 'PUT',
+    body: JSON.stringify({ allergens: chosen }),
+  });
+  toast('Allergens saved');
+  await loadDineInMenu();
 }
 
 function diField(kind, id, field) {
