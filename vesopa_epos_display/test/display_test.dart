@@ -451,6 +451,23 @@ void main() {
       );
     });
 
+    test('a paid sale that arrived without its items still holds', () {
+      // The order of the rules is the fix, and this is what pins it. A paid
+      // snapshot with no lines reads as hasSale == false, and the empty-basket
+      // shortcut used to run first and throw it out as though nothing had been
+      // sold — a fraction of a second after a sale. The till sends the items
+      // now, and this must not go back to depending on that.
+      expect(
+        shouldShowAdverts(
+          hasSale: false, customerQr: '', idleSeconds: 45,
+          sinceChange: const Duration(seconds: 5),
+          paid: true, thankYouSeconds: 20,
+        ),
+        isFalse,
+        reason: 'the thank-you was thrown out as an empty basket',
+      );
+    });
+
     test('a live bill is unaffected by the thank-you time', () {
       // Twenty seconds into a bill somebody is still ringing up, the screen
       // must not clear. This is the regression the two numbers exist to avoid.

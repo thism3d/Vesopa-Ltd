@@ -416,10 +416,52 @@ class CustomerDisplayFeed {
   /// and on a till whose data folder could not be opened.
   File? get file => _file;
 
+  /// How long a finished sale is held on screen before anything may clear it.
+  ///
+  /// Set from the venue's customer-display settings. Zero holds it until the
+  /// next sale; the display's own timer is what eventually takes it down.
+  Duration thankYouHold = const Duration(seconds: 20);
+
+  /// When the last `paid` snapshot went out, or null if the last thing
+  /// published was not one.
+  DateTime? _paidAt;
+
+  /// Whether a finished sale is still inside its hold.
+  bool get _holdingThankYou {
+    final at = _paidAt;
+    if (at == null) return false;
+    // Zero means hold until something replaces it.
+    if (thankYouHold <= Duration.zero) return true;
+    return DateTime.now().difference(at) < thankYouHold;
+  }
+
   /// Write [snapshot], unless it would draw the same screen as the last one.
+  ///
+  /// A FINISHED SALE IS NOT CLEARED BY THE NEXT EMPTY BILL
+  ///
+  /// This is the whole reason the thank-you hold appeared to do nothing. The
+  /// display's rule was right and never got the chance to run: the moment a
+  /// sale settled, the till published `paid`, closed the change window, called
+  /// [clear], and then started a new empty bill which published `idle` on top
+  /// of that. The screen went to adverts before the display had drawn anything.
+  ///
+  /// So the *publisher* holds. Inside the window, an `idle` is dropped — a new
+  /// empty bill is not news to a customer who is still looking at their change.
+  /// A real sale is published at once and cancels the hold, which is exactly
+  /// what the venue asked for: "if the till is used before 20 seconds it will
+  /// show the new transaction".
+  ///
+  /// Held here rather than in the display because this is the thing that owns
+  /// the file. A display second-guessing what it has been told would be a
+  /// second rule to keep in step with this one.
   Future<void> publish(DisplaySnapshot snapshot) async {
+    if (snapshot.state == 'idle' && _holdingThankYou) return;
+
     final previous = _last;
     if (previous != null && snapshot.sameAs(previous)) return;
+
+    // Recorded before the write, so a slow disk cannot shorten the hold.
+    _paidAt = snapshot.state == 'paid' ? DateTime.now() : null;
 
     await _resolve();
     final file = _file;
@@ -439,8 +481,15 @@ class CustomerDisplayFeed {
 
   /// Put the display back to adverts. Called when a sale is finished with, and
   /// when the till shuts down.
-  Future<void> clear({String? terminalName}) =>
-      publish(DisplaySnapshot.idle(terminalName: terminalName));
+  ///
+  /// Honours the thank-you hold, so the change window closing does not wipe the
+  /// screen the customer is reading their change off. [force] is for the till
+  /// shutting down, where there is no next sale to wait for and the last bill
+  /// of the night must not be left up.
+  Future<void> clear({String? terminalName, bool force = false}) {
+    if (force) _paidAt = null;
+    return publish(DisplaySnapshot.idle(terminalName: terminalName));
+  }
 }
 
 /// Build a snapshot from what the sale screen is holding.
@@ -449,19 +498,32 @@ class CustomerDisplayFeed {
 /// row carries forty columns this screen has no business knowing about — a
 /// clerk's PIN among them — and naming the four it does need is what keeps a
 /// change to the schema from quietly altering what a customer is shown.
+/// [paidMinor] and [changeMinor] make it a *finished* sale rather than a live
+/// one — the items stay on screen, with what was handed over and what is coming
+/// back underneath, and the venue's thank-you under that.
+///
+/// The items matter. A `paid` snapshot with no lines is not a sale as far as
+/// the display is concerned (`Basket.hasSale` wants a state and some items), so
+/// one sent without them is thrown away by the very rule meant to hold it up —
+/// which is exactly what used to happen, and why the thank-you never appeared.
 DisplaySnapshot snapshotFor({
   required List<OrderLine> lines,
   int subtotalMinor = 0,
   int discountMinor = 0,
   int taxMinor = 0,
   int totalMinor = 0,
+  int paidMinor = 0,
+  int changeMinor = 0,
+  bool paid = false,
   String? terminalName,
   String? message,
 }) {
   if (lines.isEmpty) return DisplaySnapshot.idle(terminalName: terminalName);
 
   return DisplaySnapshot(
-    state: 'sale',
+    state: paid ? 'paid' : 'sale',
+    paidMinor: paidMinor,
+    changeMinor: changeMinor,
     terminalName: terminalName,
     message: message,
     lines: [

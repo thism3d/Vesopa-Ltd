@@ -11,6 +11,7 @@ import '../data/pricing_engine.dart';
 import '../data/staff_session.dart';
 import '../data/tender_engine.dart';
 import '../data/customer_display.dart';
+import '../data/customer_display_control.dart';
 import '../data/till_settings.dart';
 import '../main.dart';
 import '../payments/connect_pac.dart';
@@ -1228,7 +1229,30 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     final container = ProviderScope.containerOf(context, listen: false);
     final settings = container.read(tillSettingsProvider);
 
-    // Change first, before anything else can cover it. The customer is standing
+    // The finished sale, on the customer's screen, before anything else.
+    //
+    // Every sale and not only the ones with change to hand back. This used to
+    // live inside _showChange, which returns early when change is zero — so a
+    // card sale and an exact-cash sale published nothing at all, and the
+    // customer's screen went from the live bill straight to adverts. The
+    // thank-you the venue configured was never drawn on the two most common
+    // ways of paying.
+    //
+    // With the lines on it, too. `paid` with no lines is not a sale as far as
+    // the display is concerned — Basket.hasSale wants both — so the old
+    // snapshot was discarded by the very rule meant to hold it up.
+    //
+    // Resolved off the root container, like the settings above: this runs as
+    // the page is popping and `ref` goes with it.
+    unawaited(
+      _publishFinishedSale(
+        container.read(customerDisplayProvider),
+        container.read(orderRepositoryProvider),
+        _tender,
+      ),
+    );
+
+    // Change next, before anything else can cover it. The customer is standing
     // there waiting for money out of the drawer, and a receipt prompt in front of
     // that instruction is how change gets forgotten.
     final timedOut = await _showChange(settings);
@@ -1284,25 +1308,10 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     final change = _tender.changeMinor;
     if (change <= 0) return false;
 
-    // The one moment the customer display genuinely earns its keep: the
-    // customer can check their change against the screen without asking. It
-    // goes up beside the clerk's own change box and comes down with it.
-    //
-    // Published here rather than left to the shell's basket feed, because by
-    // now the bill is closed and the shell has nothing to publish — what the
-    // customer needs to see is what they handed over and what is coming back.
-    final display = ref.read(customerDisplayProvider);
-    unawaited(
-      display.publish(
-        DisplaySnapshot(
-          state: 'paid',
-          totalMinor: _tender.totals.totalMinor,
-          paidMinor: _tender.paidMinor,
-          changeMinor: change,
-        ),
-      ),
-    );
-
+    // What the customer sees is published by _publishFinishedSale before this
+    // runs — every sale, with its items, change included. It used to be done
+    // here, which meant it never happened on a card or exact-cash sale because
+    // of the early return above.
     final timedOut = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -1312,10 +1321,63 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
       ),
     );
 
-    // Back to adverts. A change figure left on a customer-facing screen is the
-    // next customer's first sight of the till, and it is somebody else's money.
-    unawaited(display.clear());
+    // Deliberately not cleared here.
+    //
+    // A change figure left on a customer-facing screen is the next customer's
+    // first sight of the till and is somebody else's money — which is why this
+    // used to clear immediately. But clearing on the clerk's timing rather than
+    // the customer's is what made the venue's thank-you setting do nothing: the
+    // window closes the moment the clerk hands the money over, often within two
+    // seconds, and the screen was blanked before the customer had looked up.
+    //
+    // The hold in CustomerDisplayFeed takes it down instead, after the time the
+    // venue set, and a new sale replaces it at once.
     return timedOut ?? false;
+  }
+
+  /// Put the finished sale on the customer's screen, and set how long it holds.
+  ///
+  /// Called for every settled sale. The items stay up with what was handed over
+  /// and what is coming back underneath, and the venue's thank-you under that;
+  /// the hold in CustomerDisplayFeed keeps it there for the configured time and
+  /// drops any idle that would wipe it — a new bill starting behind the clerk,
+  /// most often.
+  Future<void> _publishFinishedSale(
+    CustomerDisplayFeed display,
+    OrderRepository repo,
+    TenderState tender,
+  ) async {
+    // Read here rather than threaded down from the build method: settling is a
+    // long run of awaits and the lines the customer should see are the ones on
+    // the bill that was just closed, not a list captured before a voucher or a
+    // gratuity changed it. Settling does not delete the lines — only voiding
+    // does — so they are still there to read.
+    final lines = await repo.linesOnce(widget.orderId);
+    if (lines.isEmpty) return;
+
+    // The venue's own settings, read now rather than cached: a manager who
+    // changes the hold or the message on the till mid-service should see the
+    // next sale honour it.
+    //
+    // Read before publishing, so the hold is in place by the time the snapshot
+    // lands — setting it afterwards would leave the first idle of the next bill
+    // free to wipe the screen.
+    final control = await readDisplayControl();
+    display.thankYouHold = Duration(seconds: control.thankYouSeconds);
+
+    await display.publish(
+      snapshotFor(
+        lines: lines,
+        paid: true,
+        subtotalMinor: tender.totals.grossMinor,
+        discountMinor: tender.totals.savedMinor,
+        taxMinor: tender.totals.taxMinor,
+        totalMinor: tender.totals.totalMinor,
+        paidMinor: tender.paidMinor,
+        changeMinor: tender.changeMinor,
+        message: control.thankYou,
+      ),
+    );
   }
 
   /// The amount a tender key will take: what the clerk has keyed, or — when

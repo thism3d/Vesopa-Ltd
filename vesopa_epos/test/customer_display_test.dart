@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vesopa_epos/data/customer_display.dart';
+import 'package:vesopa_epos/data/local/database.dart';
 
 /// The feed the customer display application reads.
 ///
@@ -27,6 +28,19 @@ void main() {
 
   CustomerDisplayFeed feedInto(Directory where) =>
       CustomerDisplayFeed(directoryOverride: where);
+
+  /// One line on a bill, with only the columns the display reads.
+  OrderLine orderLine(String name, double quantity, int unitPriceMinor) =>
+      OrderLine(
+        id: name,
+        orderId: 'o1',
+        pluId: 1,
+        name: name,
+        quantity: quantity,
+        unitPriceMinor: unitPriceMinor,
+        taxPercentage: 20,
+        lineDiscountMinor: 0,
+      );
 
   File writtenIn(Directory where) => File(
     '${where.path}/$customerDisplayFolder/$customerDisplayFile',
@@ -187,6 +201,137 @@ void main() {
     // the venue's adverts, not at a bill for £0.00.
     final snapshot = snapshotFor(lines: const [], totalMinor: 0);
     expect(snapshot.state, 'idle');
+  });
+
+  // ---------------------------------------------------------------------
+  // Holding a finished sale on screen
+  // ---------------------------------------------------------------------
+  //
+  // The venue reported the thank-you setting doing nothing: the screen went to
+  // full-screen adverts the instant a sale finished. Three things caused it,
+  // and every one of them was on this side of the file rather than in the
+  // display's own rule, which is why the display's unit tests all passed while
+  // the feature did not work at all.
+
+  test('a finished sale is published with its items on it', () async {
+    // A `paid` snapshot with no lines is not a sale as far as the display is
+    // concerned — Basket.hasSale wants a state AND items — so one sent without
+    // them is discarded by the very rule meant to hold it up. That is what the
+    // till used to send.
+    final snapshot = snapshotFor(
+      lines: [orderLine('Lager Pint', 2, 460)],
+      paid: true,
+      totalMinor: 920,
+      paidMinor: 1000,
+      changeMinor: 80,
+    );
+
+    expect(snapshot.state, 'paid');
+    expect(snapshot.lines, isNotEmpty, reason: 'a paid sale with no items');
+    expect(snapshot.paidMinor, 1000);
+    expect(snapshot.changeMinor, 80);
+  });
+
+  test('a new empty bill does not wipe the finished sale', () async {
+    // The exact sequence that broke it: the sale settles, the change window
+    // closes, and the till starts a new bill which publishes idle on top of the
+    // thank-you a fraction of a second later.
+    final feed = feedInto(dir);
+    feed.thankYouHold = const Duration(seconds: 20);
+
+    await feed.publish(
+      snapshotFor(
+        lines: [orderLine('Lager Pint', 1, 460)],
+        paid: true,
+        totalMinor: 460,
+      ),
+    );
+    await feed.clear();
+
+    final written = jsonDecode(feed.file!.readAsStringSync()) as Map;
+    expect(written['state'], 'paid', reason: 'the thank-you was wiped');
+  });
+
+  test('but a real sale replaces it at once', () async {
+    // "If the till is used before 20 seconds it will show the new transaction."
+    final feed = feedInto(dir);
+    feed.thankYouHold = const Duration(seconds: 20);
+
+    await feed.publish(
+      snapshotFor(lines: [orderLine('Lager Pint', 1, 460)], paid: true),
+    );
+    await feed.publish(
+      snapshotFor(lines: [orderLine('Chips', 1, 250)], totalMinor: 250),
+    );
+
+    final written = jsonDecode(feed.file!.readAsStringSync()) as Map;
+    expect(written['state'], 'sale');
+    expect((written['lines'] as List).single['name'], 'Chips');
+  });
+
+  test('the hold expires and the screen can be cleared again', () async {
+    final feed = feedInto(dir);
+    // A hold that has already passed, rather than a test that waits.
+    feed.thankYouHold = Duration.zero;
+    await feed.publish(
+      snapshotFor(lines: [orderLine('Lager Pint', 1, 460)], paid: true),
+    );
+
+    // Zero means hold until something replaces it, so this one does not clear.
+    await feed.clear();
+    expect(
+      (jsonDecode(feed.file!.readAsStringSync()) as Map)['state'],
+      'paid',
+    );
+
+    // A real hold that has elapsed does clear.
+    feed.thankYouHold = const Duration(milliseconds: 1);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    await feed.clear();
+    expect(
+      (jsonDecode(feed.file!.readAsStringSync()) as Map)['state'],
+      'idle',
+    );
+  });
+
+  test('the till shutting down clears it whatever the hold says', () async {
+    // There is no next sale to replace it and nothing left running to take it
+    // down, so the last bill of the night would stay on a screen facing the
+    // street.
+    final feed = feedInto(dir);
+    feed.thankYouHold = const Duration(minutes: 5);
+    await feed.publish(
+      snapshotFor(lines: [orderLine('Lager Pint', 1, 460)], paid: true),
+    );
+
+    await feed.clear(force: true);
+    expect(
+      (jsonDecode(feed.file!.readAsStringSync()) as Map)['state'],
+      'idle',
+    );
+  });
+
+  test('two sales running together each hold from their own moment', () async {
+    // A second sale settling inside the first one's hold must restart it, not
+    // inherit what is left of it.
+    final feed = feedInto(dir);
+    feed.thankYouHold = const Duration(milliseconds: 60);
+
+    await feed.publish(
+      snapshotFor(lines: [orderLine('First', 1, 100)], paid: true),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 45));
+    await feed.publish(
+      snapshotFor(lines: [orderLine('Second', 1, 200)], paid: true),
+    );
+
+    // 45ms into the first hold, but only just into the second.
+    await feed.clear();
+    expect(
+      (jsonDecode(feed.file!.readAsStringSync()) as Map)['state'],
+      'paid',
+      reason: "the second sale inherited what was left of the first hold",
+    );
   });
 
   test('two snapshots that draw the same screen compare equal', () {

@@ -67,29 +67,38 @@ bool shouldShowAdverts({
 }) {
   if (customerQr.isNotEmpty) return false;
 
-  // Nothing rung up is not a quiet moment in a sale, it is no sale. Adverts
-  // take the screen immediately rather than after the countdown.
-  if (!hasSale) return true;
-
-  // A finished sale holds for its own time, not the idle time.
+  // A finished sale holds for its own time, and it is checked BEFORE the empty
+  // basket below. That order is the fix for the thank-you never appearing: a
+  // paid snapshot that arrived without its items — which is what the till used
+  // to send — reads as `hasSale == false` and was thrown out by the next line
+  // as though nothing had been sold, a fraction of a second after the sale.
   //
-  // The two are different questions and used to share one answer. `idleSeconds`
-  // asks "how long does a bill nobody is adding to stay up" — a minute or so,
-  // because the clerk is talking to the customer and the bill is still live.
-  // This asks "how long does the total and the thank-you stay up after the
-  // money has changed hands", which is a customer checking their change and
-  // then walking away: twenty seconds, not forty-five.
-  //
-  // Ringing something up before it expires needs no rule of its own. A new
-  // basket resets the clock this measures and is no longer `paid`, so the next
-  // customer's items appear at once — which is exactly what was asked for.
-  //
-  // Zero holds for ever, matching what zero already means below.
+  // The till now sends the items too, so both halves agree. This stays in this
+  // order anyway: a screen told a sale has been paid for should say so, and
+  // "paid, and I was sent no lines" is still a customer standing at a counter
+  // waiting to be thanked.
   if (paid) {
     if (thankYouSeconds <= 0) return false;
     return sinceChange >= Duration(seconds: thankYouSeconds);
   }
 
+  // Nothing rung up is not a quiet moment in a sale, it is no sale. Adverts
+  // take the screen immediately rather than after the countdown.
+  if (!hasSale) return true;
+
+  // The idle countdown, for a bill still being rung up.
+  //
+  // Two different questions that used to share one answer. `idleSeconds` asks
+  // "how long does a bill nobody is adding to stay up" — a minute or so,
+  // because the clerk is talking to the customer and the bill is still live.
+  // The paid case asks "how long do the total and the thank-you stay up after
+  // the money has changed hands", which is a customer checking their change
+  // and then walking away: twenty seconds, not forty-five.
+  //
+  // Ringing something up before it expires needs no rule of its own. A new
+  // basket resets the clock this measures and is no longer paid, so the next
+  // customer's items appear at once.
+  //
   // Zero means never: a screen beside a busy bar may want the bill up
   // permanently, and that is an answer rather than a mistake.
   if (idleSeconds <= 0) return false;

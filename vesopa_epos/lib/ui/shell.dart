@@ -244,7 +244,10 @@ class _PosShellState extends ConsumerState<PosShell> {
     _displayFeed?.cancel();
     // Put the customer's screen back to adverts rather than leaving the last
     // bill of the night on it.
-    unawaited(_display.clear());
+    //
+    // Forced past the thank-you hold: the till is closing, so there is no next
+    // sale to replace it and nothing left running to take it down later.
+    unawaited(_display.clear(force: true));
     super.dispose();
   }
 
