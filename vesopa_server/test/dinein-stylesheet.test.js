@@ -123,9 +123,19 @@ check('the rules the page depends on are all present', () => {
   // Each of these was, at some point, silently switched off by a brace or a
   // slice. A page that renders with any of them missing still loads.
   const required = [
-    '.add{', '.qty{', '.item{', '.item .body', '.item .thumb',
+    // .qbadge replaced .qty: the quantity is now the button, and the stepper
+    // is what it opens into. All three layouts position it, so all three
+    // selectors have to survive a careless slice.
+    '.add{', '.qbadge{', '.qbadge.open{',
+    '.item .thumb .qbadge', '.pcard .qbadge', '.item .end .qbadge',
+    '.item{', '.item .body', '.item .thumb',
     '.pcard', '.pop-grid', '.offerbox', '.promos', '.money',
     '.tabs{', '.hero{', '.basket', '.pop{',
+    // The dish sheet. Its footer being sticky is the whole reason the price
+    // and the Add button are reachable on a dish with four add-on groups.
+    '.sheet.dish', '.dfoot{', '.dopt{', '.dgroup{', '.dadd{',
+    // The offer sparkle, and the pill that asks which table.
+    '.sparks{', '.where.pick.ask{',
   ];
   const missing = required.filter((sel) => !CSS.includes(sel));
   assert.deepStrictEqual(missing, []);

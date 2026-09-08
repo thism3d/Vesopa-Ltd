@@ -1,4 +1,9 @@
 const express = require('express');
+// The fourteen, so the page can turn a stored code into the wording a customer
+// reads. Injected as a constant at render time rather than fetched: the
+// dietary sheet must be able to open on a phone that has lost its signal since
+// the menu loaded, and a list fixed by statute is not worth a round trip.
+const { ALLERGENS } = require('./allergens');
 
 /**
  * The page a customer's phone actually loads.
@@ -155,6 +160,9 @@ async function metaFor(pool, { table, slug }) {
     image: null,
     icon: null,
     table: null,
+    metaTitle: null,
+    metaDescription: null,
+    metaImage: null,
   };
   if (!pool) return fallback;
 
@@ -189,6 +197,15 @@ async function metaFor(pool, { table, slug }) {
       (row.table_label || '').trim() ||
       (row.table_number != null ? 'Table ' + row.table_number : '');
 
+    // What the venue has written for itself, falling back to what this page
+    // has always derived. NULL in a column is not "no description" — it is
+    // "carry on deriving one", which is why a venue that never opens those
+    // fields sees exactly the page it saw before. See
+    // schema_menu_dinein_ordering.sql.
+    const metaTitle = (row.meta_title || '').trim();
+    const metaDescription = (row.meta_description || '').trim();
+    const metaImage = (row.meta_image_url || '').trim();
+
     return {
       name: (row.display_name || row.office_name || 'Menu').trim(),
       tagline: (row.tagline || '').trim() || 'See the menu and order from your table',
@@ -196,6 +213,12 @@ async function metaFor(pool, { table, slug }) {
       image: row.banner_url || row.logo_url || null,
       icon: row.logo_url || null,
       table: tableName || null,
+      // Overrides, kept separate from the derived values above so the page can
+      // still use the real venue name for the browser tab while showing the
+      // venue's own wording to a link preview.
+      metaTitle: metaTitle || null,
+      metaDescription: metaDescription || null,
+      metaImage: metaImage || null,
     };
   } catch {
     // A page that cannot reach the database still has to render — the menu
@@ -307,13 +330,32 @@ function dineinPageRoutes({ pool } = {}) {
  * /m/vesopakitchen is one page to a search engine rather than two competing
  * copies of the same venue.
  */
-function canonicalFor({ table, slug }) {
-  const base = (process.env.PUBLIC_BASE_URL || 'https://' + MENU_HOST)
+function menuBase() {
+  return (process.env.PUBLIC_BASE_URL || 'https://' + MENU_HOST)
     .trim()
     .replace(/\/+$/, '');
+}
+
+function canonicalFor({ table, slug }) {
+  const base = menuBase();
   if (table) return base + '/t/' + table;
   if (slug) return base + '/' + String(slug).toLowerCase();
   return base;
+}
+
+/**
+ * A URL a link preview can actually fetch.
+ *
+ * og:image is read by a scraper that has no page to be relative to — WhatsApp,
+ * iMessage and Slack all fetch it from their own servers — so "/uploads/x.png"
+ * resolves against nothing and the preview comes back as a grey box. Every
+ * image on this venue is stored as a site-relative path, which is right
+ * everywhere else on the page and wrong in exactly this one place.
+ */
+function absoluteUrl(url) {
+  if (!url) return null;
+  if (/^https?:\/\//i.test(url) || url.startsWith('//')) return url;
+  return menuBase() + (url.startsWith('/') ? '' : '/') + url;
 }
 
 /**
@@ -526,16 +568,31 @@ button{font:inherit;cursor:pointer}
  * means it works for a venue whose logo is light-on-transparent, because the
  * one thing both kinds need is a light, opaque, predictable ground. */
 .logo{
-  width:62px;height:62px;border-radius:16px;flex:0 0 auto;
-  background:#fff;border:2px solid #fff;
-  box-shadow:0 8px 24px rgba(0,0,0,.35);overflow:hidden;
+  width:66px;height:66px;flex:0 0 auto;
+  /* A circle, and nothing around it.
+   *
+   * This used to be a rounded square with a white ground, a 2px white border
+   * and 7px of padding — three separate white things stacked, which read as a
+   * thick white ring around a small logo. The venue asked for it gone and for
+   * the image to fill a circle instead.
+   *
+   * The ground only survives as a fallback for the initial letter drawn when a
+   * venue has no logo at all, and for a logo that is genuinely transparent —
+   * without it a white-on-transparent mark would vanish into the banner. */
+  border-radius:50%;overflow:hidden;
+  background:#fff;border:0;padding:0;
+  box-shadow:0 8px 24px rgba(0,0,0,.35);
   display:grid;place-items:center;font-size:24px;font-weight:800;
-  color:#10130A;padding:7px
+  color:#10130A
 }
-/* Contain, not cover. A venue's logo is as likely to be a wide wordmark as a
-   square badge, and cover on a wordmark crops out the middle two letters and
-   presents those as the brand. */
-.logo img{width:100%;height:100%;object-fit:contain}
+/* Cover and centred, at the venue's request.
+ *
+ * The trade-off is real and worth writing down rather than discovering later:
+ * a WIDE WORDMARK will lose its ends to a square crop. The previous rule used
+ * contain for exactly that reason. Cover is what was asked for and is right
+ * for the badge-shaped logos most venues upload; a venue whose logo is a
+ * wordmark should upload a square version of it. */
+.logo img{width:100%;height:100%;object-fit:cover;object-position:center;display:block}
 
 .where{
   margin:14px auto 0;max-width:648px;padding:11px 14px;
@@ -558,6 +615,43 @@ button{font:inherit;cursor:pointer}
 }
 .where.pick:hover{border-color:var(--accent)}
 .where.pick:active{transform:scale(.995)}
+
+/* The affordance, on the right where a thumb already is. A character rather
+   than an SVG because it inherits the font, the colour and the line height for
+   free, and because one chevron is not worth another node in ICON. */
+.where.pick .go{
+  margin-left:auto;flex:0 0 auto;display:flex;align-items:center;gap:4px;
+  color:var(--accent);font-weight:700;white-space:nowrap
+}
+.where.pick .go .chev{font-size:19px;line-height:1;transform:translateY(-1px)}
+.where.warn.pick .go{color:inherit}
+
+/* Nobody has said where they are sitting, and every single thing below this
+   line depends on it. A dashed grey box reads as a caption and was being read
+   as one — people filled a basket, hit the checkout and met the question there
+   for the first time. So it breathes: the accent washes in and out on the pill
+   itself, which draws the eye without moving anything or occupying space of its
+   own. It stops the moment a table is chosen, because then it has nothing left
+   to ask. */
+.where.pick.ask{border-style:solid;animation:whereAsk 1.6s ease-in-out infinite}
+@keyframes whereAsk{
+  0%,100%{
+    background:color-mix(in srgb, var(--accent) 15%, var(--sunken));
+    border-color:color-mix(in srgb, var(--accent) 34%, var(--line))
+  }
+  50%{
+    background:color-mix(in srgb, var(--accent) 45%, var(--sunken));
+    border-color:var(--accent)
+  }
+}
+/* Somebody who has asked for less movement still needs to see the thing. They
+   get the emphasis without the pulse. */
+@media (prefers-reduced-motion: reduce){
+  .where.pick.ask{
+    animation:none;border-color:var(--accent);
+    background:color-mix(in srgb, var(--accent) 24%, var(--sunken))
+  }
+}
 
 /* ---- The floor plan ---------------------------------------------------- */
 
@@ -961,6 +1055,125 @@ button{font:inherit;cursor:pointer}
 .pop .icobtn svg{width:19px;height:19px;stroke:currentColor;fill:none;
                  stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .pop .sheetbody{overflow:auto;-webkit-overflow-scrolling:touch;flex:1 1 auto}
+
+/* ---- One dish, in full --------------------------------------------------
+
+   Taller than the other sheets and edge to edge inside them, because it is
+   carrying a photograph and a form rather than a question. The footer is
+   sticky inside the scrolling body: the price and the Add button are the two
+   things somebody is looking for, and on a dish with four add-on groups they
+   would otherwise be a scroll away from every decision that changes them. */
+.pop .sheet.dish{max-height:90vh;padding-left:0;padding-right:0}
+.pop .sheet.dish .sheethead{padding:0 16px}
+.pop .sheet.dish .sheetbody{padding:0 16px}
+.pop .dhero{
+  margin:0 0 14px;border-radius:14px;overflow:hidden;
+  background:var(--sunken);height:180px
+}
+.pop .dhero img{width:100%;height:100%;object-fit:cover;display:block}
+.pop .dtop h4{margin:0;font-size:19px;font-weight:700;line-height:1.25}
+.pop .dtop .dfrom{margin:4px 0 0;font-size:16px;font-weight:650;color:var(--ink)}
+.pop .ddesc{margin:10px 0 0;color:var(--ink-soft);font-size:14px;line-height:1.5}
+
+.pop .drow-diet{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px}
+.pop .dinfo{
+  display:inline-flex;align-items:center;gap:6px;
+  border:1px solid var(--line);background:var(--card);color:var(--ink-soft);
+  border-radius:999px;padding:5px 11px 5px 8px;
+  font:inherit;font-size:12px;font-weight:600;cursor:pointer
+}
+.pop .dinfo svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.8}
+.pop .dsub{margin:2px 0 8px;font-size:14px;font-weight:700}
+.pop .dallerg{margin:0;padding:0 0 0 18px;color:var(--ink);font-size:15px;line-height:1.7}
+.pop .dnone,.pop .dask{margin:10px 0 0;color:var(--ink-soft);font-size:14px;line-height:1.5}
+.pop .dask{margin-top:14px;font-size:13px}
+
+/* A question, and its answers. */
+.pop .dgroup{margin-top:20px;border-top:1px solid var(--line);padding-top:16px}
+.pop .dghead{display:flex;align-items:center;gap:10px}
+.pop .dghead h5{margin:0;flex:1;font-size:16px;font-weight:700}
+.pop .dgtag{
+  font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+  color:var(--ink-soft);background:var(--sunken);
+  border-radius:999px;padding:4px 9px;flex:0 0 auto
+}
+.pop .dgtag.need{background:color-mix(in srgb,#B3261E 12%,var(--card));color:#B3261E}
+.pop .dhint{margin:5px 0 10px;color:var(--ink-soft);font-size:13px;line-height:1.45}
+.pop .dopt{
+  display:flex;align-items:center;gap:12px;
+  padding:12px 2px;border-bottom:1px solid var(--line);
+  /* Stated, because these are LABEL elements and the sheet's generic label
+     rule paints every label the soft grey it uses for form captions. An
+     option somebody is choosing between is not a caption. */
+  color:var(--ink);font-size:15px;font-weight:600;cursor:pointer
+}
+.pop .dopt:last-of-type{border-bottom:0}
+.pop .dopt input{width:21px;height:21px;flex:0 0 auto;accent-color:var(--accent);margin:0}
+.pop .dopt .dopt-n{flex:1 1 auto;min-width:0}
+.pop .dopt .dopt-n small{
+  display:block;margin-top:2px;color:var(--ink-soft);font-size:13px;font-weight:400
+}
+.pop .dopt .dopt-p{flex:0 0 auto;color:var(--ink-soft);font-size:14px;font-weight:650}
+/* Ticked to the group's limit: the rest go quiet rather than refusing a tap
+   with no explanation. */
+.pop .dopt.nope{opacity:.45}
+.pop .dopt.wide{align-items:flex-start;padding:14px 2px}
+.pop .dopt.wide input{margin-top:2px}
+
+.pop .dblock{margin-top:20px;border-top:1px solid var(--line);padding-top:16px}
+.pop .dblock label{margin:0 0 4px;font-size:15px;font-weight:700;color:var(--ink)}
+.pop .dblock textarea{
+  width:100%;box-sizing:border-box;border:1px solid var(--line);
+  border-radius:12px;padding:12px 13px;
+  font:inherit;font-size:16px;   /* 16px: iOS zooms the page below it */
+  background:var(--card);color:var(--ink);resize:vertical
+}
+.pop .dcount{margin-top:5px;text-align:right;color:var(--ink-soft);font-size:12px}
+
+/* The one row that opens another sheet. */
+.pop .drow{
+  width:100%;display:flex;align-items:center;gap:10px;
+  border:1px solid var(--line);border-radius:13px;
+  background:var(--card);color:var(--ink);
+  padding:13px 14px;font:inherit;text-align:left;cursor:pointer
+}
+.pop .drow .drow-t{flex:1 1 auto;font-size:15px;font-weight:650}
+.pop .drow .drow-t b{
+  display:block;margin-top:3px;font-size:14px;font-weight:500;color:var(--ink-soft)
+}
+.pop .drow .chev{color:var(--accent);font-size:20px;line-height:1;font-weight:700}
+
+/* Price and Add, always in reach. */
+.pop .dfoot{
+  position:sticky;bottom:0;z-index:2;
+  display:flex;align-items:center;gap:12px;
+  margin:20px -16px 0;padding:12px 16px calc(12px + env(safe-area-inset-bottom));
+  background:var(--card);border-top:1px solid var(--line)
+}
+.pop .dstep{
+  display:flex;align-items:center;gap:4px;flex:0 0 auto;
+  border:1px solid var(--line);border-radius:999px;padding:3px
+}
+.pop .dstep button{
+  width:36px;height:36px;border:0;border-radius:999px;background:none;
+  color:var(--ink);display:grid;place-items:center;cursor:pointer;padding:0
+}
+.pop .dstep button:disabled{opacity:.3;cursor:default}
+.pop .dstep b{min-width:24px;text-align:center;font-size:16px;font-weight:750;
+         font-variant-numeric:tabular-nums}
+.pop .dstep .minus,.pop .dstep .plus{position:relative;width:15px;height:15px}
+.pop .dstep .minus::before,.pop .dstep .plus::before,.pop .dstep .plus::after{
+  content:"";position:absolute;top:50%;left:50%;
+  background:currentColor;border-radius:1px;
+  width:14px;height:2.4px;transform:translate(-50%,-50%)
+}
+.pop .dstep .plus::after{transform:translate(-50%,-50%) rotate(90deg)}
+.pop .dadd{
+  flex:1 1 auto;border:0;border-radius:13px;padding:15px 14px;
+  background:var(--accent);color:var(--on-accent);
+  font:inherit;font-size:15px;font-weight:700;cursor:pointer
+}
+.pop .dadd:disabled{background:var(--sunken);color:var(--ink-soft);cursor:default}
 .pop label{display:block;font-size:13px;color:var(--ink-soft);margin:12px 0 5px}
 .pop input{
   width:100%;box-sizing:border-box;border:1px solid var(--line);
@@ -1134,6 +1347,14 @@ button{font:inherit;cursor:pointer}
 .basket .toward .bar i{
   display:block;height:100%;background:var(--offer);
   transition:width .35s cubic-bezier(.2,.8,.3,1)
+}
+/* Won. The offer is on, and the line that says so should not look like the one
+   that was still asking for four pounds. */
+.basket .toward.won{color:var(--ink);font-weight:700}
+.basket .toward.won .tick{
+  width:17px;height:17px;flex:0 0 auto;
+  stroke:var(--offer);fill:none;stroke-width:2.6;
+  stroke-linecap:round;stroke-linejoin:round
 }
 
 .notice{
@@ -1574,9 +1795,32 @@ html, body, .col, .col section, .item, .pcard{overflow-anchor:none}
 /* The picture, and the button on the corner of it. */
 .item .thumb{
   position:relative;
-  width:104px;height:104px;border-radius:var(--radius);flex:0 0 auto;
+  /* 132, not 104.
+   *
+   * The venue's complaint was that pictures were "not showing me the quality",
+   * and the pictures themselves are fine — 80KB JPEGs, served 200, correctly
+   * typed. What was wrong was how much of the row they were given. At 104px a
+   * plate of food is a stamp; the apps this was compared against give the same
+   * row about a third more, and at 132 the food is legible without the text
+   * column dropping to two words a line. */
+  width:132px;height:132px;border-radius:var(--radius);flex:0 0 auto;
   background:var(--sunken)
 }
+/* The ladder down to a phone, in one place and in order.
+ *
+ * It used to be two rules 20px apart — 104px below 380 and 88px below 400 —
+ * written at different times and left in the order they were written. Because
+ * the 88 came second it won every overlap, so the 104 rung was dead code and
+ * EVERY phone got 88px, including the 390px handsets almost everyone is
+ * holding. That is what the venue was actually looking at when they said the
+ * pictures were not showing the quality: not a 132px picture, not even the
+ * 104px one, but the smallest rung on the ladder.
+ *
+ * Widest first, narrowest last, so each one only overrides the rung above it.
+ * The numbers are what is left for the dish name after the picture, the 14px
+ * gap and the page's 22px of gutter: 220px at 390, 206px at 360. */
+@media (max-width:420px){ .item .thumb{width:112px;height:112px} }
+@media (max-width:360px){ .item .thumb{width:96px;height:96px} }
 .item .thumb img{
   width:100%;height:100%;object-fit:cover;
   border-radius:var(--radius);display:block
@@ -1599,11 +1843,6 @@ html, body, .col, .col section, .item, .pcard{overflow-anchor:none}
   padding-left:10px
 }
 
-@media (max-width:400px){
-  /* A 104px picture and a 40px button leave under 200px for a dish name on the
-     narrowest phones still in service. */
-  .item .thumb{width:88px;height:88px}
-}
 .item.gone{opacity:.55}
 .item .gone-tag{
   display:inline-block;margin-top:6px;font-size:12px;font-weight:700;
@@ -1635,12 +1874,89 @@ html, body, .col, .col section, .item, .pcard{overflow-anchor:none}
 .add::before{width:15px;height:2.5px;transform:translate(-50%,-50%)}
 .add::after{width:2.5px;height:15px;transform:translate(-50%,-50%)}
 .add[disabled]{background:var(--sunken);color:var(--ink-soft)}
-.qty{display:flex;align-items:center;gap:10px}
-.qty button{
-  width:34px;height:34px;border-radius:999px;border:1px solid var(--line);
-  background:var(--card);color:var(--ink);font-size:18px;line-height:1
+/* ---- The number, and what it opens into --------------------------------
+
+   The old control was a three-part stepper that appeared the moment anything
+   went in the basket: minus, number, plus, roughly 110px of it, sitting in the
+   row where a 40px button had been. Every row that had something in the basket
+   was therefore a different shape from every row that did not, and adding a
+   dish visibly shoved its own description sideways.
+
+   This is one 40px circle in both states — a plus when there is nothing, the
+   quantity when there is — and the stepper is something the circle OPENS into,
+   in place, over the row rather than in it. So the menu is the same menu
+   whatever is in the basket, and the count of each dish is readable at a
+   glance down the page without opening anything.
+
+   It grows leftwards because it is anchored by its right edge, which is where
+   it sits in all three layouts: on the corner of a photograph, on the corner
+   of a grid card, and at the end of a row with no picture. */
+.qbadge{
+  position:relative;width:40px;height:40px;flex:0 0 auto;
+  border-radius:999px;background:var(--ink);color:var(--page);
+  transition:width .18s cubic-bezier(.3,.7,.3,1), background .18s ease;
+  /* Anchored right: the pill opens over the row, never pushing it. */
+  margin-left:auto
 }
-.qty b{min-width:18px;text-align:center;font-size:16px}
+.qbadge .qn{
+  position:absolute;inset:0;width:100%;height:100%;
+  border:0;background:none;border-radius:999px;
+  color:inherit;font:inherit;font-size:16px;font-weight:750;
+  display:grid;place-items:center;cursor:pointer;
+  transition:opacity .12s ease
+}
+.qbadge .qexp{
+  position:absolute;inset:0;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 4px;opacity:0;pointer-events:none;
+  transition:opacity .14s ease .04s
+}
+.qbadge .qexp button{
+  width:32px;height:32px;flex:0 0 auto;border:0;border-radius:999px;
+  background:none;color:var(--ink);
+  display:grid;place-items:center;cursor:pointer;padding:0
+}
+.qbadge .qexp b{
+  flex:1 1 auto;text-align:center;color:var(--ink);
+  font-size:16px;font-weight:750;font-variant-numeric:tabular-nums
+}
+.qbadge .qexp .binic{
+  width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.9;
+  stroke-linecap:round;stroke-linejoin:round
+}
+/* The minus and the plus are drawn for the same reason the big plus is: a
+   glyph on a baseline is never quite in the middle of a circle. */
+.qbadge .qexp .minus,
+.qbadge .qexp .plus{position:relative;width:15px;height:15px}
+.qbadge .qexp .minus::before,
+.qbadge .qexp .plus::before,
+.qbadge .qexp .plus::after{
+  content:"";position:absolute;top:50%;left:50%;
+  background:currentColor;border-radius:1px;
+  width:14px;height:2.4px;transform:translate(-50%,-50%)
+}
+.qbadge .qexp .plus::after{transform:translate(-50%,-50%) rotate(90deg)}
+
+.qbadge.open{
+  width:118px;background:var(--card);
+  box-shadow:0 3px 14px rgba(0,0,0,.2), inset 0 0 0 1px var(--line)
+}
+.qbadge.open .qn{opacity:0;pointer-events:none}
+.qbadge.open .qexp{opacity:1;pointer-events:auto}
+
+/* Where it sits, matching the plus it replaces, in each of the three layouts. */
+.item .thumb .qbadge{
+  position:absolute;right:8px;bottom:8px;
+  box-shadow:0 3px 12px rgba(0,0,0,.28)
+}
+.item .thumb .qbadge.open{box-shadow:0 3px 14px rgba(0,0,0,.3), inset 0 0 0 1px var(--line)}
+.pcard .qbadge{position:absolute;right:8px;bottom:8px;box-shadow:0 4px 14px rgba(0,0,0,.22)}
+.pcard .qbadge.open{box-shadow:0 4px 16px rgba(0,0,0,.26), inset 0 0 0 1px var(--line)}
+/* A row with no picture reserves the 40px and lets the pill hang over the
+   words to its left, so the description never reflows. */
+.item .end{position:relative}
+.item.bare .end{width:40px;box-sizing:content-box}
+.item .end .qbadge{position:absolute;right:0;top:50%;transform:translateY(-50%)}
 
 .basket{
   position:fixed;left:0;right:0;bottom:0;z-index:40;
@@ -1650,6 +1966,38 @@ html, body, .col, .col section, .item, .pcard{overflow-anchor:none}
   transform:translateY(140%);transition:transform .22s cubic-bezier(.2,.8,.3,1)
 }
 .basket.up{transform:none}
+
+/* ---- The moment the discount switches on --------------------------------
+
+   The offer line changing from "add £4.20 for 15% off" to "you are saving
+   £3.75" is the best news on the page and the smallest text on it. A burst of
+   sparkle over the bar is what makes somebody look down at the sentence that
+   just changed — the sentence still carries the fact, the sparkle only points
+   at it.
+
+   Fixed to the viewport rather than parented to the bar so the bar's own
+   translate does not drag it, and pointer-events:none throughout so a burst can
+   never come between a thumb and the checkout button. Every span deletes itself
+   after a second; nothing accumulates. */
+.sparks{
+  position:fixed;left:0;right:0;bottom:0;height:190px;z-index:41;
+  pointer-events:none;overflow:hidden
+}
+.sparks i{
+  position:absolute;bottom:74px;display:block;border-radius:50%;
+  opacity:0;will-change:transform,opacity;
+  animation:sparkFall .9s cubic-bezier(.25,.6,.4,1) forwards
+}
+@keyframes sparkFall{
+  0%{opacity:0;transform:translate3d(0,0,0) scale(.4)}
+  18%{opacity:1;transform:translate3d(0,-46px,0) scale(1)}
+  100%{opacity:0;transform:translate3d(var(--dx,0),58px,0) scale(.5)}
+}
+/* Somebody who has asked for less movement gets none of this. The offer line
+   underneath says the same thing in words, which is the part that matters. */
+@media (prefers-reduced-motion: reduce){
+  .sparks{display:none}
+}
 .basket button{
   width:100%;max-width:648px;margin:0 auto;
   border:0;border-radius:14px;background:var(--accent);
@@ -1663,9 +2011,19 @@ dialog{
 }
 dialog::backdrop{background:rgba(0,0,0,.5)}
 .sheet{padding:20px 18px calc(20px + env(safe-area-inset-bottom))}
+/* The panel is the checkout's focus target so the keyboard does not open by
+   itself; it is not something anybody navigates TO, so it is not ringed. */
+.sheet:focus{outline:none}
 .sheet h2{margin:0 0 4px;font-size:19px}
 .sheet .row{display:flex;justify-content:space-between;gap:12px;padding:9px 0;font-size:15px}
 .sheet .row.total{border-top:1px solid var(--line);margin-top:6px;padding-top:12px;font-weight:750;font-size:17px}
+/* Add-ons, the note and a non-default answer to "if it is off", under the line
+   they belong to. Small, because the dish is what is being checked; present,
+   because the kitchen is about to act on all three. */
+.sheet .row .rmeta{
+  display:block;margin-top:3px;color:var(--ink-soft);font-size:13px;
+  font-weight:400;line-height:1.4
+}
 .sheet label{display:block;margin:14px 0 5px;font-size:13px;font-weight:650;color:var(--ink-soft)}
 .sheet input,.sheet textarea{
   width:100%;padding:13px;border-radius:12px;border:1px solid var(--line);
@@ -1712,6 +2070,16 @@ function page({ table, slug, meta }) {
   // a search result is looking for the place they are sitting in — the platform
   // that runs the till is the footnote, not the headline.
   const title = m.table ? `${name} — ${m.table}` : `${name} — Menu`;
+  // The picture a link preview shows: the venue's own choice, then the banner,
+  // then the logo. A logo is a poor share image — it is usually square and
+  // often transparent — but it beats a grey box, which is what a preview shows
+  // with no image at all.
+  const shareImage = absoluteUrl(m.metaImage || m.image || null);
+  // What the tab and the search result say. A venue that has taken the trouble
+  // to write a title means it for the page, not only for the share card, so it
+  // is used whole — a "· Vesopa" bolted onto the end would be us overruling
+  // the thing they typed.
+  const headTitle = m.metaTitle ? m.metaTitle : `${title} · Vesopa`;
 
   return `<!doctype html>
 <html lang="en">
@@ -1720,8 +2088,8 @@ function page({ table, slug, meta }) {
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="${esc(m.accent || '#A5C715')}">
 <meta name="color-scheme" content="light dark">
-<title>${esc(title)} · Vesopa</title>
-<meta name="description" content="${esc(m.tagline || '')}">
+<title>${esc(headTitle)}</title>
+<meta name="description" content="${esc(m.metaDescription || m.tagline || '')}">
 <meta name="robots" content="index,follow">
 <link rel="canonical" href="${esc(canonicalFor({ table, slug }))}">
 
@@ -1729,14 +2097,14 @@ ${iconTags(m)}
 
 <meta property="og:type" content="restaurant.menu">
 <meta property="og:site_name" content="Vesopa">
-<meta property="og:title" content="${esc(title)}">
-<meta property="og:description" content="${esc(m.tagline || '')}">
+<meta property="og:title" content="${esc(m.metaTitle || title)}">
+<meta property="og:description" content="${esc(m.metaDescription || m.tagline || '')}">
 <meta property="og:url" content="${esc(canonicalFor({ table, slug }))}">
-${m.image ? `<meta property="og:image" content="${esc(m.image)}">` : ''}
-<meta name="twitter:card" content="${m.image ? 'summary_large_image' : 'summary'}">
-<meta name="twitter:title" content="${esc(title)}">
-<meta name="twitter:description" content="${esc(m.tagline || '')}">
-${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
+${shareImage ? `<meta property="og:image" content="${esc(shareImage)}">` : ''}
+<meta name="twitter:card" content="${shareImage ? 'summary_large_image' : 'summary'}">
+<meta name="twitter:title" content="${esc(m.metaTitle || title)}">
+<meta name="twitter:description" content="${esc(m.metaDescription || m.tagline || '')}">
+${shareImage ? `<meta name="twitter:image" content="${esc(shareImage)}">` : ''}
 
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="${esc(name)}">
@@ -1756,7 +2124,14 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
   </button>
 </div>
 
-<dialog id="checkout"><div class="sheet" id="checkoutBody"></div></dialog>
+<!-- tabindex and autofocus together, on the panel rather than on anything in it.
+     showModal() has to put focus somewhere: with no autofocus it takes the
+     first focusable descendant, which here is the name box, so the checkout
+     opened with the keyboard already up and the order — the thing the customer
+     came to look at — pushed off the screen. Nobody wrote a focus() call; it
+     is the dialog element doing what it is specified to do. Naming the panel
+     as the target satisfies the spec with something that has no keyboard. -->
+<dialog id="checkout"><div class="sheet" id="checkoutBody" tabindex="-1" autofocus></div></dialog>
 
 <!-- What this table has out.
      Only ever on screen while something is actually being made, and it sits
@@ -1777,11 +2152,101 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
   "use strict";
   var TABLE = ${table ? `"${esc(table)}"` : 'null'};
   var SLUG  = ${slug ? `"${esc(slug)}"` : 'null'};
+  /* code -> the words a customer reads. From src/allergens.js, so the menu,
+     the back office, the kitchen ticket and the display cannot drift into
+     saying "Nuts" where another says "Tree nuts". */
+  var ALLERGEN_LABELS = ${JSON.stringify(
+    ALLERGENS.reduce((m, a) => Object.assign(m, { [a.code]: a.label }), {})
+  )};
 
   var data = null;
-  // item id -> quantity. Notes live alongside so the same dish ordered twice
-  // with different instructions stays two lines.
+
+  /* ---------------------------------------------------------------------
+     THE BASKET
+
+     Keyed by LINE, not by dish. Two Margheritas, one with extra basil and
+     one without, are two different things to cook, two different prices and
+     two lines on the ticket — so they cannot share a key. The key is the
+     dish, its note, what to do if it is off, and the add-ons chosen, which
+     is exactly the key the server builds when it writes the order (see the
+     order route in src/dinein.js); a customer adding the same combination
+     twice therefore lands on the same line here and on the same line there.
+
+     Each entry: { item_id, qty, note, unavailable, addOns: [pluId], at }.
+     The at field is only for ordering the lines of one dish so that the minus
+     badge takes from the most recent, which is the one somebody has just
+     been looking at.
+     --------------------------------------------------------------------- */
   var basket = Object.create(null);
+  var basketSeq = 0;
+
+  /** The key a line is stored under. Must match the server's, field for field. */
+  function lineKey(itemId, note, unavailable, addOns){
+    return [itemId, note || '', unavailable || 'remove',
+            (addOns || []).slice().sort(function(a,b){ return a - b; }).join('+')]
+      .join('|');
+  }
+
+  /** Every line of one dish, oldest first. */
+  function linesOf(itemId){
+    return Object.keys(basket)
+      .map(function(k){ return basket[k]; })
+      .filter(function(l){ return l.item_id === itemId; })
+      .sort(function(a, b){ return a.at - b.at; });
+  }
+
+  /** How many of a dish are in the basket, however they were ordered. */
+  function qtyOf(itemId){
+    return linesOf(itemId).reduce(function(n, l){ return n + l.qty; }, 0);
+  }
+
+  /** What the chosen add-ons add to one of something. */
+  function addOnPrice(item, addOns){
+    if (!item || !addOns || !addOns.length) return 0;
+    var sum = 0;
+    (item.add_ons || []).forEach(function(g){
+      (g.options || []).forEach(function(o){
+        if (addOns.indexOf(o.plu_id) !== -1) sum += o.price_minor;
+      });
+    });
+    return sum;
+  }
+
+  /** The names of the chosen add-ons, in the order the groups are shown. */
+  function addOnNames(item, addOns){
+    var names = [];
+    if (!item || !addOns || !addOns.length) return names;
+    (item.add_ons || []).forEach(function(g){
+      (g.options || []).forEach(function(o){
+        if (addOns.indexOf(o.plu_id) !== -1) names.push(o.name);
+      });
+    });
+    return names;
+  }
+
+  /**
+   * Put a line in, or add to the one that is already there.
+   *
+   * Everything that changes the basket comes through here, so there is one
+   * place that knows a quantity of zero means the line is gone.
+   */
+  function addLine(itemId, qty, note, unavailable, addOns){
+    var key = lineKey(itemId, note, unavailable, addOns);
+    var line = basket[key];
+    if (!line) {
+      line = basket[key] = {
+        item_id: itemId,
+        qty: 0,
+        note: note || '',
+        unavailable: unavailable || 'remove',
+        addOns: (addOns || []).slice(),
+        at: ++basketSeq
+      };
+    }
+    line.qty += qty;
+    if (line.qty <= 0) delete basket[key];
+    return line;
+  }
 
   var app = document.getElementById('app');
   var bar = document.getElementById('basketBar');
@@ -1801,7 +2266,11 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
     receipt: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>',
     x: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg>',
     chev: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg>',
-    mail: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5.5" width="18" height="13" rx="2.5"/><path d="m3.6 7 8.4 6 8.4-6"/></svg>'
+    mail: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5.5" width="18" height="13" rx="2.5"/><path d="m3.6 7 8.4 6 8.4-6"/></svg>',
+    /* The last one out. Drawn, not an emoji: an emoji is a different picture
+       on every phone and a colour we do not control. */
+    bin: '<svg class="binic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"/><path d="M10 7V5.2A1.2 1.2 0 0 1 11.2 4h1.6A1.2 1.2 0 0 1 14 5.2V7"/><path d="M6.5 7 7.4 19a1.6 1.6 0 0 0 1.6 1.5h6a1.6 1.6 0 0 0 1.6-1.5L17.5 7"/><path d="M10.2 10.6v6M13.8 10.6v6"/></svg>',
+    info: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.6"/><path d="M12 11v5.4"/><circle cx="12" cy="7.9" r="1.05" fill="currentColor" stroke="none"/></svg>'
   };
 
   function esc(s){
@@ -1826,13 +2295,24 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
         if (data.venue && data.venue.slug) store(SEEN_KEY, data.venue.slug);
         else if (SLUG) store(SEEN_KEY, SLUG);
 
+        // A page reached by scanning knows its table and nothing else — the
+        // document is served by /t/<id> and carries no slug. The floor is
+        // addressed by slug, so without this the one thing a mis-scanned card
+        // needs, a way to a different table, could not be fetched at all.
+        if (!SLUG && data.venue && data.venue.slug) SLUG = data.venue.slug;
+
         draw();
         // Somebody who arrived without scanning may still be sitting in the
         // room. Fetching the floor now — after the menu is on screen, so it
         // costs nobody a moment — is what lets the line under the hero offer to
-        // ask, instead of telling them to go and find a code.
-        if (!TABLE && SLUG) {
-          loadFloor().then(function(floor){ if (floor.tables.length) draw(); });
+        // ask, instead of telling them to go and find a code. It is fetched
+        // with a table too, because the same line then offers to change it.
+        if (SLUG) {
+          loadFloor().then(function(floor){
+            // Only worth a repaint if the answer changes the line: somewhere to
+            // sit when there is nowhere, or somewhere else when there is.
+            if (floor.tables.length > (TABLE ? 1 : 0)) draw();
+          });
         }
       })
       .catch(function(){
@@ -1880,20 +2360,49 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
       '</div>' +
     '</header>';
 
+    // Whether there is anywhere else to go. A one-table venue has nothing to
+    // offer, and a floor that has not been read yet says nothing either way —
+    // in both cases the line stays the plain notice it has always been, and
+    // becomes a button a moment later if the floor turns out to have one.
+    var canMove = !!(FLOOR && FLOOR.tables.length > (data.table ? 1 : 0));
+    // The arrow says the line goes somewhere; the word says what will happen
+    // when it does. "Change" only makes sense once there is something to
+    // change — on the line that is still asking, the arrow speaks for itself
+    // and a second verb next to "Tap to say…" would be one instruction too
+    // many for a single pill.
+    var chev = function(word){
+      return '<span class="go">' + (word || '') +
+             '<span class="chev">›</span></span>';
+    };
+
     if (data.table) {
+      var at = 'You are at ' + esc(data.table.name) +
+               (data.table.room ? ' · ' + esc(data.table.room) : '');
+      // A card scanned by mistake, a party moved to a bigger table, a phone
+      // handed across — all of them end here, and until now this line was a
+      // dead notice with the only way out buried in the checkout behind a
+      // basket. It is the same button as the one that asks.
       html += data.table.ordering
-        ? '<div class="where"><span class="dot"></span>You are at ' +
-            esc(data.table.name) +
-            (data.table.room ? ' · ' + esc(data.table.room) : '') + '</div>'
-        : '<div class="where warn">This table is not taking orders from phones — ' +
-            'please order at the bar.</div>';
+        ? (canMove
+            ? '<button type="button" class="where pick" id="pickTable">' +
+                '<span class="dot"></span>' + at + chev('Change') +
+              '</button>'
+            : '<div class="where"><span class="dot"></span>' + at + '</div>')
+        : (canMove
+            ? '<button type="button" class="where warn pick" id="pickTable">' +
+                'This table is not taking orders from phones — pick another, ' +
+                'or order at the bar.' + chev('Change') +
+              '</button>'
+            : '<div class="where warn">This table is not taking orders from phones — ' +
+                'please order at the bar.</div>');
     } else {
       // Two ways to be here without a table, and they want different words. A
       // venue with a floor of its own can be sat at, so the line is an offer; a
       // venue without one can only be read.
-      html += (FLOOR && FLOOR.tables.length)
-        ? '<button type="button" class="where pick" id="pickTable">' +
+      html += canMove
+        ? '<button type="button" class="where pick ask" id="pickTable">' +
             '<span class="dot"></span>Tap to say which table you are at' +
+            chev('') +
           '</button>'
         : '<div class="where">Viewing the menu. Scan the code on your table to order.</div>';
     }
@@ -3382,16 +3891,37 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
    * is decided in onTap, which is the only place that knows why.
    */
   function controlsHtml(id, it){
-    var out = it && it.available === false;
-    var qty = basket[id] ? basket[id].qty : 0;
+    var dish = it || itemById(id);
+    var out = dish && dish.available === false;
+    var qty = qtyOf(id);
     if (!qty) {
       return '<button class="add' + (out ? ' off' : '') + '" type="button" ' +
              'data-add="' + id + '" aria-label="Add"></button>';
     }
-    return '<div class="qty">' +
-      '<button type="button" data-less="' + id + '" aria-label="One fewer">−</button>' +
-      '<b>' + qty + '</b>' +
-      '<button type="button" data-add="' + id + '" aria-label="One more">+</button>' +
+
+    // In the basket: one circle carrying the number, which is itself the
+    // control. Nothing on the row moves — the pill it opens into is absolutely
+    // positioned and grows leftwards over the row, so a column of these stays
+    // a column whatever is in the basket.
+    //
+    // At one, the left button empties the line rather than counting down to
+    // nothing; the bin says what will happen, where a minus would leave
+    // somebody pressing it and watching the badge disappear without warning.
+    return '<div class="qbadge" data-badge="' + id + '">' +
+      '<button class="qn" type="button" data-open="' + id + '" ' +
+        'aria-label="' + qty + ' in your order. Change the quantity">' +
+        qty +
+      '</button>' +
+      '<div class="qexp" aria-hidden="true">' +
+        '<button type="button" data-less="' + id + '" aria-label="' +
+          (qty > 1 ? 'One fewer' : 'Take it out') + '">' +
+          (qty > 1 ? '<span class="minus"></span>' : ICON.bin) +
+        '</button>' +
+        '<b>' + qty + '</b>' +
+        '<button type="button" data-add="' + id + '" aria-label="One more">' +
+          '<span class="plus"></span>' +
+        '</button>' +
+      '</div>' +
     '</div>';
   }
 
@@ -3703,9 +4233,33 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
     // rather than a notice because there is something to do about it.
     if (e.target.closest('#pickTable')) { askTable(null); return; }
 
+    // The number itself is the control. Tapping it opens the row's own
+    // stepper; tapping it again, or anywhere else on the page, puts it away.
+    var open = e.target.closest('[data-open]');
+    if (open) {
+      var badge = open.closest('.qbadge');
+      var wasOpen = badge && badge.classList.contains('open');
+      shutBadges();
+      if (badge && !wasOpen) badge.classList.add('open');
+      return;
+    }
+
     var add = e.target.closest('[data-add]');
     var less = e.target.closest('[data-less]');
-    if (!add && !less) return;
+
+    // The dish itself opens its sheet: the picture, what is in it, what can be
+    // added to it, and anything the kitchen should know. Everywhere else in the
+    // app a photograph of food is a thing you press.
+    if (!add && !less) {
+      var card = e.target.closest('[data-item]');
+      if (card && !e.target.closest('.qbadge')) {
+        var openId = Number(card.getAttribute('data-item'));
+        if (itemById(openId)) { shutBadges(); openItemSheet(openId); }
+        return;
+      }
+      shutBadges();
+      return;
+    }
 
     var itemId = Number((add || less).getAttribute(add ? 'data-add' : 'data-less'));
 
@@ -3744,37 +4298,408 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
       return;
     }
 
-    var id = itemId;
-    var entry = basket[id] || (basket[id] = { qty: 0 });
-    entry.qty += add ? 1 : -1;
-    if (entry.qty <= 0) delete basket[id];
-    redrawItem(id);
+    var dishNow = itemById(itemId);
+    var lines = linesOf(itemId);
+
+    if (add) {
+      // A dish with questions attached cannot be added by a plus. "Which
+      // sauce" has no default, and a kitchen that guesses is a kitchen sending
+      // back the wrong plate — so the plus opens the sheet and the sheet does
+      // the adding. The same is true of adding a SECOND one to a basket that
+      // already holds a version of this dish with add-ons: which of them is
+      // being repeated is a real question, and the sheet asks it.
+      var mustAsk = !!(dishNow && dishNow.add_ons && dishNow.add_ons.length);
+      if (mustAsk || (lines.length && lines[lines.length - 1].addOns.length)) {
+        shutBadges();
+        openItemSheet(itemId);
+        return;
+      }
+      addLine(itemId, 1, '', 'remove', []);
+    } else {
+      // Off the most recent line of this dish — the one somebody has just been
+      // looking at. On a basket holding one plain line, which is nearly always,
+      // this is simply "one fewer".
+      var last = lines[lines.length - 1];
+      if (!last) return;
+      addLine(last.item_id, -1, last.note, last.unavailable, last.addOns);
+      if (!qtyOf(itemId)) shutBadges();
+    }
+
+    redrawItem(itemId);
     paintBasket();
+  }
+
+  /** Put every open stepper away. */
+  function shutBadges(){
+    var open = app.querySelectorAll('.qbadge.open');
+    for (var i = 0; i < open.length; i++) open[i].classList.remove('open');
+  }
+
+  // =========================================================================
+  // ONE DISH, IN FULL
+  // =========================================================================
+  //
+  // Everything that has to be decided before a dish can be cooked, asked once,
+  // in the order somebody decides it: what it is, what goes with it, anything
+  // the kitchen should know, and what to do if it turns out to be off.
+  //
+  // It exists because a plus button cannot ask a question. A dish with a
+  // "choose your sauce" group has no sensible default — a kitchen that guesses
+  // sends back the wrong plate — and a customer who wants no mayo has, until
+  // now, had one free-text box at the very end of the checkout covering the
+  // whole order, which is not a thing a ticket can be split by.
+  //
+  // WHAT IT DOES NOT DO
+  //
+  // It does not price anything. Every figure on it is drawn from the menu
+  // payload so the customer can see what they are agreeing to, and the server
+  // prices the order again from the catalogue when it arrives. If the two ever
+  // disagree the server is right, and the difference will be a price the venue
+  // changed while somebody was reading.
+
+  var UNAVAILABLE = [
+    { code: 'remove', label: 'Remove it from my order',
+      hint: 'The rest of the order still comes.' },
+    { code: 'call', label: 'Call me about it',
+      hint: 'Somebody rings the number you leave.' },
+    { code: 'refund', label: 'Refund this item',
+      hint: 'Money back for this line only.' }
+  ];
+
+  function unavailableLabel(code){
+    for (var i = 0; i < UNAVAILABLE.length; i++) {
+      if (UNAVAILABLE[i].code === code) return UNAVAILABLE[i].label;
+    }
+    return UNAVAILABLE[0].label;
+  }
+
+  function openItemSheet(itemId){
+    var it = itemById(itemId);
+    if (!it) return;
+
+    // Everything the sheet is deciding. Nothing touches the basket until the
+    // button at the bottom is pressed, so backing out of the sheet leaves the
+    // order exactly as it was.
+    var picked = Object.create(null);   // group id -> [plu_id]
+    var qty = 1;
+    var note = '';
+    var unavailable = 'remove';
+
+    var body = sheet(it.name, {});
+    var panel = body.parentNode;
+    if (panel) panel.classList.add('dish');
+
+    var groups = it.add_ons || [];
+
+    body.innerHTML =
+      (it.image_url
+        ? '<div class="dhero"><img src="' + esc(it.image_url) + '" alt=""></div>'
+        : '') +
+      '<div class="dtop">' +
+        '<h4>' + esc(it.name) + '</h4>' +
+        '<p class="dfrom">' + (groups.length ? 'from ' : '') +
+          money(it.price_minor) + '</p>' +
+      '</div>' +
+      dietRowHtml(it) +
+      (it.description ? '<p class="ddesc">' + esc(it.description) + '</p>' : '') +
+      groups.map(groupHtml).join('') +
+      '<div class="dblock">' +
+        '<label for="dnote">Special instructions</label>' +
+        '<p class="dhint">Anything the kitchen should know about this dish. ' +
+          'It is printed on the ticket beside it.</p>' +
+        '<textarea id="dnote" rows="3" maxlength="500" ' +
+          'placeholder="e.g. no mayo"></textarea>' +
+        '<div class="dcount"><span id="dcount">0</span>/500</div>' +
+      '</div>' +
+      '<div class="dblock">' +
+        '<button type="button" class="drow" id="dunav">' +
+          '<span class="drow-t">If this dish is not available' +
+            '<b id="dunavv">' + esc(unavailableLabel(unavailable)) + '</b>' +
+          '</span>' +
+          '<span class="chev">›</span>' +
+        '</button>' +
+      '</div>' +
+      '<div class="dfoot">' +
+        '<div class="dstep">' +
+          '<button type="button" id="dless" aria-label="One fewer">' +
+            '<span class="minus"></span></button>' +
+          '<b id="dqty">1</b>' +
+          '<button type="button" id="dmore" aria-label="One more">' +
+            '<span class="plus"></span></button>' +
+        '</div>' +
+        '<button type="button" class="dadd" id="dadd">Add to order</button>' +
+      '</div>';
+
+    // ---- The dietary sheet, from the (i) beside the chip ------------------
+    var diet = body.querySelector('#ddiet');
+    if (diet) diet.addEventListener('click', function(){ openDietSheet(it); });
+
+    // ---- Add-on groups ---------------------------------------------------
+    body.querySelectorAll('[data-opt]').forEach(function(input){
+      input.addEventListener('change', function(){
+        var gid = Number(input.getAttribute('data-group'));
+        var plu = Number(input.getAttribute('data-opt'));
+        var group = groups.filter(function(g){ return g.id === gid; })[0];
+        var list = picked[gid] || (picked[gid] = []);
+
+        if (input.type === 'radio') {
+          picked[gid] = [plu];
+        } else if (input.checked) {
+          if (list.indexOf(plu) === -1) list.push(plu);
+        } else {
+          picked[gid] = list.filter(function(p){ return p !== plu; });
+        }
+
+        // A group that says "up to two" means it. Once two are ticked the rest
+        // go quiet rather than silently refusing the third tap.
+        if (group && group.max_select > 1) {
+          var full = (picked[gid] || []).length >= group.max_select;
+          body.querySelectorAll('[data-group="' + gid + '"]').forEach(function(o){
+            if (!o.checked) o.disabled = full;
+            var row = o.closest('.dopt');
+            if (row) row.classList.toggle('nope', !o.checked && full);
+          });
+        }
+        refresh();
+      });
+    });
+
+    // ---- Special instructions -------------------------------------------
+    var noteBox = body.querySelector('#dnote');
+    var counter = body.querySelector('#dcount');
+    noteBox.addEventListener('input', function(){
+      note = noteBox.value;
+      counter.textContent = String(note.length);
+    });
+
+    // ---- What happens if it is off --------------------------------------
+    body.querySelector('#dunav').addEventListener('click', function(){
+      openUnavailableSheet(unavailable, function(code){
+        unavailable = code;
+        body.querySelector('#dunavv').textContent = unavailableLabel(code);
+      });
+    });
+
+    // ---- Quantity and the button ----------------------------------------
+    body.querySelector('#dless').addEventListener('click', function(){
+      if (qty > 1) { qty--; refresh(); }
+    });
+    body.querySelector('#dmore').addEventListener('click', function(){
+      if (qty < 99) { qty++; refresh(); }
+    });
+
+    body.querySelector('#dadd').addEventListener('click', function(){
+      if (!ready()) return;
+      // The same guards the plus has: a sold-out dish, a table that is not
+      // taking orders, a kitchen that has shut. The sheet can be open across
+      // any of them, because a menu left on a screen goes stale.
+      if (it.available === false) {
+        pop({ title: it.name,
+              body: 'Sorry — the kitchen has run out of this one today.',
+              ok: 'I see' });
+        return;
+      }
+      if (!canOrder()) {
+        pop({ title: 'Not taking orders',
+              body: data && data.table
+                ? 'This table is not taking orders from phones just now. ' +
+                  'Please order at the bar.'
+                : 'Scan the code on your table to order.',
+              ok: 'I see' });
+        return;
+      }
+      if (!kitchenOpen()) {
+        pop({ title: 'The kitchen is closed', body: shutMessage(), ok: 'I see' });
+        return;
+      }
+      addLine(itemId, qty, note.trim(), unavailable, chosenPlus());
+      redrawItem(itemId);
+      paintBasket();
+      body.close();
+    });
+
+    refresh();
+
+    /** Every add-on chosen, across every group. */
+    function chosenPlus(){
+      var all = [];
+      Object.keys(picked).forEach(function(gid){
+        (picked[gid] || []).forEach(function(p){ all.push(p); });
+      });
+      return all;
+    }
+
+    /** Whether every required group has been answered. */
+    function ready(){
+      for (var i = 0; i < groups.length; i++) {
+        var g = groups[i];
+        if (g.min_select > 0 && (picked[g.id] || []).length < g.min_select) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    /** The footer, after anything at all has changed. */
+    function refresh(){
+      var each = it.price_minor + addOnPrice(it, chosenPlus());
+      var add = body.querySelector('#dadd');
+      var ok = ready();
+      body.querySelector('#dqty').textContent = String(qty);
+      body.querySelector('#dless').disabled = qty <= 1;
+      add.disabled = !ok;
+      add.textContent = ok
+        ? 'Add to order · ' + money(each * qty)
+        : 'Choose an option above';
+    }
+  }
+
+  /** The chip, and the way into what is in it. */
+  function dietRowHtml(it){
+    var has = (it.allergens && it.allergens.length) || it.allergens_declared;
+    if (!it.diet && !has) return '';
+    return '<div class="drow-diet">' +
+      (it.diet ? '<span class="diet">' + esc(it.diet) + '</span>' : '') +
+      '<button type="button" id="ddiet" class="dinfo">' + ICON.info +
+        'Dietary information</button>' +
+    '</div>';
+  }
+
+  /** One add-on group, as the question it is. */
+  function groupHtml(g){
+    var one = g.max_select === 1;
+    var need = g.min_select > 0;
+    var how = one
+      ? 'Select one'
+      : 'Select up to ' + g.max_select;
+    return '<div class="dgroup">' +
+      '<div class="dghead">' +
+        '<h5>' + esc(g.name) + '</h5>' +
+        '<span class="dgtag' + (need ? ' need' : '') + '">' +
+          (need ? 'Required' : 'Optional') + '</span>' +
+      '</div>' +
+      '<p class="dhint">' + how + '</p>' +
+      (g.options || []).map(function(o){
+        return '<label class="dopt">' +
+          '<input type="' + (one ? 'radio' : 'checkbox') + '"' +
+            (one ? ' name="g' + g.id + '"' : '') +
+            ' data-group="' + g.id + '" data-opt="' + o.plu_id + '">' +
+          '<span class="dopt-n">' + esc(o.name) + '</span>' +
+          '<span class="dopt-p">' +
+            (o.price_minor > 0 ? '+ ' + money(o.price_minor) : 'Free') +
+          '</span>' +
+        '</label>';
+      }).join('') +
+    '</div>';
+  }
+
+  /**
+   * What is in it.
+   *
+   * The wording is careful on purpose. An empty allergen list can mean two
+   * different things — nobody has filled it in, or somebody has and it
+   * contains none of the fourteen — and the menu payload now says which. Only
+   * the second is safe to state; the first has to admit that it does not know,
+   * because somebody with a nut allergy is reading this to decide whether to
+   * eat.
+   */
+  function openDietSheet(it){
+    var body = sheet('Dietary information', {});
+    var codes = it.allergens || [];
+    var known = codes.map(function(c){
+      return '<li>' + esc(ALLERGEN_LABELS[c] || c) + '</li>';
+    }).join('');
+
+    body.innerHTML =
+      (it.diet ? '<p><span class="diet">' + esc(it.diet) + '</span></p>' : '') +
+      (codes.length
+        ? '<h5 class="dsub">Contains</h5><ul class="dallerg">' + known + '</ul>'
+        : (it.allergens_declared
+            ? '<p class="dnone">The venue has checked this dish against the ' +
+              'fourteen allergens that have to be declared and says it ' +
+              'contains none of them.</p>'
+            : '<p class="dnone">The venue has not listed allergens for this ' +
+              'dish. Please ask before you order if you need to know.</p>')) +
+      '<p class="dask">Dishes are prepared in a working kitchen where other ' +
+        'ingredients are handled. Please contact the venue for details.</p>' +
+      '<button type="button" class="send" id="dgot">Got it</button>';
+
+    body.querySelector('#dgot').addEventListener('click', function(){
+      body.close();
+    });
+  }
+
+  /**
+   * What to do about a dish the kitchen turns out not to have.
+   *
+   * Asked per dish rather than per order, because the answer is genuinely
+   * different per dish: a side that can simply go, and the one thing somebody
+   * actually came in for, are not the same decision. "Remove it" is the
+   * default because it is the only one of the three that needs nothing from
+   * anybody — the rest of the order still arrives.
+   */
+  function openUnavailableSheet(current, then){
+    var body = sheet('If this dish is not available', {});
+    body.innerHTML =
+      '<p class="dhint">It happens — a kitchen runs out mid-service. Tell us ' +
+        'now and nobody has to chase you about it.</p>' +
+      UNAVAILABLE.map(function(u){
+        return '<label class="dopt wide">' +
+          '<input type="radio" name="unav" value="' + u.code + '"' +
+            (u.code === current ? ' checked' : '') + '>' +
+          '<span class="dopt-n">' + esc(u.label) +
+            '<small>' + esc(u.hint) + '</small></span>' +
+        '</label>';
+      }).join('') +
+      '<button type="button" class="send" id="uapply">Apply</button>';
+
+    body.querySelector('#uapply').addEventListener('click', function(){
+      var on = body.querySelector('input[name="unav"]:checked');
+      then(on ? on.value : 'remove');
+      body.close();
+    });
   }
 
   /** Redraw one row rather than the menu. Redrawing all of it loses the scroll
       position, which on a long menu throws somebody back to the starters. */
   function redrawItem(id){
-    var row = app.querySelector('[data-item="' + id + '"]');
-    if (!row) return;
-    // Into the end column, not onto the row. Appended to the row it would land
-    // beside the price instead of under it, and the layout would come apart the
-    // first time somebody added something.
-    var end = row.querySelector('.end');
-    if (!end) return;
-    var old = end.querySelector('.add, .qty');
-    var holder = document.createElement('div');
-    holder.innerHTML = controlsHtml(id);
-    var fresh = holder.firstChild;
-    if (old && fresh) end.replaceChild(fresh, old);
-    else if (fresh) end.appendChild(fresh);
+    // EVERY place the dish appears, not the first.
+    //
+    // Two bugs lived in the old three lines. It took .end, which only rows
+    // WITHOUT a picture have, so on a menu with photographs — every menu that
+    // matters — pressing the plus changed the basket and left the button
+    // showing a plus; and it took querySelector, so a dish that is in the
+    // Popular grid as well as in its own section only ever updated once. The
+    // control is generated by one function for all three layouts; it has to be
+    // written back into all three too.
+    var holders = app.querySelectorAll('[data-item="' + id + '"]');
+    for (var i = 0; i < holders.length; i++) {
+      var seat = holders[i].querySelector('.end, .thumb, .shot');
+      if (!seat) continue;
+      var old = seat.querySelector('.add, .qbadge');
+      // Stepping from three to two redraws the badge, and a badge that was
+      // open must come back open — otherwise the pill snaps shut under the
+      // thumb between one press and the next.
+      var wasOpen = !!(old && old.classList.contains('open'));
+      var box = document.createElement('div');
+      box.innerHTML = controlsHtml(id);
+      var fresh = box.firstChild;
+      if (!fresh) continue;
+      if (wasOpen && fresh.classList.contains('qbadge')) fresh.classList.add('open');
+      if (old) seat.replaceChild(fresh, old);
+      else seat.appendChild(fresh);
+    }
   }
 
+  /** Every line in the basket, with the dish behind it, oldest first. */
   function eachChosen(fn){
-    Object.keys(basket).forEach(function(id){
-      var item = find(Number(id));
-      if (item) fn(item, basket[id].qty);
-    });
+    Object.keys(basket)
+      .map(function(k){ return basket[k]; })
+      .sort(function(a, b){ return a.at - b.at; })
+      .forEach(function(line){
+        var item = find(line.item_id);
+        if (item) fn(item, line.qty, line);
+      });
   }
 
   /** The dish behind an id, wherever it sits. */
@@ -3790,7 +4715,13 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
 
   function totals(){
     var count = 0, sum = 0;
-    eachChosen(function(item, qty){ count += qty; sum += item.price_minor * qty; });
+    eachChosen(function(item, qty, line){
+      count += qty;
+      // The add-ons are part of what this line costs. Leaving them out of the
+      // bar would show a total the customer never pays — the server prices
+      // them from the catalogue and would come back higher.
+      sum += (item.price_minor + addOnPrice(item, line.addOns)) * qty;
+    });
     return { count: count, sum: sum };
   }
 
@@ -3805,8 +4736,58 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
       ? Math.floor((t.sum * o.percent) / 100) : 0;
     document.getElementById('basketTotal').textContent = money(t.sum - off);
 
+    // Once, on the way up.
+    //
+    // paintBasket runs on every tap of a plus, so "the offer is on" is not the
+    // condition — "the offer has just come on" is. The flag re-arms only when
+    // the basket falls back under the threshold, so somebody who adds a
+    // seventh item does not get a second firework for news they already have.
+    if (off > 0 && !offerWasOn) sparkleBurst();
+    offerWasOn = off > 0;
+
     paintToward(t.sum, o, off);
     bar.classList.toggle('up', t.count > 0);
+  }
+
+  var offerWasOn = false;
+
+  /**
+   * A short burst of sparkle over the basket bar.
+   *
+   * Twenty spans, no library, no canvas. They are spawned into one host that is
+   * emptied first, so a burst arriving while another is still in the air
+   * replaces it rather than stacking; the host itself is removed a beat after
+   * the last animation ends, which means a page that is left open all afternoon
+   * has nothing of this in it.
+   */
+  function sparkleBurst(){
+    var host = document.getElementById('sparks');
+    if (!host) {
+      host = document.createElement('div');
+      host.className = 'sparks';
+      host.id = 'sparks';
+      document.body.appendChild(host);
+    }
+    host.innerHTML = '';
+
+    // The venue's accent, and a gold that reads as celebration against every
+    // accent a venue has picked so far.
+    var colours = ['var(--accent)', '#FFC53D', '#FFE9A8', 'var(--accent)'];
+    var bits = '';
+    for (var i = 0; i < 20; i++) {
+      var size = 4 + Math.floor(Math.random() * 5);       // 4–8px
+      var left = Math.round(Math.random() * 100);          // across the bar
+      var drift = Math.round(Math.random() * 60 - 30);     // ±30px sideways
+      var delay = Math.round(Math.random() * 220);         // not one clap
+      bits += '<i style="left:' + left + '%;width:' + size + 'px;height:' +
+        size + 'px;background:' + colours[i % colours.length] +
+        ';--dx:' + drift + 'px;animation-delay:' + delay + 'ms"></i>';
+    }
+    host.innerHTML = bits;
+    clearTimeout(sparkleBurst.timer);
+    sparkleBurst.timer = setTimeout(function(){
+      if (host.parentNode) host.parentNode.removeChild(host);
+    }, 1400);
   }
 
   /**
@@ -3822,10 +4803,18 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
     if (!o || !o.min_spend_minor) { host.innerHTML = ''; return; }
 
     if (off > 0) {
-      host.innerHTML = '<span>' + esc(o.percent + '% off — you are saving ' +
-        money(off)) + '</span>';
+      // A tick, and the venue's own colour. Until now this line was the same
+      // grey as "add £4.20 for 15% off", so the one state change worth
+      // noticing looked exactly like the state it replaced.
+      host.className = 'toward won';
+      host.innerHTML =
+        '<svg class="tick" viewBox="0 0 24 24" aria-hidden="true">' +
+          '<path d="m5 12.5 4.5 4.5L19 7.5"/></svg>' +
+        '<span>' + esc(o.percent + '% off — you are saving ' + money(off)) +
+        '</span>';
       return;
     }
+    host.className = 'toward';
     var needed = o.min_spend_minor - sum;
     var pct = Math.max(0, Math.min(100, Math.round((sum / o.min_spend_minor) * 100)));
     host.innerHTML =
@@ -3835,6 +4824,15 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
 
   document.getElementById('basketBtn').addEventListener('click', openCheckout);
 
+  // An open stepper is a temporary state, and it closes the way every
+  // temporary state on a phone closes: by touching something else. On the
+  // document rather than on the menu, so the header, the basket bar and the
+  // page background all count as somewhere else.
+  document.addEventListener('click', function(e){
+    if (e.target && e.target.closest && e.target.closest('.qbadge')) return;
+    shutBadges();
+  });
+
   function openCheckout(){
     // The one place the question is asked. Not at the door, and not on every
     // tap of a plus — here, with a basket ready to send and a reason to answer.
@@ -3843,9 +4841,26 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
     var v = data.venue;
     var t = totals();
     var rows = '';
-    eachChosen(function(item, qty){
-      rows += '<div class="row"><span>' + qty + ' × ' + esc(item.name) + '</span>' +
-              '<span>' + money(item.price_minor * qty) + '</span></div>';
+    eachChosen(function(item, qty, line){
+      // Everything that was decided about this line, under it. A customer who
+      // asked for no mayo and picked a sauce needs to see both before they
+      // send it — the ticket is going to say so, and this is the last screen
+      // where anything can be changed.
+      var extras = addOnNames(item, line.addOns);
+      var under = [];
+      if (extras.length) under.push(extras.join(', '));
+      if (line.note) under.push('“' + line.note + '”');
+      if (line.unavailable !== 'remove') {
+        under.push('If off: ' + unavailableLabel(line.unavailable).toLowerCase());
+      }
+      rows += '<div class="row"><span>' + qty + ' × ' + esc(item.name) +
+                (under.length
+                  ? '<small class="rmeta">' + esc(under.join(' · ')) + '</small>'
+                  : '') +
+              '</span>' +
+              '<span>' +
+                money((item.price_minor + addOnPrice(item, line.addOns)) * qty) +
+              '</span></div>';
     });
 
     document.getElementById('checkoutBody').innerHTML =
@@ -3913,7 +4928,17 @@ ${m.image ? `<meta name="twitter:image" content="${esc(m.image)}">` : ''}
     err.hidden = true;
 
     var lines = [];
-    eachChosen(function(item, qty){ lines.push({ item_id: item.id, qty: qty }); });
+    eachChosen(function(item, qty, line){
+      lines.push({
+        item_id: item.id,
+        qty: qty,
+        note: line.note || '',
+        unavailable_action: line.unavailable || 'remove',
+        // Names only what the menu offered as an answer; the server checks the
+        // same thing again and prices every one of them from the catalogue.
+        add_ons: line.addOns.map(function(p){ return { item_id: p }; })
+      });
+    });
 
     var headers = { 'Content-Type': 'application/json' };
     // Sent when there is one. The endpoint treats a missing, expired or

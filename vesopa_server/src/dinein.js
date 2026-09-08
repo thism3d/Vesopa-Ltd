@@ -1633,6 +1633,16 @@ function dineinRoutes({ pool, broadcast, secret }) {
             // item means inherit; [] means somebody looked and it contains
             // none of the fourteen. See src/allergens.js.
             allergens: effectiveAllergens(i.item_allergens, i.product_allergens),
+            // Whether anybody has answered the question at all, which the array
+            // above cannot say: an unanswered dish and a dish that genuinely
+            // contains none of the fourteen both arrive as []. The page has to
+            // tell those apart, because "contains no allergens" and "nobody has
+            // filled this in" are different sentences to read with an allergy.
+            allergens_declared:
+              (i.item_allergens !== null && i.item_allergens !== undefined &&
+                i.item_allergens !== '') ||
+              (i.product_allergens !== null && i.product_allergens !== undefined &&
+                i.product_allergens !== ''),
             // The questions this item asks before it goes in the basket, with
             // their answers priced. An empty array is an item that goes
             // straight in, which is most of them.
