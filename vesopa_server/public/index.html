@@ -232,6 +232,21 @@
                class="brand-logo lockup-light" />
         </div>
 
+        <!-- Every section starts folded, which is what the venue asked for and
+             is right for a menu this long. This is what it costs and how that
+             is paid back: type a word and every matching page appears wherever
+             it lives, so nobody has to remember that Timesheets is filed under
+             Reports before they can reach it. -->
+        <div class="rail-find">
+          <svg class="rail-find-icon" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" />
+            <path d="m20 20-3.5-3.5" />
+          </svg>
+          <input id="rail-find" type="search" placeholder="Find a page"
+                 autocomplete="off" aria-label="Find a page in the menu" />
+        </div>
+
         <nav>
           <button class="nav active" data-view="dashboard">Dashboard</button>
 
@@ -912,7 +927,7 @@
           <div class="page-head">
             <div>
               <h2>Back Office Users</h2>
-              <p class="muted small">Managers and employees who sign into this back office. Clerks who only use the till are managed under Clerks.</p>
+              <p class="muted small">Managers and employees who sign in to this back office. People who only use the till are managed under Staff.</p>
             </div>
             <button class="btn primary" id="add-user">Add user</button>
           </div>

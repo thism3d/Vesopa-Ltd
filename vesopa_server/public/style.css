@@ -924,10 +924,72 @@ tr.new { animation: flash 1.6s ease-out; }
 .rail nav {
   flex: 1;
   overflow-y: auto;
+  /* Room under the last item. Without it the scroll ends flush against the
+     fold button and the bottom heading is cut through the middle of its own
+     letters, which reads as a rendering fault rather than as more to scroll. */
+  padding-bottom: 14px;
   /* A thin scrollbar that does not draw attention on the dark rail. */
   scrollbar-width: thin;
   scrollbar-color: var(--rail-scroll) transparent;
 }
+
+/* Finding a page now that every section starts closed.
+   ---------------------------------------------------------------------------
+   The venue asked for the groups to be folded, and they are right — forty-nine
+   items is not a menu. But folding them costs something real: somebody who
+   knows a page is called "Timesheets" now has to remember it lives under
+   Reports before they can get to it.
+
+   Typing here shows every matching item wherever it lives, folded or not, and
+   clearing it puts the rail back exactly as it was. */
+.rail-find {
+  margin: 0 12px 8px;
+  position: relative;
+}
+.rail-find input {
+  width: 100%;
+  min-height: 38px;
+  height: 38px;
+  padding: 4px 10px 4px 30px;
+  /* Sixteen, not the 13 the rail's labels use. Safari zooms the whole page in
+     when a field under 16px takes focus and does not zoom back out, so every
+     input in this product is at least that — see the guard in
+     test/backoffice-tablet.test.js, which caught this one. */
+  font-size: 16px;
+  border-radius: 8px;
+  border: 1px solid var(--rail-line);
+  background: var(--rail-hover);
+  color: var(--rail-text);
+}
+.rail-find input::placeholder { color: var(--rail-group); }
+.rail-find input:focus {
+  outline: none;
+  border-color: var(--brand);
+  color: var(--rail-active);
+}
+.rail-find .rail-find-icon {
+  position: absolute;
+  left: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 15px;
+  height: 15px;
+  opacity: .55;
+  pointer-events: none;
+}
+/* While a search is running the headings step back: what is on screen is a
+   list of matches, not a set of sections. */
+.rail.finding .nav-group { opacity: .45; }
+.nav.hidden-by-find,
+.nav-group.hidden-by-find { display: none; }
+
+/* A match shows even though its section is folded.
+   ---------------------------------------------------------------------------
+   This is the whole feature, and without it the search found nothing: every
+   group starts collapsed, so every matching item carried `hidden-by-group` as
+   well, and typing "time" produced the Reports heading with nothing under it.
+   Three classes, so it outranks `.nav.hidden-by-group`. */
+.rail.finding .nav.hidden-by-group:not(.hidden-by-find) { display: flex; }
 .rail nav::-webkit-scrollbar { width: 6px; }
 .rail nav::-webkit-scrollbar-thumb {
   background: var(--rail-scroll);
@@ -2684,10 +2746,16 @@ table.sortable th[data-sort] {
 }
 table.sortable th[data-sort]:hover { color: var(--ink, #10131a); }
 table.sortable th.sorted::after {
-  content: ' ▲';
+  content: '▲';
   font-size: 10px;
+  /* An explicit gap, not a space inside the content string. A 10px space
+     between an 11px uppercase heading and the arrow is about three pixels, so
+     "SUB DEPARTMENT▲" read as one word with a mark stuck on the end of it. */
+  margin-left: 5px;
+  vertical-align: 1px;
+  opacity: .75;
 }
-table.sortable th.sorted[data-dir="down"]::after { content: ' ▼'; }
+table.sortable th.sorted[data-dir="down"]::after { content: '▼'; }
 
 /* A member's face in the customers table.
 

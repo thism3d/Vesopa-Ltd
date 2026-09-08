@@ -52,22 +52,22 @@ values: `Not started`, `In progress`, `Done`, `Blocked`.
 | T10 | Green dashboard palette | 2 | Done | `--chart-1`…`--chart-8` per theme; charts resolve them at draw time |
 | T11 | Dark-mode select chevron fix | 2 | Done | cause was a shorthand/longhand clash — see correction 2 |
 | T12 | Mix & Match product picker UI | 2 | Done | a `products` field type: search, tick, chips; `afterSave` writes the join table |
-| T13 | Customers bulk-edit UI | 2 | Not started | |
-| T14 | Customer photo picker UI | 2 | Not started | |
+| T13 | Customers bulk-edit UI | 2 | Done | search, membership filter, picks, shift-click and a bulk expiry modal |
+| T14 | Customer photo picker UI | 2 | Done | a square crop posted to `/api/customer-photo`; a face or initials in the table |
 | T15 | Shift-click range select on Products | 2 | Done | shift-click over `visibleProducts()`, on `click` not `change` |
-| T16 | Back-office polish list | 2 | Not started | |
+| T16 | Back-office polish list | 2 | Done | sort-arrow gap, rail bottom padding, and a Find a page box — see correction 6 |
 | T17 | British English pass | 2 | Not started | |
-| T18 | Drift: customer `photoUrl` column + migration | 3 | Not started | |
-| T19 | Till: refuse expired memberships | 3 | Not started | |
-| T20 | Till: take renewal fee and renew | 3 | Not started | |
-| T21 | Till: show customer photo on attach | 3 | Not started | |
-| T22 | Pay key: amount beside the label | 3 | Not started | |
-| T23 | Split bill: divide a quantity line | 3 | Not started | |
-| T24 | Till: add staff / replace card from Functions | 3 | Not started | |
-| T25 | Version bumps, three apps | 4 | Not started | |
+| T18 | Drift: customer `photoUrl` column + migration | 3 | Not needed | the till reads the photo off the loyalty payload it already fetches; no local column, no Drift migration |
+| T19 | Till: refuse expired memberships | 3 | Done | `LoyaltyCustomer.membershipExpired`; the expiry day itself still works |
+| T20 | Till: take renewal fee and renew | 3 | Done | the fee is a line, the date moves at settle; `membership_plu` decides the VAT |
+| T21 | Till: show customer photo on attach | 3 | Done | `MemberFace`, shown when the venue has taken a photograph and not otherwise |
+| T22 | Pay key: amount beside the label | 3 | Done | programmed_bar only — `pay` is a BAR key, never a grid one, so the grid is untouched |
+| T23 | Split bill: divide a quantity line | 3 | Done | `data/split_portions.dart`; the odd penny is on the first glass |
+| T24 | Till: add staff / replace card from Functions | 3 | Done | `ui/staff_admin.dart`, behind manager approval, refused with no network |
+| T25 | Version bumps, three apps | 4 | Done | the till only — see correction 7 |
 | T26 | Full test sweep | 4 | Not started | |
 | T27 | Server deploy + smoke checks | 4 | Not started | |
-| T28 | Three msix builds | 4 | Not started | |
+| T28 | Three msix builds | 4 | Done | `vesopa-epos-store.msix`, 21,031,053 bytes, Identity Version 1.6.8.0 |
 | T29 | Store release notes, three apps | 4 | Not started | |
 | T30 | Upload and publish submissions | 4 | Not started | |
 
@@ -120,6 +120,36 @@ or measuring the running site rather than by thinking harder about the brief.
    from anywhere — the products were invisible in the back office entirely. The
    CRUD factory grew one option, `extraSelect`, and the list carries a
    "no products" badge.
+
+6. **Folding every group needed something in its place.** With all eight
+   sections closed, somebody who knows a page is called "Timesheets" has to
+   know it is filed under Reports before they can reach it — which is a thing
+   they did not have to know yesterday. The rail has a **Find a page** box now:
+   typing shows every matching item wherever it lives, folded or not, and
+   clearing it puts the rail back exactly as it was. Two things were found
+   building it: the first version showed the heading and nothing under it,
+   because a matching item still carried `hidden-by-group`; and the box failed
+   `backoffice-tablet.test.js` at 13px, because Safari zooms the page in on any
+   field under 16px and does not zoom back out. Both are fixed and the second
+   is why that guard exists.
+
+7. **Only the till is released as 1.6.8.0.** The kitchen and the customer
+   display have no changes at all this release — the whole diff since 1.6.7.0
+   is `vesopa_epos` and `vesopa_server` — so pushing identical binaries through
+   certification would be a download for every venue and nothing to show for
+   it. The display could not have been submitted anyway: its 1.6.7.0 is in
+   certification right now, and the Store allows one submission at a time.
+
+8. **`put public` alone does not update the page.** `index.html` is read into a
+   constant at start-up and rewritten with asset versions — see `sendShell` in
+   `src/server.js` — so a markup change is invisible until `pm2 restart`. The
+   search box was uploaded, served from disk, and absent from the page for one
+   confusing round trip.
+
+9. **The chart palette had one caller outside charts.js.** `Charts.PALETTE` was
+   read by the loyalty tier editor to colour a new tier. Making the palette a
+   function per theme would have thrown there on Add tier — caught by grep
+   rather than by anything failing, which is the argument for grepping.
 
 ## Decisions taken for the client
 

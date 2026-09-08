@@ -491,6 +491,78 @@ function toggleGroup(heading) {
 }
 
 /**
+ * Find a page by typing, whatever section it is filed under.
+ *
+ * The counterweight to folding every group. A manager who knows a page is
+ * called "Timesheets" should not have to know it lives under Reports, and
+ * before this they did not have to — every item was on screen.
+ *
+ * It hides rather than moves: the rail keeps its order, so the same word
+ * always finds the same item in the same place, and clearing the box puts
+ * everything back exactly as it was including each group's own fold state.
+ * A heading survives only if something under it matched.
+ */
+function wireNavFind() {
+  const box = document.getElementById('rail-find');
+  const rail = document.getElementById('rail');
+  if (!box || !rail) return;
+
+  box.addEventListener('input', () => {
+    const q = box.value.trim().toLowerCase();
+    rail.classList.toggle('finding', q !== '');
+
+    if (!q) {
+      document.querySelectorAll('.hidden-by-find').forEach((el) =>
+        el.classList.remove('hidden-by-find')
+      );
+      return;
+    }
+
+    document.querySelectorAll('.nav-group').forEach((heading) => {
+      const items = navItemsFor(heading);
+      let any = false;
+      for (const item of items) {
+        const hit = item.textContent.trim().toLowerCase().includes(q);
+        item.classList.toggle('hidden-by-find', !hit);
+        any = any || hit;
+      }
+      heading.classList.toggle('hidden-by-find', !any);
+    });
+
+    // Dashboard sits above every heading and belongs to no group, so it is
+    // matched on its own rather than being missed by the loop above.
+    document.querySelectorAll('.nav').forEach((item) => {
+      if (item.closest('nav') && !item.classList.contains('nav-group')
+          && !navGrouped(item)) {
+        item.classList.toggle(
+          'hidden-by-find',
+          !item.textContent.trim().toLowerCase().includes(q)
+        );
+      }
+    });
+  });
+
+  // Escape clears it, because a search box that can only be emptied by
+  // selecting its contents is a search box people stop using.
+  box.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      box.value = '';
+      box.dispatchEvent(new Event('input'));
+    }
+  });
+}
+
+/** Whether this nav item sits under a group heading. */
+function navGrouped(item) {
+  let el = item.previousElementSibling;
+  while (el) {
+    if (el.classList.contains('nav-group')) return true;
+    el = el.previousElementSibling;
+  }
+  return false;
+}
+
+/**
  * Set the initial fold state.
  *
  * **Every group starts closed**, at the venue's request: "default the back
@@ -5940,8 +6012,10 @@ async function start() {
   show(viewForPath(location.pathname), { push: false });
 
   // Fold the rail once the current view is known, so the group holding it is
-  // the one section left open.
+  // the one section left open — and give it a way to be searched, which is
+  // what folding it costs.
   initNavGroups();
+  wireNavFind();
 }
 
 
