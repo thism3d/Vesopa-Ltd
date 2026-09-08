@@ -9,6 +9,7 @@ const {
   backfill: backfillMemberNumbers,
 } = require('./member_numbers');
 const { accessGuard } = require('./permissions');
+const { ALLERGENS, cleanAllergens } = require('./allergens');
 
 // Product images. Stored on disk under public/uploads and served statically.
 // Capped and type-checked, so an upload cannot fill the disk or smuggle in a
@@ -189,7 +190,7 @@ function backofficeRoutes({ pool, broadcast, secret }) {
                 accounting_code, price, tax_percentage, stock_quantity,
                 low_stock_at, button_position, button_color, printer_routes,
                 print_to_receipt, emoji, image_url, print_category_id,
-                is_modifier, barcode,
+                is_modifier, barcode, allergens,
                 ${PRICE_LEVELS.join(', ')}
          FROM bo_products
          WHERE email = ?
@@ -266,9 +267,9 @@ function backofficeRoutes({ pool, broadcast, secret }) {
             accounting_code, price, tax_percentage, stock_quantity,
             button_position, button_color, printer_route, printer_routes,
             print_to_receipt, emoji, image_url, print_category_id,
-            is_modifier, barcode,
+            is_modifier, barcode, allergens,
             ${PRICE_LEVELS.join(', ')})
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                  ${PRICE_LEVELS.map(() => '?').join(', ')})`,
         [
           // The office's key, not the individual's: two managers in one shop
@@ -295,6 +296,7 @@ function backofficeRoutes({ pool, broadcast, secret }) {
           printCategoryId(p.print_category_id),
           flag(p.is_modifier),
           barcode(p.barcode),
+          cleanAllergens(p.allergens),
           ...PRICE_LEVELS.map((level) => priceLevel(p[level])),
         ]
       );
@@ -346,6 +348,7 @@ function backofficeRoutes({ pool, broadcast, secret }) {
              print_category_id = ${keep('print_category_id')},
              is_modifier = ${keep('is_modifier')},
              barcode = ${keep('barcode')},
+             allergens = ${keep('allergens')},
              ${PRICE_LEVELS.map((l) => l + ' = ' + keep(l)).join(', ')}
          WHERE id = ? AND email = ?`,
         [
@@ -369,6 +372,12 @@ function backofficeRoutes({ pool, broadcast, secret }) {
           // not un-flag every one a venue has set.
           ...kept('is_modifier', flag(p.is_modifier)),
           ...kept('barcode', barcode(p.barcode)),
+          // Only when the caller sent it, the same rule as barcode and the
+          // price levels: an import that knows nothing about allergens must
+          // not erase what a venue has declared about every product it
+          // touches. Silently dropping a nut warning is the worst thing on
+          // this form.
+          ...kept('allergens', cleanAllergens(p.allergens)),
           // Each level only when the caller sent it — the same rule as
           // button_position and emoji above. An import that knows nothing about
           // price levels must not strip a venue's happy-hour prices off every
@@ -532,6 +541,21 @@ function backofficeRoutes({ pool, broadcast, secret }) {
    * venue's print header at sign-in, and this exposes nothing a customer does
    * not already read off their receipt.
    */
+  /**
+   * The fourteen allergens, as a list anything may read.
+   *
+   * Unauthenticated on purpose. It is a list fixed by law, identical for every
+   * venue and carrying nothing about anybody's business — and the two things
+   * that most need it are a kitchen board on a venue's own network and a menu
+   * page a customer opens with no account at all. Putting a token in front of a
+   * public statutory list would be a login prompt protecting nothing.
+   *
+   * Served from src/allergens.js so no surface spells the labels for itself.
+   */
+  router.get('/allergens', (_req, res) => {
+    res.json({ allergens: ALLERGENS });
+  });
+
   router.get('/branding/public', async (req, res, next) => {
     try {
       const office = String(req.query.office || '').trim();
