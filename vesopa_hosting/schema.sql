@@ -1301,6 +1301,50 @@ CALL vesopa_add_column('domains', 'registrant_verified_at', 'DATETIME NULL');
 CALL vesopa_add_column('domains', 'verification_deadline', 'DATETIME NULL');
 CALL vesopa_add_column('domains', 'contacts_verified', 'TINYINT(1) NOT NULL DEFAULT 0');
 CALL vesopa_add_column('domains', 'contacts_warning', "VARCHAR(300) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT ''");
+-- When the registry was last asked about this domain's verification, and when
+-- a reminder was last sent. The second one is what rate-limits the resend
+-- button: without it, a customer who cannot find the email can send themselves
+-- thirty of them.
+CALL vesopa_add_column('domains', 'verification_checked_at', 'DATETIME NULL');
+CALL vesopa_add_column('domains', 'verification_sent_at', 'DATETIME NULL');
+
+-- ---------------------------------------------------------------------------
+-- Registrant verifications: tracked against the ADDRESS, not the domain.
+--
+-- This is the arpi.site fault, and it is a modelling mistake rather than a
+-- missing feature. ICANN's 2013 RAA obliges a registrar to verify the
+-- registrant's EMAIL ADDRESS, once. Every gTLD afterwards registered to that
+-- same address is covered by that one confirmation and no second email is ever
+-- sent — so a panel that records the obligation per domain counts down to a
+-- suspension that is not going to happen, and has nothing it can ever set.
+--
+-- `registrant_verified_at` on `domains` stays: it is the per-domain cache, and
+-- it is filled in from here. This table is the fact.
+--
+-- `source` is kept because the evidence is not all the same strength:
+--   registry   the deadline passed and the registry had not suspended it, which
+--              it is obliged to do for an unverified registrant
+--   registrar  the registrar told us directly (no endpoint offers this today)
+--   customer   the customer says they clicked the link. They are the only party
+--              who saw the email, and without this the banner can never clear.
+--   admin      support cleared it after chasing the registrar
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS registrant_verifications (
+  id            INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  email         VARCHAR(190) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  verified_at   DATETIME NULL,
+  source        ENUM('registry','registrar','customer','admin') NOT NULL DEFAULT 'customer',
+  -- The admin who cleared it, where one did. NULL for every other source.
+  noted_by      INT UNSIGNED NULL,
+  -- The domain the confirmation arrived on, so the panel can say "you
+  -- confirmed this address on example.com" rather than leaving it unexplained
+  -- when a brand-new domain arrives already clear.
+  first_domain  VARCHAR(190) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_registrant_email (email)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- Once a plan has adopted a domain, that domain is the plan's identity: the
 -- docroot, the certificate and the mail domain on the node are all named after

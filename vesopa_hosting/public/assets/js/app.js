@@ -415,12 +415,33 @@
    * one spinner. panel.js bails out if the class is already present, so the two
    * listeners cannot double up.
    *
-   * The label is NOT replaced — `data-busy` is read by CSS via a content
-   * attribute below, so the DOM is left alone and there is nothing to restore.
+   * The label is NOT replaced. `data-busy` is not drawn at all — see the note
+   * beside `.is-working` in app.css for why a pseudo-element cannot show it
+   * without clipping it — so the DOM is left alone and there is nothing to
+   * restore. The attribute stays on the markup as the description of what the
+   * button is doing; nothing reads it today.
    */
+  /* The pinned width comes off too. It is set from the label the button had at
+     the moment it was pressed, so a button restored with it still on keeps a
+     width that belongs to a state the page has left. */
+  const unbusy = (btn) => {
+    btn.classList.remove('is-working');
+    btn.disabled = false;
+    btn.style.minWidth = '';
+  };
+
   $$('form[data-guard]').forEach((form) => {
-    form.addEventListener('submit', () => {
-      const btn = $('[type=submit]', form);
+    form.addEventListener('submit', (e) => {
+      /*
+       * THE BUTTON THAT WAS PRESSED, not the first submit button in the form.
+       * `event.submitter` is the one the user actually clicked; the old
+       * `$('[type=submit]', form)` returned whichever came first in the DOM, so
+       * on a form with two actions — Save and Delete, Attach and Detach — the
+       * wrong button spun while the pressed one sat there looking ignored.
+       * Falls back to the old selector for a form submitted from script, where
+       * there is no submitter.
+       */
+      const btn = e.submitter || $('[type=submit]', form);
       if (!btn || btn.disabled || btn.classList.contains('is-working')) return;
       // Fixed width first, or the button collapses once its label is hidden.
       btn.style.minWidth = btn.offsetWidth + 'px';
@@ -428,27 +449,36 @@
       btn.disabled = true;
       // A form that fails validation never navigates, so the button has to come
       // back or the page is stuck. Also covers a bfcache restore.
-      setTimeout(() => {
-        btn.classList.remove('is-working');
-        btn.disabled = false;
-      }, 25_000);
+      setTimeout(() => unbusy(btn), 25_000);
     });
   });
 
   window.addEventListener('pageshow', (e) => {
     if (!e.persisted) return;
-    $$('.is-working').forEach((btn) => {
-      btn.classList.remove('is-working');
-      btn.disabled = false;
-    });
+    $$('.is-working').forEach(unbusy);
   });
 
-  /* ---- Confirm before destructive actions ------------------------------- */
+  /* ---- Confirm before destructive actions -------------------------------
+   * IN THE CAPTURE PHASE, and that is the whole fix for a stuck button.
+   *
+   * This used to listen on the bubble, which is AFTER the form's own listener
+   * — so on a form carrying both `data-guard` and `data-confirm` (the domain
+   * rebuild, the domain removal, every delete in the panel) the sequence was:
+   * button goes into `.is-working` and disabled, THEN the confirm box opens,
+   * and pressing Cancel prevented the submit and left the button spinning for
+   * twenty-five seconds on a page where nothing was happening.
+   *
+   * Capturing on the document runs this before any listener on the form, so a
+   * cancelled confirm stops the submit before anything has been made busy.
+   * ----------------------------------------------------------------------- */
   document.addEventListener('submit', (e) => {
     const form = e.target;
-    const message = form.dataset.confirm;
-    if (message && !window.confirm(message)) e.preventDefault();
-  });
+    const message = form.dataset ? form.dataset.confirm : null;
+    if (message && !window.confirm(message)) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  }, true);
 
   /* ---- Email family tabs (business / marketing) -------------------------- */
   $$('[data-email-tabs]').forEach((tabs) => {

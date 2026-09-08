@@ -108,11 +108,31 @@
      the page looks dead and people press the button again, which is how a
      domain gets two certificate requests and a rate limit.
      ======================================================================= */
+
+  /* Put a button back exactly as it was found — INCLUDING the pinned width,
+     which the old restore left behind. A button that came back 140px wide
+     because that is what "Rebuild on the server" measured, and then had its
+     label swapped by a re-render, sat in a row of buttons at the wrong size. */
+  function restore(btn) {
+    btn.classList.remove('is-working');
+    btn.disabled = false;
+    btn.style.minWidth = '';
+  }
+
   document.addEventListener('submit', (e) => {
     const form = e.target;
     if (form.dataset.noBusy !== undefined) return;
-    const btn = form.querySelector('button[type="submit"]:not([data-no-busy]), button:not([type]):not([data-no-busy])');
-    if (!btn || btn.classList.contains('is-working')) return;
+    /*
+     * `event.submitter` first — the button the user actually pressed. The
+     * selector below is the fallback for a script-driven submit, and on its own
+     * it was wrong twice over: it returned the FIRST submit button in the form
+     * (so a two-action form spun the wrong one), and `button:not([type])`
+     * matches any button with no type attribute, including ones that are there
+     * to toggle something rather than to submit.
+     */
+    const btn = e.submitter
+      || form.querySelector('button[type="submit"]:not([data-no-busy]), button:not([type]):not([data-no-busy])');
+    if (!btn || btn.dataset.noBusy !== undefined || btn.classList.contains('is-working')) return;
     // Fixed width first, or the button collapses when its label is hidden.
     btn.style.minWidth = btn.offsetWidth + 'px';
     btn.classList.add('is-working');
@@ -120,11 +140,9 @@
     // A form that fails validation never navigates, so the button must come
     // back or the page is stuck. Belt and braces: this also covers a
     // back-forward-cache restore.
-    setTimeout(() => { btn.classList.remove('is-working'); btn.disabled = false; }, 20000);
+    setTimeout(() => restore(btn), 20000);
   });
-  window.addEventListener('pageshow', () => {
-    $$('.is-working').forEach((b) => { b.classList.remove('is-working'); b.disabled = false; });
-  });
+  window.addEventListener('pageshow', () => { $$('.is-working').forEach(restore); });
 
   /* =======================================================================
      Instant DNS check
@@ -135,7 +153,26 @@
      returned rather than just failing.
      ======================================================================= */
   $$('[data-check]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
+    btn.addEventListener('click', async (e) => {
+      /*
+       * THE FORM MUST NOT ALSO SUBMIT, and it was.
+       *
+       * Every one of these buttons is `type="submit"` inside a real form — on
+       * purpose, so the check still works with no JavaScript. This handler
+       * never called preventDefault, so a click ran the fetch AND posted the
+       * form: two verification requests for one press (against a limit of
+       * twelve in ten minutes), the "Asking the public DNS…" line appearing for
+       * a fraction of a second, and then the whole page thrown away and
+       * re-rendered — which is exactly the full-page reload the fetch was
+       * written to avoid.
+       */
+      e.preventDefault();
+      // A second click while the first request is still out fires a second
+      // fetch. There was no guard here at all: the DNS check is the slowest
+      // thing on the page and therefore the one most likely to be clicked
+      // twice, and the server rate-limits it at twelve in ten minutes.
+      if (btn.classList.contains('is-working')) return;
+      let reloading = false;
       const out = document.getElementById(btn.dataset.checkOut || '');
       btn.style.minWidth = btn.offsetWidth + 'px';
       btn.classList.add('is-working');
@@ -161,15 +198,20 @@
         }
         // Verified is a page-shape change — the instructions fold away — so the
         // honest thing is to re-render rather than patch six places by hand.
-        if (data.ok) setTimeout(() => window.location.reload(), 900);
+        if (data.ok) {
+          reloading = true;
+          setTimeout(() => window.location.reload(), 900);
+        }
       } catch (err) {
         if (out) {
           out.className = 'tip tip-warn';
           out.innerHTML = '<span class="tip-ic"></span><span>Could not run the check. Try again in a moment.</span>';
         }
       } finally {
-        btn.classList.remove('is-working');
-        btn.disabled = false;
+        // A successful check reloads the page in 900ms. Leaving the button busy
+        // until it does is the honest state — restoring it invites a second
+        // click into a page that is already on its way out.
+        if (!reloading) restore(btn);
       }
     });
   });

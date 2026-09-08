@@ -107,10 +107,26 @@ async function ignoringExists(fn) {
 async function addExternal({
   customer, domain: input, serviceId = null, wantDns = true, wantMail = false,
 }) {
-  const { domain, sld, tld } = registrar.splitDomain(input);
-  const invalid = registrar.validateLabel(sld);
+  const { domain, tld } = registrar.splitDomain(input);
+  /*
+   * HOSTNAME RULES, NOT REGISTRY RULES. See registrar.validateHostname for the
+   * whole story; the short version is that this used to check `sld`, `sld` is
+   * whatever survives stripping the extension, and stripping the wrong
+   * extension made `muzahid.com.bd` unaddable with an error about hyphens.
+   *
+   * A name somebody already owns is not being bought, so the registry's rules
+   * about what may be sold do not apply to it. What applies is whether it is a
+   * valid hostname — and then whether it is delegated to us, which is checked
+   * for real a moment later.
+   *
+   * Checked against what was TYPED, not against what splitDomain returned:
+   * splitDomain strips anything outside `[a-z0-9.-]` on its way past, so
+   * `muz@hid.com` would arrive here as a valid `muzhid.com` and be added
+   * silently under a name nobody asked for.
+   */
+  const typed = String(input || '').trim().toLowerCase().replace(/\.$/, '');
+  const invalid = registrar.validateHostname(typed || domain);
   if (invalid) return { ok: false, error: invalid };
-  if (!tld) return { ok: false, error: 'Add an extension, like .com.' };
 
   const existing = await db.one('SELECT * FROM domains WHERE domain = ? LIMIT 1', [domain]);
 
@@ -439,14 +455,27 @@ async function verify(domainRow, { customer = null } = {}) {
      * it is not holding the zone — build it, then ask the public internet
      * again. One retry, never a loop.
      *
-     * An EXTERNAL domain is deliberately excluded. Its SERVFAIL is ambiguous:
-     * it may be delegated to us and waiting for exactly this, or it may be
+     * AN EXTERNAL DOMAIN IS NO LONGER EXCLUDED, and that is the sheve.site fix.
+     *
+     * It used to be, and the reasoning was sound while a SERVFAIL was all we
+     * had: it may be delegated to us and waiting for exactly this, or it may be
      * broken at a registrar we have nothing to do with, and creating zones for
      * names nobody has pointed at us on the strength of a failed lookup is not
-     * a thing to do automatically. The panel gives its owner a button instead —
-     * see `rebuild()`.
+     * a thing to do automatically.
+     *
+     * `nameservers.check()` reads the delegation out of the REGISTRY now, so
+     * the ambiguity is gone. `ns.matched` with `ns.serverFailure` means the
+     * registry sends the internet to ns1/ns2.vesopa.com and our nameservers are
+     * not answering — which is not ambiguous at all. It is proof of control
+     * (only whoever holds the domain can set that delegation) and the thing
+     * that is broken is ours to fix. sheve.site sat in exactly that state:
+     * correctly delegated, "Could not read the nameservers (ESERVFAIL)" on the
+     * screen, and a four-day clock running to drop it off the account.
+     *
+     * `mayPoint` still guards everything else. This is the one case it gets
+     * wrong, and only because it cannot be satisfied until the zone exists.
      */
-    if (!ns.matched && ns.serverFailure && mayPoint(domainRow)) {
+    if (ns.serverFailure && (ns.matched || mayPoint(domainRow))) {
       const ours = await nameservers.servedByUs(domainRow.domain);
       if (ours.reachable && !ours.served) {
         const owner = customer
@@ -526,6 +555,15 @@ async function verify(domainRow, { customer = null } = {}) {
     resolvesHere,
     nameservers: ns.nameservers,
     addresses: ip.addresses,
+    // Where the delegation came from — 'registry' is the record itself,
+    // 'resolver' is what a recursive resolver happened to answer. Reported so
+    // the panel can say "delegated to us, still propagating" rather than
+    // implying the customer has something left to do.
+    via: ns.via || '',
+    resolved: ns.resolved || [],
+    // The registry says this name is not registered at all. A different problem
+    // from a delegation pointing elsewhere, and a different thing to say.
+    unregistered: Boolean(ns.unregistered),
     error: ns.error || '',
     // Set when this call created the zone that was missing. The panel says so
     // rather than reporting a bare "not yet" for a check that just did real
@@ -712,7 +750,46 @@ async function pointAtNode(domainRow, customer, { resolvesHere = null, force = f
     await db.query('UPDATE domains SET pointed_at = COALESCE(pointed_at, NOW()) WHERE id = ?', [domainRow.id]);
   }
 
-  return { pointed: web.ok, ssl: ssl.ok, sslError: ssl.ok ? '' : explainSslError(ssl.error), steps };
+  return {
+    pointed: web.ok,
+    ssl: ssl.ok,
+    sslError: ssl.ok ? '' : explainSslError(ssl.error),
+    // WHY it did not get built, in a sentence the customer can act on. Without
+    // this the caller falls back to "the website could not be created on the
+    // server — open a ticket", which is the wrong instruction for the commonest
+    // cause by far. Measured on sheve.site: correctly delegated, correctly
+    // added, and unbuildable because the account's plan allows one website and
+    // arpi.site is using it. A ticket cannot fix that; a bigger plan can.
+    reason: web.ok ? '' : explainNodeError(web.error),
+    steps,
+  };
+}
+
+/**
+ * Turn a Hestia refusal into something with a next step in it.
+ *
+ * The same job `explainSslError` does for Let's Encrypt. These strings come
+ * from an exit-code table and are written for an administrator — "The package
+ * limit was reached." is accurate, tells a customer nothing about which limit
+ * or what to do, and reads like a fault in our software.
+ */
+function explainNodeError(raw) {
+  const text = String(raw || '').toLowerCase();
+  if (!text) return '';
+  if (text.includes('package limit')) {
+    return 'Your hosting plan is already using all the websites it allows, so there is no room on it '
+      + 'for another domain. Moving up a plan makes room immediately — or take a domain off this plan '
+      + 'first and this will go straight through.';
+  }
+  if (text.includes('disk') || text.includes('quota')) {
+    return 'The hosting account is out of disk space, so nothing further can be created on it. '
+      + 'Free some space or move up a plan, then try again.';
+  }
+  if (text.includes('suspend')) {
+    return 'The hosting account is suspended, so nothing can be created on it. '
+      + 'Settle any outstanding invoice, or open a ticket and we will look.';
+  }
+  return raw;
 }
 
 /**

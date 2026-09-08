@@ -20,6 +20,7 @@ const registrar = require('../integrations/domainnameapi');
 const pricing = require('../pricing');
 const linking = require('../domain-linking');
 const nameservers = require('../nameservers');
+const registrantVerification = require('../registrant-verification');
 const domainState = require('../domain-state');
 const notify = require('../notifications');
 const invoices = require('../invoices');
@@ -275,12 +276,21 @@ async function attachToService({ domain, service, customer, ip }) {
       fixLabel: 'Set it up on the server',
       dedupeKey: `domain:${domain.id}:not_built`,
     }).catch(() => {});
+    /*
+     * "Try 'Set it up on the server'" is the right advice for a transient
+     * failure and exactly the wrong advice for a plan that is full — pressing
+     * it again produces the same refusal for the same reason, forever.
+     * `explainNodeError` already says what to do about those, so it gets the
+     * last word and the retry hint is only offered where a retry could help.
+     */
+    const retryable = !/plan|disk space|suspended/i.test(why);
     return {
       ok: false,
       adopted,
       kind: 'warn',
       message: `${domain.domain} is now on your ${service.plan_name || 'hosting'} plan, but the website `
-        + `could not be created on the server (${why}). Try "Set it up on the server" on this page.`,
+        + `could not be created on the server. ${why}`
+        + (retryable ? ' Try "Set it up on the server" on this page.' : ''),
     };
   }
 
@@ -1293,8 +1303,15 @@ router.post('/domains/add', async (req, res, next) => {
         return res.redirect(added.id ? `/panel/domains/${added.id}` : '/panel/domains/add');
       }
       if (!added.built.pointed) {
+        /*
+         * Say WHY. "Open a ticket and we will sort it" is the wrong instruction
+         * for the commonest cause — a plan with no room left on it, which
+         * support cannot fix and the customer can. pointAtNode explains those
+         * in `reason`; a ticket is offered only where there is nothing else to
+         * suggest.
+         */
         flash(res, `${added.domain} was added, but the website could not be created on the server. `
-          + 'Open a ticket and we will sort it.', 'warn');
+          + (added.built.reason || 'Open a ticket and we will sort it.'), 'warn');
         return res.redirect(domainPath(added));
       }
 
@@ -1347,13 +1364,27 @@ router.post('/domains/add', async (req, res, next) => {
 
     if (verdict.matched) {
       flash(res, `${added.domain} is pointing at us — we are setting it up now.`);
-    } else if (wanted.split('.').length > 2) {
+    } else if (verdict.unregistered) {
+      /*
+       * The registry says the name does not exist. Worth its own sentence: the
+       * generic "point it at us" reads as though the setup is nearly done, and
+       * sends somebody to a nameserver form for a domain they have not bought.
+       */
+      flash(res, `${added.domain} has been added, but its registry says the name is not registered. `
+        + 'Check the spelling — or register it here and we will set it up for you.', 'warn');
+    } else if (wanted.split('.').length > 2 && !verdict.nameservers.length) {
       /*
        * Looks like a subdomain, but of a domain this account does not hold. It
        * is still perfectly addable — an A record aimed here is enough, and the
        * new verification will pick that up — so it is added rather than
        * refused. Saying why avoids the "it did not offer me the subdomain
        * options" confusion.
+       *
+       * GUARDED ON HAVING NO DELEGATION OF ITS OWN, because counting dots does
+       * not tell a subdomain from a domain: `muzahid.com.bd` has three labels
+       * and is a registrable name with its own nameservers, and telling its
+       * owner we do not have "its main domain" is nonsense. A name the registry
+       * has a delegation for is a domain, whatever its label count.
        */
       flash(res, `${added.domain} has been added. We do not have its main domain on this account, `
         + 'so point it here with an A record — this page shows the value to use.', 'warn');
@@ -1484,13 +1515,29 @@ router.get('/domains/:id', async (req, res, next) => {
        * beside it reads as optional — which is exactly how arpi.site came to
        * sit unverified for nine hours.
        */
-      verification: (domain.verification_deadline && !domain.registrant_verified_at)
-        ? {
+      /*
+       * READ AGAINST THE ADDRESS, not the domain row alone. ICANN's obligation
+       * is on the registrant's email address and it is discharged once — so a
+       * customer who confirmed while registering their first domain must not be
+       * asked again on their second. See registrant-verification.js; this is
+       * the arpi.site fault, where the banner had no way to clear at all.
+       */
+      verification: await (async () => {
+        if (!domain.verification_deadline || domain.registrant_verified_at) return null;
+        const address = registrantVerification.normaliseEmail(domain.registrant_email)
+          || registrantVerification.normaliseEmail(req.customer.email);
+        const known = await registrantVerification.verifiedAddresses([address]).catch(() => new Map());
+        if (known.has(address)) return null;
+        return {
           email: domain.registrant_email || req.customer.email,
           deadline: domain.verification_deadline,
           days_left: Math.ceil((new Date(domain.verification_deadline) - Date.now()) / 864e5),
-        }
-        : null,
+          // When a reminder last went out, so the page can show the cooldown
+          // rather than letting somebody press a button that will refuse them.
+          sent_at: domain.verification_sent_at || null,
+          checked_at: domain.verification_checked_at || null,
+        };
+      })(),
       // The plans this domain could be attached to, and the one it is on. A
       // domain with no service is not broken — but it is also not hosted, and
       // until now the panel had no control that could change that.
@@ -1622,10 +1669,125 @@ router.post('/domains/:id/verify', async (req, res, next) => {
         : `Not yet — ${domain.domain} does not resolve anywhere yet. Add the A record shown on this page.`);
     }
 
+    if (verdict.unregistered) {
+      return answer(false, `Not yet — the registry says ${domain.domain} is not registered. `
+        + 'Check the spelling, or register it here and we will set it up for you.');
+    }
+
     return answer(false, verdict.nameservers.length
-      ? `Not yet — ${domain.domain} still points at ${verdict.nameservers.join(' and ')}. `
+      ? `Not yet — ${domain.domain} is delegated to ${verdict.nameservers.join(' and ')}. `
         + 'Either switch its nameservers to ours, or point an A record here.'
       : `Not yet — ${verdict.error || 'we could not read its nameservers.'}`);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/* ---------------------------------------------------------------------------
+   The registrant email verification: three buttons on one card.
+
+   Split into three routes rather than one with a mode, because they are three
+   different actions with three different risks: one reads, one sends mail, and
+   one writes down a fact about the account. See registrant-verification.js for
+   why the whole thing is keyed on the ADDRESS rather than the domain.
+   --------------------------------------------------------------------------- */
+
+/** Ask the registry what it currently says, and clear the card if it is settled. */
+router.post('/domains/:id/verification/check', async (req, res, next) => {
+  try {
+    if (!auth.checkCsrf(req)) return res.redirect(`/panel/domains/${req.params.id}`);
+    const domain = await ownedDomain(req);
+    if (!domain) return next();
+    const back = `${domainPath(domain)}#verification`;
+
+    if (rateLimited(req.customer.id, 'domain-verification-check', { max: 10, windowMs: 600_000 })) {
+      flash(res, 'We have just checked a few times. Give it a couple of minutes.', 'warn');
+      return res.redirect(back);
+    }
+
+    const state = await registrantVerification.check(domain);
+
+    if (!state.outstanding) {
+      flash(
+        res,
+        state.source === 'registry'
+          ? `The registry still has ${domain.domain} live past the verification deadline, so the address `
+            + 'has been confirmed. We will stop asking.'
+          : `${state.email} has already been confirmed${state.via_domain ? ` on ${state.via_domain}` : ''}. `
+            + 'That covers every domain you hold on this address.',
+        'ok',
+      );
+      return res.redirect(domainPath(domain));
+    }
+
+    if (state.state === 'suspended') {
+      flash(res, `The registry has ${domain.domain} on hold (${state.registry.codes.join(', ')}), which means `
+        + 'the confirmation has not reached it. Open the registrar\'s email and click the link, or send it '
+        + 'again from here.', 'error');
+    } else if (state.state === 'unknown') {
+      flash(res, `We could not reach the registrar just now (${state.error}). Nothing has changed — try again `
+        + 'in a few minutes.', 'warn');
+    } else {
+      flash(res, `The registry shows ${domain.domain} as ${state.registry.status || 'active'} and has told us `
+        + 'nothing about the confirmation — it never does while the deadline is still running. If you have '
+        + 'already clicked the link, tell us and we will stop asking.', 'warn');
+    }
+    return res.redirect(back);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** Send the reminder again. Rate-limited in the module, not here. */
+router.post('/domains/:id/verification/resend', async (req, res, next) => {
+  try {
+    if (!auth.checkCsrf(req)) return res.redirect(`/panel/domains/${req.params.id}`);
+    const domain = await ownedDomain(req);
+    if (!domain) return next();
+    const back = `${domainPath(domain)}#verification`;
+
+    const sent = await registrantVerification.resend(domain, req.customer);
+    if (!sent.ok) {
+      flash(res, sent.error, 'warn');
+      return res.redirect(back);
+    }
+    flash(res, `Sent to ${sent.email}. It comes from the registrar, not from us, so look for the domain name `
+      + 'rather than for Vesopa — and check your spam folder, which is where it usually is.', 'ok');
+    return res.redirect(back);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * "I have already confirmed this."
+ *
+ * The customer is the only party who saw the registrar's email and the gateway
+ * offers no way to ask it — so their word is the evidence, and it is recorded
+ * as their word. Refused if the registry has the domain on hold, because then
+ * it demonstrably has not been confirmed and accepting the claim would leave a
+ * suspended domain looking healthy.
+ */
+router.post('/domains/:id/verification/confirm', async (req, res, next) => {
+  try {
+    if (!auth.checkCsrf(req)) return res.redirect(`/panel/domains/${req.params.id}`);
+    const domain = await ownedDomain(req);
+    if (!domain) return next();
+    const back = `${domainPath(domain)}#verification`;
+
+    const done = await registrantVerification.confirmByCustomer(domain, req.customer);
+    if (!done.ok) {
+      flash(res, done.error, done.held ? 'error' : 'warn');
+      return res.redirect(back);
+    }
+
+    await notify.resolve(req.customer.id, `domain:${domain.id}:registrant_verification`).catch(() => {});
+    live.publish(req.customer.id, `domain:${domain.id}`);
+
+    flash(res, done.cleared > 1
+      ? `Thank you — ${done.email} is marked confirmed, and that clears ${done.cleared} domains on this address.`
+      : `Thank you — ${done.email} is marked confirmed. We will stop asking.`, 'ok');
+    return res.redirect(domainPath(domain));
   } catch (err) {
     next(err);
   }

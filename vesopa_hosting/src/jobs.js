@@ -34,6 +34,7 @@ const registrar = require('./integrations/domainnameapi');
 const linking = require('./domain-linking');
 const notify = require('./notifications');
 const nameservers = require('./nameservers');
+const registrantVerification = require('./registrant-verification');
 const {
   JOB_INTERVAL_MINUTES, PAYMENT_SESSION_MINUTES, DOMAIN_NS_GRACE_DAYS, NAMESERVERS,
 } = require('./config');
@@ -443,7 +444,81 @@ async function sweepDomains() {
     }
   }
 
-  return { checked: rows.length, verified, dropped };
+  const registrants = await sweepRegistrantVerifications().catch((err) => {
+    console.error('[jobs] registrant verification sweep failed:', err.message);
+    return 0;
+  });
+
+  return { checked: rows.length, verified, dropped, registrants };
+}
+
+/**
+ * Clear registrant verifications that have quietly completed.
+ *
+ * The registrar has no verification endpoint — see registrant-verification.js
+ * for the probe that established that — so there is exactly one thing the
+ * registry will tell us, and it tells it by NOT suspending the domain. A
+ * registrar is obliged to put an unverified registrant on hold; a domain still
+ * answering after its deadline has therefore been verified.
+ *
+ * Which means this pass is the thing that eventually takes the banner down on
+ * its own, without anybody pressing anything. Without it, `registrant_verified_at`
+ * is a column nothing ever writes and the countdown runs past zero into
+ * "may be suspended" forever — which is precisely what arpi.site did.
+ *
+ * A handful at a time, oldest check first, and only past the deadline: inside
+ * the fifteen days the registry cannot distinguish verified from waiting, so
+ * asking it is a round trip that can only return "do not know".
+ */
+async function sweepRegistrantVerifications() {
+  if (!registrar.isConnected()) return 0;
+
+  const rows = await db.query(
+    `SELECT * FROM domains
+      WHERE status = 'active'
+        AND source IN ('registered','transfer')
+        AND registrant_verified_at IS NULL
+        AND verification_deadline IS NOT NULL
+        AND verification_deadline < NOW()
+        AND (verification_checked_at IS NULL
+             OR verification_checked_at < DATE_SUB(NOW(), INTERVAL 6 HOUR))
+      ORDER BY verification_checked_at IS NOT NULL, verification_checked_at ASC
+      LIMIT 5`,
+  );
+
+  let cleared = 0;
+  for (const row of rows) {
+    try {
+      // eslint-disable-next-line no-await-in-loop -- the gateway 429s on concurrency
+      const state = await registrantVerification.check(row);
+      if (!state.outstanding) {
+        cleared += 1;
+        console.log(`[jobs] ${row.domain} — registrant address ${state.email} confirmed (${state.source})`);
+        await notify.resolve(row.customer_id, `domain:${row.id}:registrant_verification`).catch(() => {});
+      } else if (state.state === 'suspended') {
+        /*
+         * The failure the countdown was warning about has happened. Said as an
+         * error with the registry's own status codes in it, because "verify
+         * your email" is the wrong sentence for a domain that is already off.
+         */
+        await notify.raise({
+          customerId: row.customer_id,
+          level: 'error',
+          area: 'domain',
+          title: `${row.domain} has been suspended by the registry`,
+          body: `The registry has it on hold (${state.registry.codes.join(', ')}) because the owner's `
+            + `email address, ${state.email}, was never confirmed. Confirming it puts the domain back. `
+            + 'Open the domain and send the confirmation email again.',
+          fixUrl: `/panel/domains/${row.id}#verification`,
+          fixLabel: 'Fix it',
+          dedupeKey: `domain:${row.id}:registrant_suspended`,
+        }).catch(() => {});
+      }
+    } catch (err) {
+      console.error(`[jobs] verification check failed for ${row.domain}:`, err.message);
+    }
+  }
+  return cleared;
 }
 
 // ---------------------------------------------------------------------------

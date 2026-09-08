@@ -1444,7 +1444,13 @@ body.nav-open .nav-sheet-foot {
   border: 2.5px solid rgba(255, 255, 255, .3); border-top-color: currentColor;
   animation: spin .7s linear infinite;
 }
-@keyframes spin { to { transform: rotate(360deg); } }
+/* BOTH ENDS DECLARED, and the `from` is doing real work.
+   A keyframe set with only a `to` interpolates from the element's own computed
+   transform — which on a `.btn` pseudo-element is the hover sheen's
+   `translateX(-120%)`. So the spinner interpolated from "19px to the left" to
+   "rotated 360°", i.e. it slid across the button while turning. Measured on the
+   live sign-in button: `transform: matrix(1, 0, 0, 1, -19.2, 0)`. */
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
 /* ---- The busy button ----------------------------------------------------
    ONE TREATMENT FOR THE WHOLE PRODUCT, defined here rather than in panel.css
@@ -1468,20 +1474,69 @@ body.nav-open .nav-sheet-foot {
   --icon-hidden: 1;
 }
 .is-working > * { visibility: hidden; }
+
+/* ---- The spinner, on ::after, WHICH `.btn` ALREADY OWNS -----------------
+   `.btn::after` is the decorative hover sheen, and it and this rule are the
+   same pseudo-element on the same element with the same specificity. The later
+   rule wins property by property — so everything the sheen declares and this
+   does not was still applying to the spinner. Three of them mattered, all
+   measured on the live site on 2026-09-08:
+
+     transform      translateX(-120%) — the spinner sat 19px left of centre and,
+                    because @keyframes spin had no `from`, animated FROM there
+                    to rotate(360deg). It slid across the button.
+     background     the sheen's white diagonal gradient, painted inside the
+                    16px ring.
+     display: none  from `.btn-ghost::after`, which switches the sheen off on
+                    ghost buttons. The label is transparent and the spinner was
+                    not drawn at all, so EVERY ghost button in the panel went
+                    completely blank the moment it was pressed. That is the
+                    "loading shows a wrong UI" report.
+
+   So every one of them is re-stated here rather than left to inheritance, and
+   the display is re-stated again at `.btn.is-working::after` so it beats
+   `.btn-ghost::after` on specificity rather than on source order.
+   ------------------------------------------------------------------------ */
 .is-working::after {
   content: '';
+  display: block;
   position: absolute; inset: 0; margin: auto;
   width: 16px; height: 16px; border-radius: 999px;
   border: 2px solid currentColor; border-top-color: transparent;
+  background: none;
+  transform: none;
+  transition: none;
+  opacity: 1;
   color: var(--ink-2);
   animation: spin .7s linear infinite;
   /* ::after inherits `color: transparent` from the rule above unless it is
      re-stated, which is precisely how the spinner came to be invisible. */
 }
+.btn.is-working::after,
+.btn-ghost.is-working::after { display: block; transform: none; background: none; }
 .btn.is-working::after { color: var(--on-lime); }
 .btn-ghost.is-working::after,
 .btn-light.is-working::after { color: var(--ink); }
 .btn-dark.is-working::after { color: #fff; }
+
+/* ---- Why there is no busy LABEL, only a spinner --------------------------
+   `data-busy="Saving…"` sits on some ninety buttons and nothing reads it. It is
+   tempting to draw it with `content: attr(data-busy)` — app.js's comment used
+   to claim that is what happens — and it does not work, for a reason worth
+   writing down so it is not tried a third time.
+
+   A pseudo-element is out of flow, so it cannot make the button wider. The busy
+   word is nearly always LONGER than the label it replaces ("Save" -> "Saving…",
+   "Add it" -> "Adding…"), `.btn` sets `overflow: hidden`, and the JS pins
+   min-width to the measured width — a floor, not a ceiling, but nothing pushes
+   past it. So the text clips on every small button.
+
+   Putting it back in flow means replacing the button's innerHTML, which is
+   exactly what the version before last did: it fought with `.is-working`, hid
+   its own spinner, and produced the unreadable button described in app.js. A
+   centred spinner on a button that keeps its size is the treatment that works.
+   ------------------------------------------------------------------------ */
+
 @media (prefers-reduced-motion: reduce) {
   .is-working::after { animation: spin 1.6s linear infinite; }
 }
