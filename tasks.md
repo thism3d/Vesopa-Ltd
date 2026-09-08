@@ -56,7 +56,7 @@ values: `Not started`, `In progress`, `Done`, `Blocked`.
 | T14 | Customer photo picker UI | 2 | Done | a square crop posted to `/api/customer-photo`; a face or initials in the table |
 | T15 | Shift-click range select on Products | 2 | Done | shift-click over `visibleProducts()`, on `click` not `change` |
 | T16 | Back-office polish list | 2 | Done | sort-arrow gap, rail bottom padding, and a Find a page box — see correction 6 |
-| T17 | British English pass | 2 | Not started | |
+| T17 | British English pass | 2 | In progress | extraction and the audit script are in `tool/extract_copy.py`; two findings so far, one applied, one a false positive |
 | T18 | Drift: customer `photoUrl` column + migration | 3 | Not needed | the till reads the photo off the loyalty payload it already fetches; no local column, no Drift migration |
 | T19 | Till: refuse expired memberships | 3 | Done | `LoyaltyCustomer.membershipExpired`; the expiry day itself still works |
 | T20 | Till: take renewal fee and renew | 3 | Done | the fee is a line, the date moves at settle; `membership_plu` decides the VAT |
@@ -65,11 +65,11 @@ values: `Not started`, `In progress`, `Done`, `Blocked`.
 | T23 | Split bill: divide a quantity line | 3 | Done | `data/split_portions.dart`; the odd penny is on the first glass |
 | T24 | Till: add staff / replace card from Functions | 3 | Done | `ui/staff_admin.dart`, behind manager approval, refused with no network |
 | T25 | Version bumps, three apps | 4 | Done | the till only — see correction 7 |
-| T26 | Full test sweep | 4 | Not started | |
-| T27 | Server deploy + smoke checks | 4 | Not started | |
+| T26 | Full test sweep | 4 | Done | server `npm test` 0; till 810 pass with the 3 known failures; 22 + 16 live checks against backoffice.vesopaepos.com, both tidy |
+| T27 | Server deploy + smoke checks | 4 | Done | src, schema, public (uploads excluded), migrations x3 silent, pm2 restart, /health ok — and index.html needs that restart |
 | T28 | Three msix builds | 4 | Done | `vesopa-epos-store.msix`, 21,031,053 bytes, Identity Version 1.6.8.0 |
-| T29 | Store release notes, three apps | 4 | Not started | |
-| T30 | Upload and publish submissions | 4 | Not started | |
+| T29 | Store release notes, three apps | 4 | Done | `notes-1.6.8.0-epos.txt`, 1,376 characters, the venue's shape, checked by `src/release-notes.js` |
+| T30 | Upload and publish submissions | 4 | Done | submission 1152921505701835902 committed; blob read back byte for byte; status Certification, targetPublishMode Immediate |
 
 ## Corrections to the plan, found while executing it
 
