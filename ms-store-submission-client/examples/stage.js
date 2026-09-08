@@ -9,7 +9,7 @@
 // pipeline, and it is the venue's to make. Everything here lives as a draft
 // in Partner Center and can be reviewed, edited or deleted there.
 //
-// Run: node examples/stage-1670.js <app> <package> <release-notes-file>
+// Run: node examples/stage.js <app> <package> <release-notes-file>
 //
 // The release notes come from a file rather than the command line because
 // they are multi-paragraph prose and every shell on this machine mangles at
@@ -19,26 +19,39 @@ import fs from "node:fs";
 import path from "node:path";
 import { StoreSubmissionClient } from "../src/client.js";
 import { resolveStoreId } from "../src/apps.config.js";
+import { readReleaseNotes, versionInNotes } from "../src/release-notes.js";
 
 const [, , appArg, packageArg, notesArg] = process.argv;
 if (!appArg || !packageArg || !notesArg) {
   console.error(
-    "Usage: node examples/stage-1670.js <app> <package.msix> <notes.txt>"
+    "Usage: node examples/stage.js <app> <package.msix> <notes.txt>"
   );
   process.exit(1);
 }
 
-const notes = fs.readFileSync(notesArg, "utf8").trim();
-if (!notes) {
-  console.error("The release notes file is empty.");
-  process.exit(1);
-}
-if (notes.length > 1500) {
-  console.error(`Release notes are ${notes.length} characters; the limit is 1500.`);
+// The venue's shape, checked here as well as in set-notes.js — this is the
+// path notes normally arrive by, and it was the one that did not look.
+let notes;
+try {
+  notes = readReleaseNotes(notesArg);
+} catch (e) {
+  console.error(e.message);
   process.exit(1);
 }
 if (!fs.existsSync(packageArg)) {
   console.error(`No package at ${packageArg}`);
+  process.exit(1);
+}
+
+// The words and the binary are set in different files, and shipping one
+// release's notes over another's package is a mistake nothing else here would
+// catch.
+const declared = versionInNotes(notes);
+if (process.env.STAGE_VERSION && declared !== process.env.STAGE_VERSION) {
+  console.error(
+    `The notes say ${declared} and STAGE_VERSION says ` +
+      `${process.env.STAGE_VERSION}. One of them is wrong.`
+  );
   process.exit(1);
 }
 

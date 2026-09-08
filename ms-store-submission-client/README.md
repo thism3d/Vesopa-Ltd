@@ -111,7 +111,7 @@ Microsoft's certification queue until you uncomment it deliberately.
 ## Releasing a Vesopa version, end to end
 
 This is the path that was actually used for 1.6.7.0, in order. Everything
-before `commit-1670.js` is reversible; that one is not.
+before `commit.js` is reversible; that one is not.
 
 ```bash
 # 0. Build the packages first. All three apps must have the same version in
@@ -125,13 +125,13 @@ before `commit-1670.js` is reversible; that one is not.
 node src/cli.js list-apps
 
 # 2. Stage: create the draft, attach the package, set the notes, upload.
-STAGE_VERSION=1.6.7.0 node examples/stage-1670.js vesopa-epos     ../vesopa_epos/build/store/vesopa-epos-store.msix notes-1.6.7.0-epos.txt
+STAGE_VERSION=1.6.8.0 node examples/stage.js vesopa-epos     ../vesopa_epos/build/store/vesopa-epos-store.msix notes-1.6.8.0-epos.txt
 
 # 3. Fix the wording without re-uploading tens of megabytes, as often as needed.
-node examples/set-notes.js vesopa-epos notes-1.6.7.0-epos.txt
+node examples/set-notes.js vesopa-epos notes-1.6.8.0-epos.txt
 
 # 4. Ship it. Unpacks, validates, and goes to certification.
-node examples/commit-1670.js vesopa-epos
+node examples/commit.js vesopa-epos
 ```
 
 Package paths differ per app, because the kitchen's msix config has no
@@ -154,7 +154,7 @@ commit carries the submission straight into certification. Until then Partner
 Center shows *Packages: Unchanged* with the previous package still listed as
 Validated, and the API shows the new one with no version, no languages and no
 capabilities. None of that means the upload failed — check it by reading the
-blob back, which `stage-1670.js` does and prints.
+blob back, which `stage.js` does and prints.
 
 If somebody wants to see a validated package and press **Submit** themselves,
 the msix has to be dragged into Partner Center by hand. This API cannot offer
@@ -193,7 +193,7 @@ generated from it and are gitignored.
    one `PendingUpload` — and all three Vesopa msix files come out of the same
    config, so both entries had the same name. That is ambiguous to the Store
    and read as a submission with no package in it. `STAGE_VERSION` stamps the
-   version into the name; `stage-1670.js` refuses to stage if the name it is
+   version into the name; `stage.js` refuses to stage if the name it is
    about to add is already in the submission.
 2. **"The PUT did not throw" is not "the file is there."** The upload is a
    blind PUT to a SAS URL that returns no useful body. Read the blob back with

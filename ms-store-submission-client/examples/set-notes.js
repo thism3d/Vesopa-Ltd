@@ -1,6 +1,6 @@
 // Replace the release notes on a submission that is already staged.
 //
-// Separate from stage-1670.js because the package and the words are edited on
+// Separate from stage.js because the package and the words are edited on
 // different clocks: a package is rebuilt, but wording gets read back, argued
 // with and changed several times before anybody commits. Re-staging the whole
 // submission to fix a sentence would mean re-uploading tens of megabytes and
@@ -21,9 +21,9 @@
 // page broken at 78 characters. This script refuses anything that looks
 // wrapped, because the mistake is invisible until it is public.
 import "dotenv/config";
-import fs from "node:fs";
 import { StoreSubmissionClient } from "../src/client.js";
 import { resolveStoreId } from "../src/apps.config.js";
+import { readReleaseNotes } from "../src/release-notes.js";
 
 const [, , appArg, notesArg] = process.argv;
 if (!appArg || !notesArg) {
@@ -31,41 +31,14 @@ if (!appArg || !notesArg) {
   process.exit(1);
 }
 
-const notes = fs.readFileSync(notesArg, "utf8").trim();
-const lines = notes.split("\n");
-
-if (!notes) {
-  console.error("The notes file is empty.");
-  process.exit(1);
-}
-if (notes.length > 1500) {
-  console.error(`${notes.length} characters; the Store's limit is 1500.`);
-  process.exit(1);
-}
-if (!/^Version \d+\.\d+\.\d+\.\d+ - \S/.test(lines[0])) {
-  console.error(
-    `First line must be "Version x.x.x.x - Short title", got: ${lines[0]}`
-  );
-  process.exit(1);
-}
-if (lines[1] !== "") {
-  console.error("The title line must be followed by a blank line.");
-  process.exit(1);
-}
-
-// The wrap check. A paragraph typed as one line is long; prose wrapped by an
-// editor is a run of lines that all stop around the same column and none of
-// which end a sentence.
-const body = lines.slice(2).filter((l) => l.trim() !== "");
-const suspicious = body.filter(
-  (l) => l.length > 55 && l.length < 100 && !/[.!?:]$/.test(l.trim())
-);
-if (suspicious.length > 1) {
-  console.error(
-    `${suspicious.length} lines look hard-wrapped — Partner Center will break ` +
-      `the text exactly where they end. Write one paragraph per line.\n` +
-      suspicious.slice(0, 3).map((l) => `  "${l}"`).join("\n")
-  );
+// The rules live in src/release-notes.js so that the staging script — the
+// path notes normally arrive by, and the one that did not look — checks
+// exactly the same things this one does.
+let notes;
+try {
+  notes = readReleaseNotes(notesArg);
+} catch (e) {
+  console.error(e.message);
   process.exit(1);
 }
 

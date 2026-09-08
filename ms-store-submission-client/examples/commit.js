@@ -4,7 +4,7 @@
 // is finished; the Store then unpacks the uploaded zip, validates the package
 // and sends the submission to certification. From here on nothing is a draft.
 //
-// Run: node examples/commit-1670.js <app>
+// Run: node examples/commit.js <app>
 //
 // WHAT IT CHECKS BEFORE COMMITTING
 //
@@ -30,7 +30,7 @@ import { resolveStoreId } from "../src/apps.config.js";
 
 const [, , appArg] = process.argv;
 if (!appArg) {
-  console.error("Usage: node examples/commit-1670.js <app-name-or-store-id>");
+  console.error("Usage: node examples/commit.js <app-name-or-store-id>");
   process.exit(1);
 }
 
