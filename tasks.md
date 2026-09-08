@@ -65,11 +65,11 @@ values: `Not started`, `In progress`, `Done`, `Blocked`.
 | T23 | Split bill: divide a quantity line | 3 | Done | `data/split_portions.dart`; the odd penny is on the first glass |
 | T24 | Till: add staff / replace card from Functions | 3 | Done | `ui/staff_admin.dart`, behind manager approval, refused with no network |
 | T25 | Version bumps, three apps | 4 | Done | the till only — see correction 7 |
-| T26 | Full test sweep | 4 | Done | server `npm test` 0; till 810 pass with the 3 known failures; 22 + 16 live checks against backoffice.vesopaepos.com, both tidy |
+| T26 | Full test sweep | 4 | Done | server `npm test` exits 0; till 825 pass with the 3 known failures (`--concurrency=2`); 22 + 16 live checks, both tidy |
 | T27 | Server deploy + smoke checks | 4 | Done | src, schema, public (uploads excluded), migrations x3 silent, pm2 restart, /health ok — and index.html needs that restart |
 | T28 | Three msix builds | 4 | Done | `vesopa-epos-store.msix`, 21,031,053 bytes, Identity Version 1.6.8.0 |
 | T29 | Store release notes, three apps | 4 | Done | `notes-1.6.8.0-epos.txt`, 1,376 characters, the venue's shape, checked by `src/release-notes.js` |
-| T30 | Upload and publish submissions | 4 | Done | submission 1152921505701835902 committed; blob read back byte for byte; status Certification, targetPublishMode Immediate |
+| T30 | Upload and publish submissions | 4 | Done | submission 1152921505701835902 committed and **published** — venues have 1.6.8.0 |
 
 ## Corrections to the plan, found while executing it
 
@@ -168,6 +168,14 @@ or measuring the running site rather than by thinking harder about the brief.
     tense error. Every finding was read back in context before anything was
     changed, which is the only reason that one did not get "corrected" into a
     mistake.
+
+11. **`flutter test` at the default concurrency invents failures on this
+    machine.** A full run reported four beyond the three known ones —
+    `card_sign_on_test.dart` failing to *load*, three clock-punch tests "did
+    not complete" — and every one of them passed when its file was run alone.
+    `--concurrency=2` removes them outright and is twice as fast: 825 tests in
+    1m12s with exactly the three known failures, against 2m22s and four
+    phantoms. Any run whose result is going to be believed should use it.
 
 ## Decisions taken for the client
 
