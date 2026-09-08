@@ -1,0 +1,21 @@
+{
+  "name": "ms-store-submission-client",
+  "version": "1.0.0",
+  "description": "Reusable Node.js client for the Microsoft Store submission API (Partner Center) covering Vesopa EPOS, Vesopa Display, and Vesopa Kitchen.",
+  "type": "module",
+  "main": "src/client.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "cli": "node src/cli.js",
+    "list-apps": "node examples/list-apps.js",
+    "create-submission": "node examples/create-submission.js"
+  },
+  "dependencies": {
+    "archiver": "^7.0.1",
+    "dotenv": "^16.4.5"
+  },
+  "license": "UNLICENSED",
+  "private": true
+}

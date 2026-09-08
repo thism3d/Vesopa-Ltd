@@ -1,0 +1,97 @@
+{
+	"id": "0887a3b0-36bc-45ec-af3d-7b81ba3893a2",
+	"deletedDateTime": null,
+	"appId": "6ef0452e-04ea-4f22-b580-6a93534978f6",
+	"applicationTemplateId": null,
+	"disabledByMicrosoftStatus": null,
+	"createdByAppId": "18ed3507-a475-4ccb-b669-d66bc9f2a36e",
+	"createdDateTime": "2026-09-08T02:05:31Z",
+	"displayName": " VesopaEPOS",
+	"description": null,
+	"groupMembershipClaims": null,
+	"identifierUris": [],
+	"isDeviceOnlyAuthSupported": null,
+	"isDisabled": null,
+	"isFallbackPublicClient": true,
+	"nativeAuthenticationApisEnabled": null,
+	"notes": null,
+	"publisherDomain": "vesopaepos.com",
+	"serviceManagementReference": null,
+	"signInAudience": "AzureADandPersonalMicrosoftAccount",
+	"tags": [],
+	"tokenEncryptionKeyId": null,
+	"samlMetadataUrl": null,
+	"defaultRedirectUri": null,
+	"certification": null,
+	"optionalClaims": null,
+	"requestSignatureVerification": null,
+	"addIns": [],
+	"api": {
+		"acceptMappedClaims": null,
+		"knownClientApplications": [],
+		"requestedAccessTokenVersion": 2,
+		"oauth2PermissionScopes": [],
+		"preAuthorizedApplications": []
+	},
+	"appRoles": [],
+	"info": {
+		"logoUrl": "https://aadcdn.msftauthimages.net/c1c6b6c8-videp98fxc-skltsyvjfu-l2kyzp1ypxo-0n5jmtdsk/appbranding/ym5hrla7altc5tqvkwt21oucfgwryslrjl-t8f-wfik/1033/bannerlogo?ts=639244313785302158",
+		"marketingUrl": null,
+		"privacyStatementUrl": null,
+		"supportUrl": null,
+		"termsOfServiceUrl": null
+	},
+	"keyCredentials": [],
+	"parentalControlSettings": {
+		"countriesBlockedForMinors": [],
+		"legalAgeGroupRule": "Allow"
+	},
+	"passwordCredentials": [],
+	"publicClient": {
+		"redirectUris": []
+	},
+	"requiredResourceAccess": [
+		{
+			"resourceAppId": "00000003-0000-0000-c000-000000000000",
+			"resourceAccess": [
+				{
+					"id": "e1fe6dd8-ba31-4d61-89e7-88639da4683d",
+					"type": "Scope"
+				}
+			]
+		}
+	],
+	"verifiedPublisher": {
+		"displayName": null,
+		"verifiedPublisherId": null,
+		"addedDateTime": null
+	},
+	"web": {
+		"homePageUrl": null,
+		"logoutUrl": null,
+		"redirectUris": [
+			"http://localhost:12345"
+		],
+		"implicitGrantSettings": {
+			"enableAccessTokenIssuance": true,
+			"enableIdTokenIssuance": true
+		},
+		"redirectUriSettings": [
+			{
+				"uri": "http://localhost:12345",
+				"index": null
+			}
+		]
+	},
+	"servicePrincipalLockConfiguration": {
+		"isEnabled": false,
+		"allProperties": false,
+		"credentialsWithUsageVerify": false,
+		"credentialsWithUsageSign": false,
+		"identifierUris": false,
+		"tokenEncryptionKeyId": false
+	},
+	"spa": {
+		"redirectUris": []
+	}
+}

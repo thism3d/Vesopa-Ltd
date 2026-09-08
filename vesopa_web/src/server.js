@@ -258,6 +258,10 @@ app.use(
     // /pricing must never be shadowed by a stray pricing.html.
     extensions: false,
     index: false,
+    // Express ignores dotfiles by default, which would 404 the domain
+    // verification files (.well-known/microsoft-identity-association.json,
+    // apple-app-site-association, ACME challenges, ...) this directory holds.
+    dotfiles: 'allow',
   })
 );
 
