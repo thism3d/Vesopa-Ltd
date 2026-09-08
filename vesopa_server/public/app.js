@@ -70,6 +70,15 @@ function setTheme(choice) {
     // Not remembered, but still applied for this session.
   }
   applyTheme(choice);
+
+  // Redraw whatever is on screen. The charts are SVG with the series colour
+  // baked into each stroke, and they resolve `--chart-1` … `--chart-8` at draw
+  // time — so a page drawn in Day and then switched to Night keeps the Day
+  // greens on a near-black card until something else happens to re-render it.
+  // Guarded on `token`, because the switch is also on the sign-in page, where
+  // there is no view to render. Reachable only from a click, so `token` is
+  // long past its declaration by the time this runs.
+  if (token) render();
 }
 
 applyTheme(readTheme());
@@ -387,7 +396,14 @@ function show(view, { push = true, userInitiated = false } = {}) {
   if (push && location.pathname !== path) {
     history.pushState({ view }, '', path);
   }
-  document.title = `Vesopa EPOS — ${view.replace(/_/g, ' ')}`;
+  // Named by the rail rather than by the view key. The key is a variable name
+  // — `run_report`, `dinein_qr` — and a browser tab reading "Vesopa EPOS —
+  // dinein qr" is the internals leaking into the one place a manager keeps
+  // several of these open at once.
+  const tab = document.querySelector(`.nav[data-view="${view}"]`);
+  document.title = `Vesopa EPOS — ${
+    tab ? tab.textContent.trim() : view.replace(/_/g, ' ')
+  }`;
 
   document.querySelectorAll('.view').forEach((v) => (v.hidden = true));
   $(`view-${view}`).hidden = false;
@@ -439,12 +455,35 @@ function navItemsFor(heading) {
   return items;
 }
 
-function applyGroupState(heading, collapsed) {
+/**
+ * Where the operator's own fold choices are kept.
+ *
+ * Version 2 of the key, deliberately. Until 1.6.8.0 three of the seven groups
+ * started open, and every browser that has ever been used has a v1 preference
+ * saved that says so. A saved choice wins over the default — which is right,
+ * and which would also mean that "start every group closed" reached nobody who
+ * had ever pressed a heading. A new key hands everybody the new behaviour once
+ * and then remembers what they do next.
+ */
+const NAV_OPEN_KEY = 'vesopa_nav_open_v2';
+
+/**
+ * Fold or unfold one group.
+ *
+ * `remember` is false when the state is not the operator's decision — the
+ * opening of whichever group holds the current page. Saving that would turn
+ * "you are looking at Products" into "you always want Catalogue open", and a
+ * week of ordinary use would leave every group open again, which is the thing
+ * the venue asked to be rid of.
+ */
+function applyGroupState(heading, collapsed, { remember = true } = {}) {
   heading.classList.toggle('collapsed', collapsed);
   navItemsFor(heading).forEach((n) => n.classList.toggle('hidden-by-group', collapsed));
-  const open = JSON.parse(localStorage.getItem('vesopa_nav_open') || '{}');
+  heading.setAttribute('aria-expanded', String(!collapsed));
+  if (!remember) return;
+  const open = JSON.parse(localStorage.getItem(NAV_OPEN_KEY) || '{}');
   open[heading.dataset.group] = !collapsed;
-  localStorage.setItem('vesopa_nav_open', JSON.stringify(open));
+  localStorage.setItem(NAV_OPEN_KEY, JSON.stringify(open));
 }
 
 function toggleGroup(heading) {
@@ -452,22 +491,31 @@ function toggleGroup(heading) {
 }
 
 /**
- * Set the initial fold state. Bigger sections start minimised so the rail is
- * short and scannable; the operator's own choices (saved above) win over the
- * defaults, and whichever group holds the current view is always opened.
+ * Set the initial fold state.
+ *
+ * **Every group starts closed**, at the venue's request: "default the back
+ * office navigation so all the sub pages are hidden and only displaying the
+ * header until clicked to show submenu". Seven headings fit on any screen
+ * without scrolling, which forty-nine items never did — the rail used to run
+ * off the bottom under the Hide menu footer, and the last two sections were
+ * only reachable by scrolling a column nobody expects to scroll.
+ *
+ * Two things still override the default: an operator's own saved choices, and
+ * the group holding the page they are looking at, which is never hidden.
  */
 function initNavGroups() {
-  const defaultCollapsed = ['programming', 'people', 'administration'];
-  const saved = JSON.parse(localStorage.getItem('vesopa_nav_open') || '{}');
+  const saved = JSON.parse(localStorage.getItem(NAV_OPEN_KEY) || '{}');
 
   document.querySelectorAll('.nav-group').forEach((heading) => {
     const g = heading.dataset.group;
-    let collapsed = g in saved ? !saved[g] : defaultCollapsed.includes(g);
-    // Never hide the section the user is currently looking at.
-    if (navItemsFor(heading).some((n) => n.dataset.view === currentView)) {
-      collapsed = false;
-    }
-    applyGroupState(heading, collapsed);
+    const chosen = g in saved ? !saved[g] : true;
+    // Never hide the section the user is currently looking at — but do not
+    // record that as a choice they made.
+    const holdsCurrent = navItemsFor(heading)
+      .some((n) => n.dataset.view === currentView);
+    applyGroupState(heading, holdsCurrent ? false : chosen, {
+      remember: !holdsCurrent,
+    });
   });
 }
 
@@ -565,14 +613,71 @@ const CRUD = {
         ? iconBtn('tune', 'Edit the answers', `data-edit-answers="${r.screen_id}"`)
         : '',
   },
+  /**
+   * Mix & Match deals, and — new in 1.6.8.0 — which products are in one.
+   *
+   * "Instead of using PLU numbers can this be set to select products from a
+   * drop down list with a search function." Worth saying what was actually
+   * there: `bo_mix_match_products` has existed since the first schema and the
+   * till has always read it, but the back office has never written it. There
+   * was no PLU box to replace — the deals on the live database were populated
+   * by hand — so this is the first way a venue can say what a deal is *for*.
+   *
+   * `plu_ids` is not a column on `bo_mix_match`; it is a second table, saved
+   * by `afterSave` once the deal has an id. That is also why it is hidden from
+   * the table: `extraColumns` shows the count instead, which is the part
+   * anybody scanning the list wants.
+   */
   'mix-match': {
     path: 'mix-match', title: 'deal', sortable: true,
     fields: [
       { name: 'name', label: 'Deal name', required: true },
       { name: 'trigger_qty', label: 'Trigger quantity', type: 'number' },
       { name: 'deal_price_minor', label: 'Deal price (£)', type: 'money' },
+      {
+        name: 'plu_ids',
+        label: 'Products in this deal',
+        type: 'products',
+        hideInTable: true,
+        hint: 'Search by name or PLU. The deal fires when the trigger quantity '
+          + 'of any of these is on one bill.',
+      },
       { name: 'active', label: 'Active', type: 'checkbox', render: yesNo },
     ],
+    extraColumns: [
+      {
+        // Zero is the number worth spotting: a deal with no products never
+        // fires, and until 1.6.8.0 there was no way to see that from here.
+        cell: (r) =>
+          Number(r.product_count)
+            ? `${r.product_count} product${Number(r.product_count) === 1 ? '' : 's'}`
+            : '<span class="badge archived" title="No products chosen, so this deal never fires on the till.">no products</span>',
+      },
+    ],
+    /**
+     * The catalogue, fetched when the form opens rather than with the page.
+     * The Mix & Match list itself has no use for four hundred products, and a
+     * venue looking at four deals should not pay for them.
+     */
+    choices: async () => {
+      crudProductChoices = await api('/products');
+    },
+    /** The deal's products, fetched when the form opens. */
+    prefill: async (row) =>
+      row?.id
+        ? {
+            plu_ids: (await api(`/mix-match/${row.id}/products`))
+              .map((p) => String(p.plu_id)),
+          }
+        : { plu_ids: [] },
+    /** The second table, written once the deal has an id. */
+    afterSave: async (id, data) =>
+      api(`/mix-match/${id}/products`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          plu_ids: [].concat(data.plu_ids || []).map(Number).filter(Number.isFinite),
+        }),
+      }),
   },
   'finalise-keys': {
     path: 'finalise-keys', title: 'finalise key', sortable: true,
@@ -678,7 +783,15 @@ function cellText(field, value) {
  *
  * `wireImagePickers` has to be called on whatever contains it.
  */
-function imagePicker(name, value, { crop = 'square', label = 'Choose a picture' } = {}) {
+function imagePicker(name, value, {
+  crop = 'square',
+  label = 'Choose a picture',
+  // Where the file goes. Product images and venue logos share one route;
+  // a photograph of a person has its own, because a venue has to be able to
+  // find, replace and delete those on request and the two should be separable
+  // later without rewriting every URL in the database.
+  endpoint = '/api/product-image',
+} = {}) {
   const has = !!(value && String(value).trim());
   return `
     <input type="hidden" name="${esc(name)}" id="${esc(name)}" value="${esc(value ?? '')}" />
@@ -688,7 +801,8 @@ function imagePicker(name, value, { crop = 'square', label = 'Choose a picture' 
         <label class="btn small filepick-btn">
           <span>${esc(has ? 'Replace' : label)}</span>
           <input type="file" accept="image/*"
-                 data-upload-for="${esc(name)}" data-crop-shape="${esc(crop)}" />
+                 data-upload-for="${esc(name)}" data-crop-shape="${esc(crop)}"
+                 data-upload-to="${esc(endpoint)}" />
         </label>
         <button type="button" class="btn small ghost" data-img-clear="${esc(name)}"
                 ${has ? '' : 'hidden'}>Remove</button>
@@ -735,7 +849,7 @@ function wireImagePickers(root) {
       const body = new FormData();
       body.append('image', blob, 'image.png');
       try {
-        const res = await fetch('/api/product-image', {
+        const res = await fetch(input.dataset.uploadTo || '/api/product-image', {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}` },
           body,
@@ -934,12 +1048,25 @@ async function loadCrud(key) {
  * Build the modal fields for a CRUD row, prefilled from `row` on edit.
  * Money fields store pence but edit in pounds, so they convert both ways.
  */
+/**
+ * The catalogue, for a picker that chooses products inside a CRUD form.
+ *
+ * Module-level rather than passed through, because `fieldHtml` renders from a
+ * field description alone and the alternative is threading a products array
+ * through four call sites that have no other use for one. Filled by a config's
+ * `choices()` hook immediately before the form is built.
+ */
+let crudProductChoices = [];
+
 function crudModalFields(cfg, row = {}) {
   return cfg.fields.map((f) => {
     let value = row[f.name];
     if (f.type === 'money' && value != null) value = (Number(value) / 100).toFixed(2);
     if (f.type === 'checkbox') value = Number(value) ? 1 : 0;
     if (f.type === 'date' && value) value = String(value).slice(0, 10);
+    if (f.type === 'products') {
+      return { ...f, options: crudProductChoices, value: value ?? [] };
+    }
     return { ...f, value: value ?? (f.type === 'checkbox' ? 0 : '') };
   });
 }
@@ -1663,6 +1790,11 @@ let productsBound = false;
 /// does not lose them because somebody else saved a price.
 let productPicks = new Set();
 
+/// The last row whose box was clicked, which is where a shift-click measures
+/// from. Null until something has been picked, and left alone by the header's
+/// select-all — "everything" has no end to hold a range against.
+let pickAnchor = null;
+
 // What the product form's list boxes are built from: the departments, sub
 // departments and VAT rates this venue has already set up. Fetched beside the
 // catalogue rather than when the form opens, so picking a department is a
@@ -1816,8 +1948,59 @@ function bindProducts() {
       const id = String(pick.dataset.pick);
       if (pick.checked) productPicks.add(id);
       else productPicks.delete(id);
+      pickAnchor = id;
       renderBulkBar();
     }
+  });
+
+  /**
+   * Shift-click picks everything between the last box and this one.
+   *
+   * "Select the first and last product and everything in between" — the venue
+   * asked for it because the alternative on a 400-product catalogue is 400
+   * clicks, and because every other list they use works this way.
+   *
+   * Three things worth knowing:
+   *
+   * * It runs on `click`, not on `change`. A `change` event is not a mouse
+   *   event and carries no `shiftKey`, so the modifier is simply not there to
+   *   read by then.
+   * * The range follows **what is on screen** — `visibleProducts()`, in the
+   *   order it is drawn, after the search, the department filter and whatever
+   *   column the manager has sorted by. Walking `productRows` instead would
+   *   tick rows that are not in front of them, which they would find out about
+   *   at the point of pressing Edit.
+   * * The whole range takes the state of the box just clicked, so a shift-click
+   *   on an unticked box de-selects a range as readily as it selects one.
+   *
+   * Selecting text is suppressed for the gesture: holding shift and clicking
+   * twice in a table otherwise highlights every product name in between, and
+   * the row of blue then survives the re-render.
+   */
+  table.addEventListener('click', (e) => {
+    const pick = e.target.closest('[data-pick]');
+    if (!pick) return;
+    const id = String(pick.dataset.pick);
+
+    if (e.shiftKey && pickAnchor && pickAnchor !== id) {
+      const order = visibleProducts().map((r) => String(r.id));
+      const from = order.indexOf(pickAnchor);
+      const to = order.indexOf(id);
+      // The anchor can have been filtered away since it was clicked. Falling
+      // back to the single tick is right: there is no range to a row that is
+      // not on the screen.
+      if (from !== -1 && to !== -1) {
+        const span = from < to ? order.slice(from, to + 1) : order.slice(to, from + 1);
+        for (const rowId of span) {
+          if (pick.checked) productPicks.add(rowId);
+          else productPicks.delete(rowId);
+        }
+        window.getSelection?.()?.removeAllRanges();
+        renderProducts();
+        renderBulkBar();
+      }
+    }
+    pickAnchor = id;
   });
 
   // Enter commits and moves on rather than submitting anything — there is no
@@ -1844,6 +2027,7 @@ function bindProducts() {
 
   $('prod-bulk-clear').addEventListener('click', () => {
     productPicks.clear();
+    pickAnchor = null;
     renderProducts();
     renderBulkBar();
   });
@@ -2455,13 +2639,114 @@ function discountLabel(c) {
   return '—';
 }
 
+// ---- Customers -------------------------------------------------------------
+//
+// Held in the browser between renders, exactly as the catalogue is: the whole
+// list is already in hand, so filtering and picking cost nothing, and a socket
+// push does not throw away a selection somebody is halfway through making.
+
+let customerRows = [];
+let customerQuery = '';
+let customerFilter = '';
+let customerPicks = new Set();
+let customerAnchor = null;
+let customersBound = false;
+
+/** Today, as the same YYYY-MM-DD text the server sends an expiry in. */
+function todayText() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** The customers on screen, after the search box and the membership filter. */
+function visibleCustomers() {
+  const today = todayText();
+  const soon = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 30);
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  })();
+
+  return customerRows.filter((c) => {
+    const expiry = c.membership_expiry ? String(c.membership_expiry).slice(0, 10) : null;
+    if (customerFilter === 'member' && !expiry) return false;
+    if (customerFilter === 'none' && expiry) return false;
+    if (customerFilter === 'lapsed' && !(expiry && expiry < today)) return false;
+    if (customerFilter === 'soon'
+        && !(expiry && expiry >= today && expiry <= soon)) return false;
+
+    if (!customerQuery) return true;
+    return [c.name, c.phone, c.email, c.card_number, c.member_no]
+      .some((v) => String(v ?? '').toLowerCase().includes(customerQuery));
+  });
+}
+
+/** The "N selected" bar, shown only when there is a selection to act on. */
+function renderCustomerBulkBar() {
+  const bar = $('cust-bulk');
+  if (!bar) return;
+  const n = customerPicks.size;
+  bar.hidden = n === 0;
+  $('cust-bulk-count').textContent = `${n} selected`;
+}
+
+/**
+ * A face, or the initials to stand in for one.
+ *
+ * The initials are not decoration. A venue that has photographed half its
+ * members needs to see at a glance which half, and an empty cell reads as a
+ * column that is not working.
+ */
+function customerAvatar(c) {
+  if (c.photo_url) {
+    return `<img class="cust-face" src="${esc(c.photo_url)}" alt=""
+                 title="Shown on the till when this member is scanned" />`;
+  }
+  const initials = String(c.name || '?')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0].toUpperCase())
+    .join('');
+  return `<span class="cust-face cust-face-none" aria-hidden="true">${esc(initials || '?')}</span>`;
+}
+
 async function loadCustomers() {
-  const rows = await api('/customers');
+  customerRows = await api('/customers');
+  bindCustomers();
+  renderCustomers();
+}
+
+function renderCustomers() {
+  const rows = visibleCustomers();
+  const today = todayText();
+
+  // Picks for customers that have since been deleted are dropped, so the bar
+  // cannot offer to edit rows that are not there.
+  const live = new Set(customerRows.map((r) => String(r.id)));
+  for (const id of [...customerPicks]) {
+    if (!live.has(id)) customerPicks.delete(id);
+  }
+  renderCustomerBulkBar();
+
+  const count = $('cust-count');
+  if (count) {
+    count.textContent = rows.length === customerRows.length
+      ? `${customerRows.length} customer${customerRows.length === 1 ? '' : 's'}`
+      : `${rows.length} of ${customerRows.length} customers`;
+  }
+
   $('customers').innerHTML = rows
     .map((c) => {
       const expiry = c.membership_expiry ? String(c.membership_expiry).slice(0, 10) : null;
-      const lapsed = expiry && expiry < new Date().toISOString().slice(0, 10);
-      return `<tr>
+      const lapsed = expiry && expiry < today;
+      return `<tr data-customer="${esc(String(c.id))}">
+        <td class="pick-col"><input type="checkbox" data-cust-pick="${esc(String(c.id))}"${
+          customerPicks.has(String(c.id)) ? ' checked' : ''
+        }></td>
+        <td class="cust-face-cell">${customerAvatar(c)}</td>
         <td>${esc(c.name)}</td>
         <td class="muted small">${c.card_number
           // The number on the stripe, and the membership number under it.
@@ -2485,7 +2770,146 @@ async function loadCustomers() {
         </td>
       </tr>`;
     })
-    .join('') || '<tr><td colspan="8" class="empty">No customers yet.</td></tr>';
+    .join('') || `<tr><td colspan="10" class="empty">${
+      customerRows.length ? 'No customers match that.' : 'No customers yet.'
+    }</td></tr>`;
+}
+
+/**
+ * Wire the customers page once. The table is redrawn on every filter and every
+ * socket push, so the listeners live on the containers rather than the rows.
+ */
+function bindCustomers() {
+  if (customersBound) return;
+  customersBound = true;
+
+  const table = $('customers');
+
+  table.addEventListener('change', (e) => {
+    const pick = e.target.closest('[data-cust-pick]');
+    if (!pick) return;
+    const id = String(pick.dataset.custPick);
+    if (pick.checked) customerPicks.add(id);
+    else customerPicks.delete(id);
+    customerAnchor = id;
+    renderCustomerBulkBar();
+  });
+
+  // Shift-click picks a range, the same gesture and the same rules as the
+  // catalogue: measured over what is on screen, and taking the state of the
+  // box just clicked. See the note on the Products table.
+  table.addEventListener('click', (e) => {
+    const pick = e.target.closest('[data-cust-pick]');
+    if (!pick) return;
+    const id = String(pick.dataset.custPick);
+    if (e.shiftKey && customerAnchor && customerAnchor !== id) {
+      const order = visibleCustomers().map((r) => String(r.id));
+      const from = order.indexOf(customerAnchor);
+      const to = order.indexOf(id);
+      if (from !== -1 && to !== -1) {
+        const span = from < to ? order.slice(from, to + 1) : order.slice(to, from + 1);
+        for (const rowId of span) {
+          if (pick.checked) customerPicks.add(rowId);
+          else customerPicks.delete(rowId);
+        }
+        window.getSelection?.()?.removeAllRanges();
+        renderCustomers();
+      }
+    }
+    customerAnchor = id;
+  });
+
+  $('cust-pick-all')?.addEventListener('change', (e) => {
+    // Every customer *shown*, not every customer. A manager who has filtered
+    // to "Expired" and ticks the header means those, and a select-all that
+    // quietly included everybody else would be found out at renewal time.
+    for (const row of visibleCustomers()) {
+      if (e.target.checked) customerPicks.add(String(row.id));
+      else customerPicks.delete(String(row.id));
+    }
+    renderCustomers();
+  });
+
+  $('cust-q')?.addEventListener('input', (e) => {
+    customerQuery = e.target.value.trim().toLowerCase();
+    renderCustomers();
+  });
+  $('cust-filter')?.addEventListener('change', (e) => {
+    customerFilter = e.target.value;
+    renderCustomers();
+  });
+  $('cust-clear')?.addEventListener('click', () => {
+    customerQuery = '';
+    customerFilter = '';
+    $('cust-q').value = '';
+    $('cust-filter').value = '';
+    renderCustomers();
+  });
+
+  $('cust-bulk-clear')?.addEventListener('click', () => {
+    customerPicks.clear();
+    customerAnchor = null;
+    renderCustomers();
+  });
+
+  $('cust-bulk-expiry')?.addEventListener('click', bulkCustomerExpiry);
+}
+
+/**
+ * Put one expiry date on every picked customer.
+ *
+ * "Please allow a mass edit of customers so we can set expiry dates easier."
+ * A blank date is a real answer and clears the membership — which is the other
+ * half of what a venue does at renewal time, to the people who did not renew —
+ * so it asks for confirmation rather than treating an empty box as a mistake.
+ */
+async function bulkCustomerExpiry() {
+  const ids = [...customerPicks];
+  if (!ids.length) return;
+
+  const names = customerRows
+    .filter((c) => ids.includes(String(c.id)))
+    .map((c) => c.name);
+  const listed = names.slice(0, 3).join(', ')
+    + (names.length > 3 ? ` and ${names.length - 3} more` : '');
+
+  return modal(
+    `Membership for ${ids.length} customer${ids.length === 1 ? '' : 's'}`,
+    [
+      {
+        name: 'membership_expiry',
+        label: 'Expires on',
+        type: 'date',
+        value: '',
+        hint: `${listed}. Leave the date empty to take the membership off all `
+          + 'of them.',
+      },
+    ],
+    async (d) => {
+      const expiry = d.membership_expiry || '';
+      if (!expiry && !(await confirmDialog(
+        `This takes the membership off ${ids.length} customer`
+          + `${ids.length === 1 ? '' : 's'}. Their cards stop working at the till.`,
+        { title: 'Clear the expiry?', confirmLabel: 'Clear it', danger: true }
+      ))) return;
+
+      const res = await api('/customers/bulk', {
+        method: 'PATCH',
+        body: JSON.stringify({ ids, fields: { membership_expiry: expiry || null } }),
+      });
+      // The rows in hand are updated rather than re-fetched, so the badges move
+      // on the same frame and a filtered view does not jump.
+      for (const c of customerRows) {
+        if (ids.includes(String(c.id))) c.membership_expiry = expiry || null;
+      }
+      renderCustomers();
+      toast(
+        expiry
+          ? `${res.updated} customer${res.updated === 1 ? '' : 's'} now expire on ${date(expiry)}.`
+          : `${res.updated} membership${res.updated === 1 ? '' : 's'} cleared.`
+      );
+    }
+  );
 }
 
 // ---- Admin ----------------------------------------------------------------
@@ -3509,7 +3933,10 @@ function fieldHtml(f) {
     </span>`;
   }
   if (f.type === 'image') {
-    return imagePicker(f.name, f.value, { crop: f.crop || 'square' });
+    return imagePicker(f.name, f.value, {
+      crop: f.crop || 'square',
+      endpoint: f.endpoint || '/api/product-image',
+    });
   }
   if (f.type === 'modifiers') {
     // An ordered list, not a set of tick boxes, because the order is the
@@ -3556,6 +3983,57 @@ function fieldHtml(f) {
         ? ''
         : '<p class="muted small">No modifier groups yet — make one under Programming › Modifiers.</p>'}
       <template data-mod-template>${f.options.map((o) => rowFor(o.id)).join('')}</template>
+    </div>`;
+  }
+  if (f.type === 'products') {
+    // Pick products by searching for them.
+    //
+    // "Instead of using PLU numbers can this be set to select products from a
+    // drop down list with a search function." Not a <select>, deliberately: a
+    // venue has several hundred products and the answer is a *set* of them, so
+    // a multiple-select would be a scrolling box in which the operator has to
+    // hold ctrl to keep what they already chose. A search box over a filtered
+    // list of tick boxes is the control people actually mean when they say
+    // "drop down with a search".
+    //
+    // The value is carried by one hidden input per chosen PLU, exactly as the
+    // modifier picker does, so the form submits the list without anything
+    // having to be kept in step with the DOM. Everything the search does is
+    // hide and show rows; nothing about the value moves when a filter changes,
+    // which is what stops a search wiping the choices made before it.
+    const chosen = new Set([].concat(f.value || []).map(String));
+    const all = f.options || [];
+    return `<div class="pp-field" data-product-field data-name="${esc(f.name)}">
+      <input type="search" class="pp-search" data-pp-search
+             placeholder="Search by name or PLU" autocomplete="off" />
+      <div class="pp-chosen" data-pp-chosen>
+        ${[...chosen].map((plu) => {
+          const p = all.find((o) => String(o.pluid) === plu);
+          return `<span class="pp-chip" data-pp-chip="${esc(plu)}">
+            <input type="hidden" name="${esc(f.name)}" value="${esc(plu)}" />
+            ${esc(p ? p.product_name : `PLU ${plu}`)}
+            <button type="button" class="pp-x" data-pp-remove="${esc(plu)}"
+                    aria-label="Remove">✕</button>
+          </span>`;
+        }).join('')}
+      </div>
+      <p class="pp-empty muted small"${chosen.size ? ' hidden' : ''}>
+        Nothing chosen yet — this deal will never fire on the till.
+      </p>
+      <ul class="pp-list" data-pp-list>
+        ${all.map((p) => `<li class="pp-row" data-pp-plu="${esc(String(p.pluid))}"
+              data-pp-hay="${esc(`${p.product_name || ''} ${p.pluid}`.toLowerCase())}"
+              ${chosen.has(String(p.pluid)) ? 'data-pp-on' : ''}>
+          <label>
+            <input type="checkbox" ${chosen.has(String(p.pluid)) ? 'checked' : ''} />
+            <span class="pp-name">${esc(p.product_name || `PLU ${p.pluid}`)}</span>
+            <span class="pp-meta muted small">${esc(String(p.pluid))}${
+              p.department_name ? ` · ${esc(p.department_name)}` : ''
+            }</span>
+          </label>
+        </li>`).join('')}
+      </ul>
+      ${all.length ? '' : '<p class="muted small">No products in the catalogue yet.</p>'}
     </div>`;
   }
   if (f.type === 'allergens') {
@@ -4019,6 +4497,64 @@ function modal(title, fields, onSubmit) {
         if (row.nextElementSibling) {
           list.insertBefore(row.nextElementSibling, row);
         }
+      }
+    });
+  });
+
+  // The product picker: search, tick, chip. Everything it does is add or
+  // remove one hidden input, because those inputs *are* the value — see the
+  // note in fieldHtml.
+  root.querySelectorAll('[data-product-field]').forEach((field) => {
+    const name = field.dataset.name;
+    const chips = field.querySelector('[data-pp-chosen]');
+    const list = field.querySelector('[data-pp-list]');
+    const empty = field.querySelector('.pp-empty');
+
+    const refreshEmpty = () => {
+      if (empty) empty.hidden = chips.children.length > 0;
+    };
+
+    const label = (plu) => {
+      const row = list.querySelector(`[data-pp-plu="${CSS.escape(plu)}"] .pp-name`);
+      return row ? row.textContent : `PLU ${plu}`;
+    };
+
+    const add = (plu) => {
+      if (chips.querySelector(`[data-pp-chip="${CSS.escape(plu)}"]`)) return;
+      const chip = document.createElement('span');
+      chip.className = 'pp-chip';
+      chip.dataset.ppChip = plu;
+      chip.innerHTML =
+        `<input type="hidden" name="${esc(name)}" value="${esc(plu)}" />` +
+        `${esc(label(plu))}<button type="button" class="pp-x" ` +
+        `data-pp-remove="${esc(plu)}" aria-label="Remove">✕</button>`;
+      chips.appendChild(chip);
+      refreshEmpty();
+    };
+
+    const remove = (plu) => {
+      chips.querySelector(`[data-pp-chip="${CSS.escape(plu)}"]`)?.remove();
+      const box = list.querySelector(`[data-pp-plu="${CSS.escape(plu)}"] input`);
+      if (box) box.checked = false;
+      refreshEmpty();
+    };
+
+    list.addEventListener('change', (e) => {
+      const row = e.target.closest('[data-pp-plu]');
+      if (!row) return;
+      if (e.target.checked) add(row.dataset.ppPlu);
+      else remove(row.dataset.ppPlu);
+    });
+
+    chips.addEventListener('click', (e) => {
+      const plu = e.target.closest('[data-pp-remove]')?.dataset.ppRemove;
+      if (plu) remove(plu);
+    });
+
+    field.querySelector('[data-pp-search]')?.addEventListener('input', (e) => {
+      const q = e.target.value.trim().toLowerCase();
+      for (const row of list.children) {
+        row.hidden = q ? !row.dataset.ppHay.includes(q) : false;
       }
     });
   });
@@ -4573,12 +5109,21 @@ document.addEventListener('click', async (e) => {
   }
   if (t.dataset.add) {
     const cfg = CRUD[t.dataset.add];
-    return modal(`Add ${cfg.title}`, crudModalFields(cfg), (d) =>
-      api(`/${cfg.path}`, {
+    if (cfg.choices) await cfg.choices();
+    const seed = cfg.prefill ? await cfg.prefill(null) : {};
+    return modal(`Add ${cfg.title}`, crudModalFields(cfg, seed), async (d) => {
+      const created = await api(`/${cfg.path}`, {
         method: 'POST',
         body: JSON.stringify(crudPayload(cfg, d)),
-      })
-    );
+      });
+      // Anything kept in a second table is written after the row exists,
+      // because it is keyed by the id the insert has just handed back. A deal
+      // and its products cannot be saved in one request without the CRUD
+      // factory knowing about join tables, which is a much larger change for
+      // one screen.
+      if (cfg.afterSave && created?.id) await cfg.afterSave(created.id, d);
+      return created;
+    });
   }
   // A modifier group's answers are a grid of buttons, so they are laid out in
   // the screen editor rather than in a form of their own. The editor cannot be
@@ -4605,12 +5150,16 @@ document.addEventListener('click', async (e) => {
     const rows = await api(`/${cfg.path}`);
     const row = rows.find((r) => String(r.id) === String(t.dataset.id));
     if (!row) return;
-    return modal(`Edit ${cfg.title}`, crudModalFields(cfg, row), (d) =>
-      api(`/${cfg.path}/${row.id}`, {
+    if (cfg.choices) await cfg.choices();
+    const full = cfg.prefill ? { ...row, ...(await cfg.prefill(row)) } : row;
+    return modal(`Edit ${cfg.title}`, crudModalFields(cfg, full), async (d) => {
+      const saved = await api(`/${cfg.path}/${row.id}`, {
         method: 'PUT',
         body: JSON.stringify(crudPayload(cfg, d)),
-      })
-    );
+      });
+      if (cfg.afterSave) await cfg.afterSave(row.id, d);
+      return saved;
+    });
   }
   if (t.id === 'ex-run') return loadExplorer();
 
@@ -4751,6 +5300,24 @@ document.addEventListener('click', async (e) => {
     { label: 'Discount value (% or pence)', name: 'discount_value', type: 'number', value: c.discount_value ?? 0 },
     { label: 'Loyalty points', name: 'points_balance', type: 'number', value: c.points_balance ?? 0 },
     { label: 'Membership expires (blank = none)', name: 'membership_expiry', type: 'date', value: c.membership_expiry ? String(c.membership_expiry).slice(0, 10) : '' },
+    // A face, cropped round, shown on the till the moment the card is scanned.
+    // "To confirm it's the right person" — a membership card is a bearer
+    // token, and without this the only check a venue has is whether somebody
+    // knows the name on it.
+    {
+      label: 'Photo',
+      name: 'photo_url',
+      type: 'image',
+      // Square, and rounded off by whatever draws it. `CROP_SHAPES` has no
+      // circle — a circular crop would only mean storing a square with the
+      // corners thrown away, which is worse for anything that later wants the
+      // whole face.
+      crop: 'square',
+      endpoint: '/api/customer-photo',
+      value: c.photo_url ?? '',
+      hint: 'Shown on the till when this member is scanned, so staff can see '
+        + 'they are serving the right person.',
+    },
     { label: 'Notes', name: 'notes', value: c.notes ?? '' },
   ];
   const customerPayload = (d) => ({
@@ -5372,8 +5939,8 @@ async function start() {
   // reopens where the user left off.
   show(viewForPath(location.pathname), { push: false });
 
-  // Fold the rail's bigger sections once the current view is known, so the
-  // group holding it is left open.
+  // Fold the rail once the current view is known, so the group holding it is
+  // the one section left open.
   initNavGroups();
 }
 
@@ -5708,7 +6275,7 @@ async function loadDashboardAnalytics() {
   Charts.bar($('dash-hourly'), (data.hourly || []).map((h) => ({
     label: `${String(h.hour).padStart(2, '0')}`,
     value: h.gross_minor,
-  })), { colour: '#4361ee' });
+  })), { colour: 'var(--chart-2)' });
 
   Charts.donut($('dash-tenders'), (data.tenders || []).map((x) => ({
     label: tenderLabel(x.method),
@@ -5724,14 +6291,14 @@ async function loadDashboardAnalytics() {
   Charts.ranked($('dash-departments'), (data.departments || []).map((x) => ({
     label: x.department,
     value: x.gross_minor,
-  })), { colour: '#4cc9f0' });
+  })), { colour: 'var(--chart-4)' });
 
   // MySQL DAYOFWEEK is 1=Sunday.
   const DOW = ['', 'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   Charts.bar($('dash-weekday'), (data.weekday || []).map((w) => ({
     label: DOW[w.dow] || String(w.dow),
     value: w.gross_minor,
-  })), { colour: '#7209b7' });
+  })), { colour: 'var(--chart-5)' });
 
   const l = data.liabilities || {};
   const s = data.stock || {};
@@ -5827,7 +6394,7 @@ async function loadPromotions() {
       label: p.name,
       value: p.discount_minor,
       meta: `${p.uses} uses`,
-    })), { colour: '#f72585' });
+    })), { colour: 'var(--chart-6)' });
   } catch { /* chart is a nicety; the table is the page */ }
 }
 
@@ -6153,13 +6720,13 @@ async function loadLoyalty() {
       Object.entries(byDay).map(([day, v]) => ({
         label: shortDate(day), value: v.earn,
       })),
-      { colour: '#06d6a0', format: (v) => `${v} pts` });
+      { colour: 'var(--chart-4)', format: (v) => `${v} pts` });
 
     Charts.ranked($('loyalty-top'), (stats.top_customers || []).map((c) => ({
       label: c.name || 'Guest',
       value: c.lifetime_spend_minor,
       meta: `${c.points_balance} pts${c.tier_name ? ` · ${c.tier_name}` : ''}`,
-    })), { limit: 8, colour: '#4361ee' });
+    })), { limit: 8, colour: 'var(--chart-2)' });
 
     const totals = (stats.tiers || []).reduce((s, t) => s + Number(t.customers || 0), 0);
     const points = (stats.tiers || []).reduce((s, t) => s + Number(t.points || 0), 0);

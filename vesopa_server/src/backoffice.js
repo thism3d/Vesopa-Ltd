@@ -949,6 +949,24 @@ function backofficeRoutes({ pool, broadcast, secret }) {
     }
   );
 
+  /**
+   * Upload a customer's photograph; returns the URL to store on the customer.
+   *
+   * A route of its own rather than a second caller of `/product-image`, and
+   * that is worth a sentence: they are the same upload today, and they are not
+   * the same *thing*. One is a picture of a burger and the other is a
+   * photograph of a person, which a venue has to be able to find, replace and
+   * delete on request — so the two want to be separable later without a
+   * migration of every URL in the database.
+   */
+  router.post('/customer-photo', auth, (req, res) => {
+    upload.single('image')(req, res, (err) => {
+      if (err) return res.status(400).json({ error: err.message });
+      if (!req.file) return res.status(400).json({ error: 'No file' });
+      res.status(201).json({ url: `/uploads/${req.file.filename}` });
+    });
+  });
+
   // Departments & groups are served by the programming router's CRUD factory
   // (with sort_order, edit and reorder). They used to have read-only handlers
   // here; removed so the fuller routes are not shadowed by mount order.
@@ -1538,18 +1556,31 @@ function backofficeRoutes({ pool, broadcast, secret }) {
 
       const params = q ? [email, q, q, q] : [email];
 
-      // `member_no` is added by schema_swipe_cards.sql, and deploy.ps1 applies
-      // the migrations only when it is asked to. So it is tried and fallen back
-      // from rather than assumed: naming a column that is not there yet is an
-      // error, not a degraded response, and it would take this whole page down
-      // for the sake of one extra field.
+      // `member_no` is added by schema_swipe_cards.sql and `photo_url` by
+      // schema_membership.sql, and deploy.ps1 applies the migrations only when
+      // it is asked to. So they are tried and fallen back from rather than
+      // assumed: naming a column that is not there yet is an error, not a
+      // degraded response, and it would take this whole page down for the sake
+      // of two extra fields.
+      //
+      // Narrowed one column at a time rather than dropping straight to the
+      // base set, because the two migrations are independent — a venue can
+      // easily have one and not the other, and an all-or-nothing fallback
+      // would throw away a field it actually has.
+      const ATTEMPTS = [
+        `${columns}, member_no, photo_url`,
+        `${columns}, member_no`,
+        `${columns}, photo_url`,
+        columns,
+      ];
       let rows;
-      try {
-        [rows] = await pool.query(
-          `SELECT ${columns}, member_no ${where}`, params);
-      } catch (e) {
-        if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
-        [rows] = await pool.query(`SELECT ${columns} ${where}`, params);
+      for (const select of ATTEMPTS) {
+        try {
+          [rows] = await pool.query(`SELECT ${select} ${where}`, params);
+          break;
+        } catch (e) {
+          if (e.code !== 'ER_BAD_FIELD_ERROR' || select === columns) throw e;
+        }
       }
       res.json(rows);
     } catch (e) {
@@ -1563,26 +1594,48 @@ function backofficeRoutes({ pool, broadcast, secret }) {
     try {
       const { randomUUID } = require('crypto');
       const id = c.id || randomUUID();
-      await pool.execute(
-        `INSERT INTO epos_customers
-           (id, email_key, name, phone, email, card_number,
-            discount_type, discount_value, points_balance,
-            membership_expiry, notes)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          id,
-          await tenantEmail(req),
-          c.name,
-          c.phone ?? null,
-          c.email ?? null,
-          c.card_number ?? null,
-          c.discount_type ?? 'none',
-          c.discount_value ?? 0,
-          c.points_balance ?? 0,
-          c.membership_expiry || null,
-          c.notes ?? null,
-        ]
-      );
+      const values = [
+        id,
+        await tenantEmail(req),
+        c.name,
+        c.phone ?? null,
+        c.email ?? null,
+        c.card_number ?? null,
+        c.discount_type ?? 'none',
+        c.discount_value ?? 0,
+        c.points_balance ?? 0,
+        c.membership_expiry || null,
+        c.notes ?? null,
+      ];
+      // `photo_url` arrives with schema_membership.sql, and the migrations are
+      // applied only when the deploy is asked to — so it is tried and fallen
+      // back from rather than assumed, exactly as `member_no` is on the list
+      // route above. Saving a customer is not a thing to lose for the sake of
+      // a field nobody has filled in yet.
+      //
+      // An empty string is a real instruction here: it is what the picker
+      // sends when a photograph has been removed, and it has to reach the
+      // database as NULL rather than as ''.
+      try {
+        await pool.execute(
+          `INSERT INTO epos_customers
+             (id, email_key, name, phone, email, card_number,
+              discount_type, discount_value, points_balance,
+              membership_expiry, notes, photo_url)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [...values, c.photo_url || null]
+        );
+      } catch (e) {
+        if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+        await pool.execute(
+          `INSERT INTO epos_customers
+             (id, email_key, name, phone, email, card_number,
+              discount_type, discount_value, points_balance,
+              membership_expiry, notes)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          values
+        );
+      }
       // Every member gets a number, whichever door they came in through. See
       // src/member_numbers.js for why this is not part of issuing a card.
       await ensureMemberNumber(pool, await tenantEmail(req), id);
@@ -1628,29 +1681,108 @@ function backofficeRoutes({ pool, broadcast, secret }) {
     }
   });
 
+  /**
+   * Set one field across a chosen list of customers.
+   *
+   * "Please allow a mass edit of customers so we can set expiry dates easier."
+   * A venue running a membership year renews two hundred people on the same
+   * date, and doing that through the edit form is two hundred modals.
+   *
+   * Deliberately narrow. It writes `membership_expiry` and nothing else: this
+   * is the one field a venue sets on a whole list at once, and every other
+   * column here — a name, a phone number, a points balance — describes one
+   * person and would be a mistake to write across a selection. The shape
+   * (`ids` plus `fields`) matches `PATCH /products/bulk` so a second field can
+   * be added later without changing the contract.
+   *
+   * Ids are UUIDs, not numbers: `epos_customers.id` is CHAR(36). They are
+   * matched as strings and scoped to the office in the same statement, so a
+   * crafted request cannot reach another venue's customers.
+   */
+  router.patch('/customers/bulk', auth, async (req, res, next) => {
+    try {
+      const office = await tenantEmail(req);
+      const ids = [...new Set(
+        (Array.isArray(req.body?.ids) ? req.body.ids : [])
+          .map((v) => String(v).trim())
+          .filter(Boolean)
+      )];
+      if (!ids.length) {
+        return res.status(400).json({ error: 'Choose some customers first.' });
+      }
+      // A cap, so a mistyped request cannot rewrite the whole customer book in
+      // one statement. The page selects what is on screen, which is 200 rows.
+      if (ids.length > 500) {
+        return res.status(400).json({ error: 'Too many customers in one edit.' });
+      }
+
+      const fields = req.body?.fields || {};
+      if (!('membership_expiry' in fields)) {
+        return res.status(400).json({ error: 'Nothing to change.' });
+      }
+
+      // Empty string and null both mean "no expiry", which is how a venue
+      // takes a date off a batch. Anything else has to be a real calendar date
+      // — `2026-02-30` parses in some places and is not a day.
+      const raw = fields.membership_expiry;
+      let expiry = null;
+      if (raw !== null && raw !== undefined && String(raw).trim() !== '') {
+        const text = String(raw).trim().slice(0, 10);
+        const parsed = /^\d{4}-\d{2}-\d{2}$/.test(text) ? new Date(`${text}T00:00:00Z`) : null;
+        if (!parsed || Number.isNaN(parsed.getTime())
+            || parsed.toISOString().slice(0, 10) !== text) {
+          return res.status(400).json({ error: 'That is not a date. Use YYYY-MM-DD.' });
+        }
+        expiry = text;
+      }
+
+      const [r] = await pool.execute(
+        `UPDATE epos_customers SET membership_expiry = ?
+          WHERE email_key = ? AND id IN (${ids.map(() => '?').join(',')})`,
+        [expiry, office, ...ids]
+      );
+
+      broadcast({ type: 'customers.updated' });
+      res.json({ ok: true, updated: r.affectedRows, membership_expiry: expiry });
+    } catch (e) {
+      next(e);
+    }
+  });
+
   router.put('/customers/:id', auth, async (req, res, next) => {
     const c = req.body || {};
     try {
-      const [r] = await pool.execute(
-        `UPDATE epos_customers
-         SET name = ?, phone = ?, email = ?, card_number = ?,
+      const common = [
+        c.name,
+        c.phone ?? null,
+        c.email ?? null,
+        c.card_number ?? null,
+        c.discount_type ?? 'none',
+        c.discount_value ?? 0,
+        c.points_balance ?? 0,
+        c.membership_expiry || null,
+        c.notes ?? null,
+      ];
+      const where = [req.params.id, await tenantEmail(req)];
+      const SETS = `name = ?, phone = ?, email = ?, card_number = ?,
              discount_type = ?, discount_value = ?, points_balance = ?,
-             membership_expiry = ?, notes = ?
-         WHERE id = ? AND email_key = ?`,
-        [
-          c.name,
-          c.phone ?? null,
-          c.email ?? null,
-          c.card_number ?? null,
-          c.discount_type ?? 'none',
-          c.discount_value ?? 0,
-          c.points_balance ?? 0,
-          c.membership_expiry || null,
-          c.notes ?? null,
-          req.params.id,
-          await tenantEmail(req),
-        ]
-      );
+             membership_expiry = ?, notes = ?`;
+
+      // Tried and fallen back from, for the same reason as the insert above.
+      let r;
+      try {
+        [r] = await pool.execute(
+          `UPDATE epos_customers SET ${SETS}, photo_url = ?
+            WHERE id = ? AND email_key = ?`,
+          [...common, c.photo_url || null, ...where]
+        );
+      } catch (e) {
+        if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+        [r] = await pool.execute(
+          `UPDATE epos_customers SET ${SETS} WHERE id = ? AND email_key = ?`,
+          [...common, ...where]
+        );
+      }
       if (r.affectedRows === 0) {
         return res.status(404).json({ error: 'No such customer' });
       }

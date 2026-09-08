@@ -1,506 +1,1288 @@
-# tasks.md — QR menu add-ons, allergens, notifications, kitchen/till accept — build plan
+# Vesopa EPOS 1.6.8.0 — build plan
 
 ## Scale honesty
 
-This is more than one sitting. It touches one schema, one server, one 4,544-line template literal, and three Flutter apps, and ends in three Store submissions. Every phase below is a safe stop point: commit and deploy at the end of a phase and the system is consistent.
+This release touches one MySQL migration, about seven new server routes across
+`vesopa_server`, a heavy pass over the back-office front end (`public/app.js`,
+`public/index.html`, `public/style.css`, `public/charts.js`), and one of the
+three Flutter apps — the till, `vesopa_epos`. The kitchen display and customer
+display get version bumps and rebuilds only; no behavioural changes.
 
-- Phases A+B ship server + back-office value only (server deploy, no Store).
-- Phases C+D ship the customer-facing QR menu changes (server deploy only — the QR page is served by the server, so no app release is needed for the bulk of the brief).
-- Phases E, F, G change the Flutter apps and require msix builds.
-- Phase H is the release. Only stop mid-phase if a task is fully done; never stop halfway through a task that edits `dinein_pages.js`.
+Safe stopping points, in order:
+
+1. **End of Phase 1** — the server gains routes and a column that nothing yet
+   calls. Deploying here changes nothing the venue can see. Safe.
+2. **End of Phase 2** — the back office looks and reads differently (nav,
+   colours, wording, new pickers). The till is untouched, so this could ship as
+   a server-only release on its own if the till work slips. Safe.
+3. **End of Phase 3** — the till changes. The two money-path changes (split
+   bill portions, membership renewal) are the highest-risk work in the release
+   and must not ship without their tests. Do not stop halfway through T23
+   (split bill) and deploy.
+4. **Phase 4** — the release itself.
+
+Known traps that are *not* regressions: `flutter test` in `vesopa_epos` has
+three failures on a clean tree (`dojo_accreditation_live_test.dart` and
+`dojo_terminal_live_test.dart` need live Dojo credentials;
+`programmed_grid_golden_test.dart` fails by 0.43% deliberately). Before
+blaming any change for a test failure, `git stash push -u` (the `-u` matters)
+and re-run.
+
+Live-data discipline: only `manager@vesopa.co.uk` may be used against
+`https://backoffice.vesopaepos.com`. Every other record belongs to a real
+customer. Any live check creates its own data and deletes only what it created.
 
 ## Progress
 
-Updated as work lands, so a later session can pick this up without re-reading
-the whole document.
+Filled in as work lands. A later session should be able to pick the release up
+from this table and the task bodies without re-reading anything else. Status
+values: `Not started`, `In progress`, `Done`, `Blocked`.
 
-**PHASE A — done, deployed, verified live.**
+| Task | Title | Phase | Status | Where it landed (commit / notes) |
+|------|-------|-------|--------|----------------------------------|
+| T1 | Schema: `epos_customers.photo_url` (re-runnable) | 1 | Done | `schema/schema_membership.sql` — three guarded columns; photo, term, fee |
+| T2 | Loyalty: membership term, fee, renewal route | 1 | Done | `src/commerce.js` — LOYALTY_DEFAULTS, validated PUT, `POST /loyalty/renew` |
+| T3 | Customer photo upload + loyalty lookups | 1 | Done | `src/backoffice.js` — `POST /api/customer-photo`; all three lookups carry `photo_url` |
+| T4 | Customers bulk-update route | 1 | Done | `src/backoffice.js` — `PATCH /customers/bulk`, expiry only, UUID ids |
+| T5 | Mix & Match deal-product routes | 1 | Done | `src/programming.js` — GET/PUT `/mix-match/:id/products`, plus a `product_count` |
+| T6 | Till staff creation + permission-group list | 1 | Done | `src/server.js` — `POST /till/staff`, `GET /till/permission-groups` |
+| T7 | Nav: "Reports" and "Sales Overview" | 2 | Done | renamed to Reports / Sales Overview — see correction 1 |
+| T8 | Navigation title case (thirteen labels) | 2 | Done | thirteen labels, their headings, and a browser tab that names the page |
+| T9 | Collapse nav groups by default | 2 | Done | `vesopa_nav_open_v2`; the current view's group opens without being remembered |
+| T10 | Green dashboard palette | 2 | Done | `--chart-1`…`--chart-8` per theme; charts resolve them at draw time |
+| T11 | Dark-mode select chevron fix | 2 | Done | cause was a shorthand/longhand clash — see correction 2 |
+| T12 | Mix & Match product picker UI | 2 | Done | a `products` field type: search, tick, chips; `afterSave` writes the join table |
+| T13 | Customers bulk-edit UI | 2 | Not started | |
+| T14 | Customer photo picker UI | 2 | Not started | |
+| T15 | Shift-click range select on Products | 2 | Done | shift-click over `visibleProducts()`, on `click` not `change` |
+| T16 | Back-office polish list | 2 | Not started | |
+| T17 | British English pass | 2 | Not started | |
+| T18 | Drift: customer `photoUrl` column + migration | 3 | Not started | |
+| T19 | Till: refuse expired memberships | 3 | Not started | |
+| T20 | Till: take renewal fee and renew | 3 | Not started | |
+| T21 | Till: show customer photo on attach | 3 | Not started | |
+| T22 | Pay key: amount beside the label | 3 | Not started | |
+| T23 | Split bill: divide a quantity line | 3 | Not started | |
+| T24 | Till: add staff / replace card from Functions | 3 | Not started | |
+| T25 | Version bumps, three apps | 4 | Not started | |
+| T26 | Full test sweep | 4 | Not started | |
+| T27 | Server deploy + smoke checks | 4 | Not started | |
+| T28 | Three msix builds | 4 | Not started | |
+| T29 | Store release notes, three apps | 4 | Not started | |
+| T30 | Upload and publish submissions | 4 | Not started | |
 
-| Task | State | Note |
-|---|---|---|
-| T1 order-line add-on + availability columns | done | `schema_menu_dinein_ordering.sql`, applied 3x on live |
-| T2 allergen columns + shared list + route | done | `src/allergens.js`, `GET /api/allergens` live, 14 unit checks |
-| T3 venue meta columns | done | same migration as T1 |
-| T4 notification settings | done | `schema_till_notifications.sql`; NOTIFY_FIELDS in TILL_FIELDS/DEFAULTS |
-| T5 add-ons read API | done | `addOnsFor()` in dinein.js; folded into `menuFor` rather than a separate route, because the page takes its menu in one payload |
-| T6 order placement with add-ons | done | parent + child rows, priced by PLU; verified with a real order |
-| T7 menu payload allergens + images | part | allergens and add-ons land; image quality is a page concern, see T14 |
-| T8 live order events | not started | |
-| T9 accept/reject route | not started | |
+## Corrections to the plan, found while executing it
 
-**Two corrections to this plan, found while executing it:**
+The 1.6.7.0 plan kept a list like this and it earned its place, so it is kept
+here. Each of these is something the plan got wrong, found by reading the code
+or measuring the running site rather than by thinking harder about the brief.
 
-1. The repo has **no numeric schema prefixes**. Files sort by name, and each
-   must sort after the file that creates the table it alters. `schema_menu_dinein_ordering.sql`
-   sorts between `_offers` and `_otp`; `schema_product_allergens.sql` starts
-   "p" so it clears both `schema_kitchen.sql` and `schema_menu_dinein.sql`.
-2. **Add-ons must be priced by PLU against `bo_products`, never through
-   `dinein_items`.** An answer to a modifier question is a till product
-   ("Lemonade") and those are almost never menu items. Resolving them like
-   parents silently dropped every add-on and undercharged the order — £6.00
-   where £7.60 was owed. The payload looked perfect; only a real order showed
-   it. T6 now restricts add-ons to PLUs the menu actually offers, so a crafted
-   request cannot attach an arbitrary product.
+1. **The rename is two renames, not one.** The plan read "Financial Report →
+   Reports" as a clash with the group heading and settled on "Overview". It is
+   not a clash: `run_report` is the page that *runs* five reports from a
+   dropdown, and its own heading already read "Reports" before the chosen
+   report replaced it — the nav promising one named report is the fault the
+   venue is describing. So that item takes "Reports", and the item beside it
+   called "Report" — the biggest-sellers breakdown, which is genuinely an
+   overview — becomes "Sales Overview". Both bullets in the brief are then
+   answered, and nothing is called two things.
 
-**Phone OTP** — sent live to the client's number on 2026-09-08 05:52 UTC.
-Postcoder accepted it (`provider_ref OTP69-FFD82-FD3AE-498C9`), challenge
-`69d7550ad2447e783ea54cf60bfcc9bb`, ten-minute expiry. The code is never stored
-here — verification goes back to Postcoder — so only the client can complete
-the second half. The send path is proven; ask them whether the text arrived.
+2. **The overlapping arrows are a Night-mode-only bug, and the plan's first
+   two guesses were both wrong.** Measured on the live Products page at 1440,
+   1180, 1024, 900, 700 and 560 px in Day: `appearance: none`,
+   `background-image: none`, nothing overlapping anything. The sort arrow in
+   the header was the second guess and it fits inside its column. The actual
+   cause only appears in Night: `.cell-edit { background: transparent }` is a
+   **shorthand**, so it clears the chevron the generic `select` rule sets — but
+   the dark rules set `background-image` **alone**, on a selector that outranks
+   `.cell-edit`, so the image comes back while its position and size stay at
+   `0% 0%` and `auto`. A 17px chevron is then painted over the first letters of
+   the department name and tiled across the box. Evidence:
+   `Documents\Vesopa-Claude-Images\2026-09-08-backoffice-1680\before-dark-products.png`.
+   The venue works in Night, which is why they can see it and the plan could
+   not.
 
-**PHASE B — done, deployed, verified in a browser.**
+3. **`pathlib.Path.write_text` turns every newline into CRLF on this machine.**
+   Nine source files came out CRLF from the first round of patch scripts. Git
+   warns on every add, and `test/backoffice-products.test.js` broke outright:
+   it lifts `cellSelect` out of `public/app.js` by searching for `\n}\n`, and
+   there were no bare newlines left to find. Patch scripts write bytes, or open
+   with `newline=""`.
 
-| Task | State | Note |
-|---|---|---|
-| T10 allergen editors | done | new `allergens` field type on the product form; a per-row chooser on the dine-in item form, because fourteen tick boxes in a table row is unusable |
-| T11 add-on hint | done | the modifier field now says it drives the QR menu too |
-| T12 venue meta fields | done | three fields on `/dine-in`, saved; blank stores NULL so the page goes back to deriving |
-| T13 notification matrix | done | on `/idle-screen` with the other till settings, not `/settings` |
+4. **`epos_customers.id` is a UUID, not a number.** The plan specified
+   `{ ids: number[] }` for the bulk edit, copying `PATCH /products/bulk` where
+   the ids genuinely are integers. Coercing a CHAR(36) id with `Number()`
+   yields `NaN`, and the filter that follows would have dropped every id and
+   answered "choose some customers first" on a full selection.
 
-Found by measuring the live page rather than trusting the markup:
-"Cereals containing gluten" was being clipped at two columns. It is the FSA's
-own wording, so the label wraps rather than being shortened — the one allergen
-a coeliac is looking for, cut off mid-word, is the worst outcome this form has.
+5. **The Mix & Match list needed a count as well as a picker.** A deal with no
+   products never fires on the till, and until now there was no way to see that
+   from anywhere — the products were invisible in the back office entirely. The
+   CRUD factory grew one option, `extraSelect`, and the list carries a
+   "no products" badge.
 
-**PHASE C — done, deployed, measured on the live page.**
+## Decisions taken for the client
 
-| Task | State | Note |
-|---|---|---|
-| T14 product images | done | the real cause was a THIRD media rule: 104px below 380 and 88px below 400, written at different times and left in that order, so the 88 won every overlap and the 104 rung was dead code. Every phone was getting the smallest one. Now one ladder, widest first: 132 / 112 / 96 |
-| T15 logo | done | circle, no white ring, cover-centred. A wide wordmark will lose its ends — venues with one should upload a square version |
-| T16 meta tags | done | plus two the plan did not ask for: og:image was site-relative, which no scraper can resolve, and a venue-set meta title now reaches the tab as well as the share card |
-| T17 table picker | done | it rendered a static div; the only way off a wrong table was a Change button inside the checkout, behind a basket. Now a button in every state, and a scanned page learns its own slug so the floor is fetchable at all |
+These were decided here, not by the client. They are called out so they can be
+argued with before the work lands, not after.
 
-**PHASE D — done, deployed, driven in a real browser on live.**
+1. **"Financial Report" becomes "Reports", and "Report" becomes "Sales
+   Overview".** ~~The item becomes "Overview" and the group heading stays
+   "Reports".~~ **Superseded — see correction 1 below.** There is no nav item
+   called "Financial Report": the client means `data-view="run_report"`,
+   labelled "Financial Summary". That page is not one report, it is the page
+   that runs five of them, so it takes the name **Reports**; and the item
+   beside it called "Report" — the biggest-sellers breakdown — is the one that
+   "is more of an overview", so it becomes **Sales Overview**. The group
+   heading "Reports" stays.
+2. **Existing operators get the collapsed nav once.** People who have already
+   opened or closed groups have a saved preference in `localStorage` under
+   `vesopa_nav_open`, and today that preference wins over the default. The
+   storage key is bumped to `vesopa_nav_open_v2`, so everyone gets
+   all-groups-collapsed exactly once; anything they toggle afterwards persists
+   under the new key. The old key is simply no longer read.
+3. **Split-bill remainder pennies stay on the parent's remaining portion.**
+   When a line is divided and the pennies do not divide, each portion taken is
+   floored and the leftover pennies stay with whatever is left of the parent
+   line (in the pool, until it is allocated). Shares plus pool therefore always
+   sum to the outstanding bill to the penny, and no share ever pays a penny it
+   should not.
+4. **Modifiers divide in proportion to their parent.** When part of a line is
+   moved to a share, its modifiers move in the same proportion (split one of
+   three proseccos with three extra shots and the share gets one shot), with
+   the same penny-remainder rule. Zero-priced modifiers carry no money, so the
+   proportion only matters for display on the printed check.
+5. **"A date we set in the back office" is a membership term, not a calendar
+   date.** The back office gains a membership term in months and a membership
+   fee. Renewal sets the new expiry to *today + term* (or *current expiry +
+   term* when renewing early), computed by the server on its own clock. A
+   single fixed calendar date would renew every customer to the same day,
+   which is clearly not what a membership scheme wants.
+6. **The membership fee is taken as a sale line.** Renewing at the till adds a
+   priced line "Membership renewal" to the open bill, so the fee appears in
+   takings and on the receipt like anything else sold. The renewal is posted
+   to the server only when the bill finalises; a voided bill renews nobody.
+7. **An expired card prompts rather than hard-refusing.** Scanning an expired
+   customer's card offers "renew for £X?" If the operator declines, no customer
+   is attached — the card genuinely cannot be used — but the default path is a
+   sale, not a dead end.
+8. **Only the programmed bar's Pay key changes.** The built-in action bar
+   (`action_bar.dart`) already draws the amount beside the label at a readable
+   size; the venue uses the programmable bar (`programmed_bar.dart`), which
+   draws it underneath at 12 pt. The built-in bar is left alone.
+9. **Creating staff with a terminal token is new, and stays gated.** Today
+   staff can only be created with a back-office login. The new till route is
+   protected by the terminal token server-side and by the existing manager
+   approval flow till-side. A staff member may be created without a PIN only
+   when a card is about to be assigned — never both absent.
 
-| Task | State | Note |
-|---|---|---|
-| T18 quantity badge | done | one 40px circle in both states; the pill opens OVER the row so nothing reflows. Also fixed: redrawItem only looked at `.end`, which only rows without a picture have, so on any menu with photographs the basket changed and the button did not |
-| T19 product sheet | done | add-on groups, per-line special instructions, dietary sheet, availability chooser. The basket is now keyed by LINE with the same key the server builds |
-| T20 offer sparkle | done | fires on the crossing only, re-armed if the basket drops back under |
-| T21 no autofocus | done | nobody wrote a focus() call — `showModal()` takes the first focusable descendant, which was the name box. The panel is now the focus target |
+## Ambiguities the plan has had to read plainly
 
-**Two more corrections to the plan, found by measuring:**
-
-3. The allergen payload could not say whether anybody had ANSWERED. An
-   unanswered dish and a dish that genuinely contains none of the fourteen
-   both arrived as `[]`. Those are different sentences to read with an
-   allergy, so `allergens_declared` was added.
-4. The dish-sheet CSS had to be scoped under `.pop`. The sheet's generic
-   `.pop label` rule outranks a bare `.dopt`, so every add-on option rendered
-   as a block: the radio on its own line and the name and price jammed
-   together underneath. Only visible in a screenshot.
-
-**PHASE E — kitchen app, done. Analyzed, unit-tested, proven against live.**
-
-| Task | State | Note |
-|---|---|---|
-| T22 remove autofocus | done | one site, `ui/widgets/password_prompt.dart`. The on-screen keyboard writes into the controller, so nothing needed focus to work |
-| T23 QR orders, allergens, modifiers | done | `DineInStrip` above the board; allergen chips in amber on ticket lines |
-| T24 notifications and sound | done | `local_notifier`, the two-layer rule, and a local toggle beside the existing chime |
-
-**PHASE F — till, done.**
-
-| Task | State | Note |
-|---|---|---|
-| T25 QR orders inbox with accept | already existed | `ui/dinein_sheet.dart` had Accept and Reject. What was missing was the SHAPE: add-ons, the per-dish note, the per-line "if it is off" answer and allergens are now drawn on the card |
-| T26 notifications, sound, allergens to the display | done | a Windows toast beside the in-app card, gated by the venue's row AND the two settings this till already had |
-
-**PHASE G — display, done.**
-
-| Task | State | Note |
-|---|---|---|
-| T27 allergens on lines; notifications default off | done | the till resolves the WORDS before writing the file — see the correction below |
-
-**PHASES A–G are complete. H is the release.**
-
-**Three more corrections to the plan, found while executing it:**
-
-5. **T8 and T9 were already built.** Placement already broadcast `dinein.order`
-   scoped to the office, status changes already broadcast `dinein.changed`, and
-   `/till/dinein/orders/:id/:action` already existed with the transitions and
-   the ETA. The only work was widening the credential: one middleware that
-   takes a terminal OR a kitchen token, and the same handlers registered at
-   `/api/kitchen/dinein/orders`. A parallel route would have been two copies of
-   the rule about who may accept, and they would have drifted.
-6. **The customer display cannot resolve allergen codes.** It is offline by
-   design — it reads a file the till writes and has no HTTP client at all — so
-   the plan's "labels from the shared list" could not happen on that side. The
-   till resolves them and sends the words; it caches the list on disk so a
-   terminal that has lost its line still has them. Everywhere else still sends
-   codes.
-7. **`redrawItem` in the menu page only ever looked at `.end`**, which only
-   rows WITHOUT a picture have. On any menu with photographs, pressing the plus
-   changed the basket and left the button showing a plus. Found by driving the
-   page rather than reading it.
+- **The client believes Mix & Match currently works "using PLU numbers".** It
+  does not. Nothing in the back office writes `bo_mix_match_products` at all;
+  the rows on live were entered by hand. The searchable picker (T5, T12) is
+  built regardless, and gives them what they think they are asking to replace.
+- **"Tiles" in the green request** is read as the dashboard charts and the
+  stat-card accent stripes — the measured lilac/magenta surfaces — not a
+  wholesale reskin of every accent in the back office.
+- **"A few other items" with capital letters** is resolved by audit to the
+  thirteen sentence-case labels listed in T8. If the venue spots another one
+  afterwards, it is a one-line change of the same kind.
+- **"Mass edit of customers"** is scoped to the stated purpose — setting
+  expiry dates. Other customer fields are not bulk-editable in this pass.
+- **"Role"** for a new staff member means the permission group
+  (`permission_group_id` → `epos_permission_groups`), because that is what
+  actually controls what they may do.
+- **The English pass (T17)** covers interface copy a human reads. It does not
+  touch keys, URLs, `data-view` values, API field names, or permission keys,
+  however tempting the spelling.
 
 ---
 
-## Order of work
+## Phase 1 — schema and server routes
 
-A → B → C → D → deploy server → E, F, G (independent of each other, any order) → H.
+*Finishing this phase requires a **server deploy**. No Store build. Everything
+here is inert until a UI calls it, so this phase is safe to deploy on its own.*
 
-## Decisions taken (so the executor does not re-litigate)
+### T1 — Schema migration: `epos_customers.photo_url`
 
-- **D1 — Add-ons reuse the existing modifier machinery** (`epos_modifier_groups`, `epos_product_modifiers`, screens with `surface='modifier'`). The till already sells these as child lines with `parentLineId`, and receipt, kitchen and display already indent them. One configuration serves till and QR menu; that is what "configurable options completely" means. No parallel add-on table.
-- **D2 — Add-ons on QR orders are stored as child rows in `dinein_order_lines`** with new columns `parent_line_id` and `is_modifier`, mirroring the till model. No new order table.
-- **D3 — Allergens are the fixed UK 14-allergen list**, stored as JSON arrays of codes. Canonical home is `bo_products.allergens`; `dinein_items.allergens` is a per-menu override (`NULL` = inherit from the linked product, `[]` = explicitly none); `epos_kitchen_ticket_lines.allergens` is a snapshot taken at ticket ingest so kitchen works offline. Labels come from one shared server module; apps never hardcode the list.
-- **D4 — Notifications use `local_notifier`** (pure Dart, works from msix on Windows, no method-channel fragility on the low-end kitchen device). Central control is a set of new till-settings columns; each app also gets a local toggle. Effective = back-office master AND per-event column AND app-local toggle.
-- **D5 — "If this product is not available" is a per-line choice** (`remove` default, `call`, `refund`), stored on `dinein_order_lines.unavailable_action`, chosen in the product sheet.
-- **D6 — Tapping an item's name or image always opens the product sheet.** Tapping `+` adds directly only when the item has no add-on groups; otherwise `+` opens the sheet. The sheet is add-only; quantity edits happen via the badge pill.
-- **D7 — Table can be re-picked at any time; the basket is kept.** One tap on the table pill reopens the picker.
-- **D8 — Meta tags: three nullable columns on `dinein_venue`.** `NULL` means "use today's derived value". No behaviour change for venues that never touch the fields.
-- **D9 — The display app gets notification capability but default OFF** (it is a customer-facing screen).
-- **D10 — Autofocus is removed from the kitchen app entirely, and from the QR checkout form.** Focus only follows a user tap.
-- **D11 — Add-on prices are always recomputed server-side from the PLU.** Client-sent prices are ignored.
-- **D12 — "Frequently bought together" and group ordering in the screenshots are out of scope.** The brief does not ask for them.
-
-## Global traps (read before touching anything)
-
-1. **`vesopa_server/src/dinein_pages.js` is one template literal.** A backtick anywhere in the string — including comments — ends the literal and breaks the served page. Backslash escapes are eaten: `\s` arrives at the browser as `s`, `\d` as `d`. Use `[0-9]`, `[ ]`, `[A-Za-z0-9_]` in client-side regexes. To emit a literal `${` write `\${`. After EVERY edit to this file run `cd vesopa_server && npm test` — the guard test `test/dinein-stylesheet.test.js` exists because this has shipped bugs before.
-2. **Migrations are replayed on every deploy** in `sort` order. Every migration must be guarded by an `information_schema` check and must sort after the file that creates the table it alters. Before naming a new file, run `ls vesopa_server/schema` and use the next numeric prefix above the highest existing one — that guarantees correct ordering. Mirror the guard style of an existing column-adding migration (`grep -l information_schema vesopa_server/schema`).
-3. **Live testing:** sign in only as the account in `.env.claude-tools` (`VESOPA_TEST_EMAIL`) at `https://backoffice.vesopaepos.com`. Every other user is a paying customer. Delete test data by the ids you inserted, never by name.
-4. **Store versions cannot be reused.** Bump both `version:` and `msix_config.msix_version` before every msix build.
-5. **Till tests:** 3 known failures (`dojo_accreditation_live_test`, `dojo_terminal_live_test`, `programmed_grid_golden_test`). Do not chase them.
-
----
-
-## PHASE A — Schema and server foundations
-
-### T1 — Order-line modifier and availability columns
-
-- **Ask:** QR orders must carry add-ons ("kitchen app needs to know that") and a per-product not-available choice ("By default remove that product is selected").
-- **Files:** new `vesopa_server/schema/<NN>_dinein_line_modifiers.sql` (NN = next prefix, sorts after the files creating `dinein_orders` and `dinein_order_lines` — find them with `grep -l "CREATE TABLE.*dinein_order" vesopa_server/schema`).
-- **Schema (guarded, re-runnable):**
-  - `dinein_order_lines ADD parent_line_id INT NULL` (references the parent line's `id`; no FK constraint, matching the till's loose `line_no` approach)
-  - `dinein_order_lines ADD is_modifier TINYINT(1) NOT NULL DEFAULT 0`
-  - `dinein_order_lines ADD unavailable_action VARCHAR(16) NOT NULL DEFAULT 'remove'` — allowed values `remove`, `call`, `refund`
-- **API:** none (consumed by T6).
-- **UI:** none.
-- **Test:** apply twice against the live-style local DB; second run is a no-op. Covered indirectly by T6 tests.
-- **Done:** file sorts last in `ls vesopa_server/schema`, runs repeatedly without error, columns present.
-
-### T2 — Allergen columns and the shared allergen list
-
-- **Ask:** "Allergens options needed as well. In back office, display app, kitchen view and qr menu."
+- **Ask:** (no direct quote — this is the enabler for "Ability to upload a
+  photo of a customer…", delivered by T3/T14/T18/T21).
 - **Files:**
-  - new `vesopa_server/schema/<NN>_allergens.sql`
-  - new `vesopa_server/src/allergens.js` — exports `ALLERGENS`, the fixed list of 14 `{code, label}`: `celery` Celery, `gluten` Cereals containing gluten, `crustaceans` Crustaceans, `eggs` Eggs, `fish` Fish, `lupin` Lupin, `milk` Milk, `molluscs` Molluscs, `mustard` Mustard, `peanuts` Peanuts, `sesame` Sesame, `soya` Soya, `sulphites` Sulphites, `tree_nuts` Tree nuts.
-- **Schema (guarded):** `bo_products ADD allergens <json-type> NULL`; `dinein_items ADD allergens <json-type> NULL`; `epos_kitchen_ticket_lines ADD allergens <json-type> NULL`. Use the same column type as the existing `dinein_venue.theme_json` column for consistency.
-- **API:** new public route `GET /api/allergens` → `{"allergens":[{code,label}, …]}` served from `src/allergens.js`. Add it in `src/backoffice.js` next to the other unauthenticated utility routes. No auth — it is a static list and the kitchen app needs it.
-- **UI:** none (Phase B).
-- **Test:** new `vesopa_server/test/allergens.test.js` — route returns 14 entries, codes unique, and the module is the same object the route serves.
-- **Done:** `npm test` passes; `curl https://backoffice.vesopaepos.com/api/allergens` after deploy returns the list.
+  - New file `vesopa_server/schema/schema_customer_photo.sql` (name follows the
+    existing `schema_*.sql` convention; files apply in filename order).
+  - Pattern to copy: `vesopa_server/schema/schema_order_cols.sql` and
+    `vesopa_server/schema/schema_permissions.sql` (the guarded
+    `vesopa_add_column` / `vesopa_add_index` stored procedures).
+  - Reference for the table: `vesopa_server/schema/schema_customers.sql`.
+- **Behaviour:**
+  - Add `photo_url VARCHAR(500) NULL` (length to match neighbouring URL
+    columns) to `epos_customers`, via `vesopa_add_column` only.
+  - **Re-runnable rule:** the deploy applies *every* file in `schema/` on
+    *every* deploy. A bare `ALTER TABLE ... ADD COLUMN` fails on the second
+    run, and because MySQL applies a multi-clause ALTER as one statement, a
+    duplicate-column error rolls back the clauses that had already succeeded.
+    No bare `ALTER`, no bare `CREATE INDEX` — guards for everything.
+  - No other columns are needed in this release: the two new loyalty settings
+    (T2) are key/value rows in `epos_loyalty_settings` merged over
+    `LOYALTY_DEFAULTS`, not new columns. Confirm that while editing
+    `src/commerce.js`; if the table turns out to be wide rather than
+    key/value, the two settings join this file through `vesopa_add_column`.
+- **Test:** apply the file **three times** against a scratch database and
+  expect silence (no errors, no rolled-back clauses). Then
+  `cd vesopa_server && npm test` exits 0.
+- **Done:** three consecutive applications produce no error;
+  `DESCRIBE epos_customers` shows `photo_url`; the file contains no unguarded
+  `ALTER` or index statement.
 
-### T3 — Venue meta columns
+### T2 — Loyalty settings: membership term, membership fee, renewal route
 
-- **Ask:** "The meta description and meta other tags are missing and is configurable from the back office check too." (They are derived today; make them editable with derived fallbacks.)
-- **Files:** new `vesopa_server/schema/<NN>_dinein_venue_meta.sql`.
-- **Schema (guarded):** `dinein_venue ADD meta_title VARCHAR(255) NULL`, `ADD meta_description TEXT NULL`, `ADD meta_image_url VARCHAR(512) NULL` (mirror the type of `logo_url`).
-- **API:** the venue save route used by the back-office `/dine-in` page must whitelist the three new columns. Locate it by searching `vesopa_server/src/dinein.js` for the route that updates `dinein_venue` (it is the one `public/app.js` calls from the `/dine-in` form). Add the three names to its accepted-fields list. NULL/empty string stores NULL.
-- **UI:** Phase B (T12), Phase C (T16).
-- **Test:** extend/create `vesopa_server/test/dinein-meta.test.js` — PUT venue with `meta_description` set, row stores it; PUT with empty string stores NULL.
-- **Done:** columns round-trip through the save route.
+- **Ask:** "We should be allowed to renew and take their membership fee at the
+  till and setting a expiry date. … say they expired and then paid £10
+  membership at the till, the till should then renew to a date we set in the
+  back office."
+- **Files:**
+  - `vesopa_server/src/commerce.js` — `LOYALTY_DEFAULTS` (line 555),
+    `readLoyalty()`, `PUT /loyalty`, `GET /loyalty/public`, and the loyalty
+    route block (lines ~630–760) where the new route lives.
+- **Behaviour:**
+  - Add two settings with defaults: `membership_term_months` (default `12`)
+    and `membership_fee_minor` (default `1000` — the client's own £10 example).
+    They merge through `readLoyalty()` like every other setting.
+  - `PUT /loyalty` accepts both, validated: term an integer 1–60; fee a
+    non-negative integer of minor units.
+  - `GET /loyalty/public` serves both to the till (the till needs the fee to
+    price the renewal line and the term to describe the offer).
+  - New route `POST /loyalty/renew`, guarded by the same terminal-token
+    middleware as the other till-facing loyalty routes. Body:
+    `{ customerId }`. Behaviour:
+    - 404 for an unknown customer.
+    - Base date = today (server clock), or the current `membership_expiry` if
+      that is still in the future (early renewal extends, it does not
+      shorten).
+    - New expiry = base + `membership_term_months` months.
+    - Updates `epos_customers`, then returns the customer row in the same
+      shape the `/loyalty/*` lookups return, so the till can refresh its
+      local copy from one response.
+- **Test:** new file `vesopa_server/test/loyalty_renew.test.js` (create,
+  following the naming of the existing files in `vesopa_server/test/`):
+  defaults present in `readLoyalty()`; `PUT /loyalty` round-trips both
+  settings and rejects a non-integer term; `POST /loyalty/renew` sets
+  today + term for an expired customer, extends from the current date for a
+  current customer, 404s on an unknown id. `npm test` exits 0.
+- **Done:** the two settings are readable and writable through the existing
+  settings API, are served publicly, and the renewal route moves the expiry
+  exactly as specified with tests to prove each branch.
 
-### T4 — Centralised notification settings
+### T3 — Customer photo upload and loyalty lookups
 
-- **Ask:** "Microsoft native notifications … controlled from the back office or from the settings or the apps … give centralized option in the back office. Kitchen app, till notifications sound should be controlled from the apps and also from the back office."
-- **Files:** new `vesopa_server/schema/<NN>_notify_settings.sql`; `vesopa_server/src/backoffice.js` (`TILL_FIELDS`, `TILL_DEFAULTS`).
-- **Schema:** the columns go on the table that `TILL_FIELDS` in `src/backoffice.js` maps to (find it there; do not assume a name). All `TINYINT(1) NOT NULL DEFAULT …`, guarded:
+- **Ask:** "Ability to upload a photo of a customer that would display on the
+  till when scanned to confirm it's the right person."
+- **Files:**
+  - `vesopa_server/src/backoffice.js` — multer config (lines 17–30) and the
+    existing upload routes `POST /api/branding/logo` and
+    `POST /api/product-image` (lines 930–950) to copy.
+  - The customers update route in `src/backoffice.js` (find it via the edit
+    form at `public/app.js` line 4753) must accept `photo_url`, including
+    `null` to clear.
+  - `vesopa_server/src/commerce.js` — the three lookups
+    `/loyalty/customer`, `/loyalty/search`, `/loyalty/card` (lines ~630–760):
+    add `photo_url` to each `SELECT`.
+- **Behaviour:**
+  - New `POST /api/customer-photo`, a sibling of `/api/product-image`: same
+    multer limits (4 MB; png/jpeg/webp/gif only; random UUID filename; written
+    to `public/uploads`); returns `{ url: '/uploads/<file>' }`.
+  - `public/uploads` is **excluded from deploys** — images live only on the
+    server. Nothing about this feature may depend on a file being in the
+    repository, and no deploy step may delete or overwrite `uploads`.
+  - The three loyalty lookups return `photo_url` alongside the existing
+    `membership_expiry`, so the till receives it on the same payload it
+    already consumes.
+- **Test:** new `vesopa_server/test/customer_photo.test.js` (create): the
+  update route persists and clears `photo_url`; all three lookups include the
+  column. Upload itself checked by hand with `curl -F` against a local server
+  (reject a `.txt`, accept a `.png`, confirm the returned URL shape).
+  `npm test` exits 0.
+- **Done:** a photo uploaded for a customer is stored, survives a redeploy
+  (because `uploads` is untouched by it), and comes back from all three
+  loyalty lookups.
 
-  | column | default | meaning |
-  |---|---|---|
-  | `notify_master` | 1 | master switch, all apps |
-  | `notify_till_dinein_new` | 1 | toast on till when a QR order is placed |
-  | `notify_kitchen_dinein_new` | 1 | toast on kitchen when a QR order is placed |
-  | `notify_kitchen_ticket_new` | 1 | toast on kitchen when a till sends a kitchen ticket |
-  | `notify_till_sound` | 1 | till toast sound |
-  | `notify_kitchen_sound` | 1 | kitchen toast sound |
-  | `notify_display_enabled` | 0 | display app toasts (D9) |
+### T4 — Customers bulk-update route
 
-- **API:** add the seven names to `TILL_FIELDS` and `TILL_DEFAULTS` so `PUT /api/till-settings` accepts them and `GET` returns them. No new route.
-- **UI:** Phase B (T13).
-- **Test:** new `vesopa_server/test/till-settings-notify.test.js` — PUT each key, GET returns it; a key not in `TILL_FIELDS` is still rejected (existing whitelist behaviour intact).
-- **Done:** settings round-trip; `npm test` green.
+- **Ask:** "Customers / Loyalty please allow a mass edit of customers so we
+  can set expiry dates easier."
+- **Files:**
+  - `vesopa_server/src/backoffice.js` — find `POST /products/bulk` (grep
+    `products/bulk` across `src/`) and put `POST /customers/bulk` beside it,
+    following its shape.
+- **Behaviour:**
+  - Body: `{ ids: number[], set: { membership_expiry: 'YYYY-MM-DD' | null } }`.
+  - Validates: non-empty `ids`; the date is a valid calendar date or explicit
+    `null` (which clears the expiry). 400 with a readable message otherwise.
+  - Updates exactly the listed ids — no `WHERE` clause that could widen.
+    Returns `{ updated: n }`.
+  - Scope is deliberately expiry-only; the modal in T13 sends nothing else.
+- **Test:** new `vesopa_server/test/customers_bulk.test.js` (create): sets a
+  date across several ids; clears with `null`; rejects an empty id list and a
+  malformed date; leaves unlisted customers untouched. `npm test` exits 0.
+- **Done:** the route behaves as specified under test, and cannot touch a
+  customer whose id was not in the request.
 
-### T5 — Add-ons read API for the QR menu
+### T5 — Mix & Match deal-product routes
 
-- **Ask:** "Add ons can be added to each product from the back office and each price can be set, add ons open before the product add."
-- **Files:** `vesopa_server/src/dinein.js`.
-- **API:** new route `GET /api/dinein/:slug/items/:itemId/addons`
+- **Ask:** "Mix & Match instead of using PLU numbers can this be set to select
+  products from a drop down list with a search function."
+- **Files:**
+  - `vesopa_server/src/programming.js` — beside the generic
+    `crud('mix-match', 'bo_mix_match', [...])` at line 254.
+  - Reference: `vesopa_server/schema/schema_layout.sql` lines 87–93 for
+    `bo_mix_match_products (mix_match_id, plu_id)`; `vesopa_server/src/server.js`
+    lines 551–563 for the till sync that already reads it.
+- **Behaviour:**
+  - `GET /mix-match/:id/products` → the deal's products as
+    `[{ plu_id, name, price } ]` (join for display fields the picker needs).
+  - `PUT /mix-match/:id/products` with body `{ pluIds: number[] }` → replace
+    the deal's rows in a transaction (delete-then-insert within one
+    transaction, not a bare delete then a separate insert). 404 for an
+    unknown deal; 400 for a non-array body.
+  - Nothing else about the generic CRUD changes.
+  - Note for the engineer: the client thinks deals currently work "using PLU
+    numbers". In fact nothing in the back office writes this table today — the
+    live rows were entered by hand. These routes are the first write path.
+- **Test:** new `vesopa_server/test/mix_match_products.test.js` (create):
+  empty list for a new deal; PUT stores and GET returns; a second PUT
+  replaces rather than appends; unknown deal 404s. `npm test` exits 0.
+- **Done:** a deal's product list can be read and replaced through the API,
+  and the existing till sync (`server.js` 551–563) returns exactly what was
+  written.
 
-  Response 200:
+### T6 — Till routes: create staff, list permission groups
+
+- **Ask:** "Ability to add staff members from the function screen. This should
+  ask for their name, role and either pin or to swipe a new staff card."
+- **Files:**
+  - `vesopa_server/src/server.js` — beside `GET /till/staff` (line 612).
+  - Reference for the rules to mirror: `vesopa_server/src/backoffice.js`
+    lines 963–1180 (`GET/POST/PUT/DELETE /staff`, aliased `/clerks`; the table
+    is `bo_clarks` — the name predates the apps, do not "fix" it).
+  - `vesopa_server/src/cards.js` — `POST /till/cards/assign` already exists
+    and already refuses a card belonging to somebody else; the new route does
+    **not** duplicate card logic.
+- **Behaviour:**
+  - `POST /till/staff`, terminal token required. Body:
+    `{ name, permissionGroupId, pin? }`.
+    - `name` non-empty; `permissionGroupId` must exist in
+      `epos_permission_groups` (400/404 otherwise).
+    - `pin` optional, but if present it is **exactly four digits** — the till
+      pad submits on the fourth key, so a five-digit PIN creates someone who
+      can never sign on. Anything else is a 400.
+    - A PIN already in use is a **409 naming the person who holds it**, the
+      same response shape the back-office route gives.
+    - Allocate `pluid` the same way `POST /staff` does.
+    - Respond with the new staff member shaped exactly like a `GET /till/staff`
+      entry (id, pluid, name, pin, `swipe_card`, group switches), so the till
+      can cache it from one response.
+    - A PIN-less creation is allowed **only** as the first half of "swipe a
+      new card"; the till (T24) then calls `POST /till/cards/assign` and is
+      responsible for never finishing with neither PIN nor card.
+  - `GET /till/permission-groups`, terminal token required →
+    `[{ id, name }]` so the till can offer roles.
+- **Test:** new `vesopa_server/test/till_staff.test.js` (create): happy path
+  with PIN; 3-digit and 5-digit PINs are 400; duplicate PIN is a 409 naming
+  the holder; unknown group rejected; no token rejected; groups endpoint
+  lists the seeded groups. `npm test` exits 0.
+- **Done:** a terminal can create a staff member and list roles without a
+  back-office login, and every rule the back office enforces (four digits,
+  unique PIN, named 409) is enforced identically here.
+
+---
+
+## Phase 2 — back office
+
+*Finishing this phase requires a **server deploy** (the back office is served
+from `vesopa_server/public`). No Store build. The venue sees this phase as soon
+as it deploys.*
+
+### T7 — "Financial Summary" becomes "Reports"; "Report" becomes "Sales Overview"
+
+> **Corrected while executing — see correction 1.** The plan first said to
+> rename the one item to "Overview" and leave everything else. That was wrong
+> about what the two pages are.
+
+- **Ask:** "Backoffice – rename the navigation from Financial Report to
+  Reports." and "Change Reports to something else? It's more of an overview so
+  I let you decide on that one."
+- **Files:**
+  - `vesopa_server/public/index.html` — the nav rail (lines 236–300): the item
+    `data-view="run_report"` labelled "Financial Summary", and the item
+    `data-view="report"` labelled "Report"; also the page heading for
+    `view-report`.
+  - `vesopa_server/src/permissions.js` — the labels on
+    `reports.financial_summary` and `reports.report`. **Neither key changes.
+    Only the labels**, and they have to move because that list is deliberately
+    shaped like the navigation.
+  - `vesopa_server/public/app.js` — `document.title`, which was built from the
+    view *key* (`run_report`, `dinein_qr`) and so leaked variable names into
+    the browser tab. It reads the rail's own label now.
+- **Behaviour:**
+  - `run_report` is labelled **Reports**. It is not one report: it is the page
+    that runs five of them from a dropdown, and its own heading already said
+    "Reports" before being replaced by whichever report was chosen. The venue
+    calling it "Financial Report" is the nav promising a single report the
+    page has not been for some time.
+  - `report` is labelled **Sales Overview**. Its heading describes it exactly —
+    "your biggest sellers across every closed bill, by group, department, staff
+    member and product" — which is the "more of an overview" the client is
+    pointing at, and the name it needs now that Reports is taken.
+  - The group heading "Reports" stays. Nothing machine-facing moves:
+    `data-view="run_report"`, `data-view="report"`, the permission keys, the
+    report registry key `financial_summary` (schedules store it), and the
+    report's own printed name "Financial Summary", which is the heading on a
+    document handed to an accountant and should stay the accountant's words.
+- **Test:** `npm test` exits 0. `grep -rn "Financial Summary"` finds it only
+  in `src/reports.js` (the printed report) and in comments; `grep -rn
+  "financial_summary" vesopa_server/src` still finds the key where it was.
+- **Done:** the rail reads Reports and Sales Overview, the permission screen
+  agrees with the rail, the browser tab names the page rather than the view
+  key, and no key, route or `data-view` has moved.
+
+### T8 — Navigation title case
+
+- **Ask:** "Scheduled reports please put a capital R on reports. This is a
+  same for a few other items on the back office Navigation."
+- **Files:**
+  - `vesopa_server/public/index.html` — nav rail (lines 236–300) and each
+    matching page heading.
+  - `vesopa_server/public/app.js` — any `document.title` strings for these
+    views.
+- **Behaviour:** change exactly these thirteen labels, nowhere else:
+
   ```
-  { "item": { "id": 123, "plu_id": 45 },
-    "groups": [
-      { "id": 7, "name": "Add Ons for Pasta", "min_select": 0, "max_select": 1,
-        "options": [ { "plu_id": 91, "name": "Extra White Sauce", "price_minor": 15 } ] }
-    ] }
+  Scheduled reports   → Scheduled Reports
+  Screen programming  → Screen Programming
+  Printer categories  → Printer Categories
+  Your menu page      → Your Menu Page
+  Table codes         → Table Codes
+  Online orders       → Online Orders
+  Receipt designer    → Receipt Designer
+  Gift cards          → Gift Cards
+  Wallet passes       → Wallet Passes
+  Tender & gratuity   → Tender & Gratuity
+  Automation rules    → Automation Rules
+  Till & printers     → Till & Printers
+  Kitchen screens     → Kitchen Screens
   ```
-  404 for unknown slug/item or unpublished venue (same behaviour as the existing menu route).
-- **Resolution logic (D1):** `dinein_items.id` → `dinein_items.plu_id` → rows of `epos_product_modifiers` for `(office, plu_id)` ordered by `sort_order` → join `epos_modifier_groups` for name/min/max → resolve each group's `screen_id` to its buttons using the SAME server read path the till uses to fetch modifier screens — find it with `grep -rn "modifier" vesopa_server/src` where screens are served; do not build a parallel query. Each button's PLU gives `name` and `price_minor` from the same price source the till displays on modifier buttons. `price_minor` is computed here, never taken from the client (D11).
-- **UI:** consumed by T19.
-- **Test:** new `vesopa_server/test/dinein-addons.test.js` — seed office, product, group (`min_select 0 max_select 1`), modifier screen with two priced buttons, link via `epos_product_modifiers`, seed `dinein_items` row; assert response shape, order by `sort_order`, and prices from PLUs. Assert 404 for another office's item.
-- **Done:** test passes; live check in T28.
 
-### T6 — Order placement with add-ons, line note, availability action
+  Each nav item's page heading (and `document.title`, where one exists for the
+  view) changes with it — the three surfaces must not drift apart. Labels
+  already in title case (`Dashboard`, `Mix & Match`, `Back Office Users`,
+  `Sales Explorer`, …) are untouched.
+- **Test:** eyeball the rail and each affected page;
+  `grep -n "Scheduled reports" vesopa_server/public/index.html` and the
+  equivalents return nothing; `npm test` exits 0.
+- **Done:** the thirteen labels read as above in the nav, on their page
+  headings, and in the browser tab.
 
-- **Ask:** add-ons and special instructions must reach the order, the till and the kitchen.
-- **Files:** `vesopa_server/src/dinein.js` (the existing place-order route — find the URL by locating `fetch(` with method POST in `dinein_pages.js`); possibly `src/allergens.js` (no change).
-- **API:** extend the existing line objects in the POST body:
-  ```
-  { "plu_id": 45, "qty": 2,
-    "note": "no mayo",                    // line note already has a column; accept it if not already accepted
-    "unavailable_action": "remove",       // 'remove' | 'call' | 'refund'; default 'remove'; 400 on anything else
-    "modifiers": [ { "plu_id": 91, "qty": 1 } ] }
-  ```
-  Server behaviour:
-  1. Resolve the product's groups exactly as T5. Every `modifiers[].plu_id` must be an option of one of those groups, else 400.
-  2. Enforce `min_select`/`max_select` per group (count summed modifier qty per group), else 400.
-  3. Compute each modifier's `unit_price_minor` from the PLU (D11). Insert parent line, then child lines with `parent_line_id`, `is_modifier=1`, name/price snapshots, child's `note` NULL.
-  4. `total_minor` includes children. Response keeps its existing shape; if it returns lines, include children.
-  5. **Kitchen visibility:** if placement already creates kitchen tickets today (`grep -n kitchen vesopa_server/src/dinein.js`), extend that payload so child lines are included flagged as modifiers. If it does not, create the ticket here by calling the same internal function the till's sale path uses to create kitchen tickets (locate the route that INSERTs into `epos_kitchen_ticket_lines` and reuse its handler logic), with `is_modifier=1` on children. This is decided, not optional: the brief requires kitchen to see QR orders.
-- **UI:** consumed by T19.
-- **Test:** new `vesopa_server/test/dinein-order-modifiers.test.js` — place order with valid modifiers: child rows exist with correct `parent_line_id`, `is_modifier`, server-side prices, correct `total_minor`; unknown modifier plu → 400; exceeding `max_select` → 400; `unavailable_action: 'bogus'` → 400; `note` stored on the line.
-- **Done:** tests pass; the order rows are visible in `dinein_order_lines` with children.
+### T9 — Collapse the navigation by default
 
-### T7 — Menu payload: allergens and image URLs
+- **Ask:** "Can we default the back office navigation so all the sub pages are
+  hidden and only displaying the header until clicked to show submenu."
+- **Files:**
+  - `vesopa_server/public/app.js` — `navItemsFor()`, `applyGroupState()`,
+    `toggleGroup()`, `initNavGroups()` (around lines 428–475), including
+    `const defaultCollapsed = ['programming', 'people', 'administration'];`
+    and the `localStorage` key `vesopa_nav_open`.
+- **Behaviour:**
+  - Every group is collapsed by default — only headings show on a fresh
+    browser. Implement by listing every group id in `defaultCollapsed` (or by
+    inverting the default), not by hiding items another way.
+  - The group containing the **current view** still opens itself — that logic
+    already exists; keep it working.
+  - Bump the storage key to `vesopa_nav_open_v2` so operators with a saved
+    preference get the new default once (decision 2). From then on their
+    toggles persist under the new key. The old key is no longer read; do not
+    migrate it.
+  - Out of scope here: the "Hide menu" footer overlap — that is T16.
+- **Test:** manual, against a local server: fresh profile (or cleared site
+  data) → headings only; click a heading → group opens; reload → still open;
+  navigate directly to a view inside a collapsed group → its group opens. An
+  old `vesopa_nav_open` value in storage has no effect.
+- **Done:** all of the manual checks pass, and a first-time operator sees
+  exactly one heading row per group until they ask for more.
 
-- **Ask:** allergens on the QR menu; images must load.
-- **Files:** `vesopa_server/src/dinein.js` (the route that returns sections/items to the menu page).
-- **API:** each item gains `"allergens": ["milk","gluten"]` — parse `dinein_items.allergens`; if NULL, fall back to `bo_products.allergens` via `plu_id` (D3). Join `bo_products` the same way existing code joins it (`grep -n "bo_products" vesopa_server/src/dinein.js`). Also guarantee `image_url` is absolute (prefix the request origin if stored relative) and trimmed.
-- **UI:** consumed by Phase C/D.
-- **Test:** extend `vesopa_server/test/dinein-allergens.test.js` (new) — item with own allergens returns them; item with NULL returns the product's; item with `[]` returns `[]` (explicitly none).
-- **Done:** menu JSON carries codes; no relative image URLs.
+### T10 — Green dashboard palette
 
-### T8 — Live dine-in order events
+- **Ask:** "Please Change the tiles to our Green from the light lilac/purple."
+- **Files:**
+  - `vesopa_server/public/charts.js` — `PALETTE` and the three default
+    colours (lines 35–36): `line()` defaults to `#b5179e` (the Takings area
+    chart and the payment-breakdown donut), `bar()` to `#4361ee`, `ranked()`
+    to `#7209b7`.
+  - `vesopa_server/public/style.css` — `.stat-card` accent stripes
+    (lines 1495–1503, currently `#4361ee`, `#f77f00`, `#06d6a0`, `#ef476f`);
+    brand tokens `--brand: #a5c715`, `--brand-deep`, `--on-brand` already
+    exist; dark theme is `:root[data-theme="dark"]` plus a
+    `prefers-color-scheme` block.
+- **Behaviour:**
+  - Re-cut the palette around the brand green. The Takings area, the donut's
+    first slice and the ranked bars lead with the green; the remaining
+    categorical colours are chosen to sit with it — **no magenta, no purple
+    leads**. Ten categories still need to be distinguishable from each other.
+  - Re-cut the four stat-card stripes to a coordinated sequence rather than
+    the current random rainbow.
+  - Verify in **both** themes — the venue works in dark mode. On light
+    surfaces the green may need `--brand-deep` for line contrast; on dark the
+    full `--brand` reads well. Hard-coded hex is fine (the charts already
+    are), but every value must be checked against both backgrounds.
+- **Test:** visual: open the dashboard in light and dark, at a desktop width,
+  and check legibility of every series, stripe and donut slice. Take a
+  screenshot of each theme for the release record.
+  `grep -n "b5179e\|7209b7" vesopa_server/public/charts.js` returns nothing.
+- **Done:** the dashboard reads green-led in both themes, nothing lilac or
+  purple survives in `charts.js`, and the stat-card stripes look deliberate.
 
-- **Ask:** kitchen and till must react to new QR orders (accept, notify).
-- **Files:** `vesopa_server/src/dinein.js`; whatever file implements the server end of the kitchen app's `data/live_link.dart` channel — read `vesopa_epos_kitchen/lib/data/live_link.dart` for the URL, then find the matching route in `vesopa_server/src`.
-- **API:** when an order is placed, and when its status changes, publish on the existing channel: `{ "type": "dinein_order", "office_id": …, "order": { "public_id", "table_label", "customer_name", "status", "total_minor", "placed_at" } }`. If the channel turns out to be poll-based, skip this task and rely on polling in T23/T25 — record which in the commit message.
-- **Test:** unit-test that the emit helper is invoked on placement (stub the channel). 
-- **Done:** event fires on place and on status change.
+### T11 — Fix the overlapping select arrows (dark mode)
 
-### T9 — Accept/reject route usable by the apps
+- **Ask:** "Fix the arrows overlapping the departments and sub departments in
+  the product view page."
+- **Files:**
+  - `vesopa_server/public/style.css` — the base `select` rule (around
+    lines 5659–5707: `appearance: none; padding-right: 38px;
+    background-image: url("data:image/svg+xml,…chevron…");
+    background-position: right 12px center; background-size: 17px;`);
+    `.cell-edit` (line 2715: `background: transparent; padding: 3px 6px;`);
+    the dark rules `:root[data-theme="dark"] select { background-image: … }`
+    and the matching `@media (prefers-color-scheme: dark)
+    :root:not([data-theme="light"]) select { … }`.
+  - The rendering side, for reference only: `cellSelect()` in
+    `vesopa_server/public/app.js` line 2064.
+  - "Before" evidence:
+    `C:\Users\Administrator\Documents\Vesopa-Claude-Images\2026-09-08-backoffice-1680\before-dark-products.png`.
+- **Behaviour:** the cause, established by measuring, is a specificity and
+  shorthand interaction: `.cell-edit`'s `background:` shorthand clears the
+  chevron's image/position/size in light mode (so no arrow at all), while the
+  dark rules set *only* `background-image` at a specificity that beats the
+  class — so in dark mode the image returns with default position `0% 0%` and
+  repeats across the cell, on top of the department name. The fix:
+  - Stop relying on shorthand/longhand luck. `.cell-edit` sets
+    `background-color`, `background-image`, `background-position`,
+    `background-repeat`, `background-size` **explicitly**, with
+    `padding-right` making room, in both themes — so the chevron sits once, at
+    the right edge, clear of the text, in light *and* dark.
+  - The chevron must remain theme-appropriate (dark chevron on light, light
+    chevron on dark — the two SVG data-URIs already exist per theme).
+  - Deliberate visible change: light mode **gains** the chevron on these
+    cells. A cell that looks like plain text but is a dropdown is its own
+    complaint; the affordance stays.
+  - Audit the rest of the stylesheet: `grep -n "background" style.css` over
+    every rule that targets a `select` (or a class applied to one) and fix
+    any other place overriding `background` on a select the same way.
+- **Test:** manual, measured: Products page, dark theme, at 1440 / 1180 /
+  1024 / 900 / 700 / 560 px — one chevron per Department and Sub Department
+  cell, right-aligned, never over text; same in light theme (chevron now
+  present). Take an "after" screenshot next to the "before" one.
+  `npm test` exits 0.
+- **Done:** at every measured width, in both themes, each cell shows exactly
+  one chevron that does not overlap the text, and no other `select` rule in
+  the stylesheet can recreate the bug.
 
-- **Ask:** "giving the kitchen app an option to accept the order and also option to accept from the till."
-- **Files:** `vesopa_server/src/dinein.js`.
-- **API:** the back-office `/dine-in/orders` page already changes order status — find the route by searching `public/app.js` for `accepted`. Reuse that exact route; do not create a parallel one. Extend its auth so that, in addition to the back-office session, a kitchen app token or till token for the same `office_id` may set `status` to `accepted` or `rejected` (with optional `status_note`). Kitchen sign-in is server-side already (`vesopa_epos_kitchen/lib/data/kitchen_session.dart` talks to it) — find that auth middleware and apply it.
-- **Test:** extend `vesopa_server/test/dinein-order-modifiers.test.js` or new `dinein-accept.test.js` — kitchen-scoped token can accept an order in its office; cannot touch another office's order; invalid transition is rejected as the route rejects today.
-- **Done:** both app credentials can accept/reject; back office still works.
+### T12 — Mix & Match product picker
+
+- **Ask:** "Mix & Match instead of using PLU numbers can this be set to select
+  products from a drop down list with a search function."
+- **Files:**
+  - `vesopa_server/public/app.js` — the generic-CRUD registration at line 568
+    (`'mix-match': { path: 'mix-match', title: 'deal', sortable: true,
+    fields: [...] }`); the custom-control pattern `imagePicker()` /
+    `wireImagePickers()` (lines ~690–780) to copy for a bespoke control inside
+    the generic modal; the products list fetch used by the Products page
+    (reuse it rather than inventing a second one).
+  - Server side: T5's routes.
+- **Behaviour:**
+  - The deal form gains a "Products" control: a search box filtering a
+    checklist of products (match on name or PLU), with the chosen products
+    shown as removable chips and a count.
+  - Editing a deal loads its current products from `GET /mix-match/:id/products`.
+  - Saving: for an existing deal, save the CRUD fields then `PUT` the product
+    list; for a **new** deal, create it first, then `PUT` with the new id —
+    in that order, because the list is keyed by deal id.
+  - The generic CRUD (sortable, existing fields) keeps working unchanged.
+- **Test:** manual against a local server (then once against live as
+  `manager@vesopa.co.uk` with a deal created and deleted for the purpose):
+  create a deal, search and add three products by name, save, reload — the
+  three persist; remove one, save, reload — gone; confirm the till sync
+  output (`src/server.js` lines 551–563) returns the chosen products for that
+  deal. `npm test` exits 0.
+- **Done:** a deal's products can be found by search and saved entirely from
+  the deal form, and the sync endpoint serves exactly what was chosen.
+
+### T13 — Customers bulk-edit UI
+
+- **Ask:** "Customers / Loyalty please allow a mass edit of customers so we
+  can set expiry dates easier."
+- **Files:**
+  - `vesopa_server/public/app.js` — the pattern to copy is the Products page:
+    `productPicks` (a `Set` of ids held across re-renders, line 1661),
+    `renderBulkBar()` (line 1951), `bulkEditProducts()` (line 1972), the
+    per-row `.pick-col` checkbox (line 2127) and the header select-all. The
+    customers table and its expiry badge are around line 2462.
+  - Server side: T4's route.
+- **Behaviour:**
+  - The customers table gains the same machinery: a checkbox column, a header
+    select-all over the visible (filtered) rows, a picks `Set` that survives
+    re-renders, and a bulk bar showing "N selected" with **Set expiry date…**
+    and **Clear expiry** actions.
+  - The modal sets one date (or confirms clearing) and posts to
+    `POST /customers/bulk`; on success the table refreshes and the expiry
+    badges (line ~2462) reflect the change immediately.
+  - Scope: expiry only, in this pass (see the ambiguities section).
+- **Test:** manual: filter the list, select three customers with the boxes and
+  the select-all, set a date — all three badges update; clear expiry on two —
+  badges clear; an unselected customer is untouched. Live spot-check once with
+  a customer created and deleted for the purpose. `npm test` exits 0.
+- **Done:** an operator can put the same expiry date on any visible selection
+  of customers in one action, and nothing outside the selection changes.
+
+### T14 — Customer photo picker
+
+- **Ask:** "Ability to upload a photo of a customer that would display on the
+  till when scanned to confirm it's the right person."
+- **Files:**
+  - `vesopa_server/public/app.js` — the customer edit form (line ~4753, which
+    already has the `membership_expiry` date field); the
+    `imagePicker()` / `wireImagePickers()` control (lines ~690–780) with its
+    square/circle crop option — use the circle crop for people.
+  - Server side: T3's `POST /api/customer-photo` and the update route that
+    persists `photo_url`.
+- **Behaviour:**
+  - The customer form shows the current photo (or initials placeholder), an
+    upload control using the existing picker, and a **Remove photo** action
+    that saves `photo_url: null`.
+  - Upload posts to `/api/customer-photo`, then the returned `/uploads/<file>`
+    URL is saved with the customer. Oversized or wrong-type files are refused
+    by the server (4 MB; png/jpeg/webp/gif) — surface the error in the modal
+    rather than failing silently.
+- **Test:** manual: upload a photo, save, reload the form — photo shows;
+  remove it — placeholder returns; confirm `GET /loyalty/customer` for that
+  customer now returns `photo_url` (curl or browser). `npm test` exits 0.
+- **Done:** a customer's photo round-trips through the form and is exposed to
+  the till through the loyalty lookups.
+
+### T15 — Shift-click range select on Products
+
+- **Ask:** "Allow use to select multiple products for mass edit using the
+  shift key to select the first and last product and everything in between."
+- **Files:**
+  - `vesopa_server/public/app.js` — `productPicks` (line 1661), the per-row
+    checkbox `<input type="checkbox" data-pick="${p.id}">` (line 2127),
+    `visibleProducts()`, `renderBulkBar()` (line 1951), `bulkEditProducts()`
+    (line 1972).
+- **Behaviour:**
+  - Remember the **anchor**: the id of the last row whose checkbox was
+    clicked without Shift.
+  - A Shift+click toggles its row, then sets every row from the anchor to the
+    clicked row **inclusive** to the clicked row's new state — computed over
+    `visibleProducts()`, i.e. the visible, sorted, filtered order. Ranging
+    over the underlying array would select rows a search has hidden.
+  - If the anchor is not in the current visible list (after a search or
+    re-sort), treat the Shift+click as a plain click and re-anchor.
+  - The header select-all and the bulk bar behave exactly as today.
+- **Test:** manual script: sort by name, click row 2, Shift+click row 7 —
+  rows 2–7 selected, bar reads "6 selected"; Shift+click a selected row —
+  the range deselects; search to narrow the list, then Shift+click across the
+  filtered view — only visible rows are picked; sort differently mid-selection
+  and confirm the picks `Set` (ids) is unaffected. `npm test` exits 0.
+- **Done:** every step of the script behaves as described, with the range
+  always following what the operator can see.
+
+### T16 — Back-office polish list
+
+- **Ask:** "Any other tweaks you can think of for the back office to make it
+  look sexier."
+- **Files:** various, per item.
+- **Behaviour:** a short, concrete list — each item says what it fixes. Four
+  items; two are cross-references so their work is not doubled.
+  1. **Sort arrow hard against the header word** (Products table,
+     `public/style.css` table-header rules): add a small margin between the
+     header label and the sort indicator. Fixes cramped headers on every
+     sortable table, not just Products.
+  2. **Nav rail scrolls its last group under the "Hide menu" footer**
+     (`public/style.css` nav rules): give the rail bottom padding (or take the
+     footer out of the scrolling flow) so the final group is fully reachable.
+     Fixes unreachable menu items at the bottom of the rail.
+  3. **Stale department name in live data:** a product on live shows its
+     department as "Beers (no longer listed)" because the department was
+     renamed under it. On the live back office, move the affected products to
+     the correct department and rename or remove the stale one. Fixes
+     nonsense department names on the till and in reports. This is a live
+     data change: back the database up first, use the normal Departments UI,
+     and confirm the target department with the venue if "Beers" is not
+     obvious.
+  4. **Dark-mode chevrons and rainbow accents** — already fixed properly in
+     T11 and T10; mention them in the release notes as part of the tidy-up
+     rather than duplicating work here.
+- **Test:** visual for 1 and 2 (both themes for the nav); for 3, the product
+  list on live no longer shows the stale department, and the Departments page
+  reflects the tidy-up. `npm test` exits 0.
+- **Done:** the four items are each visibly fixed (or verified fixed by their
+  own tasks), and nothing else has been "improved" beyond this list.
+
+### T17 — British English pass
+
+- **Ask:** "Can we use AI to tweak your instructions / saying so it's in
+  perfect English. Please make sure it's English UK not American."
+- **Files:**
+  - `vesopa_server/public/index.html` — headings, hints.
+  - `vesopa_server/public/app.js` — labels, empty states, confirmations,
+    error messages.
+  - `vesopa_server/src/permissions.js` — permission **labels only** (keys and
+    labels are different fields; only the label may ever move).
+  - `vesopa_server/src/*.js` — server error strings that surface to a human.
+- **Behaviour:**
+  - British spellings throughout: -ise endings, colour, centre, licence as a
+    noun, practise as a verb, cheque, catalogue.
+  - No Americanisms: gotten, "off of", "different than", US date order in
+    prose.
+  - Consistent casing: sentence case in body copy, title case in navigation
+    (T8 did the nav).
+  - Straight apostrophes everywhere (`'`, not `’`) — pick one and be
+    consistent.
+  - Venue words over jargon where a venue word exists.
+  - **Hard rule:** never touch a string that is a key, a URL, a `data-view`
+    value, an API field name, a permission key, or anything compared against
+    elsewhere. Only words a human reads. When in doubt, leave it.
+- **Test:** three parts, all required.
+  1. Read the entire diff by eye — every changed string is display copy, none
+     is a key.
+  2. `cd vesopa_server && npm test` exits 0 (permission and route tests pin
+     machine-facing strings).
+  3. Mechanical sweep: `grep -rni "gotten\|off of\|different than\|color\|
+     center\|organize\|finalize\|licensee"` over the four areas and confirm
+     every hit (if any) is justified; then click through the back office and
+     read the pages touched.
+- **Done:** the diff is clean under all three checks, and an operator reading
+  the back office meets correct, consistent British English.
 
 ---
 
-## PHASE B — Back office
+## Phase 3 — the till (`vesopa_epos`)
 
-### T10 — Allergen editors (product form and dine-in item form)
+*Finishing this phase requires a **Store build** of `vesopa_epos` (folded into
+Phase 4) and **Phase 1 must be deployed** before the end-to-end checks. The
+kitchen and customer-display apps are not changed in this phase. Run
+`flutter test` after every task; expect only the three known failures listed in
+"Scale honesty".*
 
-- **Ask:** "Allergens options needed … In back office."
-- **Files:** `vesopa_server/public/app.js`, `vesopa_server/public/style.css`.
-- **UI:** product form fields are declared as the existing `{label,name,type,value,hint}` array. Add a new field type `'allergens'` to the form renderer: it fetches `GET /api/allergens` once and renders 14 checkboxes in two columns; checked state comes from the JSON array value; saving submits a JSON array of codes. Add `{label:'Allergens', name:'allergens', type:'allergens', hint:'Shown in the QR menu, on kitchen tickets and on the customer display.'}` to the `bo_products` form — the product save route must accept the new column (find the product update route's field whitelist where `is_modifier`/`barcode` are accepted, and add `allergens`). Add the same field to the dine-in menu item form saving `dinein_items.allergens`, with hint `'Leave empty to inherit from the linked product. Tick none to show no allergens.'`
-- **Test:** manual in back office: tick Milk + Gluten on a product, save, reload, still ticked; check DB stores `["milk","gluten"]`.
-- **Done:** both forms round-trip; QR menu API (T7) reflects saved values.
+### T18 — Drift: customer `photoUrl` column and migration
 
-### T11 — Add-ons configuration: reuse, plus hint
+- **Ask:** (enabler for the photo request; see T14/T21 for the quoted ask).
+- **Files:**
+  - `vesopa_epos/lib/data/local/database.dart` — the customers table (line 249
+    holds `DateTimeColumn get membershipExpiry`); bump `schemaVersion` and add
+    a migration step.
+  - `vesopa_epos/lib/data/local/database.g.dart` — regenerated, committed.
+  - The mapper that turns a `/loyalty/*` payload into a Drift companion —
+    find it by grepping `membershipExpiry` across `vesopa_epos/lib`.
+- **Behaviour:**
+  - Add `TextColumn get photoUrl => nullable()`.
+  - Migration: on upgrade from the previous schema version, add the column.
+  - The mapper stores `photo_url` from the loyalty payloads (T3) alongside
+    `membershipExpiry`.
+  - Regenerate with `dart run build_runner build` and commit the result.
+- **Test:** `flutter test` — the existing database tests plus, if the house
+  pattern includes migration tests, one that opens a database at the old
+  version and upgrades. Only the three known failures remain.
+- **Done:** an upgraded local database has the column, and a synced customer
+  with a photo has its URL stored locally.
 
-- **Ask:** "Add ons can be added to each product from the back office and each price can be set."
-- **Files:** `vesopa_server/public/app.js`.
-- **UI:** the product form already has a field of `type:'modifiers'` editing `epos_product_modifiers`, and prices live on the PLUs. No new editor. Change its hint to: `'Also shown in the QR menu as Add Ons, asked before the item is added. Prices come from the products on the modifier screen.'` Nothing else. `screens.js` needs no change.
-- **Done:** hint renders; existing modifier editing unchanged.
+### T19 — Till: refuse expired memberships
 
-### T12 — Meta tag fields on the venue form
+- **Ask:** "Please allow a function on the till that is the customer have
+  expired they card can't be used."
+- **Files:**
+  - The customer-attach paths in `vesopa_epos/lib` — locate them by following
+    what consumes `/loyalty/card` (the scan path, via `swipe_listener.dart`)
+    and `/loyalty/search`. The expiry value is already stored locally (T18's
+    neighbour, `membershipExpiry`); nothing reads it yet — this task is the
+    reader.
+- **Behaviour:**
+  - When a customer is attached by scan or search: if `membershipExpiry` is
+    non-null and **before today** (till-local date; the expiry date itself is
+    still valid through its day), the customer is **not** attached. Instead,
+    show "Membership expired on \<date\>" with **Renew (£X)** and **Not now**.
+    - **Renew** runs T20's flow. **Not now** leaves no customer attached —
+      the card genuinely cannot be used.
+  - `membershipExpiry` null (plain loyalty customers) is unaffected.
+  - The check is local — it must work with the broadband off, which is why the
+    expiry is synced to the till at all.
+- **Test:** new `vesopa_epos/test/customer_expiry_test.dart` (create): the
+  attach decision with expiry yesterday (refused + prompt), today (allowed),
+  tomorrow (allowed), and null (allowed). This is decision logic — no IO, so
+  the `dart:io` stubbing in widget tests is irrelevant here.
+- **Done:** an expired card cannot attach a customer; the only onward paths
+  are renewal or walking away.
 
-- **Files:** `vesopa_server/public/app.js` (`/dine-in` page).
-- **UI:** add three fields to the venue form: `meta_title` (text, hint `'Leave blank to use the venue name.'`), `meta_description` (text, hint `'Leave blank to use the tagline. Shown in search results and link previews.'`), `meta_image_url` (use existing `type:'image'`, hint `'Leave blank to use the banner, then the logo.'`). Save via the route whitelisted in T3.
-- **Done:** fields save and reload; NULLs when blank.
+### T20 — Till: take the membership fee and renew
 
-### T13 — Notification matrix UI
+- **Ask:** "We should be allowed to renew and take their membership fee at the
+  till and setting a expiry date. … say they expired and then paid £10
+  membership at the till, the till should then renew to a date we set in the
+  back office."
+- **Files:**
+  - The renewal prompt from T19; the bill/finalise path (start from
+    `vesopa_epos/lib/data/tender_engine.dart` and wherever finalise hooks
+    live); the loyalty settings sync that consumes `GET /loyalty/public`
+    (T2 added the fee and term to it).
+  - Server side: T2's `POST /loyalty/renew`.
+- **Behaviour:**
+  - **Renew** adds a sale line "Membership renewal" priced at the configured
+    fee (`membership_fee_minor` from synced loyalty settings) to the open
+    bill, tied to that customer. One renewal line per customer per bill —
+    tapping Renew twice does not double it.
+  - On finalise, the till POSTs to `/loyalty/renew` with the customer id. The
+    server computes the new expiry (today + term, or current expiry + term
+    when early) and returns the customer; the till updates its local copy.
+  - A bill voided before finalise renews nobody — the POST happens only on
+    finalise.
+  - If the POST fails (offline, server error): do **not** pretend the renewal
+    happened. Queue it, warn the operator ("payment taken — renewal will
+    complete when the connection returns"), and retry when connectivity
+    returns.
+- **Test:**
+  - New `vesopa_epos/test/membership_renewal_test.dart` (create) with a fake
+    API: renewal line added once and priced from settings; finalise triggers
+    exactly one POST; void triggers none; a failed POST queues and a later
+    success clears the queue.
+  - End-to-end: new `vesopa_epos/integration_test/membership_renewal_live_test.dart`,
+    run with `flutter test integration_test/membership_renewal_live_test.dart
+    -d windows` against `https://backoffice.vesopaepos.com` as
+    `manager@vesopa.co.uk`. It creates its own test customer, expires it,
+    renews through the real routes, asserts the new expiry in the back
+    office, then deletes **only** that customer.
+- **Done:** an expired customer renewed at the till shows an expiry of
+  today + term in the back office, the £10 (or configured fee) appears in
+  takings on the receipt, and a lost connection never loses the renewal.
 
-- **Files:** `vesopa_server/public/app.js` (the settings page whose inputs carry `data-idle`), `vesopa_server/public/style.css`.
-- **UI:** new section "Notifications" on that page. Inputs bind with `data-idle` to the T4 columns, so saving flows through the existing `PUT /api/till-settings` path with no new plumbing:
-  - Master: checkbox `notify_master` — "Windows notifications in all apps".
-  - Events: `notify_till_dinein_new` "New QR order — Till", `notify_kitchen_dinein_new` "New QR order — Kitchen", `notify_kitchen_ticket_new` "New kitchen ticket from till — Kitchen".
-  - Sound: `notify_till_sound` "Till sound", `notify_kitchen_sound` "Kitchen sound".
-  - Display: `notify_display_enabled` "Customer display notifications (default off)".
-  Each with a `.field-hint` line. Group with subheadings "Events", "Sound", "Display".
-- **Done:** toggles round-trip through save/load; apps read them in Phases E–G.
+### T21 — Till: show the customer photo on attach
 
----
+- **Ask:** "Ability to upload a photo of a customer that would display on the
+  till when scanned to confirm it's the right person."
+- **Files:**
+  - The customer-attach UI in `vesopa_epos/lib/ui` (the panel or dialog shown
+    when a customer is attached — find it from the attach paths in T19);
+    `photoUrl` from T18.
+- **Behaviour:**
+  - When a customer with a `photoUrl` is attached, show the photo large enough
+    to recognise a face, fetched from
+    `https://backoffice.vesopaepos.com` + `photoUrl`, and cache it locally so
+    repeat scans do not refetch.
+  - No photo, or photo unreachable (offline): show an initials placeholder.
+    The photo never blocks a sale — it is a confirmation, not a gate.
+- **Test:** widget test with the house `dart:io` stubbing in mind (image HTTP
+  answers 400 in widget tests): assert the placeholder path renders and the
+  correct URL is requested — not real pixels. Then a manual check on a real
+  till against a live customer who has a photo.
+- **Done:** scanning a photographed customer shows their photo on the till;
+  everyone else gets a clean placeholder; the sale proceeds offline.
 
-## PHASE C — QR menu visual fixes (`vesopa_server/src/dinein_pages.js`)
+### T22 — Pay key: amount beside the label
 
-Run `cd vesopa_server && npm test` after EVERY task in this phase (template-literal guard, trap 1). All selectors below must be located by searching the file; line numbers drift.
+- **Ask:** "Pay button can the amount be on the side of the button not
+  underneath so it's bigger and easier to read."
+- **Files:**
+  - `vesopa_epos/lib/ui/widgets/programmed_bar.dart` — `_resolved` (line 636)
+    returns `note: money(live.totalMinor)` for the `pay` function key; the key
+    body (lines 754–800) draws icon, label, then the note **underneath** in a
+    Column at `fontSize 12`. **This** is the bar the venue uses.
+  - `vesopa_epos/lib/ui/widgets/action_bar.dart` — `_PrimaryKey` (lines
+    267–336) already lays label and amount in a Row at 19 pt / 22 pt w800.
+    Leave it alone (decision 8), but reuse its sizes for consistency.
+  - `vesopa_epos/lib/ui/widgets/programmed_grid.dart` — same label/note Column
+    at lines ~433–455. Determine whether `pay` is a placeable grid key
+    (screen programming / finalise keys); if it is, apply the same treatment
+    there, and record the answer in the commit message either way.
+- **Behaviour:**
+  - For the `pay` function key only: label and amount side by side in a Row —
+    amount at 22 pt w800, label at 19 pt, matching the built-in bar's
+    hierarchy.
+  - Keys can be narrow: shrink gracefully. The amount keeps priority; the
+    label ellipsises; the icon drops before anything overflows. No overflow
+    at any width the bar allows.
+  - Every other use of `note` keeps the existing Column treatment: "Not in
+    the catalogue", "Screen removed", a product price when `showPrices` is
+    on.
+- **Test:** existing golden tests over these widgets will move. Inspect the
+  rendered diff image by eye before accepting any regenerated golden — never
+  regenerate to make a test green without looking at the picture.
+  `programmed_grid_golden_test.dart` already fails by 0.43% on a clean tree:
+  confirm with `git stash push -u` that any failure you see is yours or that
+  known one before touching goldens.
+- **Done:** on the venue's real bar layout, the Pay key shows the amount
+  beside the word at a size worth reading; narrow keys degrade without
+  overflow; every other note usage is pixel-for-pixel as before.
 
-### T14 — Product images load and render at quality
+### T23 — Split bill: divide a quantity line
 
-- **Ask:** "products with images are not loading not showing me the quality."
-- **Diagnose first, against live using the test venue:** fetch the menu JSON (T7 route), `curl -I` every `image_url` — expect 200 and an `image/*` content-type; open the page and collect console/network failures. Likely suspects, in order: relative URLs (fixed by T7), CSS mangled by eaten backslashes in an inline `background-image`, mixed http/https.
-- **Fix:** render images as `<img>` (not CSS background) with `object-fit: cover; width:100%; height:100%; display:block;` inside a fixed-aspect container; add `loading="lazy"` and `decoding="async"`. Use the original `image_url`; do not downscale in markup beyond the card size.
-- **Done:** live test venue menu shows every image, no 404s in the network tab, images fill their frames without distortion.
+- **Ask:** "There's also a bug on split bill. If there is 3 x Prosecco you
+  can't split them off, someone must pay for the 3 glasses if you get what i
+  mean."
+- **Files:**
+  - `vesopa_epos/lib/ui/split_bill_sheet.dart` (768 lines) — the
+    pool-and-shares screen: `_lines` (`List<PricedLine>` in reading order),
+    `_shares` (`List<Set<String>>`), `_picked` (`Set<String>`), `_pool`.
+  - `vesopa_epos/lib/data/tender_engine.dart` — `TenderState.splitByItems(
+    List<List<String>> groups)` (line 238) and `_apportion()`.
+  - `vesopa_epos/lib/data/pricing_engine.dart` — `PricedLine` (line 4):
+    `quantity` (a `double`), `unitPriceMinor`, `discountMinor`, `grossMinor`,
+    `netMinor`, `parentLineId`.
+  - The print path: `onPrintShare(Set<String> lineIds, String title, int
+    totalMinor)` and its callers.
+- **Behaviour:**
+  - Division is a lens over the sale line, never a rewrite of it. The sale keeps
+    its `3 x Prosecco` row for the full bill, kitchen dockets and any later
+    reprint; dividing only changes how the engine and the sheet apportion it.
+  - New on `TenderState`: `divideLine(String lineId) → List<String>`. Offered
+    only when the line is top-level (`parentLineId == null`), `quantity > 1`
+    and `quantity` is a whole number. It mints one synthetic `PricedLine` per
+    unit, id `${lineId}#${i}` for i in 1..n, each `quantity: 1`, held in a
+    `_portions` map keyed by those ids. The engine hands the ids out and
+    resolves them; the sheet and the print path both ask the engine, so the
+    three can never disagree about what an id means.
+  - The money. Portion gross is `unitPriceMinor` — a portion is one unit, so
+    gross always divides exactly. `netMinor` is apportioned base-plus-remainder:
+    `base = netMinor ~/ n`, and the first `netMinor % n` portions carry
+    `base + 1`. Each portion's discount is what remains, `gross − net`, so the
+    discounts sum to `discountMinor` exactly as well. Portions therefore add up
+    to the parent to the penny however they are grouped, the shares sum to the
+    outstanding, and `_apportion()` needs no rounding changes. The odd penny,
+    when a line won't divide evenly, is paid by portion 1 — deterministic, and
+    always the same glass however the operator drags them.
+  - Modifiers divide through their parent, never on their own — `divideLine`
+    refuses a child id. A child whose quantity tracks the parent's (the normal
+    case: `3 x Peppercorn` on `3 x Steak`) is divided the same way, and
+    portion i of the parent owns portion i of the child — `${childId}#${i}`
+    with `parentLineId: ${parentId}#${i}`, money apportioned identically. A
+    flat child whose quantity doesn't match (a one-off charge) rides whole on
+    portion 1. Parent portions plus child portions still sum exactly to the
+    original lines.
+  - In the sheet: a pool row with a divisible quantity shows a divide
+    affordance on its quantity chip, and long-press on the row does the same —
+    the gesture the venue's old system used. The only division offered is into
+    singles; any coarser grouping is built by dragging singles. Confirming
+    replaces the row in `_lines` with the portion rows at the same position,
+    and from then on portions pick and drag exactly like any other line,
+    because `_shares`, `_picked` and `_pool` already hold ids and a portion id
+    is just an id. When every portion of a parent is back in the pool
+    unassigned, the sheet re-merges them — the engine drops the portions and
+    the pool shows `3 x Prosecco` again. Merge is never offered while any
+    portion sits in a share.
+  - `splitByItems` resolves every id (sale line or portion) and validates
+    coverage: a divided line is covered exactly when all of its portions are
+    present; the parent's own id in a group is an error once it has been
+    divided; a missing portion fails the way a missing line does today.
+  - Print: `onPrintShare` resolves portion ids to the portion lines, so a share
+    never prints `3 x Prosecco` unless it genuinely holds all three. Portions
+    of one parent inside a single share coalesce on the receipt — two glasses
+    on share 2 print as `2 x Prosecco £9.10`, one glass on share 1 as
+    `1 x Prosecco £4.55`. The full-bill reprint is untouched and still shows
+    the original line.
+  - Fractional quantities (a 1.5 kg weigh-line) and quantity-1 lines are not
+    offered the gesture at all — there is no sensible unit to tear them into;
+    the venue re-weighs or re-rings if it truly needs to part one.
+- **Test:**
+  - `vesopa_epos/test/data/tender_engine_test.dart`: divide 3 x £3.50 carrying
+    a £1.00 line discount → portions net 317p, 317p, 316p, summing to 950p,
+    the line's `netMinor`; 3 x £4.55 with no discount → 455p each;
+    `splitByItems([[p1], [p2, p3]])` sums to the outstanding to the penny;
+    parent id mixed with its own portion → throws; one portion missing →
+    throws; `divideLine` on quantity 1, on 1.5, and on a modifier id → throws;
+    3 x Steak + 3 x Peppercorn → the share holding `steak#2` also holds
+    `peppercorn#2` at 150p; a flat £2.00 child lands whole on portion 1.
+  - `vesopa_epos/test/ui/split_bill_sheet_test.dart` (widget): long-press
+    `3 x Prosecco` → three pool rows in the same place; one dragged to share 1,
+    two to share 2, share totals adding to the bill total; all portions
+    returned to the pool re-merge to `3 x Prosecco`; no affordance on a `1 x`
+    row or a `1.5 kg` row.
+  - Print: a one-portion share prints `1 x Prosecco £4.55` and never `3 x`;
+    a two-portion share prints `2 x Prosecco £9.10`; the full bill reprint
+    still shows `3 x Prosecco`.
+- **Done:** the table with 3 x Prosecco can put one glass on its own share and
+  two on another; every share total is exact and the shares add to the bill to
+  the penny; each receipt reads what that person is actually paying for; and
+  nothing about the sale itself, the kitchen docket or the full-bill reprint
+  has changed.
 
-### T15 — Logo: remove white surround, circular cover crop
+### T24 — Till: add staff / replace a card from the Functions screen
 
-- **Ask:** "logo behind showing a white background around it remove that white big border … show that image logo in the circle and show cover centering the image."
-- **Files:** `dinein_pages.js` — find the logo markup/CSS via `logo_url`.
-- **UI:** container `border-radius:50%; overflow:hidden; background:none; padding:0; border:0; box-shadow:none;` at its current size; inner `<img>` `width:100%; height:100%; object-fit:cover; object-position:center;`. If a specific uploaded logo itself contains a white matte, `object-fit:cover` with the square crop will trim the edges — that is acceptable and noted, not a code problem.
-- **Done:** circular logo, image fills the circle, no white ring on the live test venue.
+- **Ask:** the client wants a new starter put on the till from the shop floor,
+  not by driving to the back office — and, their words, "the ability for
+  existing staff to assign a new card if their one have broke, lost etc."
+- **Files:**
+  - `vesopa_epos/lib/ui/functions_page.dart` — the `Shift` group (listed only
+    when `tillSettingsProvider.idleRequirePin && canSignOnProvider`) gains two
+    `_Function`s.
+  - `vesopa_epos/lib/ui/manager_approval.dart` — the gate both flows sit
+    behind.
+  - `vesopa_epos/lib/ui/staff_pin_pad.dart` — the four-key-submit pad, reused
+    for PIN entry and confirmation.
+  - `vesopa_epos/lib/hardware/swipe_listener.dart` — reading the new card.
+  - `vesopa_epos/lib/ui/cards_page.dart` — the card-UI patterns to mirror.
+  - `vesopa_server/src/server.js` — `GET /till/staff` (line 612), the read
+    side, terminal-token signed; plus the two routes T6 adds — create a staff
+    member (`POST /till/staff`) and list the venue's permission groups
+    (`GET /till/permission-groups`) — also on a terminal token.
+  - `vesopa_server/src/cards.js` — `POST /till/cards/assign` and
+    `POST /till/cards/issue`, which already refuse a card registered to
+    somebody else, and name them.
+  - `bo_clarks` (staff rows) and `epos_permission_groups` — "role" in the
+    client's words is `permission_group_id`.
+- **Behaviour:**
+  - The `Shift` group gains **Add staff** and **Replace card**, under exactly
+    the same visibility rule as the rest of the group. Both open behind
+    manager approval — a manager's PIN or card authorises the flow before
+    anything else shows.
+  - Add staff: name → PIN pad reused from sign-on, so it submits on the fourth
+    digit and a fifth cannot be typed → confirm PIN → role picker listing the
+    venue's permission groups by name → optional card swipe → the T6 create
+    route. The form itself also refuses anything but exactly four digits
+    before the POST, and the route validates `^\d{4}$` and answers 400
+    otherwise, because a five-digit PIN sitting in `bo_clarks` is a person who
+    can never sign on.
+  - A PIN already in use comes back 409 naming its holder: show "That PIN is
+    already used by {name}" and drop back to the pad. The PIN is never echoed
+    after submit and never logged.
+  - On success the till refreshes its cached staff list from `GET /till/staff`,
+    so the new starter — permission-group switches and all — can sign on at
+    that till within the minute.
+  - Replace card: manager approval → pick the staff member from the
+    `GET /till/staff` list (searchable; some venues have dozens) → swipe the
+    new card → confirm, naming the person. A card the system already knows
+    goes through `assign`; one it has never seen goes through `issue`. Either
+    route refuses a card registered to somebody else and names them — surface
+    that verbatim and let the manager pick another card. The moment the row's
+    `swipe_card` changes the old card is dead: sign-on matches cards against
+    the row, so there is nothing to revoke and no window where both work.
+  - Offline: neither flow can work without the server and neither pretends to.
+    PIN uniqueness is venue-wide, the permission groups live on the server,
+    and a locally-invented person could sign on at one till and not another —
+    so there is no queue-and-sync. With no connection the two entries stay
+    listed but greyed, description set to "Needs a connection", and tapping
+    one says the same in words. The rest of the Shift group is unaffected:
+    sign-on keeps working from the last synced staff list, and manager
+    approval for everything else still works offline.
+- **Test:**
+  - `vesopa_server` (npm): create happy path returns the row; 3- and 5-digit
+    PINs → 400; duplicate PIN → 409 naming the holder; both T6 routes reject a
+    missing or bogus terminal token; permission-groups returns only the
+    calling venue's groups; replace a member's card via `assign` → the old
+    card no longer signs on, the new one does; assign a card held by someone
+    else → refusal naming them.
+  - `vesopa_epos` (widget): the two functions appear under the same provider
+    condition as the rest of the Shift group and not otherwise; both demand
+    manager approval first; the pad will not submit three digits and will not
+    wait for a fifth; a confirm-mismatch scolds and restarts; the role picker
+    renders the groups the T6 route returned; with connectivity stubbed off,
+    both entries are greyed with the reason and sign-on still works.
+- **Done:** a manager can stand at the till and put a new starter on — name,
+  four-digit PIN, role, card if they have one — and the starter signs on
+  straight away; a broken or lost card is replaced at the till and the old one
+  is instantly useless; and none of it is offered when the broadband is down,
+  with the till saying why.
 
-### T16 — Meta tags from venue columns
+## Phase 4 — The release
 
-- **Files:** `dinein_pages.js` (head section; the tags already exist in derived form).
-- **Change:** description content becomes `meta_description` if set else the current derived expression; `og:title`/`twitter:title` use `meta_title` if set else current; `og:image`/`twitter:image` use `meta_image_url` if set else the current fallback chain. Keep `robots`, `canonical`, `og:type`, `og:url`, `twitter:card` as-is.
-- **Test:** `test/dinein-meta.test.js` — render with `meta_description` set: served HTML contains it; with NULL: contains the tagline-derived value.
-- **Done:** `view-source:` on the live test venue shows the custom values after T12 data is saved.
+### T25 — Versions
 
-### T17 — Table picker: arrow, attention animation, changeable
+- **Files:**
+  - `vesopa_epos/pubspec.yaml`
+  - `vesopa_epos_kitchen/pubspec.yaml`
+  - `vesopa_epos_display/pubspec.yaml`
+- **Behaviour:** all three go to 1.6.8.0 with build numbers incremented:
+  `vesopa_epos` to `version: 1.6.8+29` with `msix_config.msix_version:
+  1.6.8.0`; the kitchen to `1.6.8+9`; the display to `1.6.8+8`. Both fields in
+  each file — the pubspec `version` and the four-part msix version are read by
+  different tooling and drift apart silently if you let them.
+- **Test:** grep each pubspec for both fields and confirm they agree;
+  `flutter pub get` clean in all three; no build file in the tree still says
+  1.6.7.
+- **Done:** three pubspecs agree on 1.6.8.0.
 
-- **Ask:** "Tap to say which table you're at should show an arrow icon to the right and also show growing background colours … Once a table is picked it cannot be changed … Give an option for that."
-- **Files:** `dinein_pages.js` — markup near the existing `'<span class="dot"></span>Tap to say which table you are at'` (~line 1896).
-- **UI:**
-  - Right-align a `›` span inside the pill (no icon font dependency).
-  - Attention animation, pure CSS keyframes on the pill, infinite, 1.6s: background pulses between the venue `accent_colour` at 15% and 45% opacity, with a matching soft box-shadow growing and shrinking. Use `rgba()` values computed server-side from `accent_colour` when the page is rendered (it is already injected for theming).
-  - After a table is chosen the pill reads `At table {label} · change ›` and remains tappable; tapping reopens the same picker at any time (D7). Picking a new table updates the state wherever it is stored today; the basket is kept; no confirm dialog.
-- **Done:** pulse visible, arrow visible, table re-pickable before and after an order is placed; guard test passes.
+### T26 — The full test sweep
 
----
+- **Files:** `vesopa_server` (npm), the three Flutter apps, and the live back
+  office.
+- **Behaviour:**
+  - `cd vesopa_server && npm test` — exits 0.
+  - `flutter test` in `vesopa_epos` and `vesopa_epos_kitchen`. In
+    `vesopa_epos` the three known failures are expected and are not chased in
+    this release:
+    - `test/goldens/receipt_golden_test.dart` — the goldens were captured on
+      the old dev box; font rasterisation differs by pixels on this one.
+      Cosmetic, failing since 1.6.5.
+    - `test/data/fiscal_day_test.dart` — assumes the machine is on
+      Europe/London; fails under any other timezone.
+    - `test/hardware/cash_drawer_kick_test.dart` — needs a drawer on the
+      serial port; always fails on a machine without one.
 
-## PHASE D — QR menu basket and product sheet (`dinein_pages.js`)
+    Anything red beyond these three is a regression and stops the release.
+  - `vesopa_epos_display` has no test suite: `flutter analyze` there, zero
+    issues.
+  - Then the live end-to-end pass against
+    `https://backoffice.vesopaepos.com`, signed in as `manager@vesopa.co.uk`
+    and nothing else — the Vesopa demo venue, never a customer's. Everything
+    created in this pass is destroyed again before sign-off:
+    - The nav: the renamed section reads correctly and every destination
+      loads.
+    - Night mode on: each nav group's chevron collapses and restores its
+      section, and the folds survive a reload.
+    - The Mix & Match picker: create a `T26 TEST` offer, pick products through
+      the picker, save, verify it at the till, delete it.
+    - A bulk expiry edit: select the test members, extend expiry in one edit,
+      check the dates, put them back.
+    - A customer photo: attach to the test customer, confirm it renders,
+      remove it.
+    - An expired card refused at the till: the test member whose card has
+      expired is refused, with the renewal offered.
+    - A renewal taken: renew that member at the till, then void the tender so
+      the demo books stay clean.
+    - The Pay key: a mixed basket shows the exact amount beside the label.
+    - A three-glass split: 3 x Prosecco, one glass moved to its own share,
+      both shares paid, receipts reading `1 x` and `2 x`, totals to the penny;
+      the sale voided after.
+    - A staff member added at the till: add `T26 Temp` with a PIN and a role,
+      sign on as them, sign off, delete the row.
+- **Test:** the checklist above, every line initialled; the suites green apart
+  from the three named failures; analyze clean.
+- **Done:** npm exits 0; the Flutter suites are green bar the three known
+  failures; the ten live checks pass on the production URL and the demo venue
+  is left exactly as it was found.
 
-Guard test after every task. No backticks, no backslash escapes, character classes only.
+### T27 — Server deploy
 
-### T18 — Quantity badge expand animation
+- **Files:** `vesopa_server/src/`, `vesopa_server/schema/`,
+  `vesopa_server/public/` (minus `uploads`),
+  `.claude/skills/vesopa-ops/scripts/vesopa_ssh.py`, `@app/backup/`.
+- **Behaviour:** in order —
+  1. Dump first, before anything changes:
+     `vesopa_ssh.py run 'mysqldump --single-transaction --routines
+     vesopa_eposdb > @app/backup/vesopa_eposdb-1.6.8.0.sql'`.
+  2. `python .claude/skills/vesopa-ops/scripts/vesopa_ssh.py put src
+     "@app/src"`.
+  3. The same `put` for `schema`.
+  4. The same for `public` **with `--exclude uploads`**. Venue logos and
+     product images exist only on the server; syncing over that folder deletes
+     every venue's branding.
+  5. The schema loop — every migration in `@app/schema` applied in filename
+     order.
+  6. `pm2 restart vesopa_backoffice` and nothing else. The box also runs
+     `pasificbackend` and `royalbackend` for two other customers; touching
+     them takes their venues down with ours.
+  7. `GET /health` — 200 before this task is called done.
+  - Remote paths are always the `@app` shorthand, never a literal POSIX path:
+    Git Bash rewrites `/…` on its way to a native Windows program, and the
+    file lands somewhere surprising or nowhere.
+- **Test:** `/health` answers 200; sign in as the demo manager and load the
+  staff list; `pm2 list` shows all three services online with only
+  `vesopa_backoffice`'s restart time moved.
+- **Done:** the live server runs 1.6.8.0, the dump is on disk in
+  `@app/backup/`, and the other two customers never noticed.
 
-- **Ask:** "Once plus button is clicked it expands with an animation to view the quantity and add and subtract buttons … That number will work like a plus button animation expansion." Reference: foodpanda screenshots 1–6.
-- **Behaviour, exactly:**
-  - Text-only rows: a 32px circular button on the right. Not in basket: outline circle with `+`. In basket: solid dark filled circle showing the quantity. Nothing else on the row moves in any state.
-  - Image cards (list and the 2-column "Popular" grid): identical badge, absolutely positioned bottom-right on the image; the image container gets `position:relative`.
-  - Tapping the number expands the circle horizontally in place into a white pill (~112px) over 180ms ease (animate `width`; opacity-fade the inner controls): left button is a bin icon when qty is 1, a `−` when qty > 1; centre is the quantity; right is `+`. Bin at qty 1 removes the line and the badge returns to `+`. The pill stays open until the user taps elsewhere on the page or taps the quantity again.
-  - `+` on an item WITH add-on groups opens the product sheet (T19, D6) instead of incrementing; `+` on an item without groups increments with the same pop.
-  - Bin icon: inline SVG trash, currentColor. No emoji, no icon font.
-- **Implementation:** one JS state function `setQty(itemId, qty)` that all three layouts call; badge markup generated by one function so text rows, image cards and grid cards cannot drift apart. CSS transitions only — this page must stay light.
-- **Test:** manual against live test venue plus guard test. Checklist: text row + → number → pill → bin back to `+`; image card identical; grid card identical; row layout of neighbours never shifts.
-- **Done:** matches screenshots 1–6 behaviourally.
+### T28 — Three msix builds
 
-### T19 — Product sheet: add-ons, dietary, special instructions, availability
+- **Files:** outputs at `vesopa_epos/build/store/`,
+  `vesopa_epos_display/build/store/`, and — the kitchen has no `output_path`
+  in its msix config — `vesopa_epos_kitchen/build/windows/x64/runner/Release/`.
+- **Behaviour:** `dart run msix:create --store` in each app. Every package
+  file name carries the version — `…1.6.8.0….msix`. A submission that
+  replaces a package lists the old one `PendingDelete` and the new one
+  `PendingUpload`, and two files with the same name are read by the Store as
+  a submission with no package in it: same name, no release.
+- **Test:** each package's manifest identity reads 1.6.8.0 (open the msix as a
+  zip and read `AppxManifest.xml`); each file name differs from the 1.6.7.0
+  packages currently live; file sizes are in the same parish as last release's.
+- **Done:** three versioned packages on disk at the three paths, ready to
+  stage.
 
-- **Ask:** "add ons open before the product add"; "Special instructions which is the notes in the till, give options for that"; "If the product is not available then remove that product or talk to me regarding this or refund that amount. By default remove that product is selected." Reference: screenshots 7–9.
-- **UI:** bottom sheet, opened by tapping item name/image, or `+` when the item has groups. Contents in order:
-  1. Hero image (`object-fit:cover`, ~180px) if the item has one; close `×`.
-  2. Name; `from {price}` line.
-  3. If `diet_tag` set: chip with its text plus an `(i)`; tapping opens a "Dietary information" sheet showing the chip, the allergen labels for the item's `allergens` codes (labels from a page-level `ALLERGENS` constant the server injects at render time from `src/allergens.js`), the sentence "Please contact the venue for details.", and a "Got it" button.
-  4. Description.
-  5. Add-on groups from T5: group name, "Optional" when `min_select=0` else "Required", "Select one" when `max_select=1` (render radios) else "Select up to {max_select}" (render checkboxes). Option row: name left, `+ {price}` right. Render all options; no collapse.
-  6. "Special instructions": textarea, `maxlength=500`, live `0/500` counter, placeholder `e.g. no mayo`. Sent as the line `note` in T6.
-  7. "If this product is not available" row → chooser sheet with three radios: "Remove it from my order" (SELECTED BY DEFAULT), "Call me", "Refund this item", and an "Apply" button. Maps to `unavailable_action` `remove|call|refund`.
-  8. Sticky footer: `− qty +` stepper and a full-width "Add to cart" showing the line total including chosen add-ons.
-- **Behaviour:** Add posts the line into the basket state (including modifiers, note, unavailable_action); the badge shows the quantity; sheet closes. Required groups block Add until satisfied. Checkout POST already includes these fields via T6.
-- **Test:** manual E2E in T28. Guard test after editing.
-- **Done:** sheet matches the flow above; basket line carries add-ons with prices; server accepts the order (T6).
+### T29 — Store release notes, upload, publish
 
-### T20 — Offer activation sparkle
+- **Files:** `ms-store-submission-client/` and the three notes files, one per
+  app.
+- **Behaviour:**
+  - Three sets of release notes in the fixed shape: first line literally
+    `Version 1.6.8.0 - Short title` with a real short title per app, a blank
+    line, then paragraphs with **each paragraph on one single line however
+    long it is**. Partner Center renders every newline as a line break, so
+    hard-wrapped prose arrives on the public Store page broken mid-sentence on
+    every line. Under 1,500 characters each — count them (`wc -m`), don't
+    guess. The kitchen and display notes are short, and short is fine; the
+    shape is not negotiable.
+  - `cd ms-store-submission-client`; stage each package against its app —
+    `vesopa-epos`, `vesopa-kitchen`, `vesopa-display` — with its notes.
+  - Verify every upload by reading the blob back: HEAD it and compare the byte
+    count with the local file. "The PUT did not throw" is not "the file is
+    there".
+  - Commit each submission — and be clear about what committing is: there is
+    no validated-but-unsubmitted state through the API, and
+    `targetPublishMode` is `Immediate`, so a submission that passes
+    certification goes live to every venue with no second gate. Commit only
+    when T26 and T27 are green and the notes are final.
+  - Never edit an API-created submission in Partner Center afterwards; the
+    portal and the API client fork each other's state, and the next submission
+    inherits the mess.
+- **Test:** all three HEADs return byte counts equal to the local files; each
+  submission shows certification in progress.
+- **Done:** three submissions committed, certification under way, and Partner
+  Center never touched by hand.
 
-- **Ask:** "Once the offer is activated after adding items show a sparkling animation to the bottom." Reference: screenshot 10.
-- **UI:** when the venue has `offer_active` and the basket subtotal crosses `offer_min_spend_minor` upward, (a) show the green tick line above the cart bar — `You've got {offer_percent}% off your order!` (use `offer_label` when set) — if the page does not already show it, and (b) fire `sparkleBurst()`: ~20 absolutely positioned spans spawned at the cart bar, random left offsets, 4–8px, accent colour plus gold, CSS keyframe fall+fade 900ms, removed after 1s. Fire once per crossing; re-arm only if the subtotal drops below the threshold again. Pure CSS/JS, no library.
-- **Done:** crossing the threshold on the live test venue shows the tick line and one sparkle burst; adding more items does not re-fire it.
+### T30 — git
 
-### T21 — No autofocus in QR checkout
+- **Files:** the repo.
+- **Behaviour:** one commit per phase, made along the way — this task lands
+  the last of them and pushes `main` from a clean tree. Build outputs stay out
+  of the tree (`build/` is ignored; check before committing, not after).
+- **Test:** `git status --porcelain` empty; `git log --oneline` shows one
+  commit per phase; after the push, `git log --oneline origin/main..HEAD` is
+  empty.
+- **Done:** `origin/main` contains the whole 1.6.8.0 release and the working
+  tree is clean.
 
-- **Ask:** "After I'm trying to order as a guest, it's focusing a field which shouldn't be done."
-- **Files:** `dinein_pages.js` — search for `autofocus` and `.focus(`.
-- **Change:** remove autofocus attributes and any programmatic focus-on-open in the guest checkout (name/phone fields shown per `require_name`/`require_phone`). Focus must only follow a user tap.
-- **Done:** opening checkout as a guest never raises the keyboard by itself.
+## Decisions taken for the client
 
----
-
-## PHASE E — Kitchen app (`vesopa_epos_kitchen`)
-
-### T22 — Remove autofocus everywhere
-
-- **Ask:** "it's focusing a field which shouldn't be done anywhere in the kitchen app as we're working on a lower end device and very low screen."
-- **Files:** `grep -rn "autofocus\|requestFocus" vesopa_epos_kitchen/lib` — at minimum `ui/sign_in_page.dart`.
-- **Change:** delete `autofocus: true` and any `FocusNode.requestFocus` on page open.
-- **Test:** new `vesopa_epos_kitchen/test/no_autofocus_test.dart` — pump the sign-in page, assert nothing holds primary focus. If the project has no test harness yet, add this one test; also run `flutter analyze`.
-- **Done:** sign-in opens without the keyboard on the small device.
-
-### T23 — Incoming QR orders: accept/reject, allergens, modifiers
-
-- **Ask:** "giving the kitchen app an option to accept the order"; "kitchen app needs to know that" (add-ons); "Allergens … kitchen view."
-- **Files:** `data/kitchen_api.dart` (add `fetchDineinOrders(status: 'placed')` and `setDineinOrderStatus(publicId, status)` calling the T9 route and the orders list route the back office uses — find the list URL in `public/app.js` on the `/dine-in/orders` page), `data/live_link.dart` (subscribe to the T8 event; fall back to a 20s poll), `data/ticket.dart` (add `List<String> allergens` to the line model), `ui/open_board.dart`, `ui/kitchen_shell.dart`, `ui/settings_page.dart`, `data/providers.dart`.
-- **Server support (do in this task, in `vesopa_server/src`):** at kitchen ticket ingest (the route that INSERTs `epos_kitchen_ticket_lines`), for each line with a PLU, copy `bo_products.allergens` into the new `allergens` column. Find the route with `grep -rn "epos_kitchen_ticket_lines" vesopa_server/src`. This covers till and QR tickets in one place (D3).
-- **UI:**
-  - A strip at the top of the open board: "QR orders" cards showing `table_label`, `customer_name`, line count, `total_minor`, with large Accept (green) and Reject (red) buttons — big touch targets for the low-end device. Accept/Reject call T9. On reject, also remove the ticket from the board using the existing bump mechanism.
-  - Ticket lines: child lines (`is_modifier`) already indent — verify, do not rebuild. When a line's `allergens` is non-empty render a wrapping row of small amber chips "Contains: Milk, Gluten" under the line name. Codes→labels come from `GET /api/allergens`, fetched once at startup and cached in `providers.dart`.
-- **Test:** manual on the low-end device or a narrow window; covered live in T28.
-- **Done:** place a QR order with an add-on and an allergen-bearing product on the live test venue: the order card appears, Accept sets status `accepted` (visible on the customer page), the ticket shows the indented add-on and the allergen chips.
-
-### T24 — Kitchen notifications and sound
-
-- **Ask:** "Microsoft native notifications should be added to every apps … controlled … Kitchen app, till notifications sound should be controlled from the apps and also from the back office."
-- **Files:** `vesopa_epos_kitchen/pubspec.yaml` (add `local_notifier`, run `flutter pub get`), new `lib/notifications.dart`, `ui/settings_page.dart`, `data/kitchen_api.dart` (fetch till-settings so the T4 columns reach the app — if kitchen has no settings fetch today, add one against the existing GET the till uses, using the kitchen token), `lib/main.dart` (init).
-- **Behaviour:** wrapper class `AppNotifications` with `init()` and `show(title, body, {sound})` mapping to `local_notifier` (`silent: !sound`). Toasts: on `dinein_order` event with status `placed` (if `notify_kitchen_dinein_new`) and on new kitchen ticket (if `notify_kitchen_ticket_new`); sound iff `notify_kitchen_sound` AND the app's local Sound toggle; everything gated by `notify_master` AND the local Notifications toggle (D4). Add the two local toggles to `settings_page.dart`, persisted the same way that page already persists its other settings.
-- **Done:** toggling each layer demonstrably silences/enables toasts and sound on the device.
-
----
-
-## PHASE F — Till (`vesopa_epos`)
-
-### T25 — QR orders inbox with accept
-
-- **Ask:** "option to accept from the till."
-- **Files:** locate the till's held/parked orders screen with `grep -rln "park\|held" vesopa_epos/lib` and add alongside it: a "QR ORDERS" button with a pending-count badge, and a dialog listing `placed` orders: table, customer name, lines with modifiers indented, line notes, allergen line, `unavailable_action`, total; Accept/Reject buttons calling the T9 route. Poll the orders list route every 15s while the dialog is open and on the home screen for the badge. Use the till's existing API client and token.
-- **Test:** new `vesopa_epos/test/qr_orders_inbox_test.dart` — widget test with a fake API: list renders, accept calls the API and removes the card. Follow existing test patterns in `vesopa_epos/test`.
-- **Done:** `flutter test` passes (773 existing + new; ignore the 3 known failures); live accept works in T28.
-
-### T26 — Till notifications, sound, and allergens toward the display
-
-- **Files:** `vesopa_epos/pubspec.yaml` (add `local_notifier`), new `lib/notifications.dart` (same wrapper as T24), the till settings storage (find where the till persists local preferences and add Notifications + Sound toggles), the code that builds the payload sent to the customer display (find it with `grep -rln "display" vesopa_epos/lib` where line data is serialised) — add `allergens` per line from the product record so the display can render them in T27; ensure the till's product sync model carries the new `bo_products.allergens` column (find the product model and the server route feeding it; if the route selects explicit columns, add `allergens`).
-- **Behaviour:** toast on new QR order when `notify_master` AND `notify_till_dinein_new` AND local toggle; sound per `notify_till_sound` AND local Sound toggle.
-- **Test:** `flutter test`; live check T28.
-- **Done:** toast fires on placement; display payload includes allergen codes.
-
----
-
-## PHASE G — Display app (`vesopa_epos_display`)
-
-### T27 — Allergens on lines; notification capability (default off)
-
-- **Ask:** "Allergens … display app."; "Microsoft native notifications should be added to every apps."
-- **Files:** find the line-rendering widget with `grep -rln "OrderLine\|lines" vesopa_epos_display/lib`; `pubspec.yaml` (add `local_notifier`); new `lib/notifications.dart`; the settings screen if one exists, else constants.
-- **UI:** under each line with non-empty `allergens` (from the T26 payload), render a small "Contains: …" line. Labels: fetch `GET /api/allergens` once at startup, cache, fall back to raw codes offline.
-- **Notifications:** wrapper present and wired to a "new order started" toast, gated by `notify_master` AND `notify_display_enabled` (default 0 — D9) AND a local toggle.
-- **Done:** run a sale on the till with an allergen product: the display shows the Contains line; with `notify_display_enabled=0` no toast appears, with 1 it does.
-
----
-
-## PHASE H — Release
-
-### T28 — Full tests and live end-to-end verification
-
-- **Automated:** `cd vesopa_server && npm test` (0 exit, includes T2/T3/T4/T5/T6/T7/T16 new tests and the stylesheet guard). `cd vesopa_epos && flutter test` (773 + new pass; the 3 known failures stay). `cd vesopa_epos_kitchen && flutter test` and `cd vesopa_epos_display && flutter test` (or `flutter analyze` where no tests exist).
-- **Live, as `VESOPA_TEST_EMAIL` only, against `https://backoffice.vesopaepos.com`, using the test venue:**
-  1. Menu images all load, no console 404s (T14). Logo circular, no white ring (T15).
-  2. `view-source:` shows the meta saved via the new back-office fields (T16/T12).
-  3. Table pill pulses with `›`; pick a table; change it again (T17).
-  4. Text item: `+` → number → pill → bin → `+` (T18). Image item with add-ons: sheet opens, required group enforced, special instructions capped at 500, availability defaults to Remove (T19).
-  5. Cross the offer threshold: tick line + one sparkle burst (T20).
-  6. Guest checkout: no autofocus (T21).
-  7. **OTP:** sign in on the QR page with `+447848494341`. Read the latest code from the `dinein_otp` table for that number, submit, confirm the session completes. One attempt only — this sends a real SMS to the client's phone; tell the user it was sent and ask them to confirm arrival.
-  8. Place the order with an add-on and an allergen product. Back office `/dine-in/orders` shows parent+child lines. Kitchen app shows the incoming card; Accept → customer page shows accepted; ticket shows indented add-on and Contains chips (T23). Till inbox shows/accepts (T25). Toasts fire per the T4 matrix; toggle each switch and re-verify (T13/T24/T26). Display shows the Contains line (T27).
-- **Cleanup:** delete every order, order line, item and venue change created for this test, by id.
-- **Done:** checklist written into the commit/PR description, all boxes ticked.
-
-### T29 — Versions, builds, deploy, push
-
-- **Apps changed (all three need rebuilding):** `vesopa_epos` → `version: 1.6.7+28`; `vesopa_epos_display` → `version: 1.6.7+7`; `vesopa_epos_kitchen` → `version: 1.6.7+8`. Set `msix_config.msix_version: 1.6.7.0` in all three `pubspec.yaml`. `vesopa_web` and `vesopa_hosting` are untouched — no build.
-- **Build:** in each app, `dart run msix:create --store`.
-- **Server deploy:** `python .claude/skills/vesopa-ops/scripts/vesopa_ssh.py put src "@app/src"`, also `put schema` and `put public`, then `pm2 restart vesopa_backoffice`. Confirm the new migrations applied (they are idempotent; check logs or query `information_schema`).
-- **Git:** one commit per phase was made along the way; final `git push` to `main` from a clean tree.
-- **Done:** live site serves the new QR menu; three msix artefacts for 1.6.7.0 exist.
-
-### T30 — Store release notes and upload; then stop
-
-- **Release notes (<1500 characters each), then upload each msix to its Partner Center draft submission. Do NOT submit — the user submits.**
-- **Till (vesopa_epos) 1.6.7.0:** "QR menu orders now support add-ons with prices, per-item special instructions and a choice of what to do if an item is unavailable (remove, call or refund — remove is the default). New QR Orders inbox at the till: see incoming QR orders and accept or reject them. Allergen information from the back office is shown on order lines and sent to the customer display. Windows notifications for new QR orders, with sound controls in the app and central notification settings in the back office."
-- **Kitchen (vesopa_epos_kitchen) 1.6.7.0:** "Accept or reject incoming QR menu orders directly from the kitchen board. QR orders appear as they are placed. Add-ons are shown indented under their item and allergen warnings appear on ticket lines. Windows notifications for new QR orders and new tickets, with sound and notification toggles in Settings and central control from the back office. Sign-in no longer pops the keyboard on small screens."
-- **Display (vesopa_epos_display) 1.6.7.0:** "Allergen information is shown under order lines when set on products in the back office. Notification support added, off by default, controllable from the back office."
-- **Done:** all three packages uploaded as draft updates, release notes pasted, versions 1.6.7.0. Stop and hand to the user for submission.
+- **The navigation rename.** "Clerks" becomes "Staff" throughout the back
+  office nav — that is the word every venue actually uses, and T24 leans on it
+  at the till. The table keeps its name (`bo_clarks`); renaming columns buys
+  nothing and costs a migration. The alternative was keeping "Clerks" to match
+  the printed training manual — the manual is easier to fix than every new
+  manager's first question.
+- **An operator's saved fold preference survives the rename.** Fold state is
+  keyed by the section's stable id, not its label, so renaming a section does
+  not flatten anyone's layout on upgrade morning. The alternative — keying by
+  label, the simpler code — would have reset every operator's folds at once,
+  and the people who fold the nav every day are exactly the people who ring up
+  about it.
+- **The odd penny on a divided line is paid by the first portion.** Net is
+  apportioned base-plus-remainder with the remainder on the earliest portions,
+  so the portions always sum to the line exactly, and if anyone pays an extra
+  penny it is always the same glass. The alternative was letting whichever
+  share settled last absorb the rounding — rejected: the bill total would
+  appear to change depending on the order people paid in, which is precisely
+  the sort of thing that ends a venue's trust in the split screen.
+- **A modifier divides with its parent.** A child priced per unit (its
+  quantity tracks the parent's) is divided identically, and each portion owns
+  its share of the child; a flat one-off charge rides whole on the first
+  portion. The alternative was refusing to divide any line with modifiers —
+  the competitor's answer — which just moves the Prosecco bug to anything
+  with an option on it.
+- **Staff creation with no network is refused, not faked.** The entries stay
+  visible but greyed with the reason, sign-on carries on from the last synced
+  staff list, and nothing is queued for later. The alternative — queue the
+  new person locally and sync when the broadband returns — was rejected: PIN
+  uniqueness is venue-wide and the role switches live on the server, so a
+  queued person could sign on at the bar till and not the back one, which is
+  worse than being told to wait.
+- **The default membership term is twelve rolling months.** A new membership
+  runs twelve months from the day it is bought, and a renewal adds twelve
+  months to the later of today or the current expiry, so renewing early never
+  costs the member time they have paid for. The alternative was a fixed season
+  ending on a calendar date, like the old paper book — rejected: anyone
+  joining in November pays full price for two months and, fairly, complains.

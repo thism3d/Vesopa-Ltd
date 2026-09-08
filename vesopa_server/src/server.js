@@ -697,6 +697,143 @@ app.get('/till/staff', requireTerminal(JWT_SECRET), async (req, res, next) => {
   }
 });
 
+/**
+ * The roles a new member of staff can be given, for the till's own form.
+ *
+ * "This should ask for their name, role and either pin or to swipe a new staff
+ * card." Role means a permission group: it is what actually decides whether
+ * somebody may void a line or open the drawer, and picking one from a list is
+ * the only way a manager standing at the counter can get it right.
+ *
+ * Names only. The switches inside a group already travel with `/till/staff`,
+ * so there is nothing here worth a second copy of them.
+ */
+app.get('/till/permission-groups', requireTerminal(JWT_SECRET), async (req, res, next) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT id, name FROM epos_permission_groups
+        WHERE email = ? ORDER BY sort_order, name`,
+      [req.office]
+    );
+    res.json(rows);
+  } catch (e) {
+    // A venue whose migrations predate permission groups has no roles to
+    // offer, which is not an error — it is a venue where every clerk is
+    // unrestricted. An empty list lets the till draw the form without one.
+    if (e.code === 'ER_NO_SUCH_TABLE') return res.json([]);
+    next(e);
+  }
+});
+
+/**
+ * Take somebody on, from the till.
+ *
+ * "Ability to add staff members from the function screen." A new starter
+ * arrives at four on a Friday and cannot ring anything up until somebody with
+ * a back-office login has been found — which in a venue with one manager and
+ * no office computer means they cannot start.
+ *
+ * WHAT THIS DELIBERATELY DOES NOT DO
+ *
+ * It does not touch cards. `POST /till/cards/assign` already exists, already
+ * knows this venue's prefixes and already refuses a card that belongs to
+ * somebody else *by name*. The till creates the person here and then assigns
+ * the card there, so there is one implementation of what a staff card is.
+ *
+ * The rules are the back office's rules, enforced identically, because a
+ * member of staff created here has to be able to sign on there:
+ *
+ *   * a PIN is exactly four digits — the pad submits on the fourth key, so a
+ *     five-digit PIN creates somebody who can never sign on at all;
+ *   * a PIN already in use is refused, naming its holder, because two people
+ *     on one PIN means every sale either of them rings up is recorded against
+ *     whichever row was found first.
+ *
+ * A PIN is optional here and is not in the back office, and that is the one
+ * difference. It is the "or swipe a new staff card" half of the ask: the till
+ * creates the person, then writes the card onto them. The till is responsible
+ * for not leaving somebody with neither — see the Functions screen.
+ */
+app.post('/till/staff', requireTerminal(JWT_SECRET), async (req, res, next) => {
+  try {
+    const office = req.office;
+    const name = String(req.body?.name || '').trim().slice(0, 190);
+    if (!name) return res.status(400).json({ error: 'A name is required.' });
+
+    const pin = req.body?.pin == null ? '' : String(req.body.pin).trim();
+    if (pin && !/^\d{4}$/.test(pin)) {
+      return res.status(400).json({
+        error: 'A PIN must be exactly 4 digits, numbers only.',
+      });
+    }
+
+    if (pin) {
+      const [[clash]] = await pool.query(
+        'SELECT clark_name FROM bo_clarks WHERE email = ? AND pin_code = ?',
+        [office, pin]
+      );
+      if (clash) {
+        return res.status(409).json({
+          error: `That PIN is already in use by ${clash.clark_name}.`,
+        });
+      }
+    }
+
+    // The role, checked against this venue's own groups. An id from another
+    // venue would otherwise hand somebody that venue's switches.
+    let groupId = null;
+    if (req.body?.permission_group_id != null && req.body.permission_group_id !== '') {
+      const id = Number(req.body.permission_group_id);
+      if (!Number.isInteger(id) || id <= 0) {
+        return res.status(400).json({ error: 'That role does not exist.' });
+      }
+      const [[group]] = await pool.query(
+        'SELECT id FROM epos_permission_groups WHERE id = ? AND email = ?',
+        [id, office]
+      );
+      if (!group) return res.status(400).json({ error: 'That role does not exist.' });
+      groupId = id;
+    }
+
+    // The next clerk number, per venue. `pluid` is how the till's own reports
+    // group a shift, and two people sharing one would merge their takings.
+    const [[{ next_pluid: pluid }]] = await pool.query(
+      'SELECT COALESCE(MAX(pluid), 0) + 1 AS next_pluid FROM bo_clarks WHERE email = ?',
+      [office]
+    );
+
+    const values = [office, pluid, name, pin || null, 1];
+    let result;
+    try {
+      [result] = await pool.execute(
+        `INSERT INTO bo_clarks
+           (email, pluid, clark_name, pin_code, active, permission_group_id)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [...values, groupId]
+      );
+    } catch (e) {
+      if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+      [result] = await pool.execute(
+        `INSERT INTO bo_clarks (email, pluid, clark_name, pin_code, active)
+         VALUES (?, ?, ?, ?, ?)`,
+        values
+      );
+    }
+
+    broadcast({ type: 'staff.updated' });
+    res.status(201).json({
+      id: result.insertId,
+      pluid,
+      name,
+      pin: pin || '',
+      swipe_card: '',
+      permission_group_id: groupId,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
 app.get(['/till/floor', '/floor.json'], async (req, res, next) => {
   const office = req.query.office;
   if (!office) {

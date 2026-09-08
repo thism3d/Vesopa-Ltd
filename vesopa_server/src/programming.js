@@ -60,6 +60,12 @@ function programmingRoutes({ pool, broadcast, secret }) {
     sortable = true,
     tenantColumn = null,
     tenantBy = 'officeId',
+    // A read-only expression added to the list query and nothing else — not an
+    // editable column, so the INSERT and UPDATE never see it. Mix & Match uses
+    // it for the count of products in a deal, which lives in a second table
+    // and which the list has to show: a deal with none never fires, and that
+    // is exactly the state a venue needs to be able to spot from the list.
+    extraSelect = null,
   } = {}) {
     const orderBy = sortable ? 'sort_order, id' : 'id';
     const selectCols = sortable ? [...columns, 'sort_order'] : columns;
@@ -89,7 +95,8 @@ function programmingRoutes({ pool, broadcast, secret }) {
       try {
         const { sql, params } = await scope(req);
         const [rows] = await pool.query(
-          `SELECT id, ${selectCols.join(', ')} FROM ${table}
+          `SELECT id, ${selectCols.join(', ')}${extraSelect ? `, ${extraSelect}` : ''}
+             FROM ${table}
            WHERE 1 = 1${sql} ORDER BY ${orderBy}`,
           params
         );
@@ -251,7 +258,141 @@ function programmingRoutes({ pool, broadcast, secret }) {
     'free_product_pluid', 'button_label', 'button_colour', 'button_size',
     'icon',
   ], 'programming.updated', { tenantColumn: 'office_id' });
-  crud('mix-match', 'bo_mix_match', ['name', 'trigger_qty', 'deal_price_minor', 'active'], 'programming.updated', { tenantColumn: 'office_id' });
+  crud('mix-match', 'bo_mix_match', ['name', 'trigger_qty', 'deal_price_minor', 'active'], 'programming.updated', {
+    tenantColumn: 'office_id',
+    extraSelect: `(SELECT COUNT(*) FROM bo_mix_match_products mp
+                    WHERE mp.mix_match_id = bo_mix_match.id) AS product_count`,
+  });
+
+  // ---- Which products a Mix & Match deal applies to ------------------------
+  //
+  // "Mix & Match instead of using PLU numbers can this be set to select
+  // products from a drop down list with a search function."
+  //
+  // Worth being precise about what was there before, because the ask reads as
+  // a change to something that worked: `bo_mix_match_products` has existed
+  // since schema_layout.sql and the till sync has always read it
+  // (`src/server.js`, the deals block), but **nothing in the back office has
+  // ever written it**. There was no PLU box to be replaced — the rows on the
+  // live database were entered by hand. These two routes are the first write
+  // path this table has had.
+  //
+  // The deal is tenanted on `office_id` and the catalogue on `email`, which is
+  // the split the rest of this file lives with. Both are resolved, and a PLU
+  // that does not belong to this venue's catalogue is dropped rather than
+  // stored: `bo_mix_match_products` has no office column of its own, so what
+  // stops one venue's deal naming another's product is this check.
+
+  /** The office id a programming request belongs to, or null for an admin. */
+  async function dealOfficeId(req) {
+    return req.user.role === 'admin' ? null : (req.user.officeId ?? null);
+  }
+
+  /** The deal, if this request is allowed to see it. */
+  async function findDeal(req, id) {
+    const officeId = await dealOfficeId(req);
+    const [[deal]] = await pool.query(
+      `SELECT id FROM bo_mix_match WHERE id = ?${officeId == null ? '' : ' AND office_id = ?'}`,
+      officeId == null ? [id] : [id, officeId]
+    );
+    return deal || null;
+  }
+
+  /**
+   * The products in a deal, with enough to draw them.
+   *
+   * Left-joined on the catalogue, so a PLU whose product has since been
+   * deleted still comes back — as a row with no name. A deal quietly losing a
+   * line because somebody retired a product is exactly the sort of thing a
+   * venue finds out about at the till, and a picker that shows "PLU 412 —
+   * no longer in the catalogue" lets them fix it.
+   */
+  router.get('/mix-match/:id/products', auth, async (req, res, next) => {
+    try {
+      if (!(await findDeal(req, req.params.id))) {
+        return res.status(404).json({ error: 'No such deal' });
+      }
+      const email = await tenantEmail(req);
+      const [rows] = await pool.query(
+        `SELECT m.plu_id, p.product_name, p.price, p.department_name
+           FROM bo_mix_match_products m
+           LEFT JOIN bo_products p ON p.pluid = m.plu_id AND p.email = ?
+          WHERE m.mix_match_id = ?
+          ORDER BY p.product_name IS NULL, p.product_name, m.plu_id`,
+        [email, req.params.id]
+      );
+      res.json(rows);
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /**
+   * Replace a deal's product list.
+   *
+   * Replace rather than add-and-remove: the picker holds the whole list on
+   * screen and sends what it ends up with, so there is nothing for the two
+   * sides to disagree about. Done inside a transaction, because the moment
+   * between the DELETE and the INSERT is a moment when a till syncing would
+   * read a deal with no products in it and stop honouring it mid-service.
+   */
+  router.put('/mix-match/:id/products', auth, async (req, res, next) => {
+    const conn = await pool.getConnection();
+    try {
+      if (!(await findDeal(req, req.params.id))) {
+        conn.release();
+        return res.status(404).json({ error: 'No such deal' });
+      }
+      if (!Array.isArray(req.body?.plu_ids)) {
+        conn.release();
+        return res.status(400).json({ error: 'plu_ids must be a list.' });
+      }
+
+      const wanted = [...new Set(
+        req.body.plu_ids.map((v) => Number(v)).filter(Number.isFinite)
+      )];
+
+      // Only PLUs this venue actually sells. An id that is not in the
+      // catalogue is dropped and reported back rather than refused outright:
+      // the common cause is a product retired since the deal was set up, and
+      // refusing the whole save would leave the operator unable to remove it.
+      let allowed = [];
+      if (wanted.length) {
+        const email = await tenantEmail(req);
+        const [rows] = await conn.query(
+          `SELECT DISTINCT pluid FROM bo_products
+            WHERE email = ? AND pluid IN (${wanted.map(() => '?').join(',')})`,
+          [email, ...wanted]
+        );
+        allowed = rows.map((r) => Number(r.pluid));
+      }
+
+      await conn.beginTransaction();
+      await conn.execute(
+        'DELETE FROM bo_mix_match_products WHERE mix_match_id = ?',
+        [req.params.id]
+      );
+      for (const plu of allowed) {
+        await conn.execute(
+          'INSERT INTO bo_mix_match_products (mix_match_id, plu_id) VALUES (?, ?)',
+          [req.params.id, plu]
+        );
+      }
+      await conn.commit();
+
+      broadcast({ type: 'programming.updated' });
+      res.json({
+        ok: true,
+        stored: allowed.length,
+        dropped: wanted.filter((p) => !allowed.includes(p)),
+      });
+    } catch (e) {
+      try { await conn.rollback(); } catch { /* the connection is going back anyway */ }
+      next(e);
+    } finally {
+      conn.release();
+    }
+  });
   // Tenanted on `email`, not `office_id`: these two tables carry the office's
   // contact email as their owner, inherited from the PHP schema, and it is NOT
   // NULL on both. Running them untenanted meant every office read every other

@@ -236,9 +236,9 @@
           <button class="nav active" data-view="dashboard">Dashboard</button>
 
           <button class="nav-group" data-group="reports">Reports<span class="caret">▼</span></button>
-          <button class="nav" data-view="run_report">Financial Summary</button>
-          <button class="nav" data-view="report_schedules">Scheduled reports</button>
-          <button class="nav" data-view="report">Report</button>
+          <button class="nav" data-view="run_report">Reports</button>
+          <button class="nav" data-view="report_schedules">Scheduled Reports</button>
+          <button class="nav" data-view="report">Sales Overview</button>
           <button class="nav" data-view="sales_explorer">Sales Explorer</button>
           <button class="nav" data-view="till_report">Till Report</button>
           <button class="nav" data-view="bill_report">Bill Report</button>
@@ -249,28 +249,28 @@
           <button class="nav" data-view="stock">Stock</button>
 
           <button class="nav-group" data-group="programming">Programming<span class="caret">▼</span></button>
-          <button class="nav" data-view="screens">Screen programming</button>
+          <button class="nav" data-view="screens">Screen Programming</button>
           <button class="nav" data-view="program_departments">Departments</button>
           <button class="nav" data-view="program_groups">Sub Departments</button>
-          <button class="nav" data-view="printer_categories">Printer categories</button>
+          <button class="nav" data-view="printer_categories">Printer Categories</button>
           <button class="nav" data-view="import">Import</button>
           <button class="nav" data-view="modifiers">Modifiers</button>
           <button class="nav" data-view="mix_match">Mix &amp; Match</button>
           <button class="nav" data-view="finalise_keys">Finalise Keys</button>
           <button class="nav" data-view="error_reasons">Error Reasons</button>
           <button class="nav" data-view="tax">Tax</button>
-          <button class="nav" data-view="idle">Till &amp; printers</button>
-          <button class="nav" data-view="kitchen">Kitchen screens</button>
+          <button class="nav" data-view="idle">Till &amp; Printers</button>
+          <button class="nav" data-view="kitchen">Kitchen Screens</button>
           <button class="nav" data-view="devices">Devices</button>
 
           <button class="nav-group" data-group="floor">Floor<span class="caret">▼</span></button>
           <button class="nav" data-view="tables">Table Designer</button>
 
           <button class="nav-group" data-group="dinein">Dine-in &amp; QR<span class="caret">▼</span></button>
-          <button class="nav" data-view="dinein">Your menu page</button>
+          <button class="nav" data-view="dinein">Your Menu Page</button>
           <button class="nav" data-view="dinein_menu">Menu</button>
-          <button class="nav" data-view="dinein_qr">Table codes</button>
-          <button class="nav" data-view="dinein_orders">Online orders</button>
+          <button class="nav" data-view="dinein_qr">Table Codes</button>
+          <button class="nav" data-view="dinein_orders">Online Orders</button>
 
           <button class="nav-group" data-group="people">People<span class="caret">▼</span></button>
           <button class="nav" data-view="users">Back Office Users</button>
@@ -279,17 +279,17 @@
           <button class="nav" data-view="permission_groups">Staff Permissions</button>
           <button class="nav" data-view="customers">Customers</button>
           <button class="nav" data-view="vouchers">Vouchers</button>
-          <button class="nav" data-view="receipt_designer">Receipt designer</button>
+          <button class="nav" data-view="receipt_designer">Receipt Designer</button>
 
           <button class="nav-group" data-group="commerce">Commerce<span class="caret">▼</span></button>
           <button class="nav" data-view="promotions">Promotions</button>
-          <button class="nav" data-view="gift_cards">Gift cards</button>
+          <button class="nav" data-view="gift_cards">Gift Cards</button>
           <button class="nav" data-view="deposits">Deposits</button>
           <button class="nav" data-view="loyalty">Loyalty</button>
           <button class="nav" data-view="cards">Cards</button>
-          <button class="nav" data-view="wallet">Wallet passes</button>
-          <button class="nav" data-view="tender">Tender &amp; gratuity</button>
-          <button class="nav" data-view="rules">Automation rules</button>
+          <button class="nav" data-view="wallet">Wallet Passes</button>
+          <button class="nav" data-view="tender">Tender &amp; Gratuity</button>
+          <button class="nav" data-view="rules">Automation Rules</button>
 
           <div id="admin-group" hidden>
             <button class="nav-group" data-group="administration">Administration<span class="caret">▼</span></button>
@@ -422,7 +422,7 @@
 
         <!-- Report -->
         <section id="view-report" class="view" hidden>
-          <div class="page-head"><div><h2>Report</h2><p class="muted small">Your biggest sellers across every closed bill, by group, department, staff member and product.</p></div></div>
+          <div class="page-head"><div><h2>Sales Overview</h2><p class="muted small">Your biggest sellers across every closed bill, by group, department, staff member and product.</p></div></div>
           <div class="grid-2">
             <div class="card panel"><h3>Group Sales Total</h3><div class="bars" id="r-groups"></div></div>
             <div class="card panel"><h3>Department Sales Total</h3><div class="bars" id="r-depts"></div></div>
@@ -496,7 +496,7 @@
         <section id="view-report_schedules" class="view" hidden>
           <div class="page-head">
             <div>
-              <h2>Scheduled reports</h2>
+              <h2>Scheduled Reports</h2>
               <p class="muted small">
                 A report that runs on a clock and emails itself. Nothing has to be remembered
                 on a Monday morning.
@@ -697,7 +697,7 @@
         <section id="view-printer_categories" class="view" hidden>
           <div class="page-head">
             <div>
-              <h2>Printer categories</h2>
+              <h2>Printer Categories</h2>
               <p class="muted small">
                 Group what the kitchen sees, and set the order it prints in — Breakfast, then Mains,
                 then Desserts. Drag the rows to reorder them, then put each product in a category
@@ -822,7 +822,7 @@
         <section id="view-dinein" class="view" hidden>
           <div class="page-head">
             <div>
-              <h2>Your menu page</h2>
+              <h2>Your Menu Page</h2>
               <p class="muted small">The page a customer lands on when they scan the code on their table. Set the address once — it goes on printed cards — then fill in what they see and turn it on.</p>
             </div>
           </div>
@@ -842,7 +842,7 @@
         <section id="view-dinein_qr" class="view" hidden>
           <div class="page-head">
             <div>
-              <h2>Table codes</h2>
+              <h2>Table Codes</h2>
               <p class="muted small">Every table has its own permanent web address and its own code. Lay the card out once and print the set.</p>
             </div>
           </div>
@@ -852,7 +852,7 @@
         <section id="view-dinein_orders" class="view" hidden>
           <div class="page-head">
             <div>
-              <h2>Online orders</h2>
+              <h2>Online Orders</h2>
               <p class="muted small">Everything that has come in from a phone in the last 24 hours, and what the till did with it.</p>
             </div>
           </div>
@@ -993,7 +993,7 @@
         <section id="view-idle" class="view" hidden>
           <div class="page-head">
             <div>
-              <h2>Till &amp; printers</h2>
+              <h2>Till &amp; Printers</h2>
               <p class="muted small">What every terminal in this venue does between customers, and what the venue calls each printer.</p>
             </div>
             <button class="btn primary" id="idle-save">Save settings</button>
@@ -1221,7 +1221,7 @@
         <section id="view-kitchen" class="view" hidden>
           <div class="page-head">
             <div>
-              <h2>Kitchen screens</h2>
+              <h2>Kitchen Screens</h2>
               <p class="muted small">
                 Vesopa Kitchen shows a station its orders on a touch screen instead of
                 printing them. Products are still routed to KP&nbsp;1 to KP&nbsp;6 in the product
@@ -1390,7 +1390,7 @@
         <section id="view-screens" class="view" hidden>
           <div class="page-head">
             <div>
-              <h2>Screen programming</h2>
+              <h2>Screen Programming</h2>
               <p class="muted small">
                 Lay out what your tills show. The sale screen is a grid of buttons — each one a
                 product, a jump to another screen, or a till function — and the two strips of
@@ -1915,8 +1915,39 @@
             </div>
             <button class="btn primary" id="add-customer">Add customer</button>
           </div>
+
+          <!-- A membership year is renewed for everybody on one date, and doing
+               that through the edit form is two hundred modals. Search is held
+               in the browser like the catalogue's: the list is already in hand,
+               so a round trip per keystroke would only be slower. -->
+          <div class="tbl-bar">
+            <label class="sp-pick">Search
+              <input id="cust-q" type="search" placeholder="Name, card, phone or email" autocomplete="off">
+            </label>
+            <label class="sp-pick">Membership
+              <select id="cust-filter">
+                <option value="">Everyone</option>
+                <option value="member">Has a membership</option>
+                <option value="lapsed">Expired</option>
+                <option value="soon">Expiring within 30 days</option>
+                <option value="none">No membership</option>
+              </select>
+            </label>
+            <button type="button" class="btn ghost" id="cust-clear">Clear</button>
+            <span class="sp-spacer"></span>
+            <span class="muted small" id="cust-count"></span>
+            <span class="bulk-bar" id="cust-bulk" hidden>
+              <span class="bulk-count" id="cust-bulk-count"></span>
+              <button class="btn small primary" id="cust-bulk-expiry">Set expiry date</button>
+              <button class="btn small ghost" id="cust-bulk-clear">Clear</button>
+            </span>
+          </div>
+
           <div class="card"><table>
-            <thead><tr><th>Name</th><th>Card</th><th>Phone</th><th>Email</th><th>Discount</th><th class="right">Points</th><th>Membership</th><th></th></tr></thead>
+            <thead><tr>
+              <th class="pick-col"><input type="checkbox" id="cust-pick-all" title="Select every customer shown"></th>
+              <th></th><th>Name</th><th>Card</th><th>Phone</th><th>Email</th><th>Discount</th><th class="right">Points</th><th>Membership</th><th></th>
+            </tr></thead>
             <tbody id="customers"></tbody>
           </table></div>
         </section>
@@ -1930,7 +1961,7 @@
         <section id="view-receipt_designer" class="view" hidden>
           <div class="page-head">
             <div>
-              <h2>Receipt designer</h2>
+              <h2>Receipt Designer</h2>
               <p class="muted small">Changes appear on every till as soon as you save.</p>
             </div>
             <div class="rd-head-actions">
@@ -2037,7 +2068,7 @@
         <!-- Gift cards -->
         <section id="view-gift_cards" class="view" hidden>
           <div class="page-head">
-            <div><h2>Gift cards</h2><p class="muted small">Smart cards keep a balance and can be topped up. Paper certificates redeem once.</p></div>
+            <div><h2>Gift Cards</h2><p class="muted small">Smart cards keep a balance and can be topped up. Paper certificates redeem once.</p></div>
             <button class="btn primary" id="gift-add">Issue card</button>
           </div>
           <div class="grid-cards" id="gift-stats"></div>
@@ -2128,7 +2159,7 @@
         <section id="view-wallet" class="view" hidden>
           <div class="page-head">
             <div>
-              <h2>Wallet passes</h2>
+              <h2>Wallet Passes</h2>
               <p class="muted small">
                 A card on the customer's phone. The barcode carries the same
                 number as the plastic, so a phone and a card scan to the same
@@ -2462,7 +2493,7 @@
         <!-- Tender & gratuity -->
         <section id="view-tender" class="view" hidden>
           <div class="page-head">
-            <div><h2>Tender &amp; gratuity</h2><p class="muted small">How the till takes money: service charge, cash keys, split and partial payments.</p></div>
+            <div><h2>Tender &amp; Gratuity</h2><p class="muted small">How the till takes money: service charge, cash keys, split and partial payments.</p></div>
             <button class="btn primary" id="tender-save">Save settings</button>
           </div>
           <div class="rd-layout">
@@ -2518,7 +2549,7 @@
         <!-- Automation rules -->
         <section id="view-rules" class="view" hidden>
           <div class="page-head">
-            <div><h2>Automation rules</h2><p class="muted small">If this happens, then that applies.</p></div>
+            <div><h2>Automation Rules</h2><p class="muted small">If this happens, then that applies.</p></div>
             <button class="btn primary" id="rule-add">New rule</button>
           </div>
           <div class="card"><table>
@@ -2530,7 +2561,7 @@
         <!-- Templates (super admin) -->
         <section id="view-templates" class="view" hidden>
           <div class="page-head">
-            <div><h2>Starter templates</h2><p class="muted small">Pre-set catalogues assigned when an office is created.</p></div>
+            <div><h2>Starter Templates</h2><p class="muted small">Pre-set catalogues assigned when an office is created.</p></div>
             <button class="btn primary" id="template-add">New template</button>
           </div>
           <div class="card"><table>

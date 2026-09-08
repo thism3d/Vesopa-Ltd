@@ -556,6 +556,15 @@ function commerceRoutes({ pool, broadcast, secret }) {
     enabled: 1, points_per_pound: 1, point_value_minor: 1, min_spend_minor: 0,
     min_redeem_points: 100, redeem_step_points: 100, points_expire_months: 0,
     earn_on_gratuity: 0, require_phone: 1,
+    // Membership, which is a different thing from points and shares this row
+    // because it is the same scheme from the venue's side.
+    //
+    // A TERM, NOT A DATE. "The till should then renew to a date we set in the
+    // back office" — but a date set in the back office is wrong for everybody
+    // who renews on a different day, and has to be edited every year. Twelve
+    // months added to the day the fee is taken is the same promise and needs
+    // setting once. £10 is the venue's own figure.
+    membership_term_months: 12, membership_fee_minor: 1000,
   };
 
   async function readLoyalty(office) {
@@ -564,7 +573,12 @@ function commerceRoutes({ pool, broadcast, secret }) {
     const [tiers] = await pool.query(
       `SELECT * FROM epos_loyalty_tiers WHERE office = ? AND active = 1
        ORDER BY min_spend_minor`, [office]);
-    return { ...(row || { office, ...LOYALTY_DEFAULTS }), tiers };
+    // Defaults first, so a stored row that predates a setting still answers
+    // for it. `SELECT *` returns whatever columns the database has; before
+    // schema_membership.sql has been applied that is nine settings rather than
+    // eleven, and the till would otherwise be told a membership costs
+    // `undefined`.
+    return { ...LOYALTY_DEFAULTS, ...(row || { office }), tiers };
   }
 
   router.get('/loyalty', auth, async (req, res, next) => {
@@ -585,6 +599,27 @@ function commerceRoutes({ pool, broadcast, secret }) {
       const office = await tenantEmail(req);
       const fields = Object.keys(LOYALTY_DEFAULTS)
         .filter((f) => Object.prototype.hasOwnProperty.call(req.body, f));
+
+      // The two membership settings are checked rather than merely rounded.
+      // A term of 0 renews a member to today — an expired card the moment it
+      // is paid for — and a negative fee is a line that takes money off the
+      // bill. Both are one typed character away in the settings form.
+      if (Object.prototype.hasOwnProperty.call(req.body, 'membership_term_months')) {
+        const months = Number(req.body.membership_term_months);
+        if (!Number.isInteger(months) || months < 1 || months > 60) {
+          return res.status(400).json({
+            error: 'A membership runs for between 1 and 60 months.',
+          });
+        }
+      }
+      if (Object.prototype.hasOwnProperty.call(req.body, 'membership_fee_minor')) {
+        const fee = Number(req.body.membership_fee_minor);
+        if (!Number.isFinite(fee) || fee < 0) {
+          return res.status(400).json({
+            error: 'A membership fee cannot be less than nothing.',
+          });
+        }
+      }
 
       if (fields.length) {
         const values = fields.map((f) => {
@@ -653,7 +688,7 @@ function commerceRoutes({ pool, broadcast, secret }) {
       const [rows] = await pool.query(
         `SELECT id, name, phone, email, card_number, points_balance, tier_name,
                 lifetime_spend_minor, visits, discount_type, discount_value,
-                membership_expiry
+                membership_expiry, photo_url
          FROM epos_customers
          WHERE email_key = ?
            AND (name LIKE ? OR email LIKE ? OR card_number LIKE ?
@@ -689,7 +724,7 @@ function commerceRoutes({ pool, broadcast, secret }) {
       const [[customer]] = await pool.query(
         `SELECT id, name, phone, email, points_balance, tier_name,
                 lifetime_spend_minor, visits, discount_type, discount_value,
-                membership_expiry
+                membership_expiry, photo_url
          FROM epos_customers
          WHERE email_key = ? AND REPLACE(phone, ' ', '') = ?`,
         [office, phone]
@@ -742,7 +777,7 @@ function commerceRoutes({ pool, broadcast, secret }) {
       const [[customer]] = await pool.query(
         `SELECT id, name, phone, email, card_number, points_balance, tier_name,
                 lifetime_spend_minor, visits, discount_type, discount_value,
-                membership_expiry
+                membership_expiry, photo_url
          FROM epos_customers
          WHERE email_key = ? AND card_number = ?
          LIMIT 1`,
@@ -763,6 +798,100 @@ function commerceRoutes({ pool, broadcast, secret }) {
         ...customer,
         points_value_minor: customer.points_balance * settings.point_value_minor,
         redeemable: customer.points_balance >= settings.min_redeem_points,
+        settings,
+      });
+    } catch (e) { next(e); }
+  });
+
+  /**
+   * Renew a membership, and say when it now runs to.
+   *
+   * "Say they expired and then paid £10 membership at the till, the till
+   * should then renew to a date we set in the back office."
+   *
+   * THE DATE IS COMPUTED HERE, NOT AT THE TILL
+   *
+   * Two tills and a back office would otherwise each add a term to whatever
+   * they last synced, on whatever their own clock says, and a member would end
+   * up with a different expiry depending on which terminal took the money. One
+   * server, one clock, one answer.
+   *
+   * AN EARLY RENEWAL EXTENDS, IT DOES NOT SHORTEN
+   *
+   * A member who pays in November for a card that runs to January gets January
+   * plus a year, not November plus a year. Renewing early must never cost
+   * somebody two months they have already paid for — and a venue that pushes
+   * renewals at Christmas would otherwise be quietly taking them.
+   *
+   * The money is not taken here. The fee is a line on the bill and goes
+   * through tendering like everything else, so it lands in the takings, on the
+   * receipt and in the Z. This route moves a date.
+   */
+  router.post('/loyalty/renew', async (req, res, next) => {
+    try {
+      const office = tillOffice(req);
+      const customerId = String(req.body?.customer_id || '').trim();
+      if (!office || !customerId) {
+        return res.status(400).json({ error: 'office and customer_id are required' });
+      }
+
+      const [[customer]] = await pool.query(
+        `SELECT id, DATE_FORMAT(membership_expiry, '%Y-%m-%d') AS membership_expiry
+           FROM epos_customers WHERE id = ? AND email_key = ?`,
+        [customerId, office]
+      );
+      if (!customer) return res.status(404).json({ error: 'No such customer' });
+
+      const settings = await readLoyalty(office);
+      const months = Math.min(
+        Math.max(Number(settings.membership_term_months) || 12, 1), 60);
+
+      // Today, or the expiry it already has if that is still ahead. Compared
+      // as text in the server's own day, which is what the till shows and what
+      // the back office badge reads.
+      const today = new Date();
+      const todayText = [
+        today.getFullYear(),
+        String(today.getMonth() + 1).padStart(2, '0'),
+        String(today.getDate()).padStart(2, '0'),
+      ].join('-');
+      const from = customer.membership_expiry && customer.membership_expiry > todayText
+        ? customer.membership_expiry
+        : todayText;
+
+      // Added in SQL rather than in JavaScript: MySQL's INTERVAL already knows
+      // that a year from the 29th of February is the 28th, and that a month
+      // from the 31st of January is the 28th too. Doing it here with a Date
+      // gives the 1st of March and the 3rd of March respectively, which is a
+      // day nobody chose.
+      const [[{ next_expiry: expiry }]] = await pool.query(
+        'SELECT DATE_FORMAT(DATE_ADD(?, INTERVAL ? MONTH), \'%Y-%m-%d\') AS next_expiry',
+        [from, months]
+      );
+
+      await pool.execute(
+        'UPDATE epos_customers SET membership_expiry = ? WHERE id = ? AND email_key = ?',
+        [expiry, customerId, office]
+      );
+      broadcast({ type: 'customers.updated' });
+
+      // The whole customer back, in the shape the till already reads from
+      // /loyalty/card, so a renewal refreshes the local copy from one response
+      // rather than needing a second lookup.
+      const [[row]] = await pool.query(
+        `SELECT id, name, phone, email, card_number, points_balance, tier_name,
+                lifetime_spend_minor, visits, discount_type, discount_value,
+                photo_url,
+                DATE_FORMAT(membership_expiry, '%Y-%m-%d') AS membership_expiry
+           FROM epos_customers WHERE id = ?`,
+        [customerId]
+      );
+      res.json({
+        ...row,
+        renewed_from: from,
+        term_months: months,
+        points_value_minor: row.points_balance * settings.point_value_minor,
+        redeemable: row.points_balance >= settings.min_redeem_points,
         settings,
       });
     } catch (e) { next(e); }

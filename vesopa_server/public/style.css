@@ -35,6 +35,31 @@
   --red: #e5484d;
   --green: #30a46c;
 
+  /* THE SERIES COLOURS EVERY CHART DRAWS WITH.
+   *
+   * They were a magenta-and-violet ramp living in charts.js — `#b5179e` on the
+   * Takings area and the payment donut, `#7209b7` on the ranked bars — which
+   * belonged to no part of the brand and is what the venue meant by "change
+   * the tiles to our Green from the light lilac/purple".
+   *
+   * Green leads, because the first series on a single-series chart is the
+   * takings and the takings are the brand. The rest are hue-spaced far enough
+   * apart to survive being read as a donut, and they are NOT tints of the
+   * green: eight shades of one hue is a chart nobody can read a legend off.
+   *
+   * Deeper than the brand lime on purpose. `--brand` is #a5c715, which is a
+   * 2.1:1 line against white — fine as a large fill, unreadable as a 2px
+   * stroke. The dark theme puts the lime itself back, where it is the one that
+   * reads. */
+  --chart-1: #7fa50c;
+  --chart-2: #3b7ddd;
+  --chart-3: #d9860a;
+  --chart-4: #0d8f8f;
+  --chart-5: #7c5cd6;
+  --chart-6: #d33b41;
+  --chart-7: #5b7186;
+  --chart-8: #96701a;
+
   /* Surfaces the cards sit on and inside. `--panel` and `--surface-2` were
      already being referenced with literal fallbacks in a dozen places before
      they existed; naming them here is what makes the dark theme below a list
@@ -1496,11 +1521,18 @@ tr.clickable:hover { background: var(--brand-soft); }
   display: flex; flex-direction: column; gap: 3px;
   padding: 14px 16px; border-left: 3px solid var(--line, #d9dce1);
 }
-.stat-card.primary { border-left-color: var(--brand); }
-.stat-card.blue    { border-left-color: #4361ee; }
-.stat-card.amber   { border-left-color: #f77f00; }
-.stat-card.green   { border-left-color: #06d6a0; }
-.stat-card.red     { border-left-color: #ef476f; }
+/* The accent stripe down each figure.
+
+   Five hardcoded values from a palette nothing else used — a royal blue, an
+   orange, a mint and a raspberry — sat beside a brand-green first card and
+   read as five unrelated cards rather than one row. They take the chart
+   series colours now, so the stripe on Gross Takings is the same green as the
+   Takings line under it, and the whole dashboard is one set of colours. */
+.stat-card.primary { border-left-color: var(--chart-1); }
+.stat-card.blue    { border-left-color: var(--chart-2); }
+.stat-card.amber   { border-left-color: var(--chart-3); }
+.stat-card.green   { border-left-color: var(--chart-4); }
+.stat-card.red     { border-left-color: var(--chart-6); }
 .stat-label {
   font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px;
   color: var(--muted, #7a828c);
@@ -2657,6 +2689,96 @@ table.sortable th.sorted::after {
 }
 table.sortable th.sorted[data-dir="down"]::after { content: ' ▼'; }
 
+/* A member's face in the customers table.
+
+   Round, small, and always drawn: a venue that has photographed half its
+   members needs to see which half at a glance, and an empty cell reads as a
+   column that is not working rather than as a member with no photograph. */
+.cust-face-cell { width: 44px; }
+.cust-face {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  object-fit: cover;
+  display: grid;
+  place-items: center;
+  background: var(--surface-2);
+}
+.cust-face-none {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  border: 1px solid var(--line);
+}
+
+/* ---------------------------------------------------------------------------
+   The product picker: search a catalogue, tick what belongs, see the answer.
+
+   Used by Mix & Match, where the answer is a set of products out of several
+   hundred. The chosen ones sit above the list as chips rather than only as
+   ticks inside it, because the question a manager is answering is "what is in
+   this deal" and scrolling a list to find three ticks is not an answer.
+   --------------------------------------------------------------------------- */
+.pp-field { margin-top: 6px; }
+.pp-search { width: 100%; }
+.pp-chosen {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 0;
+}
+.pp-chosen:empty { display: none; }
+.pp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 10px;
+  border-radius: 999px;
+  background: var(--brand-soft);
+  color: var(--brand-deep);
+  font-size: 13px;
+  font-weight: 600;
+}
+.pp-x {
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 999px;
+}
+.pp-x:hover { background: rgba(0, 0, 0, .12); }
+.pp-empty { margin: 8px 0 0; }
+/* Tall enough to be worth scrolling and short enough to leave the rest of the
+   form on screen. A catalogue of four hundred is why it scrolls at all. */
+.pp-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 4px;
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+.pp-row { border-radius: 8px; }
+.pp-row:hover { background: var(--hover); }
+.pp-row label {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 7px 8px;
+  cursor: pointer;
+}
+.pp-row input[type="checkbox"] { width: auto; margin: 0; }
+.pp-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pp-meta { white-space: nowrap; }
+
 /* ---------------------------------------------------------------------------
    The ordered modifier picker on the product form.
 
@@ -2690,7 +2812,10 @@ table.sortable th.sorted[data-dir="down"]::after { content: ' ▼'; }
 /* ---------------------------------------------------------------------------
    Picking several products at once, and editing a cell where it sits.
    --------------------------------------------------------------------------- */
-.pick-col { width: 34px; }
+/* Shift-clicking two boxes in a table selects every word between them as
+   text as well as every row, and the blue survives the re-render. The gesture
+   is a selection of rows, so the column does not take part in the other one. */
+.pick-col { width: 34px; user-select: none; }
 /* `input, select { width: 100% }` near the top of this file is a bare element
    selector, so it reaches every control in the application including the tick
    boxes — and a checkbox is not a field that wants filling. It went unnoticed
@@ -2715,7 +2840,10 @@ table.sortable th.sorted[data-dir="down"]::after { content: ' ▼'; }
 .cell-edit {
   width: 100%;
   border: 1px solid transparent;
-  background: transparent;
+  /* `background-color`, never the shorthand — see `select.cell-edit` below,
+     where a shorthand here was half of a bug that only showed up in Night. */
+  background-color: transparent;
+  background-image: none;
   border-radius: 6px;
   padding: 3px 6px;
   font: inherit;
@@ -2732,12 +2860,61 @@ table.sortable th.sorted[data-dir="down"]::after { content: ' ▼'; }
 .cell-edit:hover { border-color: var(--line); }
 .cell-edit:focus {
   border-color: var(--brand-deep);
-  background: var(--card, #fff);
+  /* `background-color`, not the shorthand: a shorthand here would throw away
+     the chevron a select cell paints as a background image, and it would do it
+     only while the cell had focus. See the note under `select.cell-edit`. */
+  background-color: var(--card, #fff);
   outline: none;
 }
 .cell-edit.saving { opacity: 0.5; }
 .cell-edit.saved { border-color: #2e7d32; }
-select.cell-edit { cursor: pointer; }
+
+/* An inline dropdown, and the chevron that goes with it.
+   ---------------------------------------------------------------------------
+   THE BUG THIS FIXES, BECAUSE IT WAS INVISIBLE IN DAY MODE
+
+   The venue reported "arrows overlapping the departments and sub departments
+   in the product view page". Measured in light mode at six widths, nothing
+   overlapped: `.cell-edit`'s `background: transparent` is a SHORTHAND, so it
+   cleared the `background-image`, `background-position` and `background-size`
+   the generic `select` rule sets, and a class beats an element selector — no
+   chevron was drawn at all.
+
+   The dark rules further down set `background-image` ALONE, on a selector
+   (`:root[data-theme="dark"] select`) that outranks `.cell-edit`. So in Night
+   the image came back while the position and size stayed at their initial
+   values — `0% 0%` and `auto` — and a 17px chevron was painted over the first
+   letters of "Beers", tiled across the box. Only ever visible on the venue's
+   own screen, which is the one in the dark.
+
+   Set as longhands here, on both the class and the theme, so neither can be
+   half-overridden again. And the arrow is kept rather than removed: a cell
+   that changes a department when you click it should look like it will. */
+select.cell-edit {
+  cursor: pointer;
+  /* Room for the arrow, so the longest sub department name stops short of it
+     rather than running underneath. */
+  padding-right: 22px;
+  text-overflow: ellipsis;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2378717f' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 4px center;
+  background-size: 13px;
+}
+:root[data-theme="dark"] select.cell-edit {
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394a2ae' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 4px center;
+  background-size: 13px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) select.cell-edit {
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394a2ae' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 4px center;
+    background-size: 13px;
+  }
+}
 
 /* ---------------------------------------------------------------------------
    The screen editor's search palette — double-click a key.
@@ -3147,6 +3324,18 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
   --red: #ff6b6f;
   --green: #46c78c;
 
+  /* On near-black the brand lime is the colour that sings, so chart 1 is the
+     lime itself rather than the deepened version the light theme needs. The
+     rest are lifted the same way every other colour in this block is. */
+  --chart-1: #a5c715;
+  --chart-2: #6ba4ff;
+  --chart-3: #ffb648;
+  --chart-4: #2fc9b5;
+  --chart-5: #a78bfa;
+  --chart-6: #ff6b6f;
+  --chart-7: #94a2ae;
+  --chart-8: #d1a34a;
+
   --ok-wash: #10281c;
   --warn-wash: #2e2110;
   --warn-ink: #ffb648;
@@ -3188,6 +3377,14 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
     --amber: #ffb648;
     --red: #ff6b6f;
     --green: #46c78c;
+    --chart-1: #a5c715;
+    --chart-2: #6ba4ff;
+    --chart-3: #ffb648;
+    --chart-4: #2fc9b5;
+    --chart-5: #a78bfa;
+    --chart-6: #ff6b6f;
+    --chart-7: #94a2ae;
+    --chart-8: #d1a34a;
     --ok-wash: #10281c;
     --warn-wash: #2e2110;
     --warn-ink: #ffb648;
