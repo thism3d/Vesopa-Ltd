@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../printing/print_targets.dart';
+import 'notifications.dart';
 import 'price_levels.dart';
 
 /// How the terminal behaves *between* sales: the idle screen it drops to, and
@@ -34,6 +35,8 @@ class TillSettings {
     this.payBottomBarScreenId,
     this.fontFamily,
     this.priceLevelNames = PriceLevelNames.empty,
+    this.notify = NotifyPolicy.standard,
+    this.notifyDisplayEnabled = false,
   });
 
   /// The programmed screen this venue's tills open on, or null.
@@ -272,9 +275,34 @@ class TillSettings {
   // rather than a bool.
   static bool _flag(Object? v) => v == 1 || v == true || v == '1';
 
+  /// Which notifications this venue's tills are allowed to raise.
+  ///
+  /// Read from the same row as everything else here, because the venue asked
+  /// for one place in the back office that decides which notification goes
+  /// where — and a second fetch would be a second thing to be out of date. See
+  /// `data/notifications.dart` for how it combines with this terminal's own
+  /// switches.
+  final NotifyPolicy notify;
+
+  /// Whether this venue lets its customer displays raise a Windows toast.
+  ///
+  /// Off unless a manager turns it on. A customer display is a screen facing a
+  /// queue: a toast sliding over somebody's bill is a notification aimed at
+  /// nobody, because the person who needs to know is behind the counter. It
+  /// exists for the venue that mounts one in a back office.
+  ///
+  /// Read here and written into the snapshot file, because the display
+  /// application has no network of its own.
+  final bool notifyDisplayEnabled;
+
   factory TillSettings.fromJson(Map<String, dynamic> j) {
     final url = (j['idle_image_url'] as String?)?.trim();
     return TillSettings(
+      notify: NotifyPolicy.fromSettings(j),
+      notifyDisplayEnabled:
+          j['notify_display_enabled'] == 1 ||
+          j['notify_display_enabled'] == true ||
+          j['notify_display_enabled'] == '1',
       homeScreenId: (j['home_screen_id'] as num?)?.toInt(),
       // Absent — a server that has not run schema_till_fonts.sql — reads as
       // null, which is "the app's own lettering". Which is what every till

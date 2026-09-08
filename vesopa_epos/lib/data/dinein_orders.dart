@@ -31,6 +31,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../main.dart';
 import 'sync_service.dart';
@@ -43,8 +44,17 @@ class DineInLine {
     required this.name,
     required this.qty,
     required this.unitPriceMinor,
+    this.id = 0,
     this.note,
+    this.parentLineId,
+    this.isModifier = false,
+    this.unavailableAction = 'remove',
+    this.allergens = const [],
+    this.allergensDeclared = false,
   });
+
+  /// The order line's own id, which is what an add-on names as its parent.
+  final int id;
 
   final int pluId;
   final String name;
@@ -52,16 +62,50 @@ class DineInLine {
   final int unitPriceMinor;
 
   /// "No onions", "well done". Goes on the kitchen ticket.
+  ///
+  /// Per DISH, not per order. The customer menu asks for it on the product
+  /// sheet, which is the only place a note can be attached to the one thing it
+  /// is about — an order-level note cannot be split across two kitchen
+  /// sections.
   final String? note;
+
+  /// The line this one is an answer to, when it is an add-on chosen on the
+  /// phone. The same shape the till's own modifiers use, so the check, the
+  /// receipt and the kitchen ticket all indent it without being told to.
+  final int? parentLineId;
+  final bool isModifier;
+
+  /// What the customer asked for if this dish turns out to be off: `remove`
+  /// (the default, and what happens anyway), `call` or `refund`. Shown on the
+  /// card so a clerk does not have to ring anybody to find out.
+  final String unavailableAction;
+
+  /// Allergen codes, as the catalogue reads now. Turned into words by the
+  /// server's own list so the till, the menu, the kitchen board and the
+  /// customer display cannot spell them four ways.
+  final List<String> allergens;
+
+  /// Whether anybody has answered the question. An unanswered dish and a dish
+  /// containing none of the fourteen both arrive as an empty list.
+  final bool allergensDeclared;
 
   int get totalMinor => unitPriceMinor * qty;
 
   static DineInLine fromJson(Map<String, Object?> raw) => DineInLine(
+    id: _int(raw['id']),
     pluId: _int(raw['plu_id']),
     name: _str(raw['name']),
     qty: _int(raw['qty'], 1),
     unitPriceMinor: _int(raw['unit_price_minor']),
     note: _nullableStr(raw['note']),
+    parentLineId: raw['parent_line_id'] is num
+        ? (raw['parent_line_id']! as num).toInt()
+        : null,
+    isModifier: raw['is_modifier'] == 1 || raw['is_modifier'] == true,
+    unavailableAction: _nullableStr(raw['unavailable_action']) ?? 'remove',
+    allergens: [for (final a in (raw['allergens'] as List?) ?? const []) '$a'],
+    allergensDeclared:
+        raw['allergens_declared'] == true || raw['allergens_declared'] == 1,
   );
 }
 
@@ -108,7 +152,23 @@ class DineInOrder {
   /// Waiting for somebody to press Accept.
   bool get isWaiting => status == 'placed';
 
-  int get itemCount => lines.fold(0, (sum, line) => sum + line.qty);
+  /// The dishes, without the add-ons hanging off them. What "3 items" means to
+  /// somebody reading the card: three plates, not three rows.
+  Iterable<DineInLine> get dishes => lines.where((l) => !l.isModifier);
+
+  int get itemCount => dishes.fold(0, (sum, line) => sum + line.qty);
+
+  /// The add-ons chosen for [line].
+  List<DineInLine> addOnsFor(DineInLine line) => [
+    for (final l in lines)
+      if (l.parentLineId != null && l.parentLineId == line.id) l,
+  ];
+
+  /// Every allergen anywhere on this order, once, in a stable order.
+  List<String> get allAllergens {
+    final seen = <String>{for (final l in lines) ...l.allergens};
+    return seen.toList()..sort();
+  }
 
   static DineInOrder? fromJson(Object? raw) {
     if (raw is! Map) return null;
@@ -317,4 +377,59 @@ final dineInOrdersProvider =
 final dineInWaitingCountProvider = Provider<int>((ref) {
   final orders = ref.watch(dineInOrdersProvider).value ?? const <DineInOrder>[];
   return orders.where((o) => o.isWaiting).length;
+});
+
+/// Allergen codes to the words a person reads.
+///
+/// From the server rather than a list in this app, so the till, the QR menu,
+/// the kitchen board and the customer display cannot drift into four spellings
+/// of the same allergen. Unauthenticated: it is the statutory fourteen, and a
+/// kitchen screen and a menu page both need it before anybody has signed in.
+///
+/// Cached on the machine, because the two surfaces that need it are the two
+/// that must survive a dropped line: a customer display showing what is in the
+/// food, and a QR order card a clerk is reading at the counter. The list is
+/// fixed by statute and does not drift, so a copy from last week is a copy
+/// from today.
+const _allergenCacheKey = 'till.allergen_labels';
+
+final allergenLabelsProvider = FutureProvider<Map<String, String>>((ref) async {
+  Map<String, String> parse(Object? decoded) {
+    if (decoded is! List) return const {};
+    return {
+      for (final row in decoded)
+        if (row is Map && row['code'] != null)
+          '${row['code']}': '${row['label']}',
+    };
+  }
+
+  SharedPreferences? prefs;
+  try {
+    prefs = await SharedPreferences.getInstance();
+  } catch (_) {
+    // A terminal whose preferences will not open still sells.
+  }
+
+  try {
+    final res = await http
+        .get(Uri.parse('${ref.read(apiBaseProvider)}/api/allergens'))
+        .timeout(const Duration(seconds: 8));
+    if (res.statusCode == 200) {
+      final labels = parse(jsonDecode(res.body));
+      if (labels.isNotEmpty) {
+        await prefs?.setString(_allergenCacheKey, res.body);
+        return labels;
+      }
+    }
+  } catch (_) {
+    // Offline. Fall through to whatever was last read.
+  }
+
+  final cached = prefs?.getString(_allergenCacheKey);
+  if (cached == null) return const {};
+  try {
+    return parse(jsonDecode(cached));
+  } catch (_) {
+    return const {};
+  }
 });

@@ -29,6 +29,7 @@ class KitchenSession {
     this.screens = const [],
     this.screenId,
     this.soundOverride,
+    this.notify = true,
     this.branding = KitchenBranding.standard,
   });
 
@@ -55,6 +56,18 @@ class KitchenSession {
   /// — somebody is working next to it — and that is not a fact the office can
   /// know.
   final bool? soundOverride;
+
+  /// Whether this machine may raise a Windows toast.
+  ///
+  /// The screen's half of the two-layer rule in `notifications.dart`: the back
+  /// office decides which CLASS of notification this venue's machines may
+  /// show, and this decides whether this particular machine shows any of them.
+  /// Neither can switch on what the other has switched off.
+  ///
+  /// On by default, and stored here with the rest of the session for the same
+  /// reason [soundOverride] is: it is a fact about a panel bolted to a wall,
+  /// and it must survive a restart without a round trip.
+  final bool notify;
 
   /// The venue's white-label branding, cached with the rest of the session.
   ///
@@ -106,6 +119,7 @@ class KitchenSession {
     bool clearScreenId = false,
     bool? soundOverride,
     bool clearSoundOverride = false,
+    bool? notify,
     KitchenBranding? branding,
   }) => KitchenSession(
     token: token ?? this.token,
@@ -118,6 +132,7 @@ class KitchenSession {
     soundOverride: clearSoundOverride
         ? null
         : (soundOverride ?? this.soundOverride),
+    notify: notify ?? this.notify,
     branding: branding ?? this.branding,
   );
 
@@ -130,6 +145,7 @@ class KitchenSession {
     'screens': [for (final s in screens) s.toJson()],
     'screenId': screenId,
     'soundOverride': soundOverride,
+    'notify': notify,
     'branding': branding.toJson(),
   };
 
@@ -148,6 +164,10 @@ class KitchenSession {
         .toList(),
     screenId: (j['screenId'] as num?)?.toInt(),
     soundOverride: j['soundOverride'] as bool?,
+    // Absent in a session written by an earlier release, and absent means on:
+    // a screen that has been upgraded should behave as the release notes say,
+    // not stay silent because it was signed in before the feature existed.
+    notify: j['notify'] as bool? ?? true,
     branding: KitchenBranding.fromJson(j['branding'] as Map<String, dynamic>?),
   );
 
@@ -267,6 +287,17 @@ class KitchenSessionController extends AsyncNotifier<KitchenSession> {
           ? current.copyWith(clearSoundOverride: true)
           : current.copyWith(soundOverride: on),
     );
+  }
+
+  /// Whether this machine may raise a Windows toast at all.
+  ///
+  /// Stored with the session rather than pushed to the server: it is a fact
+  /// about where this panel is standing, not about the venue. See the
+  /// two-layer rule in `notifications.dart`.
+  Future<void> setNotify(bool on) async {
+    final current = state.value;
+    if (current == null) return;
+    await _persist(current.copyWith(notify: on));
   }
 
   /// Check the password of the login this screen is signed in as.

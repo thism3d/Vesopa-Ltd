@@ -34,7 +34,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../main.dart' show notificationsProvider;
 import '../data/dinein_orders.dart';
+import '../data/notifications.dart';
 import '../data/order_alerts.dart';
 import 'dinein_actions.dart';
 import 'dinein_sheet.dart' show showDineInOrders;
@@ -119,7 +121,37 @@ class _ToastStackState extends ConsumerState<_ToastStack> {
     // Not on the first read after a restart. A till started at nine in the
     // morning with four orders already waiting should not open with four
     // chimes, none of which just happened.
-    if (first || !ref.read(orderChimeProvider)) return;
+    if (first) return;
+
+    // A Windows toast as well as the card that slid in.
+    //
+    // Not instead of: the card carries Accept and Cancel and does not go away,
+    // which is what somebody looking at the till needs. The toast is for the
+    // clerk who has this window minimised behind a stock count or the back
+    // office — the only one of the two that reaches somebody who is not
+    // looking at the till. Whether it appears at all is the back office's
+    // decision AND this terminal's; see data/notifications.dart.
+    final notifications = ref.read(notificationsProvider)
+      ..local = NotifyLocal(
+        enabled: ref.read(orderAlertsProvider) != OrderAlerts.off,
+        sound: ref.read(orderChimeProvider),
+      );
+    final newest = waiting.firstWhere((o) => fresh.contains(o.id));
+    unawaited(
+      notifications.show(
+        NotifyKind.dineInOrder,
+        title: newest.tableLabel.isEmpty
+            ? 'Order from a phone'
+            : 'Order from ${newest.tableLabel}',
+        body: fresh.length > 1
+            ? '${fresh.length} orders waiting to be accepted'
+            : '${newest.itemCount} '
+                  '${newest.itemCount == 1 ? 'item' : 'items'} · '
+                  '${money(newest.totalMinor)}',
+      ),
+    );
+
+    if (!ref.read(orderChimeProvider)) return;
     unawaited(SystemSound.play(SystemSoundType.alert));
   }
 

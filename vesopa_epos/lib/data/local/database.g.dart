@@ -146,6 +146,17 @@ class $ProductsTable extends Products with TableInfo<$ProductsTable, Product> {
     type: DriftSqlType.int,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _allergensMeta = const VerificationMeta(
+    'allergens',
+  );
+  @override
+  late final GeneratedColumn<String> allergens = GeneratedColumn<String>(
+    'allergens',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _taxPercentageMeta = const VerificationMeta(
     'taxPercentage',
   );
@@ -279,6 +290,7 @@ class $ProductsTable extends Products with TableInfo<$ProductsTable, Product> {
     price6Minor,
     printCategory,
     printCategoryOrder,
+    allergens,
     taxPercentage,
     stockQuantity,
     buttonPosition,
@@ -409,6 +421,12 @@ class $ProductsTable extends Products with TableInfo<$ProductsTable, Product> {
           data['print_category_order']!,
           _printCategoryOrderMeta,
         ),
+      );
+    }
+    if (data.containsKey('allergens')) {
+      context.handle(
+        _allergensMeta,
+        allergens.isAcceptableOrUnknown(data['allergens']!, _allergensMeta),
       );
     }
     if (data.containsKey('tax_percentage')) {
@@ -550,6 +568,10 @@ class $ProductsTable extends Products with TableInfo<$ProductsTable, Product> {
         DriftSqlType.int,
         data['${effectivePrefix}print_category_order'],
       ),
+      allergens: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}allergens'],
+      ),
       taxPercentage: attachedDatabase.typeMapping.read(
         DriftSqlType.double,
         data['${effectivePrefix}tax_percentage'],
@@ -634,6 +656,19 @@ class Product extends DataClass implements Insertable<Product> {
   /// `printing/print_categories.dart`.
   final String? printCategory;
   final int? printCategoryOrder;
+
+  /// The allergens declared for this product, as a JSON array of codes.
+  ///
+  /// A snapshot of what the back office says, refreshed with the rest of the
+  /// catalogue. It is here rather than fetched when a bill is drawn because
+  /// the customer display has to be able to show it on a till whose network
+  /// has gone — a declaration about food is not something to hide behind a
+  /// working connection.
+  ///
+  /// NULL and '[]' mean different things and the difference is the point:
+  /// NULL is "nobody has said", '[]' is "somebody looked and it contains none
+  /// of the fourteen". See vesopa_server/src/allergens.js.
+  final String? allergens;
   final double taxPercentage;
   final double stockQuantity;
 
@@ -706,6 +741,7 @@ class Product extends DataClass implements Insertable<Product> {
     this.price6Minor,
     this.printCategory,
     this.printCategoryOrder,
+    this.allergens,
     required this.taxPercentage,
     required this.stockQuantity,
     this.buttonPosition,
@@ -752,6 +788,9 @@ class Product extends DataClass implements Insertable<Product> {
     }
     if (!nullToAbsent || printCategoryOrder != null) {
       map['print_category_order'] = Variable<int>(printCategoryOrder);
+    }
+    if (!nullToAbsent || allergens != null) {
+      map['allergens'] = Variable<String>(allergens);
     }
     map['tax_percentage'] = Variable<double>(taxPercentage);
     map['stock_quantity'] = Variable<double>(stockQuantity);
@@ -813,6 +852,9 @@ class Product extends DataClass implements Insertable<Product> {
       printCategoryOrder: printCategoryOrder == null && nullToAbsent
           ? const Value.absent()
           : Value(printCategoryOrder),
+      allergens: allergens == null && nullToAbsent
+          ? const Value.absent()
+          : Value(allergens),
       taxPercentage: Value(taxPercentage),
       stockQuantity: Value(stockQuantity),
       buttonPosition: buttonPosition == null && nullToAbsent
@@ -857,6 +899,7 @@ class Product extends DataClass implements Insertable<Product> {
       price6Minor: serializer.fromJson<int?>(json['price6Minor']),
       printCategory: serializer.fromJson<String?>(json['printCategory']),
       printCategoryOrder: serializer.fromJson<int?>(json['printCategoryOrder']),
+      allergens: serializer.fromJson<String?>(json['allergens']),
       taxPercentage: serializer.fromJson<double>(json['taxPercentage']),
       stockQuantity: serializer.fromJson<double>(json['stockQuantity']),
       buttonPosition: serializer.fromJson<int?>(json['buttonPosition']),
@@ -886,6 +929,7 @@ class Product extends DataClass implements Insertable<Product> {
       'price6Minor': serializer.toJson<int?>(price6Minor),
       'printCategory': serializer.toJson<String?>(printCategory),
       'printCategoryOrder': serializer.toJson<int?>(printCategoryOrder),
+      'allergens': serializer.toJson<String?>(allergens),
       'taxPercentage': serializer.toJson<double>(taxPercentage),
       'stockQuantity': serializer.toJson<double>(stockQuantity),
       'buttonPosition': serializer.toJson<int?>(buttonPosition),
@@ -913,6 +957,7 @@ class Product extends DataClass implements Insertable<Product> {
     Value<int?> price6Minor = const Value.absent(),
     Value<String?> printCategory = const Value.absent(),
     Value<int?> printCategoryOrder = const Value.absent(),
+    Value<String?> allergens = const Value.absent(),
     double? taxPercentage,
     double? stockQuantity,
     Value<int?> buttonPosition = const Value.absent(),
@@ -945,6 +990,7 @@ class Product extends DataClass implements Insertable<Product> {
     printCategoryOrder: printCategoryOrder.present
         ? printCategoryOrder.value
         : this.printCategoryOrder,
+    allergens: allergens.present ? allergens.value : this.allergens,
     taxPercentage: taxPercentage ?? this.taxPercentage,
     stockQuantity: stockQuantity ?? this.stockQuantity,
     buttonPosition: buttonPosition.present
@@ -995,6 +1041,7 @@ class Product extends DataClass implements Insertable<Product> {
       printCategoryOrder: data.printCategoryOrder.present
           ? data.printCategoryOrder.value
           : this.printCategoryOrder,
+      allergens: data.allergens.present ? data.allergens.value : this.allergens,
       taxPercentage: data.taxPercentage.present
           ? data.taxPercentage.value
           : this.taxPercentage,
@@ -1038,6 +1085,7 @@ class Product extends DataClass implements Insertable<Product> {
           ..write('price6Minor: $price6Minor, ')
           ..write('printCategory: $printCategory, ')
           ..write('printCategoryOrder: $printCategoryOrder, ')
+          ..write('allergens: $allergens, ')
           ..write('taxPercentage: $taxPercentage, ')
           ..write('stockQuantity: $stockQuantity, ')
           ..write('buttonPosition: $buttonPosition, ')
@@ -1067,6 +1115,7 @@ class Product extends DataClass implements Insertable<Product> {
     price6Minor,
     printCategory,
     printCategoryOrder,
+    allergens,
     taxPercentage,
     stockQuantity,
     buttonPosition,
@@ -1095,6 +1144,7 @@ class Product extends DataClass implements Insertable<Product> {
           other.price6Minor == this.price6Minor &&
           other.printCategory == this.printCategory &&
           other.printCategoryOrder == this.printCategoryOrder &&
+          other.allergens == this.allergens &&
           other.taxPercentage == this.taxPercentage &&
           other.stockQuantity == this.stockQuantity &&
           other.buttonPosition == this.buttonPosition &&
@@ -1121,6 +1171,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
   final Value<int?> price6Minor;
   final Value<String?> printCategory;
   final Value<int?> printCategoryOrder;
+  final Value<String?> allergens;
   final Value<double> taxPercentage;
   final Value<double> stockQuantity;
   final Value<int?> buttonPosition;
@@ -1145,6 +1196,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     this.price6Minor = const Value.absent(),
     this.printCategory = const Value.absent(),
     this.printCategoryOrder = const Value.absent(),
+    this.allergens = const Value.absent(),
     this.taxPercentage = const Value.absent(),
     this.stockQuantity = const Value.absent(),
     this.buttonPosition = const Value.absent(),
@@ -1170,6 +1222,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     this.price6Minor = const Value.absent(),
     this.printCategory = const Value.absent(),
     this.printCategoryOrder = const Value.absent(),
+    this.allergens = const Value.absent(),
     this.taxPercentage = const Value.absent(),
     this.stockQuantity = const Value.absent(),
     this.buttonPosition = const Value.absent(),
@@ -1196,6 +1249,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     Expression<int>? price6Minor,
     Expression<String>? printCategory,
     Expression<int>? printCategoryOrder,
+    Expression<String>? allergens,
     Expression<double>? taxPercentage,
     Expression<double>? stockQuantity,
     Expression<int>? buttonPosition,
@@ -1222,6 +1276,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
       if (printCategory != null) 'print_category': printCategory,
       if (printCategoryOrder != null)
         'print_category_order': printCategoryOrder,
+      if (allergens != null) 'allergens': allergens,
       if (taxPercentage != null) 'tax_percentage': taxPercentage,
       if (stockQuantity != null) 'stock_quantity': stockQuantity,
       if (buttonPosition != null) 'button_position': buttonPosition,
@@ -1249,6 +1304,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     Value<int?>? price6Minor,
     Value<String?>? printCategory,
     Value<int?>? printCategoryOrder,
+    Value<String?>? allergens,
     Value<double>? taxPercentage,
     Value<double>? stockQuantity,
     Value<int?>? buttonPosition,
@@ -1274,6 +1330,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
       price6Minor: price6Minor ?? this.price6Minor,
       printCategory: printCategory ?? this.printCategory,
       printCategoryOrder: printCategoryOrder ?? this.printCategoryOrder,
+      allergens: allergens ?? this.allergens,
       taxPercentage: taxPercentage ?? this.taxPercentage,
       stockQuantity: stockQuantity ?? this.stockQuantity,
       buttonPosition: buttonPosition ?? this.buttonPosition,
@@ -1329,6 +1386,9 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     if (printCategoryOrder.present) {
       map['print_category_order'] = Variable<int>(printCategoryOrder.value);
     }
+    if (allergens.present) {
+      map['allergens'] = Variable<String>(allergens.value);
+    }
     if (taxPercentage.present) {
       map['tax_percentage'] = Variable<double>(taxPercentage.value);
     }
@@ -1378,6 +1438,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
           ..write('price6Minor: $price6Minor, ')
           ..write('printCategory: $printCategory, ')
           ..write('printCategoryOrder: $printCategoryOrder, ')
+          ..write('allergens: $allergens, ')
           ..write('taxPercentage: $taxPercentage, ')
           ..write('stockQuantity: $stockQuantity, ')
           ..write('buttonPosition: $buttonPosition, ')
@@ -8539,6 +8600,7 @@ typedef $$ProductsTableCreateCompanionBuilder =
       Value<int?> price6Minor,
       Value<String?> printCategory,
       Value<int?> printCategoryOrder,
+      Value<String?> allergens,
       Value<double> taxPercentage,
       Value<double> stockQuantity,
       Value<int?> buttonPosition,
@@ -8565,6 +8627,7 @@ typedef $$ProductsTableUpdateCompanionBuilder =
       Value<int?> price6Minor,
       Value<String?> printCategory,
       Value<int?> printCategoryOrder,
+      Value<String?> allergens,
       Value<double> taxPercentage,
       Value<double> stockQuantity,
       Value<int?> buttonPosition,
@@ -8648,6 +8711,11 @@ class $$ProductsTableFilterComposer
 
   ColumnFilters<int> get printCategoryOrder => $composableBuilder(
     column: $table.printCategoryOrder,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get allergens => $composableBuilder(
+    column: $table.allergens,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -8776,6 +8844,11 @@ class $$ProductsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get allergens => $composableBuilder(
+    column: $table.allergens,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<double> get taxPercentage => $composableBuilder(
     column: $table.taxPercentage,
     builder: (column) => ColumnOrderings(column),
@@ -8895,6 +8968,9 @@ class $$ProductsTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<String> get allergens =>
+      $composableBuilder(column: $table.allergens, builder: (column) => column);
+
   GeneratedColumn<double> get taxPercentage => $composableBuilder(
     column: $table.taxPercentage,
     builder: (column) => column,
@@ -8981,6 +9057,7 @@ class $$ProductsTableTableManager
                 Value<int?> price6Minor = const Value.absent(),
                 Value<String?> printCategory = const Value.absent(),
                 Value<int?> printCategoryOrder = const Value.absent(),
+                Value<String?> allergens = const Value.absent(),
                 Value<double> taxPercentage = const Value.absent(),
                 Value<double> stockQuantity = const Value.absent(),
                 Value<int?> buttonPosition = const Value.absent(),
@@ -9005,6 +9082,7 @@ class $$ProductsTableTableManager
                 price6Minor: price6Minor,
                 printCategory: printCategory,
                 printCategoryOrder: printCategoryOrder,
+                allergens: allergens,
                 taxPercentage: taxPercentage,
                 stockQuantity: stockQuantity,
                 buttonPosition: buttonPosition,
@@ -9031,6 +9109,7 @@ class $$ProductsTableTableManager
                 Value<int?> price6Minor = const Value.absent(),
                 Value<String?> printCategory = const Value.absent(),
                 Value<int?> printCategoryOrder = const Value.absent(),
+                Value<String?> allergens = const Value.absent(),
                 Value<double> taxPercentage = const Value.absent(),
                 Value<double> stockQuantity = const Value.absent(),
                 Value<int?> buttonPosition = const Value.absent(),
@@ -9055,6 +9134,7 @@ class $$ProductsTableTableManager
                 price6Minor: price6Minor,
                 printCategory: printCategory,
                 printCategoryOrder: printCategoryOrder,
+                allergens: allergens,
                 taxPercentage: taxPercentage,
                 stockQuantity: stockQuantity,
                 buttonPosition: buttonPosition,

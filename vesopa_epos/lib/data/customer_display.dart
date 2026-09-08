@@ -65,6 +65,7 @@ class DisplayLine {
     required this.quantity,
     required this.totalMinor,
     this.isModifier = false,
+    this.allergens = const [],
   });
 
   final String name;
@@ -75,11 +76,26 @@ class DisplayLine {
   /// receipt panel.
   final bool isModifier;
 
+  /// What is in it, in the words a customer reads.
+  ///
+  /// WORDS, not codes, and that is the opposite of what everything else in
+  /// this system carries. The customer display is deliberately an offline
+  /// application: it reads a file this till writes and has no HTTP client at
+  /// all, so it cannot turn `tree_nuts` into "Tree nuts" and a screen facing a
+  /// customer must never show a database code. The till resolves them, from
+  /// the server's own list, and sends the result.
+  ///
+  /// Empty is not "contains none of the fourteen" — it is "nothing to say
+  /// here", which covers both an unanswered product and a till that has never
+  /// managed to read the list. The display words itself accordingly.
+  final List<String> allergens;
+
   Map<String, Object?> toJson() => {
     'name': name,
     'quantity': quantity,
     'total_minor': totalMinor,
     if (isModifier) 'modifier': true,
+    if (allergens.isNotEmpty) 'allergens': allergens,
   };
 }
 
@@ -87,6 +103,7 @@ class DisplayLine {
 class DisplaySnapshot {
   const DisplaySnapshot({
     required this.state,
+    this.notifyDisplay = false,
     this.lines = const [],
     this.subtotalMinor = 0,
     this.discountMinor = 0,
@@ -101,11 +118,19 @@ class DisplaySnapshot {
   /// A till with nothing rung up. The display shows adverts full screen for
   /// this, without waiting for its own idle timer — an empty basket is not
   /// something a customer needs to look at.
-  const DisplaySnapshot.idle({String? terminalName})
-    : this(state: 'idle', terminalName: terminalName);
+  const DisplaySnapshot.idle({String? terminalName, bool notifyDisplay = false})
+    : this(
+        state: 'idle',
+        terminalName: terminalName,
+        notifyDisplay: notifyDisplay,
+      );
 
   /// 'idle' | 'sale' | 'paid'
   final String state;
+
+  /// What the back office says about toasts on the customer display. Passed
+  /// through to the file for the display to read. See [toJson].
+  final bool notifyDisplay;
 
   final List<DisplayLine> lines;
   final int subtotalMinor;
@@ -137,6 +162,15 @@ class DisplaySnapshot {
     'paid_minor': paidMinor,
     'change_minor': changeMinor,
     'message': message,
+    // Whether the venue lets its customer displays raise a Windows toast.
+    //
+    // Carried in the file because the display application has no network of
+    // its own — it reads what this till writes and nothing else — and the
+    // venue asked for one place in the back office that decides which
+    // notification goes where. Off by default; see
+    // schema_till_notifications.sql for why a screen facing a queue is the one
+    // surface that should not interrupt anybody.
+    'notify_display': notifyDisplay,
   };
 
   /// Whether two snapshots would draw the same screen.
@@ -508,6 +542,14 @@ class CustomerDisplayFeed {
 /// which is exactly what used to happen, and why the thank-you never appeared.
 DisplaySnapshot snapshotFor({
   required List<OrderLine> lines,
+  bool notifyDisplay = false,
+  /// PLU to the allergens declared for it, already in the words a customer
+  /// reads. See [DisplayLine.allergens] for why they are resolved on this side.
+  ///
+  /// Passed in rather than looked up here so this stays a pure function of
+  /// what it is given — it is driven directly by the display tests, and a
+  /// database read inside it would mean standing one up for every case.
+  Map<int, List<String>> allergensByPlu = const {},
   int subtotalMinor = 0,
   int discountMinor = 0,
   int taxMinor = 0,
@@ -518,10 +560,16 @@ DisplaySnapshot snapshotFor({
   String? terminalName,
   String? message,
 }) {
-  if (lines.isEmpty) return DisplaySnapshot.idle(terminalName: terminalName);
+  if (lines.isEmpty) {
+    return DisplaySnapshot.idle(
+      terminalName: terminalName,
+      notifyDisplay: notifyDisplay,
+    );
+  }
 
   return DisplaySnapshot(
     state: paid ? 'paid' : 'sale',
+    notifyDisplay: notifyDisplay,
     paidMinor: paidMinor,
     changeMinor: changeMinor,
     terminalName: terminalName,
@@ -541,6 +589,7 @@ DisplaySnapshot snapshotFor({
           // gin. The display indents those under the item they belong to, the
           // same way the till's own check does.
           isModifier: line.parentLineId != null,
+          allergens: allergensByPlu[line.pluId] ?? const [],
         ),
     ],
     subtotalMinor: subtotalMinor,

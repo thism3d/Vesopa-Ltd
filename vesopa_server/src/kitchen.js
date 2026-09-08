@@ -23,6 +23,7 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 
 const { requireAuth, requireTerminal } = require('./auth');
+const { cleanAllergens, readAllergens } = require('./allergens');
 
 /**
  * The stations a screen may watch.
@@ -120,7 +121,7 @@ async function loadTickets(pool, ids) {
 
   const [lines] = await pool.query(
     `SELECT id, ticket_id, seq, quantity, name, note, stations, made_at,
-            made_by, is_modifier
+            made_by, is_modifier, allergens
        FROM epos_kitchen_ticket_lines
       WHERE ticket_id IN (${holes})
       ORDER BY ticket_id, seq`,
@@ -147,6 +148,12 @@ async function loadTickets(pool, ids) {
       // dish of its own. `seq` already puts it directly under its item.
       isModifier: line.is_modifier === 1,
       stations: parseStations(line.stations),
+      // What is in it, as the catalogue said when the ticket was fired. An
+      // empty list here means nobody has declared anything, not that the dish
+      // is free of the fourteen — `allergensDeclared` is the one that says
+      // which, and the board has to word itself from that, not from a count.
+      allergens: readAllergens(line.allergens),
+      allergensDeclared: line.allergens !== null && line.allergens !== undefined,
       // When this item was crossed off as made, and by whom. Null until it is.
       madeAt: line.made_at,
       madeBy: line.made_by,
@@ -1332,12 +1339,45 @@ function tillKitchenRoutes({ pool, broadcast, secret }) {
         return res.status(200).json({ status: 'duplicate', id: ticket.id });
       }
 
+      // What is in the food, frozen at the moment it is fired.
+      //
+      // A snapshot, unlike the customer menu, which reads the catalogue live.
+      // The board in front of a chef has to keep saying what the plate they
+      // are making contains even if a manager edits the product mid-service,
+      // and it has to keep saying it on a screen that has lost its network.
+      //
+      // Taken from the PLU the till names. A till on the previous version
+      // sends neither the allergens nor the PLU, and the column stays NULL —
+      // which reads as "nobody has said", not as "contains nothing".
+      const plus = [
+        ...new Set(lines.map((l) => Number(l.plu_id)).filter((p) => p > 0)),
+      ];
+      const allergensByPlu = new Map();
+      if (plus.length) {
+        const [rows] = await conn.query(
+          'SELECT pluid, allergens FROM bo_products' +
+            ' WHERE email = ? AND pluid IN (' + plus.map(() => '?').join(',') + ')',
+          [ticket.office, ...plus]
+        );
+        for (const r of rows) allergensByPlu.set(r.pluid, r.allergens);
+      }
+
       let seq = 0;
       for (const line of lines) {
+        // What the till sent wins over what the catalogue says, because a till
+        // that has already resolved a price-level or a variant knows something
+        // this lookup does not. cleanAllergens drops anything that is not one
+        // of the fourteen rather than refusing the ticket: a mis-typed code
+        // must never stop food reaching a kitchen.
+        const declared = line.allergens !== undefined && line.allergens !== null
+          ? cleanAllergens(line.allergens)
+          : allergensByPlu.get(Number(line.plu_id)) ?? null;
+
         await conn.execute(
           `INSERT INTO epos_kitchen_ticket_lines
-             (id, ticket_id, seq, quantity, name, note, stations, is_modifier)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+             (id, ticket_id, seq, quantity, name, note, stations, is_modifier,
+              allergens)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             line.id || crypto.randomUUID(),
             ticket.id,
@@ -1349,6 +1389,7 @@ function tillKitchenRoutes({ pool, broadcast, secret }) {
             // A till on the previous version sends nothing here, and every one
             // of its lines is a dish in its own right — which is the default.
             line.is_modifier ? 1 : 0,
+            declared,
           ]
         );
       }

@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/dinein_orders.dart';
+import '../data/notifications.dart';
 import '../data/providers.dart';
 import '../data/ticket.dart';
 import '../printing/kitchen_print.dart';
@@ -12,6 +16,7 @@ import 'open_board.dart';
 import 'settings_page.dart';
 import 'theme.dart';
 import 'widgets/brand_mark.dart';
+import 'widgets/dinein_strip.dart';
 import 'widgets/password_prompt.dart';
 
 /// The chrome, and everything that lives in it.
@@ -55,6 +60,7 @@ class _KitchenShellState extends ConsumerState<KitchenShell> {
     // opinion about how a new ticket is announced — it knows one arrived, and
     // the shell decides what that sounds and looks like.
     ref.read(ticketBoardProvider.notifier).onNewTicket = _announce;
+    ref.read(dineInInboxProvider.notifier).onNewOrder = _announceOrder;
 
     // Started after the first frame: `start` reads the session, and a provider
     // read during the build that mounts this widget is a rebuild during a
@@ -68,10 +74,72 @@ class _KitchenShellState extends ConsumerState<KitchenShell> {
     await ref
         .read(ticketBoardProvider.notifier)
         .start(session!.office!, ref.read(wsUrlProvider));
+    ref.read(dineInInboxProvider.notifier).start();
+    unawaited(_loadNotifyPolicy(session.office!));
+  }
+
+  /// Read what the back office says this venue's machines may interrupt people
+  /// about, and register with Windows.
+  ///
+  /// Failures are swallowed on purpose. A screen that cannot reach the
+  /// settings row keeps the built-in defaults — which are "on" — because a
+  /// kitchen screen that says nothing when an order arrives is the fault this
+  /// exists to fix, and a network blip must not be what causes it.
+  Future<void> _loadNotifyPolicy(String office) async {
+    final notifications = ref.read(notificationsProvider);
+    await notifications.init();
+    try {
+      final row = await ref.read(kitchenApiProvider).tillSettings(office);
+      notifications.policy = NotifyPolicy.fromSettings(row);
+    } catch (_) {
+      // Keep the defaults.
+    }
+    final session = ref.read(kitchenSessionProvider).value;
+    if (session != null) {
+      notifications.local = NotifyLocal(
+        enabled: session.notify,
+        sound: session.sound,
+      );
+    }
+  }
+
+  /// A QR order nobody has picked up. Announced the same way a ticket is —
+  /// the flash and the venue's own alert — plus a Windows toast, because the
+  /// board may be on a second monitor or behind another window while somebody
+  /// is doing paperwork, and this one is a customer waiting for an answer.
+  void _announceOrder(DineInOrder order) {
+    if (!mounted) return;
+    unawaited(
+      ref
+          .read(notificationsProvider)
+          .show(
+            NotifyKind.dineInOrder,
+            title: 'Order from ${order.tableLabel}',
+            body:
+                '${order.itemCount} '
+                '${order.itemCount == 1 ? 'item' : 'items'} · '
+                '£${(order.totalMinor / 100).toStringAsFixed(2)}'
+                '${order.customerName == null ? '' : ' · ${order.customerName}'}',
+          ),
+    );
+    _flashAndChime();
   }
 
   void _announce(Ticket ticket) {
     if (!mounted) return;
+
+    unawaited(
+      ref
+          .read(notificationsProvider)
+          .show(
+            NotifyKind.kitchenTicket,
+            title: ticket.tableNumber == null
+                ? 'New order'
+                : 'Table ${ticket.tableNumber}',
+            body: '${ticket.lines.length} '
+                '${ticket.lines.length == 1 ? 'item' : 'items'} to the pass',
+          ),
+    );
 
     if (ref.read(kitchenSessionProvider).value?.sound ?? true) {
       // The system alert, not a bundled sound file.
@@ -83,6 +151,15 @@ class _KitchenShellState extends ConsumerState<KitchenShell> {
       SystemSound.play(SystemSoundType.alert);
     }
 
+    _flashAndChime(chime: false);
+  }
+
+  /// The flash on the board, and optionally the venue's own alert sound.
+  void _flashAndChime({bool chime = true}) {
+    if (!mounted) return;
+    if (chime && (ref.read(kitchenSessionProvider).value?.sound ?? true)) {
+      SystemSound.play(SystemSoundType.alert);
+    }
     setState(() => _flash = true);
     Future.delayed(const Duration(milliseconds: 700), () {
       if (mounted) setState(() => _flash = false);
@@ -141,7 +218,12 @@ class _KitchenShellState extends ConsumerState<KitchenShell> {
                 duration: const Duration(milliseconds: 220),
                 color: _flash ? skin.selectedTrack : skin.canvas,
                 child: switch (_tab) {
-                  _Tab.open => const OpenBoard(),
+                  // The waiting QR orders sit above the tickets, and only on
+                  // the open board: the Counts and Completed tabs are about
+                  // work that has already been accepted.
+                  _Tab.open => const Column(
+                    children: [DineInStrip(), Expanded(child: OpenBoard())],
+                  ),
                   _Tab.counts => const CountsBoard(),
                   _Tab.completed => const CompletedBoard(),
                 },

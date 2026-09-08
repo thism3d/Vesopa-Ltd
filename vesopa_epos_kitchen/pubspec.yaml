@@ -10,7 +10,7 @@ publish_to: 'none'
 # ship together: a kitchen screen and a till on different major versions is a
 # support question nobody can answer over the phone. The build number is this
 # app's own.
-version: 1.5.0+7
+version: 1.6.7+8
 
 environment:
   sdk: ^3.11.3
@@ -54,6 +54,12 @@ dependencies:
   # the same whichever machine printed it.
   pdf: ^3.12.0
   printing: ^5.14.3
+  # Windows toast notifications, so a kitchen that has the board on a second
+  # monitor still learns that an order has arrived. Pure Dart over the Windows
+  # notification API: no method-channel plugin to go wrong on the low-end panel
+  # this app runs on, and it works from an msix, which is the only way this is
+  # installed.
+  local_notifier: ^0.1.6
 
 dev_dependencies:
   flutter_test:
@@ -121,7 +127,7 @@ msix_config:
 
   # Four parts, and the last must be 0 — the Store reserves the revision field
   # and rejects anything else. Tracks `version:` at the top of this file.
-  msix_version: 1.5.0.0
+  msix_version: 1.6.7.0
 
   logo_path: assets/brand/kitchen_mark.png
 

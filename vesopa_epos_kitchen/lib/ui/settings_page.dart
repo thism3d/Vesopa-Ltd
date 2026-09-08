@@ -124,6 +124,29 @@ class _SettingsSheet extends ConsumerWidget {
                     ),
                   ),
 
+                // Separate from the chime, because they answer different
+                // questions. The chime is heard across the room; a toast is
+                // for the times the board is not the window on top — somebody
+                // doing paperwork, or a second monitor.
+                SwitchListTile(
+                  value: session.notify,
+                  onChanged: (on) {
+                    notifier.setNotify(on);
+                    ref.read(notificationsProvider).local = ref
+                        .read(notificationsProvider)
+                        .local
+                        .copyWith(enabled: on);
+                  },
+                  title: const Text('Show Windows notifications'),
+                  subtitle: const Text(
+                    'A pop-up from Windows when an order arrives, so it is '
+                    'seen even when this board is behind another window. '
+                    'Which kinds are allowed is set in the back office, under '
+                    'Settings — this machine can only turn them off.',
+                  ),
+                  contentPadding: EdgeInsets.zero,
+                ),
+
                 const SizedBox(height: 14),
                 // On this machine and not in the back office, deliberately: two
                 // screens in one venue can be in two different rooms, and the

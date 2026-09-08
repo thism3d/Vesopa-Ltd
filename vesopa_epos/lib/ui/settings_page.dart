@@ -204,6 +204,16 @@ class SettingsPage extends ConsumerWidget {
                   'want different answers.',
                   style: TextStyle(fontSize: 12.5),
                 ),
+                const SizedBox(height: 4),
+                const Text(
+                  'A Windows notification is also shown, so an order reaches '
+                  'somebody who has this window minimised. It follows the two '
+                  'settings below — a till set to be told Nothing shows none, '
+                  'and turning the sound off makes it silent — and the back '
+                  'office can switch them off for every terminal at once under '
+                  'Settings.',
+                  style: TextStyle(fontSize: 12.5),
+                ),
                 const SizedBox(height: 6),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,

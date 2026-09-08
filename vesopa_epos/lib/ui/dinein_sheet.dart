@@ -64,6 +64,8 @@ class _DineInSheetState extends ConsumerState<DineInSheet> {
   @override
   Widget build(BuildContext context) {
     final orders = ref.watch(dineInOrdersProvider).value ?? const <DineInOrder>[];
+    // Codes to words, once, for every card on this sheet.
+    final labels = ref.watch(allergenLabelsProvider).value ?? const {};
     final waiting = orders.where((o) => o.isWaiting).toList();
     final working = orders.where((o) => !o.isWaiting).toList();
 
@@ -122,6 +124,7 @@ class _DineInSheetState extends ConsumerState<DineInSheet> {
             _OrderCard(
               order: order,
               busy: _busy == order.id,
+              allergenLabels: labels,
               onAccept: () => unawaited(_accept(order)),
               onRefuse: () => unawaited(_refuse(order)),
             ),
@@ -137,6 +140,7 @@ class _DineInSheetState extends ConsumerState<DineInSheet> {
               _OrderCard(
                 order: order,
                 busy: _busy == order.id,
+                allergenLabels: labels,
                 onReady: order.status == 'accepted'
                     ? () => unawaited(_move(order, 'ready'))
                     : null,
@@ -196,6 +200,7 @@ class _OrderCard extends StatelessWidget {
   const _OrderCard({
     required this.order,
     required this.busy,
+    this.allergenLabels = const {},
     this.onAccept,
     this.onRefuse,
     this.onReady,
@@ -204,6 +209,9 @@ class _OrderCard extends StatelessWidget {
 
   final DineInOrder order;
   final bool busy;
+
+  /// Allergen codes to the words a person reads, from the venue's own server.
+  final Map<String, String> allergenLabels;
   final VoidCallback? onAccept;
   final VoidCallback? onRefuse;
   final VoidCallback? onReady;
@@ -256,7 +264,12 @@ class _OrderCard extends StatelessWidget {
               ),
             const SizedBox(height: 10),
 
-            for (final line in order.lines)
+            // The dishes, each with whatever hangs off it. Add-ons are drawn
+            // under their dish rather than as lines of their own, because that
+            // is how the check, the receipt and the kitchen ticket already
+            // draw a modifier — a clerk reading this card and then the bill it
+            // becomes should be reading the same thing twice.
+            for (final line in order.dishes)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 3),
                 child: Row(
@@ -274,6 +287,11 @@ class _OrderCard extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(line.name),
+                          for (final on in order.addOnsFor(line))
+                            Text(
+                              '+ ${on.name}',
+                              style: const TextStyle(fontSize: 12.5),
+                            ),
                           if (line.note != null)
                             Text(
                               line.note!,
@@ -282,10 +300,63 @@ class _OrderCard extends StatelessWidget {
                                 fontStyle: FontStyle.italic,
                               ),
                             ),
+                          // Only when it is not the default. "Remove it" is
+                          // what happens anyway, and printing it on every line
+                          // would bury the two that actually ask something.
+                          if (line.unavailableAction != 'remove')
+                            Text(
+                              line.unavailableAction == 'call'
+                                  ? 'If off: ring the customer'
+                                  : 'If off: refund this item',
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w600,
+                                color: Theme.of(context).colorScheme.error,
+                              ),
+                            ),
+                          if (line.allergens.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 3),
+                              child: Wrap(
+                                spacing: 4,
+                                runSpacing: 3,
+                                children: [
+                                  for (final code in line.allergens)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 6,
+                                        vertical: 1,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFFFF2D6),
+                                        borderRadius: BorderRadius.circular(5),
+                                        border: Border.all(
+                                          color: const Color(0xFF8A5300),
+                                        ),
+                                      ),
+                                      child: Text(
+                                        allergenLabels[code] ?? code,
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                          color: Color(0xFF8A5300),
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
                         ],
                       ),
                     ),
-                    Text(money(line.totalMinor)),
+                    Text(
+                      money(
+                        line.totalMinor +
+                            order
+                                .addOnsFor(line)
+                                .fold(0, (sum, a) => sum + a.totalMinor),
+                      ),
+                    ),
                   ],
                 ),
               ),

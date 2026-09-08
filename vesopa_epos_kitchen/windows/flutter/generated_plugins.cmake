@@ -4,6 +4,7 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   connectivity_plus
+  local_notifier
   printing
   screen_retriever_windows
   window_manager

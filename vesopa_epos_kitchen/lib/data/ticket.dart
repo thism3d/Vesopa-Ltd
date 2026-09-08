@@ -19,6 +19,8 @@ class TicketLine {
     this.madeAt,
     this.madeBy,
     this.isModifier = false,
+    this.allergens = const [],
+    this.allergensDeclared = false,
   });
 
   final String id;
@@ -56,6 +58,20 @@ class TicketLine {
   /// kitchen does not care which.
   final bool isModifier;
 
+  /// What is in it, as the catalogue said when the ticket was fired.
+  ///
+  /// Codes, not words. The words come from the venue's own server so that the
+  /// menu, the back office, this board and the customer display cannot drift
+  /// into saying "Nuts" where another says "Tree nuts".
+  final List<String> allergens;
+
+  /// Whether anybody has answered the question, which [allergens] cannot say.
+  ///
+  /// An unanswered dish and a dish that genuinely contains none of the
+  /// fourteen both arrive as an empty list, and the board must never print
+  /// "no allergens" over a question nobody filled in.
+  final bool allergensDeclared;
+
   /// Whether this item has been cooked.
   bool get made => madeAt != null;
 
@@ -68,6 +84,8 @@ class TicketLine {
     note: note,
     stations: stations,
     isModifier: isModifier,
+    allergens: allergens,
+    allergensDeclared: allergensDeclared,
     madeAt: value ? (at ?? DateTime.now()) : null,
     madeBy: value ? by : null,
   );
@@ -95,6 +113,11 @@ class TicketLine {
         : (j['note'] as String).trim(),
     stations: _stations(j['stations']),
     isModifier: j['isModifier'] == true || j['isModifier'] == 1,
+    allergens: [
+      for (final a in (j['allergens'] as List?) ?? const []) '$a',
+    ],
+    allergensDeclared:
+        j['allergensDeclared'] == true || j['allergensDeclared'] == 1,
     madeAt: _time(j['madeAt']),
     madeBy: j['madeBy'] as String?,
   );
@@ -106,6 +129,8 @@ class TicketLine {
     'name': name,
     if (note != null) 'note': note,
     if (isModifier) 'isModifier': true,
+    if (allergens.isNotEmpty) 'allergens': allergens,
+    if (allergensDeclared) 'allergensDeclared': true,
     'stations': stations.toList(),
     if (madeAt != null) 'madeAt': madeAt!.toUtc().toIso8601String(),
     if (madeBy != null) 'madeBy': madeBy,

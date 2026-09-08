@@ -32,11 +32,23 @@ class KitchenTicketLine {
     required this.name,
     required this.stations,
     this.note,
+    this.pluId,
   });
 
   final String id;
   final double quantity;
   final String name;
+
+  /// Which product this is, so the server can take an allergen snapshot for
+  /// the board.
+  ///
+  /// The till does not send the allergens themselves. It could — it holds the
+  /// catalogue — but a ticket queued on a till that has been offline since
+  /// Tuesday would then carry Tuesday's declaration, and a declaration about
+  /// food is the last thing that should be served from a stale cache. The PLU
+  /// is stable; the server reads what the catalogue says at the moment the
+  /// ticket lands. See src/kitchen.js.
+  final int? pluId;
 
   /// The modifier, shown in red on the board: "no tomato", "extra sausage".
   /// The one thing on the card that is not the recipe, and the reason a ticket
@@ -58,6 +70,7 @@ class KitchenTicketLine {
     'id': id,
     'quantity': quantity,
     'name': name,
+    if (pluId != null) 'plu_id': pluId,
     if (note != null && note!.isNotEmpty) 'note': note,
     if (isModifier) 'is_modifier': true,
     'stations': stations.join(','),
@@ -68,6 +81,7 @@ class KitchenTicketLine {
         id: j['id'] as String,
         quantity: (j['quantity'] as num).toDouble(),
         name: j['name'] as String,
+        pluId: (j['plu_id'] as num?)?.toInt(),
         note: j['note'] as String?,
         isModifier: j['is_modifier'] == true || j['is_modifier'] == 1,
         stations: {
@@ -416,6 +430,7 @@ KitchenTicket buildKitchenTicket({
         id: line.id,
         quantity: line.quantity,
         name: line.name,
+        pluId: line.pluId,
         note: line.notes,
         isModifier: line.parentLineId != null,
         stations: onScreens,

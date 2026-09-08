@@ -696,6 +696,17 @@ class SyncService {
             printCategoryOrder: Value(
               (raw['print_category_order'] as num?)?.toInt(),
             ),
+            // What is in the food, as the back office declared it. Stored as
+            // the server's own JSON string rather than parsed here, so the
+            // till, the kitchen and the customer display are all reading the
+            // one document and nothing can re-order or re-spell it on the way.
+            // Absent — a server that predates the column — is null, which
+            // reads as "nobody has said" and never as "contains nothing".
+            allergens: Value(
+              (raw['allergens'] as String?)?.trim().isNotEmpty ?? false
+                  ? (raw['allergens'] as String).trim()
+                  : null,
+            ),
             taxPercentage: Value(
               (raw['tax_percentage'] as num? ?? 0).toDouble(),
             ),

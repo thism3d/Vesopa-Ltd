@@ -146,7 +146,14 @@ class _PasswordPromptState extends ConsumerState<_PasswordPrompt> {
               TextField(
                 controller: _password,
                 obscureText: !_revealed,
-                autofocus: true,
+                // Deliberately NOT autofocused.
+                //
+                // On the panel this app runs on, focusing a field raises the
+                // system keyboard over half a 1024x768 screen the moment the
+                // dialog opens — before anybody has decided they want to type.
+                // The on-screen keyboard below writes straight into the
+                // controller, so nothing here needs focus to be usable; focus
+                // follows a tap, and only a tap.
                 enabled: !_busy,
                 onSubmitted: (_) => _submit(),
                 decoration: InputDecoration(

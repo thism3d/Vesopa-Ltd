@@ -49,6 +49,7 @@ class DisplaySettings {
     this.customerQr = '',
     this.customerQrCaption = 'Scan to join',
     this.childLock = false,
+    this.notifications = false,
   });
 
   /// The folder of images and clips to play. Empty means none chosen.
@@ -169,6 +170,15 @@ class DisplaySettings {
   /// lock the locked screen can undo is not a lock.
   final bool childLock;
 
+  /// Whether this screen may raise a Windows toast when the till goes quiet.
+  ///
+  /// Off, and off is the right default for a screen facing a queue: a pop-up
+  /// over somebody's bill is a notification aimed at nobody. It is here for
+  /// the venue that mounts a display in a back office or a service corridor,
+  /// where there is somebody to tell. The back office has to allow it too —
+  /// see `data/notifications.dart`.
+  final bool notifications;
+
   /// The bill's share of the screen, as a usable fraction.
   double get billFraction => (billShare.clamp(20, 80)) / 100;
 
@@ -219,6 +229,7 @@ class DisplaySettings {
     String? customerQr,
     String? customerQrCaption,
     bool? childLock,
+    bool? notifications,
   }) => DisplaySettings(
     advertFolder: advertFolder ?? this.advertFolder,
     screenKey: screenKey ?? this.screenKey,
@@ -240,6 +251,7 @@ class DisplaySettings {
     customerQr: customerQr ?? this.customerQr,
     customerQrCaption: customerQrCaption ?? this.customerQrCaption,
     childLock: childLock ?? this.childLock,
+    notifications: notifications ?? this.notifications,
   );
 }
 
@@ -274,6 +286,7 @@ const _keyStatusHide = 'display.status_hide_seconds';
 const _keySaleSame = 'display.sale_adverts_same';
 const _keySaleFolder = 'display.sale_advert_folder';
 const _keyChildLock = 'display.child_lock';
+const _keyNotifications = 'display.notifications';
 
 class DisplaySettingsController extends AsyncNotifier<DisplaySettings> {
   @override
@@ -302,6 +315,7 @@ class DisplaySettingsController extends AsyncNotifier<DisplaySettings> {
       // Remembered across a restart on purpose. A screen that unlocked itself
       // every time the venue rebooted would be locked in name only.
       childLock: prefs.getBool(_keyChildLock) ?? false,
+      notifications: prefs.getBool(_keyNotifications) ?? false,
     );
   }
 
@@ -332,6 +346,7 @@ class DisplaySettingsController extends AsyncNotifier<DisplaySettings> {
       await prefs.setBool(_keySaleSame, next.saleAdvertsSameFolder);
       await prefs.setString(_keySaleFolder, next.saleAdvertFolder);
       await prefs.setBool(_keyChildLock, next.childLock);
+      await prefs.setBool(_keyNotifications, next.notifications);
     } catch (_) {
       // Nothing to tell the customer standing in front of this.
     }

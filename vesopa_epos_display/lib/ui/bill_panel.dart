@@ -163,14 +163,45 @@ class _Line extends StatelessWidget {
               ),
             ),
           Expanded(
-            child: Text(
-              line.name,
-              style: TextStyle(
-                fontSize: modifier ? 20 : 26,
-                fontWeight: modifier ? FontWeight.w400 : FontWeight.w600,
-                color: modifier ? Brand.inkSoft : Brand.ink,
-                height: 1.2,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  line.name,
+                  style: TextStyle(
+                    fontSize: modifier ? 20 : 26,
+                    fontWeight: modifier ? FontWeight.w400 : FontWeight.w600,
+                    color: modifier ? Brand.inkSoft : Brand.ink,
+                    height: 1.2,
+                  ),
+                ),
+
+                // What is in it, under the item.
+                //
+                // On the screen the customer is looking at, because this is
+                // the one screen in the building they can read for themselves
+                // — the menu they ordered from may have been a printed card,
+                // and asking across a counter is exactly what somebody with an
+                // allergy would rather not have to do.
+                //
+                // Only ever what has been declared. Nothing is drawn for a
+                // product nobody has filled in, because a customer reading
+                // "no allergens" over an unanswered question is the one
+                // failure this whole feature must not have.
+                if (line.allergens.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      'Contains ${line.allergens.join(', ').toLowerCase()}',
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
+                        color: Brand.inkSoft,
+                        height: 1.25,
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
           if (showPrice && !(modifier && line.totalMinor == 0)) ...[

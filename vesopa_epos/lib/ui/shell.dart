@@ -1,10 +1,13 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../config/constants.dart';
 import '../data/customer_display.dart';
+import '../data/dinein_orders.dart' show allergenLabelsProvider;
+import '../data/local/database.dart';
 import '../data/customer_display_control.dart' show clearCustomerCode;
 import '../data/device_registry.dart';
 import '../data/display_pairing.dart';
@@ -266,12 +269,22 @@ class _PosShellState extends ConsumerState<PosShell> {
     }
 
     final repo = ref.read(orderRepositoryProvider);
+    final db = ref.read(databaseProvider);
     _displayFeed = repo
         .watchOrder(orderId)
         .asyncMap((order) async {
           final lines = await repo.watchLines(orderId).first;
           return snapshotFor(
             lines: lines,
+            notifyDisplay: ref.read(tillSettingsProvider).notifyDisplayEnabled,
+            // Only the products on this bill, so a large catalogue is not read
+            // into memory to draw four lines on a screen that repaints on
+            // every tap.
+            allergensByPlu: await _allergensFor(
+              db,
+              lines,
+              ref.read(allergenLabelsProvider).value ?? const {},
+            ),
             subtotalMinor: order.subtotalMinor,
             discountMinor: order.discountMinor,
             taxMinor: order.taxMinor,
@@ -285,6 +298,50 @@ class _PosShellState extends ConsumerState<PosShell> {
           onError: (Object _) {},
           cancelOnError: false,
         );
+  }
+
+  /// The allergens declared for the products on this bill, PLU by PLU.
+  ///
+  /// Read from the till's own catalogue rather than from the server, so the
+  /// screen facing the customer keeps saying what is in the food on a terminal
+  /// whose network has gone. A declaration about food is not something to hide
+  /// behind a working connection.
+  ///
+  /// A row with nothing stored is left out of the map entirely, which the
+  /// display reads as "nobody has declared anything" — deliberately not as
+  /// "this contains none of the fourteen".
+  static Future<Map<int, List<String>>> _allergensFor(
+    AppDatabase db,
+    List<OrderLine> lines,
+    Map<String, String> labels,
+  ) async {
+    // No words, nothing to draw. A raw code on a screen facing a customer —
+    // "tree_nuts" — is worse than a line that is not there, and the display
+    // cannot resolve one itself: it has no network by design.
+    if (labels.isEmpty) return const {};
+
+    final plus = lines.map((l) => l.pluId).toSet();
+    if (plus.isEmpty) return const {};
+    try {
+      final rows = await (db.select(
+        db.products,
+      )..where((p) => p.pluId.isIn(plus))).get();
+      final out = <int, List<String>>{};
+      for (final row in rows) {
+        final stored = row.allergens;
+        if (stored == null || stored.trim().isEmpty) continue;
+        final decoded = jsonDecode(stored);
+        if (decoded is! List || decoded.isEmpty) continue;
+        final words = [for (final code in decoded) ?labels['$code']];
+        if (words.isNotEmpty) out[row.pluId] = words;
+      }
+      return out;
+    } catch (_) {
+      // A catalogue read that fails must not stop the customer seeing their
+      // bill. They get the bill without the allergen line, which is what every
+      // release before this one showed.
+      return const {};
+    }
   }
 
   Future<void> _newOrder() async {

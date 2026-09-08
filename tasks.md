@@ -62,8 +62,36 @@ Found by measuring the live page rather than trusting the markup:
 own wording, so the label wraps rather than being shortened — the one allergen
 a coeliac is looking for, cut off mid-word, is the worst outcome this form has.
 
-**PHASES C–H — not started.** C/D the QR menu page, E/F/G the three Flutter
-apps, H the release. Nothing needs a Store build yet: A and B changed no app.
+**PHASE C — done, deployed, measured on the live page.**
+
+| Task | State | Note |
+|---|---|---|
+| T14 product images | done | the real cause was a THIRD media rule: 104px below 380 and 88px below 400, written at different times and left in that order, so the 88 won every overlap and the 104 rung was dead code. Every phone was getting the smallest one. Now one ladder, widest first: 132 / 112 / 96 |
+| T15 logo | done | circle, no white ring, cover-centred. A wide wordmark will lose its ends — venues with one should upload a square version |
+| T16 meta tags | done | plus two the plan did not ask for: og:image was site-relative, which no scraper can resolve, and a venue-set meta title now reaches the tab as well as the share card |
+| T17 table picker | done | it rendered a static div; the only way off a wrong table was a Change button inside the checkout, behind a basket. Now a button in every state, and a scanned page learns its own slug so the floor is fetchable at all |
+
+**PHASE D — done, deployed, driven in a real browser on live.**
+
+| Task | State | Note |
+|---|---|---|
+| T18 quantity badge | done | one 40px circle in both states; the pill opens OVER the row so nothing reflows. Also fixed: redrawItem only looked at `.end`, which only rows without a picture have, so on any menu with photographs the basket changed and the button did not |
+| T19 product sheet | done | add-on groups, per-line special instructions, dietary sheet, availability chooser. The basket is now keyed by LINE with the same key the server builds |
+| T20 offer sparkle | done | fires on the crossing only, re-armed if the basket drops back under |
+| T21 no autofocus | done | nobody wrote a focus() call — `showModal()` takes the first focusable descendant, which was the name box. The panel is now the focus target |
+
+**Two more corrections to the plan, found by measuring:**
+
+3. The allergen payload could not say whether anybody had ANSWERED. An
+   unanswered dish and a dish that genuinely contains none of the fourteen
+   both arrived as `[]`. Those are different sentences to read with an
+   allergy, so `allergens_declared` was added.
+4. The dish-sheet CSS had to be scoped under `.pop`. The sheet's generic
+   `.pop label` rule outranks a bare `.dopt`, so every add-on option rendered
+   as a block: the radio on its own line and the name and price jammed
+   together underneath. Only visible in a screenshot.
+
+**PHASES E–H — not started.** E/F/G the three Flutter apps, H the release.
 
 ---
 

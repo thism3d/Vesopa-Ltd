@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import 'dinein_orders.dart';
 import 'kitchen_branding.dart';
 import 'screen_profile.dart';
 import 'ticket.dart';
@@ -221,6 +222,51 @@ class KitchenApi {
     body: {'rushed': rushed},
   );
 
+  /// The QR orders a customer has sent and nobody has picked up yet.
+  ///
+  /// The same handler the till calls, reached at a kitchen-scoped path — see
+  /// the note on `appAuth` in vesopa_server/src/dinein.js. A venue with no QR
+  /// menu simply gets an empty list, which is why nothing here has to ask
+  /// whether the feature is switched on.
+  Future<List<DineInOrder>> dineInOrders({String status = 'placed'}) async {
+    final rows = await _sendList(
+      'GET',
+      '/api/kitchen/dinein/orders?status=$status&limit=30',
+    );
+    return [
+      for (final row in rows) ?DineInOrder.fromJson(row),
+    ];
+  }
+
+  /// Accept or reject one. [action] is `accepted` or `rejected`.
+  ///
+  /// A 409 means somebody else got there first — the till, or the screen on the
+  /// other wall — and it is a normal outcome rather than a fault, so it comes
+  /// back as a typed error the board can turn into a sentence instead of a
+  /// red banner.
+  Future<void> moveDineInOrder(int id, String action) =>
+      _send('POST', '/api/kitchen/dinein/orders/$id/$action');
+
+  /// The venue's notification settings, from the same row the back office
+  /// edits. Unauthenticated and scoped by office, exactly as the till reads it.
+  Future<Map<String, dynamic>> tillSettings(String office) => _send(
+    'GET',
+    '/api/till-settings/public?office=${Uri.encodeQueryComponent(office)}',
+    authorised: false,
+  );
+
+  /// Allergen codes to the words a person reads. Fetched once at start-up.
+  ///
+  /// From the server rather than a list in this app, so the board, the menu,
+  /// the back office and the customer display cannot drift into four spellings
+  /// of the same allergen.
+  Future<Map<String, String>> allergenLabels() async {
+    final rows = await _sendList('GET', '/api/allergens', authorised: false);
+    return {
+      for (final row in rows) '${row['code']}': '${row['label']}',
+    }..removeWhere((code, label) => code == 'null' || label == 'null');
+  }
+
   /// Check the password of the login this screen is already signed in as.
   ///
   /// Not a second sign-in: it issues no token and cannot be used to become
@@ -261,7 +307,41 @@ class KitchenApi {
     return KitchenBranding.fromJson(body);
   }
 
+  /// The same call as [_send], for the routes that answer with a JSON array.
+  ///
+  /// Two methods rather than one returning `Object?`, so no caller has to cast
+  /// and none can forget to.
+  Future<List<Map<String, dynamic>>> _sendList(
+    String method,
+    String path, {
+    bool authorised = true,
+  }) async {
+    final decoded = await _raw(method, path, authorised: authorised);
+    if (decoded is! List) return const [];
+    return [
+      for (final row in decoded)
+        if (row is Map<String, dynamic>) row,
+    ];
+  }
+
   Future<Map<String, dynamic>> _send(
+    String method,
+    String path, {
+    Map<String, dynamic>? body,
+    bool authorised = true,
+  }) async {
+    final decoded = await _raw(method, path, body: body, authorised: authorised);
+    return decoded is Map<String, dynamic> ? decoded : const {};
+  }
+
+  /// One request, one set of error rules, whatever shape the answer is.
+  ///
+  /// Split out of [_send] when the dine-in orders route turned up: it answers
+  /// with a JSON array, and the alternative was a second copy of the timeout
+  /// handling, the 401-means-sign-out rule and the error-message extraction —
+  /// three things that must not be allowed to differ between two calls made
+  /// from the same screen.
+  Future<Object?> _raw(
     String method,
     String path, {
     Map<String, dynamic>? body,
@@ -289,9 +369,8 @@ class KitchenApi {
     }
 
     if (res.statusCode >= 200 && res.statusCode < 300) {
-      if (res.body.isEmpty) return const {};
-      final decoded = jsonDecode(res.body);
-      return decoded is Map<String, dynamic> ? decoded : const {};
+      if (res.body.isEmpty) return null;
+      return jsonDecode(res.body);
     }
 
     // 401 is the credential; 402 is a paused office, which is also a sign-out

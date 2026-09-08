@@ -3,7 +3,7 @@ const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
-const { requireAuth, requireTerminal } = require('./auth');
+const { requireAuth } = require('./auth');
 const {
   readAllergens, effectiveAllergens, cleanAllergens,
 } = require('./allergens');
@@ -322,18 +322,60 @@ function dineinRoutes({ pool, broadcast, secret }) {
   const auth = requireAuth(secret);
 
   /**
-   * The till's own credential, which is not a session.
+   * A till OR a kitchen screen, for the two shop-floor routes.
    *
-   * `requireAuth` deliberately refuses a terminal token and `requireTerminal`
-   * refuses a session one — a terminal token sits on a shop-floor machine and
-   * must not open the back office. So the two `/till/dinein/*` routes below
-   * take the terminal credential, and everything else takes a session.
+   * `requireAuth` deliberately refuses an app token and the app middlewares
+   * refuse a session one — an app token sits on a machine in a room full of
+   * people and must not open the back office. So the `/till/dinein/*` and
+   * `/api/kitchen/dinein/*` routes take this, and everything else takes a
+   * session.
    *
-   * A terminal token carries `office` (the contact email) and `officeId`, but
-   * not the `user` shape the rest of this file reads, so those routes resolve
-   * their office through [terminalOffice] rather than [officeOf].
+   * An app token carries `office` (the contact email); a terminal one also
+   * carries `officeId`. Neither has the `user` shape the rest of this file
+   * reads, so those routes resolve their office through [terminalOffice]
+   * rather than [officeOf].
+   *
+   * The venue asked for the kitchen app to be able to accept a QR order, and
+   * for the till to be able to accept one too. That is one decision reached
+   * from two rooms, not two features: the transitions, the ETA stamped on
+   * acceptance, and the refusal when another screen got there first all have
+   * to behave identically, and the surest way to make them identical is for
+   * there to be one route.
+   *
+   * The venue asked for the kitchen app to be able to accept a QR order, and
+   * for the till to be able to accept one too. That is one decision reached
+   * from two rooms, not two features: the transitions, the ETA stamped on
+   * acceptance, and the refusal when another screen got there first all have
+   * to behave identically, and the surest way to make them identical is for
+   * there to be one route.
+   *
+   * Neither token can name an office it was not issued for, which is what
+   * keeps one venue's screen out of another's orders. Anything else, including
+   * a back-office session, is refused here: the back office has its own route
+   * with its own listing.
    */
-  const terminal = requireTerminal(secret);
+  const appAuth = (req, res, next) => {
+    const header = req.headers.authorization || '';
+    const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+    if (!token) {
+      return res.status(401).json({ error: 'This screen is not signed in' });
+    }
+    let claims;
+    try {
+      claims = jwt.verify(token, secret);
+    } catch {
+      return res
+        .status(401)
+        .json({ error: 'This screen needs to be signed in again.' });
+    }
+    if (!claims.office || !['terminal', 'kitchen'].includes(claims.scope)) {
+      return res.status(401).json({ error: 'Not a till or kitchen token.' });
+    }
+    req.office = claims.office;
+    if (claims.scope === 'terminal') req.terminal = claims;
+    else req.kitchen = claims;
+    next();
+  };
 
   // -------------------------------------------------------------------------
   // Small shared pieces
@@ -1265,9 +1307,41 @@ function dineinRoutes({ pool, broadcast, secret }) {
         orders.map(() => '?').join(',') + ') ORDER BY id',
       orders.map((o) => o.id)
     );
+
+    // What is in each line, read at the moment somebody asks rather than
+    // copied onto the order when it was placed.
+    //
+    // The order is a request, not a sale — nothing has been cooked yet — so
+    // the useful answer is what the catalogue says NOW. A venue that corrects
+    // a wrong declaration at four o'clock must not have the old one still
+    // sitting on the tills and the kitchen screens for the rest of service.
+    // The snapshot that has to be frozen is the KITCHEN TICKET, taken when the
+    // order is accepted and the food is actually going to be made; see
+    // schema_product_allergens.sql.
+    const plus = [...new Set(lines.map((l) => l.plu_id).filter(Boolean))];
+    const allergensByPlu = new Map();
+    if (plus.length) {
+      const [rows] = await pool.query(
+        'SELECT pluid, allergens FROM bo_products' +
+          ' WHERE email = ? AND pluid IN (' + plus.map(() => '?').join(',') + ')',
+        [await emailOf(officeId), ...plus]
+      );
+      for (const r of rows) allergensByPlu.set(r.pluid, r.allergens);
+    }
+
     return orders.map((o) => ({
       ...o,
-      lines: lines.filter((l) => l.dinein_order_id === o.id),
+      lines: lines
+        .filter((l) => l.dinein_order_id === o.id)
+        .map((l) => ({
+          ...l,
+          allergens: readAllergens(allergensByPlu.get(l.plu_id) || null),
+          // Whether anybody has answered, which the array cannot say: an
+          // unanswered dish and one that contains none of the fourteen both
+          // read as empty. A kitchen screen must not print "no allergens"
+          // over a question nobody filled in.
+          allergens_declared: !!allergensByPlu.get(l.plu_id),
+        })),
     }));
   }
 
@@ -2249,22 +2323,26 @@ function dineinRoutes({ pool, broadcast, secret }) {
    * The `status` filter defaults to the three states a clerk can act on,
    * because the commonest call by far is "is there anything for me".
    */
-  router.get('/till/dinein/orders', terminal, async (req, res, next) => {
-    try {
-      const officeId = await terminalOffice(req);
-      if (officeId == null) {
-        return res.status(400).json({ error: 'Unknown office.' });
+  router.get(
+    ['/till/dinein/orders', '/api/kitchen/dinein/orders'],
+    appAuth,
+    async (req, res, next) => {
+      try {
+        const officeId = await terminalOffice(req);
+        if (officeId == null) {
+          return res.status(400).json({ error: 'Unknown office.' });
+        }
+        res.json(
+          await readOrders(officeId, {
+            status: req.query.status || 'placed,accepted,ready',
+            limit: Number(req.query.limit) || 50,
+          })
+        );
+      } catch (e) {
+        next(e);
       }
-      res.json(
-        await readOrders(officeId, {
-          status: req.query.status || 'placed,accepted,ready',
-          limit: Number(req.query.limit) || 50,
-        })
-      );
-    } catch (e) {
-      next(e);
     }
-  });
+  );
 
   /**
    * Move an order along.
@@ -2281,7 +2359,10 @@ function dineinRoutes({ pool, broadcast, secret }) {
     rejected: ['placed', 'accepted'],
   };
 
-  router.post('/till/dinein/orders/:id/:action', terminal, async (req, res, next) => {
+  router.post(
+    ['/till/dinein/orders/:id/:action', '/api/kitchen/dinein/orders/:id/:action'],
+    appAuth,
+    async (req, res, next) => {
     try {
       const officeId = await terminalOffice(req);
       if (officeId == null) {
@@ -2341,7 +2422,8 @@ function dineinRoutes({ pool, broadcast, secret }) {
     } catch (e) {
       next(e);
     }
-  });
+    }
+  );
 
   return router;
 }

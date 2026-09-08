@@ -26,6 +26,7 @@ import '../data/adverts.dart';
 import '../data/basket_feed.dart';
 import '../data/control.dart';
 import '../data/deep_links.dart';
+import '../data/notifications.dart';
 import '../data/pairing.dart';
 import '../data/screens.dart';
 import '../data/settings.dart';
@@ -119,6 +120,12 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
   Basket _basket = Basket.unknown;
   List<Advert> _adverts = const [];
 
+  /// Windows toasts, off unless BOTH the back office and this machine allow
+  /// them. See `data/notifications.dart` for why a screen facing a queue is
+  /// the one surface that defaults to silence.
+  final _notifications = DisplayNotifications();
+  Timer? _quietWatch;
+
   /// A second loop, for the folder a venue plays beside a bill. Null whenever
   /// the same adverts serve both, which is the ordinary setup.
   AdvertLibrary? _saleLibrary;
@@ -192,6 +199,33 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
       const Duration(seconds: 10),
       (_) => unawaited(_readScreens()),
     );
+
+    // Has the till stopped talking to us?
+    //
+    // The one thing this application knows that nothing else does. The till is
+    // running happily and the adverts are still playing, so the screen LOOKS
+    // like it is working — while a customer at the counter is looking at
+    // something that is no longer their bill. Checked on a slow timer because
+    // the answer changes on the scale of minutes.
+    unawaited(_notifications.init());
+    _quietWatch = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => _checkTheTill(),
+    );
+  }
+
+  void _checkTheTill() {
+    final feed = _feed;
+    if (feed == null) return;
+    _notifications
+      ..allowedByVenue = _basket.notifyAllowed
+      ..allowedHere =
+          ref.read(displaySettingsProvider).value?.notifications ?? false;
+    if (feed.isStale) {
+      unawaited(_notifications.tillWentQuiet(terminal: _basket.terminal));
+    } else {
+      _notifications.tillCameBack();
+    }
   }
 
   Future<void> _readScreens() async {
@@ -224,6 +258,7 @@ class _DisplayPageState extends ConsumerState<DisplayPage> {
     _tick?.cancel();
     _findTill?.cancel();
     _screenSweep?.cancel();
+    _quietWatch?.cancel();
     unawaited(_controlChanges?.cancel());
     unawaited(_control?.dispose());
     unawaited(_baskets?.cancel());

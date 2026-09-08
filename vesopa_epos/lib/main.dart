@@ -23,6 +23,7 @@ import 'data/device_registry.dart';
 import 'data/display_pairing.dart';
 import 'data/local/database.dart';
 import 'data/loyalty_repository.dart';
+import 'data/notifications.dart';
 import 'data/session_controller.dart';
 import 'data/order_repository.dart';
 import 'data/session_repository.dart';
@@ -496,6 +497,21 @@ final tillSettingsProvider = Provider<TillSettings>(
   (ref) =>
       ref.watch(tillSettingsRepositoryProvider).cached ?? TillSettings.defaults,
 );
+
+/// Windows toasts, and the two-layer rule about who may raise one.
+///
+/// One instance, like the API clients, because the back office's policy is
+/// pushed onto it — a second instance would be a second, permissive copy that
+/// had never heard of the venue's settings. See `data/notifications.dart`.
+final notificationsProvider = Provider<AppNotifications>((ref) {
+  final notifier = AppNotifications();
+  // Re-read whenever the settings row is refetched, which the till already
+  // does on a socket push and on a two-minute backstop — so a manager
+  // switching notifications off in the back office reaches every terminal in
+  // the building without anybody restarting anything.
+  notifier.policy = ref.watch(tillSettingsProvider).notify;
+  return notifier;
+});
 
 /// How often the till re-reads its settings when nothing has told it to.
 ///

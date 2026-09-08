@@ -45,6 +45,19 @@ class Products extends Table {
   /// `printing/print_categories.dart`.
   TextColumn get printCategory => text().nullable()();
   IntColumn get printCategoryOrder => integer().nullable()();
+
+  /// The allergens declared for this product, as a JSON array of codes.
+  ///
+  /// A snapshot of what the back office says, refreshed with the rest of the
+  /// catalogue. It is here rather than fetched when a bill is drawn because
+  /// the customer display has to be able to show it on a till whose network
+  /// has gone — a declaration about food is not something to hide behind a
+  /// working connection.
+  ///
+  /// NULL and '[]' mean different things and the difference is the point:
+  /// NULL is "nobody has said", '[]' is "somebody looked and it contains none
+  /// of the fourteen". See vesopa_server/src/allergens.js.
+  TextColumn get allergens => text().nullable()();
   RealColumn get taxPercentage => real().withDefault(const Constant(0))();
   RealColumn get stockQuantity => real().withDefault(const Constant(0))();
 
@@ -596,7 +609,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 23;
+  int get schemaVersion => 24;
 
 
   /// Add a column only if the table has not already got it.
@@ -781,6 +794,12 @@ class AppDatabase extends _$AppDatabase {
             // product prints under no heading — the ticket a venue gets today.
             await _addColumnIfMissing(m, products, products.printCategory);
             await _addColumnIfMissing(m, products, products.printCategoryOrder);
+          }
+          if (from < 24) {
+            // What is in the food. Null on every existing row, which reads as
+            // "nobody has said" — deliberately not as "contains nothing" — and
+            // fills in on the next catalogue sync.
+            await _addColumnIfMissing(m, products, products.allergens);
           }
           if (from < 23) {
             // The barcode on the packet. Null everywhere until a catalogue

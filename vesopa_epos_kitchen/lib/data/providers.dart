@@ -1,8 +1,10 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../config/constants.dart';
+import 'dinein_inbox.dart';
 import 'kitchen_api.dart';
 import 'kitchen_session.dart';
+import 'notifications.dart';
 import 'ticket_board.dart';
 
 /// Every provider this app has, in one file.
@@ -36,3 +38,32 @@ final kitchenSessionProvider =
 final ticketBoardProvider = NotifierProvider<TicketBoard, BoardState>(
   TicketBoard.new,
 );
+
+/// The QR orders nobody has picked up yet.
+final dineInInboxProvider = NotifierProvider<DineInInbox, DineInInboxState>(
+  DineInInbox.new,
+);
+
+/// Windows toasts, and the two-layer rule about who may set one off.
+///
+/// One instance, like the API client, because the back office's policy is
+/// fetched onto it and a second instance would be a second, permissive copy
+/// that had never heard of the venue's settings.
+final notificationsProvider = Provider<AppNotifications>(
+  (_) => AppNotifications(appName: VesopaBrand.appName),
+);
+
+/// Allergen codes to the words a person reads.
+///
+/// Fetched once from the server rather than listed in this app, so the board,
+/// the QR menu, the back office and the customer display cannot drift into
+/// four spellings of the same allergen. An empty map — a screen that has not
+/// reached the server yet — means the board shows the codes it has rather than
+/// nothing at all.
+final allergenLabelsProvider = FutureProvider<Map<String, String>>((ref) async {
+  try {
+    return await ref.watch(kitchenApiProvider).allergenLabels();
+  } catch (_) {
+    return const {};
+  }
+});

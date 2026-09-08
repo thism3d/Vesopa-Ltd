@@ -40,6 +40,7 @@ class BasketLine {
     required this.quantity,
     required this.totalMinor,
     this.isModifier = false,
+    this.allergens = const [],
   });
 
   final String name;
@@ -50,6 +51,18 @@ class BasketLine {
   /// indented and without a price, the way the till's own check draws it.
   final bool isModifier;
 
+  /// What is in it, already in the words a customer reads.
+  ///
+  /// The till resolves the codes before writing the file. This application is
+  /// deliberately offline — it reads a file and has no HTTP client — so it
+  /// could not turn `tree_nuts` into "Tree nuts", and a screen facing a
+  /// customer must never show a database code.
+  ///
+  /// Empty means "nothing to say", which covers both a product nobody has
+  /// filled in and a till that has never managed to read the list. It never
+  /// means "contains none of the fourteen", so nothing here prints that.
+  final List<String> allergens;
+
   static BasketLine? fromJson(Object? raw) {
     if (raw is! Map) return null;
     final name = raw['name'];
@@ -59,6 +72,10 @@ class BasketLine {
       quantity: (raw['quantity'] as num?)?.toDouble() ?? 1,
       totalMinor: (raw['total_minor'] as num?)?.toInt() ?? 0,
       isModifier: raw['modifier'] == true,
+      allergens: [
+        for (final a in (raw['allergens'] as List?) ?? const [])
+          if (a is String && a.isNotEmpty) a,
+      ],
     );
   }
 }
@@ -77,6 +94,7 @@ class Basket {
     this.changeMinor = 0,
     this.message,
     this.terminal,
+    this.notifyAllowed = false,
   });
 
   /// The state before the till has ever written a file: a display switched on
@@ -104,6 +122,14 @@ class Basket {
   ///
   /// An empty basket is not a sale in progress. It is a till somebody has just
   /// walked up to, and the right thing on the screen is the venue's advert.
+  /// Whether the venue lets this screen raise a Windows toast.
+  ///
+  /// Decided in the back office and carried in the file, because this
+  /// application has no network of its own. Off unless somebody turns it on:
+  /// a screen facing a queue is the one surface in the building that should
+  /// not interrupt anybody. See schema_till_notifications.sql.
+  final bool notifyAllowed;
+
   bool get hasSale => state != 'idle' && lines.isNotEmpty;
 
   static Basket? fromJson(Map<String, Object?> raw) {
@@ -129,6 +155,9 @@ class Basket {
       changeMinor: (raw['change_minor'] as num?)?.toInt() ?? 0,
       message: raw['message'] as String?,
       terminal: raw['terminal'] as String?,
+      // Absent on a till that predates this, and absent means off — which is
+      // also the default for a venue that has one and has not turned it on.
+      notifyAllowed: raw['notify_display'] == true,
     );
   }
 }

@@ -35,6 +35,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   int _thanksFor = 20;
   int _dwell = 12;
   bool _prices = true;
+  bool _notifications = false;
   bool _loaded = false;
 
   /// The advert folder as a value rather than as typed text: it is chosen from
@@ -111,6 +112,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     _thanksFor = settings.thankYouSeconds;
     _dwell = settings.dwellSeconds;
     _prices = settings.showPrices;
+    _notifications = settings.notifications;
     _screenKey = settings.screenKey;
     _fullScreen = settings.fullScreen;
   }
@@ -171,6 +173,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         thankYouSeconds: _thanksFor,
         dwellSeconds: _dwell,
         showPrices: _prices,
+        notifications: _notifications,
         screenKey: _screenKey,
         fullScreen: _fullScreen,
         thankYou: _thanks.text.trim().isEmpty ? 'Thank you' : _thanks.text.trim(),
@@ -620,6 +623,21 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                       ),
                       value: _prices,
                       onChanged: (v) => setState(() => _prices = v),
+                    ),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text(
+                        'Windows notification if the till goes quiet',
+                      ),
+                      subtitle: const Text(
+                        'Off by default, because a pop-up over a customer’s '
+                        'bill is aimed at nobody. Worth turning on where this '
+                        'screen is in a back office or a corridor and somebody '
+                        'would want to know the till has stopped sending. The '
+                        'back office has to allow it too, under Settings.',
+                      ),
+                      value: _notifications,
+                      onChanged: (v) => setState(() => _notifications = v),
                     ),
                     const SizedBox(height: 12),
                     TextField(
