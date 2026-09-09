@@ -81,7 +81,24 @@ class VesopaSso {
     final redirectUri = 'http://127.0.0.1:${server.port}/callback';
 
     try {
-      final authorizeUrl = Uri.parse('$issuer/authorize').replace(
+      /*
+       * `/oauth/authorize`, NOT `/authorize`.
+       *
+       * This said `/authorize` and had done since the file was written, so the
+       * browser opened a 404 — "That page is not here" — and Continue with
+       * Vesopa on the till has never once completed. The token exchange below
+       * has the path right, which is exactly why nobody caught it: the half
+       * that is unit-tested was correct and the half that only a real browser
+       * exercises was not.
+       *
+       * The server publishes the truth at
+       * `/.well-known/openid-configuration`, where `authorization_endpoint` is
+       * `https://auth.vesopa.com/oauth/authorize`. A future version of this
+       * client should read it from there rather than assembling paths by hand;
+       * until it does, these two strings have to agree with that document and
+       * with each other.
+       */
+      final authorizeUrl = Uri.parse('$issuer/oauth/authorize').replace(
         queryParameters: {
           'response_type': 'code',
           'client_id': clientId,

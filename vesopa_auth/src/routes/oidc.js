@@ -116,6 +116,38 @@ function fatal(res, heading, message) {
 }
 
 /**
+ * `/authorize` — the path a shipped till asks for, sent to the one that exists.
+ *
+ * WHY A SERVER-SIDE ALIAS AND NOT JUST A FIX IN THE APP. Both were done; only
+ * this one helps anybody today. The till and the kitchen screen assembled
+ * `https://auth.vesopa.com/authorize` — the endpoint is `/oauth/authorize` —
+ * so Continue with Vesopa opened a 404 reading "That page is not here" and had
+ * never once completed. Those are Windows applications distributed through the
+ * Microsoft Store: the corrected build is a submission and a review, and every
+ * till already on a counter keeps asking for the old path until it arrives.
+ *
+ * So the old path answers. It is a 302 to the canonical one carrying the query
+ * unchanged, which means:
+ *
+ *   the address bar shows where the person actually is;
+ *   there is still exactly ONE authorisation endpoint, with all the checking in
+ *   it — this adds no second code path to keep in step; and
+ *   `/.well-known/openid-configuration` still advertises only the real one, so
+ *   nothing new learns the wrong address.
+ *
+ * NOTHING IS RELAXED BY IT. Every check that matters — the client, the
+ * registered redirect URI, PKCE, the session, membership, consent — happens at
+ * the endpoint this points to, and a redirect cannot skip any of them.
+ *
+ * GET only. An authorisation request is a navigation; a POST to this path is
+ * not a till with an old build and has nothing to be helped with.
+ */
+router.get('/authorize', (req, res) => {
+  const query = new URLSearchParams(req.query).toString();
+  return res.redirect(302, `/oauth/authorize${query ? `?${query}` : ''}`);
+});
+
+/**
  * "You are signed in, and this application is not for you."
  *
  * The address is shown because it is the thing an administrator will ask for,

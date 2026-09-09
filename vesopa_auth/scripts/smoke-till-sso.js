@@ -143,6 +143,49 @@ async function main() {
   );
 
   // ---------------------------------------------------------------------
+  console.log('▶ the address the shipped till actually opens');
+
+  /*
+   * WHY THIS CHECK EXISTS, AND WHY THIS SUITE WAS GREEN WHILE THE TILL WAS
+   * BROKEN.
+   *
+   * The header of this file says "this test IS the till". It was not. The Dart
+   * client assembled `https://auth.vesopa.com/authorize`; every request below
+   * is built by hand and used `/oauth/authorize`, which is the endpoint that
+   * exists. So the suite proved the server and proved nothing about the
+   * application — Continue with Vesopa opened a 404 reading "That page is not
+   * here" and had never once completed, for as long as the feature has
+   * shipped.
+   *
+   * The client is fixed. This checks the OTHER half of the repair: the old
+   * path still answers, with a redirect, because a till already on a counter
+   * cannot be corrected until a new build has been through the Store.
+   *
+   * A test that only ever exercises the path it built itself cannot find a
+   * client that builds a different one. The lesson is cheap to write down and
+   * was not cheap to learn.
+   */
+  const legacy = await fetch(`${AUTH}/authorize?response_type=code&client_id=x`, {
+    redirect: 'manual',
+  });
+  check(
+    'the path a shipped till opens is answered, not 404',
+    legacy.status === 302,
+    `got ${legacy.status}`,
+  );
+  check(
+    'and it points at the real authorisation endpoint, query intact',
+    String(legacy.headers.get('location') || '').startsWith('/oauth/authorize?response_type=code'),
+    String(legacy.headers.get('location')),
+  );
+  check(
+    'which is the endpoint the discovery document advertises',
+    await fetch(`${AUTH}/.well-known/openid-configuration`)
+      .then((r) => r.json())
+      .then((d) => d.authorization_endpoint === `${AUTH}/oauth/authorize`),
+  );
+
+  // ---------------------------------------------------------------------
   console.log('▶ the till runs the flow itself');
 
   /*
