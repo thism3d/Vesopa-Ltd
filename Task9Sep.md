@@ -387,3 +387,65 @@ things were wrong or already done, and the tasks below are amended accordingly.
 is `+821 -4` with the known failures (two Dojo live tests, the programmed-grid
 golden, and the three `clock_punch_test.dart` "did not complete" phantoms that
 do not reproduce when the file runs alone).
+
+---
+
+## What actually shipped, and what did not
+
+Written after the work, against the running system rather than the plan.
+
+### Done and deployed
+
+Every one of the twelve requests is answered, the back office is live on
+`backoffice.vesopaepos.com`, and all three apps are staged and committed to the
+Microsoft Store as 1.6.9.0.
+
+Proved on the live server after deploying, not only locally:
+
+* `/till/void-reasons` answers exactly what it answered before, for the tills
+  still on 1.6.8.0.
+* `/till/error-reasons` answers a separate list for void, cancel, refund and
+  no_sale, and refuses an action it does not know with a 400.
+* `/till/customers` now carries `membership_expiry`, `photo_url` and
+  `points_balance` — five expired members and one photograph on the test venue.
+* A renewal posted for the expired test member with the season set to the
+  client's own example returned `2027-08-31`, `renewed_by: season`. The test
+  member's expiry was put back afterwards.
+* The migration seeded 56 cancel reasons and 16 no-sale reasons across eight
+  offices — seven and two each, exactly once.
+
+### The one thing deliberately left switched off
+
+`VESOPA_AUTH_TILL_ONLY` is **not** set on the live server, so the till still
+offers email and password beside Login with Vesopa.
+
+The reason is a number: of the eight venues on the platform, **one** has a
+back-office user linked to a Vesopa account, and it is the test venue. The
+back office has been Vesopa-only for some time, so those venues are already
+living with that; adding the same constraint to till commissioning today would
+mean a venue that needs to set a terminal up cannot, and would find out at the
+counter.
+
+Turning it on is one line in `@app/.env` and a `pm2 restart` — no deploy, no
+Store release — and it should be turned on once venues have signed in through
+Vesopa at least once. The button, the mark and the wording are already there;
+the flag only decides whether the password fields sit beside it.
+
+### The design the plan got wrong
+
+Auto-accept. The plan had the server accept an order at placement time. It
+cannot: accepting is what *creates the sale*, on the till, so a server-side
+accept marks an order accepted with no bill behind it and the venue cooks food
+that reaches no Z report. It runs on the till instead — and, unlike the manual
+path, it claims the order **before** ringing it up, because auto-accept runs on
+every terminal at once and three tills ringing the same food onto three local
+bills is a table charged twice.
+
+### Not attempted
+
+`dinein_auth.js` still carries its own copy of the OIDC machinery. Its header
+schedules the move for "the next time somebody has a reason to open it", and
+this release never needed to open it — consolidating a working live migration
+purely for tidiness is the kind of change that breaks a thing nobody asked to
+have broken. It is still worth doing, on a day when it is the only thing being
+done.
