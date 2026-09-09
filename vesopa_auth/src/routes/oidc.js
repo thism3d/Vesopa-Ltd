@@ -256,14 +256,30 @@ router.get('/oauth/authorize', async (req, res, next) => {
     /*
      * Consent.
      *
-     * Vesopa's own products skip it, and that is a considered decision rather
-     * than a shortcut: asking somebody to authorise "Vesopa EPOS" to see their
-     * Vesopa profile, on Vesopa's own sign-in page, teaches people to click
-     * through consent screens without reading them — which is the exact habit
-     * the screen exists to prevent. Third parties always ask.
+     * A third party ALWAYS asks. Vesopa's own products ask when
+     * `applications.show_consent` says so, which it does by default now.
+     *
+     * The old rule was that first-party products always skipped it, and the
+     * reasoning was real: asking somebody to authorise "Vesopa EPOS" to see
+     * their Vesopa profile, on Vesopa's own sign-in page, teaches people to
+     * click through consent screens without reading them — the exact habit the
+     * screen exists to prevent.
+     *
+     * The owner asked for consent on every authorisation, and on balance that
+     * is the better trade. A consent screen nobody is ever shown is a promise
+     * in a policy document rather than a control, and being able to SEE what
+     * the till is asking for is worth more than one saved tap. It stays a
+     * setting, per application, so the judgement can go the other way for
+     * anything where the tap really does cost more than the sight of it.
+     *
+     * An already-granted consent is still not re-asked — that is what the
+     * `oauth_consents` lookup below is for. This decides whether the screen is
+     * shown the FIRST time, not every time.
      */
     const needsConsent =
-      !application.is_first_party &&
+      (application.show_consent === undefined
+        ? !application.is_first_party
+        : Boolean(application.show_consent)) &&
       !(await db.one(
         `SELECT id FROM oauth_consents
           WHERE user_id = ? AND application_id = ? AND revoked_at IS NULL

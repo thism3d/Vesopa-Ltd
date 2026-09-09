@@ -451,6 +451,52 @@ async function main() {
   );
 
   // -------------------------------------------------------------------------
+  section('how people sign in');
+
+  const signinPage = await get(`/developers/a/${clientId}/signin`);
+  check(signinPage.status === 200, 'the sign-in settings page loads');
+  check(
+    /Vesopa OAuth Google login/.test(signinPage.body),
+    'and offers the providers by name, generated from the method registry',
+  );
+  check(
+    /Password first/.test(signinPage.body) && /Code first/.test(signinPage.body),
+    'with the choice of what to ask for first',
+  );
+
+  const savedSignin = await post(`/developers/a/${clientId}/signin`, {
+    method: ['password', 'code_email', 'google'],
+    auth_policy: 'code_first',
+    show_consent: '1',
+  });
+  check(savedSignin.location && savedSignin.location.includes('saved=1'), 'it saves',
+    errorFrom(savedSignin));
+
+  const afterSave = await get(`/developers/a/${clientId}/signin`);
+  check(/name="auth_policy" value="code_first"[^>]*checked/.test(afterSave.body.replace(/\s+/g, ' ')),
+    'and the policy sticks');
+
+  const emptied = await post(`/developers/a/${clientId}/signin`, {
+    method: [],
+    auth_policy: 'password_first',
+  });
+  check(
+    errorFrom(emptied).includes('at least one way in'),
+    'switching everything off is refused — that would be an app nobody can sign into',
+    errorFrom(emptied),
+  );
+
+  const noProvider = await post(`/developers/a/${clientId}/signin`, {
+    method: ['password', 'code_email'],
+    auth_policy: 'provider_only',
+  });
+  check(
+    errorFrom(noProvider).includes('at least one provider'),
+    'and provider-only with no provider is refused for the same reason',
+    errorFrom(noProvider),
+  );
+
+  // -------------------------------------------------------------------------
   section('scopes and roles');
 
   const scopes = await get(`/developers/a/${clientId}/scopes`);

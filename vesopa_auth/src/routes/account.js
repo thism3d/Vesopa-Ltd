@@ -668,16 +668,35 @@ router.post('/account/apps/:id/revoke', csrf.verify, async (req, res, next) => {
     const session = await guard(req, res);
     if (!session) return undefined;
 
-    await db.transaction(async (tx) => {
-      await tx.execute(
-        'UPDATE oauth_consents SET revoked_at = NOW() WHERE user_id = ? AND application_id = ? AND revoked_at IS NULL',
-        [session.user_id, req.params.id],
-      );
-      await tx.execute(
-        "UPDATE application_members SET status = 'removed' WHERE user_id = ? AND application_id = ?",
-        [session.user_id, req.params.id],
-      );
-    });
+    /*
+     * THE GRANT IS REVOKED. THE MEMBERSHIP IS NOT.
+     *
+     * This used to also set `application_members.status = 'removed'`, and that
+     * was wrong in a way that only shows up later. Consent and membership are
+     * different facts:
+     *
+     *   consent     "this application may act on my behalf" — the person's to
+     *               give and to take back, which is what this button is
+     *   membership  "this person is a user of this application" — an
+     *               administrative fact about who works here
+     *
+     * Removing the membership meant that disconnecting the till locked the
+     * person out of it permanently: `vesopa-epos` has `allow_self_enroll = 0`,
+     * so nothing re-adds them and an administrator has to. Somebody tidying up
+     * their connected apps on a Sunday could not open the till on Monday.
+     *
+     * The owner's requirement is the opposite and is the ordinary behaviour
+     * everywhere else: take the link away and the app simply asks again. With
+     * the consent gone and every token dead, it has to — and this time the
+     * answer is yes.
+     *
+     * Leaving an application for good is account deletion or an administrator
+     * removing the membership, both of which exist and are deliberate acts.
+     */
+    await db.execute(
+      'UPDATE oauth_consents SET revoked_at = NOW() WHERE user_id = ? AND application_id = ? AND revoked_at IS NULL',
+      [session.user_id, req.params.id],
+    );
     await tokens.revokeForUserAndApplication(session.user_id, req.params.id, 'user_revoked');
 
     await events.recordAudit({

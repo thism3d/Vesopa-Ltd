@@ -40,6 +40,8 @@ const csrf = require('../csrf');
 const portal = require('../portal');
 const webhooks = require('../webhooks');
 const logos = require('../logos');
+const authmethods = require('../authmethods');
+const settings = require('../settings');
 const { normaliseEmail } = require('../normalise');
 
 const router = express.Router();
@@ -85,6 +87,7 @@ function appRail(clientId) {
     { href: base, label: 'Overview', icon: 'home', tint: 'brand' },
     { href: `${base}/redirects`, label: 'Redirect URIs', icon: 'link', tint: 'blue' },
     { href: `${base}/credentials`, label: 'Credentials & API', icon: 'key', tint: 'amber' },
+    { href: `${base}/signin`, label: 'How people sign in', icon: 'key', tint: 'brand' },
     { href: `${base}/scopes`, label: 'Data it may ask for', icon: 'shield', tint: 'teal' },
     { href: `${base}/roles`, label: 'Roles', icon: 'people', tint: 'violet' },
     { href: `${base}/people`, label: 'Who uses it', icon: 'person', tint: 'pink' },
@@ -1296,6 +1299,173 @@ router.post('/developers/a/:clientId/team/:id/remove', csrf.verify, async (req, 
     });
 
     return back(res, req.params.clientId, 'team');
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// How people sign in to this application
+// ---------------------------------------------------------------------------
+//
+// The owner's requirement, in their words: each application should be able to
+// use "Vesopa OAuth Google Login API, Vesopa OAuth Microsoft Login API, Vesopa
+// OAuth Github, Vesopa OAuth Email, Vesopa OAuth Phone or anything that comes
+// later, keep the scope open."
+//
+// So this page is generated from `authmethods.KNOWN` rather than written out.
+// Adding a provider means adding one entry there and it appears here, in the
+// database, and on the sign-in page — with no template to edit and no migration
+// to run.
+
+router.get('/developers/a/:clientId/signin', async (req, res, next) => {
+  try {
+    const session = await guard(req, res);
+    if (!session) return undefined;
+    const found = await portal.access(session, req.params.clientId);
+    if (!found) return notFound(res, session);
+
+    const detail = await portal.detail(found.application.id);
+    const live = await settings.all();
+
+    /*
+     * Every method this codebase knows, with whether it is chosen and whether
+     * this server could complete it. The unavailable ones are SHOWN and locked
+     * rather than hidden: "GitHub is here but needs credentials" is useful,
+     * and a silently missing option is a support question.
+     */
+    const methods = Object.entries(authmethods.KNOWN).map(([key, spec]) => ({
+      key,
+      kind: spec.kind,
+      label: spec.label,
+      on: detail.authMethods.has(key),
+      available: spec.available(),
+    }));
+
+    return page(res, 'developers/signin', session, {
+      title: 'How people sign in',
+      path: `/developers/a/${req.params.clientId}/signin`,
+      rail: appRail(req.params.clientId),
+      application: found.application,
+      role: found.role,
+      detail,
+      methods,
+      globalPolicy: live.auth_policy_default,
+      saved: req.query.saved === '1',
+      error: req.query.error || '',
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post('/developers/a/:clientId/signin', csrf.verify, async (req, res, next) => {
+  try {
+    const session = await guard(req, res);
+    if (!session) return undefined;
+    const found = await open(req, res, session, 'write');
+    if (!found) return undefined;
+
+    const wanted = [].concat(req.body.method || []);
+
+    /*
+     * AN APPLICATION WITH NO WAY IN IS REFUSED.
+     *
+     * Saving an empty list would produce a sign-in page with nothing on it —
+     * for everybody, immediately, with no error anywhere. The check is here
+     * rather than in the database because "at least one row" is not something
+     * a constraint can express, and because the person doing it deserves a
+     * sentence rather than a 500.
+     */
+    /*
+     * Known methods only — but NOT filtered to what this server can currently
+     * do.
+     *
+     * Dropping an unavailable one here would undo the hidden field the page
+     * sends to preserve it: "Text a code" is on for the menu and unavailable
+     * because SMS is not configured, and saving any other change on the page
+     * would silently switch it off. A row for something we cannot do is inert —
+     * `authmethods.forApplication` filters it out at render time — so keeping
+     * it costs nothing and losing it costs a setting.
+     */
+    const usable = wanted.filter((m) => authmethods.KNOWN[m]);
+
+    // What could actually be completed today, which is what "at least one way
+    // in" has to be measured against — a list of methods this server cannot
+    // perform is not a way in.
+    const workable = usable.filter((m) => authmethods.KNOWN[m].available());
+    if (!workable.length) {
+      return back(
+        res,
+        req.params.clientId,
+        'signin',
+        'error=' +
+          encodeURIComponent(
+            'Leave at least one way in switched on, or nobody can sign into this application.',
+          ),
+      );
+    }
+
+    const policy = ['password_first', 'code_first', 'provider_only'].includes(req.body.auth_policy)
+      ? req.body.auth_policy
+      : found.application.auth_policy;
+
+    /*
+     * `provider_only` with no provider is the other way to lock everybody out —
+     * it says "no local credential" while there is nothing to hand off to.
+     */
+    if (policy === 'provider_only' && !workable.some((m) => authmethods.KNOWN[m].kind === 'provider')) {
+      return back(
+        res,
+        req.params.clientId,
+        'signin',
+        'error=' +
+          encodeURIComponent(
+            'Provider only needs at least one provider switched on — otherwise there is nothing to sign in with.',
+          ),
+      );
+    }
+
+    await authmethods.set(found.application.id, usable);
+    /*
+     * The scheme is normalised before it is stored, not when it is used.
+     * `device.js` checks it again on the way out — a value that reaches an href
+     * deserves both — but storing `vesopa-epos://` because somebody typed the
+     * separator would produce `vesopa-epos://://auth/callback`, which fails in a
+     * way that looks like the app is broken rather than the field.
+     */
+    const scheme = String(req.body.app_scheme || '')
+      .trim()
+      .toLowerCase()
+      .replace(/:\/*$/, '')
+      .slice(0, 64);
+
+    await db.execute(
+      `UPDATE applications
+          SET auth_policy = ?, show_consent = ?, app_scheme = ?, app_display_name = ?
+        WHERE id = ?`,
+      [
+        policy,
+        req.body.show_consent === '1' ? 1 : 0,
+        /^[a-z][a-z0-9+.-]*$/.test(scheme) ? scheme : '',
+        String(req.body.app_display_name || '').slice(0, 120),
+        found.application.id,
+      ],
+    );
+
+    await events.recordAudit({
+      actorUserId: session.user_id,
+      actorType: 'developer',
+      action: 'application.signin_changed',
+      targetType: 'application',
+      targetId: found.application.client_id,
+      applicationId: found.application.id,
+      detail: { methods: usable, policy, consent: req.body.show_consent === '1' },
+      ip: req.clientIp,
+      userAgent: req.userAgent,
+    });
+
+    return back(res, req.params.clientId, 'signin');
   } catch (error) {
     return next(error);
   }

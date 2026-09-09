@@ -31,6 +31,7 @@ const account = require('./routes/account');
 const policies = require('./routes/policies');
 const admin = require('./routes/admin');
 const developers = require('./routes/developers');
+const device = require('./routes/device');
 
 const app = express();
 
@@ -149,6 +150,7 @@ app.use('/', account);
 app.use('/', policies);
 app.use('/', admin);
 app.use('/', developers);
+app.use('/', device);
 app.use('/', stepup);
 app.use('/', auth);
 app.use('/', pages);

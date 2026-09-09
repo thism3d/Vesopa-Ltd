@@ -1,0 +1,113 @@
+<%- include('partials/head') %>
+
+<main class="signin device-done">
+  <a class="signin-mark" href="/" aria-label="Vesopa">
+    <img src="/brand/icon-192.png" alt="" width="44" height="44">
+  </a>
+
+  <% if (failure) { %>
+    <%
+      /*
+       * They pressed Deny, or the provider refused. Not an error page: nothing
+       * has gone wrong and nothing has been changed. The app is still waiting
+       * and will simply ask again.
+       */
+    %>
+    <h1 class="signin-hi">Sign-in cancelled</h1>
+    <p class="signin-sub">
+      Nothing has changed on your account. You can close this window and try
+      again in <%= appName %> whenever you like.
+    </p>
+
+  <% } else if (misconfigured) { %>
+    <%
+      /*
+       * A code arrived and there is nowhere to send it. That is a configuration
+       * mistake — no `app_scheme` on the application — and saying so plainly is
+       * the difference between a five-minute fix and an afternoon. It names the
+       * exact field and the exact page.
+       */
+    %>
+    <h1 class="signin-hi">Almost</h1>
+    <p class="signin-sub">
+      You are signed in, but this application has not said which app to hand
+      you back to.
+    </p>
+    <div class="status status-warn mt-3">
+      <span class="status-mark"><%- include('partials/icon', { name: 'alert' }) %></span>
+      <div>
+        <strong>Its desktop scheme is not set</strong>
+        <p>
+          A developer needs to fill in <b>Desktop app scheme</b> under
+          <b>How people sign in</b> in the developer portal — something like
+          <code>vesopa-epos</code>. Until then the browser has nothing to open.
+        </p>
+      </div>
+    </div>
+
+  <% } else { %>
+    <h1 class="signin-hi">You're signed in</h1>
+    <p class="signin-sub">
+      Handing you back to <b><%= appName %></b>. Your browser will ask for
+      permission to open it.
+    </p>
+
+    <%
+      /*
+       * THE BUTTON EXISTS EVEN THOUGH THE PAGE OPENS THE APP BY ITSELF.
+       *
+       * The automatic hand-off raises the operating system's "Open …?" dialog,
+       * and people dismiss those by reflex — especially the second time, when
+       * the browser adds a "always allow" tickbox they did not read. Somebody
+       * who cancels it is then looking at a page that has already done its one
+       * trick and appears to be stuck. The button is what they press next.
+       *
+       * It is a plain <a href>, so it works with scripting blocked, which is
+       * also the state the automatic attempt fails in.
+       */
+    %>
+    <p class="device-actions">
+      <a class="btn btn-primary btn-pill" href="<%= handoff %>" id="handoff">
+        Open <%= appName %>
+      </a>
+    </p>
+
+    <p class="device-hint">
+      Nothing happening? <%= appName %> may not be installed on this computer,
+      or it may already have finished — check the app.
+      You can close this window either way.
+    </p>
+  <% } %>
+</main>
+
+<% if (handoff) { %>
+<script nonce="<%= nonce %>">
+  (function () {
+    /*
+     * Hand over once, a moment after the page paints.
+     *
+     * NOT IMMEDIATELY, and not more than once. Navigating to a custom scheme
+     * before the page has rendered means somebody who cancels the dialog is
+     * left looking at a blank white page with no explanation. The short delay
+     * buys the sentence above being on screen first — so if the dialog is
+     * dismissed, the page behind it already says what to do.
+     *
+     * `location.href` rather than a synthetic click: a click on an unhandled
+     * scheme can leave the browser on an error page in some versions, while
+     * assigning href fails silently and leaves this page intact, which is
+     * exactly the failure mode wanted here.
+     */
+    var target = document.getElementById('handoff');
+    if (!target) return;
+    setTimeout(function () {
+      try {
+        window.location.href = target.getAttribute('href');
+      } catch (e) {
+        /* the button is still there */
+      }
+    }, 700);
+  })();
+</script>
+<% } %>
+
+<%- include('partials/foot') %>

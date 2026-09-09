@@ -163,6 +163,19 @@ async function detail(applicationId) {
     ),
   ]);
 
+  /*
+   * Which ways in this application offers.
+   *
+   * Read as a set of names rather than joined into the query above, because the
+   * page needs BOTH what is chosen and what could be — a toggle list has to
+   * draw the off ones too, and a join can only return the on ones.
+   */
+  const methodRows = await db.query(
+    'SELECT method, enabled FROM application_auth_methods WHERE application_id = ?',
+    [applicationId],
+  );
+  const authMethods = new Set(methodRows.filter((r) => r.enabled).map((r) => r.method));
+
   const chosen = new Set(appScopes.map((row) => row.scope_id));
   return {
     redirects: redirects.filter((row) => row.kind === 'login'),
@@ -172,6 +185,11 @@ async function detail(applicationId) {
     roles,
     secrets,
     team,
+    authMethods,
+    // True when the application has no rows at all and is running on the
+    // defaults — worth showing, so nobody wonders why a list they never chose
+    // is ticked.
+    methodsInherited: methodRows.length === 0,
   };
 }
 
