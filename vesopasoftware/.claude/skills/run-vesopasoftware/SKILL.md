@@ -72,8 +72,12 @@ npm run db:setup                     # create the database + apply schema
 npm run db:seed                      # accounts + demo workload (idempotent)
 ```
 
-Seeded logins — admin `info@vesopasoftware.com`, customer `muzahid@onzep.uk`,
-both `@Vesopa2026`.
+Seeded logins — admin `info@vesopasoftware.com`, customer `muzahid@onzep.uk`.
+The password is **not written down here**: this repository is public, and the
+one that used to be printed on this line was the same string as the auth
+database user, the admin login and the mail accounts. Set
+`SEED_ADMIN_PASSWORD` in the environment before running `npm run db:seed`; with
+it unset the seed leaves passwords alone rather than imposing a known one.
 
 ## Run (agent path)
 

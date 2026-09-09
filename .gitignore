@@ -215,3 +215,7 @@ vesopa_auth/Screenshot*.png
 
 # Python's bytecode cache for the ops scripts.
 __pycache__/
+
+# Loose screenshots dropped at the repository root by a chat session. The
+# copies that matter are kept under Documents\Vesopa-Claude-Images.
+/Screenshot*.png
