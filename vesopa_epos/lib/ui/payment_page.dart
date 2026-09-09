@@ -37,7 +37,7 @@ import 'till_actions.dart';
 import 'void_dialog.dart';
 import 'widgets/cash_notes_panel.dart';
 import '../data/screens.dart';
-import 'sale_page.dart' show productsProvider;
+import 'sale_page.dart' show productsProvider, dealsProvider;
 import 'widgets/pay_check_panel.dart';
 import 'widgets/programmed_bar.dart';
 import 'widgets/till_top_bar.dart' show VenueTopBarBody;
@@ -534,6 +534,10 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
             addedBy: l.addedBy,
             addedAt: l.addedAt,
             parentLineId: l.parentLineId,
+            // What the clerk took off this line by hand. It reached the stored
+            // total and never reached here, so a pound off a line reduced the
+            // Pay key and the customer was still charged the full amount.
+            lineDiscountMinor: l.lineDiscountMinor,
           ),
       ];
 
@@ -566,6 +570,11 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
 
     return PricingEngine(promotions: ref.read(promotionsProvider)).price(
       _priced(lines),
+      // The venue's mix & match deals. This screen never applied them, so a
+      // customer who had earned "2 Cocktails for £16" was charged for both at
+      // the shelf price while the sale screen's stored total said otherwise.
+      dealMinor:
+          ref.watch(dealsProvider(widget.orderId)).value?.totalSavingMinor ?? 0,
       manualDiscountMinor: manual,
       customerDiscountMinor: customer,
       voucherMinor: _voucherMinor,

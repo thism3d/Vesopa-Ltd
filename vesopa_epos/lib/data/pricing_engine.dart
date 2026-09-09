@@ -13,6 +13,7 @@ class PricedLine {
     this.group,
     this.note,
     this.discountMinor = 0,
+    this.lineDiscountMinor = 0,
     this.promotionName,
     this.promotionId,
     this.addedBy,
@@ -40,6 +41,18 @@ class PricedLine {
 
   /// What the promotion took off this line. Always positive.
   final int discountMinor;
+
+  /// What the CLERK took off this line by hand, from the line editor.
+  ///
+  /// Separate from [discountMinor], which is an automatic offer. The two are
+  /// different money with different reasons, and a receipt that lumped them
+  /// together could not tell a customer which of the two they were given.
+  ///
+  /// It used to reach `orders.total_minor` and nothing else -- so a clerk
+  /// taking a pound off a line reduced the figure on the Pay key and the
+  /// customer was still charged the full amount at the payment screen. See the
+  /// header of this patch.
+  final int lineDiscountMinor;
   final String? promotionName;
   final int? promotionId;
 
@@ -53,9 +66,13 @@ class PricedLine {
   int get grossMinor => (unitPriceMinor * quantity).round();
 
   /// What the customer actually pays for this line.
-  int get netMinor => grossMinor - discountMinor;
+  ///
+  /// Clamped at zero: an offer and a keyed discount that together came to more
+  /// than the line is worth would otherwise make the line pay the customer.
+  int get netMinor =>
+      (grossMinor - discountMinor - lineDiscountMinor).clamp(0, grossMinor);
 
-  bool get discounted => discountMinor > 0;
+  bool get discounted => discountMinor > 0 || lineDiscountMinor > 0;
 
   PricedLine withDiscount({
     required int discountMinor,
@@ -73,6 +90,7 @@ class PricedLine {
         group: group,
         note: note,
         discountMinor: discountMinor,
+        lineDiscountMinor: lineDiscountMinor,
         promotionName: promotionName,
         promotionId: promotionId,
         addedBy: addedBy,
@@ -87,6 +105,8 @@ class BasketTotals {
     required this.lines,
     required this.grossMinor,
     required this.promoMinor,
+    required this.dealMinor,
+    required this.lineDiscountMinor,
     required this.manualDiscountMinor,
     this.customerDiscountMinor = 0,
     required this.voucherMinor,
@@ -105,6 +125,16 @@ class BasketTotals {
 
   /// Taken off by automatic offers.
   final int promoMinor;
+
+  /// Taken off by the venue's mix & match deals -- "2 Cocktails for £16".
+  ///
+  /// Its own figure rather than folded into [promoMinor] because the two come
+  /// from different pages of the back office and a manager reading a receipt
+  /// needs to see which one fired.
+  final int dealMinor;
+
+  /// Taken off individual lines by the clerk, added up.
+  final int lineDiscountMinor;
 
   /// Taken off by the clerk.
   final int manualDiscountMinor;
@@ -131,6 +161,8 @@ class BasketTotals {
   /// Everything taken off, for the "you saved" line.
   int get savedMinor =>
       promoMinor +
+      dealMinor +
+      lineDiscountMinor +
       manualDiscountMinor +
       customerDiscountMinor +
       voucherMinor +
@@ -139,12 +171,19 @@ class BasketTotals {
   /// Goods after discounts but before service — what gratuity is charged on,
   /// and what loyalty points are earned on.
   int get netGoodsMinor =>
-      grossMinor - promoMinor - manualDiscountMinor - customerDiscountMinor;
+      grossMinor -
+      promoMinor -
+      dealMinor -
+      lineDiscountMinor -
+      manualDiscountMinor -
+      customerDiscountMinor;
 
   static const empty = BasketTotals(
     lines: [],
     grossMinor: 0,
     promoMinor: 0,
+    dealMinor: 0,
+    lineDiscountMinor: 0,
     manualDiscountMinor: 0,
     voucherMinor: 0,
     pointsMinor: 0,
@@ -162,8 +201,16 @@ class BasketTotals {
 /// land on a particular basket.
 ///
 /// Order of operations matters and is fixed:
-///   goods → automatic promotions → manual discount → voucher → points →
-///   gratuity.
+///   goods → line offers → mix & match deals → the clerk's line discounts →
+///   whole-sale offers → manual discount → customer discount → voucher →
+///   points → gratuity.
+///
+/// THIS IS THE ONLY PLACE A BILL IS TOTALLED. It was not: `recalculate` in
+/// order_repository.dart used to work out its own answer, applying deals and
+/// line discounts that this engine had never heard of while missing the
+/// promotions this engine applied. The venue filmed the result — a check panel
+/// reading 31.77 beside a Pay key reading 30.80 on the same bill. Anything
+/// that needs to know what a bill comes to asks here.
 /// Gratuity is charged on the discounted goods, never on the pre-discount
 /// price, and never on the voucher or points already taken off — charging
 /// service on money the customer did not spend is the kind of error that ends
@@ -184,8 +231,16 @@ class PricingEngine {
   /// [manualDiscountMinor], [voucherMinor] and [pointsMinor] are what the
   /// clerk has already agreed; this clamps them so the bill can never go
   /// below zero however they combine.
+  ///
+  /// [dealMinor] is what the venue's mix & match deals save on this basket,
+  /// from `MixMatchEngine.apply`. It is REQUIRED rather than defaulted, and
+  /// that is the guard: a caller that quietly passed nothing is exactly how
+  /// the payment screen came to charge a customer who had earned "2 Cocktails
+  /// for £16" the full price for both. A basket with no deals passes 0 and
+  /// says so.
   BasketTotals price(
     List<PricedLine> rawLines, {
+    required int dealMinor,
     int manualDiscountMinor = 0,
     int customerDiscountMinor = 0,
     int voucherMinor = 0,
@@ -240,8 +295,26 @@ class PricingEngine {
 
     var promoTotal = priced.fold<int>(0, (s, l) => s + l.discountMinor);
 
-    // Whole-sale offers, applied to what is left after line offers.
-    final afterLines = gross - promoTotal;
+    /*
+     * Mix & match, and the clerk's own per-line reductions.
+     *
+     * Both come off the goods before any whole-sale percentage, because both
+     * are reductions to what the items cost rather than to what the bill
+     * comes to: "10% off the bill" means ten per cent of what is actually
+     * being charged for the drinks, and charging it on a price the customer is
+     * not paying would take off more than the offer promises.
+     *
+     * Clamped against what is left at each step, so no combination can drive
+     * the goods below nothing and come back as change owed.
+     */
+    final deal = dealMinor.clamp(0, gross - promoTotal);
+    final keyed = priced
+        .fold<int>(0, (s, l) => s + l.lineDiscountMinor)
+        .clamp(0, gross - promoTotal - deal);
+
+    // Whole-sale offers, applied to what is left after line offers, deals and
+    // anything the clerk took off by hand.
+    final afterLines = gross - promoTotal - deal - keyed;
     for (final promo in live.where((p) => p.scope == 'order')) {
       if (promo.minSpendMinor > 0 && afterLines < promo.minSpendMinor) continue;
       final discount = switch (promo.kind) {
@@ -251,18 +324,18 @@ class PricingEngine {
       };
       if (discount > 0) {
         // Never take off more than is left on the bill at this point.
-        final headroom = gross - promoTotal;
+        final headroom = gross - promoTotal - deal - keyed;
         promoTotal += discount.clamp(0, headroom);
         applied.add(promo.name);
         // Only the best whole-sale offer applies unless it stacks.
         if (!promo.stackable) break;
       }
     }
-    promoTotal = promoTotal.clamp(0, gross);
+    promoTotal = promoTotal.clamp(0, gross - deal - keyed);
 
     // Each reduction is clamped against what is actually left, so the running
     // total cannot pass through zero and come back as change owed.
-    var remaining = gross - promoTotal;
+    var remaining = gross - promoTotal - deal - keyed;
     final manual = manualDiscountMinor.clamp(0, remaining);
     remaining -= manual;
     // The customer's standing discount sits with the manual one: both are
@@ -285,13 +358,16 @@ class PricingEngine {
     // values: a discount reduces the VAT due with it, so working it out from
     // the gross would over-report tax.
     var tax = 0;
-    final discountable = gross - promoTotal;
+    // What the reductions below are shared out across. `netMinor` already has
+    // the line offer and the keyed discount taken off it, so the deal is the
+    // only one of the three that still has to be spread.
+    final discountable = gross - promoTotal - keyed;
     for (final line in priced) {
       if (line.taxPercentage <= 0) continue;
       // This line's share of the reductions that came after promotions.
       final share = discountable <= 0
           ? 0
-          : ((manual + customer + voucher + points) * line.netMinor /
+          : ((deal + manual + customer + voucher + points) * line.netMinor /
                   discountable)
               .round();
       final taxable = line.netMinor - share;
@@ -303,6 +379,8 @@ class PricingEngine {
       lines: priced,
       grossMinor: gross,
       promoMinor: promoTotal,
+      dealMinor: deal,
+      lineDiscountMinor: keyed,
       manualDiscountMinor: manual,
       customerDiscountMinor: customer,
       voucherMinor: voucher,

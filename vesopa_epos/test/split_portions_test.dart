@@ -34,7 +34,7 @@ void main() {
   TenderState stateOf(List<PricedLine> lines, {int manualDiscountMinor = 0}) =>
       TenderState(
         totals: const PricingEngine()
-            .price(lines, manualDiscountMinor: manualDiscountMinor),
+            .price(lines, manualDiscountMinor: manualDiscountMinor, dealMinor: 0),
       );
 
   group('reading a portion id', () {

@@ -7,6 +7,8 @@ import 'local/database.dart';
 import 'mix_match_engine.dart';
 import 'modifier_layout.dart';
 import 'price_levels.dart';
+import 'pricing_engine.dart';
+import 'commerce.dart';
 
 /// Owns the sale lifecycle. Every write lands in the local database first and
 /// is queued for the server second, both inside one transaction: the till is
@@ -32,9 +34,23 @@ extension ProductPricing on Product {
 }
 
 class OrderRepository {
-  OrderRepository(this._db);
+  OrderRepository(this._db, {List<Promotion> Function()? promotions})
+      : promotionsAvailable = promotions ?? _noPromotions;
 
   final AppDatabase _db;
+
+  /// The venue's live offers, read at the moment a bill is totalled.
+  ///
+  /// A function rather than a list because promotions are cached in
+  /// `CommerceRepository` and refreshed when the back office changes them, and
+  /// a repository built once at start-up would otherwise hold the set that
+  /// existed then — a happy hour that began at five would never apply.
+  ///
+  /// Defaults to none, so a test or a tool that builds a bare repository
+  /// prices exactly as it did before offers existed.
+  final List<Promotion> Function() promotionsAvailable;
+
+  static List<Promotion> _noPromotions() => const [];
   static const _uuid = Uuid();
 
   Future<String> openOrder({
@@ -711,6 +727,26 @@ class OrderRepository {
   /// stored, so a reprint or an end-of-day report never disagrees with what the
   /// customer was actually charged. Public because splitting and merging bills
   /// move lines between orders and must restate both.
+  /// Work out what this bill comes to, and store it.
+  ///
+  /// ONE ENGINE, AND IT IS NOT THIS FUNCTION.
+  ///
+  /// This used to do its own arithmetic: gross, minus the clerk's manual
+  /// discount, minus mix & match, minus per-line discounts, minus the
+  /// customer's standing rate. It never applied PROMOTIONS, because those live
+  /// in a cache the data layer could not see — and `PricingEngine`, which the
+  /// check panel and the payment screen use, applied promotions and had never
+  /// heard of deals or per-line discounts.
+  ///
+  /// So the two answered different numbers for the same bill, and both were
+  /// wrong. The venue filmed it: a check panel reading TOTAL £31.77 beside a
+  /// Pay key reading £30.80, on a basket where a 10% offer took £3.53 and
+  /// "2 Cocktails for £16" took £4.50. The panel had the promotion and not the
+  /// deal; the stored total had the deal and not the promotion.
+  ///
+  /// Now there is one engine and this asks it. What is stored here is what the
+  /// customer is charged at the payment screen, what the Pay key says, what the
+  /// open-bills strip says and what the reports read.
   Future<void> recalculate(String orderId) async {
     final lines = await (_db.select(_db.orderLines)
           ..where((l) => l.orderId.equals(orderId)))
@@ -719,50 +755,43 @@ class OrderRepository {
         await (_db.select(_db.orders)..where((o) => o.id.equals(orderId)))
             .getSingle();
 
-    // Gross is what the customer is asked for; the mockup's "Subtotal" is that
-    // figure, with VAT shown as the portion already inside it.
-    var gross = 0;
-    var lineDiscounts = 0;
-    for (final line in lines) {
-      gross += (line.unitPriceMinor * line.quantity).round();
-      // A per-line discount can never exceed that line's own value.
-      final lineTotal = (line.unitPriceMinor * line.quantity).round();
-      lineDiscounts += line.lineDiscountMinor.clamp(0, lineTotal);
-    }
+    final gross = lines.fold<int>(
+      0,
+      (sum, l) => sum + (l.unitPriceMinor * l.quantity).round(),
+    );
 
-    // Mix & match deals from the back office. These are a discount the till
-    // works out, on top of the per-line and order-level ones the clerk keyed.
+    // Mix & match deals from the back office, worked out on the whole basket
+    // before anything is priced: a deal reprices the items themselves.
     final dealSaving = (await mixMatch()).apply(lines).totalSavingMinor;
 
-    // The attached customer's standing discount, on the gross.
-    final customerDiscount = customerDiscountOn(order, gross);
-
-    // A discount can never take the bill below zero.
-    final discount = (order.manualDiscountMinor +
-            dealSaving +
-            lineDiscounts +
-            customerDiscount)
-        .clamp(0, gross);
-    final payable = gross - discount;
-
-    // Prices are tax-inclusive, so back the VAT out of the discounted total
-    // rather than adding it on top — otherwise the customer is charged twice,
-    // and the tax must follow the amount actually taken, not the pre-discount
-    // figure, or the VAT return overstates what was collected.
-    var tax = 0;
-    for (final line in lines) {
-      final lineGross = (line.unitPriceMinor * line.quantity).round();
-      final share = gross == 0 ? 0.0 : lineGross / gross;
-      final lineNet = payable * share;
-      tax += (lineNet - lineNet / (1 + line.taxPercentage / 100)).round();
-    }
+    final totals = PricingEngine(promotions: promotionsAvailable()).price(
+      [
+        for (final l in lines)
+          PricedLine(
+            id: l.id,
+            pluid: l.pluId,
+            name: l.name,
+            quantity: l.quantity,
+            unitPriceMinor: l.unitPriceMinor,
+            taxPercentage: l.taxPercentage,
+            note: l.notes,
+            parentLineId: l.parentLineId,
+            lineDiscountMinor: l.lineDiscountMinor,
+          ),
+      ],
+      dealMinor: dealSaving,
+      manualDiscountMinor: order.manualDiscountMinor,
+      customerDiscountMinor: customerDiscountOn(order, gross),
+    );
 
     await (_db.update(_db.orders)..where((o) => o.id.equals(orderId))).write(
       OrdersCompanion(
-        subtotalMinor: Value(gross),
-        discountMinor: Value(discount),
-        taxMinor: Value(tax),
-        totalMinor: Value(payable),
+        subtotalMinor: Value(totals.grossMinor),
+        // Everything taken off, which is what every reader of this column
+        // means by it: the gap between the shelf price and what is owed.
+        discountMinor: Value(totals.grossMinor - totals.totalMinor),
+        taxMinor: Value(totals.taxMinor),
+        totalMinor: Value(totals.totalMinor),
       ),
     );
   }

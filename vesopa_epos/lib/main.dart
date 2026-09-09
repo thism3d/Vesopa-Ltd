@@ -149,7 +149,14 @@ final deviceRegistryProvider = Provider<DeviceRegistry>(
 );
 
 final orderRepositoryProvider = Provider<OrderRepository>(
-  (ref) => OrderRepository(ref.watch(databaseProvider)),
+  (ref) => OrderRepository(
+    ref.watch(databaseProvider),
+    // Read at the moment a bill is totalled, not captured now: offers are
+    // refreshed when the back office changes them, and a happy hour that
+    // starts at five has to start at five on a till that has been on since
+    // eleven. See OrderRepository.promotionsAvailable.
+    promotions: () => ref.read(promotionsProvider),
+  ),
 );
 
 final sessionRepositoryProvider = Provider<SessionRepository>(

@@ -31,7 +31,7 @@ void main() {
       unitPriceMinor: 320,
       taxPercentage: 20,
     ),
-  ]);
+  ], dealMinor: 0);
 
   // No imageUrl, so the keys fall back to their labels — which is also what a
   // till with no artwork synced shows, and what makes them findable by text.

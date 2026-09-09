@@ -63,20 +63,20 @@ Promotion promo({
 void main() {
   group('no promotions', () {
     test('a plain basket totals its lines', () {
-      final t = const PricingEngine().price([line(qty: 2, unit: 895)]);
+      final t = const PricingEngine().price([line(qty: 2, unit: 895)], dealMinor: 0);
       expect(t.grossMinor, 1790);
       expect(t.totalMinor, 1790);
       expect(t.promoMinor, 0);
     });
 
     test('VAT is backed out of an inclusive price', () {
-      final t = const PricingEngine().price([line(unit: 1200, tax: 20)]);
+      final t = const PricingEngine().price([line(unit: 1200, tax: 20)], dealMinor: 0);
       // £12.00 inc 20% = £10.00 net + £2.00 VAT.
       expect(t.taxMinor, 200);
     });
 
     test('zero-rated lines contribute no VAT', () {
-      final t = const PricingEngine().price([line(unit: 1200, tax: 0)]);
+      final t = const PricingEngine().price([line(unit: 1200, tax: 0)], dealMinor: 0);
       expect(t.taxMinor, 0);
     });
   });
@@ -84,7 +84,7 @@ void main() {
   group('percentage and amount offers', () {
     test('10% off a line', () {
       final e = PricingEngine(promotions: [promo(kind: 'percent', value: 100)]);
-      final t = e.price([line(unit: 1000)]);
+      final t = e.price([line(unit: 1000)], dealMinor: 0);
       expect(t.promoMinor, 100);
       expect(t.totalMinor, 900);
       expect(t.lines.single.promotionName, 'Offer');
@@ -92,14 +92,14 @@ void main() {
 
     test('amount off is per unit', () {
       final e = PricingEngine(promotions: [promo(kind: 'amount', value: 50)]);
-      final t = e.price([line(qty: 3, unit: 1000)]);
+      final t = e.price([line(qty: 3, unit: 1000)], dealMinor: 0);
       expect(t.promoMinor, 150);
       expect(t.totalMinor, 2850);
     });
 
     test('an amount off cannot exceed the line', () {
       final e = PricingEngine(promotions: [promo(kind: 'amount', value: 5000)]);
-      final t = e.price([line(unit: 1000)]);
+      final t = e.price([line(unit: 1000)], dealMinor: 0);
       expect(t.promoMinor, 1000);
       expect(t.totalMinor, 0);
     });
@@ -107,7 +107,7 @@ void main() {
     test('fixed price replaces the unit price', () {
       final e = PricingEngine(
           promotions: [promo(kind: 'fixed_price', value: 700)]);
-      final t = e.price([line(qty: 2, unit: 1000)]);
+      final t = e.price([line(qty: 2, unit: 1000)], dealMinor: 0);
       // Two at £7 instead of two at £10.
       expect(t.promoMinor, 600);
       expect(t.totalMinor, 1400);
@@ -119,7 +119,7 @@ void main() {
       final e = PricingEngine(promotions: [
         promo(kind: 'multibuy', buyQty: 3, dealPrice: 1000),
       ]);
-      final t = e.price([line(qty: 3, unit: 400)]);
+      final t = e.price([line(qty: 3, unit: 400)], dealMinor: 0);
       // £12 becomes £10.
       expect(t.promoMinor, 200);
       expect(t.totalMinor, 1000);
@@ -129,7 +129,7 @@ void main() {
       final e = PricingEngine(promotions: [
         promo(kind: 'multibuy', buyQty: 3, dealPrice: 1000),
       ]);
-      final t = e.price([line(qty: 4, unit: 400)]);
+      final t = e.price([line(qty: 4, unit: 400)], dealMinor: 0);
       // Three for £10, one at £4.
       expect(t.totalMinor, 1400);
     });
@@ -138,7 +138,7 @@ void main() {
       final e = PricingEngine(promotions: [
         promo(kind: 'multibuy', buyQty: 3, dealPrice: 1000),
       ]);
-      final t = e.price([line(qty: 6, unit: 400)]);
+      final t = e.price([line(qty: 6, unit: 400)], dealMinor: 0);
       expect(t.totalMinor, 2000);
     });
 
@@ -146,7 +146,7 @@ void main() {
       final e = PricingEngine(promotions: [
         promo(kind: 'multibuy', buyQty: 3, dealPrice: 1000),
       ]);
-      final t = e.price([line(qty: 2, unit: 400)]);
+      final t = e.price([line(qty: 2, unit: 400)], dealMinor: 0);
       expect(t.promoMinor, 0);
       expect(t.totalMinor, 800);
     });
@@ -155,7 +155,7 @@ void main() {
       final e = PricingEngine(promotions: [
         promo(kind: 'bogof', buyQty: 2, freeQty: 1),
       ]);
-      final t = e.price([line(qty: 3, unit: 500)]);
+      final t = e.price([line(qty: 3, unit: 500)], dealMinor: 0);
       // One of the three is free.
       expect(t.promoMinor, 500);
       expect(t.totalMinor, 1000);
@@ -165,7 +165,7 @@ void main() {
       final e = PricingEngine(promotions: [
         promo(kind: 'bogof', buyQty: 2, freeQty: 1),
       ]);
-      final t = e.price([line(qty: 2, unit: 500)]);
+      final t = e.price([line(qty: 2, unit: 500)], dealMinor: 0);
       expect(t.promoMinor, 0);
     });
   });
@@ -176,7 +176,7 @@ void main() {
         promo(id: 1, name: 'Small', kind: 'percent', value: 100),
         promo(id: 2, name: 'Big', kind: 'percent', value: 250),
       ]);
-      final t = e.price([line(unit: 1000)]);
+      final t = e.price([line(unit: 1000)], dealMinor: 0);
       expect(t.promoMinor, 250);
       expect(t.lines.single.promotionName, 'Big');
     });
@@ -186,7 +186,7 @@ void main() {
         promo(kind: 'percent', value: 100, scope: 'department',
             scopeValue: 'Drinks', products: const []),
       ]);
-      final t = e.price([line(unit: 1000, department: 'Drinks')]);
+      final t = e.price([line(unit: 1000, department: 'Drinks')], dealMinor: 0);
       expect(t.promoMinor, 100);
     });
 
@@ -195,7 +195,7 @@ void main() {
         promo(kind: 'percent', value: 100, scope: 'department',
             scopeValue: 'Drinks', products: const []),
       ]);
-      final t = e.price([line(unit: 1000, department: 'Food')]);
+      final t = e.price([line(unit: 1000, department: 'Food')], dealMinor: 0);
       expect(t.promoMinor, 0);
     });
 
@@ -203,7 +203,7 @@ void main() {
       final e = PricingEngine(promotions: [
         promo(kind: 'percent', value: 100, minSpend: 5000),
       ]);
-      final t = e.price([line(unit: 1000)]);
+      final t = e.price([line(unit: 1000)], dealMinor: 0);
       expect(t.promoMinor, 0);
     });
 
@@ -211,7 +211,7 @@ void main() {
       final e = PricingEngine(promotions: [
         promo(kind: 'percent', value: 100, scope: 'order', products: const []),
       ]);
-      final t = e.price([line(unit: 1000), line(pluid: 2, unit: 2000)]);
+      final t = e.price([line(unit: 1000), line(pluid: 2, unit: 2000)], dealMinor: 0);
       expect(t.promoMinor, 300);
       expect(t.totalMinor, 2700);
     });
@@ -224,7 +224,7 @@ void main() {
         promotions: [promo(kind: 'percent', value: 500, days: '1000000')],
         now: DateTime(2026, 7, 18), // a Saturday
       );
-      expect(e.price([line(unit: 1000)]).promoMinor, 0);
+      expect(e.price([line(unit: 1000)], dealMinor: 0).promoMinor, 0);
     });
 
     test('an offer inside its days applies', () {
@@ -232,7 +232,7 @@ void main() {
         promotions: [promo(kind: 'percent', value: 500, days: '0000010')],
         now: DateTime(2026, 7, 18), // Saturday is index 5
       );
-      expect(e.price([line(unit: 1000)]).promoMinor, 500);
+      expect(e.price([line(unit: 1000)], dealMinor: 0).promoMinor, 500);
     });
 
     test('happy hour applies only inside its window', () {
@@ -243,8 +243,8 @@ void main() {
           promotions: promos, now: DateTime(2026, 7, 18, 18));
       final outside = PricingEngine(
           promotions: promos, now: DateTime(2026, 7, 18, 20));
-      expect(inside.price([line(unit: 1000)]).promoMinor, 500);
-      expect(outside.price([line(unit: 1000)]).promoMinor, 0);
+      expect(inside.price([line(unit: 1000)], dealMinor: 0).promoMinor, 500);
+      expect(outside.price([line(unit: 1000)], dealMinor: 0).promoMinor, 0);
     });
 
     test('a window that crosses midnight still applies after midnight', () {
@@ -252,7 +252,7 @@ void main() {
         promotions: [promo(kind: 'percent', value: 500, start: '22:00', end: '02:00')],
         now: DateTime(2026, 7, 18, 1),
       );
-      expect(e.price([line(unit: 1000)]).promoMinor, 500);
+      expect(e.price([line(unit: 1000)], dealMinor: 0).promoMinor, 500);
     });
   });
 
@@ -262,8 +262,7 @@ void main() {
         [line(unit: 5000)],
         manualDiscountMinor: 500,
         voucherMinor: 1000,
-        pointsMinor: 250,
-      );
+        pointsMinor: 250, dealMinor: 0);
       expect(t.totalMinor, 3250);
       expect(t.savedMinor, 1750);
     });
@@ -273,8 +272,7 @@ void main() {
         [line(unit: 1000)],
         manualDiscountMinor: 900,
         voucherMinor: 5000,
-        pointsMinor: 5000,
-      );
+        pointsMinor: 5000, dealMinor: 0);
       expect(t.totalMinor, 0);
       // The voucher is worth only what was left after the discount.
       expect(t.voucherMinor, 100);
@@ -283,7 +281,7 @@ void main() {
 
     test('a voucher larger than the bill is capped at the bill', () {
       final t = const PricingEngine()
-          .price([line(unit: 800)], voucherMinor: 2000);
+          .price([line(unit: 800)], voucherMinor: 2000, dealMinor: 0);
       expect(t.voucherMinor, 800);
       expect(t.totalMinor, 0);
     });
@@ -295,8 +293,7 @@ void main() {
         [line(unit: 10000)],
         manualDiscountMinor: 2000,
         gratuityBp: 125,
-        gratuityApplies: true,
-      );
+        gratuityApplies: true, dealMinor: 0);
       // Service on £80, not £100.
       expect(t.gratuityMinor, 1000);
       expect(t.totalMinor, 9000);
@@ -306,8 +303,7 @@ void main() {
       final t = const PricingEngine().price(
         [line(unit: 10000)],
         gratuityBp: 125,
-        gratuityApplies: false,
-      );
+        gratuityApplies: false, dealMinor: 0);
       expect(t.gratuityMinor, 0);
       expect(t.totalMinor, 10000);
     });
@@ -317,8 +313,7 @@ void main() {
         [line(unit: 10000)],
         voucherMinor: 5000,
         gratuityBp: 100,
-        gratuityApplies: true,
-      );
+        gratuityApplies: true, dealMinor: 0);
       // 10% of the £50 actually being paid.
       expect(t.gratuityMinor, 500);
     });
@@ -331,9 +326,9 @@ void main() {
 
   group('VAT with discounts', () {
     test('a discount reduces the VAT due with it', () {
-      final plain = const PricingEngine().price([line(unit: 1200, tax: 20)]);
+      final plain = const PricingEngine().price([line(unit: 1200, tax: 20)], dealMinor: 0);
       final discounted = const PricingEngine()
-          .price([line(unit: 1200, tax: 20)], manualDiscountMinor: 600);
+          .price([line(unit: 1200, tax: 20)], manualDiscountMinor: 600, dealMinor: 0);
       expect(plain.taxMinor, 200);
       // Half the bill discounted means half the VAT.
       expect(discounted.taxMinor, 100);
@@ -343,7 +338,7 @@ void main() {
       final t = const PricingEngine().price([
         line(pluid: 1, unit: 1200, tax: 20),
         line(pluid: 2, unit: 500, tax: 0),
-      ]);
+      ], dealMinor: 0);
       expect(t.taxMinor, 200);
       expect(t.totalMinor, 1700);
     });

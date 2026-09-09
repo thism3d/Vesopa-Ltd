@@ -766,8 +766,21 @@ class SalePage extends ConsumerWidget {
                                                 addedBy: l.addedBy,
                                                 addedAt: l.addedAt,
                                                 parentLineId: l.parentLineId,
+                                                lineDiscountMinor:
+                                                    l.lineDiscountMinor,
                                               ),
                                           ],
+                                          // What the venue's deals save on this
+                                          // basket. Zero until the answer lands,
+                                          // which is one frame -- and the stored
+                                          // total this panel is drawn beside is
+                                          // priced the same way, so the two agree
+                                          // rather than arguing.
+                                          dealMinor: ref
+                                                  .watch(dealsProvider(orderId))
+                                                  .value
+                                                  ?.totalSavingMinor ??
+                                              0,
                                           manualDiscountMinor:
                                               order?.manualDiscountMinor ?? 0,
                                           customerDiscountMinor: order == null

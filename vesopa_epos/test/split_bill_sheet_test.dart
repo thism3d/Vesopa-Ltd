@@ -28,7 +28,7 @@ PricedLine line(
 TenderState stateOf(List<PricedLine> lines, {int discountMinor = 0}) =>
     TenderState(
       totals: const PricingEngine()
-          .price(lines, manualDiscountMinor: discountMinor),
+          .price(lines, manualDiscountMinor: discountMinor, dealMinor: 0),
     );
 
 /// Table 1 from the venue's screenshot: two rounds, two people, one bill.

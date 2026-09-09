@@ -28,7 +28,7 @@ void main() {
       unitPriceMinor: 250,
       taxPercentage: 20,
     ),
-  ]);
+  ], dealMinor: 0);
 
   Widget harness({
     required Set<String> selected,

@@ -25,8 +25,7 @@ TenderState stateFor(
                   taxPercentage: 0,
                 ),
               ],
-        manualDiscountMinor: discountMinor,
-      ),
+        manualDiscountMinor: discountMinor, dealMinor: 0),
     );
 
 TenderEntry cash(int minor) =>
@@ -285,8 +284,7 @@ void main() {
               unitPriceMinor: 8000, taxPercentage: 0),
         ],
         gratuityBp: 125,
-        gratuityApplies: true,
-      );
+        gratuityApplies: true, dealMinor: 0);
       final s = TenderState(totals: totals);
       expect(totals.gratuityMinor, 1000);
       expect(s.outstandingMinor, 9000);
