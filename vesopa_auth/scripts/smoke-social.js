@@ -357,6 +357,63 @@ async function checkMicrosoftRegistration() {
   } else if (code && code !== 'AADSTS7000215' && code !== 'AADSTS700016') {
     console.log(`    Microsoft accepted the credential (${code} is about permissions, not the secret).`);
   }
+
+  /*
+   * IS THE CALLBACK REGISTERED UNDER THE RIGHT PLATFORM?
+   *
+   * This is the check that was missing, and its absence cost a live sign-in
+   * failure that looked exactly like a bad secret. Adding the redirect URI in
+   * the Azure portal under **Single-page application** instead of **Web** makes
+   * the whole registration public: the secret is then refused (AADSTS700025)
+   * and — worse, because it cannot be worked around — an authorisation code can
+   * only be redeemed from a browser (AADSTS9002327). A server-side application
+   * can never do that.
+   *
+   * It can be detected with no user and no real code, because Microsoft
+   * validates the CLIENT before it looks at the code: send a deliberately junk
+   * code with the secret attached, and a public registration answers
+   * AADSTS700025 whatever the code was. A correctly registered Web application
+   * complains about the code instead, which is the answer we want.
+   */
+  /*
+   * Named `platformProbe`, not `probe`.
+   *
+   * `probe()` is already a function in this file, and `const probe = …` inside
+   * the same scope shadows it — the declaration hoists into the temporal dead
+   * zone, so the CALL to probe() thirty lines earlier throws "Cannot access
+   * 'probe' before initialization". The whole check crashed before it reached
+   * anything it was meant to test.
+   */
+  const platformProbe = await fetch(
+    `https://login.microsoftonline.com/${provider.tenant || 'common'}/oauth2/v2.0/token`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: provider.clientId,
+        client_secret: provider.clientSecret,
+        redirect_uri: `${BASE}/auth/microsoft/callback`,
+        grant_type: 'authorization_code',
+        code: 'not-a-real-code-this-is-a-platform-probe',
+        code_verifier: 'x'.repeat(43),
+      }).toString(),
+    },
+  );
+  const probeBody = await platformProbe.json().catch(() => ({}));
+  const probeCode = (/AADSTS\d+/.exec(probeBody.error_description || '') || [])[0] || '';
+
+  check(
+    'microsoft: the callback is registered as a Web platform, not an SPA',
+    probeCode !== 'AADSTS700025',
+    'Microsoft says AADSTS700025 — this registration is PUBLIC, which means the ' +
+      'callback was added under "Single-page application" (or "Mobile and desktop"). ' +
+      'A server-side app cannot redeem an SPA code at all. Fix it in the portal: ' +
+      'Authentication → remove the URI from "Single-page application" → Add a ' +
+      'platform → Web → add it there → set "Allow public client flows" to No.',
+  );
+  if (probeCode && probeCode !== 'AADSTS700025') {
+    console.log(`    Platform looks right: Microsoft objected to the code (${probeCode}), not the client.`);
+  }
 }
 
 /**

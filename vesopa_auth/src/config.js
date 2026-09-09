@@ -210,6 +210,20 @@ const config = {
    * These flip to `true` as each phase lands, and the switches are here rather
    * than in the template so the page and the script agree.
    */
+  /*
+   * reCAPTCHA v3.
+   *
+   * Off unless both keys are present. The threshold is Google's own suggested
+   * default; below it the sign-in page does not refuse anybody, it stops
+   * offering the fast paths and asks for an emailed code — see src/captcha.js
+   * for why a score must never be a gate on a page like this.
+   */
+  captcha: {
+    siteKey: process.env.RECAPTCHA_SITE_KEY || '',
+    secretKey: process.env.RECAPTCHA_SECRET_KEY || '',
+    threshold: Number(process.env.RECAPTCHA_THRESHOLD || 0.5),
+  },
+
   features: {
     passkeys: flag('FEATURE_PASSKEYS', false),
     social: flag('FEATURE_SOCIAL', false),

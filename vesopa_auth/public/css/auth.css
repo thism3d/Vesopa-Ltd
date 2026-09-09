@@ -882,3 +882,148 @@ a { color: var(--text); }
   font-size: 13.5px;
   color: var(--text-muted);
 }
+
+
+/* ==========================================================================
+ * THE SIGN-IN STEP — rebuilt to the reference
+ * ==========================================================================
+ * `reference_design/VesopaOauthReference.md` §3, measured off Google's own
+ * sign-in at 1080×2340. What the reference actually shows, as opposed to what
+ * everyone remembers it showing:
+ *
+ *   the mark is SMALL — about 48px, top-left. Not a wordmark across the page.
+ *   "Hi <name>" at ~40px, the step title under it, a muted subtitle under that
+ *   ONE text link, low down
+ *   NO CARD. The step sits directly on the background.
+ *
+ * The mark is the specific fix for `design_mistakes/…731`, where the back
+ * office rendered the wordmark ~830px wide on a 1080px screen — a logo taking
+ * up a third of the height of a sign-in page.
+ * ======================================================================== */
+
+.signin {
+  width: 100%;
+  max-width: 448px;
+  margin: 0 auto;
+  padding: 40px 24px 64px;
+  flex: 1;
+}
+
+.signin-mark {
+  display: inline-flex;
+  margin: 0 0 28px;
+}
+.signin-mark img {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  display: block;
+}
+
+.signin-hi {
+  margin: 0 0 14px;
+  font-size: 34px;
+  line-height: 1.15;
+  letter-spacing: -.02em;
+  font-weight: 400;
+}
+@media (min-width: 520px) { .signin-hi { font-size: 38px; } }
+
+.signin-sub {
+  margin: 14px 0 0;
+  color: var(--text-muted);
+  font-size: 15px;
+}
+
+/* The account chip — a pill holding a small avatar, the address, and a caret.
+ *
+ * It is here for a reason beyond looks: it says WHICH account is about to be
+ * signed in. On a shared machine, or for anybody with a work address and a
+ * personal one, that is the difference between signing in and three failed
+ * attempts against the wrong account followed by a lockout. */
+.account-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 5px 12px 5px 5px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  text-decoration: none;
+  color: var(--text);
+  font-size: 14px;
+}
+.account-chip:hover { background: var(--surface-2); }
+.account-chip img { border-radius: 50%; display: block; object-fit: cover; }
+.chip-initial {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--green);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 700;
+  flex: 0 0 auto;
+}
+.chip-id { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip-caret { display: flex; color: var(--text-muted); }
+.chip-caret svg { width: 14px; height: 14px; transform: rotate(90deg); }
+
+.signin-form { margin-top: 26px; }
+
+/* The floating-label field from `…715`: the label rides the top border while
+ * focused, the border goes 2px accent, the box is generous. The input carries
+ * a single-space placeholder so `:placeholder-shown` can tell empty from
+ * filled — that is what makes the label stay down until there is something to
+ * float above. */
+.float-field { position: relative; margin: 0 0 8px; }
+.float-field input {
+  width: 100%;
+  height: 62px;
+  padding: 22px 16px 6px;
+  font: inherit;
+  font-size: 16px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  outline: none;
+}
+.float-field input:focus {
+  border-color: var(--focus);
+  border-width: 2px;
+  padding: 21px 15px 5px;
+}
+.float-field label {
+  position: absolute;
+  left: 17px;
+  top: 20px;
+  font-size: 16px;
+  color: var(--text-muted);
+  pointer-events: none;
+  transition: transform .12s ease, font-size .12s ease, color .12s ease;
+  transform-origin: left top;
+  background: transparent;
+}
+.float-field input:focus + label,
+.float-field input:not(:placeholder-shown) + label {
+  transform: translateY(-13px);
+  font-size: 12px;
+}
+.float-field input:focus + label { color: var(--focus); }
+
+/* The action is a pill, and it is on its own line at the end — `…715` puts it
+   bottom-right, which on a 360px screen is simply "after the field". */
+.signin-actions { display: flex; justify-content: flex-end; margin-top: 22px; }
+.btn-pill { border-radius: 999px; width: auto; min-width: 132px; padding: 0 28px; }
+
+/* The way out. One link, quiet, low. Not a second button competing with the
+   first — somebody who knows their password should see one thing to press. */
+.signin-alt { margin-top: 22px; }
+.signin-alt .linklike { font-size: 14.5px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .float-field label { transition: none; }
+}

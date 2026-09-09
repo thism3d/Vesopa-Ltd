@@ -69,14 +69,36 @@
           <h1>Sign in to Back Office</h1>
           <p class="login-sub">Manage your tills, catalogue and reporting.</p>
 
-          <div class="field">
+          <!-- CONTINUE WITH VESOPA — the first thing on the page, and with
+               "Vesopa only" on, the only thing.
+
+               Hidden until the server says the feature is live, because this
+               file is read into a constant at start-up and the flag lives in
+               the environment. A button that leads nowhere is worse than no
+               button: somebody picks the option that looks most official and is
+               told it went wrong, which teaches them the whole product is
+               unreliable. -->
+          <div id="vesopa-sso" hidden>
+            <a class="btn primary block sso-btn" id="vesopa-sso-link"
+               href="/auth/vesopa/start">
+              <img src="/assets/vesopa_mark.svg" alt="" width="20" height="20"
+                   class="sso-mark" />
+              <span>Continue with Vesopa</span>
+            </a>
+          </div>
+
+          <!-- The rule between the two ways in. Shown only while BOTH are on
+               the page: with "Vesopa only" there is nothing to separate. -->
+          <div id="vesopa-or" class="login-or" hidden><span>or</span></div>
+
+          <div class="field" data-local-auth>
             <label for="email">Email</label>
             <input type="email" id="email" required autocomplete="username"
                    autocapitalize="off" spellcheck="false"
                    placeholder="you@company.com" />
           </div>
 
-          <div class="field">
+          <div class="field" data-local-auth>
             <label for="password">Password</label>
             <div class="field-pw">
               <input type="password" id="password" required minlength="4"
@@ -86,7 +108,7 @@
             </div>
           </div>
 
-          <div class="login-row">
+          <div class="login-row" data-local-auth>
             <label class="check" for="remember">
               <input type="checkbox" id="remember" checked />
               Keep me signed in
@@ -98,26 +120,9 @@
 
           <p id="login-note" class="login-hint" hidden></p>
 
-          <button class="btn primary block" type="submit">Sign in</button>
+          <button class="btn primary block" type="submit" data-local-auth>Sign in</button>
           <p id="login-error" class="error" role="alert" aria-live="polite"></p>
 
-          <!-- Signing in with a Vesopa account — Phase 6, migration two.
-
-               Hidden until the server says the feature is on, because the flag
-               lives in the environment and this file is read into a constant at
-               start-up. A button that leads nowhere is worse than none: somebody
-               picks the option that looks most official and is told it went
-               wrong, which teaches them the whole product is unreliable.
-
-               BELOW the password button, deliberately. Nobody is being moved;
-               the password form is still the way in, and this is an addition
-               beside it for the whole soak. -->
-          <div id="vesopa-sso" hidden>
-            <div class="login-or"><span>or</span></div>
-            <a class="btn block" id="vesopa-sso-link" href="/auth/vesopa/start">
-              Sign in with your Vesopa account
-            </a>
-          </div>
 
           <p class="login-foot">
             Don't have an account?

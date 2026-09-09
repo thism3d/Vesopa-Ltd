@@ -155,10 +155,61 @@ h3 { font-size: 16px; }
 .login-logo {
   display: block;
   width: 100%;
-  max-width: 220px;
+  /* 148, not 220.
+   *
+   * The reference measurement (reference_design/VesopaOauthReference.md §3,
+   * `…716`) is that Google's own mark on its sign-in page is about 48px — small,
+   * top-left, not a wordmark across the page. The complaint that started this
+   * was a lockup rendered ~830px wide on a 1080px screen, which is a logo
+   * taking a third of the height of a sign-in form. This is a lockup rather
+   * than a square mark, so it cannot go all the way down to 48, but it has no
+   * business being the largest thing on the page either. */
+  max-width: 148px;
   height: auto;
-  margin: 0 0 30px;
+  margin: 0 0 26px;
 }
+
+/* AND IT HAS TO WIN, which the rule above did not.
+ *
+ * `.lockup-light` and `.lockup-dark` are declared later in this file with
+ * `max-width: 100%`, and they have exactly the same specificity — so the later
+ * rule won and the lockup rendered 358px wide on a 414px screen. Measured, not
+ * guessed: the served stylesheet said 148px while the element said 358px,
+ * which is the shape of every specificity bug.
+ *
+ * The two-class selector (0,2,0) settles it rather than relying on source
+ * order, which the next person to move a block would silently undo. */
+.login-logo.lockup-light,
+.login-logo.lockup-dark { max-width: 148px; }
+
+/* ---------------------------------------------------------------------------
+   Continue with Vesopa
+   ---------------------------------------------------------------------------
+   Built to match the Google and Apple buttons the owner supplied: a pill, a
+   1px outline, the mark on the left at 20px, and the label centred with the
+   mark rather than centred in the button. The same shape everywhere it appears
+   is the point — a person should recognise it on the till, in the menu and in
+   the back office without reading it.
+   --------------------------------------------------------------------------- */
+.sso-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-decoration: none;
+}
+.sso-mark {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  display: block;
+  flex: 0 0 auto;
+}
+
+/* With "Vesopa only" on, the local form is not merely hidden — it is removed
+   from the layout, so the card does not keep a gap where a password box used
+   to be. */
+.vesopa-only [data-local-auth] { display: none !important; }
 
 .login-card h1 {
   font-size: clamp(24px, 2.2vw, 28px);

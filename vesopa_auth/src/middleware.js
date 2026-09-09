@@ -26,11 +26,31 @@ function securityHeaders(req, res, next) {
   const nonce = crypto.randomBytes(16).toString('base64');
   res.locals.nonce = nonce;
 
+  /*
+   * reCAPTCHA needs three exceptions, and only when it is switched on.
+   *
+   * The token can only be minted by Google's own code, so `script-src` has to
+   * admit it — but the exception is written as narrowly as it can be: two
+   * named hosts, `frame-src` for the invisible challenge iframe v3 still uses,
+   * and nothing else. `connect-src` is deliberately NOT opened: the v3 script
+   * talks to Google inside its own frame, and widening connect-src on the
+   * origin that holds every session to save checking would be the wrong trade.
+   *
+   * With no site key configured the arrays are empty and the policy is exactly
+   * what it was — which is the state a development machine is in, and the
+   * state this server is in until somebody sets the keys.
+   */
+  const captchaOn = Boolean(config.captcha && config.captcha.siteKey);
+  const captchaScript = captchaOn
+    ? ' https://www.google.com/recaptcha/ https://www.gstatic.com/recaptcha/'
+    : '';
+  const captchaFrame = captchaOn ? ["frame-src https://www.google.com/recaptcha/"] : [];
+
   res.setHeader(
     'Content-Security-Policy',
     [
       "default-src 'none'",
-      `script-src 'self' 'nonce-${nonce}'`,
+      `script-src 'self' 'nonce-${nonce}'${captchaScript}`,
       // Styles are all in files; the nonce covers the theme variables block.
       `style-src 'self' 'nonce-${nonce}'`,
       // data: is needed for the TOTP enrolment QR code, which is generated in
@@ -45,6 +65,7 @@ function securityHeaders(req, res, next) {
       // Where a form may post. 'self' only: an injected form that posts the
       // password to another origin is otherwise perfectly legal HTML.
       "form-action 'self'",
+      ...captchaFrame,
       "base-uri 'none'",
       "frame-ancestors 'none'",
       "object-src 'none'",

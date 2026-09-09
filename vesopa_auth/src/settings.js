@@ -46,6 +46,42 @@ const DEFINITIONS = {
       'be turned off to keep the page simpler. Ignored in the compact layout, ' +
       'which never shows it.',
   },
+  /*
+   * WHAT THE SIGN-IN PAGE ASKS FOR FIRST, everywhere, unless an application
+   * says otherwise.
+   *
+   * The owner's instruction: *"By default, it will ask for password in apps
+   * too. But highly configurable from the Admin."* So the default lives here
+   * and each application can override it — and the override is what the QR
+   * menu uses, because a diner has no password and asking for one is a wall in
+   * front of a menu.
+   *
+   * It decides what LEADS, never what is possible. `password_first` still
+   * offers an emailed code underneath, and it is ignored entirely for somebody
+   * who has no password — an empty password box shown to somebody who never
+   * set one is a question with no answer.
+   */
+  auth_policy_default: {
+    default: 'password_first',
+    options: ['password_first', 'code_first', 'provider_only'],
+    label: 'What applications ask for first',
+    help:
+      'Password first asks for a password and offers a code underneath. Code ' +
+      'first sends a code straight away — right for the QR menu, where nobody ' +
+      'has a password. Provider only offers nothing but Continue with Google ' +
+      'and the rest. Any application can override this on its own page.',
+  },
+
+  password_fallback_label: {
+    default: 'Email me a code instead',
+    options: null,
+    label: 'The way out from under the password',
+    help:
+      'The text link under the password box. Avoid "OTP" — it is jargon most ' +
+      'people have never met, and this sentence has to work for a diner as ' +
+      'well as a developer.',
+  },
+
   service_name: {
     default: 'Vesopa',
     options: null,

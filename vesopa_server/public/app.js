@@ -5815,8 +5815,27 @@ $('login-form').addEventListener('submit', async (e) => {
     if (!res.ok) return;
     const options = await res.json();
     if (!options || !options.vesopa) return;
+
     const panel = document.getElementById('vesopa-sso');
     if (panel) panel.hidden = false;
+
+    /*
+     * "Vesopa only" — the owner's instruction for the back office: no other
+     * options.
+     *
+     * The class goes on <body> rather than the fields being hidden one by one,
+     * so a field added to this form later is covered by the same rule instead
+     * of quietly reappearing on a page that is supposed to have one way in.
+     *
+     * The rule between the two ways in is only shown when there ARE two.
+     */
+    const rule = document.getElementById('vesopa-or');
+    if (options.only) {
+      document.body.classList.add('vesopa-only');
+      if (rule) rule.hidden = true;
+    } else if (rule) {
+      rule.hidden = false;
+    }
   } catch (e) {
     /* the password form is unaffected */
   }

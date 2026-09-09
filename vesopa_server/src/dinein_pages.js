@@ -1,4 +1,10 @@
 const express = require('express');
+/*
+ * Only the flag, not the router. dinein_pages renders the page and
+ * dinein_auth serves the round trip; importing the whole router here
+ * would tie the page's render to a module it never calls.
+ */
+const { ENABLED: VESOPA_SSO_ON } = require('./dinein_auth');
 // The fourteen, so the page can turn a stored code into the wording a customer
 // reads. Injected as a constant at render time rather than fetched: the
 // dietary sheet must be able to open on a phone that has lost its signal since
@@ -1228,8 +1234,19 @@ button{font:inherit;cursor:pointer}
 }
 .hist .tag.live{background:color-mix(in srgb,var(--accent) 26%,var(--card));color:var(--ink)}
 
-/* Guest or account, at checkout. Guest is chosen, always. */
-.asme{display:flex;gap:8px;margin:14px 0 4px}
+/* Guest or account, at checkout. Guest is chosen, always.
+   Stacked now rather than side by side: Continue with Vesopa is full width on
+   top, and the two smaller choices sit under it. */
+.asme{display:flex;flex-direction:column;gap:8px;margin:14px 0 4px}
+.asme-row{display:flex;gap:8px}
+.asme-vesopa{
+  display:flex;align-items:center;justify-content:center;gap:9px;
+  border:1px solid var(--line);border-radius:12px;background:var(--card);
+  color:var(--ink);padding:12px;font-size:14.5px;font-weight:600;
+  text-decoration:none
+}
+.asme-vesopa:hover{background:var(--sunken)}
+.asme-vesopa img{width:20px;height:20px;border-radius:5px;display:block;flex:0 0 auto}
 .asme button{
   flex:1;border:1px solid var(--line);border-radius:12px;background:var(--card);
   color:var(--ink-soft);padding:11px;font-size:14px;font-weight:600;cursor:pointer
@@ -2170,6 +2187,14 @@ ${shareImage ? `<meta name="twitter:image" content="${esc(shareImage)}">` : ''}
   "use strict";
   var TABLE = ${table ? `"${esc(table)}"` : 'null'};
   var SLUG  = ${slug ? `"${esc(slug)}"` : 'null'};
+  /* Whether to offer a Vesopa account. Injected by the server rather than
+     fetched, because the checkout sheet can be opened before any fetch has
+     come back — and a button that appears half a second after somebody has
+     already pressed "Continue as guest" is worse than one that was never
+     there. The geo endpoint still carries the same flag for the
+     sign-in sheet. NO BACKTICKS IN HERE: this comment sits inside the
+     page's own template literal, and one would end it. */
+  var VESOPA_SSO = ${VESOPA_SSO_ON ? 'true' : 'false'};
   /* code -> the words a customer reads. From src/allergens.js, so the menu,
      the back office, the kitchen ticket and the display cannot drift into
      saying "Nuts" where another says "Tree nuts". */
@@ -4928,8 +4953,22 @@ ${shareImage ? `<meta name="twitter:image" content="${esc(shareImage)}">` : ''}
         ? '<p class="muted" style="margin:14px 0 0;color:var(--ink-soft);font-size:14px">' +
             'Ordering as <b>' + esc(firstName(account())) + '</b>.</p>'
         : '<div class="asme">' +
-            '<button type="button" data-as="guest" aria-pressed="true">Order as guest</button>' +
-            '<button type="button" data-as="in" aria-pressed="false">Sign in first</button>' +
+            /* CONTINUE WITH VESOPA ON TOP, as drawn: the mark, then the words,
+               full width. It is FIRST because it is one press for anybody who
+               has an account — and it is not the pressed state, because guest
+               still is. Nobody is being moved off guest ordering; there is now
+               a faster way in for people who want one. */
+            (VESOPA_SSO
+              ? '<a class="asme-vesopa" href="/api/public/dinein/auth/start' +
+                  (SLUG ? '?venue=' + encodeURIComponent(SLUG) : '') + '">' +
+                  '<img src="/assets/vesopa_mark.svg" alt="" width="20" height="20">' +
+                  '<span>Continue with Vesopa</span>' +
+                '</a>'
+              : '') +
+            '<div class="asme-row">' +
+              '<button type="button" data-as="guest" aria-pressed="true">Continue as guest</button>' +
+              '<button type="button" data-as="in" aria-pressed="false">Use a code</button>' +
+            '</div>' +
           '</div>') +
       '<div class="err" id="cerr" hidden></div>' +
       '<button class="send" id="csend" type="button">Send to the kitchen</button>' +

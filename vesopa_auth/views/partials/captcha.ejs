@@ -1,0 +1,74 @@
+<%
+  /*
+   * reCAPTCHA v3, added to whichever form is on the page.
+   *
+   * NOTHING IS RENDERED WHEN IT IS NOT CONFIGURED, which is the state a
+   * development machine and a fresh install are in. The page must not carry a
+   * dead script tag pointing at Google on an identity provider.
+   *
+   * The script is the one exception to `script-src 'self'` in the policy — it
+   * has to be, because the token can only be minted by Google's own code — and
+   * the exception is narrow: `www.google.com` and `www.gstatic.com`, nothing
+   * else, and only when a site key exists. See middleware.js.
+   *
+   * IT SETS A HIDDEN FIELD RATHER THAN BLOCKING SUBMISSION. If Google's script
+   * is blocked — an ad blocker, a corporate proxy, a country — the field stays
+   * empty and the form still posts. captcha.js treats an empty token as
+   * "ask for a code", never as "refuse". A sign-in page that stops working
+   * because a third-party script did not load is not a sign-in page.
+   */
+  const siteKey = config.captcha && config.captcha.siteKey;
+%>
+<% if (siteKey) { %>
+<input type="hidden" name="captcha_token" id="captcha-token" value="">
+<script src="https://www.google.com/recaptcha/api.js?render=<%= siteKey %>" async defer></script>
+<script nonce="<%= nonce %>">
+  (function () {
+    var FORM_ACTION = <%- JSON.stringify(action || 'signin') %>;
+    var KEY = <%- JSON.stringify(siteKey) %>;
+
+    /*
+     * A v3 token is good for two minutes, so it is minted when the form is
+     * submitted rather than on load — a page left open on a table for ten
+     * minutes would otherwise carry a stale one, and `timeout-or-duplicate` is
+     * the commonest reason a real person is challenged for no reason.
+     *
+     * The submit is deferred once, the token filled in, and the form submitted
+     * again. `submitted` stops that becoming a loop.
+     */
+    var submitted = false;
+    function attach(form) {
+      form.addEventListener('submit', function (event) {
+        if (submitted || !window.grecaptcha || !window.grecaptcha.execute) return;
+        event.preventDefault();
+        try {
+          window.grecaptcha.ready(function () {
+            window.grecaptcha.execute(KEY, { action: FORM_ACTION }).then(function (token) {
+              var field = form.querySelector('#captcha-token')
+                || document.getElementById('captcha-token');
+              if (field) field.value = token;
+              submitted = true;
+              form.submit();
+            }, function () {
+              // Google said no. Post anyway with an empty token; the server
+              // asks for a code rather than refusing.
+              submitted = true;
+              form.submit();
+            });
+          });
+        } catch (e) {
+          submitted = true;
+          form.submit();
+        }
+      });
+    }
+
+    var forms = document.querySelectorAll('form[method="post"]');
+    for (var i = 0; i < forms.length; i += 1) {
+      if (forms[i].querySelector('#captcha-token') || forms[i].getAttribute('data-captcha') !== null) {
+        attach(forms[i]);
+      }
+    }
+  })();
+</script>
+<% } %>

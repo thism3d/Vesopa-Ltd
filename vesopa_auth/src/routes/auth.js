@@ -37,6 +37,8 @@ const settings = require('../settings');
 const recovery = require('../recovery');
 const stepup = require('./stepup');
 const factors = require('../factors');
+const authmethods = require('../authmethods');
+const captcha = require('../captcha');
 const { verifyPassword } = require('../crypto');
 const { normaliseEmail, normalisePhone, guessIdentifierType } = require('../normalise');
 const { safeReturnTo } = require('./pages');
@@ -82,6 +84,14 @@ const DIAL_CODES = {
 /** Show the sign-in form again with something gone wrong. */
 async function backToLogin(res, { error, mode = 'login', channel = 'email', identifier = '', returnTo = '' }) {
   const live = await settings.all();
+  /*
+   * The same context the GET builds. Without it this render would show the
+   * default buttons rather than the application's — so a failed attempt would
+   * quietly offer more ways in than the successful page did, which is both
+   * confusing and a way to reach a method an application deliberately turned
+   * off.
+   */
+  const context = await authmethods.contextFor(returnTo, live.auth_policy_default);
   return res.status(400).render('login', {
     title: 'Sign in to Vesopa',
     description: 'One Vesopa account for every Vesopa product.',
@@ -89,7 +99,10 @@ async function backToLogin(res, { error, mode = 'login', channel = 'email', iden
     config,
     mode,
     channel,
-    providers: require('../providers').enabled(),
+    providers: context.shape.providers,
+    methods: context.shape,
+    application: context.application,
+    policy: context.policy,
     returnTo,
     identifier,
     error,
@@ -176,6 +189,92 @@ router.post('/login', csrf.verify, async (req, res, next) => {
      */
     const suspended = existing && existing.user_status !== 'active';
 
+    /*
+     * IS THIS A PERSON? reCAPTCHA v3 answers with a probability, not a verdict.
+     *
+     * A hard failure — a token that did not come from our form — is refused. A
+     * LOW SCORE IS NOT: it removes the password fast path and asks for an
+     * emailed code, which the account's owner can answer and a script cannot.
+     * Refusing on a score would lock real people out of their own accounts on a
+     * shared office address or a VPN, which is a worse outcome than the one
+     * being defended against. See src/captcha.js.
+     */
+    const verdict = await captcha.assess(req.body.captcha_token, 'signin', req.clientIp);
+    if (!verdict.ok) {
+      await events.recordLogin({
+        userId: existing ? existing.user_id : null,
+        method: 'email_code',
+        outcome: 'blocked',
+        failureReason: `captcha_${String(verdict.reason).slice(0, 40)}`,
+        identifier: normalised,
+        ip: req.clientIp,
+        userAgent: req.userAgent,
+      });
+      return await backToLogin(res, {
+        error: 'Something went wrong checking that request. Please try again.',
+        mode,
+        channel,
+        identifier: typed,
+        returnTo,
+      });
+    }
+
+    /*
+     * Does this person have a password, and does this application lead with it?
+     *
+     * Resolved BEFORE any code is sent, which is the whole point of the change:
+     * asking for a password and emailing a code are alternatives, and the old
+     * order sent a code to everybody whether or not they were ever going to
+     * look at it.
+     *
+     * A paused account is treated as having no password. The pause is enforced
+     * on the POST regardless — this only stops the page offering a box that is
+     * going to refuse whatever is typed into it, which is a small cruelty to
+     * somebody who has already been locked out once.
+     */
+    const hasPassword = existing
+      ? Boolean(
+          await db.one(
+            `SELECT p.id FROM user_passwords p
+               JOIN users u ON u.id = p.user_id
+              WHERE p.user_id = ? AND p.retired_at IS NULL
+                AND (u.password_paused_until IS NULL OR u.password_paused_until <= NOW())
+              LIMIT 1`,
+            [existing.user_id],
+          ),
+        )
+      : false;
+
+    const live = await settings.all();
+    const context = await authmethods.contextFor(returnTo, live.auth_policy_default);
+    const step = authmethods.firstStep({
+      policy: context.policy,
+      methods: context.methods,
+      hasPassword,
+    });
+
+    if (step === 'password' && !suspended && !verdict.degrade) {
+      /*
+       * Straight to the password, with NO code sent and nothing said about
+       * whether the address is known — the page after this one looks the same
+       * either way to anybody who has not got the password.
+       */
+      setFlow(
+        res,
+        JSON.stringify({
+          s: 'password',
+          d: typed,
+          n: normalised,
+          ch: channel,
+          p: true,
+          r: returnTo,
+          m: remember,
+          u: existing.user_id,
+        }),
+      );
+      return res.redirect(303, '/login/password');
+    }
+
     let result = { ok: true, challengeId: null };
     if (!suspended) {
       result = await challenges.create({
@@ -232,27 +331,6 @@ router.post('/login', csrf.verify, async (req, res, next) => {
      * which never touched the database, produces a page that looks exactly like
      * a successful one.
      */
-    /*
-     * A paused account is treated as having no password at all.
-     *
-     * The pause is enforced on the POST regardless — that is the control. This
-     * only stops the verify page OFFERING a box that is going to refuse
-     * whatever is typed into it, which is a small cruelty to somebody who has
-     * just been locked out once already.
-     */
-    const hasPassword = existing
-      ? Boolean(
-          await db.one(
-            `SELECT p.id FROM user_passwords p
-               JOIN users u ON u.id = p.user_id
-              WHERE p.user_id = ? AND p.retired_at IS NULL
-                AND (u.password_paused_until IS NULL OR u.password_paused_until <= NOW())
-              LIMIT 1`,
-            [existing.user_id],
-          ),
-        )
-      : false;
-
     setFlow(
       res,
       JSON.stringify({
@@ -304,6 +382,107 @@ router.get('/login/verify', (req, res) => {
     noindex: true,
   });
 });
+
+
+/**
+ * One factor is down. Decide whether that is enough, and sign them in.
+ *
+ * SHARED BY EVERY FIRST FACTOR — an emailed code, a texted code, and now a
+ * password. It was inline in the code path until the password step existed,
+ * and duplicating it would have been the classic way to end up with a
+ * second-factor check on one route and not the other: the security page would
+ * say two-step verification was on, and for one way in it would not be.
+ *
+ * `flow` carries what the first factor established: the identifier (n), where
+ * to go afterwards (r), whether to remember (m), and the channel (ch).
+ */
+async function completeSignIn({ req, res, userId, amr, method, flow }) {
+    // ------------------------------------------------------------------
+    // One factor down. Is that enough?
+    // ------------------------------------------------------------------
+
+    const known = await sessions.recogniseDevice(req, res);
+    let deviceId = known && !known.reuseDetected ? known.id : null;
+
+    /*
+     * ASK FOR THE SECOND FACTOR, IF THEY HAVE ONE.
+     *
+     * Until this existed, enrolling an authenticator changed nothing: sign-in
+     * finished on the first factor and the session was recorded as `aal1`
+     * regardless. The security page said two-step verification was on, and it
+     * was not — which is the worst kind of security feature, one that is
+     * believed.
+     *
+     * A remembered device may skip this, and only this. It never skips the
+     * first factor: the device cookie proves which machine this is, not who is
+     * sitting at it.
+     */
+    const held = await factors.enrolled(userId, {
+      firstFactorPhone: flow.ch === 'phone' ? flow.n : null,
+    });
+
+    if (held.any && !factors.deviceMaySkip(known)) {
+      stepup.setPending(res, {
+        u: userId,
+        a: amr,
+        r: flow.r || '',
+        m: Boolean(flow.m),
+        // What the first factor was, so a code to the same phone is not
+        // offered as the second — that would be one proof counted twice.
+        p: flow.ch === 'phone' ? flow.n : null,
+      });
+      clearFlow(res);
+
+      await events.recordLogin({
+        userId,
+        method,
+        outcome: 'challenge',
+        failureReason: 'second_factor_required',
+        identifier: flow.n,
+        ip: req.clientIp,
+        userAgent: req.userAgent,
+      });
+
+      return res.redirect(303, '/login/second');
+    }
+
+    // ------------------------------------------------------------------
+    // Signed in
+    // ------------------------------------------------------------------
+
+    if (flow.m && !deviceId) {
+      deviceId = await sessions.rememberDevice({ userId, req, res });
+    }
+
+    const session = await sessions.create({
+      userId,
+      amr,
+      // A remembered device that skipped the second factor is still recorded
+      // as having met the bar — that is what being trusted means — so the
+      // assurance reflects what the person actually holds.
+      acr: held.any ? 'aal2' : 'aal1',
+      remembered: Boolean(flow.m),
+      deviceId,
+      ip: req.clientIp,
+      userAgent: req.userAgent,
+    });
+
+    sessions.setCookie(res, session.token, Boolean(flow.m));
+    clearFlow(res);
+
+    await events.recordLogin({
+      userId,
+      sessionId: session.id,
+      method,
+      outcome: 'success',
+      identifier: flow.n,
+      ip: req.clientIp,
+      userAgent: req.userAgent,
+      deviceId,
+    });
+
+    return res.redirect(303, flow.r || '/account');
+  }
 
 // ---------------------------------------------------------------------------
 // POST /login/verify — check it, and sign them in
@@ -503,91 +682,224 @@ router.post('/login/verify', csrf.verify, async (req, res, next) => {
       }
     }
 
-    // ------------------------------------------------------------------
-    // One factor down. Is that enough?
-    // ------------------------------------------------------------------
+    return completeSignIn({ req, res, userId, amr, method, flow });
+  } catch (error) {
+    return next(error);
+  }
+});
 
-    const known = await sessions.recogniseDevice(req, res);
-    let deviceId = known && !known.reuseDetected ? known.id : null;
+// ===========================================================================
+// The password step
+// ===========================================================================
+//
+// Reached only when the application's policy leads with a password AND the
+// person actually has one. It is a separate page rather than a second field on
+// the first one, for the reason the reference design shows: one thing on screen
+// at a time, and the page can say WHO it is about to sign in — which on a
+// shared machine is the difference between signing in and three wrong attempts
+// against somebody else's account.
+
+/** Everything the password page needs, from the flow cookie. */
+async function passwordPage(req, res, error = '') {
+  const flow = readFlow(req);
+  if (!flow || flow.s !== 'password' || !flow.u) {
+    res.redirect(303, '/login');
+    return null;
+  }
+
+  const user = await db.one(
+    'SELECT public_id, display_name, given_name, avatar_path FROM users WHERE id = ?',
+    [flow.u],
+  );
+  const context = await authmethods.contextFor(flow.r || '');
+  const name = (user && (user.given_name || user.display_name || '').trim()) || '';
+
+  return res.status(error ? 400 : 200).render('password', {
+    title: 'Enter your password',
+    nonce: res.locals.nonce,
+    config,
+    // "Hi Muzahid" where we know a name, and a plain instruction where we do
+    // not — an empty "Hi" reads as a bug, and "Hi there" reads as marketing.
+    greeting: name ? `Hi ${name}` : 'Welcome back',
+    destination: flow.d,
+    initial: (name || flow.d || '?').trim().charAt(0).toUpperCase(),
+    avatar: (user && user.avatar_path) || '',
+    application: context.application,
+    canPasskey: context.shape.passkey,
+    returnTo: flow.r || '',
+    remember: Boolean(flow.m),
+    error,
+    noindex: true,
+  });
+}
+
+router.get('/login/password', async (req, res, next) => {
+  try {
+    return await passwordPage(req, res);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post('/login/password', csrf.verify, async (req, res, next) => {
+  try {
+    const flow = readFlow(req);
+    if (!flow || flow.s !== 'password' || !flow.u) return res.redirect(303, '/login');
 
     /*
-     * ASK FOR THE SECOND FACTOR, IF THEY HAVE ONE.
+     * RATE LIMITED PER ACCOUNT, not only per IP.
      *
-     * Until this existed, enrolling an authenticator changed nothing: sign-in
-     * finished on the first factor and the session was recorded as `aal1`
-     * regardless. The security page said two-step verification was on, and it
-     * was not — which is the worst kind of security feature, one that is
-     * believed.
-     *
-     * A remembered device may skip this, and only this. It never skips the
-     * first factor: the device cookie proves which machine this is, not who is
-     * sitting at it.
+     * A password box that is not is a password box somebody grinds. The limit
+     * is on the account because that is what is being attacked — an attacker
+     * with a list of addresses and a botnet defeats a per-IP limit by using a
+     * different address each time, and a per-account one stops exactly the
+     * thing they are trying to do.
      */
-    const held = await factors.enrolled(userId, {
-      firstFactorPhone: flow.ch === 'phone' ? flow.n : null,
+    /*
+     * THE SAME BUCKET AND THE SAME SUBJECT as the password option on the
+     * verify page, deliberately.
+     *
+     * There are two routes into a password check now, and giving them separate
+     * counters would hand an attacker a second allowance for free: spend eight
+     * guesses here, walk to the other page, spend eight more. Keyed on the
+     * normalised identifier — which is what is being attacked — rather than on
+     * the IP, because an attacker with a list of addresses and a botnet defeats
+     * a per-IP limit by construction.
+     */
+    const limited = await rateLimit.hit('password', flow.n, {
+      limit: 8,
+      windowSeconds: 900,
     });
-
-    if (held.any && !factors.deviceMaySkip(known)) {
-      stepup.setPending(res, {
-        u: userId,
-        a: amr,
-        r: flow.r || '',
-        m: Boolean(flow.m),
-        // What the first factor was, so a code to the same phone is not
-        // offered as the second — that would be one proof counted twice.
-        p: flow.ch === 'phone' ? flow.n : null,
-      });
-      clearFlow(res);
-
+    // `allowed`, not `ok` — ratelimit.hit's shape. Checking the wrong property
+    // made every attempt read as blocked, including the right password.
+    if (!limited.allowed) {
       await events.recordLogin({
-        userId,
-        method,
-        outcome: 'challenge',
-        failureReason: 'second_factor_required',
+        userId: flow.u,
+        method: 'password',
+        outcome: 'blocked',
+        failureReason: 'rate_limited',
         identifier: flow.n,
         ip: req.clientIp,
         userAgent: req.userAgent,
       });
-
-      return res.redirect(303, '/login/second');
+      return await passwordPage(
+        req,
+        res,
+        'Too many attempts. Wait a few minutes, or use a code instead.',
+      );
     }
 
-    // ------------------------------------------------------------------
-    // Signed in
-    // ------------------------------------------------------------------
-
-    if (flow.m && !deviceId) {
-      deviceId = await sessions.rememberDevice({ userId, req, res });
+    const verdict = await captcha.assess(req.body.captcha_token, 'password', req.clientIp);
+    if (!verdict.ok || verdict.degrade) {
+      /*
+       * The score dropped between the first page and this one, or the token
+       * did not check out. Not refused — moved to a code, which is the same
+       * account and a harder thing for a script to answer.
+       */
+      return await sendCodeForFlow(req, res, flow, 'We need to check it is you. Enter the code we just sent.');
     }
 
-    const session = await sessions.create({
-      userId,
-      amr,
-      // A remembered device that skipped the second factor is still recorded
-      // as having met the bar — that is what being trusted means — so the
-      // assurance reflects what the person actually holds.
-      acr: held.any ? 'aal2' : 'aal1',
-      remembered: Boolean(flow.m),
-      deviceId,
-      ip: req.clientIp,
-      userAgent: req.userAgent,
+    const row = await db.one(
+      `SELECT p.id, p.password_hash, p.algorithm
+         FROM user_passwords p
+         JOIN users u ON u.id = p.user_id
+        WHERE p.user_id = ? AND p.retired_at IS NULL
+          AND (u.password_paused_until IS NULL OR u.password_paused_until <= NOW())
+        ORDER BY p.id DESC LIMIT 1`,
+      [flow.u],
+    );
+
+    const given = String(req.body.password || '');
+    const ok =
+      row && given
+        ? await verifyPassword(row.password_hash, given, config.secrets.passwordPepper)
+        : false;
+
+    if (!ok) {
+      await events.recordLogin({
+        userId: flow.u,
+        method: 'password',
+        outcome: 'failure',
+        failureReason: 'wrong_password',
+        identifier: flow.n,
+        ip: req.clientIp,
+        userAgent: req.userAgent,
+      });
+      /*
+       * The same sentence whether the password was wrong or there was no
+       * password row at all. Distinguishing them tells whoever is guessing
+       * which accounts are worth more guesses.
+       */
+      return await passwordPage(req, res, 'That password is not right. Try again, or use a code.');
+    }
+
+    await rateLimit.clear('password', flow.n);
+
+    return await completeSignIn({
+      req,
+      res,
+      userId: flow.u,
+      amr: ['pwd'],
+      method: 'password',
+      flow,
     });
+  } catch (error) {
+    return next(error);
+  }
+});
 
-    sessions.setCookie(res, session.token, Boolean(flow.m));
-    clearFlow(res);
+/**
+ * Drop out of the password step and send a code instead.
+ *
+ * THE WAY OUT IS THE POINT. A password-first page with no escape is a locked
+ * door for everybody who has forgotten theirs, and "forgot password" flows are
+ * where account recovery goes wrong. Here the escape is the ordinary sign-in
+ * path: prove you can receive at the address, exactly as if the password had
+ * never been asked for.
+ */
+async function sendCodeForFlow(req, res, flow, notice) {
+  const result = await challenges.create({
+    channel: flow.ch === 'phone' ? 'sms' : 'email',
+    purpose: 'login',
+    destination: flow.d,
+    destinationNorm: flow.n,
+    userId: flow.u,
+    ip: req.clientIp,
+    userAgent: req.userAgent,
+  });
 
-    await events.recordLogin({
-      userId,
-      sessionId: session.id,
-      method,
-      outcome: 'success',
-      identifier: flow.n,
-      ip: req.clientIp,
-      userAgent: req.userAgent,
-      deviceId,
-    });
+  await events.recordLogin({
+    userId: flow.u,
+    method: flow.ch === 'phone' ? 'sms_otp' : 'email_code',
+    outcome: 'challenge',
+    identifier: flow.n,
+    ip: req.clientIp,
+    userAgent: req.userAgent,
+  });
 
-    return res.redirect(303, flow.r || '/account');
+  setFlow(
+    res,
+    JSON.stringify({
+      c: result.challengeId,
+      d: flow.d,
+      n: flow.n,
+      ch: flow.ch,
+      // Carried through, so the verify page can still offer "use my password"
+      // to somebody who changed their mind on the way.
+      p: true,
+      r: flow.r || '',
+      m: flow.m,
+      u: flow.u,
+    }),
+  );
+  return res.redirect(303, `/login/verify${notice ? '?notice=1' : ''}`);
+}
+
+router.post('/login/use-code', csrf.verify, async (req, res, next) => {
+  try {
+    const flow = readFlow(req);
+    if (!flow || !flow.u) return res.redirect(303, '/login');
+    return await sendCodeForFlow(req, res, flow);
   } catch (error) {
     return next(error);
   }

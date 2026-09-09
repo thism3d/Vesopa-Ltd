@@ -47,6 +47,25 @@ const client = createClient({
 
 const LIVE = ENABLED && client.enabled;
 
+/*
+ * VESOPA AND NOTHING ELSE.
+ *
+ * The owner's instruction: *"In the backoffice, no need other options rather
+ * then Vesopa Auth."* With this on, the local email-and-password form is not
+ * rendered at all and the only way in is a round trip to auth.vesopa.com.
+ *
+ * IT IS A FLAG AND NOT A DELETION, and that is rule 2 of the migration plan
+ * rather than timidity. The password form, its hashes and its reset flow all
+ * still exist; rollback is turning this off and restarting, which is a thing
+ * somebody can do at seven on a Friday with a room full of covers. Deleting the
+ * code would make the rollback a deploy, and a deploy under that kind of
+ * pressure is how a bad evening becomes a bad night.
+ *
+ * It also cannot turn itself on by accident: if Vesopa sign-in is not LIVE,
+ * "Vesopa only" would leave the page with no way in at all, so it is ignored.
+ */
+const ONLY = LIVE && String(process.env.VESOPA_AUTH_BACKOFFICE_ONLY || '').toLowerCase() === 'on';
+
 /**
  * @param pool    the back office's own database
  * @param secret  the JWT secret the back office already signs with
@@ -68,7 +87,13 @@ function backofficeAuthRoutes({ pool, secret, issueToken }) {
    */
   router.get('/api/public/backoffice/sign-in-options', (req, res) => {
     res.set('Cache-Control', 'no-store');
-    res.json({ vesopa: LIVE });
+    /*
+     * `only` tells the page to stop drawing the password form. It is answered
+     * by the server rather than baked into index.html because that file is read
+     * into a constant at start-up — see the README — so a flag change would
+     * otherwise need a deploy to be seen.
+     */
+    res.json({ vesopa: LIVE, only: ONLY });
   });
 
   if (!LIVE) {

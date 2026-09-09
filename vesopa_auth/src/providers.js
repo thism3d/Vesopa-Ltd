@@ -179,7 +179,26 @@ const microsoft = {
        * basic profile — and it is not sensitive, so the application stays out
        * of Microsoft's review track. Nothing else is requested.
        */
-      scope: 'openid email profile offline_access User.Read',
+      /*
+       * NO `offline_access`, DELIBERATELY.
+       *
+       * It is what puts *"Maintain access to data you have given Vesopa access
+       * to"* on Microsoft's consent screen, and it buys a refresh token for
+       * Microsoft Graph — a thing this server has no use for. We read the
+       * profile once, at sign-in, copy the picture, and never call Graph again;
+       * the session that follows is ours and has nothing to do with Microsoft.
+       *
+       * Asking for it anyway would be asking somebody to grant standing access
+       * so that we can not use it, which is the sort of over-asking that makes
+       * people abandon a consent screen — and the sort a Microsoft publisher
+       * review asks you to justify.
+       *
+       * `User.Read` stays: it is *"Read your profile"*, and it is what lets the
+       * profile picture be copied at sign-in. Microsoft does not put the photo
+       * in the ID token, so without it everybody who signs in with Microsoft
+       * has no avatar.
+       */
+      scope: 'openid email profile User.Read',
       state,
       nonce,
       code_challenge: codeChallenge,
@@ -189,15 +208,89 @@ const microsoft = {
     return `https://login.microsoftonline.com/${this.tenant}/oauth2/v2.0/authorize?${params}`;
   },
 
+  /**
+   * Exchange the code — and cope with the registration being a PUBLIC client.
+   *
+   * AADSTS700025: *"Client is public so neither 'client_assertion' nor
+   * 'client_secret' should be presented."* Microsoft decides whether an app
+   * registration is public or confidential from where its redirect URI is
+   * registered in the portal: a URI added under **Web** is confidential and
+   * wants the secret, while one added under **Single-page application** or
+   * **Mobile and desktop applications** makes the whole registration public and
+   * REFUSES the secret. Adding the callback under the wrong heading is an easy
+   * mistake — the field looks identical — and it breaks sign-in for everybody
+   * with an error that names neither the platform nor the fix.
+   *
+   * This is the one place in the codebase that retries a failed exchange, so it
+   * is worth saying why that is safe: an error response does NOT redeem the
+   * authorisation code. Microsoft rejected the request before looking at the
+   * code, so the code is still live and the second attempt is the first real
+   * redemption. A retry after a SUCCESSFUL exchange would be a different matter
+   * entirely, and nothing here does that.
+   *
+   * `MICROSOFT_PUBLIC_CLIENT=true` skips straight to the public form and saves
+   * the wasted round trip. Without it this works either way, which is what
+   * stops the same afternoon being spent on it again after somebody edits the
+   * registration back.
+   *
+   * PKCE is sent regardless, and is what actually protects a public client —
+   * it is already required by the authorize call above.
+   */
   async exchange({ code, codeVerifier }) {
-    return postForm(`https://login.microsoftonline.com/${this.tenant}/oauth2/v2.0/token`, {
+    const url = `https://login.microsoftonline.com/${this.tenant}/oauth2/v2.0/token`;
+    const base = {
       code,
       client_id: this.clientId,
-      client_secret: this.clientSecret,
       redirect_uri: redirectUri('microsoft'),
       grant_type: 'authorization_code',
       code_verifier: codeVerifier,
-    });
+    };
+
+    if (String(env('MICROSOFT_PUBLIC_CLIENT') || '').toLowerCase() === 'true') {
+      return postForm(url, base);
+    }
+
+    try {
+      return await postForm(url, { ...base, client_secret: this.clientSecret });
+    } catch (error) {
+      if (!/AADSTS700025/.test(String(error.message || ''))) throw error;
+      console.warn(
+        '[social] microsoft says this registration is a PUBLIC client, so the ' +
+          'secret is being dropped and PKCE is doing the work.',
+      );
+      try {
+        return await postForm(url, base);
+      } catch (second) {
+        /*
+         * AADSTS9002327 — THE ONE THIS CODE CANNOT FIX, so it says so loudly.
+         *
+         * "Tokens issued for the 'Single-Page Application' client-type may only
+         * be redeemed via cross-origin requests." The callback has been added
+         * in the Azure portal under **Single-page application** instead of
+         * **Web**. Those two fields look identical and sit on the same screen,
+         * and picking the wrong one has three consequences at once: the
+         * registration becomes public (so the secret is refused — that is the
+         * 700025 above), PKCE becomes mandatory, and the token endpoint will
+         * ONLY answer a request carrying a browser `Origin` header.
+         *
+         * A server-side web application cannot send one. There is no
+         * combination of secret, no-secret or PKCE that redeems an SPA-issued
+         * code from a server — which is why this throws with instructions
+         * instead of trying a third time.
+         */
+        if (/AADSTS9002327/.test(String(second.message || ''))) {
+          throw new Error(
+            'microsoft: the callback is registered as a Single-Page Application in ' +
+              'Azure, and an SPA code can only be redeemed from a browser. Fix it in ' +
+              'the portal: App registrations → your app → Authentication → remove ' +
+              `${redirectUri('microsoft')} from "Single-page application", then ` +
+              'Add a platform → Web → add the same URI there, and set "Allow public ' +
+              'client flows" to No. Nothing in this codebase can work around it.',
+          );
+        }
+        throw second;
+      }
+    }
   },
 
   async profile(tokens, { nonce }) {

@@ -221,7 +221,15 @@
     <% } %>
     <% } %>
 
-    <% if (config.features.passkeys) { %>
+    <%
+      /*
+       * The passkey button follows the APPLICATION's methods, not the server's
+       * feature flag alone. An application that does not offer passkeys should
+       * not show one, and `methods` has already been filtered to what this
+       * server can actually complete.
+       */
+    %>
+    <% if (typeof methods !== 'undefined' ? methods.passkey : config.features.passkeys) { %>
     <button class="btn btn-quiet" type="button" data-passkey hidden>
       Sign in with a passkey
     </button>
@@ -235,5 +243,7 @@
 </main>
 
 <script nonce="<%= nonce %>" src="/js/login.js?v=<%= config.version %>"></script>
+
+<%- include('partials/captcha', { action: 'signin' }) %>
 
 <%- include('partials/foot') %>

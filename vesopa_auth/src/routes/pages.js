@@ -24,6 +24,7 @@ const sessions = require('../sessions');
 const identity = require('../identity');
 const invitations = require('../invitations');
 const settings = require('../settings');
+const authmethods = require('../authmethods');
 
 const router = express.Router();
 
@@ -79,6 +80,17 @@ router.get('/login', async (req, res, next) => {
   const channel = req.query.channel === 'phone' ? 'phone' : 'email';
   const live = await settings.all();
 
+  /*
+   * WHICH APPLICATION IS THIS SIGN-IN FOR?
+   *
+   * `/oauth/authorize` sends people here with the whole request in `return_to`,
+   * so the application — and therefore which buttons it offers and which step
+   * leads — is already known. Somebody arriving at /login directly is signing
+   * in to Vesopa itself and gets the administrator's defaults.
+   */
+  const returnTo = safeReturnTo(req.query.return_to);
+  const context = await authmethods.contextFor(returnTo, live.auth_policy_default);
+
   return res.render('login', {
     // The tab must agree with the heading; in the compact layout both say
     // "Continue", because signing in and registering are one action here.
@@ -90,8 +102,18 @@ router.get('/login', async (req, res, next) => {
     config,
     mode,
     channel,
-    providers: socialProviders(),
-    returnTo: safeReturnTo(req.query.return_to),
+    /*
+     * The buttons come from the APPLICATION now, not from whatever credentials
+     * this server happens to hold. `authmethods` still filters to what can
+     * actually be completed, so a row for a provider with no credentials draws
+     * nothing — the owner's "keep the scope open" without the failure mode of a
+     * button that leads nowhere.
+     */
+    providers: context.shape.providers,
+    methods: context.shape,
+    application: context.application,
+    policy: context.policy,
+    returnTo,
     identifier: '',
     error: '',
     noindex: true,
