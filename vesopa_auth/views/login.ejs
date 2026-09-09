@@ -186,6 +186,7 @@
            data-register="Log in"><%= mode === 'register' ? 'Log in' : 'Register' %></a>
       </p>
       <% } %>
+      <%- include('partials/captcha', { action: 'signin' }) %>
     </form>
 
     <% if (providers.length) { %>
@@ -244,6 +245,5 @@
 
 <script nonce="<%= nonce %>" src="/js/login.js?v=<%= config.version %>"></script>
 
-<%- include('partials/captcha', { action: 'signin' }) %>
 
 <%- include('partials/foot') %>

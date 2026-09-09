@@ -91,10 +91,30 @@
     });
   }
 
-  var forms = document.querySelectorAll('form[method="post"]');
-  for (var i = 0; i < forms.length; i += 1) {
-    if (forms[i].querySelector('#captcha-token') || forms[i].getAttribute('data-captcha') !== null) {
-      attach(forms[i]);
-    }
-  }
+  /*
+   * THE FORM IS FOUND THROUGH THE FIELD, and the field is put back inside the
+   * form if it has got out.
+   *
+   * This is the fault that made the whole feature inert on the live site for
+   * as long as it was switched on. The partial was included AFTER `</form>` on
+   * both pages, so:
+   *
+   *   the hidden field was never submitted, because a control outside a form
+   *   is not part of it — the server saw no token on every single sign-in; and
+   *   the old scan (`forms[i].querySelector('#captcha-token')`) matched
+   *   nothing, so nothing was ever bound and no token was minted anyway.
+   *
+   * Neither failure showed. A missing token was a silent degrade, so the page
+   * worked and the score was simply never consulted. The templates are fixed;
+   * this is the belt to that pair of braces, because "the include moved" is a
+   * one-line change somebody will make again.
+   */
+  var form =
+    field.form ||
+    document.querySelector('form[data-captcha]') ||
+    document.querySelector('form[method="post"]');
+  if (!form) return;
+  if (field.form !== form) form.appendChild(field);
+
+  attach(form);
 })();
