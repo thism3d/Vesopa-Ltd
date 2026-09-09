@@ -1274,6 +1274,7 @@ function makeSortable(tbody, path) {
  * is the difference between drawing a skeleton and drawing nothing.
  */
 const VIEW_LOADERS = {
+    price_levels: loadPriceLevels,
     dashboard: loadDashboard,
     report: loadReports,
     sales_explorer: loadExplorer,
@@ -11134,4 +11135,402 @@ async function rsShowRuns(id) {
   // Written after the view loaded, so it missed the pass in render().
   cardsOnPhone($('rs-runs').querySelector('table'));
   $('rs-runs').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// ---- Price levels ---------------------------------------------------------
+//
+// Repricing a whole shelf at once. Three things make this different from the
+// form it is modelled on: nothing is written until a preview has been seen,
+// rounding is part of the rule rather than an afterthought, and every run can
+// be put back.
+//
+// The server does the arithmetic — twice, once for the preview and once for
+// the write, from the same inputs. Nothing here sends a price. A preview the
+// browser could edit would be a preview that decided nothing.
+
+let plProducts = [];
+let plLevels = [];
+let plChosen = new Set();
+let plPreview = null;
+
+async function loadPriceLevels() {
+  const data = await api('/price-levels');
+  plProducts = data.products || [];
+  plLevels = data.levels || [];
+  plChosen = new Set();
+  plPreview = null;
+
+  // The venue's own names, everywhere. "Happy Hour" tells a manager what they
+  // are about to reprice; "Price Level 2" tells them nothing.
+  const options = (skipOne) =>
+    plLevels
+      .filter((l) => !(skipOne && l.level === 1))
+      .map((l) => `<option value="${l.level}">${esc(l.name)}</option>`)
+      .join('');
+
+  $('pl-source').innerHTML = options(false);
+  $('pl-target').innerHTML = options(true);
+  $('pl-target').value = '2';
+
+  plRenderProducts();
+  plRenderMethod();
+  await plRenderRuns();
+  plBind();
+}
+
+let plBound = false;
+function plBind() {
+  if (plBound) return;
+  plBound = true;
+
+  $('pl-method').addEventListener('change', plRenderMethod);
+  $('pl-search').addEventListener('input', plRenderProducts);
+  $('pl-all').addEventListener('click', () => {
+    // Everything the SEARCH is currently showing, not the whole catalogue —
+    // "select all" under a filter means the filtered set, which is the only
+    // reading that makes the search box worth having.
+    for (const p of plVisible()) plChosen.add(p.pluid);
+    plRenderProducts();
+  });
+  $('pl-none').addEventListener('click', () => {
+    plChosen = new Set();
+    plRenderProducts();
+  });
+  $('pl-runs').addEventListener('click', plUndoClicked);
+  $('pl-preview').addEventListener('click', plDoPreview);
+  $('pl-apply').addEventListener('click', plDoApply);
+  $('pl-cancel').addEventListener('click', () => {
+    plPreview = null;
+    $('pl-preview-card').hidden = true;
+  });
+
+  $('pl-products').addEventListener('change', (e) => {
+    const plu = Number(e.target?.dataset?.plu);
+    if (!plu) return;
+    if (e.target.checked) plChosen.add(plu);
+    else plChosen.delete(plu);
+    plCount();
+  });
+
+  $('pl-products').addEventListener('click', (e) => {
+    const dept = e.target?.dataset?.dept;
+    if (dept === undefined) return;
+    // A department heading ticks or clears everything under it, which is how
+    // somebody actually reprices "all the beers".
+    const rows = plVisible().filter((p) => (p.department_name || '') === dept);
+    const allOn = rows.every((p) => plChosen.has(p.pluid));
+    for (const p of rows) {
+      if (allOn) plChosen.delete(p.pluid);
+      else plChosen.add(p.pluid);
+    }
+    plRenderProducts();
+  });
+}
+
+/** Products matching the search box. */
+function plVisible() {
+  const q = String($('pl-search').value || '').trim().toLowerCase();
+  if (!q) return plProducts;
+  return plProducts.filter(
+    (p) =>
+      String(p.product_name || '').toLowerCase().includes(q) ||
+      String(p.department_name || '').toLowerCase().includes(q) ||
+      String(p.pluid).includes(q),
+  );
+}
+
+function plCount() {
+  const n = plChosen.size;
+  $('pl-count').textContent =
+    n === 0 ? 'Nothing selected' : `${n} product${n === 1 ? '' : 's'} selected`;
+}
+
+function plRenderProducts() {
+  const box = $('pl-products');
+  const rows = plVisible();
+  if (!rows.length) {
+    box.innerHTML = '<p class="muted small">No products match that.</p>';
+    plCount();
+    return;
+  }
+
+  // Grouped by department, because that is the unit a venue reprices in.
+  const byDept = new Map();
+  for (const p of rows) {
+    const key = p.department_name || 'No department';
+    if (!byDept.has(key)) byDept.set(key, []);
+    byDept.get(key).push(p);
+  }
+
+  const source = Number($('pl-source').value) || 1;
+  const priceOf = (p, level) => (level === 1 ? p.price : p[`price_${level}`]);
+
+  box.innerHTML = [...byDept.entries()]
+    .map(([dept, items]) => {
+      const on = items.filter((p) => plChosen.has(p.pluid)).length;
+      return (
+        `<div class="pl-dept">` +
+        `<button type="button" class="pl-dept-head" data-dept="${esc(
+          dept === 'No department' ? '' : dept,
+        )}">` +
+        `${esc(dept)} <span class="muted small">${on}/${items.length}</span></button>` +
+        items
+          .map((p) => {
+            const base = priceOf(p, source);
+            return (
+              `<label class="check pl-item">` +
+              `<input type="checkbox" data-plu="${p.pluid}"${
+                plChosen.has(p.pluid) ? ' checked' : ''
+              }>` +
+              `<span>${esc(p.product_name || `PLU ${p.pluid}`)}` +
+              `<span class="muted small"> — ${
+                base === null || base === undefined ? 'no price' : '£' + pounds(Math.round(base * 100))
+              }</span></span></label>`
+            );
+          })
+          .join('') +
+        `</div>`
+      );
+    })
+    .join('');
+  plCount();
+}
+
+/** A fixed amount is in pounds; a percentage is not; a copy needs neither. */
+function plRenderMethod() {
+  const method = $('pl-method').value;
+  $('pl-amount-row').hidden = method === 'copy';
+  $('pl-amount-label').firstChild.textContent =
+    method === 'percent' ? 'By (%)' : 'By (£)';
+}
+
+async function plDoPreview() {
+  const button = $('pl-preview');
+  button.disabled = true;
+  $('pl-status').textContent = 'Working it out…';
+  try {
+    const body = plRule();
+    const res = await api('/price-levels/preview', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    plPreview = { body, ...res };
+    plRenderPreview();
+    $('pl-status').textContent = '';
+  } catch (err) {
+    $('pl-status').textContent = '';
+    toast(err.message, 'error');
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function plRule() {
+  const method = $('pl-method').value;
+  return {
+    source_level: Number($('pl-source').value),
+    target_level: Number($('pl-target').value),
+    method,
+    direction: $('pl-direction').value,
+    // Pence for a fixed amount, percentage points for a percentage. Sent as
+    // the server expects them so the two cannot disagree about the unit.
+    amount:
+      method === 'copy'
+        ? 0
+        : method === 'amount'
+          ? Math.round((Number($('pl-amount').value) || 0) * 100)
+          : Number($('pl-amount').value) || 0,
+    rounding: $('pl-rounding').value,
+    plu_ids: [...plChosen],
+  };
+}
+
+function plRenderPreview() {
+  const card = $('pl-preview-card');
+  const body = $('pl-preview-body');
+  const { changes = [], skipped = [] } = plPreview || {};
+
+  if (!changes.length) {
+    body.innerHTML =
+      '<p class="muted">Nothing would change.</p>' + plSkippedHtml(skipped);
+    $('pl-apply').disabled = true;
+    card.hidden = false;
+    return;
+  }
+
+  $('pl-apply').disabled = false;
+
+  const target = plLevels.find((l) => l.level === Number($('pl-target').value));
+  const up = changes.filter((c) => c.delta_minor !== null && c.delta_minor > 0).length;
+  const down = changes.filter((c) => c.delta_minor !== null && c.delta_minor < 0).length;
+  const fresh = changes.filter((c) => c.before_minor === null).length;
+
+  body.innerHTML =
+    `<p><strong>${changes.length}</strong> product${changes.length === 1 ? '' : 's'} ` +
+    `would change on <strong>${esc(target ? target.name : '')}</strong>` +
+    `${up ? ` · ${up} up` : ''}${down ? ` · ${down} down` : ''}` +
+    `${fresh ? ` · ${fresh} priced for the first time` : ''}.</p>` +
+    '<div class="pl-preview-table"><table class="table"><thead><tr>' +
+    '<th>Product</th><th>Department</th><th class="right">Now</th>' +
+    '<th class="right">Becomes</th><th class="right">Change</th>' +
+    '</tr></thead><tbody>' +
+    changes
+      .map(
+        (c) =>
+          '<tr><td>' +
+          esc(c.name || `PLU ${c.pluid}`) +
+          '</td><td class="muted small">' +
+          esc(c.department || '') +
+          '</td><td class="right">' +
+          (c.before_minor === null ? '<span class="muted">—</span>' : '£' + pounds(c.before_minor)) +
+          '</td><td class="right"><strong>£' +
+          pounds(c.after_minor) +
+          '</strong></td><td class="right">' +
+          (c.delta_minor === null
+            ? '<span class="muted">new</span>'
+            : (c.delta_minor > 0 ? '+' : '−') + '£' + pounds(Math.abs(c.delta_minor))) +
+          '</td></tr>',
+      )
+      .join('') +
+    '</tbody></table></div>' +
+    plSkippedHtml(skipped);
+
+  card.hidden = false;
+  card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+/**
+ * What was left out, and why.
+ *
+ * Named rather than silently dropped. A product with no price at the level
+ * being read is skipped on purpose — null there means "charge Price 1", and
+ * treating it as £0.00 would set a real price of nothing on the target.
+ */
+function plSkippedHtml(skipped) {
+  if (!skipped.length) return '';
+  return (
+    `<details class="pl-skipped"><summary class="muted small">` +
+    `${skipped.length} left alone</summary><ul class="muted small">` +
+    skipped
+      .map((s) => `<li>${esc(s.name || `PLU ${s.pluid}`)} — ${esc(s.reason)}</li>`)
+      .join('') +
+    '</ul></details>'
+  );
+}
+
+async function plDoApply() {
+  if (!plPreview) return;
+  const n = (plPreview.changes || []).length;
+  if (
+    !(await confirmDialog(
+      `This changes the price of ${n} product${n === 1 ? '' : 's'} on every till. ` +
+        'It can be put back afterwards from the list below.',
+      { title: 'Apply these prices?', confirmLabel: 'Apply' },
+    ))
+  ) {
+    return;
+  }
+
+  const button = $('pl-apply');
+  button.disabled = true;
+  try {
+    // The rule again, not the preview's rows: the server recalculates. See the
+    // header of src/price_levels.js.
+    const res = await api('/price-levels/apply', {
+      method: 'POST',
+      body: JSON.stringify(plPreview.body),
+    });
+    toast(`${res.applied} price${res.applied === 1 ? '' : 's'} updated.`, 'ok');
+    plPreview = null;
+    $('pl-preview-card').hidden = true;
+    await loadPriceLevels();
+  } catch (err) {
+    toast(err.message, 'error');
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function plRenderRuns() {
+  const box = $('pl-runs');
+  let runs = [];
+  try {
+    runs = await api('/price-levels/runs');
+  } catch {
+    box.innerHTML = '<p class="muted small">Could not read the history.</p>';
+    return;
+  }
+  if (!runs.length) {
+    box.innerHTML = '<p class="muted small">No bulk price changes yet.</p>';
+    return;
+  }
+
+  const name = (n) => {
+    const l = plLevels.find((x) => x.level === Number(n));
+    return l ? l.name : `Price ${n}`;
+  };
+  const how = (r) => {
+    if (r.method === 'copy') return 'copied across';
+    const value = r.method === 'percent'
+      ? `${Number(r.amount)}%`
+      : `£${pounds(Math.round(Number(r.amount)))}`;
+    return `${r.direction === 'down' ? 'down' : 'up'} ${value}`;
+  };
+
+  box.innerHTML =
+    '<table class="table"><thead><tr><th>When</th><th>What</th>' +
+    '<th class="right">Products</th><th>By</th><th></th></tr></thead><tbody>' +
+    runs
+      .map(
+        (r) =>
+          '<tr><td class="muted small">' +
+          esc(
+            new Date(r.created_at).toLocaleString('en-GB', {
+              dateStyle: 'short',
+              timeStyle: 'short',
+            }),
+          ) +
+          '</td><td>' +
+          esc(`${name(r.source_level)} → ${name(r.target_level)}, ${how(r)}`) +
+          '</td><td class="right">' +
+          r.product_count +
+          '</td><td class="muted small">' +
+          esc(r.created_by || '') +
+          '</td><td class="right">' +
+          (r.undone_at
+            ? '<span class="muted small">put back</span>'
+            : `<button class="btn small ghost" data-pl-undo="${r.id}">Undo</button>`) +
+          '</td></tr>',
+      )
+      .join('') +
+    '</tbody></table>';
+}
+
+/**
+ * Put a run back.
+ *
+ * Delegated on the runs container rather than on `document`, and registered in
+ * `plBind()` with every other listener on this page — a top-level listener at
+ * the bottom of this file runs the moment the file is evaluated, which is not
+ * something a page module should do.
+ */
+async function plUndoClicked(e) {
+  const id = e.target?.dataset?.plUndo;
+  if (!id) return;
+  if (
+    !(await confirmDialog(
+      'Every product this change touched goes back to the price it had before. '
+        + 'Tills pick it up on their next refresh.',
+      { title: 'Put these prices back?', confirmLabel: 'Put them back' },
+    ))
+  ) {
+    return;
+  }
+  try {
+    const res = await api(`/price-levels/runs/${id}/undo`, { method: 'POST' });
+    toast(`${res.restored} price${res.restored === 1 ? '' : 's'} put back.`, 'ok');
+    await loadPriceLevels();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
 }

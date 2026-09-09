@@ -6739,3 +6739,66 @@ textarea, select[multiple], select[size] { height: auto; min-height: 0; }
   margin: 4px 0 0;
   padding-left: 18px;
 }
+
+/* ---------------------------------------------------------------------------
+   Price levels
+   ---------------------------------------------------------------------------
+   Two columns of rules, a scrolling product list, and a preview table that can
+   be four hundred rows long — so both lists scroll inside themselves rather
+   than pushing the Apply button somewhere a manager has to hunt for it.
+   ------------------------------------------------------------------------ */
+.pl-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 22px;
+}
+
+.pl-products {
+  margin-top: 12px;
+  max-height: 46vh;
+  overflow-y: auto;
+  border: 1px solid var(--line, #d9dde5);
+  border-radius: 10px;
+  padding: 6px 10px;
+}
+
+/* A department is a heading you can press, because "all the beers" is the unit
+   a venue actually reprices in. */
+.pl-dept-head {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--line, #d9dde5);
+  padding: 10px 2px 6px;
+  margin-top: 8px;
+  font-weight: 700;
+  cursor: pointer;
+  color: inherit;
+}
+
+.pl-dept-head:hover { color: var(--brand, #6b7f12); }
+
+.pl-item {
+  padding: 3px 2px 3px 10px;
+}
+
+.pl-preview-table {
+  max-height: 44vh;
+  overflow-y: auto;
+  border: 1px solid var(--line, #d9dde5);
+  border-radius: 10px;
+}
+
+.pl-skipped { margin-top: 10px; }
+.pl-skipped ul { margin: 6px 0 0; padding-left: 18px; }
+
+/* The action rows on this page hold one or two buttons and a note, so the
+   buttons take their natural width instead of stretching across the card. */
+.view #pl-preview,
+.view #pl-apply,
+.view #pl-cancel {
+  flex: 0 0 auto;
+  align-self: flex-start;
+}

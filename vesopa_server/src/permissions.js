@@ -133,6 +133,7 @@ const BACKOFFICE_PERMISSIONS = [
       { key: 'programming.modifiers', label: 'Modifiers' },
       { key: 'programming.mix_match', label: 'Mix & Match' },
       { key: 'programming.finalise_keys', label: 'Finalise Keys' },
+      { key: 'programming.price_levels', label: 'Price Levels' },
       { key: 'programming.error_reasons', label: 'Error Reasons' },
       { key: 'programming.tax', label: 'Tax' },
       { key: 'programming.till_printers', label: 'Till & Printers' },

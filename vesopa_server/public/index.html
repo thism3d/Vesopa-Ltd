@@ -299,6 +299,7 @@
 
           <button class="nav-group" data-group="programming">Programming<span class="caret">▼</span></button>
           <button class="nav" data-view="screens">Screen Programming</button>
+          <button class="nav" data-view="price_levels">Price Levels</button>
           <button class="nav" data-view="program_departments">Departments</button>
           <button class="nav" data-view="program_groups">Sub Departments</button>
           <button class="nav" data-view="printer_categories">Printer Categories</button>
@@ -850,6 +851,114 @@
         <section id="view-mix_match" class="view" hidden>
           <div class="page-head"><div><h2>Mix &amp; Match</h2><p class="muted small">Drag rows to set the order deals are tried on the till.</p></div><button class="btn primary" data-add="mix-match">Add deal</button></div>
           <div class="card"><table><thead><tr><th class="drag-col"></th><th>Deal</th><th class="right">Qty</th><th class="right">Deal price</th><th>Active</th><th></th></tr></thead><tbody id="mix-match"></tbody></table></div>
+        </section>
+
+        <!-- Repricing a catalogue a level at a time.
+
+             Two columns and then a preview, in that order, because that is the
+             order the decision is actually made in: what am I reading, what am
+             I writing, to which products, by how much — and only then, is this
+             right? Nothing is written until the preview has been seen. -->
+        <section id="view-price_levels" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Price Levels</h2>
+              <p class="muted small">
+                Change a whole shelf of prices at once. Read one level, write another,
+                and see every change before anything is saved.
+              </p>
+            </div>
+          </div>
+
+          <div class="card rd-card">
+            <div class="pl-grid">
+              <div>
+                <label>Read prices from
+                  <select id="pl-source"></select>
+                </label>
+                <p class="muted small">The level the new price is worked out from.</p>
+
+                <label>Write them to
+                  <select id="pl-target"></select>
+                </label>
+                <p class="muted small" id="pl-target-note">
+                  Price 1 is the product&rsquo;s own price and cannot be written by a
+                  bulk update.
+                </p>
+              </div>
+
+              <div>
+                <label>Change by
+                  <select id="pl-method">
+                    <option value="percent">A percentage</option>
+                    <option value="amount">A fixed amount</option>
+                    <option value="copy">Nothing &mdash; copy the price across</option>
+                  </select>
+                </label>
+
+                <div class="grid2" id="pl-amount-row">
+                  <label>Direction
+                    <select id="pl-direction">
+                      <option value="up">Up</option>
+                      <option value="down">Down</option>
+                    </select>
+                  </label>
+                  <label id="pl-amount-label">By
+                    <input id="pl-amount" type="number" min="0" step="0.01" placeholder="0">
+                  </label>
+                </div>
+
+                <label>Round the result to
+                  <select id="pl-rounding">
+                    <option value="none">The exact penny</option>
+                    <option value="5p">The nearest 5p</option>
+                    <option value="10p">The nearest 10p</option>
+                    <option value="99">A price ending .99</option>
+                    <option value="95">A price ending .95</option>
+                    <option value="pound">A whole pound</option>
+                  </select>
+                </label>
+                <p class="muted small">
+                  7.5% on &pound;3.20 is &pound;3.44, and no bar prices like that.
+                  Pick the shape you actually charge in.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div class="card rd-card">
+            <h3>Which products</h3>
+            <div class="row" style="gap:10px;align-items:center;flex-wrap:wrap">
+              <input id="pl-search" placeholder="Search products&hellip;" style="flex:1 1 240px">
+              <button class="btn ghost small" id="pl-all">Select all</button>
+              <button class="btn ghost small" id="pl-none">Clear</button>
+              <span class="muted small" id="pl-count">Nothing selected</span>
+            </div>
+            <div id="pl-products" class="pl-products"></div>
+          </div>
+
+          <div class="row" style="gap:10px;align-items:center">
+            <button class="btn primary" id="pl-preview">Preview the change</button>
+            <span class="muted small" id="pl-status"></span>
+          </div>
+
+          <div class="card rd-card" id="pl-preview-card" hidden>
+            <h3>What will change</h3>
+            <div id="pl-preview-body"></div>
+            <div class="row" style="gap:10px;align-items:center;margin-top:12px">
+              <button class="btn primary" id="pl-apply">Apply these prices</button>
+              <button class="btn ghost" id="pl-cancel">Not yet</button>
+            </div>
+          </div>
+
+          <div class="card rd-card">
+            <h3>Recent price updates</h3>
+            <p class="muted small" style="margin:0 0 10px">
+              Every bulk change is recorded with what each product used to cost, so
+              the last one can be put back.
+            </p>
+            <div id="pl-runs"></div>
+          </div>
         </section>
 
         <section id="view-finalise_keys" class="view" hidden>

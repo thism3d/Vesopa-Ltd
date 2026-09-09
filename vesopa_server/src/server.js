@@ -56,6 +56,7 @@ const {
 const { walletCore, walletRoutes, walletPublicRoutes } = require('./wallet');
 const { appleWalletRoutes } = require('./wallet_apple_service');
 const { ensureMemberNumber } = require('./member_numbers');
+const { priceLevelRoutes } = require('./price_levels');
 const { walletPageRoutes } = require('./wallet_pages');
 
 const PORT = process.env.PORT || 4000;
@@ -214,6 +215,10 @@ app.use('/api', permissionRoutes({ pool, broadcast, secret: JWT_SECRET }));
 app.use('/api', backofficeRoutes({ pool, broadcast, secret: JWT_SECRET }));
 app.use('/api', programmingRoutes({ pool, broadcast, secret: JWT_SECRET }));
 app.use('/api', commerceRoutes({ pool, broadcast, secret: JWT_SECRET }));
+// Repricing a catalogue a level at a time: preview, apply, and put back. See
+// the header of src/price_levels.js for why a preview and an undo are the
+// whole point rather than extras.
+app.use('/api', priceLevelRoutes({ pool, broadcast, secret: JWT_SECRET }));
 app.use('/api', analyticsRoutes({ pool, secret: JWT_SECRET }));
 app.use('/api/admin', adminRoutes({ pool, broadcast, secret: JWT_SECRET }));
 app.use('/api/admin', templateRoutes({ pool, broadcast, secret: JWT_SECRET }));
