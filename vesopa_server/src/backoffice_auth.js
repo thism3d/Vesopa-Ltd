@@ -319,4 +319,58 @@ function escapeHtml(value) {
  * rules in another file is a copy that drifts, quietly leaving one door with
  * the older, weaker version of the office check.
  */
-module.exports = { backofficeAuthRoutes, LIVE, ENABLED, client, linkAndFind };
+/**
+ * Invite a member of staff to the back office THROUGH their Vesopa account.
+ *
+ * THE OWNER'S RULE, and the reason this is not just "add a row and hope":
+ * *"Backoffice admin decides and create user and invite that user through
+ * Vesopa account"*. A back-office user row is a person this venue has decided
+ * may see its prices and its takings; a Vesopa account is a person. The two are
+ * joined by the manager saying so, and this is that sentence, made into a
+ * request.
+ *
+ * WHAT ACTUALLY HAPPENS. Vesopa emails them a link. The link does not sign
+ * anybody in — it opens the ordinary Vesopa sign-in, and the membership is
+ * granted only once they have proved they own that address. So an invitation
+ * read by somebody else in the office is worth nothing to them, and a manager
+ * who mistypes an address has not given the back office away.
+ *
+ * IT NEVER THROWS AT THE CALLER. A staff row that exists with no invitation
+ * sent is a manager pressing the button again; a failed request that took the
+ * whole "add a user" operation down with it is a manager who cannot add
+ * anybody because an unrelated service is having an afternoon.
+ */
+async function inviteToVesopa({ email, role = '', message = '' }) {
+  if (!LIVE) return { ok: false, error: 'Vesopa sign-in is not switched on here.' };
+  if (!email) return { ok: false, error: 'An email address is needed.' };
+
+  const url = `${client.issuer.replace(/\/$/, '')}/api/app/invitations`;
+  const credentials = Buffer.from(
+    `${encodeURIComponent(process.env.VESOPA_AUTH_BACKOFFICE_CLIENT_ID || '')}:` +
+      `${encodeURIComponent(process.env.VESOPA_AUTH_BACKOFFICE_CLIENT_SECRET || '')}`,
+  ).toString('base64');
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json',
+        authorization: `Basic ${credentials}`,
+      },
+      body: JSON.stringify({ email, role: role || undefined, message: message || undefined }),
+      signal: AbortSignal.timeout(8000),
+    });
+
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return { ok: false, error: body.error_description || body.error || `Vesopa said ${response.status}.` };
+    }
+    return { ok: true, url: body.url, expiresInDays: body.expires_in_days };
+  } catch (error) {
+    console.warn('[backoffice_auth] invitation not sent:', error.message);
+    return { ok: false, error: 'Vesopa could not be reached. Try again in a moment.' };
+  }
+}
+
+module.exports = { backofficeAuthRoutes, LIVE, ENABLED, ONLY, client, linkAndFind, inviteToVesopa };

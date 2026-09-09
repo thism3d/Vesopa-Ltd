@@ -285,11 +285,18 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                         ),
                       ],
                       const SizedBox(height: 18),
-                      // "(Vesopa icon) Login with Vesopa" — the brand's own
+                      // "(Vesopa icon) Continue with Vesopa" — the brand's own
                       // mark rather than the open-in-new arrow it wore before,
                       // and a filled button rather than an outlined one when
                       // it is the only way in. A venue should not have to work
                       // out which of two buttons is the real one.
+                      //
+                      // The WORDS match the back office and the kitchen, to the
+                      // letter. They did not: this said "Login with" and the
+                      // back office said "Continue with", which is the sort of
+                      // difference nobody reports and everybody half-notices —
+                      // and on a sign-in button the whole point is being
+                      // recognised without being read.
                       _vesopaOnly
                           ? FilledButton.icon(
                               style: FilledButton.styleFrom(
@@ -310,7 +317,7 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                                     )
                                   : const VesopaMark(size: 20),
                               label: const Text(
-                                'Login with Vesopa',
+                                'Continue with Vesopa',
                                 style: TextStyle(
                                   fontSize: 15,
                                   fontWeight: FontWeight.w600,
@@ -325,7 +332,7 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                               onPressed: _busy ? null : _vesopaSignIn,
                               icon: const VesopaMark(size: 18),
                               label: const Text(
-                                'Login with Vesopa',
+                                'Continue with Vesopa',
                                 style: TextStyle(
                                   fontSize: 15,
                                   fontWeight: FontWeight.w600,

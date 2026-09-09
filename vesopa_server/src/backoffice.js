@@ -10,6 +10,7 @@ const {
 } = require('./member_numbers');
 const { accessGuard } = require('./permissions');
 const { ALLERGENS, cleanAllergens } = require('./allergens');
+const { inviteToVesopa, LIVE: VESOPA_SIGN_IN, ONLY: VESOPA_ONLY } = require('./backoffice_auth');
 
 // Product images. Stored on disk under public/uploads and served statically.
 // Capped and type-checked, so an upload cannot fill the disk or smuggle in a
@@ -1291,11 +1292,31 @@ function backofficeRoutes({ pool, broadcast, secret }) {
   });
 
   router.post('/users', auth, async (req, res, next) => {
-    const { email, name, password, approved } = req.body || {};
-    if (!email || !name || !password) {
-      return res
-        .status(400)
-        .json({ error: 'Name, email and password are required' });
+    const { email, name, approved } = req.body || {};
+    let { password } = req.body || {};
+
+    if (!email || !name) {
+      return res.status(400).json({ error: 'Name and email are required' });
+    }
+
+    /*
+     * NO PASSWORD IS ASKED FOR WHEN VESOPA IS THE ONLY WAY IN.
+     *
+     * With `VESOPA_AUTH_BACKOFFICE_ONLY` on, the password form is not rendered
+     * and no password can ever be used — so demanding one here means a manager
+     * inventing a secret, typing it twice, and sending it to a colleague over
+     * WhatsApp for a door that is not there. That is not a smaller risk than no
+     * password; it is a real credential in a chat log for nothing.
+     *
+     * The column is NOT NULL and the hash is what stops the row being a way in
+     * if the flag is ever turned back off, so it is filled with random bytes
+     * that are hashed and then thrown away. Nobody knows it, including us.
+     */
+    if (!password) {
+      if (!VESOPA_ONLY) {
+        return res.status(400).json({ error: 'Name, email and password are required' });
+      }
+      password = crypto.randomBytes(32).toString('base64url');
     }
 
     // A non-admin can only add people to their own office — never to someone
@@ -1327,12 +1348,80 @@ function backofficeRoutes({ pool, broadcast, secret }) {
         );
       }
       broadcast({ type: 'users.updated' });
-      res.status(201).json({ id: r.insertId });
+
+      /*
+       * INVITE THEM STRAIGHT AWAY, when Vesopa is how people sign in here.
+       *
+       * A staff row on its own is a person who cannot get in and has not been
+       * told anything — and the manager has no reason to suspect a second step
+       * exists, because from their side they have just added somebody. So the
+       * invitation goes with the row.
+       *
+       * Its failure is REPORTED, NOT THROWN. The user has been created and
+       * that must stand; what an unreachable Vesopa costs is one press of
+       * "Invite through Vesopa" on the row that is now in the list.
+       */
+      let invited = null;
+      if (VESOPA_SIGN_IN) {
+        invited = await inviteToVesopa({
+          email,
+          message: `You have been added to the back office for ${req.user.officeName || 'your venue'}.`,
+        });
+      }
+
+      res.status(201).json({
+        id: r.insertId,
+        invited: invited ? invited.ok : null,
+        invite_error: invited && !invited.ok ? invited.error : undefined,
+      });
     } catch (e) {
       if (e.code === 'ER_DUP_ENTRY') {
         return res.status(409).json({ error: 'That email is already in use' });
       }
       next(e);
+    }
+  });
+
+  /**
+   * Send — or re-send — the Vesopa invitation for somebody already on the list.
+   *
+   * The row and the invitation are separate things and either can exist without
+   * the other: somebody added before Vesopa sign-in was switched on has a row
+   * and no invitation, and somebody who deleted the email has a row and a dead
+   * one. This is the button for both.
+   *
+   * `mayEditPeople`, the same permission as changing a role. Sending an
+   * invitation decides who may hold an account here, which is the same kind of
+   * decision.
+   */
+  router.post('/users/:id/vesopa-invite', mayEditPeople, async (req, res, next) => {
+    try {
+      if (!VESOPA_SIGN_IN) {
+        return res.status(400).json({ error: 'Vesopa sign-in is not switched on here.' });
+      }
+
+      const [rows] = await pool.execute(
+        'SELECT email, name, office_id, role FROM backoffice_users WHERE id = ?',
+        [req.params.id],
+      );
+      const person = rows[0];
+      if (!person) return res.status(404).json({ error: 'No such user' });
+
+      // The same isolation as every other route here: an office manager acts
+      // on their own office and nobody else's.
+      if (req.user.role !== 'admin' && person.office_id !== req.user.officeId) {
+        return res.status(403).json({ error: 'That user is not in your office' });
+      }
+
+      const result = await inviteToVesopa({
+        email: person.email,
+        message: `You have been added to the back office for ${req.user.officeName || 'your venue'}.`,
+      });
+      if (!result.ok) return res.status(502).json({ error: result.error });
+
+      return res.json({ ok: true, expires_in_days: result.expiresInDays });
+    } catch (e) {
+      return next(e);
     }
   });
 

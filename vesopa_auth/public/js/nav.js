@@ -11,10 +11,26 @@
  * router, so every branch here that is not certain gives up and lets the
  * browser do it.
  *
- * FORMS ARE NEVER INTERCEPTED. Signing in, submitting a code, saving a profile,
- * consenting to an application — all of those post normally and follow the
- * server's redirect. They are the paths where being wrong costs the most, and
- * they gain nothing from being fetched in the background.
+ * FORMS ARE INTERCEPTED TOO, and that is the change the owner asked for:
+ * *"why the browser native loading is showing fix that properly no loading
+ * should be on browser only load the Vesopa loading bar"*. A link handled here
+ * shows nothing in the browser chrome; a form did, because a form was a real
+ * navigation — and forms are where every long wait on this site actually is.
+ *
+ * WHAT MAKES IT SAFE, given these are the paths where being wrong costs most.
+ * The request carries `x-vesopa-nav: 1`, and a redirect from a route that sees
+ * that header comes back as `204` with the address in `X-Vesopa-Location`
+ * rather than as a `303` that `fetch` would follow silently (see
+ * src/middleware.js). So the router always knows where the server sent it, and:
+ *
+ *   another origin        a real navigation — an OAuth hand-off is leaving
+ *   same origin           fetch, swap, push the URL
+ *   HTML back instead     a form that came back with an error; swap in place
+ *   anything unexpected   submit the form again, natively, and get out of the way
+ *
+ * A form that another script has already handled is left entirely alone —
+ * `defaultPrevented` is checked, and this listener is on the bubble phase so
+ * a form's own handler has always run first.
  */
 (function () {
   'use strict';
@@ -274,6 +290,156 @@
      * a moment before the page it is describing actually arrives.
      */
   }
+
+  // -------------------------------------------------------------------------
+  // Forms
+  // -------------------------------------------------------------------------
+
+  /** Should this submission be handled here, or left to the browser? */
+  function shouldSubmit(form, event) {
+    if (event.defaultPrevented) return false;
+    if (!form || form.hasAttribute('data-no-router')) return false;
+    // A GET form is a search box; letting it through would need the query
+    // string assembled by hand, and there is one on this site.
+    if ((form.getAttribute('method') || 'get').toLowerCase() !== 'post') return false;
+
+    var action;
+    try {
+      action = new URL(form.getAttribute('action') || window.location.href, window.location.href);
+    } catch (e) {
+      return false;
+    }
+    if (action.origin !== window.location.origin) return false;
+    // The same refusals as a link: these paths hand off to a provider or are
+    // not documents at all.
+    if (/^\/(auth|webauthn|api|health|jwks|\.well-known)(\/|$)/.test(action.pathname)) return false;
+    return true;
+  }
+
+  function submitNatively(form, submitter) {
+    form.setAttribute('data-no-router', '');
+    if (form.requestSubmit) form.requestSubmit(submitter || undefined);
+    else form.submit();
+  }
+
+  document.addEventListener('submit', function (event) {
+    var form = event.target;
+    if (!shouldSubmit(form, event)) return;
+
+    var submitter = event.submitter || null;
+    var action = new URL(form.getAttribute('action') || window.location.href, window.location.href);
+
+    var fields;
+    try {
+      fields = new FormData(form);
+    } catch (e) {
+      return;
+    }
+    /*
+     * The button that was pressed travels with the form.
+     *
+     * FormData does not include it — the browser adds it during a real
+     * submission — and the consent screen's two buttons are the same form with
+     * `decision=allow` and `decision=deny`. Losing it there would turn every
+     * Allow into neither.
+     */
+    if (submitter && submitter.name) fields.append(submitter.name, submitter.value || '');
+
+    /*
+     * THE ENCODING HAS TO MATCH WHAT THE SERVER PARSES, and posting a FormData
+     * silently does not.
+     *
+     * `fetch` sends a FormData as `multipart/form-data`. The server parses
+     * multipart only where a route asks it to — the avatar upload — so
+     * everywhere else `req.body` came back empty, `_csrf` with it, and every
+     * form on the site answered **403**. It looked exactly like the router
+     * working: no reload, no error page, and the same page again.
+     *
+     * So a form with no file in it is sent url-encoded, which is what it would
+     * have sent as a real submission. `URLSearchParams` built from the
+     * FormData does that and sets the header itself. A form that DOES carry a
+     * file keeps its FormData — the boundary is the point there, and the one
+     * route that receives one is set up for it.
+     */
+    var hasFile = false;
+    fields.forEach(function (value) {
+      if (typeof File !== 'undefined' && value instanceof File) hasFile = true;
+    });
+    var multipart =
+      hasFile ||
+      String(form.getAttribute('enctype') || '').toLowerCase() === 'multipart/form-data';
+    var body = multipart ? fields : new URLSearchParams(fields);
+
+    event.preventDefault();
+    bar.start();
+
+    fetch(action.href, {
+      method: 'POST',
+      body: body,
+      credentials: 'same-origin',
+      headers: { 'x-vesopa-nav': '1', 'x-requested-with': 'vesopa-nav' },
+      redirect: 'follow',
+    })
+      .then(function (response) {
+        var moved = response.headers.get('x-vesopa-location');
+        if (moved) {
+          var next;
+          try {
+            next = new URL(moved, window.location.href);
+          } catch (e) {
+            window.location.assign(moved);
+            return null;
+          }
+          if (next.origin !== window.location.origin) {
+            // Leaving. The browser does this one, and should.
+            window.location.assign(next.href);
+            return null;
+          }
+          go(next.href, true);
+          return null;
+        }
+
+        /*
+         * `response.redirected` means a redirect was followed without the
+         * header — a route that answered before requestContext ran, or a
+         * version of the server that predates it. The address is still known,
+         * so this is recoverable rather than a reason to reload.
+         */
+        if (response.redirected) {
+          var landed = new URL(response.url, window.location.href);
+          if (landed.origin !== window.location.origin) {
+            window.location.assign(landed.href);
+            return null;
+          }
+          return response.text().then(function (html) {
+            swap(html, landed.href, true);
+            return null;
+          });
+        }
+
+        var type = response.headers.get('content-type') || '';
+        if (type.indexOf('text/html') === -1) {
+          submitNatively(form, submitter);
+          return null;
+        }
+        return response.text().then(function (html) {
+          /*
+           * The form came back — a wrong code, a password that is not right, a
+           * validation message. The address does not change, because it did not
+           * change for a real submission either: a 400 renders in place.
+           */
+          swap(html, window.location.href, false);
+          return null;
+        });
+      })
+      .catch(function () {
+        // Offline, or the request never left. Let the browser do it, so the
+        // person sees the browser's own error rather than a page that quietly
+        // did nothing.
+        bar.done();
+        submitNatively(form, submitter);
+      });
+  });
 
   document.addEventListener('click', function (event) {
     var link = event.target.closest ? event.target.closest('a') : null;

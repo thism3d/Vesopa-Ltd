@@ -3,6 +3,22 @@
 <% if (saved) { %><p class="notice-good">Saved.</p><% } %>
 <% if (error) { %><p class="form-error" role="alert"><%= error %></p><% } %>
 
+<%
+  /*
+   * TWO QUESTIONS, TWO PANELS: how do I get in, and how do I get back in.
+   *
+   * They used to be one list, with recovery rows carrying "· recovery only" at
+   * the end of a run of small grey text. Nobody reads the end of a line of
+   * small grey text, so a recovery address read as another way to sign in —
+   * which is precisely what it is not, and the difference matters most on the
+   * day somebody is locked out.
+   */
+  const label = (row) =>
+    row.type === 'email' ? 'Email'
+      : row.type === 'phone' ? 'Phone'
+      : row.type.charAt(0).toUpperCase() + row.type.slice(1);
+%>
+
 <section class="panel">
   <h2>Ways you can sign in</h2>
   <%
@@ -27,13 +43,12 @@
           <%= row.identifier %><%= row.display && row.display !== row.identifier ? ' (' + row.display + ')' : '' %>
         </span>
         <span class="row-meta">
-          <%= row.type === 'email' ? 'Email' : row.type === 'phone' ? 'Phone' : row.type.charAt(0).toUpperCase() + row.type.slice(1) %><%
+          <%= label(row) %><%
           %><%= row.verified_at ? ' · confirmed' : ' · not confirmed' %><%
-          %><%= row.is_recovery ? ' · recovery only' : '' %><%
           %><%= row.is_private_relay ? ' · Apple private relay' : '' %>
         </span>
       </div>
-      <% if (methodCount > 1 || row.is_recovery) { %>
+      <% if (methodCount > 1) { %>
       <form method="post" action="/account/linked/<%= row.id %>/remove">
         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
         <button type="submit" class="linklike">Remove</button>
@@ -56,6 +71,52 @@
   </p>
 </section>
 
+<!-- ------------------------------------------------------ Getting back in -->
+<section class="panel">
+  <h2>Getting back in</h2>
+  <p class="row-meta mb-2">
+    A recovery address or number can get you back into your account if you are
+    locked out. It can never be used to sign in on its own, so adding one does
+    not make the account easier to reach for anybody else.
+  </p>
+
+  <% if (!recovery.length) { %>
+  <p class="row-meta">You have not set one.</p>
+  <% } %>
+
+  <ul class="rows">
+    <% recovery.forEach(function (row) { %>
+    <li class="row-with-action">
+      <div>
+        <span class="row-main"><%= row.identifier %></span>
+        <span class="row-meta">
+          <%= label(row) %><%
+          %><%= row.verified_at ? ' · confirmed' : ' · not confirmed yet' %>
+        </span>
+      </div>
+      <div class="row-actions">
+        <%
+          /*
+           * Change, not Remove-then-Add. Two steps means there is a moment when
+           * the account has no way back at all, and it is the moment somebody
+           * gets distracted and closes the tab.
+           *
+           * The link goes to a page that asks for the password, the
+           * authenticator or a code first — see src/reauth.js for why this
+           * particular edit, and only this one, is worth an extra step.
+           */
+        %>
+        <a class="linklike" href="/account/recovery/<%= row.id %>">Change</a>
+        <form method="post" action="/account/linked/<%= row.id %>/remove">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <button type="submit" class="linklike">Remove</button>
+        </form>
+      </div>
+    </li>
+    <% }) %>
+  </ul>
+</section>
+
 <% if (available.length) { %>
 <section class="panel">
   <h2>Add an account</h2>
@@ -68,33 +129,79 @@
     </a>
     <% }) %>
   </div>
+  <p class="hint mt-3">
+    Linking one of these does not give it access to anything on your Vesopa
+    account. It only means you can press its button instead of typing a code.
+  </p>
 </section>
 <% } %>
 
 <section class="panel">
   <h2>Add an email address or phone number</h2>
-  <form method="post" action="/account/linked/add">
+
+  <%
+    /*
+     * AN EMAIL / PHONE TOGGLE, LIKE THE SIGN-IN PAGE — the owner asked for the
+     * two pages to behave the same, and they now do. What was here was a
+     * `<select>` with two options, which is three taps on a phone to answer a
+     * question with two answers.
+     *
+     * IT IS PURE CSS, and that is worth the slightly odd markup. The radios sit
+     * before the panes so that `:checked ~` can reach them, and nothing here
+     * needs a script — which matters because the router replaces the body on
+     * every navigation, and a toggle that depends on a script rebinding itself
+     * is a toggle that stops working on the second page somebody visits.
+     *
+     * The server does not trust the toggle anyway: it reads what was typed and
+     * follows that, exactly as /login does. The toggle chooses the keyboard and
+     * the label, not the outcome.
+     *
+     * The two fields have DIFFERENT NAMES, which looks like an oversight and is
+     * not. A hidden pane still submits — `display: none` hides a field, it does
+     * not exclude it — so two inputs both called `value` would arrive as an
+     * array and the empty one might win. Two names, and the server takes
+     * whichever was actually filled in.
+     */
+  %>
+  <form method="post" action="/account/linked/add" class="seg-form">
     <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-    <div class="field">
-      <label for="value">Email address or mobile number</label>
-      <input type="text" id="value" name="value" autocomplete="off"
-             placeholder="you@example.com or 07911 123456">
+
+    <input class="seg-radio" type="radio" name="type" id="add-email" value="email" checked>
+    <input class="seg-radio" type="radio" name="type" id="add-phone" value="phone">
+
+    <div class="seg" role="radiogroup" aria-label="What are you adding?">
+      <label for="add-email">
+        <%- include('../partials/icon', { name: 'mail' }) %>
+        <span>Email</span>
+      </label>
+      <label for="add-phone">
+        <%- include('../partials/icon', { name: 'phone' }) %>
+        <span>Phone</span>
+      </label>
     </div>
-    <div class="field">
-      <label for="type">What is it?</label>
-      <select id="type" name="type">
-        <option value="email">Email address</option>
-        <option value="phone">Mobile number</option>
-      </select>
+
+    <div class="seg-pane seg-pane-email">
+      <div class="field">
+        <label for="value-email">Email address</label>
+        <input type="email" id="value-email" name="value_email" autocomplete="email"
+               autocapitalize="off" spellcheck="false" placeholder="you@example.com">
+      </div>
     </div>
+
+    <div class="seg-pane seg-pane-phone">
+      <div class="field">
+        <label for="value-phone">Mobile number</label>
+        <input type="tel" id="value-phone" name="value_phone" autocomplete="tel"
+               placeholder="07911 123456">
+        <p class="hint">UK mobile numbers only for now.</p>
+      </div>
+    </div>
+
     <label class="tickbox">
       <input type="checkbox" name="recovery" value="1">
-      <span>For recovery only — do not let it sign me in</span>
+      <span>For getting back in only — do not let it sign me in</span>
     </label>
-    <p class="hint">
-      A recovery address can get you back in if you are locked out, but cannot
-      be used to sign in on its own.
-    </p>
+
     <button class="btn btn-quiet" type="submit">Send a confirmation code</button>
   </form>
 </section>

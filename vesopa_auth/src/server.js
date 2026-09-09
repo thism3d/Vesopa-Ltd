@@ -33,6 +33,8 @@ const policies = require('./routes/policies');
 const admin = require('./routes/admin');
 const developers = require('./routes/developers');
 const device = require('./routes/device');
+const reauth = require('./routes/reauth');
+const appapi = require('./routes/appapi');
 
 const app = express();
 
@@ -144,9 +146,11 @@ app.get('/.well-known/security.txt', (req, res) => {
  * page route must never be able to shadow one — and /.well-known/ in
  * particular has to answer before anything else claims it.
  */
+app.use('/', appapi);
 app.use('/', oidc);
 app.use('/', social);
 app.use('/', mfa);
+app.use('/', reauth);
 app.use('/', account);
 app.use('/', policies);
 app.use('/', admin);

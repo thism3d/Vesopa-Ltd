@@ -1461,3 +1461,97 @@ pre.code {
   .sub-mark svg { width: 21px; height: 21px; }
   .sub-product, .sub-product-plain { font-size: 16.5px; }
 }
+
+
+/* ==========================================================================
+ * A two-way toggle with no script at all
+ * ==========================================================================
+ * Used by "Add an email address or phone number". The sign-in page has the same
+ * control and drives it from login.js; this one cannot, because the router
+ * replaces the body on every navigation and a toggle whose script has to
+ * rebind itself is a toggle that stops working on the second page somebody
+ * visits.
+ *
+ * So the radios come FIRST in the markup and `:checked ~` reaches forward to
+ * both the labels and the panes. The order looks odd in the template and is the
+ * whole mechanism.
+ * ======================================================================== */
+
+.seg-form { margin: 0; }
+
+/* Present and reachable, just not drawn. `display: none` would take them out of
+   the tab order and make the control keyboard-dead. */
+.seg-radio {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.seg {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+}
+.seg label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 9px 8px;
+  border-radius: 8px;
+  font-size: 14.5px;
+  font-weight: 550;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+.seg label svg { width: 17px; height: 17px; }
+.seg label:hover { color: var(--text); }
+
+#add-email:checked ~ .seg label[for="add-email"],
+#add-phone:checked ~ .seg label[for="add-phone"] {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .08);
+}
+/* Keyboard focus has to be visible on the LABEL, because the input it belongs
+   to is the invisible one. */
+#add-email:focus-visible ~ .seg label[for="add-email"],
+#add-phone:focus-visible ~ .seg label[for="add-phone"] {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* Both panes are shown when this stylesheet does not load, which is the right
+   fallback: two labelled fields and a person who fills in one of them. */
+.seg-pane { display: none; }
+#add-email:checked ~ .seg-pane-email,
+#add-phone:checked ~ .seg-pane-phone { display: block; }
+
+/* Two actions on one row — "Change" and "Remove" on a recovery address. */
+.row-actions { display: flex; align-items: center; gap: 14px; flex: 0 0 auto; }
+.row-actions form { margin: 0; }
+
+
+/* The "who can join" banner at the top of an application's people page. It is
+   a statement rather than a control, so it is a row of text with a mark and not
+   a card that looks pressable. */
+.access-state { display: flex; gap: 14px; align-items: flex-start; }
+.access-state > div { min-width: 0; }
+.access-state strong { display: block; font-size: 15px; margin-bottom: 3px; }
+.access-mark {
+  display: grid;
+  place-items: center;
+  flex: 0 0 38px;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+}
+.access-mark svg { width: 19px; height: 19px; }

@@ -115,6 +115,47 @@ function fatal(res, heading, message) {
   });
 }
 
+/**
+ * "You are signed in, and this application is not for you."
+ *
+ * The address is shown because it is the thing an administrator will ask for,
+ * and because on a shared machine it is often the whole answer: the person is
+ * signed in as somebody else and has not noticed.
+ */
+async function refuse(res, req, { application, session, reason, redirectUri, state }) {
+  const account = await db.one(
+    `SELECT i.identifier FROM users u
+       JOIN user_identities i ON i.id = u.primary_email_id
+      WHERE u.id = ? AND i.revoked_at IS NULL`,
+    [session.user_id],
+  );
+
+  const back = `/oauth/authorize?${new URLSearchParams(req.query).toString()}`;
+  const params = new URLSearchParams({ error: 'access_denied' });
+  params.set(
+    'error_description',
+    reason === 'suspended'
+      ? 'Access to this application has been suspended.'
+      : 'This account has not been given access to this application.',
+  );
+  if (state) params.set('state', state);
+
+  return res.status(403).render('no-access', {
+    title: `${application.name} is not available to this account`,
+    nonce: res.locals.nonce,
+    config,
+    application,
+    session,
+    accountEmail: (account && account.identifier) || '',
+    reason,
+    // Where "carry on to the application anyway" goes — the ordinary OAuth
+    // error redirect, taken deliberately rather than automatically.
+    backToApp: `${redirectUri}${redirectUri.includes('?') ? '&' : '?'}${params.toString()}`,
+    returnTo: back,
+    noindex: true,
+  });
+}
+
 router.get('/oauth/authorize', async (req, res, next) => {
   try {
     const {
@@ -195,8 +236,32 @@ router.get('/oauth/authorize', async (req, res, next) => {
     const member = await clients.membership(application.id, session.user_id);
     if (!member || member.status === 'removed') {
       if (!application.allow_self_enroll) {
-        return redirectError(res, redirectUri, state, 'access_denied',
-          'You do not have access to this application.');
+        /*
+         * TURNED AWAY, AND TOLD WHY, HERE.
+         *
+         * This used to redirect back to the application with
+         * `error=access_denied`, which is what the specification says and what
+         * the owner experienced as "the link is not working": press Continue
+         * with Vesopa, sign in perfectly successfully, and land back on the
+         * back office looking at "we could not finish signing you in". Nothing
+         * had gone wrong — the account simply was not on the list — and there
+         * was no way to tell those two apart from where he was standing.
+         *
+         * So the refusal is a page on this origin, in words, naming the
+         * application and the address that was refused, with the two things a
+         * person in that position actually wants: try a different account, or
+         * go back and ask. The link back to the application is still there and
+         * still carries `error=access_denied`, so a client that wants the
+         * callback can still have it — it is one press away instead of
+         * automatic.
+         */
+        return await refuse(res, req, {
+          application,
+          session,
+          reason: 'not_invited',
+          redirectUri,
+          state,
+        });
       }
       await clients.enrol(application.id, session.user_id);
 
@@ -219,8 +284,13 @@ router.get('/oauth/authorize', async (req, res, next) => {
         },
       });
     } else if (member.status === 'suspended') {
-      return redirectError(res, redirectUri, state, 'access_denied',
-        'Your access to this application has been suspended.');
+      return await refuse(res, req, {
+        application,
+        session,
+        reason: 'suspended',
+        redirectUri,
+        state,
+      });
     }
 
     /*
@@ -292,6 +362,38 @@ router.get('/oauth/authorize', async (req, res, next) => {
         return redirectError(res, redirectUri, state, 'consent_required',
           'This application needs your permission first.');
       }
+      /*
+       * Two extra facts the screen needs, and neither is decorative.
+       *
+       * The ADDRESS, because "wants to use your Vesopa account (Vesopa
+       * Administrator)" tells somebody with two accounts nothing — a display
+       * name is not what distinguishes them, an address is. The session does
+       * not carry one, so it is fetched here rather than being put on every
+       * session load for the one page that wants it.
+       *
+       * And whether this person ADMINISTERS the application they are being
+       * asked to authorise. That is a warning rather than a refusal; the note
+       * on the screen itself explains where the line is.
+       */
+      const [account, administers] = await Promise.all([
+        db.one(
+          `SELECT i.identifier FROM users u
+             JOIN user_identities i ON i.id = u.primary_email_id
+            WHERE u.id = ? AND i.revoked_at IS NULL`,
+          [session.user_id],
+        ),
+        db.one(
+          `SELECT 1 AS yes
+             FROM applications a
+             LEFT JOIN organisation_members om
+                    ON om.organisation_id = a.organisation_id AND om.user_id = ?
+             LEFT JOIN application_developers ad
+                    ON ad.application_id = a.id AND ad.user_id = ?
+            WHERE a.id = ? AND (om.user_id IS NOT NULL OR ad.user_id IS NOT NULL)`,
+          [session.user_id, session.user_id, application.id],
+        ),
+      ]);
+
       return res.render('consent', {
         title: `Allow ${application.name}?`,
         nonce: res.locals.nonce,
@@ -299,6 +401,8 @@ router.get('/oauth/authorize', async (req, res, next) => {
         application,
         scopes: scopes.describe,
         session,
+        accountEmail: (account && account.identifier) || '',
+        adminWarning: Boolean(administers),
         query: req.query,
         noindex: true,
       });

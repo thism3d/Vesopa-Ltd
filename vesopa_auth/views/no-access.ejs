@@ -1,0 +1,103 @@
+<%- include('partials/head') %>
+
+<%
+  /*
+   * "You are signed in, and this application is not for you."
+   *
+   * THE PAGE THAT WAS MISSING. Being turned away used to be a redirect back to
+   * the application carrying `error=access_denied`, which is what the
+   * specification prescribes and what the owner met as *"the link is not
+   * working"*: press Continue with Vesopa, sign in perfectly successfully, and
+   * land back on the back office looking at "we could not finish signing you
+   * in". Nothing had gone wrong. The account was simply not on the list — and
+   * from where he was standing those two are indistinguishable.
+   *
+   * The rule it is explaining is the owner's own: anybody may hold a Vesopa
+   * account, and no application has to take everybody. A menu enrols whoever
+   * scans a table; a back office does not. So this page's job is to say which
+   * kind of thing has happened, in a sentence, and offer the two things
+   * somebody in that position actually wants.
+   */
+  const shownName = (session.display_name || '').trim();
+  const chipInitial = (shownName || accountEmail || 'V').trim().charAt(0).toUpperCase();
+%>
+
+<main class="auth-shell">
+  <div class="auth-card">
+
+    <a class="brand" href="/" aria-label="Vesopa">
+      <img class="brand-mark" src="/brand/logo-light.svg" alt="" width="112" height="15" data-logo-light>
+      <img class="brand-mark" src="/brand/logo-dark.svg" alt="" width="112" height="15" data-logo-dark>
+    </a>
+
+    <div class="consent-app">
+      <% if (application.logo_path) { %>
+      <img class="consent-logo" src="<%= application.logo_path %>" alt="" width="44" height="44">
+      <% } else { %>
+      <img class="consent-logo" src="/brand/app-logo.png" alt="" width="44" height="44">
+      <% } %>
+      <div>
+        <h1 class="auth-title"><%= application.name %></h1>
+        <p class="auth-sub">by <%= application.organisation_name %></p>
+      </div>
+    </div>
+
+    <% if (reason === 'suspended') { %>
+    <p class="consent-lead">
+      Access to <%= application.name %> has been suspended for this account.
+      Nothing has been removed from your Vesopa account, and your other
+      applications are unaffected.
+    </p>
+    <% } else { %>
+    <p class="consent-lead">
+      Your Vesopa account works — it has just not been given access to
+      <%= application.name %>. This application is not one anybody can join on
+      their own; somebody who administers it has to add you first.
+    </p>
+    <% } %>
+
+    <div class="panel-inline">
+      <p class="row-meta mt-0">Signed in as</p>
+      <div class="account-line">
+        <% if (session.avatar_path) { %>
+        <img class="account-chip-face" src="<%= session.avatar_path %>" alt="" width="30" height="30">
+        <% } else { %>
+        <span class="account-chip-face account-chip-empty" aria-hidden="true"><%= chipInitial %></span>
+        <% } %>
+        <span>
+          <strong><%= accountEmail || shownName || 'your Vesopa account' %></strong>
+        </span>
+      </div>
+      <p class="hint mb-0">
+        Quote this address to whoever administers <%= application.name %> and
+        they can invite you. The invitation arrives by email and takes one tap.
+      </p>
+    </div>
+
+    <%
+      /*
+       * "Use a different account" is first, because on a shared machine it is
+       * usually the whole answer — somebody is signed in as a colleague and has
+       * not noticed. It is a POST, because signing somebody out on a GET is a
+       * thing any page on the internet could do to you with an image tag.
+       */
+    %>
+    <form method="post" action="/logout" class="auth-form">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="return_to" value="<%= returnTo %>">
+      <button class="btn btn-primary" type="submit">Use a different account</button>
+    </form>
+
+    <p class="resend">
+      <a class="linklike" href="<%= backToApp %>" rel="nofollow">Back to <%= application.name %></a>
+    </p>
+
+    <p class="small-print">
+      Nothing about your Vesopa account has changed, and you are still signed
+      in. <a href="/account">Your account</a> ·
+      <a href="/account/apps">Connected apps</a>
+    </p>
+  </div>
+</main>
+
+<%- include('partials/foot') %>

@@ -23,6 +23,8 @@ const config = require('../config');
 const avatars = require('../avatars');
 const db = require('../db');
 const sessions = require('../sessions');
+const geo = require('../geo');
+const reauth = require('../reauth');
 const identity = require('../identity');
 const challenges = require('../challenges');
 const events = require('../events');
@@ -31,7 +33,7 @@ const csrf = require('../csrf');
 const providers = require('../providers');
 const tokens = require('../oauth/tokens');
 const { hashPassword, verifyPassword } = require('../crypto');
-const { normaliseEmail, normalisePhone } = require('../normalise');
+const { normaliseEmail, normalisePhone, guessIdentifierType } = require('../normalise');
 
 const router = express.Router();
 
@@ -58,6 +60,19 @@ function page(res, view, session, extra = {}) {
      * do is ask for the stylesheet that draws it.
      */
     styles: ['console'],
+    /*
+     * `sessions` and `geo` are handed to every template here rather than
+     * cherry-picked per route.
+     *
+     * The devices page and the history page both need to name a device, choose
+     * an icon for it and write out a country, and passing four loose functions
+     * into two renders is how one of them ends up with three of them and a
+     * `describeDevice is not a function` on a live page. The modules have no
+     * state and nothing in them writes; handing them over whole is the smaller
+     * risk and the shorter file.
+     */
+    sessions,
+    geo,
     ...extra,
   });
 }
@@ -474,8 +489,16 @@ router.get('/account/linked', async (req, res, next) => {
     const held = new Set(linked.map((row) => row.type));
 
     return page(res, 'account/linked', session, {
-      title: 'Linked accounts',
-      linked,
+      title: 'How you sign in',
+      /*
+       * Recovery rows are separated from sign-in rows here rather than in the
+       * template, because they answer different questions and the page now asks
+       * them separately: "how do I get in" and "how do I get back in". Mixed
+       * into one list — which is what it was — a recovery address reads as
+       * another way to sign in, which is exactly what it is not.
+       */
+      linked: linked.filter((row) => !row.is_recovery),
+      recovery: linked.filter((row) => row.is_recovery),
       // Only providers this server can actually complete are offered.
       available: providers.enabled().filter((provider) => !held.has(provider.key)),
       methodCount: await identity.countAuthMethods(session.user_id),
@@ -493,8 +516,24 @@ router.post('/account/linked/add', csrf.verify, async (req, res, next) => {
     const session = await guard(req, res);
     if (!session) return undefined;
 
-    const type = req.body.type === 'phone' ? 'phone' : 'email';
-    const typed = String(req.body.value || '').trim();
+    /*
+     * Whichever box was filled in. The form has one per channel — see the note
+     * in linked.ejs on why they cannot share a name — and the toggle only says
+     * which one was on screen.
+     */
+    const picked = req.body.type === 'phone' ? req.body.value_phone : req.body.value_email;
+    const typed = String(
+      req.body.value || picked || req.body.value_email || req.body.value_phone || '',
+    ).trim();
+
+    /*
+     * FOLLOW WHAT THEY TYPED, not which tab was showing — the same rule the
+     * sign-in page uses. Being told "that email address does not look right"
+     * when you have carefully typed a phone number is a small insult, and it is
+     * entirely avoidable: the two are trivially distinguishable.
+     */
+    const guessed = guessIdentifierType(typed);
+    const type = guessed || (req.body.type === 'phone' ? 'phone' : 'email');
     const normalised = type === 'email' ? normaliseEmail(typed) : normalisePhone(typed, 'GB');
 
     if (!normalised) {
@@ -532,6 +571,7 @@ router.post('/account/linked/add', csrf.verify, async (req, res, next) => {
       destination: typed,
       normalised,
       isRecovery: req.body.recovery === '1',
+      replaces: String(req.body.replaces || ''),
       challengeId: result.challengeId,
       error: '',
     });
@@ -557,6 +597,7 @@ router.post('/account/linked/confirm', csrf.verify, async (req, res, next) => {
         destination: req.body.destination,
         normalised: req.body.normalised,
         isRecovery: req.body.recovery === '1',
+        replaces: String(req.body.replaces || ''),
         challengeId: req.body.challenge_id,
         error: 'That code is not right. Check it and try again.',
       });
@@ -585,6 +626,30 @@ router.post('/account/linked/confirm', csrf.verify, async (req, res, next) => {
       return res.redirect(303, '/account/linked?error=That+is+already+in+use.');
     }
 
+    /*
+     * REPLACING a recovery address, rather than adding one.
+     *
+     * The old row goes only AFTER the new one is attached and proved, and only
+     * if the person passed the confirmation gate to start the change. Removing
+     * it first would leave a window where the account has no way back at all —
+     * which is the state this whole feature exists to prevent — and doing it
+     * without the gate would make "change the recovery address" the easiest
+     * takeover on the site.
+     */
+    const replaces = Number(req.body.replaces || 0);
+    if (replaces && reauth.fresh(session)) {
+      const gone = await identity.revokeIdentity(session.user_id, replaces, 'replaced');
+      if (gone.ok) {
+        await events.recordAudit({
+          actorUserId: session.user_id,
+          action: 'identity.replaced',
+          targetType: 'identity',
+          targetId: String(replaces),
+          ip: req.clientIp,
+        });
+      }
+    }
+
     await events.recordAudit({
       actorUserId: session.user_id,
       action: 'identity.linked',
@@ -604,6 +669,40 @@ router.post('/account/linked/confirm', csrf.verify, async (req, res, next) => {
     });
 
     return res.redirect(303, '/account/linked?saved=1');
+  } catch (error) {
+    return next(error);
+  }
+});
+
+/**
+ * Change a recovery address or number.
+ *
+ * BEHIND THE CONFIRMATION GATE, and this is the route the gate was built for.
+ * Whoever holds the recovery address gets the account back after everything
+ * else is lost, so somebody who has borrowed a signed-in session changes it
+ * first and then locks the owner out at leisure. Every other change here is
+ * reversible by the owner; this one is not, so it asks for the password, the
+ * authenticator, or a code to the ORDINARY address — never to the recovery one,
+ * which would be a circle with nobody outside it. See src/reauth.js.
+ */
+router.get('/account/recovery/:id', async (req, res, next) => {
+  try {
+    const session = await guard(req, res);
+    if (!session) return undefined;
+    if (!reauth.guard(req, res, session)) return undefined;
+
+    const row = await db.one(
+      `SELECT id, type, identifier, is_recovery FROM user_identities
+        WHERE id = ? AND user_id = ? AND revoked_at IS NULL AND is_recovery = 1`,
+      [req.params.id, session.user_id],
+    );
+    if (!row) return res.redirect(303, '/account/linked');
+
+    return page(res, 'account/recovery', session, {
+      title: 'Change your recovery address',
+      identity: row,
+      error: req.query.error || '',
+    });
   } catch (error) {
     return next(error);
   }
@@ -671,7 +770,6 @@ router.get('/account/devices', async (req, res, next) => {
       title: 'Your devices',
       devices: await sessions.listDevices(session.user_id),
       liveSessions: await sessions.listForUser(session.user_id),
-      describeDevice: sessions.describeDevice,
     });
   } catch (error) {
     return next(error);
@@ -752,7 +850,6 @@ router.get('/account/history', async (req, res, next) => {
     return page(res, 'account/history', session, {
       title: 'Sign-in history',
       history,
-      describeDevice: sessions.describeDevice,
     });
   } catch (error) {
     return next(error);

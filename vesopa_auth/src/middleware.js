@@ -30,21 +30,39 @@ function securityHeaders(req, res, next) {
    * reCAPTCHA needs three exceptions, and only when it is switched on.
    *
    * The token can only be minted by Google's own code, so `script-src` has to
-   * admit it — but the exception is written as narrowly as it can be: two
-   * named hosts, `frame-src` for the invisible challenge iframe v3 still uses,
-   * and nothing else. `connect-src` is deliberately NOT opened: the v3 script
-   * talks to Google inside its own frame, and widening connect-src on the
-   * origin that holds every session to save checking would be the wrong trade.
+   * admit it, `frame-src` has to admit the invisible challenge frame v3 still
+   * uses, and `connect-src` has to admit the one request the script makes back
+   * to Google while it is scoring.
    *
-   * With no site key configured the arrays are empty and the policy is exactly
-   * what it was — which is the state a development machine is in, and the
-   * state this server is in until somebody sets the keys.
+   * THE THIRD ONE WAS LEFT OUT ON PURPOSE, AND THAT WAS A MISTAKE. The note
+   * here used to say the script talks to Google inside its own frame, so
+   * connect-src did not need opening. Measured in a browser, it does not: every
+   * sign-in logged
+   *
+   *   Connecting to 'https://www.google.com/recaptcha/api2/clr' violates the
+   *   following Content Security Policy directive: "connect-src 'self'"
+   *
+   * A token was still minted, so nothing was visibly broken — which is the
+   * worst version of this: a policy violation on the sign-in page, in every
+   * visitor's console, that nobody has a reason to investigate. And a refused
+   * request is a signal Google does not get, on the exact call whose purpose is
+   * to decide whether this is a person.
+   *
+   * The exception is one path prefix on one host that `script-src` already
+   * admits. `connect-src` was worth defending because this origin holds every
+   * session; it is not made meaningfully weaker by allowing the same host the
+   * script itself comes from, and it is made honest.
+   *
+   * With no site key configured every one of these is empty and the policy is
+   * exactly what it was — the state of a development machine, and of this
+   * server until somebody sets the keys.
    */
   const captchaOn = Boolean(config.captcha && config.captcha.siteKey);
   const captchaScript = captchaOn
     ? ' https://www.google.com/recaptcha/ https://www.gstatic.com/recaptcha/'
     : '';
-  const captchaFrame = captchaOn ? ["frame-src https://www.google.com/recaptcha/"] : [];
+  const captchaConnect = captchaOn ? ' https://www.google.com/recaptcha/' : '';
+  const captchaFrame = captchaOn ? ['frame-src https://www.google.com/recaptcha/'] : [];
 
   res.setHeader(
     'Content-Security-Policy',
@@ -57,7 +75,7 @@ function securityHeaders(req, res, next) {
       // the page rather than fetched — the secret must not travel as a URL.
       "img-src 'self' data:",
       "font-src 'self'",
-      "connect-src 'self'",
+      `connect-src 'self'${captchaConnect}`,
       // manifest-src falls back to default-src, which is 'none' — so without
       // this line the web app manifest is refused and the site can never be
       // installed. It fails silently in the console, not on the page.
@@ -110,6 +128,41 @@ function securityHeaders(req, res, next) {
 function requestContext(req, res, next) {
   req.clientIp = (req.ip || '').replace(/^::ffff:/, '').slice(0, 45);
   req.userAgent = String(req.get('user-agent') || '').slice(0, 400);
+
+  /*
+   * A REDIRECT THE ROUTER CAN SEE.
+   *
+   * The owner's complaint was that the browser's own loading bar appears —
+   * *"no loading should be on browser only load the Vesopa loading bar"*. The
+   * router in nav.js already handles links; what was left was forms, and a form
+   * is where the waits actually are: sending a code, checking a password,
+   * answering a consent screen.
+   *
+   * A form cannot be fetched naively, because almost every one of these routes
+   * answers `303 See Other` and `fetch` follows a redirect silently. The
+   * router would then be handed the CONTENT of the page it was sent to with no
+   * way to know the address changed — so the URL bar would lie, and Back would
+   * be wrong.
+   *
+   * So when the request says it came from the router, a redirect is answered
+   * as `204` with the address in a header instead. The router reads it and
+   * decides: same origin, fetch and swap and push the URL; another origin —
+   * the hand-off at the end of an OAuth authorisation — a real navigation,
+   * because that is genuinely leaving.
+   *
+   * Only the SHAPE of the answer changes, never the decision. Every check, every
+   * rate limit and every audit line has already happened by the time a route
+   * calls res.redirect.
+   */
+  if (req.get('x-vesopa-nav') === '1') {
+    const sendRedirect = res.redirect.bind(res);
+    res.redirect = function navRedirect(statusOrUrl, maybeUrl) {
+      const url = typeof statusOrUrl === 'string' ? statusOrUrl : maybeUrl;
+      if (typeof url !== 'string') return sendRedirect(statusOrUrl, maybeUrl);
+      res.setHeader('X-Vesopa-Location', url);
+      return res.status(204).end();
+    };
+  }
 
   res.locals.config = config;
   res.locals.path = req.path;

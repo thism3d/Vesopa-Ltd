@@ -19,6 +19,7 @@
  */
 
 const db = require('./db');
+const geo = require('./geo');
 
 /** Something a person tried, whether or not it worked. */
 async function recordLogin({
@@ -49,7 +50,9 @@ async function recordLogin({
         String(failureReason).slice(0, 60),
         String(identifier).slice(0, 255),
         String(ip).slice(0, 45),
-        String(country).slice(0, 2),
+        // Whatever the caller said, or whatever is already known about the
+        // address. Never a fresh lookup — see the note on geo.peek.
+        String(country || geo.peek(ip)).slice(0, 2),
         String(userAgent).slice(0, 400),
         deviceId,
       ],

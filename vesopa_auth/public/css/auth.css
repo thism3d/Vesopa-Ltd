@@ -37,6 +37,12 @@
   --focus: #000000;
   --danger: #a3231c;
   --danger-bg: #fdeceb;
+  /* Amber, for "are you sure" as distinct from "something is wrong". The one
+     thing it must never be is the brand green: green on this site means the
+     primary action, and a caution the colour of Allow is not a caution. */
+  --warn: #7a5300;
+  --warn-line: #e2c069;
+  --warn-bg: #fff8e6;
 
   --radius: 12px;
   --radius-sm: 9px;
@@ -66,6 +72,9 @@
     --focus: #a5c715;
     --danger: #ff9a92;
     --danger-bg: #2a1512;
+    --warn: #f0cd77;
+    --warn-line: #5f4c14;
+    --warn-bg: #241d06;
     --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 12px 32px rgba(0, 0, 0, .55);
   }
 }
@@ -82,6 +91,9 @@
   --focus: #a5c715;
   --danger: #ff9a92;
   --danger-bg: #2a1512;
+  --warn: #f0cd77;
+  --warn-line: #5f4c14;
+  --warn-bg: #241d06;
   --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 12px 32px rgba(0, 0, 0, .55);
 }
 
@@ -259,10 +271,26 @@ body {
   margin-bottom: 6px;
 }
 
+/* EVERY TEXTUAL INPUT, and the list is exhaustive on purpose.
+ *
+ * It used to name five types, and `date` was not one of them — so the date of
+ * birth field on the profile page fell through to the browser's own drawing.
+ * On Safari that is a 102px pill reading "Sep 9, 2026" sitting in the middle of
+ * a full-width form: not broken, just visibly not part of the page, which is
+ * how it was reported. A selector per type rather than a bare `input` because
+ * checkboxes, radios and file inputs must NOT get this. */
 input[type="email"],
 input[type="tel"],
 input[type="text"],
 input[type="password"],
+input[type="search"],
+input[type="url"],
+input[type="number"],
+input[type="date"],
+input[type="datetime-local"],
+input[type="month"],
+input[type="time"],
+textarea,
 select {
   width: 100%;
   /* 16px, so that iOS does not zoom the page when the field is focused. */
@@ -276,15 +304,72 @@ select {
   min-height: 44px;
 }
 
-input::placeholder { color: var(--text-muted); opacity: .75; }
+/* Safari draws a date input as a shrink-to-fit inline box and ignores `width`
+ * unless the platform appearance is turned off first. Without these three lines
+ * the rule above simply does not apply to it, which is exactly what was wrong.
+ *
+ * `min-height` rather than `height`, and `align-items: center`, because
+ * WebKit's date field is a flex row of segments that otherwise sits on the top
+ * edge of the box. */
+input[type="date"],
+input[type="datetime-local"],
+input[type="month"],
+input[type="time"] {
+  -webkit-appearance: none;
+  appearance: none;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+/* The calendar button is a tap target and should look like one. */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  margin-left: auto;
+  padding: 4px;
+  cursor: pointer;
+  opacity: .55;
+}
+input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity: 1; }
+
+/* An empty date field on WebKit shows the placeholder segments in full-strength
+ * text, so a blank field reads as if it already has a value in it. */
+input[type="date"]::-webkit-datetime-edit-year-field:not(:focus),
+input[type="date"]::-webkit-datetime-edit-month-field:not(:focus),
+input[type="date"]::-webkit-datetime-edit-day-field:not(:focus) { color: inherit; }
+
+textarea { min-height: 96px; line-height: 1.5; resize: vertical; }
+
+input::placeholder, textarea::placeholder { color: var(--text-muted); opacity: .75; }
 
 input:focus-visible,
+textarea:focus-visible,
 select:focus-visible,
 button:focus-visible,
 a:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
+
+/* NO FOCUS RING ON SOMETHING THAT IS NOT A CONTROL.
+ *
+ * The router moves focus to the new page's `h1` after a swap, which is the
+ * accepted way to tell a screen reader that the page changed — a no-reload
+ * navigation is otherwise announced by nothing at all. To be focusable the
+ * heading needs `tabindex="-1"`, and Safari on iPad then draws its standard
+ * blue focus rectangle around it: the owner reported a "blue bar selected a
+ * section" on auth.vesopa.com and /login, and this is it.
+ *
+ * The announcement is worth keeping and the box is not, so the box goes. Only
+ * for `tabindex="-1"`, which by definition is not reachable by tabbing — a real
+ * keyboard user never lands here, so no visible focus is being taken from
+ * anybody. Everything above still gets its ring. */
+[tabindex="-1"]:focus,
+[tabindex="-1"]:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+/* iOS paints its own grey wash over anything focusable when it is tapped. */
+h1[tabindex="-1"], h2[tabindex="-1"] { -webkit-tap-highlight-color: transparent; }
 
 .phone-row { display: grid; grid-template-columns: 108px 1fr; gap: 8px; }
 
@@ -486,26 +571,154 @@ a { color: var(--text); }
  * Consent
  * ------------------------------------------------------------------------ */
 
-.consent-app { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
+/* IT HAS TO FIT ON ONE PHONE SCREEN, and that is the whole brief.
+ *
+ * Measured at 393 x 852 the old screen was two and a half screenfuls, with
+ * Allow below all of it. Every number below is chosen against that: the card
+ * padding, the 44px logo, the collapsed list. A consent screen where the
+ * decision is off-screen while the reasoning is on it has the two the wrong way
+ * round. */
+
+.consent-card { padding-top: 18px; }
+
+.consent-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 18px;
+  /* The chip is allowed to shrink; the wordmark is not. */
+  min-width: 0;
+}
+.consent-head .brand { margin: 0; flex: 0 0 auto; }
+
+/* The account chip: a picture, an address, a chevron. It is a submit button,
+ * so every one of the browser's own button styles has to be taken off first. */
+.account-switch { margin: 0; min-width: 0; }
+.account-chip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  margin: 0;
+  padding: 3px 8px 3px 3px;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  min-width: 0;
+}
+.account-chip:hover { background: var(--surface); color: var(--text); }
+.account-chip-face {
+  width: 26px; height: 26px;
+  flex: 0 0 26px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--surface);
+}
+.account-chip-empty {
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+/* The address is the part that gives way. A long one truncates rather than
+ * pushing the chevron off the card or wrapping the header onto two lines. */
+.account-chip-mail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.account-chip-go { display: flex; flex: 0 0 auto; opacity: .6; }
+.account-chip-go svg { width: 14px; height: 14px; }
+
+.consent-app { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
 .consent-logo {
-  width: 48px; height: 48px;
+  width: 44px; height: 44px;
   border-radius: 10px;
   border: 1px solid var(--border);
   background: var(--surface-2);
-  flex: 0 0 48px;
+  flex: 0 0 44px;
 }
-.consent-app .auth-title { margin: 0; font-size: 20px; }
-.consent-app .auth-sub { margin: 2px 0 0; font-size: 13.5px; }
-.consent-lead { font-size: 15px; margin: 0 0 14px; }
+.consent-app .auth-title { margin: 0; font-size: 19px; line-height: 1.25; }
+.consent-app .auth-sub { margin: 2px 0 0; font-size: 13px; }
+.consent-lead { font-size: 14.5px; margin: 0 0 14px; color: var(--text-muted); }
 
-.scopes { list-style: none; margin: 0 0 22px; padding: 0; }
-.scopes li {
-  padding: 11px 0;
-  border-top: 1px solid var(--border);
+/* The administrator warning. Amber rather than red: this is "are you sure",
+ * not "something has gone wrong", and a red panel on a consent screen reads as
+ * an error with the application rather than a caution about the account. */
+.consent-warn {
+  display: flex;
+  gap: 11px;
+  padding: 12px 13px;
+  margin: 0 0 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--warn-line);
+  background: var(--warn-bg);
 }
+.consent-warn strong { display: block; font-size: 14px; color: var(--warn); }
+.consent-warn p { margin: 3px 0 0; font-size: 13px; color: var(--text-muted); }
+.consent-warn-mark { display: flex; flex: 0 0 18px; margin-top: 1px; color: var(--warn); }
+.consent-warn-mark svg { width: 18px; height: 18px; }
+
+/* The permission list, closed by default. `<details>` so it needs no script —
+ * this page must work when everything else has failed. */
+.consent-scopes {
+  margin: 0 0 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.consent-scopes > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  font-size: 14px;
+  font-weight: 550;
+  cursor: pointer;
+  /* The default triangle is replaced by the count and the rotation below. */
+  list-style: none;
+}
+.consent-scopes > summary::-webkit-details-marker { display: none; }
+.consent-scopes > summary:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.consent-count {
+  flex: 0 0 auto;
+  min-width: 22px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 650;
+  text-align: center;
+  color: var(--text-muted);
+}
+.consent-scopes[open] > summary { border-bottom: 1px solid var(--border); }
+
+.scopes { list-style: none; margin: 0; padding: 0 14px 6px; }
+.scopes li { padding: 10px 0; border-top: 1px solid var(--border); }
 .scopes li:first-child { border-top: 0; }
-.scope-title { display: block; font-size: 15px; font-weight: 550; }
-.scope-desc { display: block; font-size: 13.5px; color: var(--text-muted); margin-top: 2px; }
+.scope-title { display: block; font-size: 14.5px; font-weight: 550; }
+.scope-desc { display: block; font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+
+/* Who is about to be connected, said once more directly above the button. */
+.consent-as {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+}
+.consent-as strong { color: var(--text); font-weight: 600; overflow-wrap: anywhere; }
+
+.consent-other { margin-top: 12px; text-align: center; }
 
 /* The code field: big, spaced, and unmistakably for digits. */
 .code-input {
@@ -612,6 +825,40 @@ a { color: var(--text); }
   gap: 14px;
 }
 .row-with-action form { flex: 0 0 auto; }
+
+/* A device, a session or a sign-in attempt: a mark, then the lines, then
+ * whatever action the row has.
+ *
+ * `min-width: 0` on the middle column is the whole reason this is not a plain
+ * flex row. Without it a long user-agent string sets the column's minimum width
+ * and the row pushes the page sideways at 360px — which is the fault that took
+ * a measurement to find last time, so it is written down rather than
+ * rediscovered. */
+.device-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.device-row > div { flex: 1 1 auto; min-width: 0; }
+.device-row form { flex: 0 0 auto; }
+
+.device-mark {
+  display: grid;
+  place-items: center;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  margin-top: 2px;
+  border-radius: 9px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+.device-mark svg { width: 18px; height: 18px; }
+
+/* The country. Given its own weight because it is the thing being scanned for
+ * — everything else on the line is context for it. */
+.where { color: var(--text); font-weight: 550; }
 
 .tag {
   display: inline-block;
@@ -874,7 +1121,7 @@ a { color: var(--text); }
  * account. Quiet rather than alarming — it is reassurance, not a warning — and
  * set apart from the scope list so it does not read as another permission. */
 .consent-guest {
-  margin: -6px 0 20px;
+  margin: -4px 0 16px;
   padding: 11px 14px;
   border-radius: var(--radius-sm);
   background: var(--surface-2);
@@ -1137,3 +1384,23 @@ a { color: var(--text); }
   .code-box { font-size: 22px; }
   .code-box.is-active::after { height: 22px; }
 }
+
+
+/* A quiet block inside an auth card — "signed in as", on the no-access page.
+   Not `.panel`, which belongs to the console sheet the sign-in pages do not
+   load. */
+.panel-inline {
+  padding: 13px 14px;
+  margin: 0 0 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.account-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0 8px;
+  min-width: 0;
+}
+.account-line strong { overflow-wrap: anywhere; font-size: 14.5px; }

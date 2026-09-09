@@ -226,12 +226,27 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                     ),
                   ],
 
-                  // "(Vesopa icon) Login with Vesopa", first on the page and,
-                  // where the venue has moved over, the only thing on it.
+                  // "(Vesopa icon) Continue with Vesopa", first on the page
+                  // and, where the venue has moved over, the only thing on it.
+                  //
+                  // THE COLOURS ARE SET HERE RATHER THAN LEFT TO THE THEME, and
+                  // so are the words. The owner's report was that this button
+                  // "not maintained the branding like Vesopa Backoffice" — and
+                  // it did not: the back office draws lime-on-black and says
+                  // "Continue with Vesopa", while this took whatever the
+                  // kitchen's own ColorScheme made of a FilledButton and said
+                  // "Login with". One button, three products, three
+                  // appearances. Somebody who has seen it once should recognise
+                  // it anywhere, which is the entire value of a sign-in button
+                  // being branded at all.
                   if (_vesopa?.enabled ?? false) ...[
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Kds.brand,
+                          foregroundColor: Colors.black,
+                        ),
                         onPressed: _busy ? null : _vesopaSignIn,
                         icon: _busy
                             ? const SizedBox(
@@ -239,11 +254,11 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                                 height: 22,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2.4,
-                                  color: Colors.white,
+                                  color: Colors.black,
                                 ),
                               )
                             : const VesopaMark(size: 22),
-                        label: const Text('Login with Vesopa'),
+                        label: const Text('Continue with Vesopa'),
                       ),
                     ),
                     if (_opened != null) ...[

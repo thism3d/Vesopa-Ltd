@@ -20,6 +20,7 @@
  */
 
 const config = require('./config');
+const geo = require('./geo');
 const db = require('./db');
 const { newId, newToken, hashToken } = require('./crypto');
 
@@ -76,6 +77,20 @@ async function create({
   const token = newToken(32);
   const publicId = newId();
 
+  /*
+   * Where in the world this is, resolved HERE rather than by the caller.
+   *
+   * Every caller already passes the address, so asking each of them to pass a
+   * country as well would be five places to forget it — and the one that
+   * forgot would be the one whose sessions had no country on the devices page,
+   * for no reason anybody could see. Doing it once, here, on the path that
+   * runs exactly once per sign-in, is both cheaper and impossible to miss.
+   *
+   * It cannot fail: geo.countryFor swallows everything and answers '' when it
+   * does not know, which is what the column already means.
+   */
+  const where = country || (await geo.countryFor(ip));
+
   const idleMs = config.session.idleHours * 3600 * 1000;
   const absoluteDays = remembered
     ? config.session.rememberedDays
@@ -96,7 +111,7 @@ async function create({
       JSON.stringify(amr),
       acr,
       String(ip).slice(0, 45),
-      String(country).slice(0, 2),
+      String(where).slice(0, 2),
       String(userAgent).slice(0, 400),
       Math.floor(idleMs / 1000),
       absoluteDays,
@@ -264,11 +279,21 @@ async function recogniseDevice(req, res) {
 
 async function rotateDevice(device, req, res) {
   const secret = newToken(32);
+  // The country moves with the address. A remembered laptop that turns up in
+  // another country is the single thing on the devices page worth noticing,
+  // and it is only noticeable if the row is kept current.
+  const country = await geo.countryFor(req.clientIp);
   await db.execute(
     `UPDATE devices
-        SET token_hash = ?, token_rotated_at = NOW(), last_seen_at = NOW(), last_ip = ?
+        SET token_hash = ?, token_rotated_at = NOW(), last_seen_at = NOW(),
+            last_ip = ?, last_country = ?
       WHERE id = ?`,
-    [hashToken(secret), String(req.clientIp || '').slice(0, 45), device.id],
+    [
+      hashToken(secret),
+      String(req.clientIp || '').slice(0, 45),
+      String(country).slice(0, 2),
+      device.id,
+    ],
   );
   res.cookie(
     DEVICE_COOKIE,
@@ -281,17 +306,26 @@ async function rotateDevice(device, req, res) {
 /** Start remembering this machine. Only ever after a successful sign-in. */
 async function rememberDevice({ userId, req, res, name = '' }) {
   const secret = newToken(32);
+  const country = await geo.countryFor(req.clientIp);
   const result = await db.execute(
     `INSERT INTO devices
-       (user_id, token_hash, name, user_agent, first_ip, last_ip, trusted_until)
-     VALUES (?, ?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL ? DAY))`,
+       (user_id, token_hash, name, platform, browser, user_agent,
+        first_ip, last_ip, last_country, trusted_until)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL ? DAY))`,
     [
       userId,
       hashToken(secret),
       String(name || describeDevice(req.userAgent)).slice(0, 120),
+      // `platform` and `browser` are columns that have existed since
+      // schema_002 and were never written, so the devices page had to re-parse
+      // the user agent on every render to say "Safari on iPhone". Writing them
+      // once, here, is what lets the page show an icon per KIND of device.
+      platformOf(req.userAgent),
+      browserOf(req.userAgent),
       String(req.userAgent || '').slice(0, 400),
       String(req.clientIp || '').slice(0, 45),
       String(req.clientIp || '').slice(0, 45),
+      String(country).slice(0, 2),
       config.session.deviceTrustDays,
     ],
   );
@@ -336,28 +370,72 @@ async function listDevices(userId) {
 }
 
 /**
- * A human name for a device, from its user agent.
+ * What kind of machine, what platform, what browser — from the user agent.
  *
- * Deliberately rough. This is shown on the devices page so somebody can tell
- * "the laptop" from "the phone" and spot the one that is neither — it is not
- * analytics, and a wrong guess costs nothing.
+ * DELIBERATELY ROUGH, all three of them. This is shown on the devices page so
+ * somebody can tell "the laptop" from "the phone" and spot the one that is
+ * neither. It is not analytics, nobody makes a decision on the aggregate, and a
+ * wrong guess costs nothing at all.
+ *
+ * There is no user-agent parsing library here on purpose: one would be a
+ * dependency that needs updating every time a browser renumbers itself, on the
+ * one server where a supply-chain update is worth the most to an attacker, in
+ * order to improve a label.
  */
-function describeDevice(userAgent) {
+function platformOf(userAgent) {
   const ua = String(userAgent || '');
-  const os =
-    (/Windows NT/.test(ua) && 'Windows') ||
-    (/iPhone|iPad/.test(ua) && 'iPhone or iPad') ||
-    (/Macintosh/.test(ua) && 'Mac') ||
+  return (
+    (/iPad/.test(ua) && 'iPad') ||
+    (/iPhone/.test(ua) && 'iPhone') ||
     (/Android/.test(ua) && 'Android') ||
+    (/Windows NT/.test(ua) && 'Windows') ||
+    (/Macintosh|Mac OS X/.test(ua) && 'Mac') ||
+    (/CrOS/.test(ua) && 'ChromeOS') ||
     (/Linux/.test(ua) && 'Linux') ||
-    'Unknown device';
-  const browser =
+    ''
+  );
+}
+
+function browserOf(userAgent) {
+  const ua = String(userAgent || '');
+  return (
     (/Edg\//.test(ua) && 'Edge') ||
-    (/OPR\//.test(ua) && 'Opera') ||
+    (/OPR\/|Opera/.test(ua) && 'Opera') ||
+    (/SamsungBrowser/.test(ua) && 'Samsung Internet') ||
+    (/Firefox\//.test(ua) && 'Firefox') ||
     (/Chrome\//.test(ua) && 'Chrome') ||
     (/Safari\//.test(ua) && !/Chrome/.test(ua) && 'Safari') ||
-    (/Firefox\//.test(ua) && 'Firefox') ||
-    '';
+    ''
+  );
+}
+
+/**
+ * Which icon this row gets: `phone`, `tablet`, `desktop` or `device`.
+ *
+ * The owner asked for "different device different logo", and the reason it is
+ * worth the twelve lines is the same reason the country is: a list of nine rows
+ * that all say the same thing in the same shape is a list nobody reads. A phone
+ * outline among six laptops is seen before it is read.
+ */
+function kindOf(userAgent, platform = '') {
+  const ua = String(userAgent || '');
+  const known = String(platform || '') || platformOf(ua);
+  if (known === 'iPad' || /Tablet/i.test(ua)) return 'tablet';
+  if (known === 'iPhone' || known === 'Android' || /Mobile/.test(ua)) {
+    // An Android tablet says Android and does NOT say Mobile. That is the one
+    // distinction Google actually documents, so it is the one used here.
+    return known === 'Android' && !/Mobile/.test(ua) ? 'tablet' : 'phone';
+  }
+  if (known === 'Windows' || known === 'Mac' || known === 'Linux' || known === 'ChromeOS') {
+    return 'desktop';
+  }
+  return 'device';
+}
+
+/** "Chrome on Windows", or as much of that as we can honestly say. */
+function describeDevice(userAgent) {
+  const os = platformOf(userAgent) || 'Unknown device';
+  const browser = browserOf(userAgent);
   return browser ? `${browser} on ${os}` : os;
 }
 
@@ -379,4 +457,7 @@ module.exports = {
   revokeDevice,
   listDevices,
   describeDevice,
+  platformOf,
+  browserOf,
+  kindOf,
 };

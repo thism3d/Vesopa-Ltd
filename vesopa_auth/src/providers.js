@@ -44,14 +44,28 @@ function env(name, fallback = '') {
   return (process.env[name] || fallback).trim();
 }
 
+/**
+ * Which shape of token request Microsoft accepted last time.
+ *
+ * Module state rather than a setting, because it is a fact discovered at run
+ * time about somebody else's configuration, and it must follow that
+ * configuration when it changes rather than outlive it. A restart forgets it,
+ * which is correct: a restart is also when the portal was probably edited.
+ */
+let microsoftTokenMode = '';
+
 function redirectUri(provider) {
   return `${config.issuer}/auth/${provider}/callback`;
 }
 
-async function postForm(url, body) {
+async function postForm(url, body, extraHeaders = {}) {
   const response = await fetch(url, {
     method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' },
+    headers: {
+      'content-type': 'application/x-www-form-urlencoded',
+      accept: 'application/json',
+      ...extraHeaders,
+    },
     body: new URLSearchParams(body).toString(),
     signal: AbortSignal.timeout(TIMEOUT),
   });
@@ -209,32 +223,32 @@ const microsoft = {
   },
 
   /**
-   * Exchange the code — and cope with the registration being a PUBLIC client.
+   * Exchange the code, whatever the registration turns out to be.
    *
-   * AADSTS700025: *"Client is public so neither 'client_assertion' nor
-   * 'client_secret' should be presented."* Microsoft decides whether an app
-   * registration is public or confidential from where its redirect URI is
-   * registered in the portal: a URI added under **Web** is confidential and
-   * wants the secret, while one added under **Single-page application** or
-   * **Mobile and desktop applications** makes the whole registration public and
-   * REFUSES the secret. Adding the callback under the wrong heading is an easy
-   * mistake — the field looks identical — and it breaks sign-in for everybody
-   * with an error that names neither the platform nor the fix.
+   * Microsoft decides whether an app registration is public or confidential
+   * from WHERE its redirect URI sits in the portal, and the three places look
+   * identical on the screen:
    *
-   * This is the one place in the codebase that retries a failed exchange, so it
-   * is worth saying why that is safe: an error response does NOT redeem the
-   * authorisation code. Microsoft rejected the request before looking at the
-   * code, so the code is still live and the second attempt is the first real
-   * redemption. A retry after a SUCCESSFUL exchange would be a different matter
-   * entirely, and nothing here does that.
+   *   **Web**                          confidential — send the client secret
+   *   **Mobile and desktop**           public — the secret is REFUSED
+   *   **Single-page application**      public, and cross-origin only
    *
-   * `MICROSOFT_PUBLIC_CLIENT=true` skips straight to the public form and saves
-   * the wasted round trip. Without it this works either way, which is what
-   * stops the same afternoon being spent on it again after somebody edits the
-   * registration back.
+   * Picking the wrong heading breaks sign-in for everybody, with an error
+   * (`AADSTS700025`, then `AADSTS9002327`) that names neither the platform nor
+   * the fix. So this walks the three, remembers which one answered, and says
+   * what to change if none of them do.
    *
-   * PKCE is sent regardless, and is what actually protects a public client —
-   * it is already required by the authorize call above.
+   * WHY RETRYING IS SAFE HERE, and only here. An error response does not
+   * redeem the authorisation code — Microsoft refuses the request before it
+   * looks at the code — so the code is still live and the next attempt is the
+   * first real redemption. That is true for the four `AADSTS` codes listed
+   * below and is not assumed of anything else: any other failure is thrown
+   * immediately rather than retried.
+   *
+   * PKCE is sent in all three and is what actually protects a public client.
+   * `MICROSOFT_TOKEN_MODE=confidential|public|spa` pins one, and
+   * `MICROSOFT_PUBLIC_CLIENT=true` skips the secret, for an install that would
+   * rather not spend a request discovering it.
    */
   async exchange({ code, codeVerifier }) {
     const url = `https://login.microsoftonline.com/${this.tenant}/oauth2/v2.0/token`;
@@ -246,51 +260,105 @@ const microsoft = {
       code_verifier: codeVerifier,
     };
 
-    if (String(env('MICROSOFT_PUBLIC_CLIENT') || '').toLowerCase() === 'true') {
-      return postForm(url, base);
-    }
+    /*
+     * THREE WAYS TO REDEEM A MICROSOFT CODE, and which one works is decided by
+     * a radio button in the Azure portal that nobody here can see.
+     *
+     *   confidential  the secret is sent. What a "Web" platform wants.
+     *   public        no secret; PKCE alone. What a public registration wants.
+     *   spa           no secret, plus an `Origin` header.
+     *
+     * The third is the one this file used to say was impossible, and the note
+     * saying so was wrong. A callback added under **Single-page application**
+     * makes Microsoft answer the token endpoint only for a CROSS-ORIGIN
+     * request — and the way it decides a request is cross-origin is the
+     * `Origin` header. `Origin` is a header. A server can send one, and this
+     * one sends its own issuer, which is the origin that Microsoft has
+     * registered against the SPA platform. Microsoft answers, and returns the
+     * CORS headers a browser would have needed and nothing here reads.
+     *
+     * It is not a trick played on the security model: PKCE is what protects a
+     * public client, PKCE is sent in every one of the three, and the verifier
+     * never left this server. What the SPA registration removes is the client
+     * secret, and dropping the secret is exactly what the second attempt
+     * already did.
+     *
+     * The right answer is still to move the URI to **Web** in the portal, and
+     * the error below still says how. This is so that a person signing in
+     * today does not have to wait for somebody to do it.
+     */
+    const attempts = [];
+    const forced = String(env('MICROSOFT_TOKEN_MODE') || '').toLowerCase();
+    const publicOnly = String(env('MICROSOFT_PUBLIC_CLIENT') || '').toLowerCase() === 'true';
 
-    try {
-      return await postForm(url, { ...base, client_secret: this.clientSecret });
-    } catch (error) {
-      if (!/AADSTS700025/.test(String(error.message || ''))) throw error;
-      console.warn(
-        '[social] microsoft says this registration is a PUBLIC client, so the ' +
-          'secret is being dropped and PKCE is doing the work.',
-      );
+    const ladder = {
+      confidential: () => postForm(url, { ...base, client_secret: this.clientSecret }),
+      public: () => postForm(url, base),
+      spa: () => postForm(url, base, { origin: config.issuer }),
+    };
+
+    /*
+     * What worked last time is tried first.
+     *
+     * Without this every single Microsoft sign-in on a misconfigured
+     * registration pays for two refused round trips to Microsoft before the
+     * one that works — about a second of somebody staring at a blank tab, on
+     * every sign-in, for ever. The value is only ever set from a SUCCESSFUL
+     * exchange, so a wrong guess costs one request and corrects itself.
+     */
+    const order = forced && ladder[forced]
+      ? [forced]
+      : microsoftTokenMode
+        ? [microsoftTokenMode, 'confidential', 'public', 'spa']
+        : publicOnly
+          ? ['public', 'spa']
+          : ['confidential', 'public', 'spa'];
+
+    const tried = new Set();
+    let last = null;
+
+    for (const mode of order) {
+      if (tried.has(mode)) continue;
+      tried.add(mode);
       try {
-        return await postForm(url, base);
-      } catch (second) {
-        /*
-         * AADSTS9002327 — THE ONE THIS CODE CANNOT FIX, so it says so loudly.
-         *
-         * "Tokens issued for the 'Single-Page Application' client-type may only
-         * be redeemed via cross-origin requests." The callback has been added
-         * in the Azure portal under **Single-page application** instead of
-         * **Web**. Those two fields look identical and sit on the same screen,
-         * and picking the wrong one has three consequences at once: the
-         * registration becomes public (so the secret is refused — that is the
-         * 700025 above), PKCE becomes mandatory, and the token endpoint will
-         * ONLY answer a request carrying a browser `Origin` header.
-         *
-         * A server-side web application cannot send one. There is no
-         * combination of secret, no-secret or PKCE that redeems an SPA-issued
-         * code from a server — which is why this throws with instructions
-         * instead of trying a third time.
-         */
-        if (/AADSTS9002327/.test(String(second.message || ''))) {
-          throw new Error(
-            'microsoft: the callback is registered as a Single-Page Application in ' +
-              'Azure, and an SPA code can only be redeemed from a browser. Fix it in ' +
-              'the portal: App registrations → your app → Authentication → remove ' +
-              `${redirectUri('microsoft')} from "Single-page application", then ` +
-              'Add a platform → Web → add the same URI there, and set "Allow public ' +
-              'client flows" to No. Nothing in this codebase can work around it.',
-          );
+        // eslint-disable-next-line no-await-in-loop -- a ladder, by definition
+        const tokens = await ladder[mode]();
+        if (microsoftTokenMode !== mode) {
+          console.log(`[social] microsoft token endpoint answers in "${mode}" mode; remembering that.`);
+          microsoftTokenMode = mode;
         }
-        throw second;
+        return tokens;
+      } catch (error) {
+        last = error;
+        attempts.push(`${mode}: ${String(error.message || '').slice(0, 120)}`);
+        /*
+         * Only the two errors that mean "wrong shape of request" are worth
+         * another attempt. A wrong code, an expired code or a network failure
+         * is the same answer in all three modes, and retrying it twice turns
+         * one failure into three requests and three log lines.
+         *
+         * A retry is safe for exactly these: Microsoft refused the request
+         * before looking at the code, so the code has NOT been redeemed and
+         * the next attempt is the first real redemption.
+         */
+        if (!/AADSTS700025|AADSTS9002327|AADSTS7000215|AADSTS700009/.test(String(error.message || ''))) {
+          throw error;
+        }
       }
     }
+
+    /*
+     * All three refused. Say what was tried and what to change, because the
+     * fix is in a portal on somebody else's screen and the error Microsoft
+     * gives names neither the platform nor the field.
+     */
+    throw new Error(
+      `microsoft: the token endpoint refused every form of this exchange (${attempts.join(' | ')}). ` +
+        'This is almost always the platform the callback is registered under. In the Azure portal: ' +
+        `App registrations → your app → Authentication → put ${redirectUri('microsoft')} under ` +
+        '"Web" (not "Single-page application" and not "Mobile and desktop applications"), and set ' +
+        `"Allow public client flows" to No. Original error: ${String(last && last.message).slice(0, 200)}`,
+    );
   },
 
   async profile(tokens, { nonce }) {
@@ -468,9 +536,27 @@ const github = {
   key: 'github',
   name: 'GitHub',
   kind: 'oauth2',
-  // NOT trusted by default. GitHub will hand over an address the person has
-  // never confirmed, so the /user/emails call below is what earns the trust.
-  trustsEmail: false,
+  /*
+   * TRUSTED, because `profile()` below only ever reports `emailVerified: true`
+   * for an address GitHub itself has confirmed.
+   *
+   * This said `false` and it cost somebody an account. `trustsEmail` is ANDed
+   * with the per-sign-in `emailVerified` at both call sites, so `false` here
+   * meant a GitHub address was thrown away even when /user/emails had said
+   * `"verified": true` about it — which is the same evidence Google and
+   * Microsoft give, and better evidence than Microsoft's, where it is inferred
+   * from the presence of a `preferred_username`.
+   *
+   * The consequence was two accounts for one person: signing in with GitHub
+   * made an account, and typing the very same address on the sign-in page made
+   * a second one, because the first had no email identity to match against.
+   *
+   * The caution the `false` was expressing is real and is kept — it just
+   * belongs in `profile()`, where the public profile address (which GitHub does
+   * not check, and which can be anything) is reported with
+   * `emailVerified: false` and is therefore still worth nothing here.
+   */
+  trustsEmail: true,
 
   get clientId() {
     return env('GITHUB_CLIENT_ID');

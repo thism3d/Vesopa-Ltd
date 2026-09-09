@@ -2,18 +2,59 @@
 
 <h1 class="console-title">Who uses it</h1>
 <p class="console-lead">
-  <%= application.name %> — the people who have signed into this application.
+  <%= application.name %> — who may connect, and who has.
 </p>
+
+<% if (notice) { %><p class="notice-good"><%= notice %></p><% } %>
+<% if (error) { %><p class="form-error" role="alert"><%= error %></p><% } %>
 
 <%
   /*
-   * ONLY THIS APPLICATION'S PEOPLE, and that is the isolation the owner asked
-   * for. There is one pool of accounts across Vesopa — a person who already has
-   * one does not make a second for another product — but an application only
-   * ever sees the people who have a membership row for IT. A developer here
+   * THE RULE THIS PAGE EXISTS TO MAKE VISIBLE.
+   *
+   * Anybody may hold a Vesopa account; nobody is entitled to use a given
+   * application because of it. The two are separate on purpose — the QR menu
+   * enrols whoever scans a table, the back office does not, and the till is
+   * staff only — and the setting that decides it has been in the database since
+   * schema_004 while being invisible everywhere except one toggle on another
+   * page. Said here, at the top of the list of people, is where it means
+   * something.
+   *
+   * ONLY THIS APPLICATION'S PEOPLE ARE LISTED, which is the isolation the owner
+   * asked for. There is one pool of accounts across Vesopa, and an application
+   * only ever sees the people who have a membership row for IT. A developer
    * cannot enumerate the identity provider's users; they can see their own.
    */
 %>
+<section class="card">
+  <div class="card-body access-state">
+    <span class="access-mark <%= application.allow_self_enroll ? 't-teal' : 't-violet' %>">
+      <%- include('../partials/icon', { name: application.allow_self_enroll ? 'globe' : 'lock' }) %>
+    </span>
+    <div>
+      <% if (application.allow_self_enroll) { %>
+      <strong>Anybody with a Vesopa account can use this</strong>
+      <p class="hint mb-0">
+        The first time somebody signs in they are enrolled automatically. Right
+        for a menu a customer scans at a table; wrong for anything with prices
+        or staff in it. Invitations still work — they are just not required.
+      </p>
+      <% } else { %>
+      <strong>Invited people only</strong>
+      <p class="hint mb-0">
+        Somebody who has not been invited is turned away at the sign-in, even
+        with a perfectly good Vesopa account. Invite them below, or from your
+        own product if it creates people there.
+      </p>
+      <% } %>
+      <p class="hint mb-0 mt-2">
+        Change it under
+        <a href="/developers/a/<%= application.client_id %>">Overview → Who can use it</a>.
+      </p>
+    </div>
+  </div>
+</section>
+
 <div class="tiles">
   <div class="tile">
     <span class="tile-mark t-brand"><%- include('../partials/icon', { name: 'people' }) %></span>
@@ -32,6 +73,98 @@
   </div>
 </div>
 
+<!-- ----------------------------------------------------------- Invite them -->
+<% if (mayEdit) { %>
+<section class="card">
+  <h2 class="card-head">Invite somebody</h2>
+  <p class="card-note">
+    They get an email with a link. The link does not sign anybody in — it opens
+    the ordinary Vesopa sign-in, and the access is granted only once the person
+    has proved they own that address. So a forwarded invitation is worth
+    nothing to whoever it was forwarded to.
+  </p>
+  <form method="post" action="/developers/a/<%= application.client_id %>/people/invite"
+        class="card-body">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+    <div class="field">
+      <label for="invite-email">Their email address</label>
+      <input type="email" id="invite-email" name="email" required
+             autocomplete="off" autocapitalize="off" spellcheck="false"
+             placeholder="them@example.com">
+      <p class="hint">
+        It does not matter whether they already have a Vesopa account. If they
+        do, this adds <%= application.name %> to it; if they do not, they make
+        one on the way in.
+      </p>
+    </div>
+
+    <% if (roles.length) { %>
+    <div class="field">
+      <label for="invite-role">Give them a role</label>
+      <select id="invite-role" name="role_id">
+        <option value="">No role</option>
+        <% roles.forEach(function (role) { %>
+        <option value="<%= role.id %>"><%= role.name || role.role_key %></option>
+        <% }) %>
+      </select>
+      <p class="hint">
+        Roles are yours, not ours — they arrive in the token and your
+        application decides what they mean.
+      </p>
+    </div>
+    <% } %>
+
+    <div class="field">
+      <label for="invite-message">A line to include (optional)</label>
+      <input type="text" id="invite-message" name="message" maxlength="200"
+             placeholder="You will be doing the Friday rota on this.">
+    </div>
+
+    <button class="btn btn-primary" type="submit">Send the invitation</button>
+  </form>
+</section>
+<% } %>
+
+<!-- ------------------------------------------------------------ Outstanding -->
+<% if (waiting.length) { %>
+<section class="card">
+  <h2 class="card-head">Waiting to be accepted</h2>
+  <p class="card-note">
+    These expire on their own. Sending again issues a fresh link and kills the
+    old one, so a copy in an old mailbox stops working.
+  </p>
+  <% waiting.forEach(function (row) { %>
+  <div class="row">
+    <span class="row-mark"><%- include('../partials/icon', { name: 'mail' }) %></span>
+    <span class="row-lines">
+      <span class="row-title"><%= row.email %></span>
+      <span class="row-sub">
+        Sent <%= new Date(row.created_at).toISOString().slice(0, 10) %><%
+        %><%= row.role_name ? ' · ' + row.role_name : '' %><%
+        %> · expires <%= new Date(row.expires_at).toISOString().slice(0, 10) %>
+      </span>
+    </span>
+    <% if (mayEdit) { %>
+    <span class="row-right row-actions">
+      <form method="post"
+            action="/developers/a/<%= application.client_id %>/people/invite/<%= row.public_id %>/resend">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <button type="submit" class="linklike">Send again</button>
+      </form>
+      <form method="post"
+            action="/developers/a/<%= application.client_id %>/people/invite/<%= row.public_id %>/revoke">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <button type="submit" class="linklike">Withdraw</button>
+      </form>
+    </span>
+    <% } %>
+  </div>
+  <% }) %>
+</section>
+<% } %>
+
+<!-- ---------------------------------------------------------------- People -->
 <section class="card">
   <h2 class="card-head">People</h2>
   <p class="card-note">
@@ -55,7 +188,9 @@
     <p>
       <%= search
         ? 'Only people who have used this application appear here.'
-        : 'The first person to sign in appears here straight away.' %>
+        : application.allow_self_enroll
+          ? 'The first person to sign in appears here straight away.'
+          : 'Invite somebody above — nobody can get in on their own.' %>
     </p>
   </div>
   <% } %>
@@ -72,11 +207,20 @@
         <%= row.email || 'no email on the account' %>
         <% if (row.roles) { %> · <%= row.roles %><% } %>
         <% if (row.external_ref) { %> · your ref <%= row.external_ref %><% } %>
+        · <%= row.last_seen_at ? 'last seen ' + new Date(row.last_seen_at).toISOString().slice(0, 10) : 'never signed in' %>
       </span>
     </span>
+    <% if (mayEdit) { %>
     <span class="row-right">
-      <%= row.last_seen_at ? new Date(row.last_seen_at).toISOString().slice(0, 10) : 'never' %>
+      <form method="post"
+            action="/developers/a/<%= application.client_id %>/people/<%= row.id %>/<%= row.status === 'active' ? 'suspend' : 'restore' %>">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <button type="submit" class="linklike">
+          <%= row.status === 'active' ? 'Suspend' : 'Restore' %>
+        </button>
+      </form>
     </span>
+    <% } %>
   </div>
   <% }) %>
 </section>

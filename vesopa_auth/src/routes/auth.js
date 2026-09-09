@@ -179,7 +179,24 @@ router.post('/login', csrf.verify, async (req, res, next) => {
       }
     }
 
-    const existing = await identity.findIdentity(channel === 'email' ? 'email' : 'phone', normalised);
+    let existing = await identity.findIdentity(channel === 'email' ? 'email' : 'phone', normalised);
+
+    /*
+     * NOBODY GETS TWO ACCOUNTS FOR ONE ADDRESS.
+     *
+     * If no identity of our own holds this address, an account may still hold
+     * it as an address a provider verified — the state left behind by signing
+     * in with GitHub, where the provider's own row carries the address and
+     * there is no separate email row. Without this line the person types the
+     * address they just signed in with, and gets a brand-new empty account.
+     *
+     * It only decides WHOSE code this is. The code still has to be received and
+     * typed, and the identity is only attached at that point — see the note in
+     * POST /login/verify.
+     */
+    if (!existing && channel === 'email') {
+      existing = await identity.findByAssertedEmail(normalised);
+    }
 
     /*
      * A suspended account is told the same thing as everyone else and simply
@@ -660,6 +677,31 @@ router.post('/login/verify', csrf.verify, async (req, res, next) => {
        */
       if (!userId) {
         const type = flow.ch === 'phone' ? 'phone' : 'email';
+
+        /*
+         * Asked again, here, rather than trusted from the flow cookie. The
+         * cookie was written before the code was sent, and an account can be
+         * created in between — by the person themselves in another tab, or by
+         * a provider sign-in that finished first. Making a second account for
+         * an address somebody has just proved is the exact fault this is for.
+         */
+        const held = type === 'email' ? await identity.findByAssertedEmail(flow.n) : null;
+        if (held) {
+          userId = held.user_id;
+          try {
+            await identity.attachIdentity(userId, {
+              type: 'email',
+              identifier: flow.d,
+              normalised: flow.n,
+              verified: true,
+              verifiedVia: 'email_code',
+            });
+          } catch (error) {
+            if (!db.isDuplicate(error)) throw error;
+          }
+          return completeSignIn({ req, res, userId, amr, method, flow });
+        }
+
         try {
           const created = await identity.createUser({
             type,
@@ -692,12 +734,48 @@ router.post('/login/verify', csrf.verify, async (req, res, next) => {
           userId = now.user_id;
         }
       } else {
-        identityRow = await identity.findIdentity(
-          flow.ch === 'phone' ? 'phone' : 'email',
-          flow.n,
-        );
+        const type = flow.ch === 'phone' ? 'phone' : 'email';
+        identityRow = await identity.findIdentity(type, flow.n);
+
         if (identityRow) {
-          await identity.markVerified(identityRow.id, flow.ch === 'phone' ? 'sms' : 'email_code');
+          await identity.markVerified(identityRow.id, type === 'phone' ? 'sms' : 'email_code');
+        } else if (type === 'email') {
+          /*
+           * ADOPTION. The account was found by the address a provider asserted
+           * (see POST /login), so it has no email identity of its own yet — and
+           * the person has just proved, this minute, that they receive there.
+           *
+           * Attaching it now is what stops the same discovery having to be made
+           * on every future sign-in, and is what makes the address appear under
+           * "How you sign in" where the person can see and remove it. The
+           * proof for it is genuinely two-sided: the provider verified the
+           * address, and so did we, independently.
+           *
+           * A duplicate means somebody else took the address in the seconds
+           * since the code was sent. The sign-in still succeeds — this person
+           * is who the account says they are — and the address simply stays
+           * unattached rather than the whole thing failing.
+           */
+          try {
+            await identity.attachIdentity(userId, {
+              type: 'email',
+              identifier: flow.d,
+              normalised: flow.n,
+              verified: true,
+              verifiedVia: 'email_code',
+            });
+            await events.recordAudit({
+              actorUserId: userId,
+              action: 'identity.adopted',
+              targetType: 'identity',
+              targetId: 'email',
+              detail: { why: 'a provider had already verified this address for this account' },
+              ip: req.clientIp,
+              userAgent: req.userAgent,
+            });
+          } catch (error) {
+            if (!db.isDuplicate(error)) throw error;
+          }
         }
       }
     }
@@ -995,6 +1073,21 @@ router.post('/logout', csrf.verify, async (req, res, next) => {
     }
     sessions.clearCookie(res);
     clearFlow(res);
+
+    /*
+     * "Use a different account" is a logout with somewhere to come back to.
+     *
+     * The consent screen's account chip posts here with the authorisation it
+     * was in the middle of, so that signing out and signing in as somebody else
+     * lands back on the same request rather than on an empty account page with
+     * the application still waiting.
+     *
+     * A POST, and `safeReturnTo` — this is a same-site path or nothing. A
+     * logout that redirects to wherever a query string says would be an open
+     * redirect on the one origin where that matters most.
+     */
+    const back = safeReturnTo(req.body.return_to);
+    if (back) return res.redirect(303, `/login?return_to=${encodeURIComponent(back)}`);
     return res.redirect(303, '/login');
   } catch (error) {
     return next(error);

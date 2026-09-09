@@ -42,6 +42,10 @@ const webhooks = require('../webhooks');
 const logos = require('../logos');
 const authmethods = require('../authmethods');
 const settings = require('../settings');
+const invitations = require('../invitations');
+
+/** Said when a role id from another application is posted here. */
+const ROLE_NOT_YOURS = 'That role is not one this application defines.';
 const { normaliseEmail } = require('../normalise');
 
 const router = express.Router();
@@ -1129,6 +1133,28 @@ router.get('/developers/a/:clientId/people', async (req, res, next) => {
       [found.application.id],
     );
 
+    /*
+     * The roles this application defines, and the invitations nobody has
+     * answered yet.
+     *
+     * BOTH ARE THE POINT OF THIS PAGE NOW. It used to be a read-only list, and
+     * the owner's rule is that it should not be: *"anyone can register account
+     * to Vesopa Account but not every Oauth apps let's anyone to connect to
+     * their app, admin decide that"*. The database has said so since
+     * schema_004 — `applications.allow_self_enroll`, `application_members` and
+     * `invitations.application_id` — but there was no way to MAKE an
+     * invitation, so "invited only" meant "nobody, ever", and the back office
+     * was a door with no handle on either side.
+     */
+    const [roles, waiting] = await Promise.all([
+      db.query(
+        `SELECT id, role_key, name FROM application_roles
+          WHERE application_id = ? ORDER BY is_default DESC, role_key`,
+        [found.application.id],
+      ),
+      invitations.list({ applicationId: found.application.id }),
+    ]);
+
     return page(res, 'developers/people', session, {
       title: 'Who uses it',
       path: `/developers/a/${req.params.clientId}/people`,
@@ -1137,8 +1163,185 @@ router.get('/developers/a/:clientId/people', async (req, res, next) => {
       role: found.role,
       members,
       totals,
+      roles,
+      waiting,
       search,
+      notice: String(req.query.notice || ''),
+      error: String(req.query.error || ''),
+      mayEdit: found.role !== 'viewer',
     });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+/**
+ * Invite somebody to this application.
+ *
+ * WHAT AN INVITATION IS NOT: a way in. It grants a MEMBERSHIP to whoever proves
+ * they own the invited address, and the proving is the ordinary sign-in flow,
+ * unchanged. So an invitation read in transit is worth nothing on its own —
+ * whoever read it must also be able to receive at the address it was sent to,
+ * and at that point they did not need it. See src/invitations.js.
+ *
+ * Somebody who already has a Vesopa account is invited exactly the same way.
+ * There is ONE pool of accounts across Vesopa and this does not make a second;
+ * what it adds is membership of this application, which is the thing the
+ * application's administrator is entitled to decide.
+ */
+router.post('/developers/a/:clientId/people/invite', csrf.verify, async (req, res, next) => {
+  try {
+    const session = await guard(req, res);
+    if (!session) return undefined;
+    const found = await portal.access(session, req.params.clientId);
+    if (!found) return notFound(res, session);
+
+    const base = `/developers/a/${req.params.clientId}/people`;
+    const back = (query) => res.redirect(303, `${base}?${query}`);
+
+    if (found.role === 'viewer') {
+      return back(`error=${encodeURIComponent('You have read-only access to this application.')}`);
+    }
+
+    const email = String(req.body.email || '').trim();
+    if (!normaliseEmail(email)) {
+      return back(`error=${encodeURIComponent('That does not look like an email address.')}`);
+    }
+
+    /*
+     * The role must belong to THIS application. Without the check, a role id
+     * belonging to somebody else's application could be granted from here — and
+     * roles are what an application's own authorisation is built on, so that is
+     * not a cosmetic mix-up.
+     */
+    let roleId = null;
+    if (req.body.role_id) {
+      const role = await db.one(
+        'SELECT id FROM application_roles WHERE id = ? AND application_id = ?',
+        [req.body.role_id, found.application.id],
+      );
+      if (!role) return back(`error=${encodeURIComponent(ROLE_NOT_YOURS)}`);
+      roleId = role.id;
+    }
+
+    const result = await invitations.create({
+      email,
+      invitedBy: session.user_id,
+      applicationId: found.application.id,
+      roleId,
+      message: String(req.body.message || '').slice(0, 500),
+      ip: req.clientIp,
+    });
+
+    if (!result.ok) return back(`error=${encodeURIComponent(result.error)}`);
+    return back(`notice=${encodeURIComponent(`Invitation sent to ${email}.`)}`);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post('/developers/a/:clientId/people/invite/:publicId/:action', csrf.verify, async (req, res, next) => {
+  try {
+    const session = await guard(req, res);
+    if (!session) return undefined;
+    const found = await portal.access(session, req.params.clientId);
+    if (!found) return notFound(res, session);
+
+    const base = `/developers/a/${req.params.clientId}/people`;
+    if (found.role === 'viewer') {
+      return res.redirect(303, `${base}?error=${encodeURIComponent('You have read-only access to this application.')}`);
+    }
+
+    /*
+     * Looked up against THIS application, not merely by id. A public id is not
+     * a secret and this route has proved access to one application only —
+     * without the second half of the WHERE, the id in a URL would be enough to
+     * withdraw somebody else's invitation to somebody else's product.
+     */
+    const invitation = await invitations.forApplication(req.params.publicId, found.application.id);
+    if (!invitation) return res.redirect(303, base);
+
+    if (req.params.action === 'revoke') {
+      await invitations.revoke(invitation.public_id, session.user_id, req.clientIp);
+      return res.redirect(303, `${base}?notice=${encodeURIComponent('Invitation withdrawn.')}`);
+    }
+    if (req.params.action === 'resend') {
+      const sent = await invitations.resend(invitation.public_id, session.user_id, req.clientIp);
+      return res.redirect(
+        303,
+        sent.ok
+          ? `${base}?notice=${encodeURIComponent('Sent again, with a fresh link.')}`
+          : `${base}?error=${encodeURIComponent(sent.error || 'That invitation is no longer waiting.')}`,
+      );
+    }
+    return res.redirect(303, base);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+/**
+ * Suspend somebody, or let them back in.
+ *
+ * SUSPENDED, NOT DELETED. Deleting the membership row would let the person
+ * straight back in on their next sign-in wherever `allow_self_enroll` is on —
+ * which for the QR menu is exactly right and for a back office is exactly
+ * wrong, and nobody pressing this button can be expected to hold that
+ * distinction in their head. A status is honest in both cases, and it survives
+ * as a record of what was decided and when.
+ */
+router.post('/developers/a/:clientId/people/:id/:action', csrf.verify, async (req, res, next) => {
+  try {
+    const session = await guard(req, res);
+    if (!session) return undefined;
+    const found = await portal.access(session, req.params.clientId);
+    if (!found) return notFound(res, session);
+
+    const base = `/developers/a/${req.params.clientId}/people`;
+    if (found.role === 'viewer') {
+      return res.redirect(303, `${base}?error=${encodeURIComponent('You have read-only access to this application.')}`);
+    }
+
+    const status = req.params.action === 'suspend' ? 'suspended'
+      : req.params.action === 'restore' ? 'active'
+      : null;
+    if (!status) return res.redirect(303, base);
+
+    const member = await db.one(
+      'SELECT id, user_id FROM application_members WHERE id = ? AND application_id = ?',
+      [req.params.id, found.application.id],
+    );
+    if (!member) return res.redirect(303, base);
+
+    await db.execute('UPDATE application_members SET status = ? WHERE id = ?', [status, member.id]);
+
+    /*
+     * Suspending ends what they are doing NOW, not only what they do next. A
+     * refresh token that outlived the decision would keep an application signed
+     * in for its whole life, which is not what anybody means by "remove their
+     * access" — they mean now.
+     */
+    if (status === 'suspended') {
+      await db.execute(
+        `UPDATE oauth_refresh_tokens SET revoked_at = NOW(), revoked_reason = 'member_suspended'
+          WHERE user_id = ? AND application_id = ? AND revoked_at IS NULL`,
+        [member.user_id, found.application.id],
+      );
+    }
+
+    await events.recordAudit({
+      actorUserId: session.user_id,
+      action: status === 'suspended' ? 'application.member_suspended' : 'application.member_restored',
+      targetType: 'application_member',
+      targetId: String(member.id),
+      applicationId: found.application.id,
+      ip: req.clientIp,
+    });
+
+    return res.redirect(
+      303,
+      `${base}?notice=${encodeURIComponent(status === 'suspended' ? 'Access suspended.' : 'Access restored.')}`,
+    );
   } catch (error) {
     return next(error);
   }

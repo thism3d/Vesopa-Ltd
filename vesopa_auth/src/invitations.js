@@ -231,17 +231,55 @@ async function accept(token, userId, { ip = '' } = {}) {
   return { ok: true, invitation };
 }
 
-async function list({ includeSettled = false } = {}) {
+/**
+ * Invitations, all of them or one application's.
+ *
+ * `applicationId` is what the developer portal reads: a person who can edit one
+ * application must be able to see who they have invited to IT, and must not be
+ * able to see who anybody has invited to anything else. The filter is in the
+ * query rather than in the caller for exactly that reason — a `.filter()` after
+ * the fetch is one forgotten line away from being a list of every address any
+ * customer of ours has ever invited.
+ */
+async function list({ includeSettled = false, applicationId = null } = {}) {
+  const where = [];
+  const params = [];
+  if (!includeSettled) {
+    where.push('i.accepted_at IS NULL AND i.revoked_at IS NULL AND i.expires_at > NOW()');
+  }
+  if (applicationId) {
+    where.push('i.application_id = ?');
+    params.push(applicationId);
+  }
+
   return db.query(
     `SELECT i.*, u.display_name AS invited_by_name,
-            o.name AS organisation_name, a.name AS application_name
+            o.name AS organisation_name, a.name AS application_name,
+            r.name AS role_name
        FROM invitations i
        LEFT JOIN users u ON u.id = i.invited_by
        LEFT JOIN organisations o ON o.id = i.organisation_id
        LEFT JOIN applications a ON a.id = i.application_id
-      ${includeSettled ? '' : 'WHERE i.accepted_at IS NULL AND i.revoked_at IS NULL AND i.expires_at > NOW()'}
+       LEFT JOIN application_roles r ON r.id = i.role_id
+      ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
       ORDER BY i.created_at DESC
       LIMIT 100`,
+    params,
+  );
+}
+
+/**
+ * One invitation, checked against the application it is supposed to belong to.
+ *
+ * Used before revoke or resend from the developer portal. Without it, the
+ * public id in a URL would be enough to revoke somebody else's invitation to
+ * somebody else's application — the id is not a secret, and the portal route
+ * that reads it has already proved access to THIS application and nothing more.
+ */
+async function forApplication(publicId, applicationId) {
+  return db.one(
+    'SELECT * FROM invitations WHERE public_id = ? AND application_id = ?',
+    [publicId, applicationId],
   );
 }
 
@@ -308,4 +346,4 @@ async function resend(publicId, actorUserId, ip = '') {
   return { ok: true, url };
 }
 
-module.exports = { create, findByToken, accept, list, revoke, resend, TTL_DAYS };
+module.exports = { create, findByToken, accept, list, forApplication, revoke, resend, TTL_DAYS };

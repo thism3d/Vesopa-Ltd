@@ -14,23 +14,43 @@
     <a href="/account/devices">sign out everywhere</a>.
   </p>
 
+  <%
+    /*
+     * The country, written out, exactly as on the devices page. This list is
+     * the one place somebody is scanning for a row that is not theirs, and
+     * "United Kingdom" is scannable in a way that `(GB)` after an IP address
+     * was not.
+     */
+    const place = (code) => {
+      const name = geo.nameFor(code);
+      if (!name) return '';
+      const flag = geo.flagFor(code);
+      return flag ? `${flag} ${name}` : name;
+    };
+  %>
   <ul class="rows">
     <% history.forEach(function (event) { %>
-    <li>
-      <span class="row-main">
-        <% if (event.outcome === 'success') { %>Signed in
-        <% } else if (event.outcome === 'failure') { %>Failed attempt
-        <% } else if (event.outcome === 'blocked') { %>Blocked
-        <% } else { %>Code sent<% } %>
-        — <%= String(event.method).replace(/_/g, ' ') %><%
-        %><%= event.application_name ? ' · ' + event.application_name : '' %>
+    <li class="device-row">
+      <span class="device-mark" aria-hidden="true">
+        <%- include('../partials/icon', { name: sessions.kindOf(event.user_agent) }) %>
       </span>
-      <span class="row-meta">
-        <%= event.created_at %> ·
-        <%= event.ip || 'unknown address' %><%= event.country ? ' (' + event.country + ')' : '' %> ·
-        <%= describeDevice(event.user_agent) %><%
-        %><%= event.failure_reason ? ' · ' + String(event.failure_reason).replace(/_/g, ' ') : '' %>
-      </span>
+      <div>
+        <span class="row-main">
+          <% if (event.outcome === 'success') { %>Signed in
+          <% } else if (event.outcome === 'failure') { %>Failed attempt
+          <% } else if (event.outcome === 'blocked') { %>Blocked
+          <% } else { %>Code sent<% } %>
+          — <%= String(event.method).replace(/_/g, ' ') %><%
+          %><%= event.application_name ? ' · ' + event.application_name : '' %>
+        </span>
+        <span class="row-meta">
+          <%= event.created_at %> ·
+          <% if (place(event.country)) { %><span class="where"><%= place(event.country) %></span> · <% } %><%
+          %><%= event.ip || 'unknown address' %> ·
+          <%= sessions.describeDevice(event.user_agent) %><%
+          %><%= event.failure_reason ? ' · ' + String(event.failure_reason).replace(/_/g, ' ') : '' %>
+        </span>
+      </div>
     </li>
     <% }) %>
   </ul>

@@ -159,10 +159,17 @@ What each one is for, where it is not obvious:
   code, passkey, Google, Microsoft, Apple, GitHub — and whatever comes next,
   which is one entry in `src/authmethods.js` and no migration.
 * **reCAPTCHA v3, which never locks anybody out.** A low score does not refuse;
-  it drops the password fast path and asks for an emailed code. A missing token
-  degrades the same way, because plenty of real people block google.com. Only a
-  token that did not come from our form is refused, and if Google does not
+  it drops the password fast path and asks for an emailed code. A **missing**
+  token is treated as no evidence at all and changes nothing — it used to
+  degrade, and the day the keys were configured that quietly took the password
+  step away from everybody whose browser blocks google.com. Only a token Google
+  rejects, or one minted for a different action, is refused; if Google does not
   answer in four seconds it fails **open**.
+* **One address, one account.** An address a provider has verified is matched
+  against an address typed on the sign-in page, in both directions — so signing
+  in with GitHub and later typing the same address reaches the same account
+  rather than making a second one. Both sides are proofs of the same fact: the
+  provider verified the mailbox and so did we.
 * **Email codes and phone codes**, social sign-in with **Google, Apple,
   Microsoft and GitHub**, **passkeys**, **TOTP** with recovery codes, and
   step-up authentication.
@@ -178,6 +185,41 @@ What each one is for, where it is not obvious:
   to money.
 * **Nothing is wider than the viewport.** The profile picture control was the
   cause (min-content 357px on a 360px screen) and is now the avatar itself.
+* **Devices and sign-in history say WHERE**, not just which four numbers — the
+  country is looked up server-side (`src/geo.js`, ported from
+  `vesopa_hosting`), cached three deep, and each row carries a mark for the
+  KIND of machine. `scripts/backfill-countries.js` fills in rows written before
+  the lookup existed.
+* **"Getting back in" is its own panel**, with an Email/Phone toggle like the
+  sign-in page. Changing a recovery address asks for the password, the
+  authenticator, or a code to the ORDINARY address first — never to the
+  recovery one, which would be a circle with nobody outside it. See
+  `src/reauth.js`.
+* **The picture upload works.** It did not: the template said the form
+  "submits itself when a file is chosen" and the script that would have done
+  that was never written, so choosing a picture did nothing at all.
+
+**Consent, and who is allowed in**
+
+* **The consent screen fits one phone screen.** Who is about to be signed in,
+  what is asking, the permission list COLLAPSED behind a tap, then Allow and
+  Not now. The account chip at the top is a control — pressing it signs out and
+  comes back to the same authorisation as somebody else.
+* **An administrator of the application is warned.** Consent granted by the
+  person who administers the app is not a customer's consent; the screen says
+  so and makes switching the primary action.
+* **Anybody may hold a Vesopa account; no application has to take everybody.**
+  `applications.allow_self_enroll` decides, per application: the QR menu enrols
+  whoever scans a table, the back office and the till do not.
+* **Being turned away is a page, not a bounce.** It used to redirect to the
+  application with `error=access_denied`, which arrived as "we could not finish
+  signing you in" — indistinguishable from a fault. It now says, on this
+  domain, that the account is fine and simply is not on the list, shows the
+  address to quote, and offers to switch account.
+* **Invitations, from two places.** `/developers/a/<id>/people` for somebody
+  who builds on Vesopa, and `POST /api/app/invitations` (client credentials,
+  confidential clients only) for an application inviting on a manager's behalf
+  — which is what the back office's "Invite through Vesopa" uses.
 
 **For developers** — `/developers`
 
@@ -199,11 +241,26 @@ where that person can see it.
 
 * **Back office** — Vesopa Auth and nothing else, behind
   `VESOPA_AUTH_BACKOFFICE_ONLY`. Driven end to end in a browser: one button,
-  out to auth.vesopa.com, back signed in.
+  out to auth.vesopa.com, back signed in. Adding a member of staff sends them a
+  Vesopa invitation, and with Vesopa-only on it stops asking a manager to
+  invent a password for a door that is not there.
 * **QR menu** — the mark and "Continue with Vesopa" above "Continue as guest".
   Guest stays the default and stays first-class.
-* **Till** — the device hand-off, with loopback still registered so an older
-  build keeps working.
+* **Till and kitchen screen** — the device hand-off, with loopback still
+  registered so an older build keeps working. Both draw the same button as the
+  back office: the Vesopa mark, lime on black, and the words "Continue with
+  Vesopa" to the letter.
+
+**The shell**
+
+* **No browser loading bar.** Links already went through the router; forms do
+  now too. A redirect from a route that sees `x-vesopa-nav: 1` comes back as
+  `204` with the address in `X-Vesopa-Location` instead of a `303` that `fetch`
+  would follow silently — so the router always knows where the server sent it,
+  and only a hand-off to another origin is a real navigation.
+* **No blue box round the heading on iPad.** The router focuses the new page's
+  `h1` so a screen reader is told the page changed; Safari drew its focus
+  rectangle around it. The announcement stays, the rectangle goes.
 
 ### The rules the owner asked for, and where each one lives
 

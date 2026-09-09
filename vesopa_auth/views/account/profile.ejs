@@ -43,15 +43,22 @@
 
     <%
       /*
-       * Submits itself when a file is chosen, and shows a plain button when it
-       * cannot. Two steps — choose, then press Upload — is one step more than
-       * anybody expects, and the button below is what makes the page still work
-       * with scripting off rather than a fallback nobody sees.
+       * THE BUTTON IS ALWAYS HERE, and /js/profile.js hides it once it has
+       * bound the change handler that makes it unnecessary.
+       *
+       * It used to live inside `<noscript>`, with a comment saying the form
+       * "submits itself when a file is chosen" — and the script that would have
+       * done that was never written. So for everybody with scripting on, which
+       * is everybody, choosing a picture selected a file into a hidden input
+       * and nothing happened at all. That is the fault the owner reported, and
+       * the reason the button is no longer conditional: a control that only
+       * exists when a script fails is a control nobody ever tests.
        */
     %>
-    <noscript>
-      <button class="btn btn-quiet btn-small mt-2" type="submit">Upload</button>
-    </noscript>
+    <button class="btn btn-quiet btn-small mt-2" type="submit" data-avatar-submit>
+      Upload this picture
+    </button>
+    <p class="form-error" role="alert" data-avatar-error hidden></p>
     <p class="hint">JPEG, PNG, WebP or GIF, up to 2&nbsp;MB.</p>
   </form>
 
@@ -98,7 +105,9 @@
     %>
     <input type="date" id="date_of_birth" name="date_of_birth"
            value="<%= user.date_of_birth ? String(user.date_of_birth).slice(0, 10) : '' %>"
-           autocomplete="bday" max="<%= new Date().toISOString().slice(0, 10) %>">
+           autocomplete="bday"
+           min="1900-01-01"
+           max="<%= new Date().toISOString().slice(0, 10) %>">
     <p class="hint">Only shared with an app that asked for your profile and that you allowed. Leave it blank if you would rather not.</p>
   </div>
 
@@ -114,4 +123,5 @@
   </p>
 </section>
 
+<script src="/js/profile.js?v=<%= config.version %>"></script>
 <%- include('../partials/console-foot') %>

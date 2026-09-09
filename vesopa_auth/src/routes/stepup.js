@@ -462,6 +462,13 @@ router.post('/step-up', csrf.verify, async (req, res, next) => {
 
 module.exports = router;
 module.exports.setPending = setPending;
+/*
+ * Shared with the "confirm it is you" gate, which needs exactly this check for
+ * an authenticator or a recovery code. Copying it there would mean two rate
+ * limits on one thing, and the day one of them was tightened the other would
+ * quietly still be the loose one.
+ */
+module.exports.checkSecondFactor = checkSecondFactor;
 module.exports.clearPending = clearPending;
 module.exports.readState = readState;
 module.exports.PENDING_COOKIE = PENDING_COOKIE;

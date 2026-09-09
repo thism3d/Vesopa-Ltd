@@ -18,7 +18,7 @@
 const crypto = require('crypto');
 const db = require('./db');
 const { newId } = require('./crypto');
-const { isPrivateRelay } = require('./normalise');
+const { isPrivateRelay, normaliseEmail } = require('./normalise');
 
 /**
  * The live identity for this identifier, with its owner — or null.
@@ -160,8 +160,8 @@ async function insertIdentity(
     `INSERT INTO user_identities
        (user_id, type, identifier, identifier_norm, display, verified_at,
         verified_via, is_recovery, is_private_relay, profile,
-        asserted_email, asserted_email_verified)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        asserted_email, asserted_email_norm, asserted_email_verified)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       userId,
       type,
@@ -174,6 +174,17 @@ async function insertIdentity(
       type === 'email' && isPrivateRelay(identifier) ? 1 : 0,
       profile ? JSON.stringify(profile) : null,
       String(assertedEmail).slice(0, 255),
+      /*
+       * The SAME normalisation as every other identifier in this system.
+       *
+       * `asserted_email` used to be stored raw and only raw, which broke the
+       * rule at the top of normalise.js — store it as written, and store it
+       * again in the one form we compare against. The consequence was that
+       * `findByAssertedEmail` could not exist, so an address Google or GitHub
+       * had already proved could not be matched to the same address typed on
+       * the sign-in page, and one person ended up with two accounts.
+       */
+      normaliseEmail(assertedEmail) || '',
       assertedEmailVerified === null ? null : assertedEmailVerified ? 1 : 0,
     ],
   );
@@ -264,6 +275,54 @@ async function findLinkCandidate(assertedEmail, normalised, providerTrustsEmail)
   return existing;
 }
 
+/**
+ * The account that already holds this address because a provider proved it.
+ *
+ * THE OTHER HALF OF `findLinkCandidate`, and the fault it fixes is the one the
+ * owner reported: signing in with GitHub made an account holding
+ * `muzahid@onzep.uk`; typing that same address on the sign-in page made a
+ * SECOND account. His words — *"any user link their account has the same email
+ * linked to the one account"* — and he is right.
+ *
+ * `findLinkCandidate` answers "Google says this address is theirs; do we
+ * already know it?". This answers the mirror image: "somebody has just read a
+ * code we sent to this address; does an account already exist that a provider
+ * told us owns it?".
+ *
+ * WHY THIS IS SAFE, WHEN THE SILENT LINK IN THE OTHER DIRECTION WOULD NOT BE.
+ * The classic attack on email matching is that an UNPROVEN claim gets welded to
+ * a proven one — somebody registers victim@gmail.com without verifying it, and
+ * later the real owner's Google sign-in hands them the account. Nothing like
+ * that is possible here, because BOTH sides are proofs of the same fact:
+ *
+ *   the provider verified that address (asserted_email_verified), and
+ *   the person just received a code AT that address, this minute.
+ *
+ * Two independent demonstrations of control over one mailbox. If they are
+ * different people, the mailbox is already shared, and no account boundary was
+ * ever going to survive that.
+ *
+ * Apple relay addresses are excluded by `isPrivateRelay`: they are per-app
+ * aliases that can be switched off, and they are not evidence about a person.
+ */
+async function findByAssertedEmail(normalised) {
+  if (!normalised || isPrivateRelay(normalised)) return null;
+  return db.one(
+    `SELECT i.*, u.public_id AS user_public_id, u.status AS user_status,
+            u.display_name
+       FROM user_identities i
+       JOIN users u ON u.id = i.user_id
+      WHERE i.asserted_email_norm = ?
+        AND i.asserted_email_verified = 1
+        AND i.revoked_at IS NULL
+        AND i.type NOT IN ('email', 'phone')
+        AND u.status = 'active'
+      ORDER BY i.id
+      LIMIT 1`,
+    [normalised],
+  );
+}
+
 /** The person, by internal id. */
 async function getUser(userId) {
   return db.one('SELECT * FROM users WHERE id = ?', [userId]);
@@ -284,6 +343,7 @@ module.exports = {
   touchIdentity,
   revokeIdentity,
   findLinkCandidate,
+  findByAssertedEmail,
   getUser,
   getUserByPublicId,
 };

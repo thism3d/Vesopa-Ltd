@@ -2481,7 +2481,17 @@ async function loadUsers() {
                   + 'card to issue. Add them under Staff first.' })}
           ${u.role !== 'admin'
             ? `<button class="btn small ghost" data-role-user="${u.id}" data-role-current="${u.role_id ?? ''}">Role</button>` : ''}
-          <button class="btn small ghost" data-pw-user="${u.id}">Reset password</button>
+          ${vesopaOnly
+            // WITH VESOPA AS THE ONLY WAY IN, there is no password to reset —
+            // the form is not on the sign-in page and no hash here can open
+            // anything. Offering the button anyway would be a manager setting a
+            // password, sending it to somebody, and both of them discovering
+            // over the phone that it does nothing.
+            //
+            // What replaces it is the thing that DOES let somebody in: an
+            // invitation to their Vesopa account.
+            ? `<button class="btn small ghost" data-invite-user="${u.id}">Invite through Vesopa</button>`
+            : `<button class="btn small ghost" data-pw-user="${u.id}">Reset password</button>`}
           ${u.role !== 'admin'
             ? iconBtn('del', 'Delete', `data-del-user="${u.id}"`, 'danger') : ''}
         </td>
@@ -3221,6 +3231,17 @@ async function dropPreset(preset, gridX, gridY) {
 // It writes the same array of grid points the presets do, so nothing downstream
 // knows the difference and a room drawn today can still be edited as a preset
 // tomorrow.
+
+/*
+ * Is Vesopa the only way into this back office?
+ *
+ * Answered by the server — see /api/public/backoffice/sign-in-options — because
+ * this page is static HTML read into a constant at start-up, so a flag baked in
+ * here could never follow the environment. It is read on the sign-in screen and
+ * used again on the users page, where it decides whether "Reset password" is a
+ * real thing or a button that does nothing.
+ */
+let vesopaOnly = false;
 
 let lasso = null;   // { points: [[x,y], …] } while drawing, else null
 
@@ -5723,16 +5744,53 @@ document.addEventListener('click', async (e) => {
     return modal('Add back office user', [
       { label: 'Name', name: 'name', required: true },
       { label: 'Email (their sign-in)', name: 'email', type: 'email', required: true },
-      { label: 'Password', name: 'password', type: 'password', required: true },
+      /*
+       * NO PASSWORD FIELD WHERE THERE IS NO PASSWORD FORM.
+       *
+       * With Vesopa as the only way in, asking a manager to invent a password
+       * means them typing a secret, sending it to a colleague over WhatsApp,
+       * and discovering together that it opens nothing — a real credential in a
+       * chat log, for a door that is not there. The server fills the column
+       * with random bytes nobody ever sees.
+       */
+      ...(vesopaOnly
+        ? []
+        : [{ label: 'Password', name: 'password', type: 'password', required: true }]),
       ...(me?.role === 'admin'
         ? [{ label: 'Office', name: 'office_id', type: 'select',
              options: offices.map((o) => `${o.id} — ${o.name}`) }]
         : []),
-    ], (d) => {
+    ], async (d) => {
       // The select carries "12 — Name"; the API wants the id.
       if (d.office_id) d.office_id = parseInt(d.office_id, 10);
-      return api('/users', { method: 'POST', body: JSON.stringify(d) });
+      const made = await api('/users', { method: 'POST', body: JSON.stringify(d) });
+
+      /*
+       * Say whether the invitation went, because from the manager's side
+       * "added the user" and "the user can get in" are the same act and they
+       * have no reason to think otherwise. A row with no invitation is a
+       * colleague who cannot sign in and has been told nothing.
+       */
+      if (made && made.invited === true) toast(`Invitation sent to ${d.email}.`);
+      else if (made && made.invited === false) {
+        toast(made.invite_error || 'The user was added, but the invitation did not send.', 'error');
+      }
+      return made;
     });
+  }
+
+  if (t.dataset.inviteUser) {
+    const button = t;
+    button.disabled = true;
+    try {
+      const sent = await api(`/users/${button.dataset.inviteUser}/vesopa-invite`, { method: 'POST' });
+      toast(`Invitation sent. The link works for ${sent.expires_in_days || 7} days.`);
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      button.disabled = false;
+    }
+    return undefined;
   }
   if (t.dataset.pwUser) {
     const who = t.dataset.pwUser;
@@ -5896,6 +5954,7 @@ $('login-form').addEventListener('submit', async (e) => {
      */
     const rule = document.getElementById('vesopa-or');
     if (options.only) {
+      vesopaOnly = true;
       document.body.classList.add('vesopa-only');
       if (rule) rule.hidden = true;
     } else if (rule) {
