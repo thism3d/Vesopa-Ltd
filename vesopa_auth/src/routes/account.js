@@ -211,7 +211,7 @@ router.get('/account/security', async (req, res, next) => {
     const session = await guard(req, res);
     if (!session) return undefined;
 
-    const [totp, passkeys, password, recovery] = await Promise.all([
+    const [totp, passkeys, password, recovery, phone] = await Promise.all([
       db.one(
         'SELECT id, label, created_at, last_used_at FROM user_totp WHERE user_id = ? AND confirmed_at IS NOT NULL AND revoked_at IS NULL',
         [session.user_id],
@@ -229,6 +229,22 @@ router.get('/account/security', async (req, res, next) => {
         'SELECT COUNT(*) AS remaining FROM user_recovery_codes WHERE user_id = ? AND used_at IS NULL',
         [session.user_id],
       ),
+      /*
+       * The phone that can receive a sign-in code.
+       *
+       * VERIFIED ONLY, and ordered the same way factors.js orders it, so this
+       * page names the number that would actually be texted. Showing a
+       * different one — an unverified number, or the second of two — would be
+       * worse than showing none: somebody would wait for a code at a phone we
+       * were never going to text.
+       */
+      db.one(
+        `SELECT identifier FROM user_identities
+          WHERE user_id = ? AND type = 'phone'
+            AND revoked_at IS NULL AND verified_at IS NOT NULL
+          ORDER BY is_recovery, created_at LIMIT 1`,
+        [session.user_id],
+      ),
     ]);
 
     return page(res, 'account/security', session, {
@@ -238,6 +254,7 @@ router.get('/account/security', async (req, res, next) => {
       hasPassword: Boolean(password),
       passwordSince: password ? password.created_at : null,
       recoveryRemaining: recovery ? recovery.remaining : 0,
+      smsPhone: phone ? phone.identifier : null,
       error: req.query.error || '',
       saved: req.query.saved === '1',
     });

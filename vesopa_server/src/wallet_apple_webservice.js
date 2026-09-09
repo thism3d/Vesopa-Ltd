@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const express = require('express');
 
 const G = require('./wallet_google');
+const walletLog = require('./wallet_log');
 
 /**
  * Apple's pass update service, which is a protocol and not an API of ours.
@@ -38,6 +39,15 @@ const G = require('./wallet_google');
  * model for a thing that lives in a stranger's pocket. A leaked token exposes
  * exactly one card and is rotated by reissuing it.
  */
+/**
+ * Where a device log line goes when it names no pass we know.
+ *
+ * Not blank and not the first venue that comes to hand: an unattributable line
+ * is still worth keeping, and filing it under a real venue would show that
+ * venue somebody else's trouble.
+ */
+const PLATFORM_OFFICE = 'platform@vesopa.co.uk';
+
 function appleWebServiceRoutes({ pool, config, build }) {
   const router = express.Router();
 
@@ -157,6 +167,17 @@ function appleWebServiceRoutes({ pool, config, build }) {
           );
         }
 
+        walletLog.record(pool, {
+          office: pass.office,
+          event: 'registered',
+          kind: pass.kind,
+          subjectId: pass.subject_id,
+          serial: String(serial),
+          deviceId: String(deviceId),
+          detail: existing ? 'already registered, push token refreshed' : 'first registration',
+          req,
+        });
+
         return res.sendStatus(existing ? 200 : 201);
       } catch (e) {
         next(e);
@@ -188,6 +209,24 @@ function appleWebServiceRoutes({ pool, config, build }) {
           'DELETE FROM epos_wallet_devices WHERE device_id = ? AND serial_number = ?',
           [String(deviceId), String(serial)]
         );
+
+        /*
+         * Somebody deleted the card from their phone.
+         *
+         * Worth a row of its own: a venue whose passes are being removed
+         * shortly after they are added has a problem with the card, not with
+         * the wallet — and nothing else in this system would ever show that.
+         */
+        walletLog.record(pool, {
+          office: pass.office,
+          event: 'unregistered',
+          kind: pass.kind,
+          subjectId: pass.subject_id,
+          serial: String(serial),
+          deviceId: String(deviceId),
+          req,
+        });
+
         return res.sendStatus(200);
       } catch (e) {
         next(e);
@@ -281,11 +320,31 @@ function appleWebServiceRoutes({ pool, config, build }) {
 
       let built;
       try {
-        built = await build(pass.office, pass.kind, pass.subject_id);
+        built = await build(pass.office, pass.kind, pass.subject_id, req);
+        walletLog.record(pool, {
+          office: pass.office,
+          event: 'refreshed',
+          kind: pass.kind,
+          subjectId: pass.subject_id,
+          serial: String(serial),
+          bytes: built.bytes ? built.bytes.length : null,
+          detail: 'a phone came back for an updated card',
+          req,
+        });
       } catch (e) {
         // The subject is gone — a customer deleted, a staff member removed. The
         // card cannot be rebuilt and never will be, so 404 rather than 500:
         // it is the honest answer and iOS stops asking.
+        walletLog.record(pool, {
+          office: pass.office,
+          event: 'error',
+          kind: pass.kind,
+          subjectId: pass.subject_id,
+          serial: String(serial),
+          detail: e.message,
+          ok: false,
+          req,
+        });
         if (e.status === 404) return res.sendStatus(404);
         throw e;
       }
@@ -325,11 +384,64 @@ function appleWebServiceRoutes({ pool, config, build }) {
    * Always 200, whatever the body. A device that cannot file a complaint retries
    * it, and there is nothing here worth making it retry.
    */
-  router.post('/v1/log', (req, res) => {
+  router.post('/v1/log', async (req, res) => {
     const logs = (req.body && Array.isArray(req.body.logs) ? req.body.logs : [])
       .map((line) => String(line).slice(0, 500))
       .slice(0, 20);
+
     for (const line of logs) console.error('[wallet] Apple Wallet device log:', line);
+
+    /*
+     * And now KEPT, not only printed.
+     *
+     * These lines were going to the process output alone, where they rotate
+     * away and cannot be read from the back office at all — so the single most
+     * useful diagnostic in this subsystem was visible only to somebody with a
+     * shell on the server, and only for as long as the log file lasted.
+     *
+     * WHICH VENUE THEY BELONG TO takes a little work. Apple does not say, and
+     * this request carries no authentication and no serial — so the line is
+     * matched to a venue by the pass type and serial it mentions, when it
+     * mentions one, and otherwise filed against the platform. Guessing wrong
+     * would show one venue another's trouble, so it is only ever an exact
+     * match on a serial we already know.
+     */
+    for (const line of logs) {
+      try {
+        const found = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.exec(line);
+        let office = PLATFORM_OFFICE;
+        let serial = null;
+        let kind = null;
+
+        if (found) {
+          const [[pass]] = await pool.query(
+            'SELECT office, kind, apple_serial FROM epos_wallet_passes WHERE apple_serial = ? LIMIT 1',
+            [found[0]],
+          );
+          if (pass) {
+            office = pass.office;
+            serial = pass.apple_serial;
+            kind = pass.kind;
+          }
+        }
+
+        walletLog.record(pool, {
+          office,
+          event: 'device_log',
+          kind,
+          serial,
+          detail: line,
+          // Apple only calls this endpoint when something went wrong.
+          ok: false,
+          req,
+        });
+      } catch (error) {
+        console.warn('[wallet] could not file a device log line:', error.message);
+      }
+    }
+
+    // Always 200, whatever happened above. A device that cannot file a
+    // complaint retries it, and there is nothing here worth making it retry.
     res.sendStatus(200);
   });
 

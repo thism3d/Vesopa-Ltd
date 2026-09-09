@@ -8,7 +8,7 @@
     "dev": "node --watch src/server.js",
     "keys:rotate": "node scripts/rotate-signing-key.js",
     "seed": "node scripts/seed.js",
-    "test": "node --test test/"
+    "test": "node --test test/crypto.test.js test/normalise.test.js test/views.test.js"
   },
   "author": "Vesopa Software Ltd",
   "license": "UNLICENSED",

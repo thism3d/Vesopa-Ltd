@@ -2,6 +2,7 @@ const http2 = require('http2');
 
 const A = require('./wallet_apple');
 const G = require('./wallet_google');
+const walletLog = require('./wallet_log');
 
 /**
  * Telling a phone that a pass has changed.
@@ -231,7 +232,10 @@ async function notifySerial({ pool, serial, config, host = APNS_HOST }) {
   if (!result.serial) return result;
 
   const [[pass]] = await pool.query(
-    `SELECT id, office, kind, apple_serial FROM epos_wallet_passes
+    // subject_id as well, so the event log can name WHOSE card this was.
+    // Without it every push row reads "a card" rather than "Jane's loyalty
+    // card", which is the difference between a log and a usable one.
+    `SELECT id, office, kind, subject_id, apple_serial FROM epos_wallet_passes
       WHERE apple_serial = ?`,
     [result.serial]
   );
@@ -271,6 +275,15 @@ async function notifySerial({ pool, serial, config, host = APNS_HOST }) {
           [device.device_id, result.serial]
         )
         .catch(() => {});
+      walletLog.record(pool, {
+        office: pass.office,
+        event: 'pushed',
+        kind: pass.kind,
+        subjectId: pass.subject_id,
+        serial: result.serial,
+        deviceId: device.device_id,
+        detail: 'Apple accepted the notification',
+      });
       continue;
     }
 
@@ -286,6 +299,22 @@ async function notifySerial({ pool, serial, config, host = APNS_HOST }) {
           [device.device_id, result.serial]
         )
         .catch(() => {});
+      /*
+       * Recorded as an ordinary event and not a failure.
+       *
+       * "The pass is no longer on that phone" is Apple working correctly, and
+       * counting it as an error would make a venue whose customers churn look
+       * like a venue whose wallet is broken.
+       */
+      walletLog.record(pool, {
+        office: pass.office,
+        event: 'unregistered',
+        kind: pass.kind,
+        subjectId: pass.subject_id,
+        serial: result.serial,
+        deviceId: device.device_id,
+        detail: `Apple says the pass is gone from this device (${sent.reason})`,
+      });
       continue;
     }
 
@@ -297,6 +326,25 @@ async function notifySerial({ pool, serial, config, host = APNS_HOST }) {
         [String(sent.reason).slice(0, 500), device.device_id, result.serial]
       )
       .catch(() => {});
+    /*
+     * The reason, kept per attempt rather than only in `last_error`.
+     *
+     * That column holds the MOST RECENT failure and is overwritten by the next
+     * one, so a card that failed for one reason on Monday and another on
+     * Tuesday reads as though only Tuesday ever happened. Three of these in a
+     * row with three different reasons is a completely different diagnosis from
+     * three the same.
+     */
+    walletLog.record(pool, {
+      office: pass.office,
+      event: 'push_failed',
+      kind: pass.kind,
+      subjectId: pass.subject_id,
+      serial: result.serial,
+      deviceId: device.device_id,
+      detail: String(sent.reason),
+      ok: false,
+    });
   }
 
   return result;

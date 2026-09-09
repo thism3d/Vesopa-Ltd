@@ -7756,6 +7756,126 @@ async function loadWalletApple() {
     <p class="muted small">${walletApple.push_updates
       ? 'Passes update themselves in the customer’s wallet.'
       : 'Passes are correct when issued and refresh when the code is scanned again. Automatic updates need a web service URL.'}</p>`;
+
+  // The history sits under the same tab, so a venue looking at "can we issue
+  // passes" also sees whether anybody has one.
+  loadWalletEvents();
+
+  const refresh = $('wallet-events-refresh');
+  if (refresh && !refresh.dataset.wired) {
+    refresh.dataset.wired = '1';
+    refresh.addEventListener('click', loadWalletEvents);
+    $('wallet-events-trouble').addEventListener('change', loadWalletEvents);
+    $('wallet-events-serial').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') loadWalletEvents();
+    });
+  }
+}
+
+/**
+ * What has actually happened to this venue's passes.
+ *
+ * WHY THIS SCREEN EXISTS
+ *
+ * Everything a pass does after it leaves the server happens on somebody else's
+ * phone. There is no app to instrument and no crash report to read, so when a
+ * customer says "it never updated" the only evidence is what the server saw:
+ * the card was built, a phone registered, a push went out, Apple refused it.
+ * That story was previously spread across one overwritable error column and a
+ * log file on the server that no venue can reach.
+ */
+async function loadWalletEvents() {
+  const box = $('wallet-events');
+  const summaryBox = $('wallet-events-summary');
+  if (!box) return;
+
+  const params = new URLSearchParams({ limit: '150' });
+  if ($('wallet-events-trouble') && $('wallet-events-trouble').checked) params.set('trouble', '1');
+  const serial = $('wallet-events-serial') && $('wallet-events-serial').value.trim();
+  if (serial) params.set('serial', serial);
+
+  let data;
+  try {
+    data = await api(`/wallet/apple/events?${params}`);
+  } catch (e) {
+    box.innerHTML = '<p class="muted small">No wallet activity is recorded on this server yet.</p>';
+    if (summaryBox) summaryBox.innerHTML = '';
+    return;
+  }
+
+  const s = data.summary || {};
+  if (summaryBox) {
+    /*
+     * Built and downloaded side by side on purpose.
+     *
+     * A column of successful builds looks healthy until you notice none were
+     * downloaded — which is what a broken QR code looks like from here, and it
+     * is invisible if you only count the thing that worked.
+     */
+    summaryBox.innerHTML = `
+      <p class="muted small">Last ${s.days || 7} days:
+        <b>${s.built || 0}</b> built,
+        <b>${s.downloaded || 0}</b> added to a phone,
+        <b>${s.registered || 0}</b> registered for updates,
+        <b>${s.refreshed || 0}</b> refreshed,
+        <b>${s.pushed || 0}</b> pushed${s.push_failed ? `, <b>${s.push_failed}</b> pushes failed` : ''}${
+          s.unregistered ? `, <b>${s.unregistered}</b> removed` : ''}.
+        ${s.avg_build_ms ? `A card takes about ${s.avg_build_ms}ms to sign.` : ''}
+        ${s.failures ? `<span class="pill warn">${s.failures} problem${s.failures === 1 ? '' : 's'}</span>` : ''}
+      </p>`;
+  }
+
+  const rows = data.events || [];
+  if (!rows.length) {
+    box.innerHTML = '<p class="muted small">Nothing yet. Hand out a card and it will appear here.</p>';
+    return;
+  }
+
+  const WORDS = {
+    built: 'Card built',
+    downloaded: 'Added to a phone',
+    registered: 'Registered for updates',
+    unregistered: 'Removed from a phone',
+    refreshed: 'Refreshed on a phone',
+    pushed: 'Update pushed',
+    push_failed: 'Update failed',
+    device_log: 'Reported by Apple',
+    error: 'Failed',
+  };
+
+  box.innerHTML = `<table class="table"><thead><tr>
+      <th>When</th><th>What</th><th>Card</th><th>Detail</th>
+    </tr></thead><tbody>${rows
+      .map((r) => {
+        const when = new Date(r.created_at);
+        /*
+         * Joined, not concatenated.
+         *
+         * Each part carried its own leading separator, so a row with a size and
+         * no detail — which is every download — rendered as "· 341KB" with a
+         * dot floating in front of it.
+         */
+        const detail = [
+          r.detail,
+          r.bytes ? `${Math.round(r.bytes / 1024)}KB` : null,
+          r.ms ? `${r.ms}ms` : null,
+        ]
+          .filter(Boolean)
+          .map((part) => esc(part))
+          .join(' · ');
+        return `<tr${r.ok ? '' : ' class="warn-row"'}>
+          <td class="small muted" title="${esc(when.toISOString())}">${esc(
+            when.toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short' }),
+          )}</td>
+          <td>${r.ok ? '' : '<span class="pill warn">!</span> '}${esc(WORDS[r.event] || r.event)}</td>
+          <td class="small muted">${esc(r.kind || '')}${
+            r.serial_number ? `<br><code>${esc(String(r.serial_number).slice(0, 8))}…</code>` : ''
+          }</td>
+          <td class="small muted">${detail}</td>
+        </tr>`;
+      })
+      .join('')}</tbody></table>
+    <p class="muted small">Kept for ${data.retain_days || 90} days.</p>`;
 }
 
 /**

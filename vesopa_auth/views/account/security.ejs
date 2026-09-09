@@ -92,6 +92,54 @@
   <p class="form-error" role="alert" data-totp-error></p>
 </section>
 
+<!-- ------------------------------------------------------------ Text message -->
+<%
+  /*
+   * There is no "set up SMS" button here, and that is not an omission.
+   *
+   * A verified phone number IS the factor — the sign-in screen offers it the
+   * moment one exists, so a second enrolment step would be a form that saved
+   * something already saved. What was genuinely missing was anywhere that SAID
+   * so: somebody with a number on file had a second factor they did not know
+   * about, and somebody without one had no way to learn that adding it helps.
+   *
+   * The number is shown with only its last three digits, the way a bank does.
+   * The whole number on a page anybody can shoulder-read is more than this
+   * screen needs to prove: the point is "yes, that is my phone", not to be a
+   * place to look somebody's number up.
+   */
+%>
+<section class="panel">
+  <h2>Text message</h2>
+
+  <% if (smsPhone) { %>
+  <p class="row-meta">
+    We can text a code to
+    <span class="mono">••• ••• <%= String(smsPhone).slice(-3) %></span>
+    when you sign in.
+  </p>
+  <p class="hint">
+    An authenticator app or a passkey is stronger — a text can be intercepted,
+    and a phone number can be moved to somebody else's SIM. Use this as the way
+    back in rather than the everyday one.
+  </p>
+  <p class="mt-2">
+    <a class="btn btn-quiet" href="/account/linked">Manage your phone numbers</a>
+  </p>
+  <% } else { %>
+  <p class="row-meta mb-2">
+    You have no confirmed phone number, so we cannot text you a code.
+  </p>
+  <p class="hint">
+    Adding one gives you a second step at sign-in and a way back in if you lose
+    your authenticator app.
+  </p>
+  <p class="mt-2">
+    <a class="btn btn-quiet" href="/account/linked">Add a phone number</a>
+  </p>
+  <% } %>
+</section>
+
 <!-- --------------------------------------------------------- Recovery codes -->
 <%
   /*

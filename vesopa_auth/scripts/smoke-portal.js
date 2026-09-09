@@ -514,6 +514,40 @@ async function main() {
   );
   check(dead.status !== 302, 'and an archived client cannot start a sign-in');
 
+  /*
+   * And now remove it properly.
+   *
+   * Archiving is a SOFT delete, which is right for the product — audit rows,
+   * tokens and consents all reference an application, and a real archive must
+   * not orphan them. But it means every run of this test leaves a row behind,
+   * and ten of them had quietly accumulated in the live applications table
+   * before anybody looked.
+   *
+   * Only the one this run created, addressed by the client id it was given,
+   * and only when it is archived — so a mistake here cannot reach a real
+   * application.
+   */
+  section('clearing up after ourselves');
+
+  const db = require('../src/db');
+  const mine = await db.one(
+    'SELECT id, slug, status, deleted_at FROM applications WHERE client_id = ?',
+    [clientId],
+  );
+  check(Boolean(mine), 'the application this run created is findable');
+  check(
+    Boolean(mine && mine.deleted_at) && String(mine.slug).startsWith('smoke-test-'),
+    'it is archived and named as a test, so it is safe to remove',
+    mine ? `${mine.slug} status=${mine.status} deleted_at=${mine.deleted_at}` : 'not found',
+  );
+
+  if (mine && mine.deleted_at && String(mine.slug).startsWith('smoke-test-')) {
+    await db.execute('DELETE FROM applications WHERE id = ?', [mine.id]);
+    const still = await db.one('SELECT id FROM applications WHERE id = ?', [mine.id]);
+    check(!still, 'and it is gone, so these do not pile up run after run');
+  }
+  await db.close();
+
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);
 }

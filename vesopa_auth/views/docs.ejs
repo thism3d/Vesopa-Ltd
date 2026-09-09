@@ -248,18 +248,135 @@ CHALLENGE=$(printf '%s' "$VERIFIER" | openssl dgst -binary -sha256 \
       </table>
     </section>
 
+    <section id="webhooks">
+      <h2>Webhooks</h2>
+      <p>
+        Signing somebody in tells you who they are <em>at that moment</em>.
+        Webhooks tell you what happened afterwards — that they changed their
+        name, disconnected you, or deleted their account and you must erase your
+        copy of their data. Add an endpoint in the
+        <a href="/developers">developer portal</a> and pick the events you want.
+      </p>
+
+      <table class="docs-table">
+        <tbody>
+          <tr><th><code>user.created</code></th><td>Somebody used your application for the first time.</td></tr>
+          <tr><th><code>user.updated</code></th><td>A name, picture or date of birth changed.</td></tr>
+          <tr><th><code>user.deleted</code></th><td>The account was deleted. Erase your copy of their data.</td></tr>
+          <tr><th><code>user.suspended</code></th><td>An administrator suspended the account.</td></tr>
+          <tr><th><code>identity.linked</code></th><td>An email address, phone number or provider was added.</td></tr>
+          <tr><th><code>identity.unlinked</code></th><td>One was removed — it may now belong to somebody else.</td></tr>
+          <tr><th><code>consent.revoked</code></th><td>The person disconnected your application. Stop using their tokens.</td></tr>
+          <tr><th><code>session.revoked</code></th><td>They signed out everywhere, or a session was ended for them.</td></tr>
+        </tbody>
+      </table>
+
+      <h3>What arrives</h3>
+      <div class="code-card">
+        <div class="code-head"><span class="code-dot"></span>POST to your endpoint</div>
+        <pre><code>POST /your/endpoint HTTP/1.1
+Content-Type: application/json
+Vesopa-Signature: t=1757370000,v1=6f1c…
+Vesopa-Event: user.updated
+Vesopa-Event-Id: 01M21Z4RP1MXNKM2HFESAV3H29
+Vesopa-Delivery: 01M21Z4RP2QK8CJ4W0YT7BNXME
+Vesopa-Attempt: 1
+
+{
+  "id": "01M21Z4RP1MXNKM2HFESAV3H29",
+  "type": "user.updated",
+  "created": 1757370000,
+  "data": { "sub": "01M21YEY6BPPC048E6J3CR6MSB", "name": "Jane Bell" }
+}</code></pre>
+      </div>
+      <p class="row-meta">
+        The <code>sub</code> inside <code>data</code> is the same subject your ID
+        tokens carry — for a third-party application it is derived from the
+        person <em>and</em> your application, so it matches what you already
+        store and is meaningless to anybody else.
+      </p>
+
+      <h3>Check the signature. Every time.</h3>
+      <p>
+        An unverified webhook endpoint is a public API that writes to your
+        database, and its address is not a secret — it is in our outbound
+        connection logs, your access logs and probably a screenshot somewhere.
+        The signature is HMAC-SHA256 over
+        <code>timestamp + "." + raw&nbsp;body</code>, so you must hash the bytes
+        you received, <strong>before</strong> any JSON parsing and
+        re-serialising: a re-encoded body is a different string and will never
+        match.
+      </p>
+      <div class="code-card">
+        <div class="code-head"><span class="code-dot"></span>Node</div>
+        <pre><code>const crypto = require('crypto');
+
+function verify(rawBody, header, secret) {
+  const parts = Object.fromEntries(
+    header.split(',').map((p) => p.split('=')),
+  );
+
+  // Reject anything old, or a genuine delivery captured today can be
+  // replayed at your endpoint tomorrow. The signature alone does not
+  // stop that — it covers the timestamp precisely so you can.
+  const age = Math.abs(Date.now() / 1000 - Number(parts.t));
+  if (!(age &lt; 300)) return false;
+
+  const expected = crypto
+    .createHmac('sha256', secret)
+    .update(`${parts.t}.${rawBody}`, 'utf8')
+    .digest('hex');
+
+  // Constant time, so a comparison cannot be timed to guess the digest.
+  return crypto.timingSafeEqual(
+    Buffer.from(expected, 'hex'),
+    Buffer.from(parts.v1, 'hex'),
+  );
+}</code></pre>
+      </div>
+
+      <h3>Delivery</h3>
+      <p>
+        Answer <code>2xx</code> and quickly — anything else is a failure and we
+        try again. Retries back off
+        <code>10s → 1m → 5m → 15m → 1h → 3h → 6h → 12h</code>, eight attempts in
+        all; an endpoint that has failed twenty times in a row is switched off
+        and we email you. Delivery is <strong>at least once</strong>, so the same
+        event can arrive twice — make your handler idempotent on
+        <code>Vesopa-Event-Id</code>, which is stable across every retry while
+        <code>Vesopa-Delivery</code> changes.
+      </p>
+      <p class="row-meta">
+        Do the work after you answer. We wait ten seconds for a response, and an
+        endpoint that rebuilds a search index before replying will time out, be
+        retried, and rebuild it again.
+      </p>
+      <p>
+        Endpoints must be <code>https://</code> and reachable from the public
+        internet — an address that resolves to a private range is refused when
+        you add it, because an endpoint pointing back inside our network would
+        turn your webhook into a way of reading it. Redirects are not followed,
+        for the same reason.
+      </p>
+      <p>
+        The portal shows every attempt with the status and the first part of the
+        response body, and will replay any delivery on demand — so a deploy that
+        was down for an hour costs nothing.
+      </p>
+    </section>
+
     <section>
       <h2>Getting a client id</h2>
       <p>
-        The developer portal is being built. Until it opens, write to
-        <a href="mailto:info@vesopasoftware.com">info@vesopasoftware.com</a> with
-        your application's name, its redirect URI and the scopes you need, and we
-        will register it and send you the credentials.
+        Sign in and open the <a href="/developers">developer portal</a>. Create
+        an application, register your redirect URI, choose your scopes, and the
+        client id and secret are issued straight away. Secrets can be rotated
+        there too — add the new one, deploy, then revoke the old, so a rotation
+        is never an outage.
       </p>
       <p class="row-meta">
-        Webhooks — told when a person changes or deletes their account — are on
-        the way. The current documentation is this page; it will grow rather than
-        move.
+        Something not covered here?
+        <a href="mailto:info@vesopasoftware.com">info@vesopasoftware.com</a>.
       </p>
     </section>
   </div>

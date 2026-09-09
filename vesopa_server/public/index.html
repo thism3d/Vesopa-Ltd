@@ -2420,6 +2420,34 @@
               <label class="check"><input type="checkbox" data-wal="apple_enabled"> Issue Apple passes</label>
               <div id="wallet-apple-status"></div>
             </div>
+
+            <!--
+              What has actually happened to the cards.
+
+              The panel above says whether a pass CAN be signed. This one says
+              whether anybody's phone has one, whether it updated, and what
+              Apple said when it did not — which is the question a venue rings
+              up about, and which nothing on this screen could previously
+              answer.
+            -->
+            <div class="card rd-card">
+              <h3>Wallet activity</h3>
+              <p class="muted small">
+                Every card built, every phone that added one, and every update —
+                newest first. Kept for 90 days.
+              </p>
+              <div id="wallet-events-summary"></div>
+              <p class="row" style="gap:8px;align-items:center;flex-wrap:wrap">
+                <label class="check">
+                  <input type="checkbox" id="wallet-events-trouble"> Only what went wrong
+                </label>
+                <input id="wallet-events-serial" class="input" style="flex:1 1 20em;max-width:26em"
+                       placeholder="Filter by pass serial (from the customer's card)">
+                <button class="btn" id="wallet-events-refresh" type="button"
+                        style="flex:0 0 auto">Refresh</button>
+              </p>
+              <div id="wallet-events"></div>
+            </div>
           </div>
 
           <!-- ---- Every card handed out -------------------------------- -->
