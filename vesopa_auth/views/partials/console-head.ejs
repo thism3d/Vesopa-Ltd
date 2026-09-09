@@ -68,7 +68,14 @@
   </div>
 </header>
 
-<div class="console">
+<%
+  /*
+   * `consoleClass` lets a page say something about its own layout. The one
+   * user today is the hub, which passes `is-hub` to suppress the rail: the hub
+   * IS the menu, so a rail beside it is the same nine links twice.
+   */
+%>
+<div class="console<%= typeof consoleClass !== 'undefined' && consoleClass ? ' ' + consoleClass : '' %>">
   <nav class="rail" aria-label="<%= sectionTitle %> sections">
     <% railItems.forEach(function (item) { %>
       <% if (item.group) { %>

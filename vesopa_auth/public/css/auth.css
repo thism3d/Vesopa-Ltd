@@ -1027,3 +1027,113 @@ a { color: var(--text); }
 @media (prefers-reduced-motion: reduce) {
   .float-field label { transition: none; }
 }
+
+/* --------------------------------------------------------------------------
+ * THE CODE FIELD — six boxes, one input
+ * --------------------------------------------------------------------------
+ * The input sits on top of the boxes at full size with transparent text and
+ * caret, so every tap, every keystroke, every paste and every autofill lands
+ * on a normal field. The boxes below are painted by public/js/code.js.
+ *
+ * `color: transparent` rather than `opacity: 0`: an input at zero opacity is
+ * invisible to some screen readers and to Safari's autofill, and this field's
+ * whole advantage over six real inputs is that autofill still works.
+ * ------------------------------------------------------------------------ */
+
+.code-field {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+
+/*
+ * `.code-field .code-real`, not `.code-real`.
+ *
+ * The global field rule is `input[type="text"]` — an element plus an attribute,
+ * specificity (0,1,1) — and a single class is (0,1,0), so it LOST. The result
+ * was an ordinary bordered white input painted straight over the six boxes:
+ * the boxes were there, correctly laid out, and completely hidden behind the
+ * thing that was supposed to be invisible. Two classes take it to (0,2,0).
+ */
+.code-field .code-real {
+  position: relative;
+  z-index: 2;
+  display: block;
+  width: 100%;
+  height: 64px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-height: 0;
+  background: transparent;
+  color: transparent;
+  caret-color: transparent;
+  font-size: 16px; /* 16px or iOS zooms the page when it is focused. */
+  letter-spacing: 0;
+  /* Chrome paints a selection highlight over the boxes otherwise. */
+  -webkit-text-fill-color: transparent;
+}
+.code-field .code-real:focus { outline: none; }
+.code-field .code-real::selection { background: transparent; }
+
+.code-boxes {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.code-box {
+  display: grid;
+  place-items: center;
+  height: 64px;
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  font-size: 26px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  transition: border-color .12s ease, transform .12s ease;
+}
+
+.code-box.is-filled { border-color: var(--text-muted); }
+
+/*
+ * The box waiting for the next digit. The brand colour and a blinking bar —
+ * the caret is hidden on the real input, so this is the only thing telling
+ * somebody where they are.
+ */
+.code-box.is-active {
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 22%, transparent);
+}
+.code-box.is-active::after {
+  content: "";
+  width: 2px;
+  height: 26px;
+  background: var(--green);
+  animation: code-caret 1.05s step-end infinite;
+}
+
+@keyframes code-caret { 0%, 50% { opacity: 1; } 50.01%, 100% { opacity: 0; } }
+
+/* All six in, and the field is about to submit itself. */
+.code-field.is-complete .code-box { border-color: var(--green); }
+
+@media (prefers-reduced-motion: reduce) {
+  .code-box { transition: none; }
+  .code-box.is-active::after { animation: none; }
+}
+
+/* Narrow phones: six 64px boxes plus gaps do not fit at 320px. */
+@media (max-width: 380px) {
+  .code-field .code-real, .code-box { height: 56px; }
+  .code-boxes { gap: 6px; }
+  .code-box { font-size: 22px; }
+  .code-box.is-active::after { height: 22px; }
+}

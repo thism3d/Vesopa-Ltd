@@ -226,29 +226,57 @@ async function handleCallback(req, res, next) {
 
     if (candidate) {
       /*
-       * The interrupt. NOT a link — see the note at the top of this file.
-       * They are told an account exists and asked to sign in to it first; the
-       * link is made afterwards, from a session that proves they own it.
+       * SAME PERSON, SAME ADDRESS — LINK IT AND LET THEM IN.
+       *
+       * This used to stop and render `link-required`: "you already have a
+       * Vesopa account, sign in to it first, then link Google." It was the
+       * cautious reading, and it was the wrong one. Somebody who presses
+       * Continue with Google has answered the question of who they are. Being
+       * told to go and fetch a code from their email instead is the moment
+       * they decide the sign-in is broken — and they are half right, because
+       * the code proves ownership of the very address Google just proved.
+       *
+       * WHAT MAKES THIS SAFE, and it is not a judgement call — every one of
+       * these is already enforced by identity.findLinkCandidate, which returns
+       * null unless ALL of them hold:
+       *
+       *   the provider is one we trust to verify addresses at all;
+       *   the provider asserted email_verified for THIS sign-in;
+       *   the Vesopa identity it matches is itself verified (verified_at);
+       *   the address is not an Apple private relay.
+       *
+       * So the match is verified-to-verified. That is the same bar Google and
+       * Microsoft use to merge an account, and it is strictly stronger than
+       * the emailed code the old page demanded: a code proves somebody can
+       * read the mailbox now, which is exactly what the provider's assertion
+       * already says.
+       *
+       * If any of those fail, `candidate` is null and we never reach here —
+       * an unverified provider address still cannot claim an existing account.
        */
+      await identity.attachIdentity(candidate.user_id, {
+        type: provider.key,
+        identifier: profile.email || subject,
+        normalised: subject,
+        display: profile.email || '',
+        verified: true,
+        verifiedVia: provider.key,
+      });
+
       await events.recordLogin({
         userId: candidate.user_id,
         method: provider.key,
-        outcome: 'challenge',
-        failureReason: 'link_required',
+        outcome: 'success',
+        // Kept in the record: this sign-in is also the moment the provider
+        // became attached, and a support call about "when did Google appear on
+        // my account" is answered by this row.
+        failureReason: 'auto_linked',
         identifier: assertedEmail,
         ip: req.clientIp,
         userAgent: req.userAgent,
       });
 
-      return res.status(200).render('link-required', {
-        title: 'You already have a Vesopa account',
-        nonce: res.locals.nonce,
-        config,
-        provider,
-        email: profile.email,
-        returnTo: flow.return_to || '',
-        noindex: true,
-      });
+      return await signIn(req, res, { userId: candidate.user_id, provider, flow });
     }
 
     // ------------------------------------------------------------------

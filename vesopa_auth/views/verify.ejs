@@ -23,23 +23,45 @@
         <label for="code">Your code</label>
         <%
           /*
-           * ONE INPUT, NOT SIX BOXES.
+           * SIX BOXES, ONE INPUT.
            *
-           * The six-separate-boxes pattern looks tidy and is a menace: pasting a
-           * code into it usually fails, a screen reader announces six unlabelled
-           * fields, and the focus juggling fights every password manager. One
-           * field with `autocomplete="one-time-code"` lets iOS and Android offer
-           * the code from the notification directly, which is the fastest route
-           * there is.
+           * It looks like the six separate boxes an iPhone shows, and it is
+           * still a single ordinary field: the input is stretched across the
+           * boxes with its text and caret hidden, and public/js/code.js copies
+           * each character into a box.
+           *
+           * That is not a cosmetic preference. Six real inputs would cost the
+           * three things that make an OTP field good on a phone —
+           * `autocomplete="one-time-code"` autofill straight from the
+           * notification, pasting a six-character code, and one labelled field
+           * for a screen reader instead of six unlabelled ones. The look is
+           * worth having; those are not worth trading for it.
+           *
+           * With the script blocked it degrades to exactly what it is: a
+           * labelled text input that accepts six digits.
            */
         %>
-        <input type="text" id="code" name="code"
-               inputmode="numeric" pattern="[0-9]*"
-               autocomplete="one-time-code"
-               maxlength="<%= config.codes.length %>"
-               autofocus
-               class="code-input"
-               aria-describedby="form-error">
+        <div class="code-field" data-code-field>
+          <input type="text" id="code" name="code"
+                 inputmode="numeric" pattern="[0-9]*"
+                 autocomplete="one-time-code"
+                 maxlength="<%= config.codes.length %>"
+                 autofocus
+                 class="code-real"
+                 aria-describedby="form-error">
+          <%
+            /*
+             * Hidden from assistive technology entirely — they are a picture of
+             * the input's value, and announcing them would say every digit
+             * twice.
+             */
+          %>
+          <div class="code-boxes" aria-hidden="true">
+            <% for (let i = 0; i < config.codes.length; i += 1) { %>
+            <span class="code-box"></span>
+            <% } %>
+          </div>
+        </div>
       </div>
 
       <button class="btn btn-primary" type="submit">Continue</button>
@@ -48,24 +70,24 @@
     <% if (hasPassword) { %>
     <%
       /*
-       * The password route, offered only to accounts that have one — which is
-       * the person's own choice, made after their first verification. Most
-       * accounts here will never have a password and must not be shown a box
-       * they cannot fill in.
+       * A LINK BACK, NOT A SECOND FORM.
+       *
+       * This used to render an entire password form underneath the code — two
+       * fields, two submit buttons and an "or" between them, on the one screen
+       * whose whole job is to accept six digits. Somebody who has just asked
+       * for a code was being shown the thing they had chosen to skip.
+       *
+       * One question per screen. The password page offers a code; this page
+       * offers the password back. Neither shows both, so there is never a
+       * choice to make while a code is sitting unread in a mailbox.
+       *
+       * Only for accounts that HAVE a password — most here never will, and a
+       * way back to a box they cannot fill is a dead end wearing a link.
        */
     %>
-    <div class="divider"><span>or</span></div>
-
-    <form class="auth-form" method="post" action="/login/verify" novalidate>
-      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-      <div class="field">
-        <label for="password">Your password</label>
-        <input type="password" id="password" name="password"
-               autocomplete="current-password"
-               aria-describedby="form-error">
-      </div>
-      <button class="btn btn-quiet" type="submit">Sign in with password</button>
-    </form>
+    <p class="small-print">
+      <a href="/login/password">Use your password instead</a>
+    </p>
     <% } %>
 
     <form method="post" action="/login/resend" class="resend">
@@ -79,4 +101,5 @@
   </div>
 </main>
 
+<script src="/js/code.js?v=<%= config.version %>"></script>
 <%- include('partials/foot') %>

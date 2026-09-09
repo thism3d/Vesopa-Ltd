@@ -253,6 +253,26 @@ router.post('/login', csrf.verify, async (req, res, next) => {
       hasPassword,
     });
 
+    /*
+     * Why this person is about to be asked for a code rather than a password.
+     *
+     * Without this line the degrade is invisible: somebody reports "it never
+     * asks for my password, it just emails me", and there is no way from
+     * outside to tell whether the policy is wrong, they have no password, the
+     * account is suspended, or reCAPTCHA scored them badly. All four look
+     * identical on the page — deliberately, because saying which would tell an
+     * attacker as much as it tells the owner. So it is said HERE instead.
+     *
+     * No address and no score-per-person beyond the number: this is an
+     * operational breadcrumb, not a log of who signed in from where.
+     */
+    if (step === 'password' && (suspended || verdict.degrade)) {
+      console.log(
+        `[signin] password step skipped — ${suspended ? 'account suspended' : `captcha ${verdict.reason}` +
+          (verdict.score === null ? '' : ` (score ${verdict.score})`)}`,
+      );
+    }
+
     if (step === 'password' && !suspended && !verdict.degrade) {
       /*
        * Straight to the password, with NO code sent and nothing said about

@@ -1047,6 +1047,22 @@ pre.code {
 .avatar-control .avatar {
   width: 96px;
   height: 96px;
+  /*
+   * `flex: 0 0 auto` is the fix, and the rest of this rule was never the
+   * problem.
+   *
+   * Measured on the live page, the avatar rendered 96 x 72 — a 96px box with
+   * `border-radius: 50%` and a height of 72 is an ELLIPSE, which is exactly
+   * what it looked like. `.avatar-control` is a column flexbox, this is a flex
+   * item, and a flex item's `flex-shrink` defaults to 1: when the column was
+   * short of room the browser did as it was told and took 24px off the height.
+   * The declared `height: 96px` is a starting size, not a floor.
+   *
+   * `aspect-ratio` is belt and braces — if a future change removes one of the
+   * two lengths, the shape still cannot go oval.
+   */
+  flex: 0 0 auto;
+  aspect-ratio: 1;
   border-radius: 50%;
   object-fit: cover;
   display: block;
@@ -1054,7 +1070,12 @@ pre.code {
   border: 1px solid var(--border);
 }
 .avatar-control .avatar-empty {
+  /* `display: grid` here overrides the `display: block` above — same
+     specificity, later in the file — so the shrink guard has to be repeated
+     rather than inherited. */
   display: grid;
+  flex: 0 0 auto;
+  aspect-ratio: 1;
   place-items: center;
   font-size: 38px;
   font-weight: 650;
@@ -1138,6 +1159,8 @@ pre.code {
 .hub-avatar-empty {
   width: 88px;
   height: 88px;
+  flex: 0 0 auto;
+  aspect-ratio: 1;
   border-radius: 50%;
   object-fit: cover;
   display: grid;
@@ -1178,40 +1201,129 @@ pre.code {
 .hub-email { margin: 0; color: var(--text-muted); font-size: 15px; overflow-wrap: anywhere; }
 .hub-plan { margin: 12px 0 0; }
 
-/* A group. 4px between its rows, 32px to the next group. */
-.hub-group { display: grid; gap: 4px; margin: 0 0 32px; }
+/* --------------------------------------------------------------------------
+ * THE ACCOUNT LOOKS LIKE VESOPA
+ * --------------------------------------------------------------------------
+ * What was here was a Google Account tracing: eight pastel circles, white
+ * cards floating on grey, one colour per section. It was a reasonable way to
+ * learn the STRUCTURE — rows, groups, a hub — and the wrong thing to ship,
+ * because the structure was the part worth borrowing and the surface was not.
+ *
+ * Vesopa is not pastel. The wordmark is a hard geometric cut: acid green on
+ * black, every diagonal at the same 31 degrees, no soft edges anywhere. It is
+ * the badge on a till in a bar, and the account that opens it should feel like
+ * the same company made it.
+ *
+ * So, three deliberate departures:
+ *
+ *   THE MARKS ARE CHAMFERED SQUARES, NOT CIRCLES. One corner cut at the
+ *   wordmark's own angle. A circle is the most generic shape there is; this
+ *   one is a signature, and it costs nothing to draw.
+ *
+ *   COLOUR MEANS SOMETHING AGAIN. Eight pastel tints spend the whole palette
+ *   on decoration and leave nothing to say "this one, now" with. Here the
+ *   marks are monochrome and the green is kept for three jobs only: who you
+ *   are, where you are, and what you are about to press.
+ *
+ *   THE ROWS ARE ONE SURFACE. A stack of separately-bordered cards is eight
+ *   rectangles the eye has to reconcile. A single panel divided by hairlines
+ *   reads as one instrument — which is what the till software beside it looks
+ *   like, and what this is a control panel for.
+ * ------------------------------------------------------------------------ */
+
 .hub-group:last-of-type { margin-bottom: 24px; }
+
+.hub-group {
+  display: grid;
+  gap: 0;
+  margin: 0 0 22px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
 
 .hub-row {
   display: grid;
-  grid-template-columns: 48px minmax(0, 1fr) 20px;
+  grid-template-columns: 44px minmax(0, 1fr) 20px;
   align-items: center;
   gap: 16px;
-  min-height: 76px;
-  padding: 14px 18px;
-  border-radius: 14px;
-  background: var(--surface);
-  border: 1px solid var(--border);
+  min-height: 72px;
+  padding: 13px 18px;
   text-decoration: none;
   color: var(--text);
+  position: relative;
 }
-.hub-row:hover { background: var(--surface-2); }
-.hub-row:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
-/* Saturated, not tinted. The reference uses full colour ONLY here — for
-   section identity — and greyscale everywhere else. That discipline is what
-   makes the colour mean something. */
+/* The hairline between rows, and never above the first one. */
+.hub-row + .hub-row { border-top: 1px solid var(--border); }
+
+/*
+ * The green edge on hover.
+ *
+ * A 3px bar down the leading edge rather than a background wash: it points at
+ * the row you are on without repainting a quarter of the screen, and it is the
+ * same gesture the till uses for a selected line.
+ */
+.hub-row::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: 3px;
+  background: var(--green);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform .12s ease;
+}
+.hub-row:hover::before,
+.hub-row:focus-visible::before { transform: scaleX(1); }
+.hub-row:hover { background: var(--surface-2); }
+.hub-row:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .hub-row::before { transition: none; }
+}
+
+/*
+ * The chamfered mark. The clip cuts the bottom-left corner at 31 degrees —
+ * `logo.svg` runs 9.95 across for 16.54 down, and 12px across for 20px down is
+ * the same slope at this size.
+ */
 .hub-mark {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
   display: grid;
   place-items: center;
+  border-radius: 9px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 34% 100%, 0 68%);
 }
-.hub-mark svg { width: 22px; height: 22px; }
+.hub-mark svg { width: 21px; height: 21px; }
+
+/* The mark takes the brand colour on the row you are pointing at — the only
+   place colour appears in this list. */
+.hub-row:hover .hub-mark,
+.hub-row:focus-visible .hub-mark {
+  color: var(--ink);
+  background: var(--green);
+  border-color: var(--green);
+}
+
+/*
+ * The tint classes still exist because the rail and other pages use them, but
+ * the hub no longer asks for them. Neutralised here rather than stripped from
+ * the markup: the day somebody wants one section coloured again, it is one
+ * line, not a template change.
+ */
+.hub-mark[class*="t-"] { background: var(--surface-2); }
+.hub-row:hover .hub-mark[class*="t-"] { background: var(--green); }
 
 .hub-lines { min-width: 0; }
-.hub-title { display: block; font-size: 17px; font-weight: 500; }
+.hub-title { display: block; font-size: 17px; font-weight: 550; letter-spacing: -.005em; }
 .hub-sub {
   display: block;
   margin-top: 2px;
@@ -1244,6 +1356,24 @@ pre.code {
   .console .rail { display: none; }
   .console-main { padding-top: 20px; }
 }
+
+/* --------------------------------------------------------------------------
+ * ONE MENU, NOT TWO
+ * --------------------------------------------------------------------------
+ * On an iPad the hub showed the rail AND the hub's own rows — the same nine
+ * destinations, twice, side by side. Reported from a real device, and obvious
+ * once seen: "Personal info, Security, How you sign in, Devices, Sign-in
+ * history, Connected apps" runs down the left, and the identical list fills
+ * the middle.
+ *
+ * The hub IS the menu. So the rail is gone on that page at EVERY width, not
+ * just on a phone — a duplicate is no more useful on a desktop than on a
+ * tablet, it merely has room to be ignored in. Everywhere else the rail stays
+ * on a wide screen, where it is navigation rather than a repeat of the page
+ * you are looking at.
+ * ------------------------------------------------------------------------ */
+.console.is-hub { grid-template-columns: minmax(0, 1fr); }
+.console.is-hub .rail { display: none; }
 
 /* Coming back, on a phone. The reference puts the arrow on the title line
    rather than in the bar above it. */

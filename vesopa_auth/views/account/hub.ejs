@@ -19,15 +19,21 @@
    * The rail is kept on a wide screen, where there is room for it and where
    * losing it would mean a wasted third of the window.
    */
+  /*
+   * NO SUBSCRIPTIONS ROW AND NO WALLET ROW.
+   *
+   * Both were built and both were wrong to put here: Vesopa does not sell a
+   * subscription through this account yet and takes no card in it, so the rows
+   * led to two empty pages that promised features that do not exist. On the
+   * front screen of somebody's account that is not a placeholder, it is a
+   * claim — and the person it misleads first is the owner, showing the product
+   * to somebody.
+   *
+   * The routes and templates are left in place, dormant and unlinked, because
+   * the work is done and the day billing is real this is one array entry. What
+   * is removed is the promise.
+   */
   const groups = [
-    {
-      rows: [
-        { href: '/account/subscriptions', icon: 'sparkle', tint: 'violet',
-          title: 'Subscriptions', sub: 'Your Vesopa products and what renews when' },
-        { href: '/account/wallet', icon: 'clipboard', tint: 'violet',
-          title: 'Wallet', sub: 'Payment methods and receipts' },
-      ],
-    },
     {
       rows: [
         { href: '/account/profile', icon: 'person', tint: 'brand',
@@ -96,7 +102,16 @@
   <h2 class="hub-name"><%= name || 'Your Vesopa account' %></h2>
   <% if (user.email) { %><p class="hub-email"><%= user.email %></p><% } %>
   <% if (session.is_staff) { %>
-  <p class="hub-plan"><span class="pill pill-info">Administrator</span></p>
+  <%
+    /*
+     * `pill-good`, not `pill-info`.
+     *
+     * The blue one is the generic informational tint and looked borrowed —
+     * because it was. Who somebody is, on their own account page, is the one
+     * badge worth spending the brand colour on.
+     */
+  %>
+  <p class="hub-plan"><span class="pill pill-good">Administrator</span></p>
   <% } %>
 </section>
 

@@ -41,6 +41,8 @@
   railTitle: 'Account',
   railHome: '/account',
   rail: accountRail,
+  // The hub suppresses the rail; every other account page keeps it.
+  consoleClass: path === '/account' ? 'is-hub' : '',
 }) %>
 
 <%

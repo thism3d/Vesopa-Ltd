@@ -78,21 +78,45 @@ function hasProvider(key) {
 }
 
 /*
- * What an application gets when it has no rows at all.
+ * What an application gets when it has no rows at all — which includes the
+ * bare `/login` page, reached directly rather than through /oauth/authorize.
  *
- * Every application created before this table existed has rows, because the
- * migration backfilled them. This covers the other case: an application created
- * by a route that forgets to seed its methods. Answering "nothing" there would
- * be a sign-in page with no way to sign in — so it answers with the sensible
- * default and the portal shows them as inherited rather than chosen.
+ * THE PROVIDERS ARE DERIVED, NOT LISTED, AND THAT IS THE WHOLE POINT.
+ *
+ * This was a hand-written list ending `{ method: 'google', sort: 50 }`, and it
+ * quietly removed Apple, Microsoft and GitHub from the front page of the
+ * identity provider. Their credentials were configured, their code worked and
+ * their callbacks were registered — they simply were not named in an array,
+ * and nothing anywhere reports a provider that was never asked for.
+ *
+ * It was the second copy of the same mistake: schema_008's backfill enumerated
+ * the same five methods and dropped the same three providers, so repairing the
+ * table alone changed nothing here. A hand-written list of what exists, kept
+ * in two places, goes stale in two places.
+ *
+ * So the fallback asks the server what it can actually do. Add credentials for
+ * a fifth provider tomorrow and it appears; take Apple's away and it goes.
+ * There is no third place to remember.
  */
-const FALLBACK = [
-  { method: 'password', sort: 10 },
-  { method: 'code_email', sort: 20 },
-  { method: 'code_sms', sort: 30 },
-  { method: 'passkey', sort: 40 },
-  { method: 'google', sort: 50 },
-];
+function fallbackMethods() {
+  const base = [
+    { method: 'password', sort: 10 },
+    { method: 'code_email', sort: 20 },
+    { method: 'code_sms', sort: 30 },
+    { method: 'passkey', sort: 40 },
+  ];
+
+  /*
+   * Ordered as the provider module orders them, so the buttons do not shuffle
+   * between one deployment and the next. `available()` still has the final say
+   * below — this decides what is OFFERED, never what works.
+   */
+  providers.enabled().forEach((provider, index) => {
+    base.push({ method: provider.key, sort: 50 + index * 10 });
+  });
+
+  return base;
+}
 
 /**
  * The methods this application offers, ordered, filtered to what works.
@@ -110,7 +134,7 @@ async function forApplication(applicationId) {
       [applicationId],
     );
   }
-  const chosen = rows.length ? rows : FALLBACK;
+  const chosen = rows.length ? rows : fallbackMethods();
 
   return chosen
     .filter((row) => KNOWN[row.method] && KNOWN[row.method].available())
@@ -214,4 +238,4 @@ async function contextFor(returnTo, defaultPolicy = 'password_first') {
   };
 }
 
-module.exports = { KNOWN, forApplication, group, firstStep, set, contextFor, FALLBACK };
+module.exports = { KNOWN, forApplication, group, firstStep, set, contextFor, fallbackMethods };
