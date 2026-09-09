@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/session_controller.dart';
+import '../data/vesopa_sso.dart';
 import '../main.dart';
 import 'theme.dart';
 
@@ -23,6 +24,66 @@ class _SignInPageState extends ConsumerState<SignInPage> {
   final _password = TextEditingController();
   bool _busy = false;
   String? _error;
+
+  /// Whether the back office will accept a Vesopa account, asked once when the
+  /// page opens. Null while the question is still in flight, so the button does
+  /// not flash into view and back out again on a slow line.
+  VesopaOption? _vesopa;
+
+  /// The address the browser was sent to, shown after it opens.
+  ///
+  /// A till is often a kiosked Windows machine with no browser to hand the
+  /// address to, and a clerk who can READ it can finish the sign-in on their
+  /// phone. Without this the terminal simply appears to hang.
+  Uri? _opened;
+
+  @override
+  void initState() {
+    super.initState();
+    _askAboutVesopa();
+  }
+
+  Future<void> _askAboutVesopa() async {
+    final option = await SessionController.option(ref.read(apiBaseProvider));
+    if (mounted) setState(() => _vesopa = option);
+  }
+
+  Future<void> _vesopaSignIn() async {
+    final option = _vesopa;
+    if (option == null || !option.enabled) return;
+
+    setState(() {
+      _busy = true;
+      _error = null;
+      _opened = null;
+    });
+
+    try {
+      await ref.read(sessionControllerProvider.notifier).signInWithVesopa(
+            apiBase: ref.read(apiBaseProvider),
+            via: option,
+            onUrl: (url) {
+              if (mounted) setState(() => _opened = url);
+            },
+          );
+    } on SignInFailed catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = e.message;
+          _busy = false;
+          _opened = null;
+        });
+      }
+    } on VesopaSsoFailed catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = e.message;
+          _busy = false;
+          _opened = null;
+        });
+      }
+    }
+  }
 
   Future<void> _submit() async {
     if (_email.text.trim().isEmpty || _password.text.isEmpty) {
@@ -184,6 +245,56 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                               ),
                             ),
                     ),
+
+                    if (_vesopa?.enabled ?? false) ...[
+                      const SizedBox(height: 18),
+                      Row(
+                        children: [
+                          const Expanded(child: Divider()),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            child: Text(
+                              'or',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                color: Theme.of(context).hintColor,
+                              ),
+                            ),
+                          ),
+                          const Expanded(child: Divider()),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 15),
+                        ),
+                        onPressed: _busy ? null : _vesopaSignIn,
+                        icon: const Icon(Icons.open_in_new, size: 18),
+                        label: const Text(
+                          'Continue with Vesopa',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      // The address, once the browser has been sent to it. A
+                      // kiosked till may have no browser at all; this is what
+                      // lets the sign-in be finished on a phone instead.
+                      if (_opened != null) ...[
+                        const SizedBox(height: 12),
+                        SelectableText(
+                          'Finish in the browser, or open:\n${_opened!.origin}',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            height: 1.4,
+                            color: Theme.of(context).hintColor,
+                          ),
+                        ),
+                      ],
+                    ],
 
                     const SizedBox(height: 16),
                     Text(

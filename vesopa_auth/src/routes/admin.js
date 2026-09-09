@@ -31,6 +31,9 @@ const sessions = require('../sessions');
 const settings = require('../settings');
 const events = require('../events');
 const rollups = require('../rollups');
+const portal = require('../portal');
+const recovery = require('../recovery');
+const invitations = require('../invitations');
 const csrf = require('../csrf');
 const { normaliseEmail, normalisePhone } = require('../normalise');
 
@@ -42,6 +45,8 @@ const RAIL = [
   { href: '/admin/applications', label: 'Applications', icon: 'apps', tint: 'violet' },
   { href: '/admin/activity', label: 'Activity', icon: 'chart', tint: 'teal' },
   { href: '/admin/health', label: 'Health', icon: 'shield', tint: 'amber' },
+  { href: '/admin/invitations', label: 'Invitations', icon: 'mail', tint: 'green' },
+  { href: '/admin/recoveries', label: 'Recoveries', icon: 'key', tint: 'amber' },
   { href: '/admin/settings', label: 'Sign-in page', icon: 'settings', tint: 'pink' },
   { group: 'Elsewhere' },
   { href: '/developers', label: 'Developer portal', icon: 'code', tint: 'slate' },
@@ -309,6 +314,18 @@ router.get('/admin/people/:publicId', async (req, res, next) => {
       memberships,
       history,
       devices,
+      /*
+       * What could be removed, and what would be left. Shown BEFORE the button
+       * is pressed, because "remove their passkeys" reads very differently when
+       * the answer is "they have three" and when it is "that is the only way
+       * they can sign in at all".
+       */
+      recoverySummary: await recovery.summarise(person.id),
+      recoveries: await recovery.historyFor(person.id),
+      verification: recovery.VERIFICATION,
+      pauseHours: recovery.PASSWORD_PAUSE_HOURS,
+      // New recovery codes exist in readable form for exactly this render.
+      codes: portal.claim(req.query.codes),
       saved: req.query.saved === '1',
       error: req.query.error || '',
     });
@@ -570,6 +587,167 @@ router.post('/admin/settings', csrf.verify, async (req, res, next) => {
     });
 
     return res.redirect(303, '/admin/settings?saved=1');
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// ===========================================================================
+// Invitations
+//
+// The only way somebody becomes an administrator or a developer other than the
+// seed. It grants; it does not sign anybody in — see src/invitations.js for why
+// that distinction is the whole security of the feature.
+// ===========================================================================
+
+router.get('/admin/invitations', async (req, res, next) => {
+  try {
+    const session = await requireAdmin(req, res);
+    if (!session) return undefined;
+
+    const showAll = req.query.all === '1';
+    return page(res, 'admin/invitations', session, {
+      title: 'Invitations',
+      path: '/admin/invitations',
+      invitations: await invitations.list({ includeSettled: showAll }),
+      showAll,
+      organisations: await db.query(
+        "SELECT id, name FROM organisations WHERE status = 'active' ORDER BY is_first_party DESC, name",
+      ),
+      sent: portal.claim(req.query.sent),
+      saved: req.query.saved === '1',
+      error: req.query.error || '',
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post('/admin/invitations', csrf.verify, async (req, res, next) => {
+  try {
+    const session = await requireAdmin(req, res);
+    if (!session) return undefined;
+
+    const result = await invitations.create({
+      email: req.body.email,
+      invitedBy: session.user_id,
+      organisationId: req.body.organisation_id ? Number(req.body.organisation_id) : null,
+      organisationRole: req.body.organisation_role || 'developer',
+      grantsDeveloper: req.body.grants_developer === '1',
+      grantsStaff: req.body.grants_staff === '1',
+      message: req.body.message,
+      ip: req.clientIp,
+    });
+
+    if (!result.ok) {
+      return res.redirect(303, `/admin/invitations?error=${encodeURIComponent(result.error)}`);
+    }
+
+    /*
+     * The link is stashed and shown once, the same way a secret is.
+     *
+     * It is emailed as well — but somebody whose email is the thing that is
+     * broken is one of the commonest reasons to send an invitation at all, and
+     * an administrator on the telephone needs to be able to read it out.
+     */
+    return res.redirect(303, `/admin/invitations?sent=${portal.stash(result.url)}`);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post('/admin/invitations/:id/revoke', csrf.verify, async (req, res, next) => {
+  try {
+    const session = await requireAdmin(req, res);
+    if (!session) return undefined;
+    await invitations.revoke(req.params.id, session.user_id, req.clientIp);
+    return res.redirect(303, '/admin/invitations?saved=1');
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post('/admin/invitations/:id/resend', csrf.verify, async (req, res, next) => {
+  try {
+    const session = await requireAdmin(req, res);
+    if (!session) return undefined;
+    const result = await invitations.resend(req.params.id, session.user_id, req.clientIp);
+    if (!result.ok) {
+      return res.redirect(303, `/admin/invitations?error=${encodeURIComponent(result.error)}`);
+    }
+    return res.redirect(303, `/admin/invitations?sent=${portal.stash(result.url)}`);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// ===========================================================================
+// Helping somebody back in
+// ===========================================================================
+
+router.get('/admin/recoveries', async (req, res, next) => {
+  try {
+    const session = await requireAdmin(req, res);
+    if (!session) return undefined;
+    return page(res, 'admin/recoveries', session, {
+      title: 'Account recoveries',
+      path: '/admin/recoveries',
+      recoveries: await recovery.recent(50),
+      verification: recovery.VERIFICATION,
+      pauseHours: recovery.PASSWORD_PAUSE_HOURS,
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post('/admin/people/:publicId/recover', csrf.verify, async (req, res, next) => {
+  try {
+    const session = await requireAdmin(req, res);
+    if (!session) return undefined;
+
+    const person = await db.one('SELECT * FROM users WHERE public_id = ?', [req.params.publicId]);
+    if (!person) {
+      return res.status(404).render('error', {
+        title: 'Page not found',
+        heading: 'No such account',
+        message: 'It may have been deleted.',
+        config,
+        nonce: res.locals.nonce,
+        session,
+        noindex: true,
+      });
+    }
+
+    const result = await recovery.reset({
+      userId: person.id,
+      actorUserId: session.user_id,
+      removeTotp: req.body.remove_totp === '1',
+      removePasskeys: req.body.remove_passkeys === '1',
+      reissueCodes: req.body.reissue_codes === '1',
+      reason: req.body.reason,
+      verifiedBy: req.body.verified_by,
+      ip: req.clientIp,
+      userAgent: req.userAgent,
+    });
+
+    if (!result.ok) {
+      return res.redirect(
+        303,
+        `/admin/people/${encodeURIComponent(req.params.publicId)}?error=${encodeURIComponent(result.error)}`,
+      );
+    }
+
+    /*
+     * If new recovery codes were issued they exist in readable form for exactly
+     * this render — nowhere else, ever. Stashed and claimed once, like every
+     * other secret in this system.
+     */
+    const shown = result.recoveryCodes ? `&codes=${portal.stash(result.recoveryCodes.join('\n'))}` : '';
+    return res.redirect(
+      303,
+      `/admin/people/${encodeURIComponent(req.params.publicId)}?saved=1${shown}`,
+    );
   } catch (error) {
     return next(error);
   }

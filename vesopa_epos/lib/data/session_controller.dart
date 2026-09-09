@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'vesopa_sso.dart';
+
 /// Who is signed into this terminal.
 class Session {
   const Session({
@@ -145,10 +147,86 @@ class SessionController extends AsyncNotifier<Session> {
       throw SignInFailed((body['error'] as String?) ?? 'Sign-in failed.');
     }
 
+    // The catalogue is keyed by the office's contact email, and the terminal
+    // token is what staff PIN sign-on later reads the staff list with. Both are
+    // handled in _adopt, which the Vesopa door uses as well.
+    await _adopt(body);
+  }
+
+  /// Ask the back office whether a till may be commissioned with a Vesopa
+  /// account here.
+  ///
+  /// Asked rather than compiled in. A till in a venue is updated through a
+  /// store release that may be weeks behind the server, so a button baked into
+  /// this build would keep offering an option the server had turned off — and
+  /// the flag is the whole rollback plan.
+  static Future<VesopaOption> option(String apiBase) async {
+    try {
+      final res = await http
+          .get(Uri.parse('$apiBase/api/terminal/vesopa/enabled'))
+          .timeout(const Duration(seconds: 8));
+      if (res.statusCode != 200) return const VesopaOption.off();
+      final body = jsonDecode(res.body) as Map<String, dynamic>;
+      if (body['enabled'] != true) return const VesopaOption.off();
+      return VesopaOption(
+        enabled: true,
+        issuer: body['issuer'] as String,
+        clientId: body['clientId'] as String,
+      );
+    } catch (_) {
+      // A till with no signal cannot be commissioned by any route, so there is
+      // nothing to say here beyond hiding a button that would not work.
+      return const VesopaOption.off();
+    }
+  }
+
+  /// Commission this terminal with a Vesopa account.
+  ///
+  /// The till proves who the person is to `auth.vesopa.com` itself, then hands
+  /// the resulting identity token to the back office, which decides what that
+  /// is worth and issues the SAME pair of tokens the password form issues. From
+  /// [Session] downwards nothing can tell which door was used, which is what
+  /// keeps this an addition rather than a second system.
+  Future<void> signInWithVesopa({
+    required String apiBase,
+    required VesopaOption via,
+    void Function(Uri url)? onUrl,
+  }) async {
+    final idToken = await VesopaSso(issuer: via.issuer, clientId: via.clientId)
+        .authorize(onUrl: onUrl);
+
+    final http.Response res;
+    try {
+      res = await http
+          .post(
+            Uri.parse('$apiBase/api/terminal/vesopa/commission'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'id_token': idToken}),
+          )
+          .timeout(const Duration(seconds: 20));
+    } catch (e) {
+      throw SignInFailed(
+        'Signed in with Vesopa, but the till could not reach $apiBase to finish.\n'
+        'Check the network and try again.',
+      );
+    }
+
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    if (res.statusCode != 200) {
+      throw SignInFailed((body['error'] as String?) ?? 'The back office refused that sign-in.');
+    }
+
+    await _adopt(body);
+  }
+
+  /// Take a `/api/login`-shaped response and become that session.
+  ///
+  /// Shared by both doors on purpose: the office rule and the terminal token
+  /// are read in ONE place, so the Vesopa route cannot quietly end up with a
+  /// laxer version of either.
+  Future<void> _adopt(Map<String, dynamic> body) async {
     final user = body['user'] as Map<String, dynamic>;
 
-    // The catalogue is keyed by the office's contact email, so a user with no
-    // office has nothing to sell and must not be allowed to commission a till.
     final office = (user['officeEmail'] ?? user['email']) as String?;
     if (office == null) {
       throw SignInFailed('This account is not attached to an office.');
@@ -158,12 +236,8 @@ class SessionController extends AsyncNotifier<Session> {
       email: user['email'] as String?,
       name: user['name'] as String?,
       office: office,
-      // The server has always sent this; the till simply never kept it, which
-      // is why receipts printed the office email as the venue's name.
       officeName: user['officeName'] as String?,
       token: body['token'] as String?,
-      // Absent if this server predates v1.3.1.0. Everything except staff
-      // sign-on works without it, so a missing token is not a failed sign-in.
       terminalToken: body['terminalToken'] as String?,
     );
 
@@ -179,6 +253,25 @@ class SessionController extends AsyncNotifier<Session> {
     await prefs.remove(_key);
     state = const AsyncData(Session.empty);
   }
+}
+
+/// Whether the back office will accept a Vesopa account for commissioning, and
+/// what to use if it will.
+class VesopaOption {
+  const VesopaOption({
+    required this.enabled,
+    required this.issuer,
+    required this.clientId,
+  });
+
+  const VesopaOption.off()
+      : enabled = false,
+        issuer = '',
+        clientId = '';
+
+  final bool enabled;
+  final String issuer;
+  final String clientId;
 }
 
 final sessionControllerProvider =

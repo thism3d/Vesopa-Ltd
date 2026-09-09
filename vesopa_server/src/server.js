@@ -11,6 +11,8 @@ const { dineinRoutes } = require('./dinein');
 const { dineinPageRoutes, isMenuAddress } = require('./dinein_pages');
 const { dineinOtpRoutes } = require('./dinein_otp');
 const { dineinAuthRoutes, ENABLED: VESOPA_AUTH_ON } = require('./dinein_auth');
+const { backofficeAuthRoutes, LIVE: VESOPA_BACKOFFICE_LIVE } = require('./backoffice_auth');
+const { terminalVesopaRoutes, ENABLED: VESOPA_TILL_LIVE } = require('./terminal_vesopa');
 
 const {
   verifyPassword,
@@ -295,6 +297,30 @@ app.use(dineinOtpRoutes({ pool, secret: JWT_SECRET }));
 if (VESOPA_AUTH_ON) {
   app.use(dineinAuthRoutes({ pool, secret: JWT_SECRET }));
   console.log('[boot] Vesopa account sign-in is ON for the menu');
+}
+
+/*
+ * The back office, migration two. Same rules as the menu: dormant behind its
+ * own flag, the password form untouched beside it, and the token it issues is
+ * the back office's own — so nothing downstream of sign-in can tell which door
+ * somebody came through, and turning it off is a flag rather than a rewrite.
+ */
+app.use(backofficeAuthRoutes({ pool, secret: JWT_SECRET, issueToken }));
+if (VESOPA_BACKOFFICE_LIVE) {
+  console.log('[boot] Vesopa account sign-in is ON for the back office');
+}
+
+/*
+ * The till, migration four — and the one that is not a browser.
+ *
+ * A till is a PUBLIC client: it ships to venues and holds no secret, so it runs
+ * the code flow itself with PKCE against a loopback address and hands the ID
+ * token here. This endpoint verifies it and issues the terminal token, which is
+ * the same credential `/api/login` hands a till that signed in with a password.
+ */
+app.use(terminalVesopaRoutes({ pool, secret: JWT_SECRET, issueToken, issueTerminalToken }));
+if (VESOPA_TILL_LIVE) {
+  console.log('[boot] Vesopa account commissioning is ON for tills');
 }
 
 app.use('/api', reportRoutes({ pool, secret: JWT_SECRET }));

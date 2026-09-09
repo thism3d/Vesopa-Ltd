@@ -5798,6 +5798,30 @@ $('login-form').addEventListener('submit', async (e) => {
   }
 });
 
+/*
+ * Ask the server whether to offer signing in with a Vesopa account.
+ *
+ * The flag lives in the environment on the server, and this page is static —
+ * so the button cannot be baked in. Asking is also what keeps a rollback
+ * instant: the flag goes off, the next person to open the page does not see the
+ * button, and nobody has to deploy anything.
+ *
+ * Failure is silent and means "no". A sign-in page must not break because an
+ * optional extra could not be reached.
+ */
+(async function offerVesopaSignIn() {
+  try {
+    const res = await fetch('/api/public/backoffice/sign-in-options', { cache: 'no-store' });
+    if (!res.ok) return;
+    const options = await res.json();
+    if (!options || !options.vesopa) return;
+    const panel = document.getElementById('vesopa-sso');
+    if (panel) panel.hidden = false;
+  } catch (e) {
+    /* the password form is unaffected */
+  }
+})();
+
 function signOut() {
   token = null;
   me = null;

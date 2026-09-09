@@ -19,9 +19,11 @@ const cookieParser = require('cookie-parser');
 const config = require('./config');
 const db = require('./db');
 const csrf = require('./csrf');
+const webhooks = require('./webhooks');
 const { securityHeaders, requestContext } = require('./middleware');
 const pages = require('./routes/pages');
 const auth = require('./routes/auth');
+const stepup = require('./routes/stepup');
 const oidc = require('./routes/oidc');
 const social = require('./routes/social');
 const mfa = require('./routes/mfa');
@@ -147,6 +149,7 @@ app.use('/', account);
 app.use('/', policies);
 app.use('/', admin);
 app.use('/', developers);
+app.use('/', stepup);
 app.use('/', auth);
 app.use('/', pages);
 
@@ -200,6 +203,15 @@ async function start() {
   const info = await db.check();
   console.log(`[boot] database ${info.db} on MariaDB ${info.version}`);
 
+  /*
+   * The webhook worker. A timer in this process rather than a cron entry,
+   * because the owner asked that nothing be added to the shared server outside
+   * this application's own domain — and pm2 runs this in fork mode with one
+   * instance, so there is exactly one worker.
+   */
+  webhooks.startWorker();
+  console.log('[boot] webhook worker running');
+
   const server = app.listen(config.port, '127.0.0.1', () => {
     console.log(
       `[boot] vesopa_auth ${config.version} listening on 127.0.0.1:${config.port} (${config.env})`,
@@ -213,6 +225,7 @@ async function start() {
    */
   const shutdown = (signal) => {
     console.log(`[shutdown] ${signal}`);
+    webhooks.stopWorker();
     server.close(async () => {
       await db.close();
       process.exit(0);

@@ -1,0 +1,121 @@
+<%- include('partials/head') %>
+
+<main class="auth-shell">
+  <div class="auth-card">
+
+    <a class="brand" href="/" aria-label="Vesopa">
+      <img class="brand-mark" src="/brand/logo-light.svg" alt="" width="130" height="17" data-logo-light>
+      <img class="brand-mark" src="/brand/logo-dark.svg" alt="" width="130" height="17" data-logo-dark>
+    </a>
+
+    <% if (state === 'expired') { %>
+
+    <h1 class="auth-title">That invitation has expired</h1>
+    <p class="auth-sub">
+      Invitations last a week, and each one can be accepted once. Ask whoever
+      sent it to send another — it takes them a moment.
+    </p>
+    <a class="btn btn-quiet" href="/login">Sign in to Vesopa</a>
+
+    <% } else if (state === 'wrong-account') { %>
+
+    <h1 class="auth-title">That invitation is for a different address</h1>
+    <%
+      /*
+       * The refusal that stops a forwarded invitation making the wrong person
+       * an administrator. Worth explaining rather than simply denying: somebody
+       * signed in on a shared machine as a colleague meets this and would
+       * otherwise think the link was broken.
+       */
+    %>
+    <p class="auth-sub">
+      It was sent to <strong><%= invitation.email %></strong>, and you are signed
+      in as somebody else. Nothing has been changed.
+    </p>
+    <p class="consent-lead">
+      Sign out, then open the link again from the account that owns that address.
+    </p>
+    <form method="post" action="/logout">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <button class="btn btn-primary" type="submit">Sign out</button>
+    </form>
+
+    <% } else if (state === 'accepted') { %>
+
+    <h1 class="auth-title">You are in</h1>
+    <p class="auth-sub">
+      <%
+        const got = [];
+        if (invitation.grants_staff) got.push('the administrator console');
+        if (invitation.grants_developer) got.push('the developer portal');
+        if (invitation.organisation_name) got.push(invitation.organisation_name);
+        if (invitation.application_name) got.push(invitation.application_name);
+      %>
+      <% if (got.length) { %>
+        You now have access to <%= got.join(', ') %>.
+      <% } else { %>
+        Your invitation has been accepted.
+      <% } %>
+    </p>
+
+    <% if (invitation.grants_staff) { %>
+    <a class="btn btn-primary" href="/admin">Open the administrator console</a>
+    <% } else if (invitation.grants_developer) { %>
+    <a class="btn btn-primary" href="/developers">Open the developer portal</a>
+    <% } else { %>
+    <a class="btn btn-primary" href="/account/profile">Go to your account</a>
+    <% } %>
+
+    <% } else { %>
+
+    <h1 class="auth-title">You have been invited to Vesopa</h1>
+    <p class="auth-sub">
+      Sent to <strong><%= invitation.email %></strong>.
+    </p>
+
+    <% if (invitation.message) { %>
+    <p class="consent-lead">“<%= invitation.message %>”</p>
+    <% } %>
+
+    <%
+      /*
+       * Say what is being offered before asking anybody to sign in. An
+       * invitation that explains nothing is one people ignore, and one that
+       * quietly grants administrator access is one nobody should accept
+       * without being told.
+       */
+      const offers = [];
+      if (invitation.grants_staff) offers.push('Administer Vesopa OAuth — search accounts, suspend one, help somebody back in');
+      if (invitation.grants_developer) offers.push('Use the developer portal to build applications');
+      if (invitation.organisation_name) offers.push(`Join ${invitation.organisation_name} as a ${invitation.organisation_role}`);
+      if (invitation.application_name) offers.push(`Access to ${invitation.application_name}${invitation.role_name ? ' as ' + invitation.role_name : ''}`);
+    %>
+    <% if (offers.length) { %>
+    <ul class="scopes">
+      <% offers.forEach(function (offer) { %>
+      <li><span class="scope-title"><%= offer %></span></li>
+      <% }) %>
+    </ul>
+    <% } %>
+
+    <p class="consent-lead">
+      Sign in with <strong><%= invitation.email %></strong> to accept. If you
+      have not used Vesopa before, signing in creates your account — it is the
+      same form either way.
+    </p>
+
+    <a class="btn btn-primary"
+       href="/login?return_to=<%= encodeURIComponent('/invite/' + inviteToken) %>">
+      Continue
+    </a>
+
+    <p class="small-print">
+      Not expecting this? Ignore it — nothing happens until somebody proves they
+      can receive at that address.
+    </p>
+
+    <% } %>
+  </div>
+</main>
+
+<%- include('partials/foot') %>

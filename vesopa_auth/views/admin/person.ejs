@@ -230,4 +230,144 @@
 </div>
 <% } %>
 
+<!-- ================================================== helping them back in -->
+<% if (person.id !== session.user_id) { %>
+
+<% if (codes) { %>
+<div class="secret-once">
+  <h2>Their new recovery codes — copy them now</h2>
+  <p>
+    Read these to them, or send them by whatever route you used to check it was
+    really them. They are stored hashed, so this is the only time they exist in
+    readable form. Each works once.
+  </p>
+  <pre class="codes"><%= codes %></pre>
+</div>
+<% } %>
+
+<section class="card">
+  <div class="card-head"><h2>Lost their second factor?</h2></div>
+  <div class="card-body">
+
+    <%
+      /*
+       * WHAT THEY HAVE, SHOWN BEFORE THE BUTTON.
+       *
+       * "Remove their passkeys" reads very differently when the answer is
+       * "they have three" and when it is "that is the only way they can sign in
+       * at all". An administrator about to lock somebody out rather than help
+       * them should find that out here, not afterwards.
+       */
+    %>
+    <div class="row">
+      <span class="row-mark"><%- include('../partials/icon', { name: 'key' }) %></span>
+      <div class="row-lines">
+        <span class="row-title">What they have now</span>
+        <span class="row-sub">
+          <%= recoverySummary.totp ? 'An authenticator app' : 'No authenticator app' %> ·
+          <%= recoverySummary.passkeys.length %> passkey<%= recoverySummary.passkeys.length === 1 ? '' : 's' %> ·
+          <%= recoverySummary.recoveryCodesLeft %> unused recovery code<%= recoverySummary.recoveryCodesLeft === 1 ? '' : 's' %> ·
+          <%= recoverySummary.hasPassword ? 'a password' : 'no password' %>
+        </span>
+      </div>
+    </div>
+
+    <% if (!recoverySummary.canStillSignIn) { %>
+    <div class="status status-bad">
+      <span class="status-mark"><%- include('../partials/icon', { name: 'alert' }) %></span>
+      <div>
+        <strong>They have no confirmed email address or phone number</strong>
+        <p>
+          Removing a factor would lock them out completely rather than help
+          them — there would be nothing left to send a code to. Add a confirmed
+          address to the account first.
+        </p>
+      </div>
+    </div>
+    <% } %>
+
+    <% if (recoverySummary.recoveryCodesLeft > 0) { %>
+    <p class="card-note">
+      They still have <%= recoverySummary.recoveryCodesLeft %> unused recovery
+      code<%= recoverySummary.recoveryCodesLeft === 1 ? '' : 's' %>. Ask them to
+      look for those first — it needs nobody's help and leaves their account as
+      strong as it was.
+    </p>
+    <% } %>
+
+    <form method="post" action="/admin/people/<%= person.public_id %>/recover">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+      <fieldset class="field">
+        <legend>What to do</legend>
+        <label class="tickbox">
+          <input type="checkbox" name="remove_totp" value="1" <%= recoverySummary.totp ? '' : 'disabled' %>>
+          <span>Remove their authenticator app<%= recoverySummary.totp ? '' : ' (they have none)' %></span>
+        </label>
+        <label class="tickbox">
+          <input type="checkbox" name="remove_passkeys" value="1" <%= recoverySummary.passkeys.length ? '' : 'disabled' %>>
+          <span>Remove all <%= recoverySummary.passkeys.length %> passkey<%= recoverySummary.passkeys.length === 1 ? '' : 's' %></span>
+        </label>
+        <label class="tickbox">
+          <input type="checkbox" name="reissue_codes" value="1">
+          <span>Issue new recovery codes</span>
+        </label>
+      </fieldset>
+
+      <div class="field">
+        <label for="verified_by">How did you satisfy yourself it is really them?</label>
+        <select id="verified_by" name="verified_by" required>
+          <% Object.entries(verification).forEach(function (entry) { %>
+          <option value="<%= entry[0] %>"><%= entry[1] %></option>
+          <% }) %>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="reason">Why — in a sentence somebody can read in six months</label>
+        <input type="text" id="reason" name="reason" minlength="10" maxlength="500" required
+               placeholder="Phone stolen on 8 September, confirmed by their manager Nicki">
+      </div>
+
+      <div class="status status-warn">
+        <span class="status-mark"><%- include('../partials/icon', { name: 'shield' }) %></span>
+        <div>
+          <strong>What happens the moment you press this</strong>
+          <p>
+            Every session and application token ends. They are emailed at once.
+            For <%= pauseHours %> hours a password alone will not sign them in —
+            they will need a code sent to their address or number, which is what
+            stops somebody else asking you to do this to their account. All of it
+            is recorded against your name.
+          </p>
+        </div>
+      </div>
+
+      <button class="btn btn-primary btn-small" type="submit">Help them back in</button>
+    </form>
+
+    <% if (recoveries.length) { %>
+    <h3 class="mt-2">This has happened before</h3>
+    <%
+      /*
+       * Shown on the person's page, not only on the recoveries list. A second
+       * request for the same account within a month is the shape social
+       * engineering actually takes, and the administrator being asked right now
+       * is the one who needs to see it.
+       */
+    %>
+    <% recoveries.forEach(function (row) { %>
+    <div class="row">
+      <span class="row-mark"><%- include('../partials/icon', { name: 'history' }) %></span>
+      <div class="row-lines">
+        <span class="row-title"><%= String(row.created_at).slice(0, 16) %> — by <%= row.actor_name || 'unknown' %></span>
+        <span class="row-sub"><%= verification[row.verified_by] || row.verified_by %> · “<%= row.reason %>”</span>
+      </div>
+    </div>
+    <% }) %>
+    <% } %>
+  </div>
+</section>
+<% } %>
+
 <%- include('../partials/console-foot') %>

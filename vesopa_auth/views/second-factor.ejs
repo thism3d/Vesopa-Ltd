@@ -1,0 +1,122 @@
+<%- include('partials/head') %>
+
+<main class="auth-shell">
+  <div class="auth-card">
+
+    <a class="brand" href="/" aria-label="Vesopa">
+      <img class="brand-mark" src="/brand/logo-light.svg" alt="" width="130" height="17" data-logo-light>
+      <img class="brand-mark" src="/brand/logo-dark.svg" alt="" width="130" height="17" data-logo-dark>
+    </a>
+
+    <h1 class="auth-title">
+      <%= mode === 'step-up' ? 'Confirm it is you' : 'One more step' %>
+    </h1>
+    <p class="auth-sub">
+      <% if (mode === 'step-up') { %>
+        This action needs a second check<%= displayName ? ', ' + displayName : '' %>. You will stay signed in.
+      <% } else { %>
+        You have two-step verification on, so we need one more thing.
+      <% } %>
+    </p>
+
+    <div class="form-error" role="alert" aria-live="polite" id="form-error"><%= error || '' %></div>
+
+    <%
+      /*
+       * The authenticator app first, because it is the strongest thing most
+       * people here have and it needs no round trip. A text is offered second,
+       * a recovery code last — the order is the order somebody should reach for
+       * them, and putting recovery codes at the bottom is deliberate: they are
+       * finite, and spending one should feel like spending one.
+       */
+      const action = mode === 'step-up' ? '/step-up' : '/login/second';
+      const smsAction = mode === 'step-up' ? '/step-up/sms' : '/login/second/sms';
+    %>
+
+    <% if (held.totp) { %>
+    <form class="auth-form" method="post" action="<%= action %>">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="method" value="totp">
+      <input type="hidden" name="return_to" value="<%= returnTo %>">
+      <div class="field">
+        <label for="totp">The code from your authenticator app</label>
+        <input type="text" id="totp" name="code" inputmode="numeric" pattern="[0-9]*"
+               autocomplete="one-time-code" maxlength="6" class="code-input" autofocus
+               aria-describedby="form-error">
+      </div>
+      <button class="btn btn-primary" type="submit">Continue</button>
+    </form>
+    <% } %>
+
+    <% if (held.sms) { %>
+    <% if (held.totp) { %><div class="divider"><span>or</span></div><% } %>
+    <form class="auth-form" method="post" action="<%= action %>">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="method" value="sms">
+      <input type="hidden" name="return_to" value="<%= returnTo %>">
+      <div class="field">
+        <label for="sms">The code we texted to <%= phoneHint %></label>
+        <input type="text" id="sms" name="code" inputmode="numeric"
+               autocomplete="one-time-code" maxlength="6" class="code-input">
+      </div>
+      <button class="btn btn-quiet" type="submit">Continue</button>
+    </form>
+    <form method="post" action="<%= smsAction %>" class="resend">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="return_to" value="<%= returnTo %>">
+      <button type="submit" class="linklike">Text me a code</button>
+    </form>
+    <% } %>
+
+    <% if (held.smsWithheld) { %>
+    <%
+      /*
+       * They have a phone on the account and it is NOT offered, because it is
+       * the same number they just signed in with. Saying so is better than
+       * silently omitting it — otherwise somebody stands there wondering where
+       * the text option went.
+       */
+    %>
+    <p class="hint">
+      We are not offering a text, because you just signed in with a code to that
+      same number — that would be the same proof twice.
+    </p>
+    <% } %>
+
+    <% if (held.recoveryCodesLeft > 0) { %>
+    <div class="divider"><span>lost your phone?</span></div>
+    <form class="auth-form" method="post" action="<%= action %>">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="method" value="recovery">
+      <input type="hidden" name="return_to" value="<%= returnTo %>">
+      <div class="field">
+        <label for="recovery">One of your recovery codes</label>
+        <input type="text" id="recovery" name="code" autocomplete="one-time-code"
+               maxlength="16" class="code-input" placeholder="XXXXX-XXXXX"
+               spellcheck="false" autocapitalize="characters">
+        <p class="hint">
+          You have <%= held.recoveryCodesLeft %> left. Each works once — after
+          this one, generate a fresh set from your security settings.
+        </p>
+      </div>
+      <button class="btn btn-quiet" type="submit">Use a recovery code</button>
+    </form>
+    <% } else if (!held.totp && !held.sms) { %>
+    <p class="hint">
+      There is nothing left on this account to check against. Write to
+      <a href="mailto:security@vesopa.com">security@vesopa.com</a> and we will
+      help you back in.
+    </p>
+    <% } %>
+
+    <p class="small-print">
+      <% if (mode === 'step-up') { %>
+      <a href="/account/profile">Not now</a>
+      <% } else { %>
+      <a href="/login">Start again</a>
+      <% } %>
+    </p>
+  </div>
+</main>
+
+<%- include('partials/foot') %>

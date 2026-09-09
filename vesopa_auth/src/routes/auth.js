@@ -34,6 +34,9 @@ const rateLimit = require('../ratelimit');
 const csrf = require('../csrf');
 const sms = require('../sms');
 const settings = require('../settings');
+const recovery = require('../recovery');
+const stepup = require('./stepup');
+const factors = require('../factors');
 const { verifyPassword } = require('../crypto');
 const { normaliseEmail, normalisePhone, guessIdentifierType } = require('../normalise');
 const { safeReturnTo } = require('./pages');
@@ -229,10 +232,22 @@ router.post('/login', csrf.verify, async (req, res, next) => {
      * which never touched the database, produces a page that looks exactly like
      * a successful one.
      */
+    /*
+     * A paused account is treated as having no password at all.
+     *
+     * The pause is enforced on the POST regardless — that is the control. This
+     * only stops the verify page OFFERING a box that is going to refuse
+     * whatever is typed into it, which is a small cruelty to somebody who has
+     * just been locked out once already.
+     */
     const hasPassword = existing
       ? Boolean(
           await db.one(
-            'SELECT id FROM user_passwords WHERE user_id = ? AND retired_at IS NULL LIMIT 1',
+            `SELECT p.id FROM user_passwords p
+               JOIN users u ON u.id = p.user_id
+              WHERE p.user_id = ? AND p.retired_at IS NULL
+                AND (u.password_paused_until IS NULL OR u.password_paused_until <= NOW())
+              LIMIT 1`,
             [existing.user_id],
           ),
         )
@@ -348,6 +363,40 @@ router.post('/login/verify', csrf.verify, async (req, res, next) => {
 
       if (!userId) return showAgain('That password is not right.');
 
+      /*
+       * A PASSWORD ALONE WILL NOT DO, FOR A DAY AFTER SOMEBODY WAS HELPED BACK
+       * IN.
+       *
+       * This is the control that keeps administrator-assisted recovery from
+       * becoming the easiest way into an account. The attack it survives is not
+       * technical: somebody telephones, says they have lost their phone, is
+       * convincing, and support removes their second factor. If a stolen
+       * password worked immediately afterwards, the reset would have handed the
+       * account over.
+       *
+       * With the password paused, whoever asked must now prove they can RECEIVE
+       * at the address or number on the account — exactly what an attacker with
+       * only a password cannot do, and exactly what the real owner does in ten
+       * seconds. The code they need has already been sent; they simply use it
+       * instead.
+       */
+      const account = await db.one('SELECT password_paused_until FROM users WHERE id = ?', [userId]);
+      if (recovery.passwordPaused(account)) {
+        await events.recordLogin({
+          userId,
+          method: 'password',
+          outcome: 'blocked',
+          failureReason: 'password_paused',
+          identifier: flow.n,
+          ip: req.clientIp,
+          userAgent: req.userAgent,
+        });
+        return showAgain(
+          'Your account was recently recovered, so a password on its own is not enough for now. ' +
+            'Use the code we sent you instead.',
+        );
+      }
+
       const stored = await db.one(
         'SELECT password_hash FROM user_passwords WHERE user_id = ? AND retired_at IS NULL LIMIT 1',
         [userId],
@@ -455,11 +504,57 @@ router.post('/login/verify', csrf.verify, async (req, res, next) => {
     }
 
     // ------------------------------------------------------------------
-    // Signed in
+    // One factor down. Is that enough?
     // ------------------------------------------------------------------
 
     const known = await sessions.recogniseDevice(req, res);
     let deviceId = known && !known.reuseDetected ? known.id : null;
+
+    /*
+     * ASK FOR THE SECOND FACTOR, IF THEY HAVE ONE.
+     *
+     * Until this existed, enrolling an authenticator changed nothing: sign-in
+     * finished on the first factor and the session was recorded as `aal1`
+     * regardless. The security page said two-step verification was on, and it
+     * was not — which is the worst kind of security feature, one that is
+     * believed.
+     *
+     * A remembered device may skip this, and only this. It never skips the
+     * first factor: the device cookie proves which machine this is, not who is
+     * sitting at it.
+     */
+    const held = await factors.enrolled(userId, {
+      firstFactorPhone: flow.ch === 'phone' ? flow.n : null,
+    });
+
+    if (held.any && !factors.deviceMaySkip(known)) {
+      stepup.setPending(res, {
+        u: userId,
+        a: amr,
+        r: flow.r || '',
+        m: Boolean(flow.m),
+        // What the first factor was, so a code to the same phone is not
+        // offered as the second — that would be one proof counted twice.
+        p: flow.ch === 'phone' ? flow.n : null,
+      });
+      clearFlow(res);
+
+      await events.recordLogin({
+        userId,
+        method,
+        outcome: 'challenge',
+        failureReason: 'second_factor_required',
+        identifier: flow.n,
+        ip: req.clientIp,
+        userAgent: req.userAgent,
+      });
+
+      return res.redirect(303, '/login/second');
+    }
+
+    // ------------------------------------------------------------------
+    // Signed in
+    // ------------------------------------------------------------------
 
     if (flow.m && !deviceId) {
       deviceId = await sessions.rememberDevice({ userId, req, res });
@@ -468,7 +563,10 @@ router.post('/login/verify', csrf.verify, async (req, res, next) => {
     const session = await sessions.create({
       userId,
       amr,
-      acr: 'aal1',
+      // A remembered device that skipped the second factor is still recorded
+      // as having met the bar — that is what being trusted means — so the
+      // assurance reflects what the person actually holds.
+      acr: held.any ? 'aal2' : 'aal1',
       remembered: Boolean(flow.m),
       deviceId,
       ip: req.clientIp,

@@ -32,6 +32,29 @@
       </div>
 
       <button class="btn btn-block btn-lg" type="submit" data-busy="Signing in…">Sign in</button>
+
+      <%
+        /*
+         * Signing in with a Vesopa account, offered BELOW the password form.
+         *
+         * Hidden until the server says the feature is on: the flag lives in the
+         * environment, and a button that leads to a 404 is worse than none —
+         * somebody picks the option that looks most official and is told it
+         * went wrong.
+         *
+         * Nobody is being moved. The password form above stays exactly as it
+         * was for the whole soak; this is an addition beside it.
+         */
+      %>
+      <% if (typeof vesopaSso !== 'undefined' && vesopaSso) { %>
+      <div id="vesopa-sso" style="margin-top:14px">
+        <div class="or-divider"><span>or</span></div>
+        <a class="btn btn-block btn-lg btn-secondary"
+           href="/auth/vesopa/start?next=<%= encodeURIComponent(typeof next !== 'undefined' && next ? next : '/panel') %>">
+          Sign in with your Vesopa account
+        </a>
+      </div>
+      <% } %>
     </form>
 
     <p class="auth-alt mb-0">

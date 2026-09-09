@@ -26,6 +26,7 @@ const sessions = require('../sessions');
 const identity = require('../identity');
 const challenges = require('../challenges');
 const events = require('../events');
+const webhooks = require('../webhooks');
 const csrf = require('../csrf');
 const providers = require('../providers');
 const tokens = require('../oauth/tokens');
@@ -115,6 +116,20 @@ router.post('/account/profile', csrf.verify, async (req, res, next) => {
       targetId: session.user_public_id,
       ip: req.clientIp,
     });
+
+    /*
+     * Tell every application that holds this person. Their copy of the name is
+     * now wrong, and an application that has to poll to find that out will
+     * never bother.
+     */
+    await webhooks.emitForUser(session.user_id, 'user.updated', async (user, subject) => ({
+      sub: subject,
+      name: user.display_name || undefined,
+      given_name: user.given_name || undefined,
+      family_name: user.family_name || undefined,
+      birthdate: user.date_of_birth ? String(user.date_of_birth).slice(0, 10) : undefined,
+      picture: user.avatar_path ? `${config.issuer}${user.avatar_path}` : undefined,
+    }));
 
     return res.redirect(303, '/account/profile?saved=1');
   } catch (error) {
@@ -440,6 +455,11 @@ router.post('/account/linked/confirm', csrf.verify, async (req, res, next) => {
       targetId: req.body.type,
       ip: req.clientIp,
     });
+
+    await webhooks.emitForUser(session.user_id, 'identity.linked', async (user, subject) => ({
+      sub: subject,
+      type: req.body.type === 'phone' ? 'phone' : 'email',
+    }));
     await notify(session.user_id, {
       heading: 'Something was added to your account',
       body: `${check.challenge.destination} can now be used with your Vesopa account.`,
@@ -478,6 +498,18 @@ router.post('/account/linked/:id/remove', csrf.verify, async (req, res, next) =>
       detail: { type: result.identity.type },
       ip: req.clientIp,
     });
+
+    /*
+     * The identifier is FREE NOW — under the owner's rule it can be claimed by
+     * a different Vesopa account this afternoon. An application still treating
+     * it as this person's address would then be wrong about who somebody is,
+     * which is the worst kind of stale copy, so this event matters more than it
+     * looks.
+     */
+    await webhooks.emitForUser(session.user_id, 'identity.unlinked', async (user, subject) => ({
+      sub: subject,
+      type: result.identity.type,
+    }));
     await notify(session.user_id, {
       heading: 'Something was removed from your account',
       body: `${result.identity.identifier} can no longer be used with your Vesopa account. It is now free to be added to another account.`,
@@ -553,6 +585,11 @@ router.post('/account/signout-everywhere', csrf.verify, async (req, res, next) =
       detail: { sessions: ended },
       ip: req.clientIp,
     });
+
+    await webhooks.emitForUser(session.user_id, 'session.revoked', async (user, subject) => ({
+      sub: subject,
+      reason: 'signed_out_everywhere',
+    }));
 
     sessions.clearCookie(res);
     return res.redirect(303, '/login');
@@ -634,6 +671,25 @@ router.post('/account/apps/:id/revoke', csrf.verify, async (req, res, next) => {
       ip: req.clientIp,
     });
 
+    /*
+     * Told to the application being disconnected, and to it alone. It is the
+     * one that must stop using the tokens it holds — and telling anybody else
+     * that this person left would be reporting somebody's behaviour to a third
+     * party, which is not what an identity provider is for.
+     */
+    const revoked = await db.one('SELECT id FROM applications WHERE id = ?', [req.params.id]);
+    if (revoked) {
+      const application = await db.one(
+        'SELECT id, client_id, subject_type, sector_salt FROM applications WHERE id = ?',
+        [revoked.id],
+      );
+      const person = await identity.getUser(session.user_id);
+      await webhooks.emit(application.id, 'consent.revoked', {
+        subject: tokens.subjectFor(application, person.public_id),
+        payload: { sub: tokens.subjectFor(application, person.public_id) },
+      });
+    }
+
     return res.redirect(303, '/account/apps');
   } catch (error) {
     return next(error);
@@ -708,6 +764,18 @@ router.post('/account/delete', csrf.verify, async (req, res, next) => {
       ip: req.clientIp,
       userAgent: req.userAgent,
     });
+
+    /*
+     * The most important event this system sends, and the reason webhooks exist
+     * at all: the person exercised a legal right to be erased, and a dozen
+     * applications are each holding a copy of their name and address. It is
+     * emitted after the tombstone but the memberships survive it, so the
+     * fan-out still knows who to tell.
+     */
+    await webhooks.emitForUser(session.user_id, 'user.deleted', async (user, subject) => ({
+      sub: subject,
+      deleted_at: new Date().toISOString(),
+    }));
 
     sessions.clearCookie(res);
     return res.render('account/deleted', {

@@ -22,6 +22,7 @@ const config = require('../config');
 const db = require('../db');
 const sessions = require('../sessions');
 const identity = require('../identity');
+const invitations = require('../invitations');
 const settings = require('../settings');
 
 const router = express.Router();
@@ -142,6 +143,101 @@ router.get('/account', async (req, res) => {
     return res.redirect(303, `/login?return_to=${encodeURIComponent('/account/profile')}`);
   }
   return res.redirect(303, '/account/profile');
+});
+
+/**
+ * Accepting an invitation.
+ *
+ * THE LINK DOES NOT SIGN ANYBODY IN. It shows what is on offer and sends them
+ * to the ordinary sign-in page; the grants are applied afterwards, and only if
+ * the address they proved matches the address that was invited.
+ *
+ * That is the whole security of the feature. A link that signed somebody in
+ * would be a password sent by email, sitting in a mailbox for a week and
+ * forwardable to anybody. This way an intercepted invitation is worth nothing
+ * on its own: whoever holds it must also be able to receive at the address it
+ * was sent to, and at that point they never needed the link.
+ */
+router.get('/invite/:token', async (req, res, next) => {
+  try {
+    const invitation = await invitations.findByToken(req.params.token);
+
+    if (!invitation) {
+      return res.status(410).render('invite', {
+        title: 'That invitation has expired',
+        nonce: res.locals.nonce,
+        config,
+        invitation: null,
+        inviteToken: req.params.token,
+        state: 'expired',
+        noindex: true,
+      });
+    }
+
+    const session = await sessions.load(req);
+
+    if (!session) {
+      /*
+       * Not signed in. Show what is on offer — an invitation with no
+       * explanation is one nobody accepts — and send them to the sign-in page,
+       * which is also the registration page, with the address filled in.
+       */
+      return res.render('invite', {
+        title: 'You have been invited to Vesopa',
+        nonce: res.locals.nonce,
+        config,
+        invitation,
+        inviteToken: req.params.token,
+        state: 'sign-in',
+        noindex: true,
+      });
+    }
+
+    const result = await invitations.accept(req.params.token, session.user_id, {
+      ip: req.clientIp,
+    });
+
+    if (!result.ok && result.error === 'wrong_account') {
+      /*
+       * Signed in as somebody else. This is the check that stops a forwarded
+       * invitation making the wrong person an administrator, so it refuses
+       * rather than helpfully applying what it can.
+       */
+      return res.status(403).render('invite', {
+        title: 'That invitation is for a different address',
+        nonce: res.locals.nonce,
+        config,
+        invitation,
+        inviteToken: req.params.token,
+        state: 'wrong-account',
+        noindex: true,
+      });
+    }
+
+    if (!result.ok) {
+      return res.status(410).render('invite', {
+        title: 'That invitation has expired',
+        nonce: res.locals.nonce,
+        config,
+        invitation: null,
+        inviteToken: req.params.token,
+        state: 'expired',
+        noindex: true,
+      });
+    }
+
+    return res.render('invite', {
+      title: 'Invitation accepted',
+      nonce: res.locals.nonce,
+      config,
+      invitation: result.invitation,
+      inviteToken: req.params.token,
+      state: 'accepted',
+      noindex: true,
+    });
+  } catch (error) {
+    return next(error);
+  }
 });
 
 module.exports = router;

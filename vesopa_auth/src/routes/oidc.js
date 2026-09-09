@@ -24,6 +24,8 @@ const keys = require('../keys');
 const sessions = require('../sessions');
 const identity = require('../identity');
 const events = require('../events');
+const webhooks = require('../webhooks');
+const factors = require('../factors');
 const csrf = require('../csrf');
 const clients = require('../oauth/clients');
 const tokens = require('../oauth/tokens');
@@ -197,9 +199,58 @@ router.get('/oauth/authorize', async (req, res, next) => {
           'You do not have access to this application.');
       }
       await clients.enrol(application.id, session.user_id);
+
+      /*
+       * `user.created` means "new TO YOU", not new to Vesopa.
+       *
+       * The person may have held a Vesopa account for two years; this is the
+       * first time this application has seen them, which is exactly the moment
+       * it wants to create its own row. Telling an application about an account
+       * created elsewhere, for somebody who has never used it, would be
+       * reporting a stranger's existence to a third party.
+       */
+      const person = await identity.getUser(session.user_id);
+      await webhooks.emit(application.id, 'user.created', {
+        subject: tokens.subjectFor(application, person.public_id),
+        payload: {
+          sub: tokens.subjectFor(application, person.public_id),
+          name: person.display_name || undefined,
+          created_at: person.created_at,
+        },
+      });
     } else if (member.status === 'suspended') {
       return redirectError(res, redirectUri, state, 'access_denied',
         'Your access to this application has been suspended.');
+    }
+
+    /*
+     * IS THE SESSION STRONG ENOUGH FOR WHAT IS BEING ASKED?
+     *
+     * Three things can raise the bar: the person enrolled a second factor, the
+     * application set `min_acr`, or this particular request sent `acr_values`
+     * because the action behind it moves money. Whichever is strongest wins.
+     *
+     * If the session does not meet it, they are sent to step-up — NOT signed
+     * out. They keep everything they had open and are asked only for the factor
+     * they are missing, which is the whole reason `amr` and `acr` are recorded
+     * on the session in the first place.
+     */
+    const required = await factors.requiredFor({
+      userId: session.user_id,
+      application,
+      scopes: scopes.granted,
+      requested: acrValues,
+    });
+
+    if (!factors.meets(session.acr, required)) {
+      if (prompt === 'none') {
+        // The application asked us not to interact, and we cannot satisfy it
+        // silently. This is the exact error the specification has for it.
+        return redirectError(res, redirectUri, state, 'interaction_required',
+          `This action needs ${required} and the session is ${session.acr || 'aal1'}.`);
+      }
+      const back = `/oauth/authorize?${new URLSearchParams(req.query).toString()}`;
+      return res.redirect(303, `/step-up?return_to=${encodeURIComponent(back)}`);
     }
 
     /*

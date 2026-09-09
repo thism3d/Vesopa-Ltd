@@ -33,6 +33,8 @@ const avatars = require('../avatars');
 const sessions = require('../sessions');
 const events = require('../events');
 const rateLimit = require('../ratelimit');
+const stepup = require('./stepup');
+const factors = require('../factors');
 const { normaliseEmail, normaliseSubject, isPrivateRelay } = require('../normalise');
 const { newToken } = require('../crypto');
 const { safeReturnTo } = require('./pages');
@@ -399,10 +401,42 @@ async function signIn(req, res, { userId, provider, flow }) {
   const known = await sessions.recogniseDevice(req, res);
   const deviceId = known && !known.reuseDetected ? known.id : null;
 
+  /*
+   * A provider is ONE factor, not two.
+   *
+   * It is easy to assume that somebody who came back from Google with a valid
+   * ID token has already done their own two-step verification, and to wave them
+   * through. Google may well have — but we cannot see whether they did, and the
+   * factor the person enrolled HERE is the one this account's owner chose. So
+   * the same rule as every other first factor: if they hold a second one, they
+   * are asked for it.
+   */
+  const held = await factors.enrolled(userId);
+  if (held.any && !factors.deviceMaySkip(known)) {
+    stepup.setPending(res, {
+      u: userId,
+      a: [provider.key],
+      r: safeReturnTo(flow.return_to) || '',
+      m: true,
+      p: null,
+    });
+
+    await events.recordLogin({
+      userId,
+      method: provider.key,
+      outcome: 'challenge',
+      failureReason: 'second_factor_required',
+      ip: req.clientIp,
+      userAgent: req.userAgent,
+    });
+
+    return res.redirect(303, '/login/second');
+  }
+
   const session = await sessions.create({
     userId,
     amr: [provider.key],
-    acr: 'aal1',
+    acr: held.any ? 'aal2' : 'aal1',
     remembered: true,
     deviceId,
     ip: req.clientIp,

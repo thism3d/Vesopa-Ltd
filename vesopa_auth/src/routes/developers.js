@@ -38,6 +38,7 @@ const sessions = require('../sessions');
 const events = require('../events');
 const csrf = require('../csrf');
 const portal = require('../portal');
+const webhooks = require('../webhooks');
 const logos = require('../logos');
 const { normaliseEmail } = require('../normalise');
 
@@ -87,6 +88,7 @@ function appRail(clientId) {
     { href: `${base}/scopes`, label: 'Data it may ask for', icon: 'shield', tint: 'teal' },
     { href: `${base}/roles`, label: 'Roles', icon: 'people', tint: 'violet' },
     { href: `${base}/people`, label: 'Who uses it', icon: 'person', tint: 'pink' },
+    { href: `${base}/webhooks`, label: 'Webhooks', icon: 'bolt', tint: 'green' },
     { href: `${base}/team`, label: 'Who may edit it', icon: 'settings', tint: 'slate' },
   ];
 }
@@ -1446,6 +1448,249 @@ router.post('/developers/a/:clientId/archive', csrf.verify, async (req, res, nex
     });
 
     return res.redirect(303, '/developers?archived=1');
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Webhooks
+//
+// The part of the portal a developer visits when something is not working, so
+// the page is built around evidence: every attempt, what the endpoint said, and
+// a button to send it again. "Did you actually send it?" is the first question
+// anybody asks, and it has to be answerable without writing to us.
+// ---------------------------------------------------------------------------
+
+router.get('/developers/a/:clientId/webhooks', async (req, res, next) => {
+  try {
+    const session = await guard(req, res);
+    if (!session) return undefined;
+    const found = await portal.access(session, req.params.clientId);
+    if (!found) return notFound(res, session);
+
+    const endpoints = await webhooks.listEndpoints(found.application.id);
+
+    // The deliveries for whichever endpoint is being looked at, or the first.
+    // Showing the list without the attempts would make the developer click
+    // twice to reach the only thing they came for.
+    const chosen = req.query.e
+      ? endpoints.find(function (e) { return e.public_id === req.query.e; })
+      : endpoints[0];
+
+    return page(res, 'developers/webhooks', session, {
+      title: 'Webhooks',
+      path: `/developers/a/${req.params.clientId}/webhooks`,
+      rail: appRail(req.params.clientId),
+      application: found.application,
+      role: found.role,
+      endpoints,
+      chosen: chosen || null,
+      deliveries: chosen ? await webhooks.deliveries(chosen.id) : [],
+      eventTypes: webhooks.EVENT_TYPES,
+      shown: portal.claim(req.query.shown),
+      saved: req.query.saved === '1',
+      error: req.query.error || '',
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post('/developers/a/:clientId/webhooks', csrf.verify, async (req, res, next) => {
+  try {
+    const session = await guard(req, res);
+    if (!session) return undefined;
+    const found = await open(req, res, session, 'write');
+    if (!found) return undefined;
+
+    const wanted = [].concat(req.body.events || []);
+    const result = await webhooks.createEndpoint({
+      applicationId: found.application.id,
+      url: req.body.url,
+      description: req.body.description,
+      events: wanted,
+      createdBy: session.user_id,
+    });
+    if (!result.ok) {
+      return back(res, req.params.clientId, 'webhooks', `error=${encodeURIComponent(result.error)}`);
+    }
+
+    await events.recordAudit({
+      actorUserId: session.user_id,
+      actorType: 'developer',
+      action: 'webhook.created',
+      targetType: 'webhook',
+      targetId: result.publicId,
+      applicationId: found.application.id,
+      ip: req.clientIp,
+    });
+
+    // The signing secret travels the way a client secret does: stashed in
+    // memory and claimed once by the next render, never through the URL.
+    return back(
+      res,
+      req.params.clientId,
+      'webhooks',
+      `shown=${portal.stash(result.secret)}&e=${result.publicId}`,
+    );
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post('/developers/a/:clientId/webhooks/:id/update', csrf.verify, async (req, res, next) => {
+  try {
+    const session = await guard(req, res);
+    if (!session) return undefined;
+    const found = await open(req, res, session, 'write');
+    if (!found) return undefined;
+
+    const endpoint = await webhooks.getEndpoint(found.application.id, req.params.id);
+    if (!endpoint) return notFound(res, session);
+
+    const result = await webhooks.updateEndpoint(endpoint.id, {
+      url: req.body.url,
+      description: req.body.description,
+      events: [].concat(req.body.events || []),
+      isEnabled: req.body.enabled === '1',
+    });
+    if (!result.ok) {
+      return back(
+        res,
+        req.params.clientId,
+        'webhooks',
+        `error=${encodeURIComponent(result.error)}&e=${endpoint.public_id}`,
+      );
+    }
+
+    await events.recordAudit({
+      actorUserId: session.user_id,
+      actorType: 'developer',
+      action: 'webhook.updated',
+      targetType: 'webhook',
+      targetId: endpoint.public_id,
+      applicationId: found.application.id,
+      ip: req.clientIp,
+    });
+
+    return back(res, req.params.clientId, 'webhooks', `saved=1&e=${endpoint.public_id}`);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post('/developers/a/:clientId/webhooks/:id/rotate', csrf.verify, async (req, res, next) => {
+  try {
+    const session = await guard(req, res);
+    if (!session) return undefined;
+    const found = await open(req, res, session, 'write');
+    if (!found) return undefined;
+
+    const endpoint = await webhooks.getEndpoint(found.application.id, req.params.id);
+    if (!endpoint) return notFound(res, session);
+
+    const secret = await webhooks.rotateSecret(endpoint.id);
+    await events.recordAudit({
+      actorUserId: session.user_id,
+      actorType: 'developer',
+      action: 'webhook.secret_rotated',
+      targetType: 'webhook',
+      targetId: endpoint.public_id,
+      applicationId: found.application.id,
+      ip: req.clientIp,
+    });
+
+    return back(
+      res,
+      req.params.clientId,
+      'webhooks',
+      `shown=${portal.stash(secret)}&e=${endpoint.public_id}`,
+    );
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post('/developers/a/:clientId/webhooks/:id/test', csrf.verify, async (req, res, next) => {
+  try {
+    const session = await guard(req, res);
+    if (!session) return undefined;
+    const found = await open(req, res, session, 'write');
+    if (!found) return undefined;
+
+    const endpoint = await webhooks.getEndpoint(found.application.id, req.params.id);
+    if (!endpoint) return notFound(res, session);
+
+    // Sent synchronously, because the developer is watching this one. Every
+    // other delivery goes through the queue.
+    const delivery = await webhooks.sendTest(endpoint.id, found.application.id);
+    const outcome =
+      delivery && delivery.status === 'delivered'
+        ? 'saved=1'
+        : `error=${encodeURIComponent(
+            `The test did not get through: ${
+              delivery ? delivery.error || `HTTP ${delivery.response_code}` : 'no response'
+            }`,
+          )}`;
+
+    return back(res, req.params.clientId, 'webhooks', `${outcome}&e=${endpoint.public_id}`);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post(
+  '/developers/a/:clientId/webhooks/:id/replay/:delivery',
+  csrf.verify,
+  async (req, res, next) => {
+    try {
+      const session = await guard(req, res);
+      if (!session) return undefined;
+      const found = await open(req, res, session, 'write');
+      if (!found) return undefined;
+
+      const endpoint = await webhooks.getEndpoint(found.application.id, req.params.id);
+      if (!endpoint) return notFound(res, session);
+
+      // Scoped to this endpoint, so a delivery id belonging to somebody else's
+      // application cannot be replayed by guessing at the URL.
+      const delivery = await db.one(
+        'SELECT id FROM webhook_deliveries WHERE public_id = ? AND endpoint_id = ?',
+        [req.params.delivery, endpoint.id],
+      );
+      if (!delivery) return notFound(res, session);
+
+      await webhooks.replay(delivery.id);
+      return back(res, req.params.clientId, 'webhooks', `saved=1&e=${endpoint.public_id}`);
+    } catch (error) {
+      return next(error);
+    }
+  },
+);
+
+router.post('/developers/a/:clientId/webhooks/:id/remove', csrf.verify, async (req, res, next) => {
+  try {
+    const session = await guard(req, res);
+    if (!session) return undefined;
+    const found = await open(req, res, session, 'write');
+    if (!found) return undefined;
+
+    const endpoint = await webhooks.getEndpoint(found.application.id, req.params.id);
+    if (!endpoint) return notFound(res, session);
+
+    await webhooks.removeEndpoint(endpoint.id);
+    await events.recordAudit({
+      actorUserId: session.user_id,
+      actorType: 'developer',
+      action: 'webhook.removed',
+      targetType: 'webhook',
+      targetId: endpoint.public_id,
+      applicationId: found.application.id,
+      ip: req.clientIp,
+    });
+
+    return back(res, req.params.clientId, 'webhooks', 'saved=1');
   } catch (error) {
     return next(error);
   }

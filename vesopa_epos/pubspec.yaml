@@ -56,6 +56,11 @@ dependencies:
   pdf: ^3.12.0
   printing: ^5.14.3
   url_launcher: ^6.3.0
+  # SHA-256 for the PKCE challenge when a till is commissioned with a Vesopa
+  # account. Declared rather than leaned on: it already arrives transitively
+  # through drift, and a package imported but not declared disappears the day
+  # that dependency drops it — in a file the whole sign-in goes through.
+  crypto: ^3.0.3
 
   # Drawing a customer's wallet code on the till, and on the screen facing them.
   #

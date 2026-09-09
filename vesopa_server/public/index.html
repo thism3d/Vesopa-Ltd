@@ -101,6 +101,24 @@
           <button class="btn primary block" type="submit">Sign in</button>
           <p id="login-error" class="error" role="alert" aria-live="polite"></p>
 
+          <!-- Signing in with a Vesopa account — Phase 6, migration two.
+
+               Hidden until the server says the feature is on, because the flag
+               lives in the environment and this file is read into a constant at
+               start-up. A button that leads nowhere is worse than none: somebody
+               picks the option that looks most official and is told it went
+               wrong, which teaches them the whole product is unreliable.
+
+               BELOW the password button, deliberately. Nobody is being moved;
+               the password form is still the way in, and this is an addition
+               beside it for the whole soak. -->
+          <div id="vesopa-sso" hidden>
+            <div class="login-or"><span>or</span></div>
+            <a class="btn block" id="vesopa-sso-link" href="/auth/vesopa/start">
+              Sign in with your Vesopa account
+            </a>
+          </div>
+
           <p class="login-foot">
             Don't have an account?
             <a href="https://vesopaepos.com/#try-vesopa" target="_blank"
