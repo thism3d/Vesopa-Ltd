@@ -27,8 +27,15 @@ abstract final class TillActions {
   /// and it is reported as such rather than as a generic error.
   static Future<void> openCashDrawer(
     BuildContext context,
-    WidgetRef ref,
-  ) async {
+    WidgetRef ref, {
+    /// Why the drawer is being opened, from the venue's No Sale list.
+    ///
+    /// Null is a real answer and is not refused: the clerk skipped the
+    /// question, or the list could not be reached. The event is still recorded
+    /// — the COUNT is what the Z report is for, and a no-sale with no reason
+    /// on it is still a no-sale.
+    String? reason,
+  }) async {
     final settings = await ref.read(printerSettingsProvider.future);
     final printer = settings.receiptPrinter;
 
@@ -56,6 +63,7 @@ abstract final class TillActions {
       await ref.read(orderRepositoryProvider).logNoSale(
             sessionId: session.id,
             staffName: ref.read(servedByProvider),
+            note: reason,
           );
 
       if (context.mounted) _toast(context, 'Drawer opened.');

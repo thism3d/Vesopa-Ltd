@@ -157,6 +157,21 @@ class $ProductsTable extends Products with TableInfo<$ProductsTable, Product> {
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _renewsMembershipMeta = const VerificationMeta(
+    'renewsMembership',
+  );
+  @override
+  late final GeneratedColumn<bool> renewsMembership = GeneratedColumn<bool>(
+    'renews_membership',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("renews_membership" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   static const VerificationMeta _taxPercentageMeta = const VerificationMeta(
     'taxPercentage',
   );
@@ -291,6 +306,7 @@ class $ProductsTable extends Products with TableInfo<$ProductsTable, Product> {
     printCategory,
     printCategoryOrder,
     allergens,
+    renewsMembership,
     taxPercentage,
     stockQuantity,
     buttonPosition,
@@ -427,6 +443,15 @@ class $ProductsTable extends Products with TableInfo<$ProductsTable, Product> {
       context.handle(
         _allergensMeta,
         allergens.isAcceptableOrUnknown(data['allergens']!, _allergensMeta),
+      );
+    }
+    if (data.containsKey('renews_membership')) {
+      context.handle(
+        _renewsMembershipMeta,
+        renewsMembership.isAcceptableOrUnknown(
+          data['renews_membership']!,
+          _renewsMembershipMeta,
+        ),
       );
     }
     if (data.containsKey('tax_percentage')) {
@@ -572,6 +597,10 @@ class $ProductsTable extends Products with TableInfo<$ProductsTable, Product> {
         DriftSqlType.string,
         data['${effectivePrefix}allergens'],
       ),
+      renewsMembership: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}renews_membership'],
+      )!,
       taxPercentage: attachedDatabase.typeMapping.read(
         DriftSqlType.double,
         data['${effectivePrefix}tax_percentage'],
@@ -669,6 +698,22 @@ class Product extends DataClass implements Insertable<Product> {
   /// NULL is "nobody has said", '[]' is "somebody looked and it contains none
   /// of the fourteen". See vesopa_server/src/allergens.js.
   final String? allergens;
+
+  /// Whether paying for this product moves a member's expiry forward.
+  ///
+  /// "Set a check box on a product (Renews membership)." Any number of a
+  /// venue's products may carry it -- a club sells full, concession, junior and
+  /// social memberships, which is four products, four prices and one meaning.
+  ///
+  /// It replaces the single PLU named in the loyalty settings, which could
+  /// express exactly one of those four. The old setting is carried forward by
+  /// the back office's own migration, so a venue that named a PLU has that
+  /// product flagged and behaves identically.
+  ///
+  /// False on every existing row and filled in on the next catalogue sync,
+  /// which is the safe direction: a product that wrongly renewed a membership
+  /// would move somebody's expiry a year for buying a pint.
+  final bool renewsMembership;
   final double taxPercentage;
   final double stockQuantity;
 
@@ -742,6 +787,7 @@ class Product extends DataClass implements Insertable<Product> {
     this.printCategory,
     this.printCategoryOrder,
     this.allergens,
+    required this.renewsMembership,
     required this.taxPercentage,
     required this.stockQuantity,
     this.buttonPosition,
@@ -792,6 +838,7 @@ class Product extends DataClass implements Insertable<Product> {
     if (!nullToAbsent || allergens != null) {
       map['allergens'] = Variable<String>(allergens);
     }
+    map['renews_membership'] = Variable<bool>(renewsMembership);
     map['tax_percentage'] = Variable<double>(taxPercentage);
     map['stock_quantity'] = Variable<double>(stockQuantity);
     if (!nullToAbsent || buttonPosition != null) {
@@ -855,6 +902,7 @@ class Product extends DataClass implements Insertable<Product> {
       allergens: allergens == null && nullToAbsent
           ? const Value.absent()
           : Value(allergens),
+      renewsMembership: Value(renewsMembership),
       taxPercentage: Value(taxPercentage),
       stockQuantity: Value(stockQuantity),
       buttonPosition: buttonPosition == null && nullToAbsent
@@ -900,6 +948,7 @@ class Product extends DataClass implements Insertable<Product> {
       printCategory: serializer.fromJson<String?>(json['printCategory']),
       printCategoryOrder: serializer.fromJson<int?>(json['printCategoryOrder']),
       allergens: serializer.fromJson<String?>(json['allergens']),
+      renewsMembership: serializer.fromJson<bool>(json['renewsMembership']),
       taxPercentage: serializer.fromJson<double>(json['taxPercentage']),
       stockQuantity: serializer.fromJson<double>(json['stockQuantity']),
       buttonPosition: serializer.fromJson<int?>(json['buttonPosition']),
@@ -930,6 +979,7 @@ class Product extends DataClass implements Insertable<Product> {
       'printCategory': serializer.toJson<String?>(printCategory),
       'printCategoryOrder': serializer.toJson<int?>(printCategoryOrder),
       'allergens': serializer.toJson<String?>(allergens),
+      'renewsMembership': serializer.toJson<bool>(renewsMembership),
       'taxPercentage': serializer.toJson<double>(taxPercentage),
       'stockQuantity': serializer.toJson<double>(stockQuantity),
       'buttonPosition': serializer.toJson<int?>(buttonPosition),
@@ -958,6 +1008,7 @@ class Product extends DataClass implements Insertable<Product> {
     Value<String?> printCategory = const Value.absent(),
     Value<int?> printCategoryOrder = const Value.absent(),
     Value<String?> allergens = const Value.absent(),
+    bool? renewsMembership,
     double? taxPercentage,
     double? stockQuantity,
     Value<int?> buttonPosition = const Value.absent(),
@@ -991,6 +1042,7 @@ class Product extends DataClass implements Insertable<Product> {
         ? printCategoryOrder.value
         : this.printCategoryOrder,
     allergens: allergens.present ? allergens.value : this.allergens,
+    renewsMembership: renewsMembership ?? this.renewsMembership,
     taxPercentage: taxPercentage ?? this.taxPercentage,
     stockQuantity: stockQuantity ?? this.stockQuantity,
     buttonPosition: buttonPosition.present
@@ -1042,6 +1094,9 @@ class Product extends DataClass implements Insertable<Product> {
           ? data.printCategoryOrder.value
           : this.printCategoryOrder,
       allergens: data.allergens.present ? data.allergens.value : this.allergens,
+      renewsMembership: data.renewsMembership.present
+          ? data.renewsMembership.value
+          : this.renewsMembership,
       taxPercentage: data.taxPercentage.present
           ? data.taxPercentage.value
           : this.taxPercentage,
@@ -1086,6 +1141,7 @@ class Product extends DataClass implements Insertable<Product> {
           ..write('printCategory: $printCategory, ')
           ..write('printCategoryOrder: $printCategoryOrder, ')
           ..write('allergens: $allergens, ')
+          ..write('renewsMembership: $renewsMembership, ')
           ..write('taxPercentage: $taxPercentage, ')
           ..write('stockQuantity: $stockQuantity, ')
           ..write('buttonPosition: $buttonPosition, ')
@@ -1116,6 +1172,7 @@ class Product extends DataClass implements Insertable<Product> {
     printCategory,
     printCategoryOrder,
     allergens,
+    renewsMembership,
     taxPercentage,
     stockQuantity,
     buttonPosition,
@@ -1145,6 +1202,7 @@ class Product extends DataClass implements Insertable<Product> {
           other.printCategory == this.printCategory &&
           other.printCategoryOrder == this.printCategoryOrder &&
           other.allergens == this.allergens &&
+          other.renewsMembership == this.renewsMembership &&
           other.taxPercentage == this.taxPercentage &&
           other.stockQuantity == this.stockQuantity &&
           other.buttonPosition == this.buttonPosition &&
@@ -1172,6 +1230,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
   final Value<String?> printCategory;
   final Value<int?> printCategoryOrder;
   final Value<String?> allergens;
+  final Value<bool> renewsMembership;
   final Value<double> taxPercentage;
   final Value<double> stockQuantity;
   final Value<int?> buttonPosition;
@@ -1197,6 +1256,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     this.printCategory = const Value.absent(),
     this.printCategoryOrder = const Value.absent(),
     this.allergens = const Value.absent(),
+    this.renewsMembership = const Value.absent(),
     this.taxPercentage = const Value.absent(),
     this.stockQuantity = const Value.absent(),
     this.buttonPosition = const Value.absent(),
@@ -1223,6 +1283,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     this.printCategory = const Value.absent(),
     this.printCategoryOrder = const Value.absent(),
     this.allergens = const Value.absent(),
+    this.renewsMembership = const Value.absent(),
     this.taxPercentage = const Value.absent(),
     this.stockQuantity = const Value.absent(),
     this.buttonPosition = const Value.absent(),
@@ -1250,6 +1311,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     Expression<String>? printCategory,
     Expression<int>? printCategoryOrder,
     Expression<String>? allergens,
+    Expression<bool>? renewsMembership,
     Expression<double>? taxPercentage,
     Expression<double>? stockQuantity,
     Expression<int>? buttonPosition,
@@ -1277,6 +1339,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
       if (printCategoryOrder != null)
         'print_category_order': printCategoryOrder,
       if (allergens != null) 'allergens': allergens,
+      if (renewsMembership != null) 'renews_membership': renewsMembership,
       if (taxPercentage != null) 'tax_percentage': taxPercentage,
       if (stockQuantity != null) 'stock_quantity': stockQuantity,
       if (buttonPosition != null) 'button_position': buttonPosition,
@@ -1305,6 +1368,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     Value<String?>? printCategory,
     Value<int?>? printCategoryOrder,
     Value<String?>? allergens,
+    Value<bool>? renewsMembership,
     Value<double>? taxPercentage,
     Value<double>? stockQuantity,
     Value<int?>? buttonPosition,
@@ -1331,6 +1395,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
       printCategory: printCategory ?? this.printCategory,
       printCategoryOrder: printCategoryOrder ?? this.printCategoryOrder,
       allergens: allergens ?? this.allergens,
+      renewsMembership: renewsMembership ?? this.renewsMembership,
       taxPercentage: taxPercentage ?? this.taxPercentage,
       stockQuantity: stockQuantity ?? this.stockQuantity,
       buttonPosition: buttonPosition ?? this.buttonPosition,
@@ -1389,6 +1454,9 @@ class ProductsCompanion extends UpdateCompanion<Product> {
     if (allergens.present) {
       map['allergens'] = Variable<String>(allergens.value);
     }
+    if (renewsMembership.present) {
+      map['renews_membership'] = Variable<bool>(renewsMembership.value);
+    }
     if (taxPercentage.present) {
       map['tax_percentage'] = Variable<double>(taxPercentage.value);
     }
@@ -1439,6 +1507,7 @@ class ProductsCompanion extends UpdateCompanion<Product> {
           ..write('printCategory: $printCategory, ')
           ..write('printCategoryOrder: $printCategoryOrder, ')
           ..write('allergens: $allergens, ')
+          ..write('renewsMembership: $renewsMembership, ')
           ..write('taxPercentage: $taxPercentage, ')
           ..write('stockQuantity: $stockQuantity, ')
           ..write('buttonPosition: $buttonPosition, ')
@@ -1717,6 +1786,17 @@ class $OrdersTable extends Orders with TableInfo<$OrdersTable, Order> {
         type: DriftSqlType.string,
         requiredDuringInsert: false,
       );
+  static const VerificationMeta _customerPointsMeta = const VerificationMeta(
+    'customerPoints',
+  );
+  @override
+  late final GeneratedColumn<int> customerPoints = GeneratedColumn<int>(
+    'customer_points',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -1777,6 +1857,7 @@ class $OrdersTable extends Orders with TableInfo<$OrdersTable, Order> {
     customerPhone,
     customerEmail,
     customerCardNumber,
+    customerPoints,
     createdAt,
     closedAt,
     syncedAt,
@@ -1969,6 +2050,15 @@ class $OrdersTable extends Orders with TableInfo<$OrdersTable, Order> {
         ),
       );
     }
+    if (data.containsKey('customer_points')) {
+      context.handle(
+        _customerPointsMeta,
+        customerPoints.isAcceptableOrUnknown(
+          data['customer_points']!,
+          _customerPointsMeta,
+        ),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -2091,6 +2181,10 @@ class $OrdersTable extends Orders with TableInfo<$OrdersTable, Order> {
       customerCardNumber: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}customer_card_number'],
+      ),
+      customerPoints: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}customer_points'],
       ),
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
@@ -2218,6 +2312,22 @@ class Order extends DataClass implements Insertable<Order> {
   final String? customerPhone;
   final String? customerEmail;
   final String? customerCardNumber;
+
+  /// What this member had saved up when they were put on the bill.
+  ///
+  /// "Can we add the customer's name and points to the customer display
+  /// screen." The screen facing the customer reads a file this till writes and
+  /// has no network of its own, so the figure has to travel with the bill.
+  ///
+  /// Copied down with the name for the same reason the phone number and the
+  /// card number are: the till has nowhere to look it up again. A bill can be
+  /// parked on a table and picked up on a second terminal an hour later, and
+  /// the local customers table is empty — every lookup on this till goes
+  /// straight to the back office.
+  ///
+  /// A snapshot, and honestly so: it is the balance BEFORE this sale, because
+  /// the points for this sale are not earned until it settles.
+  final int? customerPoints;
   final DateTime createdAt;
   final DateTime? closedAt;
   final DateTime? syncedAt;
@@ -2246,6 +2356,7 @@ class Order extends DataClass implements Insertable<Order> {
     this.customerPhone,
     this.customerEmail,
     this.customerCardNumber,
+    this.customerPoints,
     required this.createdAt,
     this.closedAt,
     this.syncedAt,
@@ -2306,6 +2417,9 @@ class Order extends DataClass implements Insertable<Order> {
     }
     if (!nullToAbsent || customerCardNumber != null) {
       map['customer_card_number'] = Variable<String>(customerCardNumber);
+    }
+    if (!nullToAbsent || customerPoints != null) {
+      map['customer_points'] = Variable<int>(customerPoints);
     }
     map['created_at'] = Variable<DateTime>(createdAt);
     if (!nullToAbsent || closedAt != null) {
@@ -2373,6 +2487,9 @@ class Order extends DataClass implements Insertable<Order> {
       customerCardNumber: customerCardNumber == null && nullToAbsent
           ? const Value.absent()
           : Value(customerCardNumber),
+      customerPoints: customerPoints == null && nullToAbsent
+          ? const Value.absent()
+          : Value(customerPoints),
       createdAt: Value(createdAt),
       closedAt: closedAt == null && nullToAbsent
           ? const Value.absent()
@@ -2421,6 +2538,7 @@ class Order extends DataClass implements Insertable<Order> {
       customerCardNumber: serializer.fromJson<String?>(
         json['customerCardNumber'],
       ),
+      customerPoints: serializer.fromJson<int?>(json['customerPoints']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       closedAt: serializer.fromJson<DateTime?>(json['closedAt']),
       syncedAt: serializer.fromJson<DateTime?>(json['syncedAt']),
@@ -2454,6 +2572,7 @@ class Order extends DataClass implements Insertable<Order> {
       'customerPhone': serializer.toJson<String?>(customerPhone),
       'customerEmail': serializer.toJson<String?>(customerEmail),
       'customerCardNumber': serializer.toJson<String?>(customerCardNumber),
+      'customerPoints': serializer.toJson<int?>(customerPoints),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'closedAt': serializer.toJson<DateTime?>(closedAt),
       'syncedAt': serializer.toJson<DateTime?>(syncedAt),
@@ -2485,6 +2604,7 @@ class Order extends DataClass implements Insertable<Order> {
     Value<String?> customerPhone = const Value.absent(),
     Value<String?> customerEmail = const Value.absent(),
     Value<String?> customerCardNumber = const Value.absent(),
+    Value<int?> customerPoints = const Value.absent(),
     DateTime? createdAt,
     Value<DateTime?> closedAt = const Value.absent(),
     Value<DateTime?> syncedAt = const Value.absent(),
@@ -2521,6 +2641,9 @@ class Order extends DataClass implements Insertable<Order> {
     customerCardNumber: customerCardNumber.present
         ? customerCardNumber.value
         : this.customerCardNumber,
+    customerPoints: customerPoints.present
+        ? customerPoints.value
+        : this.customerPoints,
     createdAt: createdAt ?? this.createdAt,
     closedAt: closedAt.present ? closedAt.value : this.closedAt,
     syncedAt: syncedAt.present ? syncedAt.value : this.syncedAt,
@@ -2577,6 +2700,9 @@ class Order extends DataClass implements Insertable<Order> {
       customerCardNumber: data.customerCardNumber.present
           ? data.customerCardNumber.value
           : this.customerCardNumber,
+      customerPoints: data.customerPoints.present
+          ? data.customerPoints.value
+          : this.customerPoints,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       closedAt: data.closedAt.present ? data.closedAt.value : this.closedAt,
       syncedAt: data.syncedAt.present ? data.syncedAt.value : this.syncedAt,
@@ -2610,6 +2736,7 @@ class Order extends DataClass implements Insertable<Order> {
           ..write('customerPhone: $customerPhone, ')
           ..write('customerEmail: $customerEmail, ')
           ..write('customerCardNumber: $customerCardNumber, ')
+          ..write('customerPoints: $customerPoints, ')
           ..write('createdAt: $createdAt, ')
           ..write('closedAt: $closedAt, ')
           ..write('syncedAt: $syncedAt')
@@ -2643,6 +2770,7 @@ class Order extends DataClass implements Insertable<Order> {
     customerPhone,
     customerEmail,
     customerCardNumber,
+    customerPoints,
     createdAt,
     closedAt,
     syncedAt,
@@ -2675,6 +2803,7 @@ class Order extends DataClass implements Insertable<Order> {
           other.customerPhone == this.customerPhone &&
           other.customerEmail == this.customerEmail &&
           other.customerCardNumber == this.customerCardNumber &&
+          other.customerPoints == this.customerPoints &&
           other.createdAt == this.createdAt &&
           other.closedAt == this.closedAt &&
           other.syncedAt == this.syncedAt);
@@ -2705,6 +2834,7 @@ class OrdersCompanion extends UpdateCompanion<Order> {
   final Value<String?> customerPhone;
   final Value<String?> customerEmail;
   final Value<String?> customerCardNumber;
+  final Value<int?> customerPoints;
   final Value<DateTime> createdAt;
   final Value<DateTime?> closedAt;
   final Value<DateTime?> syncedAt;
@@ -2734,6 +2864,7 @@ class OrdersCompanion extends UpdateCompanion<Order> {
     this.customerPhone = const Value.absent(),
     this.customerEmail = const Value.absent(),
     this.customerCardNumber = const Value.absent(),
+    this.customerPoints = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.closedAt = const Value.absent(),
     this.syncedAt = const Value.absent(),
@@ -2764,6 +2895,7 @@ class OrdersCompanion extends UpdateCompanion<Order> {
     this.customerPhone = const Value.absent(),
     this.customerEmail = const Value.absent(),
     this.customerCardNumber = const Value.absent(),
+    this.customerPoints = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.closedAt = const Value.absent(),
     this.syncedAt = const Value.absent(),
@@ -2794,6 +2926,7 @@ class OrdersCompanion extends UpdateCompanion<Order> {
     Expression<String>? customerPhone,
     Expression<String>? customerEmail,
     Expression<String>? customerCardNumber,
+    Expression<int>? customerPoints,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? closedAt,
     Expression<DateTime>? syncedAt,
@@ -2828,6 +2961,7 @@ class OrdersCompanion extends UpdateCompanion<Order> {
       if (customerEmail != null) 'customer_email': customerEmail,
       if (customerCardNumber != null)
         'customer_card_number': customerCardNumber,
+      if (customerPoints != null) 'customer_points': customerPoints,
       if (createdAt != null) 'created_at': createdAt,
       if (closedAt != null) 'closed_at': closedAt,
       if (syncedAt != null) 'synced_at': syncedAt,
@@ -2860,6 +2994,7 @@ class OrdersCompanion extends UpdateCompanion<Order> {
     Value<String?>? customerPhone,
     Value<String?>? customerEmail,
     Value<String?>? customerCardNumber,
+    Value<int?>? customerPoints,
     Value<DateTime>? createdAt,
     Value<DateTime?>? closedAt,
     Value<DateTime?>? syncedAt,
@@ -2891,6 +3026,7 @@ class OrdersCompanion extends UpdateCompanion<Order> {
       customerPhone: customerPhone ?? this.customerPhone,
       customerEmail: customerEmail ?? this.customerEmail,
       customerCardNumber: customerCardNumber ?? this.customerCardNumber,
+      customerPoints: customerPoints ?? this.customerPoints,
       createdAt: createdAt ?? this.createdAt,
       closedAt: closedAt ?? this.closedAt,
       syncedAt: syncedAt ?? this.syncedAt,
@@ -2977,6 +3113,9 @@ class OrdersCompanion extends UpdateCompanion<Order> {
     if (customerCardNumber.present) {
       map['customer_card_number'] = Variable<String>(customerCardNumber.value);
     }
+    if (customerPoints.present) {
+      map['customer_points'] = Variable<int>(customerPoints.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
@@ -3019,6 +3158,7 @@ class OrdersCompanion extends UpdateCompanion<Order> {
           ..write('customerPhone: $customerPhone, ')
           ..write('customerEmail: $customerEmail, ')
           ..write('customerCardNumber: $customerCardNumber, ')
+          ..write('customerPoints: $customerPoints, ')
           ..write('createdAt: $createdAt, ')
           ..write('closedAt: $closedAt, ')
           ..write('syncedAt: $syncedAt, ')
@@ -8601,6 +8741,7 @@ typedef $$ProductsTableCreateCompanionBuilder =
       Value<String?> printCategory,
       Value<int?> printCategoryOrder,
       Value<String?> allergens,
+      Value<bool> renewsMembership,
       Value<double> taxPercentage,
       Value<double> stockQuantity,
       Value<int?> buttonPosition,
@@ -8628,6 +8769,7 @@ typedef $$ProductsTableUpdateCompanionBuilder =
       Value<String?> printCategory,
       Value<int?> printCategoryOrder,
       Value<String?> allergens,
+      Value<bool> renewsMembership,
       Value<double> taxPercentage,
       Value<double> stockQuantity,
       Value<int?> buttonPosition,
@@ -8716,6 +8858,11 @@ class $$ProductsTableFilterComposer
 
   ColumnFilters<String> get allergens => $composableBuilder(
     column: $table.allergens,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get renewsMembership => $composableBuilder(
+    column: $table.renewsMembership,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -8849,6 +8996,11 @@ class $$ProductsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<bool> get renewsMembership => $composableBuilder(
+    column: $table.renewsMembership,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<double> get taxPercentage => $composableBuilder(
     column: $table.taxPercentage,
     builder: (column) => ColumnOrderings(column),
@@ -8971,6 +9123,11 @@ class $$ProductsTableAnnotationComposer
   GeneratedColumn<String> get allergens =>
       $composableBuilder(column: $table.allergens, builder: (column) => column);
 
+  GeneratedColumn<bool> get renewsMembership => $composableBuilder(
+    column: $table.renewsMembership,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<double> get taxPercentage => $composableBuilder(
     column: $table.taxPercentage,
     builder: (column) => column,
@@ -9058,6 +9215,7 @@ class $$ProductsTableTableManager
                 Value<String?> printCategory = const Value.absent(),
                 Value<int?> printCategoryOrder = const Value.absent(),
                 Value<String?> allergens = const Value.absent(),
+                Value<bool> renewsMembership = const Value.absent(),
                 Value<double> taxPercentage = const Value.absent(),
                 Value<double> stockQuantity = const Value.absent(),
                 Value<int?> buttonPosition = const Value.absent(),
@@ -9083,6 +9241,7 @@ class $$ProductsTableTableManager
                 printCategory: printCategory,
                 printCategoryOrder: printCategoryOrder,
                 allergens: allergens,
+                renewsMembership: renewsMembership,
                 taxPercentage: taxPercentage,
                 stockQuantity: stockQuantity,
                 buttonPosition: buttonPosition,
@@ -9110,6 +9269,7 @@ class $$ProductsTableTableManager
                 Value<String?> printCategory = const Value.absent(),
                 Value<int?> printCategoryOrder = const Value.absent(),
                 Value<String?> allergens = const Value.absent(),
+                Value<bool> renewsMembership = const Value.absent(),
                 Value<double> taxPercentage = const Value.absent(),
                 Value<double> stockQuantity = const Value.absent(),
                 Value<int?> buttonPosition = const Value.absent(),
@@ -9135,6 +9295,7 @@ class $$ProductsTableTableManager
                 printCategory: printCategory,
                 printCategoryOrder: printCategoryOrder,
                 allergens: allergens,
+                renewsMembership: renewsMembership,
                 taxPercentage: taxPercentage,
                 stockQuantity: stockQuantity,
                 buttonPosition: buttonPosition,
@@ -9194,6 +9355,7 @@ typedef $$OrdersTableCreateCompanionBuilder =
       Value<String?> customerPhone,
       Value<String?> customerEmail,
       Value<String?> customerCardNumber,
+      Value<int?> customerPoints,
       Value<DateTime> createdAt,
       Value<DateTime?> closedAt,
       Value<DateTime?> syncedAt,
@@ -9225,6 +9387,7 @@ typedef $$OrdersTableUpdateCompanionBuilder =
       Value<String?> customerPhone,
       Value<String?> customerEmail,
       Value<String?> customerCardNumber,
+      Value<int?> customerPoints,
       Value<DateTime> createdAt,
       Value<DateTime?> closedAt,
       Value<DateTime?> syncedAt,
@@ -9399,6 +9562,11 @@ class $$OrdersTableFilterComposer
 
   ColumnFilters<String> get customerCardNumber => $composableBuilder(
     column: $table.customerCardNumber,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get customerPoints => $composableBuilder(
+    column: $table.customerPoints,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -9597,6 +9765,11 @@ class $$OrdersTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get customerPoints => $composableBuilder(
+    column: $table.customerPoints,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -9720,6 +9893,11 @@ class $$OrdersTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<int> get customerPoints => $composableBuilder(
+    column: $table.customerPoints,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
 
@@ -9832,6 +10010,7 @@ class $$OrdersTableTableManager
                 Value<String?> customerPhone = const Value.absent(),
                 Value<String?> customerEmail = const Value.absent(),
                 Value<String?> customerCardNumber = const Value.absent(),
+                Value<int?> customerPoints = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime?> closedAt = const Value.absent(),
                 Value<DateTime?> syncedAt = const Value.absent(),
@@ -9861,6 +10040,7 @@ class $$OrdersTableTableManager
                 customerPhone: customerPhone,
                 customerEmail: customerEmail,
                 customerCardNumber: customerCardNumber,
+                customerPoints: customerPoints,
                 createdAt: createdAt,
                 closedAt: closedAt,
                 syncedAt: syncedAt,
@@ -9892,6 +10072,7 @@ class $$OrdersTableTableManager
                 Value<String?> customerPhone = const Value.absent(),
                 Value<String?> customerEmail = const Value.absent(),
                 Value<String?> customerCardNumber = const Value.absent(),
+                Value<int?> customerPoints = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime?> closedAt = const Value.absent(),
                 Value<DateTime?> syncedAt = const Value.absent(),
@@ -9921,6 +10102,7 @@ class $$OrdersTableTableManager
                 customerPhone: customerPhone,
                 customerEmail: customerEmail,
                 customerCardNumber: customerCardNumber,
+                customerPoints: customerPoints,
                 createdAt: createdAt,
                 closedAt: closedAt,
                 syncedAt: syncedAt,

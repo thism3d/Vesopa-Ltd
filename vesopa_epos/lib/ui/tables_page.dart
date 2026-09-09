@@ -9,6 +9,7 @@ import 'floor_editor_page.dart';
 import 'payment_page.dart';
 import 'placeholder_page.dart';
 import 'theme.dart';
+import 'transfer_table.dart';
 import 'widgets/pos_message.dart';
 import 'room_walls.dart';
 import 'widgets/basket_panel.dart' show money;
@@ -241,15 +242,12 @@ class TablesPage extends ConsumerWidget {
       case 'recall':
         // onRecall (the shell) performs the recall and switches to the bill.
         onRecall(order.id);
+      // The same flow the Transfer bar key runs, so the two cannot drift.
+      // This used to ask for a number and refuse outright when the destination
+      // was taken; it now shows the floor and offers to merge, which is what
+      // the venue asked for and is the more useful half of the two answers.
       case 'transfer':
-        final to = await _askNumber(context, 'Transfer to table');
-        if (to == null) return;
-        try {
-          await tables.transfer(order.id, to);
-        } on StateError catch (e) {
-          if (!context.mounted) return;
-          PosMessenger.error(context, e.message);
-        }
+        await transferTable(context, ref, orderId: order.id);
       case 'split':
         if (!context.mounted) return;
         await _splitDialog(context, ref, order);

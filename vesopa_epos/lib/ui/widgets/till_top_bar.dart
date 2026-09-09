@@ -442,16 +442,44 @@ class VenueTopBarBody extends ConsumerWidget {
   /// A sale bar would be the wrong answer even as a default. It carries Void,
   /// Save Table and Covers, and a bill that is being settled has no use for
   /// any of them.
+  /// The bars the payment board wears.
+  ///
+  /// The venue's own pay bars when it has laid any out, and otherwise **it
+  /// falls back to the sale screen's**.
+  ///
+  /// THAT FALLBACK IS NEW, AND IT OVERRULES A DECISION THIS CODE ARGUED FOR.
+  ///
+  /// `schema_till_pay_bars.sql` gave the payment screen its own pair of
+  /// columns and its header makes the case for them: a sale bar carries Void,
+  /// Save Table and Covers, none of which mean anything once the bill is being
+  /// settled, so a payment screen showing the sale bar would be a bar of keys
+  /// that do nothing.
+  ///
+  /// The venue has asked for exactly that, in as many words — "please make the
+  /// top and bottom bars from the sales screen the same on the payment
+  /// screens" — and they are right about their own counter. A clerk learns one
+  /// set of keys in one set of places; two arrangements a tap apart is two
+  /// things to learn, and the keys that genuinely cannot act here say so when
+  /// they are pressed rather than being absent.
+  ///
+  /// The columns stay. A venue that wants a tender-only bar lays one out and it
+  /// wins; a venue that wants what The Bridge wants does nothing at all. Both
+  /// are one decision in the back office rather than a build.
   static (TillScreen?, TillScreen?) paymentBars(WidgetRef ref) {
     final screens = ref.watch(screensProvider).value;
     if (screens == null) return (null, null);
     final settings = ref.watch(tillSettingsProvider);
     return (
-      screens.surfaceById(settings.payTopBarScreenId, ScreenSurface.topBar),
+      screens.surfaceById(settings.payTopBarScreenId, ScreenSurface.topBar) ??
+          screens.surfaceById(settings.topBarScreenId, ScreenSurface.topBar),
       screens.surfaceById(
-        settings.payBottomBarScreenId,
-        ScreenSurface.bottomBar,
-      ),
+            settings.payBottomBarScreenId,
+            ScreenSurface.bottomBar,
+          ) ??
+          screens.surfaceById(
+            settings.bottomBarScreenId,
+            ScreenSurface.bottomBar,
+          ),
     );
   }
 

@@ -109,7 +109,7 @@ class _GiftCardDialogState extends State<_GiftCardDialog> {
             : widget.outstandingMinor;
 
     return AlertDialog(
-      title: const Text('Gift card'),
+      title: const Text('Gift Card'),
       content: SizedBox(
         width: 380,
         child: Column(

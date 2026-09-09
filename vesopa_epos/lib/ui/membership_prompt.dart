@@ -18,6 +18,7 @@ library;
 import 'package:flutter/material.dart';
 
 import '../data/commerce.dart';
+import '../data/customer_repository.dart';
 import 'theme.dart';
 
 String _money(int minor) => '£${(minor / 100).toStringAsFixed(2)}';
@@ -28,6 +29,117 @@ String _day(DateTime d) {
     'July', 'August', 'September', 'October', 'November', 'December',
   ];
   return '${d.day} ${months[d.month - 1]} ${d.year}';
+}
+
+/// Everything the membership dialogs need about one person, whichever lookup
+/// found them.
+///
+/// WHY THIS EXISTS AT ALL
+///
+/// A card swipe produces a [LoyaltyCustomer] and the Customer key produces a
+/// [TillCustomer], and until now only the first of those went anywhere near an
+/// expiry check. That is the venue's complaint in one sentence: "if a customer
+/// has expired, they can still use the loyalty card on the till" — swipe the
+/// card and you were stopped, pick the same person off the list and you were
+/// not.
+///
+/// So both become this, and there is exactly one gate. A third way in later
+/// has to build one of these too, which is the point.
+class ExpiredMember {
+  const ExpiredMember({
+    required this.id,
+    required this.name,
+    this.cardNumber,
+    this.photoUrl,
+    this.pointsBalance = 0,
+    this.membershipExpiry,
+    this.membershipFeeMinor = 0,
+    this.membershipTermMonths = 12,
+    this.membershipRenewalDate,
+  });
+
+  /// From a swiped or scanned card, or a phone-number lookup.
+  ///
+  /// The venue's fee and term travel on the customer because a swipe is one
+  /// round trip, not two, with somebody standing at the counter.
+  factory ExpiredMember.fromLoyalty(LoyaltyCustomer c) => ExpiredMember(
+    id: c.id,
+    name: c.name,
+    cardNumber: c.cardNumber,
+    photoUrl: c.photoUrl,
+    pointsBalance: c.pointsBalance,
+    membershipExpiry: c.membershipExpiry,
+    membershipFeeMinor: c.membershipFeeMinor,
+    membershipTermMonths: c.membershipTermMonths,
+    membershipRenewalDate: c.membershipRenewalDate,
+  );
+
+  /// From the Customer key's list.
+  ///
+  /// That lookup carries no loyalty settings — it is a search over names, not
+  /// a card read — so the fee and the term come from the settings the till has
+  /// already cached. Both are passed in rather than defaulted here, because a
+  /// dialog that offered to renew for the wrong money would be worse than one
+  /// that did not offer at all.
+  factory ExpiredMember.fromTill(
+    TillCustomer c, {
+    required int feeMinor,
+    required int termMonths,
+    required DateTime? renewalDate,
+  }) => ExpiredMember(
+    id: c.id,
+    name: c.name,
+    cardNumber: c.cardNumber,
+    photoUrl: c.photoUrl,
+    pointsBalance: c.pointsBalance,
+    membershipExpiry: c.membershipExpiry,
+    membershipFeeMinor: feeMinor,
+    membershipTermMonths: termMonths,
+    membershipRenewalDate: renewalDate,
+  );
+
+  final String id;
+  final String name;
+  final String? cardNumber;
+  final String? photoUrl;
+  final int pointsBalance;
+  final DateTime? membershipExpiry;
+
+  /// The venue's settings, carried on the person so a swipe is one lookup.
+  final int membershipFeeMinor;
+  final int membershipTermMonths;
+
+  /// The night the season ends, when the venue runs one.
+  final DateTime? membershipRenewalDate;
+
+  /// Whether the card has run out, as of this terminal's clock.
+  ///
+  /// The expiry day itself counts: a card that says 31 March works all of the
+  /// 31st. Compared as calendar days, so a member is not expired an evening
+  /// early through British summer time.
+  bool get membershipExpired {
+    final expiry = membershipExpiry;
+    if (expiry == null) return false;
+    final now = DateTime.now();
+    return expiry.isBefore(DateTime(now.year, now.month, now.day));
+  }
+
+  /// What renewing buys, said the way the venue has set it up.
+  ///
+  /// A season that has already passed is not quoted, because the server will
+  /// not renew to it either — it falls back to the term rather than hand
+  /// somebody a card that expired last year. Saying "runs to 31 August 2024"
+  /// at the counter and then writing a different date would be worse than
+  /// saying nothing.
+  String get runsToPhrase {
+    final season = membershipRenewalDate;
+    final now = DateTime.now();
+    if (season != null && !season.isBefore(DateTime(now.year, now.month, now.day))) {
+      return 'runs the card to ${_day(season)}';
+    }
+    final months = membershipTermMonths;
+    return 'moves the card on $months month${months == 1 ? '' : 's'}';
+  }
 }
 
 /// What the clerk decided about an expired membership.
@@ -125,7 +237,7 @@ class MemberFace extends StatelessWidget {
 /// as "not now": nothing is attached and nothing is charged.
 Future<MembershipChoice?> showExpiredMembership(
   BuildContext context, {
-  required LoyaltyCustomer member,
+  required ExpiredMember member,
   String? apiBase,
 }) {
   final expiry = member.membershipExpiry;
@@ -176,14 +288,9 @@ Future<MembershipChoice?> showExpiredMembership(
           Text(
             member.membershipFeeMinor > 0
                 ? 'Renewing puts ${_money(member.membershipFeeMinor)} on this '
-                      'bill and moves the card on '
-                      '${member.membershipTermMonths} month'
-                      '${member.membershipTermMonths == 1 ? '' : 's'} once it '
-                      'is paid.'
-                : 'Renewing moves the card on ${member.membershipTermMonths} '
-                      'month${member.membershipTermMonths == 1 ? '' : 's'}. No '
-                      'fee is set in the back office, so nothing is added to '
-                      'the bill.',
+                      'bill and ${member.runsToPhrase} once it is paid.'
+                : 'Renewing ${member.runsToPhrase}. No fee is set in the back '
+                      'office, so nothing is added to the bill.',
           ),
           const SizedBox(height: 8),
           Text(
@@ -216,7 +323,7 @@ Future<MembershipChoice?> showExpiredMembership(
 /// the person the card belongs to.
 Future<void> showMemberOnBill(
   BuildContext context, {
-  required LoyaltyCustomer member,
+  required ExpiredMember member,
   String? apiBase,
   String? footnote,
 }) {

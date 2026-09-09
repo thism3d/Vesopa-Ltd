@@ -60,17 +60,42 @@ Product membershipProduct({
     stockQuantity: 0,
     printToReceipt: true,
     isModifier: false,
+    // True, and it matters: this line IS the renewal when a venue has ticked
+    // no product of its own, so the settle path has to be able to recognise it
+    // on a bill picked up an hour later on another terminal.
+    renewsMembership: true,
   );
 }
 
-/// Whether any of a bill's lines is a membership renewal.
+/// The PLUs that renew a membership when they are paid for.
 ///
-/// Matched on the name as well as the PLU, because a venue that has named its
-/// own product for the fee rings that product's own PLU — so the marker cannot
-/// be the number alone. [plu] is the venue's setting, read from the same
-/// loyalty settings the fee came from.
-bool billRenewsMembership(Iterable<OrderLine> lines, {int? plu}) => lines.any(
-  (l) =>
-      l.pluId == membershipRenewalPlu ||
-      (plu != null && plu > 0 && l.pluId == plu),
-);
+/// "Set a check box on a product (Renews membership)." Built from the till's
+/// own catalogue, which carries the flag from 1.6.9.0 onward, plus two things
+/// that are not in it:
+///
+///   * [membershipRenewalPlu], the sentinel a plain fee line is rung under
+///     when the venue has named no product at all;
+///   * [legacyPlu], the single PLU the loyalty settings used to name. A till
+///     talking to a back office that has not been updated yet still gets that
+///     setting and nothing else, and must go on renewing on it.
+///
+/// A set rather than one number, which is the whole change: a club sells full,
+/// concession, junior and social memberships, and those are four products with
+/// four prices, four VAT treatments and one meaning.
+Set<int> renewingPlus(Iterable<Product> catalogue, {int? legacyPlu}) => {
+  membershipRenewalPlu,
+  if (legacyPlu != null && legacyPlu > 0) legacyPlu,
+  for (final p in catalogue)
+    if (p.renewsMembership) p.pluId,
+};
+
+/// Whether any of a bill's lines renews a membership.
+///
+/// [renewing] is what [renewingPlus] built. Read off the LINES rather than off
+/// anything held in memory, because a bill can be started on one terminal,
+/// parked on a table, picked up on another and paid an hour later — and a
+/// variable on a page does not travel with it.
+bool billRenewsMembership(
+  Iterable<OrderLine> lines, {
+  required Set<int> renewing,
+}) => lines.any((l) => renewing.contains(l.pluId));

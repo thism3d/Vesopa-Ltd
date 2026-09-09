@@ -37,6 +37,8 @@ class TillSettings {
     this.priceLevelNames = PriceLevelNames.empty,
     this.notify = NotifyPolicy.standard,
     this.notifyDisplayEnabled = false,
+    this.customerDisplayGreeting,
+    this.customerDisplayShowMember = true,
   });
 
   /// The programmed screen this venue's tills open on, or null.
@@ -95,6 +97,22 @@ class TillSettings {
   /// key: "Happy Hour" tells a clerk what they are switching to and "Price 2"
   /// tells them nothing. See `data/price_levels.dart`.
   final PriceLevelNames priceLevelNames;
+
+  /// What the screen facing the customer says above a member's name, or null
+  /// for the built-in "Welcome".
+  ///
+  /// Null rather than the word itself, so a venue that clears the box gets the
+  /// default back instead of being left with a field it cannot empty — the
+  /// same rule the printer names follow.
+  final String? customerDisplayGreeting;
+
+  /// Whether that screen names the member at all.
+  ///
+  /// On by default, because a greeting with no name under it is a screen
+  /// saying "Welcome" to nobody. Off is a real choice: the display faces a
+  /// room, and "Welcome Mrs Protheroe — 1,240 points" is a sentence the next
+  /// person in the queue can read.
+  final bool customerDisplayShowMember;
 
   final bool idleEnabled;
 
@@ -316,6 +334,20 @@ class TillSettings {
       // reads as "nothing named" — the state every venue is in until it names
       // one.
       priceLevelNames: PriceLevelNames.parse(j['price_level_names']),
+      // Trimmed, and empty is null. A greeting of spaces would draw a gap
+      // above the name and look like a fault.
+      customerDisplayGreeting: switch (j['customer_display_greeting']) {
+        final String s when s.trim().isNotEmpty => s.trim(),
+        _ => null,
+      },
+      // Absent means on — a server that predates the column must not be read
+      // as "this venue has switched the name off".
+      customerDisplayShowMember: switch (j['customer_display_show_member']) {
+        final bool v => v,
+        final num v => v != 0,
+        final String v => v == '1' || v == 'true',
+        _ => true,
+      },
       topBarScreenId: (j['top_bar_screen_id'] as num?)?.toInt(),
       bottomBarScreenId: (j['bottom_bar_screen_id'] as num?)?.toInt(),
       // Absent on a server that has not run schema_till_pay_bars.sql, which

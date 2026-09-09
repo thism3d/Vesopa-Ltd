@@ -2385,6 +2385,48 @@ function dineinRoutes({ pool, broadcast, secret }) {
   );
 
   /**
+   * Say which sale an accepted order became.
+   *
+   * NORMALLY THIS IS NOT NEEDED. A clerk pressing Accept rings the order onto
+   * a bill first and sends the sale id with the acceptance, in one call.
+   *
+   * Auto-accept cannot do that, and the reason is worth writing down: it runs
+   * on every till in the venue at once, so it has to CLAIM the order before
+   * ringing it up — otherwise three terminals all ring the same food onto
+   * three local bills and only one of them wins the transition, which is a
+   * table charged twice with nobody having touched anything. The claim comes
+   * first and the sale id follows here.
+   *
+   * Only fills a blank. An order that already names a sale keeps it, so a
+   * retry cannot repoint a QR order at a different bill.
+   */
+  router.post(
+    ['/till/dinein/orders/:id/link', '/api/kitchen/dinein/orders/:id/link'],
+    appAuth,
+    async (req, res, next) => {
+      try {
+        const officeId = await terminalOffice(req);
+        if (officeId == null) {
+          return res.status(400).json({ error: 'Unknown office.' });
+        }
+        const saleId = String((req.body && req.body.order_id) || '').trim();
+        if (!saleId) return res.status(400).json({ error: 'order_id is required' });
+
+        const [r] = await pool.execute(
+          'UPDATE dinein_orders SET order_id = ?' +
+            ' WHERE id = ? AND office_id = ? AND order_id IS NULL',
+          [saleId, req.params.id, officeId]
+        );
+        // Not an error. Another terminal linked it, or it was linked when it
+        // was accepted -- both mean the order knows which sale it became.
+        res.json({ ok: true, linked: r.affectedRows === 1 });
+      } catch (e) {
+        next(e);
+      }
+    }
+  );
+
+  /**
    * Move an order along.
    *
    * The transitions are stated rather than implied, so a stale screen cannot

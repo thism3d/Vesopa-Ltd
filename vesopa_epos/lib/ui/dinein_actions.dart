@@ -69,6 +69,40 @@ Future<DineInOutcome> acceptDineInOrder(WidgetRef ref, DineInOrder order) async 
     );
   }
 
+  final saleId = await _ringUp(ref, order, byPlu, tableNumber);
+
+  final moved = await ref
+      .read(dineInOrdersProvider.notifier)
+      .move(order.id, 'accepted', saleId: saleId);
+
+  if (!moved) {
+    return DineInOutcome(
+      'Another till accepted this one first. The items are on '
+      "${order.tableLabel}'s bill — check it before ringing them again.",
+      ok: false,
+    );
+  }
+
+  return DineInOutcome(
+    missing.isEmpty
+        ? 'Accepted onto ${order.tableLabel}.'
+        : 'Accepted onto ${order.tableLabel}, but ${missing.join(', ')} could '
+              'not be rung up — add it by hand.',
+    ok: missing.isEmpty,
+  );
+}
+
+/// Put an order's lines onto the right table's bill, and answer which bill.
+///
+/// Shared by the two ways an order is accepted -- a clerk pressing Accept, and
+/// the venue's auto-accept setting -- which run the two halves in opposite
+/// orders. See `autoAcceptWaiting` for why.
+Future<String> _ringUp(
+  WidgetRef ref,
+  DineInOrder order,
+  Map<int, Product> byPlu,
+  int tableNumber,
+) async {
   final tables = ref.read(tableRepositoryProvider);
   final orders = ref.read(orderRepositoryProvider);
 
@@ -92,25 +126,27 @@ Future<DineInOutcome> acceptDineInOrder(WidgetRef ref, DineInOrder order) async 
     );
   }
 
-  final moved = await ref
-      .read(dineInOrdersProvider.notifier)
-      .move(order.id, 'accepted', saleId: saleId);
+  return saleId;
+}
 
-  if (!moved) {
-    return DineInOutcome(
-      'Another till accepted this one first. The items are on '
-      "${order.tableLabel}'s bill — check it before ringing them again.",
-      ok: false,
-    );
-  }
+/// Ring up an order this till has ALREADY claimed, and tell the server which
+/// bill it landed on.
+///
+/// Only auto-accept uses this: it claims first, so the sale id cannot travel
+/// with the acceptance and follows separately. Answers false when there was
+/// nothing it could ring — a table deleted since the order was placed, or a
+/// catalogue with none of the items in it — so the caller can say so.
+Future<bool> ringUpAcceptedOrder(WidgetRef ref, DineInOrder order) async {
+  final tableNumber = order.tableNumber;
+  if (tableNumber == null) return false;
 
-  return DineInOutcome(
-    missing.isEmpty
-        ? 'Accepted onto ${order.tableLabel}.'
-        : 'Accepted onto ${order.tableLabel}, but ${missing.join(', ')} could '
-              'not be rung up — add it by hand.',
-    ok: missing.isEmpty,
-  );
+  final products = ref.read(productsProvider).value ?? const <Product>[];
+  final byPlu = {for (final p in products) p.pluId: p};
+  if (!order.lines.any((l) => byPlu.containsKey(l.pluId))) return false;
+
+  final saleId = await _ringUp(ref, order, byPlu, tableNumber);
+  await ref.read(dineInServiceProvider).linkSale(order.id, saleId);
+  return true;
 }
 
 /// Refuse an order, with a reason the customer will read.
@@ -324,3 +360,80 @@ Future<void> acceptAndSay(
 
 /// Kept so `unawaited` reads the same way here as everywhere else.
 void ignore(Future<void> future) => unawaited(future);
+
+// ---------------------------------------------------------------------------
+// Accepting without anybody pressing Accept
+// ---------------------------------------------------------------------------
+
+/// Whether this venue has asked for orders to be taken automatically.
+///
+/// Asked once and held for the life of the till session, like the membership
+/// settings: it is one boolean that changes when a manager opens a settings
+/// page, and re-reading it on every poll would be a request every thirty
+/// seconds per terminal for a value that changes twice a year.
+final dineInAutoAcceptProvider = FutureProvider<bool>(
+  (ref) => ref.watch(dineInServiceProvider).autoAccept(),
+);
+
+/// Guards against two passes overlapping on one terminal.
+///
+/// The list refreshes on a socket push AND on a thirty-second timer, so two
+/// refreshes can land together — and without this the same order would be rung
+/// up twice onto the same bill before either claim came back.
+bool _autoAccepting = false;
+
+/// Take everything that is waiting, if the venue has asked us to.
+///
+/// WHY THIS CLAIMS THE ORDER BEFORE IT RINGS IT UP, WHICH IS BACKWARDS
+///
+/// `acceptDineInOrder` deliberately does the opposite: it rings the lines onto
+/// a bill first and only then tells the server, so that the worst case is an
+/// order sitting on a bill and still showing as waiting — visible, and fixable
+/// by pressing Accept again. That is the right order for a clerk pressing a
+/// key, and it is the wrong one here.
+///
+/// The difference is how many terminals are doing it. One clerk presses Accept
+/// on one till. Auto-accept runs on EVERY till in the venue at once, and bills
+/// are local to each terminal — so if three tills all ring the order up and
+/// only one wins the server's transition, the other two are left holding local
+/// bills with the same food on them. That is a table charged twice, quietly,
+/// with nobody having touched anything.
+///
+/// So the claim goes first. The server's transition is atomic — it updates
+/// `WHERE status IN ('placed')` — so exactly one terminal wins and the other
+/// two do nothing at all. The cost is the failure this inversion creates: a
+/// claim that succeeds and a ring-up that then fails leaves an order marked
+/// accepted with nothing on a bill. It is the smaller of the two, it is loud
+/// (the clerk is told), and it is recoverable by ringing the order up by hand
+/// — which charging a table twice is not.
+Future<void> autoAcceptWaiting(WidgetRef ref) async {
+  if (_autoAccepting) return;
+
+  final on = ref.read(dineInAutoAcceptProvider).value ?? false;
+  if (!on) return;
+
+  final waiting = [
+    for (final order in ref.read(dineInOrdersProvider).value ?? const [])
+      if (order.isWaiting) order,
+  ];
+  if (waiting.isEmpty) return;
+
+  _autoAccepting = true;
+  try {
+    for (final order in waiting) {
+      // Claimed first, and `by: auto` so the back office can answer "why did
+      // this go straight to the kitchen?" months later.
+      final claimed = await ref
+          .read(dineInServiceProvider)
+          .move(order.id, 'accepted', by: 'auto');
+      // Another terminal got there first, or the order was withdrawn. Either
+      // way this till has nothing to do and must not ring anything up.
+      if (!claimed) continue;
+
+      await ringUpAcceptedOrder(ref, order);
+    }
+  } finally {
+    _autoAccepting = false;
+    await ref.read(dineInOrdersProvider.notifier).refresh();
+  }
+}

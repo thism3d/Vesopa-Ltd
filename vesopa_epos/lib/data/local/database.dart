@@ -58,6 +58,23 @@ class Products extends Table {
   /// NULL is "nobody has said", '[]' is "somebody looked and it contains none
   /// of the fourteen". See vesopa_server/src/allergens.js.
   TextColumn get allergens => text().nullable()();
+
+  /// Whether paying for this product moves a member's expiry forward.
+  ///
+  /// "Set a check box on a product (Renews membership)." Any number of a
+  /// venue's products may carry it -- a club sells full, concession, junior and
+  /// social memberships, which is four products, four prices and one meaning.
+  ///
+  /// It replaces the single PLU named in the loyalty settings, which could
+  /// express exactly one of those four. The old setting is carried forward by
+  /// the back office's own migration, so a venue that named a PLU has that
+  /// product flagged and behaves identically.
+  ///
+  /// False on every existing row and filled in on the next catalogue sync,
+  /// which is the safe direction: a product that wrongly renewed a membership
+  /// would move somebody's expiry a year for buying a pint.
+  BoolColumn get renewsMembership =>
+      boolean().withDefault(const Constant(false))();
   RealColumn get taxPercentage => real().withDefault(const Constant(0))();
   RealColumn get stockQuantity => real().withDefault(const Constant(0))();
 
@@ -383,6 +400,22 @@ class Orders extends Table {
   TextColumn get customerEmail => text().nullable()();
   TextColumn get customerCardNumber => text().nullable()();
 
+  /// What this member had saved up when they were put on the bill.
+  ///
+  /// "Can we add the customer's name and points to the customer display
+  /// screen." The screen facing the customer reads a file this till writes and
+  /// has no network of its own, so the figure has to travel with the bill.
+  ///
+  /// Copied down with the name for the same reason the phone number and the
+  /// card number are: the till has nowhere to look it up again. A bill can be
+  /// parked on a table and picked up on a second terminal an hour later, and
+  /// the local customers table is empty — every lookup on this till goes
+  /// straight to the back office.
+  ///
+  /// A snapshot, and honestly so: it is the balance BEFORE this sale, because
+  /// the points for this sale are not earned until it settles.
+  IntColumn get customerPoints => integer().nullable()();
+
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
   DateTimeColumn get closedAt => dateTime().nullable()();
   DateTimeColumn get syncedAt => dateTime().nullable()();
@@ -609,7 +642,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 24;
+  int get schemaVersion => 25;
 
 
   /// Add a column only if the table has not already got it.
@@ -794,6 +827,21 @@ class AppDatabase extends _$AppDatabase {
             // product prints under no heading — the ticket a venue gets today.
             await _addColumnIfMissing(m, products, products.printCategory);
             await _addColumnIfMissing(m, products, products.printCategoryOrder);
+          }
+          if (from < 25) {
+            // Which products renew a membership, and what a member looks like.
+            //
+            // Both false/null on every existing row and filled in by the next
+            // sync -- the catalogue pull and the customer lookup respectively.
+            // That is the safe direction for the flag in particular: a product
+            // that arrived wrongly flagged would move somebody's membership on
+            // a year for buying a pint.
+            await _addColumnIfMissing(m, products, products.renewsMembership);
+            // Null on every bill that is already open, which is the truth: the
+            // balance was never captured for those, and there is nowhere to
+            // fetch it from now. Those bills go on showing the name, which is
+            // what they always showed.
+            await _addColumnIfMissing(m, orders, orders.customerPoints);
           }
           if (from < 24) {
             // What is in the food. Null on every existing row, which reads as

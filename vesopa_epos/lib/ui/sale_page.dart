@@ -15,10 +15,13 @@ import '../main.dart';
 import 'layout.dart';
 import 'modifier_prompt.dart';
 import 'customer_picker.dart';
+import 'membership_gate.dart';
+import 'membership_prompt.dart';
 import 'payment_page.dart';
 import 'sign_on_pad.dart';
 import 'table_picker.dart';
 import 'theme.dart';
+import 'transfer_table.dart';
 import 'till_actions.dart';
 import 'void_dialog.dart';
 import 'widgets/action_bar.dart';
@@ -1306,6 +1309,24 @@ class SalePage extends ConsumerWidget {
       case 'refund':
         return showRefund(context, ref);
 
+      // Move this bill onto another table, and offer to merge when that table
+      // already has a party on it.
+      //
+      // The same flow the floor plan's own Transfer runs — see
+      // ui/transfer_table.dart. A bill with nothing on it is refused rather
+      // than moved: "transferring" an empty check does nothing a clerk can see
+      // and leaves them believing something happened.
+      case 'transfer':
+        if (order == null || lines.isEmpty) {
+          PosMessenger.info(
+            context,
+            'There is nothing on this bill to transfer.',
+          );
+          return;
+        }
+        await transferTable(context, ref, orderId: orderId);
+        return;
+
       // Divide the bill before anybody pays, which is what a restaurant table
       // asks for. The board is where the split is applied, so this goes there
       // and opens it — rather than splitting here and handing a half-made
@@ -1396,7 +1417,19 @@ class SalePage extends ConsumerWidget {
       case 'open_drawer':
         if (!await allowed(context, ref, TillPermission.noSale)) return;
         if (!context.mounted) return;
-        return TillActions.openCashDrawer(context, ref);
+        // Why the drawer is being opened with nothing sold. Asked before it
+        // opens, because afterwards the clerk has their hands in it — and
+        // skipping is allowed, because a drawer that will not open over an
+        // audit field is a till that has stopped working.
+        final why = await askReason(
+          context,
+          ref,
+          ReasonFor.noSale,
+          title: 'Opening the drawer',
+          subtitle: 'This is recorded on the Z report with the voids.',
+        );
+        if (!context.mounted) return;
+        return TillActions.openCashDrawer(context, ref, reason: why);
       case 'print_bill':
         return TillActions.printCurrentBill(context, ref, orderId);
 
@@ -1436,22 +1469,84 @@ class SalePage extends ConsumerWidget {
     }
   }
 
+  /// The Customer key.
+  ///
+  /// THIS IS THE DOOR THE VENUE FOUND OPEN. A card swipe has checked the
+  /// membership since 1.6.8.0; this one attached whoever was tapped, expired or
+  /// not, because the search it reads was not even told there was an expiry.
+  /// Both halves are fixed: `/till/customers` now sends the membership and the
+  /// photograph, and this goes through the same gate the swipe does.
   Future<void> _promptCustomer(BuildContext context, WidgetRef ref) async {
     final customer = await pickCustomer(context, ref);
-    if (customer == null) return;
+    if (customer == null || !context.mounted) return;
+
+    // The venue's fee and term, which the name search does not carry. Cached
+    // for the session, and answers its defaults when the back office cannot be
+    // reached rather than stopping the sale.
+    final settings =
+        await ref.read(commerceRepositoryProvider).membershipSettings();
+    if (!context.mounted) return;
+
+    final member = ExpiredMember.fromTill(
+      customer,
+      feeMinor: settings.feeMinor,
+      termMonths: settings.termMonths,
+      renewalDate: settings.renewalDate,
+    );
+
+    final gate = await checkMembership(
+      context,
+      ref,
+      orderId: orderId,
+      member: member,
+    );
+    if (!context.mounted) return;
+    if (gate == MembershipGate.refused) {
+      sayMembership(context, gate, member: member);
+      return;
+    }
+
     await ref
         .read(orderRepositoryProvider)
         .attachCustomer(
           orderId,
           id: customer.id,
           name: customer.name,
+          // Being renewed on this bill, so the expiry it carries now is the
+          // one being replaced — see the same note in card_actions.dart.
+          membershipExpiry: gate == MembershipGate.renewing
+              ? null
+              : customer.membershipExpiry,
           discountType: customer.discountType,
           discountValue: customer.discountValue,
           phone: customer.phone,
           email: customer.email,
           cardNumber: customer.cardNumber,
+          pointsBalance: customer.pointsBalance,
         );
-    if (context.mounted && customer.hasDiscount) {
+    if (!context.mounted) return;
+
+    if (gate == MembershipGate.renewing) {
+      sayMembership(context, gate, member: member);
+      return;
+    }
+
+    // A face, where the venue has taken one. The same treatment a swipe gets,
+    // and for the same reason: a photograph is what tells a clerk they are
+    // serving the person the card belongs to.
+    if (member.photoUrl != null) {
+      await showMemberOnBill(
+        context,
+        member: member,
+        apiBase: ref.read(apiBaseProvider),
+        footnote: customer.hasDiscount
+            ? 'On this bill with ${customer.discountLabel}.'
+            : 'On this bill.',
+      );
+      return;
+    }
+
+    if (customer.hasDiscount) {
       PosMessenger.success(
         context,
         '${customer.name} attached — ${customer.discountLabel} applied.',

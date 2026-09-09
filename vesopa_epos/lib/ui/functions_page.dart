@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/staff_session.dart';
+import '../data/price_level_controller.dart';
 import '../main.dart';
 import 'card_machine_page.dart';
 import 'cash_drawer_sheets.dart';
@@ -166,8 +167,12 @@ class FunctionsPage extends ConsumerWidget {
       _Group('Pricing', [
         // "…or a setting on the till in functions to swap price levels."
         // This is that setting, in the place it was asked for.
+        // The key says which level the till is ON, in the venue's own words.
+        // "Price Level" is the name of a setting; "Price Level — Happy Hour"
+        // is an answer to the question a clerk actually has, which is what
+        // this till is charging right now.
         _Function(
-          'Price Level',
+          _priceLevelKeyLabel(ref),
           Icons.sell_outlined,
           Pos.teal,
           'Switch this terminal between the six prices a product can carry — a '
@@ -520,4 +525,15 @@ class _FunctionTile extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The Price Level key's label, carrying the level the till is charging.
+///
+/// A venue that has named nothing gets "Price Level", exactly as before —
+/// "Price Level — Price 1" would be a key repeating itself. A venue that has
+/// named one gets the name, which is the whole of what was asked for.
+String _priceLevelKeyLabel(WidgetRef ref) {
+  final level = ref.watch(currentPriceLevelProvider);
+  final named = ref.watch(priceLevelNamesProvider).nameFor(level);
+  return named == 'Price $level' ? 'Price Level' : 'Price Level — $named';
 }

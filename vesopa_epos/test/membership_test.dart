@@ -139,6 +139,7 @@ void main() {
         stockQuantity: 0,
         printToReceipt: true,
         isModifier: false,
+        renewsMembership: true,
       );
       final p = membershipProduct(feeMinor: 1000, plu: 4100, named: real);
       expect(p.name, 'Club membership');
@@ -165,25 +166,98 @@ void main() {
       lineDiscountMinor: 0,
     );
 
+    Product product(int plu, {required bool renews, int priceMinor = 1000}) =>
+        Product(
+          pluId: plu,
+          name: 'PLU $plu',
+          priceMinor: priceMinor,
+          taxPercentage: 0,
+          stockQuantity: 0,
+          printToReceipt: true,
+          isModifier: false,
+          renewsMembership: renews,
+        );
+
     test('a plain renewal line is spotted', () {
-      expect(billRenewsMembership([line(12), line(membershipRenewalPlu)]),
-          isTrue);
+      final renewing = renewingPlus(const <Product>[]);
+      expect(
+        billRenewsMembership(
+          [line(12), line(membershipRenewalPlu)],
+          renewing: renewing,
+        ),
+        isTrue,
+      );
     });
 
-    test('so is the venue’s own membership product', () {
-      expect(billRenewsMembership([line(12), line(4100)], plu: 4100), isTrue);
+    // The change this release makes. The venue ticks products rather than
+    // naming one PLU in the loyalty settings, because a club sells full,
+    // concession, junior and social memberships — four products, one meaning.
+    test('a product the venue has ticked renews', () {
+      final renewing = renewingPlus([
+        product(4100, renews: true),
+        product(12, renews: false),
+      ]);
+      expect(
+        billRenewsMembership([line(12), line(4100)], renewing: renewing),
+        isTrue,
+      );
+    });
+
+    test('more than one product may be ticked', () {
+      final renewing = renewingPlus([
+        product(4100, renews: true),
+        product(4101, renews: true),
+        product(4102, renews: true),
+      ]);
+      for (final plu in [4100, 4101, 4102]) {
+        expect(
+          billRenewsMembership([line(plu)], renewing: renewing),
+          isTrue,
+          reason: 'PLU $plu is ticked and should renew',
+        );
+      }
     });
 
     test('an ordinary bill renews nothing', () {
-      expect(billRenewsMembership([line(12), line(13)], plu: 4100), isFalse);
+      final renewing = renewingPlus([product(4100, renews: true)]);
+      expect(
+        billRenewsMembership([line(12), line(13)], renewing: renewing),
+        isFalse,
+      );
     });
 
-    // The setting is read at settle time, and a till that could not reach the
-    // server answers null for it. A bill carrying the venue's own product then
-    // has to fall through rather than being renewed by accident.
-    test('with no setting, only the marker counts', () {
-      expect(billRenewsMembership([line(4100)]), isFalse);
-      expect(billRenewsMembership([line(membershipRenewalPlu)]), isTrue);
+    // A venue whose back office has not been updated sends no flag on any
+    // product and still names its old single PLU. That venue has to go on
+    // renewing exactly as it did, or a Store rollout would stop a club taking
+    // subscriptions until somebody deployed the server.
+    test('the old single-PLU setting is still honoured', () {
+      final renewing = renewingPlus(
+        [product(4100, renews: false)],
+        legacyPlu: 4100,
+      );
+      expect(billRenewsMembership([line(4100)], renewing: renewing), isTrue);
+    });
+
+    // The other direction, and the one that costs money if it is wrong: a
+    // catalogue with nothing ticked and no legacy setting must renew nothing
+    // but the marker line. A product wrongly counted here moves somebody's
+    // membership on a year for buying a pint.
+    test('with nothing ticked, only the marker counts', () {
+      final renewing = renewingPlus([product(4100, renews: false)]);
+      expect(billRenewsMembership([line(4100)], renewing: renewing), isFalse);
+      expect(
+        billRenewsMembership([line(membershipRenewalPlu)], renewing: renewing),
+        isTrue,
+      );
+    });
+
+    test('a zero or negative legacy PLU is not a product', () {
+      // 0 is what a settings form sends for "no product", and the sentinel is
+      // negative. Neither may become a catalogue PLU that renews.
+      expect(renewingPlus(const <Product>[], legacyPlu: 0),
+          equals({membershipRenewalPlu}));
+      expect(renewingPlus(const <Product>[], legacyPlu: -5),
+          equals({membershipRenewalPlu}));
     });
   });
 }

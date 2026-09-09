@@ -289,6 +289,22 @@ class _PosShellState extends ConsumerState<PosShell> {
             discountMinor: order.discountMinor,
             taxMinor: order.taxMinor,
             totalMinor: order.totalMinor,
+            // Who is on the bill, for the screen facing them. Both null on
+            // most sales, and the display then draws nothing rather than an
+            // empty greeting -- see bill_panel.dart.
+            //
+            // The venue can turn the name off and keep the greeting: a screen
+            // that says "Welcome Mrs Protheroe -- 1,240 points" is a sentence
+            // the next person in the queue can read from the other side of the
+            // counter, and that is their objection to make.
+            customerName: ref.read(tillSettingsProvider).customerDisplayShowMember
+                ? order.customerName
+                : null,
+            customerPoints:
+                ref.read(tillSettingsProvider).customerDisplayShowMember
+                    ? order.customerPoints
+                    : null,
+            greeting: ref.read(tillSettingsProvider).customerDisplayGreeting,
           );
         })
         .listen(

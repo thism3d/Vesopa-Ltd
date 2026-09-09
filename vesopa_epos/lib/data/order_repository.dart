@@ -270,8 +270,20 @@ class OrderRepository {
   /// Counted rather than valued: the amount is always zero, and the number of
   /// times it happened is the whole point. Beside the void count on the Z
   /// report because they are read together and for the same reason.
-  Future<void> logNoSale({required String sessionId, String? staffName}) =>
-      _logEvent(kind: 'no_sale', sessionId: sessionId, staffName: staffName);
+  Future<void> logNoSale({
+    required String sessionId,
+    String? staffName,
+    String? note,
+  }) => _logEvent(
+        kind: 'no_sale',
+        sessionId: sessionId,
+        staffName: staffName,
+        // Why the drawer was opened, where the clerk said. Nullable, and
+        // deliberately so: the count is what the Z report reads, and a drawer
+        // that would not open because a reason list was unreachable would be a
+        // till that stops working over an audit field.
+        note: note,
+      );
 
   /// Record money handed back.
   ///
@@ -512,16 +524,42 @@ class OrderRepository {
 
   /// Attach a customer to the sale, carrying their standing discount so it
   /// applies to the total automatically.
+  ///
+  /// [membershipExpiry] is REQUIRED, and it is required rather than optional on
+  /// purpose. The venue reported that an expired card still worked at the till,
+  /// and the reason was that the expiry check lived in one of the four places a
+  /// customer can reach a bill from. A parameter with a default would have let
+  /// the fifth door be written without anybody thinking about it; one that has
+  /// to be filled in makes the question unavoidable, and the compiler asks it.
+  ///
+  /// Pass null for a customer with no membership at all — a points customer,
+  /// who never expires.
+  ///
+  /// Throws [MembershipExpired] rather than attaching. This is a backstop and
+  /// not the user interface: `ui/membership_gate.dart` is what a clerk actually
+  /// meets, and it offers to renew. Reaching this exception means a caller
+  /// skipped it.
   Future<void> attachCustomer(
     String orderId, {
     required String? id,
     required String name,
+    required DateTime? membershipExpiry,
     String discountType = 'none',
     int discountValue = 0,
     String? phone,
     String? email,
     String? cardNumber,
+    int? pointsBalance,
   }) async {
+    if (membershipExpiry != null) {
+      final now = DateTime.now();
+      // The expiry day itself counts: a card that says 31 March works all of
+      // the 31st. Compared as calendar days so British summer time cannot
+      // expire somebody the evening before.
+      if (membershipExpiry.isBefore(DateTime(now.year, now.month, now.day))) {
+        throw MembershipExpired(name, membershipExpiry);
+      }
+    }
     await _db.transaction(() async {
       await (_db.update(_db.orders)..where((o) => o.id.equals(orderId))).write(
         OrdersCompanion(
@@ -534,6 +572,9 @@ class OrderRepository {
           customerPhone: Value(phone),
           customerEmail: Value(email),
           customerCardNumber: Value(cardNumber),
+          // For the screen facing the customer, which has no network of its
+          // own and reads only what this till writes to a file.
+          customerPoints: Value(pointsBalance),
         ),
       );
       await recalculate(orderId);
@@ -554,6 +595,9 @@ class OrderRepository {
           customerPhone: Value(null),
           customerEmail: Value(null),
           customerCardNumber: Value(null),
+          // Every column attachCustomer writes. A balance left behind would
+          // greet the next customer by the last one's points.
+          customerPoints: Value(null),
         ),
       );
       await recalculate(orderId);
@@ -920,4 +964,22 @@ class OrderRepository {
   Stream<Order> watchOrder(String orderId) =>
       (_db.select(_db.orders)..where((o) => o.id.equals(orderId)))
           .watchSingle();
+}
+
+/// An expired membership reached a bill without going through the gate.
+///
+/// Thrown rather than swallowed, because the alternative is exactly the fault
+/// the venue reported: a lapsed member served as though they were paid up,
+/// quietly, for months. Whoever sees this has added a new way onto a bill and
+/// needs to call `checkMembership` first — see `ui/membership_gate.dart`.
+class MembershipExpired implements Exception {
+  const MembershipExpired(this.name, this.expiry);
+
+  final String name;
+  final DateTime? expiry;
+
+  @override
+  String toString() =>
+      "$name's membership has run out and was not renewed, so they were not "
+      'put on the bill.';
 }

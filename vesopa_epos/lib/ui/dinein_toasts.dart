@@ -56,6 +56,24 @@ class DineInToastLayer extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    /*
+     * Auto-accept, if the venue has asked for it.
+     *
+     * Hooked here rather than inside the toast stack below, and that is the
+     * point of putting it in this widget: the stack is not built at all on a
+     * terminal whose notifications are set to go somewhere else, and a venue
+     * that had turned toasts off would have found auto-accept silently doing
+     * nothing.
+     *
+     * `ref.listen` rather than a timer of its own. The orders list already
+     * refreshes on the socket push and on its own thirty-second poll, so
+     * following it costs nothing and fires at exactly the two moments an order
+     * can appear.
+     */
+    ref.listen(dineInOrdersProvider, (_, _) {
+      unawaited(autoAcceptWaiting(ref));
+    });
+
     final where = ref.watch(orderAlertsProvider);
     if (!where.showsToasts) return child;
 

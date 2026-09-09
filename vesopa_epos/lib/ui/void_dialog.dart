@@ -8,36 +8,205 @@ import '../main.dart';
 import 'theme.dart';
 import 'widgets/on_screen_keyboard.dart';
 
-/// The void reasons offered on the till. Defined in the back office; cached in
-/// prefs is overkill for a short list, so this just fetches with a sensible
-/// fallback for when the network is down.
-final voidReasonsProvider = FutureProvider<List<String>>((ref) async {
-  const fallback = [
+/// The four things a clerk has to explain.
+///
+/// "Can we have reasons for No Sale, Refunds, Voids and Cancel (Void and
+/// Cancel is already done just need to split them off." Cancel was NOT already
+/// done: cancelling a check showed the void list, because the till only ever
+/// asked for one list. Each of these now asks for its own.
+enum ReasonFor {
+  /// One or more lines off a bill.
+  voidLine('void', [
     'Customer changed mind',
     'Wrong item rung up',
     'Duplicate order',
     'Kitchen error',
     'Other',
-  ];
-  try {
-    // Named, or the back office cannot tell whose reasons to send. Without it
-    // this till was being handed every venue on the platform's — sixty-one
-    // rows where this venue has nine, the same wording over and over, and
-    // other people's private wording among them.
-    final office = ref.watch(officeProvider);
-    final res = await http
-        .get(Uri.parse(
-          '${ref.watch(apiBaseProvider)}/till/void-reasons'
-          '?office=${Uri.encodeComponent(office)}',
-        ))
-        .timeout(const Duration(seconds: 5));
-    if (res.statusCode != 200) return fallback;
-    final reasons = (jsonDecode(res.body) as List<dynamic>).cast<String>();
-    return reasons.isEmpty ? fallback : reasons;
-  } catch (_) {
-    return fallback;
+  ]),
+
+  /// The whole check abandoned. A different question from a void, and a
+  /// different answer: "rung up in error" explains a line coming off and says
+  /// nothing about why a table walked.
+  cancelCheck('cancel', [
+    'Customer left',
+    'Ordered by mistake',
+    'Table walked',
+    'Training / test',
+    'Other',
+  ]),
+
+  /// Money back out of the drawer.
+  refund('refund', [
+    'Item returned',
+    'Not as described',
+    'Wrong item served',
+    'Other',
+  ]),
+
+  /// The drawer opened with nothing sold.
+  noSale('no_sale', [
+    'Change for a customer',
+    'Opened in error',
+    'Other',
+  ]);
+
+  const ReasonFor(this.key, this.fallback);
+
+  /// What the back office calls this action in `bo_error_reasons.applies_to`.
+  final String key;
+
+  /// What to offer when the venue has set none up, or the network is down.
+  ///
+  /// A list rather than an empty dialog, because every one of these is a
+  /// moment where somebody is standing at the counter: a clerk who cannot get
+  /// past the reason box is a clerk who cannot serve. See the note on the
+  /// provider below.
+  final List<String> fallback;
+}
+
+/// The reasons this venue offers for one action.
+///
+/// Defined in the back office; caching in prefs is overkill for a short list,
+/// so this fetches with a sensible fallback for when the network is down.
+///
+/// FALLS BACK TWICE, AND THE SECOND ONE MATTERS.
+///
+/// `/till/error-reasons` is new in 1.6.9.0. A till updates from the Store on
+/// its own schedule and a venue's server updates on ours, so there will be
+/// tills asking a back office that has never heard of the route. Those get a
+/// 404, and rather than an empty dialog they drop to `/till/void-reasons`,
+/// which every version of the server has answered — right for a void, and for
+/// the other three the built-in list above, which is better than nothing at
+/// all in front of a customer.
+final reasonsProvider =
+    FutureProvider.family<List<String>, ReasonFor>((ref, action) async {
+  // Named, or the back office cannot tell whose reasons to send. Without it
+  // this till was being handed every venue on the platform's — sixty-one rows
+  // where this venue has nine, the same wording over and over, and other
+  // people's private wording among them.
+  final office = ref.watch(officeProvider);
+  final base = ref.watch(apiBaseProvider);
+  final scoped = '?office=${Uri.encodeComponent(office)}';
+
+  Future<List<String>?> fetch(String url) async {
+    try {
+      final res = await http
+          .get(Uri.parse(url))
+          .timeout(const Duration(seconds: 5));
+      if (res.statusCode != 200) return null;
+      final reasons = (jsonDecode(res.body) as List<dynamic>).cast<String>();
+      return reasons.isEmpty ? null : reasons;
+    } catch (_) {
+      return null;
+    }
   }
+
+  final own = await fetch(
+    '$base/till/error-reasons$scoped&applies_to=${action.key}',
+  );
+  if (own != null) return own;
+
+  // A server that predates the per-action route. Only the void list exists
+  // there, and only a void can honestly use it.
+  if (action == ReasonFor.voidLine) {
+    final legacy = await fetch('$base/till/void-reasons$scoped');
+    if (legacy != null) return legacy;
+  }
+
+  return action.fallback;
 });
+
+/// Kept so nothing that already reads the void list has to change.
+final voidReasonsProvider = FutureProvider<List<String>>(
+  (ref) => ref.watch(reasonsProvider(ReasonFor.voidLine).future),
+);
+
+/// Ask why, for the actions that are not a void.
+///
+/// No Sale and Refund both take money-shaped decisions that leave no bill
+/// behind, and until now neither was asked to explain itself: the drawer
+/// simply opened, and a refund off a receipt recorded the receipt and nothing
+/// about why. The venue asked for both.
+///
+/// NOTHING IS EVER BLOCKED BY THIS. Returns the chosen reason, or null when
+/// the clerk backs out — and the callers treat null as "do it anyway, with no
+/// reason recorded" rather than as a refusal. A drawer that will not open
+/// because a list would not load is a till that has stopped working over an
+/// audit field, and the audit is worth less than the service.
+Future<String?> askReason(
+  BuildContext context,
+  WidgetRef ref,
+  ReasonFor action, {
+  required String title,
+  String? subtitle,
+}) {
+  return showDialog<String>(
+    context: context,
+    builder: (_) => _ReasonSheet(
+      action: action,
+      title: title,
+      subtitle: subtitle,
+    ),
+  );
+}
+
+class _ReasonSheet extends ConsumerWidget {
+  const _ReasonSheet({
+    required this.action,
+    required this.title,
+    required this.subtitle,
+  });
+
+  final ReasonFor action;
+  final String title;
+  final String? subtitle;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final reasons = ref.watch(reasonsProvider(action)).value ?? const <String>[];
+
+    return AlertDialog(
+      title: Text(title),
+      content: SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (subtitle != null) ...[
+              Text(subtitle!, style: Theme.of(context).textTheme.bodySmall),
+              const SizedBox(height: 12),
+            ],
+            // Scrollable, because a venue may have set up a dozen and a till
+            // is not a tall screen.
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final reason in reasons)
+                    ListTile(
+                      dense: true,
+                      title: Text(reason),
+                      onTap: () => Navigator.of(context).pop(reason),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        // Not a cancel. The action goes ahead either way — see the note on
+        // askReason — so this says what it does rather than implying the
+        // drawer will stay shut.
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Skip'),
+        ),
+      ],
+    );
+  }
+}
 
 /// Confirms a void and captures why. Returns the chosen reason, or null if
 /// cancelled. A void with no reason is not allowed — that is the whole point of
@@ -118,7 +287,15 @@ class _VoidDialogState extends ConsumerState<_VoidDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final reasons = ref.watch(voidReasonsProvider).value ?? const [];
+    // Cancelling a whole check asks the CANCEL list; taking lines off asks
+    // the void list. They were the same list until now, which is exactly what
+    // the venue asked to have split.
+    final reasons = ref
+            .watch(reasonsProvider(
+              widget.wholeCheck ? ReasonFor.cancelCheck : ReasonFor.voidLine,
+            ))
+            .value ??
+        const [];
     final isCustom = _selected == '__custom__';
 
     final whole = widget.wholeCheck;

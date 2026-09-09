@@ -33,6 +33,7 @@ void main() {
     taxPercentage: 20,
     stockQuantity: 0,
     printToReceipt: true,
+    renewsMembership: false,
     isModifier: false,
     emoji: emoji,
     departmentName: department,

@@ -10,6 +10,7 @@ import '../../data/screens.dart';
 import '../../data/staff_session.dart';
 import '../../main.dart';
 import '../shell.dart' show SyncStatusBadge;
+import '../../data/price_level_controller.dart';
 import '../theme.dart';
 import 'basket_panel.dart' show money;
 import 'clock_punch_button.dart';
@@ -200,6 +201,12 @@ class ProgrammedBar extends ConsumerWidget {
                         child: _BarKey(
                           button: button,
                           screens: screens,
+                          // What this venue calls the level the till is
+                          // charging, so the key reads "Happy Hour" rather
+                          // than "Price level".
+                          priceLevelLabel: ref
+                              .watch(priceLevelNamesProvider)
+                              .nameFor(ref.watch(currentPriceLevelProvider)),
                           product: button.pluId == null
                               ? null
                               : products[button.pluId],
@@ -248,6 +255,7 @@ class _BarKey extends ConsumerWidget {
   const _BarKey({
     required this.button,
     required this.screens,
+    required this.priceLevelLabel,
     required this.product,
     required this.live,
     required this.pal,
@@ -262,6 +270,13 @@ class _BarKey extends ConsumerWidget {
 
   final ScreenButton button;
   final ScreenSet screens;
+
+  /// What the venue calls the price level this till is currently charging.
+  ///
+  /// Resolved by the bar rather than looked up here, because every key on the
+  /// bar is rebuilt when the level changes and a watch per key would be one
+  /// subscription per button.
+  final String priceLevelLabel;
   final Product? product;
 
   /// The question this key asks, when it is that kind of key.
@@ -632,7 +647,14 @@ class _BarKey extends ConsumerWidget {
         // [ProgrammedBar.onSaleScreen].
         final here = onSaleScreen || ProgrammedBar._anywhere.contains(key);
         return (
-          label: button.label ?? _names[key] ?? key,
+          // The venue's own name for the level beats the generic word, unless
+          // the venue has lettered the key itself. A key that says "Price
+          // level" tells a clerk nothing; one that says "Happy Hour" tells
+          // them what they are about to switch to.
+          label: button.label ??
+              (key == 'price_level' ? priceLevelLabel : null) ??
+              _names[key] ??
+              key,
           note: key == 'pay' && live.totalMinor != 0
               ? money(live.totalMinor)
               : null,

@@ -105,7 +105,7 @@ void main() {
     await pumpColumn(tester);
 
     final note = keySize(tester, '£20');
-    final function = keySize(tester, 'Gift card');
+    final function = keySize(tester, 'Gift Card');
 
     expect(
       function.height,
@@ -162,7 +162,7 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text('Cash'), findsOneWidget);
-    expect(find.text('Gift card'), findsOneWidget);
+    expect(find.text('Gift Card'), findsOneWidget);
     expect(find.text('£20'), findsOneWidget);
   });
 

@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import 'customer_repository.dart' show parseMembershipDay;
+
 /// Money the till can take, beyond cash and card.
 ///
 /// A gift card and a deposit are *held* money — the venue already has it, so
@@ -23,7 +25,7 @@ enum TenderKind {
         TenderKind.cash => 'Cash',
         TenderKind.card => 'Card',
         TenderKind.manualCard => 'Manual card',
-        TenderKind.giftCard => 'Gift card',
+        TenderKind.giftCard => 'Gift Card',
         TenderKind.voucher => 'Voucher',
         TenderKind.deposit => 'Deposit',
         TenderKind.points => 'Points',
@@ -372,6 +374,7 @@ class LoyaltyCustomer {
     this.membershipTermMonths = 12,
     this.membershipFeeMinor = 0,
     this.membershipPlu,
+    this.membershipRenewalDate,
   });
 
   final String id;
@@ -427,7 +430,21 @@ class LoyaltyCustomer {
   final int membershipFeeMinor;
 
   /// The product a renewal is rung up as, or null to ring a plain line.
+  ///
+  /// Retired in favour of the `Renews membership` flag on the product itself,
+  /// and kept because a till may be talking to a back office that has not been
+  /// updated yet. See `data/membership.dart`.
   final int? membershipPlu;
+
+  /// The night the venue's membership season ends, or null for a venue that
+  /// runs rolling months instead.
+  ///
+  /// SHOWN, NOT APPLIED. The till says "renews to 31 August 2027" so the clerk
+  /// can tell the member what they are buying; the server works out the
+  /// authoritative date when the renewal is posted. Two tills and a back
+  /// office would otherwise each answer from their own clock, and a till's
+  /// clock is a thing that drifts.
+  final DateTime? membershipRenewalDate;
 
   /// Whether the card still works, as of the till's own clock.
   ///
@@ -531,14 +548,16 @@ class LoyaltyCustomer {
       // which route answered. Both parse; anything else is treated as no
       // membership rather than as an expired one, because guessing wrong in
       // that direction turns a member away at the counter.
-      membershipExpiry: switch (j['membership_expiry']) {
-        final String s when s.isNotEmpty => DateTime.tryParse(s),
-        _ => null,
-      },
+      // Through the shared parser, so a swiped member and a picked one agree
+      // about which day a card runs out. It reads the day and rebuilds it as
+      // local midnight -- see parseMembershipDay for the summer-time trap.
+      membershipExpiry: parseMembershipDay(j['membership_expiry']),
       photoUrl: switch (j['photo_url']) {
         final String s when s.trim().isNotEmpty => s,
         _ => null,
       },
+      membershipRenewalDate:
+          parseMembershipDay((j['settings'] as Map<String, dynamic>?)?['membership_renewal_date']),
       membershipTermMonths:
           (settings['membership_term_months'] as num?)?.toInt() ?? 12,
       membershipFeeMinor:
@@ -784,7 +803,8 @@ class CommerceRepository {
   /// Answers the defaults when the server cannot be reached. A till that
   /// refused to settle a sale because it could not read a setting would be a
   /// till that stops selling when the broadband does.
-  Future<({int termMonths, int feeMinor, int? plu})> membershipSettings() async {
+  Future<({int termMonths, int feeMinor, int? plu, DateTime? renewalDate})>
+      membershipSettings() async {
     if (_membership != null) return _membership!;
     try {
       final res = await _client
@@ -796,16 +816,19 @@ class CommerceRepository {
           termMonths: (j['membership_term_months'] as num?)?.toInt() ?? 12,
           feeMinor: (j['membership_fee_minor'] as num?)?.toInt() ?? 0,
           plu: (j['membership_plu'] as num?)?.toInt(),
+          // The season, for what the till SAYS a renewal buys. The server
+          // decides the date that is actually written -- see /loyalty/renew.
+          renewalDate: parseMembershipDay(j['membership_renewal_date']),
         );
         return _membership!;
       }
     } catch (_) {
       // Falls through to the defaults below.
     }
-    return (termMonths: 12, feeMinor: 0, plu: null);
+    return (termMonths: 12, feeMinor: 0, plu: null, renewalDate: null);
   }
 
-  ({int termMonths, int feeMinor, int? plu})? _membership;
+  ({int termMonths, int feeMinor, int? plu, DateTime? renewalDate})? _membership;
 
   /// Renew a membership, and say what it now runs to.
   ///

@@ -95,6 +95,9 @@ class Basket {
     this.message,
     this.terminal,
     this.notifyAllowed = false,
+    this.customerName,
+    this.customerPoints,
+    this.greeting,
   });
 
   /// The state before the till has ever written a file: a display switched on
@@ -117,6 +120,18 @@ class Basket {
   final int changeMinor;
   final String? message;
   final String? terminal;
+
+  /// The member on this bill, and what they had saved up when they went on it.
+  ///
+  /// Both null on most sales, and on every sale written by a till that has not
+  /// been updated yet. The panel draws nothing at all for null rather than an
+  /// empty greeting -- see bill_panel.dart -- so an old till against this
+  /// build shows exactly the screen it showed yesterday.
+  final String? customerName;
+  final int? customerPoints;
+
+  /// What the venue says above the name. Null for the built-in "Welcome".
+  final String? greeting;
 
   /// Whether there is a bill worth showing a customer.
   ///
@@ -154,6 +169,19 @@ class Basket {
       paidMinor: (raw['paid_minor'] as num?)?.toInt() ?? 0,
       changeMinor: (raw['change_minor'] as num?)?.toInt() ?? 0,
       message: raw['message'] as String?,
+      // Absent is null, which is what a till on the previous release writes
+      // and what a bill with nobody on it writes. Unknown keys are ignored by
+      // this parser either way, so a NEW till against an OLD display is the
+      // screen that venue had yesterday rather than one that will not draw.
+      customerName: switch (raw['customer_name']) {
+        final String s when s.trim().isNotEmpty => s.trim(),
+        _ => null,
+      },
+      customerPoints: (raw['customer_points'] as num?)?.toInt(),
+      greeting: switch (raw['greeting']) {
+        final String s when s.trim().isNotEmpty => s.trim(),
+        _ => null,
+      },
       terminal: raw['terminal'] as String?,
       // Absent on a till that predates this, and absent means off — which is
       // also the default for a venue that has one and has not turned it on.

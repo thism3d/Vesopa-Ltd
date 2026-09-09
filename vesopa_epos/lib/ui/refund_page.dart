@@ -43,6 +43,7 @@ import 'permission_gate.dart';
 import 'widgets/basket_panel.dart' show money;
 import 'widgets/on_screen_keyboard.dart';
 import 'widgets/pos_message.dart';
+import 'void_dialog.dart';
 
 /// Start a refund. Opens on the receipt list.
 Future<void> showRefund(BuildContext context, WidgetRef ref) async {
@@ -360,11 +361,34 @@ class _RefundPageState extends ConsumerState<RefundPage> {
           'A card refund is raised on the card machine itself — this records '
           'that it happened.',
     );
-    if (ok != true) return;
+    if (ok != true || !mounted) return;
+
+    // Why it went back.
+    //
+    // "Can we have reasons for No Sale, Refunds, Voids and Cancel." A refund
+    // off a receipt recorded WHAT was returned and never why, so a manager
+    // reading the Z could see the money leave and not what it was for.
+    //
+    // Asked after the amount is agreed rather than before: the clerk is
+    // answering the customer first. Skippable, like the No Sale reason,
+    // because a refund that could not be given while somebody stood waiting
+    // would be a worse failure than one recorded without a reason.
+    final why = await askReason(
+      context,
+      ref,
+      ReasonFor.refund,
+      title: 'Why is this going back?',
+      subtitle: 'Recorded on the Z report against your name.',
+    );
+    if (!mounted) return;
 
     await _record(
       amountMinor: _refundMinor,
-      note: 'Receipt ${detail.summary.id} · ${names.join(', ')}',
+      note: [
+        'Receipt ${detail.summary.id}',
+        names.join(', '),
+        if (why != null) why,
+      ].join(' · '),
     );
   }
 

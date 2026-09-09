@@ -436,7 +436,7 @@ class TenderColumn extends StatelessWidget {
 
     final keys = <Widget>[
       _FlatKey(
-        label: 'Gift card',
+        label: 'Gift Card',
         scale: v,
         fontSize: 19 * v,
         onTap: due > 0 ? () => onTender(TenderKind.giftCard, _amount) : null,

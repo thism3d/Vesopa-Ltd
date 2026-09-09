@@ -267,13 +267,48 @@ class DineInService {
     }
   }
 
+  /// Whether this venue wants orders accepted without anybody pressing Accept.
+  ///
+  /// Read from the server rather than from the till's own settings, because it
+  /// belongs to the QR menu rather than to this terminal — see
+  /// `schema_menu_dinein_auto_accept.sql`.
+  ///
+  /// FALSE WHENEVER IT CANNOT BE READ. A till that could not ask must never
+  /// start accepting things by itself: the failure of the safe answer is a
+  /// clerk pressing Accept as they did yesterday, and of the other one is food
+  /// firing that nobody agreed to.
+  Future<bool> autoAccept() async {
+    if (!canAsk) return false;
+    try {
+      final res = await _client
+          .get(Uri.parse('$apiBase/till/dinein/settings'), headers: _headers)
+          .timeout(_quick);
+      if (res.statusCode != 200) return false;
+      final body = jsonDecode(res.body);
+      return body is Map && body['auto_accept_orders'] == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Move an order along. [saleId] attaches the bill this became.
   ///
   /// False means it did not move, which is a real answer and not only an error:
   /// the server refuses a transition from the wrong state, so a clerk pressing
   /// Accept on an order the till beside them has already taken gets a plain no
   /// rather than a second kitchen ticket.
-  Future<bool> move(int id, String action, {String? saleId, String? note}) async {
+  Future<bool> move(
+    int id,
+    String action, {
+    String? saleId,
+    String? note,
+    /// 'auto' when the venue's setting took this rather than a person.
+    ///
+    /// Sent so the back office can answer "why did this go straight to the
+    /// kitchen?" months later, when the setting may since have been turned
+    /// off. Anything but 'auto' is recorded as a clerk.
+    String? by,
+  }) async {
     if (!canAsk) return false;
     try {
       final res = await _client
@@ -283,12 +318,34 @@ class DineInService {
             body: jsonEncode({
               'order_id': ?saleId,
               'note': ?note,
+              'by': ?by,
             }),
           )
           .timeout(_quick);
       return res.statusCode == 200;
     } catch (_) {
       return false;
+    }
+  }
+
+  /// Say which sale an already-accepted order became.
+  ///
+  /// Only needed by auto-accept, which claims before it rings up -- see
+  /// `autoAcceptWaiting` for why that order is inverted there. Best effort: a
+  /// link that does not land costs the tie between a QR order and its bill in
+  /// reporting, and costs the customer nothing.
+  Future<void> linkSale(int id, String saleId) async {
+    if (!canAsk) return;
+    try {
+      await _client
+          .post(
+            Uri.parse('$apiBase/till/dinein/orders/$id/link'),
+            headers: _headers,
+            body: jsonEncode({'order_id': saleId}),
+          )
+          .timeout(_quick);
+    } catch (_) {
+      // Nothing to do about it, and nothing a clerk could act on.
     }
   }
 }
@@ -355,10 +412,16 @@ class DineInOrdersController extends AsyncNotifier<List<DineInOrder>> {
   /// Refreshed straight afterwards anyway: the optimistic step is what makes
   /// the button feel like it worked, and the refresh is what makes the screen
   /// right when the terminal beside this one got there first.
-  Future<bool> move(int id, String action, {String? saleId, String? note}) async {
+  Future<bool> move(
+    int id,
+    String action, {
+    String? saleId,
+    String? note,
+    String? by,
+  }) async {
     final ok = await ref
         .read(dineInServiceProvider)
-        .move(id, action, saleId: saleId, note: note);
+        .move(id, action, saleId: saleId, note: note, by: by);
     await refresh();
     return ok;
   }

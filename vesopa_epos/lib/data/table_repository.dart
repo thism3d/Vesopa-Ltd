@@ -110,11 +110,16 @@ class TableRepository {
   }
 
   /// Move a bill to a different table.
+  ///
+  /// Throws [TableOccupied] when the destination already has a party on it,
+  /// carrying the bill that is in the way. The caller decides what to do about
+  /// it — the venue asked to be offered a merge, and the answer to that
+  /// question is a clerk's rather than a repository's. Merging two parties'
+  /// bills without asking would be the one thing worse than refusing.
   Future<void> transfer(String orderId, int toTable) async {
     final existing = await orderOn(toTable);
     if (existing != null && existing.id != orderId) {
-      // Refusing is safer than silently merging two parties' bills.
-      throw StateError('Table $toTable already has an open bill.');
+      throw TableOccupied(toTable, existing);
     }
     await _db.transaction(() async {
       await _db
@@ -129,19 +134,110 @@ class TableRepository {
   }
 
   /// Merge two tables' bills into one.
+  ///
+  /// The DESTINATION survives. Its id, its audit trail, its table and its
+  /// bill-level discount are the ones that carry on; the source's lines move
+  /// across keeping their own ids, their modifiers and their line discounts,
+  /// and the source order is closed.
+  ///
+  /// WHAT HAPPENS TO THE THINGS THAT CANNOT BOTH SURVIVE
+  ///
+  ///   * **Covers are added together.** Two tables pushed into one is one
+  ///     party of the two counts, and a covers figure that quietly stayed at
+  ///     four when eight people sat down is a wrong average spend in every
+  ///     report that reads it.
+  ///   * **The customer moves only onto a bill that has none.** A destination
+  ///     with a member on it keeps that member — their discount has already
+  ///     been quoted against that bill — and a destination with nobody on it
+  ///     takes the source's, because otherwise merging silently drops
+  ///     somebody's membership discount.
+  ///   * **The source's bill-level discount is dropped**, and cannot be
+  ///     otherwise: two percentage discounts on one bill is not a discount
+  ///     anybody agreed to. Line discounts are untouched, because those belong
+  ///     to the lines and travel with them.
+  ///
+  /// Both halves are written in one transaction. A half-applied merge would
+  /// leave items on neither bill, which is the one outcome a till must never
+  /// produce.
   Future<void> merge(String fromOrderId, String intoOrderId) async {
     await _db.transaction(() async {
+      final from = await (_db.select(_db.orders)
+            ..where((o) => o.id.equals(fromOrderId)))
+          .getSingleOrNull();
+      final into = await (_db.select(_db.orders)
+            ..where((o) => o.id.equals(intoOrderId)))
+          .getSingleOrNull();
+
       await (_db.update(_db.orderLines)
             ..where((l) => l.orderId.equals(fromOrderId)))
           .write(OrderLinesCompanion(orderId: Value(intoOrderId)));
 
-      await (_db.update(_db.orders)..where((o) => o.id.equals(fromOrderId)))
-          .write(const OrdersCompanion(status: Value('void')));
+      if (from != null && into != null) {
+        await (_db.update(_db.orders)..where((o) => o.id.equals(intoOrderId)))
+            .write(
+          OrdersCompanion(
+            covers: Value((into.covers ?? 0) + (from.covers ?? 0)),
+            // Only onto a bill with nobody on it. See the note above.
+            customerId: into.customerId == null
+                ? Value(from.customerId)
+                : const Value.absent(),
+            customerName: into.customerId == null
+                ? Value(from.customerName)
+                : const Value.absent(),
+            customerDiscountType: into.customerId == null
+                ? Value(from.customerDiscountType)
+                : const Value.absent(),
+            customerDiscountValue: into.customerId == null
+                ? Value(from.customerDiscountValue)
+                : const Value.absent(),
+            customerPhone: into.customerId == null
+                ? Value(from.customerPhone)
+                : const Value.absent(),
+            customerEmail: into.customerId == null
+                ? Value(from.customerEmail)
+                : const Value.absent(),
+            customerCardNumber: into.customerId == null
+                ? Value(from.customerCardNumber)
+                : const Value.absent(),
+          ),
+        );
+      }
+
+      // Both bills say what happened, in their own notes, so neither audit
+      // trail ends without an explanation. A table that simply vanished at
+      // half past nine is the sort of thing a manager cannot reconstruct.
+      if (from != null) {
+        await (_db.update(_db.orders)..where((o) => o.id.equals(fromOrderId)))
+            .write(
+          OrdersCompanion(
+            status: const Value('void'),
+            notes: Value(
+              _note(from.notes, 'Merged into table ${into?.tableNumber ?? "?"}'),
+            ),
+          ),
+        );
+      }
+      if (into != null) {
+        await (_db.update(_db.orders)..where((o) => o.id.equals(intoOrderId)))
+            .write(
+          OrdersCompanion(
+            notes: Value(
+              _note(into.notes, 'Merged from table ${from?.tableNumber ?? "?"}'),
+            ),
+          ),
+        );
+      }
 
       await _orders.recalculate(intoOrderId);
       await _orders.recalculate(fromOrderId);
     });
   }
+
+  /// Add a line to a bill's notes without losing what was already there.
+  static String _note(String? existing, String line) =>
+      existing == null || existing.trim().isEmpty
+          ? line
+          : '${existing.trim()}\n$line';
 
   /// Split named lines onto a new bill, leaving the rest behind.
   ///
@@ -204,4 +300,18 @@ class TableRepository {
   // models it correctly (see TenderState.splitEqually: shares that track their
   // own outstanding balance against one intact order). The tables screen now
   // opens the payment screen with that split applied.
+}
+
+/// The table a bill is being moved onto already has a party on it.
+///
+/// Carries the bill that is in the way, because the useful next question is
+/// "merge these two?" and answering it needs to know what is being merged.
+class TableOccupied implements Exception {
+  const TableOccupied(this.tableNumber, this.existing);
+
+  final int tableNumber;
+  final Order existing;
+
+  @override
+  String toString() => 'Table $tableNumber already has an open bill.';
 }

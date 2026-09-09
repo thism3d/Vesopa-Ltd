@@ -707,6 +707,22 @@ class SyncService {
                   ? (raw['allergens'] as String).trim()
                   : null,
             ),
+            // Whether paying for this renews a membership.
+            //
+            // Absent is FALSE, and that direction is the whole point: a server
+            // that predates the column sends no field, and reading that as
+            // "yes" would move a member's expiry on a year every time somebody
+            // bought a pint. The failure of the safe default is a renewal that
+            // has to be done in the back office; of the other one, a season of
+            // subscriptions nobody paid for.
+            renewsMembership: Value(
+              switch (raw['renews_membership']) {
+                final bool value => value,
+                final num value => value != 0,
+                final String value => value == '1' || value == 'true',
+                _ => false,
+              },
+            ),
             taxPercentage: Value(
               (raw['tax_percentage'] as num? ?? 0).toDouble(),
             ),

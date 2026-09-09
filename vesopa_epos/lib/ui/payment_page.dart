@@ -23,6 +23,8 @@ import '../printing/print_service.dart';
 import '../printing/print_targets.dart';
 import '../printing/receipt_builder.dart';
 import 'card_checkout_page.dart';
+import 'membership_gate.dart';
+import 'membership_prompt.dart';
 import 'printers_page.dart' show printerSettingsProvider;
 import 'card_payment_dialog.dart';
 import 'confirm_tender_dialog.dart';
@@ -1216,7 +1218,14 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
       if (renewFor != null && renewFor.isNotEmpty) {
         final lines = await repo.watchLines(widget.orderId).first;
         final settings = await commerce.membershipSettings();
-        if (billRenewsMembership(lines, plu: settings.plu)) {
+        // Which PLUs renew, from the till's own catalogue plus the venue's
+        // old single-PLU setting — so a back office that has not been updated
+        // yet still renews on the product it names. See data/membership.dart.
+        final renewing = renewingPlus(
+          ref.read(productsProvider).value ?? const <Product>[],
+          legacyPlu: settings.plu,
+        );
+        if (billRenewsMembership(lines, renewing: renewing)) {
           final renewed = await commerce.renewMembership(renewFor);
           if (mounted && renewed.membershipExpiry != null) {
             PosMessenger.success(
@@ -1595,19 +1604,28 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
                       tableNumber: order?.tableNumber,
                       covers: order?.covers,
                       clerkName: ref.read(servedByProvider),
-                      // Void and Cancel live here as well as on the sale
-                      // screen. A mis-rung item is most often spotted at the
-                      // moment the total is read out to the customer, and
-                      // having to back out to the sale screen to fix it is how
-                      // a whole check ends up cancelled instead of one line.
-                      onVoid: _canAmend
+                      // VOID AND CANCEL ARE NOT HERE ANY MORE WHEN THERE IS A
+                      // BAR. "We can remove the void and cancel because they
+                      // will now be on the top and bottom bars." Both keys are
+                      // on the bars — the same two keys, in the same places
+                      // they sit on the sale screen — and two of each, a tap
+                      // apart, is how a clerk presses the wrong one.
+                      //
+                      // They stay on the header for a venue running the
+                      // built-in board with no bars at all, because that venue
+                      // would otherwise have to back out to the sale screen to
+                      // take one mis-rung item off, which is how a whole check
+                      // ends up cancelled instead of one line.
+                      onVoid: _canAmend && payTopBar == null && payBottomBar == null
                           ? () => _voidSelected(
                                 lines: lines,
                                 selected: selected,
                               )
                           : null,
                       onCancel:
-                          _canAmend ? () => _cancelCheck(lines: lines) : null,
+                          _canAmend && payTopBar == null && payBottomBar == null
+                              ? () => _cancelCheck(lines: lines)
+                              : null,
                       bar: payTopBar == null ? null : barOf(payTopBar),
                     ),
                     // Expanded, so the board gives the bars their room rather
@@ -1801,6 +1819,23 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     final picked = result?.customer;
     if (picked == null || !mounted) return;
 
+    // The fourth door onto a bill, and it gets the same gate as the other
+    // three. A membership that has run out is refused here too — the money is
+    // being taken on this screen, which makes it the last place an expired
+    // card could still be used.
+    final member = ExpiredMember.fromLoyalty(picked);
+    final gate = await checkMembership(
+      context,
+      ref,
+      orderId: widget.orderId,
+      member: member,
+    );
+    if (!mounted) return;
+    if (gate == MembershipGate.refused) {
+      sayMembership(context, gate, member: member);
+      return;
+    }
+
     setState(() => _customer = picked);
 
     // And onto the order, which is where the check reads it from.
@@ -1814,11 +1849,19 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
           widget.orderId,
           id: picked.id,
           name: picked.name,
+          membershipExpiry: gate == MembershipGate.renewing
+              ? null
+              : picked.membershipExpiry,
           discountType: picked.discountType,
           discountValue: picked.discountValue,
           phone: picked.phone,
           cardNumber: picked.cardNumber,
+          pointsBalance: picked.pointsBalance,
         );
+    if (!mounted) return;
+    if (gate == MembershipGate.renewing) {
+      sayMembership(context, gate, member: member);
+    }
   }
 }
 
@@ -2061,6 +2104,12 @@ class _PayBar extends ConsumerWidget {
             (onCancel ?? () => notHere('Cancelling'))();
           case 'go_sale':
             Navigator.of(context).pop();
+          // Moving a bill onto another table while its money is being taken
+          // would leave the tender running against a check that is no longer
+          // where the clerk thinks it is — and a merge would fold a second
+          // party's items into a total the customer has already been quoted.
+          case 'transfer':
+            notHere('Transferring a table');
           default:
             // Everything else on a bar is either a widget that draws itself or
             // a key whose home is the sale screen. Deliberately not silent.

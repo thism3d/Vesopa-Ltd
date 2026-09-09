@@ -113,6 +113,9 @@ class DisplaySnapshot {
     this.changeMinor = 0,
     this.message,
     this.terminalName,
+    this.customerName,
+    this.customerPoints,
+    this.greeting,
   });
 
   /// A till with nothing rung up. The display shows adverts full screen for
@@ -149,6 +152,26 @@ class DisplaySnapshot {
 
   final String? terminalName;
 
+  /// Who is on this bill, and what they have saved up.
+  ///
+  /// Null when nobody is attached, which is most sales — and the display then
+  /// draws nothing at all rather than an empty greeting. Only a member the
+  /// clerk has actually put on the check appears here.
+  ///
+  /// The points are the balance as the till last synced it, not a live figure.
+  /// A customer looking at this screen has not earned this sale's points yet;
+  /// they are added when the bill settles.
+  final String? customerName;
+  final int? customerPoints;
+
+  /// What the venue says above the name -- "Welcome", "Croeso", whatever they
+  /// set in the back office.
+  ///
+  /// Travels in the basket rather than being configured on the display,
+  /// because a venue with four counters has four displays and a greeting typed
+  /// into each of them ends up different on all four.
+  final String? greeting;
+
   Map<String, Object?> toJson() => {
     'format': customerDisplayFormat,
     'updated_at': DateTime.now().toIso8601String(),
@@ -171,6 +194,24 @@ class DisplaySnapshot {
     // schema_till_notifications.sql for why a screen facing a queue is the one
     // surface that should not interrupt anybody.
     'notify_display': notifyDisplay,
+    /*
+     * The member on this bill.
+     *
+     * ADDITIVE, AND `format` DELIBERATELY DOES NOT MOVE.
+     *
+     * A venue updates its tills and its customer displays on the Store's own
+     * schedule, which means both mismatches happen: a new till writing for an
+     * old display, and an old till writing for a new one. An old display
+     * ignores keys it has never heard of, and a new display draws nothing when
+     * they are absent — so both directions are the screen the venue had
+     * yesterday rather than a screen that will not draw.
+     *
+     * Bumping `format` would have been the other choice and it breaks the
+     * first of those two: the old display checks the version.
+     */
+    'customer_name': customerName,
+    'customer_points': customerPoints,
+    'greeting': greeting,
   };
 
   /// Whether two snapshots would draw the same screen.
@@ -188,6 +229,13 @@ class DisplaySnapshot {
       paidMinor == other.paidMinor &&
       changeMinor == other.changeMinor &&
       message == other.message &&
+      // A customer attached or taken off changes the screen, so it has to
+      // count as a change. Without this the display would keep showing the
+      // last member's name after the clerk removed them — the write is skipped
+      // when nothing "visible" moved, and this is visible.
+      customerName == other.customerName &&
+      customerPoints == other.customerPoints &&
+      greeting == other.greeting &&
       lines.length == other.lines.length &&
       () {
         for (var i = 0; i < lines.length; i++) {
@@ -559,6 +607,9 @@ DisplaySnapshot snapshotFor({
   bool paid = false,
   String? terminalName,
   String? message,
+  String? customerName,
+  int? customerPoints,
+  String? greeting,
 }) {
   if (lines.isEmpty) {
     return DisplaySnapshot.idle(
@@ -574,6 +625,9 @@ DisplaySnapshot snapshotFor({
     changeMinor: changeMinor,
     terminalName: terminalName,
     message: message,
+    customerName: customerName,
+    customerPoints: customerPoints,
+    greeting: greeting,
     lines: [
       for (final line in lines)
         DisplayLine(

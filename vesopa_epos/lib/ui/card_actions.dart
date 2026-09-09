@@ -46,6 +46,7 @@ import 'barcode_actions.dart';
 import '../data/terminal_identity.dart';
 import '../main.dart';
 import 'cards_page.dart' show lastCardReadProvider;
+import 'membership_gate.dart';
 import 'membership_prompt.dart';
 import 'staff_admin.dart' show StaffCardCapture;
 import 'staff_handover.dart';
@@ -224,15 +225,20 @@ Future<void> _loyaltyCard(
 
   final apiBase = ref.read(apiBaseProvider);
 
+  // The same person, in the shape the membership dialogs and the gate read.
+  // Named `profile` rather than `card`, because `card` in this function is the
+  // piece of plastic that was swiped.
+  final profile = ExpiredMember.fromLoyalty(member);
+
   if (orderId == null) {
     // The face, even with no bill open. A clerk swiping a card at a locked
     // till is usually answering "is this yours?", and the photograph is the
     // whole answer.
     await showMemberOnBill(
       context,
-      member: member,
+      member: profile,
       apiBase: apiBase,
-      footnote: member.membershipExpired
+      footnote: profile.membershipExpired
           ? 'This membership has run out. Open a bill and swipe again to '
                 'renew it.'
           : 'Open a bill and swipe again to put them on it.',
@@ -242,51 +248,21 @@ Future<void> _loyaltyCard(
 
   // ---- An expired card cannot be used ------------------------------------
   //
-  // "Please allow a function on the till that is the customer have expired
-  // they card can't be used." Refused by offering: the useful thing to do with
-  // somebody at the counter holding a card that ran out in March is to take
-  // the fee off them. Declining leaves nobody on the bill, which is the refusal.
-  if (member.membershipExpired) {
-    final choice = await showExpiredMembership(
-      context,
-      member: member,
-      apiBase: apiBase,
-    );
-    if (!context.mounted) return;
-    if (choice != MembershipChoice.renew) {
-      PosMessenger.info(
-        context,
-        '${member.name} was not put on this bill — their membership has run '
-        'out.',
-      );
-      return;
-    }
-
-    // The fee goes on the bill and is taken with the rest of it. The date does
-    // not move until the money is in: see `data/membership.dart`.
-    if (member.membershipFeeMinor > 0 || member.membershipPlu != null) {
-      final named = member.membershipPlu == null
-          ? null
-          : await ref
-                .read(databaseProvider)
-                .managers
-                .products
-                .filter((p) => p.pluId.equals(member!.membershipPlu!))
-                .getSingleOrNull();
-      if (!context.mounted) return;
-      await ref
-          .read(orderRepositoryProvider)
-          .addLine(
-            orderId,
-            membershipProduct(
-              feeMinor: member.membershipFeeMinor,
-              plu: member.membershipPlu,
-              named: named,
-            ),
-            addedBy: ref.read(servedByProvider),
-          );
-      if (!context.mounted) return;
-    }
+  // Through the shared gate, which is where the whole of this used to live.
+  // "If a customer has expired, they can still use the loyalty card on the
+  // till" was true because the check was HERE and only here: a clerk who
+  // picked the same person off the Customer key met nothing at all. See
+  // ui/membership_gate.dart.
+  final gate = await checkMembership(
+    context,
+    ref,
+    orderId: orderId,
+    member: profile,
+  );
+  if (!context.mounted) return;
+  if (gate == MembershipGate.refused) {
+    sayMembership(context, gate, member: profile);
+    return;
   }
 
   await ref
@@ -295,21 +271,23 @@ Future<void> _loyaltyCard(
         orderId,
         id: member.id,
         name: member.name,
+        // Renewing is happening on this bill, so the expiry it currently
+        // carries is the one being replaced. Passing it would have the
+        // repository refuse the very attach the clerk has just paid for.
+        membershipExpiry: gate == MembershipGate.renewing
+            ? null
+            : member.membershipExpiry,
         // Their standing discount comes with them, which is the whole reason a
         // card is worth swiping before the round is rung rather than after.
         discountType: member.discountType,
         discountValue: member.discountValue,
+        pointsBalance: member.pointsBalance,
       );
 
   if (!context.mounted) return;
 
-  if (member.membershipExpired) {
-    PosMessenger.success(
-      context,
-      '${member.name} is on this bill. Their membership renews for '
-      '${member.membershipTermMonths} month'
-      '${member.membershipTermMonths == 1 ? '' : 's'} once this is paid.',
-    );
+  if (gate == MembershipGate.renewing) {
+    sayMembership(context, gate, member: profile);
     return;
   }
   // PosMessenger rather than a SnackBar. A bar rises from the bottom of the
@@ -329,7 +307,7 @@ Future<void> _loyaltyCard(
   if (member.photoUrl != null) {
     await showMemberOnBill(
       context,
-      member: member,
+      member: profile,
       apiBase: apiBase,
       footnote:
           'On this bill'
@@ -425,7 +403,13 @@ Future<void> _offerToEnrol(
     if (orderId != null) {
       await ref
           .read(orderRepositoryProvider)
-          .attachCustomer(orderId, id: member.id, name: member.name);
+          .attachCustomer(
+            orderId,
+            id: member.id,
+            name: member.name,
+            // Just enrolled, so there is no membership to have run out.
+            membershipExpiry: null,
+          );
     }
 
     if (!context.mounted) return;
@@ -516,10 +500,10 @@ Future<void> _giftCard(
 
     await _explain(
       context,
-      title: 'Gift card ${card.number}',
+      title: 'Gift Card ${card.number}',
       message:
           '${_money(gift.balanceMinor)} on the card.\n\n'
-          'To spend it, take the payment and choose Gift card.',
+          'To spend it, take the payment and choose Gift Card.',
     );
   } on Object catch (e) {
     if (!context.mounted) return;
