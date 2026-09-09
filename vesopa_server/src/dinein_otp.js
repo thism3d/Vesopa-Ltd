@@ -42,6 +42,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
 const { sendMail } = require('./mailer');
+const { ENABLED: VESOPA_AUTH_ON } = require('./dinein_auth');
 
 // How long a session lasts once a code has been checked. A month, as asked:
 // long enough that a regular is not asked again, short enough that a phone
@@ -252,6 +253,21 @@ function dineinOtpRoutes({ pool, secret }) {
       // Said out loud so the page can tell somebody before they type, rather
       // than after they have waited for a message that is not coming.
       sms_countries: ['GB'],
+      /*
+       * Whether to offer a Vesopa account as a third way in.
+       *
+       * It travels here rather than being injected into the page, because the
+       * page is one enormous template literal and a stray backtick or backslash
+       * in it breaks only the served page — silently, and for every venue at
+       * once. This endpoint is already fetched before the sign-in sheet is
+       * drawn, so the flag costs nothing extra.
+       *
+       * False means the button is never rendered. A button for a sign-in the
+       * server cannot complete is worse than no button: somebody picks the
+       * option that looks most official and is told it went wrong, which
+       * teaches them the whole menu is unreliable.
+       */
+      vesopa_auth: VESOPA_AUTH_ON,
     });
   });
 

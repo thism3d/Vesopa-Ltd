@@ -869,3 +869,113 @@ pre.code {
   border-radius: 8px;
   background: var(--surface-2);
 }
+
+/* --------------------------------------------------------------------------
+ * Toggles
+ * --------------------------------------------------------------------------
+ * A row with a mark, a name, a sentence saying what it does, and a switch. The
+ * same shape as every other row on the site, so a setting reads as a thing you
+ * change rather than as a form field you fill in.
+ *
+ * IT IS A REAL CHECKBOX UNDERNEATH. The input is visually hidden and still
+ * focusable, still keyboard-operable, still announced as a checkbox, and still
+ * submitted with its form — so this works with scripting blocked, which a
+ * div-and-JavaScript switch does not. The `<label>` wraps everything, so the
+ * whole row is the hit target: on a phone that is the difference between a
+ * setting people change and one they give up on.
+ * ------------------------------------------------------------------------ */
+
+.switch-row {
+  display: grid;
+  /* mark · words · the word On/Off · the switch. Four columns, and every one of
+     them a DIRECT child — the checked state is styled through a sibling
+     selector, which cannot reach into a wrapper. */
+  grid-template-columns: 26px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 18px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+  cursor: pointer;
+  min-height: 62px;
+}
+.card-head + .switch-row,
+.card-note + .switch-row,
+.card > .switch-row:first-child { border-top: 0; }
+.switch-row:hover { background: var(--surface-2); }
+
+.switch-row input {
+  /* Hidden from sight, not from the keyboard or a screen reader. `display:none`
+     and `visibility:hidden` both remove it from the tab order, which would make
+     this unusable without a mouse. */
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 26px;
+  border-radius: 999px;
+  background: var(--border-strong);
+  transition: background .16s ease;
+}
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .3);
+  transition: transform .16s ease;
+}
+.switch-row input:checked ~ .switch { background: var(--green); }
+.switch-row input:checked ~ .switch::after { transform: translateX(18px); }
+
+/* The word follows the checkbox, not the render. Both are in the markup and
+   CSS picks — otherwise the label still says "On" beside a switch the person
+   has just moved to off, because nothing has been saved yet. */
+.switch-state i { font-style: normal; }
+.switch-state .on-word { display: none; }
+.switch-row input:checked ~ .switch-state .on-word { display: inline; }
+.switch-row input:checked ~ .switch-state .off-word { display: none; }
+
+/* Focus goes on the switch, because the input it belongs to is invisible.
+   Without this the setting is reachable by keyboard and gives no sign of it. */
+.switch-row input:focus-visible ~ .switch {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+}
+
+/* A setting somebody may look at and not change. Dimmed rather than removed:
+   knowing a switch exists and is off is worth more than not knowing it exists. */
+.switch-row input:disabled ~ .switch { opacity: .45; }
+.switch-row:has(input:disabled) { cursor: default; }
+.switch-row:has(input:disabled):hover { background: none; }
+
+.switch-title { display: block; font-size: 15px; font-weight: 500; }
+.switch-sub { display: block; font-size: 13.5px; color: var(--text-muted); margin-top: 2px; }
+
+/* The word beside the switch, for anybody who reads state rather than shape. */
+.switch-state {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  min-width: 26px;
+  text-align: right;
+}
+.switch-row input:checked ~ .switch-state { color: var(--text); }
+
+@media (prefers-reduced-motion: reduce) {
+  .switch, .switch::after { transition: none; }
+}
+
+@media (max-width: 560px) {
+  .switch-row { grid-template-columns: 24px minmax(0, 1fr) auto; gap: 14px; padding: 13px 16px; }
+}

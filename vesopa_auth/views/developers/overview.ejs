@@ -76,6 +76,17 @@
       </div>
     </div>
 
+    <%
+      /*
+       * TWO SEPARATE FORMS, and no closing tag inside a conditional.
+       *
+       * The first version of this closed `</div></form>` in one branch of an
+       * `if` and again in the other, so the markup only balanced at runtime and
+       * only if both branches stayed in step. That is the kind of thing that
+       * survives review, breaks when somebody adds a third branch, and produces
+       * a page that renders almost right.
+       */
+    %>
     <% if (role !== 'viewer') { %>
     <form method="post" action="/developers/a/<%= application.client_id %>/logo"
           enctype="multipart/form-data" class="mt-3">
@@ -84,17 +95,16 @@
         <input type="file" name="logo" accept="image/png,image/jpeg,image/webp"
                aria-label="Choose a logo">
         <button class="btn btn-quiet btn-small" type="submit">Upload</button>
-        <% if (application.logo_path) { %>
       </div>
     </form>
+
+    <% if (application.logo_path) { %>
     <form method="post" action="/developers/a/<%= application.client_id %>/logo/remove" class="mt-2">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <button type="submit" class="btn-link">Remove the logo</button>
     </form>
-        <% } else { %>
-      </div>
-    </form>
-        <% } %>
+    <% } %>
+
     <p class="hint mt-2">
       PNG, JPEG or WebP, under 512&nbsp;KB, square. <b>SVG is not accepted</b> —
       it is a document that can carry script, and it would be served from this
@@ -179,10 +189,22 @@
 </section>
 <% } %>
 
-<section class="card">
-  <h2 class="card-head">Settings</h2>
-  <form method="post" action="/developers/a/<%= application.client_id %>/settings">
-    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+<%
+  /*
+   * ONE FORM, TWO CARDS.
+   *
+   * The form has to open OUTSIDE both sections rather than inside the first.
+   * A `<form>` opened inside a `<section>` and closed after the next one is
+   * interleaved markup — the parser closes the form at the first `</section>`
+   * and everything in the second card silently stops being submitted, which
+   * looks exactly like a setting that will not save.
+   */
+%>
+<form method="post" action="/developers/a/<%= application.client_id %>/settings">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+  <section class="card">
+    <h2 class="card-head">Settings</h2>
     <div class="card-body">
       <div class="field">
         <label for="name">Name</label>
@@ -234,52 +256,66 @@
         The consent screen shows these. One with no links is the one people
         click through without reading.
       </p>
-
-      <%
-        /*
-         * Self-enrolment: may somebody who has never used this application sign
-         * into it, or must a person add them first? A QR menu says yes; a back
-         * office says no. It is the difference between a public product and an
-         * internal one, and getting it wrong in the "yes" direction lets
-         * anybody with a Vesopa account into a staff tool.
-         */
-      %>
-      <label class="check mt-1">
-        <input type="checkbox" name="allow_self_enroll" value="1"
-               <%= application.allow_self_enroll ? 'checked' : '' %>
-               <%= role === 'viewer' ? 'disabled' : '' %>>
-        <span><b>Anybody with a Vesopa account may use it</b>
-        <span>Off means a person must be added first — right for a back office, wrong for a customer-facing menu.</span></span>
-      </label>
-
-      <%
-        /*
-         * GUEST USE IS A STATEMENT ABOUT THE PRODUCT, not a switch that changes
-         * what this server does — an identity provider cannot stop an
-         * application demanding a sign-in; only the application can. What it
-         * can do is record the intention somewhere the next person to touch the
-         * integration will read it.
-         *
-         * The failure this exists to prevent is quiet and specific: somebody
-         * puts the OIDC check one layer too high and a diner at a table with
-         * food coming is asked to register before they can read a menu. Nobody
-         * catches it in testing, because everybody testing it has an account.
-         */
-      %>
-      <label class="check mt-1">
-        <input type="checkbox" name="guest_allowed" value="1"
-               <%= application.guest_allowed ? 'checked' : '' %>
-               <%= role === 'viewer' ? 'disabled' : '' %>>
-        <span><b>People can use it without signing in at all</b>
-        <span>Signing in is an addition, never a gate. Tick this and the consent screen tells people they can carry on as a guest.</span></span>
-      </label>
-
-      <% if (role !== 'viewer') { %>
-      <button class="btn btn-quiet btn-small" type="submit">Save settings</button>
-      <% } %>
     </div>
-  </form>
-</section>
+  </section>
+
+  <%
+    /*
+     * The switches, out of the form's body and into rows of their own.
+     *
+     * A checkbox buried under four text inputs reads as one more field to fill
+     * in. These two are not fields — they are decisions about who may use the
+     * application at all, and the two most consequential things on this page.
+     * Given the shape of a setting, they get looked at.
+     */
+  %>
+  <section class="card">
+    <h2 class="card-head">Who can use it</h2>
+    <p class="card-note">
+      Both of these change what happens to real people at the sign-in.
+    </p>
+
+    <%- include('../partials/switch', {
+      name: 'allow_self_enroll',
+      on: !!application.allow_self_enroll,
+      icon: 'people',
+      title: 'Anybody with a Vesopa account may use it',
+      sub: 'Off means a person must be added first — right for a back office, wrong for a customer-facing menu.',
+      locked: role === 'viewer',
+      why: 'You have read-only access to this application.',
+    }) %>
+
+    <%
+      /*
+       * GUEST USE IS A STATEMENT ABOUT THE PRODUCT, not a switch that changes
+       * what this server does — an identity provider cannot stop an application
+       * demanding a sign-in; only the application can. What it can do is record
+       * the intention somewhere the next person to touch the integration reads
+       * it.
+       *
+       * The failure this exists to prevent is quiet and specific: somebody puts
+       * the OIDC check one layer too high and a diner at a table with food
+       * coming is asked to register before they can read a menu. Nobody catches
+       * it in testing, because everybody testing it has an account.
+       */
+    %>
+    <%- include('../partials/switch', {
+      name: 'guest_allowed',
+      on: !!application.guest_allowed,
+      icon: 'person',
+      title: 'People can use it without signing in at all',
+      sub: 'Signing in is an addition, never a gate. The consent screen then tells people they can carry on as a guest.',
+      locked: role === 'viewer',
+      why: 'You have read-only access to this application.',
+    }) %>
+
+    <% if (role !== 'viewer') { %>
+    <div class="card-body">
+      <button class="btn btn-quiet btn-small" type="submit">Save settings</button>
+    </div>
+    <% } %>
+  </section>
+</form>
 
 <section class="card">
   <h2 class="card-head">Where to go next</h2>

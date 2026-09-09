@@ -117,8 +117,29 @@ const APPLICATIONS = [
     // that page and stays the default; an account buys the orders you placed,
     // on whatever phone you are holding, and nothing else.
     guestAllowed: 1,
-    redirects: ['https://menu.vesopa.com/auth/callback'],
-    logoutRedirects: ['https://menu.vesopa.com/'],
+    /*
+     * BOTH DOMAINS, AND menu.vesopaepos.com IS THE ONE THAT EXISTS.
+     *
+     * The plan calls the QR menu `menu.vesopa.com` throughout, and that
+     * hostname does not resolve — the live menu real venues are trading on is
+     * served from `menu.vesopaepos.com`, on the EPOS box. Registering only the
+     * aspirational name would mean the very first sign-in attempt failed with
+     * `invalid_request`, from a domain that answers nothing, which is a
+     * miserable thing to debug.
+     *
+     * Both are registered because redirect matching is exact string equality —
+     * there is no wildcard to lean on — and because the menu is expected to
+     * move to the vesopa.com name eventually. Two exact strings cost nothing
+     * and mean the move is a DNS change rather than a coordinated deploy.
+     */
+    redirects: [
+      'https://menu.vesopaepos.com/auth/callback',
+      'https://menu.vesopa.com/auth/callback',
+    ],
+    logoutRedirects: [
+      'https://menu.vesopaepos.com/',
+      'https://menu.vesopa.com/',
+    ],
     grants: ['authorization_code', 'refresh_token'],
     scopes: [
       'openid', 'profile', 'email', 'phone', 'offline_access',

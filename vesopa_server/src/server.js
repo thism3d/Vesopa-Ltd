@@ -10,6 +10,7 @@ const { WebSocketServer } = require('ws');
 const { dineinRoutes } = require('./dinein');
 const { dineinPageRoutes, isMenuAddress } = require('./dinein_pages');
 const { dineinOtpRoutes } = require('./dinein_otp');
+const { dineinAuthRoutes, ENABLED: VESOPA_AUTH_ON } = require('./dinein_auth');
 
 const {
   verifyPassword,
@@ -279,6 +280,22 @@ app.use(dineinRoutes({ pool, broadcast, secret: JWT_SECRET }));
 // dine-in, and beside it rather than inside it because it is a self-contained
 // piece with its own outside dependency.
 app.use(dineinOtpRoutes({ pool, secret: JWT_SECRET }));
+
+/*
+ * Signing in to a menu with a Vesopa account — the first product migration.
+ *
+ * NOT MOUNTED AT ALL unless VESOPA_AUTH_ENABLED is on AND the client
+ * credentials are present. That is rule 2 of the migration plan: legacy login
+ * ships dormant behind a flag, and rollback is flipping it back and restarting
+ * rather than a deploy under pressure with a room full of covers.
+ *
+ * It is an ADDITION to the code sign-in, never a replacement — and guest
+ * ordering, which is what most diners do, is untouched either way.
+ */
+if (VESOPA_AUTH_ON) {
+  app.use(dineinAuthRoutes({ pool, secret: JWT_SECRET }));
+  console.log('[boot] Vesopa account sign-in is ON for the menu');
+}
 
 app.use('/api', reportRoutes({ pool, secret: JWT_SECRET }));
 app.use('/api', reportScheduleRoutes({ pool, secret: JWT_SECRET }));

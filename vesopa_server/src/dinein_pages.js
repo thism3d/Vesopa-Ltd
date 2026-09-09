@@ -974,6 +974,24 @@ button{font:inherit;cursor:pointer}
 
 /* Email or phone. Email is pressed to start with, because most people know
    their own address and not everybody has signal in a cellar. */
+/* Continue with a Vesopa account, and the rule under it.
+   Deliberately quieter than "Send me a code": most diners here have no Vesopa
+   account and never will, and the loudest button on this sheet should be the
+   one that works for everybody. */
+.vsso{
+  width:100%;display:flex;align-items:center;justify-content:center;gap:8px;
+  min-height:46px;padding:0 16px;margin:0 0 4px;font:inherit;font-size:15px;
+  font-weight:600;line-height:1;cursor:pointer;
+  color:var(--ink);background:var(--card);border:1px solid var(--line);
+  border-radius:var(--radius);
+}
+/* --sunken, not a literal grey: this sheet has a dark mode and a hard-coded
+   hover would be invisible in it. */
+.vsso:hover{background:var(--sunken)}
+.vor{display:flex;align-items:center;gap:10px;margin:12px 0 10px;
+  color:var(--ink-soft);font-size:13px}
+.vor::before,.vor::after{content:"";flex:1;height:1px;background:var(--line)}
+
 .chan{display:flex;gap:8px;margin:4px 0 2px}
 .chan button{
   flex:1;border:1px solid var(--line);border-radius:12px;background:var(--card);
@@ -3262,6 +3280,16 @@ ${shareImage ? `<meta name="twitter:image" content="${esc(shareImage)}">` : ''}
           'We will send you a code. There is no password to remember, and you ' +
           'never need an account to order.</p>' +
 
+        /* A Vesopa account, where the server says that is available. It is
+           FIRST because it is one press for anybody who has one, and it is
+           separated by an "or" rather than replacing anything: the code still
+           works, and ordering as a guest still needs none of this. */
+        (g.vesopa_auth
+          ? '<button type="button" class="vsso" id="vsso">' +
+              'Continue with your Vesopa account</button>' +
+            '<div class="vor"><span>or use a code</span></div>'
+          : '') +
+
         '<div class="chan">' +
           '<button type="button" data-ch="email" aria-pressed="' +
             (channel === 'email') + '">' + ICON.mail + 'Email</button>' +
@@ -3308,6 +3336,19 @@ ${shareImage ? `<meta name="twitter:image" content="${esc(shareImage)}">` : ''}
           channel = b.getAttribute('data-ch');
           paint();
         });
+      });
+
+      /* Leaves this page entirely, so nothing is stored first: the basket is
+         already in localStorage and is still there when they come back.
+
+         Bound after the channel loop rather than inside it — inside, it would
+         be attached once per channel button, and every press would fire two
+         navigations. */
+      var vsso = body.querySelector('#vsso');
+      if (vsso) vsso.addEventListener('click', function(){
+        var url = '/api/public/dinein/auth/start';
+        if (SLUG) url += '?venue=' + encodeURIComponent(SLUG);
+        window.location.href = url;
       });
       var picker = document.getElementById('siCountry');
       if (picker) picker.addEventListener('change', function(){
@@ -5132,7 +5173,55 @@ ${shareImage ? `<meta name="twitter:image" content="${esc(shareImage)}">` : ''}
     return (0.2126 * r + 0.7152 * g + 0.0722 * b) > 150 ? '#10130A' : '#FFFFFF';
   }
 
-  load();
+  /**
+   * Coming back from signing in with a Vesopa account.
+   *
+   * The callback put a single-use handle on the URL rather than the session
+   * itself. A URL is written to the access log, kept in browser history and
+   * handed to the next site as a Referer — and what is being passed here is a
+   * thirty-day session.
+   *
+   * EVERY FAILURE HERE IS SILENT AND LANDS ON THE MENU ANYWAY. A handle that
+   * has been used, expired, or been typed in by hand means somebody carries on
+   * as a guest, which is what they were going to do before they pressed the
+   * button. Nothing about this path is allowed to leave a person looking at an
+   * error instead of a menu.
+   */
+  function finishVesopaSignIn(){
+    var handle = null;
+    try {
+      handle = new URLSearchParams(window.location.search).get('signed_in');
+    } catch (e) { return Promise.resolve(); }
+    if (!handle) return Promise.resolve();
+
+    /* Off the URL before anything else, so a refresh or a shared link does not
+       carry a spent handle around. replaceState rather than a redirect: the
+       page has not finished loading and must not start again. */
+    try {
+      var url = new URL(window.location.href);
+      url.searchParams.delete('signed_in');
+      window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+    } catch (e) {}
+
+    return fetch('/api/public/dinein/auth/claim', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ handle: handle })
+    })
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(d){
+        if (!d || !d.token) return;
+        store(TOKEN_KEY, d.token);
+        store(ACCT_KEY, JSON.stringify(d.account || {}));
+      })
+      .catch(function(){ /* a guest, then */ });
+  }
+
+  /* The session is claimed BEFORE the menu is drawn, so the page renders once,
+     already knowing who it is talking to. Drawing first and signing in second
+     would show "Order as guest" for a moment to somebody who has just signed
+     in, which is the one thing this whole trip was for. */
+  finishVesopaSignIn().then(load, load);
 })();
 </script>
 </body>
