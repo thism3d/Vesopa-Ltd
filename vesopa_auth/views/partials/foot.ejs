@@ -39,5 +39,15 @@
 %>
 <script src="/js/loadbar.js?v=<%= config.version %>"></script>
 <script src="/js/nav.js?v=<%= config.version %>"></script>
+<%
+  /*
+   * The eye at the end of a password box. Loaded for every page rather than
+   * for the two that have a password field today, because the third one — the
+   * confirmation step — was added this week and would have been forgotten.
+   * It decorates nothing on a page with no password field and costs a cached
+   * request.
+   */
+%>
+<script src="/js/reveal.js?v=<%= config.version %>"></script>
 </body>
 </html>

@@ -1404,3 +1404,64 @@ a { color: var(--text); }
   min-width: 0;
 }
 .account-line strong { overflow-wrap: anywhere; font-size: 14.5px; }
+
+
+/* ==========================================================================
+ * "Show the password"
+ * ==========================================================================
+ * Inside the field at the right-hand end, which is where every platform puts
+ * it and therefore the only place somebody will look for it.
+ *
+ * The room is made by the field, not by the button: an absolutely positioned
+ * control does not push text out of its own way, so without the extra padding
+ * a long password runs underneath the eye and is unreadable exactly when it is
+ * being read.
+ * ======================================================================== */
+
+.reveal {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  /* 40px square: below the 44px guidance for a primary target, and this is a
+     secondary one sharing a row with a field that is itself the target. */
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.reveal svg { width: 21px; height: 21px; display: block; }
+.reveal:hover { color: var(--text); background: var(--surface-2); }
+.reveal.is-showing { color: var(--text); }
+.reveal:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+
+/* The floating-label field is 62px tall and its label sits inside, so the
+   button is centred on the box rather than on the text. */
+.float-field.has-reveal input { padding-right: 54px; }
+.float-field.has-reveal input:focus { padding-right: 53px; }
+
+/* The ordinary field is 44px tall, so the button is smaller and tighter in. */
+.field.has-reveal { position: relative; }
+.field.has-reveal input { padding-right: 46px; }
+.field.has-reveal .reveal {
+  width: 34px;
+  height: 34px;
+  right: 5px;
+  /* Not 50%: the wrapper contains the label above and the hint below, so the
+     centre of the WRAPPER is not the centre of the input. Measured from the
+     top of the field instead. */
+  top: auto;
+  bottom: 5px;
+  transform: none;
+}
+/* Where a hint sits under the field, the bottom edge is no longer the input's
+   bottom edge either. */
+.field.has-reveal:has(.hint) .reveal { bottom: auto; top: 28px; }
+.field.has-reveal .reveal svg { width: 19px; height: 19px; }

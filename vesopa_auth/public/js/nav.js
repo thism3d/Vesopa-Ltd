@@ -196,6 +196,54 @@
     var sheets = syncStylesheets(incoming);
 
     sheets.pending.then(function () {
+      /*
+       * EVERYTHING THAT TOUCHES THE NEW PAGE RUNS INSIDE `apply`, and that is
+       * not tidiness — it is a bug that was live.
+       *
+       * `document.startViewTransition(apply)` returns IMMEDIATELY and runs
+       * `apply` later, when the browser has taken its snapshot. Anything after
+       * that call therefore ran against the OUTGOING page: the heading being
+       * focused for the screen-reader announcement was the old page's heading,
+       * and the "the new page is here" event fired before the new page was.
+       * The visible symptom was the reveal button never appearing on the
+       * password step, because the script that adds it swept a body that had
+       * not been replaced yet.
+       *
+       * The URL is the one thing that is still updated straight away, so Back
+       * behaves during the transition.
+       */
+      var settled = function () {
+        window.scrollTo(0, 0);
+
+        /*
+         * Tell somebody using a screen reader that the page changed.
+         *
+         * A router that only swaps the DOM is silent to assistive technology:
+         * the browser announces a real navigation, and a fake one announces
+         * nothing at all. Moving focus to the new heading is what restores it.
+         */
+        var heading = document.querySelector('h1');
+        if (heading) {
+          heading.setAttribute('tabindex', '-1');
+          heading.focus({ preventScroll: true });
+        }
+
+        /*
+         * Anything that DECORATES a page rather than driving it needs to run
+         * again now — the reveal button on a password field, say. Those
+         * scripts guard themselves against binding twice, so being re-created
+         * with the body is not enough on its own.
+         */
+        try {
+          window.dispatchEvent(new CustomEvent('vesopa:navigated', { detail: { url: url } }));
+        } catch (e) {
+          /* An old browser without CustomEvent still gets a working page. */
+        }
+
+        // The bar has something to finish against.
+        bar.done();
+      };
+
       var apply = function () {
         document.title = incoming.title || document.title;
         document.body.className = incoming.body.className;
@@ -213,7 +261,12 @@
         sheets.stale.forEach(function (link) {
           if (link.parentNode) link.parentNode.removeChild(link);
         });
+
+        settled();
       };
+
+      if (push) window.history.pushState({ vesopa: true }, '', url);
+      current = url;
 
       // A crossfade where the browser supports it; an instant swap where it
       // does not. Never a reason to fail.
@@ -222,27 +275,6 @@
       } else {
         apply();
       }
-
-      if (push) window.history.pushState({ vesopa: true }, '', url);
-      current = url;
-
-      window.scrollTo(0, 0);
-
-      /*
-       * Tell somebody using a screen reader that the page changed.
-       *
-       * A router that only swaps the DOM is silent to assistive technology:
-       * the browser announces a real navigation, and a fake one announces
-       * nothing at all. Moving focus to the new heading is what restores it.
-       */
-      var heading = document.querySelector('h1');
-      if (heading) {
-        heading.setAttribute('tabindex', '-1');
-        heading.focus({ preventScroll: true });
-      }
-
-      // The new page is on screen: the bar has something to finish against.
-      bar.done();
     });
   }
 
