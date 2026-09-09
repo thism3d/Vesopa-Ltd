@@ -36,6 +36,19 @@ dependencies:
   # the last board it drew. All small, all local to this device.
   shared_preferences: ^2.5.5
 
+  # Signing a screen in with a Vesopa account.
+  #
+  # The system browser, not a window inside the app: an embedded webview would
+  # mean somebody typing their Vesopa password into a text field this
+  # application is drawing, which is the habit an attacker needs. The browser
+  # shows the real address bar and already has the passkey and the password
+  # manager. RFC 8252 asks native applications to do exactly this.
+  url_launcher: ^6.3.0
+  # SHA-256 for the PKCE challenge. Declared rather than leaned on: it arrives
+  # transitively today, and a package imported but not declared disappears the
+  # day that dependency drops it -- in the file the whole sign-in goes through.
+  crypto: ^3.0.3
+
   intl: ^0.20.3
   uuid: ^4.5.3
 

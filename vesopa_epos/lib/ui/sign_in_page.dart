@@ -5,6 +5,7 @@ import '../data/session_controller.dart';
 import '../data/vesopa_sso.dart';
 import '../main.dart';
 import 'theme.dart';
+import 'widgets/vesopa_mark.dart';
 
 /// Commissioning the terminal. Shown once, on first run, and again after a
 /// verified sign-out.
@@ -25,10 +26,12 @@ class _SignInPageState extends ConsumerState<SignInPage> {
   bool _busy = false;
   String? _error;
 
-  /// Whether the back office will accept a Vesopa account, asked once when the
-  /// page opens. Null while the question is still in flight, so the button does
-  /// not flash into view and back out again on a slow line.
-  VesopaOption? _vesopa;
+  /// Whether the back office will accept a Vesopa account.
+  ///
+  /// Read from [vesopaOptionProvider] in `build`, so a test can override it and
+  /// draw either shape of this page. Null while the question is in flight, so
+  /// the button does not flash into view and back out again on a slow line.
+  VesopaOption? get _vesopa => ref.watch(vesopaOptionProvider).value;
 
   /// The address the browser was sent to, shown after it opens.
   ///
@@ -37,16 +40,12 @@ class _SignInPageState extends ConsumerState<SignInPage> {
   /// phone. Without this the terminal simply appears to hang.
   Uri? _opened;
 
-  @override
-  void initState() {
-    super.initState();
-    _askAboutVesopa();
-  }
-
-  Future<void> _askAboutVesopa() async {
-    final option = await SessionController.option(ref.read(apiBaseProvider));
-    if (mounted) setState(() => _vesopa = option);
-  }
+  /// Whether the back office says Vesopa is the only way to commission a till.
+  ///
+  /// False while the question is still in flight, so the page does not flash
+  /// the password fields away on a slow line — it starts as the venue had it
+  /// and settles once the answer lands.
+  bool get _vesopaOnly => (_vesopa?.enabled ?? false) && (_vesopa?.only ?? false);
 
   Future<void> _vesopaSignIn() async {
     final option = _vesopa;
@@ -154,8 +153,14 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'Use your back office account. The till will load your '
-                      'venue\'s products, deals and floor plan.',
+                      _vesopaOnly
+                          ? 'Sign in with your Vesopa account. The till will '
+                                'load your venue\'s products, deals and floor '
+                                'plan.\n\nStaff are added by your manager in '
+                                'the back office — this is not the same as '
+                                'signing on to sell.'
+                          : 'Use your back office account. The till will load '
+                                'your venue\'s products, deals and floor plan.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 12.5,
@@ -165,6 +170,12 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                     ),
                     const SizedBox(height: 26),
 
+                    // Email and password, for a venue that has not moved over
+                    // yet. Hidden — not deleted — once the back office says
+                    // Vesopa is the only way in, so rolling back is a flag and
+                    // a restart rather than a Store release. See
+                    // VesopaOption.only.
+                    if (!_vesopaOnly) ...[
                     TextField(
                       controller: _email,
                       enabled: !_busy,
@@ -190,6 +201,7 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                         border: OutlineInputBorder(),
                       ),
                     ),
+                    ],
 
                     if (_error != null) ...[
                       const SizedBox(height: 16),
@@ -220,65 +232,106 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                       ),
                     ],
 
-                    const SizedBox(height: 22),
-                    FilledButton(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: Pos.brand,
-                        foregroundColor: Pos.onBrand,
-                        padding: const EdgeInsets.symmetric(vertical: 15),
-                      ),
-                      onPressed: _busy ? null : _submit,
-                      child: _busy
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Pos.onBrand,
-                              ),
-                            )
-                          : const Text(
-                              'Sign in',
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                    ),
-
-                    if (_vesopa?.enabled ?? false) ...[
-                      const SizedBox(height: 18),
-                      Row(
-                        children: [
-                          const Expanded(child: Divider()),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            child: Text(
-                              'or',
-                              style: TextStyle(
-                                fontSize: 11.5,
-                                color: Theme.of(context).hintColor,
-                              ),
-                            ),
-                          ),
-                          const Expanded(child: Divider()),
-                        ],
-                      ),
-                      const SizedBox(height: 18),
-                      OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
+                    if (!_vesopaOnly) ...[
+                      const SizedBox(height: 22),
+                      FilledButton(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Pos.brand,
+                          foregroundColor: Pos.onBrand,
                           padding: const EdgeInsets.symmetric(vertical: 15),
                         ),
-                        onPressed: _busy ? null : _vesopaSignIn,
-                        icon: const Icon(Icons.open_in_new, size: 18),
-                        label: const Text(
-                          'Continue with Vesopa',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
+                        onPressed: _busy ? null : _submit,
+                        child: _busy
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Pos.onBrand,
+                                ),
+                              )
+                            : const Text(
+                                'Sign in',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
                       ),
+                    ],
+
+                    if (_vesopa?.enabled ?? false) ...[
+                      // The rule between the two ways in, drawn only while
+                      // there ARE two. With Vesopa on its own there is nothing
+                      // to separate.
+                      if (!_vesopaOnly) ...[
+                        const SizedBox(height: 18),
+                        Row(
+                          children: [
+                            const Expanded(child: Divider()),
+                            Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 12),
+                              child: Text(
+                                'or',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  color: Theme.of(context).hintColor,
+                                ),
+                              ),
+                            ),
+                            const Expanded(child: Divider()),
+                          ],
+                        ),
+                      ],
+                      const SizedBox(height: 18),
+                      // "(Vesopa icon) Login with Vesopa" — the brand's own
+                      // mark rather than the open-in-new arrow it wore before,
+                      // and a filled button rather than an outlined one when
+                      // it is the only way in. A venue should not have to work
+                      // out which of two buttons is the real one.
+                      _vesopaOnly
+                          ? FilledButton.icon(
+                              style: FilledButton.styleFrom(
+                                backgroundColor: Pos.brand,
+                                foregroundColor: Pos.onBrand,
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 15),
+                              ),
+                              onPressed: _busy ? null : _vesopaSignIn,
+                              icon: _busy
+                                  ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Pos.onBrand,
+                                      ),
+                                    )
+                                  : const VesopaMark(size: 20),
+                              label: const Text(
+                                'Login with Vesopa',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            )
+                          : OutlinedButton.icon(
+                              style: OutlinedButton.styleFrom(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 15),
+                              ),
+                              onPressed: _busy ? null : _vesopaSignIn,
+                              icon: const VesopaMark(size: 18),
+                              label: const Text(
+                                'Login with Vesopa',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
                       // The address, once the browser has been sent to it. A
                       // kiosked till may have no browser at all; this is what
                       // lets the sign-in be finished on a phone instead.

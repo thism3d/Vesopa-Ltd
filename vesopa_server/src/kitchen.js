@@ -1023,6 +1023,25 @@ function kitchenAppRoutes({ pool, broadcast, secret }) {
    */
   router.post('/kitchen/verify', kitchen, async (req, res, next) => {
     try {
+      /*
+       * A screen commissioned with a Vesopa account has no typed password to
+       * re-enter, and this route exists to stop a passer-by in a kitchen
+       * rebranding a display.
+       *
+       * Said plainly rather than answered with "that is not the password for
+       * this screen", which would be true and useless: there is no password
+       * for this screen, and the person reading it would try three more times.
+       * Branding is a venue-wide setting and the back office is where every
+       * other one of them already lives.
+       */
+      if (req.kitchen && req.kitchen.via === 'vesopa') {
+        return res.status(403).json({
+          error: 'This screen was set up with a Vesopa account, so it has no '
+            + 'screen password. Change the branding in the back office under '
+            + 'Kitchen screens.',
+        });
+      }
+
       const ok = await passwordMatches(
         req.office,
         req.kitchen.user,

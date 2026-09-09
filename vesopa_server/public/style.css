@@ -210,6 +210,10 @@ h3 { font-size: 16px; }
    from the layout, so the card does not keep a gap where a password box used
    to be. */
 .vesopa-only [data-local-auth] { display: none !important; }
+/* And the other way round: the line that only makes sense once Vesopa is the
+   only door. `hidden` in the markup keeps it away from every venue that has
+   not moved over, without a second flag to set. */
+.vesopa-only [data-vesopa-only] { display: block !important; }
 
 .login-card h1 {
   font-size: clamp(24px, 2.2vw, 28px);

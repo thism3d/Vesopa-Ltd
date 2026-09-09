@@ -7,6 +7,7 @@ import 'kitchen_api.dart';
 import 'kitchen_branding.dart';
 import 'providers.dart';
 import 'screen_profile.dart';
+import 'vesopa_sso.dart';
 
 /// Who this screen is signed in as, and which board it is.
 ///
@@ -238,6 +239,45 @@ class KitchenSessionController extends AsyncNotifier<KitchenSession> {
     );
 
     await _persist(session);
+  }
+
+  /// Set this screen up with a Vesopa account.
+  ///
+  /// The person proves who they are to auth.vesopa.com in the system browser,
+  /// and the back office turns that into this screen's own ninety-day token.
+  /// From there nothing downstream can tell which door was used, which is what
+  /// keeps this an addition rather than a second system.
+  Future<void> signInWithVesopa({
+    required String issuer,
+    required String clientId,
+    void Function(Uri url)? onUrl,
+  }) async {
+    final idToken = await VesopaSso(issuer: issuer, clientId: clientId)
+        .authorize(onUrl: onUrl);
+    final result = await _api.commissionWithVesopa(idToken);
+
+    // The screen's profile, read with the token it was just handed. The typed
+    // door gets this back from the sign-in itself; this door issues the token
+    // first and then asks, which is one extra round trip on a screen that is
+    // set up once.
+    final profile = await _api.profile();
+
+    await _persist(
+      KitchenSession(
+        token: result.token,
+        office: profile.office.isEmpty ? result.office : profile.office,
+        officeName: profile.officeName,
+        userName: profile.userName,
+        stationNames: profile.stationNames,
+        screens: profile.screens,
+        branding: profile.branding,
+        // Unset, exactly as the typed door leaves it: the screen picker is
+        // shown straight after a first sign-in, and guessing here would put a
+        // chef in front of a board that is nearly right -- which is harder to
+        // notice than one that is obviously unset.
+        screenId: null,
+      ),
+    );
   }
 
   /// Re-read the venue's screens and station names.

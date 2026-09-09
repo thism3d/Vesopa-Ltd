@@ -186,6 +186,56 @@ class KitchenApi {
     return (token: issued, profile: KitchenProfile.fromJson(body));
   }
 
+  /// What the back office says about signing in with a Vesopa account.
+  ///
+  /// The till's own endpoint, shared: the issuer and the public client id are
+  /// the same for both applications -- see `data/vesopa_sso.dart` for why --
+  /// and a second route answering the same two strings would be a second thing
+  /// to keep in step.
+  Future<({bool enabled, bool only, String issuer, String clientId})?>
+      vesopaOption() async {
+    try {
+      final body = await _send(
+        'GET',
+        '/api/terminal/vesopa/enabled',
+        authorised: false,
+      );
+      if (body['enabled'] != true) return null;
+      return (
+        enabled: true,
+        only: body['only'] == true,
+        issuer: body['issuer'] as String,
+        clientId: body['clientId'] as String,
+      );
+    } catch (_) {
+      // A screen that cannot ask keeps the typed form it has always had.
+      return null;
+    }
+  }
+
+  /// Set this screen up from a person's Vesopa account.
+  ///
+  /// The back office decides what that account may commission -- the same
+  /// matching and access rules the browser and the till go through -- and
+  /// issues the screen's own token. The token is the screen's from then on;
+  /// nobody stays signed in as a person.
+  Future<({String token, String office})> commissionWithVesopa(
+    String idToken,
+  ) async {
+    final body = await _send(
+      'POST',
+      '/api/kitchen/vesopa/commission',
+      body: {'id_token': idToken},
+      authorised: false,
+    );
+    final issued = body['token'] as String?;
+    if (issued == null) {
+      throw KitchenApiError('The back office did not set this screen up.');
+    }
+    token = issued;
+    return (token: issued, office: body['office'] as String? ?? '');
+  }
+
   /// Re-read the venue's screens and station names without signing in again.
   Future<KitchenProfile> profile() async =>
       KitchenProfile.fromJson(await _send('GET', '/api/kitchen/profile'));

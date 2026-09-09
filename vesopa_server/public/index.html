@@ -83,7 +83,7 @@
                href="/auth/vesopa/start">
               <img src="/assets/vesopa_mark.svg" alt="" width="20" height="20"
                    class="sso-mark" />
-              <span>Continue with Vesopa</span>
+              <span>Login with Vesopa</span>
             </a>
           </div>
 
@@ -124,10 +124,21 @@
           <p id="login-error" class="error" role="alert" aria-live="polite"></p>
 
 
-          <p class="login-foot">
+          <!-- Marked as local auth so it goes with the password form.
+               "Don't have an account?" is a question for a prospect, and with
+               Vesopa as the only way in the person reading this page is a
+               member of a venue's staff whose manager adds them in Staff. An
+               invitation to sign up, on a door that cannot be signed up
+               through, is the sort of promise this product does not make. -->
+          <p class="login-foot" data-local-auth>
             Don't have an account?
             <a href="https://vesopaepos.com/#try-vesopa" target="_blank"
                rel="noopener">Request a demo</a>
+          </p>
+          <!-- What replaces it, and it is the true answer: there is no
+               self-registration anywhere in this platform. -->
+          <p class="login-foot" data-vesopa-only hidden>
+            Staff are added by your manager under <strong>Staff</strong>.
           </p>
         </form>
 

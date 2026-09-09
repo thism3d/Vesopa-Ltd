@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -5,6 +7,7 @@ import '../config/constants.dart';
 import '../data/providers.dart';
 import 'theme.dart';
 import 'widgets/brand_mark.dart';
+import 'widgets/vesopa_mark.dart';
 import 'widgets/on_screen_keyboard.dart';
 
 /// Signing a kitchen screen in.
@@ -42,6 +45,74 @@ class _SignInPageState extends ConsumerState<SignInPage> {
   bool _busy = false;
   bool _revealed = false;
   String? _error;
+
+  /// Whether the back office offers a Vesopa account, and whether it is meant
+  /// to be the only way in. Null while the question is in flight, so the page
+  /// does not flash one shape and settle into the other on a slow line.
+  ({bool enabled, bool only, String issuer, String clientId})? _vesopa;
+
+  /// Set when somebody chooses the screen login instead.
+  ///
+  /// A way through rather than a way round: a venue mid-migration, a screen
+  /// being set up before anybody has a Vesopa account, and the morning the
+  /// identity provider is the thing that is down. Hidden behind a press, so
+  /// the page still has one obvious answer on it.
+  bool _typedInstead = false;
+
+  /// The address the browser was sent to, once it has been opened.
+  ///
+  /// A kitchen screen is a wall-mounted machine that may have no browser to
+  /// hand it to, and somebody who can READ the address can finish on a phone.
+  /// Without this the screen simply appears to hang.
+  Uri? _opened;
+
+  bool get _vesopaOnly =>
+      (_vesopa?.enabled ?? false) && (_vesopa?.only ?? false) && !_typedInstead;
+
+  bool get _showsTyped => !(_vesopa?.enabled ?? false) || !_vesopaOnly;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_askAboutVesopa());
+  }
+
+  Future<void> _askAboutVesopa() async {
+    final option = await ref.read(kitchenApiProvider).vesopaOption();
+    if (mounted) setState(() => _vesopa = option);
+  }
+
+  /// Set this screen up with a Vesopa account.
+  Future<void> _vesopaSignIn() async {
+    final option = _vesopa;
+    if (option == null || !option.enabled) return;
+
+    setState(() {
+      _busy = true;
+      _error = null;
+      _opened = null;
+    });
+
+    try {
+      await ref.read(kitchenSessionProvider.notifier).signInWithVesopa(
+            issuer: option.issuer,
+            clientId: option.clientId,
+            onUrl: (url) {
+              if (mounted) setState(() => _opened = url);
+            },
+          );
+      // Nothing to do on success: the app watches the session and swaps this
+      // page for the board.
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = '$e';
+          _busy = false;
+          _opened = null;
+        });
+      }
+    }
+  }
 
   @override
   void dispose() {
@@ -123,8 +194,12 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                   ),
                   SizedBox(height: 4),
                   Text(
-                    'Sign this screen in with the kitchen login created in the '
-                    'back office, under Kitchen screens.',
+                    _vesopaOnly
+                        ? 'Sign this screen in with your Vesopa account. The '
+                              'screen keeps its own login from then on — '
+                              'nobody stays signed in as you.'
+                        : 'Sign this screen in with the kitchen login created '
+                              'in the back office, under Kitchen screens.',
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: skin.inkMuted,
@@ -132,6 +207,77 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                   ),
                   const SizedBox(height: 22),
 
+                  // Outside the typed block, because a Vesopa sign-in can fail
+                  // too and its message has to be readable on a page with no
+                  // fields on it.
+                  if (_error != null) ...[
+                    const SizedBox(height: 14),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Kds.late.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        _error!,
+                        style: const TextStyle(color: Kds.late),
+                      ),
+                    ),
+                  ],
+
+                  // "(Vesopa icon) Login with Vesopa", first on the page and,
+                  // where the venue has moved over, the only thing on it.
+                  if (_vesopa?.enabled ?? false) ...[
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: _busy ? null : _vesopaSignIn,
+                        icon: _busy
+                            ? const SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.4,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const VesopaMark(size: 22),
+                        label: const Text('Login with Vesopa'),
+                      ),
+                    ),
+                    if (_opened != null) ...[
+                      const SizedBox(height: 10),
+                      SelectableText(
+                        'Finish in the browser, or open:\n${_opened!.origin}',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: skin.inkMuted,
+                        ),
+                      ),
+                    ],
+                    // The way through for a venue mid-migration, and for the
+                    // morning auth.vesopa.com is the thing that is down. A
+                    // press rather than a second button, so the page still has
+                    // one obvious answer on it.
+                    if (_vesopaOnly) ...[
+                      const SizedBox(height: 12),
+                      TextButton(
+                        onPressed: _busy
+                            ? null
+                            : () => setState(() => _typedInstead = true),
+                        child: const Text('Use a screen login instead'),
+                      ),
+                    ],
+                    if (_showsTyped) const SizedBox(height: 22),
+                  ],
+
+                  // The screen login: three fields, the on-screen keyboard
+                  // and its own button. Hidden as one block rather than field
+                  // by field, so a field added here later is covered by the
+                  // same rule instead of quietly reappearing on a page that is
+                  // supposed to have one way in.
+                  if (_showsTyped) ...[
                   _FieldBox(
                     label: 'Venue',
                     hint: 'The office email your tills use',
@@ -169,22 +315,6 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                     ),
                   ),
 
-                  if (_error != null) ...[
-                    const SizedBox(height: 14),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Kds.late.withValues(alpha: 0.10),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        _error!,
-                        style: const TextStyle(color: Kds.late),
-                      ),
-                    ),
-                  ],
-
                   const SizedBox(height: 16),
                   SizedBox(
                     width: double.infinity,
@@ -211,6 +341,7 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                         ? 'Sign in'
                         : 'Next',
                   ),
+                  ],
 
                   SizedBox(height: 14),
                   Text(

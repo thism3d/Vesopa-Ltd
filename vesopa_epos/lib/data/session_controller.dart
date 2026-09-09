@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'vesopa_sso.dart';
+import '../main.dart' show apiBaseProvider;
 
 /// Who is signed into this terminal.
 class Session {
@@ -170,6 +171,10 @@ class SessionController extends AsyncNotifier<Session> {
       if (body['enabled'] != true) return const VesopaOption.off();
       return VesopaOption(
         enabled: true,
+        // Absent means false, which is a back office that has not been updated
+        // — and that venue keeps the email and password fields it has always
+        // had rather than being left with a screen it cannot use.
+        only: body['only'] == true,
         issuer: body['issuer'] as String,
         clientId: body['clientId'] as String,
       );
@@ -262,17 +267,48 @@ class VesopaOption {
     required this.enabled,
     required this.issuer,
     required this.clientId,
+    this.only = false,
   });
 
   const VesopaOption.off()
       : enabled = false,
+        only = false,
         issuer = '',
         clientId = '';
 
   final bool enabled;
+
+  /// Whether this is the ONLY way to commission a terminal.
+  ///
+  /// The venue's own decision, answered by the back office rather than built
+  /// in, so turning it off is a flag and a restart rather than a Store
+  /// release — see /api/terminal/vesopa/enabled.
+  ///
+  /// There is no offline argument for keeping the password form here, and it
+  /// is worth saying why: BOTH doors post to the back office. This screen is
+  /// shown once, on first run, to commission a terminal against a venue, and a
+  /// terminal with no network cannot be commissioned by any route. What a till
+  /// does when the broadband drops mid-service is a different question, with a
+  /// different answer — it carries on selling from its local database.
+  final bool only;
+
   final String issuer;
   final String clientId;
 }
+
+/// What the back office says about signing in with a Vesopa account.
+///
+/// A provider rather than a call from the page's `initState`, so the two
+/// shapes this screen takes — with the password fields and without — can each
+/// be built in a test by overriding one thing. That was the practical
+/// difference between "the sign-in page is covered" and "somebody will find
+/// out at a venue".
+///
+/// Answers "off" when the back office cannot be reached, which leaves the page
+/// exactly as it was before any of this existed.
+final vesopaOptionProvider = FutureProvider<VesopaOption>(
+  (ref) => SessionController.option(ref.watch(apiBaseProvider)),
+);
 
 final sessionControllerProvider =
     AsyncNotifierProvider<SessionController, Session>(SessionController.new);

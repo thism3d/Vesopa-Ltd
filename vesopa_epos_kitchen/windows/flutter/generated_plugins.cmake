@@ -7,6 +7,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   local_notifier
   printing
   screen_retriever_windows
+  url_launcher_windows
   window_manager
 )
 

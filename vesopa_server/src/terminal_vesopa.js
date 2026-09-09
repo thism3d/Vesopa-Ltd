@@ -34,11 +34,16 @@ const crypto = require('crypto');
 const express = require('express');
 
 const { linkAndFind } = require('./backoffice_auth');
+const jwt = require('jsonwebtoken');
 
 const ISSUER = (process.env.VESOPA_AUTH_ISSUER || 'https://auth.vesopa.com').replace(/\/+$/, '');
 const TILL_CLIENT_ID = process.env.VESOPA_AUTH_TILL_CLIENT_ID || '';
 const ENABLED =
   String(process.env.VESOPA_AUTH_TILL_ENABLED || '').toLowerCase() === 'on' && Boolean(TILL_CLIENT_ID);
+
+// See the note on /api/terminal/vesopa/enabled. Ignored unless sign-in is live.
+const TILL_ONLY = ENABLED
+  && String(process.env.VESOPA_AUTH_TILL_ONLY || '').toLowerCase() === 'on';
 
 const MAX_TOKEN_AGE_SECONDS = 600;
 
@@ -138,9 +143,31 @@ async function verifyTillToken(idToken) {
 function terminalVesopaRoutes({ pool, secret, issueToken, issueTerminalToken }) {
   const router = express.Router();
 
+  /*
+   * VESOPA AND NOTHING ELSE, when the venue is ready for it.
+   *
+   * The owner's instruction for the whole platform: one way in, with the
+   * Vesopa mark on it. `only` tells the till to stop drawing the email and
+   * password fields beside the button.
+   *
+   * IT IS A FLAG AND NOT A DELETION, which is the same rule the back office
+   * follows. The password endpoint, its hashes and the till's own form all
+   * still exist; rolling back is turning this off and restarting, which is a
+   * thing somebody can do at seven on a Friday with a room full of covers.
+   * Deleting the code would make the rollback a deploy.
+   *
+   * It cannot turn itself on by accident: with Vesopa sign-in not live, `only`
+   * would leave a terminal with no way to be commissioned at all, so it is
+   * ignored.
+   */
   router.get('/api/terminal/vesopa/enabled', (req, res) => {
     res.set('Cache-Control', 'no-store');
-    res.json({ enabled: ENABLED, issuer: ISSUER, clientId: ENABLED ? TILL_CLIENT_ID : null });
+    res.json({
+      enabled: ENABLED,
+      only: TILL_ONLY,
+      issuer: ISSUER,
+      clientId: ENABLED ? TILL_CLIENT_ID : null,
+    });
   });
 
   if (!ENABLED) {
@@ -202,6 +229,97 @@ function terminalVesopaRoutes({ pool, secret, issueToken, issueTerminalToken }) 
         terminalToken: issueTerminalToken(user, secret),
         user,
       });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  /*
+   * The same door, for a kitchen screen.
+   *
+   * WHAT A KITCHEN SIGN-IN IS, AND WHY THIS DOES NOT REPLACE IT WHOLESALE
+   *
+   * A kitchen screen's own credential -- the venue, a username and a password
+   * created in the back office under Kitchen screens -- belongs to the WALL and
+   * not to a person. That is deliberate and it is worth keeping: a screen can
+   * be turned off without turning a person off, and nobody's identity is left
+   * signed in on a display the whole kitchen can see for ninety days.
+   *
+   * What the venue asked for is one way in across the software, and this is
+   * that: a manager signs the screen in once with their Vesopa account and the
+   * server issues the screen's token. The typed credential comes off the
+   * screen; it is still what the token names, and still what the back office
+   * manages.
+   *
+   * A screen commissioned this way is marked `via: vesopa` on its token. That
+   * matters in one place: `PUT /kitchen/profile/branding` asks for the screen
+   * password before it will rebrand a display, and a screen with no typed
+   * password cannot answer. Those screens are rebranded from the back office
+   * instead, which is where every other venue-wide setting already lives.
+   */
+  /**
+   * A kitchen screen's own token, for a screen commissioned with Vesopa.
+   *
+   * The same shape `/api/kitchen/login` issues, so nothing downstream can tell
+   * which door a screen came through — `scope`, `office`, `user` and `name` are
+   * what every kitchen route reads.
+   *
+   * `user` is the person's address rather than a kitchen login's username,
+   * because that is the truth about who set this screen up, and `via` records
+   * how. See the note above for the one route that reads `via`.
+   */
+  function issueKitchenToken(office, claims, secret) {
+    if (!office) return null;
+    return jwt.sign(
+      {
+        scope: 'kitchen',
+        office,
+        user: String(claims.email).toLowerCase(),
+        name: claims.name || claims.email,
+        via: 'vesopa',
+      },
+      secret,
+      // Ninety days, matching the typed door. A wall screen signed in every
+      // week is a wall screen somebody props open.
+      { expiresIn: '90d' }
+    );
+  }
+
+  router.post('/api/kitchen/vesopa/commission', express.json(), async (req, res, next) => {
+    try {
+      let claims;
+      try {
+        claims = await verifyTillToken((req.body || {}).id_token);
+      } catch (error) {
+        console.warn('[kitchen_vesopa] refused a token:', error.message);
+        return res.status(401).json({ error: 'That sign-in could not be accepted.' });
+      }
+
+      if (!claims.email || claims.email_verified !== true) {
+        return res.status(403).json({
+          error: 'Your Vesopa account has no confirmed email address.',
+        });
+      }
+
+      // The same matching, linking and access rules as every other door.
+      const user = await linkAndFind(pool, claims);
+      if (!user) {
+        return res.status(403).json({
+          error: 'There is no back-office user for that address. Ask your manager to add you.',
+        });
+      }
+      if (user.blocked) return res.status(403).json({ error: user.blocked });
+      if (!user.officeEmail) {
+        return res.status(403).json({
+          error: 'Your account is not attached to a venue, so it cannot set up a kitchen screen.',
+        });
+      }
+
+      const token = issueKitchenToken(user.officeEmail, claims, secret);
+      if (!token) {
+        return res.status(500).json({ error: 'That screen could not be set up.' });
+      }
+      return res.json({ token, office: user.officeEmail });
     } catch (error) {
       return next(error);
     }
