@@ -88,6 +88,33 @@
    * already run by the time any of them are parsed.
    */
   document.documentElement.dataset.js = '1';
+
+  /*
+   * THE BAR STARTS HERE, NOT ON THE FIRST PRESS.
+   *
+   * loadbar.js is loaded at the end of the body, so until now the Vesopa bar
+   * could only ever describe a navigation that had already finished arriving —
+   * it showed for a click and never for the page the click led to. On a slow
+   * connection that is exactly backwards: the wait somebody actually notices is
+   * the first one, and the only thing filling it was the browser's own bar,
+   * which is the thing the owner asked to be rid of.
+   *
+   * Three lines, inline, in the head, because that is the only place that runs
+   * before first paint. It appends to <html> rather than <body>, which does not
+   * exist yet. loadbar.js adopts it a moment later and finishes it on `load` —
+   * see the note there on why it must not simply start a second one.
+   *
+   * Wrapped in try/catch like the theme setter above it: a sign-in page must
+   * not be taken down by a progress bar.
+   */
+  try {
+    var vBar = document.createElement('div');
+    vBar.id = 'loadbar';
+    vBar.className = 'on';
+    vBar.setAttribute('aria-hidden', 'true');
+    vBar.style.width = '10%';
+    document.documentElement.appendChild(vBar);
+  } catch (e) {}
 </script>
 </head>
 <%

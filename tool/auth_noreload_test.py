@@ -85,10 +85,15 @@ def main():
             print("  ok  a link does not reload the page")
 
         # --- a form, which is the new part ----------------------------------
-        page.goto(f"{BASE}/account/profile", wait_until="networkidle")
+        #
+        # The display-name editor, which saves the value it was given straight
+        # back. It replaced the old four-box profile form when the personal-info
+        # page became a list of values, and it is the right one to use here for
+        # the same reason: it changes nothing and it redirects.
+        page.goto(f"{BASE}/account/profile/edit/display_name", wait_until="networkidle")
         loads.clear()
         page.evaluate("window.__marker = 'form'")
-        page.click('form[action="/account/profile"] button[type="submit"]')
+        page.click('form[action="/account/profile/edit/display_name"] button[type="submit"]')
         page.wait_for_timeout(2500)
 
         if page.evaluate("window.__marker") != "form":

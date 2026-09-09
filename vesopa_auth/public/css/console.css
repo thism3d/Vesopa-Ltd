@@ -1555,3 +1555,48 @@ pre.code {
   border-radius: 10px;
 }
 .access-mark svg { width: 19px; height: 19px; }
+
+
+/* ==========================================================================
+ * A value that opens its own page
+ * ==========================================================================
+ * The personal-info rows. Same treatment as the account hub's rows, with the
+ * two lines the other way up: the LABEL is the small grey one and the VALUE is
+ * the large one, because the value is what somebody is scanning for. A row
+ * with nothing in it says so in the same grey as the label, so an empty
+ * account does not read as a page that failed to load.
+ * ======================================================================== */
+
+/* TWO COLUMNS, NOT THREE.
+ *
+ * `.hub-row` is `grid-template-columns: 44px minmax(0,1fr) 20px` — a mark, the
+ * lines, a chevron. A value row has no mark, so its lines landed in the 44px
+ * column and its chevron in the flexible one: measured on the live page, the
+ * text column was 44px wide and "Vesopa Administrator" came down it one
+ * syllable at a time. Nothing about `flex` on the child could have fixed that,
+ * because the parent is a grid and the child's width was never its own to
+ * choose. */
+.value-rows .hub-row { padding-block: 14px; grid-template-columns: minmax(0, 1fr) 20px; }
+/* A flex column, because `order` is what puts the label above the value and it
+   does nothing to a pair of block-level spans.
+ *
+ * `flex: 1 1 auto` is not optional and was the bug: `.hub-row` is a flex row,
+ * and a flex ITEM that is itself a flex container stops filling the row and
+ * shrinks to its content's minimum. Measured on the live page, "Vesopa
+ * Administrator" came out one letter per line down a 60px column. The block
+ * version filled the row for free; this one has to be told to. */
+.value-rows .hub-lines { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
+.value-rows .hub-sub { order: -1; margin: 0 0 3px; font-size: 12.5px; }
+/* `break-word`, not `anywhere`: a long address should wrap rather than widen
+   the row, and a name should never be hyphenated mid-word to achieve it. */
+.value-rows .hub-title { font-size: 16px; font-weight: 500; overflow-wrap: break-word; }
+.value-rows .hub-title.is-blank { color: var(--text-muted); font-weight: 400; }
+
+/* The picture, its button and its note stack. Left as an inline row, "Upload
+   this picture" sat in the avatar's armpit. */
+.picture-panel form { display: flex; flex-direction: column; align-items: flex-start; }
+.picture-panel .avatar-control { align-self: flex-start; }
+
+/* Save and Cancel, side by side, Save first. */
+.edit-actions { display: flex; align-items: center; gap: 10px; margin-top: 20px; }
+.edit-actions .btn { width: auto; min-width: 104px; }

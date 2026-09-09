@@ -48,14 +48,29 @@
     input.setAttribute('data-reveal-ready', '');
 
     /*
-     * The button is placed inside whatever wrapper the field already has —
-     * `.float-field` on the sign-in step, `.field` elsewhere — because both are
-     * `position: relative` and neither needs a new element around the input.
-     * Where there is no wrapper we leave the field alone rather than
-     * restructuring somebody's markup from JavaScript.
+     * WHERE THE BUTTON GOES, and why it is not simply "the field's wrapper".
+     *
+     * On the sign-in step the wrapper is `.float-field`, which contains the
+     * input and its floating label and nothing else — so the wrapper's box IS
+     * the input's box, and centring on it is centring on the field.
+     *
+     * Everywhere else the wrapper is `.field`, which also contains a label
+     * ABOVE and usually a hint BELOW. Centring on that would put the eye
+     * somewhere in the middle of three stacked things, and offsetting it by a
+     * guessed number of pixels breaks the first time somebody's label wraps to
+     * two lines. So the input gets a wrapper of its own, added here, sized by
+     * the input and nothing else.
      */
-    var wrap = input.closest('.float-field, .field');
-    if (!wrap) return;
+    var host = input.closest('.float-field');
+    if (!host) {
+      var field = input.closest('.field');
+      if (!field) return;
+      host = document.createElement('span');
+      host.className = 'reveal-wrap';
+      input.parentNode.insertBefore(host, input);
+      host.appendChild(input);
+    }
+    var wrap = host;
 
     var button = document.createElement('button');
     button.type = 'button';

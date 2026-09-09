@@ -8,10 +8,10 @@ pixel, that one wins.
 
 Status: `[x]` done and proven on the live server · `[~]` partly done · `[ ]` not started
 
-**Where it got to.** Everything except two items, both noted below: the
-personal-info page is still one form rather than a list of values opening
-editor pages (C2/C4 — the sideways scroll it caused IS fixed), and the loading
-bar still starts on a click rather than on first paint (C5).
+**Where it got to.** All of it. C2, C4 and C5 — the last three — were finished
+in the round of work recorded in `PLAN-1691.md`: the personal-info page is a
+list of values, each opening its own editor page; and the loading bar is
+started inline in the head, before first paint, rather than on a click.
 
 ---
 
@@ -87,14 +87,17 @@ from signing in to VS Code with Google.
 - [x] **C1** `/account` becomes the **hub**: identity card with the avatar
       carrying a pencil badge, then colour-grouped rows. No tab strip on a
       phone; the rail stays on desktop.
-- [~] **C2** `/account/profile` becomes a **list of values**, each opening its
+- [x] **C2** `/account/profile` becomes a **list of values**, each opening its
       own editor page. One thing on screen at a time.
 - [x] **C3** **The avatar is the control** — click the picture, choose, crop in
       the browser, upload. This also removes `.avatar-row`, which is the thing
       making every account page scroll sideways (measured: 357px min-content).
-- [~] **C4** The floating-label field from `…715`, and a date input that is not
-      a 102px stub.
-- [ ] **C5** The loading bar on **first paint**, not only on a click.
+- [x] **C4** The floating-label field from `…715`, and a date input that is not
+      a 102px stub — `input[type=date]` was not in the shared input rule at all,
+      so Safari drew its own.
+- [x] **C5** The loading bar on **first paint**, not only on a click. Three
+      lines inline in the head, which is the only place that runs before the
+      first paint; loadbar.js adopts it and finishes it on `load`.
 - [x] **C6** A test that no page is wider than its viewport, at 360px.
 
 ### D — Images and first impression

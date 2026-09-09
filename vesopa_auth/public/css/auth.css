@@ -1447,21 +1447,11 @@ a { color: var(--text); }
 .float-field.has-reveal input { padding-right: 54px; }
 .float-field.has-reveal input:focus { padding-right: 53px; }
 
-/* The ordinary field is 44px tall, so the button is smaller and tighter in. */
-.field.has-reveal { position: relative; }
-.field.has-reveal input { padding-right: 46px; }
-.field.has-reveal .reveal {
-  width: 34px;
-  height: 34px;
-  right: 5px;
-  /* Not 50%: the wrapper contains the label above and the hint below, so the
-     centre of the WRAPPER is not the centre of the input. Measured from the
-     top of the field instead. */
-  top: auto;
-  bottom: 5px;
-  transform: none;
-}
-/* Where a hint sits under the field, the bottom edge is no longer the input's
-   bottom edge either. */
-.field.has-reveal:has(.hint) .reveal { bottom: auto; top: 28px; }
-.field.has-reveal .reveal svg { width: 19px; height: 19px; }
+/* Everywhere else the input is wrapped by reveal.js in an element that is
+   exactly the input's size — see the note there. The button can then be
+   centred on it, with no guessed offsets to be wrong about when a label wraps
+   to two lines. */
+.reveal-wrap { position: relative; display: block; }
+.reveal-wrap.has-reveal input { padding-right: 46px; }
+.reveal-wrap .reveal { width: 34px; height: 34px; right: 5px; }
+.reveal-wrap .reveal svg { width: 19px; height: 19px; }

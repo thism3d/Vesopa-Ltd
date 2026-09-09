@@ -5,19 +5,45 @@
 
 <%
   /*
+   * A LIST OF VALUES, NOT A FORM — `reference_design/…` §C2, and the last
+   * unfinished item of the redesign.
+   *
+   * What was here was four boxes and one Save. That is fine on a laptop and it
+   * is four decisions at once on a phone, with a soft keyboard covering half of
+   * them; and it is not the shape anybody who has used a Google or an Apple
+   * account expects to find. Now each value is a row that says what it is and
+   * what it currently says, and tapping it gives you that one thing on a page
+   * of its own.
+   *
+   * The rows read as a table of facts rather than as navigation, which is
+   * exactly what they are — so they use the same `.hub-row` treatment as the
+   * account hub, and the chevron says they open.
+   */
+  const shown = (name) => {
+    const raw = user[name];
+    if (!raw) return '';
+    if (name === 'date_of_birth') {
+      const iso = String(raw).slice(0, 10);
+      const date = new Date(`${iso}T00:00:00Z`);
+      return Number.isNaN(date.getTime())
+        ? iso
+        : date.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+    }
+    return String(raw);
+  };
+%>
+
+<%
+  /*
    * THE PICTURE IS THE CONTROL — reference_design §6.3, and `…730` where the
-   * avatar carries a pencil badge on its corner.
+   * avatar carries a badge on its corner.
    *
    * What was here before was a raw `<input type=file>` and an Upload button in
    * a non-wrapping flex row, and it was not merely ugly: MEASURED with
    * tool/auth_overflow.py, `.avatar-row` had a min-content width of 357px,
    * which set its panel to 399 and `.console-main` to 431 on a 360px screen.
    * The profile picture control was the reason EVERY account page scrolled
-   * sideways on a phone. Rebuilding it fixes both complaints at once.
-   *
-   * The file input is still a real file input — it is simply the label that is
-   * visible, so the picture and the words under it are both the button. No
-   * script is needed for it to work.
+   * sideways on a phone.
    */
 %>
 <section class="panel picture-panel">
@@ -50,9 +76,8 @@
        * "submits itself when a file is chosen" — and the script that would have
        * done that was never written. So for everybody with scripting on, which
        * is everybody, choosing a picture selected a file into a hidden input
-       * and nothing happened at all. That is the fault the owner reported, and
-       * the reason the button is no longer conditional: a control that only
-       * exists when a script fails is a control nobody ever tests.
+       * and nothing happened at all. A control that only exists when a script
+       * fails is a control nobody ever tests.
        */
     %>
     <button class="btn btn-quiet btn-small mt-2" type="submit" data-avatar-submit>
@@ -70,49 +95,19 @@
   <% } %>
 </section>
 
-<form method="post" action="/account/profile" class="panel">
-  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-
-  <div class="field">
-    <label for="display_name">Display name</label>
-    <input type="text" id="display_name" name="display_name"
-           value="<%= user.display_name %>" autocomplete="name" maxlength="120">
-    <p class="hint">What applications show when they greet you.</p>
-  </div>
-
-  <div class="field-row">
-    <div class="field">
-      <label for="given_name">First name</label>
-      <input type="text" id="given_name" name="given_name"
-             value="<%= user.given_name %>" autocomplete="given-name" maxlength="80">
-    </div>
-    <div class="field">
-      <label for="family_name">Last name</label>
-      <input type="text" id="family_name" name="family_name"
-             value="<%= user.family_name %>" autocomplete="family-name" maxlength="80">
-    </div>
-  </div>
-
-  <div class="field">
-    <label for="date_of_birth">Date of birth</label>
-    <%
-      /*
-       * A date input, not three dropdowns. It is only shared with an
-       * application that asked for the profile scope and that you allowed —
-       * said here rather than buried in the privacy policy, because this is
-       * the moment somebody is deciding whether to type it.
-       */
-    %>
-    <input type="date" id="date_of_birth" name="date_of_birth"
-           value="<%= user.date_of_birth ? String(user.date_of_birth).slice(0, 10) : '' %>"
-           autocomplete="bday"
-           min="1900-01-01"
-           max="<%= new Date().toISOString().slice(0, 10) %>">
-    <p class="hint">Only shared with an app that asked for your profile and that you allowed. Leave it blank if you would rather not.</p>
-  </div>
-
-  <button class="btn btn-primary" type="submit">Save</button>
-</form>
+<nav class="hub-group value-rows">
+  <% Object.keys(fields).forEach(function (name) { %>
+  <a class="hub-row" href="/account/profile/edit/<%= name %>">
+    <span class="hub-lines">
+      <span class="hub-sub"><%= fields[name].label %></span>
+      <span class="hub-title <%= shown(name) ? '' : 'is-blank' %>">
+        <%= shown(name) || fields[name].blank %>
+      </span>
+    </span>
+    <span class="row-go"><%- include('../partials/icon', { name: 'chevron' }) %></span>
+  </a>
+  <% }) %>
+</nav>
 
 <section class="panel">
   <h2>Your Vesopa id</h2>

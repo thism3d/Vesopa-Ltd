@@ -102,6 +102,35 @@
 
   window.VesopaLoadbar = { start: start, done: done };
 
+  /*
+   * ADOPT THE BAR THE HEAD STARTED, and finish it when the page has finished
+   * arriving.
+   *
+   * The head creates the element and puts it on screen before first paint (see
+   * partials/head.ejs). By the time this file runs the document is
+   * `interactive` — the markup is there, the stylesheets, fonts and pictures
+   * usually are not — so there is still a real wait to describe.
+   *
+   * `running = true` and a `setInterval` picking up from where the head left
+   * off, rather than `start()`, because start() resets to 8% and would visibly
+   * snap the bar backwards on every page load.
+   */
+  if (document.readyState !== 'complete') {
+    var early = document.getElementById('loadbar');
+    if (early && early.classList.contains('on')) {
+      running = true;
+      el = early;
+      at = parseFloat(early.style.width) || 10;
+      clearInterval(timer);
+      timer = setInterval(function () {
+        at += Math.max(0.4, (92 - at) / 14);
+        if (at > 92) at = 92;
+        early.style.width = at + '%';
+      }, 220);
+    }
+    window.addEventListener('load', function () { done(); }, { once: true });
+  }
+
   // -------------------------------------------------------------------------
   // The navigations the router does not handle
   // -------------------------------------------------------------------------

@@ -207,11 +207,154 @@ router.get('/account/profile', async (req, res, next) => {
     if (!session) return undefined;
     const user = await identity.getUser(session.user_id);
     return page(res, 'account/profile', session, {
-      title: 'Your profile',
+      title: 'Personal info',
       user,
+      fields: PROFILE_FIELDS,
       saved: req.query.saved === '1',
       error: req.query.error || '',
     });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+/*
+ * THE FOUR THINGS SOMEBODY CAN CHANGE ABOUT THEMSELVES, described once.
+ *
+ * `reference_design/…` §C2: the personal-info page is a LIST OF VALUES, and
+ * each one opens its own page. It was a single form with four boxes and one
+ * Save, which is fine on a laptop and is four decisions at once on a phone —
+ * and it is not what anybody who has used a Google or Apple account expects to
+ * find. One thing on screen at a time.
+ *
+ * The table lives here rather than in the template because the editor route
+ * validates against it: a field name in a URL that is not one of these four is
+ * a 404, not an UPDATE.
+ */
+const PROFILE_FIELDS = {
+  display_name: {
+    label: 'Display name',
+    type: 'text',
+    max: 120,
+    autocomplete: 'name',
+    hint: 'What applications show when they greet you.',
+    blank: 'Not set',
+  },
+  given_name: {
+    label: 'First name',
+    type: 'text',
+    max: 80,
+    autocomplete: 'given-name',
+    hint: 'Only shared with an application that asked for your profile and that you allowed.',
+    blank: 'Not set',
+  },
+  family_name: {
+    label: 'Last name',
+    type: 'text',
+    max: 80,
+    autocomplete: 'family-name',
+    hint: 'Only shared with an application that asked for your profile and that you allowed.',
+    blank: 'Not set',
+  },
+  date_of_birth: {
+    label: 'Date of birth',
+    type: 'date',
+    autocomplete: 'bday',
+    hint: 'Only shared with an app that asked for your profile and that you allowed. Leave it blank if you would rather not.',
+    blank: 'Not given',
+  },
+};
+
+/**
+ * Save whatever changed, and tell the applications that hold this person.
+ *
+ * Shared by the whole-form save and the one-field editor, so a webhook is not
+ * something one of the two routes forgets. An application's copy of somebody's
+ * name is wrong the moment they change it, and one that has to poll to find
+ * that out will never bother.
+ */
+async function saveProfile(req, session, values) {
+  const sets = [];
+  const params = [];
+
+  for (const [name, value] of Object.entries(values)) {
+    if (!PROFILE_FIELDS[name]) continue;
+    sets.push(`${name} = ?`);
+    if (name === 'date_of_birth') {
+      /*
+       * Stored as a DATE or not at all. An empty string written into a DATE
+       * column becomes '0000-00-00' on some MariaDB settings, which then
+       * formats as a real date in the year zero and cannot be cleared through
+       * the form again.
+       */
+      const dob = String(value || '').trim();
+      params.push(/^\d{4}-\d{2}-\d{2}$/.test(dob) ? dob : null);
+    } else {
+      params.push(String(value || '').slice(0, PROFILE_FIELDS[name].max || 120));
+    }
+  }
+  if (!sets.length) return;
+
+  await db.execute(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`, [...params, session.user_id]);
+
+  await events.recordAudit({
+    actorUserId: session.user_id,
+    action: 'profile.updated',
+    targetType: 'user',
+    targetId: session.user_public_id,
+    detail: { fields: Object.keys(values) },
+    ip: req.clientIp,
+  });
+
+  await webhooks.emitForUser(session.user_id, 'user.updated', async (user, subject) => ({
+    sub: subject,
+    name: user.display_name || undefined,
+    given_name: user.given_name || undefined,
+    family_name: user.family_name || undefined,
+    birthdate: user.date_of_birth ? String(user.date_of_birth).slice(0, 10) : undefined,
+    picture: user.avatar_path ? `${config.issuer}${user.avatar_path}` : undefined,
+  }));
+}
+
+/**
+ * One value, on its own page.
+ *
+ * `:field` is looked up in PROFILE_FIELDS and nothing else is ever written —
+ * so a name in the URL cannot reach a column it was not meant to. That check
+ * is the reason the table above exists rather than a list in the template.
+ */
+router.get('/account/profile/edit/:field', async (req, res, next) => {
+  try {
+    const session = await guard(req, res);
+    if (!session) return undefined;
+
+    const spec = PROFILE_FIELDS[req.params.field];
+    if (!spec) return res.redirect(303, '/account/profile');
+
+    const user = await identity.getUser(session.user_id);
+    return page(res, 'account/profile-edit', session, {
+      title: spec.label,
+      field: req.params.field,
+      spec,
+      user,
+      value: user[req.params.field] || '',
+      error: req.query.error || '',
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post('/account/profile/edit/:field', csrf.verify, async (req, res, next) => {
+  try {
+    const session = await guard(req, res);
+    if (!session) return undefined;
+
+    const spec = PROFILE_FIELDS[req.params.field];
+    if (!spec) return res.redirect(303, '/account/profile');
+
+    await saveProfile(req, session, { [req.params.field]: req.body.value });
+    return res.redirect(303, '/account/profile?saved=1');
   } catch (error) {
     return next(error);
   }
@@ -223,48 +366,18 @@ router.post('/account/profile', csrf.verify, async (req, res, next) => {
     if (!session) return undefined;
 
     /*
-     * Date of birth is stored as a DATE or not at all. An empty string written
-     * into a DATE column becomes '0000-00-00' on some MariaDB settings, which
-     * then formats as a real date in the year zero and is impossible to clear
-     * through the form.
+     * KEPT, though no page posts here any more: the personal-info page is now
+     * a list of values, each with its own editor. It is one UPDATE for all four
+     * fields and it is what an older cached page, or somebody's bookmarked
+     * form, would still post to — and answering that with a 404 would lose
+     * somebody's typing for no reason.
      */
-    const dob = String(req.body.date_of_birth || '').trim();
-    const validDob = /^\d{4}-\d{2}-\d{2}$/.test(dob) ? dob : null;
-
-    await db.execute(
-      `UPDATE users
-          SET display_name = ?, given_name = ?, family_name = ?, date_of_birth = ?
-        WHERE id = ?`,
-      [
-        String(req.body.display_name || '').slice(0, 120),
-        String(req.body.given_name || '').slice(0, 80),
-        String(req.body.family_name || '').slice(0, 80),
-        validDob,
-        session.user_id,
-      ],
-    );
-
-    await events.recordAudit({
-      actorUserId: session.user_id,
-      action: 'profile.updated',
-      targetType: 'user',
-      targetId: session.user_public_id,
-      ip: req.clientIp,
+    await saveProfile(req, session, {
+      display_name: req.body.display_name,
+      given_name: req.body.given_name,
+      family_name: req.body.family_name,
+      date_of_birth: req.body.date_of_birth,
     });
-
-    /*
-     * Tell every application that holds this person. Their copy of the name is
-     * now wrong, and an application that has to poll to find that out will
-     * never bother.
-     */
-    await webhooks.emitForUser(session.user_id, 'user.updated', async (user, subject) => ({
-      sub: subject,
-      name: user.display_name || undefined,
-      given_name: user.given_name || undefined,
-      family_name: user.family_name || undefined,
-      birthdate: user.date_of_birth ? String(user.date_of_birth).slice(0, 10) : undefined,
-      picture: user.avatar_path ? `${config.issuer}${user.avatar_path}` : undefined,
-    }));
 
     return res.redirect(303, '/account/profile?saved=1');
   } catch (error) {

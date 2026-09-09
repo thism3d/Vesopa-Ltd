@@ -1,0 +1,59 @@
+<%- include('_shell') %>
+
+<%
+  /*
+   * ONE THING ON THE SCREEN.
+   *
+   * The whole of §C2 in one page: a label, a field, a sentence saying who ever
+   * sees this, and two buttons. Nothing else is here to be decided at the same
+   * time, which is the entire difference between this and the four-box form it
+   * replaces.
+   *
+   * The field is called `value` rather than its column name. The route already
+   * decides which column this is, from `:field` checked against a table it
+   * owns — so the browser is never in a position to name a column, and a page
+   * cached from one field cannot post into another.
+   */
+  const iso = field === 'date_of_birth' && value ? String(value).slice(0, 10) : '';
+%>
+
+<% if (error) { %><p class="form-error" role="alert"><%= error %></p><% } %>
+
+<section class="panel">
+  <form method="post" action="/account/profile/edit/<%= field %>">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+    <div class="field">
+      <label for="value"><%= spec.label %></label>
+
+      <% if (spec.type === 'date') { %>
+      <input type="date" id="value" name="value" value="<%= iso %>"
+             autocomplete="<%= spec.autocomplete %>"
+             min="1900-01-01" max="<%= new Date().toISOString().slice(0, 10) %>" autofocus>
+      <% } else { %>
+      <input type="text" id="value" name="value" value="<%= value %>"
+             autocomplete="<%= spec.autocomplete %>" maxlength="<%= spec.max %>" autofocus>
+      <% } %>
+
+      <p class="hint"><%= spec.hint %></p>
+    </div>
+
+    <div class="edit-actions">
+      <button class="btn btn-primary" type="submit">Save</button>
+      <a class="btn btn-quiet" href="/account/profile">Cancel</a>
+    </div>
+  </form>
+
+  <%
+    /*
+     * Said here rather than only on the list, because this is the moment
+     * somebody is deciding whether to type it at all — and "you can leave it
+     * blank" is worth more before the field than after it.
+     */
+  %>
+  <p class="hint mt-3">
+    Leaving this empty is fine. Nothing on Vesopa requires it.
+  </p>
+</section>
+
+<%- include('../partials/console-foot') %>
