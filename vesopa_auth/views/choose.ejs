@@ -1,0 +1,123 @@
+<%- include('partials/head') %>
+
+<%
+  /*
+   * THE ACCOUNT CHOOSER.
+   *
+   * The shape everybody already knows from Google's: a stack of faces and
+   * addresses, "Use another account" under them, and a quiet way out at the
+   * bottom. It is worth copying exactly, because this is a screen people meet
+   * once every few weeks and have to understand instantly — inventing a
+   * different one buys nothing and costs recognition.
+   *
+   * THE ADDRESS IS THE IDENTIFIER, not the name. Two accounts belonging to one
+   * person very often share a display name — "Vesopa Manager" personally and
+   * "Vesopa Manager" as the administrator — and picking the wrong one of those
+   * is the exact mistake this page exists to prevent. So the address is always
+   * shown, and it is never truncated to fit.
+   */
+  const initialOf = (entry) =>
+    ((entry.session.display_name || entry.session.email || 'V').trim().charAt(0) || 'V').toUpperCase();
+%>
+
+<main class="auth-shell">
+  <div class="auth-card chooser">
+
+    <a class="brand" href="/" aria-label="Vesopa">
+      <img class="brand-mark" src="/brand/logo-light.svg" alt="" width="112" height="15" data-logo-light>
+      <img class="brand-mark" src="/brand/logo-dark.svg" alt="" width="112" height="15" data-logo-dark>
+    </a>
+
+    <h1 class="auth-title">Choose an account</h1>
+    <p class="auth-sub">
+      <% if (returnTo) { %>
+        to carry on where you left off
+      <% } else { %>
+        You are signed in to <%= roster.length %> on this browser.
+      <% } %>
+    </p>
+
+    <ul class="chooser-list">
+      <% roster.forEach(function (entry) { %>
+      <li>
+        <form method="post" action="/account/switch">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <input type="hidden" name="return_to" value="<%= returnTo %>">
+          <input type="hidden" name="session" value="<%= entry.session.public_id %>">
+          <button type="submit" class="chooser-row">
+            <% if (entry.session.avatar_path) { %>
+            <img class="chooser-face" src="<%= entry.session.avatar_path %>" alt="" width="40" height="40">
+            <% } else { %>
+            <span class="chooser-face chooser-face-empty" aria-hidden="true"><%= initialOf(entry) %></span>
+            <% } %>
+            <span class="chooser-lines">
+              <span class="chooser-name">
+                <%= entry.session.display_name || 'Your Vesopa account' %>
+                <% if (entry.active) { %><span class="pill pill-good">Signed in</span><% } %>
+              </span>
+              <span class="chooser-mail"><%= entry.session.email || 'no address on this account' %></span>
+            </span>
+          </button>
+        </form>
+
+        <%
+          /*
+           * Leaving ONE account, from the row it belongs to.
+           *
+           * A separate form rather than a second button inside the first: a
+           * button inside a button is not valid HTML and behaves differently in
+           * every browser, and "sign out" nested inside "switch to this
+           * account" is the last control to be casual about.
+           */
+        %>
+        <form method="post" action="/account/signout" class="chooser-out">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <input type="hidden" name="return_to" value="<%= returnTo %>">
+          <input type="hidden" name="session" value="<%= entry.session.public_id %>">
+          <button type="submit" class="linklike">Sign out</button>
+        </form>
+      </li>
+      <% }) %>
+    </ul>
+
+    <%
+      /*
+       * `add=1` is what stops this replacing the account already signed in —
+       * see the note in routes/auth.js. Without it, "use another account" is
+       * just "sign out and sign in", which is the thing this whole feature
+       * exists to stop being necessary.
+       */
+    %>
+    <% if (!full) { %>
+    <a class="chooser-add" href="/login?add=1<%= returnTo ? '&return_to=' + encodeURIComponent(returnTo) : '' %>">
+      <span class="chooser-face chooser-face-plus" aria-hidden="true">
+        <%- include('partials/icon', { name: 'plus' }) %>
+      </span>
+      <span class="chooser-lines">
+        <span class="chooser-name">Use another account</span>
+        <span class="chooser-mail">Sign in without leaving the others</span>
+      </span>
+    </a>
+    <% } else { %>
+    <p class="hint mt-3">
+      This browser is holding <%= max %> accounts, which is as many as it will.
+      Sign out of one to add another.
+    </p>
+    <% } %>
+
+    <form method="post" action="/account/signout" class="chooser-all">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="return_to" value="<%= returnTo %>">
+      <input type="hidden" name="scope" value="all">
+      <button type="submit" class="linklike">Sign out of all accounts</button>
+    </form>
+
+    <p class="small-print">
+      Signing out of one account here leaves the others exactly as they were.
+      Applications you have connected keep working until you disconnect them
+      from <a href="/account/apps">your connected apps</a>.
+    </p>
+  </div>
+</main>
+
+<%- include('partials/foot') %>

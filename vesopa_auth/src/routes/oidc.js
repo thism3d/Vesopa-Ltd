@@ -259,6 +259,28 @@ router.get('/oauth/authorize', async (req, res, next) => {
     await sessions.touch(session);
 
     /*
+     * `prompt=select_account` — the application asking us to let them choose.
+     *
+     * It is the standard way to say "I know somebody is signed in, ask them
+     * anyway", and until now it was accepted and ignored, which is worse than
+     * refusing it: a back office that asks to choose and is silently handed
+     * whoever was already there is a back office that opens as the wrong
+     * person on a shared machine.
+     *
+     * THE PROMPT IS STRIPPED FROM WHAT WE COME BACK TO, and that is the whole
+     * trap in this feature. Leaving it in `return_to` means the chooser sends
+     * them back here, this branch fires again, and the two bounce off each
+     * other for ever — a loop that looks exactly like a broken redirect and is
+     * a one-word omission.
+     */
+    if (prompt === 'select_account') {
+      const back = new URLSearchParams(req.query);
+      back.delete('prompt');
+      const to = `/oauth/authorize?${back.toString()}`;
+      return res.redirect(303, `/account/choose?return_to=${encodeURIComponent(to)}`);
+    }
+
+    /*
      * Isolation: may this person use this application at all?
      *
      * One pool of people, per-application membership. A QR menu enrols whoever

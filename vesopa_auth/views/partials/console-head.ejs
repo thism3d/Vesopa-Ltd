@@ -45,20 +45,30 @@
   <div class="topbar-right">
     <%
       /*
-       * The avatar is a link to the profile, not a menu. A menu here would hold
-       * two items — profile and sign out — and hide both behind a press;
-       * "Sign out" being one click away on every page is worth more on an
-       * identity provider than the tidiness of hiding it.
+       * THE AVATAR OPENS THE ACCOUNT CHOOSER.
+       *
+       * It used to be a link to the profile, on the reasoning that a menu here
+       * would hold two items and hide both behind a press. That was right while
+       * a browser could hold one account. With several, the face IS the
+       * question — "which of these am I?" — and it is the first place anybody
+       * looks for the answer, because it is where every other product on the
+       * internet has put it.
+       *
+       * Sign out stays visible beside it rather than moving inside, which was
+       * the good half of the old reasoning: on an identity provider, one click
+       * away is worth more than tidiness.
        */
       const shownName = (session && (session.display_name || session.email)) || '';
       const initial = shownName ? shownName.trim().charAt(0).toUpperCase() : '?';
     %>
     <% if (session && session.avatar_path) { %>
-    <a href="/account/profile" class="topbar-avatar" aria-label="Your profile">
+    <a href="/account/choose" class="topbar-avatar"
+       aria-label="Signed in as <%= shownName %>. Choose an account">
       <img src="<%= session.avatar_path %>" alt="" width="34" height="34" class="fill">
     </a>
     <% } else { %>
-    <a href="/account/profile" class="topbar-avatar" aria-label="Your profile"><%= initial %></a>
+    <a href="/account/choose" class="topbar-avatar"
+       aria-label="Signed in as <%= shownName %>. Choose an account"><%= initial %></a>
     <% } %>
 
     <form method="post" action="/logout" data-no-loadbar>

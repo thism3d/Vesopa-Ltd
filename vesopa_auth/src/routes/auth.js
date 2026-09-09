@@ -39,6 +39,7 @@ const stepup = require('./stepup');
 const factors = require('../factors');
 const authmethods = require('../authmethods');
 const captcha = require('../captcha');
+const accounts = require('../accounts');
 const { verifyPassword } = require('../crypto');
 const { normaliseEmail, normalisePhone, guessIdentifierType } = require('../normalise');
 const { safeReturnTo } = require('./pages');
@@ -505,6 +506,22 @@ async function completeSignIn({ req, res, userId, amr, method, flow }) {
     });
 
     sessions.setCookie(res, session.token, Boolean(flow.m));
+
+    /*
+     * THE NEW SESSION JOINS THE OTHERS RATHER THAN EVICTING THEM.
+     *
+     * `accounts.add` puts this token at the front of the roster and keeps
+     * whatever was already there, so signing in as a second account leaves the
+     * first one signed in — which is the whole feature. It is done on EVERY
+     * sign-in, not only when `add=1` was asked for, because the roster is
+     * simply the list of sessions this browser holds and a session that is not
+     * in it is one the chooser cannot offer.
+     *
+     * The list is read first so that a dead entry — an account signed out on
+     * another device — is pruned in the same write rather than lingering.
+     */
+    accounts.add(res, await accounts.list(req, null), session.token);
+
     clearFlow(res);
 
     await events.recordLogin({
@@ -1071,7 +1088,28 @@ router.post('/logout', csrf.verify, async (req, res, next) => {
         userAgent: req.userAgent,
       });
     }
-    sessions.clearCookie(res);
+    /*
+     * ONE ACCOUNT LEAVES, NOT ALL OF THEM.
+     *
+     * This used to clear the session cookie and stop, which with a roster would
+     * mean the browser still held tokens for accounts nobody could reach — a
+     * chooser offering sessions and a person who believes they have signed out.
+     * The account that was active is removed from the roster, and if another
+     * one is left it becomes active. `/account/signout` is the same decision
+     * with a name on it; this is the plain "Sign out" button.
+     */
+    const roster = await accounts.list(req, null);
+    const active = roster.find((entry) => entry.active);
+    const left = roster.filter((entry) => !entry.active);
+
+    if (left.length) {
+      accounts.write(res, left.map((entry) => entry.token));
+      sessions.setCookie(res, left[0].token, Boolean(left[0].session.remembered));
+    } else {
+      sessions.clearCookie(res);
+      accounts.clear(res);
+    }
+    void active;
     clearFlow(res);
 
     /*
@@ -1087,6 +1125,11 @@ router.post('/logout', csrf.verify, async (req, res, next) => {
      * redirect on the one origin where that matters most.
      */
     const back = safeReturnTo(req.body.return_to);
+    if (left.length) {
+      // Still signed in as somebody. Sending them to a sign-in page they do not
+      // need is how "sign out of this one" reads as "sign out of everything".
+      return res.redirect(303, back || '/account');
+    }
     if (back) return res.redirect(303, `/login?return_to=${encodeURIComponent(back)}`);
     return res.redirect(303, '/login');
   } catch (error) {

@@ -50,18 +50,24 @@
       <%
         /*
          * The account chip, and it is a CONTROL rather than a label — the
-         * owner asked for "circle click to change the account". It is a form
-         * rather than a link because switching means ending this session, and
-         * ending a session on a GET is a thing any page on the internet could
-         * do to you with an image tag.
+         * owner asked for "circle click to change the account".
+         *
+         * IT NO LONGER SIGNS ANYBODY OUT TO DO IT. It used to POST to /logout
+         * with somewhere to come back to, which was the only thing possible
+         * when a browser could hold one account: changing who you were meant
+         * ending the session you had, and with it the till, the menu and the
+         * back office. Now it opens the chooser, and switching keeps every
+         * other account exactly as it was.
+         *
+         * A link, therefore, and not a form: opening a chooser changes nothing.
+         * The two destructive actions on that page are both POSTs with a CSRF
+         * token, which is where that protection belongs.
          */
       %>
-      <form method="post" action="/logout" class="account-switch">
-        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-        <input type="hidden" name="return_to" value="<%= here %>">
-        <button type="submit" class="account-chip"
-                title="Use a different Vesopa account"
-                aria-label="Signed in as <%= shownEmail || shownName %>. Use a different account">
+      <div class="account-switch">
+        <a class="account-chip" href="/account/choose?return_to=<%= encodeURIComponent(here) %>"
+           title="Choose a different Vesopa account"
+           aria-label="Signed in as <%= shownEmail || shownName %>. Choose a different account">
           <% if (session.avatar_path) { %>
           <img class="account-chip-face" src="<%= session.avatar_path %>" alt="" width="28" height="28">
           <% } else { %>
@@ -71,8 +77,8 @@
           <span class="account-chip-go" aria-hidden="true">
             <%- include('partials/icon', { name: 'chevron' }) %>
           </span>
-        </button>
-      </form>
+        </a>
+      </div>
     </header>
 
     <div class="consent-app">
@@ -200,14 +206,12 @@
       </button>
     </form>
 
-    <form method="post" action="/logout" class="consent-other">
-      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-      <input type="hidden" name="return_to" value="<%= here %>">
-      <button type="submit"
-              class="<%= typeof adminWarning !== 'undefined' && adminWarning ? 'btn btn-primary' : 'linklike' %>">
+    <p class="consent-other">
+      <a href="/account/choose?return_to=<%= encodeURIComponent(here) %>"
+         class="<%= typeof adminWarning !== 'undefined' && adminWarning ? 'btn btn-primary' : 'linklike' %>">
         Use a different account
-      </button>
-    </form>
+      </a>
+    </p>
 
     <p class="small-print">
       You can take this back at any time from

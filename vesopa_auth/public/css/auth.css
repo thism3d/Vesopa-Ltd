@@ -1455,3 +1455,107 @@ a { color: var(--text); }
 .reveal-wrap.has-reveal input { padding-right: 46px; }
 .reveal-wrap .reveal { width: 34px; height: 34px; right: 5px; }
 .reveal-wrap .reveal svg { width: 19px; height: 19px; }
+
+
+/* ==========================================================================
+ * The account chooser
+ * ==========================================================================
+ * The shape everybody already knows: a stack of faces and addresses, "use
+ * another" under them, a quiet way out at the bottom. Worth copying exactly —
+ * this is a screen somebody meets once every few weeks and has to understand
+ * immediately, and inventing a different one buys nothing.
+ * ======================================================================== */
+
+.chooser-list { list-style: none; margin: 6px 0 0; padding: 0; }
+.chooser-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+}
+.chooser-list li:first-child { border-top: 0; }
+.chooser-list form { margin: 0; }
+.chooser-list li > form:first-child { flex: 1 1 auto; min-width: 0; }
+
+/* The row is a submit button, so every one of the browser's own button styles
+   has to come off before it can look like a row. */
+.chooser-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 8px;
+  margin: 0;
+  font: inherit;
+  text-align: left;
+  color: var(--text);
+  background: none;
+  border: 0;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.chooser-row:hover { background: var(--surface-2); }
+.chooser-row:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+
+.chooser-face {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--surface-2);
+}
+.chooser-face-empty,
+.chooser-face-plus {
+  display: grid;
+  place-items: center;
+  font-size: 17px;
+  font-weight: 650;
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+.chooser-face-plus svg { width: 20px; height: 20px; }
+
+.chooser-lines { min-width: 0; }
+/* The name and the "Signed in" pill share a line. As two block-level things
+   the pill dropped underneath the name and read as part of it — "Vesopa
+   Administrator / Signed in" looked like a two-line name. */
+.chooser-name {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  font-size: 15px;
+  font-weight: 550;
+  overflow-wrap: anywhere;
+}
+.chooser-name .pill { flex: 0 0 auto; }
+/* NEVER TRUNCATED. Two accounts belonging to one person very often share a
+   display name, and the address is the only thing that tells them apart —
+   which is the mistake this whole page exists to prevent. */
+.chooser-mail {
+  display: block;
+  margin-top: 1px;
+  font-size: 13px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+.chooser-out { flex: 0 0 auto; padding-right: 4px; }
+.chooser-out .linklike { font-size: 13px; color: var(--text-muted); }
+.chooser-out .linklike:hover { color: var(--text); }
+
+.chooser-add {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 8px;
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+  border-radius: 10px;
+  text-decoration: none;
+  color: var(--text);
+}
+.chooser-add:hover { background: var(--surface-2); }
+
+.chooser-all { margin-top: 18px; text-align: center; }
+.chooser .small-print { margin-top: 14px; }

@@ -34,6 +34,7 @@ const admin = require('./routes/admin');
 const developers = require('./routes/developers');
 const device = require('./routes/device');
 const reauth = require('./routes/reauth');
+const choose = require('./routes/choose');
 const appapi = require('./routes/appapi');
 
 const app = express();
@@ -150,6 +151,7 @@ app.use('/', appapi);
 app.use('/', oidc);
 app.use('/', social);
 app.use('/', mfa);
+app.use('/', choose);
 app.use('/', reauth);
 app.use('/', account);
 app.use('/', policies);

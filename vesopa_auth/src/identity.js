@@ -137,7 +137,13 @@ async function createUser({
  * "somebody else has this" — which is a 409 and a sentence, not a 500.
  */
 async function attachIdentity(userId, fields) {
-  return db.transaction(async (tx) => insertIdentity(tx, { userId, ...fields }));
+  return db.transaction(async (tx) => {
+    const id = await insertIdentity(tx, { userId, ...fields });
+    // In the same transaction, so an account never exists with an address it
+    // does not point at — see the note on ensurePrimary for what that cost.
+    await ensurePrimary(userId, tx);
+    return id;
+  });
 }
 
 async function insertIdentity(
@@ -189,6 +195,52 @@ async function insertIdentity(
     ],
   );
   return result.insertId;
+}
+
+/**
+ * Make sure the account points at an address and a number, if it has them.
+ *
+ * WHY THIS IS NEEDED AT ALL. `createUser` sets `primary_email_id` when the
+ * FIRST identity is an email — which is right for somebody who signed in with
+ * an address, and silently wrong for everybody else. An account created by
+ * signing in with GitHub has a provider identity first and an email attached a
+ * moment later, so the pointer stays null; so does one created by phone and
+ * given an address afterwards.
+ *
+ * That was invisible until something needed to NAME the account. Then it is
+ * everywhere at once: the account chooser said "no address on this account"
+ * for a person who plainly has one, the consent screen could not say whose
+ * account was about to be connected, and "confirm it is you" had nowhere to
+ * send a code. All three read `primary_email_id`, and all three were reading a
+ * null that nothing had ever been responsible for filling in.
+ *
+ * A VERIFIED ADDRESS, AND NEVER A RECOVERY-ONLY ONE. A recovery address exists
+ * precisely so that it is NOT the account's public identity, and pointing the
+ * account at one would put it on the consent screen of every application.
+ */
+async function ensurePrimary(userId, tx = db) {
+  await tx.execute(
+    `UPDATE users u
+        SET u.primary_email_id = (
+              SELECT i.id FROM user_identities i
+               WHERE i.user_id = u.id AND i.type = 'email'
+                 AND i.revoked_at IS NULL AND i.is_recovery = 0
+               ORDER BY i.verified_at IS NULL, i.id
+               LIMIT 1)
+      WHERE u.id = ? AND u.primary_email_id IS NULL`,
+    [userId],
+  );
+  await tx.execute(
+    `UPDATE users u
+        SET u.primary_phone_id = (
+              SELECT i.id FROM user_identities i
+               WHERE i.user_id = u.id AND i.type = 'phone'
+                 AND i.revoked_at IS NULL AND i.is_recovery = 0
+               ORDER BY i.verified_at IS NULL, i.id
+               LIMIT 1)
+      WHERE u.id = ? AND u.primary_phone_id IS NULL`,
+    [userId],
+  );
 }
 
 /** Mark an identity proved, and note how. */
@@ -340,6 +392,7 @@ module.exports = {
   createUser,
   attachIdentity,
   markVerified,
+  ensurePrimary,
   touchIdentity,
   revokeIdentity,
   findLinkCandidate,

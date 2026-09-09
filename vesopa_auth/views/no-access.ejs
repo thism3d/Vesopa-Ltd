@@ -78,15 +78,19 @@
       /*
        * "Use a different account" is first, because on a shared machine it is
        * usually the whole answer — somebody is signed in as a colleague and has
-       * not noticed. It is a POST, because signing somebody out on a GET is a
-       * thing any page on the internet could do to you with an image tag.
+       * not noticed.
+       *
+       * It opens the chooser rather than signing anybody out. Being refused by
+       * one application is no reason to lose the session you have with four
+       * others, and the account that IS allowed in is very often already signed
+       * in in this browser — in which case this is one tap and not a sign-in.
        */
     %>
-    <form method="post" action="/logout" class="auth-form">
-      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-      <input type="hidden" name="return_to" value="<%= returnTo %>">
-      <button class="btn btn-primary" type="submit">Use a different account</button>
-    </form>
+    <p class="auth-form">
+      <a class="btn btn-primary" href="/account/choose?return_to=<%= encodeURIComponent(returnTo) %>">
+        Use a different account
+      </a>
+    </p>
 
     <p class="resend">
       <a class="linklike" href="<%= backToApp %>" rel="nofollow">Back to <%= application.name %></a>
