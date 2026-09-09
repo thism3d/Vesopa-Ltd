@@ -6,12 +6,34 @@
 -- existing row and on every diner who signs in with a code, exactly as they do
 -- today. Guest ordering does not touch this table at all.
 --
--- The guard procedure is `vesopa_add_column`, defined in schema_branding.sql
--- and used by every migration here. MySQL 5.7 has no `ADD COLUMN IF NOT
--- EXISTS`, and the deploy applies every file on every run — so an unguarded
--- ALTER either fails the whole file on the second deploy or, worse, succeeds at
--- something nobody meant.
+-- EVERY FILE HERE DEFINES ITS OWN GUARD AND DROPS IT AGAIN, and that is the
+-- convention rather than an oversight — 39 of the 40 files in this directory do
+-- it. `schema_branding.sql` creates `vesopa_add_column`, uses it, and DROPS IT
+-- on its last line, so a file that merely calls the procedure works when run on
+-- its own and fails when run after branding in the same deploy. That is exactly
+-- how this file failed the first time: `PROCEDURE vesopa_eposdb.vesopa_add_column
+-- does not exist`, from a file that had worked in isolation five minutes
+-- earlier. MySQL 5.7 has no `ADD COLUMN IF NOT EXISTS`, which is why the guard
+-- exists at all.
 -- ---------------------------------------------------------------------------
+
+SET NAMES utf8mb4 COLLATE utf8mb4_general_ci;
+
+DROP PROCEDURE IF EXISTS vesopa_add_column;
+DELIMITER //
+CREATE PROCEDURE vesopa_add_column(
+  IN t VARCHAR(64), IN c VARCHAR(64), IN spec VARCHAR(255)
+)
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = t AND COLUMN_NAME = c
+  ) THEN
+    SET @sql = CONCAT('ALTER TABLE `', t, '` ADD COLUMN `', c, '` ', spec);
+    PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+  END IF;
+END //
+DELIMITER ;
 
 -- ---------------------------------------------------------------------------
 -- Which Vesopa account this diner is, at this venue.
@@ -70,3 +92,10 @@ CALL vesopa_add_index_once(
   'uq_dinein_diner_vesopa',
   'UNIQUE KEY `uq_dinein_diner_vesopa` (office_id, vesopa_sub)'
 );
+
+
+-- Cleaned up, the way every other file here does: the procedures exist for the
+-- length of this file and no longer. Leaving them behind would mean the next
+-- file to define one is dropping somebody else's.
+DROP PROCEDURE IF EXISTS vesopa_add_column;
+DROP PROCEDURE IF EXISTS vesopa_add_index_once;

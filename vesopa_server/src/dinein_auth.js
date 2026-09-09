@@ -219,11 +219,7 @@ function dineinAuthRoutes({ pool, secret }) {
       if (bySlug) return bySlug;
     }
 
-    const host = String(req.headers['x-forwarded-host'] || req.headers.host || '')
-      .split(',')[0]
-      .trim()
-      .toLowerCase()
-      .replace(/:\d+$/, '');
+    const host = hostOf(req);
     if (!host || host === MENU_HOST || host === `www.${MENU_HOST}`) return null;
 
     const names = host.startsWith('www.') ? [host, host.slice(4)] : [host, `www.${host}`];
@@ -253,12 +249,25 @@ function dineinAuthRoutes({ pool, secret }) {
       const nonce = crypto.randomBytes(16).toString('base64url');
 
       /*
-       * Where to come back to, as the person typed it. This is why the venue's
-       * own domain never has to be registered at the identity provider — it is
-       * kept here, server-side, and only ever used to build a path on a host we
-       * have already decided is acceptable.
+       * Where to come back to. This is why the venue's own domain never has to
+       * be registered at the identity provider — it is kept here, server-side,
+       * and only ever used to build a path on a host we already trust.
+       *
+       * THE FALLBACK HAS TO BE THE VENUE'S MENU, NOT `/`.
+       *
+       * On the shared host, `/` is the "which venue?" page, and it does not
+       * carry the menu's script — so a person returning there lands on a page
+       * that cannot claim the session they just went and got. It looks like the
+       * sign-in silently failed, and it did: the handle sat unused on the URL.
+       * That is exactly what happened the first time this was driven end to
+       * end. On a venue's own domain `/` IS the menu, so it is right there.
        */
-      const backTo = safeReturn(req.headers.referer, req);
+      const fromReferer = safeReturn(req.headers.referer, req);
+      const onSharedHost = hostOf(req) === MENU_HOST || hostOf(req) === `www.${MENU_HOST}`;
+      const backTo =
+        fromReferer && fromReferer !== '/'
+          ? fromReferer
+          : (onSharedHost && venue.slug ? `/${venue.slug}` : '/');
 
       sweep(states, STATE_TTL_MS);
       states.set(state, {
@@ -411,6 +420,23 @@ function dineinAuthRoutes({ pool, secret }) {
  * handed straight to somebody else's page — which then asks for the same thing
  * again and is believed.
  */
+/**
+ * The host this request arrived on, as the customer typed it.
+ *
+ * A proxy may append to `x-forwarded-host`; the first entry is the one the
+ * browser asked for. The port is stripped because menu.vesopaepos.com:443 is
+ * the same host. Mirrors `hostOf` in dinein_pages.js deliberately — the two
+ * have to agree about what host a request is on, or a venue's own domain works
+ * for the menu and not for the sign-in.
+ */
+function hostOf(req) {
+  return String(req.headers['x-forwarded-host'] || req.headers.host || '')
+    .split(',')[0]
+    .trim()
+    .toLowerCase()
+    .replace(/:\d+$/, '');
+}
+
 function safeReturn(referer, req) {
   try {
     const url = new URL(String(referer || ''), `https://${MENU_HOST}`);
