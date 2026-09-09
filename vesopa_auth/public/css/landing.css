@@ -170,7 +170,23 @@
  * same tokens it cannot drift out of date the way a screenshot would.
  * ------------------------------------------------------------------------ */
 
-.hero-visual { display: flex; justify-content: center; }
+/*
+ * A COLUMN, not a row.
+ *
+ * This was `display: flex; justify-content: center` and held one child. Adding
+ * the hero picture beside the preview card made it two, and a flex ROW laid
+ * them out side by side — together far wider than the column, so the pair
+ * spilled left and the art sat on top of the word "product" in the headline.
+ * Caught by looking at the page rather than by any test, which is what looking
+ * at the page is for.
+ */
+.hero-visual {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  min-width: 0;
+}
 
 .preview-card {
   width: 100%;
@@ -449,4 +465,91 @@
   .band { padding: 48px 20px; }
   .hero { padding: 24px 20px 52px; }
   .btn-auto { width: 100%; }
+}
+
+
+/* ==========================================================================
+ * THE HEADER, WHICH USED TO WRAP
+ * ==========================================================================
+ * `design_mistakes/…733`: at 414px the header put "Developers Policies" on one
+ * line and "Privacy [Sign in]" on the next, crowding the wordmark into the
+ * corner. The reference's bars carry a wordmark and controls only — never a
+ * row of links that has to wrap.
+ *
+ * So on a phone the links go, and Sign in stays. Everything they pointed at is
+ * in the footer and in the page itself; a header that wraps onto two lines is
+ * worse than a header with one button on it.
+ * ======================================================================== */
+
+.site-head { flex-wrap: nowrap; }
+.site-nav { flex-wrap: nowrap; }
+
+@media (max-width: 620px) {
+  .site-head { padding: 14px 16px; gap: 12px; }
+  /* The wordmark must not be squeezed by the button beside it. */
+  .site-head .brand { flex: 0 0 auto; }
+  .site-nav a:not(.btn-sm) { display: none; }
+}
+
+/* ==========================================================================
+ * The hero picture
+ * ==========================================================================
+ * Generated with Gemini and SERVED FROM THIS ORIGIN. `img-src` here is
+ * `'self' data:` and the sign-in domain is the last place to open that up — a
+ * hot-linked hero would tell somebody else's server every time a person looks
+ * at a Vesopa page.
+ *
+ * `aspect-ratio` with `object-fit: cover` so it never dictates the height of
+ * the column, and `loading="eager"` because it is the thing above the fold —
+ * lazy-loading the hero is a blank rectangle on first paint.
+ * ======================================================================== */
+
+.hero-art {
+  display: block;
+  width: 100%;
+  /* Capped, because the picture and the form preview are stacked and the pair
+     decides the height of the whole hero. A 16:9 image at full column width
+     would push the fold past the buttons on a laptop. */
+  max-width: 460px;
+  aspect-ratio: 16 / 10;
+  /* `height: auto` is load-bearing.
+   *
+   * The <img> carries width and height attributes — it should, they reserve the
+   * space and stop the page jumping as it loads — and the browser maps them to
+   * presentational width/height. With a CSS `width` set and no CSS `height`,
+   * the ATTRIBUTE height wins and `aspect-ratio` never computes: this rendered
+   * 460 x 768 instead of 460 x 287, a picture two and a half times too tall.
+   * Measured, because it looked like the ratio was being ignored and it was
+   * not — it was being overridden. */
+  height: auto;
+
+  object-fit: cover;
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  background: #0e0e0e;
+}
+
+/* On a phone the column stacks under the copy anyway, and the form preview is
+   the more useful of the two — it shows what the next page looks like. The
+   picture goes, rather than making somebody scroll past it to reach it. */
+@media (max-width: 720px) {
+  .hero-art { display: none; }
+}
+
+.section-art {
+  display: block;
+  width: 100%;
+  max-width: 320px;
+  aspect-ratio: 1;
+  /* Same reason as .hero-art above: the attribute height would win. */
+  height: auto;
+  object-fit: cover;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: #0e0e0e;
+  margin: 0 auto 22px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .hero-art, .section-art { transition: none; }
 }

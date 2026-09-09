@@ -13,6 +13,7 @@
    * them ends up missing an entry.
    */
   const accountRail = [
+    { href: '/account', label: 'Home', icon: 'home', tint: 'slate' },
     { href: '/account/profile', label: 'Personal info', icon: 'person', tint: 'brand' },
     { href: '/account/security', label: 'Security', icon: 'lock', tint: 'blue' },
     { href: '/account/linked', label: 'How you sign in', icon: 'link', tint: 'violet' },
@@ -38,8 +39,24 @@
 %>
 <%- include('../partials/console-head', {
   railTitle: 'Account',
-  railHome: '/account/profile',
+  railHome: '/account',
   rail: accountRail,
 }) %>
+
+<%
+  /*
+   * Back to the hub — shown only on a phone, where the rail is not.
+   *
+   * Without it there is no way out of a section but the browser's own back
+   * button, and the reference puts this arrow on the title line rather than in
+   * the bar above it.
+   */
+%>
+<% if (path !== '/account') { %>
+<a class="page-back" href="/account">
+  <%- include('../partials/icon', { name: 'back' }) %>
+  <span>Account</span>
+</a>
+<% } %>
 
 <h1 class="console-title"><%= title %></h1>

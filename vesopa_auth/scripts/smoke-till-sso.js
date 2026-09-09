@@ -164,7 +164,59 @@ async function main() {
     `&state=${state}&nonce=${nonce}` +
     `&code_challenge=${challenge}&code_challenge_method=S256`;
 
-  const authorized = await fetch(authorizeUrl, { redirect: 'manual', headers: { cookie } });
+  /*
+   * CONSENT IS ASKED NOW, first-party included — `applications.show_consent`
+   * defaults to on, which is what the owner asked for. So /authorize may answer
+   * 200 with a form rather than a redirect, and the till's browser half has to
+   * answer it exactly as a person would.
+   *
+   * The consent row is cleared first so this is the same on every run: consent
+   * is remembered once given, and a test that only passes the first time is a
+   * test that fails on the second and teaches everybody to ignore it.
+   */
+  await db.execute(
+    `UPDATE oauth_consents SET revoked_at = NOW()
+      WHERE user_id = ? AND application_id = ? AND revoked_at IS NULL`,
+    [user.id, application.id],
+  );
+
+  let authorized = await fetch(authorizeUrl, { redirect: 'manual', headers: { cookie } });
+
+  if (authorized.status === 200) {
+    const html = await authorized.text();
+    const field = (name) => {
+      const marker = `name="${name}"`;
+      const at = html.indexOf(marker);
+      if (at < 0) return '';
+      const found = html
+        .slice(at + marker.length, at + marker.length + 400)
+        .match(/value="([^"]*)"/);
+      return found ? found[1] : '';
+    };
+    const issued = (authorized.headers.getSetCookie ? authorized.headers.getSetCookie() : [])
+      .map((line) => line.split(';')[0])
+      .join('; ');
+
+    authorized = await fetch(`${AUTH}/oauth/consent`, {
+      method: 'POST',
+      redirect: 'manual',
+      headers: {
+        cookie: issued ? `${cookie}; ${issued}` : cookie,
+        'content-type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        _csrf: field('_csrf'),
+        client_id: field('client_id'),
+        redirect_uri: field('redirect_uri'),
+        scope: field('scope'),
+        state: field('state'),
+        nonce: field('nonce'),
+        code_challenge: field('code_challenge'),
+        decision: 'allow',
+      }).toString(),
+    });
+  }
+
   const back = authorized.headers.get('location') || '';
   check(
     'a loopback redirect on an unregistered port is accepted',

@@ -1,0 +1,124 @@
+<%- include('_shell') %>
+
+<%
+  /*
+   * THE ACCOUNT HUB — `reference_design/…730`, the screen that document calls
+   * the most important one.
+   *
+   * Top to bottom: an identity card with the avatar carrying a badge, the name,
+   * the address; then rows in colour-grouped clusters, separated by SPACE
+   * rather than by headings or boxes.
+   *
+   * WHY IT EXISTS AT ALL. `/account` used to redirect straight to the profile,
+   * and navigation was a horizontally-scrolling tab strip across the top of
+   * every page — which is what sliced "How you sign in" in half at 360px
+   * (`design_mistakes/…735`). The reference has no tab strip and no rail
+   * anywhere on a phone: you tap a row, you get a page, you come back with the
+   * arrow. That is what this is.
+   *
+   * The rail is kept on a wide screen, where there is room for it and where
+   * losing it would mean a wasted third of the window.
+   */
+  const groups = [
+    {
+      rows: [
+        { href: '/account/subscriptions', icon: 'sparkle', tint: 'violet',
+          title: 'Subscriptions', sub: 'Your Vesopa products and what renews when' },
+        { href: '/account/wallet', icon: 'clipboard', tint: 'violet',
+          title: 'Wallet', sub: 'Payment methods and receipts' },
+      ],
+    },
+    {
+      rows: [
+        { href: '/account/profile', icon: 'person', tint: 'brand',
+          title: 'Personal info', sub: 'Name, picture, email, phone, birthday' },
+      ],
+    },
+    {
+      rows: [
+        { href: '/account/security', icon: 'lock', tint: 'blue',
+          title: 'Security', sub: 'Passkeys, authenticator, password, recovery' },
+        { href: '/account/linked', icon: 'link', tint: 'blue',
+          title: 'How you sign in', sub: 'Addresses, numbers and linked accounts' },
+      ],
+    },
+    {
+      rows: [
+        { href: '/account/devices', icon: 'device', tint: 'teal',
+          title: 'Devices', sub: 'Where you are signed in' },
+        { href: '/account/history', icon: 'history', tint: 'amber',
+          title: 'Sign-in history', sub: 'Every attempt, kept 13 months' },
+      ],
+    },
+    {
+      rows: [
+        { href: '/account/apps', icon: 'apps', tint: 'pink',
+          title: 'Connected apps', sub: 'What you have let use your account' },
+      ],
+    },
+  ];
+
+  if (session.is_developer || session.is_staff) {
+    const extra = { rows: [] };
+    if (session.is_developer) {
+      extra.rows.push({ href: '/developers', icon: 'code', tint: 'slate',
+        title: 'Developer portal', sub: 'Applications, credentials and redirect URIs' });
+    }
+    if (session.is_staff) {
+      extra.rows.push({ href: '/admin', icon: 'shield', tint: 'slate',
+        title: 'Administration', sub: 'People, applications, activity and health' });
+    }
+    groups.push(extra);
+  }
+
+  const name = (user.display_name || '').trim();
+  const initial = (name || user.email || 'V').trim().charAt(0).toUpperCase();
+%>
+
+<%
+  /*
+   * The identity card. The avatar carries the badge and IS a link to the
+   * picture editor, which is the reference's answer to "the profile picture is
+   * a raw file input": the picture itself is the control, everywhere it appears.
+   */
+%>
+<section class="hub-identity">
+  <a class="hub-avatar" href="/account/profile" aria-label="Change your profile picture">
+    <% if (user.avatar_path) { %>
+    <img src="<%= user.avatar_path %>" alt="" width="88" height="88">
+    <% } else { %>
+    <span class="hub-avatar-empty" aria-hidden="true"><%= initial %></span>
+    <% } %>
+    <span class="hub-avatar-badge" aria-hidden="true">
+      <%- include('../partials/icon', { name: 'person' }) %>
+    </span>
+  </a>
+  <h2 class="hub-name"><%= name || 'Your Vesopa account' %></h2>
+  <% if (user.email) { %><p class="hub-email"><%= user.email %></p><% } %>
+  <% if (session.is_staff) { %>
+  <p class="hub-plan"><span class="pill pill-info">Administrator</span></p>
+  <% } %>
+</section>
+
+<% groups.forEach(function (group) { %>
+<nav class="hub-group">
+  <% group.rows.forEach(function (row) { %>
+  <a class="hub-row" href="<%= row.href %>">
+    <span class="hub-mark t-<%= row.tint %>"><%- include('../partials/icon', { name: row.icon }) %></span>
+    <span class="hub-lines">
+      <span class="hub-title"><%= row.title %></span>
+      <span class="hub-sub"><%= row.sub %></span>
+    </span>
+    <span class="row-go"><%- include('../partials/icon', { name: 'chevron' }) %></span>
+  </a>
+  <% }) %>
+</nav>
+<% }) %>
+
+<p class="hub-foot">
+  Only you can see these settings. Vesopa never shows your address or your
+  number to an application unless you allow it, and you can take that back at
+  any time from <a href="/account/apps">connected apps</a>.
+</p>
+
+<%- include('../partials/console-foot') %>

@@ -66,6 +66,126 @@ function page(res, view, session, extra = {}) {
 // Profile
 // ---------------------------------------------------------------------------
 
+/**
+ * The hub — reference_design/…730, and the page that makes the phone layout
+ * work at all.
+ *
+ * `/account` used to redirect straight to the profile, which was fine while
+ * navigation was a tab strip across the top of every page. That strip is the
+ * thing that sliced "How you s…" in half at 360px, and the reference has no
+ * strip and no rail anywhere on a phone: the hub IS the navigation. Tap a row,
+ * get a page, come back with the arrow.
+ */
+router.get('/account', async (req, res, next) => {
+  try {
+    const session = await guard(req, res);
+    if (!session) return undefined;
+
+    const user = await identity.getUser(session.user_id);
+    const primary = user.primary_email_id
+      ? await db.one('SELECT identifier FROM user_identities WHERE id = ?', [user.primary_email_id])
+      : null;
+
+    return page(res, 'account/hub', session, {
+      title: 'Your Vesopa account',
+      path: '/account',
+      user: { ...user, email: primary ? primary.identifier : '' },
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Subscriptions and the wallet
+// ---------------------------------------------------------------------------
+//
+// Modelled on reference_design/…711 and …712: grouped by STATE, with the state
+// as a plain-text heading over each group, and each row carrying the product
+// mark, the product name as a link, the plan, and a status line.
+//
+// CARDS ARE RECORDED, NEVER CHARGED. There is no code path from here to money —
+// see schema_010_billing.sql for what is deliberately absent from the table.
+
+router.get('/account/subscriptions', async (req, res, next) => {
+  try {
+    const session = await guard(req, res);
+    if (!session) return undefined;
+
+    const rows = await db.query(
+      `SELECT s.*, p.slug AS product_slug, p.name AS product_name,
+              p.description AS product_description, p.mark, p.tint, p.manage_url,
+              m.brand, m.last4, m.kind AS payment_kind
+         FROM subscriptions s
+         JOIN products p ON p.id = s.product_id
+         LEFT JOIN payment_methods m ON m.id = s.payment_method_id AND m.removed_at IS NULL
+        WHERE s.user_id = ?
+        ORDER BY FIELD(s.status,'active','trialling','paused','cancelled','expired'),
+                 p.sort, s.id`,
+      [session.user_id],
+    );
+
+    /*
+     * Grouped here rather than in the template. The order of the groups is a
+     * decision — active first, expired last — and a template that groups as it
+     * renders makes that decision invisible.
+     */
+    const order = ['active', 'trialling', 'paused', 'cancelled', 'expired'];
+    const headings = {
+      active: 'Active',
+      trialling: 'On trial',
+      paused: 'Paused',
+      cancelled: 'Cancelled',
+      expired: 'Expired',
+    };
+    const groups = order
+      .map((status) => ({
+        status,
+        heading: headings[status],
+        rows: rows.filter((row) => row.status === status),
+      }))
+      .filter((group) => group.rows.length);
+
+    return page(res, 'account/subscriptions', session, {
+      title: 'Subscriptions',
+      path: '/account/subscriptions',
+      groups,
+      attention: rows.filter((row) => row.needs_attention),
+      total: rows.length,
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.get('/account/wallet', async (req, res, next) => {
+  try {
+    const session = await guard(req, res);
+    if (!session) return undefined;
+
+    const methods = await db.query(
+      `SELECT * FROM payment_methods
+        WHERE user_id = ? AND removed_at IS NULL
+        ORDER BY is_default DESC, id DESC`,
+      [session.user_id],
+    );
+    const paying = await db.one(
+      `SELECT COUNT(*) AS total FROM subscriptions
+        WHERE user_id = ? AND status IN ('active','trialling')`,
+      [session.user_id],
+    );
+
+    return page(res, 'account/wallet', session, {
+      title: 'Wallet',
+      path: '/account/wallet',
+      methods,
+      activeSubscriptions: paying ? paying.total : 0,
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
 router.get('/account/profile', async (req, res, next) => {
   try {
     const session = await guard(req, res);

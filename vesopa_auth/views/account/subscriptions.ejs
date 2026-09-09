@@ -1,0 +1,126 @@
+<%- include('_shell') %>
+
+<%
+  /*
+   * reference_design/…711 and …712, which that document calls the model for
+   * this page.
+   *
+   * What those screens actually do, as opposed to what a subscriptions page
+   * usually does:
+   *
+   *   the STATE is a plain-text heading over each group — "Managed by Google",
+   *     "Inactive" — rather than a badge on every row
+   *   the list is ONE bordered card with hairline rules between rows, unlike
+   *     the rest of the design, which separates with gaps
+   *   the product mark is 56px, squared with a 12px radius, in full colour
+   *   the product NAME is in the accent colour, because it is a link
+   *   the plan is in full contrast, and the status line is muted
+   *
+   * The last two are the ones that matter for reading it: your eye lands on
+   * "Vesopa EPOS", then on "Till × 3", then on when it renews — which is the
+   * order the questions are actually asked in.
+   */
+  function when(value) {
+    if (!value) return '';
+    const d = new Date(value);
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+%>
+
+<p class="console-lead">
+  Everything you pay Vesopa for, and when it next renews.
+</p>
+
+<%
+  /*
+   * The alert card from `…714`: an orange mark, the problem, and two actions
+   * on the right. It is at the top because a failed renewal is the only thing
+   * on this page that is going to stop working if it is ignored.
+   */
+%>
+<% attention.forEach(function (row) { %>
+<div class="status status-warn">
+  <span class="status-mark"><%- include('../partials/icon', { name: 'alert' }) %></span>
+  <div>
+    <strong><%= row.product_name %> needs attention</strong>
+    <p><%= row.attention_note || 'The last renewal did not go through.' %></p>
+  </div>
+</div>
+<% }) %>
+
+<% if (!total) { %>
+<section class="card">
+  <div class="empty">
+    <span class="empty-mark"><%- include('../partials/icon', { name: 'sparkle' }) %></span>
+    <strong>Nothing here yet</strong>
+    <p>
+      Subscriptions you take out for Vesopa EPOS, the QR menu, hosting or a
+      domain will appear here, with what renews and when.
+    </p>
+  </div>
+</section>
+<% } %>
+
+<% groups.forEach(function (group) { %>
+<%
+  /*
+   * A plain-text heading over the group, not a card header and not a pill on
+   * every row. One word above a list is quieter and says the same thing about
+   * every row underneath it.
+   */
+%>
+<h2 class="sub-heading"><%= group.heading %></h2>
+<section class="card sub-list">
+  <% group.rows.forEach(function (row) { %>
+  <div class="sub-row">
+    <span class="sub-mark t-<%= row.tint %>"><%- include('../partials/icon', { name: row.mark }) %></span>
+    <span class="sub-lines">
+      <% if (row.manage_url) { %>
+      <a class="sub-product" href="<%= row.manage_url %>" rel="noopener"><%= row.product_name %></a>
+      <% } else { %>
+      <span class="sub-product-plain"><%= row.product_name %></span>
+      <% } %>
+      <span class="sub-plan">
+        <%= row.plan_label || row.product_description %><%
+        %><% if (row.quantity > 1) { %> × <%= row.quantity %><% } %>
+      </span>
+      <span class="sub-status">
+        <% if (row.status === 'active' && row.renews_at) { %>
+          Renews <%= when(row.renews_at) %>
+        <% } else if (row.status === 'trialling' && row.ends_at) { %>
+          Trial ends <%= when(row.ends_at) %>
+        <% } else if (row.status === 'cancelled' && row.ends_at) { %>
+          Cancelled — access until <%= when(row.ends_at) %>
+        <% } else if (row.status === 'expired' && row.ends_at) { %>
+          Expired on <%= when(row.ends_at) %>
+        <% } else if (row.status === 'paused') { %>
+          Paused
+        <% } else { %>
+          <%= row.started_at ? 'Since ' + when(row.started_at) : '' %>
+        <% } %>
+        <% if (row.last4) { %>
+          · <%= row.payment_kind === 'wallet' ? row.brand.replace('_', ' ') : row.brand %> ····<%= row.last4 %>
+        <% } %>
+      </span>
+    </span>
+  </div>
+  <% }) %>
+</section>
+<% }) %>
+
+<section class="card section-gap">
+  <h2 class="card-head">How Vesopa charges for these</h2>
+  <div class="card-body">
+    <p class="hint mt-0">
+      Payments are taken by the billing system, not by this one. Your Vesopa
+      account records which products you have and which card is on file — it
+      never holds a card number, and nothing here can take a payment.
+    </p>
+    <p class="hint mb-0">
+      <a href="/account/wallet">Payment methods</a> ·
+      <a href="/account/apps">Connected apps</a>
+    </p>
+  </div>
+</section>
+
+<%- include('../partials/console-foot') %>

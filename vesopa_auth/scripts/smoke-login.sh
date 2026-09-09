@@ -105,14 +105,16 @@ status="$(curl -sS -b "$JAR" -c "$JAR" -o /dev/null -w '%{redirect_url}' -X POST
 check "redirected to the account area" "$status" "$BASE/account"
 
 echo "▶ 7. the session cookie works"
-# -L, because /account is a signpost that redirects to /account/profile. Every
-# section has its own URL now, and an overview here would have been a second
-# copy of each list to keep in step with the real one.
-body="$(curl -sSL -b "$JAR" "$BASE/account")"
-check "the profile page loads" \
-  "$(printf '%s' "$body" | grep -c 'Profile picture')" "1"
-check "and it is this account" \
-  "$(printf '%s' "$body" | grep -c 'Your Vesopa id')" "1"
+# /account is the HUB now, not a redirect to the profile. It was a signpost
+# while navigation was a tab strip across the top of every page; that strip is
+# gone on a phone — it was slicing "How you s..." in half — so the hub IS the
+# navigation: an identity card and one row per section.
+body="$(curl -sS -b "$JAR" "$BASE/account")"
+check "the account hub loads"   "$(printf '%s' "$body" | grep -c 'hub-identity')" "1"
+check "with a way through to every section"   "$(printf '%s' "$body" | grep -o '/account/security' | head -1 | wc -l | tr -d ' ')" "1"
+
+profile="$(curl -sS -b "$JAR" "$BASE/account/profile")"
+check "the profile picture control is on the profile page"   "$(printf '%s' "$profile" | grep -c 'avatar-control')" "1"
 
 echo "▶ 7b. every section of the account area"
 for section in profile security linked devices history apps; do

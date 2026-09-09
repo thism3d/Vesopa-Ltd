@@ -6,7 +6,12 @@ still governs the architecture; this governs what is being changed now and why.
 visual work is built against — where this file and that one disagree about a
 pixel, that one wins.
 
-Status: ⬜ not started · 🔨 in progress · ✅ done and proven on the live server
+Status: `[x]` done and proven on the live server · `[~]` partly done · `[ ]` not started
+
+**Where it got to.** Everything except two items, both noted below: the
+personal-info page is still one form rather than a list of values opening
+editor pages (C2/C4 — the sideways scroll it caused IS fixed), and the loading
+bar still starts on a click rather than on first paint (C5).
 
 ---
 
@@ -41,7 +46,7 @@ from signing in to VS Code with Google.
 
 ### A — Foundations · schema and settings
 
-- [ ] **A1** `schema_008_auth_policy.sql` — per-application sign-in policy.
+- [x] **A1** `schema_008_auth_policy.sql` — per-application sign-in policy.
       `application_auth_methods` (application_id, method, enabled, sort) where
       method is one of `password`, `code_email`, `code_sms`, `passkey`,
       `google`, `microsoft`, `apple`, `github` — **rows, not columns**, so a
@@ -49,110 +54,110 @@ from signing in to VS Code with Google.
       Plus `applications.auth_policy` (`password_first` | `code_first` |
       `provider_only`) and `applications.show_consent` (so consent can be
       demanded even of a first-party app).
-- [ ] **A2** `schema_009_billing.sql` — `subscriptions`, `subscription_items`,
+- [x] **A2** `schema_009_billing.sql` — `subscriptions`, `subscription_items`,
       `payment_methods`. Cards are **recorded, never charged**: brand, last
       four, expiry, and the provider's token. No PAN, no CVV, no authorisation
       code — that is a later piece of work and the schema must not invite it.
-- [ ] **A3** Settings gain the global defaults: `auth_policy_default`,
+- [x] **A3** Settings gain the global defaults: `auth_policy_default`,
       `captcha_enabled`, `captcha_site_key`, `captcha_threshold`,
       `signin_wordmark_size`. Everything an administrator can set globally, an
       application can override.
 
 ### B — The sign-in flow rebuilt
 
-- [ ] **B1** **Identifier first.** One field. Submit finds the person, then the
+- [x] **B1** **Identifier first.** One field. Submit finds the person, then the
       page becomes "Hi <name>" with an account chip and the strongest method
       they actually hold. Never says whether an address is known before that
       point — the answer is the same page either way.
-- [ ] **B2** **Password, with a way out.** Where the application asks for a
+- [x] **B2** **Password, with a way out.** Where the application asks for a
       password and the person has one, that is the field. Underneath, a text
       link: **"Email me a code instead"** — the phrasing is deliberate; "Login
       using OTP" is jargon most diners have never met.
-- [ ] **B3** **reCAPTCHA v3** on `/login`, on the code send, and on the password
+- [x] **B3** **reCAPTCHA v3** on `/login`, on the code send, and on the password
       check. Score-based and invisible; below the threshold it does not refuse,
       it demands a code — a refusal on a wrong guess about a human is a person
       locked out of their own account. Off when no site key is configured.
-- [ ] **B4** Provider buttons come from the application's `auth_methods`, not
+- [x] **B4** Provider buttons come from the application's `auth_methods`, not
       from what the server happens to have credentials for.
-- [ ] **B5** The wordmark on the sign-in page is **~40px tall, top-left**, not
+- [x] **B5** The wordmark on the sign-in page is **~40px tall, top-left**, not
       830px wide. `design_mistakes/…731`.
 
 ### C — The account area, to the reference
 
-- [ ] **C1** `/account` becomes the **hub**: identity card with the avatar
+- [x] **C1** `/account` becomes the **hub**: identity card with the avatar
       carrying a pencil badge, then colour-grouped rows. No tab strip on a
       phone; the rail stays on desktop.
-- [ ] **C2** `/account/profile` becomes a **list of values**, each opening its
+- [~] **C2** `/account/profile` becomes a **list of values**, each opening its
       own editor page. One thing on screen at a time.
-- [ ] **C3** **The avatar is the control** — click the picture, choose, crop in
+- [x] **C3** **The avatar is the control** — click the picture, choose, crop in
       the browser, upload. This also removes `.avatar-row`, which is the thing
       making every account page scroll sideways (measured: 357px min-content).
-- [ ] **C4** The floating-label field from `…715`, and a date input that is not
+- [~] **C4** The floating-label field from `…715`, and a date input that is not
       a 102px stub.
 - [ ] **C5** The loading bar on **first paint**, not only on a click.
-- [ ] **C6** A test that no page is wider than its viewport, at 360px.
+- [x] **C6** A test that no page is wider than its viewport, at 360px.
 
 ### D — Images and first impression
 
-- [ ] **D1** Generate the hero and section imagery with Gemini
+- [x] **D1** Generate the hero and section imagery with Gemini
       (`gemini-3-pro-image`), in Vesopa's palette. Stored locally and served
       from this origin — the CSP allows no third-party images, and the sign-in
       domain is the last place to make an exception.
-- [ ] **D2** Rebuild the landing page around it: hero, what it is, the products
+- [x] **D2** Rebuild the landing page around it: hero, what it is, the products
       it signs you into, developers, policies. Fix the header that wraps
       "Privacy [Sign in]" onto a second line (`…733`).
-- [ ] **D3** A **"Continue with Vesopa" button**, matching the Google and Apple
+- [x] **D3** A **"Continue with Vesopa" button**, matching the Google and Apple
       buttons the owner supplied, published as a copy-and-paste snippet so every
       product renders it identically.
 
 ### E — Subscriptions and payment methods
 
-- [ ] **E1** `/account/subscriptions` on the `…711`/`…712` model: grouped by
+- [x] **E1** `/account/subscriptions` on the `…711`/`…712` model: grouped by
       state, product tile, product name in the accent colour, plan, status line.
-- [ ] **E2** `/account/wallet` — payment methods listed, the alert card from
+- [x] **E2** `/account/wallet` — payment methods listed, the alert card from
       `…714` for a failed renewal. **Cards are recorded, never charged.**
-- [ ] **E3** Seed the six Vesopa products so the page is real: EPOS, Kitchen,
+- [x] **E3** Seed the six Vesopa products so the page is real: EPOS, Kitchen,
       Display, Hosting, Domain, Email.
 
 ### F — Consent
 
-- [ ] **F1** Every application shows the consent screen when
+- [x] **F1** Every application shows the consent screen when
       `show_consent` is set, first-party included. The screen gains the app's
       logo, the organisation, and per-scope wording it already has.
 
 ### G — One sign-in in the products
 
-- [ ] **G1** **Menu** — the Vesopa button above "Continue as guest", with the
+- [x] **G1** **Menu** — the Vesopa button above "Continue as guest", with the
       Vesopa mark, as drawn. Guest stays the default and stays first-class.
-- [ ] **G2** **Back office** — Vesopa Auth and nothing else. The local password
+- [x] **G2** **Back office** — Vesopa Auth and nothing else. The local password
       form goes.
-- [ ] **G3** **EPOS till** — device sign-in, below.
+- [x] **G3** **EPOS till** — device sign-in, below.
 
 ### H — How a desktop application connects
 
 The flow the owner described, which is the one VS Code uses with Google:
 
-- [ ] **H1** The app shows **Continue with Vesopa** and opens the system
+- [x] **H1** The app shows **Continue with Vesopa** and opens the system
       browser. It listens on `http://127.0.0.1:<port>/callback` — RFC 8252
       loopback, already allowed for `native` clients.
-- [ ] **H2** The browser shows the account chooser and the consent screen; the
+- [x] **H2** The browser shows the account chooser and the consent screen; the
       person picks an account and continues.
-- [ ] **H3** The browser lands on **a page on this origin** that says it worked
+- [x] **H3** The browser lands on **a page on this origin** that says it worked
       and offers to hand back to the application — the "open the app?" dialog
       the browser raises for a custom scheme, with a visible button behind it in
       case they dismiss it.
-- [ ] **H4** The app exchanges the code, stores the refresh token, and is
+- [x] **H4** The app exchanges the code, stores the refresh token, and is
       linked. Revoking it under `/account/apps` kills the refresh token family,
       so the app finds itself unauthenticated and asks again — which is exactly
       the behaviour asked for.
-- [ ] **H5** `smoke-device-flow.js` drives it end to end.
+- [x] **H5** `smoke-device-flow.js` drives it end to end.
 
 ### I — Finishing
 
-- [ ] **I1** Every suite green on the live domain.
-- [ ] **I2** The EPOS sign-in driven in a real browser, start to finish.
-- [ ] **I3** `README.md` rewritten to describe what exists.
-- [ ] **I4** Committed and pushed.
+- [x] **I1** Every suite green on the live domain.
+- [x] **I2** The EPOS sign-in driven in a real browser, start to finish.
+- [x] **I3** `README.md` rewritten to describe what exists.
+- [x] **I4** Committed and pushed.
 
 ---
 

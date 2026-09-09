@@ -3,40 +3,64 @@
 <% if (saved) { %><p class="notice-good">Saved.</p><% } %>
 <% if (typeof error !== 'undefined' && error) { %><p class="form-error" role="alert"><%= error %></p><% } %>
 
-<section class="panel">
+<%
+  /*
+   * THE PICTURE IS THE CONTROL — reference_design §6.3, and `…730` where the
+   * avatar carries a pencil badge on its corner.
+   *
+   * What was here before was a raw `<input type=file>` and an Upload button in
+   * a non-wrapping flex row, and it was not merely ugly: MEASURED with
+   * tool/auth_overflow.py, `.avatar-row` had a min-content width of 357px,
+   * which set its panel to 399 and `.console-main` to 431 on a 360px screen.
+   * The profile picture control was the reason EVERY account page scrolled
+   * sideways on a phone. Rebuilding it fixes both complaints at once.
+   *
+   * The file input is still a real file input — it is simply the label that is
+   * visible, so the picture and the words under it are both the button. No
+   * script is needed for it to work.
+   */
+%>
+<section class="panel picture-panel">
   <h2>Profile picture</h2>
-  <%
-    /*
-     * If they signed in with Google, GitHub or Microsoft we already copied
-     * their picture across — copied, not linked, so no page here tells Google
-     * when somebody is looking at it. Apple never provides one.
-     */
-  %>
-  <div class="avatar-row">
-    <% if (user.avatar_path) { %>
-    <img class="avatar" src="<%= user.avatar_path %>" alt="Your profile picture" width="72" height="72">
-    <% } else { %>
-    <div class="avatar avatar-empty" aria-hidden="true">
-      <%= (user.display_name || 'V').trim().charAt(0).toUpperCase() %>
-    </div>
-    <% } %>
+  <p class="hint mt-0">A picture helps people recognise your account.</p>
 
-    <div class="avatar-actions">
-      <form method="post" action="/account/avatar" enctype="multipart/form-data">
-        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-        <label class="file-label" for="avatar">Choose an image</label>
-        <input type="file" id="avatar" name="avatar" accept="image/jpeg,image/png,image/webp,image/gif">
-        <button class="btn btn-quiet" type="submit">Upload</button>
-      </form>
+  <form method="post" action="/account/avatar" enctype="multipart/form-data" id="avatar-form">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+    <label class="avatar-control" for="avatar">
       <% if (user.avatar_path) { %>
-      <form method="post" action="/account/avatar/remove">
-        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-        <button type="submit" class="linklike">Remove picture</button>
-      </form>
+      <img class="avatar" src="<%= user.avatar_path %>" alt="Your profile picture" width="96" height="96">
+      <% } else { %>
+      <span class="avatar avatar-empty" aria-hidden="true"><%= (user.display_name || 'V').trim().charAt(0).toUpperCase() %></span>
       <% } %>
-      <p class="hint">JPEG, PNG, WebP or GIF, up to 2 MB.</p>
-    </div>
-  </div>
+      <span class="avatar-badge" aria-hidden="true">
+        <%- include('../partials/icon', { name: 'person' }) %>
+      </span>
+      <span class="avatar-cta">Change picture</span>
+      <input type="file" id="avatar" name="avatar"
+             accept="image/jpeg,image/png,image/webp,image/gif">
+    </label>
+
+    <%
+      /*
+       * Submits itself when a file is chosen, and shows a plain button when it
+       * cannot. Two steps — choose, then press Upload — is one step more than
+       * anybody expects, and the button below is what makes the page still work
+       * with scripting off rather than a fallback nobody sees.
+       */
+    %>
+    <noscript>
+      <button class="btn btn-quiet btn-small mt-2" type="submit">Upload</button>
+    </noscript>
+    <p class="hint">JPEG, PNG, WebP or GIF, up to 2&nbsp;MB.</p>
+  </form>
+
+  <% if (user.avatar_path) { %>
+  <form method="post" action="/account/avatar/remove">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <button type="submit" class="linklike">Remove picture</button>
+  </form>
+  <% } %>
 </section>
 
 <form method="post" action="/account/profile" class="panel">

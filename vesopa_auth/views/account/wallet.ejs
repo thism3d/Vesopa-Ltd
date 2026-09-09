@@ -1,0 +1,103 @@
+<%- include('_shell') %>
+
+<p class="console-lead">
+  The cards and wallets on your Vesopa account.
+</p>
+
+<%
+  /*
+   * SAID PLAINLY, AT THE TOP.
+   *
+   * This page shows cards and cannot charge them, and somebody looking at a
+   * list of their own cards deserves to know which of those two things is true
+   * before they wonder. It is also the honest description of the schema: there
+   * is no card number here, no security code, and no code path from this
+   * server to money — see schema_010_billing.sql.
+   */
+%>
+<div class="status">
+  <span class="status-mark"><%- include('../partials/icon', { name: 'lock' }) %></span>
+  <div>
+    <strong>Vesopa never sees your card number</strong>
+    <p>
+      Only the brand, the last four digits and the expiry are kept here, so a
+      card can be recognised. The number itself stays with Google&nbsp;Pay,
+      Apple&nbsp;Pay or the payment provider, and payments are taken there.
+    </p>
+  </div>
+</div>
+
+<section class="card">
+  <h2 class="card-head">Payment methods</h2>
+
+  <% if (!methods.length) { %>
+  <div class="empty">
+    <span class="empty-mark"><%- include('../partials/icon', { name: 'clipboard' }) %></span>
+    <strong>Nothing saved</strong>
+    <p>
+      A card or wallet added while paying for a Vesopa product appears here.
+      <% if (activeSubscriptions) { %>
+      Your <%= activeSubscriptions %>
+      <%= activeSubscriptions === 1 ? 'subscription is' : 'subscriptions are' %>
+      invoiced instead.
+      <% } %>
+    </p>
+  </div>
+  <% } %>
+
+  <% methods.forEach(function (m) { %>
+  <div class="row">
+    <span class="row-mark"><%- include('../partials/icon', {
+      name: m.kind === 'wallet' ? 'phone' : 'clipboard'
+    }) %></span>
+    <span class="row-lines">
+      <span class="row-title">
+        <%= (m.brand || 'Card').replace(/_/g, ' ') %> ····<%= m.last4 %>
+        <% if (m.is_default) { %><span class="pill pill-good">default</span><% } %>
+      </span>
+      <span class="row-sub">
+        <% if (m.exp_month && m.exp_year) { %>
+          Expires <%= String(m.exp_month).padStart(2, '0') %>/<%= String(m.exp_year).slice(-2) %>
+        <% } else { %>
+          <%= m.kind === 'wallet' ? 'Wallet' : 'Card' %>
+        <% } %>
+      </span>
+    </span>
+  </div>
+  <% }) %>
+
+  <%
+    /*
+     * NO "ADD A CARD" BUTTON, and its absence is the point.
+     *
+     * The owner deferred card authorisation: *"no need to add the card
+     * authorization feature right now would do that later"*. A button that
+     * opened a form to collect a card number would be the first half of exactly
+     * the feature that was deferred — and a half-built payment path is the one
+     * that takes money by accident. Cards arrive here from the checkout that
+     * actually handles them.
+     */
+  %>
+  <div class="card-body">
+    <p class="hint m-0">
+      Cards are added when you pay for something, at the checkout that handles
+      the payment. There is nothing to fill in here.
+    </p>
+  </div>
+</section>
+
+<section class="card">
+  <h2 class="card-head">What these pay for</h2>
+  <a class="row" href="/account/subscriptions">
+    <span class="row-mark"><%- include('../partials/icon', { name: 'sparkle' }) %></span>
+    <span class="row-lines">
+      <span class="row-title">Subscriptions</span>
+      <span class="row-sub">
+        <%= activeSubscriptions %> active — what renews, and when
+      </span>
+    </span>
+    <span class="row-right"><span class="row-go"><%- include('../partials/icon', { name: 'chevron' }) %></span></span>
+  </a>
+</section>
+
+<%- include('../partials/console-foot') %>

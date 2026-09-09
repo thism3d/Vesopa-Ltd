@@ -49,6 +49,17 @@
   --rail-current: #e8f2c4;
   --rail-hover: rgba(0, 0, 0, .05);
   --card-radius: 16px;
+
+  /*
+   * Green that may be TEXT.
+   *
+   * The brand lime (#a5c715) is a background colour — auth.css says so at the
+   * top, and the numbers back it: it is about 1.8:1 on white, which fails every
+   * contrast rule there is. The subscriptions page needs the product name to
+   * read as a link in the brand's colour, so this is the darkest green that
+   * still reads as the same family and clears 4.5:1 on both grounds.
+   */
+  --link-green: #4f6b06;
 }
 
 /*
@@ -71,6 +82,7 @@
 
     --rail-current: #2e3a08;
     --rail-hover: rgba(255, 255, 255, .07);
+    --link-green: #b6d442;
   }
 }
 
@@ -86,6 +98,8 @@
 
   --rail-current: #2e3a08;
   --rail-hover: rgba(255, 255, 255, .07);
+  /* On black the lime is legible; it is white grounds it fails on. */
+  --link-green: #b6d442;
 }
 
 /* The ground behind the cards. Slightly off the card white so a card has an
@@ -211,7 +225,14 @@ body.console-body { background: var(--bg); }
   max-width: 812px;
   /* Centred in the space the rail leaves, rather than pinned to its edge. On a
      wide screen the pinned version leaves a third of the window empty on the
-     right and the page reads as though it failed to load the rest. */
+     right and the page reads as though it failed to load the rest.
+     *
+     * `width: 100%` is load-bearing and its absence was a real bug. A grid item
+     * with `margin-inline: auto` is sized to its CONTENT rather than stretched,
+     * so one wide child made the whole column wider than the track — measured
+     * at 431px inside a 360px grid column. Capping without stretching caps
+     * nothing. */
+  width: 100%;
   margin-inline: auto;
 }
 
@@ -978,4 +999,335 @@ pre.code {
 
 @media (max-width: 560px) {
   .switch-row { grid-template-columns: 24px minmax(0, 1fr) auto; gap: 14px; padding: 13px 16px; }
+}
+
+/* --------------------------------------------------------------------------
+ * The profile picture, which is its own control
+ * --------------------------------------------------------------------------
+ * reference_design §6.3 and `…730`: the avatar with a badge on its corner, and
+ * the picture itself is what you press.
+ *
+ * The rule it replaces was measured rather than judged. `.avatar-row` — avatar,
+ * "Choose an image", a raw file input and an Upload button in one non-wrapping
+ * flex row — had a min-content width of 357px, which pushed its panel to 399
+ * and `.console-main` to 431 on a 360px viewport. That control was the reason
+ * every account page scrolled sideways.
+ *
+ * Nothing here has an intrinsic minimum wider than the avatar itself, so the
+ * whole thing fits at 320px.
+ * ------------------------------------------------------------------------ */
+
+.avatar-control {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  position: relative;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 14px;
+  max-width: 100%;
+}
+.avatar-control:hover .avatar { filter: brightness(.94); }
+.avatar-control:focus-within {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* The real input, present and reachable, just not drawn. `display:none` would
+   take it out of the tab order and make the control keyboard-dead. */
+.avatar-control input[type="file"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.avatar-control .avatar {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+.avatar-control .avatar-empty {
+  display: grid;
+  place-items: center;
+  font-size: 38px;
+  font-weight: 650;
+  color: var(--ink);
+  background: var(--green);
+  border-color: transparent;
+}
+
+/* The badge that says the picture is a button. Bottom-right of the circle,
+   which is where `…730` puts it and where a thumb reaches. */
+.avatar-badge {
+  position: absolute;
+  top: 68px;
+  left: 68px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .18);
+}
+.avatar-badge svg { width: 16px; height: 16px; }
+
+.avatar-cta { font-size: 14px; font-weight: 550; color: var(--text); }
+
+.picture-panel { text-align: center; }
+.picture-panel h2, .picture-panel .hint { text-align: left; }
+.picture-panel .hint { margin-top: 12px; }
+
+
+/* --------------------------------------------------------------------------
+ * Nothing wider than the viewport, ever
+ * --------------------------------------------------------------------------
+ * The reference document's last decision, and the one worth enforcing rather
+ * than remembering: a grid or flex ITEM defaults to `min-width: auto`, which
+ * means it refuses to shrink below its content. One long email address, one
+ * unbreakable client id, one row of buttons that will not wrap, and the whole
+ * page scrolls sideways on a phone.
+ *
+ * `minmax(0, 1fr)` is already used on the grid tracks. This is the same fix for
+ * everything inside them, plus the two kinds of content that genuinely cannot
+ * wrap on their own.
+ * ------------------------------------------------------------------------ */
+
+.console-main .panel,
+.console-main .card,
+.console-main section,
+.console-main form,
+.console-main .row-lines { min-width: 0; }
+
+/* An address, a client id, a redirect URI: long, unbreakable, and pasted in by
+   somebody who was not thinking about layout. */
+.console-main .row-sub,
+.console-main .mono,
+.console-main code { overflow-wrap: anywhere; }
+
+/* ==========================================================================
+ * THE ACCOUNT HUB — reference_design/…730 and …729
+ * ==========================================================================
+ * An identity card, then rows in colour-grouped clusters. The grouping is done
+ * with SPACE, not with headings or boxes: ~4px between rows in a group, ~32px
+ * between groups. That is measured off the reference and it is why the page
+ * reads as five things rather than eleven.
+ * ======================================================================== */
+
+.hub-identity {
+  text-align: center;
+  padding: 8px 0 34px;
+}
+
+.hub-avatar {
+  position: relative;
+  display: inline-block;
+  margin: 0 0 16px;
+  border-radius: 50%;
+}
+.hub-avatar img,
+.hub-avatar-empty {
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  object-fit: cover;
+  display: grid;
+  place-items: center;
+  background: var(--green);
+  color: var(--ink);
+  font-size: 34px;
+  font-weight: 650;
+  border: 1px solid var(--border);
+}
+.hub-avatar img { background: var(--surface-2); }
+.hub-avatar:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+
+/* The badge on the corner. It is the whole answer to "how do I change my
+   picture" — the picture is the control, and this says so. */
+.hub-avatar-badge {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .2);
+}
+.hub-avatar-badge svg { width: 16px; height: 16px; }
+
+.hub-name {
+  margin: 0 0 4px;
+  font-size: 26px;
+  font-weight: 500;
+  letter-spacing: -.02em;
+}
+.hub-email { margin: 0; color: var(--text-muted); font-size: 15px; overflow-wrap: anywhere; }
+.hub-plan { margin: 12px 0 0; }
+
+/* A group. 4px between its rows, 32px to the next group. */
+.hub-group { display: grid; gap: 4px; margin: 0 0 32px; }
+.hub-group:last-of-type { margin-bottom: 24px; }
+
+.hub-row {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) 20px;
+  align-items: center;
+  gap: 16px;
+  min-height: 76px;
+  padding: 14px 18px;
+  border-radius: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  text-decoration: none;
+  color: var(--text);
+}
+.hub-row:hover { background: var(--surface-2); }
+.hub-row:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+/* Saturated, not tinted. The reference uses full colour ONLY here — for
+   section identity — and greyscale everywhere else. That discipline is what
+   makes the colour mean something. */
+.hub-mark {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+}
+.hub-mark svg { width: 22px; height: 22px; }
+
+.hub-lines { min-width: 0; }
+.hub-title { display: block; font-size: 17px; font-weight: 500; }
+.hub-sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 14px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.hub-foot {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+  max-width: 46ch;
+  margin-inline: auto;
+}
+
+/* --------------------------------------------------------------------------
+ * NO TAB STRIP ON A PHONE
+ * --------------------------------------------------------------------------
+ * The reference has no navigation rail and no tab strip anywhere on a phone.
+ * Vesopa's rail turned into a horizontally-scrolling strip below 900px, and
+ * that strip is what sliced "How you s…" in half in design_mistakes/…735.
+ *
+ * On a phone the HUB is the navigation: tap a row, get a page, come back. The
+ * rail stays on a wide screen, where there is room for it and where losing it
+ * would waste a third of the window.
+ * ------------------------------------------------------------------------ */
+@media (max-width: 900px) {
+  .console .rail { display: none; }
+  .console-main { padding-top: 20px; }
+}
+
+/* Coming back, on a phone. The reference puts the arrow on the title line
+   rather than in the bar above it. */
+.page-back {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 10px;
+  font-size: 14.5px;
+  color: var(--text-muted);
+  text-decoration: none;
+}
+.page-back svg { width: 18px; height: 18px; }
+@media (max-width: 900px) { .page-back { display: inline-flex; } }
+
+/* ==========================================================================
+ * SUBSCRIPTIONS — reference_design/…711 and …712
+ * ==========================================================================
+ * The one place in this design that uses hairline RULES between rows instead
+ * of gaps, because that is what the reference does: a subscriptions list reads
+ * as one ledger, and gaps would make six products look like six unrelated
+ * cards. The state is a plain-text heading above each group rather than a badge
+ * on every row — one word, said once.
+ * ======================================================================== */
+
+.sub-heading {
+  margin: 26px 0 10px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: .01em;
+}
+.sub-heading:first-of-type { margin-top: 6px; }
+
+.sub-list { padding: 0; }
+
+.sub-row {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--border);
+}
+.sub-list .sub-row:first-child { border-top: 0; }
+
+/* 56px, squared with a 12px radius — the reference's product tile, not a
+   circle. A circle reads as a person; a rounded square reads as a product. */
+.sub-mark {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+}
+.sub-mark svg { width: 26px; height: 26px; }
+
+.sub-lines { min-width: 0; }
+
+/* The product name is in the ACCENT colour because it is a link — and Vesopa's
+   accent is a lime that fails every contrast rule as text on white. So the link
+   colour here is the darker green, which reads as the same family and is
+   actually legible. The brand book's rule holds: the lime is a background. */
+.sub-product {
+  display: block;
+  font-size: 18px;
+  font-weight: 550;
+  color: var(--link-green);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.sub-product:hover { text-decoration: underline; }
+.sub-product-plain {
+  display: block;
+  font-size: 18px;
+  font-weight: 550;
+  overflow-wrap: anywhere;
+}
+.sub-plan { display: block; margin-top: 2px; font-size: 15px; }
+.sub-status { display: block; margin-top: 3px; font-size: 13.5px; color: var(--text-muted); }
+
+@media (max-width: 560px) {
+  .sub-row { grid-template-columns: 44px minmax(0, 1fr); gap: 13px; padding: 14px 16px; }
+  .sub-mark { width: 44px; height: 44px; border-radius: 10px; }
+  .sub-mark svg { width: 21px; height: 21px; }
+  .sub-product, .sub-product-plain { font-size: 16.5px; }
 }

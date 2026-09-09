@@ -15,6 +15,7 @@
 const crypto = require('crypto');
 
 const db = require('../src/db');
+const { authorizeAnsweringConsent, clearConsent } = require('./lib/consent');
 const config = require('../src/config');
 const { newId, newToken, hashToken } = require('../src/crypto');
 
@@ -100,7 +101,14 @@ async function main() {
     sent.get('redirect_uri'),
   );
 
-  const authorized = await fetch(authorizeUrl, { redirect: 'manual', headers: { cookie } });
+  /*
+   * Consent is asked now, first-party included, so /authorize may answer with a
+   * form rather than a redirect. The shared helper answers it exactly as a
+   * browser would — see scripts/lib/consent.js for the two details that make it
+   * work, both of which were got wrong separately in three other tests.
+   */
+  await clearConsent(db, user.id, application.id);
+  const { response: authorized } = await authorizeAnsweringConsent(authorizeUrl, cookie);
   const back = authorized.headers.get('location') || '';
   check(
     'the identity provider sends us back with a code',

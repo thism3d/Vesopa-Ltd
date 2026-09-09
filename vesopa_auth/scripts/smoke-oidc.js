@@ -132,7 +132,56 @@ async function main() {
   // -----------------------------------------------------------------------
   console.log('▶ /authorize happy path');
 
-  const authorize = await get(`/oauth/authorize?${new URLSearchParams(baseQuery)}`, { cookie });
+  /*
+   * CONSENT IS ASKED NOW, even of a first-party application.
+   *
+   * `applications.show_consent` defaults to on, which is what the owner asked
+   * for — so /authorize answers 200 with the consent screen the first time
+   * rather than redirecting. This test predates that and read `location` from
+   * a page that no longer has one, which is why it failed with
+   * `TypeError: Invalid URL, input: 'null'` rather than with anything about
+   * consent.
+   *
+   * Answering it is the honest fix: the flow being tested is the one a person
+   * actually walks through, and skipping the screen would mean the test no
+   * longer covers what ships.
+   */
+  /*
+   * Consent is asked ONCE and then remembered, so asserting that the screen
+   * appears is only true on a database that has not seen this pair before —
+   * the check passed on the first run and failed on the second. Clearing the
+   * grant first makes it deterministic, and clearing it is also what somebody
+   * revoking the application from their account page does.
+   */
+  await db.execute(
+    `UPDATE oauth_consents SET revoked_at = NOW()
+      WHERE user_id = ? AND application_id = ? AND revoked_at IS NULL`,
+    [userId, application.id],
+  );
+
+  const answered = await authorizeAnswering(baseQuery, cookie);
+  ok('the consent screen is shown, even to a first-party application', answered.consented);
+  const authorize = answered.response;
+
+  /*
+   * A missing Location here used to crash with `TypeError: Invalid URL,
+   * input: 'null'`, which says nothing about what actually happened. It is
+   * always one of two things — a consent screen that was not answered, or a
+   * refusal — and both are in the body.
+   */
+  if (!authorize.headers.get('location')) {
+    const why = (await authorize.text())
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 300);
+    console.log(`
+  /authorize did not redirect (HTTP ${authorize.status}).`);
+    console.log(`  The page said: ${why}
+`);
+    process.exit(1);
+  }
+
   const location = new URL(authorize.headers.get('location'));
   check('redirected to the registered address', `${location.origin}${location.pathname}`, REDIRECT);
   check('state is echoed back', location.searchParams.get('state'), 'state-123');
@@ -303,19 +352,81 @@ async function main() {
   process.exit(failed === 0 ? 0 : 1);
 }
 
+/**
+ * Start an authorisation and answer the consent screen if one appears.
+ *
+ * `applications.show_consent` defaults to on now — the owner asked for consent
+ * on every authorisation, first-party included — so /authorize answers 200 with
+ * a form the first time rather than redirecting. Every caller here needs the
+ * same two steps, and having them in one place is what stopped the second
+ * caller being forgotten (it was, and it failed with `Invalid URL: null` three
+ * hundred lines from the cause).
+ */
+async function authorizeAnswering(query, cookie) {
+  let response = await get(`/oauth/authorize?${new URLSearchParams(query)}`, { cookie });
+  if (response.status !== 200) return { response, consented: false };
+
+  const html = await response.text();
+  /*
+   * NO ESCAPED BACKSLASHES ANYWHERE IN THIS PATTERN.
+   *
+   * Three attempts at this were wrong in three different ways: inside a
+   * template literal `\s` is not an escape JavaScript knows and collapses to
+   * a bare `s`; inside a single-quoted string it does the same; and writing
+   * the class out longhand invited whatever generated the file to turn the
+   * escapes into real control characters. Each time the pattern matched
+   * nothing, the CSRF field came back empty, and the POST was refused 403 —
+   * a failure that looks like a cookie problem and is a quoting one.
+   *
+   * So: find the attribute by text, then use a regex LITERAL, which no amount
+   * of string quoting can damage.
+   */
+  const field = (name) => {
+    const marker = 'name="' + name + '"';
+    const at = html.indexOf(marker);
+    if (at < 0) return '';
+    const after = html.slice(at + marker.length, at + marker.length + 400);
+    const found = after.match(/value="([^"]*)"/);
+    return found ? found[1] : '';
+  };
+
+  // The CSRF cookie arrives with the consent PAGE and the hidden field has to
+  // match it; sending one without the other is refused, which is the protection
+  // working.
+  const issued = (response.headers.getSetCookie ? response.headers.getSetCookie() : [])
+    .map((line) => line.split(';')[0])
+    .join('; ');
+
+  response = await post(
+    '/oauth/consent',
+    {
+      _csrf: field('_csrf'),
+      client_id: field('client_id'),
+      redirect_uri: field('redirect_uri'),
+      scope: field('scope'),
+      state: field('state'),
+      nonce: field('nonce'),
+      code_challenge: field('code_challenge'),
+      decision: 'allow',
+    },
+    { headers: { cookie: issued ? `${cookie}; ${issued}` : cookie } },
+  );
+  return { response, consented: true };
+}
+
 async function freshAuthorizationCode(application, cookie) {
   const verifier = newToken(32);
   const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
-  const response = await get(
-    `/oauth/authorize?${new URLSearchParams({
+  const { response } = await authorizeAnswering(
+    {
       client_id: application.client_id,
       redirect_uri: REDIRECT,
       response_type: 'code',
       scope: 'openid offline_access',
       code_challenge: challenge,
       code_challenge_method: 'S256',
-    })}`,
-    { cookie },
+    },
+    cookie,
   );
   const url = new URL(response.headers.get('location'));
   return { code: url.searchParams.get('code'), verifier };

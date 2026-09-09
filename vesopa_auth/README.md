@@ -4,7 +4,7 @@ The identity provider that is replacing every login across Vesopa Ltd: the EPOS
 till, the QR dine-in menu, the back office, the hosting control panel, and
 whatever is built next.
 
-**It is live and working.** 287 automated checks pass against the real domain —
+**It is live and working.** 465 automated checks pass against the real domain —
 not a local mock — and a person can create an account, sign in and manage it
 today. A developer can create an OAuth application, register a redirect URI and
 mint a credential without touching this repository or the database.
@@ -93,84 +93,117 @@ Everything runs **on the server, against the live domain**, because that is wher
 nginx, the certificate, the cookie flags and the real database are.
 
 ```bash
-python tool/auth_ssh.py run "cd @app && node --test test/*.test.js"          # 112
-python tool/auth_ssh.py run "cd @app && bash scripts/smoke-login.sh"         # 27
-python tool/auth_ssh.py run "cd @app && node scripts/smoke-oidc.js"          # 40
-python tool/auth_ssh.py run "cd @app && node scripts/smoke-social.js"        # 39
-python tool/auth_ssh.py run "cd @app && node scripts/smoke-portal.js"        # 45
-python tool/auth_nav_test.py                                                 # 15
-python tool/auth_loadbar_test.py                                             # 11
+python tool/auth_ssh.py run "cd @app && node --test test/*.test.js"        # 138
+python tool/auth_ssh.py run "cd @app && bash scripts/smoke-login.sh"       #  28
+python tool/auth_ssh.py run "cd @app && node scripts/smoke-oidc.js"        #  41
+python tool/auth_ssh.py run "cd @app && node scripts/smoke-social.js"      #  40
+python tool/auth_ssh.py run "cd @app && node scripts/smoke-portal.js"      #  55
+python tool/auth_ssh.py run "cd @app && node scripts/smoke-password.js"    #  21
+python tool/auth_ssh.py run "cd @app && node scripts/smoke-mfa.js"         #  29
+python tool/auth_ssh.py run "cd @app && node scripts/smoke-webhooks.js"    #  32
+python tool/auth_ssh.py run "cd @app && node scripts/smoke-phase5.js"      #  33
+python tool/auth_ssh.py run "cd @app && node scripts/smoke-device-flow.js" #  23
+python tool/auth_ssh.py run "cd @app && node scripts/smoke-till-sso.js"    #  34
+python tool/auth_ssh.py run "cd @app && node scripts/smoke-backoffice-sso.js" # 18
+python tool/auth_ssh.py run "cd @app && node scripts/smoke-panel-sso.js"   #  17
+
+python tool/auth_nav_test.py                                              #  15
+python tool/auth_loadbar_test.py                                          #  11
+python tool/auth_width_test.py 360                                        #  21
 ```
 
-What each one is for:
+What each one is for, where it is not obvious:
 
-* **`test/`** — TOTP against RFC 6238's own published vectors, email and phone
-  normalisation, AES-GCM, pairwise subjects, and **every template compiling**.
-* **`scripts/smoke-login.sh`** — signs in for real: posts the form, waits for
-  the message to land in the mailbox, reads the code out of it, types it back.
-  Also checks every account section and every policy page.
-* **`scripts/smoke-oidc.js`** — the whole protocol, and every refusal. The
-  refusals are the product: unknown client, unregistered redirect, missing PKCE,
-  altered `redirect_uri`, replayed code, reused refresh token.
-* **`scripts/smoke-social.js`** — asks **Google, Microsoft and GitHub directly**
-  whether we are registered, and asks Microsoft to validate the client secret.
-  Catches the two failures that break social sign-in for every user at once and
-  are invisible until somebody tries it.
-* **`scripts/smoke-portal.js`** — creates an application through the web
-  interface, registers redirect URIs, mints a secret and **uses it against
-  `/oauth/token`**, then archives what it made. Its refusals are the product
-  too: an `http://` redirect, a wildcard, a `#fragment`, `localhost`, removing
-  the last redirect URI, a browser app asking for a secret, and an SVG logo —
-  which would be a stored XSS hole on the domain that holds every session.
-* **`tool/auth_nav_test.py`** — drives a real browser to prove the no-reload
-  router does not break the sign-in form.
-* **`tool/auth_loadbar_test.py`** — proves the progress bar appears in all
-  three cases: a routed link, a form submit, and the hand-off to a provider.
-  The last is the longest wait on the site and the one the router never sees.
-* **`tool/auth_console_shot.py`** — photographs the signed-in pages, in both
-  colour schemes, and `--as somebody@example.com` photographs them as that
-  person. That is the only way to check what a developer granted ONE
-  application actually sees.
-
----
+* **`smoke-password.js`** — the identifier goes in and a PASSWORD page comes
+  back, not an emailed code; the password signs the person in; the way out from
+  under it still sends a code; and an application whose policy says otherwise
+  gets otherwise. A wrong password must not reveal whether the account exists.
+* **`smoke-portal.js`** — creates an application through the web interface,
+  registers redirect URIs, mints a secret and **uses it against `/oauth/token`**.
+  Its refusals are the product: `http://`, wildcards, `#fragment`, `localhost`,
+  removing the last redirect URI, a browser app asking for a secret, an SVG
+  logo, and switching every sign-in method off.
+* **`smoke-device-flow.js`** — the desktop round trip: browser out, consent,
+  the hand-off page, the app exchanging the code with PKCE and NO secret, and
+  then revoking the link and proving the app can reconnect. A code presented
+  with the WRONG verifier is refused, which is what makes a custom scheme safe.
+* **`tool/auth_width_test.py`** — no page is wider than the phone it is on. A
+  grid item's default `min-width: auto` is why this keeps happening, and it is
+  invisible on a laptop, so it ships.
+* **`tool/auth_loadbar_test.py`** — the progress bar appears on a routed link,
+  on a form submit, and on the hand-off to a provider. The last is the longest
+  wait on the site and the one the router never sees.
+* **`scripts/lib/consent.js`** — not a test; the shared "answer the consent
+  screen" step. Four suites drive `/oauth/authorize`, consent now applies to
+  first-party applications too, and without this each of them rediscovers the
+  same two details separately. It has the details written down.
 
 ## 4. What is done
 
 ### Working, proven on the live domain
 
-* **The sign-in page is the registration page.** One form; whether an account is
-  created depends only on whether the identifier is already known.
-* **Email first with a toggle to phone**, the opposite way round from the
-  dine-in menu, which is deliberate.
-* **Email codes** (ours: minted, HMAC'd under a pepper, sent, checked here) and
-  **phone codes** (Postcoder's: they mint, send AND verify — we never see the
-  code, so the row holds their reference instead of a hash).
-* **Google, Apple, Microsoft and GitHub** sign-in, all four verified against the
-  real providers.
-* **Passkeys** — registration and sign-in, discoverable credentials, conditional
-  UI on the email field.
-* **TOTP** with a server-rendered QR and ten single-use recovery codes.
-* **OpenID Connect provider** — discovery, `/authorize`, `/token`, `/userinfo`,
-  JWKS with three-state key rotation, consent, revocation, introspection,
-  RP-initiated logout.
-* **The account area** — profile with picture, security, linked accounts,
-  devices, sign-in history, connected apps, deletion.
-* **Eight policy pages**, served and reachable, with the company details filled
-  in.
-* **A landing page and developer documentation**, both of which an OAuth
-  reviewer will read.
-* **A developer portal** at `/developers` — create an application, register
-  redirect URIs with the rules explained as you type, mint and revoke client
-  secrets (shown once, never stored), choose scopes, define roles, upload a
-  logo, see who uses it and who may edit it. Access is grantable **per
-  application**, not only per organisation.
-* **An admin console** at `/admin` — overview, people search, applications,
-  activity, health and the sign-in page settings. The charts read **daily
-  rollups**, never a `GROUP BY` over raw events.
-* **A progress bar** across the top of every page, the same one the EPOS back
-  office uses, on links, on forms and on the hand-off to a provider.
-* **No-reload navigation** across the whole site, written so that any doubt at
-  all falls back to an ordinary page load.
+**The sign-in itself**
+
+* **Identifier first, then a password, with a way out.** One field; the server
+  finds the person and then shows the password step — small mark top-left,
+  "Hi &lt;name&gt;", an account chip saying WHICH account is about to be signed
+  in, one field, and **"Email me a code instead"** underneath. The phrasing
+  avoids "OTP" deliberately: it is jargon a diner has never met.
+* **What an application asks for first is a setting.** `password_first`,
+  `code_first` or `provider_only`, defaulting from `/admin/settings` and
+  overridable per application. It decides what LEADS, never what is possible —
+  and is ignored for somebody with no password, because an empty password box
+  is a question with no answer.
+* **Which ways in an application offers is a table of rows**
+  (`application_auth_methods`), not a column each: password, email code, text
+  code, passkey, Google, Microsoft, Apple, GitHub — and whatever comes next,
+  which is one entry in `src/authmethods.js` and no migration.
+* **reCAPTCHA v3, which never locks anybody out.** A low score does not refuse;
+  it drops the password fast path and asks for an emailed code. A missing token
+  degrades the same way, because plenty of real people block google.com. Only a
+  token that did not come from our form is refused, and if Google does not
+  answer in four seconds it fails **open**.
+* **Email codes and phone codes**, social sign-in with **Google, Apple,
+  Microsoft and GitHub**, **passkeys**, **TOTP** with recovery codes, and
+  step-up authentication.
+
+**The account area** — rebuilt to `reference_design/VesopaOauthReference.md`
+
+* **A hub at `/account`**: an identity card whose avatar carries a badge and IS
+  the control, then rows in colour-grouped clusters. No tab strip on a phone —
+  that strip was slicing "How you s…" in half at 360px.
+* **Subscriptions and a wallet**, on the reference's model: grouped by state,
+  product tile, product name as a link, plan, status line. **Cards are recorded
+  and never charged** — there is no card number in the schema and no code path
+  to money.
+* **Nothing is wider than the viewport.** The profile picture control was the
+  cause (min-content 357px on a 360px screen) and is now the avatar itself.
+
+**For developers** — `/developers`
+
+* Create an application, register redirect URIs, mint and revoke secrets,
+  choose scopes and roles, upload a logo, see who uses it and who may edit it.
+* **How people sign in** — per-application methods, policy, and consent.
+* **Access is grantable per application**, not only per organisation.
+* **The desktop hand-off** — a page on this domain that says it worked and
+  offers to open the app, for the flow people know from VS Code and Google.
+
+**For administrators** — `/admin`
+
+Overview, people search, applications, activity, health, sign-in settings. The
+figures come from daily rollups, never a `GROUP BY` over raw events. There is
+no way to sign in as somebody, deliberately, and opening an account is audited
+where that person can see it.
+
+**In the products**
+
+* **Back office** — Vesopa Auth and nothing else, behind
+  `VESOPA_AUTH_BACKOFFICE_ONLY`. Driven end to end in a browser: one button,
+  out to auth.vesopa.com, back signed in.
+* **QR menu** — the mark and "Continue with Vesopa" above "Continue as guest".
+  Guest stays the default and stays first-class.
+* **Till** — the device hand-off, with loopback still registered so an older
+  build keeps working.
 
 ### The rules the owner asked for, and where each one lives
 
@@ -239,6 +272,43 @@ integrations and were correct behaviour.
 
 ---
 
+**A `<img>`'s `width`/`height` attributes beat `aspect-ratio`.** The attributes
+should be there — they reserve the space and stop the page jumping — but with a
+CSS `width` set and no CSS `height`, the ATTRIBUTE height wins and the ratio
+never computes. The hero rendered 460×768 instead of 460×288. `height: auto` is
+the fix, and its absence looks exactly like the ratio being ignored.
+
+**Equal specificity means source order decides, and source order moves.** The
+back-office wordmark rendered 358px wide on a 414px screen because
+`.lockup-light { max-width: 100% }` came later than
+`.login-logo { max-width: 148px }`. The served stylesheet said one thing and the
+element said another, which is the shape of every specificity bug. Settle it
+with a two-class selector, not with where the block sits.
+
+**`\s` inside a JavaScript template literal is not an escape.** It collapses to
+a bare `s`, so a regular expression built from one silently matches nothing.
+This was got wrong three times in a row in one afternoon, each time presenting
+as a CSRF failure rather than as a pattern that never matched. Use a regex
+LITERAL, or `indexOf`.
+
+**A disabled checkbox is not submitted.** A setting shown as on-but-locked
+therefore vanishes the moment somebody presses Save on that page — a setting
+switched off by looking at it. Carry it through in a hidden field.
+
+**A grid item with `margin-inline: auto` is sized to its content.** It does not
+stretch, so `max-width` caps nothing and one wide child makes the whole column
+wider than its track. `width: 100%` alongside is what makes the cap mean
+anything.
+
+**`ratelimit.hit` answers `{ allowed }`, not `{ ok }`.** Checking the wrong
+property made every password attempt read as blocked, including the right one.
+
+**Revoking a connected app must not remove the membership.** Consent is "this
+application may act for me"; membership is "this person works here". Removing
+both meant disconnecting the till locked somebody out permanently, because the
+till does not allow self-enrolment. Found by a smoke test on its second run,
+which is the only way that kind of bug ever shows up.
+
 ## 6. Credentials
 
 All of them live in **`.env.claude-tools`** at the repository root, gitignored —
@@ -262,47 +332,32 @@ error can quote the credential back.
 
 In the order it should be done.
 
-**1. SMS as a second factor**, and step-up authentication at `/authorize` via
-`acr_values`. The claims (`amr`, `acr`) are already carried in every token and
-recorded on every session; the enforcement is not written. These are the last
-two items of Phase 3.
+**1. Rotate the shared password.** It was a plain-text constant in
+`vesopasoftware/server/seed.js`, this repository is **public**, and it is in the
+git history — which is public too. It is the same string as the auth database
+user, the `info@vesopasoftware.com` login and the mail accounts. Nothing in the
+code fixes that; only changing the password does.
 
-**2. Webhooks** — telling an application that a person changed or deleted their
-account. The only part of Phase 4 not built.
+**2. Set the reCAPTCHA keys.** The code is written and off:
+`RECAPTCHA_SITE_KEY` and `RECAPTCHA_SECRET_KEY` in `.env`, with
+`RECAPTCHA_THRESHOLD` defaulting to 0.5. Nothing on the page changes until both
+are present.
 
-**3. Invitations, and resetting a factor for somebody.** `/admin/people` can
-search, suspend, restore and grant access, and it deliberately cannot sign in as
-anybody. Helping a person who has lost their authenticator still needs doing,
-and it needs building as something visible to them in their own history.
+**3. The Microsoft platform, if it moves again.** The callback must be
+registered under **Web**, not "Single-page application" — an SPA registration
+makes the whole client public and its codes redeemable only from a browser,
+which a server can never do. `smoke-social.js` now detects it with no user at
+all.
 
-**4. Migrate the four products.** The order is settled: **QR menu → back office
-→ hosting panel → till.** The rules are not negotiable:
+**4. Card authorisation.** Deliberately not built: the schema records a brand,
+four digits, an expiry and a provider token, and there is no code path to money.
+When it is built, it belongs at the gateway.
 
-* The identity provider **never writes to a product's database.**
-* Legacy login ships **dormant behind a flag**; rollback is flipping it back.
-* **No bulk password reset.** Import the existing hashes with an algorithm tag,
-  verify with the old algorithm at first sign-in, rehash to argon2id silently.
-* **Sessions are not ported.** One clean re-login beats importing an insecure
-  session format.
-* Dual-auth during the soak; 90 days before the legacy code is removed.
+**5. Migrate the remaining products.** The back office, the till and the menu
+are done. The hosting panel has `smoke-panel-sso.js` passing and its own flag.
 
-**7. Outstanding, not code:**
-
-* **The ICO registration number.** Deliberately not invented — the policy pages
-  give the ICO complaint route instead, which is what UK GDPR requires of us.
-  The data-protection fee registration is itself a legal obligation.
-* **Google and Microsoft app verification**, which take weeks. Everything they
-  check is ready.
-* **One password is shared** between the database user, the admin login and the
-  mail accounts, at the owner's instruction. The value is in `.env` on the
-  server and in `.env.claude-tools`, never in this repository. The database password can be
-  rotated to a random value in `.env` with no user-visible change, and should be
-  before third-party developers arrive.
-* **One box, every login.** JWKS caching, 30-day refresh tokens and short access
-  tokens soften an outage; an off-box uptime probe and a tested restore do not
-  exist yet.
-
----
+**6. Outstanding, not code:** the ICO registration number, and Microsoft's
+verified-publisher status.
 
 ## 8. If you change one thing, know this
 
