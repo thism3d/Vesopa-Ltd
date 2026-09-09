@@ -602,6 +602,23 @@ function initNavGroups() {
  */
 const yesNo = (v) => (Number(v) ? 'Yes' : '—');
 
+/**
+ * What an error reason explains, in the words the manager chose it by.
+ *
+ * The column stores `no_sale`, which is right for a database and wrong for a
+ * list somebody reads. Anything unrecognised is shown as it is stored rather
+ * than blanked — a value this list has not caught up with is still a fact
+ * about the row, and hiding it would make the row look broken.
+ */
+const REASON_ACTION_LABELS = {
+  void: 'Void',
+  cancel: 'Cancel',
+  refund: 'Refund',
+  no_sale: 'No Sale',
+  discount: 'Discount',
+};
+const reasonAction = (v) => REASON_ACTION_LABELS[String(v)] || String(v || '—');
+
 const CRUD = {
   departments: {
     path: 'departments', title: 'department', sortable: true,
@@ -763,7 +780,30 @@ const CRUD = {
     path: 'error-reasons', title: 'error reason', sortable: true,
     fields: [
       { name: 'reason', label: 'Reason', required: true },
-      { name: 'applies_to', label: 'Applies to', type: 'select', options: ['void', 'refund', 'discount'] },
+      {
+        name: 'applies_to',
+        label: 'Applies to',
+        type: 'select',
+        render: reasonAction,
+        // Five actions, each with its own list on the till.
+        //
+        // "Can we have reasons for No Sale, Refunds, Voids and Cancel (Void
+        // and Cancel is already done just need to split them off." Cancel was
+        // not done — the till was showing the void list when a check was
+        // cancelled, which is why it looked done. It has its own list now,
+        // seeded from each venue's void reasons so nobody starts with an
+        // empty dialog, and it is theirs to edit apart.
+        //
+        // Labelled, not raw: the stored value is `no_sale` and a manager
+        // choosing from this box should read "No Sale".
+        options: [
+          { value: 'void', label: 'Void — an item off a bill' },
+          { value: 'cancel', label: 'Cancel — a whole check abandoned' },
+          { value: 'refund', label: 'Refund — money back out of the drawer' },
+          { value: 'no_sale', label: 'No Sale — the drawer opened with nothing sold' },
+          { value: 'discount', label: 'Discount — money off' },
+        ],
+      },
     ],
   },
   tax: {
@@ -5512,6 +5552,31 @@ document.addEventListener('click', async (e) => {
       value: String(Number(p.tax_percentage ?? 20)),
     },
     { label: 'Stock', name: 'stock_quantity', type: 'number', value: p.stock_quantity ?? 0 },
+    /*
+     * "Set a check box on a product (Renews membership)."
+     *
+     * Which lines on a bill move a member's expiry forward when the bill is
+     * paid. Any number of products may carry it, which is the whole reason it
+     * lives here rather than as one PLU named in the loyalty settings: a club
+     * sells full, concession, junior and social memberships, and those are
+     * four products with four prices and one meaning.
+     *
+     * The date it renews TO is the club's, not the product's — set once under
+     * Loyalty › Membership, because a season ends on one night for everybody
+     * and four products disagreeing about which night is a support call.
+     *
+     * The fee is an ordinary line and goes through tendering with the rest of
+     * the bill, so it carries this product's VAT rate and department and lands
+     * in the Z report. Nothing is renewed until the bill is actually settled:
+     * a renewal recorded when the key is pressed is a renewal a voided bill
+     * leaves behind.
+     */
+    {
+      label: 'Renews membership — paying for this moves the member’s expiry on',
+      name: 'renews_membership',
+      type: 'checkbox',
+      value: p.renews_membership ?? 0,
+    },
     // No button colour, no button position, no emoji. All three belong to the
     // screen editor now — that is where the layout, the colour, the size, the
     // lettering and the face of every key are set. Two places to style one
@@ -6889,39 +6954,66 @@ function fillLoyaltyForm() {
     // would be a PLU no venue has, which the till would look up, fail to find,
     // and fall back from silently for ever.
     else if (el.dataset.loy === 'membership_plu') el.value = v ?? '';
+    // A day, not a number. `?? 0` on a date input would put "0" into a field
+    // that only accepts YYYY-MM-DD, which browsers answer by showing an empty
+    // box — so the setting would look unset every time the page was opened
+    // and be silently cleared the next time it was saved.
+    else if (el.dataset.loy === 'membership_renewal_date') el.value = v ?? '';
     else el.value = v ?? 0;
   });
   membershipNote();
 }
 
-/// Say in words what the till will actually do, because the two fields do not
-/// say it on their own.
+/// Say in words what the till will actually do, because the fields do not say
+/// it on their own — and warn about the one setting that goes stale.
 function membershipNote() {
   const el = $('loyalty-membership-note');
   if (!el || !loyaltyState) return;
   const months = Number(loyaltyState.membership_term_months) || 12;
   const fee = Number(loyaltyState.membership_fee_minor) || 0;
-  const plu = loyaltyState.membership_plu;
-  const product = plu
-    ? (productRows.find((p) => Number(p.pluid) === Number(plu))
-       || crudProductChoices.find((p) => Number(p.pluid) === Number(plu)))
-    : null;
+  const season = loyaltyState.membership_renewal_date || '';
 
-  // A PLU nobody has is said out loud — that is a setting pointing at nothing
-  // and the till would fall back silently — but only when the catalogue is
-  // actually in hand. Claiming "no product with that PLU" because the list has
-  // not loaded would be the same sentence about a product that exists.
-  const known = crudProductChoices.length > 0;
-  el.textContent = plu
-    ? `Renewing at the till rings up PLU ${plu}`
-      + (product
-        ? ` (${product.product_name})`
-        : known ? ' — no product with that PLU' : '')
-      + `, and moves the expiry on ${months} month${months === 1 ? '' : 's'}.`
-    : `Renewing at the till rings up a plain “Membership renewal” line at `
-      + `£${pounds(fee)} with no VAT on it, and moves the expiry on ${months} `
-      + `month${months === 1 ? '' : 's'}. Name a product above to give the fee `
-      + `a VAT rate and a department.`;
+  // Today in the same shape the server compares in: a plain calendar day.
+  // Not `new Date(season) < new Date()`, which compares a UTC midnight against
+  // a local moment and calls today's date yesterday all summer.
+  const now = new Date();
+  const today = [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, '0'),
+    String(now.getDate()).padStart(2, '0'),
+  ].join('-');
+  const stale = season && season < today;
+
+  /*
+   * The stale-season warning.
+   *
+   * A season end is typed in months ahead, so there will be a morning after it
+   * when nobody has moved it forward. The till does not renew to a date that
+   * has passed — it falls back to the term, so nobody is handed an
+   * already-expired card at the counter — but the venue has to be told, here,
+   * where they can fix it.
+   */
+  const warn = $('loyalty-season-warning');
+  if (warn) {
+    warn.hidden = !stale;
+    if (stale) {
+      warn.textContent = `That date has passed. Until it is moved forward, `
+        + `renewals at the till fall back to ${months} month`
+        + `${months === 1 ? '' : 's'} from the day the fee is taken.`;
+    }
+  }
+
+  const runsTo = season && !stale
+    ? `moves the expiry to ${season}`
+    : `moves the expiry on ${months} month${months === 1 ? '' : 's'}`;
+
+  el.textContent = fee > 0
+    ? `Renewing at the till puts £${pounds(fee)} on the bill and, once it is `
+      + `paid, ${runsTo}. Which product the fee is rung up as is whichever `
+      + `product you have ticked as renewing a membership; if none is on the `
+      + `bill the till rings a plain “Membership renewal” line with no VAT on it.`
+    : `No fee is set, so renewing adds nothing to the bill and simply `
+      + `${runsTo} once the sale is settled.`;
 }
 
 function renderTiers() {
@@ -6956,6 +7048,14 @@ document.addEventListener('input', (e) => {
   if (key === 'membership_plu') {
     const raw = e.target.value.trim();
     loyaltyState[key] = raw === '' ? null : Number(raw) || null;
+  } else if (key === 'membership_renewal_date') {
+    // A day, kept as the string the date input gives us. Everything else on
+    // this form is a number and falls through to `Number(value) || 0` below —
+    // which would turn "2027-08-31" into 0 and silently save a season of
+    // nothing. Emptying the box is a real instruction and means "no season,
+    // use the term", so it is stored as null rather than as ''.
+    const raw = e.target.value.trim();
+    loyaltyState[key] = raw === '' ? null : raw;
   } else {
     loyaltyState[key] = e.target.type === 'checkbox'
       ? (e.target.checked ? 1 : 0)
@@ -8655,6 +8755,28 @@ async function loadIdle() {
     if (el.type === 'checkbox') el.checked = !!Number(v);
     else el.value = v ?? '';
   });
+  /*
+   * The price level names, which are one JSON column rather than five.
+   *
+   * `data-level` instead of `data-idle` because the five boxes are not five
+   * settings: they are five keys inside `price_level_names`, and the server
+   * takes the whole object. Reusing `data-idle` would have meant either five
+   * columns on the till settings row or a special case inside the generic
+   * handler, and both are worse than one more attribute.
+   *
+   * Unreadable JSON reads as "named nothing", which is what every venue that
+   * has named none already sees. A settings page that would not open because a
+   * blob was malformed is a much worse failure than a box labelled with a
+   * number.
+   */
+  const names = safeLevelNames(idleState.price_level_names) || {};
+  document.querySelectorAll('[data-level]').forEach((el) => {
+    el.value = names[el.dataset.level] ?? '';
+  });
+  // The product form reads this to label its five optional price fields, and
+  // it is loaded independently. Keep the two in step so a manager who renames
+  // a level and walks straight to a product sees the new name.
+  priceLevelNames = names;
   renderIdlePreview();
 }
 
@@ -8712,6 +8834,29 @@ async function idleUploadImage(event) {
 
 document.addEventListener('change', (e) => {
   if (e.target.id === 'idle-image') return idleUploadImage(e);
+
+  // A price level name: gathered into the one JSON column the server stores.
+  //
+  // Rebuilt from the boxes rather than merged into whatever was loaded, so
+  // clearing a box actually clears the name. Merging would have made a name
+  // impossible to remove — the key would simply keep its old value — which is
+  // the sort of thing a manager reports as "it will not let me undo it".
+  //
+  // A trimmed-empty box is left out of the object entirely, which is what the
+  // till reads as "call it Price N".
+  if (e.target.dataset?.level) {
+    const names = {};
+    document.querySelectorAll('[data-level]').forEach((el) => {
+      const name = String(el.value || '').trim();
+      if (name) names[el.dataset.level] = name;
+    });
+    idleState.price_level_names = Object.keys(names).length
+      ? JSON.stringify(names)
+      : null;
+    priceLevelNames = names;
+    return;
+  }
+
   if (!e.target.dataset?.idle) return;
   idleState[e.target.dataset.idle] = e.target.type === 'checkbox'
     ? (e.target.checked ? 1 : 0)

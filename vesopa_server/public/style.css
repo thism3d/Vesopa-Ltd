@@ -6700,3 +6700,38 @@ textarea, select[multiple], select[size] { height: auto; min-height: 0; }
   /* Stops the box shrinking when its label takes two lines. */
   flex: 0 0 auto;
 }
+
+/* ---------------------------------------------------------------------------
+   Copy keys to other pages
+   ---------------------------------------------------------------------------
+   The list of pages scrolls rather than growing the dialog: a venue with
+   thirty pages would otherwise push Copy off the bottom of the screen, which
+   is the one control the dialog exists for.
+
+   The report below it is the part that matters. It stays until the dialog is
+   closed, because a manager needs to be able to read which keys a bar refused
+   after the toast has gone.
+   ------------------------------------------------------------------------ */
+.sp-copy-list {
+  max-height: 40vh;
+  overflow-y: auto;
+  border: 1px solid var(--line, #d9dde5);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.sp-copy-report {
+  margin-top: 12px;
+  max-height: 30vh;
+  overflow-y: auto;
+}
+
+.sp-copy-row {
+  padding: 6px 0;
+  border-top: 1px solid var(--line, #d9dde5);
+}
+
+.sp-copy-row ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}

@@ -442,14 +442,60 @@ app.get('/till/customers', async (req, res, next) => {
 
   const q = req.query.q ? `%${req.query.q}%` : null;
   try {
-    const [rows] = await pool.query(
-      `SELECT id, name, phone, email, card_number, discount_type, discount_value
+    /*
+     * THE MEMBERSHIP AND THE FACE TRAVEL WITH THE NAME.
+     *
+     * This is the endpoint behind the Customer key, and until now it answered
+     * with a name, a phone number and a discount and nothing else. That is the
+     * whole of two of the venue's complaints:
+     *
+     *   "If a customer has expired, they can still use the loyalty card on the
+     *   till" — a clerk who picks the member off this list instead of swiping
+     *   their card attaches them with nothing checked, because the till was
+     *   never told the membership had run out.
+     *
+     *   "Photos of customers doesn't show on the till" — the till has drawn
+     *   `MemberFace` since 1.6.8.0 and it draws initials when there is no
+     *   photograph, which is exactly what a row with no `photo_url` in it
+     *   looks like.
+     *
+     * Both are fixed by sending the two columns. The gate itself lives on the
+     * till, in `OrderRepository.attachCustomer`, so that every door is closed
+     * by one check rather than four.
+     *
+     * `points_balance` comes too. It costs nothing here and it is what the
+     * customer display now shows beside their name.
+     *
+     * DATE_FORMAT, not the bare column. mysql2 hands a DATE back as a Date at
+     * local midnight and JSON turns that into the previous evening in British
+     * summer time — a membership that expires a day early, every summer. Every
+     * other read of this column in the codebase formats it for that reason.
+     *
+     * Falls back when the columns are not there. `photo_url` arrives with
+     * schema_membership.sql and the migrations are applied only when the
+     * deploy is asked to, so naming a column that does not exist yet would
+     * take the Customer key down completely rather than degrade it — the same
+     * treatment `member_no` gets on the back-office list route.
+     */
+    const base = `id, name, phone, email, card_number, discount_type,
+                  discount_value, points_balance,
+                  DATE_FORMAT(membership_expiry, '%Y-%m-%d') AS membership_expiry`;
+    const where = `
        FROM epos_customers
        WHERE email_key = ?
        ${q ? 'AND (name LIKE ? OR phone LIKE ? OR email LIKE ?)' : ''}
-       ORDER BY name LIMIT 50`,
-      q ? [office, q, q, q] : [office]
-    );
+       ORDER BY name LIMIT 50`;
+    const params = q ? [office, q, q, q] : [office];
+
+    let rows;
+    for (const select of [`${base}, photo_url`, base]) {
+      try {
+        [rows] = await pool.query(`SELECT ${select} ${where}`, params);
+        break;
+      } catch (e) {
+        if (e.code !== 'ER_BAD_FIELD_ERROR' || select === base) throw e;
+      }
+    }
     res.json(rows);
   } catch (e) {
     next(e);
@@ -516,25 +562,105 @@ app.post('/till/customers', async (req, res, next) => {
  * with nothing in it on a till that has not been updated yet — and a clerk who
  * cannot void is a clerk who cannot serve.
  */
-app.get('/till/void-reasons', async (req, res, next) => {
-  const office = req.query.office;
-  try {
-    if (!office) {
-      const [rows] = await pool.query(
-        "SELECT reason FROM bo_error_reasons" +
-          " WHERE applies_to = 'void' AND office_id IS NULL ORDER BY sort_order, id"
-      );
-      return res.json(rows.map((r) => r.reason));
-    }
+/*
+ * The five things a venue explains, and the one list each.
+ *
+ * "In Error Reasons, Can we have reasons for No Sale, Refunds, Voids and
+ * Cancel (Void and Cancel is already done just need to split them off."
+ *
+ * Cancel was not "already done" — the till has been showing the VOID list when
+ * a clerk cancels a check, which is why the venue reads it as done and why
+ * they want it split. "Rung up in error" explains one line coming off a bill
+ * and says nothing about why a whole check was abandoned, and a manager
+ * reading the Z report cannot tell the two apart afterwards.
+ *
+ * A whitelist rather than passing the query through. `applies_to` is a free
+ * string column, and a till asking for a value nothing seeds would get an
+ * empty list and a dialog a clerk cannot get past.
+ */
+const REASON_ACTIONS = ['void', 'cancel', 'refund', 'no_sale', 'discount'];
 
+/**
+ * What a venue calls the reasons for one action.
+ *
+ * Scoped by office, like every other /till read, and for a reason worth
+ * repeating: this query once had no office on it at all — the handler took
+ * `_req` — so it returned every reason belonging to every venue on the
+ * platform. Measured on live: 61 rows where a venue has nine. That was
+ * reported as the same reason listed over and over on the void dialog, and it
+ * was not duplicated data but one venue being shown everybody's. It is a leak
+ * as well as a mess, because a reason is free text a manager types.
+ *
+ * A till that names no office gets the platform defaults rather than
+ * everybody's, because the alternative is an empty dialog on a till that has
+ * not been updated yet — and a clerk who cannot void is a clerk who cannot
+ * serve.
+ */
+async function reasonsFor(office, appliesTo) {
+  if (!office) {
     const [rows] = await pool.query(
-      "SELECT e.reason FROM bo_error_reasons e" +
-        "  JOIN offices o ON o.id = e.office_id" +
-        " WHERE e.applies_to = 'void' AND o.contact_email = ?" +
-        " ORDER BY e.sort_order, e.id",
-      [office]
+      'SELECT reason FROM bo_error_reasons' +
+        ' WHERE applies_to = ? AND office_id IS NULL ORDER BY sort_order, id',
+      [appliesTo]
     );
-    res.json(rows.map((r) => r.reason));
+    return rows.map((r) => r.reason);
+  }
+
+  const [rows] = await pool.query(
+    'SELECT e.reason FROM bo_error_reasons e' +
+      '  JOIN offices o ON o.id = e.office_id' +
+      ' WHERE e.applies_to = ? AND o.contact_email = ?' +
+      ' ORDER BY e.sort_order, e.id',
+    [appliesTo, office]
+  );
+  return rows.map((r) => r.reason);
+}
+
+/**
+ * One list, named by the action asking for it.
+ *
+ * Falls back to the void list for `cancel` when a venue has no cancel reasons
+ * of its own. The migration seeds one for every office that exists today, so
+ * this is for the office created between the migration running and somebody
+ * opening the Error Reasons page — and for the venue that deletes every cancel
+ * reason it has, which the back office lets them do. Either way the answer is
+ * the list the till used yesterday rather than a dialog with nothing in it.
+ *
+ * No such fallback for the other four: an empty refund or no-sale list is a
+ * venue that has not set any up, and the till carries on without asking rather
+ * than blocking the drawer. See ui/void_dialog.dart.
+ */
+app.get('/till/error-reasons', async (req, res, next) => {
+  const office = req.query.office;
+  const appliesTo = String(req.query.applies_to || 'void');
+  if (!REASON_ACTIONS.includes(appliesTo)) {
+    return res.status(400).json({
+      error: `applies_to must be one of ${REASON_ACTIONS.join(', ')}`,
+    });
+  }
+  try {
+    let reasons = await reasonsFor(office, appliesTo);
+    if (!reasons.length && appliesTo === 'cancel') {
+      reasons = await reasonsFor(office, 'void');
+    }
+    res.json(reasons);
+  } catch (e) {
+    next(e);
+  }
+});
+
+/**
+ * The old route, kept exactly as it was.
+ *
+ * Every till in every venue on 1.6.8.0 and earlier calls this and expects a
+ * bare JSON array of strings. It delegates rather than being rewritten, so the
+ * two can never drift, and it is not deprecated in any way a till can notice —
+ * a Store rollout takes days to reach every terminal and the ones still on the
+ * old build have to keep being able to void.
+ */
+app.get('/till/void-reasons', async (req, res, next) => {
+  try {
+    res.json(await reasonsFor(req.query.office, 'void'));
   } catch (e) {
     next(e);
   }
@@ -1384,6 +1510,12 @@ app.get(['/till/products', '/products.json'], async (req, res, next) => {
               p.printer_routes, p.print_to_receipt, p.emoji, p.image_url,
               p.is_modifier, p.barcode, p.allergens,
               p.price_2, p.price_3, p.price_4, p.price_5, p.price_6,
+              -- "Set a check box on a product (Renews membership)". Which
+              -- lines on a bill move a member's expiry when it is paid for.
+              -- Any number of products may carry it — full, concession,
+              -- junior and social are four products and one meaning, which is
+              -- what the single named PLU it replaces could not express.
+              p.renews_membership,
               pc.name AS print_category, pc.sort_order AS print_category_order
        FROM bo_products p
        LEFT JOIN bo_print_categories pc

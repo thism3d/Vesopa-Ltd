@@ -190,7 +190,7 @@ function backofficeRoutes({ pool, broadcast, secret }) {
                 accounting_code, price, tax_percentage, stock_quantity,
                 low_stock_at, button_position, button_color, printer_routes,
                 print_to_receipt, emoji, image_url, print_category_id,
-                is_modifier, barcode, allergens,
+                is_modifier, barcode, allergens, renews_membership,
                 ${PRICE_LEVELS.join(', ')}
          FROM bo_products
          WHERE email = ?
@@ -267,9 +267,9 @@ function backofficeRoutes({ pool, broadcast, secret }) {
             accounting_code, price, tax_percentage, stock_quantity,
             button_position, button_color, printer_route, printer_routes,
             print_to_receipt, emoji, image_url, print_category_id,
-            is_modifier, barcode, allergens,
+            is_modifier, barcode, allergens, renews_membership,
             ${PRICE_LEVELS.join(', ')})
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                  ${PRICE_LEVELS.map(() => '?').join(', ')})`,
         [
           // The office's key, not the individual's: two managers in one shop
@@ -297,6 +297,10 @@ function backofficeRoutes({ pool, broadcast, secret }) {
           flag(p.is_modifier),
           barcode(p.barcode),
           cleanAllergens(p.allergens),
+          // "Set a check box on a product (Renews membership)". Off unless
+          // the form says otherwise: a product that silently renewed a
+          // membership would move somebody's expiry a year for buying a pint.
+          flag(p.renews_membership),
           ...PRICE_LEVELS.map((level) => priceLevel(p[level])),
         ]
       );
@@ -349,6 +353,7 @@ function backofficeRoutes({ pool, broadcast, secret }) {
              is_modifier = ${keep('is_modifier')},
              barcode = ${keep('barcode')},
              allergens = ${keep('allergens')},
+             renews_membership = ${keep('renews_membership')},
              ${PRICE_LEVELS.map((l) => l + ' = ' + keep(l)).join(', ')}
          WHERE id = ? AND email = ?`,
         [
@@ -378,6 +383,11 @@ function backofficeRoutes({ pool, broadcast, secret }) {
           // touches. Silently dropping a nut warning is the worst thing on
           // this form.
           ...kept('allergens', cleanAllergens(p.allergens)),
+          // Only when the caller sent it, the same rule as the rest. An
+          // import or a template that knows nothing about memberships must not
+          // un-flag the product a club renews on — that is a season's
+          // subscriptions quietly stopping working at the counter.
+          ...kept('renews_membership', flag(p.renews_membership)),
           // Each level only when the caller sent it — the same rule as
           // button_position and emoji above. An import that knows nothing about
           // price levels must not strip a venue's happy-hour prices off every
@@ -692,6 +702,9 @@ function backofficeRoutes({ pool, broadcast, secret }) {
     'idle_message', 'signoff_seconds', 'change_window_seconds',
     'receipt_auto_print', 'buttons_show_prices', 'font_family',
     'price_level_names', 'consolidate_lines', 'cash_declaration',
+    // What the screen facing the customer says above their name, and whether
+    // it names them at all. See schema_till_customer_display.sql.
+    'customer_display_greeting', 'customer_display_show_member',
     ...NOTIFY_FIELDS,
     ...PRINTER_NAME_FIELDS,
     ...KITCHEN_MODE_FIELDS,
@@ -725,6 +738,14 @@ function backofficeRoutes({ pool, broadcast, secret }) {
     // Never ask, which is what every till does today. See
     // schema_till_consolidate.sql for what the other two values mean.
     cash_declaration: 'off',
+    // Null, not 'Welcome'. An empty greeting means "use the built-in one", so
+    // a venue that clears the box gets the default back rather than being left
+    // with a field it cannot empty. Same rule as the printer names above.
+    customer_display_greeting: null,
+    // On, because a customer display with a greeting and no name on it is a
+    // screen that says "Welcome" to nobody. A venue that would rather not put
+    // a name on a screen the queue can read turns it off.
+    customer_display_show_member: 1,
     // On, except the customer display — it faces a queue, and the person who
     // needs to know a QR order has landed is behind the counter.
     notify_master: 1,

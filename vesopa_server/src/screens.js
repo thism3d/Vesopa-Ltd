@@ -181,6 +181,18 @@ const BAR_KEYS = [
   // "show me the floor", and the venue said their customers find it confusing.
   // This one always opens the plan, so a bill can be moved to another table.
   'table_plan',
+  // Move this bill to another table, from the bar.
+  //
+  // "Create a function for the top and bottom bars called Transfer. This
+  // transfers one table to another." The till has been able to do it since
+  // tables existed, but only from inside the floor plan's own sheet — three
+  // taps in, and only for a bill that is already parked. This is the same
+  // action on a key, for the bill in front of the clerk.
+  //
+  // Deliberately not `table_plan`, which opens the floor and leaves the clerk
+  // to find the move, and not `save_table`, which parks a bill rather than
+  // moving one that is already parked.
+  'transfer',
   'sign_off',
   // The other half of sign_off, and the reason it is here rather than only in
   // the list above: a bar is where a venue puts the thing a clerk presses
@@ -1012,6 +1024,278 @@ function screensRoutes({ pool, broadcast, secret }) {
    * apply, whereas a sequence of inserts, updates and deletes can and leaves a
    * venue looking at a screen that never existed.
    */
+  /**
+   * Copy some of this screen's buttons onto several other screens at once.
+   *
+   * "Ability to copy products / functions from one page to multiple other pages
+   * using a checkbox for each page and a select all button."
+   *
+   * ONE CALL, NOT ONE PER PAGE. A venue with twenty pages copying a row of
+   * drinks onto all of them is one request; twenty separate ones would
+   * half-apply the moment the network hiccuped and leave the manager with no
+   * way to know which pages got it.
+   *
+   * WHERE A COPIED BUTTON LANDS
+   *
+   * Its own cell if that cell exists on the target and is empty; otherwise the
+   * first empty cell, reading left to right and top to bottom. Never on top of
+   * anything.
+   *
+   * The two alternatives were both worse. Refusing the whole copy because one
+   * cell is occupied fails the ordinary case -- pages that are nearly
+   * identical, which is exactly when somebody copies between them -- over a
+   * collision the manager does not care about. Overwriting destroys
+   * programming that cannot be got back, and whoever did it would not find out
+   * until service.
+   *
+   * WHAT IS SKIPPED, AND SAID OUT LOUD
+   *
+   *   * a key the target surface will not accept -- a grid-only function key
+   *     copied onto a bar, or a modifier key onto a page of modifier answers;
+   *   * a button already bound to the same thing on the target, so running the
+   *     same copy twice cannot stack duplicates;
+   *   * a target with no room left.
+   *
+   * Every one is reported back per page rather than dropped. A copy that
+   * silently does four fifths of what was asked is worse than one that
+   * refuses: the manager walks away believing the pages match.
+   *
+   * PER TARGET, IN ITS OWN TRANSACTION. One bad page must not cost the other
+   * nineteen, and a half-written page must not exist at all.
+   */
+  router.post('/screens/:id/buttons/copy', auth, async (req, res, next) => {
+    try {
+      const office = await tenantEmail(req);
+      const source = await screenFor(office, req.params.id);
+      if (!source) return res.status(404).json({ error: 'No such screen' });
+
+      const wanted = Array.isArray(req.body && req.body.target_screen_ids)
+        ? [...new Set(req.body.target_screen_ids.map(Number).filter(Boolean))]
+        : [];
+      if (!wanted.length) {
+        return res.status(400).json({ error: 'Choose at least one page to copy to.' });
+      }
+      // Copying a page onto itself is a no-op at best and a duplicate at
+      // worst. Dropped rather than refused, because "select all" is one tap
+      // and the page being edited is in that list.
+      const targetIds = wanted.filter((id) => Number(id) !== Number(source.id));
+      if (!targetIds.length) {
+        return res.status(400).json({ error: 'Choose a page other than this one.' });
+      }
+
+      /*
+       * Which buttons, named by CELL rather than by row id.
+       *
+       * The editor holds unsaved work in hand and a button being copied may
+       * never have been written, so asking it for database ids would mean
+       * saving before copying -- and losing the undo stack with it. The grid
+       * already keys everything by "row:col", which is what arrives here.
+       */
+      const cells = Array.isArray(req.body && req.body.cells)
+        ? req.body.cells.map(String)
+        : [];
+      if (!cells.length) {
+        return res.status(400).json({ error: 'Pick the buttons to copy first.' });
+      }
+      const wantedCells = new Set(cells);
+
+      const [sourceButtons] = await pool.query(
+        'SELECT * FROM epos_screen_buttons WHERE screen_id = ? AND office = ?'
+        + ' ORDER BY grid_row, grid_col',
+        [source.id, office]
+      );
+      const chosen = sourceButtons.filter(
+        (b) => wantedCells.has(b.grid_row + ':' + b.grid_col)
+      );
+      if (!chosen.length) {
+        return res.status(400).json({
+          error: 'Those buttons are not saved yet. Save this page, then copy.',
+        });
+      }
+
+      /*
+       * EVERY target checked against this office before anything is written.
+       *
+       * Up front rather than page by page, because a request naming nineteen
+       * of their own screens and one of somebody else's must copy nothing at
+       * all. A partial answer here would be one venue writing buttons onto
+       * another venue's tills.
+       */
+      const [targets] = await pool.query(
+        'SELECT * FROM epos_screens WHERE office = ? AND id IN ('
+        + targetIds.map(() => '?').join(',') + ')',
+        [office, ...targetIds]
+      );
+      if (targets.length !== targetIds.length) {
+        return res.status(403).json({ error: 'One of those pages is not yours.' });
+      }
+
+      /** What a button is bound to -- the test for "already on that page". */
+      const identity = (b) => [
+        b.kind,
+        b.plu_id == null ? '' : b.plu_id,
+        b.target_screen_id == null ? '' : b.target_screen_id,
+        b.function_key || '',
+        b.modifier_group_id == null ? '' : b.modifier_group_id,
+      ].join(':');
+
+      const results = [];
+      for (const target of targets) {
+        const connection = await pool.getConnection();
+        try {
+          await connection.beginTransaction();
+          const [existing] = await connection.query(
+            'SELECT * FROM epos_screen_buttons WHERE screen_id = ? FOR UPDATE',
+            [target.id]
+          );
+
+          /*
+           * Occupancy read from the ROWS, not from the grid's bounds.
+           *
+           * A button sitting outside the target's current grid -- left behind
+           * by a page somebody shrank -- still owns its cell as far as the
+           * unique key is concerned, and inserting on top of it would fail the
+           * whole page. It is drawn by nothing, so it would also be invisible
+           * to whoever was wondering why the copy went where it did.
+           */
+          const taken = new Set();
+          for (const b of existing) {
+            for (let r = b.grid_row; r < b.grid_row + Math.max(1, b.row_span); r += 1) {
+              for (let c = b.grid_col; c < b.grid_col + Math.max(1, b.col_span); c += 1) {
+                taken.add(r + ':' + c);
+              }
+            }
+          }
+          const present = new Set(existing.map(identity));
+
+          const copied = [];
+          const skipped = [];
+
+          const freeAt = (row, col, rowSpan, colSpan) => {
+            if (row + rowSpan > target.grid_rows) return false;
+            if (col + colSpan > target.grid_cols) return false;
+            for (let r = row; r < row + rowSpan; r += 1) {
+              for (let c = col; c < col + colSpan; c += 1) {
+                if (taken.has(r + ':' + c)) return false;
+              }
+            }
+            return true;
+          };
+
+          for (const b of chosen) {
+            const label = b.label || b.function_key || b.kind;
+
+            // A page key pointing at the page it now sits on is a button that
+            // goes nowhere, drawn on every page it was copied to.
+            if (b.kind === 'page' && Number(b.target_screen_id) === Number(target.id)) {
+              skipped.push({ label, reason: 'that page button points at this page' });
+              continue;
+            }
+
+            // The surface decides what a key may be: a bar takes Pay and
+            // Transfer, a sale grid does not, and a page of modifier answers
+            // takes no modifier key at all. Same rule as normaliseButton.
+            if (b.kind === 'function'
+                && !functionKeysFor(target.surface).includes(b.function_key)) {
+              skipped.push({
+                label,
+                reason: b.function_key + ' cannot go on '
+                  + (isBar(target.surface) ? 'a bar' : 'this kind of page'),
+              });
+              continue;
+            }
+            if (b.kind === 'modifier' && isModifier(target.surface)) {
+              skipped.push({
+                label,
+                reason: 'a modifier key cannot go on a page of answers',
+              });
+              continue;
+            }
+
+            if (present.has(identity(b))) {
+              skipped.push({ label, reason: 'already on that page' });
+              continue;
+            }
+
+            const rowSpan = Math.max(1, b.row_span);
+            const colSpan = Math.max(1, b.col_span);
+
+            let row = null;
+            let col = null;
+            if (freeAt(b.grid_row, b.grid_col, rowSpan, colSpan)) {
+              row = b.grid_row;
+              col = b.grid_col;
+            } else {
+              // The first free cell, read the way the grid reads.
+              let found = false;
+              for (let r = 0; r + rowSpan <= target.grid_rows && !found; r += 1) {
+                for (let c = 0; c + colSpan <= target.grid_cols && !found; c += 1) {
+                  if (freeAt(r, c, rowSpan, colSpan)) {
+                    row = r;
+                    col = c;
+                    found = true;
+                  }
+                }
+              }
+            }
+
+            if (row === null) {
+              skipped.push({ label, reason: 'no room left on that page' });
+              continue;
+            }
+
+            await connection.execute(
+              'INSERT INTO epos_screen_buttons'
+              + ' (screen_id, office, grid_row, grid_col, row_span, col_span,'
+              + '  kind, plu_id, target_screen_id, function_key, modifier_group_id,'
+              + '  label, fill, ink, emoji, image_url, image_fit, image_scale,'
+              + '  image_x, image_y, show_label, font_family, font_size)'
+              + ' VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+              [
+                target.id, office, row, col, rowSpan, colSpan,
+                b.kind, b.plu_id, b.target_screen_id, b.function_key,
+                b.modifier_group_id, b.label, b.fill, b.ink,
+                b.emoji, b.image_url, b.image_fit, b.image_scale,
+                b.image_x, b.image_y, b.show_label, b.font_family, b.font_size,
+              ]
+            );
+
+            for (let r = row; r < row + rowSpan; r += 1) {
+              for (let c = col; c < col + colSpan; c += 1) taken.add(r + ':' + c);
+            }
+            present.add(identity(b));
+            copied.push({ label, row, col });
+          }
+
+          await connection.commit();
+          results.push({
+            screen_id: target.id, name: target.name, copied, skipped,
+          });
+        } catch (e) {
+          await connection.rollback();
+          // Named rather than thrown. Nineteen pages that worked must not be
+          // reported as a failure because the twentieth did not.
+          results.push({
+            screen_id: target.id,
+            name: target.name,
+            copied: [],
+            skipped: [{
+              label: 'every button',
+              reason: 'that page could not be written (' + (e.code || e.message) + ')',
+            }],
+          });
+        } finally {
+          connection.release();
+        }
+      }
+
+      pushed(office);
+      res.json({ results });
+    } catch (e) {
+      next(e);
+    }
+  });
+
   router.put('/screens/:id/buttons', auth, async (req, res, next) => {
     try {
       const office = await tenantEmail(req);

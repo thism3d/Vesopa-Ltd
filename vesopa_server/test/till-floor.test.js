@@ -120,9 +120,38 @@ check('an office is required before anything is read', () => {
 // And the endpoint beside it, which had no office on it at all
 // ---------------------------------------------------------------------------
 
-const voidReasons = (() => {
-  const at = source.indexOf("app.get('/till/void-reasons'");
-  assert.ok(at > 0, 'the /till/void-reasons route has moved or been renamed');
+/**
+ * The reason lists a till is offered.
+ *
+ * Both routes now read through one `reasonsFor(office, appliesTo)` -- the
+ * legacy `/till/void-reasons`, which every terminal on 1.6.8.0 and earlier
+ * calls, and `/till/error-reasons`, which the new till uses to ask for the
+ * void, cancel, refund and no-sale lists separately.
+ *
+ * So the scoping is asserted on the helper rather than on one handler's text,
+ * and both routes are checked to go through it. That is a wider guard than the
+ * one it replaces, not a looser one: previously nothing stopped a second
+ * reason route being added with no office on it, which is exactly how the
+ * original bug happened.
+ */
+const reasonsHelper = (() => {
+  const at = source.indexOf('async function reasonsFor(');
+  assert.ok(at > 0, 'reasonsFor has moved or been renamed');
+  let depth = 0;
+  let seen = false;
+  for (let i = at; i < source.length; i++) {
+    if (source[i] === '{') { depth++; seen = true; }
+    else if (source[i] === '}') {
+      depth--;
+      if (seen && depth === 0) return source.slice(at, i + 1);
+    }
+  }
+  throw new Error('reasonsFor never closes');
+})();
+
+const routeBody = (path) => {
+  const at = source.indexOf("app.get('" + path + "'");
+  assert.ok(at > 0, 'the ' + path + ' route has moved or been renamed');
   let depth = 0;
   for (let i = at; i < source.length; i++) {
     if (source[i] === '{') depth++;
@@ -132,12 +161,15 @@ const voidReasons = (() => {
     }
   }
   throw new Error('the route never closes');
-})();
+};
 
-check("a till is only offered its own venue's void reasons", () => {
+const voidReasons = routeBody('/till/void-reasons');
+const errorReasons = routeBody('/till/error-reasons');
+
+check("a till is only offered its own venue's reasons", () => {
   // REPORTED AS THE SAME REASON LISTED OVER AND OVER ON THE VOID DIALOG.
   //
-  // It was not duplicated data — the table holds nine rows per venue. This read
+  // It was not duplicated data — the table holds nine rows per venue. The read
   // had no office on it whatsoever, and the handler took `_req`, so the request
   // was never even looked at. Measured on live: 61 reasons returned where a
   // venue has nine, with every default appearing once per office on the
@@ -146,11 +178,7 @@ check("a till is only offered its own venue's void reasons", () => {
   // A reason is free text a manager types, so this was also one venue reading
   // another's wording off its own till.
   assert.ok(
-    voidReasons.includes('req.query.office'),
-    'the route does not ask which venue is calling'
-  );
-  assert.ok(
-    voidReasons.includes('o.contact_email = ?'),
+    reasonsHelper.includes('o.contact_email = ?'),
     'the reasons are not scoped to a venue'
   );
 });
@@ -160,8 +188,51 @@ check("a till that names no venue gets the defaults, not everybody's", () => {
   // a void dialog with nothing in it, and a clerk who cannot void is a clerk
   // who cannot serve. Not everybody's either, which is the bug.
   assert.ok(
-    voidReasons.includes('office_id IS NULL'),
+    reasonsHelper.includes('office_id IS NULL'),
     'a till with no office is not given the platform defaults'
+  );
+});
+
+check('both reason routes ask which venue is calling', () => {
+  // The guard that stops this regressing by way of a NEW route rather than an
+  // edit to the old one.
+  for (const [name, body] of [
+    ['/till/void-reasons', voidReasons],
+    ['/till/error-reasons', errorReasons],
+  ]) {
+    assert.ok(
+      body.includes('req.query.office'),
+      name + ' does not ask which venue is calling'
+    );
+    assert.ok(
+      body.includes('reasonsFor('),
+      name + ' does not read through the scoped helper'
+    );
+  }
+});
+
+check('a till cannot ask for an action nothing seeds', () => {
+  // `applies_to` is a free VARCHAR. Without the whitelist a till asking for a
+  // misspelt action would get an empty list and a dialog a clerk cannot get
+  // past — and the back office would have no way to show that it had happened.
+  assert.ok(
+    errorReasons.includes('REASON_ACTIONS.includes'),
+    'the action is not checked against the list of actions'
+  );
+  assert.ok(
+    /status\(400\)/.test(errorReasons),
+    'an unknown action is not refused'
+  );
+});
+
+check('the legacy void route still answers the old shape', () => {
+  // Every till on the previous release calls /till/void-reasons and parses a
+  // bare JSON array of strings. A Store rollout takes days to reach every
+  // terminal, and the ones still on the old build have to keep being able to
+  // void.
+  assert.ok(
+    voidReasons.includes("reasonsFor(req.query.office, 'void')"),
+    'the legacy route no longer answers the void list'
   );
 });
 

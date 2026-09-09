@@ -559,12 +559,27 @@ function commerceRoutes({ pool, broadcast, secret }) {
     // Membership, which is a different thing from points and shares this row
     // because it is the same scheme from the venue's side.
     //
-    // A TERM, NOT A DATE. "The till should then renew to a date we set in the
-    // back office" — but a date set in the back office is wrong for everybody
-    // who renews on a different day, and has to be edited every year. Twelve
-    // months added to the day the fee is taken is the same promise and needs
-    // setting once. £10 is the venue's own figure.
+    // A TERM *AND* A DATE, and which one applies is decided in /loyalty/renew.
+    //
+    // This used to be a term only, and the comment here argued the case: a
+    // fixed date is wrong for everybody who renews on a different day and has
+    // to be edited every year, whereas twelve months from the day the fee is
+    // taken needs setting once. That argument is sound and it answered the
+    // wrong question. A members' club does not run twelve rolling months per
+    // person; it runs a season, and every card in the place expires on the
+    // same night. The venue said so in their own example — "the card would
+    // expire on 31/08/2027" — which is a rugby season, not an anniversary.
+    //
+    // So both. `membership_renewal_date` wins while it is set and has not
+    // passed; the term is what a venue with no season gets, and what everybody
+    // gets back the moment the date is cleared. £10 is the venue's own figure.
     membership_term_months: 12, membership_fee_minor: 1000,
+    // The night the season ends, or null for "no season, use the term".
+    //
+    // Null is a real answer and the default, not a value nobody has filled in
+    // yet: it is what every venue on 1.6.8.0 has, and clearing the field is
+    // how a venue goes back to rolling months.
+    membership_renewal_date: null,
     // The product a renewal is rung up as, so the fee carries a VAT treatment,
     // a department and a line in the Z report rather than being a bare number.
     // Null is a real answer — the till then rings a plain line at the fee above
@@ -583,7 +598,33 @@ function commerceRoutes({ pool, broadcast, secret }) {
     // schema_membership.sql has been applied that is nine settings rather than
     // eleven, and the till would otherwise be told a membership costs
     // `undefined`.
-    return { ...LOYALTY_DEFAULTS, ...(row || { office }), tiers };
+    const settings = { ...LOYALTY_DEFAULTS, ...(row || { office }), tiers };
+
+    /*
+     * The season date, as a day rather than as a moment.
+     *
+     * `SELECT *` hands a DATE back as a JavaScript Date at local midnight, and
+     * JSON.stringify turns that into "2027-08-30T23:00:00.000Z" in British
+     * summer time — a day early, and only in summer, which is the worst way
+     * for a date bug to behave because it works all winter.
+     *
+     * Every other date on this row is read with DATE_FORMAT for exactly this
+     * reason; this one cannot be, because the query is a star. So it is
+     * normalised here instead, and the string is what the till and the form
+     * both compare against.
+     */
+    const day = settings.membership_renewal_date;
+    settings.membership_renewal_date = day
+      ? (day instanceof Date
+          ? [
+              day.getFullYear(),
+              String(day.getMonth() + 1).padStart(2, '0'),
+              String(day.getDate()).padStart(2, '0'),
+            ].join('-')
+          : String(day).slice(0, 10))
+      : null;
+
+    return settings;
   }
 
   router.get('/loyalty', auth, async (req, res, next) => {
@@ -626,9 +667,34 @@ function commerceRoutes({ pool, broadcast, secret }) {
         }
       }
 
+      // The season date, if one was sent. An empty box clears it, which is how
+      // a venue goes back to rolling months, so '' and null are accepted and
+      // mean the same thing. Anything else has to be a real calendar date:
+      // a typo stored as-is would be read back by the renewal route and turn
+      // into a membership expiring on a day that does not exist.
+      //
+      // A date in the PAST is allowed through deliberately. A season end is
+      // entered months ahead and a venue that has not rolled it forward yet
+      // has made a mistake we should tell them about rather than refuse — the
+      // form warns, and /loyalty/renew ignores a date that has passed and uses
+      // the term, so nobody is ever issued an already-expired card.
+      if (Object.prototype.hasOwnProperty.call(req.body, 'membership_renewal_date')) {
+        const raw = req.body.membership_renewal_date;
+        if (raw !== null && raw !== '' && !/^\d{4}-\d{2}-\d{2}$/.test(String(raw))) {
+          return res.status(400).json({
+            error: 'A renewal date must be a day, as YYYY-MM-DD, or empty.',
+          });
+        }
+      }
+
       if (fields.length) {
         const values = fields.map((f) => {
           const v = req.body[f];
+          // A day or nothing. Not through `money` — that would turn
+          // "2027-08-31" into a number and store 2027.
+          if (f === 'membership_renewal_date') {
+            return v === null || v === '' ? null : String(v).slice(0, 10);
+          }
           // `membership_plu` is the one nullable setting here, and null is a
           // real answer: it means "no product, ring a plain line". Everything
           // else goes through `money`, which turns null into 0 — and a PLU of
@@ -875,15 +941,44 @@ function commerceRoutes({ pool, broadcast, secret }) {
         ? customer.membership_expiry
         : todayText;
 
+      /*
+       * A SEASON, IF THE VENUE RUNS ONE.
+       *
+       * "If the expired card was swiped today and they paid for a membership
+       * the card would expire on 31/08/2027." A club's membership year ends
+       * on a night, the same night for everybody, and the alternative — twelve
+       * months from whenever each person happened to pay — is what the venue
+       * is asking us to stop doing.
+       *
+       * IGNORED ONCE IT HAS PASSED, and this is the guard that makes the
+       * feature safe to leave switched on. A season date is typed in months
+       * ahead and there will be a morning after it when nobody has rolled it
+       * forward yet. Renewing to it then would take ten pounds off somebody
+       * and hand them a card that had already expired — at the counter, in
+       * front of them. So a date in the past is treated as no date at all and
+       * the rolling term takes over, which is a card that certainly works.
+       * The back office warns about the stale date separately; the till must
+       * not be the thing that discovers it.
+       *
+       * Not run through the "extend, do not shorten" rule above, deliberately.
+       * That rule protects somebody renewing early under a rolling term. Under
+       * a season there is nothing to protect: the date IS the answer for every
+       * member, and a card already running to next August renews to next
+       * August, which is what a season means.
+       */
+      const season = settings.membership_renewal_date;
+      const useSeason = Boolean(season) && season >= todayText;
+
       // Added in SQL rather than in JavaScript: MySQL's INTERVAL already knows
       // that a year from the 29th of February is the 28th, and that a month
       // from the 31st of January is the 28th too. Doing it here with a Date
       // gives the 1st of March and the 3rd of March respectively, which is a
       // day nobody chose.
-      const [[{ next_expiry: expiry }]] = await pool.query(
+      const [[{ next_expiry: rolled }]] = await pool.query(
         'SELECT DATE_FORMAT(DATE_ADD(?, INTERVAL ? MONTH), \'%Y-%m-%d\') AS next_expiry',
         [from, months]
       );
+      const expiry = useSeason ? season : rolled;
 
       await pool.execute(
         'UPDATE epos_customers SET membership_expiry = ? WHERE id = ? AND email_key = ?',
@@ -906,6 +1001,10 @@ function commerceRoutes({ pool, broadcast, secret }) {
         ...row,
         renewed_from: from,
         term_months: months,
+        // Which rule actually applied, so the till can say "renewed to 31
+        // August 2027" rather than guessing, and so a support call about a
+        // date somebody did not expect has an answer in one response.
+        renewed_by: useSeason ? 'season' : 'term',
         points_value_minor: row.points_balance * settings.point_value_minor,
         redeemable: row.points_balance >= settings.min_redeem_points,
         settings,
@@ -1011,6 +1110,47 @@ function commerceRoutes({ pool, broadcast, secret }) {
       const delta = kind === 'redeem' ? -Math.abs(points) : points;
 
       if (kind === 'redeem') {
+        /*
+         * AN EXPIRED CARD CANNOT SPEND.
+         *
+         * "If a customer has expired, they can still use the loyalty card on
+         * the till." The till now refuses at every door it owns, but the till
+         * is a copy: it syncs customers and can be holding a membership that
+         * ran out while it was on the counter, or be a version behind. This is
+         * the door the venue's money actually goes through, so it is checked
+         * here as well.
+         *
+         * REDEEMING ONLY, AND EARNING DELIBERATELY LEFT ALONE.
+         *
+         * A bill that renews a membership awards its points BEFORE it posts
+         * the renewal — see the settle path in `ui/payment_page.dart`, where
+         * the order matters because the fee has to be taken before the date
+         * moves. Refusing to earn on an expired card would therefore rob the
+         * one person who has just paid ten pounds to stop being expired. And
+         * points earned onto a lapsed card cost the venue nothing: they are
+         * unspendable until it is renewed, which is this check.
+         *
+         * Compared as days in the server's own calendar, and inclusive: a card
+         * dated 31 March works all of the 31st. Told at the counter that their
+         * card ran out today, on the day it says, is an argument no clerk
+         * should have to have.
+         */
+        const [[{ expired }]] = await conn.query(
+          'SELECT (? IS NOT NULL AND ? < CURDATE()) AS expired',
+          [customer.membership_expiry, customer.membership_expiry]
+        );
+        if (expired) {
+          await conn.rollback();
+          return res.status(409).json({
+            error: 'That membership has run out, so those points cannot be spent yet.',
+            // A code as well as a sentence: the till turns this into the same
+            // dialog a swipe produces, and matching on English would break the
+            // first time anybody reworded it.
+            code: 'membership_expired',
+            points_balance: customer.points_balance,
+          });
+        }
+
         if (Math.abs(delta) > customer.points_balance) {
           await conn.rollback();
           return res.status(409).json({

@@ -573,6 +573,10 @@ function dineinRoutes({ pool, broadcast, secret }) {
       const flags = [
         'is_published', 'ordering_open', 'require_name', 'require_phone',
         'schedule_enabled', 'offer_active', 'show_popular', 'show_featured',
+        // "A setting to automatically accept Menu orders form table ordering
+        // app." Read by the TILL, which is what does the accepting — see
+        // schema_menu_dinein_auto_accept.sql for why the server cannot.
+        'auto_accept_orders',
       ];
       for (const field of flags) {
         if (body[field] === undefined) continue;
@@ -2345,6 +2349,42 @@ function dineinRoutes({ pool, broadcast, secret }) {
   );
 
   /**
+   * The handful of dine-in settings a terminal needs to behave correctly.
+   *
+   * One small route rather than widening `/till/dinein/orders`, whose response
+   * is a bare JSON array that every till and kitchen screen on the previous
+   * release parses as one. Turning that into an object to carry a flag would
+   * break every terminal that has not updated yet, on the poll they run every
+   * few seconds, which is the worst thing to break.
+   *
+   * Only what a terminal acts on. The venue's opening hours, branding and
+   * offers all belong to the customer's phone and none of them mean anything
+   * behind the counter.
+   */
+  router.get(
+    ['/till/dinein/settings', '/api/kitchen/dinein/settings'],
+    appAuth,
+    async (req, res, next) => {
+      try {
+        const officeId = await terminalOffice(req);
+        if (officeId == null) {
+          return res.status(400).json({ error: 'Unknown office.' });
+        }
+        const [[venue]] = await pool.query(
+          'SELECT auto_accept_orders FROM dinein_venue WHERE office_id = ?',
+          [officeId]
+        );
+        // Off when the venue has no dine-in row at all, which is every venue
+        // that has never opened the QR menu. A till that could not read this
+        // must never start accepting things by itself.
+        res.json({ auto_accept_orders: venue ? Number(venue.auto_accept_orders) === 1 : false });
+      } catch (e) {
+        next(e);
+      }
+    }
+  );
+
+  /**
    * Move an order along.
    *
    * The transitions are stated rather than implied, so a stale screen cannot
@@ -2378,6 +2418,23 @@ function dineinRoutes({ pool, broadcast, secret }) {
         served: 'served_at',
       }[action];
 
+      /*
+       * Who accepted it: a clerk, or the venue's auto-accept setting.
+       *
+       * Sent by the terminal because the terminal is the only thing that
+       * knows — the same POST arrives either way. Anything that is not
+       * literally 'auto' is recorded as 'clerk', so a terminal that sends
+       * nothing (every build before this one) is not silently recorded as
+       * having accepted things by itself.
+       *
+       * "Why did this go straight to the kitchen?" is the first question asked
+       * about an order that should have been refused, and the answer has to
+       * survive the setting being turned off afterwards.
+       */
+      const acceptedBy = action === 'accepted'
+        ? (String(req.body && req.body.by) === 'auto' ? 'auto' : 'clerk')
+        : null;
+
       // Accepting is the moment a customer is promised a time, so the venue's
       // current setting is copied onto the order rather than read back from the
       // venue when the tracker draws. Otherwise a landlord changing the default
@@ -2396,6 +2453,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
         'UPDATE dinein_orders SET status = ?, status_note = ?' +
           (stamp ? ', ' + stamp + ' = NOW()' : '') +
           (eta != null ? ', eta_minutes = ?' : '') +
+          (acceptedBy ? ', accepted_by = ?' : '') +
           (req.body && req.body.order_id ? ', order_id = ?' : '') +
           ' WHERE id = ? AND office_id = ? AND status IN (' +
           from.map(() => '?').join(',') + ')',
@@ -2403,6 +2461,7 @@ function dineinRoutes({ pool, broadcast, secret }) {
           action,
           (req.body && req.body.note ? String(req.body.note).slice(0, 300) : null),
           ...(eta != null ? [eta] : []),
+          ...(acceptedBy ? [acceptedBy] : []),
           ...(req.body && req.body.order_id ? [String(req.body.order_id)] : []),
           req.params.id,
           officeId,

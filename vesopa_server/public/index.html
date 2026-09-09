@@ -1135,6 +1135,62 @@
                 </p>
               </div>
 
+              <!-- The screen facing the customer, which is the one surface
+                   in the venue a stranger reads. Both settings are here rather
+                   than on the display application itself because a venue with
+                   four counters has four displays, and a greeting typed into
+                   each of them ends up different on all four. -->
+              <div class="card rd-card">
+                <h3>Customer screen</h3>
+                <p class="muted small" style="margin:0 0 10px">
+                  What the screen facing the customer says when a member is put on
+                  the bill. Their name and points balance are shown underneath it.
+                </p>
+                <div class="rd-fields">
+                  <label>Greeting
+                    <input data-idle="customer_display_greeting" maxlength="120"
+                           placeholder="Welcome">
+                  </label>
+                </div>
+                <label class="check" style="margin-top:10px">
+                  <input type="checkbox" data-idle="customer_display_show_member">
+                  <span>Show the member&rsquo;s name and points</span>
+                </label>
+                <p class="muted small" style="margin:6px 0 0">
+                  Leave the greeting blank for &ldquo;Welcome&rdquo;. Turn the name off
+                  if you would rather not have it readable from the other side of the
+                  counter &mdash; the greeting still shows, and so does the bill.
+                  Nothing appears at all until a customer is attached to the sale.
+                </p>
+              </div>
+
+              <!-- Naming only, and only levels 2 to 6. Price 1 is *the*
+                   price: a venue that renamed it would have a product form
+                   whose first field agreed with nothing else in the system,
+                   and the till's own parser hardcodes it. -->
+              <div class="card rd-card">
+                <h3>Price level names</h3>
+                <p class="muted small" style="margin:0 0 10px">
+                  What this venue calls each price level. A till key labelled
+                  &ldquo;Price 2&rdquo; tells a clerk nothing and &ldquo;Happy Hour&rdquo; tells
+                  them everything &mdash; and the name appears on the product editor, on the
+                  price-level key at the till and in reporting, so it means the same thing
+                  everywhere. Leave one blank to call it &ldquo;Price&nbsp;N&rdquo;.
+                </p>
+                <div class="rd-fields">
+                  <label>Price 2 <input data-level="2" maxlength="40" placeholder="Price 2"></label>
+                  <label>Price 3 <input data-level="3" maxlength="40" placeholder="Price 3"></label>
+                  <label>Price 4 <input data-level="4" maxlength="40" placeholder="Price 4"></label>
+                  <label>Price 5 <input data-level="5" maxlength="40" placeholder="Price 5"></label>
+                  <label>Price 6 <input data-level="6" maxlength="40" placeholder="Price 6"></label>
+                </div>
+                <p class="muted small" style="margin:8px 0 0">
+                  Price 1 is always &ldquo;Price 1&rdquo;. Which level a till is charging is
+                  switched at the terminal, under Functions; a loyalty tier can name one too,
+                  and that wins for that member&rsquo;s bill.
+                </p>
+              </div>
+
               <div class="card rd-card">
                 <h3>Product buttons</h3>
                 <label class="check">
@@ -1552,6 +1608,8 @@
             <button type="button" class="btn ghost small" id="sp-new">New…</button>
             <button type="button" class="btn ghost small" id="sp-rename">Rename</button>
             <button type="button" class="btn ghost small" id="sp-duplicate" title="Copy this screen, buttons and all">Duplicate</button>
+            <button type="button" class="btn ghost small" id="sp-copy-to"
+                    title="Copy the selected keys onto other pages">Copy to pages…</button>
             <button type="button" class="btn danger-ghost small" id="sp-delete">Delete</button>
             <span class="sp-order">
               <button type="button" class="btn ghost small" id="sp-up" title="Move this screen earlier in the list">↑</button>
@@ -2160,23 +2218,37 @@
               </div>
               <!-- Membership is a different thing from points and shares this
                    page because it is the same scheme from the venue's side: one
-                   card, one member, one renewal. A term rather than a date, so
-                   it is right for everybody whatever day they join. -->
+                   card, one member, one renewal.
+
+                   A SEASON *OR* A TERM. This used to be a term only, and the
+                   argument for that was sound: a fixed date is wrong for
+                   everybody who joins on a different day. It answered the wrong
+                   question. A club does not run twelve rolling months per
+                   person, it runs a season, and every card in the place expires
+                   on the same night. Both are here; the date wins while it is
+                   set and has not passed. -->
               <div class="card rd-card">
                 <h3>Membership</h3>
                 <p class="muted small">
-                  A membership card stops working at the till once it has
-                  expired. Staff can take the fee and renew it there, and the
-                  new date is worked out from the term below.
+                  A membership card stops working at the till once it has expired.
+                  Staff can take the fee and renew it there, and this is what
+                  decides the new date.
                 </p>
+                <label>Memberships run to
+                  <input type="date" data-loy="membership_renewal_date">
+                </label>
+                <p class="muted small" id="loyalty-season-warning" hidden></p>
                 <div class="grid2">
-                  <label>Membership runs for (months)<input type="number" min="1" max="60" data-loy="membership_term_months"></label>
+                  <label>Or, if no date is set, run for (months)<input type="number" min="1" max="60" data-loy="membership_term_months"></label>
                   <label>Membership fee (pence)<input type="number" min="0" data-loy="membership_fee_minor"></label>
                 </div>
-                <label>Ring the fee up as this product (PLU)
-                  <input type="number" min="0" data-loy="membership_plu">
-                </label>
                 <p class="muted small" id="loyalty-membership-note"></p>
+                <p class="muted small" style="margin:8px 0 0">
+                  Which products renew a membership is set on the product itself
+                  &mdash; tick <strong>Renews membership</strong> in Products. Any number
+                  of products may carry it, so full, concession and junior can all
+                  renew, each with its own price and VAT treatment.
+                </p>
               </div>
               <div class="card rd-card">
                 <h3>Tiers</h3>

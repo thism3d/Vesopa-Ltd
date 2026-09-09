@@ -101,6 +101,7 @@ const SP_BAR_GROUPS = [
     ['customer', 'Customer'],
     ['price_override', 'Price override — change a line’s price'],
     ['split', 'Split the bill'],
+    ['transfer', 'Transfer — move this bill to another table'],
     ['refund', 'Refund — give money back'],
   ]],
   ['Looking things up', [
@@ -1816,6 +1817,156 @@ function spPasteClipboard() {
 }
 
 /**
+ * Copy the selected keys onto other pages.
+ *
+ * "Ability to copy products / functions from one page to multiple other pages
+ * using a checkbox for each page and a select all button."
+ *
+ * WHY THIS SAVES FIRST
+ *
+ * The server copies by cell -- it reads the buttons out of the database rather
+ * than trusting a list of them from the browser, because a request that
+ * carried whole button rows could write anything anywhere. So a key that has
+ * been dragged into place and not yet saved does not exist as far as the copy
+ * is concerned. Rather than copying four of the five keys somebody has just
+ * selected, the unsaved page is offered for saving first and the copy runs
+ * after. Refusing outright was the alternative, and "save first" is a step the
+ * dialog can simply take.
+ *
+ * WHAT COMES BACK IS SHOWN
+ *
+ * The server reports what it copied and what it skipped, per page, and every
+ * word of that reaches the manager. A copy that quietly dropped the two keys a
+ * bar would not accept is a manager who believes their pages match and finds
+ * out at the counter.
+ */
+async function spCopyToPages() {
+  if (!spCurrent) return;
+
+  const chosen = spSelectedButtons();
+  if (!chosen.length) {
+    toast('Select the keys you want to copy first.', 'error');
+    return;
+  }
+
+  const others = spScreens.filter((s) => Number(s.id) !== Number(spCurrent.id));
+  if (!others.length) {
+    toast('There is only one page. Make another to copy onto.', 'error');
+    return;
+  }
+
+  // Saved first, for the reason in the header. Only when there is something
+  // unsaved, so the ordinary case costs nothing.
+  if (spDirty()) {
+    if (!await confirmDialog(
+      'This page has changes that have not been saved. They have to be saved '
+      + 'before they can be copied. Save now and carry on?',
+      { title: 'Save this page first?', confirmLabel: 'Save and copy' }
+    )) return;
+    await spSaveLayout({ quiet: true });
+  }
+
+  const cells = chosen.map((b) => b.row + ':' + b.col);
+
+  /*
+   * Grids and bars in one list, but labelled.
+   *
+   * A bar accepts keys a sale grid does not and the other way round, so
+   * copying across the two is often partly refused -- and that is a useful
+   * thing to be able to do rather than something to prevent. Saying which is
+   * which lets the manager tick knowingly, and the skip report explains
+   * whatever did not fit.
+   */
+  const surfaceLabel = (s) => (
+    s.surface === 'topbar' ? 'top bar'
+      : s.surface === 'bottombar' ? 'bottom bar'
+        : s.surface === 'modifier' ? 'answers' : 'page'
+  );
+
+  const back = document.createElement('div');
+  back.className = 'modal-back';
+  back.innerHTML =
+    '<div class="modal" role="dialog" aria-modal="true">'
+    + '<h3>Copy ' + chosen.length + ' key' + (chosen.length === 1 ? '' : 's')
+    + ' to other pages</h3>'
+    + '<p class="muted small">Each key keeps its place where that cell is free, '
+    + 'and drops into the first free cell where it is not. Nothing is ever '
+    + 'written over, and a key already on a page is left alone.</p>'
+    + '<label class="check" style="margin:10px 0">'
+    + '<input type="checkbox" id="sp-copy-all"><span><b>Select all</b></span></label>'
+    + '<div id="sp-copy-list" class="sp-copy-list">'
+    + others.map((s) =>
+      '<label class="check"><input type="checkbox" class="sp-copy-target" value="'
+      + s.id + '"><span>' + spEsc(s.name)
+      + ' <span class="muted small">\u2014 ' + surfaceLabel(s) + '</span></span></label>'
+    ).join('')
+    + '</div>'
+    + '<div id="sp-copy-report" class="sp-copy-report" hidden></div>'
+    + '<div class="modal-actions">'
+    + '<button type="button" class="btn ghost" data-close>Close</button>'
+    + '<button type="button" class="btn primary" data-go>Copy</button>'
+    + '</div></div>';
+  document.body.appendChild(back);
+  requestAnimationFrame(() => back.classList.add('in'));
+
+  const close = () => {
+    back.classList.remove('in');
+    setTimeout(() => back.remove(), 220);
+    document.removeEventListener('keydown', onKey);
+  };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  back.onclick = (e) => { if (e.target === back) close(); };
+  back.querySelector('[data-close]').onclick = close;
+
+  const boxes = () => [...back.querySelectorAll('.sp-copy-target')];
+  back.querySelector('#sp-copy-all').onchange = (e) => {
+    boxes().forEach((b) => { b.checked = e.target.checked; });
+  };
+
+  back.querySelector('[data-go]').onclick = async (e) => {
+    const targets = boxes().filter((b) => b.checked).map((b) => Number(b.value));
+    if (!targets.length) {
+      toast('Tick at least one page.', 'error');
+      return;
+    }
+    const button = e.target;
+    button.disabled = true;
+    try {
+      const res = await api('/screens/' + spCurrent.id + '/buttons/copy', {
+        method: 'POST',
+        body: JSON.stringify({ cells, target_screen_ids: targets }),
+      });
+
+      // Every page's answer, in full. The skips are the point: they are the
+      // difference between a copy that worked and one that looked like it did.
+      const report = back.querySelector('#sp-copy-report');
+      report.hidden = false;
+      report.innerHTML = (res.results || []).map((r) =>
+        '<div class="sp-copy-row"><b>' + spEsc(r.name) + '</b> \u2014 '
+        + r.copied.length + ' copied'
+        + (r.skipped.length
+          ? '<ul class="muted small">' + r.skipped.map((s) =>
+            '<li>' + spEsc(s.label) + ': ' + spEsc(s.reason) + '</li>').join('') + '</ul>'
+          : '')
+        + '</div>'
+      ).join('');
+
+      const total = (res.results || []).reduce((n, r) => n + r.copied.length, 0);
+      toast(total + ' key' + (total === 1 ? '' : 's') + ' copied.', 'ok');
+      // The pages themselves have changed underneath the editor's copy of
+      // them, so re-read rather than leaving a list that disagrees with the
+      // database about what is on every other page.
+      await loadScreens();
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      button.disabled = false;
+    }
+  };
+}
+
+/**
  * Resize the grid, in hand rather than on the server.
  *
  * This used to PUT immediately and reload, which threw away every unsaved
@@ -1888,6 +2039,7 @@ function spRenderChrome() {
   for (const id of [
     'sp-rename',
     'sp-duplicate',
+    'sp-copy-to',
     'sp-delete',
     'sp-save',
     'sp-revert',
@@ -3637,6 +3789,7 @@ function spBind() {
   $('sp-new').addEventListener('click', spNewScreen);
   $('sp-rename').addEventListener('click', spRenameScreen);
   $('sp-duplicate').addEventListener('click', spDuplicateScreen);
+  $('sp-copy-to').addEventListener('click', spCopyToPages);
   $('sp-delete').addEventListener('click', spDeleteScreen);
   // The manual key. Also the way back for anybody who chose the tab: pressing
   // it says they want the window after all, so the preference goes with it.

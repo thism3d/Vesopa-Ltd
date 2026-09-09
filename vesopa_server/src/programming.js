@@ -66,6 +66,27 @@ function programmingRoutes({ pool, broadcast, secret }) {
     // and which the list has to show: a deal with none never fires, and that
     // is exactly the state a venue needs to be able to spot from the list.
     extraSelect = null,
+    /*
+     * A last look at one column before it is written, or null.
+     *
+     * The factory writes whatever the form sent, which is right for a name and
+     * a price and wrong for a column whose value means something elsewhere in
+     * the system. `bo_error_reasons.applies_to` is the case in hand: it is a
+     * free VARCHAR, the till asks for a list BY that value, and a typo would
+     * create a reason that belongs to an action nothing ever asks for. It
+     * would be saved, listed in the back office, and simply never appear on a
+     * till — which is a fault nobody can see from either end.
+     *
+     * Deliberately one hook rather than per-column validators: this is the
+     * only table that has needed it, and a validation framework in a
+     * forty-line factory would be more machinery than the problem.
+     *
+     * Answers `{ body }` or `{ error }` rather than a body that might carry an
+     * `error` key of its own. A sentinel field would work for this table and
+     * break silently on the first table that has a column called `error`,
+     * which is the kind of trap that is only found by writing it.
+     */
+    clean = null,
   } = {}) {
     const orderBy = sortable ? 'sort_order, id' : 'id';
     const selectCols = sortable ? [...columns, 'sort_order'] : columns;
@@ -157,7 +178,9 @@ function programmingRoutes({ pool, broadcast, secret }) {
         // sort_order 0 would jump a brand-new deal above everything already
         // ordered.
         const insertCols = [...columns];
-        const values = columns.map((c) => req.body[c] ?? null);
+        const checked = clean ? clean(req.body) : { body: req.body };
+        if (checked.error) return res.status(400).json({ error: checked.error });
+        const values = columns.map((c) => checked.body[c] ?? null);
 
         // Stamp the owning office. Without this a voucher was created with a
         // NULL office_id, and the till's lookup joins through that column — so
@@ -201,7 +224,9 @@ function programmingRoutes({ pool, broadcast, secret }) {
 
     router.put(`/${path}/:id`, auth, async (req, res, next) => {
       try {
-        const values = columns.map((c) => req.body[c] ?? null);
+        const checked = clean ? clean(req.body) : { body: req.body };
+        if (checked.error) return res.status(400).json({ error: checked.error });
+        const values = columns.map((c) => checked.body[c] ?? null);
         const { sql, params } = await scope(req);
         const [r] = await pool.execute(
           `UPDATE ${table} SET ${columns.map((c) => `${c} = ?`).join(', ')}
@@ -243,7 +268,26 @@ function programmingRoutes({ pool, broadcast, secret }) {
   // Cash key. Tenanted now, like everything else here.
   crud('tax', 'bo_tax_rates', ['name', 'percentage', 'is_default'], 'programming.updated', { tenantColumn: 'office_id' });
   crud('finalise-keys', 'bo_finalise_keys', ['name', 'kind', 'opens_drawer'], 'programming.updated', { tenantColumn: 'office_id' });
-  crud('error-reasons', 'bo_error_reasons', ['reason', 'applies_to'], 'programming.updated', { tenantColumn: 'office_id' });
+  /*
+   * Five actions, and a reason belongs to exactly one of them.
+   *
+   * "Can we have reasons for No Sale, Refunds, Voids and Cancel." Cancel and
+   * no_sale are new here; void, refund and discount are what the form already
+   * offered. The whitelist matters because the till fetches a list BY this
+   * value — `/till/error-reasons?applies_to=no_sale` — so a row saved with a
+   * misspelt action is a reason that exists, lists, and never reaches a till.
+   */
+  const REASON_ACTIONS = ['void', 'cancel', 'refund', 'no_sale', 'discount'];
+  crud('error-reasons', 'bo_error_reasons', ['reason', 'applies_to'], 'programming.updated', {
+    tenantColumn: 'office_id',
+    clean: (body) => {
+      const action = String(body.applies_to || 'void');
+      if (!REASON_ACTIONS.includes(action)) {
+        return { error: `An error reason applies to one of: ${REASON_ACTIONS.join(', ')}.` };
+      }
+      return { body: { ...body, applies_to: action } };
+    },
+  });
   // Every column the voucher editor shows has to be listed here, or it is
   // silently dropped on save: the factory builds its INSERT and UPDATE from
   // this list alone. It was the six original columns while the form offered

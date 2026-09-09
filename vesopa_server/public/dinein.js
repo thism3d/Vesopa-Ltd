@@ -230,6 +230,18 @@ async function loadDineIn() {
         <input type="checkbox" id="di-ordering" ${v.ordering_open ? 'checked' : ''}>
         <span><b>Taking orders.</b> Customers can send an order to the till.</span>
       </label>
+      <label class="check">
+        <input type="checkbox" id="di-auto-accept" ${v.auto_accept_orders ? 'checked' : ''}>
+        <span><b>Accept orders automatically.</b> An order goes straight onto the
+        table's bill and prints to the kitchen without anybody pressing Accept.</span>
+      </label>
+      <p class="muted small" style="margin:2px 0 0 28px">
+        What you give up is the chance to refuse. With this on there is no
+        moment between the order arriving and the food being started, so a
+        mistake has to be dealt with as a void or a refund afterwards. It also
+        needs a till switched on and signed in &mdash; accepting is what puts the
+        order on a bill, and nothing else can do that.
+      </p>
       <hr>
       <label class="check">
         <input type="checkbox" id="di-req-name" ${v.require_name ? 'checked' : ''}>
@@ -796,6 +808,7 @@ async function diSaveVenue() {
     notice: $('di-notice').value,
     is_published: $('di-published').checked,
     ordering_open: $('di-ordering').checked,
+    auto_accept_orders: $('di-auto-accept').checked,
     require_name: $('di-req-name').checked,
     require_phone: $('di-req-phone').checked,
     schedule_enabled: $('di-sched-on').checked,
