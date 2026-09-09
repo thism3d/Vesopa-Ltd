@@ -1,0 +1,123 @@
+<%- include('../partials/console-head') %>
+
+<h1 class="console-title">New application</h1>
+<p class="console-lead">
+  Four answers and it is created. Everything else can be changed afterwards —
+  except the client id, which is issued once and is public anyway.
+</p>
+
+<% if (error) { %><div class="form-error" role="alert"><%= error %></div><% } %>
+
+<form method="post" action="/developers/new">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+  <section class="card">
+    <h2 class="card-head">What it is</h2>
+    <div class="card-body">
+      <div class="field">
+        <label for="name">Name</label>
+        <input type="text" id="name" name="name" maxlength="120" required
+               value="<%= values.name || '' %>" placeholder="Riverside Bistro Menu">
+        <p class="hint">
+          This is what a person sees on the consent screen — "Riverside Bistro
+          Menu wants to see your email address". Use the name they would
+          recognise, not an internal codename.
+        </p>
+      </div>
+
+      <div class="field">
+        <label for="description">What it does <span class="hint inline">(optional)</span></label>
+        <input type="text" id="description" name="description" maxlength="500"
+               value="<%= values.description || '' %>"
+               placeholder="Order food and drink from the table">
+      </div>
+
+      <% if (organisations.length > 1) { %>
+      <div class="field">
+        <label for="organisation_id">Organisation</label>
+        <select id="organisation_id" name="organisation_id">
+          <% organisations.forEach(function (org) { %>
+          <option value="<%= org.id %>"><%= org.name %></option>
+          <% }) %>
+        </select>
+        <p class="hint">Who owns it. Applications can share data only within one organisation.</p>
+      </div>
+      <% } else if (organisations.length === 1) { %>
+      <input type="hidden" name="organisation_id" value="<%= organisations[0].id %>">
+      <p class="hint">Owned by <b><%= organisations[0].name %></b>.</p>
+      <% } %>
+    </div>
+  </section>
+
+  <%
+    /*
+     * THE TYPE IS THE ONE ANSWER THAT IS HARD TO CHANGE LATER, because it
+     * decides whether a client secret means anything at all. It is written out
+     * in terms of where the code runs rather than in OAuth vocabulary — a
+     * developer knows whether their code runs on a server or in a browser, and
+     * may well not know what "confidential client" means.
+     */
+  %>
+  <section class="card">
+    <h2 class="card-head">Where the code runs</h2>
+    <p class="card-note">
+      This decides whether it can keep a secret. Anything that ships to the
+      person using it — a browser bundle, a downloaded app — cannot, however
+      well it is hidden.
+    </p>
+    <div class="card-body">
+      <div class="check-grid">
+        <label class="check">
+          <input type="radio" name="client_type" value="web"
+                 <%= (values.client_type || 'web') === 'web' ? 'checked' : '' %>>
+          <span><b>On a server</b>
+          <span>A website or API you host. Gets a client secret. — Django, Rails, Express, Laravel.</span></span>
+        </label>
+        <label class="check">
+          <input type="radio" name="client_type" value="spa"
+                 <%= values.client_type === 'spa' ? 'checked' : '' %>>
+          <span><b>In the browser</b>
+          <span>A single-page app with no backend of its own. No secret; PKCE protects it instead.</span></span>
+        </label>
+        <label class="check">
+          <input type="radio" name="client_type" value="native"
+                 <%= values.client_type === 'native' ? 'checked' : '' %>>
+          <span><b>On a device</b>
+          <span>A desktop or mobile app. No secret, and it may use a <code>http://127.0.0.1</code> address.</span></span>
+        </label>
+        <label class="check">
+          <input type="radio" name="client_type" value="service"
+                 <%= values.client_type === 'service' ? 'checked' : '' %>>
+          <span><b>Server to server, with no person</b>
+          <span>A background job or integration. Gets a secret and exchanges it for a token directly — no sign-in, and no redirect URI.</span></span>
+        </label>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2 class="card-head">Where sign-ins come back to</h2>
+    <p class="card-note">
+      The one address we will send an authorisation code to. It is matched
+      <b>exactly</b> — no wildcards, and a trailing slash is a different
+      address. You can add more afterwards.
+    </p>
+    <div class="card-body">
+      <div class="field">
+        <label for="redirect_uri">Redirect URI</label>
+        <input type="text" id="redirect_uri" name="redirect_uri" maxlength="500"
+               inputmode="url" spellcheck="false" autocapitalize="off"
+               value="<%= values.redirect_uri || '' %>"
+               placeholder="https://menu.vesopa.com/auth/callback">
+        <p class="hint">
+          Must be <code>https://</code>. Leave blank only for a server-to-server
+          application, which never sends anybody anywhere.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <button class="btn btn-primary" type="submit">Create application</button>
+</form>
+
+<%- include('../partials/console-foot') %>

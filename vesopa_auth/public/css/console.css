@@ -1,0 +1,871 @@
+/*
+ * The signed-in console: your account, the administrator's, and the developer
+ * portal. One shell, three sets of navigation.
+ *
+ * THE MODEL IS THE GOOGLE ACCOUNT PAGE, and the reason is not fashion. That
+ * layout solves a specific problem this site has: an identity provider has a
+ * lot of small, unrelated settings, and a person arrives looking for exactly
+ * one of them. A left rail of named destinations with a distinct mark against
+ * each is scannable in a way a wall of headings is not — you find "Security"
+ * by its colour and shape before you have read the word.
+ *
+ * WHAT IS BORROWED IS THE PATTERN, NOT THE PAINT. The colours are Vesopa's:
+ * lime green and black, with the tints below derived to sit against both. A
+ * page that copied Google's blues would look like a phishing page for Google,
+ * which on a sign-in domain is the one thing it must never look like.
+ *
+ * A ROW IS A DESTINATION OR IT IS A FACT, never both. Every row that can be
+ * clicked has a chevron; every row without one is text. The failure this
+ * prevents is somebody tapping a line that shows their email address and
+ * nothing happening, then concluding the page is broken.
+ *
+ * Loaded alongside auth.css, which owns the colour tokens, the buttons and the
+ * form controls. This sheet adds only the shell.
+ */
+
+/* --------------------------------------------------------------------------
+ * Tints
+ * --------------------------------------------------------------------------
+ * Each navigation entry and each row mark gets one, and it stays with that
+ * meaning everywhere: security is always the same green, developer tools are
+ * always the same violet. The colour is doing work — it is how somebody finds
+ * the row again next week — so it must not be reassigned per page.
+ *
+ * Every pair is a pale ground with dark ink on it in light mode, and a dark
+ * ground with light ink in dark mode. Both directions are checked for contrast:
+ * an icon is a shape, and a shape at 2:1 on a pale wash is a smudge.
+ * ------------------------------------------------------------------------ */
+
+:root {
+  --tint-brand-bg: #e8f2c4;  --tint-brand-fg: #3f4d05;
+  --tint-blue-bg:  #dbe8fb;  --tint-blue-fg:  #17418a;
+  --tint-violet-bg:#e6e0fb;  --tint-violet-fg:#40268f;
+  --tint-amber-bg: #fbe8cd;  --tint-amber-fg: #7a4708;
+  --tint-teal-bg:  #d3ecea;  --tint-teal-fg:  #0b4f4a;
+  --tint-pink-bg:  #fadfe9;  --tint-pink-fg:  #7d1740;
+  --tint-slate-bg: #e2e5e9;  --tint-slate-fg: #303840;
+  --tint-red-bg:   #fbdedb;  --tint-red-fg:   #8a1f18;
+
+  --rail-current: #e8f2c4;
+  --rail-hover: rgba(0, 0, 0, .05);
+  --card-radius: 16px;
+}
+
+/*
+ * The two dark blocks must stay IDENTICAL — the same rule auth.css records,
+ * and for the same reason. One applies when the device asks for dark and the
+ * person has expressed no preference; the other when they chose dark
+ * themselves. Letting them drift means the same page looks different depending
+ * on how you arrived at it, which nobody reports and everybody notices.
+ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --tint-brand-bg: #2e3a08;  --tint-brand-fg: #cfe57c;
+    --tint-blue-bg:  #14243f;  --tint-blue-fg:  #a8c6f5;
+    --tint-violet-bg:#221a41;  --tint-violet-fg:#c3b2f7;
+    --tint-amber-bg: #3a2708;  --tint-amber-fg: #f0c489;
+    --tint-teal-bg:  #0d2b29;  --tint-teal-fg:  #8fd3cd;
+    --tint-pink-bg:  #37131f;  --tint-pink-fg:  #f4aac6;
+    --tint-slate-bg: #21252a;  --tint-slate-fg: #c3ccd5;
+    --tint-red-bg:   #3a1310;  --tint-red-fg:   #f6a9a2;
+
+    --rail-current: #2e3a08;
+    --rail-hover: rgba(255, 255, 255, .07);
+  }
+}
+
+:root[data-theme="dark"] {
+  --tint-brand-bg: #2e3a08;  --tint-brand-fg: #cfe57c;
+  --tint-blue-bg:  #14243f;  --tint-blue-fg:  #a8c6f5;
+  --tint-violet-bg:#221a41;  --tint-violet-fg:#c3b2f7;
+  --tint-amber-bg: #3a2708;  --tint-amber-fg: #f0c489;
+  --tint-teal-bg:  #0d2b29;  --tint-teal-fg:  #8fd3cd;
+  --tint-pink-bg:  #37131f;  --tint-pink-fg:  #f4aac6;
+  --tint-slate-bg: #21252a;  --tint-slate-fg: #c3ccd5;
+  --tint-red-bg:   #3a1310;  --tint-red-fg:   #f6a9a2;
+
+  --rail-current: #2e3a08;
+  --rail-hover: rgba(255, 255, 255, .07);
+}
+
+/* The ground behind the cards. Slightly off the card white so a card has an
+   edge even where its border is invisible on a bright screen. */
+body.console-body { background: var(--bg); }
+
+/* --------------------------------------------------------------------------
+ * The bar across the top
+ * ------------------------------------------------------------------------ */
+
+.topbar {
+  /* A direct child of <body>, which is a column flexbox — without this it
+     shrinks to its content and sits marooned in the middle. That has happened
+     here before; see the README. */
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 24px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.topbar .brand { margin: 0; display: flex; align-items: center; }
+.topbar-name {
+  font-size: 19px;
+  letter-spacing: -.01em;
+  color: var(--text-muted);
+  font-weight: 400;
+  /* Nothing at 320px: the wordmark alone identifies the site, and the section
+     name is repeated as the page heading two centimetres below. */
+  display: none;
+}
+@media (min-width: 560px) { .topbar-name { display: block; } }
+
+.topbar-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+
+.topbar-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  display: grid;
+  place-items: center;
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--text-muted);
+  text-decoration: none;
+  flex: 0 0 auto;
+}
+
+/* --------------------------------------------------------------------------
+ * Rail and page
+ * ------------------------------------------------------------------------ */
+
+.console {
+  flex: 1;
+  width: 100%;
+  display: grid;
+  grid-template-columns: 268px minmax(0, 1fr);
+  align-items: start;
+  gap: 0;
+}
+
+.rail {
+  position: sticky;
+  top: 59px;
+  padding: 18px 12px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rail-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 7px 16px 7px 8px;
+  border-radius: 999px;
+  text-decoration: none;
+  color: var(--text);
+  font-size: 14.5px;
+  font-weight: 500;
+  /* The rail is a list of destinations, and a destination that reflows when it
+     becomes current is a rail that jumps as you use it. */
+  border: 1px solid transparent;
+}
+.rail-item:hover { background: var(--rail-hover); }
+.rail-item[aria-current="page"] { background: var(--rail-current); font-weight: 600; }
+.rail-item:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+.rail-icon {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--tint-slate-bg);
+  color: var(--tint-slate-fg);
+}
+.rail-icon svg { width: 19px; height: 19px; }
+
+.rail-sep {
+  margin: 14px 16px 8px;
+  font-size: 11.5px;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 650;
+}
+
+.console-main {
+  padding: 26px 24px 64px;
+  min-width: 0;
+  /* About 90 characters at this size — wide enough for a table of redirect
+     URIs, narrow enough that a sentence is still readable. */
+  max-width: 812px;
+  /* Centred in the space the rail leaves, rather than pinned to its edge. On a
+     wide screen the pinned version leaves a third of the window empty on the
+     right and the page reads as though it failed to load the rest. */
+  margin-inline: auto;
+}
+
+/* A button in a console is a control, not a call to action.
+ *
+ * `.btn` is full width because it was written for the sign-in card, where one
+ * button IS the page. Carrying that into a settings form gives "Save" the
+ * visual weight of a sign-up page and makes a row of two impossible. */
+/*
+ * `display: inline-flex`, not just `width: auto`.
+ *
+ * `.btn` is `display: flex`, which is block-level — so `width: auto` on it
+ * still fills the line, and the button looks exactly as wide as it did before
+ * the rule was added. Only changing the outer display to an inline box makes it
+ * shrink to its label. That cost a round trip to work out, hence the note.
+ */
+.console-main .btn {
+  display: inline-flex;
+  width: auto;
+  min-width: 148px;
+}
+.console-main .btn-small { min-width: 0; }
+
+.console-title {
+  margin: 0 0 6px;
+  font-size: 30px;
+  line-height: 1.2;
+  letter-spacing: -.02em;
+  font-weight: 500;
+}
+.console-lead {
+  margin: 0 0 26px;
+  color: var(--text-muted);
+  font-size: 15px;
+  max-width: 60ch;
+}
+.console-title:focus-visible { outline: none; }
+
+/* The rail becomes a strip above the page on a narrow screen. Not a hamburger:
+   six destinations fit, and a menu that has to be opened is a menu whose
+   contents nobody learns. */
+@media (max-width: 900px) {
+  .console { grid-template-columns: minmax(0, 1fr); }
+  .rail {
+    position: static;
+    flex-direction: row;
+    overflow-x: auto;
+    padding: 10px 12px;
+    gap: 6px;
+    border-bottom: 1px solid var(--border);
+    scrollbar-width: none;
+  }
+  .rail::-webkit-scrollbar { display: none; }
+  .rail-item { flex: 0 0 auto; padding: 5px 14px 5px 6px; font-size: 14px; }
+  .rail-icon { width: 28px; height: 28px; }
+  .rail-icon svg { width: 16px; height: 16px; }
+  .rail-sep { display: none; }
+  .console-main { padding: 22px 16px 56px; }
+  .console-title { font-size: 25px; }
+}
+
+/* --------------------------------------------------------------------------
+ * The hero on the home page
+ * ------------------------------------------------------------------------ */
+
+.hero { text-align: center; padding: 22px 0 34px; }
+.hero-avatar {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  object-fit: cover;
+  margin: 0 auto 16px;
+  display: grid;
+  place-items: center;
+  background: var(--green);
+  color: var(--ink);
+  font-size: 36px;
+  font-weight: 650;
+  letter-spacing: -.02em;
+  border: 0;
+}
+.hero h1 { margin: 0 0 4px; font-size: 30px; font-weight: 500; letter-spacing: -.02em; }
+.hero p { margin: 0; color: var(--text-muted); font-size: 15px; }
+.hero-note {
+  margin: 22px auto 0;
+  max-width: 52ch;
+  font-size: 13.5px;
+  color: var(--text-muted);
+}
+
+/* --------------------------------------------------------------------------
+ * Cards, and the rows inside them
+ * ------------------------------------------------------------------------ */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--card-radius);
+  margin: 0 0 18px;
+  overflow: hidden;
+}
+
+.card-head {
+  padding: 16px 20px 4px;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -.005em;
+}
+.card-head + .card-note { padding-top: 0; }
+.card-note {
+  margin: 0;
+  padding: 6px 20px 14px;
+  color: var(--text-muted);
+  font-size: 13.5px;
+}
+.card-body { padding: 14px 20px 18px; }
+.card-body > :first-child { margin-top: 0; }
+.card-body > :last-child { margin-bottom: 0; }
+
+/* A row. Three lanes: mark, words, and whatever is on the right. */
+.row {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+  color: inherit;
+  text-decoration: none;
+  min-height: 60px;
+}
+.card-head + .row, .card-note + .row, .card > .row:first-child { border-top: 0; }
+a.row:hover, button.row:hover { background: var(--surface-2); }
+a.row:focus-visible, button.row:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+
+button.row {
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-top: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.row-mark { color: var(--text-muted); display: grid; place-items: center; }
+.row-mark svg { width: 21px; height: 21px; }
+.row-lines { min-width: 0; }
+.row-title { display: block; font-size: 15px; font-weight: 500; }
+.row-sub {
+  display: block;
+  font-size: 13.5px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  /* An address or a URI is long and must not push the chevron off the row. */
+  overflow-wrap: anywhere;
+}
+.row-right { display: flex; align-items: center; gap: 12px; color: var(--text-muted); font-size: 13.5px; }
+
+/* The chevron is the promise that a row goes somewhere. Only rows that do get
+   one — see the note at the top of this file. */
+.row-go { color: var(--text-muted); flex: 0 0 auto; }
+.row-go svg { width: 18px; height: 18px; display: block; }
+
+@media (max-width: 560px) {
+  .row { grid-template-columns: 24px minmax(0, 1fr) auto; gap: 14px; padding: 13px 16px; }
+  .card-head, .card-note, .card-body { padding-left: 16px; padding-right: 16px; }
+}
+
+/* --------------------------------------------------------------------------
+ * The status card at the top of a section
+ * ------------------------------------------------------------------------ */
+
+.status {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+  padding: 18px 20px;
+  border-radius: var(--card-radius);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  margin: 0 0 20px;
+}
+.status-mark { display: grid; place-items: center; margin-top: 1px; }
+.status-mark svg { width: 22px; height: 22px; }
+.status strong { display: block; font-size: 15.5px; font-weight: 600; }
+.status p { margin: 3px 0 0; color: var(--text-muted); font-size: 13.5px; }
+.status-good .status-mark { color: #2f7d32; }
+.status-warn .status-mark { color: #9a6205; }
+.status-bad  .status-mark { color: var(--danger); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .status-good .status-mark { color: #86d189; }
+  :root:not([data-theme="light"]) .status-warn .status-mark { color: #efbc63; }
+}
+:root[data-theme="dark"] .status-good .status-mark { color: #86d189; }
+:root[data-theme="dark"] .status-warn .status-mark { color: #efbc63; }
+
+/* --------------------------------------------------------------------------
+ * Figures
+ * ------------------------------------------------------------------------ */
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(158px, 1fr));
+  gap: 14px;
+  margin: 0 0 20px;
+}
+.tile {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--card-radius);
+  padding: 18px;
+  text-decoration: none;
+  color: inherit;
+  display: block;
+}
+a.tile:hover { background: var(--surface-2); }
+.tile-mark {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  margin-bottom: 12px;
+  background: var(--tint-slate-bg);
+  color: var(--tint-slate-fg);
+}
+.tile-mark svg { width: 19px; height: 19px; }
+.tile-number {
+  display: block;
+  font-size: 29px;
+  font-weight: 600;
+  letter-spacing: -.025em;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+}
+.tile-label { display: block; margin-top: 3px; font-size: 13px; color: var(--text-muted); }
+.tile-foot { display: block; margin-top: 8px; font-size: 12.5px; color: var(--text-muted); }
+.tile-alert .tile-number { color: var(--danger); }
+
+/* The tint classes, usable on any mark. */
+.t-brand  { background: var(--tint-brand-bg);  color: var(--tint-brand-fg); }
+.t-blue   { background: var(--tint-blue-bg);   color: var(--tint-blue-fg); }
+.t-violet { background: var(--tint-violet-bg); color: var(--tint-violet-fg); }
+.t-amber  { background: var(--tint-amber-bg);  color: var(--tint-amber-fg); }
+.t-teal   { background: var(--tint-teal-bg);   color: var(--tint-teal-fg); }
+.t-pink   { background: var(--tint-pink-bg);   color: var(--tint-pink-fg); }
+.t-slate  { background: var(--tint-slate-bg);  color: var(--tint-slate-fg); }
+.t-red    { background: var(--tint-red-bg);    color: var(--tint-red-fg); }
+
+/* --------------------------------------------------------------------------
+ * A horizontal bar chart, drawn as divs
+ * --------------------------------------------------------------------------
+ * No chart library. The Content-Security-Policy on this origin forbids
+ * external scripts, and a bar whose width is a percentage of the largest value
+ * is honest, readable without an axis, and cannot fail to load.
+ * ------------------------------------------------------------------------ */
+
+.meter { padding: 12px 20px 16px; }
+.meter-row { margin-bottom: 13px; }
+.meter-row:last-child { margin-bottom: 0; }
+.meter-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 5px;
+  font-size: 13.5px;
+}
+.meter-count { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.meter-track { height: 8px; background: var(--surface-2); border-radius: 999px; overflow: hidden; }
+.meter-fill { height: 100%; background: var(--green); border-radius: 999px; min-width: 3px; }
+.meter-fill.is-bad { background: var(--danger); }
+.meter-fill.is-idle { background: var(--border-strong); }
+
+.pill {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: .01em;
+  background: var(--tint-slate-bg);
+  color: var(--tint-slate-fg);
+  vertical-align: 1px;
+}
+.pill-good { background: var(--tint-brand-bg); color: var(--tint-brand-fg); }
+.pill-bad  { background: var(--tint-red-bg);   color: var(--tint-red-fg); }
+.pill-info { background: var(--tint-blue-bg);  color: var(--tint-blue-fg); }
+
+/* --------------------------------------------------------------------------
+ * Things a developer copies
+ * --------------------------------------------------------------------------
+ * A client id, a redirect URI, a curl command. Every one of these is retyped
+ * wrongly at least once if it cannot be copied, and a mistyped redirect URI
+ * fails with `invalid_request` an hour later on somebody else's machine.
+ * ------------------------------------------------------------------------ */
+
+.copy {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 8px 8px 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  overflow: hidden;
+}
+.copy code {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: thin;
+}
+/* Hidden until scripting says otherwise: a Copy button that cannot copy is
+   worse than none, because it is pressed and appears to have worked. The flag
+   is on <html>, set before first paint, so the button never flashes in. */
+.copy-btn { display: none; }
+:root[data-js="1"] .copy-btn { display: inline-block; }
+
+.copy-btn {
+  flex: 0 0 auto;
+  font: inherit;
+  font-family: var(--font);
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 5px 11px;
+  border-radius: 7px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+.copy-btn:hover { background: var(--surface-2); }
+.copy-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+pre.code {
+  margin: 12px 0;
+  padding: 14px 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow-x: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.65;
+}
+
+/* The one-time secret. Shown once, never stored in the clear, and said so in
+   the same breath — a panel that shows a secret without saying it will not be
+   shown again is how a developer closes the tab and loses it. */
+.secret-once {
+  border: 1px solid var(--green);
+  background: var(--tint-brand-bg);
+  border-radius: var(--card-radius);
+  padding: 18px 20px;
+  margin: 0 0 20px;
+}
+.secret-once h2 { margin: 0 0 6px; font-size: 16px; color: var(--tint-brand-fg); }
+.secret-once p { margin: 0 0 12px; font-size: 13.5px; color: var(--tint-brand-fg); }
+.secret-once .copy { background: var(--surface); }
+
+/* --------------------------------------------------------------------------
+ * Forms inside cards, and small tables
+ * ------------------------------------------------------------------------ */
+
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+@media (max-width: 620px) { .grid-2 { grid-template-columns: 1fr; } }
+
+.check-grid { display: grid; gap: 10px; margin: 4px 0 16px; }
+.check {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  font-size: 14.5px;
+}
+.check input { width: 18px; height: 18px; margin: 1px 0 0; accent-color: var(--green); }
+.check b { font-weight: 550; display: block; }
+.check span { display: block; color: var(--text-muted); font-size: 13px; margin-top: 1px; }
+
+.inline-form { display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; }
+.inline-form input[type="text"], .inline-form input[type="url"] { flex: 1; min-width: 240px; }
+.inline-form .btn { width: auto; flex: 0 0 auto; }
+
+.btn-small {
+  display: inline-flex;
+  width: auto;
+  /* `.btn` fixes a 48px height for the sign-in card. A control beside a text
+     input in a settings row has to match the input, not the sign-in button. */
+  height: auto;
+  min-height: 38px;
+  padding: 7px 16px;
+  font-size: 13.5px;
+  border-radius: 8px;
+}
+.btn-link {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--danger);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.empty {
+  padding: 30px 20px 34px;
+  text-align: center;
+  color: var(--text-muted);
+}
+.empty-mark {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  margin: 0 auto 12px;
+  display: grid;
+  place-items: center;
+  background: var(--tint-slate-bg);
+  color: var(--tint-slate-fg);
+}
+.empty-mark svg { width: 24px; height: 24px; }
+.empty strong { display: block; color: var(--text); font-size: 15.5px; margin-bottom: 4px; }
+.empty p { margin: 0 auto; max-width: 44ch; font-size: 13.5px; }
+
+.section-gap { margin-top: 30px; }
+
+/* --------------------------------------------------------------------------
+ * The sparkline
+ * --------------------------------------------------------------------------
+ * `preserveAspectRatio="none"` stretches the drawing to whatever width the
+ * card is, which is right for a shape read as a trend and wrong for anything
+ * with a circle in it. The strokes are therefore drawn with
+ * `vector-effect: non-scaling-stroke`, or a wide card would render a hairline
+ * and a narrow one a slab.
+ * ------------------------------------------------------------------------ */
+
+.spark { margin: 0; padding: 4px 20px 14px; }
+.spark svg { width: 100%; height: 96px; display: block; overflow: visible; }
+.spark-area { fill: var(--tint-brand-bg); stroke: none; }
+.spark-line {
+  fill: none;
+  stroke: var(--green);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+.spark-good {
+  fill: none;
+  stroke: var(--text);
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  stroke-dasharray: 3 3;
+  vector-effect: non-scaling-stroke;
+  opacity: .55;
+}
+.spark-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.spark-key { display: inline-flex; align-items: center; gap: 5px; }
+.spark-key i { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
+.spark-swatch-total { background: var(--green); }
+.spark-swatch-good { background: var(--text); opacity: .55; }
+@media (max-width: 560px) { .spark-key { display: none; } }
+
+/* --------------------------------------------------------------------------
+ * A definition-style list, for the health page and the account detail
+ * ------------------------------------------------------------------------ */
+
+.facts { margin: 0; padding: 4px 20px 16px; display: grid; gap: 0; }
+.facts div {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: 14px;
+  padding: 9px 0;
+  border-top: 1px solid var(--border);
+  font-size: 14px;
+}
+.facts div:first-child { border-top: 0; }
+.facts dt { color: var(--text-muted); }
+.facts dd { margin: 0; overflow-wrap: anywhere; }
+@media (max-width: 560px) {
+  .facts div { grid-template-columns: 1fr; gap: 2px; }
+}
+
+/* --------------------------------------------------------------------------
+ * The account pages, inside the console shell
+ * --------------------------------------------------------------------------
+ * Those pages are built from `.panel` and were written before this sheet
+ * existed. Rather than rewrite eight templates — and risk breaking forms that
+ * are covered by the login smoke test — the panel is given the card's shape
+ * here. One rule, one place, and the markup underneath is untouched.
+ * ------------------------------------------------------------------------ */
+
+.console-main .panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--card-radius);
+  padding: 18px 20px;
+  margin: 0 0 18px;
+  box-shadow: none;
+}
+.console-main .panel h2 {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -.005em;
+  margin: 0 0 12px;
+  text-transform: none;
+}
+.console-main .account-nav { display: none; }
+.console-main .notice-good,
+.console-main .form-error { border-radius: var(--card-radius); }
+
+/* The account pages still use `.account` as their wrapper on a couple of
+   sub-pages. Inside the console it must not re-centre or re-pad. */
+.console-main .account { max-width: none; margin: 0; padding: 0; width: 100%; }
+.console-main .account-head { display: none; }
+
+
+/* --------------------------------------------------------------------------
+ * Utilities, because the Content-Security-Policy forbids `style=`
+ * --------------------------------------------------------------------------
+ * `style-src 'self' 'nonce-…'` blocks inline style ATTRIBUTES as well as
+ * inline <style> blocks, and a nonce cannot rescue an attribute — the browser
+ * refuses it silently and the page renders with the declaration missing. On a
+ * meter bar that means every bar is the same width and the chart is a lie.
+ *
+ * Weakening the policy to `unsafe-inline` would fix all of these at the cost of
+ * the control that stops an injected `style` from covering the page with an
+ * invisible overlay over the sign-in button. On the domain that holds every
+ * Vesopa login, that trade is not worth making for a margin.
+ * ------------------------------------------------------------------------ */
+
+.mt-0 { margin-top: 0 !important; }
+.mt-1 { margin-top: 6px; }
+.mt-2 { margin-top: 10px; }
+.mt-3 { margin-top: 16px; }
+.mt-tight { margin-top: -8px; }
+.mb-0 { margin-bottom: 0 !important; }
+.mb-1 { margin-bottom: 6px; }
+.m-0 { margin: 0 !important; }
+.m-label { margin: 16px 0 6px; }
+.m-back { margin: 0 0 10px; }
+.is-danger { color: var(--danger); }
+.is-small { font-size: 13.5px; }
+.is-smaller { font-size: 13px; }
+.is-clickable { cursor: pointer; }
+.fill { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+
+/* --------------------------------------------------------------------------
+ * Meter widths, as classes
+ * --------------------------------------------------------------------------
+ * A bar's length is data, and data cannot reach CSS through an attribute the
+ * policy forbids. Twenty-one widths at five-percent steps is the resolution a
+ * bar chart read at arm's length actually carries — the number beside it is
+ * there for anybody who needs the exact figure, and it is exact.
+ * ------------------------------------------------------------------------ */
+.w-0 { width: 0%; }
+.w-5 { width: 5%; }
+.w-10 { width: 10%; }
+.w-15 { width: 15%; }
+.w-20 { width: 20%; }
+.w-25 { width: 25%; }
+.w-30 { width: 30%; }
+.w-35 { width: 35%; }
+.w-40 { width: 40%; }
+.w-45 { width: 45%; }
+.w-50 { width: 50%; }
+.w-55 { width: 55%; }
+.w-60 { width: 60%; }
+.w-65 { width: 65%; }
+.w-70 { width: 70%; }
+.w-75 { width: 75%; }
+.w-80 { width: 80%; }
+.w-85 { width: 85%; }
+.w-90 { width: 90%; }
+.w-95 { width: 95%; }
+.w-100 { width: 100%; }
+
+/* Never nothing: a category with one event in ten thousand still gets a
+   visible sliver, because a bar of zero width reads as "no data" rather than
+   as "almost none". */
+.w-0 { width: 3px; }
+.mb-2 { margin-bottom: 14px; }
+
+/* --------------------------------------------------------------------------
+ * An application's own logo
+ * --------------------------------------------------------------------------
+ * Uploaded by its developer, so it is somebody else's artwork on a Vesopa page:
+ * boxed to a fixed square with `object-fit: contain` so a tall image cannot
+ * stretch a row, and given a hairline so a white logo on the white card still
+ * reads as an object rather than as nothing.
+ * ------------------------------------------------------------------------ */
+
+.app-logo {
+  width: 32px;
+  height: 32px;
+  border-radius: 7px;
+  object-fit: contain;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  display: block;
+}
+
+.logo-preview {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.logo-preview img {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  object-fit: contain;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+.logo-empty {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: var(--tint-slate-bg);
+  color: var(--tint-slate-fg);
+  flex: 0 0 auto;
+}
+.logo-empty svg { width: 26px; height: 26px; }
+
+/* A file picker is drawn by the platform and never matches a button beside it.
+   Sizing it here keeps the row one height, the same fix the back office made. */
+.inline-form input[type="file"] {
+  flex: 1;
+  min-width: 220px;
+  font-size: 13.5px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+}

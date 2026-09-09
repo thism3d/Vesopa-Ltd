@@ -1,0 +1,233 @@
+<%- include('../partials/console-head') %>
+
+<p class="m-back"><a href="/admin/people">← Back to search</a></p>
+
+<h1 class="console-title"><%= person.display_name || 'No name given' %></h1>
+<p class="console-lead">
+  <span class="mono"><%= person.public_id %></span> ·
+  joined <%= new Date(person.created_at).toISOString().slice(0, 10) %>
+  <% if (person.status !== 'active') { %>
+  · <span class="pill pill-bad"><%= person.status %></span>
+  <% } %>
+</p>
+
+<% if (saved) { %>
+<div class="status status-good">
+  <span class="status-mark"><%- include('../partials/icon', { name: 'check' }) %></span>
+  <div><strong>Done.</strong><p>Recorded in the audit log, and in this person's own sign-in history.</p></div>
+</div>
+<% } %>
+<% if (error) { %>
+<div class="status status-bad">
+  <span class="status-mark"><%- include('../partials/icon', { name: 'alert' }) %></span>
+  <div><strong>Not done</strong><p><%= error %></p></div>
+</div>
+<% } %>
+
+<%
+  /*
+   * READ-ONLY, AND SAYING SO.
+   *
+   * There is no "sign in as this person" here and there never will be: it makes
+   * "the account did this" untrue, which is the one claim an identity provider
+   * sells. What an administrator can do is suspend, restore, and grant access —
+   * and every one of those is visible to the person on their own history page.
+   */
+%>
+<div class="status">
+  <span class="status-mark"><%- include('../partials/icon', { name: 'eye' }) %></span>
+  <div>
+    <strong>You are looking, not acting</strong>
+    <p>
+      There is no way to sign in as somebody from here, deliberately. Opening
+      this page is itself recorded, and the person can see it in their own
+      sign-in history.
+    </p>
+  </div>
+</div>
+
+<section class="card">
+  <h2 class="card-head">How they can sign in</h2>
+  <% identities.forEach(function (row) { %>
+  <div class="row">
+    <span class="row-mark"><%- include('../partials/icon', {
+      name: row.type === 'email' ? 'mail' : (row.type === 'phone' ? 'phone' : 'link')
+    }) %></span>
+    <span class="row-lines">
+      <span class="row-title">
+        <%= row.identifier %>
+        <% if (row.revoked_at) { %><span class="pill pill-bad">removed</span><% } %>
+        <% if (!row.verified_at && !row.revoked_at) { %><span class="pill pill-bad">unverified</span><% } %>
+      </span>
+      <span class="row-sub">
+        <%= row.type %><%= row.provider_id ? ' · linked account' : '' %>
+        <% if (row.verified_at) { %> · verified <%= new Date(row.verified_at).toISOString().slice(0, 10) %><% } %>
+      </span>
+    </span>
+  </div>
+  <% }) %>
+
+  <div class="row">
+    <span class="row-mark"><%- include('../partials/icon', { name: 'shield' }) %></span>
+    <span class="row-lines">
+      <span class="row-title">Second factors</span>
+      <span class="row-sub">
+        <%= factors.passkeys %> <%= Number(factors.passkeys) === 1 ? 'passkey' : 'passkeys' %> ·
+        <%= Number(factors.totp) ? 'authenticator app' : 'no authenticator' %> ·
+        <%= Number(factors.passwords) ? 'has a password' : 'no password' %> ·
+        <%= factors.recovery %> recovery codes left
+      </span>
+    </span>
+  </div>
+</section>
+
+<section class="card">
+  <h2 class="card-head">Applications they use</h2>
+  <% if (!memberships.length) { %>
+  <div class="empty">
+    <span class="empty-mark"><%- include('../partials/icon', { name: 'apps' }) %></span>
+    <strong>None</strong>
+    <p>They have a Vesopa account but have not signed into any product with it.</p>
+  </div>
+  <% } %>
+  <% memberships.forEach(function (row) { %>
+  <div class="row">
+    <span class="row-mark"><%- include('../partials/icon', { name: 'apps' }) %></span>
+    <span class="row-lines">
+      <span class="row-title"><%= row.name %>
+        <% if (row.status !== 'active') { %><span class="pill pill-bad"><%= row.status %></span><% } %>
+      </span>
+      <span class="row-sub"><%= row.last_seen_at ? 'last used ' + new Date(row.last_seen_at).toISOString().slice(0, 10) : 'never used' %></span>
+    </span>
+  </div>
+  <% }) %>
+</section>
+
+<section class="card">
+  <h2 class="card-head">Devices</h2>
+  <% if (!devices.length) { %>
+  <p class="card-note">None recorded.</p>
+  <% } %>
+  <% devices.forEach(function (row) { %>
+  <div class="row">
+    <span class="row-mark"><%- include('../partials/icon', { name: 'device' }) %></span>
+    <span class="row-lines">
+      <span class="row-title">
+        <%= row.name || [row.browser, row.platform].filter(Boolean).join(' on ') || 'Unnamed device' %>
+        <% if (row.revoked_at) { %><span class="pill pill-bad">signed out</span><% } %>
+      </span>
+      <span class="row-sub"><%= row.last_ip %></span>
+    </span>
+    <span class="row-right"><%= new Date(row.last_seen_at).toISOString().slice(0, 10) %></span>
+  </div>
+  <% }) %>
+</section>
+
+<section class="card">
+  <h2 class="card-head">Recent sign-ins</h2>
+  <% history.forEach(function (row) { %>
+  <div class="row">
+    <span class="row-mark"><%- include('../partials/icon', {
+      name: row.outcome === 'success' ? 'check' : 'alert'
+    }) %></span>
+    <span class="row-lines">
+      <span class="row-title">
+        <%= String(row.method).replace(/_/g, ' ') %>
+        <span class="pill<%= row.outcome === 'success' ? ' pill-good' : ' pill-bad' %>"><%= row.outcome %></span>
+      </span>
+      <span class="row-sub">
+        <%= row.ip %><%= row.country ? ' · ' + row.country : '' %><%
+        %><%= row.failure_reason ? ' · ' + row.failure_reason : '' %>
+      </span>
+    </span>
+    <span class="row-right"><%= new Date(row.created_at).toISOString().slice(0, 16).replace('T', ' ') %></span>
+  </div>
+  <% }) %>
+  <% if (!history.length) { %><p class="card-note">Nothing recorded.</p><% } %>
+</section>
+
+<% if (person.id !== session.user_id) { %>
+<section class="card">
+  <h2 class="card-head">Access</h2>
+  <p class="card-note">
+    <b>Staff</b> reaches this console. <b>Developer</b> reaches the developer
+    portal — which on its own shows them nothing until an application is
+    granted to them as well.
+  </p>
+
+  <form method="post" action="/admin/people/<%= person.public_id %>">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <input type="hidden" name="action" value="developer">
+    <input type="hidden" name="value" value="<%= person.is_developer ? '0' : '1' %>">
+    <button class="row is-clickable" type="submit">
+      <span class="row-mark"><%- include('../partials/icon', { name: 'code' }) %></span>
+      <span class="row-lines">
+        <span class="row-title">Developer portal access</span>
+        <span class="row-sub"><%= person.is_developer ? 'On — press to withdraw' : 'Off — press to grant' %></span>
+      </span>
+      <span class="row-right"><span class="pill<%= person.is_developer ? ' pill-good' : '' %>"><%= person.is_developer ? 'on' : 'off' %></span></span>
+    </button>
+  </form>
+
+  <form method="post" action="/admin/people/<%= person.public_id %>">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <input type="hidden" name="action" value="staff">
+    <input type="hidden" name="value" value="<%= person.is_staff ? '0' : '1' %>">
+    <button class="row is-clickable" type="submit">
+      <span class="row-mark"><%- include('../partials/icon', { name: 'shield' }) %></span>
+      <span class="row-lines">
+        <span class="row-title">Administrator</span>
+        <span class="row-sub"><%= person.is_staff ? 'On — press to withdraw' : 'Off — press to grant' %></span>
+      </span>
+      <span class="row-right"><span class="pill<%= person.is_staff ? ' pill-info' : '' %>"><%= person.is_staff ? 'on' : 'off' %></span></span>
+    </button>
+  </form>
+</section>
+
+<section class="card">
+  <h2 class="card-head is-danger">
+    <%= person.status === 'suspended' ? 'Restore this account' : 'Suspend this account' %>
+  </h2>
+  <p class="card-note">
+    <% if (person.status === 'suspended') { %>
+      They can sign in again immediately. Their old sessions stay dead — they
+      will be asked to sign in once.
+    <% } else { %>
+      Ends every session and every refresh token straight away, on every device
+      and in every application. They cannot sign in again until this is undone.
+    <% } %>
+  </p>
+  <form method="post" action="/admin/people/<%= person.public_id %>">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <input type="hidden" name="action" value="<%= person.status === 'suspended' ? 'restore' : 'suspend' %>">
+    <div class="card-body">
+      <div class="inline-form">
+        <% if (person.status !== 'suspended') { %>
+        <input type="text" name="reason" maxlength="255" placeholder="Why — this is kept on the record"
+               aria-label="Reason for suspending">
+        <% } %>
+        <button class="btn <%= person.status === 'suspended' ? 'btn-quiet' : 'btn-danger' %> btn-small" type="submit">
+          <%= person.status === 'suspended' ? 'Restore' : 'Suspend' %>
+        </button>
+      </div>
+      <% if (person.suspended_reason) { %>
+      <p class="hint mt-2">Suspended because: <%= person.suspended_reason %></p>
+      <% } %>
+    </div>
+  </form>
+</section>
+<% } else { %>
+<div class="status status-warn">
+  <span class="status-mark"><%- include('../partials/icon', { name: 'alert' }) %></span>
+  <div>
+    <strong>This is you</strong>
+    <p>
+      You cannot change your own access here. It is the one mistake with no way
+      back, because the page that would undo it is the page you just locked
+      yourself out of.
+    </p>
+  </div>
+</div>
+<% } %>
+
+<%- include('../partials/console-foot') %>

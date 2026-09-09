@@ -1,0 +1,43 @@
+<footer class="site-foot">
+  <nav aria-label="Policies">
+    <a href="/privacy">Privacy</a>
+    <a href="/cookies">Cookies</a>
+    <a href="/terms">Terms</a>
+    <a href="/security">Security</a>
+    <a href="/docs">Developers</a>
+  </nav>
+  <%
+    /*
+     * The registered company name, number and office are required on a UK
+     * business website by the Companies Act 2006 — not a nicety, and the
+     * OAuth providers look for them too when they review the application.
+     */
+  %>
+  <p class="legal">
+    Vesopa Software Ltd, registered in Wales, company number 17362206.
+    Baglan, Port Talbot, SA12 7AX.
+  </p>
+</footer>
+
+<%
+  /*
+   * Navigation without a full page load — the URL changes and the page does
+   * not flash.
+   *
+   * Loaded last and entirely optional: with it blocked, or failing, every link
+   * on the site is still an ordinary link and every form still posts normally.
+   * It is an enhancement on a working site, never a dependency of one.
+   */
+%>
+<%
+  /*
+   * The progress bar loads FIRST, and separately, because it is the one that
+   * matters on the pages the router never touches — the sign-in form posting,
+   * the hand-off to Google. nav.js uses it if it is there and works without it
+   * if it is not.
+   */
+%>
+<script src="/js/loadbar.js?v=<%= config.version %>"></script>
+<script src="/js/nav.js?v=<%= config.version %>"></script>
+</body>
+</html>

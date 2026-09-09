@@ -181,3 +181,37 @@ tasks/
 # Microsoft's driver samples, cloned in to read the MagneticStripeReader POS
 # sample. A vendor tree, not ours to carry.
 windows-driver-samples-main/
+
+# ---------------------------------------------------------------------------
+# vesopa_auth — credentials issued by the identity providers.
+#
+# These are live secrets, not configuration. The Google JSON contains a client
+# secret in plain text, and the Apple .p8 is the private key that signs Apple's
+# client assertion — anybody holding it can mint "Sign in with Apple" requests
+# as Vesopa. `*.pem` was already covered; these two were not, and would have
+# been committed by the first `git add vesopa_auth`.
+#
+# They live on the server, in .env and in keys/, and are read from there.
+# ---------------------------------------------------------------------------
+client_secret_*.json
+AuthKey_*.p8
+vesopa_auth/keys/
+
+# ---------------------------------------------------------------------------
+# vesopa_auth — things that belong on the server, or in the image archive.
+# ---------------------------------------------------------------------------
+
+# Profile pictures and application logos, uploaded by real people. They are
+# personal data and they live on the server; a copy pulled down while debugging
+# must never end up in the history.
+vesopa_auth/public/uploads/
+
+# Design references pasted into a session — Google's account pages, Clerk's
+# dashboard, the compact layout the owner liked. Worth keeping and not worth
+# seven megabytes of git history: the copies live in
+# Documents\Vesopa-Claude-Images\2026-09-09-auth-design-references.
+vesopa_auth/screencapture-*.png
+vesopa_auth/Screenshot*.png
+
+# Python's bytecode cache for the ops scripts.
+__pycache__/

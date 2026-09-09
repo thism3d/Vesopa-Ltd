@@ -1,0 +1,93 @@
+<%- include('_shell') %>
+
+<% if (saved) { %><p class="notice-good">Saved.</p><% } %>
+<% if (typeof error !== 'undefined' && error) { %><p class="form-error" role="alert"><%= error %></p><% } %>
+
+<section class="panel">
+  <h2>Profile picture</h2>
+  <%
+    /*
+     * If they signed in with Google, GitHub or Microsoft we already copied
+     * their picture across — copied, not linked, so no page here tells Google
+     * when somebody is looking at it. Apple never provides one.
+     */
+  %>
+  <div class="avatar-row">
+    <% if (user.avatar_path) { %>
+    <img class="avatar" src="<%= user.avatar_path %>" alt="Your profile picture" width="72" height="72">
+    <% } else { %>
+    <div class="avatar avatar-empty" aria-hidden="true">
+      <%= (user.display_name || 'V').trim().charAt(0).toUpperCase() %>
+    </div>
+    <% } %>
+
+    <div class="avatar-actions">
+      <form method="post" action="/account/avatar" enctype="multipart/form-data">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <label class="file-label" for="avatar">Choose an image</label>
+        <input type="file" id="avatar" name="avatar" accept="image/jpeg,image/png,image/webp,image/gif">
+        <button class="btn btn-quiet" type="submit">Upload</button>
+      </form>
+      <% if (user.avatar_path) { %>
+      <form method="post" action="/account/avatar/remove">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <button type="submit" class="linklike">Remove picture</button>
+      </form>
+      <% } %>
+      <p class="hint">JPEG, PNG, WebP or GIF, up to 2 MB.</p>
+    </div>
+  </div>
+</section>
+
+<form method="post" action="/account/profile" class="panel">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+  <div class="field">
+    <label for="display_name">Display name</label>
+    <input type="text" id="display_name" name="display_name"
+           value="<%= user.display_name %>" autocomplete="name" maxlength="120">
+    <p class="hint">What applications show when they greet you.</p>
+  </div>
+
+  <div class="field-row">
+    <div class="field">
+      <label for="given_name">First name</label>
+      <input type="text" id="given_name" name="given_name"
+             value="<%= user.given_name %>" autocomplete="given-name" maxlength="80">
+    </div>
+    <div class="field">
+      <label for="family_name">Last name</label>
+      <input type="text" id="family_name" name="family_name"
+             value="<%= user.family_name %>" autocomplete="family-name" maxlength="80">
+    </div>
+  </div>
+
+  <div class="field">
+    <label for="date_of_birth">Date of birth</label>
+    <%
+      /*
+       * A date input, not three dropdowns. It is only shared with an
+       * application that asked for the profile scope and that you allowed —
+       * said here rather than buried in the privacy policy, because this is
+       * the moment somebody is deciding whether to type it.
+       */
+    %>
+    <input type="date" id="date_of_birth" name="date_of_birth"
+           value="<%= user.date_of_birth ? String(user.date_of_birth).slice(0, 10) : '' %>"
+           autocomplete="bday" max="<%= new Date().toISOString().slice(0, 10) %>">
+    <p class="hint">Only shared with an app that asked for your profile and that you allowed. Leave it blank if you would rather not.</p>
+  </div>
+
+  <button class="btn btn-primary" type="submit">Save</button>
+</form>
+
+<section class="panel">
+  <h2>Your Vesopa id</h2>
+  <p class="row-meta">
+    <span class="mono"><%= session.user_public_id %></span><br>
+    Quote this if you ever write to us about your account. It identifies you and
+    is not a secret.
+  </p>
+</section>
+
+<%- include('../partials/console-foot') %>

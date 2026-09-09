@@ -1,0 +1,107 @@
+<%- include('../partials/console-head') %>
+
+<h1 class="console-title">Your applications</h1>
+<p class="console-lead">
+  An application is one thing that signs people in with their Vesopa account —
+  a website, a till, a phone app, or a server that talks to us with no person
+  involved at all.
+</p>
+
+<% if (!applications.length) { %>
+<%
+  /*
+   * The empty state does the teaching. Somebody arriving here for the first
+   * time has just been given developer access and has no idea what the three
+   * words on the next form mean — and a bare "No applications" would send them
+   * to the documentation to find out, which most people will not do.
+   */
+%>
+<section class="card">
+  <div class="empty">
+    <span class="empty-mark"><%- include('../partials/icon', { name: 'apps' }) %></span>
+    <strong>Nothing here yet</strong>
+    <p>
+      Create one and you are given a <b>client id</b> straight away. Add the
+      address your app receives the sign-in at, mint a secret if it needs one,
+      and it is working.
+    </p>
+    <p class="mt-3">
+      <a class="btn btn-primary btn-small" href="/developers/new">Create an application</a>
+    </p>
+  </div>
+</section>
+<% } else { %>
+
+<section class="card">
+  <% applications.forEach(function (app) { %>
+  <a class="row" href="/developers/a/<%= app.client_id %>">
+    <span class="row-mark"><%- include('../partials/app-mark', { app: app }) %></span>
+    <span class="row-lines">
+      <span class="row-title">
+        <%= app.name %>
+        <% if (app.is_first_party) { %><span class="pill pill-good">Vesopa</span><% } %>
+        <% if (app.status !== 'active') { %><span class="pill pill-bad"><%= app.status %></span><% } %>
+      </span>
+      <span class="row-sub">
+        <%= app.organisation_name %> ·
+        <%= app.people %> <%= Number(app.people) === 1 ? 'person' : 'people' %> ·
+        <%= app.redirects %> redirect <%= Number(app.redirects) === 1 ? 'URI' : 'URIs' %><%
+        %><% if (Number(app.secrets)) { %> · <%= app.secrets %> live <%= Number(app.secrets) === 1 ? 'secret' : 'secrets' %><% } %>
+      </span>
+    </span>
+    <span class="row-right">
+      <span class="pill<%= app.role === 'viewer' ? '' : ' pill-info' %>"><%= app.role %></span>
+      <span class="row-go"><%- include('../partials/icon', { name: 'chevron' }) %></span>
+    </span>
+  </a>
+  <% }) %>
+</section>
+
+<p><a class="btn btn-primary btn-small" href="/developers/new">Create an application</a></p>
+<% } %>
+
+<%
+  /*
+   * The four things every integration needs, on the page a developer lands on
+   * rather than three clicks away in the documentation. These are the values
+   * people paste into a library's configuration, and they are the same for
+   * every application here — only the client id differs.
+   */
+%>
+<section class="card section-gap">
+  <h2 class="card-head">The addresses your library needs</h2>
+  <p class="card-note">
+    Most OpenID Connect libraries need only the first one — they read the rest
+    from it. Every one of these is the same for every application.
+  </p>
+  <div class="card-body">
+    <p class="row-title mb-1">Discovery document</p>
+    <div class="copy">
+      <code><%= config.issuer %>/.well-known/openid-configuration</code>
+      <button type="button" class="copy-btn">Copy</button>
+    </div>
+
+    <p class="row-title m-label">Issuer</p>
+    <div class="copy">
+      <code><%= config.issuer %></code>
+      <button type="button" class="copy-btn">Copy</button>
+    </div>
+
+    <p class="row-title m-label">Authorisation and token endpoints</p>
+    <div class="copy">
+      <code><%= config.issuer %>/oauth/authorize</code>
+      <button type="button" class="copy-btn">Copy</button>
+    </div>
+    <div class="copy mt-1">
+      <code><%= config.issuer %>/oauth/token</code>
+      <button type="button" class="copy-btn">Copy</button>
+    </div>
+
+    <p class="hint mt-3">
+      Full worked examples, in curl, are in the
+      <a href="/docs">integration guide</a>.
+    </p>
+  </div>
+</section>
+
+<%- include('../partials/console-foot') %>

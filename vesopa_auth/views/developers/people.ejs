@@ -1,0 +1,107 @@
+<%- include('../partials/console-head') %>
+
+<h1 class="console-title">Who uses it</h1>
+<p class="console-lead">
+  <%= application.name %> — the people who have signed into this application.
+</p>
+
+<%
+  /*
+   * ONLY THIS APPLICATION'S PEOPLE, and that is the isolation the owner asked
+   * for. There is one pool of accounts across Vesopa — a person who already has
+   * one does not make a second for another product — but an application only
+   * ever sees the people who have a membership row for IT. A developer here
+   * cannot enumerate the identity provider's users; they can see their own.
+   */
+%>
+<div class="tiles">
+  <div class="tile">
+    <span class="tile-mark t-brand"><%- include('../partials/icon', { name: 'people' }) %></span>
+    <span class="tile-number"><%= totals.total || 0 %></span>
+    <span class="tile-label">Have used it</span>
+  </div>
+  <div class="tile">
+    <span class="tile-mark t-teal"><%- include('../partials/icon', { name: 'check' }) %></span>
+    <span class="tile-number"><%= totals.active || 0 %></span>
+    <span class="tile-label">Active</span>
+  </div>
+  <div class="tile">
+    <span class="tile-mark t-blue"><%- include('../partials/icon', { name: 'history' }) %></span>
+    <span class="tile-number"><%= totals.recent || 0 %></span>
+    <span class="tile-label">Seen in 30 days</span>
+  </div>
+</div>
+
+<section class="card">
+  <h2 class="card-head">People</h2>
+  <p class="card-note">
+    The hundred most recently seen<%= search ? ', matching your search' : '' %>.
+  </p>
+
+  <form method="get" action="/developers/a/<%= application.client_id %>/people" data-no-loadbar>
+    <div class="card-body">
+      <div class="inline-form">
+        <input type="search" name="q" value="<%= search %>" maxlength="120"
+               placeholder="Name, or a Vesopa user id" aria-label="Search this application's users">
+        <button class="btn btn-quiet btn-small" type="submit">Search</button>
+      </div>
+    </div>
+  </form>
+
+  <% if (!members.length) { %>
+  <div class="empty">
+    <span class="empty-mark"><%- include('../partials/icon', { name: 'person' }) %></span>
+    <strong><%= search ? 'Nobody matches that' : 'Nobody yet' %></strong>
+    <p>
+      <%= search
+        ? 'Only people who have used this application appear here.'
+        : 'The first person to sign in appears here straight away.' %>
+    </p>
+  </div>
+  <% } %>
+
+  <% members.forEach(function (row) { %>
+  <div class="row">
+    <span class="row-mark"><%- include('../partials/icon', { name: 'person' }) %></span>
+    <span class="row-lines">
+      <span class="row-title">
+        <%= row.display_name || 'No name given' %>
+        <% if (row.status !== 'active') { %><span class="pill pill-bad"><%= row.status %></span><% } %>
+      </span>
+      <span class="row-sub">
+        <%= row.email || 'no email on the account' %>
+        <% if (row.roles) { %> · <%= row.roles %><% } %>
+        <% if (row.external_ref) { %> · your ref <%= row.external_ref %><% } %>
+      </span>
+    </span>
+    <span class="row-right">
+      <%= row.last_seen_at ? new Date(row.last_seen_at).toISOString().slice(0, 10) : 'never' %>
+    </span>
+  </div>
+  <% }) %>
+</section>
+
+<section class="card">
+  <h2 class="card-head">Matching them to your own records</h2>
+  <div class="card-body">
+    <p class="hint mt-0">
+      The <code>sub</code> claim in the token is this application's stable id
+      for a person. Store that against your own row rather than the email
+      address — people change addresses, and two of your customers may share
+      one.
+    </p>
+    <p class="hint mb-0">
+      <% if (application.subject_type === 'pairwise') { %>
+        This application gets a <b>pairwise</b> subject: it is stable here and
+        means nothing to any other application, so nobody can compare user
+        lists with you.
+      <% } else { %>
+        This application gets a <b>public</b> subject — the same id every other
+        first-party Vesopa product sees, because the till and the back office
+        have to agree who a staff member is.
+      <% } %>
+    </p>
+  </div>
+</section>
+
+<%- include('../partials/console-foot') %>

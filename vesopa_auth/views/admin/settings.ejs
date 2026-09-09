@@ -1,0 +1,81 @@
+<%- include('../partials/console-head') %>
+
+<h1 class="console-title">Sign-in page</h1>
+<p class="console-lead">
+  What every person who signs in to Vesopa sees. Changes are live within a
+  minute — the settings are cached for that long so the sign-in page is not a
+  query per render.
+</p>
+
+<% if (saved) { %>
+<div class="status status-good">
+  <span class="status-mark"><%- include('../partials/icon', { name: 'check' }) %></span>
+  <div>
+    <strong>Saved.</strong>
+    <p>Live within a minute. <a href="/login" target="_blank" rel="noopener">Open the sign-in page</a> to see it.</p>
+  </div>
+</div>
+<% } %>
+<% if (error) { %>
+<div class="status status-bad">
+  <span class="status-mark"><%- include('../partials/icon', { name: 'alert' }) %></span>
+  <div><strong>Not saved</strong><p><%= error %></p></div>
+</div>
+<% } %>
+
+<%
+  /*
+   * A SHORT LIST, DELIBERATELY. Anything the application needs before it can
+   * serve a request — a database password, a signing key, a pepper — lives in
+   * the environment, where somebody who is merely signed in cannot reach it.
+   * What is here is presentation and policy a person running the service should
+   * be able to change at four on a Friday without calling a developer.
+   */
+%>
+<form method="post" action="/admin/settings">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+  <section class="card">
+    <h2 class="card-head">Settings</h2>
+    <div class="card-body">
+      <% Object.entries(definitions).forEach(function (entry) {
+           const name = entry[0];
+           const definition = entry[1];
+      %>
+      <div class="field">
+        <label for="set-<%= name %>"><%= definition.label %></label>
+
+        <% if (definition.options) { %>
+        <select id="set-<%= name %>" name="<%= name %>">
+          <% definition.options.forEach(function (option) { %>
+          <option value="<%= option %>" <%= settings[name] === option ? 'selected' : '' %>>
+            <%= option.charAt(0).toUpperCase() + option.slice(1) %>
+          </option>
+          <% }) %>
+        </select>
+        <% } else { %>
+        <input type="text" id="set-<%= name %>" name="<%= name %>" value="<%= settings[name] %>" maxlength="120">
+        <% } %>
+
+        <p class="hint"><%= definition.help %></p>
+      </div>
+      <% }) %>
+
+      <button class="btn btn-primary btn-small" type="submit">Save</button>
+    </div>
+  </section>
+</form>
+
+<section class="card">
+  <h2 class="card-head">Have a look</h2>
+  <a class="row" href="/login" target="_blank" rel="noopener" data-no-router>
+    <span class="row-mark"><%- include('../partials/icon', { name: 'eye' }) %></span>
+    <span class="row-lines">
+      <span class="row-title">The sign-in page</span>
+      <span class="row-sub">Opens in a new tab, so you keep this one</span>
+    </span>
+    <span class="row-right"><span class="row-go"><%- include('../partials/icon', { name: 'chevron' }) %></span></span>
+  </a>
+</section>
+
+<%- include('../partials/console-foot') %>

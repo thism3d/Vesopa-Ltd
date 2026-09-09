@@ -1,0 +1,28 @@
+<%- include('partials/head') %>
+
+<main class="prose policy">
+  <a class="brand" href="/" aria-label="Vesopa">
+    <img class="brand-mark" src="/brand/logo-light.svg" alt="Vesopa" width="130" height="17" data-logo-light>
+    <img class="brand-mark" src="/brand/logo-dark.svg" alt="Vesopa" width="130" height="17" data-logo-dark>
+  </a>
+
+  <%
+    /*
+     * The Markdown supplies its own <h1>, so this page adds only the date and
+     * the body. `updated` is shown at the top rather than buried at the bottom:
+     * "when did this last change" is the first thing anybody checking a privacy
+     * policy — including a reviewer at Google — wants to know.
+     */
+  %>
+  <p class="policy-updated">Last updated <%= policy.updated %></p>
+
+  <%- policy.html %>
+
+  <hr>
+  <p class="row-meta">
+    Questions about any of this: <a href="mailto:privacy@vesopa.com">privacy@vesopa.com</a>.
+    All our policies are listed at <a href="/policies">/policies</a>.
+  </p>
+</main>
+
+<%- include('partials/foot') %>

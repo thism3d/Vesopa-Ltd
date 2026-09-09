@@ -1,0 +1,68 @@
+<%- include('_shell') %>
+
+<section class="panel">
+  <h2>Remembered devices</h2>
+  <p class="row-meta mb-2">
+    These are machines where you ticked "remember me". Being remembered lets a
+    device skip the second step — it never skips signing in.
+  </p>
+
+  <% if (!devices.length) { %>
+  <p class="row-meta">None.</p>
+  <% } %>
+
+  <ul class="rows">
+    <% devices.forEach(function (device) { %>
+    <li class="row-with-action">
+      <div>
+        <span class="row-main"><%= device.name || describeDevice(device.user_agent) %></span>
+        <span class="row-meta">
+          Last seen <%= device.last_seen_at %> from <%= device.last_ip || 'an unknown address' %>
+        </span>
+      </div>
+      <form method="post" action="/account/devices/<%= device.id %>/remove">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <button type="submit" class="linklike">Remove</button>
+      </form>
+    </li>
+    <% }) %>
+  </ul>
+</section>
+
+<section class="panel">
+  <h2>Where you are signed in now</h2>
+  <ul class="rows">
+    <% liveSessions.forEach(function (item) { %>
+    <li>
+      <span class="row-main"><%= item.device_name || describeDevice(item.user_agent) %></span>
+      <span class="row-meta">
+        <%= item.ip || 'unknown address' %> · started <%= item.created_at %> ·
+        last active <%= item.last_seen_at %>
+      </span>
+    </li>
+    <% }) %>
+  </ul>
+</section>
+
+<section class="panel danger">
+  <h2>Sign out everywhere</h2>
+  <%
+    /*
+     * Honest about what this does. It ends every session here and revokes every
+     * application's refresh tokens — but an application that has just been
+     * given an access token can keep using it until it expires, which is why
+     * they last ten minutes. Promising more than that would be a lie the person
+     * would only discover at the worst moment.
+     */
+  %>
+  <p class="row-meta">
+    Ends every session and disconnects every app. Apps you are using may take up
+    to ten minutes to notice.
+  </p>
+  <form method="post" action="/account/signout-everywhere" class="mt-2">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <button class="btn btn-quiet" type="submit">Sign out everywhere</button>
+  </form>
+</section>
+
+<%- include('../partials/console-foot') %>

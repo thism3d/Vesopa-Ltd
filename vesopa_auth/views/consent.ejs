@@ -1,0 +1,98 @@
+<%- include('partials/head') %>
+
+<main class="auth-shell">
+  <div class="auth-card">
+
+    <a class="brand" href="/" aria-label="Vesopa">
+      <img class="brand-mark" src="/brand/logo-light.svg" alt="" width="130" height="17" data-logo-light>
+      <img class="brand-mark" src="/brand/logo-dark.svg" alt="" width="130" height="17" data-logo-dark>
+    </a>
+
+    <div class="consent-app">
+      <% if (application.logo_path) { %>
+      <img class="consent-logo" src="<%= application.logo_path %>" alt="" width="48" height="48">
+      <% } else { %>
+      <img class="consent-logo" src="/brand/app-logo.png" alt="" width="48" height="48">
+      <% } %>
+      <div>
+        <h1 class="auth-title"><%= application.name %></h1>
+        <p class="auth-sub">by <%= application.organisation_name %></p>
+      </div>
+    </div>
+
+    <p class="consent-lead">
+      <strong><%= application.name %></strong> wants to use your Vesopa account
+      <% if (session.display_name) { %>(<%= session.display_name %>)<% } %>.
+      It will be able to:
+    </p>
+
+    <%
+      /*
+       * The scope list is written for the person being asked, not the developer
+       * asking — "See your name and profile picture", never "profile". A consent
+       * screen nobody can read is a consent screen nobody has read, and the
+       * whole legal and moral weight of this page rests on it being understood.
+       */
+    %>
+    <ul class="scopes">
+      <% scopes.forEach(function (scope) { %>
+      <li>
+        <span class="scope-title"><%= scope.title %></span>
+        <% if (scope.description) { %>
+        <span class="scope-desc"><%= scope.description %></span>
+        <% } %>
+      </li>
+      <% }) %>
+    </ul>
+
+    <%
+      /*
+       * "You do not have to do this."
+       *
+       * Shown only for an application that genuinely works without an account —
+       * the QR menu, where guest ordering is the default and always will be.
+       *
+       * It looks like a strange thing to put on a consent screen, and it is the
+       * most honest sentence on the page. Somebody has arrived here mid-meal,
+       * with food coming, and the alternative to reading a permissions list is
+       * abandoning a basket. Saying plainly that Deny is not the end of the
+       * evening is what makes the Allow that follows a real decision rather
+       * than a reflex.
+       */
+    %>
+    <% if (application.guest_allowed) { %>
+    <p class="consent-guest">
+      You do not need an account to use <%= application.name %> — carrying on as
+      a guest works exactly the same. An account only keeps track of what you
+      have ordered.
+    </p>
+    <% } %>
+
+    <form method="post" action="/oauth/consent" class="auth-form">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="client_id" value="<%= query.client_id %>">
+      <input type="hidden" name="redirect_uri" value="<%= query.redirect_uri %>">
+      <input type="hidden" name="scope" value="<%= query.scope %>">
+      <input type="hidden" name="state" value="<%= query.state || '' %>">
+      <input type="hidden" name="nonce" value="<%= query.nonce || '' %>">
+      <input type="hidden" name="code_challenge" value="<%= query.code_challenge %>">
+
+      <button class="btn btn-primary" type="submit" name="decision" value="allow">
+        Allow
+      </button>
+      <button class="btn btn-quiet" type="submit" name="decision" value="deny">
+        Not now
+      </button>
+    </form>
+
+    <p class="small-print">
+      You can take this back at any time from
+      <a href="/account/apps">your connected apps</a>.
+      <% if (application.privacy_url) { %>
+      <br>Read <%= application.name %>'s <a href="<%= application.privacy_url %>" rel="noopener nofollow">privacy policy</a>.
+      <% } %>
+    </p>
+  </div>
+</main>
+
+<%- include('partials/foot') %>

@@ -1,0 +1,85 @@
+<%
+  /*
+   * The top of every signed-in page: your account, the administrator's console
+   * and the developer portal.
+   *
+   * ONE SHELL FOR ALL THREE, and the rail is the only difference. A person who
+   * is a developer and an administrator moves between them several times an
+   * hour, and three layouts that are nearly the same is how the wrong one gets
+   * changed.
+   *
+   * The caller supplies:
+   *   railTitle  the word beside the wordmark — "Account", "Administration"
+   *   rail       [{ href, label, icon, tint }] and { group: 'Heading' } rows
+   *   path       the current path, so exactly one entry is aria-current
+   *   session    for the avatar, which is the only personal thing up here
+   *
+   * The console-foot partial closes what this opens. Its name is written out
+   * rather than shown as an include tag, because an EJS tag inside an EJS
+   * comment does not nest — it ends the comment early and stops the whole file
+   * compiling. That has cost a live 500 here once already.
+   */
+  /*
+   * DIFFERENT NAMES FROM THE VALUES THEY READ, and that is not style.
+   *
+   * `const railTitle = typeof railTitle !== 'undefined' ? … ` looks like the
+   * obvious default-if-missing line and is a guaranteed crash: the `const`
+   * declaration hoists and shadows the incoming local, so `typeof railTitle`
+   * reads the not-yet-initialised one and throws "Cannot access 'railTitle'
+   * before initialization". Every page using this partial 500s, and the message
+   * names the variable rather than the pattern. It cost a deploy here.
+   */
+  const sectionTitle = typeof railTitle !== 'undefined' ? railTitle : 'Account';
+  const railItems = typeof rail !== 'undefined' ? rail : [];
+  const homeHref = typeof railHome !== 'undefined' ? railHome : '/account/profile';
+%>
+<%- include('head', { bodyClass: 'console-body' }) %>
+
+<header class="topbar">
+  <a class="brand" href="<%= homeHref %>" aria-label="Vesopa">
+    <img class="brand-mark" src="/brand/logo-light.svg" alt="" width="130" height="17" data-logo-light>
+    <img class="brand-mark" src="/brand/logo-dark.svg" alt="" width="130" height="17" data-logo-dark>
+  </a>
+  <span class="topbar-name"><%= sectionTitle %></span>
+
+  <div class="topbar-right">
+    <%
+      /*
+       * The avatar is a link to the profile, not a menu. A menu here would hold
+       * two items — profile and sign out — and hide both behind a press;
+       * "Sign out" being one click away on every page is worth more on an
+       * identity provider than the tidiness of hiding it.
+       */
+      const shownName = (session && (session.display_name || session.email)) || '';
+      const initial = shownName ? shownName.trim().charAt(0).toUpperCase() : '?';
+    %>
+    <% if (session && session.avatar_path) { %>
+    <a href="/account/profile" class="topbar-avatar" aria-label="Your profile">
+      <img src="<%= session.avatar_path %>" alt="" width="34" height="34" class="fill">
+    </a>
+    <% } else { %>
+    <a href="/account/profile" class="topbar-avatar" aria-label="Your profile"><%= initial %></a>
+    <% } %>
+
+    <form method="post" action="/logout" data-no-loadbar>
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <button type="submit" class="btn btn-small btn-quiet">Sign out</button>
+    </form>
+  </div>
+</header>
+
+<div class="console">
+  <nav class="rail" aria-label="<%= sectionTitle %> sections">
+    <% railItems.forEach(function (item) { %>
+      <% if (item.group) { %>
+    <p class="rail-sep"><%= item.group %></p>
+      <% } else { %>
+    <a class="rail-item" href="<%= item.href %>"<%= path === item.href ? ' aria-current="page"' : '' %>>
+      <span class="rail-icon t-<%= item.tint || 'slate' %>"><%- include('icon', { name: item.icon }) %></span>
+      <span><%= item.label %></span>
+    </a>
+      <% } %>
+    <% }) %>
+  </nav>
+
+  <main class="console-main">

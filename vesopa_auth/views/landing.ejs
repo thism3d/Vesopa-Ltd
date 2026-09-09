@@ -1,0 +1,245 @@
+<%- include('partials/head') %>
+
+<%
+  /*
+   * THE LANDING PAGE IS PART OF THE OAUTH SUBMISSION, not marketing decoration.
+   *
+   * Google's verification team open the homepage of the domain an application
+   * is registered to. They are checking that it is a real service, that it
+   * explains what it does with the data it asks for, and that the privacy
+   * policy is reachable from it. A holding page fails that review as surely as
+   * a broken policy link.
+   *
+   * So everything claimed below is true of what is actually running, and the
+   * privacy policy is linked from the header, the hero and the footer.
+   *
+   * No external images, fonts or scripts: the Content-Security-Policy on this
+   * origin allows none, and the one place that must never load a stranger's
+   * JavaScript is the domain the sign-in form lives on. Every graphic here is
+   * inline SVG or CSS.
+   */
+%>
+
+<header class="site-head">
+  <a class="brand" href="/" aria-label="Vesopa OAuth home">
+    <img class="brand-mark" src="/brand/logo-light.svg" alt="Vesopa" width="130" height="17" data-logo-light>
+    <img class="brand-mark" src="/brand/logo-dark.svg" alt="Vesopa" width="130" height="17" data-logo-dark>
+  </a>
+  <nav class="site-nav" aria-label="Main">
+    <a href="/docs">Developers</a>
+    <a href="/policies">Policies</a>
+    <a href="/privacy">Privacy</a>
+    <a class="btn-sm" href="/login">Sign in</a>
+  </nav>
+</header>
+
+<main>
+  <!-- ================================================================ hero -->
+  <section class="hero">
+    <div class="hero-grid">
+      <div class="hero-copy">
+        <p class="eyebrow">
+          <span class="dot" aria-hidden="true"></span>
+          Vesopa OAuth · OpenID Connect
+        </p>
+
+        <h1>One Vesopa account.<br>Every Vesopa product.</h1>
+
+        <p class="lede">
+          The single sign-in behind the till, the dine-in menu, the back office
+          and the hosting panel. Sign in with an email address, a phone number,
+          a passkey, or an account you already have — and the same account works
+          everywhere.
+        </p>
+
+        <div class="hero-actions">
+          <a class="btn btn-primary btn-auto" href="/login">Sign in or create an account</a>
+          <a class="btn btn-quiet btn-auto" href="/docs">Developer documentation</a>
+        </div>
+
+        <p class="hero-note">
+          Built and run by Vesopa Software Ltd in the United Kingdom.
+          <a href="/privacy">What we do with your data</a>.
+        </p>
+      </div>
+
+      <!--
+        A real preview of the real form, not a stock illustration. It is
+        decorative — the working one is a click away — so it is hidden from
+        screen readers rather than read out as a form nobody can submit.
+      -->
+      <div class="hero-visual" aria-hidden="true">
+        <div class="preview-card">
+          <div class="preview-brand">
+            <img class="brand-mark" src="/brand/logo-light.svg" alt="" width="107" height="14" data-logo-light>
+            <img class="brand-mark" src="/brand/logo-dark.svg" alt="" width="107" height="14" data-logo-dark>
+          </div>
+          <p class="preview-title">Sign in to Vesopa</p>
+          <div class="preview-toggle">
+            <span class="on">Email</span><span>Phone</span>
+          </div>
+          <span class="preview-label">Email address</span>
+          <div class="preview-input">you@example.com</div>
+          <div class="preview-check"><span class="tick">✓</span> Remember me on this device</div>
+          <div class="preview-button">Log in</div>
+          <div class="preview-divider"><span>or continue with</span></div>
+          <div class="preview-providers">
+            <% ['google', 'apple', 'microsoft', 'github'].forEach(function (key) { %>
+            <span class="preview-provider"><%- include('partials/provider-icon', { key: key }) %></span>
+            <% }) %>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================== trust -->
+  <%
+    /*
+     * Every one of these is a fact about the running system, phrased so that a
+     * reviewer can check it. Nothing here claims a certification Vesopa does not
+     * hold — no SOC 2, no ISO 27001, no HIPAA. Claiming one would be a lie on
+     * the page a compliance team reads first.
+     */
+    const assurances = [
+      ['lock', 'Argon2id password hashing',
+       'The memory-hard algorithm OWASP recommends, with a server-side pepper that is not in the database.'],
+      ['key', 'Passkeys and two-step verification',
+       'Sign in with a fingerprint or face. Authenticator apps and one-time codes are supported too.'],
+      ['shield', 'PKCE on every application',
+       'Public and confidential clients alike. Authorisation codes are single-use and last sixty seconds.'],
+      ['eye', 'No tracking, no advertising',
+       'No third-party analytics and no advertising anywhere on this service. We do not sell personal data.'],
+    ];
+  %>
+  <section class="assurances">
+    <div class="assurance-grid">
+      <% assurances.forEach(function (item) { %>
+      <div class="assurance">
+        <span class="assurance-icon" aria-hidden="true"><%- include('partials/icon', { name: item[0] }) %></span>
+        <h3><%= item[1] %></h3>
+        <p><%= item[2] %></p>
+      </div>
+      <% }) %>
+    </div>
+  </section>
+
+  <!-- =========================================================== products -->
+  <section class="band">
+    <div class="band-inner">
+      <h2>Sign in once, and you are in everywhere</h2>
+      <p class="section-lede">
+        Vesopa products share one identity. A manager who works the till and the
+        back office has one account, not three — and the roles decide what each
+        one lets her do.
+      </p>
+
+      <div class="product-grid">
+        <div class="product">
+          <span class="product-icon" aria-hidden="true"><%- include('partials/icon', { name: 'till' }) %></span>
+          <h3>Vesopa EPOS</h3>
+          <p>The till, the kitchen screen and the customer display, with roles for operators, managers and kitchen staff.</p>
+        </div>
+        <div class="product">
+          <span class="product-icon" aria-hidden="true"><%- include('partials/icon', { name: 'menu' }) %></span>
+          <h3>Vesopa Menu</h3>
+          <p>The QR menu customers order from at the table. A code to a phone or an email address, and they are in.</p>
+        </div>
+        <div class="product">
+          <span class="product-icon" aria-hidden="true"><%- include('partials/icon', { name: 'chart' }) %></span>
+          <h3>Back office</h3>
+          <p>Products, prices, staff and reports — with the permissions that decide who may change what.</p>
+        </div>
+        <div class="product">
+          <span class="product-icon" aria-hidden="true"><%- include('partials/icon', { name: 'cloud' }) %></span>
+          <h3>Vesopa Cloud</h3>
+          <p>The hosting control panel, for customers running their sites and mail with Vesopa.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ methods -->
+  <section class="band alt">
+    <div class="band-inner">
+      <h2>Eight ways in, one account behind them</h2>
+      <p class="section-lede">
+        However somebody chooses to sign in, they arrive at the same account.
+        Add a second way whenever you like — and take one away without losing
+        anything.
+      </p>
+
+      <ul class="method-grid">
+        <li><strong>Email and a code</strong><span>Six digits, ten minutes, one use.</span></li>
+        <li><strong>Phone and a code</strong><span>Texted to UK mobiles.</span></li>
+        <li><strong>Email and a password</strong><span>Optional, and never required.</span></li>
+        <li><strong>Passkey</strong><span>Face, fingerprint or device PIN.</span></li>
+        <li><strong>Google</strong><span>Verified addresses only.</span></li>
+        <li><strong>Apple</strong><span>Private relay addresses supported.</span></li>
+        <li><strong>Microsoft</strong><span>Personal and work accounts.</span></li>
+        <li><strong>GitHub</strong><span>Confirmed addresses only.</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ========================================================= developers -->
+  <section class="band">
+    <div class="band-inner developer">
+      <div>
+        <h2>Standards, not a bespoke API</h2>
+        <p class="section-lede">
+          OpenID Connect and OAuth 2.1. Point any certified library at the
+          issuer URL and it configures itself — there is nothing of ours for you
+          to learn.
+        </p>
+        <ul class="ticks">
+          <li>Authorisation code with PKCE, and refresh tokens that rotate</li>
+          <li>RS256 tokens, verifiable against our published JWKS</li>
+          <li>Discovery, userinfo, introspection, revocation and logout</li>
+          <li>Roles in the token, scoped to your application alone</li>
+        </ul>
+        <a class="btn btn-quiet btn-auto" href="/docs">Read the documentation</a>
+      </div>
+
+      <div class="code-card">
+        <div class="code-head"><span class="code-dot"></span>Discovery</div>
+        <%
+          /*
+           * One line, and it scrolls if it must. Split across two with a
+           * backslash it is still a valid shell command, but it reads as a
+           * broken URL — and a reader who is deciding whether this service is
+           * competent should not have to work out that the break is deliberate.
+           */
+        %>
+        <pre><code>curl https://auth.vesopa.com/.well-known/openid-configuration</code></pre>
+        <div class="code-head"><span class="code-dot"></span>Exchange a code for tokens</div>
+        <pre><code>curl -X POST https://auth.vesopa.com/oauth/token \
+  -d grant_type=authorization_code \
+  -d code="$CODE" \
+  -d code_verifier="$VERIFIER" \
+  -d client_id="$CLIENT_ID" \
+  -d redirect_uri="$REDIRECT_URI"</code></pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ control -->
+  <section class="band alt">
+    <div class="band-inner">
+      <h2>Your account is yours</h2>
+      <p class="section-lede">
+        Everything below is in your account settings, and none of it needs an
+        email to support.
+      </p>
+      <div class="control-grid">
+        <div><h3>See every sign-in</h3><p>Successful and failed, with the time, the address it came from and the device. Kept 13 months, then deleted.</p></div>
+        <div><h3>Manage your devices</h3><p>See what is signed in, and sign anything out. Remembering a device skips the second step — never the first.</p></div>
+        <div><h3>Disconnect any app</h3><p>See what each application can read, and cut it off. Access ends immediately.</p></div>
+        <div><h3>Delete your account</h3><p>Yourself, at any time. Your email address and phone number are freed straight away.</p></div>
+      </div>
+      <a class="btn btn-primary btn-auto" href="/login">Sign in to your account</a>
+    </div>
+  </section>
+</main>
+
+<%- include('partials/foot') %>

@@ -1,0 +1,54 @@
+<%
+  /*
+   * A fortnight of sign-ins, drawn as one inline SVG.
+   *
+   * NO CHART LIBRARY, and not only because the Content-Security-Policy on this
+   * origin forbids an external script. A shape this simple has no axis to read
+   * and no interaction to learn: what it is for is answering "is today like the
+   * other days" at a glance, and a line either does that or it does not.
+   *
+   * TWO SERIES, ONE PICTURE. The filled area is every attempt; the darker line
+   * is the ones that worked. When they diverge, something is refusing people —
+   * which is the failure this whole page exists to make visible, and a single
+   * "total sign-ins" line would hide it completely.
+   *
+   * Empty days are plotted as zero rather than skipped. A chart that joins
+   * Friday to Monday draws a straight line through the weekend and reports it
+   * as steady traffic; the gap is the information.
+   *
+   * Takes: series [{ day, total, good }], and an optional `label`.
+   */
+  const points = typeof series !== 'undefined' ? series : [];
+  const W = 620;
+  const H = 96;
+  const peak = Math.max(1, ...points.map(function (p) { return Number(p.total); }));
+
+  function x(i) {
+    return points.length < 2 ? 0 : (i / (points.length - 1)) * W;
+  }
+  function y(value) {
+    // 4px of headroom so a peak is not clipped by the viewBox.
+    return H - 4 - (Number(value) / peak) * (H - 12);
+  }
+
+  const line = points.map(function (p, i) { return (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(p.total).toFixed(1); }).join(' ');
+  const good = points.map(function (p, i) { return (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(p.good).toFixed(1); }).join(' ');
+  const area = points.length > 1 ? line + ' L' + W + ' ' + H + ' L0 ' + H + ' Z' : '';
+%>
+<% if (points.length > 1) { %>
+<figure class="spark">
+  <svg viewBox="0 0 <%= W %> <%= H %>" preserveAspectRatio="none" role="img"
+       aria-label="<%= typeof label !== 'undefined' ? label : 'Sign-in attempts per day' %>: <%= points.map(function (p) { return p.day + ' ' + p.total; }).join(', ') %>">
+    <path d="<%= area %>" class="spark-area"/>
+    <path d="<%= line %>" class="spark-line"/>
+    <path d="<%= good %>" class="spark-good"/>
+  </svg>
+  <figcaption class="spark-foot">
+    <span><%= points[0].day %></span>
+    <span class="spark-key"><i class="spark-swatch-total"></i> attempts <i class="spark-swatch-good"></i> succeeded</span>
+    <span><%= points[points.length - 1].day %></span>
+  </figcaption>
+</figure>
+<% } else { %>
+<p class="hint card-note">Not enough days of data to draw a line yet.</p>
+<% } %>

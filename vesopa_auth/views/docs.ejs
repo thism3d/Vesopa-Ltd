@@ -1,0 +1,268 @@
+<%- include('partials/head') %>
+
+<header class="site-head">
+  <a class="brand" href="/" aria-label="Vesopa OAuth home">
+    <img class="brand-mark" src="/brand/logo-light.svg" alt="Vesopa" width="130" height="17" data-logo-light>
+    <img class="brand-mark" src="/brand/logo-dark.svg" alt="Vesopa" width="130" height="17" data-logo-dark>
+  </a>
+  <nav class="site-nav" aria-label="Main">
+    <a href="/docs">Developers</a>
+    <a href="/policies">Policies</a>
+    <a href="/privacy">Privacy</a>
+    <a class="btn-sm" href="/login">Sign in</a>
+  </nav>
+</header>
+
+<main class="docs">
+  <div class="docs-inner">
+    <h1>Vesopa OAuth for developers</h1>
+    <p class="section-lede">
+      Vesopa OAuth is a standard OpenID Connect provider. If your language has a
+      certified OIDC library, point it at the issuer below and it will configure
+      itself — there is nothing of ours to learn. Everything here is
+      <code>curl</code>, so you can see exactly what goes over the wire.
+    </p>
+
+    <%
+      /*
+       * curl first, deliberately. A quickstart written against one framework's
+       * SDK teaches somebody using a different framework nothing, and hides the
+       * request they will have to debug at two in the morning. The requests
+       * below are the protocol; a library is a convenience on top of them.
+       */
+    %>
+
+    <section>
+      <h2>The only URL you need</h2>
+      <div class="code-card">
+        <div class="code-head"><span class="code-dot"></span>Discovery</div>
+        <pre><code>curl https://auth.vesopa.com/.well-known/openid-configuration</code></pre>
+      </div>
+      <p>
+        Every endpoint, the supported algorithms and the signing keys are
+        described there. Hard-coding any of the other URLs is how an integration
+        breaks the day one of them moves.
+      </p>
+
+      <table class="docs-table">
+        <tbody>
+          <tr><th>Issuer</th><td><code>https://auth.vesopa.com</code></td></tr>
+          <tr><th>Authorization</th><td><code>/oauth/authorize</code></td></tr>
+          <tr><th>Token</th><td><code>/oauth/token</code></td></tr>
+          <tr><th>User info</th><td><code>/oauth/userinfo</code></td></tr>
+          <tr><th>Keys</th><td><code>/jwks.json</code></td></tr>
+          <tr><th>Revoke</th><td><code>/oauth/revoke</code></td></tr>
+          <tr><th>Introspect</th><td><code>/oauth/introspect</code></td></tr>
+          <tr><th>Log out</th><td><code>/oauth/logout</code></td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>What we support, and what we refuse</h2>
+      <table class="docs-table">
+        <thead><tr><th>Grant</th><th></th></tr></thead>
+        <tbody>
+          <tr><td><code>authorization_code</code></td><td>Yes — with PKCE, always.</td></tr>
+          <tr><td><code>refresh_token</code></td><td>Yes — rotated on every use.</td></tr>
+          <tr><td><code>client_credentials</code></td><td>Yes — machine to machine only.</td></tr>
+          <tr><td><code>implicit</code></td><td><strong>No.</strong> It leaks tokens through the URL.</td></tr>
+          <tr><td><code>password</code></td><td><strong>No.</strong> It teaches applications to collect passwords, and it cannot do a second factor.</td></tr>
+        </tbody>
+      </table>
+      <p>
+        <strong>PKCE is required of every client</strong>, including confidential
+        ones with a secret. It costs you two extra fields and closes
+        authorisation-code interception for everybody.
+        <code>code_challenge_method</code> must be <code>S256</code>;
+        <code>plain</code> is refused.
+      </p>
+    </section>
+
+    <section>
+      <h2>Signing somebody in, in four steps</h2>
+
+      <h3>1. Make a PKCE pair</h3>
+      <div class="code-card">
+        <pre><code>VERIFIER=$(openssl rand -base64 60 | tr -d '=+/' | cut -c1-64)
+CHALLENGE=$(printf '%s' "$VERIFIER" | openssl dgst -binary -sha256 \
+  | openssl base64 | tr '+/' '-_' | tr -d '=')</code></pre>
+      </div>
+      <p>Keep the verifier; you will need it in step 3. Never send it in step 2.</p>
+
+      <h3>2. Send the person to Vesopa</h3>
+      <div class="code-card">
+        <pre><code>https://auth.vesopa.com/oauth/authorize
+  ?client_id=YOUR_CLIENT_ID
+  &amp;redirect_uri=https%3A%2F%2Fyour.app%2Fcallback
+  &amp;response_type=code
+  &amp;scope=openid%20profile%20email
+  &amp;state=RANDOM_PER_REQUEST
+  &amp;nonce=RANDOM_PER_REQUEST
+  &amp;code_challenge=$CHALLENGE
+  &amp;code_challenge_method=S256</code></pre>
+      </div>
+      <p>
+        They come back to your <code>redirect_uri</code> with
+        <code>?code=…&amp;state=…</code>. <strong>Check the state matches the one
+        you sent</strong> — that check is what stops somebody else's
+        authorisation code being fed to your callback.
+        The <code>redirect_uri</code> must match one you registered, character
+        for character; we do not forgive a trailing slash.
+      </p>
+
+      <h3>3. Swap the code for tokens</h3>
+      <div class="code-card">
+        <pre><code>curl -X POST https://auth.vesopa.com/oauth/token \
+  -d grant_type=authorization_code \
+  -d code="$CODE" \
+  -d redirect_uri="https://your.app/callback" \
+  -d code_verifier="$VERIFIER" \
+  -d client_id="$CLIENT_ID" \
+  -d client_secret="$CLIENT_SECRET"</code></pre>
+      </div>
+      <p>
+        Public clients — a single-page app, a desktop app — send no
+        <code>client_secret</code>. A secret shipped inside something the user
+        holds is not a secret, and we will refuse one if your application is
+        registered as public.
+      </p>
+      <div class="code-card">
+        <div class="code-head"><span class="code-dot"></span>Response</div>
+        <pre><code>{
+  "access_token": "eyJhbGciOiJSUzI1NiIsImtpZCI6…",
+  "token_type": "Bearer",
+  "expires_in": 600,
+  "id_token": "eyJhbGciOiJSUzI1NiIsImtpZCI6…",
+  "scope": "openid profile email"
+}</code></pre>
+      </div>
+
+      <h3>4. Read who they are</h3>
+      <div class="code-card">
+        <pre><code>curl https://auth.vesopa.com/oauth/userinfo \
+  -H "Authorization: Bearer $ACCESS_TOKEN"</code></pre>
+      </div>
+      <p>
+        Better still, verify the <code>id_token</code> yourself against
+        <code>/jwks.json</code> and skip the round trip. Tokens are
+        <strong>RS256</strong> and carry a <code>kid</code>; cache the key set
+        and re-fetch when you meet a <code>kid</code> you do not know.
+      </p>
+    </section>
+
+    <section>
+      <h2>Scopes</h2>
+      <table class="docs-table">
+        <tbody>
+          <tr><th><code>openid</code></th><td>Required. Gets you an ID token.</td></tr>
+          <tr><th><code>profile</code></th><td>Name, picture, date of birth, locale.</td></tr>
+          <tr><th><code>email</code></th><td>Email address and whether it is confirmed.</td></tr>
+          <tr><th><code>phone</code></th><td>Phone number and whether it is confirmed.</td></tr>
+          <tr><th><code>roles</code></th><td>The person's roles <em>in your application only</em>.</td></tr>
+          <tr><th><code>offline_access</code></th><td>A refresh token. Ask only if you need to act while they are away.</td></tr>
+        </tbody>
+      </table>
+      <p>
+        Asking for a scope you were not granted is not an error — it is dropped,
+        and the rest of the request succeeds. The <code>scope</code> in the
+        response tells you what you actually got, so read it rather than
+        assuming.
+      </p>
+    </section>
+
+    <section>
+      <h2>Refresh tokens rotate. Handle it properly.</h2>
+      <div class="code-card">
+        <pre><code>curl -X POST https://auth.vesopa.com/oauth/token \
+  -d grant_type=refresh_token \
+  -d refresh_token="$REFRESH_TOKEN" \
+  -d client_id="$CLIENT_ID"</code></pre>
+      </div>
+      <%
+        /*
+         * This is the section integrators get wrong, so it is spelled out. The
+         * failure is not theoretical: a client that keeps the old token and
+         * retries with it trips reuse detection and logs its own user out.
+         */
+      %>
+      <p>
+        <strong>Every refresh returns a new refresh token, and the old one is
+        spent.</strong> Store the new one before you do anything else. If a spent
+        token is presented again we assume it was stolen and revoke the whole
+        chain — because we cannot tell a thief from a client that kept a copy.
+      </p>
+      <p>
+        We make one allowance: the same device retrying within a few seconds,
+        after a dropped response, gets <code>409</code> and should simply try
+        once more rather than treating it as a failure.
+      </p>
+    </section>
+
+    <section>
+      <h2>Roles and permissions</h2>
+      <p>
+        A role says what a person may do <em>inside your application</em>. Ask
+        for the <code>roles</code> scope and they arrive in the access token:
+      </p>
+      <div class="code-card">
+        <pre><code>{
+  "sub": "01M21A5GMCA3838KSRAAXMFRJA",
+  "aud": "your-client-id",
+  "scope": "openid profile roles",
+  "roles": ["till.operator"],
+  "amr": ["otp"],
+  "acr": "aal1"
+}</code></pre>
+      </div>
+      <p>
+        You only ever see roles from your own application — never another
+        developer's, and never Vesopa's. Role changes reach you when the access
+        token is next refreshed, within ten minutes; call
+        <code>/oauth/introspect</code> if you need to know sooner.
+      </p>
+    </section>
+
+    <section>
+      <h2>Two claims worth using</h2>
+      <p>
+        <code>amr</code> says <em>how</em> somebody proved themselves —
+        <code>pwd</code>, <code>otp</code>, <code>sms</code>,
+        <code>webauthn</code> — and <code>acr</code> summarises how strong that
+        is. If an action in your app deserves more than a password, send
+        <code>acr_values=aal2</code> on the authorisation request and we will
+        ask for the missing factor <em>without</em> signing the person out.
+      </p>
+    </section>
+
+    <section>
+      <h2>Errors you will actually meet</h2>
+      <table class="docs-table">
+        <tbody>
+          <tr><th><code>invalid_grant</code></th><td>The code expired, was used already, or the <code>code_verifier</code> does not match. Codes last sixty seconds and work once.</td></tr>
+          <tr><th><code>invalid_client</code></th><td>Wrong client id or secret — or a secret sent by a client registered as public.</td></tr>
+          <tr><th><code>invalid_request</code></th><td>Usually a missing <code>code_challenge</code>. PKCE is not optional here.</td></tr>
+          <tr><th><code>access_denied</code></th><td>The person said no, or has no access to your application.</td></tr>
+          <tr><th>A page instead of a redirect</th><td>Your <code>client_id</code> or <code>redirect_uri</code> is not registered. We will not redirect to an address we cannot vouch for.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Getting a client id</h2>
+      <p>
+        The developer portal is being built. Until it opens, write to
+        <a href="mailto:info@vesopasoftware.com">info@vesopasoftware.com</a> with
+        your application's name, its redirect URI and the scopes you need, and we
+        will register it and send you the credentials.
+      </p>
+      <p class="row-meta">
+        Webhooks — told when a person changes or deletes their account — are on
+        the way. The current documentation is this page; it will grow rather than
+        move.
+      </p>
+    </section>
+  </div>
+</main>
+
+<%- include('partials/foot') %>

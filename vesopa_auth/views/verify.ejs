@@ -1,0 +1,82 @@
+<%- include('partials/head') %>
+
+<main class="auth-shell">
+  <div class="auth-card">
+
+    <a class="brand" href="/" aria-label="Vesopa">
+      <img class="brand-mark" src="/brand/logo-light.svg" alt="" width="130" height="17" data-logo-light>
+      <img class="brand-mark" src="/brand/logo-dark.svg" alt="" width="130" height="17" data-logo-dark>
+    </a>
+
+    <h1 class="auth-title">Check your <%= channel === 'phone' ? 'phone' : 'email' %></h1>
+    <p class="auth-sub">
+      We sent a <%= config.codes.length %>-digit code to <strong><%= destination %></strong>.
+      It expires in <%= minutes %> minutes.
+    </p>
+
+    <div class="form-error" role="alert" aria-live="polite" id="form-error"><%= error || '' %></div>
+
+    <form class="auth-form" method="post" action="/login/verify" novalidate>
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+      <div class="field">
+        <label for="code">Your code</label>
+        <%
+          /*
+           * ONE INPUT, NOT SIX BOXES.
+           *
+           * The six-separate-boxes pattern looks tidy and is a menace: pasting a
+           * code into it usually fails, a screen reader announces six unlabelled
+           * fields, and the focus juggling fights every password manager. One
+           * field with `autocomplete="one-time-code"` lets iOS and Android offer
+           * the code from the notification directly, which is the fastest route
+           * there is.
+           */
+        %>
+        <input type="text" id="code" name="code"
+               inputmode="numeric" pattern="[0-9]*"
+               autocomplete="one-time-code"
+               maxlength="<%= config.codes.length %>"
+               autofocus
+               class="code-input"
+               aria-describedby="form-error">
+      </div>
+
+      <button class="btn btn-primary" type="submit">Continue</button>
+    </form>
+
+    <% if (hasPassword) { %>
+    <%
+      /*
+       * The password route, offered only to accounts that have one — which is
+       * the person's own choice, made after their first verification. Most
+       * accounts here will never have a password and must not be shown a box
+       * they cannot fill in.
+       */
+    %>
+    <div class="divider"><span>or</span></div>
+
+    <form class="auth-form" method="post" action="/login/verify" novalidate>
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="field">
+        <label for="password">Your password</label>
+        <input type="password" id="password" name="password"
+               autocomplete="current-password"
+               aria-describedby="form-error">
+      </div>
+      <button class="btn btn-quiet" type="submit">Sign in with password</button>
+    </form>
+    <% } %>
+
+    <form method="post" action="/login/resend" class="resend">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <button type="submit" class="linklike">Send another code</button>
+    </form>
+
+    <p class="small-print">
+      <a href="/login">Use a different <%= channel === 'phone' ? 'number' : 'address' %></a>
+    </p>
+  </div>
+</main>
+
+<%- include('partials/foot') %>

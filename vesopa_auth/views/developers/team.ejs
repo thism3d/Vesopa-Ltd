@@ -1,0 +1,113 @@
+<%- include('../partials/console-head') %>
+
+<h1 class="console-title">Who may edit it</h1>
+<p class="console-lead">
+  <%= application.name %> — who can change this application's settings, its
+  redirect URIs and its secrets.
+</p>
+
+<% if (saved) { %>
+<div class="status status-good">
+  <span class="status-mark"><%- include('../partials/icon', { name: 'check' }) %></span>
+  <div><strong>Saved.</strong></div>
+</div>
+<% } %>
+<% if (error) { %>
+<div class="status status-bad">
+  <span class="status-mark"><%- include('../partials/icon', { name: 'alert' }) %></span>
+  <div><strong>Not done</strong><p><%= error %></p></div>
+</div>
+<% } %>
+
+<%
+  /*
+   * TWO WAYS IN, AND THE NARROW ONE IS THE ONE TO USE.
+   *
+   * Being a member of the owning organisation reaches every application it
+   * owns. That is right for a customer with one product and wrong for Vesopa,
+   * which owns the tills as well as the menu — somebody brought in to wire up
+   * the QR menu has no business rotating a till's client secret.
+   *
+   * So access can also be granted for this one application alone, and the list
+   * below shows both, separately, so it is obvious which kind somebody has.
+   */
+%>
+<section class="card">
+  <h2 class="card-head">Granted this application</h2>
+  <p class="card-note">
+    Access to this one application and nothing else. This is the narrow grant,
+    and the one to prefer.
+  </p>
+
+  <% if (!detail.team.length) { %>
+  <div class="empty">
+    <span class="empty-mark"><%- include('../partials/icon', { name: 'person' }) %></span>
+    <strong>Nobody yet</strong>
+    <p>Only people from the organisation below can reach it.</p>
+  </div>
+  <% } %>
+
+  <% detail.team.forEach(function (row) { %>
+  <div class="row">
+    <span class="row-mark"><%- include('../partials/icon', { name: 'person' }) %></span>
+    <span class="row-lines">
+      <span class="row-title"><%= row.display_name || row.email || row.public_id %></span>
+      <span class="row-sub"><%= row.email || row.public_id %></span>
+    </span>
+    <span class="row-right">
+      <span class="pill<%= row.role === 'admin' ? ' pill-info' : '' %>"><%= row.role %></span>
+      <% if (role === 'admin') { %>
+      <form method="post" action="/developers/a/<%= application.client_id %>/team/<%= row.id %>/remove">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <button type="submit" class="btn-link">Remove</button>
+      </form>
+      <% } %>
+    </span>
+  </div>
+  <% }) %>
+
+  <% if (role === 'admin') { %>
+  <form method="post" action="/developers/a/<%= application.client_id %>/team">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <div class="card-body">
+      <div class="inline-form">
+        <input type="email" name="email" required maxlength="190"
+               placeholder="them@example.com" aria-label="Email address to grant access to"
+               spellcheck="false" autocapitalize="off">
+        <select name="role" aria-label="What they may do">
+          <option value="viewer">Viewer — read only</option>
+          <option value="developer" selected>Developer — change settings and mint secrets</option>
+          <option value="admin">Admin — that, plus granting access</option>
+        </select>
+        <button class="btn btn-primary btn-small" type="submit">Grant access</button>
+      </div>
+      <p class="hint mt-2">
+        They must already have a Vesopa account — creating one from here would
+        mean this form can mint an identity from an address nobody has proved
+        they own. A <b>viewer</b> never sees or mints a secret, which is what
+        makes "let them look at it" safe to say yes to.
+      </p>
+    </div>
+  </form>
+  <% } %>
+</section>
+
+<section class="card">
+  <h2 class="card-head">Through <%= application.organisation_name %></h2>
+  <p class="card-note">
+    These people reach <b>every</b> application the organisation owns, including
+    this one. Change it on the organisation, not here.
+  </p>
+  <% organisation.forEach(function (row) { %>
+  <div class="row">
+    <span class="row-mark"><%- include('../partials/icon', { name: 'building' }) %></span>
+    <span class="row-lines">
+      <span class="row-title"><%= row.display_name || row.email || row.public_id %></span>
+      <span class="row-sub"><%= row.email || row.public_id %></span>
+    </span>
+    <span class="row-right"><span class="pill"><%= row.role %></span></span>
+  </div>
+  <% }) %>
+</section>
+
+<%- include('../partials/console-foot') %>

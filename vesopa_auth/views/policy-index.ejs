@@ -1,0 +1,31 @@
+<%- include('partials/head') %>
+
+<main class="prose">
+  <a class="brand" href="/" aria-label="Vesopa">
+    <img class="brand-mark" src="/brand/logo-light.svg" alt="Vesopa" width="130" height="17" data-logo-light>
+    <img class="brand-mark" src="/brand/logo-dark.svg" alt="Vesopa" width="130" height="17" data-logo-dark>
+  </a>
+
+  <h1>Policies</h1>
+  <p>
+    Everything about how Vesopa OAuth handles your information, in plain English.
+  </p>
+
+  <ul class="rows mt-4">
+    <% policies.forEach(function (policy) { %>
+    <li>
+      <a class="row-main" href="/<%= policy.slug %>"><%= policy.title %></a>
+      <span class="row-meta"><%= policy.summary %></span>
+    </li>
+    <% }) %>
+  </ul>
+
+  <p class="row-meta mt-4">
+    To ask for a copy of your data, or to have it deleted, write to
+    <a href="mailto:privacy@vesopa.com">privacy@vesopa.com</a>. You can delete
+    your account yourself at any time from
+    <a href="/account/delete">your account settings</a>.
+  </p>
+</main>
+
+<%- include('partials/foot') %>

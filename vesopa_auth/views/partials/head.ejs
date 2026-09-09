@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title><%= title %> · Vesopa</title>
+<meta name="description" content="<%= typeof description !== 'undefined' ? description : 'One Vesopa account for every Vesopa product.' %>">
+
+<%
+  /*
+   * A sign-in page must not be indexed, and the account and admin areas must
+   * not either. The landing page and the documentation should be.
+   *
+   * This is `noindex` on the page rather than Disallow in robots.txt, and the
+   * difference matters: a URL blocked by robots.txt cannot be fetched, so the
+   * crawler never reads the noindex — and can still list the bare URL if it
+   * finds it linked somewhere. Letting it read the page and obey the tag is
+   * what actually keeps a login form out of search results.
+   */
+%>
+<% if (typeof noindex !== 'undefined' && noindex) { %>
+<meta name="robots" content="noindex, nofollow">
+<% } else { %>
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="<%= config.issuer %><%= path === '/' ? '/' : path %>">
+<% } %>
+
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Vesopa">
+<meta property="og:title" content="<%= title %>">
+<meta property="og:description" content="<%= typeof description !== 'undefined' ? description : 'One Vesopa account for every Vesopa product.' %>">
+<meta property="og:url" content="<%= config.issuer %><%= path %>">
+<meta property="og:image" content="<%= config.issuer %>/brand/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="<%= title %>">
+<meta name="twitter:image" content="<%= config.issuer %>/brand/twitter-card.png">
+
+<link rel="icon" href="/brand/favicon.ico" sizes="16x16 32x32 48x48">
+<link rel="icon" href="/brand/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/brand/favicon-32.png" type="image/png" sizes="32x32">
+<link rel="icon" href="/brand/favicon-16.png" type="image/png" sizes="16x16">
+<link rel="apple-touch-icon" href="/brand/apple-touch-icon.png" sizes="180x180">
+<link rel="manifest" href="/brand/site.webmanifest">
+
+<link rel="stylesheet" href="/css/auth.css?v=<%= config.version %>">
+<%
+  /*
+   * Extra stylesheets, per page. The landing page is the only heavy one, and
+   * the sign-in form — the page used most, and on the worst connections —
+   * should not carry a byte of it.
+   */
+%>
+<% (typeof styles !== 'undefined' ? styles : []).forEach(function (sheet) { %>
+<link rel="stylesheet" href="/css/<%= sheet %>.css?v=<%= config.version %>">
+<% }) %>
+
+<%
+  /*
+   * The colour scheme is applied before first paint. Without this the page
+   * renders light for an instant and then flips, which at night is a flash of
+   * white at somebody who is trying to sign in.
+   *
+   * It is inline because it must run before the body exists, and it carries the
+   * response nonce because the Content-Security-Policy permits no other inline
+   * script. Wrapped in try/catch: a browser with site data blocked throws on
+   * localStorage, and a sign-in page must not be taken down by a preference.
+   */
+%>
+<script nonce="<%= nonce %>">
+  try {
+    var t = localStorage.getItem('vesopa-theme');
+    if (t === 'dark' || t === 'light') document.documentElement.dataset.theme = t;
+  } catch (e) {}
+  /*
+   * Controls that only make sense with scripting — the Copy buttons beside a
+   * client id or a secret — are hidden by CSS and revealed by this attribute.
+   *
+   * It goes on <html> rather than <body> deliberately: the no-reload router
+   * replaces the body on every navigation, so a flag set there is lost on the
+   * second page and the buttons vanish. <html> survives, and this line has
+   * already run by the time any of them are parsed.
+   */
+  document.documentElement.dataset.js = '1';
+</script>
+</head>
+<%
+  /*
+   * `bodyClass` is how the signed-in console asks for its own ground colour.
+   * It is an attribute on <body> rather than a wrapper div because the router
+   * copies <body>'s attributes across on every no-reload navigation — a class
+   * on an inner element would survive the swap and then be wrong.
+   */
+%>
+<body<%= typeof bodyClass !== 'undefined' && bodyClass ? ' class="' + bodyClass + '"' : '' %><%= config.features.passkeys ? ' data-passkeys-enabled' : '' %>>

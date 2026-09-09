@@ -1,0 +1,43 @@
+<%- include('_shell') %>
+
+<section class="panel">
+  <%
+    /*
+     * Failures are shown, not hidden, and that is the whole purpose of the
+     * page: the attempt somebody did NOT make is the only warning they will
+     * get that a password or a code is out there.
+     */
+  %>
+  <p class="row-meta mb-2">
+    Every attempt on your account, successful or not. If you see something you
+    did not do, <a href="/account/security">change your password</a> and
+    <a href="/account/devices">sign out everywhere</a>.
+  </p>
+
+  <ul class="rows">
+    <% history.forEach(function (event) { %>
+    <li>
+      <span class="row-main">
+        <% if (event.outcome === 'success') { %>Signed in
+        <% } else if (event.outcome === 'failure') { %>Failed attempt
+        <% } else if (event.outcome === 'blocked') { %>Blocked
+        <% } else { %>Code sent<% } %>
+        — <%= String(event.method).replace(/_/g, ' ') %><%
+        %><%= event.application_name ? ' · ' + event.application_name : '' %>
+      </span>
+      <span class="row-meta">
+        <%= event.created_at %> ·
+        <%= event.ip || 'unknown address' %><%= event.country ? ' (' + event.country + ')' : '' %> ·
+        <%= describeDevice(event.user_agent) %><%
+        %><%= event.failure_reason ? ' · ' + String(event.failure_reason).replace(/_/g, ' ') : '' %>
+      </span>
+    </li>
+    <% }) %>
+  </ul>
+
+  <p class="hint mt-3">
+    Kept for 13 months, then deleted.
+  </p>
+</section>
+
+<%- include('../partials/console-foot') %>

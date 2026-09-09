@@ -1,0 +1,239 @@
+<%- include('partials/head') %>
+
+<%
+  /*
+   * TWO LAYOUTS, ONE FORM. The administrator chooses which, at /admin.
+   *
+   *   extended  each provider on a named button, and the link under the button
+   *             that flips it between "Log in" and "Register".
+   *
+   *   compact   providers as icons in a row, and one word on the button:
+   *             "Continue".
+   *
+   * The compact wording is the more honest of the two, and worth explaining.
+   * On this site signing in and registering are the SAME ACTION — the form
+   * posts to the same place, and what happens next depends only on whether the
+   * address is already known. So "Log in" and "Register" are two names for one
+   * button, and asking somebody to choose between them invites the one moment
+   * of doubt the design exists to remove: *do I already have an account here?*
+   * "Continue" is true whichever the answer is.
+   *
+   * The extended layout keeps the older wording because people recognise it,
+   * and because the owner asked for the register link to be there. Both are
+   * correct; the choice is a matter of taste, which is why it is a setting.
+   */
+  const compact = layout === 'compact';
+  const serviceName = settings.service_name || 'Vesopa';
+  const showFlip = !compact && settings.login_show_register_link !== 'no';
+
+  const heading = compact
+    ? `Continue to ${serviceName}`
+    : (mode === 'register' ? `Create your ${serviceName} account` : `Sign in to ${serviceName}`);
+
+  const action = compact ? 'Continue' : (mode === 'register' ? 'Register' : 'Log in');
+%>
+
+<main class="auth-shell">
+  <div class="auth-card<%= compact ? ' auth-card-compact' : '' %>">
+
+    <a class="brand" href="/" aria-label="<%= serviceName %>">
+      <img class="brand-mark" src="/brand/logo-light.svg" alt="" width="130" height="17" data-logo-light>
+      <img class="brand-mark" src="/brand/logo-dark.svg" alt="" width="130" height="17" data-logo-dark>
+    </a>
+
+    <h1 class="auth-title" data-title
+        data-login="<%= compact ? heading : 'Sign in to ' + serviceName %>"
+        data-register="<%= compact ? heading : 'Create your ' + serviceName + ' account' %>"><%= heading %></h1>
+
+    <% if (!compact) { %>
+    <p class="auth-sub">One account for the till, the menu and everything else.</p>
+    <% } %>
+
+    <%
+      /*
+       * The error region exists in the DOM at all times, empty, with
+       * aria-live="polite". Creating it only when something goes wrong means a
+       * screen reader never announces the failure — the region has to be there
+       * before the text arrives for the change to be noticed.
+       */
+    %>
+    <div class="form-error" role="alert" aria-live="polite" id="form-error"><%= error || '' %></div>
+
+    <form class="auth-form" method="post" action="/login" novalidate>
+      <%
+        /*
+         * CSRF on the LOGIN form, which is the one people skip on the grounds
+         * that there is no session yet to protect. There is: an attacker who
+         * can silently log your browser into THEIR account owns everything you
+         * do next — every address you link, every card you save, saved into an
+         * account they can open.
+         */
+      %>
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="return_to" value="<%= returnTo %>">
+      <input type="hidden" name="mode" value="<%= mode %>" data-mode-field>
+
+      <%
+        /*
+         * The email/phone toggle.
+         *
+         * Radio inputs and not buttons, because this is a choice between two
+         * states — which is what a radio group is, and it comes with keyboard
+         * handling and screen-reader semantics already correct. The buttons are
+         * the labels, styled; the inputs are visually hidden but focusable.
+         *
+         * Email is first here. The dine-in menu puts phone first because
+         * somebody at a table has a phone in their hand; this page is for
+         * people at a keyboard.
+         */
+      %>
+      <div class="channel-toggle" role="radiogroup" aria-label="Sign in with">
+        <input type="radio" name="channel" id="channel-email" value="email"
+               <%= channel === 'email' ? 'checked' : '' %> data-channel>
+        <label for="channel-email">Email</label>
+
+        <input type="radio" name="channel" id="channel-phone" value="phone"
+               <%= channel === 'phone' ? 'checked' : '' %> data-channel>
+        <label for="channel-phone">Phone</label>
+      </div>
+
+      <!-- Email -->
+      <div class="field" data-pane="email" <%= channel === 'phone' ? 'hidden' : '' %>>
+        <label for="email">Email address</label>
+        <%
+          /*
+           * `autocomplete="username webauthn"` is what makes a passkey offer
+           * itself in the browser's own dropdown as the person focuses this
+           * field. Without the `webauthn` token the conditional-UI ceremony
+           * runs and nothing ever appears, which looks like passkeys being
+           * broken and is a missing word.
+           */
+        %>
+        <input type="email" id="email" name="email"
+               autocomplete="username webauthn"
+               inputmode="email" spellcheck="false" autocapitalize="off"
+               placeholder="you@example.com"
+               value="<%= identifier %>"
+               aria-describedby="form-error">
+      </div>
+
+      <!-- Phone -->
+      <div class="field field-phone" data-pane="phone" <%= channel === 'email' ? 'hidden' : '' %>>
+        <label for="phone">Mobile number</label>
+        <div class="phone-row">
+          <select id="dial" name="dial" aria-label="Country dialling code">
+            <option value="GB" selected>🇬🇧 +44</option>
+            <option value="IE">🇮🇪 +353</option>
+            <option value="US">🇺🇸 +1</option>
+            <option value="FR">🇫🇷 +33</option>
+            <option value="DE">🇩🇪 +49</option>
+            <option value="ES">🇪🇸 +34</option>
+            <option value="IT">🇮🇹 +39</option>
+            <option value="NL">🇳🇱 +31</option>
+            <option value="PL">🇵🇱 +48</option>
+            <option value="IN">🇮🇳 +91</option>
+            <option value="PK">🇵🇰 +92</option>
+            <option value="BD">🇧🇩 +880</option>
+          </select>
+          <input type="tel" id="phone" name="phone"
+                 autocomplete="tel" inputmode="tel"
+                 placeholder="07911 123456"
+                 aria-describedby="phone-hint form-error">
+        </div>
+        <p class="hint" id="phone-hint">We text a code. UK mobiles only for now — use email for anywhere else.</p>
+      </div>
+
+      <%
+        /*
+         * "Remember me on this device."
+         *
+         * What it buys is a longer session and the right to skip the SECOND
+         * factor on this machine. It never skips the first. A remembered device
+         * proves which computer this is; it does not prove who is sitting at
+         * it, and treating it as if it did turns a stolen laptop into a
+         * permanent key to every Vesopa app at once.
+         */
+      %>
+      <label class="tickbox">
+        <input type="checkbox" name="remember" value="1" checked>
+        <span>Remember me on this device</span>
+      </label>
+
+      <button class="btn btn-primary" type="submit" data-submit
+              data-login="<%= compact ? 'Continue' : 'Log in' %>"
+              data-register="<%= compact ? 'Continue' : 'Register' %>"><%= action %></button>
+
+      <% if (showFlip) { %>
+      <%
+        /*
+         * The flip. The owner's words: the link under the button "will do
+         * nothing but change the Login Button name to Register and the
+         * registration link name change to login. Means our login page is our
+         * registration page."
+         *
+         * It is a real link with a real href, so it works with JavaScript
+         * turned off — the server renders whichever mode the query string asks
+         * for. The script upgrades it to an instant flip with no round trip.
+         */
+      %>
+      <p class="flip">
+        <span data-flip-lead
+              data-login="New to <%= serviceName %>?"
+              data-register="Already have an account?"><%= mode === 'register' ? 'Already have an account?' : 'New to ' + serviceName + '?' %></span>
+        <a href="/login?mode=<%= mode === 'register' ? 'login' : 'register' %>"
+           data-flip
+           data-login="Register"
+           data-register="Log in"><%= mode === 'register' ? 'Log in' : 'Register' %></a>
+      </p>
+      <% } %>
+    </form>
+
+    <% if (providers.length) { %>
+    <div class="divider"><span>or continue with</span></div>
+
+    <%
+      /*
+       * Compact shows the marks alone in a row; extended names each provider.
+       *
+       * The icon-only version still has an accessible name — the `aria-label`
+       * on each link — because a screen reader announcing "link, link, link,
+       * link" is not a sign-in page.
+       */
+    %>
+    <% if (compact) { %>
+    <div class="providers providers-compact">
+      <% providers.forEach(function (p) { %>
+      <a class="btn btn-provider btn-icon" href="/auth/<%= p.key %>?return_to=<%= encodeURIComponent(returnTo) %>"
+         data-provider="<%= p.key %>" aria-label="Continue with <%= p.name %>" title="Continue with <%= p.name %>">
+        <%- include('partials/provider-icon', { key: p.key }) %>
+      </a>
+      <% }) %>
+    </div>
+    <% } else { %>
+    <div class="providers">
+      <% providers.forEach(function (p) { %>
+      <a class="btn btn-provider" href="/auth/<%= p.key %>?return_to=<%= encodeURIComponent(returnTo) %>" data-provider="<%= p.key %>">
+        <%- include('partials/provider-icon', { key: p.key }) %>
+        <span>Continue with <%= p.name %></span>
+      </a>
+      <% }) %>
+    </div>
+    <% } %>
+    <% } %>
+
+    <% if (config.features.passkeys) { %>
+    <button class="btn btn-quiet" type="button" data-passkey hidden>
+      Sign in with a passkey
+    </button>
+    <% } %>
+
+    <p class="small-print">
+      By continuing you agree to our <a href="/terms">terms</a> and
+      <a href="/privacy">privacy policy</a>.
+    </p>
+  </div>
+</main>
+
+<script nonce="<%= nonce %>" src="/js/login.js?v=<%= config.version %>"></script>
+
+<%- include('partials/foot') %>

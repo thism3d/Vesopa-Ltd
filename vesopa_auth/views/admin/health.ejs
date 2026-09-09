@@ -1,0 +1,160 @@
+<%- include('../partials/console-head') %>
+
+<%
+  /*
+   * THE FOUR THINGS THAT BREAK SIGNING IN FOR EVERYBODY AT ONCE, and none of
+   * them is visible from outside: the site answers 200 all the way through.
+   *
+   *   the database              nothing works, and the health endpoint says so
+   *   the signing keys          /jwks.json answering {"keys":[]} means every
+   *                             client that booted against it rejects every
+   *                             token, while the server looks perfectly healthy
+   *   a social provider's secret  one button fails, for every user, silently
+   *   mail                      codes stop arriving and nothing logs an error
+   *
+   * The second one has happened here. Keys were created lazily by the first
+   * signature, so a fresh install served an empty key set — and the first
+   * client library to boot would have cached it.
+   */
+  const active = keys.filter(function (k) { return k.status === 'active'; });
+  const next = keys.filter(function (k) { return k.status === 'next'; });
+  const dbOk = database && !database.error;
+  const keysOk = active.length > 0;
+%>
+
+<h1 class="console-title">Health</h1>
+<p class="console-lead">
+  The things that break signing in for everybody at once, checked rather than
+  assumed.
+</p>
+
+<% if (dbOk && keysOk) { %>
+<div class="status status-good">
+  <span class="status-mark"><%- include('../partials/icon', { name: 'check' }) %></span>
+  <div>
+    <strong>Signing in is working</strong>
+    <p>The database answered and there is a live signing key.</p>
+  </div>
+</div>
+<% } else { %>
+<div class="status status-bad">
+  <span class="status-mark"><%- include('../partials/icon', { name: 'alert' }) %></span>
+  <div>
+    <strong><%= !dbOk ? 'The database did not answer' : 'There is no active signing key' %></strong>
+    <p>
+      <% if (!dbOk) { %>
+        Nothing on this server can sign anybody in until it does.
+      <% } else { %>
+        <code>/jwks.json</code> is serving an empty key set, so every client
+        library that boots against it will reject every token we issue — while
+        the site itself looks perfectly healthy.
+      <% } %>
+    </p>
+  </div>
+</div>
+<% } %>
+
+<section class="card">
+  <h2 class="card-head">This server</h2>
+  <dl class="facts">
+    <div><dt>Issuer</dt><dd class="mono"><%= issuer %></dd></div>
+    <div><dt>Version</dt><dd><%= version %></dd></div>
+    <div>
+      <dt>Database</dt>
+      <dd>
+        <% if (dbOk) { %>
+          <%= database.db %> on MariaDB <%= database.version %>
+          <span class="pill pill-good">answering</span>
+        <% } else { %>
+          <span class="pill pill-bad">not answering</span>
+        <% } %>
+      </dd>
+    </div>
+    <div><dt>Codes sent, 24h</dt><dd><%= mail.sent_24h %></dd></div>
+  </dl>
+</section>
+
+<section class="card">
+  <h2 class="card-head">Signing keys</h2>
+  <p class="card-note">
+    Three states, on purpose. <b>next</b> is published in the key set before it
+    is ever used, so a client that cached the set yesterday already knows it
+    when the rotation happens; <b>retired</b> stays published long enough for
+    the last token signed with it to expire.
+  </p>
+  <% keys.forEach(function (key) { %>
+  <div class="row">
+    <span class="row-mark"><%- include('../partials/icon', { name: 'key' }) %></span>
+    <span class="row-lines">
+      <span class="row-title">
+        <span class="mono is-smaller"><%= key.kid %></span>
+        <span class="pill<%= key.status === 'active' ? ' pill-good' : (key.status === 'next' ? ' pill-info' : '') %>"><%= key.status %></span>
+      </span>
+      <span class="row-sub">
+        <%= key.algorithm %> ·
+        created <%= new Date(key.created_at).toISOString().slice(0, 10) %>
+        <% if (key.activated_at) { %> · active since <%= new Date(key.activated_at).toISOString().slice(0, 10) %><% } %>
+        <% if (key.retired_at) { %> · retired <%= new Date(key.retired_at).toISOString().slice(0, 10) %><% } %>
+      </span>
+    </span>
+  </div>
+  <% }) %>
+  <% if (!keys.length) { %>
+  <div class="empty">
+    <span class="empty-mark"><%- include('../partials/icon', { name: 'key' }) %></span>
+    <strong>No keys at all</strong>
+    <p>No token can be signed and none can be verified.</p>
+  </div>
+  <% } %>
+  <div class="card-body">
+    <p class="hint m-0">
+      What clients see:
+    </p>
+    <div class="copy mt-1">
+      <code><%= issuer %>/jwks.json</code>
+      <button type="button" class="copy-btn">Copy</button>
+    </div>
+    <% if (!next.length) { %>
+    <p class="hint mt-2">
+      No <b>next</b> key is published. A rotation from here would be visible to
+      clients only after they refetch the key set, which is the window in which
+      tokens are rejected.
+    </p>
+    <% } %>
+  </div>
+</section>
+
+<section class="card">
+  <h2 class="card-head">Sign in with</h2>
+  <p class="card-note">
+    A button only appears on the sign-in page when its credentials are present.
+    A button for a provider we cannot complete is worse than no button: somebody
+    picks the option that looks most secure and is told it went wrong.
+  </p>
+  <% providers.forEach(function (row) { %>
+  <div class="row">
+    <span class="row-mark"><%- include('../partials/provider-icon', { key: row.key }) %></span>
+    <span class="row-lines">
+      <span class="row-title"><%= row.name %></span>
+      <span class="row-sub">
+        <%= row.on
+          ? 'Credentials present — the button is shown'
+          : 'No credentials on this server — the button is hidden' %>
+      </span>
+    </span>
+    <span class="row-right">
+      <span class="pill<%= row.on ? ' pill-good' : '' %>"><%= row.on ? 'on' : 'off' %></span>
+    </span>
+  </div>
+  <% }) %>
+  <div class="card-body">
+    <p class="hint m-0">
+      Whether a secret is <i>correct</i> cannot be seen from here — only whether
+      one is present. <code>node scripts/smoke-social.js</code> asks the
+      providers directly, which is the check that catches the failure that
+      breaks social sign-in for every user at once.
+    </p>
+  </div>
+</section>
+
+<%- include('../partials/console-foot') %>

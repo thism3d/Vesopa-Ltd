@@ -1,0 +1,207 @@
+<%- include('../partials/console-head') %>
+<%
+  /*
+   * A bar's length is DATA, and data cannot reach CSS through a `style`
+   * attribute here — the Content-Security-Policy on this origin blocks inline
+   * styles, and a nonce cannot rescue an attribute. So the percentage is
+   * rounded to one of twenty-one class names.
+   *
+   * Five-percent steps is the resolution a bar chart read at arm's length
+   * actually carries, and the exact figure is printed beside every bar anyway.
+   * `w-0` is three pixels rather than nothing: a category with one event in ten
+   * thousand should read as "almost none", not as "no data".
+   */
+  function barWidth(value, largest) {
+    const share = largest > 0 ? (Number(value) / largest) * 100 : 0;
+    return 'w-' + Math.round(share / 5) * 5;
+  }
+%>
+
+<%
+  /*
+   * THE OVERVIEW ANSWERS ONE QUESTION FIRST — is anything wrong? — and only
+   * then shows figures. A console that opens on a wall of numbers makes the
+   * reader do the judging, and the whole point of a dashboard is that it has
+   * already judged.
+   *
+   * The bar is drawn from real thresholds rather than a feeling: a failure rate
+   * above a third of attempts, over twenty-four hours, is either an attack or
+   * something broken, and both want looking at now.
+   */
+  const attempts = Number(totals.events_today) || 0;
+  const failures = Number(totals.failures_today) || 0;
+  const failureRate = attempts ? failures / attempts : 0;
+  const people = Number(totals.people) || 0;
+  const strongShare = people ? Math.round((Number(strong) / people) * 100) : 0;
+
+  const trouble = attempts >= 10 && failureRate > 0.34;
+%>
+
+<h1 class="console-title">Administration</h1>
+<p class="console-lead">
+  Signed in as <%= session.display_name || session.user_public_id %>. Everything
+  on this page is read-only except the sign-in page settings.
+</p>
+
+<% if (trouble) { %>
+<div class="status status-warn">
+  <span class="status-mark"><%- include('../partials/icon', { name: 'alert' }) %></span>
+  <div>
+    <strong><%= Math.round(failureRate * 100) %>% of sign-ins failed in the last day</strong>
+    <p>
+      <%= failures %> of <%= attempts %>. That is high enough to be either
+      something broken or somebody guessing.
+      <a href="/admin/activity">See what is failing</a>.
+    </p>
+  </div>
+</div>
+<% } else { %>
+<div class="status status-good">
+  <span class="status-mark"><%- include('../partials/icon', { name: 'check' }) %></span>
+  <div>
+    <strong>Nothing needs your attention</strong>
+    <p>
+      <%= attempts %> sign-in <%= attempts === 1 ? 'attempt' : 'attempts' %> in
+      the last day<%= failures ? ', ' + failures + ' of them refused' : ', none refused' %>.
+      <a href="/admin/health">Check the service</a>.
+    </p>
+  </div>
+</div>
+<% } %>
+
+<div class="tiles">
+  <a class="tile" href="/admin/people">
+    <span class="tile-mark t-blue"><%- include('../partials/icon', { name: 'people' }) %></span>
+    <span class="tile-number"><%= totals.people %></span>
+    <span class="tile-label">People</span>
+    <span class="tile-foot"><%= totals.people_new %> in the last 30 days</span>
+  </a>
+  <div class="tile">
+    <span class="tile-mark t-teal"><%- include('../partials/icon', { name: 'device' }) %></span>
+    <span class="tile-number"><%= totals.live_sessions %></span>
+    <span class="tile-label">Signed in now</span>
+    <span class="tile-foot">Live sessions</span>
+  </div>
+  <a class="tile" href="/admin/applications">
+    <span class="tile-mark t-violet"><%- include('../partials/icon', { name: 'apps' }) %></span>
+    <span class="tile-number"><%= totals.applications %></span>
+    <span class="tile-label">Applications</span>
+    <span class="tile-foot">Active OAuth clients</span>
+  </a>
+  <div class="tile<%= failures ? ' tile-alert' : '' %>">
+    <span class="tile-mark <%= failures ? 't-red' : 't-slate' %>"><%- include('../partials/icon', { name: 'alert' }) %></span>
+    <span class="tile-number"><%= failures %></span>
+    <span class="tile-label">Refused, 24h</span>
+    <span class="tile-foot">of <%= attempts %> attempts</span>
+  </div>
+</div>
+
+<%
+  /*
+   * HOW MANY PEOPLE CAN SURVIVE LOSING THEIR PHONE.
+   *
+   * The most useful number here and the one no dashboard shows by default. An
+   * account whose only way in is an emailed code is exactly as secure as its
+   * mailbox — so this is the figure that says whether the MFA work is reaching
+   * anybody, and watching it climb is the only proof that it is.
+   */
+%>
+<section class="card">
+  <h2 class="card-head">How well protected people are</h2>
+  <p class="card-note">
+    An account with a passkey or an authenticator survives its mailbox being
+    read. One with neither does not.
+  </p>
+  <div class="meter">
+    <div class="meter-row">
+      <div class="meter-head">
+        <span>Have a passkey or an authenticator</span>
+        <span class="meter-count"><%= strong %> of <%= people %> · <%= strongShare %>%</span>
+      </div>
+      <div class="meter-track">
+        <div class="meter-fill <%= 'w-' + Math.round(strongShare / 5) * 5 %>"></div>
+      </div>
+    </div>
+  </div>
+  <div class="row">
+    <span class="row-mark"><%- include('../partials/icon', { name: 'key' }) %></span>
+    <span class="row-lines">
+      <span class="row-title">Passkeys enrolled</span>
+      <span class="row-sub">Phishing-proof, and the only factor here that is</span>
+    </span>
+    <span class="row-right"><%= totals.passkeys %></span>
+  </div>
+  <div class="row">
+    <span class="row-mark"><%- include('../partials/icon', { name: 'phone' }) %></span>
+    <span class="row-lines">
+      <span class="row-title">Authenticator apps</span>
+      <span class="row-sub">TOTP, checked against RFC 6238's own test vectors</span>
+    </span>
+    <span class="row-right"><%= totals.authenticators %></span>
+  </div>
+</section>
+
+<section class="card">
+  <h2 class="card-head">Sign-ins, last 14 days</h2>
+  <p class="card-note">
+    From the daily rollups, not from the raw events — a dashboard that scans
+    thirteen months of history is the thing that falls over first on a busy
+    Saturday.
+  </p>
+  <%- include('../partials/sparkline', { series: series, label: 'Sign-in attempts per day' }) %>
+</section>
+
+<% if (mix.length) { %>
+<section class="card">
+  <h2 class="card-head">How people signed in, last 30 days</h2>
+  <div class="meter">
+    <%
+      const largest = Math.max.apply(null, mix.map(function (m) { return Number(m.total); }));
+    %>
+    <% mix.forEach(function (row) { %>
+    <div class="meter-row">
+      <div class="meter-head">
+        <span>
+          <%= String(row.method).replace(/_/g, ' ') %>
+          <span class="pill<%= row.outcome === 'success' ? ' pill-good' : (row.outcome === 'failure' ? ' pill-bad' : '') %>"><%= row.outcome %></span>
+        </span>
+        <span class="meter-count"><%= row.total %></span>
+      </div>
+      <div class="meter-track">
+        <div class="meter-fill <%= barWidth(row.total, largest) %><%= row.outcome === 'success' ? '' : (row.outcome === 'failure' || row.outcome === 'blocked' ? ' is-bad' : ' is-idle') %>"></div>
+      </div>
+    </div>
+    <% }) %>
+  </div>
+  <a class="row" href="/admin/activity">
+    <span class="row-mark"><%- include('../partials/icon', { name: 'chart' }) %></span>
+    <span class="row-lines"><span class="row-title">All activity, and the audit trail</span></span>
+    <span class="row-right"><span class="row-go"><%- include('../partials/icon', { name: 'chevron' }) %></span></span>
+  </a>
+</section>
+<% } %>
+
+<section class="card">
+  <h2 class="card-head">Recent administrative activity</h2>
+  <% if (!recent.length) { %>
+  <div class="empty">
+    <span class="empty-mark"><%- include('../partials/icon', { name: 'clipboard' }) %></span>
+    <strong>Nothing yet</strong>
+    <p>Every change an administrator or a developer makes is recorded here.</p>
+  </div>
+  <% } %>
+  <% recent.forEach(function (row) { %>
+  <div class="row">
+    <span class="row-mark"><%- include('../partials/icon', { name: 'clipboard' }) %></span>
+    <span class="row-lines">
+      <span class="row-title"><%= String(row.action).replace(/\./g, ' · ') %></span>
+      <span class="row-sub">
+        <%= row.actor_type %><%= row.target_type ? ' · ' + row.target_type : '' %><%= row.ip ? ' · ' + row.ip : '' %>
+      </span>
+    </span>
+    <span class="row-right"><%= new Date(row.created_at).toISOString().slice(0, 16).replace('T', ' ') %></span>
+  </div>
+  <% }) %>
+</section>
+
+<%- include('../partials/console-foot') %>

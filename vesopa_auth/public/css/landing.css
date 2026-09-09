@@ -1,0 +1,452 @@
+/*
+ * The landing page.
+ *
+ * Loaded only here, so the sign-in form — the page that matters most and is
+ * used on the worst connections — does not carry a byte of it.
+ *
+ * Everything is drawn with CSS and inline SVG. There are no photographs and no
+ * illustrations to download, which keeps the page fast and keeps the
+ * Content-Security-Policy on this origin as tight as it is: `default-src
+ * 'none'`, with no external host allowed anywhere.
+ */
+
+/* --------------------------------------------------------------------------
+ * Header
+ * ------------------------------------------------------------------------ */
+
+/*
+ * `width: 100%` is load-bearing, and its absence is why the logo sat marooned
+ * in the middle of the page.
+ *
+ * `body` is `display: flex; flex-direction: column`. A direct child of a column
+ * flex container normally stretches to the full width — but `margin: 0 auto`
+ * on the cross axis overrides that stretch and makes the item shrink to fit its
+ * contents instead. The header therefore became only as wide as the logo plus
+ * the nav, centred, with the two bunched together in the middle and empty space
+ * on the left.
+ *
+ * `width: 100%` restores the full width, and `max-width` with auto margins then
+ * centres the content the way it was meant to. The same trap applies to every
+ * other direct child of `body` that uses `margin: 0 auto`.
+ */
+.site-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  width: 100%;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 20px 24px;
+}
+
+.site-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.site-nav a {
+  padding: 8px 12px;
+  font-size: 14.5px;
+  color: var(--text-muted);
+  text-decoration: none;
+  border-radius: 8px;
+}
+.site-nav a:hover { color: var(--text); background: var(--surface-2); }
+
+.btn-sm {
+  background: var(--green);
+  border: 1px solid var(--green-dark);
+  color: #000 !important;
+  font-weight: 600;
+}
+.btn-sm:hover { background: var(--green-dark) !important; }
+
+/* A button that is only as wide as it needs to be — the shared .btn is
+   full-width, which is right inside the sign-in card and wrong out here. */
+.btn-auto { width: auto; display: inline-flex; padding: 0 22px; }
+
+/* --------------------------------------------------------------------------
+ * Hero
+ * ------------------------------------------------------------------------ */
+
+.hero {
+  position: relative;
+  overflow: hidden;
+  padding: 40px 24px 72px;
+}
+
+/*
+ * The background: a very faint grid with a green glow behind the headline.
+ * Two gradients and a repeating one, so it costs no requests and scales to any
+ * screen. Kept subtle enough that text contrast is untouched — a decorative
+ * background that eats into legibility on a sign-in service is a bad trade.
+ */
+.hero::before {
+  content: "";
+  position: absolute;
+  inset: -30% -10% auto -10%;
+  height: 640px;
+  background:
+    radial-gradient(48% 60% at 22% 30%, color-mix(in srgb, var(--green) 20%, transparent), transparent 70%),
+    radial-gradient(40% 50% at 80% 10%, color-mix(in srgb, var(--green) 10%, transparent), transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+.hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, var(--border) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--border) 1px, transparent 1px);
+  background-size: 56px 56px;
+  opacity: .35;
+  /* Fade the grid out rather than letting it run into the next section.
+     Prefixed first, so a browser that understands both takes the standard
+     one — the later declaration wins, and it should be the unprefixed one. */
+  -webkit-mask-image: radial-gradient(70% 60% at 50% 35%, #000 30%, transparent 78%);
+  mask-image: radial-gradient(70% 60% at 50% 35%, #000 30%, transparent 78%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.hero-grid {
+  position: relative;
+  z-index: 1;
+  max-width: 1120px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr);
+  gap: 56px;
+  align-items: center;
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 18px;
+  padding: 6px 13px;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+.eyebrow .dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 25%, transparent);
+}
+
+.hero h1 {
+  margin: 0 0 18px;
+  font-size: clamp(34px, 5.2vw, 56px);
+  line-height: 1.06;
+  letter-spacing: -.033em;
+  font-weight: 700;
+}
+
+.lede {
+  margin: 0 0 28px;
+  max-width: 30em;
+  font-size: 17px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
+.hero-note { margin: 0; font-size: 13.5px; color: var(--text-muted); }
+
+/* --------------------------------------------------------------------------
+ * The preview card
+ *
+ * A scaled-down, non-functional copy of the real sign-in card. Showing the
+ * actual product beats a stock illustration, and because it is built from the
+ * same tokens it cannot drift out of date the way a screenshot would.
+ * ------------------------------------------------------------------------ */
+
+.hero-visual { display: flex; justify-content: center; }
+
+.preview-card {
+  width: 100%;
+  max-width: 372px;
+  padding: 26px 24px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 2px 4px rgba(0,0,0,.05), 0 24px 56px rgba(0,0,0,.10);
+}
+:root[data-theme="dark"] .preview-card,
+:root:not([data-theme="light"]) .preview-card {
+  box-shadow: 0 2px 4px rgba(0,0,0,.4), 0 24px 56px rgba(0,0,0,.5);
+}
+
+.preview-brand { margin-bottom: 16px; }
+/*
+ * Height only — NOT `display`.
+ *
+ * `.preview-brand img` (0,1,1) out-ranks `[data-logo-dark]` (0,1,0), so setting
+ * `display: block` here overrode the rule that hides the dark wordmark and both
+ * versions rendered on top of each other. On the white card the dark version's
+ * white letters were invisible and only its green accent showed, as a stray
+ * mark floating under the logo. The images carry `.brand-mark` now and obey the
+ * same swap as every other logo on the site.
+ */
+.preview-brand .brand-mark { height: 14px; }
+
+.preview-title { margin: 0 0 16px; font-size: 17px; font-weight: 650; }
+
+.preview-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.preview-toggle span { text-align: center; padding: 7px 4px; border-radius: 6px; }
+.preview-toggle .on {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0,0,0,.1);
+}
+
+.preview-label { display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 5px; }
+.preview-input {
+  padding: 10px 12px;
+  font-size: 13.5px;
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+  margin-bottom: 12px;
+}
+
+.preview-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text);
+  margin-bottom: 14px;
+}
+.preview-check .tick {
+  width: 16px; height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: #000;
+  background: var(--green);
+  border-radius: 4px;
+}
+
+.preview-button {
+  padding: 11px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 650;
+  color: #000;
+  background: var(--green);
+  border-radius: 9px;
+}
+
+.preview-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 0 12px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+.preview-divider::before, .preview-divider::after {
+  content: ""; flex: 1; height: 1px; background: var(--border);
+}
+
+.preview-providers { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.preview-provider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 38px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+}
+.preview-provider .provider-mark { width: 17px; height: 17px; }
+
+/* --------------------------------------------------------------------------
+ * Assurances
+ * ------------------------------------------------------------------------ */
+
+.assurances { border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.assurance-grid {
+  max-width: 1120px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+}
+.assurance {
+  padding: 28px 24px;
+  border-left: 1px solid var(--border);
+}
+.assurance:first-child { border-left: 0; }
+.assurance-icon { display: block; color: var(--green-dark); margin-bottom: 10px; }
+:root[data-theme="dark"] .assurance-icon,
+:root:not([data-theme="light"]) .assurance-icon { color: var(--green); }
+.assurance h3 { margin: 0 0 6px; font-size: 14.5px; font-weight: 650; }
+.assurance p { margin: 0; font-size: 13.5px; line-height: 1.55; color: var(--text-muted); }
+
+/* --------------------------------------------------------------------------
+ * Bands
+ * ------------------------------------------------------------------------ */
+
+.band { padding: 68px 24px; }
+.band.alt { background: var(--surface-2); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.band-inner { max-width: 1120px; margin: 0 auto; }
+.band h2 {
+  margin: 0 0 12px;
+  font-size: clamp(24px, 3.2vw, 33px);
+  line-height: 1.15;
+  letter-spacing: -.024em;
+}
+.section-lede { margin: 0 0 34px; max-width: 42em; font-size: 16.5px; line-height: 1.6; color: var(--text-muted); }
+
+.product-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 18px;
+}
+.product {
+  padding: 22px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+.product-icon { display: block; color: var(--green-dark); margin-bottom: 12px; }
+:root[data-theme="dark"] .product-icon,
+:root:not([data-theme="light"]) .product-icon { color: var(--green); }
+.product h3 { margin: 0 0 7px; font-size: 16px; }
+.product p { margin: 0; font-size: 14px; line-height: 1.55; color: var(--text-muted); }
+
+.method-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+.method-grid li {
+  padding: 16px 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.method-grid strong { display: block; font-size: 14.5px; margin-bottom: 3px; }
+.method-grid span { font-size: 13px; color: var(--text-muted); }
+
+.control-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
+  margin-bottom: 30px;
+}
+.control-grid h3 { margin: 0 0 6px; font-size: 16px; }
+.control-grid p { margin: 0; font-size: 14.5px; line-height: 1.55; color: var(--text-muted); }
+
+/* --------------------------------------------------------------------------
+ * Developer band
+ * ------------------------------------------------------------------------ */
+
+.developer { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 48px; align-items: start; }
+
+.ticks { list-style: none; margin: 0 0 26px; padding: 0; }
+.ticks li {
+  position: relative;
+  padding-left: 26px;
+  margin-bottom: 10px;
+  font-size: 15px;
+  color: var(--text);
+}
+.ticks li::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 6px;
+  width: 15px; height: 8px;
+  border-left: 2px solid var(--green-dark);
+  border-bottom: 2px solid var(--green-dark);
+  transform: rotate(-45deg);
+}
+:root[data-theme="dark"] .ticks li::before,
+:root:not([data-theme="light"]) .ticks li::before {
+  border-color: var(--green);
+}
+
+.code-card {
+  background: #0b0b0b;
+  border: 1px solid #262626;
+  border-radius: 14px;
+  overflow: hidden;
+}
+.code-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 16px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #a6a9ab;
+  background: #131313;
+  border-bottom: 1px solid #262626;
+}
+.code-head + .code-head { border-top: 1px solid #262626; }
+.code-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); }
+.code-card pre {
+  margin: 0;
+  padding: 16px;
+  overflow-x: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.7;
+  /* Pale on near-black: 12:1, comfortably past the contrast minimum. The code
+     block keeps its dark ground in both schemes, the way a terminal does. */
+  color: #e6e6e6;
+}
+
+/* --------------------------------------------------------------------------
+ * Narrower screens
+ * ------------------------------------------------------------------------ */
+
+@media (max-width: 940px) {
+  .hero-grid { grid-template-columns: 1fr; gap: 40px; }
+  .assurance-grid { grid-template-columns: repeat(2, 1fr); }
+  .assurance:nth-child(3) { border-left: 0; }
+  .assurance { border-top: 1px solid var(--border); }
+  .assurance:nth-child(-n+2) { border-top: 0; }
+  .product-grid { grid-template-columns: repeat(2, 1fr); }
+  .method-grid { grid-template-columns: repeat(2, 1fr); }
+  .developer { grid-template-columns: 1fr; gap: 32px; }
+}
+
+@media (max-width: 560px) {
+  .assurance-grid { grid-template-columns: 1fr; }
+  .assurance { border-left: 0; }
+  .assurance:nth-child(n) { border-top: 1px solid var(--border); }
+  .assurance:first-child { border-top: 0; }
+  .product-grid, .method-grid, .control-grid { grid-template-columns: 1fr; }
+  .site-nav a { padding: 7px 9px; font-size: 13.5px; }
+  .band { padding: 48px 20px; }
+  .hero { padding: 24px 20px 52px; }
+  .btn-auto { width: 100%; }
+}

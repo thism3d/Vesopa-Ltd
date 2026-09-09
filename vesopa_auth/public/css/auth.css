@@ -1,0 +1,884 @@
+/*
+ * Vesopa OAuth — the sign-in surface.
+ *
+ * Brand colours are the ones in the official logo: #a5c715 (Vesopa green) and
+ * #1d1d1b (near-black), with the warm off-white #f2efe6 the marketing site
+ * already uses.
+ *
+ * THE GREEN IS A BACKGROUND COLOUR, NOT A TEXT COLOUR. It is a bright lime:
+ * black on it clears 10:1, but it on white is around 1.8:1 and fails every
+ * contrast rule there is. So the primary button is green with dark ink on it,
+ * and links are ink with an underline — never green text on a pale ground.
+ *
+ * Both colour schemes are defined from the same tokens. The scheme follows the
+ * device unless the person chose one, in which case data-theme on <html> wins.
+ */
+
+:root {
+  /*
+   * Straight from the brand book, page 6, "COLOR PALETTE":
+   *   Leafy Canopy #A5C715 · Black #000000 · White #FFFFFF · Platinum #E3E3E3
+   *
+   * Note #1D1D1B is NOT a brand colour, though it appears in the logo files —
+   * it is the Adobe CMYK(0,0,0,100) conversion of brand black. The book says
+   * #000000, and page 3 makes black the brand's ground.
+   */
+  --green: #a5c715;
+  --green-dark: #8caa10;
+  --ink: #000000;
+
+  --bg: #e3e3e3;
+  --surface: #ffffff;
+  --surface-2: #f6f6f6;
+  --text: #000000;
+  --text-muted: #55595c;
+  --border: #d6d6d6;
+  --border-strong: #b4b6b8;
+  --focus: #000000;
+  --danger: #a3231c;
+  --danger-bg: #fdeceb;
+
+  --radius: 12px;
+  --radius-sm: 9px;
+  --shadow: 0 1px 2px rgba(29, 29, 27, .06), 0 12px 32px rgba(29, 29, 27, .08);
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+/*
+ * The two dark blocks must stay IDENTICAL.
+ *
+ * This one applies when the device asks for dark and the person has expressed
+ * no preference; the one below applies when they chose dark themselves. They
+ * had drifted apart — this block kept an earlier green-tinted near-black while
+ * the other had moved to the brand's true black — so the same page looked
+ * different depending on how you arrived at dark mode, which is the kind of
+ * fault nobody reports and everybody notices.
+ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #000000;
+    --surface: #101010;
+    --surface-2: #171717;
+    --text: #ffffff;
+    --text-muted: #a6a9ab;
+    --border: #2a2a2a;
+    --border-strong: #3f3f3f;
+    --focus: #a5c715;
+    --danger: #ff9a92;
+    --danger-bg: #2a1512;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 12px 32px rgba(0, 0, 0, .55);
+  }
+}
+
+:root[data-theme="dark"] {
+  /* Brand black is the ground here, as the brand book intends it. */
+  --bg: #000000;
+  --surface: #101010;
+  --surface-2: #171717;
+  --text: #ffffff;
+  --text-muted: #a6a9ab;
+  --border: #2a2a2a;
+  --border-strong: #3f3f3f;
+  --focus: #a5c715;
+  --danger: #ff9a92;
+  --danger-bg: #2a1512;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 12px 32px rgba(0, 0, 0, .55);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* --------------------------------------------------------------------------
+ * The card
+ * ------------------------------------------------------------------------ */
+
+.auth-shell {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Room to breathe at 320px, which is the narrowest phone still in use. */
+  padding: 24px 16px 40px;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 408px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 32px 28px;
+}
+
+/*
+ * The wordmark.
+ *
+ * NO MARGIN HERE, and that is a fix rather than an omission. `.brand` used to
+ * carry `margin-bottom: 22px` for the sign-in card, and every header that
+ * reused the class inherited it — inside a `display: flex; align-items: center`
+ * row a bottom margin makes the box taller underneath the image, so the mark
+ * sits visibly ABOVE the centre line while the buttons beside it are centred.
+ * That is what left the logo riding high against "Sign in" on the landing page.
+ *
+ * The gap belongs to the card that wants one, not to the mark, so it is set
+ * where it is wanted and nowhere else.
+ */
+.brand { display: inline-flex; align-items: center; }
+.brand-mark { display: block; height: 17px; width: auto; }
+.auth-card > .brand,
+.prose > .brand { margin-bottom: 22px; }
+
+/*
+ * Which wordmark is shown. The dark-ground version is hidden by default and
+ * revealed in dark mode; the rule is written three times so that it follows
+ * `prefers-color-scheme` when the person has expressed no preference, and
+ * `data-theme` in both directions when they have.
+ */
+[data-logo-dark] { display: none; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) [data-logo-light] { display: none; }
+  :root:not([data-theme="light"]) [data-logo-dark]  { display: block; }
+}
+:root[data-theme="dark"] [data-logo-light] { display: none; }
+:root[data-theme="dark"] [data-logo-dark]  { display: block; }
+:root[data-theme="light"] [data-logo-light] { display: block; }
+:root[data-theme="light"] [data-logo-dark]  { display: none; }
+
+.auth-title {
+  margin: 0 0 6px;
+  font-size: 23px;
+  line-height: 1.25;
+  letter-spacing: -.011em;
+  font-weight: 650;
+}
+
+.auth-sub {
+  margin: 0 0 22px;
+  color: var(--text-muted);
+  font-size: 14.5px;
+}
+
+/* --------------------------------------------------------------------------
+ * Errors
+ *
+ * Never colour alone: the region carries an icon and words, because a red
+ * border says nothing to somebody who cannot see red.
+ * ------------------------------------------------------------------------ */
+
+.form-error {
+  margin: 0 0 16px;
+  font-size: 14.5px;
+  color: var(--danger);
+  background: var(--danger-bg);
+  border: 1px solid currentColor;
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+.form-error:empty { display: none; }
+.form-error::before { content: "⚠ "; font-weight: 700; }
+
+/* --------------------------------------------------------------------------
+ * The email / phone toggle
+ * ------------------------------------------------------------------------ */
+
+.channel-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 18px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+/*
+ * The radios are hidden from sight but NOT from the accessibility tree and not
+ * from focus. `display:none` would remove them from both, and the toggle would
+ * become unreachable by keyboard — which on a sign-in page locks people out.
+ */
+.channel-toggle input {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0; border: 0;
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.channel-toggle label {
+  display: block;
+  text-align: center;
+  padding: 9px 8px;
+  border-radius: 6px;
+  font-size: 14.5px;
+  font-weight: 550;
+  color: var(--text-muted);
+  cursor: pointer;
+  /* Safari still needs the prefix, and a toggle label that selects instead of
+     switching when double-tapped on iOS reads as a broken control. */
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.channel-toggle input:checked + label {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(29, 29, 27, .1);
+}
+
+.channel-toggle input:focus-visible + label {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* --------------------------------------------------------------------------
+ * Fields
+ * ------------------------------------------------------------------------ */
+
+.field { margin-bottom: 16px; }
+
+.field label,
+.tickbox span {
+  display: block;
+  font-size: 14px;
+  font-weight: 550;
+  margin-bottom: 6px;
+}
+
+input[type="email"],
+input[type="tel"],
+input[type="text"],
+input[type="password"],
+select {
+  width: 100%;
+  /* 16px, so that iOS does not zoom the page when the field is focused. */
+  font: inherit;
+  font-size: 16px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 11px 12px;
+  min-height: 44px;
+}
+
+input::placeholder { color: var(--text-muted); opacity: .75; }
+
+input:focus-visible,
+select:focus-visible,
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.phone-row { display: grid; grid-template-columns: 108px 1fr; gap: 8px; }
+
+.hint {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.tickbox {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 4px 0 20px;
+  cursor: pointer;
+}
+.tickbox input { width: 18px; height: 18px; accent-color: var(--green); }
+.tickbox span { margin: 0; font-weight: 450; font-size: 14.5px; }
+
+/* --------------------------------------------------------------------------
+ * Buttons
+ * ------------------------------------------------------------------------ */
+
+/*
+ * EVERY BUTTON IS THE SAME SIZE, and the size is fixed rather than left to the
+ * content.
+ *
+ * With `min-height` and padding alone, a button's height depended on whether it
+ * contained a 20px icon or only text, so the primary button and the provider
+ * buttons ended up a couple of pixels apart — enough to look untidy in a
+ * vertical stack, which is exactly how they are used here.
+ *
+ * 48px is comfortably above the 44px minimum target size, and `box-sizing:
+ * border-box` (set globally) means the padding does not add to it.
+ */
+.btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  height: 48px;
+  padding: 0 16px;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  cursor: pointer;
+  text-decoration: none;
+  /* Long provider names must not push the icon out of the button. */
+  white-space: nowrap;
+}
+
+.btn-primary {
+  background: var(--green);
+  border-color: var(--green-dark);
+  /* Dark ink on the green: 10:1. The green as text would be 1.8:1. */
+  color: #1d1d1b;
+}
+.btn-primary:hover { background: var(--green-dark); }
+
+/*
+ * The provider buttons are CENTRED, not left-aligned.
+ *
+ * Left-aligned, the icon and label sat against the left edge and left a wide
+ * empty gap on the right — the button looked unfinished, and the gap grew with
+ * the width of the card. Centring the icon-and-label pair keeps the whole stack
+ * balanced whatever the provider is called, and matches how the primary button
+ * above them reads.
+ *
+ * The icon stays beside its label rather than being pinned to the edge, so
+ * "Continue with Google" and "Continue with Microsoft" are each centred as one
+ * unit. Their labels are therefore not aligned with each other — that is the
+ * trade, and a balanced button beats a ragged column of aligned text.
+ */
+.btn-provider {
+  background: var(--surface);
+  border-color: var(--border-strong);
+  color: var(--text);
+  margin-bottom: 8px;
+  justify-content: center;
+  font-weight: 500;
+}
+.btn-provider:hover { background: var(--surface-2); }
+
+/*
+ * The marks are inline SVG, so Apple's and GitHub's monochrome logos take the
+ * button's own text colour and are correct in both schemes without a second
+ * file or a media query. Google's and Microsoft's keep their fixed brand
+ * colours, as both companies' guidelines require.
+ */
+.provider-mark {
+  width: 18px; height: 18px;
+  flex: 0 0 18px;
+  display: block;
+}
+
+.btn-quiet {
+  background: transparent;
+  border-color: var(--border-strong);
+  color: var(--text);
+  margin-top: 4px;
+  font-weight: 500;
+}
+
+.flip {
+  margin: 14px 0 0;
+  text-align: center;
+  font-size: 14.5px;
+  color: var(--text-muted);
+}
+.flip a { color: var(--text); font-weight: 600; }
+
+/* --------------------------------------------------------------------------
+ * The compact layout
+ *
+ * Same form, less of it: the providers become their marks alone in a row, the
+ * subtitle goes, and the button says "Continue" — because signing in and
+ * registering are the same action here and naming one of them is what makes
+ * people hesitate.
+ *
+ * Chosen by an administrator at /admin. Both layouts are the same markup with
+ * the same behaviour; nothing here changes what the form does.
+ * ------------------------------------------------------------------------ */
+
+.auth-card-compact { max-width: 384px; padding: 26px 24px; }
+.auth-card-compact .auth-title { font-size: 20px; margin-bottom: 18px; }
+.auth-card-compact > .brand { margin-bottom: 18px; }
+.auth-card-compact .divider { margin: 18px 0 12px; }
+.auth-card-compact .small-print { margin-top: 14px; }
+
+.providers-compact {
+  display: grid;
+  /* Four across for the four providers we offer; auto-fit so a fifth wraps
+     tidily rather than squeezing the row into unusable slivers. */
+  grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
+  gap: 8px;
+}
+
+.btn-icon {
+  /* Overrides .btn's fixed 48px: an icon-only target is square-ish, and 44px
+     is the smallest that is comfortable under a thumb. */
+  height: 46px;
+  padding: 0;
+  margin-bottom: 0;
+  gap: 0;
+}
+.btn-icon .provider-mark { width: 20px; height: 20px; }
+
+/* --------------------------------------------------------------------------
+ * Divider
+ * ------------------------------------------------------------------------ */
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 22px 0 16px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.divider::before, .divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.small-print {
+  margin: 18px 0 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+a { color: var(--text); }
+
+/* --------------------------------------------------------------------------
+ * Footer
+ * ------------------------------------------------------------------------ */
+
+.site-foot {
+  padding: 20px 16px 28px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+.site-foot nav { display: flex; flex-wrap: wrap; gap: 4px 18px; justify-content: center; margin-bottom: 10px; }
+.site-foot a { color: var(--text-muted); }
+.legal { margin: 0; }
+
+/* --------------------------------------------------------------------------
+ * Landing and error pages
+ * ------------------------------------------------------------------------ */
+
+/* --------------------------------------------------------------------------
+ * Consent
+ * ------------------------------------------------------------------------ */
+
+.consent-app { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
+.consent-logo {
+  width: 48px; height: 48px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  flex: 0 0 48px;
+}
+.consent-app .auth-title { margin: 0; font-size: 20px; }
+.consent-app .auth-sub { margin: 2px 0 0; font-size: 13.5px; }
+.consent-lead { font-size: 15px; margin: 0 0 14px; }
+
+.scopes { list-style: none; margin: 0 0 22px; padding: 0; }
+.scopes li {
+  padding: 11px 0;
+  border-top: 1px solid var(--border);
+}
+.scopes li:first-child { border-top: 0; }
+.scope-title { display: block; font-size: 15px; font-weight: 550; }
+.scope-desc { display: block; font-size: 13.5px; color: var(--text-muted); margin-top: 2px; }
+
+/* The code field: big, spaced, and unmistakably for digits. */
+.code-input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 26px;
+  letter-spacing: 10px;
+  text-align: center;
+  padding: 12px;
+}
+
+.resend { margin-top: 14px; text-align: center; }
+
+.linklike {
+  background: none;
+  border: 0;
+  padding: 4px;
+  font: inherit;
+  font-size: 14.5px;
+  color: var(--text);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* --------------------------------------------------------------------------
+ * Account area
+ * ------------------------------------------------------------------------ */
+
+.account { width: 100%; max-width: 640px; margin: 0 auto; padding: 32px 20px 40px; flex: 1; }
+.account-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 26px;
+}
+.account h1 { font-size: 26px; letter-spacing: -.015em; margin: 0 0 4px; }
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px 22px;
+  margin-top: 20px;
+}
+.panel h2 { font-size: 15px; margin: 0 0 12px; letter-spacing: .01em; }
+
+.rows { list-style: none; margin: 0; padding: 0; }
+.rows li { padding: 10px 0; border-top: 1px solid var(--border); }
+.rows li:first-child { border-top: 0; }
+.row-main { display: block; font-size: 15px; }
+.row-meta { display: block; font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
+
+/* The account section navigation. Scrolls sideways rather than wrapping into
+   a ragged block on a phone. */
+.account-nav {
+  display: flex;
+  gap: 4px;
+  margin: 0 0 22px;
+  overflow-x: auto;
+  /* Hiding the scrollbar is decoration; Safari ignores this and shows one,
+     which is fine — the row still scrolls either way. */
+  scrollbar-width: none;
+  border-bottom: 1px solid var(--border);
+}
+.account-nav::-webkit-scrollbar { display: none; }
+.account-nav a {
+  padding: 9px 12px;
+  font-size: 14.5px;
+  color: var(--text-muted);
+  text-decoration: none;
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.account-nav a[aria-current="page"] {
+  color: var(--text);
+  font-weight: 600;
+  border-bottom-color: var(--green);
+}
+
+/* The plain declaration first, then the nicer one. A browser that does not
+   know `color-mix` drops that line and keeps the fallback, rather than
+   rendering an unstyled box — the EPOS till is an Electron shell of unknown
+   vintage and is not a place to find out. */
+.notice-good {
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  font-size: 14.5px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--green-dark);
+  background: var(--surface-2);
+  background: color-mix(in srgb, var(--green) 14%, transparent);
+  color: var(--text);
+}
+.notice-good::before { content: "✓ "; font-weight: 700; }
+
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 420px) { .field-row { grid-template-columns: 1fr; } }
+
+.row-with-action {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+.row-with-action form { flex: 0 0 auto; }
+
+.tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  font-size: 11.5px;
+  font-weight: 600;
+  border-radius: 999px;
+  background: var(--green);
+  color: #000;
+  vertical-align: 1px;
+}
+
+/* Recovery codes: monospaced, selectable, and obviously meant to be copied. */
+.codes {
+  margin: 10px 0 0;
+  padding: 14px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 15px;
+  line-height: 1.9;
+  letter-spacing: 1px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow-x: auto;
+  -webkit-user-select: all;
+  user-select: all;
+}
+
+.panel.danger { border-color: var(--danger); }
+.panel.danger { border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); }
+.panel.danger h2 { color: var(--danger); }
+
+.btn-danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+
+.plain-list { margin: 10px 0 16px; padding-left: 20px; font-size: 15px; }
+.plain-list li { margin-bottom: 5px; }
+
+/*
+ * There was a `.providers { display: block }` here. It did nothing on its own —
+ * a div is block already — and it silently beat `.providers-compact`, which is
+ * declared earlier in this file at the same specificity, so the compact
+ * layout's icon row collapsed into a stack. Removed rather than out-specified:
+ * the rule that has no effect except the wrong one is the rule to delete.
+ */
+
+/* --------------------------------------------------------------------------
+ * Profile picture
+ * ------------------------------------------------------------------------ */
+
+.avatar-row { display: flex; gap: 18px; align-items: flex-start; }
+.avatar {
+  width: 72px; height: 72px;
+  flex: 0 0 72px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.avatar-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+.avatar-actions { flex: 1; min-width: 0; }
+.avatar-actions form { display: inline-block; margin-right: 10px; }
+.file-label { display: block; font-size: 14px; font-weight: 550; margin-bottom: 6px; }
+.avatar-actions input[type="file"] {
+  display: block;
+  font: inherit;
+  font-size: 14px;
+  margin-bottom: 10px;
+  max-width: 100%;
+}
+
+/* --------------------------------------------------------------------------
+ * Policy pages
+ *
+ * These are long documents that people actually have to read, so the measure is
+ * kept narrow and the headings are given room.
+ * ------------------------------------------------------------------------ */
+
+.policy { max-width: 720px; }
+.policy-updated { font-size: 13.5px; color: var(--text-muted); margin: 0 0 26px; }
+.policy h1 { font-size: 30px; letter-spacing: -.02em; margin: 0 0 16px; }
+.policy h2 { font-size: 21px; margin: 34px 0 10px; letter-spacing: -.01em; }
+.policy h3 { font-size: 17px; margin: 24px 0 8px; }
+.policy p, .policy li { font-size: 16px; line-height: 1.65; color: var(--text); }
+.policy ul, .policy ol { padding-left: 22px; }
+.policy li { margin-bottom: 6px; }
+.policy a { color: var(--text); }
+.policy hr { border: 0; border-top: 1px solid var(--border); margin: 32px 0 20px; }
+.policy code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 14px;
+  background: var(--surface-2);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.policy blockquote {
+  margin: 18px 0;
+  padding: 12px 16px;
+  border-left: 3px solid var(--green);
+  background: var(--surface-2);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+.policy blockquote p:last-child { margin-bottom: 0; }
+.policy table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 18px 0;
+  font-size: 15px;
+  display: block;
+  overflow-x: auto;
+}
+.policy th, .policy td {
+  text-align: left;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.policy th { font-weight: 650; }
+
+/* --------------------------------------------------------------------------
+ * Administration
+ * ------------------------------------------------------------------------ */
+
+.admin { max-width: 780px; }
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+  gap: 10px;
+}
+.stat {
+  padding: 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.stat-number { display: block; font-size: 25px; font-weight: 700; letter-spacing: -.02em; line-height: 1.1; }
+.stat-label { display: block; margin-top: 3px; font-size: 12.5px; color: var(--text-muted); }
+.stat-warn .stat-number { color: var(--danger); }
+
+/* Bars drawn as divs. A charting library on the login domain would mean an
+   external script on the one origin that must never load one. */
+.bars li { padding: 9px 0; }
+.bar-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.bar-label { font-size: 14px; }
+.bar-count { font-size: 13px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.bar-track {
+  margin-top: 5px;
+  height: 7px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.bar-fill { height: 100%; background: var(--green); border-radius: 4px; }
+.bar-fill.bar-failure, .bar-fill.bar-blocked { background: var(--danger); }
+.bar-fill.bar-challenge { background: var(--border-strong); }
+
+.bar-outcome {
+  margin-left: 6px;
+  padding: 1px 6px;
+  font-size: 11px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-muted);
+}
+
+.prose { width: 100%; max-width: 640px; margin: 0 auto; padding: 48px 20px; }
+.prose h1 { font-size: 30px; letter-spacing: -.02em; margin: 0 0 12px; }
+.prose p { color: var(--text-muted); font-size: 16.5px; }
+.prose .btn { max-width: 240px; margin-top: 20px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
+
+/* --------------------------------------------------------------------------
+ * The line across the top that says something is happening
+ * --------------------------------------------------------------------------
+ * The same bar the EPOS back office uses. It creeps rather than reporting a
+ * percentage, because nothing has said how much there is — what it is for is
+ * the first two hundred milliseconds, the gap between a press and anything
+ * changing, which on a slow connection is the whole of "it did not respond".
+ *
+ * On this site the longest of those gaps is pressing Log in, because that
+ * sends an email. In the silence people press again, and a second press is a
+ * second code in their inbox that is not the one on their screen.
+ * ------------------------------------------------------------------------ */
+
+#loadbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 3px;
+  width: 0;
+  z-index: 100;
+  background: linear-gradient(90deg, var(--green), var(--green-dark));
+  box-shadow: 0 0 8px color-mix(in srgb, var(--green) 60%, transparent);
+  opacity: 0;
+  transition: width .2s ease, opacity .25s ease;
+  pointer-events: none;
+  border-radius: 0 2px 2px 0;
+}
+#loadbar.on { opacity: 1; }
+
+/* A button that has been pressed and is waiting.
+ *
+ * `aria-disabled` and not `disabled`: a disabled submit button is not sent
+ * with its form, so a form that reads which button was pressed silently loses
+ * it. This says the same thing to a screen reader and to a mouse, and the
+ * value still travels. */
+.btn.is-working,
+.btn[aria-disabled="true"] {
+  cursor: default;
+  pointer-events: none;
+  opacity: .72;
+}
+.btn.is-working::after {
+  content: "";
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  margin-left: 9px;
+  vertical-align: -1px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: btn-spin .7s linear infinite;
+}
+@keyframes btn-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  #loadbar { transition: opacity .25s ease; }
+  .btn.is-working::after { animation: none; border-right-color: currentColor; opacity: .5; }
+}
+
+/* Utilities that replace `style=` attributes the Content-Security-Policy
+   blocks. `style-src 'self' 'nonce-…'` refuses inline style ATTRIBUTES as well
+   as <style> blocks, and no nonce can rescue an attribute — the declaration is
+   simply dropped, silently, and the page renders subtly wrong. These live in
+   auth.css rather than console.css because the pages that need them (the policy
+   index, the security page) do not load the console sheet. */
+.mt-4 { margin-top: 24px; }
+.totp-qr { display: block; margin: 12px 0; border-radius: 8px; }
+
+/* "You do not have to do this."
+ *
+ * Only on a consent screen for an application that genuinely works without an
+ * account. Quiet rather than alarming — it is reassurance, not a warning — and
+ * set apart from the scope list so it does not read as another permission. */
+.consent-guest {
+  margin: -6px 0 20px;
+  padding: 11px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-size: 13.5px;
+  color: var(--text-muted);
+}

@@ -1,0 +1,36 @@
+{
+  "name": "vesopa_auth",
+  "version": "1.0.0",
+  "description": "auth.vesopa.com \u2014 Vesopa OAuth, the single sign-on and identity provider for every Vesopa product",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "keys:rotate": "node scripts/rotate-signing-key.js",
+    "seed": "node scripts/seed.js",
+    "test": "node --test test/"
+  },
+  "author": "Vesopa Software Ltd",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "commonjs",
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@node-rs/argon2": "^2.0.2",
+    "@simplewebauthn/server": "^13.2.2",
+    "compression": "^1.8.1",
+    "cookie-parser": "^1.4.7",
+    "dotenv": "^17.4.2",
+    "ejs": "^3.1.10",
+    "express": "^5.2.1",
+    "jose": "^6.2.0",
+    "libphonenumber-js": "^1.12.24",
+    "marked": "^15.0.7",
+    "multer": "^2.0.2",
+    "mysql2": "^3.22.6",
+    "nodemailer": "^7.0.9",
+    "qrcode": "^1.5.4"
+  }
+}

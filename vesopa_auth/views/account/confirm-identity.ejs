@@ -1,0 +1,29 @@
+<%- include('_shell') %>
+
+<% if (error) { %><p class="form-error" role="alert"><%= error %></p><% } %>
+
+<section class="panel">
+  <p>We sent a code to <strong><%= destination %></strong>.</p>
+
+  <form method="post" action="/account/linked/confirm">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <input type="hidden" name="challenge_id" value="<%= challengeId %>">
+    <input type="hidden" name="type" value="<%= type %>">
+    <input type="hidden" name="destination" value="<%= destination %>">
+    <input type="hidden" name="normalised" value="<%= normalised %>">
+    <input type="hidden" name="recovery" value="<%= isRecovery ? '1' : '0' %>">
+
+    <div class="field">
+      <label for="code">Your code</label>
+      <input type="text" id="code" name="code" inputmode="numeric"
+             autocomplete="one-time-code" maxlength="<%= config.codes.length %>"
+             class="code-input" autofocus>
+    </div>
+
+    <button class="btn btn-primary" type="submit">Confirm</button>
+  </form>
+
+  <p class="small-print"><a href="/account/linked">Cancel</a></p>
+</section>
+
+<%- include('../partials/console-foot') %>

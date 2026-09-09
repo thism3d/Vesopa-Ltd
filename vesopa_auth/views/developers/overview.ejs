@@ -1,0 +1,349 @@
+<%- include('../partials/console-head') %>
+
+<h1 class="console-title"><%= application.name %></h1>
+<p class="console-lead">
+  <%= application.description || 'No description yet.' %>
+</p>
+
+<% if (created) { %>
+<div class="status status-good">
+  <span class="status-mark"><%- include('../partials/icon', { name: 'check' }) %></span>
+  <div>
+    <strong>Created. Here is your client id.</strong>
+    <p>
+      <% if (application.client_type === 'spa' || application.client_type === 'native') { %>
+        That is the only credential this type needs — PKCE does the rest. Check
+        the redirect URI below and you can sign somebody in.
+      <% } else { %>
+        Next: mint a client secret under <b>Credentials &amp; API</b>, and it is
+        ready to sign somebody in.
+      <% } %>
+    </p>
+  </div>
+</div>
+<% } %>
+<% if (saved) { %>
+<div class="status status-good">
+  <span class="status-mark"><%- include('../partials/icon', { name: 'check' }) %></span>
+  <div><strong>Saved.</strong><p>The change is live now — no restart, no deploy.</p></div>
+</div>
+<% } %>
+<% if (error) { %>
+<div class="status status-bad">
+  <span class="status-mark"><%- include('../partials/icon', { name: 'alert' }) %></span>
+  <div><strong>That did not work</strong><p><%= error %></p></div>
+</div>
+<% } %>
+
+<%
+  /*
+   * THE CREDENTIALS COME FIRST, because they are what somebody opened this page
+   * for nine times out of ten. Everything below is configuration they set once.
+   */
+  const isPublic = application.client_type === 'spa' || application.client_type === 'native';
+  const typeWords = {
+    web: 'Runs on a server',
+    spa: 'Runs in the browser',
+    native: 'Runs on a device',
+    service: 'Server to server, no person',
+  };
+%>
+<%
+  /*
+   * The logo, first, because it is the thing the person signing in actually
+   * looks at — and because an application without one is indistinguishable on
+   * the consent screen from every other application on this server.
+   */
+%>
+<section class="card">
+  <h2 class="card-head">How it appears to people</h2>
+  <p class="card-note">
+    This is what somebody sees when they are asked whether to let
+    <%= application.name %> see their details.
+  </p>
+  <div class="card-body">
+    <div class="logo-preview">
+      <% if (application.logo_path) { %>
+      <img src="<%= application.logo_path %>" alt="Current logo" width="56" height="56">
+      <% } else { %>
+      <span class="logo-empty"><%- include('../partials/icon', { name: 'apps' }) %></span>
+      <% } %>
+      <div>
+        <p class="row-title mb-1"><%= application.name %></p>
+        <p class="hint m-0">
+          <%= application.name %> wants to see your name and email address.
+        </p>
+      </div>
+    </div>
+
+    <% if (role !== 'viewer') { %>
+    <form method="post" action="/developers/a/<%= application.client_id %>/logo"
+          enctype="multipart/form-data" class="mt-3">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="inline-form">
+        <input type="file" name="logo" accept="image/png,image/jpeg,image/webp"
+               aria-label="Choose a logo">
+        <button class="btn btn-quiet btn-small" type="submit">Upload</button>
+        <% if (application.logo_path) { %>
+      </div>
+    </form>
+    <form method="post" action="/developers/a/<%= application.client_id %>/logo/remove" class="mt-2">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <button type="submit" class="btn-link">Remove the logo</button>
+    </form>
+        <% } else { %>
+      </div>
+    </form>
+        <% } %>
+    <p class="hint mt-2">
+      PNG, JPEG or WebP, under 512&nbsp;KB, square. <b>SVG is not accepted</b> —
+      it is a document that can carry script, and it would be served from this
+      domain, which is the one that holds every Vesopa sign-in.
+    </p>
+    <% } %>
+  </div>
+</section>
+
+<section class="card">
+  <h2 class="card-head">Client id</h2>
+  <p class="card-note">
+    Public — it appears in the sign-in URL and there is no need to hide it.
+  </p>
+  <div class="card-body">
+    <div class="copy">
+      <code><%= application.client_id %></code>
+      <button type="button" class="copy-btn">Copy</button>
+    </div>
+  </div>
+
+  <a class="row" href="/developers/a/<%= application.client_id %>/credentials">
+    <span class="row-mark"><%- include('../partials/icon', { name: 'key' }) %></span>
+    <span class="row-lines">
+      <span class="row-title">Client secret<%= detail.secrets.filter(function (s) { return !s.revoked_at; }).length === 1 ? '' : 's' %></span>
+      <span class="row-sub">
+        <% if (isPublic) { %>
+          Not used by this type — anything shipped to the person can be read, so PKCE protects it instead
+        <% } else { %>
+          <% const live = detail.secrets.filter(function (s) { return !s.revoked_at; }); %>
+          <%= live.length ? live.length + ' live' : 'None yet — mint one to finish the setup' %>
+        <% } %>
+      </span>
+    </span>
+    <span class="row-right"><span class="row-go"><%- include('../partials/icon', { name: 'chevron' }) %></span></span>
+  </a>
+
+  <a class="row" href="/developers/a/<%= application.client_id %>/redirects">
+    <span class="row-mark"><%- include('../partials/icon', { name: 'link' }) %></span>
+    <span class="row-lines">
+      <span class="row-title">Redirect URIs</span>
+      <span class="row-sub">
+        <%= detail.redirects.length ? detail.redirects.map(function (r) { return r.uri; }).join(' · ') : 'None registered — no sign-in can complete' %>
+      </span>
+    </span>
+    <span class="row-right"><span class="row-go"><%- include('../partials/icon', { name: 'chevron' }) %></span></span>
+  </a>
+</section>
+
+<%
+  /*
+   * A URL somebody can paste into a browser and watch work, built from what is
+   * actually registered. It is the fastest way to find out that the redirect
+   * URI has a typo in it — the failure is immediate and names the problem,
+   * rather than appearing next week inside somebody's half-written client.
+   *
+   * PKCE is required of every client here, so the example carries a challenge.
+   * The verifier beside it is the one that matches, written out because a
+   * developer trying this by hand has no way to derive it.
+   */
+%>
+<% if (detail.redirects.length && detail.grants.includes('authorization_code')) { %>
+<section class="card">
+  <h2 class="card-head">Try it now</h2>
+  <p class="card-note">
+    Paste this into a browser. You should see the Vesopa sign-in page, and be
+    sent back to your redirect URI with a <code>code</code> on it.
+  </p>
+  <div class="card-body">
+    <div class="copy">
+      <code><%= config.issuer %>/oauth/authorize?response_type=code&amp;client_id=<%= application.client_id %>&amp;redirect_uri=<%= encodeURIComponent(detail.redirects[0].uri) %>&amp;scope=<%= encodeURIComponent(detail.scopes.filter(function (s) { return s.chosen; }).map(function (s) { return s.name; }).join(' ')) %>&amp;state=test123&amp;code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&amp;code_challenge_method=S256</code>
+      <button type="button" class="copy-btn">Copy</button>
+    </div>
+    <p class="hint mt-2">
+      That challenge is the one from RFC 7636's own example, so the verifier to
+      send to <code>/oauth/token</code> is
+      <code>dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk</code>. Use a fresh
+      random pair in real code — the whole point of PKCE is that only your app
+      knows it.
+    </p>
+  </div>
+</section>
+<% } %>
+
+<section class="card">
+  <h2 class="card-head">Settings</h2>
+  <form method="post" action="/developers/a/<%= application.client_id %>/settings">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <div class="card-body">
+      <div class="field">
+        <label for="name">Name</label>
+        <input type="text" id="name" name="name" maxlength="120" value="<%= application.name %>"
+               <%= role === 'viewer' ? 'disabled' : '' %>>
+      </div>
+      <div class="field">
+        <label for="description">What it does</label>
+        <input type="text" id="description" name="description" maxlength="500"
+               value="<%= application.description %>" <%= role === 'viewer' ? 'disabled' : '' %>>
+      </div>
+
+      <div class="field">
+        <label for="client_type">Where the code runs</label>
+        <select id="client_type" name="client_type" <%= role === 'viewer' ? 'disabled' : '' %>>
+          <% Object.entries(typeWords).forEach(function (entry) { %>
+          <option value="<%= entry[0] %>" <%= application.client_type === entry[0] ? 'selected' : '' %>><%= entry[1] %></option>
+          <% }) %>
+        </select>
+        <p class="hint">
+          Changing this changes whether a client secret means anything. A
+          browser or device app cannot keep one.
+        </p>
+      </div>
+
+      <div class="grid-2">
+        <div class="field">
+          <label for="homepage_url">Homepage</label>
+          <input type="url" id="homepage_url" name="homepage_url" maxlength="255"
+                 value="<%= application.homepage_url %>" <%= role === 'viewer' ? 'disabled' : '' %>>
+        </div>
+        <div class="field">
+          <label for="support_email">Support email</label>
+          <input type="email" id="support_email" name="support_email" maxlength="190"
+                 value="<%= application.support_email %>" <%= role === 'viewer' ? 'disabled' : '' %>>
+        </div>
+        <div class="field">
+          <label for="privacy_url">Privacy policy</label>
+          <input type="url" id="privacy_url" name="privacy_url" maxlength="255"
+                 value="<%= application.privacy_url %>" <%= role === 'viewer' ? 'disabled' : '' %>>
+        </div>
+        <div class="field">
+          <label for="terms_url">Terms</label>
+          <input type="url" id="terms_url" name="terms_url" maxlength="255"
+                 value="<%= application.terms_url %>" <%= role === 'viewer' ? 'disabled' : '' %>>
+        </div>
+      </div>
+      <p class="hint mt-tight">
+        The consent screen shows these. One with no links is the one people
+        click through without reading.
+      </p>
+
+      <%
+        /*
+         * Self-enrolment: may somebody who has never used this application sign
+         * into it, or must a person add them first? A QR menu says yes; a back
+         * office says no. It is the difference between a public product and an
+         * internal one, and getting it wrong in the "yes" direction lets
+         * anybody with a Vesopa account into a staff tool.
+         */
+      %>
+      <label class="check mt-1">
+        <input type="checkbox" name="allow_self_enroll" value="1"
+               <%= application.allow_self_enroll ? 'checked' : '' %>
+               <%= role === 'viewer' ? 'disabled' : '' %>>
+        <span><b>Anybody with a Vesopa account may use it</b>
+        <span>Off means a person must be added first — right for a back office, wrong for a customer-facing menu.</span></span>
+      </label>
+
+      <%
+        /*
+         * GUEST USE IS A STATEMENT ABOUT THE PRODUCT, not a switch that changes
+         * what this server does — an identity provider cannot stop an
+         * application demanding a sign-in; only the application can. What it
+         * can do is record the intention somewhere the next person to touch the
+         * integration will read it.
+         *
+         * The failure this exists to prevent is quiet and specific: somebody
+         * puts the OIDC check one layer too high and a diner at a table with
+         * food coming is asked to register before they can read a menu. Nobody
+         * catches it in testing, because everybody testing it has an account.
+         */
+      %>
+      <label class="check mt-1">
+        <input type="checkbox" name="guest_allowed" value="1"
+               <%= application.guest_allowed ? 'checked' : '' %>
+               <%= role === 'viewer' ? 'disabled' : '' %>>
+        <span><b>People can use it without signing in at all</b>
+        <span>Signing in is an addition, never a gate. Tick this and the consent screen tells people they can carry on as a guest.</span></span>
+      </label>
+
+      <% if (role !== 'viewer') { %>
+      <button class="btn btn-quiet btn-small" type="submit">Save settings</button>
+      <% } %>
+    </div>
+  </form>
+</section>
+
+<section class="card">
+  <h2 class="card-head">Where to go next</h2>
+  <a class="row" href="/developers/a/<%= application.client_id %>/scopes">
+    <span class="row-mark"><%- include('../partials/icon', { name: 'shield' }) %></span>
+    <span class="row-lines">
+      <span class="row-title">Data it may ask for</span>
+      <span class="row-sub"><%= detail.scopes.filter(function (s) { return s.chosen; }).map(function (s) { return s.name; }).join(' ') %></span>
+    </span>
+    <span class="row-right"><span class="row-go"><%- include('../partials/icon', { name: 'chevron' }) %></span></span>
+  </a>
+  <a class="row" href="/developers/a/<%= application.client_id %>/roles">
+    <span class="row-mark"><%- include('../partials/icon', { name: 'people' }) %></span>
+    <span class="row-lines">
+      <span class="row-title">Roles</span>
+      <span class="row-sub"><%= detail.roles.length ? detail.roles.map(function (r) { return r.role_key; }).join(' · ') : 'None — every user is the same to this app' %></span>
+    </span>
+    <span class="row-right"><span class="row-go"><%- include('../partials/icon', { name: 'chevron' }) %></span></span>
+  </a>
+  <a class="row" href="/developers/a/<%= application.client_id %>/people">
+    <span class="row-mark"><%- include('../partials/icon', { name: 'person' }) %></span>
+    <span class="row-lines">
+      <span class="row-title">Who uses it</span>
+      <span class="row-sub"><%= people %> <%= Number(people) === 1 ? 'person' : 'people' %></span>
+    </span>
+    <span class="row-right"><span class="row-go"><%- include('../partials/icon', { name: 'chevron' }) %></span></span>
+  </a>
+  <a class="row" href="/developers/a/<%= application.client_id %>/team">
+    <span class="row-mark"><%- include('../partials/icon', { name: 'settings' }) %></span>
+    <span class="row-lines">
+      <span class="row-title">Who may edit it</span>
+      <span class="row-sub"><%= detail.team.length %> with direct access · you are <%= role %></span>
+    </span>
+    <span class="row-right"><span class="row-go"><%- include('../partials/icon', { name: 'chevron' }) %></span></span>
+  </a>
+</section>
+
+<% if (role === 'admin') { %>
+<%
+  /*
+   * Archiving, at the bottom, behind typing the name. Not a modal: a
+   * confirmation dialog is dismissed by reflex, and typing the name is the
+   * only confirmation that reliably means the person read which application
+   * they were on.
+   */
+%>
+<section class="card">
+  <h2 class="card-head is-danger">Archive this application</h2>
+  <p class="card-note">
+    It stops working immediately: no new sign-ins, and every refresh token is
+    revoked. Nothing is deleted, so it can be brought back — but everybody
+    using it right now is signed out.
+  </p>
+  <form method="post" action="/developers/a/<%= application.client_id %>/archive">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <div class="card-body">
+      <div class="inline-form">
+        <input type="text" name="confirm" placeholder="Type <%= application.name %> to confirm"
+               aria-label="Type the application name to confirm">
+        <button class="btn btn-danger btn-small" type="submit">Archive</button>
+      </div>
+    </div>
+  </form>
+</section>
+<% } %>
+
+<%- include('../partials/console-foot') %>

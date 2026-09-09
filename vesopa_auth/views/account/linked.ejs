@@ -1,0 +1,102 @@
+<%- include('_shell') %>
+
+<% if (saved) { %><p class="notice-good">Saved.</p><% } %>
+<% if (error) { %><p class="form-error" role="alert"><%= error %></p><% } %>
+
+<section class="panel">
+  <h2>Ways you can sign in</h2>
+  <%
+    /*
+     * The count matters, and the page says so: unlinking the last one is
+     * refused, because an account nobody can reach is a permanent support
+     * ticket and a takeover route for whoever asks convincingly enough.
+     */
+  %>
+  <p class="row-meta mb-2">
+    You have <%= methodCount %>.
+    <% if (methodCount <= 1) { %>
+      Add another before removing this one.
+    <% } %>
+  </p>
+
+  <ul class="rows">
+    <% linked.forEach(function (row) { %>
+    <li class="row-with-action">
+      <div>
+        <span class="row-main">
+          <%= row.identifier %><%= row.display && row.display !== row.identifier ? ' (' + row.display + ')' : '' %>
+        </span>
+        <span class="row-meta">
+          <%= row.type === 'email' ? 'Email' : row.type === 'phone' ? 'Phone' : row.type.charAt(0).toUpperCase() + row.type.slice(1) %><%
+          %><%= row.verified_at ? ' · confirmed' : ' · not confirmed' %><%
+          %><%= row.is_recovery ? ' · recovery only' : '' %><%
+          %><%= row.is_private_relay ? ' · Apple private relay' : '' %>
+        </span>
+      </div>
+      <% if (methodCount > 1 || row.is_recovery) { %>
+      <form method="post" action="/account/linked/<%= row.id %>/remove">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <button type="submit" class="linklike">Remove</button>
+      </form>
+      <% } %>
+    </li>
+    <% }) %>
+  </ul>
+
+  <%
+    /*
+     * What happens to a removed identifier, said plainly. It is the owner's
+     * rule and people should be able to rely on it: unlinked means free, and
+     * free means somebody else can use it.
+     */
+  %>
+  <p class="hint mt-3">
+    Removing something frees it up — it can then be added to a different Vesopa
+    account. Your history of it stays on your account.
+  </p>
+</section>
+
+<% if (available.length) { %>
+<section class="panel">
+  <h2>Add an account</h2>
+  <div class="providers">
+    <% available.forEach(function (provider) { %>
+    <a class="btn btn-provider" href="/auth/<%= provider.key %>?intent=link&return_to=%2Faccount%2Flinked"
+       data-provider="<%= provider.key %>">
+      <%- include('../partials/provider-icon', { key: provider.key }) %>
+      <span>Link <%= provider.name %></span>
+    </a>
+    <% }) %>
+  </div>
+</section>
+<% } %>
+
+<section class="panel">
+  <h2>Add an email address or phone number</h2>
+  <form method="post" action="/account/linked/add">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <div class="field">
+      <label for="value">Email address or mobile number</label>
+      <input type="text" id="value" name="value" autocomplete="off"
+             placeholder="you@example.com or 07911 123456">
+    </div>
+    <div class="field">
+      <label for="type">What is it?</label>
+      <select id="type" name="type">
+        <option value="email">Email address</option>
+        <option value="phone">Mobile number</option>
+      </select>
+    </div>
+    <label class="tickbox">
+      <input type="checkbox" name="recovery" value="1">
+      <span>For recovery only — do not let it sign me in</span>
+    </label>
+    <p class="hint">
+      A recovery address can get you back in if you are locked out, but cannot
+      be used to sign in on its own.
+    </p>
+    <button class="btn btn-quiet" type="submit">Send a confirmation code</button>
+  </form>
+</section>
+
+<%- include('../partials/console-foot') %>

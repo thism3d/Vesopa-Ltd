@@ -1,0 +1,49 @@
+<%- include('partials/head') %>
+
+<main class="auth-shell">
+  <div class="auth-card">
+
+    <a class="brand" href="/" aria-label="Vesopa">
+      <img class="brand-mark" src="/brand/logo-light.svg" alt="" width="130" height="17" data-logo-light>
+      <img class="brand-mark" src="/brand/logo-dark.svg" alt="" width="130" height="17" data-logo-dark>
+    </a>
+
+    <h1 class="auth-title">You already have a Vesopa account</h1>
+
+    <%
+      /*
+       * This page is a security control wearing a friendly face.
+       *
+       * The person's provider account carries an email address that
+       * already belongs to a Vesopa account. Linking the two automatically
+       * would be the takeover: an attacker who registered that address here
+       * first, and never verified it, would have the victim's provider identity
+       * welded onto their account.
+       *
+       * So we ask them to sign in to the account that exists. Once they have —
+       * proving it is theirs — linking is one click from their account page.
+       */
+    %>
+    <p class="auth-sub">
+      There is already a Vesopa account using <strong><%= email %></strong>.
+    </p>
+
+    <p class="consent-lead">
+      For your security we have not joined them together automatically. Sign in
+      to your existing account first, and you can add
+      <strong><%= provider.name %></strong> to it from your account settings —
+      after that, either way in works.
+    </p>
+
+    <a class="btn btn-primary" href="/login?return_to=<%= encodeURIComponent('/account/linked') %>">
+      Sign in to your Vesopa account
+    </a>
+
+    <p class="small-print">
+      Not your account? <a href="/login">Start again</a>, or write to
+      <a href="mailto:security@vesopa.com">security@vesopa.com</a>.
+    </p>
+  </div>
+</main>
+
+<%- include('partials/foot') %>
