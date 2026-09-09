@@ -1,0 +1,333 @@
+<%
+/*
+ * The homepage artwork, drawn rather than photographed.
+ *
+ * WHAT WAS HERE BEFORE, AND WHY IT WENT
+ *
+ * Four generated JPEGs of neon-green wireframe devices on black. Three
+ * problems, in order of severity:
+ *
+ *   1. They read as EMPTY BOXES. Measured off the files themselves, the
+ *      average pixel was RGB(26, 28, 20) — on a black page that is a black
+ *      rectangle with a faint glow in it. On a phone the section art is the
+ *      first thing under each heading, so every section opened with what
+ *      looked like an image that had failed to load.
+ *   2. They looked generated. A formless green ellipse at the centre of the
+ *      products image is the tell, and nobody who has seen a few of these
+ *      misses it. An identity provider asking to be trusted with a password
+ *      cannot look like it was assembled from a prompt.
+ *   3. 1.6 MB of JPEG on the page people sign in from.
+ *
+ * These four SVGs are about 2 KB together, stay sharp on any screen, follow
+ * the colour scheme, and are drawn in the brand's own geometry.
+ *
+ * THE GEOMETRY IS THE WORDMARK'S. Every diagonal here is the one in
+ * `logo.svg`: its polygons run 9.95 across for 16.54 down, which is 31°
+ * off vertical, and the same slope is used for every chamfer below. That is
+ * what makes a drawing look like it belongs to a brand rather than beside it.
+ *
+ * COLOUR COMES FROM THE PAGE, NOT FROM THE FILE.
+ *
+ * Every custom property below carries a literal fallback, and that is not
+ * belt-and-braces. An undefined custom property makes the WHOLE attribute
+ * invalid, so `fill="var(--brand)"` — the wrong token name — did not fall
+ * back to green, it fell back to black, and the first version of this drawing
+ * rendered with every green line invisible on a black page. There is no
+ * console error for it. `currentColor` and the
+ * brand token mean these work on the light theme as well as the dark one —
+ * the JPEGs could not, which is why the old CSS pinned `background: #0e0e0e`
+ * behind them and made a black square in light mode.
+ *
+ * Inline rather than four `.svg` files on purpose: an <img> cannot inherit
+ * the page's colours, and the whole point is that these follow the theme.
+ * Presentation attributes only — this site's content policy refuses `style`
+ * attributes silently, so a drawing that styled itself that way would arrive
+ * unpainted and nobody would see an error.
+ */
+const art = typeof name !== 'undefined' ? name : 'hero';
+%>
+
+<% if (art === 'hero') { %>
+<%
+  /*
+   * One account, four products.
+   *
+   * The centre tile is the account; the four around it are the things it
+   * opens. Read left to right it says what the headline says, which is the
+   * only job a hero picture has.
+   */
+%>
+<svg class="art art-hero" viewBox="0 0 640 360" role="img"
+     aria-label="One Vesopa account connected to the till, the menu, the back office and the hosting panel"
+     xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- The page's own grid, faint, so the drawing sits on the same paper. -->
+    <pattern id="art-grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="currentColor" stroke-opacity=".07" stroke-width="1"/>
+    </pattern>
+    <!--
+      The grid fades out rather than stopping.
+      A patterned rectangle on a plain page has four hard edges, and the eye
+      reads them as the boundary of an image that failed to fill its box —
+      which is the exact impression this whole change exists to remove.
+    -->
+    <radialGradient id="art-fade" cx="50%" cy="50%" r="62%">
+      <stop offset="0" stop-color="#fff" stop-opacity="1"/>
+      <stop offset=".65" stop-color="#fff" stop-opacity=".55"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <mask id="art-mask">
+      <rect width="640" height="360" fill="url(#art-fade)"/>
+    </mask>
+  </defs>
+
+  <rect width="640" height="360" fill="url(#art-grid)" mask="url(#art-mask)"/>
+
+  <%
+    /*
+     * The four connections.
+     *
+     * They STOP SHORT at both ends — 62 units out from the centre and 26 short
+     * of each product — rather than running from centre point to centre point.
+     *
+     * The first version ran the full distance and the result was an X drawn
+     * straight through the middle of the wordmark, because the tile over it is
+     * a 5%-opacity fill and hides nothing. Occluding it with an opaque tile
+     * would have worked on the dark theme and left a light grey slab on the
+     * other one. Not drawing the part that has to be hidden is the version
+     * that is correct in both.
+     */
+  %>
+  <g stroke="var(--green, #a5c715)" stroke-width="1.5" fill="none" stroke-opacity=".5"
+     stroke-linecap="round">
+    <path d="M264 154 L176 111"/>
+    <path d="M376 154 L464 111"/>
+    <path d="M264 206 L176 249"/>
+    <path d="M376 206 L464 249"/>
+  </g>
+
+  <!-- Where each line meets a product, so the join is deliberate. -->
+  <g fill="var(--green, #a5c715)">
+    <circle cx="176" cy="111" r="2.8"/>
+    <circle cx="464" cy="111" r="2.8"/>
+    <circle cx="176" cy="249" r="2.8"/>
+    <circle cx="464" cy="249" r="2.8"/>
+  </g>
+
+  <!--
+    The account. A chamfered tile: the top-right and bottom-left corners are
+    cut at the wordmark's angle, so the shape rhymes with the V beside it on
+    the page.
+  -->
+  <path d="M268 140 h84 l20 20 v60 h-84 l-20 -20 z"
+        fill="var(--art-tile, rgba(255,255,255,.05))" stroke="var(--green, #a5c715)" stroke-width="1.5"/>
+
+  <%
+    /*
+     * The mark itself.
+     *
+     * Two polygons, not three. The logo's third shape is its BLACK one — it
+     * reads as the shadowed face of the V on a white page and is what gives
+     * the mark its depth. Drawn here in `currentColor` it came out mid-grey
+     * against the green and looked like a rendering fault rather than a
+     * facet, so it is drawn in a darkened green instead: the same shape doing
+     * the same job in a palette that has no black to spend.
+     */
+  %>
+  <g transform="translate(296 158) scale(0.86)" fill-rule="evenodd">
+    <polygon points="9.95 0 0 0 18.01 33.09 27.96 33.09" fill="var(--green, #a5c715)"/>
+    <polygon points="27.4 16.54 37.35 16.54 46.35 0 36.4 0" fill="var(--green, #a5c715)"/>
+    <polygon points="27.4 16.54 18.39 33.09 28.34 33.09 37.35 16.54"
+             fill="var(--green, #a5c715)" fill-opacity=".42"/>
+  </g>
+
+  <%
+    /*
+     * The four products, as the surfaces somebody actually touches: a till, a
+     * phone, a dashboard, a server. Drawn as outlines at one stroke weight —
+     * a picture of a shop's equipment, not four abstract glyphs.
+     */
+  %>
+  <g fill="none" stroke="currentColor" stroke-opacity=".62" stroke-width="1.6"
+     stroke-linecap="round" stroke-linejoin="round">
+    <!-- till -->
+    <g transform="translate(96 66)">
+      <path d="M4 22 h56 v26 h-56 z"/>
+      <path d="M12 22 v-12 h30 v12"/>
+      <path d="M20 10 v-8 h16 v8"/>
+      <path d="M22 34 h20"/>
+    </g>
+    <!-- phone, for the QR menu -->
+    <g transform="translate(452 62)">
+      <rect x="14" y="0" width="36" height="60" rx="6"/>
+      <path d="M24 14 h6 v6 h-6 z M34 14 h6 v6 h-6 z M24 24 h6 v6 h-6 z M34 24 h6 v6 h-6 z"/>
+      <path d="M28 48 h8"/>
+    </g>
+    <!-- back office -->
+    <g transform="translate(96 232)">
+      <rect x="4" y="4" width="56" height="40" rx="4"/>
+      <path d="M14 34 v-10 M26 34 v-18 M38 34 v-8 M50 34 v-14"/>
+    </g>
+    <!-- hosting -->
+    <g transform="translate(452 232)">
+      <rect x="14" y="4" width="36" height="16" rx="3"/>
+      <rect x="14" y="26" width="36" height="16" rx="3"/>
+      <path d="M21 12 h.01 M21 34 h.01"/>
+    </g>
+  </g>
+</svg>
+
+<% } else if (art === 'products') { %>
+<%
+  /*
+   * The same idea told the other way round: four surfaces, one identity
+   * underneath. Square, because it sits above a heading in a column.
+   */
+%>
+<svg class="art art-square" viewBox="0 0 320 320" role="img"
+     aria-label="Four Vesopa products drawing on one account"
+     xmlns="http://www.w3.org/2000/svg">
+  <g stroke="var(--green, #a5c715)" stroke-width="1.5" fill="none" stroke-opacity=".5">
+    <path d="M160 196 V150 H70 V104"/>
+    <path d="M160 196 V150 H250 V104"/>
+    <path d="M160 196 V116"/>
+  </g>
+
+  <g fill="none" stroke="currentColor" stroke-opacity=".62" stroke-width="1.7"
+     stroke-linecap="round" stroke-linejoin="round">
+    <g transform="translate(44 44)">
+      <path d="M2 34 h52 v22 h-52 z"/>
+      <path d="M10 34 v-12 h28 v12"/>
+      <path d="M18 22 v-8 h14 v8"/>
+    </g>
+    <g transform="translate(134 40)">
+      <rect x="12" y="0" width="28" height="52" rx="5"/>
+      <path d="M20 12 h5 v5 h-5 z M31 12 h5 v5 h-5 z M20 23 h5 v5 h-5 z M31 23 h5 v5 h-5 z"/>
+    </g>
+    <g transform="translate(224 44)">
+      <rect x="2" y="10" width="52" height="36" rx="4"/>
+      <path d="M12 38 v-9 M24 38 v-16 M36 38 v-7 M48 38 v-13"/>
+    </g>
+  </g>
+
+  <!-- The account, chamfered, with the mark inside. -->
+  <path d="M116 196 h72 l18 18 v54 h-72 l-18 -18 z"
+        fill="var(--art-tile, rgba(255,255,255,.05))" stroke="var(--green, #a5c715)" stroke-width="1.5"/>
+  <g transform="translate(139 214) scale(0.78)" fill="var(--green, #a5c715)" fill-rule="evenodd">
+    <polygon points="9.95 0 0 0 18.01 33.09 27.96 33.09"/>
+    <polygon points="27.4 16.54 37.35 16.54 46.35 0 36.4 0"/>
+    <polygon points="27.4 16.54 18.39 33.09 28.34 33.09 37.35 16.54"
+             fill="var(--green, #a5c715)" fill-opacity=".42"/>
+  </g>
+</svg>
+
+<% } else if (art === 'security') { %>
+<%
+  /*
+   * Eight ways in, one account behind them.
+   *
+   * Eight marks around a ring, all pointing at one centre. Deliberately NOT a
+   * padlock: the section is about the number of doors, not about a metaphor
+   * for security, and a padlock would say the opposite of what the heading
+   * says.
+   */
+%>
+<svg class="art art-square" viewBox="0 0 320 320" role="img"
+     aria-label="Eight ways of signing in, all leading to one account"
+     xmlns="http://www.w3.org/2000/svg">
+  <circle cx="160" cy="160" r="104" fill="none"
+          stroke="currentColor" stroke-opacity=".18" stroke-width="1.5"/>
+
+  <%
+    /*
+     * Eight spokes, generated rather than typed out. Typed by hand they drift
+     * by a degree or two and the ring stops looking machined, which on a page
+     * about precision is the wrong impression to leave.
+     */
+    const spokes = [];
+    for (let i = 0; i < 8; i += 1) {
+      const angle = (Math.PI * 2 * i) / 8 - Math.PI / 2;
+      spokes.push({
+        outer: [160 + Math.cos(angle) * 104, 160 + Math.sin(angle) * 104],
+        inner: [160 + Math.cos(angle) * 46, 160 + Math.sin(angle) * 46],
+      });
+    }
+    const fixed = (n) => Math.round(n * 100) / 100;
+  %>
+  <g stroke="var(--green, #a5c715)" stroke-width="1.4" stroke-opacity=".45">
+    <% spokes.forEach(function (s) { %>
+    <line x1="<%= fixed(s.outer[0]) %>" y1="<%= fixed(s.outer[1]) %>"
+          x2="<%= fixed(s.inner[0]) %>" y2="<%= fixed(s.inner[1]) %>"/>
+    <% }) %>
+  </g>
+  <g fill="var(--art-tile, rgba(255,255,255,.05))" stroke="var(--green, #a5c715)" stroke-width="1.5">
+    <% spokes.forEach(function (s) { %>
+    <circle cx="<%= fixed(s.outer[0]) %>" cy="<%= fixed(s.outer[1]) %>" r="13"/>
+    <% }) %>
+  </g>
+
+  <!-- The account at the centre, the same chamfered tile as everywhere else. -->
+  <path d="M124 132 h56 l16 16 v40 h-56 l-16 -16 z"
+        fill="var(--art-tile, rgba(255,255,255,.05))" stroke="var(--green, #a5c715)" stroke-width="1.6"/>
+  <g transform="translate(140 147) scale(0.62)" fill="var(--green, #a5c715)" fill-rule="evenodd">
+    <polygon points="9.95 0 0 0 18.01 33.09 27.96 33.09"/>
+    <polygon points="27.4 16.54 37.35 16.54 46.35 0 36.4 0"/>
+    <polygon points="27.4 16.54 18.39 33.09 28.34 33.09 37.35 16.54"
+             fill="var(--green, #a5c715)" fill-opacity=".42"/>
+  </g>
+</svg>
+
+<% } else { %>
+<%
+  /*
+   * A signed token, drawn as what it is: three base64 segments separated by
+   * full stops, with a signature under it.
+   *
+   * This is the one picture on the page aimed at somebody who will read the
+   * documentation, and it is honest — those really are the three parts, in
+   * that order, and the last one really is what the JWKS checks.
+   */
+%>
+<svg class="art art-square" viewBox="0 0 320 320" role="img"
+     aria-label="A signed token: header, payload and signature, verified against the published keys"
+     xmlns="http://www.w3.org/2000/svg">
+  <!-- header . payload . signature -->
+  <g stroke-width="1.5">
+    <path d="M34 92 h74 l14 14 v28 h-74 l-14 -14 z"
+          fill="var(--art-tile, rgba(255,255,255,.05))" stroke="currentColor" stroke-opacity=".45"/>
+    <path d="M132 92 h100 l14 14 v28 h-100 l-14 -14 z"
+          fill="var(--art-tile, rgba(255,255,255,.05))" stroke="currentColor" stroke-opacity=".45"/>
+    <path d="M256 92 h30 l0 42 h-16 l-14 -14 z"
+          fill="var(--green, #a5c715)" fill-opacity=".16" stroke="var(--green, #a5c715)"/>
+  </g>
+
+  <g fill="currentColor" fill-opacity=".5">
+    <rect x="48" y="106" width="52" height="4" rx="2"/>
+    <rect x="48" y="116" width="34" height="4" rx="2"/>
+    <rect x="148" y="106" width="80" height="4" rx="2"/>
+    <rect x="148" y="116" width="58" height="4" rx="2"/>
+  </g>
+  <g fill="var(--green, #a5c715)">
+    <rect x="264" y="106" width="16" height="4" rx="2"/>
+    <rect x="264" y="116" width="10" height="4" rx="2"/>
+  </g>
+
+  <!-- The separators, because the dots are the thing everybody misreads. -->
+  <g fill="currentColor" fill-opacity=".7">
+    <circle cx="126" cy="132" r="2.4"/>
+    <circle cx="250" cy="132" r="2.4"/>
+  </g>
+
+  <!-- Checked against the published keys. -->
+  <path d="M160 148 V188" stroke="var(--green, #a5c715)" stroke-width="1.5" stroke-opacity=".55"/>
+  <path d="M104 188 h96 l16 16 v40 h-96 l-16 -16 z"
+        fill="var(--art-tile, rgba(255,255,255,.05))" stroke="var(--green, #a5c715)" stroke-width="1.6"/>
+  <g fill="none" stroke="var(--green, #a5c715)" stroke-width="2"
+     stroke-linecap="round" stroke-linejoin="round">
+    <path d="M138 216 l10 10 l20 -22"/>
+  </g>
+  <g fill="currentColor" fill-opacity=".45">
+    <rect x="122" y="236" width="60" height="4" rx="2"/>
+  </g>
+</svg>
+<% } %>

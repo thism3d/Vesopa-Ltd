@@ -19,6 +19,7 @@ const cookieParser = require('cookie-parser');
 const config = require('./config');
 const db = require('./db');
 const csrf = require('./csrf');
+const captcha = require('./captcha');
 const webhooks = require('./webhooks');
 const { securityHeaders, requestContext } = require('./middleware');
 const pages = require('./routes/pages');
@@ -204,6 +205,32 @@ app.use((error, req, res, next) => {
 async function start() {
   const info = await db.check();
   console.log(`[boot] database ${info.db} on MariaDB ${info.version}`);
+
+  /*
+   * SAY WHETHER THE CAPTCHA IS ON.
+   *
+   * With no keys set, `captcha.assess()` answers "fine" and every page renders
+   * exactly as it did — which is the right behaviour and an awful thing to be
+   * unable to see. A protection that is off looks identical to one that is on
+   * and working, so the only way to know is to be told. One line at boot, and
+   * the health page shows the same thing.
+   *
+   * The site key is printed and the secret is not: the site key is in the page
+   * source of every sign-in anyway, and the secret must never reach a log.
+   */
+  if (captcha.enabled()) {
+    console.log(
+      `[boot] reCAPTCHA v3 ON — site key ${config.captcha.siteKey.slice(0, 10)}…, ` +
+        `threshold ${config.captcha.threshold} ` +
+        '(a low score asks for an emailed code; it never refuses)',
+    );
+  } else {
+    console.log(
+      '[boot] reCAPTCHA v3 OFF — no site key and secret configured. ' +
+        'Set RECAPTCHA_SITE_KEY and RECAPTCHA_SECRET_KEY (or the ' +
+        'VESOPA_AUTH_CAPTCHA_* names) to turn it on.',
+    );
+  }
 
   /*
    * The webhook worker. A timer in this process rather than a cron entry,

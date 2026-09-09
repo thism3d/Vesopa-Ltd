@@ -507,26 +507,18 @@
 .hero-art {
   display: block;
   width: 100%;
-  /* Capped, because the picture and the form preview are stacked and the pair
-     decides the height of the whole hero. A 16:9 image at full column width
-     would push the fold past the buttons on a laptop. */
+  /* Capped, because the drawing and the form preview are stacked and the pair
+     decides the height of the whole hero. At full column width it would push
+     the fold past the buttons on a laptop. */
   max-width: 460px;
-  aspect-ratio: 16 / 10;
-  /* `height: auto` is load-bearing.
+  /*
+   * No border, no background, no aspect-ratio.
    *
-   * The <img> carries width and height attributes — it should, they reserve the
-   * space and stop the page jumping as it loads — and the browser maps them to
-   * presentational width/height. With a CSS `width` set and no CSS `height`,
-   * the ATTRIBUTE height wins and `aspect-ratio` never computes: this rendered
-   * 460 x 768 instead of 460 x 287, a picture two and a half times too tall.
-   * Measured, because it looked like the ratio was being ignored and it was
-   * not — it was being overridden. */
-  height: auto;
-
-  object-fit: cover;
-  border-radius: 18px;
-  border: 1px solid var(--border);
-  background: #0e0e0e;
+   * All three were here to contain a photograph: a black JPEG on a black page
+   * needs a box drawn round it or it has no edges. The drawing inside carries
+   * its own viewBox, shares the page's colours, and looks better with nothing
+   * around it — a framed diagram reads as a screenshot of something else.
+   */
 }
 
 /* On a phone the column stacks under the copy anyway, and the form preview is
@@ -536,19 +528,48 @@
   .hero-art { display: none; }
 }
 
+/*
+ * The drawings.
+ *
+ * `--art-tile` is the fill inside a chamfered shape — a touch lighter than
+ * the page in the dark theme and a touch darker in the light one, so the
+ * tiles read as raised either way. It is defined here rather than in the
+ * drawing because the drawing has no idea which theme it is in.
+ */
+:root {
+  --art-tile: rgba(0, 0, 0, .04);
+}
+:root[data-theme="dark"],
+:root:not([data-theme="light"]) {
+  --art-tile: rgba(255, 255, 255, .045);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --art-tile: rgba(255, 255, 255, .045); }
+}
+
+.art {
+  display: block;
+  width: 100%;
+  height: auto;
+  /* Everything in the drawings that is not brand green inherits this. */
+  color: var(--text);
+}
+
 .section-art {
   display: block;
   width: 100%;
-  max-width: 320px;
-  aspect-ratio: 1;
-  /* Same reason as .hero-art above: the attribute height would win. */
-  height: auto;
-  object-fit: cover;
-  border-radius: 16px;
-  border: 1px solid var(--border);
-  background: #0e0e0e;
+  max-width: 300px;
   margin: 0 auto 22px;
 }
+
+/*
+ * No border and no panel behind them any more.
+ *
+ * The JPEGs needed both: a bordered box to stop a black photograph bleeding
+ * into a black page. A drawing that shares the page's colours does not, and
+ * the box was the thing that made each section look like it opened with a
+ * failed image.
+ */
 
 @media (prefers-reduced-motion: no-preference) {
   .hero-art, .section-art { transition: none; }

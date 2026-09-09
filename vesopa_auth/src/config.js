@@ -219,9 +219,31 @@ const config = {
    * for why a score must never be a gate on a page like this.
    */
   captcha: {
-    siteKey: process.env.RECAPTCHA_SITE_KEY || '',
-    secretKey: process.env.RECAPTCHA_SECRET_KEY || '',
-    threshold: Number(process.env.RECAPTCHA_THRESHOLD || 0.5),
+    /*
+     * TWO NAMES FOR EACH, ON PURPOSE.
+     *
+     * The server's own `.env` uses unprefixed names — GOOGLE_CLIENT_ID,
+     * MICROSOFT_CLIENT_SECRET — while `.env.claude-tools`, which carries every
+     * project's credentials on the development machine, prefixes everything
+     * with VESOPA_AUTH_. The keys arrived written the second way.
+     *
+     * Accepting both is not indecision. The failure mode of a name mismatch
+     * here is that `enabled()` answers false and the captcha silently does
+     * nothing: no error, no missing page, no clue — the exact failure this
+     * whole feature must never have. Reading either name costs one `||` and
+     * removes it. The boot log then says which state it is actually in.
+     */
+    siteKey:
+      process.env.RECAPTCHA_SITE_KEY ||
+      process.env.VESOPA_AUTH_CAPTCHA_SITE_KEY ||
+      '',
+    secretKey:
+      process.env.RECAPTCHA_SECRET_KEY ||
+      process.env.VESOPA_AUTH_CAPTCHA_SECRET_KEY ||
+      '',
+    threshold: Number(
+      process.env.RECAPTCHA_THRESHOLD || process.env.VESOPA_AUTH_CAPTCHA_THRESHOLD || 0.5,
+    ),
   },
 
   features: {

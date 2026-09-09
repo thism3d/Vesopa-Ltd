@@ -74,8 +74,7 @@
         screen readers rather than read out as a form nobody can submit.
       -->
       <div class="hero-visual" aria-hidden="true">
-        <img class="hero-art" src="/brand/art/hero.jpg" alt=""
-             width="1376" height="768" loading="eager" decoding="async">
+        <div class="hero-art"><%- include('partials/art', { name: 'hero' }) %></div>
         <div class="preview-card">
           <div class="preview-brand">
             <img class="brand-mark" src="/brand/logo-light.svg" alt="" width="107" height="14" data-logo-light>
@@ -134,8 +133,7 @@
   <!-- =========================================================== products -->
   <section class="band">
     <div class="band-inner">
-      <img class="section-art" src="/brand/art/products.jpg" alt=""
-           width="1024" height="1024" loading="lazy" decoding="async" aria-hidden="true">
+      <div class="section-art"><%- include('partials/art', { name: 'products' }) %></div>
       <h2>Sign in once, and you are in everywhere</h2>
       <p class="section-lede">
         Vesopa products share one identity. A manager who works the till and the
@@ -171,8 +169,7 @@
   <!-- ============================================================ methods -->
   <section class="band alt">
     <div class="band-inner">
-      <img class="section-art" src="/brand/art/security.jpg" alt=""
-           width="1024" height="1024" loading="lazy" decoding="async" aria-hidden="true">
+      <div class="section-art"><%- include('partials/art', { name: 'security' }) %></div>
       <h2>Eight ways in, one account behind them</h2>
       <p class="section-lede">
         However somebody chooses to sign in, they arrive at the same account.
@@ -197,8 +194,7 @@
   <section class="band">
     <div class="band-inner developer">
       <div>
-        <img class="section-art" src="/brand/art/developers.jpg" alt=""
-             width="1024" height="1024" loading="lazy" decoding="async" aria-hidden="true">
+        <div class="section-art"><%- include('partials/art', { name: 'developers' }) %></div>
         <h2>Standards, not a bespoke API</h2>
         <p class="section-lede">
           OpenID Connect and OAuth 2.1. Point any certified library at the
