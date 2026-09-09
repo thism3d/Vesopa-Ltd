@@ -1,6 +1,6 @@
 /// What the commissioning screen offers, and what it must not.
 ///
-/// "Do not forget to implement the (Vesopa icon) Login with Vesopa to the
+/// "Do not forget to implement the (Vesopa icon) Continue with Vesopa to the
 /// softwares removing any other login and registration feature."
 ///
 /// Two shapes, and the difference between them is a flag the back office
@@ -47,12 +47,14 @@ const _only = VesopaOption(
 
 void main() {
   group('the commissioning screen', () {
-    testWidgets('offers Login with Vesopa, with the mark on it', (tester) async {
+    testWidgets('offers Continue with Vesopa, with the mark on it', (tester) async {
       await pumpSignIn(tester, _live);
 
-      // The words the venue asked for, not "Continue with Vesopa" and not an
-      // open-in-new arrow.
-      expect(find.text('Login with Vesopa'), findsOneWidget);
+      // The words the owner chose, to the letter, and the brand's own mark
+      // rather than an open-in-new arrow. All three products say the same
+      // thing: a sign-in button's job is being recognised without being read,
+      // and two spellings across three apps defeats that.
+      expect(find.text('Continue with Vesopa'), findsOneWidget);
       expect(find.byType(VesopaMark), findsOneWidget);
     });
 
@@ -74,7 +76,7 @@ void main() {
       expect(find.text('Email'), findsNothing);
       expect(find.text('Password'), findsNothing);
       expect(find.text('Sign in'), findsNothing);
-      expect(find.text('Login with Vesopa'), findsOneWidget);
+      expect(find.text('Continue with Vesopa'), findsOneWidget);
     });
 
     testWidgets('and no "or" rule, because there is nothing to separate',
@@ -106,7 +108,7 @@ void main() {
       // no way in at all.
       expect(find.text('Email'), findsOneWidget);
       expect(find.text('Password'), findsOneWidget);
-      expect(find.text('Login with Vesopa'), findsNothing);
+      expect(find.text('Continue with Vesopa'), findsNothing);
     });
   });
 }

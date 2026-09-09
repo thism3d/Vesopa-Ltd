@@ -1,6 +1,6 @@
 /// The Vesopa mark, drawn rather than loaded.
 ///
-/// "(Vesopa icon) Login with Vesopa" — the button the venue asked for carries
+/// "(Vesopa icon) Continue with Vesopa" — the button the owner asked for carries
 /// the brand's own mark, not a generic "opens a browser" arrow, which is what
 /// it wore before.
 ///
