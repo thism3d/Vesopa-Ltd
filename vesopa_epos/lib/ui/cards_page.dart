@@ -286,6 +286,10 @@ class _CardsPageState extends ConsumerState<CardsPage> {
     switch (kind) {
       case CardKind.loyalty:
       case CardKind.membership:
+      // A gym card names a customer, exactly as a loyalty or membership card
+      // does -- the door looks up `epos_customers` by the number on it. So a
+      // gym card is issued to somebody the same way, from the same picker.
+      case CardKind.gym:
         final customer = await pickCustomer(context, ref);
         if (customer == null) return;
         subjectId = customer.id;
@@ -502,6 +506,7 @@ String _labelFor(CardKind kind) => switch (kind) {
   CardKind.loyalty => 'Loyalty',
   CardKind.gift => 'Gift',
   CardKind.membership => 'Membership',
+  CardKind.gym => 'Gym',
 };
 
 IconData _iconFor(CardKind kind) => switch (kind) {
@@ -509,6 +514,7 @@ IconData _iconFor(CardKind kind) => switch (kind) {
   CardKind.loyalty => Icons.card_giftcard_outlined,
   CardKind.gift => Icons.redeem_outlined,
   CardKind.membership => Icons.card_membership_outlined,
+  CardKind.gym => Icons.fitness_center,
 };
 
 class _PrefixRow extends StatelessWidget {

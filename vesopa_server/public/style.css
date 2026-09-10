@@ -4722,14 +4722,20 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
 /* ---------------------------------------------------------------------------
    The Wallet screen: five tabs, and a designer inside the first
    --------------------------------------------------------------------------- */
-.wal-tabs {
+/* Shared with the gym, which wears the same tab strip under its own
+   class. Not the same class: a test asserts that exactly one WALLET tab
+   starts open, and a second page borrowing the name made the gym part of
+   the wallet's identity. */
+.wal-tabs,
+.gym-tabs {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
   margin: 18px 0 16px;
   border-bottom: 1px solid var(--line);
 }
-.wal-tab {
+.wal-tab,
+.gym-tab {
   border: 0;
   background: none;
   padding: 10px 14px;
@@ -4740,8 +4746,10 @@ body.sp-handed-over #view-screens .page-head .denom-actions > :not(#sp-popout) {
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
 }
-.wal-tab:hover { color: var(--text); }
-.wal-tab.on { color: var(--brand-deep); border-bottom-color: var(--brand); }
+.wal-tab:hover,
+.gym-tab:hover { color: var(--text); }
+.wal-tab.on,
+.gym-tab.on { color: var(--brand-deep); border-bottom-color: var(--brand); }
 
 /* Which card, what it is, and the card itself — left to right, because that is
    the order the question is asked in. */
@@ -6802,3 +6810,107 @@ textarea, select[multiple], select[size] { height: auto; min-height: 0; }
   flex: 0 0 auto;
   align-self: flex-start;
 }
+
+
+/* ---------------------------------------------------------------------------
+   The gym
+   ---------------------------------------------------------------------------
+   A board that gets left up on a screen in a room, so it is read from further
+   away than anything else in this back office: the row colours are the whole
+   point of the page and they carry a word beside them as well. Colour alone
+   leaves out the roughly one man in twelve who cannot separate the green from
+   the red, and this is exactly the screen — glanced at, from across a room —
+   where that matters most. */
+
+.gym-board-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.gym-board-head h3 { margin-bottom: 2px; }
+
+.gym-date,
+.gym-range {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.gym-range label,
+.gym-date { display: flex; flex-direction: column; gap: 4px; }
+.gym-range input,
+.gym-date input { min-width: 140px; }
+
+/* In, and been and gone. A tinted row rather than tinted text: the name is the
+   thing being read, and recolouring it would trade legibility for the status. */
+.gym-row.is-in { background: var(--ok-wash); }
+.gym-row.is-out { background: transparent; }
+.gym-row.is-in td { border-bottom-color: transparent; }
+
+.gym-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--muted);
+}
+.gym-dot.in { background: #17a673; box-shadow: 0 0 0 3px rgba(23, 166, 115, .18); }
+.gym-dot.out { background: var(--red, #c0392b); opacity: .55; }
+
+/* A shade stronger than --ok-wash, because this pill sits ON a row already
+   tinted with --ok-wash: the two washes cancelled and left green text floating
+   with no pill around it. */
+.pill.green { background: rgba(23, 166, 115, .20); color: #06784f; }
+.pill.danger { background: var(--bad-wash); color: var(--red, #c0392b); }
+
+/* When the room is busy: twenty-four small numbers, drawn as bars rather than
+   pulled into a chart library that would be more code than the thing it draws. */
+.gym-hours {
+  display: grid;
+  grid-template-columns: repeat(24, 1fr);
+  gap: 4px;
+  align-items: end;
+  margin-top: 8px;
+}
+.gym-hour { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.gym-hour-bar {
+  width: 100%;
+  height: 90px;
+  display: flex;
+  align-items: flex-end;
+  background: var(--track);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.gym-hour-bar i {
+  display: block;
+  width: 100%;
+  background: var(--brand, #6c4cd6);
+  border-radius: 4px 4px 0 0;
+  min-height: 2px;
+}
+.gym-hour-label { font-size: 10px; color: var(--muted); }
+.gym-hour-count { font-size: 10.5px; font-weight: 600; }
+
+/* Narrow screens cannot show twenty-four labels without them colliding, so
+   every other one goes. The bar is still there; only its number is dropped. */
+@media (max-width: 720px) {
+  .gym-hour:nth-child(even) .gym-hour-label,
+  .gym-hour-count { display: none; }
+  .gym-hour-bar { height: 64px; }
+}
+
+/* What the door will do, spelled out beside the boxes that decide it. */
+.gym-rules {
+  margin: 12px 0 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.gym-rules b { color: var(--text); font-weight: 600; }

@@ -1316,6 +1316,7 @@ const VIEW_LOADERS = {
     deposits: loadDeposits,
     loyalty: loadLoyalty,
     cards: loadCards,
+    gym: loadGym,
     wallet: loadWallet,
     devices: loadDevices,
     tender: loadTender,
@@ -6175,6 +6176,13 @@ async function start() {
   // here costs a tidy menu and nothing else.
   await applyAccess();
 
+  // And then the gym, which is a question applyAccess cannot answer: not "may
+  // this person see it" but "does this venue have one". Run afterwards rather
+  // than inside, because applyAccess sets `hidden` on every nav button it
+  // knows about and would otherwise put the Gym button back for every pub in
+  // the estate.
+  await revealGym();
+
   // Land on whatever the URL asks for, so a refresh or a bookmarked page
   // reopens where the user left off.
   show(viewForPath(location.pathname), { push: false });
@@ -8549,11 +8557,31 @@ const CARD_KINDS = [
   { key: 'loyalty_prefix', label: 'Loyalty' },
   { key: 'gift_prefix', label: 'Gift' },
   { key: 'membership_prefix', label: 'Membership' },
+  // Only for a venue that runs a gym. `gym` on the list unconditionally would
+  // put a fifth programme in front of every pub in the estate, which is the
+  // one thing switching the gym off is supposed to prevent.
+  { key: 'gym_prefix', label: 'Gym', gymOnly: true },
 ];
 
 const cardKindLabel = (kind) => ({
   clerk: 'Staff', loyalty: 'Loyalty', gift: 'Gift', membership: 'Membership',
+  gym: 'Gym',
 }[kind] || kind);
+
+/**
+ * The prefixes this venue is actually offered.
+ *
+ * The gym one appears only where there is a gym. Read from `gymState`, which
+ * `revealGym` fills in at start-up for exactly this sort of question -- and
+ * falls back to "show it if it is set", so a venue that somehow has a gym
+ * prefix and no gym settings row can still see and clear it rather than being
+ * left with a prefix it cannot reach.
+ */
+function cardKindsHere() {
+  const gym = !!Number(gymState && gymState.enabled)
+    || String((cardsState && cardsState.gym_prefix) || '').length > 0;
+  return CARD_KINDS.filter((k) => !k.gymOnly || gym);
+}
 
 async function loadCards() {
   cardsState = await api('/cards/settings');
@@ -8564,7 +8592,11 @@ async function loadCards() {
     else el.value = value ?? '';
   }
 
-  const running = CARD_KINDS.filter((k) => String(cardsState[k.key] || '').length);
+  const kinds = cardKindsHere();
+  const gymRow = $('cards-gym-row');
+  if (gymRow) gymRow.hidden = !kinds.some((k) => k.gymOnly);
+
+  const running = kinds.filter((k) => String(cardsState[k.key] || '').length);
   statCards($('cards-stats'), [
     { label: 'Reading cards', value: cardsState.enabled ? 'On' : 'Off',
       tone: cardsState.enabled ? 'green' : 'red' },
@@ -8591,7 +8623,7 @@ function cardsPreview() {
   const digits = document.querySelector('[data-card="number_digits"]');
   const width = Math.min(Math.max(Number(digits && digits.value) || 5, 4), 12);
 
-  const rows = CARD_KINDS.map((kind) => {
+  const rows = cardKindsHere().map((kind) => {
     const field = document.querySelector('[data-card="' + kind.key + '"]');
     const prefix = String((field && field.value) || '').replace(/\D/g, '');
 
@@ -8690,6 +8722,545 @@ document.addEventListener('click', async (e) => {
         await loadCards();
       }
     );
+  }
+});
+
+// ---- The gym --------------------------------------------------------------
+//
+// A member swipes a card on the way in and the same card on the way out. The
+// till this happens at has nobody standing behind it, which is the fact that
+// shapes every decision on this page and in gym.js: a door that asked a
+// question would be a door that stayed shut until somebody walked over.
+//
+// OFF FOR EVERY VENUE UNTIL SOMEBODY TURNS IT ON
+//
+// Most venues on this platform are pubs. `enabled` defaults to 0, and while it
+// is 0 there is no Gym button in the rail here, no Gym page on any till in the
+// venue, no gym options in a till's settings, and a gym card is not a kind of
+// card a till recognises. That was asked for twice and in those words, and it
+// is worth being literal about: switching the gym off has to take the whole
+// thing away, not grey it out.
+
+let gymState = null;
+let gymTab = 'board';
+let gymBoardTimer = null;
+let gymAttendance = null;
+let gymExpiries = null;
+
+/**
+ * Whether this venue has a gym, and therefore whether the rail says so.
+ *
+ * Called once at start-up, and again after Save — because switching the gym on
+ * has to make the section appear without anybody signing out and in again,
+ * which is exactly the sort of thing a manager tries once and then rings about.
+ *
+ * A failure leaves the button hidden. The wrong way round would be a Gym entry
+ * in the rail of every venue whose server has not run the migration yet.
+ */
+async function revealGym() {
+  const btn = $('nav-gym');
+  if (!btn) return false;
+
+  // applyAccess has already had its say about this button; whatever it decided
+  // stands, and this can only take the entry away, never grant it.
+  const allowed = !btn.hidden;
+
+  let on = false;
+  try {
+    const settings = await api('/gym/settings');
+    on = !!Number(settings.enabled);
+    gymState = settings;
+  } catch {
+    on = false;
+  }
+
+  btn.hidden = !(allowed && on);
+
+  // The group heading was decided before this ran. A People section that is
+  // visible stays visible; there is no case where the gym is the only thing
+  // under it, because Customers is always there when the gym is.
+  return on;
+}
+
+/**
+ * The gym page.
+ *
+ * Loads the settings first and stops there if the venue has the gym switched
+ * off — every other route answers 404 while it is off, and four failed requests
+ * would paint four error messages on a page whose real answer is one sentence.
+ */
+async function loadGym() {
+  try {
+    gymState = await api('/gym/settings');
+  } catch (e) {
+    $('gym-stats').innerHTML = '';
+    $('gym-board').innerHTML =
+      '<p class="muted small">The gym is not available on this server yet.</p>';
+    return;
+  }
+
+  for (const el of document.querySelectorAll('[data-gym]')) {
+    const value = gymState[el.dataset.gym];
+    if (el.type === 'checkbox') el.checked = !!Number(value);
+    else el.value = value ?? '';
+  }
+
+  $('gym-save').hidden = false;
+  gymPreview();
+
+  if (!Number(gymState.enabled)) {
+    // Not an error and not an empty page. The one thing to do here is the one
+    // thing offered.
+    statCards($('gym-stats'), [
+      { label: 'The gym', value: 'Off', tone: 'red',
+        hint: 'Nothing gym-shaped appears on a till' },
+    ]);
+    const off = '<p class="muted small">The gym is switched off for this venue. '
+      + 'Turn it on under <b>Settings</b> and give gym cards a prefix of their '
+      + 'own, and this page fills in.</p>';
+    $('gym-board').innerHTML = off;
+    $('gym-attendance').innerHTML = off;
+    $('gym-expired').innerHTML = off;
+    $('gym-soon').innerHTML = '';
+    $('gym-hours').innerHTML = '';
+    gymStopBoardTimer();
+    return;
+  }
+
+  await gymLoadBoard();
+  gymStartBoardTimer();
+}
+
+/**
+ * The board refreshes itself, because it is meant to be left on a screen.
+ *
+ * Twenty seconds: fast enough that somebody walking in appears while they are
+ * still taking their coat off, slow enough to be nothing on a server. Stopped
+ * whenever the page is left, or a back office abandoned on a tab in an office
+ * polls a venue's door all night.
+ */
+function gymStartBoardTimer() {
+  gymStopBoardTimer();
+  gymBoardTimer = setInterval(() => {
+    if (currentView !== 'gym' || gymTab !== 'board' || document.hidden) return;
+    gymLoadBoard().catch(() => {});
+  }, 20000);
+}
+
+function gymStopBoardTimer() {
+  if (gymBoardTimer) clearInterval(gymBoardTimer);
+  gymBoardTimer = null;
+}
+
+/** Local YYYY-MM-DD. `toISOString` is UTC and gets yesterday wrong after 11pm. */
+function gymDay(date) {
+  const d = date || new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function gymClock(value) {
+  if (!value) return '—';
+  return new Date(value).toLocaleTimeString('en-GB',
+    { hour: '2-digit', minute: '2-digit' });
+}
+
+function gymSpell(minutes) {
+  const n = Number(minutes);
+  if (!Number.isFinite(n) || n < 0) return '—';
+  if (n < 60) return `${n} min`;
+  const h = Math.floor(n / 60);
+  const m = n % 60;
+  return m ? `${h}h ${m}m` : `${h}h`;
+}
+
+/** "1 day" / "12 days" — because "in 12" is not a length of time. */
+function gymDaysWord(n) {
+  return n === 1 ? '1 day' : `${n} days`;
+}
+
+async function gymLoadBoard() {
+  const date = ($('gym-board-date') && $('gym-board-date').value) || '';
+  let rows = [];
+  try {
+    rows = await api('/gym/board' + (date ? `?date=${encodeURIComponent(date)}` : ''));
+  } catch (e) {
+    $('gym-board').innerHTML =
+      '<p class="muted small">Could not read the door just now.</p>';
+    return;
+  }
+
+  const inNow = rows.filter((r) => Number(r.in_now));
+  const been = rows.filter((r) => !Number(r.in_now));
+  const expired = rows.filter((r) => Number(r.expired));
+
+  statCards($('gym-stats'), [
+    { label: 'In the gym now', value: String(inNow.length),
+      tone: inNow.length ? 'green' : '', hint: inNow.length ? '' : 'Nobody at the moment' },
+    { label: 'Been and gone', value: String(been.length) },
+    { label: 'Visits', value: String(rows.length), tone: 'primary',
+      hint: date ? `on ${date}` : 'today' },
+    { label: 'Expired cards used', value: String(expired.length),
+      tone: expired.length ? 'red' : '' },
+  ]);
+
+  if (!rows.length) {
+    $('gym-board').innerHTML =
+      '<p class="muted small">Nobody has swiped in ' + (date ? 'that day' : 'today') + '.</p>';
+    return;
+  }
+
+  // Green in, red been-and-gone. The venue's own words, and the colour carries
+  // a word beside it as well — a board read at a glance from across a room is
+  // exactly where colour alone leaves somebody out.
+  $('gym-board').innerHTML = '<table class="table"><thead><tr>'
+    + '<th></th><th>Member</th><th>In</th><th>Out</th><th>For</th>'
+    + '<th>Card</th><th></th></tr></thead><tbody>'
+    + rows.map((r) => {
+      const here = !!Number(r.in_now);
+      const auto = r.closed_by === 'auto';
+      return '<tr class="gym-row ' + (here ? 'is-in' : 'is-out') + '">'
+        + '<td><span class="gym-dot ' + (here ? 'in' : 'out') + '"></span></td>'
+        + '<td><b>' + esc(r.member_name || 'Unknown card') + '</b>'
+        + (r.member_no ? ' <span class="muted small">#' + esc(r.member_no) + '</span>' : '')
+        + (Number(r.expired)
+          ? ' <span class="pill danger">expired</span>' : '')
+        + '</td>'
+        + '<td>' + gymClock(r.entered_at) + '</td>'
+        + '<td>' + (here ? '<span class="pill green">in the gym</span>' : gymClock(r.left_at))
+        + (auto ? ' <span class="muted small">(not swiped out)</span>' : '')
+        + '</td>'
+        + '<td>' + gymSpell(r.minutes) + '</td>'
+        + '<td class="small muted"><code>' + esc(r.card_number) + '</code></td>'
+        + '<td class="right">' + (here
+          ? '<button class="btn small" data-gym-close="' + esc(r.id) + '">Sign out</button>'
+          : '') + '</td>'
+        + '</tr>';
+    }).join('')
+    + '</tbody></table>';
+}
+
+// ---- How often ------------------------------------------------------------
+
+async function gymLoadAttendance() {
+  const from = $('gym-from').value || '';
+  const to = $('gym-to').value || '';
+  const query = [];
+  if (from) query.push(`from=${encodeURIComponent(from)}`);
+  if (to) query.push(`to=${encodeURIComponent(to)}`);
+
+  try {
+    gymAttendance = await api('/gym/attendance' + (query.length ? `?${query.join('&')}` : ''));
+  } catch (e) {
+    $('gym-attendance').innerHTML =
+      '<p class="muted small">Could not read attendance just now.</p>';
+    return;
+  }
+
+  // The server decides the period when the boxes are empty; showing what it
+  // decided is how somebody knows what they are looking at.
+  $('gym-from').value = gymAttendance.from;
+  $('gym-to').value = gymAttendance.to;
+
+  const members = gymAttendance.members || [];
+  if (!members.length) {
+    $('gym-attendance').innerHTML =
+      '<p class="muted small">No visits in that period.</p>';
+    $('gym-hours').innerHTML = '';
+    return;
+  }
+
+  $('gym-attendance').innerHTML = '<table class="table"><thead><tr>'
+    + '<th>Member</th><th class="right">Visits</th><th class="right">Times a week</th>'
+    + '<th class="right">Days</th><th class="right">Typical stay</th>'
+    + '<th>Last seen</th><th>Membership</th></tr></thead><tbody>'
+    + members.map((m) => {
+      const expiry = m.membership_expiry;
+      const gone = expiry && Date.parse(expiry + 'T23:59:59') < Date.now();
+      return '<tr>'
+        + '<td><b>' + esc(m.member_name || 'Unknown') + '</b>'
+        + (m.member_no ? ' <span class="muted small">#' + esc(m.member_no) + '</span>' : '')
+        + '</td>'
+        + '<td class="right">' + esc(m.visits) + '</td>'
+        + '<td class="right"><b>' + esc(m.per_week) + '</b></td>'
+        + '<td class="right">' + esc(m.days_attended) + '</td>'
+        + '<td class="right">' + (m.avg_minutes == null
+          ? '<span class="muted">—</span>' : gymSpell(m.avg_minutes)) + '</td>'
+        + '<td class="small muted">' + (m.last_visit
+          ? new Date(m.last_visit).toLocaleString('en-GB') : '—') + '</td>'
+        + '<td class="small">' + (expiry
+          ? (gone ? '<span class="pill danger">expired ' + esc(expiry) + '</span>'
+                  : esc(expiry))
+          : '<span class="muted">no date</span>') + '</td>'
+        + '</tr>';
+    }).join('')
+    + '</tbody></table>'
+    + '<p class="muted small">Typical stay is worked out only from visits where '
+    + 'the member swiped out. Anybody signed out automatically had their length '
+    + 'guessed, and a guess averaged into a measurement is a number nobody can '
+    + 'use.</p>';
+
+  gymRenderHours();
+}
+
+/**
+ * When the room is busy, as bars.
+ *
+ * Drawn as div widths rather than through charts.js, because this is one series
+ * of twenty-four small numbers and pulling in a chart for it would be more code
+ * than the thing it draws. Percentages go on a class-free inline width, which is
+ * the one styling this back office does inline — see the note in charts.js.
+ */
+function gymRenderHours() {
+  const hours = (gymAttendance && gymAttendance.by_hour) || [];
+  if (!hours.length) { $('gym-hours').innerHTML = ''; return; }
+
+  const counts = new Array(24).fill(0);
+  for (const h of hours) counts[Number(h.hour)] = Number(h.visits);
+  const peak = Math.max(...counts, 1);
+
+  $('gym-hours').innerHTML = '<div class="gym-hours">'
+    + counts.map((n, hour) => '<div class="gym-hour">'
+      // No bar at all for an hour nobody came, rather than the 2px minimum the
+      // rule gives every other bar. A sliver at six in the morning reads as
+      // "a couple of people" from across the room, which is the opposite of
+      // what it means.
+      + '<div class="gym-hour-bar">' + (n > 0
+        ? '<i style="height:' + Math.round((n / peak) * 100) + '%"></i>'
+        : '') + '</div>'
+      + '<span class="gym-hour-label">' + String(hour).padStart(2, '0') + '</span>'
+      + '<span class="gym-hour-count">' + (n || '') + '</span>'
+      + '</div>').join('')
+    + '</div>';
+}
+
+/**
+ * The attendance report as a file.
+ *
+ * Built from what is already on screen rather than fetched again, so the file
+ * and the page can never disagree about the period.
+ */
+function gymCsv() {
+  if (!gymAttendance) return;
+  const rows = [
+    ['Member', 'Number', 'Card', 'Visits', 'Times a week', 'Days attended',
+     'Typical stay (min)', 'First visit', 'Last visit', 'Expired visits',
+     'Membership expiry'],
+    ...(gymAttendance.members || []).map((m) => [
+      m.member_name || '', m.member_no || '', m.card_number || '',
+      m.visits, m.per_week, m.days_attended,
+      m.avg_minutes == null ? '' : m.avg_minutes,
+      m.first_visit || '', m.last_visit || '', m.expired_visits || 0,
+      m.membership_expiry || '',
+    ]),
+  ];
+  downloadCsv(
+    `gym-attendance-${gymAttendance.from}-to-${gymAttendance.to}.csv`, rows);
+}
+
+/**
+ * A CSV, quoted the one way that survives a member called O'Brien-Jones and a
+ * venue that uses commas in names.
+ */
+function downloadCsv(filename, rows) {
+  const body = rows
+    .map((r) => r.map((cell) => {
+      const text = String(cell ?? '');
+      return /[",\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
+    }).join(','))
+    .join('\r\n');
+  // The BOM is not decoration: without it Excel opens a UTF-8 CSV as Windows
+  // 1252 and every accented name in the venue arrives mangled.
+  const blob = new Blob(['﻿' + body], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// ---- Expiries -------------------------------------------------------------
+
+async function gymLoadExpiries() {
+  try {
+    gymExpiries = await api('/gym/expiries');
+  } catch (e) {
+    $('gym-expired').innerHTML =
+      '<p class="muted small">Could not read memberships just now.</p>';
+    return;
+  }
+
+  const table = (rows, empty) => rows.length
+    ? '<table class="table"><thead><tr>'
+      + '<th>Member</th><th>Expiry</th><th class="right">Days</th>'
+      + '<th>Last seen</th><th class="right">Visits (90 days)</th>'
+      + '<th>Contact</th></tr></thead><tbody>'
+      + rows.map((r) => '<tr>'
+        + '<td><b>' + esc(r.name || '') + '</b>'
+        + (r.member_no ? ' <span class="muted small">#' + esc(r.member_no) + '</span>' : '')
+        + '</td>'
+        + '<td>' + esc(r.membership_expiry || '—') + '</td>'
+        + '<td class="right">' + (Number(r.days) < 0
+          ? '<span class="pill danger">' + gymDaysWord(Math.abs(Number(r.days)))
+            + ' ago</span>'
+          : '<span class="pill">in ' + gymDaysWord(Number(r.days)) + '</span>') + '</td>'
+        + '<td class="small muted">' + (r.last_visit
+          ? new Date(r.last_visit).toLocaleDateString('en-GB') : 'never') + '</td>'
+        + '<td class="right">' + esc(r.visits_90d) + '</td>'
+        + '<td class="small muted">' + esc(r.phone || r.email || '—') + '</td>'
+        + '</tr>').join('')
+      + '</tbody></table>'
+    : '<p class="muted small">' + empty + '</p>';
+
+  $('gym-expired').innerHTML = table(
+    gymExpiries.expired || [], 'Nobody has expired.');
+  $('gym-soon').innerHTML = table(
+    gymExpiries.soon || [],
+    'Nobody is due to expire in the next ' + (gymExpiries.soon_days || 0) + ' days.');
+}
+
+// ---- Settings -------------------------------------------------------------
+
+/**
+ * What the door will actually do, spelled out from the boxes above it.
+ *
+ * The same idea as the card preview beside it: the one thing a venue has to get
+ * right here is the prefix, and a worked example is how somebody checks it
+ * against a card in their hand in two seconds rather than reasoning about it.
+ */
+function gymPreview() {
+  const read = (key) => {
+    const el = document.querySelector('[data-gym="' + key + '"]');
+    if (!el) return '';
+    return el.type === 'checkbox' ? el.checked : el.value;
+  };
+
+  const prefix = String(read('gym_prefix') || '').replace(/\D/g, '');
+  const on = !!read('enabled');
+
+  const lines = [];
+
+  if (!on) {
+    lines.push('<div class="card-eg off"><span class="card-eg-label">Off</span> '
+      + '<span class="muted small">no Gym page on any till, and a gym card is '
+      + 'not a card the till knows</span></div>');
+  } else if (!prefix) {
+    lines.push('<div class="card-eg off"><span class="card-eg-label">No prefix</span> '
+      + '<span class="muted small">nothing will match — set one, or the door '
+      + 'reads every gym card as an unknown card</span></div>');
+  } else {
+    const digits = (cardsState && Number(cardsState.number_digits)) || 5;
+    const number = prefix + '1'.padStart(Math.min(Math.max(digits, 4), 12), '0');
+    lines.push('<div class="card-eg"><span class="card-eg-label">Gym</span> '
+      + '<code class="card-eg-track">;' + esc(number) + '?</code> '
+      + '<span class="muted small">card ' + esc(number) + ' — member 1</span></div>');
+  }
+
+  if (on) {
+    const grace = Number(read('grace_days')) || 0;
+    lines.push('<ul class="gym-rules">'
+      + '<li>Swipe in, and the same card swipes out.</li>'
+      + '<li>A second swipe within <b>' + (Number(read('debounce_seconds')) || 0)
+      + ' seconds</b> is ignored as a double read.</li>'
+      + '<li>Still in after <b>' + (Number(read('auto_close_hours')) || 0)
+      + ' hours</b> and they are signed out automatically, and the visit marked.</li>'
+      + '<li>An expired card ' + (read('refuse_expired')
+        ? '<b>is refused</b>' : 'still lets them in, and the visit is flagged')
+      + (read('expiry_slip') ? ', and <b>a slip prints</b> saying who and when.'
+        : ', and no slip prints.') + '</li>'
+      + (grace ? '<li>A membership keeps working for <b>' + grace
+        + ' days</b> after its expiry date.</li>' : '')
+      + '<li>The greeting clears itself after <b>'
+      + (Number(read('greeting_seconds')) || 0) + ' seconds</b>. Nothing waits '
+      + 'for a tap.</li>'
+      + '</ul>');
+  }
+
+  $('gym-preview').innerHTML = lines.join('');
+}
+
+// ---- Wiring ---------------------------------------------------------------
+
+document.addEventListener('input', (e) => {
+  if (e.target.matches && e.target.matches('[data-gym]') && gymState) gymPreview();
+});
+
+document.addEventListener('change', (e) => {
+  if (e.target && e.target.id === 'gym-board-date') gymLoadBoard();
+});
+
+document.addEventListener('click', async (e) => {
+  // ---- Tabs ----
+  const tab = e.target.closest && e.target.closest('[data-gymtab]');
+  if (tab) {
+    gymTab = tab.dataset.gymtab;
+    document.querySelectorAll('[data-gymtab]').forEach((t) =>
+      t.classList.toggle('on', t === tab));
+    document.querySelectorAll('[data-gympanel]').forEach((panel) => {
+      panel.hidden = panel.dataset.gympanel !== gymTab;
+    });
+    // Fetched when the tab is opened rather than all four at load. Attendance
+    // groups a year of visits; a manager who only ever looks at the board
+    // should not be paying for it every time the page opens.
+    if (gymTab === 'attendance' && !gymAttendance && Number(gymState?.enabled)) {
+      await gymLoadAttendance();
+    }
+    if (gymTab === 'expiries' && !gymExpiries && Number(gymState?.enabled)) {
+      await gymLoadExpiries();
+    }
+    if (gymTab === 'board') await gymLoadBoard();
+    return;
+  }
+
+  if (e.target.id === 'gym-run') { gymAttendance = null; await gymLoadAttendance(); return; }
+  if (e.target.id === 'gym-csv') { gymCsv(); return; }
+
+  if (e.target.id === 'gym-expired-csv') {
+    if (!gymExpiries) return;
+    downloadCsv('gym-expired-' + gymDay() + '.csv', [
+      ['Member', 'Number', 'Card', 'Expiry', 'Days ago', 'Last seen',
+       'Visits (90 days)', 'Phone', 'Email'],
+      ...(gymExpiries.expired || []).map((r) => [
+        r.name || '', r.member_no || '', r.card_number || '',
+        r.membership_expiry || '', Math.abs(Number(r.days) || 0),
+        r.last_visit || '', r.visits_90d || 0, r.phone || '', r.email || '',
+      ]),
+    ]);
+    return;
+  }
+
+  const closeId = e.target.dataset && e.target.dataset.gymClose;
+  if (closeId) {
+    // No confirmation. This corrects a visit somebody forgot to swipe out of,
+    // it takes nothing away, and the row stays on the board with the correction
+    // marked on it.
+    try {
+      await api('/gym/visits/' + closeId + '/close', { method: 'POST' });
+    } catch (err) {
+      toast(String(err && err.message ? err.message : err), 'error');
+    }
+    await gymLoadBoard();
+    return;
+  }
+
+  if (e.target.id === 'gym-save') {
+    const body = {};
+    for (const el of document.querySelectorAll('[data-gym]')) {
+      body[el.dataset.gym] = el.type === 'checkbox' ? el.checked : el.value;
+    }
+    await api('/gym/settings', { method: 'PUT', body: JSON.stringify(body) });
+    e.target.textContent = 'Saved ✓';
+    setTimeout(() => { e.target.textContent = 'Save gym'; }, 1500);
+    // The rail first: switching the gym on has to make the section appear
+    // without signing out and in again, and switching it off has to take it
+    // away just as promptly.
+    await revealGym();
+    gymAttendance = null;
+    gymExpiries = null;
+    await loadGym();
   }
 });
 

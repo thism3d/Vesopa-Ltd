@@ -8,7 +8,19 @@
 ///   * **a loyalty card** puts the member on the bill with their standing
 ///     discount — and where the card belongs to nobody, offers to enrol whoever
 ///     is holding it, which is the venue's own request;
-///   * **a gift card** shows what is on it.
+///   * **a gift card** shows what is on it;
+///   * **a gym card** signs a member in at the door, or back out again, and
+///     says so without asking anybody anything.
+///
+/// THE GYM CARD IS THE ONE THAT MAY NOT ASK
+///
+/// Every other branch here is allowed to open something, because every other
+/// branch happens in front of a member of staff. The gym till is unmanned --
+/// "they use this as a self service where no one mans the till" -- so a dialog
+/// there is a screen frozen on one member's name until somebody walks over from
+/// the other end of the building, with the next four people through the door
+/// getting nothing at all. See ui/gym_greeting.dart, which is a layer rather
+/// than a dialog for exactly that reason.
 ///
 /// WHERE EACH ANSWER COMES FROM, AND WHY IT DIFFERS
 ///
@@ -43,8 +55,12 @@ import '../data/staff_session.dart';
 import '../data/local/database.dart';
 import '../data/swipe_cards.dart';
 import 'barcode_actions.dart';
+import 'gym_greeting.dart';
+import 'printers_page.dart' show printerSettingsProvider;
 import '../data/terminal_identity.dart';
 import '../main.dart';
+import '../printing/print_service.dart';
+import '../printing/receipt_builder.dart';
 import 'cards_page.dart' show lastCardReadProvider;
 import 'membership_gate.dart';
 import 'membership_prompt.dart';
@@ -101,6 +117,24 @@ Future<void> handleSwipedCard(
   final settings = ref.read(cardRepositoryProvider).settings;
   if (!settings.enabled) return;
 
+  // The door, before anything that could open a dialog.
+  //
+  // Taken out of the switch below rather than added to it, because it is the
+  // one branch whose answer is "and the gym is switched on for this venue".
+  // classify() knows only about prefixes: a venue that switched the gym off
+  // and left a prefix behind would otherwise have every gym card in the
+  // building fall into a branch that does nothing, and silence at a card
+  // reader is indistinguishable from a reader that has stopped working.
+  //
+  // With the gym off the card falls through to the switch, where it matches no
+  // prefix it is allowed to match and is offered as a barcode -- exactly what
+  // happens to any other card this venue does not run.
+  final gym = ref.read(gymRepositoryProvider);
+  if (gym.isGymCard(card.number)) {
+    await _gymCard(context, ref, card);
+    return;
+  }
+
   switch (settings.classify(card.number)) {
     case CardKind.clerk:
       await _signOnWithCard(context, ref, card);
@@ -114,6 +148,20 @@ Future<void> handleSwipedCard(
       // What differs is what the till says about them, which _loyaltyCard
       // decides from the row it gets back.
       await _loyaltyCard(context, ref, card, orderId: orderId);
+    case CardKind.gym:
+      // Only reachable with the gym switched OFF and a prefix left behind --
+      // the live case returned above. Treated as a card this venue does not
+      // run, which is what it now is.
+      if (!context.mounted) return;
+      await _explain(
+        context,
+        title: 'The gym is switched off',
+        message:
+            'Card ${card.number} is a gym card, but this venue does not '
+            'currently run a gym.\n\nSwitch it on in the back office under '
+            'Gym, or clear the gym prefix under Cards so these cards stop '
+            'being recognised.',
+      );
     case null:
       // Not one of the venue's cards. Before saying so, look for a product:
       // the same reader reads a bottle as reads a loyalty card, and "not a
@@ -149,6 +197,70 @@ Future<void> handleSwipedCard(
             'The reader is working.\n\nCard prefixes are set in the back '
             'office under Cards; a barcode is set on the product itself.',
       );
+  }
+}
+
+// -----------------------------------------------------------------------------
+// The gym door
+// -----------------------------------------------------------------------------
+
+/// A gym card was swiped.
+///
+/// Three things happen and none of them waits for anybody: the door is told,
+/// the answer is painted, and an expired membership prints a slip.
+///
+/// NOTHING IN HERE MAY THROW OR BLOCK. There is no member of staff at this
+/// till to read an exception, and a member standing at a door in front of a
+/// screen that says nothing will swipe again, and again, and then go and find
+/// somebody. `GymRepository.swipe` is written not to throw; the print below is
+/// wrapped because a printer is a piece of hardware that fails, and a jammed
+/// roll must never be the reason a paying member cannot get into the gym.
+Future<void> _gymCard(
+  BuildContext context,
+  WidgetRef ref,
+  SwipedCard card,
+) async {
+  final gym = ref.read(gymRepositoryProvider);
+  final answer = await gym.swipe(card.number);
+  if (!answer.speaks) return;
+
+  // Painted first, before the printer is touched. A slip takes a second or two
+  // to come out of an 80mm printer and the member is standing there now.
+  ref
+      .read(gymGreetingProvider.notifier)
+      .show(answer, seconds: gym.settings.greetingSeconds);
+
+  if (!answer.printSlip) return;
+  if (!context.mounted) return;
+
+  try {
+    final printers = await ref.read(printerSettingsProvider.future);
+    final branding = ref.read(brandingProvider);
+    final service = PrintService(
+      await ReceiptBuilder.create(paperWidthMm: printers.receiptWidthMm),
+      PrinterSetup(
+        printers: printers,
+        shopName: branding.venueName.isNotEmpty
+            ? branding.venueName
+            : ref.read(sessionProvider).venueName,
+        footer: branding.footerMessage,
+        logo: branding.showLogo ? branding.logoBytes : null,
+      ),
+    );
+    await service.printGymExpirySlip(
+      memberName: answer.memberName ?? 'Unknown member',
+      memberNumber: answer.memberNo?.toString(),
+      cardNumber: card.number,
+      expiredOn: answer.membershipExpiry,
+      daysAgo: answer.expiredDays,
+      refused: answer.refused,
+    );
+  } on Object catch (_) {
+    // Swallowed, and this is the one place in this file where that is right.
+    // The member has already been let in and their visit recorded; a printer
+    // with no paper in it has cost the venue a notification, not the door. The
+    // same expiry is on the Gym page and in the back office, which is where
+    // somebody looks when the slips stop appearing.
   }
 }
 

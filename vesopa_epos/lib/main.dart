@@ -18,6 +18,7 @@ import 'data/kitchen_printing.dart';
 import 'data/kitchen_screens.dart';
 import 'data/customer_display.dart';
 import 'data/card_repository.dart';
+import 'data/gym.dart';
 import 'data/wallet_passes.dart';
 import 'data/device_registry.dart';
 import 'data/display_pairing.dart';
@@ -42,6 +43,7 @@ import 'payments/dojo_desktop.dart';
 import 'payments/dojo_native.dart';
 import 'payments/payment_provider.dart';
 import 'ui/idle_screen.dart';
+import 'ui/gym_greeting.dart';
 import 'ui/shell.dart';
 import 'ui/sign_in_page.dart';
 import 'ui/recovery_page.dart';
@@ -111,6 +113,36 @@ class CardRulesRevision extends Notifier<int> {
   int build() => 0;
 
   /// The rules have just been re-read. Called by the shell, from one place.
+  void bump() => state = state + 1;
+}
+
+/// The gym door: this venue's rules, its members, and the queue.
+///
+/// One long-lived object, like [cardRepositoryProvider] and for the same
+/// reason: it holds a cache that is mutated in place, and rebuilding it on
+/// every read would throw the roster and the queue away.
+final gymRepositoryProvider = Provider<GymRepository>(
+  (ref) => GymRepository(
+    apiBase: ref.watch(apiBaseProvider),
+    terminalToken: ref.watch(sessionControllerProvider).value?.terminalToken,
+  ),
+);
+
+/// How many times the gym rules have been re-read on this till.
+///
+/// The same trick as [cardRulesRevisionProvider], for the same reason: the
+/// repository above hands back one object and mutates it, so watching it
+/// rebuilds nothing. An int changes value, which is the one thing Riverpod
+/// needs to push a rebuild through -- and without it a manager switching the
+/// gym off in the back office would leave the Gym page on screen showing a
+/// board for a gym that no longer exists.
+final gymSettingsRevisionProvider =
+    NotifierProvider<GymSettingsRevision, int>(GymSettingsRevision.new);
+
+class GymSettingsRevision extends Notifier<int> {
+  @override
+  int build() => 0;
+
   void bump() => state = state + 1;
 }
 
@@ -1240,6 +1272,17 @@ class _LockedTill extends ConsumerWidget {
             showing: showIdle,
             builder: (_) => IdleScreen(settings: settings),
           ),
+          // Above the shutter, deliberately.
+          //
+          // An unmanned gym till spends its whole life locked: nobody is signed
+          // on to it and the screensaver is down. That is the state the door has
+          // to work in, so a greeting painted underneath the lock would be the
+          // one screen this feature exists to draw and the one screen nobody
+          // ever sees.
+          //
+          // It draws nothing at all when the door has nothing to say, and it
+          // passes every touch straight through -- see ui/gym_greeting.dart.
+          GymGreetingLayer(apiBase: ref.watch(apiBaseProvider)),
         ],
       ),
     );

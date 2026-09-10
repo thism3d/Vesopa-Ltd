@@ -85,6 +85,19 @@ enum CardKind {
   /// carried `points_balance` and `membership_expiry` side by side since long
   /// before there was a card to read them with.
   membership,
+
+  /// The gym door. Swipe in, swipe the same card out.
+  ///
+  /// ITS OWN PREFIX, AND THAT IS THE WHOLE POINT
+  ///
+  /// "Maybe another prefix for gym members' cards due to it being unmanned and
+  /// can't have pop ups." Nobody stands at this till. A gym card sharing the
+  /// loyalty prefix would be read as a loyalty card, and an unknown one would
+  /// open the enrol-a-member form in front of a customer who has no idea what
+  /// it is and no member of staff to ask. Its own prefix is what lets the till
+  /// decide, before it looks anything up, that this swipe is a door and not a
+  /// sale — see [CardSettings.classify] and `ui/card_actions.dart`.
+  gym,
 }
 
 /// What each prefix means in this venue.
@@ -102,6 +115,7 @@ class CardSettings {
     this.loyaltyPrefix = '9998',
     this.giftPrefix = '9878',
     this.membershipPrefix = '',
+    this.gymPrefix = '',
     this.numberDigits = 5,
     this.autoEnrol = true,
     this.tillWalletButton = true,
@@ -129,6 +143,18 @@ class CardSettings {
   /// not asked for and cannot have cards for. A venue that wants one sets a
   /// prefix, and until then an empty prefix matches nothing — see [classify].
   final String membershipPrefix;
+
+  /// Empty by default, like the membership prefix above and for the same
+  /// reason: an empty prefix matches nothing, so no venue gains a programme it
+  /// has not asked for.
+  ///
+  /// A gym card is not read at all until the venue has *also* switched the gym
+  /// on in the back office. Two switches for one thing looks redundant and is
+  /// not: the prefix says which cards are gym cards, and `GymSettings.enabled`
+  /// says whether this venue runs a gym at all. A venue that turns the gym off
+  /// must not have its gym cards silently become unknown cards that the till
+  /// then offers to turn into products — see `ui/card_actions.dart`.
+  final String gymPrefix;
 
   /// How wide the number after the prefix is when this venue *issues* a card.
   ///
@@ -172,6 +198,7 @@ class CardSettings {
     CardKind.loyalty => loyaltyPrefix,
     CardKind.gift => giftPrefix,
     CardKind.membership => membershipPrefix,
+    CardKind.gym => gymPrefix,
   };
 
   /// Which programme [number] belongs to, or null for a card from somewhere
@@ -224,6 +251,7 @@ class CardSettings {
     String? loyaltyPrefix,
     String? giftPrefix,
     String? membershipPrefix,
+    String? gymPrefix,
     int? numberDigits,
     bool? autoEnrol,
   }) => CardSettings(
@@ -232,6 +260,7 @@ class CardSettings {
     loyaltyPrefix: loyaltyPrefix ?? this.loyaltyPrefix,
     giftPrefix: giftPrefix ?? this.giftPrefix,
     membershipPrefix: membershipPrefix ?? this.membershipPrefix,
+    gymPrefix: gymPrefix ?? this.gymPrefix,
     numberDigits: numberDigits ?? this.numberDigits,
     autoEnrol: autoEnrol ?? this.autoEnrol,
   );
@@ -242,6 +271,7 @@ class CardSettings {
     'loyalty_prefix': loyaltyPrefix,
     'gift_prefix': giftPrefix,
     'membership_prefix': membershipPrefix,
+    'gym_prefix': gymPrefix,
     'number_digits': numberDigits,
     'auto_enrol': autoEnrol ? 1 : 0,
     'till_wallet_button': tillWalletButton ? 1 : 0,
@@ -279,6 +309,10 @@ class CardSettings {
       loyaltyPrefix: prefix(raw['loyalty_prefix'], '9998'),
       giftPrefix: prefix(raw['gift_prefix'], '9878'),
       membershipPrefix: prefix(raw['membership_prefix'], ''),
+      // Absent on a server that has not run schema_till_gym.sql, which reads as
+      // empty — no gym cards, which is what every venue has until it says
+      // otherwise.
+      gymPrefix: prefix(raw['gym_prefix'], ''),
       numberDigits: switch (raw['number_digits']) {
         num n => n.toInt().clamp(4, 12),
         String s => (int.tryParse(s) ?? 5).clamp(4, 12),

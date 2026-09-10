@@ -21,6 +21,7 @@ import 'layout.dart';
 import 'about_page.dart';
 import 'card_actions.dart';
 import 'functions_page.dart';
+import 'gym_page.dart';
 import 'logout_dialog.dart';
 import 'nav_panel_controller.dart';
 import 'pair_request_overlay.dart';
@@ -103,6 +104,7 @@ class _PosShellState extends ConsumerState<PosShell> {
     _display = ref.read(customerDisplayProvider);
     unawaited(_announceThisMachine());
     unawaited(_readCardRules());
+    unawaited(_readGymRules());
     unawaited(_startPresence());
     _newOrder();
   }
@@ -154,6 +156,81 @@ class _PosShellState extends ConsumerState<PosShell> {
     // mutates in place and so never looks changed. See cardRulesRevisionProvider.
     ref.read(cardRulesRevisionProvider.notifier).bump();
     setState(() {});
+  }
+
+  /// The sections this venue's rail carries.
+  ///
+  /// Read from the gym rules rather than held in state, because they arrive
+  /// from the back office some seconds after the till has drawn its first
+  /// frame, and can change again while somebody is standing at the till.
+  ///
+  /// Every use of the list goes through here, including the ones that look up
+  /// an index -- see [_sectionLabel] for why that matters.
+  List<NavDestination> get _destinations => navDestinationsFor(
+    gym: ref.watch(gymRepositoryProvider).settings.enabled,
+  );
+
+  /// The label of whichever section is showing.
+  ///
+  /// Clamped, and that is not defensive tidiness. `_index` is a position in a
+  /// list whose LENGTH changes: a manager switching the gym on adds a row, and
+  /// switching it off takes one away underneath a till that is sitting on
+  /// About. Without this, that till reads one past the end and crashes.
+  String get _sectionLabel {
+    final list = _destinations;
+    if (list.isEmpty) return 'Sale';
+    return list[_index.clamp(0, list.length - 1)].label;
+  }
+
+  /// Load the venue's gym rules, then refresh them.
+  ///
+  /// Stored first and pulled second, exactly as the card rules are, and for a
+  /// sharper version of the same reason: this is a door. A gym that could not
+  /// let anybody in until the broadband came up would be a gym that cannot open
+  /// at six in the morning, which is when a good half of its members arrive.
+  ///
+  /// The pull also re-reads the member roster and drains anything that was
+  /// queued while the line was down. Nothing waits on any of it.
+  Future<void> _readGymRules() async {
+    final before = _sectionLabel;
+    final gym = ref.read(gymRepositoryProvider);
+    await gym.load();
+    if (!mounted) return;
+    await gym.sync();
+    if (!mounted) return;
+    // Anything laid out from these rules -- the Gym page, the nav rail, the gym
+    // section in Settings -- watches this rather than the repository, which
+    // mutates in place and so never looks changed.
+    ref.read(gymSettingsRevisionProvider.notifier).bump();
+
+    // Hold the section the operator is actually looking at.
+    //
+    // Adding or removing Gym shifts every index after it, so a till sitting on
+    // Settings would silently become a till sitting on Reports the moment a
+    // manager saved the gym switch in the back office. The label is the thing
+    // that means something; the index is only where it happens to live.
+    final was = before;
+    setState(() {
+      final now = _destinations.indexWhere((d) => d.label == was);
+      if (now >= 0) _index = now;
+    });
+  }
+
+  /// Re-read the gym rules when the back office changes them.
+  ///
+  /// `gym` is the event PUT /api/gym/settings broadcasts. Switching the gym on
+  /// has to make the section appear on every till in the venue without anybody
+  /// restarting one -- and switching it off has to take it away just as
+  /// promptly, because a Gym page still sitting there is a page whose every
+  /// request now answers 404.
+  ///
+  /// `cards` as well, because the gym prefix lives on the card settings row and
+  /// a manager who changes it there has changed which cards open the door.
+  void _watchGymRules() {
+    ref.listen(syncEventsProvider, (_, next) {
+      final type = next.value?.type;
+      if (type == 'gym' || type == 'cards') unawaited(_readGymRules());
+    });
   }
 
   /// Re-read the card rules when the back office changes them.
@@ -413,6 +490,7 @@ class _PosShellState extends ConsumerState<PosShell> {
     // across rebuilds -- Riverpod replaces the subscription rather than adding
     // a second one.
     _watchCardRules();
+    _watchGymRules();
 
     // Shown instead of the shell, not inside it: a till that cannot open a bill
     // cannot do anything the tabs offer either.
@@ -458,7 +536,7 @@ class _PosShellState extends ConsumerState<PosShell> {
     // page selector pinned at its left where no layout can delete it, and the
     // Sale screen fills the middle of it with the venue's own top bar. See that
     // widget for what happened to everything the fixed strip was carrying.
-    final saleScreen = navDestinations[_index].label == 'Sale';
+    final saleScreen = _sectionLabel == 'Sale';
 
     // The drawer, for when the rail is not fixed. A fixed rail costs ~208px of
     // width permanently, on the screen where the product grid and the bill are
@@ -492,6 +570,7 @@ class _PosShellState extends ConsumerState<PosShell> {
         : Drawer(
             child: SafeArea(
               child: PosNavRail(
+                destinations: _destinations,
                 selected: _index,
                 onSelect: (i) {
                   setState(() => _index = i);
@@ -508,6 +587,7 @@ class _PosShellState extends ConsumerState<PosShell> {
     // The fixed rail has no drawer to close, so selecting must not pop — that
     // would take the current route off the navigator instead.
     final fixedRail = PosNavRail(
+      destinations: _destinations,
       selected: _index,
       onSelect: (i) => setState(() => _index = i),
       onLogout: _logout,
@@ -520,7 +600,8 @@ class _PosShellState extends ConsumerState<PosShell> {
     // this build has already worked out, and a method would have to watch those
     // providers again from inside another widget's build.
     Widget topBarChrome({Widget? body, bool trailing = true}) => TillTopBar(
-      section: navDestinations[_index],
+      section: _destinations[_index.clamp(0, _destinations.length - 1)],
+      destinations: _destinations,
       onSelectSection: (i) => setState(() => _index = i),
       // No menu key when the rail is already on screen: a button that opens a
       // copy of what is visible beside it is noise.
@@ -559,7 +640,7 @@ class _PosShellState extends ConsumerState<PosShell> {
                 : VenueTopBarBody(
                     bar: venueBar,
                     orderId: orderId,
-                    sectionName: navDestinations[_index].label,
+                    sectionName: _sectionLabel,
                     onSwitchOrder: _switchToOrder,
                     onNavigate: _goTo,
                   ),
@@ -650,7 +731,7 @@ class _PosShellState extends ConsumerState<PosShell> {
       // wanted it on the bill, not a message about where the bill is.
       onScannedProduct: (product) async {
         ref.read(pendingScanProvider.notifier).found(product);
-        final sale = navDestinations.indexWhere((d) => d.label == 'Sale');
+        final sale = _destinations.indexWhere((d) => d.label == 'Sale');
         if (sale >= 0 && _index != sale && mounted) {
           setState(() => _index = sale);
         }
@@ -682,7 +763,7 @@ class _PosShellState extends ConsumerState<PosShell> {
     if (!mounted) return;
     setState(() {
       _orderId = id;
-      _index = navDestinations.indexWhere((d) => d.label == 'Sale');
+      _index = _destinations.indexWhere((d) => d.label == 'Sale');
     });
     _followOnDisplay(id);
   }
@@ -693,7 +774,7 @@ class _PosShellState extends ConsumerState<PosShell> {
   ) {
     // Routed by label rather than index, so adding a nav item cannot silently
     // shift what each screen points to.
-    switch (navDestinations[_index].label) {
+    switch (_sectionLabel) {
       case 'Sale':
         return SalePage(
           orderId: orderId,
@@ -711,6 +792,8 @@ class _PosShellState extends ConsumerState<PosShell> {
         );
       case 'Table':
         return TablesPage(currentOrderId: orderId, onRecall: _switchToOrder);
+      case 'Gym':
+        return const GymPage();
       case 'Receipts':
         return const ReceiptsPage();
       case 'Settings':
@@ -733,14 +816,14 @@ class _PosShellState extends ConsumerState<PosShell> {
 
   /// Jump to another nav section by its label, from a button inside a page.
   void _goTo(String label) {
-    final i = navDestinations.indexWhere((d) => d.label == label);
+    final i = _destinations.indexWhere((d) => d.label == label);
     if (i != -1) setState(() => _index = i);
   }
 
   /// Sections driven from the back office. Each explains what it does rather
   /// than showing an empty screen.
   Widget _sectionInfo(int index) {
-    switch (navDestinations[index].label) {
+    switch (_destinations[index].label) {
       case 'Product':
         return PlaceholderPage(
           title: 'Products',
@@ -772,8 +855,8 @@ class _PosShellState extends ConsumerState<PosShell> {
         return const AboutPage();
       default:
         return PlaceholderPage(
-          title: navDestinations[index].label,
-          icon: navDestinations[index].icon,
+          title: _destinations[index].label,
+          icon: _destinations[index].icon,
           description: 'Managed from the Vesopa Back Office.',
         );
     }

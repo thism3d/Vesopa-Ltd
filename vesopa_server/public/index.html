@@ -328,6 +328,7 @@
           <button class="nav" data-view="staff">Staff</button>
           <button class="nav" data-view="permission_groups">Staff Permissions</button>
           <button class="nav" data-view="customers">Customers</button>
+          <button class="nav" data-view="gym" id="nav-gym" hidden>Gym</button>
           <button class="nav" data-view="vouchers">Vouchers</button>
           <button class="nav" data-view="receipt_designer">Receipt Designer</button>
 
@@ -2691,6 +2692,7 @@
                   <label>Loyalty<input type="text" inputmode="numeric" maxlength="8" data-card="loyalty_prefix" placeholder="9998"></label>
                   <label>Gift<input type="text" inputmode="numeric" maxlength="8" data-card="gift_prefix" placeholder="9878"></label>
                   <label>Membership<input type="text" inputmode="numeric" maxlength="8" data-card="membership_prefix" placeholder="not used"></label>
+                  <label id="cards-gym-row" hidden>Gym<input type="text" inputmode="numeric" maxlength="8" data-card="gym_prefix" placeholder="not used"></label>
                 </div>
                 <p class="muted small" id="cards-example"></p>
               </div>
@@ -2736,6 +2738,193 @@
               <div class="rd-preview-head"><span class="small muted">What a card looks like</span></div>
               <div class="card rd-card">
                 <div id="cards-preview"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- The gym door: who is in, how often they come, and who has expired.
+             Kept out of the rail entirely until a venue switches it on -- see
+             the note on loadGym in app.js. -->
+        <section id="view-gym" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Gym</h2>
+              <p class="muted small">
+                A member swipes their card on the way in and the same card on the
+                way out. Nobody has to be standing there: the till asks nothing
+                and waits for nothing.
+              </p>
+            </div>
+            <button class="btn primary" id="gym-save" hidden>Save gym</button>
+          </div>
+
+          <div class="grid-cards" id="gym-stats"></div>
+
+          <div class="gym-tabs" role="tablist">
+            <button class="gym-tab on" data-gymtab="board" role="tab">Who is in</button>
+            <button class="gym-tab" data-gymtab="attendance" role="tab">How often</button>
+            <button class="gym-tab" data-gymtab="expiries" role="tab">Expiries</button>
+            <button class="gym-tab" data-gymtab="settings" role="tab">Settings</button>
+          </div>
+
+          <!-- ---- Who is in ------------------------------------------- -->
+          <div class="gym-panel" data-gympanel="board">
+            <div class="card rd-card">
+              <div class="gym-board-head">
+                <div>
+                  <h3>Today at the door</h3>
+                  <p class="muted small">
+                    Green is in the gym now. Red has been and gone. The list
+                    refreshes itself, so this can be left up on a screen.
+                  </p>
+                </div>
+                <label class="gym-date">On
+                  <input type="date" id="gym-board-date">
+                </label>
+              </div>
+              <div id="gym-board"></div>
+            </div>
+          </div>
+
+          <!-- ---- How often ------------------------------------------- -->
+          <div class="gym-panel" data-gympanel="attendance" hidden>
+            <div class="card rd-card">
+              <div class="gym-board-head">
+                <div>
+                  <h3>How often members have been using the gym</h3>
+                  <p class="muted small">
+                    One row per member. Times a week is worked out over the whole
+                    period, so it means the same thing whether you ask about a
+                    fortnight or a year.
+                  </p>
+                </div>
+                <div class="gym-range">
+                  <label>From <input type="date" id="gym-from"></label>
+                  <label>To <input type="date" id="gym-to"></label>
+                  <button class="btn" id="gym-run">Show</button>
+                  <button class="btn" id="gym-csv">Download CSV</button>
+                </div>
+              </div>
+              <div id="gym-attendance"></div>
+            </div>
+            <div class="card rd-card">
+              <h3>When the gym is busy</h3>
+              <p class="muted small">
+                The other half of "how often": not how often one member comes,
+                but when the room is full. That is what staffing and class times
+                are decided on.
+              </p>
+              <div id="gym-hours"></div>
+            </div>
+          </div>
+
+          <!-- ---- Expiries -------------------------------------------- -->
+          <div class="gym-panel" data-gympanel="expiries" hidden>
+            <div class="card rd-card">
+              <div class="gym-board-head">
+                <div>
+                  <h3>Expired</h3>
+                  <p class="muted small">
+                    The same people the door prints a slip for. Last seen is here
+                    because it is the question that comes next: somebody who
+                    expired in January and has not been back is a different
+                    conversation from somebody who was here yesterday.
+                  </p>
+                </div>
+                <button class="btn" id="gym-expired-csv">Download CSV</button>
+              </div>
+              <div id="gym-expired"></div>
+            </div>
+            <div class="card rd-card">
+              <h3>About to expire</h3>
+              <p class="muted small">
+                So a renewal can be asked for before anybody is turned away at a
+                door with nobody on it. How far ahead this looks is on the
+                Settings tab.
+              </p>
+              <div id="gym-soon"></div>
+            </div>
+          </div>
+
+          <!-- ---- Settings -------------------------------------------- -->
+          <div class="gym-panel" data-gympanel="settings" hidden>
+            <div class="rd-layout">
+              <div class="rd-editor">
+                <div class="card rd-card">
+                  <h3>The gym</h3>
+                  <p class="muted small">
+                    Off until you switch it on. While it is off there is no Gym
+                    section on any till in this venue, no gym options in a till's
+                    settings, and a gym card is not a kind of card a till knows
+                    about.
+                  </p>
+                  <label class="check"><input type="checkbox" data-gym="enabled"> Run a gym at this venue</label>
+                  <div class="grid2">
+                    <label>Gym card prefix
+                      <input type="text" inputmode="numeric" maxlength="8" data-gym="gym_prefix" placeholder="not used">
+                    </label>
+                  </div>
+                  <p class="muted small" id="gym-example"></p>
+                  <p class="muted small">
+                    Gym cards need a prefix of their own, separate from staff,
+                    loyalty and gift. It is what lets a till know a swipe is a
+                    door rather than a sale before it looks anything up, which is
+                    the whole reason nothing pops up at an unmanned counter.
+                  </p>
+                </div>
+
+                <div class="card rd-card">
+                  <h3>The door</h3>
+                  <div class="grid2">
+                    <label>Ignore a second swipe within (seconds)
+                      <input type="number" min="0" max="600" data-gym="debounce_seconds">
+                    </label>
+                    <label>Sign out anyone still in after (hours)
+                      <input type="number" min="1" max="24" data-gym="auto_close_hours">
+                    </label>
+                    <label>Greeting stays on screen for (seconds)
+                      <input type="number" min="2" max="30" data-gym="greeting_seconds">
+                    </label>
+                  </div>
+                  <label class="check"><input type="checkbox" data-gym="show_photo"> Show the member's photograph on the greeting</label>
+                  <p class="muted small">
+                    A reader that double-reads, or a member who swipes twice
+                    because the first one did not look like it worked, would
+                    otherwise be signed in and straight back out again, and there
+                    is nobody standing there to notice. Anyone who leaves without
+                    swiping out is signed out automatically, and their visit is
+                    marked so the report never treats its length as measured.
+                  </p>
+                </div>
+
+                <div class="card rd-card">
+                  <h3>Memberships that have run out</h3>
+                  <div class="grid2">
+                    <label>Still let them in for (days after expiry)
+                      <input type="number" min="0" max="90" data-gym="grace_days">
+                    </label>
+                    <label>Warn this many days before expiry
+                      <input type="number" min="0" max="120" data-gym="expiring_soon_days">
+                    </label>
+                  </div>
+                  <label class="check"><input type="checkbox" data-gym="expiry_slip"> Print a slip at the till when an expired card is swiped</label>
+                  <label class="check"><input type="checkbox" data-gym="refuse_expired"> Refuse an expired card instead of recording the visit</label>
+                  <p class="muted small">
+                    The slip says who expired and when. Leave refusing off unless
+                    the door is genuinely locked to the till: it cannot stop
+                    anybody walking in, so a record saying the visit did not
+                    happen would simply be untrue. Off means they are let in, the
+                    visit is flagged, and the slip still prints.
+                  </p>
+                </div>
+              </div>
+
+              <div class="rd-preview-pane">
+                <div class="rd-preview-head"><span class="small muted">What the door does</span></div>
+                <div class="card rd-card">
+                  <div id="gym-preview"></div>
+                </div>
               </div>
             </div>
           </div>

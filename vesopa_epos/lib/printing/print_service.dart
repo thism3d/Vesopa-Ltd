@@ -269,6 +269,45 @@ class PrintService {
     );
   }
 
+  /// The slip that prints when an expired gym card is swiped at the door.
+  ///
+  /// On the receipt printer, like the card slip above and for a different
+  /// reason: not because somebody is standing there to be handed it, but
+  /// because nobody is. The receipt printer is the one at the till the member
+  /// just swiped at, which is where a member of staff walking past will see the
+  /// paper. A venue that sends its reports to an office printer at the back
+  /// would otherwise be relying on somebody going to look for a slip they do
+  /// not know exists.
+  ///
+  /// Throws where there is no printer, and the caller swallows it. A gym door
+  /// with no printer set up still has to let members in.
+  Future<void> printGymExpirySlip({
+    required String memberName,
+    String? memberNumber,
+    String? cardNumber,
+    String? expiredOn,
+    int? daysAgo,
+    bool refused = false,
+  }) async {
+    final printer = setup.deviceFor(PrintTarget.customerReceipt);
+    if (printer == null) {
+      throw StateError('No receipt printer is set up on this till.');
+    }
+
+    final builder = await _for(printer);
+    await PrinterTransport.of(printer).send(
+      builder.gymExpirySlip(
+        memberName: memberName,
+        memberNumber: memberNumber,
+        cardNumber: cardNumber,
+        expiredOn: expiredOn,
+        daysAgo: daysAgo,
+        refused: refused,
+        shopName: setup.shopName,
+      ),
+    );
+  }
+
   Future<void> openCashDrawer() async {
     final printer = setup.deviceFor(PrintTarget.cashDrawer);
     if (printer == null) {

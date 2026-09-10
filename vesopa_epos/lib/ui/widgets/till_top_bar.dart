@@ -53,13 +53,22 @@ class TillTopBar extends ConsumerWidget {
     required this.onSignOff,
     this.body,
     this.trailing = true,
+    this.destinations = navDestinations,
   });
 
   /// The section showing, which is what the selector names.
   final NavDestination section;
 
-  /// Go to another section, by its index in [navDestinations].
+  /// Go to another section, by its index in [destinations].
   final ValueChanged<int> onSelectSection;
+
+  /// What this venue's sections actually are.
+  ///
+  /// Handed in rather than read from the global list, because a venue that runs
+  /// a gym has one more of them -- and a picker listing the shell's sections
+  /// while the shell routed by a different list would send every index after
+  /// the gym to the wrong screen. See navDestinationsFor in nav_rail.dart.
+  final List<NavDestination> destinations;
 
   /// Open the side menu, or null when the rail is already on screen — a key
   /// that opens a copy of what is visible beside it is noise.
@@ -125,6 +134,7 @@ class TillTopBar extends ConsumerWidget {
             children: [
               PageSelector(
                 onBarCanvas: body != null,
+                destinations: destinations,
                 section: section,
                 onSelectSection: onSelectSection,
                 onOpenMenu: onOpenMenu,
@@ -211,6 +221,7 @@ class PageSelector extends ConsumerWidget {
     required this.onOpenMenu,
     required this.onSignOn,
     required this.onSignOff,
+    this.destinations = navDestinations,
   });
 
   /// Whether this is sitting on a venue's programmed bar rather than on the
@@ -224,6 +235,13 @@ class PageSelector extends ConsumerWidget {
   final VoidCallback? onOpenMenu;
   final VoidCallback? onSignOn;
   final VoidCallback? onSignOff;
+
+  /// The sections this venue has. Handed down from the shell rather than read
+  /// from the global list, because a venue that runs a gym has one more of
+  /// them -- and a picker offering `go:5` from a different list than the one
+  /// the shell routes with sends every section after the gym to the wrong
+  /// screen. See navDestinationsFor in nav_rail.dart.
+  final List<NavDestination> destinations;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -318,20 +336,20 @@ class PageSelector extends ConsumerWidget {
       context: context,
       position: position,
       items: [
-        for (var i = 0; i < navDestinations.length; i++)
+        for (var i = 0; i < destinations.length; i++)
           PopupMenuItem<String>(
             value: 'go:$i',
             child: Row(
               children: [
                 Icon(
-                  navDestinations[i].icon,
+                  destinations[i].icon,
                   size: 18,
-                  color: i == navDestinations.indexOf(section)
+                  color: i == destinations.indexOf(section)
                       ? Pos.brandDeep
                       : null,
                 ),
                 const SizedBox(width: 12),
-                Text(navDestinations[i].label),
+                Text(destinations[i].label),
               ],
             ),
           ),

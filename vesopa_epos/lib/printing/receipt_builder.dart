@@ -1024,6 +1024,106 @@ class ReceiptBuilder {
     return bytes;
   }
 
+  /// The slip that prints when an expired gym card is swiped.
+  ///
+  /// "If the gym membership card has expired, can we get an automated slip
+  /// printed to say who has expired and when."
+  ///
+  /// WHY A PIECE OF PAPER AND NOT A MESSAGE ON A SCREEN
+  ///
+  /// Because nobody is looking at the screen. The gym till is unmanned: the
+  /// member sees the greeting, and then it clears itself, and there is no
+  /// member of staff standing there to have seen anything at all. A slip is the
+  /// one thing that is still there an hour later when somebody walks past the
+  /// printer -- and it is what gets picked up, put on a desk, and acted on.
+  ///
+  /// So it is written for the member of staff who finds it rather than for the
+  /// member who has already walked in: the name is the largest thing on it, the
+  /// date it expired is next, and how long ago that was is spelled out in days
+  /// so nobody has to do the arithmetic against the date at the top.
+  List<int> gymExpirySlip({
+    required String memberName,
+    String? memberNumber,
+    String? cardNumber,
+    String? expiredOn,
+    int? daysAgo,
+    bool refused = false,
+    String? shopName,
+    DateTime? at,
+  }) {
+    final bytes = _begin();
+
+    if (shopName != null && shopName.trim().isNotEmpty) {
+      bytes.addAll(_shopName(shopName));
+    }
+    bytes.addAll(
+      _text(
+        'GYM MEMBERSHIP EXPIRED',
+        styles: const PosStyles(align: PosAlign.center, bold: true),
+      ),
+    );
+    bytes.addAll(_generator.hr());
+
+    // The name, at arm's length. This slip is found on a printer rather than
+    // handed to anybody, so the first question it has to answer from across a
+    // room is who.
+    bytes.addAll(
+      _text(
+        memberName.trim().isEmpty ? 'Unknown member' : memberName.trim(),
+        styles: const PosStyles(
+          align: PosAlign.center,
+          height: PosTextSize.size2,
+          width: PosTextSize.size2,
+          bold: true,
+        ),
+      ),
+    );
+    if (memberNumber != null && memberNumber.trim().isNotEmpty) {
+      bytes.addAll(
+        _text(
+          'Member $memberNumber',
+          styles: const PosStyles(align: PosAlign.center),
+        ),
+      );
+    }
+    bytes.addAll(_generator.feed(1));
+
+    if (expiredOn != null && expiredOn.trim().isNotEmpty) {
+      bytes.addAll(_row('Expired on', expiredOn.trim()));
+    }
+    if (daysAgo != null && daysAgo > 0) {
+      bytes.addAll(_row('That was', '$daysAgo day${daysAgo == 1 ? '' : 's'} ago'));
+    }
+    if (cardNumber != null && cardNumber.trim().isNotEmpty) {
+      bytes.addAll(_row('Card', cardNumber.trim()));
+    }
+    bytes.addAll(_row('Swiped at', _time.format(at ?? DateTime.now())));
+
+    bytes.addAll(_generator.hr());
+    // What actually happened, said plainly. A slip that did not distinguish
+    // "they are inside" from "they were turned away" would leave whoever picks
+    // it up unable to tell whether anything needs doing right now.
+    bytes.addAll(
+      _text(
+        refused
+            ? 'THE CARD WAS REFUSED. The member was not signed in.'
+            : 'The member was signed in. The visit is recorded and flagged.',
+        styles: const PosStyles(align: PosAlign.center),
+      ),
+    );
+    bytes.addAll(_generator.feed(1));
+    bytes.addAll(
+      _text(
+        'Renew the membership in the back office, or at a manned till.',
+        styles: const PosStyles(align: PosAlign.center),
+      ),
+    );
+
+    bytes.addAll(_generator.feed(2));
+    bytes.addAll(_generator.cut());
+    return bytes;
+  }
+
   /// Opens the cash drawer (the "No Sale" key). The drawer is a solenoid wired
   /// into a printer's RJ11 socket, so this is a printer command with nothing to
   /// print.

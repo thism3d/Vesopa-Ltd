@@ -64,6 +64,10 @@ const NAV_PERMISSION = {
   staff: 'people.staff',
   permission_groups: 'people.permission_groups',
   customers: 'people.customers',
+  // The gym is a view of the venue's members, so it rides on the key
+  // that already decides who may look at them. Whether the entry appears
+  // at all is a second question -- see revealGym in app.js.
+  gym: 'people.customers',
   vouchers: 'people.vouchers',
   receipt_designer: 'people.receipt_designer',
   promotions: 'commerce.promotions',

@@ -9,6 +9,7 @@ import 'package:window_manager/window_manager.dart';
 import '../config/constants.dart';
 import '../data/customer_display_control.dart';
 import '../data/fonts.dart';
+import '../data/gym.dart';
 import '../data/terminal_identity.dart';
 import '../main.dart';
 import '../payments/connect_pac.dart';
@@ -17,6 +18,7 @@ import '../payments/payment_provider.dart';
 import '../printing/printer_transport.dart';
 import 'card_diagnostics_page.dart';
 import 'cards_page.dart';
+import 'gym_page.dart';
 import 'layout.dart';
 import 'nav_panel_controller.dart';
 import 'customer_display_page.dart';
@@ -309,6 +311,15 @@ class SettingsPage extends ConsumerWidget {
           ),
         ),
 
+        // The gym, for a venue that runs one.
+        //
+        // "Once enabled in the till settings it appears and all the options
+        // appear in the till. If disabled nothing of gym options appears in the
+        // till." So this whole block is behind one condition and there is no
+        // greyed-out version of it: a switch a venue cannot use is a switch
+        // they ring up about.
+        const _GymSettings(),
+
         const SizedBox(height: 28),
         const _SectionTitle('Printing'),
         Card(
@@ -491,6 +502,188 @@ class SettingsPage extends ConsumerWidget {
 /// Its own widget because it polls: a manager who has just plugged the second
 /// screen in and started the display should see this row change under them
 /// without leaving Settings and coming back.
+/// The gym section, or nothing at all.
+///
+/// Every field here is set in the back office, for the venue, and shown here
+/// read-only. That is the same rule the swipe-card prefixes follow and it is
+/// the right one for the same reason: a gym card is programmed once and carried
+/// around in members' wallets, so two tills that disagreed about the debounce
+/// or the grace period would be two doors that behave differently depending on
+/// which one somebody happened to walk up to.
+///
+/// What it is *for*, then, is answering the question a manager standing at the
+/// till actually has: "is this till set up for the gym, and what will it do?"
+/// A screen that could not answer that would leave them guessing at whether a
+/// setting had failed to arrive or simply does not work.
+class _GymSettings extends ConsumerWidget {
+  const _GymSettings();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // The revision, not the repository: the repository is one long-lived object
+    // that mutates in place, so watching it would never rebuild this and a
+    // manager switching the gym on would find Settings unchanged.
+    ref.watch(gymSettingsRevisionProvider);
+    final gym = ref.read(gymRepositoryProvider);
+    final settings = gym.settings;
+
+    if (!settings.enabled) return const SizedBox.shrink();
+
+    final prefix = settings.gymPrefix;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: 28),
+        const _SectionTitle('Gym'),
+        Card(
+          margin: EdgeInsets.zero,
+          child: Column(
+            children: [
+              ListTile(
+                leading: const Icon(
+                  Icons.fitness_center,
+                  color: Pos.brandDeep,
+                ),
+                title: const Text('The gym board'),
+                subtitle: const Text(
+                  'Who is in the gym now, and who has been and gone today.',
+                  style: TextStyle(fontSize: 12.5),
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => Scaffold(
+                      appBar: AppBar(title: const Text('Gym')),
+                      body: const GymPage(),
+                    ),
+                  ),
+                ),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.badge_outlined, color: Pos.graphite),
+                title: Text(
+                  prefix.isEmpty
+                      ? 'No gym card prefix is set'
+                      : 'Gym cards start $prefix',
+                ),
+                subtitle: Text(
+                  prefix.isEmpty
+                      ? 'Until one is set in the back office, no card opens the '
+                            'door — an empty prefix matches nothing.'
+                      : 'A card starting $prefix signs a member in at the door, '
+                            'and the same card signs them out.',
+                  style: const TextStyle(fontSize: 12.5),
+                ),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.rule, color: Pos.graphite),
+                title: const Text('What this door does'),
+                subtitle: Text(
+                  _rules(settings),
+                  style: const TextStyle(fontSize: 12.5),
+                ),
+              ),
+              const Divider(height: 1),
+              _QueuedSwipes(gym: gym),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 4),
+          child: Text(
+            'All of this is set in the back office under Gym, for the whole '
+            'venue. Two tills that disagreed about the door would be two doors '
+            'that behave differently depending on which one somebody walks up '
+            'to.',
+            style: TextStyle(fontSize: 12, color: Pos.graphite),
+          ),
+        ),
+      ],
+    );
+  }
+
+  static String _rules(GymSettings s) => [
+    'A second swipe within ${s.debounceSeconds}s is ignored as a double read.',
+    'Anyone still in after ${s.autoCloseHours} hours is signed out '
+        'automatically.',
+    if (s.graceDays > 0)
+      'A membership keeps working for ${s.graceDays} days after it expires.',
+    s.refuseExpired
+        ? 'An expired card is refused.'
+        : 'An expired card still lets them in, and the visit is flagged.',
+    if (s.expirySlip) 'An expired card prints a slip on the receipt printer.',
+    'The greeting clears itself after ${s.greetingSeconds}s — nothing waits '
+        'for a tap.',
+  ].join('\n');
+}
+
+/// Swipes this till has not managed to send yet.
+///
+/// Shown because it is the one gym number that is about *this terminal* rather
+/// than about the venue, and because it is the difference between "the door is
+/// broken" and "the door is working and the broadband is not". A member of
+/// staff who can see that eleven swipes are waiting knows the visits are not
+/// lost, which is the only question worth asking at that moment.
+class _QueuedSwipes extends StatefulWidget {
+  const _QueuedSwipes({required this.gym});
+
+  final GymRepository gym;
+
+  @override
+  State<_QueuedSwipes> createState() => _QueuedSwipesState();
+}
+
+class _QueuedSwipesState extends State<_QueuedSwipes> {
+  int? _pending;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_count());
+  }
+
+  Future<void> _count() async {
+    final n = await widget.gym.pending();
+    if (mounted) setState(() => _pending = n);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pending = _pending;
+    final waiting = (pending ?? 0) > 0;
+
+    return ListTile(
+      leading: Icon(
+        waiting ? Icons.cloud_off : Icons.cloud_done_outlined,
+        color: waiting ? Pos.amber : Pos.green,
+      ),
+      title: Text(
+        pending == null
+            ? 'Checking for swipes waiting to be sent…'
+            : waiting
+            ? '$pending swipe${pending == 1 ? '' : 's'} waiting to be sent'
+            : 'Every swipe has reached the back office',
+      ),
+      subtitle: Text(
+        waiting
+            ? 'The door is working. These will go across on their own when the '
+                  'connection returns, with the times they actually happened.'
+            : 'Nothing is queued on this terminal.',
+        style: const TextStyle(fontSize: 12.5),
+      ),
+      trailing: IconButton(
+        onPressed: _count,
+        icon: const Icon(Icons.refresh),
+        tooltip: 'Check again',
+      ),
+    );
+  }
+}
+
 class _CustomerDisplaySummary extends StatefulWidget {
   @override
   State<_CustomerDisplaySummary> createState() =>

@@ -47,6 +47,7 @@ const { dojoWebhookRoutes, webhookStatus } = require('./dojo');
 const { terminalRoutes, timesheetRoutes } = require('./terminals');
 const { deviceRoutes } = require('./devices');
 const { cardRoutes } = require('./cards');
+const { gymRoutes } = require('./gym');
 const { importRoutes } = require('./imports');
 const { reportRoutes } = require('./reports');
 const {
@@ -268,6 +269,12 @@ app.use(deviceRoutes({ pool, broadcast, secret: JWT_SECRET }));
 // two views of one set of tables, and splitting them across two mounts would
 // put them in two places to read.
 app.use(cardRoutes({ pool, broadcast, secret: JWT_SECRET }));
+
+// The gym door. Mounted at the root for the same reason cards is: the till's
+// half and the back office's half read one set of tables. Every route inside
+// refuses with 404 until a venue switches the gym on, so mounting it here costs
+// a pub nothing.
+app.use(gymRoutes({ pool, broadcast, secret: JWT_SECRET }));
 // Bringing a catalogue in from a spreadsheet. Mounted after the CRUD routes
 // it writes through, so nothing here can shadow /api/products.
 app.use('/api', importRoutes({ pool, broadcast, secret: JWT_SECRET }));

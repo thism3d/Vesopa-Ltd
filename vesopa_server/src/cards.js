@@ -47,6 +47,15 @@ function cardRoutes({ pool, broadcast, secret }) {
     // would be inventing a scheme they have not asked for and have no cards
     // for. An empty prefix matches nothing -- see classify().
     membership_prefix: '',
+
+    // A fifth programme, and empty for the same reason as the fourth. A gym
+    // card has to be its own prefix rather than share the loyalty one --
+    // "another prefix for gym members' cards due to it being unmanned and can't
+    // have pop ups" -- because a gym card read as a loyalty card is an unknown
+    // card opening the enrol-a-member form at a till with nobody behind it. See
+    // gym.js and schema_till_gym.sql.
+    gym_prefix: '',
+
     number_digits: 5,
     auto_enrol: 1,
 
@@ -70,7 +79,7 @@ function cardRoutes({ pool, broadcast, secret }) {
     wallet_on_display: 1,
   };
 
-  const KINDS = ['clerk', 'loyalty', 'gift', 'membership'];
+  const KINDS = ['clerk', 'loyalty', 'gift', 'membership', 'gym'];
 
   /**
    * A prefix as it may be stored.
@@ -126,6 +135,7 @@ function cardRoutes({ pool, broadcast, secret }) {
       { kind: 'loyalty', prefix: String(settings.loyalty_prefix || '') },
       { kind: 'gift', prefix: String(settings.gift_prefix || '') },
       { kind: 'membership', prefix: String(settings.membership_prefix || '') },
+      { kind: 'gym', prefix: String(settings.gym_prefix || '') },
     ]
       .filter((c) => c.prefix.length > 0 && number.startsWith(c.prefix))
       .sort((a, b) => b.prefix.length - a.prefix.length);
