@@ -192,4 +192,55 @@ check('nothing wraps a nav button’s text any more', () => {
   assert.ok(!code.includes('nav-word'), 'nav-word is back in the code');
 });
 
+// ---- Every page in the rail can actually be got to -------------------------
+//
+// The other direction, and the one that was missing.
+//
+// The checks above go ROUTES -> server: every path app.js knows about is served
+// the shell. Nothing went the other way -- nav button -> ROUTES -- and the Gym
+// page shipped through that gap. It was added to the rail with `hidden` on it
+// (to be revealed once a venue switched the gym on), and it was never added to
+// ROUTES. So the button was invisible, /gym fell through to the dashboard, and
+// the only switch that turns the gym on lives on the page nobody could open.
+// A whole feature, unreachable, with every one of its own tests passing.
+//
+// Three things have to line up for a view to exist at all, and now all three
+// are asserted for every button in the rail.
+
+const html = read('public', 'index.html');
+
+const navViews = [...html.matchAll(/<button class="nav" data-view="([^"]+)"([^>]*)>/g)]
+  .map((m) => ({ view: m[1], attrs: m[2] }));
+
+check('there are nav buttons to check', () => {
+  assert.ok(navViews.length > 20, `found ${navViews.length} nav buttons`);
+});
+
+check('every page in the rail has a section to show', () => {
+  const missing = navViews
+    .filter((n) => !html.includes(`id="view-${n.view}"`))
+    .map((n) => n.view);
+  assert.deepStrictEqual(missing, [], `no <section id="view-..."> for: ${missing}`);
+});
+
+check('every page in the rail has a URL of its own', () => {
+  // Without one, the address bar says /dashboard whatever you are looking at,
+  // a refresh throws the page away, and the page cannot be linked to or
+  // bookmarked -- or reached at all if its button is ever hidden.
+  const routes = app.slice(app.indexOf('const ROUTES'), app.indexOf('const viewForPath'));
+  const missing = navViews
+    .filter((n) => !new RegExp(`\\b${n.view}:\\s*'`).test(routes))
+    .map((n) => n.view);
+  assert.deepStrictEqual(missing, [], `not in ROUTES: ${missing}`);
+});
+
+check('no page in the rail is hidden in the markup', () => {
+  // `hidden` here is a page nobody can navigate to. Whether a role may see a
+  // view is applyAccess's job and it does it at runtime; a hidden attribute in
+  // the file is a page that is off for everybody, including the person who
+  // needs to switch it on.
+  const hidden = navViews.filter((n) => /\bhidden\b/.test(n.attrs)).map((n) => n.view);
+  assert.deepStrictEqual(hidden, [], `hidden in index.html: ${hidden}`);
+});
+
 console.log(`\n${passed} checks passed`);

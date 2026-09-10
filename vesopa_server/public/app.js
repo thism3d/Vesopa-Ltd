@@ -337,6 +337,13 @@ const ROUTES = {
   cards: '/cards',
   wallet: '/wallet',
   devices: '/devices',
+  gym: '/gym',
+  // Added when the reachability check above found it missing. Price Levels has
+  // had a nav button, a section and a loader since 1.6.9.0 and no URL, so the
+  // address bar said /dashboard while you were looking at it and a refresh
+  // threw the page away. Nobody reported it, which is what a missing route
+  // looks like: mildly annoying, every time, to whoever is using that page.
+  price_levels: '/price-levels',
   tender: '/tender',
   rules: '/rules',
   templates: '/templates',
@@ -6176,13 +6183,6 @@ async function start() {
   // here costs a tidy menu and nothing else.
   await applyAccess();
 
-  // And then the gym, which is a question applyAccess cannot answer: not "may
-  // this person see it" but "does this venue have one". Run afterwards rather
-  // than inside, because applyAccess sets `hidden` on every nav button it
-  // knows about and would otherwise put the Gym button back for every pub in
-  // the estate.
-  await revealGym();
-
   // Land on whatever the URL asks for, so a refresh or a bookmarked page
   // reopens where the user left off.
   show(viewForPath(location.pathname), { push: false });
@@ -8571,11 +8571,15 @@ const cardKindLabel = (kind) => ({
 /**
  * The prefixes this venue is actually offered.
  *
- * The gym one appears only where there is a gym. Read from `gymState`, which
- * `revealGym` fills in at start-up for exactly this sort of question -- and
- * falls back to "show it if it is set", so a venue that somehow has a gym
- * prefix and no gym settings row can still see and clear it rather than being
- * left with a prefix it cannot reach.
+ * The gym one appears only where there is a gym -- this page belongs to every
+ * venue, and a fifth prefix on it would be a fifth thing for a pub to wonder
+ * about.
+ *
+ * `gymState` is filled in by loadGym, so on a browser that has not opened the
+ * Gym page yet it is null. That is why the prefix itself is the second half of
+ * the test: a venue that has set one has a gym whether or not this tab has been
+ * there, and hiding a prefix somebody has already set would leave them with a
+ * field they cannot clear.
  */
 function cardKindsHere() {
   const gym = !!Number(gymState && gymState.enabled)
@@ -8747,40 +8751,26 @@ let gymBoardTimer = null;
 let gymAttendance = null;
 let gymExpiries = null;
 
-/**
- * Whether this venue has a gym, and therefore whether the rail says so.
+/*
+ * WHY THE GYM IS IN THE RAIL EVEN WHERE THERE IS NO GYM
  *
- * Called once at start-up, and again after Save — because switching the gym on
- * has to make the section appear without anybody signing out and in again,
- * which is exactly the sort of thing a manager tries once and then rings about.
+ * It was hidden until `enabled` was 1, which read as the obvious way to honour
+ * "disabled by default". It was not: the only switch that turns the gym on is
+ * on this page, so hiding the page hid the switch, and the feature could not be
+ * reached at all. There was no URL either -- `gym` was missing from ROUTES, so
+ * /gym fell through to the dashboard.
  *
- * A failure leaves the button hidden. The wrong way round would be a Gym entry
- * in the rail of every venue whose server has not run the migration yet.
+ * The requirement is about the till. "If disabled nothing of gym options
+ * appears in the till" -- and that half is enforced strictly, in three places
+ * at once: the Gym section, the gym block in a till's Settings, and whether a
+ * gym card is a kind of card the till has heard of at all.
+ *
+ * The back office is where a venue switches it on, so it has to be able to see
+ * it -- and it now behaves like every other optional feature in this rail:
+ * Wallet Passes, Deposits, Vouchers and Mix & Match are all there whether or
+ * not the venue uses them. A pub that opens this page is told in one sentence
+ * that the gym is off and what the switch does.
  */
-async function revealGym() {
-  const btn = $('nav-gym');
-  if (!btn) return false;
-
-  // applyAccess has already had its say about this button; whatever it decided
-  // stands, and this can only take the entry away, never grant it.
-  const allowed = !btn.hidden;
-
-  let on = false;
-  try {
-    const settings = await api('/gym/settings');
-    on = !!Number(settings.enabled);
-    gymState = settings;
-  } catch {
-    on = false;
-  }
-
-  btn.hidden = !(allowed && on);
-
-  // The group heading was decided before this ran. A People section that is
-  // visible stays visible; there is no case where the gym is the only thing
-  // under it, because Customers is always there when the gym is.
-  return on;
-}
 
 /**
  * The gym page.
@@ -9254,10 +9244,6 @@ document.addEventListener('click', async (e) => {
     await api('/gym/settings', { method: 'PUT', body: JSON.stringify(body) });
     e.target.textContent = 'Saved ✓';
     setTimeout(() => { e.target.textContent = 'Save gym'; }, 1500);
-    // The rail first: switching the gym on has to make the section appear
-    // without signing out and in again, and switching it off has to take it
-    // away just as promptly.
-    await revealGym();
     gymAttendance = null;
     gymExpiries = null;
     await loadGym();
