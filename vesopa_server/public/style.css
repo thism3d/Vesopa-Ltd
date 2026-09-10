@@ -1678,6 +1678,16 @@ tr.clickable:hover { background: var(--brand-soft); }
 .seg-btn:last-child { border-right: 0; }
 .seg-btn.active { background: var(--brand); color: var(--on-brand); font-weight: 600; }
 
+/* A label in one of these is a phrase, and a phrase must never break in the
+   middle of itself.
+ *
+ * On a touchscreen .seg-btn is locked to 40px (see the touch-target rules near
+ * the end of this file). "Last 7 days" wrapping to two lines inside a 40px box
+ * put "days" below the bottom of its own button and clipped it -- so a phone
+ * showed "Last 7", "Last 30" and "90" with a sliver of cut-off text under each.
+ * Reported from a phone; reproduced at 360, 390 and 412px. */
+.seg-btn { white-space: nowrap; }
+
 .panel-head {
   display: flex; align-items: baseline; justify-content: space-between;
   margin-bottom: 10px;
@@ -6414,6 +6424,45 @@ textarea, select[multiple], select[size] { height: auto; min-height: 0; }
     height: 40px;
     min-height: 40px;
   }
+}
+
+/* Five ranges across a phone, still as one joined control.
+ *
+ * It has to stay one line: a segmented picker IS the row of choices, and
+ * wrapping it onto two rows -- or scrolling it, which hides two of the five --
+ * turns a control you read at a glance into one you have to work out.
+ *
+ * So the row is made to fit rather than allowed to break. The segments share
+ * the width equally, the padding comes in, and each label has a short form that
+ * only a phone sees: "Last 30 days" is the right words on a desktop and
+ * "30 days" is the same meaning in the space actually available. See the
+ * .seg-long / .seg-short pair below.
+ *
+ * The kitchen's three-way control is excluded -- one-word labels, and its own
+ * stacking treatment at 760px.
+ */
+@media (max-width: 560px) {
+  .seg:not(.kds-mode-seg) {
+    display: flex;
+    width: 100%;
+  }
+  .seg:not(.kds-mode-seg) .seg-btn {
+    /* Equal fifths. `1 1 0` rather than `1 1 auto` so the segments are the same
+       width whatever is written in them, which is what makes a segmented
+       control read as one control rather than five buttons. */
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 7px 4px;
+    font-size: 12.5px;
+  }
+}
+
+/* Two ways of saying the same range: the full phrase, and the short one a
+   phone has room for. Exactly one is ever shown. */
+.seg-short { display: none; }
+@media (max-width: 560px) {
+  .seg-long { display: none; }
+  .seg-short { display: inline; }
 }
 
 /* A row of controls lines up on their middles. Several toolbars set
