@@ -27,6 +27,7 @@ import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vesopa_epos/data/gym.dart';
 import 'package:vesopa_epos/data/swipe_cards.dart';
+import 'package:vesopa_epos/ui/widgets/nav_rail.dart';
 
 /// A server that is not there. Every request fails, which is exactly the state
 /// under test.
@@ -119,6 +120,44 @@ Future<GymRepository> _ready({
 }
 
 void main() {
+  // ---------------------------------------------------------------------------
+  // The section only exists where the venue has a gym
+  // ---------------------------------------------------------------------------
+
+  group('the sections a till shows', () {
+    test('are unchanged for a venue with no gym', () {
+      // Nearly every venue on this platform is a pub. "If disabled nothing of
+      // gym options appears in the till" -- and the cheapest way for that to go
+      // wrong is a Gym entry sitting in the rail of every pub in the estate.
+      expect(navDestinationsFor(gym: false), same(navDestinations));
+    });
+
+    test('gain exactly one when it does', () {
+      final with_ = navDestinationsFor(gym: true);
+      expect(with_.length, navDestinations.length + 1);
+      expect(with_.where((d) => d.label == 'Gym').length, 1);
+    });
+
+    test('put the gym after Reports, not last', () {
+      // The order of a rail is a claim about how often each thing is used. At a
+      // gym the board is looked at far more than Products or Functions, and
+      // putting it last files the venue's main screen below two they may never
+      // open.
+      final labels = [for (final d in navDestinationsFor(gym: true)) d.label];
+      expect(labels.indexOf('Gym'), labels.indexOf('Reports') + 1);
+      expect(labels.indexOf('Gym'), lessThan(labels.indexOf('Settings')));
+    });
+
+    test('keep every section a till already had, in order', () {
+      // Adding a row shifts every index after it. The shell routes by label and
+      // re-finds its section when the list changes shape -- but only because
+      // nothing was dropped or reordered on the way past.
+      final labels = [for (final d in navDestinationsFor(gym: true)) d.label];
+      final before = [for (final d in navDestinations) d.label];
+      expect(labels.where(before.contains).toList(), before);
+    });
+  });
+
   // ---------------------------------------------------------------------------
   // Which cards are gym cards
   // ---------------------------------------------------------------------------
