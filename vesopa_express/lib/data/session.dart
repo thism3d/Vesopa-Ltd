@@ -157,7 +157,22 @@ class KioskSession extends Notifier<KioskState> {
   }
 
   /// Set this kiosk up: Continue with Vesopa, then the kiosk's own token.
-  Future<void> commission({void Function(Uri url)? onUrl}) async {
+  ///
+  /// [beforeApply] PUTS THE KIOSK WINDOW BACK ON THE SCREEN, and it is called
+  /// before the phase changes rather than after, which is the whole reason it
+  /// exists. The kiosk is out of the way while the sign-in browser is in front,
+  /// and Windows never presents a frame that was built while it was: the phase
+  /// moved to the passcode screen, the tree rebuilt, and the glass went on
+  /// showing "Set up this kiosk" because that was the last frame rasterised.
+  /// The manager -- who had in fact just signed in perfectly well -- pressed
+  /// Continue with Vesopa again and commissioned the venue a second time.
+  ///
+  /// So the order matters: window back first, phase second, and the frame that
+  /// carries the new screen is built while there is something to present it to.
+  Future<void> commission({
+    void Function(Uri url)? onUrl,
+    Future<void> Function()? beforeApply,
+  }) async {
     final option = await _api.vesopaOption();
     if (!option.enabled) {
       throw VesopaSsoFailed('Vesopa sign-in is not switched on for this server.');
@@ -175,6 +190,8 @@ class KioskSession extends Notifier<KioskState> {
     _api.token = done.token;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_tokenKey, done.token);
+
+    if (beforeApply != null) await beforeApply();
 
     if (!done.passcodeSet) {
       state = KioskState(phase: Phase.choosePasscode, message: done.venueName);

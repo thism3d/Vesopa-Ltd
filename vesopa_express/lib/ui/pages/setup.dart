@@ -59,19 +59,34 @@ class _SetupPageState extends ConsumerState<SetupPage> {
       _error = null;
       _opened = null;
     });
-    // The browser opens behind a full-screen window, so step out of it for
-    // the sign-in and back in afterwards, whatever happens.
+    // The kiosk gets out of the way so the sign-in browser can be seen, and
+    // comes back afterwards whatever happens -- including when the sign-in
+    // fails, or this page is gone by the time it does.
+    //
+    // It comes back BEFORE the phase changes, not after: a frame built while
+    // the kiosk is off the screen is never presented, so relocking afterwards
+    // left a manager who had just signed in still looking at "Set up this
+    // kiosk". Hence `beforeApply`, and hence the guard -- it must run exactly
+    // once, whichever of the two paths gets there first.
     await KioskWindow.release();
+    var relocked = false;
+    Future<void> relock() async {
+      if (relocked) return;
+      relocked = true;
+      await KioskWindow.relock();
+    }
+
     try {
       await ref.read(kioskSessionProvider.notifier).commission(
         onUrl: (url) {
           if (mounted) setState(() => _opened = url);
         },
+        beforeApply: relock,
       );
     } catch (e) {
       if (mounted) setState(() => _error = '$e');
     } finally {
-      await KioskWindow.relock();
+      await relock();
       if (mounted) setState(() => _busy = false);
     }
   }

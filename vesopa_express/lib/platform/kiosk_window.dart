@@ -56,15 +56,30 @@ class KioskWindow {
     );
   }
 
-  /// Step out of full screen so the system browser can be seen -- for setting
-  /// the kiosk up with Continue with Vesopa, and nothing else.
+  /// Get out of the way so the system browser can be seen -- for setting the
+  /// kiosk up with Continue with Vesopa, and nothing else.
+  ///
+  /// Hidden rather than dropped out of full screen. Toggling full screen off
+  /// and on churns the window's size and its surface with it, and left the
+  /// window a few pixels short of the monitor when it came back; hiding changes
+  /// neither, so the kiosk returns to exactly the window it left.
+  ///
+  /// ON ITS OWN THIS DOES NOT FIX THE STALE SCREEN, and it is worth being
+  /// precise about that, because it looked as though it had. Whichever way the
+  /// window goes away, Windows does not present a frame that was built while it
+  /// was off the screen -- so what actually matters is that the phase changes
+  /// AFTER the window is back, which is `beforeApply` in KioskSession.commission.
   static Future<void> release() async {
     if (!_desktop || windowed) return;
-    await windowManager.setFullScreen(false);
+    await windowManager.hide();
   }
 
   static Future<void> relock() async {
     if (!_desktop || windowed) return;
+    await windowManager.show();
+    // Full screen is re-asserted rather than assumed: a venue that alt-tabbed
+    // or a Windows update that restored the window should still come back to a
+    // locked kiosk, and asking for a state it is already in costs nothing.
     await windowManager.setFullScreen(true);
     await windowManager.focus();
   }
