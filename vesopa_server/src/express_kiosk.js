@@ -44,10 +44,10 @@ const express = require('express');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 
-const { requireAuth } = require('./auth');
+const { requireAuth, requireTerminal } = require('./auth');
 const core = require('./menu_core');
 const { recordSale } = require('./sales');
-const { recordTicket, readModes, parseStations } = require('./kitchen');
+const { recordTicket, readModes, parseStations, stationNames } = require('./kitchen');
 const terminalVesopa = require('./terminal_vesopa');
 const { linkAndFind } = require('./backoffice_auth');
 const dojo = require('./dojo_client');
@@ -72,7 +72,31 @@ const DEFAULTS = Object.freeze({
   notify_till: 1,
   notify_kitchen: 1,
   board_enabled: 1,
+  receipt_mode: 'ask',
 });
+
+/** Whether the kiosk prints a ticket: see schema_till_express.sql. */
+const RECEIPT_MODES = ['always', 'ask', 'never'];
+
+/**
+ * The languages a kiosk offers, first one the default.
+ *
+ * English only for now. The Welsh is written (l10n/strings.dart in the kiosk)
+ * but was drafted by the developer, and a venue in Wales showing the public a
+ * translation nobody Welsh has read is worse than showing none -- so it is
+ * hidden until a Welsh speaker has checked it. Bringing it back is adding 'cy'
+ * here: the kiosk draws the language button only when there is more than one,
+ * so no kiosk release is needed.
+ */
+const LANGUAGES = ['en'];
+
+/**
+ * Kitchen printing: how long a claimed print may go unanswered before another
+ * till may take it, how many tries a station gets, and how late is too late.
+ */
+const PRINT_CLAIM_MINUTES = 2;
+const PRINT_ATTEMPTS = 5;
+const PRINT_EXPIRE_MINUTES = 30;
 
 const FLAGS = [
   'enabled', 'eat_in', 'take_away', 'pay_card', 'pay_counter', 'demo_mode',
@@ -355,6 +379,13 @@ function expressKioskRoutes({ pool, broadcast, secret }) {
         const ids = cleanIdList(body.upsell_items);
         patch.upsell_items = ids.length ? ids.join(',') : null;
       }
+      if (Object.prototype.hasOwnProperty.call(body, 'receipt_mode')) {
+        const mode = String(body.receipt_mode || '').trim().toLowerCase();
+        if (!RECEIPT_MODES.includes(mode)) {
+          return res.status(400).json({ error: 'Receipts are printed always, when asked, or never.' });
+        }
+        patch.receipt_mode = mode;
+      }
 
       // What the row would be, so the rules below judge the whole of it and
       // not only what this request happened to send.
@@ -543,6 +574,7 @@ function expressKioskRoutes({ pool, broadcast, secret }) {
         ? String(req.query.date)
         : businessDate();
       await sweep(office).catch(() => {});
+      await expirePrints(office).catch(() => {});
       const [rows] = await pool.query(
         'SELECT o.id, o.public_id, o.number, o.status, o.status_note, o.order_type,' +
           '       o.payment, o.customer_name, o.total_minor, o.sale_id, o.ticket_id,' +
@@ -554,13 +586,41 @@ function expressKioskRoutes({ pool, broadcast, secret }) {
           ' ORDER BY o.id DESC LIMIT 500',
         [office, day]
       );
+
+      // Where each order's kitchen paper got to, by station, in the venue's
+      // own station names -- "Grill: not printed" is a sentence somebody can
+      // act on; a blank is not.
+      const prints = new Map();
+      if (rows.length) {
+        const [jobs] = await pool.query(
+          'SELECT order_id, station, status, claimed_by, error FROM epos_express_prints' +
+            ' WHERE office = ? AND order_id IN (' + rows.map(() => '?').join(',') + ')' +
+            ' ORDER BY station',
+          [office, ...rows.map((r) => r.id)]
+        );
+        const names = jobs.length ? await stationNames(pool, office) : {};
+        for (const j of jobs) {
+          (prints.get(j.order_id) || prints.set(j.order_id, []).get(j.order_id)).push({
+            station: j.station,
+            name: names[j.station] || j.station.toUpperCase().replace('KP', 'KP '),
+            status: j.status,
+            by: j.claimed_by || null,
+            error: j.error || null,
+          });
+        }
+      }
+
       res.json({
         date: day,
         orders: rows.map((r) => {
           let lines = [];
           try { lines = JSON.parse(r.lines_json || '[]'); } catch { lines = []; }
           const { lines_json: _drop, ...rest } = r;
-          return { ...rest, items: lines.filter((l) => !l.isModifier).reduce((n, l) => n + l.qty, 0) };
+          return {
+            ...rest,
+            items: lines.filter((l) => !l.isModifier).reduce((n, l) => n + l.qty, 0),
+            prints: prints.get(r.id) || [],
+          };
         }),
       });
     } catch (e) {
@@ -568,24 +628,34 @@ function expressKioskRoutes({ pool, broadcast, secret }) {
     }
   });
 
+  /**
+   * Move a number along by hand: Ready (it goes up on the board) or Collected
+   * (it comes off). For a pass with no kitchen screen to bump -- the till and
+   * the back office both do it, through this one rule. Answers the status the
+   * order now has, or null when it had already moved on.
+   */
+  async function moveOrder(office, id, action) {
+    const from = { ready: ['paid'], collected: ['paid', 'ready'] }[action];
+    if (!from) return undefined;
+    const stamp = action === 'ready' ? 'ready_at' : 'collected_at';
+    const [r] = await pool.execute(
+      'UPDATE epos_express_orders SET status = ?, ' + stamp + ' = NOW()' +
+        ' WHERE id = ? AND office = ? AND status IN (' + from.map(() => '?').join(',') + ')',
+      [action, id, office, ...from]
+    );
+    if (!r.affectedRows) return null;
+    broadcast({ type: 'express.changed', id: Number(id), status: action }, { office });
+    return action;
+  }
+
   /** Staff moving a number along by hand: the pass has no screen, or it was missed. */
   router.post('/api/express/orders/:id/:action', auth, async (req, res, next) => {
     try {
       const office = await tenantEmail(req);
-      const action = String(req.params.action);
-      const from = { ready: ['paid'], collected: ['paid', 'ready'] }[action];
-      if (!from) return res.status(400).json({ error: 'Unknown action.' });
-      const stamp = action === 'ready' ? 'ready_at' : 'collected_at';
-      const [r] = await pool.execute(
-        'UPDATE epos_express_orders SET status = ?, ' + stamp + ' = NOW()' +
-          ' WHERE id = ? AND office = ? AND status IN (' + from.map(() => '?').join(',') + ')',
-        [action, req.params.id, office, ...from]
-      );
-      if (!r.affectedRows) {
-        return res.status(409).json({ error: 'That order has already moved on.' });
-      }
-      broadcast({ type: 'express.changed', id: Number(req.params.id), status: action }, { office });
-      res.json({ ok: true, status: action });
+      const moved = await moveOrder(office, req.params.id, String(req.params.action));
+      if (moved === undefined) return res.status(400).json({ error: 'Unknown action.' });
+      if (moved === null) return res.status(409).json({ error: 'That order has already moved on.' });
+      res.json({ ok: true, status: moved });
     } catch (e) {
       next(e);
     }
@@ -756,6 +826,40 @@ function expressKioskRoutes({ pool, broadcast, secret }) {
     };
   }
 
+  /**
+   * What the kiosk prints at the top and bottom of a ticket: the venue's own
+   * receipt branding, the same fields the till prints, so a customer's paper
+   * from the kiosk and from the counter say the same thing about who took
+   * their money. A venue that has never opened the receipt designer gets its
+   * name and nothing else.
+   */
+  async function receiptFace(office, settings, venueName) {
+    let row = null;
+    try {
+      [[row]] = await pool.query(
+        'SELECT venue_name, address_line1, address_line2, city, postcode, phone,' +
+          '       vat_number, company_number, footer_message, footer_note' +
+          '  FROM epos_branding WHERE office = ?',
+        [office]
+      );
+    } catch (e) {
+      if (!e || e.code !== 'ER_NO_SUCH_TABLE') throw e;
+    }
+    const text = (v) => String(v || '').trim() || null;
+    const place = [text(row && row.city), text(row && row.postcode)].filter(Boolean).join(' ');
+    return {
+      mode: RECEIPT_MODES.includes(settings.receipt_mode) ? settings.receipt_mode : DEFAULTS.receipt_mode,
+      venue_name: text(row && row.venue_name) || venueName || null,
+      address: [text(row && row.address_line1), text(row && row.address_line2), place || null]
+        .filter(Boolean),
+      phone: text(row && row.phone),
+      vat_number: text(row && row.vat_number),
+      company_number: text(row && row.company_number),
+      footer: text(row && row.footer_message),
+      footer_note: text(row && row.footer_note),
+    };
+  }
+
   router.get('/api/express/kiosk/config', kioskAuth, async (req, res, next) => {
     try {
       res.set('Cache-Control', 'no-store');
@@ -788,6 +892,8 @@ function expressKioskRoutes({ pool, broadcast, secret }) {
 
       res.json({
         ...base,
+        languages: LANGUAGES,
+        receipt: await receiptFace(req.office, settings, base.venue.name),
         order_types: {
           eat_in: !!Number(settings.eat_in),
           take_away: !!Number(settings.take_away),
@@ -849,7 +955,7 @@ function expressKioskRoutes({ pool, broadcast, secret }) {
       const settings = await readSettings(req.office);
       if (!Number(settings.enabled)) return expressOff(res);
       const officeId = await officeIdFor(req);
-      const sections = (await core.menuSections(pool, officeId, req.office))
+      const sections = (await core.menuSections(pool, officeId, req.office, { meals: true }))
         .filter((s) => s.items.length);
 
       // "May we suggest" -- the venue's own picks, or its popular dishes.
@@ -1082,12 +1188,25 @@ function expressKioskRoutes({ pool, broadcast, secret }) {
         : null;
       if (ticket) await recordTicket(conn, ticket);
 
+      // The stations that print, as jobs for a till to claim. In the same
+      // transaction as the sale: a paid order must never exist without the
+      // record that its kitchen still needs paper.
+      const printing = Number(settings.notify_kitchen)
+        ? await printingStations(conn, order.office, lines)
+        : [];
+      for (const station of printing) {
+        await conn.execute(
+          'INSERT IGNORE INTO epos_express_prints (order_id, office, station) VALUES (?, ?, ?)',
+          [orderId, order.office, station]
+        );
+      }
+
       await conn.execute(
         'UPDATE epos_express_orders SET sale_id = ?, ticket_id = ? WHERE id = ?',
         [saleId, ticket ? ticket.id : null, orderId]
       );
       await conn.commit();
-      done = { order, sale, ticket, settings };
+      done = { order, sale, ticket, settings, printing };
     } catch (e) {
       await conn.rollback().catch(() => {});
       throw e;
@@ -1097,9 +1216,14 @@ function expressKioskRoutes({ pool, broadcast, secret }) {
 
     // Only once it is durable. A screen told about an order that then failed
     // to commit is a screen showing food nobody paid for.
-    const { order, sale, ticket, settings } = done;
+    const { order, sale, ticket, settings, printing } = done;
     if (ticket) {
       broadcast({ type: 'kitchen.ticket', id: ticket.id, office: order.office }, { office: order.office });
+    }
+    if (printing.length) {
+      // A till with a printer for one of these asks for the job straight away
+      // rather than on its next poll.
+      broadcast({ type: 'express.print', order_id: order.id, stations: printing }, { office: order.office });
     }
     broadcast(
       { type: 'order.created', id: sale.id, tableNumber: null, totalMinor: sale.total_minor, lines: sale.lines },
@@ -1122,13 +1246,57 @@ function expressKioskRoutes({ pool, broadcast, secret }) {
   }
 
   /**
+   * Which stations each line of an order goes to, in line order.
+   *
+   * A dish goes where its product is routed. An add-on goes WHERE ITS DISH
+   * GOES, whatever its own product says -- the till's rule, word for word (see
+   * routesByLine in vesopa_epos/lib/data/modifier_layout.dart), so a kiosk
+   * ticket is exactly the ticket a till would have fired. "Extra cheese" is
+   * read on the grill beside the burger it belongs to, and a meal's side and
+   * drink travel on the meal's ticket rather than scattering across the
+   * kitchen. Shared by the screen ticket and the printer jobs, so the two
+   * halves of one order can never be routed by two different rules.
+   */
+  async function stationsByLine(db, office, lines) {
+    const plus = [...new Set(lines.map((l) => Number(l.plu_id)).filter((p) => p > 0))];
+    const routes = new Map();
+    if (plus.length) {
+      const [rows] = await db.query(
+        'SELECT pluid, printer_routes, printer_route FROM bo_products' +
+          ' WHERE email = ? AND pluid IN (' + plus.map(() => '?').join(',') + ')',
+        [office, ...plus]
+      );
+      for (const r of rows) routes.set(r.pluid, parseStations(r.printer_routes ?? r.printer_route));
+    }
+    const stationsOf = [];
+    lines.forEach((line, index) => {
+      const parent = line.isModifier && line.parentIndex != null
+        ? stationsOf[line.parentIndex]
+        : undefined;
+      stationsOf[index] = parent !== undefined ? parent : routes.get(Number(line.plu_id)) || [];
+    });
+    return stationsOf;
+  }
+
+  /**
+   * The stations of an order that PRINT: routed to by one of its lines and
+   * set to Printer or Both. A kiosk has no printer of its own for the
+   * kitchen, so these become jobs a till claims -- see epos_express_prints.
+   */
+  async function printingStations(db, office, lines) {
+    const modes = await readModes(db, office);
+    const stationsOf = await stationsByLine(db, office, lines);
+    const routed = new Set(stationsOf.flat());
+    return [...routed].filter((s) => modes[s] === 'printer' || modes[s] === 'both').sort();
+  }
+
+  /**
    * The kitchen ticket a till would have fired for this order.
    *
    * Only lines routed to a station that has a SCREEN on it (mode screen or
-   * both), exactly as the till's own fire does -- a station that is printer
-   * only is printed by a till, which a kiosk is not. An add-on with no station
-   * of its own goes where its dish goes, so "extra cheese" is read on the
-   * grill beside the burger it belongs to rather than vanishing.
+   * both), exactly as the till's own fire does. A station that is printer only
+   * is printed by a till, which a kiosk is not: those become print jobs (see
+   * printingStations) instead of vanishing.
    */
   async function kitchenTicket(conn, order, lines, saleId, typeLabel, terminal) {
     const modes = await readModes(conn, order.office);
@@ -1139,26 +1307,10 @@ function expressKioskRoutes({ pool, broadcast, secret }) {
     );
     if (!screens.size) return null;
 
-    const plus = [...new Set(lines.map((l) => Number(l.plu_id)).filter((p) => p > 0))];
-    const routes = new Map();
-    if (plus.length) {
-      const [rows] = await conn.query(
-        'SELECT pluid, printer_routes, printer_route FROM bo_products' +
-          ' WHERE email = ? AND pluid IN (' + plus.map(() => '?').join(',') + ')',
-        [order.office, ...plus]
-      );
-      for (const r of rows) routes.set(r.pluid, parseStations(r.printer_routes ?? r.printer_route));
-    }
-
+    const stationsOf = await stationsByLine(conn, order.office, lines);
     const ticketLines = [];
-    const stationsOf = [];
     lines.forEach((line, index) => {
-      let own = routes.get(Number(line.plu_id)) || [];
-      if (line.isModifier && !own.length && line.parentIndex != null) {
-        own = stationsOf[line.parentIndex] || [];
-      }
-      stationsOf[index] = own;
-      const onScreens = own.filter((s) => screens.has(s));
+      const onScreens = stationsOf[index].filter((s) => screens.has(s));
       if (!onScreens.length) return;
       ticketLines.push({
         id: crypto.randomUUID(),
@@ -1521,6 +1673,387 @@ function expressKioskRoutes({ pool, broadcast, secret }) {
     );
     if (order) await finalise(order.id, 'webhook');
   }
+
+  // -------------------------------------------------------------------------
+  // Back office: meals
+  // -------------------------------------------------------------------------
+  //
+  // Which meals each dish on the Dine-in menu offers. A meal is a catalogue
+  // product with its own price and its own questions -- see mealsFor in
+  // menu_core.js -- so this page only links products to dishes, and shows the
+  // manager what each meal will walk a customer through.
+
+  async function officeIdOfUser(req, office) {
+    return req.user.officeId || (await core.officeIdOf(pool, office));
+  }
+
+  router.get('/api/express/meals', auth, async (req, res, next) => {
+    try {
+      const office = await tenantEmail(req);
+      const officeId = await officeIdOfUser(req, office);
+      const sections = await core.menuSections(pool, officeId, office, { meals: true });
+      res.json({
+        items: sections.flatMap((s) => s.items.map((i) => ({
+          id: i.id,
+          name: i.name,
+          section: s.name,
+          plu_id: i.plu_id,
+          price_minor: i.price_minor,
+          image_url: i.image_url,
+          meals: (i.meals || []).map((m) => ({
+            id: m.id,
+            plu_id: m.plu_id,
+            label: m.label,
+            name: m.name,
+            price_minor: m.price_minor,
+            steps: m.steps.map((g) => ({
+              name: g.name,
+              min_select: g.min_select,
+              max_select: g.max_select,
+              options: g.options.map((o) => ({ name: o.name, price_minor: o.price_minor })),
+            })),
+          })),
+        }))),
+      });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.post('/api/express/meals', auth, async (req, res, next) => {
+    try {
+      const office = await tenantEmail(req);
+      const officeId = await officeIdOfUser(req, office);
+      const body = req.body || {};
+      const itemId = Number(body.item_id);
+      const plu = Number(body.plu_id);
+      if (!Number.isInteger(itemId) || !Number.isInteger(plu) || plu <= 0) {
+        return res.status(400).json({ error: 'Choose a dish and the product that is its meal.' });
+      }
+      const [[item]] = await pool.query(
+        'SELECT id, plu_id FROM dinein_items WHERE id = ? AND office_id = ?',
+        [itemId, officeId]
+      );
+      if (!item) return res.status(404).json({ error: 'That dish is not on your menu.' });
+      if (Number(item.plu_id) === plu) {
+        return res.status(400).json({
+          error: 'A meal has to be its own product, with its own price: make a product such as '
+            + '"Cheeseburger Meal" and choose that.',
+        });
+      }
+      const [[product]] = await pool.query(
+        'SELECT pluid, product_name FROM bo_products WHERE email = ? AND pluid = ?',
+        [office, plu]
+      );
+      if (!product) return res.status(404).json({ error: 'There is no product with that PLU.' });
+
+      const label = String(body.label || '').trim().slice(0, 40) || null;
+      const [[{ n }]] = await pool.query(
+        'SELECT COUNT(*) AS n FROM dinein_item_meals WHERE item_id = ?',
+        [itemId]
+      );
+      try {
+        const [r] = await pool.execute(
+          'INSERT INTO dinein_item_meals (office_id, item_id, plu_id, label, sort_order) VALUES (?, ?, ?, ?, ?)',
+          [officeId, itemId, plu, label, Number(n)]
+        );
+        res.status(201).json({ ok: true, id: r.insertId });
+      } catch (e) {
+        if (e && e.code === 'ER_DUP_ENTRY') {
+          return res.status(409).json({ error: product.product_name + ' is already a meal for that dish.' });
+        }
+        throw e;
+      }
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.put('/api/express/meals/:id', auth, async (req, res, next) => {
+    try {
+      const office = await tenantEmail(req);
+      const officeId = await officeIdOfUser(req, office);
+      const body = req.body || {};
+      const sets = [];
+      const params = [];
+      if (body.label !== undefined) {
+        sets.push('label = ?');
+        params.push(String(body.label || '').trim().slice(0, 40) || null);
+      }
+      if (body.sort_order !== undefined && Number.isInteger(Number(body.sort_order))) {
+        sets.push('sort_order = ?');
+        params.push(Number(body.sort_order));
+      }
+      if (!sets.length) return res.status(400).json({ error: 'Nothing to change.' });
+      const [r] = await pool.execute(
+        'UPDATE dinein_item_meals SET ' + sets.join(', ') + ' WHERE id = ? AND office_id = ?',
+        [...params, req.params.id, officeId]
+      );
+      if (!r.affectedRows) return res.status(404).json({ error: 'No such meal.' });
+      res.json({ ok: true });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.delete('/api/express/meals/:id', auth, async (req, res, next) => {
+    try {
+      const office = await tenantEmail(req);
+      const officeId = await officeIdOfUser(req, office);
+      const [r] = await pool.execute(
+        'DELETE FROM dinein_item_meals WHERE id = ? AND office_id = ?',
+        [req.params.id, officeId]
+      );
+      if (!r.affectedRows) return res.status(404).json({ error: 'No such meal.' });
+      res.json({ ok: true });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // The till: kiosk orders, and kiosk tickets for the kitchen printers
+  // -------------------------------------------------------------------------
+  //
+  // On the till's own token (requireTerminal), which carries the venue. A kiosk
+  // token and a kitchen screen's are refused by it, as a till's is refused by
+  // everything else in this file.
+
+  const terminal = requireTerminal(secret);
+
+  /** A print job nobody printed in time is expired, never printed late. */
+  async function expirePrints(office) {
+    await pool.execute(
+      "UPDATE epos_express_prints SET status = 'expired'" +
+        " WHERE office = ? AND status IN ('waiting', 'claimed', 'failed')" +
+        ' AND created_at < (NOW() - INTERVAL ' + PRINT_EXPIRE_MINUTES + ' MINUTE)',
+      [office]
+    );
+  }
+
+  async function kioskNamesOf(rows) {
+    const ids = [...new Set(rows.map((r) => r.kiosk_id).filter(Boolean))];
+    const names = new Map();
+    if (ids.length) {
+      const [ks] = await pool.query(
+        'SELECT id, name FROM epos_express_kiosks WHERE id IN (' + ids.map(() => '?').join(',') + ')',
+        ids
+      );
+      for (const k of ks) names.set(k.id, k.name);
+    }
+    return names;
+  }
+
+  function linesOf(order) {
+    try { return JSON.parse(order.lines_json || '[]'); } catch { return []; }
+  }
+
+  /**
+   * Today's kiosk orders a till should know about: paid and being made, and
+   * ready and waiting to be collected. The till raises a card for each new one
+   * and offers Ready and Collected on it -- which is how a counter-service
+   * venue with no kitchen screen moves a number up on the board.
+   *
+   * `enabled` and `notify_till` travel with the list, because they decide
+   * whether a till raises anything at all, and a till has to stop the minute a
+   * manager says so. Pay-at-the-counter orders are not here: they reach the
+   * till as dine-in orders, where it takes the money for them.
+   */
+  router.get('/till/express/orders', terminal, async (req, res, next) => {
+    try {
+      res.set('Cache-Control', 'no-store');
+      const settings = await readSettings(req.office);
+      if (!Number(settings.enabled)) return res.json({ enabled: false, notify_till: false, orders: [] });
+      await sweep(req.office).catch(() => {});
+      const [rows] = await pool.query(
+        'SELECT * FROM epos_express_orders' +
+          " WHERE office = ? AND business_date = ? AND status IN ('paid', 'ready')" +
+          ' ORDER BY paid_at, id LIMIT 200',
+        [req.office, businessDate()]
+      );
+      const names = await kioskNamesOf(rows);
+      res.json({
+        enabled: true,
+        notify_till: !!Number(settings.notify_till),
+        orders: rows.map((o) => ({
+          id: o.id,
+          number: o.number,
+          status: o.status,
+          order_type: o.order_type,
+          customer_name: o.customer_name || null,
+          total_minor: o.total_minor,
+          kiosk: names.get(o.kiosk_id) || 'Vesopa Express',
+          paid_at: o.paid_at,
+          ready_at: o.ready_at,
+          lines: linesOf(o).map((l) => ({
+            name: l.name,
+            qty: l.qty,
+            unit_minor: l.unit,
+            is_modifier: !!l.isModifier,
+            note: l.note || null,
+          })),
+        })),
+      });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.post('/till/express/orders/:id/:action', terminal, async (req, res, next) => {
+    try {
+      const moved = await moveOrder(req.office, req.params.id, String(req.params.action));
+      if (moved === undefined) return res.status(400).json({ error: 'Unknown action.' });
+      if (moved === null) return res.status(409).json({ error: 'That order has already moved on.' });
+      res.json({ ok: true, status: moved });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /** A job is on offer: nobody has it, its claim went quiet, or it failed and has tries left. */
+  const ON_OFFER =
+    "(p.status = 'waiting'" +
+    " OR (p.status = 'claimed' AND p.claimed_at < (NOW() - INTERVAL " + PRINT_CLAIM_MINUTES + ' MINUTE))' +
+    " OR (p.status = 'failed' AND p.attempts < " + PRINT_ATTEMPTS + '))' +
+    ' AND p.created_at >= (NOW() - INTERVAL ' + PRINT_EXPIRE_MINUTES + ' MINUTE)';
+
+  /** The ticket a till prints for one kiosk order, at the stations named. */
+  async function printTicket(order, stations) {
+    const lines = linesOf(order);
+    const stationsOf = await stationsByLine(pool, order.office, lines);
+    const wanted = new Set(stations);
+    return {
+      order_id: order.id,
+      number: order.number,
+      order_type: order.order_type,
+      order_type_label: ORDER_TYPES[order.order_type] || 'Take away',
+      customer_name: order.customer_name || null,
+      kiosk: await kioskName(order.kiosk_id),
+      placed_at: order.paid_at || order.created_at,
+      stations,
+      lines: lines
+        .map((l, i) => ({
+          name: l.name,
+          qty: l.qty,
+          note: l.note || null,
+          is_modifier: !!l.isModifier,
+          stations: stationsOf[i].filter((s) => wanted.has(s)),
+        }))
+        .filter((l) => l.stations.length),
+    };
+  }
+
+  /**
+   * Kiosk tickets waiting for a kitchen printer.
+   *
+   * A till asks on every `express.print` it hears and on a slow poll, takes
+   * the stations it has a printer for, and claims them -- see the claim route.
+   * Only the last thirty minutes: an order that nobody printed by then has
+   * expired, and the back office says so, rather than a till switched on at
+   * six o'clock printing lunch.
+   */
+  router.get('/till/express/print-queue', terminal, async (req, res, next) => {
+    try {
+      res.set('Cache-Control', 'no-store');
+      const settings = await readSettings(req.office);
+      if (!Number(settings.enabled) || !Number(settings.notify_kitchen)) return res.json({ jobs: [] });
+      await expirePrints(req.office);
+      const [rows] = await pool.query(
+        'SELECT p.order_id, p.station FROM epos_express_prints p' +
+          ' WHERE p.office = ? AND ' + ON_OFFER +
+          ' ORDER BY p.created_at, p.order_id LIMIT 100',
+        [req.office]
+      );
+      const byOrder = new Map();
+      for (const r of rows) (byOrder.get(r.order_id) || byOrder.set(r.order_id, []).get(r.order_id)).push(r.station);
+      res.json({
+        jobs: [...byOrder].map(([orderId, stations]) => ({ order_id: orderId, stations })),
+      });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /**
+   * Take some stations of one order's ticket to print.
+   *
+   * ONE UPDATE decides who wins: it stamps a fresh claim id on every named
+   * station still on offer, and the till is answered with exactly the
+   * stations that carry its id. Two tills asking in the same instant both run
+   * the statement; the row lock makes one of them find nothing left to take.
+   * So a venue with two tills and a printer at each gets one ticket per
+   * station, not two.
+   */
+  router.post('/till/express/print-queue/:orderId/claim', terminal, async (req, res, next) => {
+    try {
+      const body = req.body || {};
+      const wanted = [...new Set((Array.isArray(body.stations) ? body.stations : [])
+        .map((s) => String(s).trim().toLowerCase())
+        .filter((s) => parseStations(s).length))];
+      if (!wanted.length) return res.status(400).json({ error: 'Name the stations this till prints.' });
+
+      const claim = crypto.randomUUID();
+      const by = String(body.terminal || '').trim().slice(0, 120) || 'A till';
+      await pool.execute(
+        'UPDATE epos_express_prints p' +
+          ' SET p.status = ?, p.claim_id = ?, p.claimed_by = ?, p.claimed_at = NOW(),' +
+          '     p.attempts = p.attempts + 1, p.error = NULL' +
+          ' WHERE p.order_id = ? AND p.office = ?' +
+          '   AND p.station IN (' + wanted.map(() => '?').join(',') + ') AND ' + ON_OFFER,
+        ['claimed', claim, by, req.params.orderId, req.office, ...wanted]
+      );
+      const [won] = await pool.query(
+        'SELECT station FROM epos_express_prints WHERE claim_id = ? ORDER BY station',
+        [claim]
+      );
+      if (!won.length) return res.json({ claim_id: null, stations: [] });
+
+      const order = await loadOrder('id = ? AND office = ?', [req.params.orderId, req.office]);
+      if (!order) return res.status(404).json({ error: 'No such order.' });
+      const stations = won.map((w) => w.station);
+      res.json({ claim_id: claim, stations, ticket: await printTicket(order, stations) });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /**
+   * How the printing went, station by station. A failure goes back on offer
+   * (for another till, or this one when somebody has loaded paper) until it
+   * has had its tries; the back office shows the printer's own words.
+   */
+  router.post('/till/express/print-queue/:orderId/result', terminal, async (req, res, next) => {
+    try {
+      const body = req.body || {};
+      const claim = String(body.claim_id || '');
+      if (!/^[0-9a-f-]{36}$/i.test(claim)) return res.status(400).json({ error: 'Which claim?' });
+      const results = Array.isArray(body.results) ? body.results : [];
+      let changed = 0;
+      for (const r of results) {
+        const station = String((r && r.station) || '').trim().toLowerCase();
+        if (!parseStations(station).length) continue;
+        const ok = !!(r && r.ok);
+        const [u] = await pool.execute(
+          ok
+            ? "UPDATE epos_express_prints SET status = 'printed', printed_at = NOW(), error = NULL" +
+                " WHERE order_id = ? AND office = ? AND station = ? AND claim_id = ? AND status = 'claimed'"
+            : "UPDATE epos_express_prints SET status = 'failed', error = ?" +
+                " WHERE order_id = ? AND office = ? AND station = ? AND claim_id = ? AND status = 'claimed'",
+          ok
+            ? [req.params.orderId, req.office, station, claim]
+            : [String((r && r.error) || 'The printer did not print it.').slice(0, 300),
+                req.params.orderId, req.office, station, claim]
+        );
+        changed += u.affectedRows;
+      }
+      if (changed) {
+        broadcast({ type: 'express.changed', id: Number(req.params.orderId), prints: true }, { office: req.office });
+      }
+      res.json({ ok: true, updated: changed });
+    } catch (e) {
+      next(e);
+    }
+  });
 
   // -------------------------------------------------------------------------
   // The collection board

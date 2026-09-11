@@ -1337,8 +1337,30 @@ function dineinRoutes({ pool, broadcast, secret }) {
       for (const r of rows) allergensByPlu.set(r.pluid, r.allergens);
     }
 
+    // Which of these came from a Vesopa Express kiosk ("pay at the counter"),
+    // and the collection number it carries. Such an order has no table -- a
+    // kiosk has none -- and the till has to take payment for it at the
+    // counter rather than put it on a table's bill, so it needs to know.
+    //
+    // Its own query rather than a join, so a server whose schema predates
+    // Express (and the scratch schemas the tests build) still answers; and
+    // added as a field on each order rather than changing the shape of the
+    // array every till on the previous release parses.
+    const kioskNumbers = new Map();
+    try {
+      const [kiosk] = await pool.query(
+        'SELECT dinein_order_id, number FROM epos_express_orders' +
+          ' WHERE dinein_order_id IN (' + orders.map(() => '?').join(',') + ')',
+        orders.map((o) => o.id)
+      );
+      for (const k of kiosk) kioskNumbers.set(k.dinein_order_id, k.number);
+    } catch (e) {
+      if (!e || e.code !== 'ER_NO_SUCH_TABLE') throw e;
+    }
+
     return orders.map((o) => ({
       ...o,
+      kiosk_number: kioskNumbers.get(o.id) ?? null,
       lines: lines
         .filter((l) => l.dinein_order_id === o.id)
         .map((l) => ({

@@ -18,6 +18,12 @@ export const APPS = {
     // shows under App identity > Store ID.
     storeId: process.env.VESOPA_DISPLAY_STORE_ID || "9P8JCLQ5M3SQ",
   },
+  "vesopa-express": {
+    label: "Vesopa Express",
+    // Reserved in Partner Center on 2026-09-11 (package family
+    // MeirionDavies.VesopaExpress_nyzwpk2n60a5j).
+    storeId: process.env.VESOPA_EXPRESS_STORE_ID || "9N5W5VLP2948",
+  },
 };
 
 export function resolveStoreId(nameOrId) {

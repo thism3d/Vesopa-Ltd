@@ -222,5 +222,11 @@ __pycache__/
 
 # The owner's brief for Vesopa Express. It carries the Dojo sandbox secret key
 # in plain text, so it stays on this machine; the brief itself is restated in
-# vesopa_expresss/tasks.md without it. The key lives in the server's .env.
+# vesopa_express/tasks.md without it. The key lives in the server's .env.
+#
+# Both spellings, because the folder was vesopa_expresss/ until 11 September
+# and was renamed by hand: the rule written for the old name stopped covering
+# the file the moment the folder moved, and `git add vesopa_express` would
+# have published the key.
+vesopa_express/newapp.md
 vesopa_expresss/newapp.md

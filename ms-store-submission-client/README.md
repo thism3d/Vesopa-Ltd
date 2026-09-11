@@ -199,6 +199,24 @@ generated from it and are gitignored.
    blind PUT to a SAS URL that returns no useful body. Read the blob back with
    a HEAD and compare byte counts.
 
+### A new app's first submission
+
+It cannot be done from here. Reserving a name makes Partner Center open
+"Submission 1" for the app, and the API will read that draft but not write
+it: a PUT returns `409 InvalidState` — *"Cannot update the submission because
+it is in the state 'None'. If you need to change the submission, delete the
+submission and create a new one."* A GET of it carries no `fileUploadUrl`
+either, so there is nowhere to send a package. And "create a new one" is no
+way round it: Microsoft requires an app to have one completed submission,
+with its age rating, before the API can create submissions for it — and the
+age rating questionnaire exists only in Partner Center.
+
+So a new app's first release is typed into Partner Center by hand. Vesopa
+Express (9N5W5VLP2948, September 2026) went that way; what was typed is
+`listings/express-1.0.0.0.json` (and `listings/express-eula.txt`). From its
+second release it is `stage.js` / `commit.js` like the others, under the name
+`vesopa-express`.
+
 ## Safety notes
 
 - **Don't mix API and Partner Center UI edits** on the same submission —

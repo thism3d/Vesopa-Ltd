@@ -2950,6 +2950,7 @@
 
           <div class="gym-tabs" role="tablist">
             <button class="gym-tab on" data-exptab="orders" role="tab">Orders</button>
+            <button class="gym-tab" data-exptab="meals" role="tab">Meals</button>
             <button class="gym-tab" data-exptab="kiosks" role="tab">Kiosks</button>
             <button class="gym-tab" data-exptab="settings" role="tab">Settings</button>
           </div>
@@ -2971,6 +2972,44 @@
                 </label>
               </div>
               <div id="exp-orders"></div>
+            </div>
+          </div>
+
+          <!-- ---- Meals ----------------------------------------------- -->
+          <div class="gym-panel" data-exppanel="meals" hidden>
+            <div class="card rd-card">
+              <h3>Make it a meal</h3>
+              <p class="muted small">
+                A dish on the kiosk can offer a meal: <b>Just the burger</b> or
+                <b>Make it a meal</b>, then one step at a time through the meal's
+                own questions &mdash; a side, a drink &mdash; with a picture for
+                each answer. A meal is a product of its own, so its price lives in
+                Products like every other price, and the till sells it the same way.
+              </p>
+              <ol class="small exp-steps">
+                <li>In <b>Products</b>, make the meal: <i>Cheeseburger Meal</i> at the meal price.</li>
+                <li>Make the answers as products priced as the upgrade: <i>Chips</i> at &pound;0,
+                  <i>Sweet potato fries</i> at &pound;0.80.</li>
+                <li>In <b>Modifiers</b>, give the meal its questions: <i>Choose your side</i> and
+                  <i>Choose your drink</i>, one answer each.</li>
+                <li>Here, link the meal to the dish. A dish with a Regular and a Large meal gets two.</li>
+              </ol>
+              <div class="exp-meal-add">
+                <label>Dish
+                  <select id="exp-meal-dish"></select>
+                </label>
+                <label>Its meal (a product)
+                  <select id="exp-meal-plu"></select>
+                </label>
+                <label>Size, if it has more than one
+                  <input type="text" id="exp-meal-label" maxlength="40" placeholder="Regular">
+                </label>
+                <button class="btn primary small" id="exp-meal-add">Add meal</button>
+              </div>
+            </div>
+            <div class="card rd-card">
+              <h3>Meals on your menu</h3>
+              <div id="exp-meals"></div>
             </div>
           </div>
 
@@ -3052,8 +3091,31 @@
                   <div id="exp-board"></div>
                   <p class="muted small">
                     Kitchen screens get the dishes routed to a station set to Screen
-                    or Both under Kitchen Screens. A station that only prints is
-                    printed by a till, which a kiosk is not.
+                    or Both under Kitchen Screens. A station set to Printer or Both
+                    gets its ticket on paper too: a till with a printer at that
+                    station prints it (Vesopa EPOS 1.7.3 or later), once, however
+                    many tills the venue has. The Orders tab says where each ticket
+                    printed, or why it did not.
+                  </p>
+                </div>
+
+                <div class="card rd-card">
+                  <h3>Receipts at the kiosk</h3>
+                  <div class="grid2">
+                    <label>A ticket from the kiosk's printer
+                      <select data-exp="receipt_mode">
+                        <option value="ask">Ask the customer (Print a receipt?)</option>
+                        <option value="always">Always print one</option>
+                        <option value="never">Never</option>
+                      </select>
+                    </label>
+                  </div>
+                  <p class="muted small">
+                    The ticket carries the order number in large type, eat in or take
+                    away, the dishes and the total with its VAT, under your receipt
+                    header and footer from <b>Receipt Designer</b>. A pay-at-the-counter
+                    order says so across the top. The printer itself is chosen on the
+                    kiosk, in its Settings; a kiosk with none prints nothing.
                   </p>
                 </div>
 

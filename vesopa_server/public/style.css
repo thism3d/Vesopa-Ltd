@@ -6902,6 +6902,22 @@ textarea, select[multiple], select[size] { height: auto; min-height: 0; }
 }
 #view-express .table input[type="text"],
 #view-express .table select { width: 100%; min-width: 140px; }
+/* Where each kitchen station's paper got to, under the order's status. */
+.exp-prints { margin-top: 4px; line-height: 1.9; }
+.exp-steps { margin: 6px 0 12px; padding-left: 20px; line-height: 1.6; }
+/* Dish, product, size and the button on one line where there is room, and
+   stacked on a phone. */
+.exp-meal-add {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.4fr) minmax(0, .8fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+.exp-meal-add label { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.exp-meal-add select, .exp-meal-add input { width: 100%; min-width: 0; }
+@media (max-width: 760px) {
+  .exp-meal-add { grid-template-columns: 1fr; }
+}
 
 .gym-date,
 .gym-range {

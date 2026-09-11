@@ -92,6 +92,11 @@ async function main() {
   const officeToken = jwt.sign({ email: OFFICE, officeId: office.id, role: 'office' }, secret, {
     expiresIn: '20m',
   });
+  // A till of the test venue, shaped as issueTerminalToken makes one -- for the
+  // routes a till calls: its kiosk orders, and the kitchen-printer queue.
+  const tillToken = jwt.sign({ scope: 'terminal', office: OFFICE, officeId: office.id }, secret, {
+    expiresIn: '20m',
+  });
 
   const call = async (p, { method = 'GET', body, token = officeToken } = {}) => {
     const res = await fetch(BASE + p, {
@@ -162,6 +167,13 @@ async function main() {
           const [r] = await db.execute('DELETE FROM dinein_orders WHERE id = ? AND office_id = ?', [o.dinein_order_id, office.id]);
           removed.queued += r.affectedRows;
         }
+      }
+      if (orders.length) {
+        const [p] = await db.execute(
+          'DELETE FROM epos_express_prints WHERE office = ? AND order_id IN (' + orders.map(() => '?').join(',') + ')',
+          [OFFICE, ...orders.map((o) => o.id)]
+        );
+        removed.prints = p.affectedRows;
       }
       const [r] = await db.execute('DELETE FROM epos_express_orders WHERE kiosk_id IN (' + holes + ')', kiosks);
       removed.orders = r.affectedRows;
@@ -360,11 +372,38 @@ async function main() {
       assert(bo.status === 401, `the back office answered a kiosk token with ${bo.status}`);
     });
 
-    await check('the menu is served, priced from the catalogue', async () => {
+    await check('the kiosk is told: English only, and how to print a ticket', async () => {
+      const cfg = await call('/api/express/kiosk/config', as);
+      assert(JSON.stringify(cfg.body.languages) === '["en"]', `languages ${JSON.stringify(cfg.body.languages)}`);
+      const r = cfg.body.receipt;
+      assert(r && ['always', 'ask', 'never'].includes(r.mode), `receipt ${JSON.stringify(r)}`);
+      assert(r.venue_name, 'the ticket would have no venue name on it');
+      console.log(`        receipt: ${r.mode}, "${r.venue_name}", VAT ${r.vat_number || 'none'}, ${r.address.length} address lines`);
+    });
+
+    let expected = 0;
+    let orderLines = [];
+    await check('the menu is served, priced from the catalogue, with any meals and their steps', async () => {
       const res = await call('/api/express/kiosk/menu', as);
       assert(res.status === 200, `menu answered ${res.status}`);
-      const dish = res.body.sections.flatMap((s) => s.items).find((i) => i.id === dishId);
+      const all = res.body.sections.flatMap((s) => s.items);
+      const dish = all.find((i) => i.id === dishId);
       assert(dish && dish.price_minor > 0, 'the dish is not on the menu with a price');
+      orderLines = [{ item_id: dishId, qty: 2 }];
+      expected = dish.price_minor * 2;
+
+      // A meal, when the venue has one: its first answer to every question it
+      // requires, which is what a customer tapping straight through would pick.
+      const withMeal = all.find((i) => i.available && (i.meals || []).length);
+      if (withMeal) {
+        const meal = withMeal.meals[0];
+        const picks = meal.steps.flatMap((g) => g.options.slice(0, Math.max(1, g.min_select)));
+        orderLines.push({ item_id: withMeal.id, qty: 1, meal_plu: meal.plu_id, add_ons: picks.map((o) => o.plu_id) });
+        expected += meal.price_minor + picks.reduce((n, o) => n + o.price_minor, 0);
+        console.log(`        meal: ${withMeal.name} -> ${meal.name} (${meal.steps.map((g) => g.name).join(', ')})`);
+      } else {
+        console.log('        (no dish on this menu offers a meal: meal pricing not exercised)');
+      }
     });
 
     let machine = null;
@@ -381,10 +420,11 @@ async function main() {
         method: 'POST',
         body: {
           client_ref: crypto.randomUUID(), order_type: 'take_away', payment: 'card',
-          lines: [{ item_id: dishId, qty: 2 }],
+          lines: orderLines,
         },
       });
       assert(placed.status === 201, `order answered ${placed.status}: ${JSON.stringify(placed.body)}`);
+      assert(placed.body.total_minor === expected, `priced ${placed.body.total_minor}, the menu says ${expected}`);
       const stages = [placed.body.stage];
       let view = placed.body;
       for (let i = 0; i < 60 && view.stage !== 'paid'; i++) {
@@ -407,6 +447,47 @@ async function main() {
       paid = row;
     });
 
+    // The test venue has no kitchen screens, so every station it routes to is
+    // a printer: a paid order is paper for a till to print, and nothing else.
+    const asTill = { token: tillToken };
+    await check('the stations that print are waiting for a till, and one till takes them', async () => {
+      assert(paid, 'no paid order');
+      const [jobs] = await db.query('SELECT station, status FROM epos_express_prints WHERE order_id = ?', [paid.id]);
+      console.log(`        print jobs: ${jobs.map((j) => j.station + ' ' + j.status).join(', ') || 'none'}`);
+      assert(jobs.length, 'a paid order at a venue with only printers made no print jobs');
+      const queue = await call('/till/express/print-queue', asTill);
+      assert(queue.status === 200, `the queue answered ${queue.status}`);
+      const job = (queue.body.jobs || []).find((j) => j.order_id === paid.id);
+      assert(job, 'the order is not in the till queue');
+      const claim = await call('/till/express/print-queue/' + paid.id + '/claim', {
+        ...asTill, method: 'POST', body: { stations: job.stations, terminal: 'Live check till' },
+      });
+      assert(claim.status === 200 && claim.body.stations.length === job.stations.length, JSON.stringify(claim.body));
+      assert(claim.body.ticket.number === paid.number, 'the ticket carries the wrong number');
+      assert(claim.body.ticket.lines.length, 'the ticket has nothing on it');
+      const second = await call('/till/express/print-queue/' + paid.id + '/claim', {
+        ...asTill, method: 'POST', body: { stations: job.stations, terminal: 'Second till' },
+      });
+      assert(second.body.stations.length === 0, 'a second till took a claimed ticket');
+      const done = await call('/till/express/print-queue/' + paid.id + '/result', {
+        ...asTill, method: 'POST',
+        body: { claim_id: claim.body.claim_id, results: job.stations.map((station) => ({ station, ok: true })) },
+      });
+      assert(done.body.updated === job.stations.length, JSON.stringify(done.body));
+      const bo = await call('/api/express/orders');
+      const mine = (bo.body.orders || []).find((o) => o.id === paid.id);
+      assert(mine && mine.prints.every((p) => p.status === 'printed' && p.by === 'Live check till'), JSON.stringify(mine && mine.prints));
+      console.log(`        back office: ${mine.prints.map((p) => p.name + ' ' + p.status).join(', ')}`);
+    });
+
+    await check('the till sees the paid kiosk order and moves it to Ready on the board', async () => {
+      const list = await call('/till/express/orders', asTill);
+      assert(list.status === 200 && list.body.enabled === true, `till list answered ${list.status}`);
+      assert((list.body.orders || []).some((o) => o.id === paid.id), 'the paid order is not on the till');
+      const moved = await call('/till/express/orders/' + paid.id + '/ready', { ...asTill, method: 'POST' });
+      assert(moved.status === 200 && moved.body.status === 'ready', `ready answered ${moved.status}`);
+    });
+
     await check('the collection board shows the number', async () => {
       const settings = (await call('/api/express/settings')).body;
       const token = String(settings.board_url || '').split('/').pop();
@@ -427,6 +508,11 @@ async function main() {
       assert(res.status === 201 && res.body.status === 'counter', `answered ${res.status} ${res.body.status}`);
       const [[row]] = await db.query('SELECT dinein_order_id, sale_id FROM epos_express_orders WHERE public_id = ?', [res.body.public_id]);
       assert(row.dinein_order_id && !row.sale_id, 'it is not in the till queue, or it became a sale');
+      // And the till is told it came from a kiosk, with its number -- which is
+      // what makes it offer Take payment instead of asking for a table.
+      const queue = await call('/till/dinein/orders', asTill);
+      const mine = (queue.body || []).find((o) => o.id === row.dinein_order_id);
+      assert(mine && mine.kiosk_number === res.body.number, `kiosk_number ${mine && mine.kiosk_number}`);
     });
 
     await check('cancelling before a card is presented leaves no sale', async () => {

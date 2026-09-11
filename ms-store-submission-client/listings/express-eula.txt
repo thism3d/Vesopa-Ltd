@@ -1,0 +1,23 @@
+Vesopa Express End User License Agreement (EULA)
+
+This End User License Agreement ("Agreement") is a legal agreement between you (either an individual or a single entity) and Vesopa EPOS Ltd for the Vesopa Express software product, which includes computer software and associated media, printed materials, and online or electronic documentation ("Software").
+
+By installing, copying, or otherwise using the Software, you agree to be bound by the terms of this Agreement. If you do not agree to the terms of this Agreement, do not install or use the Software.
+
+1. Grant of License: Vesopa EPOS Ltd grants you a non-exclusive, non-transferable license to use the Software as a self-service ordering kiosk for your commercial hospitality, food service or retail business, in accordance with the features of your valid Vesopa EPOS subscription or license tier.
+
+2. Companion Software: The Software is a companion to Vesopa EPOS and has no function without it. It shows the menu, prices and settings your venue keeps in the Vesopa back office and sends orders to it. Vesopa EPOS is licensed separately, under its own agreement.
+
+3. Card Payments: Card payments taken at the kiosk are processed by Dojo, or by another payment provider your venue has chosen, under your venue's own agreement with that provider. Vesopa EPOS Ltd is not a payment service provider, does not receive or store card details, and is not responsible for the availability, fees, decisions or settlement of the payment provider.
+
+4. Your Menu and Your Customers: You are solely responsible for what the Software displays on your behalf, including menu descriptions, pictures, prices, and allergen and dietary information, for its accuracy, and for its compliance with applicable law, including food information and consumer protection law. A customer with an allergy or dietary need should always be able to ask a member of your staff.
+
+5. Kiosk Hardware: The Software is intended for touchscreen kiosks, tablets and computers that you supply. Vesopa EPOS Ltd is not responsible for the performance, compatibility, or fitness for purpose of third-party kiosks, touchscreens, card machines, receipt printers, mounts, or drivers.
+
+6. Restrictions: You may not reverse engineer, decompile, disassemble, or alter the Software in any way. You may not rent, lease, lend, resell, or distribute the Software without explicit written authorization from Vesopa EPOS Ltd.
+
+7. Termination: Without prejudice to any other rights, Vesopa EPOS Ltd may terminate this Agreement if you fail to comply with the terms and conditions outlined herein. Upon termination, you must destroy all copies of the Software in your possession.
+
+8. Disclaimer of Warranties: The Software is provided "as is" without warranty of any kind, either express or implied, including, but not limited to, the implied warranties of merchantability and fitness for a particular purpose. Vesopa EPOS Ltd does not warrant that the operation of the Software will be uninterrupted or error-free.
+
+9. Limitation of Liability: In no event shall Vesopa EPOS Ltd or its suppliers be liable for any special, incidental, indirect, or consequential damages whatsoever (including, without limitation, damages for loss of business profits, business interruption, loss of business information, or any other pecuniary loss) arising out of the use of or inability to use the Software.

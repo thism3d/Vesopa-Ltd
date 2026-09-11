@@ -1,6 +1,14 @@
 """Generate an image with Gemini and save it into the repository.
 
     python tool/gemini_image.py <name> "<prompt>" [--out DIR] [--model M]
+        [--aspect 16:9] [--size 1K|2K|4K] [--image ref.png ...]
+
+`--aspect` and `--size` ask for a shape and a resolution rather than taking
+whatever square comes back -- a Store hero is 16:9 at 4K, a menu photo 4:3.
+`--image` (repeatable) hands the model real pictures to work from: a real
+screenshot to put on a screen in the scene, the real mark to put on a sign.
+Without them the model invents a UI, and an invented UI in a Store listing is
+a picture of an app that does not exist.
 
 Reads GEMINI_API_KEY from `.env.claude-tools`, which is gitignored.
 
@@ -42,17 +50,33 @@ def key():
     raise SystemExit("GEMINI_API_KEY not found in .env.claude-tools")
 
 
-def generate(prompt, model, api_key):
+def generate(prompt, model, api_key, aspect=None, size=None, images=()):
     url = (
         f"https://generativelanguage.googleapis.com/v1beta/models/"
         f"{model}:generateContent?key={api_key}"
     )
+    parts = []
+    for path in images:
+        data = pathlib.Path(path).read_bytes()
+        mime = "image/jpeg" if str(path).lower().endswith((".jpg", ".jpeg")) else "image/png"
+        parts.append({"inline_data": {"mime_type": mime, "data": base64.b64encode(data).decode("ascii")}})
+    parts.append({"text": prompt})
+
+    # Ask for an image back. Without this the model answers with prose
+    # describing the picture it would have drawn, which is a confusing thing to
+    # receive and easy to mistake for a failure.
+    config = {"responseModalities": ["IMAGE"]}
+    image_config = {}
+    if aspect:
+        image_config["aspectRatio"] = aspect
+    if size:
+        image_config["imageSize"] = size
+    if image_config:
+        config["imageConfig"] = image_config
+
     body = json.dumps({
-        "contents": [{"parts": [{"text": prompt}]}],
-        # Ask for an image back. Without this the model answers with prose
-        # describing the picture it would have drawn, which is a confusing
-        # thing to receive and easy to mistake for a failure.
-        "generationConfig": {"responseModalities": ["IMAGE"]},
+        "contents": [{"parts": parts}],
+        "generationConfig": config,
     }).encode("utf-8")
 
     request = urllib.request.Request(
@@ -86,6 +110,9 @@ def main():
         out_dir = pathlib.Path(args[args.index("--out") + 1])
     if "--model" in args:
         model = args[args.index("--model") + 1]
+    aspect = args[args.index("--aspect") + 1] if "--aspect" in args else None
+    size = args[args.index("--size") + 1] if "--size" in args else None
+    images = [args[i + 1] for i, a in enumerate(args) if a == "--image"]
     force = "--force" in args
 
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -94,7 +121,7 @@ def main():
         print(f"  = {target.name} already there ({target.stat().st_size // 1024} KB) — not regenerating")
         return
 
-    blob, mime = generate(prompt, model, key())
+    blob, mime = generate(prompt, model, key(), aspect=aspect, size=size, images=images)
     if "png" not in mime and "jpeg" in mime:
         target = out_dir / f"{name}.jpg"
     target.write_bytes(blob)

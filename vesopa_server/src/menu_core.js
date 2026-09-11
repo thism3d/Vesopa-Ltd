@@ -127,8 +127,120 @@ async function addOnsFor(db, email, pluIds) {
       id: group.id,
       name: group.name,
       min_select: Number(group.min_select) || 0,
-      max_select: Number(group.max_select) || 1,
+      // 0 is the till's "no ceiling -- any of these, as many as you like". Sent
+      // as the number of answers rather than as 0, which every client here
+      // reads as a real ceiling: `|| 1` used to turn "as many as you like" into
+      // "one", and the QR page would have drawn "Select up to 0".
+      max_select: Number(group.max_select) > 0 ? Number(group.max_select) : options.length,
       options,
+    });
+  }
+  return out;
+}
+
+/**
+ * The meals each of these menu items offers: "make it a meal".
+ *
+ * WHAT A MEAL IS HERE
+ *
+ * A product in the catalogue -- "Cheeseburger Meal", £16.50 -- linked to the
+ * dish in `dinein_item_meals`, once per size. Its own modifier questions are
+ * the steps the kiosk walks through ("Choose your side", "Choose your drink"),
+ * and their answers are products priced as the upgrade: £0 for chips, +50p for
+ * sweet potato fries. Nothing about a meal's price lives anywhere but the
+ * catalogue, which is the point: the till sells the same product at the same
+ * price at the counter, and a meal price kept anywhere else would be the one
+ * that went stale.
+ *
+ * Each answer carries a picture when the venue's menu has one for it -- the
+ * same product, or a dish of the same name -- because "Chips" on a £0 meal
+ * product is still the chips the menu already has a photograph of, and a meal
+ * builder of picture cards is what a customer at a kiosk expects.
+ *
+ * Returns {} on a server that has not run this release's migration: no table
+ * means no meals, not an error in front of a queue.
+ */
+async function mealsFor(db, officeId, email, itemIds) {
+  if (!officeId || !email || !itemIds.length) return {};
+
+  let rows;
+  try {
+    [rows] = await db.query(
+      'SELECT m.id, m.item_id, m.plu_id, m.label,' +
+        '       p.product_name AS name, p.price AS price,' +
+        '       p.tax_percentage AS tax_percentage, p.allergens AS allergens' +
+        '  FROM dinein_item_meals m' +
+        '  JOIN bo_products p ON p.pluid = m.plu_id AND p.email = ?' +
+        ' WHERE m.office_id = ? AND m.item_id IN (' + itemIds.map(() => '?').join(',') + ')' +
+        ' ORDER BY m.item_id, m.sort_order, m.id',
+      [email, officeId, ...itemIds]
+    );
+  } catch (e) {
+    if (e && e.code === 'ER_NO_SUCH_TABLE') return {};
+    throw e;
+  }
+  if (!rows.length) return {};
+
+  const steps = await addOnsFor(db, email, [...new Set(rows.map((r) => r.plu_id))]);
+
+  // The menu's own photographs, by product and by the name a customer reads.
+  const [pictures] = await db.query(
+    'SELECT i.plu_id, i.image_url,' +
+      '       LOWER(TRIM(COALESCE(NULLIF(TRIM(i.name), ""), p.product_name))) AS name' +
+      '  FROM dinein_items i' +
+      '  JOIN bo_products p ON p.pluid = i.plu_id AND p.email = ?' +
+      ' WHERE i.office_id = ? AND i.image_url IS NOT NULL AND i.image_url <> ""',
+    [email, officeId]
+  );
+  const byPlu = new Map();
+  const byName = new Map();
+  for (const pic of pictures) {
+    if (!byPlu.has(pic.plu_id)) byPlu.set(pic.plu_id, pic.image_url);
+    if (pic.name && !byName.has(pic.name)) byName.set(pic.name, pic.image_url);
+  }
+
+  // A product's own picture, set in Products, wins over all of that: it is the
+  // one somebody chose for exactly this product.
+  const own = new Map();
+  const plus = [...new Set([
+    ...rows.map((r) => r.plu_id),
+    ...Object.values(steps).flat().flatMap((g) => g.options.map((o) => o.plu_id)),
+  ])];
+  try {
+    const [owned] = await db.query(
+      'SELECT pluid, image_url FROM bo_products' +
+        ' WHERE email = ? AND pluid IN (' + plus.map(() => '?').join(',') + ')' +
+        '   AND image_url IS NOT NULL AND image_url <> ""',
+      [email, ...plus]
+    );
+    for (const p of owned) own.set(p.pluid, p.image_url);
+  } catch (e) {
+    if (!e || e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+  }
+
+  const pictureOf = (option) =>
+    own.get(option.plu_id) ||
+    byPlu.get(option.plu_id) ||
+    byName.get(String(option.name || '').trim().toLowerCase()) ||
+    null;
+
+  const out = {};
+  for (const r of rows) {
+    (out[r.item_id] ||= []).push({
+      id: r.id,
+      plu_id: r.plu_id,
+      // "Regular", "Large". Null when the dish offers one meal and there is
+      // nothing to choose between.
+      label: r.label || null,
+      name: r.name,
+      image_url: own.get(r.plu_id) || null,
+      price_minor: Math.round(Number(r.price || 0) * 100),
+      tax_percentage: Number(r.tax_percentage) || 0,
+      allergens: readAllergens(r.allergens),
+      steps: (steps[r.plu_id] || []).map((g) => ({
+        ...g,
+        options: g.options.map((o) => ({ ...o, image_url: pictureOf(o) })),
+      })),
     });
   }
   return out;
@@ -141,8 +253,11 @@ async function addOnsFor(db, email, pluIds) {
  * The price is joined at read time and never stored on the menu row. A menu
  * carrying its own prices is a second price list, and the one that goes stale
  * is always the one the customer is reading.
+ *
+ * `meals: true` adds each dish's meals (see mealsFor). The kiosk asks for them;
+ * the QR table menu does not yet, so its payload is exactly what it was.
  */
-async function menuSections(db, officeId, email) {
+async function menuSections(db, officeId, email, { meals = false } = {}) {
   const [sections] = await db.query(
     'SELECT id, name, blurb, image_url FROM dinein_sections' +
       ' WHERE office_id = ? AND active = 1 ORDER BY sort_order, id',
@@ -171,6 +286,7 @@ async function menuSections(db, officeId, email) {
   // Resolved here rather than on the client because the answers live in the
   // till's screen machinery, which a menu page and a kiosk have none of.
   const addOns = await addOnsFor(db, email, [...new Set(items.map((i) => i.plu_id))]);
+  const mealsByItem = meals ? await mealsFor(db, officeId, email, items.map((i) => i.id)) : {};
 
   return sections.map((s) => ({
     ...s,
@@ -202,6 +318,7 @@ async function menuSections(db, officeId, email) {
             i.product_allergens !== ''),
         add_ons: addOns[i.plu_id] || [],
         price_minor: Math.round(Number(i.price || 0) * 100),
+        ...(meals ? { meals: mealsByItem[i.id] || [] } : {}),
       })),
   }));
 }
@@ -229,6 +346,14 @@ class BasketError extends Error {
  * BasketError for an empty basket, an item that has left the menu, or an item
  * that has sold out: silently dropping one would send somebody food they did
  * not order and leave off the thing they did.
+ *
+ * A line may also carry `meal_plu`: the dish as a meal (see mealsFor). It is
+ * priced from that meal product instead of the dish, its add-ons are checked
+ * against the MEAL's questions rather than the dish's, and each of those
+ * questions must be answered as often as it demands -- a meal that reaches the
+ * kitchen without its drink is a customer back at the counter. The meal has to
+ * be one the dish offers: a crafted `meal_plu` naming some cheaper product is
+ * refused, not priced.
  */
 async function priceBasket(db, { officeId, email, basket }) {
   const wanted = new Map();
@@ -259,11 +384,15 @@ async function priceBasket(db, { officeId, email, basket }) {
         )]
       : [];
 
-    // Two of the same item differing in note, add-ons or what to do when it
-    // is off are two lines, not one of quantity four. The key carries
-    // everything that makes them different.
-    const key = [id, note, unavailable, addOns.join('+')].join('|');
-    wanted.set(key, { id, qty, note, unavailable, addOns });
+    // The meal this line is, when it is one.
+    const mealPlu = Number(line && line.meal_plu);
+    const meal = Number.isInteger(mealPlu) && mealPlu > 0 ? mealPlu : null;
+
+    // Two of the same item differing in note, add-ons, what to do when it is
+    // off, or whether it is a meal are two lines, not one of quantity four. The
+    // key carries everything that makes them different.
+    const key = [id, note, unavailable, addOns.join('+'), meal || ''].join('|');
+    wanted.set(key, { id, qty, note, unavailable, addOns, meal });
   }
   if (!wanted.size) {
     throw new BasketError(400, 'There is nothing in the basket.');
@@ -281,6 +410,59 @@ async function priceBasket(db, { officeId, email, basket }) {
     [email, officeId, ...ids]
   );
   const priced = new Map(rows.map((r) => [r.id, r]));
+  const changed = () => new BasketError(
+    409,
+    'Something on the menu changed while you were ordering. Please check your basket.'
+  );
+
+  // The questions each line may be answered from: the dish's own, or -- for a
+  // meal -- the meal product's.
+  const dishQuestions = await addOnsFor(db, email, [...new Set(rows.map((r) => r.plu_id))]);
+  const mealItems = [...new Set([...wanted.values()].filter((w) => w.meal).map((w) => w.id))];
+  const mealsByItem = mealItems.length ? await mealsFor(db, officeId, email, mealItems) : {};
+
+  // Every line resolved before anything is priced, so a basket that fails
+  // fails whole, and so the add-ons each line may carry are known.
+  //
+  // Add-ons are checked against THAT LINE's questions. A crafted request
+  // cannot attach an arbitrary product at a price of its choosing, nor one
+  // dish's cheap answer to another dish -- the check used to be against every
+  // answer any dish in the basket offered.
+  const resolved = [];
+  const allowed = new Set();
+  for (const want of wanted.values()) {
+    const item = priced.get(want.id);
+    if (!item) throw changed();
+    if (!item.available) {
+      throw new BasketError(409, 'Sorry, ' + item.name + ' has just sold out.');
+    }
+
+    let meal = null;
+    let questions = dishQuestions[item.plu_id] || [];
+    if (want.meal) {
+      meal = (mealsByItem[want.id] || []).find((m) => m.plu_id === want.meal) || null;
+      if (!meal) throw changed();
+      questions = meal.steps;
+    }
+
+    const offered = new Set(questions.flatMap((g) => g.options.map((o) => o.plu_id)));
+    const chosen = want.addOns.filter((plu) => offered.has(plu));
+
+    if (meal) {
+      for (const g of questions) {
+        const inGroup = new Set(g.options.map((o) => o.plu_id));
+        const n = chosen.filter((plu) => inGroup.has(plu)).length;
+        if (n < (Number(g.min_select) || 0)) {
+          throw new BasketError(400, 'Your ' + meal.name + ' still needs: ' + g.name + '.');
+        }
+        if (Number(g.max_select) > 0 && n > Number(g.max_select)) {
+          throw new BasketError(400, 'Your ' + meal.name + ' has too many choices for ' + g.name + '.');
+        }
+      }
+    }
+    for (const plu of chosen) allowed.add(plu);
+    resolved.push({ want, item, meal, chosen });
+  }
 
   // Add-ons are priced against the CATALOGUE, by PLU -- not against
   // dinein_items. An answer to a modifier question is a till product
@@ -288,62 +470,43 @@ async function priceBasket(db, { officeId, email, basket }) {
   // of their own. Resolving them the way parents are resolved silently dropped
   // every add-on and undercharged the order -- which is what a first pass at
   // this did, and what a live order caught.
-  //
-  // Restricted to PLUs the menu actually offers as answers, so a crafted
-  // request cannot attach an arbitrary product at a price of its choosing.
-  const wantedAddOns = [...new Set([...wanted.values()].flatMap((w) => w.addOns))];
-  const offered = new Set();
-  if (wantedAddOns.length) {
-    for (const groups of Object.values(
-      await addOnsFor(db, email, [...new Set(rows.map((r) => r.plu_id))])
-    )) {
-      for (const g of groups) for (const o of g.options) offered.add(o.plu_id);
-    }
-  }
   const addOnPrices = new Map();
-  const allowed = wantedAddOns.filter((plu) => offered.has(plu));
-  if (allowed.length) {
+  if (allowed.size) {
+    const plus = [...allowed];
     const [addRows] = await db.query(
       'SELECT pluid, product_name, price, allergens, tax_percentage FROM bo_products' +
-        ' WHERE email = ? AND pluid IN (' + allowed.map(() => '?').join(',') + ')',
-      [email, ...allowed]
+        ' WHERE email = ? AND pluid IN (' + plus.map(() => '?').join(',') + ')',
+      [email, ...plus]
     );
     for (const r of addRows) addOnPrices.set(r.pluid, r);
   }
 
   const lines = [];
   let subtotal = 0;
-  for (const want of wanted.values()) {
-    const item = priced.get(want.id);
-    if (!item) {
-      throw new BasketError(
-        409,
-        'Something on the menu changed while you were ordering. Please check your basket.'
-      );
-    }
-    if (!item.available) {
-      throw new BasketError(409, 'Sorry, ' + item.name + ' has just sold out.');
-    }
-    const unit = Math.round(Number(item.price || 0) * 100);
+  for (const { want, item, meal, chosen: picks } of resolved) {
+    // A meal is sold as the meal product: its name and its price, taxed at its
+    // rate -- exactly the line the till writes when it sells the meal.
+    const unit = meal ? meal.price_minor : Math.round(Number(item.price || 0) * 100);
     subtotal += unit * want.qty;
     lines.push({
       item_id: item.id,
-      plu_id: item.plu_id,
-      name: item.name,
+      plu_id: meal ? meal.plu_id : item.plu_id,
+      name: meal ? meal.name : item.name,
       qty: want.qty,
       unit,
-      tax_percentage: Number(item.tax_percentage) || 0,
+      tax_percentage: meal ? meal.tax_percentage : Number(item.tax_percentage) || 0,
       note: want.note || null,
       unavailable: want.unavailable,
       isModifier: false,
       parentIndex: null,
+      ...(meal ? { meal: true } : {}),
     });
     const parentIndex = lines.length - 1;
 
     // The add-ons, as child lines naming the parent -- the same shape the till
     // uses, which is why the kitchen ticket and the receipt already indent
     // them.
-    for (const addOnPlu of want.addOns) {
+    for (const addOnPlu of picks) {
       const chosen = addOnPrices.get(addOnPlu);
       // An add-on the menu does not offer, or a product that has since gone,
       // is dropped rather than failing the whole order. The customer loses the
@@ -394,6 +557,7 @@ module.exports = {
   emailOfOffice,
   officeIdOf,
   addOnsFor,
+  mealsFor,
   menuSections,
   priceBasket,
   inclusiveTax,

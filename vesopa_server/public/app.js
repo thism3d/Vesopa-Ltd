@@ -9256,7 +9256,7 @@ document.addEventListener('click', async (e) => {
 //
 // The self-service kiosk. Customers order on a touchscreen, pay on the Dojo
 // card machine beside it, and collect when their number comes up. The server
-// half is src/express_kiosk.js; the kiosk is vesopa_expresss/.
+// half is src/express_kiosk.js; the kiosk is vesopa_express/.
 //
 // IN THE RAIL WHETHER OR NOT THE VENUE USES IT
 //
@@ -9272,6 +9272,17 @@ let expTimer = null;
 let expKiosks = null;
 let expTerminals = null;
 let expMenu = null;
+let expMeals = null;
+let expProducts = null;
+
+/** Where a kitchen ticket's paper got to, in words a manager can act on. */
+const EXP_PRINT = {
+  waiting: ['waiting for a till', 'amber'],
+  claimed: ['printing', 'amber'],
+  printed: ['printed', 'green'],
+  failed: ['not printed', 'danger'],
+  expired: ['not printed', 'danger'],
+};
 
 /** The order states, in the words a manager uses, and the pill each wears. */
 const EXP_STATUS = {
@@ -9323,6 +9334,7 @@ async function loadExpress() {
 
   if (expTab === 'kiosks') await expLoadKiosks();
   else if (expTab === 'settings') await expLoadMenuPicks();
+  else if (expTab === 'meals') await expLoadMeals();
   else if (expOn()) {
     await expLoadOrders();
     expStartTimer();
@@ -9400,6 +9412,11 @@ function expPreview() {
       on('board_enabled') && 'the collection board'].filter(Boolean).join(', ');
     out.push('<p>A paid order is announced to <b>' + esc(to || 'nobody') + '</b> with a '
       + 'number from ' + esc(s.number_start) + ' to ' + esc(s.number_end) + '.</p>');
+    out.push('<p>' + ({
+      always: 'Every customer gets a <b>printed ticket</b> with their number.',
+      never: 'The kiosk prints <b>no ticket</b>: the number is on the screen and the board.',
+    }[s.receipt_mode] || 'The kiosk <b>offers a printed ticket</b> with the number.')
+      + ' (Only on a kiosk with a printer chosen in its Settings.)</p>');
     out.push('<p>A basket nobody touches for ' + esc(s.idle_seconds)
       + ' seconds is cleared for the next customer.</p>');
   }
@@ -9464,6 +9481,16 @@ async function expLoadOrders() {
         + '<td class="right">' + expMoney(o.total_minor) + '</td>'
         + '<td><span class="pill ' + tone + '">' + esc(label) + '</span>'
         + (o.status_note ? ' <span class="muted small">' + esc(o.status_note) + '</span>' : '')
+        + (o.prints && o.prints.length
+          ? '<div class="exp-prints">' + o.prints.map((p) => {
+            const [said, ptone] = EXP_PRINT[p.status] || [p.status, ''];
+            const why = p.status === 'expired'
+              ? 'no till printed it within 30 minutes'
+              : p.error || (p.status === 'printed' && p.by ? 'by ' + p.by : '');
+            return '<span class="pill ' + ptone + '">' + esc(p.name) + ': ' + esc(said) + '</span>'
+              + (why ? ' <span class="muted small">' + esc(why) + '</span>' : '');
+          }).join('<br>') + '</div>'
+          : '')
         + '</td>'
         + '<td class="right">'
         + (o.status === 'paid'
@@ -9565,6 +9592,79 @@ async function expLoadMenuPicks() {
       + 'menu, so build it under <b>Dine-in &amp; QR</b> &rsaquo; <b>Menu</b> first.</p>';
 }
 
+/**
+ * The Meals tab: which dishes offer "make it a meal", and what each meal will
+ * walk a customer through.
+ *
+ * Every meal shows its steps as the kiosk will ask them, and says plainly when
+ * one asks nothing -- a meal product with no questions on it is a burger at a
+ * meal price, which is the mistake this page exists to make visible.
+ */
+async function expLoadMeals() {
+  try {
+    [expMeals, expProducts] = await Promise.all([
+      api('/express/meals'),
+      expProducts ? Promise.resolve(expProducts) : api('/products'),
+    ]);
+  } catch (e) {
+    $('exp-meals').innerHTML = '<p class="muted small">Could not read your meals just now.</p>';
+    return;
+  }
+  const items = expMeals.items || [];
+
+  const dish = $('exp-meal-dish');
+  const kept = dish.value;
+  dish.innerHTML = items.length
+    ? items.map((i) => '<option value="' + esc(i.id) + '">' + esc(i.name) + ' (' + esc(i.section) + ')</option>').join('')
+    : '<option value="">Your Dine-in menu has no dishes yet</option>';
+  if (kept && items.some((i) => String(i.id) === kept)) dish.value = kept;
+
+  // Products with "meal" in the name first: the one being looked for is almost
+  // always called something-Meal, and a catalogue can run to hundreds.
+  const products = [...(expProducts || [])].sort((a, b) => {
+    const am = /meal/i.test(a.product_name || '') ? 0 : 1;
+    const bm = /meal/i.test(b.product_name || '') ? 0 : 1;
+    return am - bm || String(a.product_name || '').localeCompare(String(b.product_name || ''));
+  });
+  const plu = $('exp-meal-plu');
+  const keptPlu = plu.value;
+  plu.innerHTML = '<option value="">Choose the meal product</option>'
+    + products.map((p) => '<option value="' + esc(p.pluid) + '">' + esc(p.product_name || 'PLU ' + p.pluid)
+      + ' &mdash; ' + expMoney(Math.round(Number(p.price || 0) * 100)) + ' (PLU ' + esc(p.pluid) + ')</option>').join('');
+  if (keptPlu) plu.value = keptPlu;
+
+  const withMeals = items.filter((i) => i.meals && i.meals.length);
+  statCards($('exp-stats'), [
+    { label: 'Vesopa Express', value: expOn() ? 'On' : 'Off', tone: expOn() ? 'green' : 'red' },
+    { label: 'Dishes with a meal', value: String(withMeals.length), tone: 'primary' },
+    { label: 'Meals', value: String(withMeals.reduce((n, i) => n + i.meals.length, 0)) },
+  ]);
+
+  if (!withMeals.length) {
+    $('exp-meals').innerHTML = '<p class="muted small">No dish offers a meal yet. Add one above.</p>';
+    return;
+  }
+  const steps = (m) => (m.steps.length
+    ? m.steps.map((s) => esc(s.name) + ' <span class="muted">(' + (s.min_select
+      ? (s.max_select > s.min_select ? s.min_select + ' to ' + s.max_select : s.min_select)
+      : 'up to ' + s.max_select) + ' of ' + s.options.length + ')</span>').join(' &rarr; ')
+    : '<span class="pill danger">Asks nothing</span> <span class="muted small">Give this product its questions '
+      + 'under <b>Modifiers</b>, or the kiosk sells it as a burger at a meal price.</span>');
+  $('exp-meals').innerHTML = '<table class="table"><thead><tr>'
+    + '<th>Dish</th><th>Meal</th><th>Size</th><th class="right">Price</th><th>Steps on the kiosk</th><th></th>'
+    + '</tr></thead><tbody>'
+    + withMeals.flatMap((i) => i.meals.map((m, n) => '<tr>'
+      + '<td>' + (n === 0 ? '<b>' + esc(i.name) + '</b><div class="muted small">' + expMoney(i.price_minor) + ' on its own</div>' : '') + '</td>'
+      + '<td>' + esc(m.name) + '</td>'
+      + '<td><input type="text" maxlength="40" value="' + esc(m.label || '') + '" placeholder="&mdash;" data-exp-meal-label="' + esc(m.id) + '"></td>'
+      + '<td class="right">' + expMoney(m.price_minor) + '</td>'
+      + '<td class="small">' + steps(m) + '</td>'
+      + '<td class="right"><button class="btn small" data-exp-meal-save="' + esc(m.id) + '">Save</button> '
+      + '<button class="btn small" data-exp-meal-remove="' + esc(m.id) + '">Remove</button></td>'
+      + '</tr>')).join('')
+    + '</tbody></table>';
+}
+
 async function expSave(button) {
   const body = {};
   for (const el of document.querySelectorAll('[data-exp]')) {
@@ -9623,10 +9723,61 @@ document.addEventListener('click', async (e) => {
     }
     if (expTab === 'kiosks') await expLoadKiosks();
     if (expTab === 'settings') await expLoadMenuPicks();
+    if (expTab === 'meals') await expLoadMeals();
     return;
   }
 
   if (t.id === 'exp-save') { await expSave(t); return; }
+
+  if (t.id === 'exp-meal-add') {
+    const body = {
+      item_id: Number($('exp-meal-dish').value),
+      plu_id: Number($('exp-meal-plu').value),
+      label: $('exp-meal-label').value.trim(),
+    };
+    if (!body.item_id || !body.plu_id) {
+      toast('Choose the dish and the product that is its meal.', 'warn');
+      return;
+    }
+    try {
+      await api('/express/meals', { method: 'POST', body: JSON.stringify(body) });
+      $('exp-meal-label').value = '';
+      toast('Meal added', 'ok');
+    } catch (err) {
+      toast(String(err && err.message ? err.message : err), 'error');
+    }
+    await expLoadMeals();
+    return;
+  }
+
+  const mealSave = t.dataset && t.dataset.expMealSave;
+  if (mealSave) {
+    const label = document.querySelector('[data-exp-meal-label="' + mealSave + '"]').value;
+    try {
+      await api('/express/meals/' + mealSave, { method: 'PUT', body: JSON.stringify({ label }) });
+      toast('Saved', 'ok');
+    } catch (err) {
+      toast(String(err && err.message ? err.message : err), 'error');
+    }
+    await expLoadMeals();
+    return;
+  }
+
+  const mealRemove = t.dataset && t.dataset.expMealRemove;
+  if (mealRemove) {
+    const yes = await confirmDialog(
+      'The dish stays on the menu; the kiosk just stops offering this meal. The product itself is not touched.',
+      { title: 'Stop offering this meal?', confirmLabel: 'Remove meal', danger: true }
+    );
+    if (!yes) return;
+    try {
+      await api('/express/meals/' + mealRemove, { method: 'DELETE' });
+    } catch (err) {
+      toast(String(err && err.message ? err.message : err), 'error');
+    }
+    await expLoadMeals();
+    return;
+  }
 
   if (t.id === 'exp-board-copy') {
     try {

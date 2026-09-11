@@ -303,5 +303,84 @@ CALL vesopa_add_index(
   'epos_express_orders', 'idx_express_kiosk', '`kiosk_id`, `created_at`');
 
 
+-- ---------------------------------------------------------------------------
+-- 11 September 2026: the receipt, the kitchen printers, and meals.
+-- ---------------------------------------------------------------------------
+
+-- A ticket from the kiosk's own printer, once the order is placed:
+--   always  printed every time, the McDonald's way -- the number on paper is
+--           what the customer holds while they wait
+--   ask     "Print a receipt?" on the number screen (the default: paper for
+--           whoever wants it, and none for whoever does not)
+--   never   the number is on the screen and on the board, and that is all
+-- A kiosk with no printer set up prints nothing whatever this says.
+CALL vesopa_add_column('epos_express_settings', 'receipt_mode',
+  "VARCHAR(8) NOT NULL DEFAULT 'ask'");
+
+
+-- Kiosk tickets for kitchen stations that PRINT.
+--
+-- A station set to Screen gets its ticket on Vesopa Kitchen straight from the
+-- server. A station set to Printer is a printer plugged into a till -- printers
+-- are set up per till, not per venue -- so only a till can print it. One row
+-- per paid kiosk order per printing station, and a till claims the stations it
+-- has a printer for with one UPDATE, so two tills never print the same ticket.
+--
+-- status:
+--   waiting   nobody has taken it
+--   claimed   a till took it and is printing (a claim older than two minutes
+--             with no answer is taken to be a till that died, and is offered
+--             again)
+--   printed   done
+--   failed    the till tried and the printer said no; offered again, up to
+--             five attempts, so another till -- or the same one after somebody
+--             loads paper -- can print it
+--   expired   nobody printed it within thirty minutes. Not printed late: a
+--             till switched on at six must not print lunch.
+CREATE TABLE IF NOT EXISTS epos_express_prints (
+  order_id          BIGINT       NOT NULL,
+  office            VARCHAR(190) CHARACTER SET utf8mb4
+                    COLLATE utf8mb4_general_ci NOT NULL,
+  station           VARCHAR(8)   NOT NULL,
+  status            VARCHAR(10)  NOT NULL DEFAULT 'waiting',
+  claim_id          CHAR(36)     NULL,
+  claimed_by        VARCHAR(120) NULL,
+  claimed_at        DATETIME     NULL,
+  printed_at        DATETIME     NULL,
+  attempts          TINYINT      NOT NULL DEFAULT 0,
+  error             VARCHAR(300) NULL,
+  created_at        TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (order_id, station),
+  KEY idx_express_prints_queue (office, status, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
+-- "Make it a meal": which meals a dish on the menu offers.
+--
+-- A meal is a PRODUCT in the catalogue -- "Cheeseburger Meal", with its own
+-- price -- whose own modifier questions are the steps ("Choose your side",
+-- "Choose your drink"), answered by products priced as the upgrade. That is
+-- exactly how the till sells a meal at the counter, so the kiosk, the till and
+-- every report agree on what a meal costs, and there is no second price list.
+-- This table only says which meal products a dish offers, and what to call
+-- each one when there is more than one size ("Regular", "Large").
+--
+-- On dinein_items because the kiosk sells from the Dine-in menu, and the QR
+-- table menu can offer the same meals later without another table.
+CREATE TABLE IF NOT EXISTS dinein_item_meals (
+  id          INT AUTO_INCREMENT PRIMARY KEY,
+  office_id   INT          NOT NULL,
+  item_id     INT          NOT NULL,
+  plu_id      INT          NOT NULL,
+  label       VARCHAR(40)  NULL,
+  sort_order  INT          NOT NULL DEFAULT 0,
+  UNIQUE KEY uq_dinein_item_meal (item_id, plu_id),
+  KEY idx_dinein_item_meals_office (office_id, item_id),
+  -- A dish taken off the menu takes its meals with it.
+  CONSTRAINT fk_dinein_item_meal_item FOREIGN KEY (item_id)
+    REFERENCES dinein_items (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
 DROP PROCEDURE IF EXISTS vesopa_add_column;
 DROP PROCEDURE IF EXISTS vesopa_add_index;

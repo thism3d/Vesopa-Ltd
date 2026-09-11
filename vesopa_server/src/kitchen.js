@@ -1569,4 +1569,6 @@ module.exports = {
   readModes,
   parseStations,
   formatStations,
+  // So the back office can say "Grill: printed" rather than "kp1: printed".
+  stationNames,
 };

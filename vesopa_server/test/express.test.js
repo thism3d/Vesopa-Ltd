@@ -106,6 +106,7 @@ CREATE TABLE bo_products (
   printer_route varchar(32) DEFAULT NULL,
   printer_routes varchar(64) DEFAULT NULL,
   allergens text DEFAULT NULL,
+  image_url varchar(500) DEFAULT NULL,
   UNIQUE KEY uq_bo_products_venue_plu (email, pluid)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_general_ci;
 
@@ -178,7 +179,27 @@ CREATE TABLE epos_till_settings (
   kitchen_mode_kp3 varchar(8) NOT NULL DEFAULT 'printer',
   kitchen_mode_kp4 varchar(8) NOT NULL DEFAULT 'printer',
   kitchen_mode_kp5 varchar(8) NOT NULL DEFAULT 'printer',
-  kitchen_mode_kp6 varchar(8) NOT NULL DEFAULT 'printer'
+  kitchen_mode_kp6 varchar(8) NOT NULL DEFAULT 'printer',
+  printer_name_kp1 varchar(40) DEFAULT NULL,
+  printer_name_kp2 varchar(40) DEFAULT NULL,
+  printer_name_kp3 varchar(40) DEFAULT NULL,
+  printer_name_kp4 varchar(40) DEFAULT NULL,
+  printer_name_kp5 varchar(40) DEFAULT NULL,
+  printer_name_kp6 varchar(40) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE epos_branding (
+  office varchar(190) NOT NULL PRIMARY KEY,
+  venue_name varchar(120) DEFAULT NULL,
+  address_line1 varchar(160) DEFAULT NULL,
+  address_line2 varchar(160) DEFAULT NULL,
+  city varchar(80) DEFAULT NULL,
+  postcode varchar(20) DEFAULT NULL,
+  phone varchar(40) DEFAULT NULL,
+  vat_number varchar(40) DEFAULT NULL,
+  company_number varchar(40) DEFAULT NULL,
+  footer_message varchar(255) DEFAULT NULL,
+  footer_note varchar(255) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 CREATE TABLE epos_orders (
@@ -443,6 +464,10 @@ function call(base, method, url, { token, body } = {}) {
 const sessionFor = (office) =>
   jwt.sign({ email: office.email, officeId: office.id, role: 'office' }, SECRET, { expiresIn: '1h' });
 
+/** A commissioned till's token, shaped as issueTerminalToken makes it. */
+const tillFor = (office) =>
+  jwt.sign({ scope: 'terminal', office: office.email, officeId: office.id }, SECRET, { expiresIn: '1h' });
+
 async function main() {
   let admin;
   try {
@@ -530,7 +555,52 @@ async function main() {
   await pool.query('INSERT INTO epos_product_modifiers (office, plu_id, group_id) VALUES (?, 101, 1)', [ARMS.email]);
   await pool.query("INSERT INTO epos_screen_buttons (office, screen_id, kind, plu_id) VALUES (?, 77, 'product', 104)", [ARMS.email]);
   // The grill (kp1) is a screen, the fryer (kp2) prints AND has a screen.
-  await pool.query("INSERT INTO epos_till_settings (office, kitchen_mode_kp1, kitchen_mode_kp2) VALUES (?, 'screen', 'both')", [ARMS.email]);
+  await pool.query(
+    "INSERT INTO epos_till_settings (office, kitchen_mode_kp1, kitchen_mode_kp2, printer_name_kp2) VALUES (?, 'screen', 'both', 'Fryer')",
+    [ARMS.email]
+  );
+
+  // A meal: "Cheeseburger Meal" is its own product at its own price, and asks
+  // three questions -- a side (one, required), a drink (one, required), and
+  // sauces (as many as you like: max_select 0). The answers are products
+  // priced as the upgrade. "Meal Fries" routes to the fryer on its own, and
+  // must still travel on the meal's ticket.
+  await pool.query(
+    'INSERT INTO bo_products (email, pluid, product_name, price, tax_percentage, printer_routes) VALUES ' +
+      "(?, 301, 'Cheeseburger Meal', 11.00, 20, 'kp1')," +
+      "(?, 302, 'Meal Fries', 0, 20, 'kp2')," +
+      "(?, 303, 'Meal Large Fries', 0.60, 20, 'kp2')," +
+      "(?, 304, 'Meal Cola', 0, 20, NULL)," +
+      "(?, 305, 'Ketchup', 0, 20, NULL)," +
+      "(?, 306, 'Mayonnaise', 0.20, 20, NULL)",
+    [ARMS.email, ARMS.email, ARMS.email, ARMS.email, ARMS.email, ARMS.email]
+  );
+  await pool.query(
+    'INSERT INTO epos_modifier_groups (id, office, name, min_select, max_select, screen_id) VALUES ' +
+      "(2, ?, 'Choose your side', 1, 1, 88), (3, ?, 'Choose your drink', 1, 1, 89), (4, ?, 'Sauces', 0, 0, 90)",
+    [ARMS.email, ARMS.email, ARMS.email]
+  );
+  await pool.query(
+    'INSERT INTO epos_product_modifiers (office, plu_id, group_id, sort_order) VALUES (?, 301, 2, 0), (?, 301, 3, 1), (?, 301, 4, 2)',
+    [ARMS.email, ARMS.email, ARMS.email]
+  );
+  await pool.query(
+    "INSERT INTO epos_screen_buttons (office, screen_id, kind, plu_id, label, grid_col) VALUES " +
+      "(?, 88, 'product', 302, 'Fries', 0), (?, 88, 'product', 303, NULL, 1)," +
+      "(?, 89, 'product', 304, 'Cola', 0), (?, 90, 'product', 305, NULL, 0), (?, 90, 'product', 306, NULL, 1)",
+    [ARMS.email, ARMS.email, ARMS.email, ARMS.email, ARMS.email]
+  );
+  // The menu has a photograph of its fries, which the meal's "Fries" borrows;
+  // the large fries and the meal have pictures of their own in Products.
+  await pool.query("UPDATE dinein_items SET image_url = '/uploads/fries.jpg' WHERE id = ?", [item.fries]);
+  await pool.query(
+    "UPDATE bo_products SET image_url = CASE pluid WHEN 303 THEN '/uploads/large.jpg' WHEN 301 THEN '/uploads/meal.jpg' END WHERE email = ? AND pluid IN (301, 303)",
+    [ARMS.email]
+  );
+  await pool.query(
+    "INSERT INTO epos_branding (office, venue_name, address_line1, city, postcode, vat_number, footer_message) VALUES (?, 'The Kiosk Arms', '1 High Street', 'Llanelli', 'SA14 8TU', 'GB123456789', 'Diolch!')",
+    [ARMS.email]
+  );
 
   // ---- Server --------------------------------------------------------------
   const router = kiosk.expressKioskRoutes({ pool, broadcast, secret: SECRET });
@@ -734,6 +804,36 @@ async function main() {
       assert.strictEqual(res.body.payments.sandbox, true);
     });
 
+    await check('the kiosk is told to offer English only while the Welsh waits to be checked', async () => {
+      const res = await call(base, 'GET', '/api/express/kiosk/config', { token: kioskToken });
+      assert.deepStrictEqual(res.body.languages, ['en']);
+    });
+
+    await check("a kiosk ticket carries the venue's own receipt branding, and asks by default", async () => {
+      const res = await call(base, 'GET', '/api/express/kiosk/config', { token: kioskToken });
+      assert.deepStrictEqual(res.body.receipt, {
+        mode: 'ask',
+        venue_name: 'The Kiosk Arms',
+        address: ['1 High Street', 'Llanelli SA14 8TU'],
+        phone: null,
+        vat_number: 'GB123456789',
+        company_number: null,
+        footer: 'Diolch!',
+        footer_note: null,
+      });
+    });
+
+    await check('receipts are printed always, when asked, or never, and nothing else', async () => {
+      let res = await call(base, 'PUT', '/api/express/settings', { token: armsSession, body: { receipt_mode: 'sometimes' } });
+      assert.strictEqual(res.status, 400);
+      res = await call(base, 'PUT', '/api/express/settings', { token: armsSession, body: { receipt_mode: 'always' } });
+      assert.strictEqual(res.status, 200, JSON.stringify(res.body));
+      assert.strictEqual(res.body.receipt_mode, 'always');
+      const config = await call(base, 'GET', '/api/express/kiosk/config', { token: kioskToken });
+      assert.strictEqual(config.body.receipt.mode, 'always');
+      await call(base, 'PUT', '/api/express/settings', { token: armsSession, body: { receipt_mode: 'ask' } });
+    });
+
     // ---- A card order, start to finish ------------------------------------
     let first = null;
     await check('an order is priced by the server and sent to the card machine once', async () => {
@@ -840,6 +940,19 @@ async function main() {
       assert.strictEqual(announced.message.number, 1);
       assert.strictEqual(announced.message.notify_till, true);
       assert.ok(broadcasts.every((b) => b.office === ARMS.email), 'something went to every socket');
+    });
+
+    await check('the stations that print become jobs for a till, and the tills are told', async () => {
+      // kp1 is a screen and gets no paper; kp2 is Both, so it gets the screen
+      // ticket above AND a print job.
+      const [jobs] = await pool.query(
+        'SELECT station, status, attempts FROM epos_express_prints WHERE order_id = (SELECT id FROM epos_express_orders WHERE public_id = ?)',
+        [first.public_id]
+      );
+      assert.deepStrictEqual(jobs.map((j) => [j.station, j.status, j.attempts]), [['kp2', 'waiting', 0]]);
+      const told = broadcasts.find((b) => b.message.type === 'express.print');
+      assert.ok(told, 'no express.print');
+      assert.deepStrictEqual(told.message.stations, ['kp2']);
     });
 
     await check('a Dojo webhook for the same payment changes nothing', async () => {
@@ -1032,6 +1145,302 @@ async function main() {
       assert.strictEqual(res.body.status, 'collected');
       res = await call(base, 'POST', '/api/express/orders/' + paid.id + '/ready', { token: armsSession });
       assert.strictEqual(res.status, 409, 'a collected order went backwards');
+    });
+
+    // ---- The till: kiosk orders, and the kitchen printers -------------------
+    const till = tillFor(ARMS);
+    let printed = null;
+    await check('a till sees the paid kiosk orders; a kiosk or back-office token does not', async () => {
+      const res = await cardOrder();
+      capture(await sessionOf(res.body.public_id));
+      await call(base, 'GET', '/api/express/kiosk/orders/' + res.body.public_id, { token: kioskToken });
+      [[printed]] = await pool.query('SELECT * FROM epos_express_orders WHERE public_id = ?', [res.body.public_id]);
+      assert.strictEqual(printed.status, 'paid');
+
+      const list = await call(base, 'GET', '/till/express/orders', { token: till });
+      assert.strictEqual(list.status, 200, JSON.stringify(list.body));
+      assert.strictEqual(list.body.enabled, true);
+      assert.strictEqual(list.body.notify_till, true);
+      const mine = list.body.orders.find((o) => o.id === printed.id);
+      assert.ok(mine, 'the paid order is not on the till');
+      assert.strictEqual(mine.number, printed.number);
+      assert.strictEqual(mine.kiosk, 'Kiosk by the door');
+      assert.deepStrictEqual(mine.lines.map((l) => [l.name, l.qty, l.is_modifier]), [
+        ['Cheeseburger', 2, false], ['Extra cheese', 2, true], ['Fries', 1, false],
+      ]);
+      assert.ok(list.body.orders.every((o) => ['paid', 'ready'].includes(o.status)));
+
+      for (const token of [kioskToken, armsSession]) {
+        const refused = await call(base, 'GET', '/till/express/orders', { token });
+        assert.strictEqual(refused.status, 401);
+      }
+    });
+
+    let won = null;
+    await check('two tills claiming one ticket: exactly one of them prints it', async () => {
+      const queue = await call(base, 'GET', '/till/express/print-queue', { token: till });
+      const job = queue.body.jobs.find((j) => j.order_id === printed.id);
+      assert.deepStrictEqual(job, { order_id: printed.id, stations: ['kp2'] });
+
+      const [a, b] = await Promise.all([
+        call(base, 'POST', '/till/express/print-queue/' + printed.id + '/claim', { token: till, body: { stations: ['kp2'], terminal: 'Till 1' } }),
+        call(base, 'POST', '/till/express/print-queue/' + printed.id + '/claim', { token: till, body: { stations: ['kp2'], terminal: 'Till 2' } }),
+      ]);
+      const winners = [a, b].filter((r) => r.body.stations.length);
+      assert.strictEqual(winners.length, 1, JSON.stringify([a.body, b.body]));
+      won = winners[0].body;
+      // The same thing in a fixed order, which the pair above cannot promise to
+      // exercise: a third till asking a moment later gets nothing, and the
+      // claim on the row is still the winner's.
+      const late = await call(base, 'POST', '/till/express/print-queue/' + printed.id + '/claim', {
+        token: till, body: { stations: ['kp2'], terminal: 'Till 3' },
+      });
+      assert.deepStrictEqual(late.body.stations, [], 'a claimed ticket was taken off its till');
+      const [[row]] = await pool.query('SELECT claim_id FROM epos_express_prints WHERE order_id = ?', [printed.id]);
+      assert.strictEqual(row.claim_id, won.claim_id);
+      assert.deepStrictEqual(won.stations, ['kp2']);
+      // The fryer's paper carries the fryer's lines and nothing else.
+      assert.strictEqual(won.ticket.number, printed.number);
+      assert.strictEqual(won.ticket.order_type_label, 'Take away');
+      assert.strictEqual(won.ticket.kiosk, 'Kiosk by the door');
+      assert.deepStrictEqual(won.ticket.lines.map((l) => [l.name, l.qty, l.stations]), [['Fries', 1, ['kp2']]]);
+
+      const again = await call(base, 'GET', '/till/express/print-queue', { token: till });
+      assert.ok(!again.body.jobs.some((j) => j.order_id === printed.id), 'a claimed ticket was offered again');
+    });
+
+    await check("a printer that fails puts the ticket back, in the printer's own words", async () => {
+      await call(base, 'POST', '/till/express/print-queue/' + printed.id + '/result', {
+        token: till, body: { claim_id: won.claim_id, results: [{ station: 'kp2', ok: false, error: 'Out of paper' }] },
+      });
+      const [[job]] = await pool.query('SELECT status, error, attempts FROM epos_express_prints WHERE order_id = ?', [printed.id]);
+      assert.deepStrictEqual([job.status, job.error, job.attempts], ['failed', 'Out of paper', 1]);
+      const queue = await call(base, 'GET', '/till/express/print-queue', { token: till });
+      assert.ok(queue.body.jobs.some((j) => j.order_id === printed.id), 'a failed ticket was not offered again');
+
+      const retry = await call(base, 'POST', '/till/express/print-queue/' + printed.id + '/claim', {
+        token: till, body: { stations: ['kp2'], terminal: 'Till 1' },
+      });
+      assert.deepStrictEqual(retry.body.stations, ['kp2']);
+      won = retry.body;
+    });
+
+    await check('a ticket that printed is done, and the back office says where', async () => {
+      // A result under somebody else's claim changes nothing.
+      const wrong = await call(base, 'POST', '/till/express/print-queue/' + printed.id + '/result', {
+        token: till, body: { claim_id: crypto.randomUUID(), results: [{ station: 'kp2', ok: true }] },
+      });
+      assert.strictEqual(wrong.body.updated, 0);
+      const ok = await call(base, 'POST', '/till/express/print-queue/' + printed.id + '/result', {
+        token: till, body: { claim_id: won.claim_id, results: [{ station: 'kp2', ok: true }] },
+      });
+      assert.strictEqual(ok.body.updated, 1);
+      const queue = await call(base, 'GET', '/till/express/print-queue', { token: till });
+      assert.ok(!queue.body.jobs.some((j) => j.order_id === printed.id));
+      const orders = await call(base, 'GET', '/api/express/orders', { token: armsSession });
+      const row = orders.body.orders.find((o) => o.id === printed.id);
+      assert.deepStrictEqual(row.prints, [{ station: 'kp2', name: 'Fryer', status: 'printed', by: 'Till 1', error: null }]);
+    });
+
+    await check("another venue's till can neither see nor take this venue's ticket", async () => {
+      const res = await cardOrder();
+      capture(await sessionOf(res.body.public_id));
+      await call(base, 'GET', '/api/express/kiosk/orders/' + res.body.public_id, { token: kioskToken });
+      const [[order]] = await pool.query('SELECT id FROM epos_express_orders WHERE public_id = ?', [res.body.public_id]);
+      const other = tillFor(OTHER);
+      await call(base, 'PUT', '/api/express/settings', { token: sessionFor(OTHER), body: { enabled: true } });
+      const queue = await call(base, 'GET', '/till/express/print-queue', { token: other });
+      assert.ok(!queue.body.jobs.some((j) => j.order_id === order.id));
+      const claim = await call(base, 'POST', '/till/express/print-queue/' + order.id + '/claim', {
+        token: other, body: { stations: ['kp2'], terminal: 'Their till' },
+      });
+      assert.deepStrictEqual(claim.body.stations, []);
+      const move = await call(base, 'POST', '/till/express/orders/' + order.id + '/ready', { token: other });
+      assert.strictEqual(move.status, 409);
+      await call(base, 'PUT', '/api/express/settings', { token: sessionFor(OTHER), body: { enabled: false } });
+    });
+
+    await check('a claim that went quiet is offered again, and a stale ticket is never printed', async () => {
+      const [[job]] = await pool.query(
+        "SELECT order_id FROM epos_express_prints WHERE office = ? AND status = 'waiting' ORDER BY order_id DESC LIMIT 1",
+        [ARMS.email]
+      );
+      const first = await call(base, 'POST', '/till/express/print-queue/' + job.order_id + '/claim', {
+        token: till, body: { stations: ['kp2'], terminal: 'Till 3' },
+      });
+      assert.deepStrictEqual(first.body.stations, ['kp2']);
+      await pool.query('UPDATE epos_express_prints SET claimed_at = NOW() - INTERVAL 3 MINUTE WHERE order_id = ?', [job.order_id]);
+      let queue = await call(base, 'GET', '/till/express/print-queue', { token: till });
+      assert.ok(queue.body.jobs.some((j) => j.order_id === job.order_id), 'a dead claim held the ticket for ever');
+
+      await pool.query('UPDATE epos_express_prints SET created_at = NOW() - INTERVAL 31 MINUTE WHERE order_id = ?', [job.order_id]);
+      queue = await call(base, 'GET', '/till/express/print-queue', { token: till });
+      assert.ok(!queue.body.jobs.some((j) => j.order_id === job.order_id), 'lunch printed at six');
+      const [[after]] = await pool.query('SELECT status FROM epos_express_prints WHERE order_id = ?', [job.order_id]);
+      assert.strictEqual(after.status, 'expired');
+      const late = await call(base, 'POST', '/till/express/print-queue/' + job.order_id + '/claim', {
+        token: till, body: { stations: ['kp2'], terminal: 'Till 3' },
+      });
+      assert.deepStrictEqual(late.body.stations, []);
+    });
+
+    await check('a till moves a number to Ready and then Collected', async () => {
+      let res = await call(base, 'POST', '/till/express/orders/' + printed.id + '/ready', { token: till });
+      assert.strictEqual(res.status, 200, JSON.stringify(res.body));
+      assert.strictEqual(res.body.status, 'ready');
+      res = await call(base, 'POST', '/till/express/orders/' + printed.id + '/ready', { token: till });
+      assert.strictEqual(res.status, 409);
+      res = await call(base, 'POST', '/till/express/orders/' + printed.id + '/collected', { token: till });
+      assert.strictEqual(res.body.status, 'collected');
+      const list = await call(base, 'GET', '/till/express/orders', { token: till });
+      assert.ok(!list.body.orders.some((o) => o.id === printed.id), 'a collected order stayed on the till');
+    });
+
+    await check('a venue that sends kiosk orders to no kitchen gets no paper either', async () => {
+      await call(base, 'PUT', '/api/express/settings', { token: armsSession, body: { notify_kitchen: false } });
+      const res = await cardOrder();
+      capture(await sessionOf(res.body.public_id));
+      await call(base, 'GET', '/api/express/kiosk/orders/' + res.body.public_id, { token: kioskToken });
+      assert.strictEqual(
+        await count('SELECT COUNT(*) AS n FROM epos_express_prints WHERE order_id = (SELECT id FROM epos_express_orders WHERE public_id = ?)', [res.body.public_id]),
+        0
+      );
+      const queue = await call(base, 'GET', '/till/express/print-queue', { token: till });
+      assert.deepStrictEqual(queue.body.jobs, []);
+      await call(base, 'PUT', '/api/express/settings', { token: armsSession, body: { notify_kitchen: true } });
+    });
+
+    // ---- Meals -----------------------------------------------------------------
+    let mealId = null;
+    await check('a meal has to be its own product, offered on one of your own dishes', async () => {
+      const add = (body, token = armsSession) => call(base, 'POST', '/api/express/meals', { token, body });
+      let res = await add({ item_id: item.burger, plu_id: 101 });
+      assert.strictEqual(res.status, 400, 'the burger became its own meal');
+      res = await add({ item_id: item.other, plu_id: 301 });
+      assert.strictEqual(res.status, 404, "a meal went onto another venue's dish");
+      res = await add({ item_id: item.burger, plu_id: 9999 });
+      assert.strictEqual(res.status, 404);
+      res = await add({ item_id: item.burger, plu_id: 301, label: 'Regular' });
+      assert.strictEqual(res.status, 201, JSON.stringify(res.body));
+      mealId = res.body.id;
+      res = await add({ item_id: item.burger, plu_id: 301 });
+      assert.strictEqual(res.status, 409);
+      res = await add({ item_id: item.burger, plu_id: 301 }, sessionFor(OTHER));
+      assert.strictEqual(res.status, 404);
+    });
+
+    await check('the Meals page shows each meal with its price and the steps it walks through', async () => {
+      const res = await call(base, 'GET', '/api/express/meals', { token: armsSession });
+      assert.strictEqual(res.status, 200);
+      const burger = res.body.items.find((i) => i.id === item.burger);
+      assert.strictEqual(burger.meals.length, 1);
+      const meal = burger.meals[0];
+      assert.deepStrictEqual([meal.name, meal.label, meal.price_minor], ['Cheeseburger Meal', 'Regular', 1100]);
+      assert.deepStrictEqual(
+        meal.steps.map((s) => [s.name, s.min_select, s.max_select, s.options.length]),
+        // "As many as you like" arrives as the number of answers, not 0 or 1.
+        [['Choose your side', 1, 1, 2], ['Choose your drink', 1, 1, 1], ['Sauces', 0, 2, 2]]
+      );
+      const fries = res.body.items.find((i) => i.id === item.fries);
+      assert.deepStrictEqual(fries.meals, []);
+    });
+
+    await check("the kiosk menu offers the meal, its steps, and the menu's own pictures", async () => {
+      const res = await call(base, 'GET', '/api/express/kiosk/menu', { token: kioskToken });
+      const burger = res.body.sections.flatMap((s) => s.items).find((i) => i.id === item.burger);
+      const side = burger.meals[0].steps[0];
+      assert.deepStrictEqual(
+        side.options.map((o) => [o.plu_id, o.name, o.price_minor, o.image_url]),
+        [[302, 'Fries', 0, '/uploads/fries.jpg'], [303, 'Meal Large Fries', 60, '/uploads/large.jpg']]
+      );
+      assert.strictEqual(burger.meals[0].image_url, '/uploads/meal.jpg');
+      assert.strictEqual(burger.meals[0].steps[1].options[0].image_url, null, 'a picture came from nowhere');
+      assert.deepStrictEqual(burger.add_ons.map((g) => g.name), ['Extras'], 'the dish kept its own questions');
+    });
+
+    let mealOrder = null;
+    await check('a meal is priced from the meal product, and its answers from the catalogue', async () => {
+      const res = await cardOrder({
+        lines: [{ item_id: item.burger, qty: 2, meal_plu: 301, add_ons: [303, 304, 306] }],
+      });
+      assert.strictEqual(res.status, 201, JSON.stringify(res.body));
+      // 2 x (11.00 meal + 0.60 large fries + 0 cola + 0.20 mayonnaise)
+      assert.strictEqual(res.body.total_minor, 2360);
+      assert.deepStrictEqual(res.body.lines.map((l) => [l.name, l.plu_id, l.qty, l.unit, l.isModifier]), [
+        ['Cheeseburger Meal', 301, 2, 1100, false],
+        ['Meal Large Fries', 303, 2, 60, true],
+        ['Meal Cola', 304, 2, 0, true],
+        ['Mayonnaise', 306, 2, 20, true],
+      ]);
+      mealOrder = res.body;
+    });
+
+    await check('a meal without its drink, or with two sides, is refused', async () => {
+      let res = await cardOrder({ lines: [{ item_id: item.burger, qty: 1, meal_plu: 301, add_ons: [302] }] });
+      assert.strictEqual(res.status, 400);
+      assert.match(res.body.error, /still needs: Choose your drink/);
+      res = await cardOrder({ lines: [{ item_id: item.burger, qty: 1, meal_plu: 301, add_ons: [302, 303, 304] }] });
+      assert.strictEqual(res.status, 400);
+      assert.match(res.body.error, /too many choices for Choose your side/);
+    });
+
+    await check('a meal the dish does not offer is refused rather than priced', async () => {
+      let res = await cardOrder({ lines: [{ item_id: item.burger, qty: 1, meal_plu: 102, add_ons: [] }] });
+      assert.strictEqual(res.status, 409, 'a crafted meal_plu was priced');
+      res = await cardOrder({ lines: [{ item_id: item.fries, qty: 1, meal_plu: 301, add_ons: [302, 304] }] });
+      assert.strictEqual(res.status, 409, "the fries were sold as the burger's meal");
+    });
+
+    await check("answers are checked against the line's own questions, not the whole basket's", async () => {
+      // The cheese answers the burger's question, not the meal's and not the
+      // fries'. On either of those it is dropped, and not charged.
+      const res = await cardOrder({
+        lines: [
+          { item_id: item.burger, qty: 1, meal_plu: 301, add_ons: [302, 304, 104] },
+          { item_id: item.fries, qty: 1, add_ons: [104] },
+          { item_id: item.burger, qty: 1, add_ons: [104] },
+        ],
+      });
+      assert.strictEqual(res.status, 201, JSON.stringify(res.body));
+      // 11.00 + 0 + 0, then 3.00, then 8.50 + 1.00
+      assert.strictEqual(res.body.total_minor, 2350);
+      await call(base, 'POST', '/api/express/kiosk/orders/' + res.body.public_id + '/cancel', { token: kioskToken });
+    });
+
+    await check("a meal's side and drink travel on the meal's ticket, as the till sends them", async () => {
+      capture(await sessionOf(mealOrder.public_id));
+      await call(base, 'GET', '/api/express/kiosk/orders/' + mealOrder.public_id, { token: kioskToken });
+      const [[order]] = await pool.query('SELECT sale_id, ticket_id, id FROM epos_express_orders WHERE public_id = ?', [mealOrder.public_id]);
+      const [lines] = await pool.query('SELECT name, stations FROM epos_kitchen_ticket_lines WHERE ticket_id = ? ORDER BY seq', [order.ticket_id]);
+      assert.deepStrictEqual(lines.map((l) => [l.name, l.stations]), [
+        ['Cheeseburger Meal', 'kp1'],
+        // Routed to the fryer on its own, and still on the grill's ticket: an
+        // answer goes where its dish goes.
+        ['Meal Large Fries', 'kp1'],
+        ['Meal Cola', 'kp1'],
+        ['Mayonnaise', 'kp1'],
+      ]);
+      const [saleLines] = await pool.query('SELECT name, unit_price_minor FROM epos_order_lines WHERE order_id = ? ORDER BY line_no', [order.sale_id]);
+      assert.deepStrictEqual(saleLines.map((l) => [l.name, l.unit_price_minor]),
+        [['Cheeseburger Meal', 1100], ['Meal Large Fries', 60], ['Meal Cola', 0], ['Mayonnaise', 20]]);
+      assert.strictEqual(
+        await count('SELECT COUNT(*) AS n FROM epos_express_prints WHERE order_id = ?', [order.id]), 0,
+        'the grill is a screen: nothing to print'
+      );
+    });
+
+    await check('a meal can be renamed and taken away again', async () => {
+      let res = await call(base, 'PUT', '/api/express/meals/' + mealId, { token: armsSession, body: { label: 'Large' } });
+      assert.strictEqual(res.status, 200);
+      res = await call(base, 'PUT', '/api/express/meals/' + mealId, { token: sessionFor(OTHER), body: { label: 'Theirs' } });
+      assert.strictEqual(res.status, 404);
+      res = await call(base, 'DELETE', '/api/express/meals/' + mealId, { token: sessionFor(OTHER) });
+      assert.strictEqual(res.status, 404);
+      res = await call(base, 'DELETE', '/api/express/meals/' + mealId, { token: armsSession });
+      assert.strictEqual(res.status, 200);
+      const menu = await call(base, 'GET', '/api/express/kiosk/menu', { token: kioskToken });
+      const burger = menu.body.sections.flatMap((s) => s.items).find((i) => i.id === item.burger);
+      assert.deepStrictEqual(burger.meals, []);
     });
 
     // ---- Tenancy -----------------------------------------------------------
