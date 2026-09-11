@@ -453,6 +453,8 @@ function dineinRoutes({ pool, broadcast, secret }) {
     'menu', 't', 'm', 'o', 'order', 'orders', 'wallet', 'pass', 'passes',
     'static', 'public', 'app', 'www', 'help', 'support', 'about', 'terms',
     'privacy', 'kitchen', 'till', 'display', 'dinein', 'qr',
+    // The loyalty app's API lives at /loyalty/v1 on this same address.
+    'loyalty',
   ]);
 
   /** The venue record, created empty on first read so the editor has a row. */

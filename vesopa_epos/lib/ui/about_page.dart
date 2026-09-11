@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../config/constants.dart';
+import '../data/deep_links.dart' show tillStoreProductId;
+import '../data/till_seat.dart';
 import 'theme.dart';
 import 'widgets/pos_message.dart';
 
@@ -121,6 +124,8 @@ class AboutPage extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _Hero(wide: wide),
+              const SizedBox(height: 16),
+              const _ThisTill(),
               const SizedBox(height: 26),
 
               Text('What Vesopa does',
@@ -293,6 +298,81 @@ class _Hero extends StatelessWidget {
                 ),
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// This build, this till's licence, and the way to update it.
+///
+/// Updates are the venue's to approve: a Vesopa release waits in the Store
+/// until Vesopa publishes it, and a till with automatic Store updates turned
+/// off (tool/till-updates.ps1) takes a new version only when somebody presses
+/// Update here. Nobody's till changes mid-service.
+class _ThisTill extends ConsumerWidget {
+  const _ThisTill();
+
+  static final _store = Uri.parse('ms-windows-store://pdp/?productid=$tillStoreProductId');
+  static final _storeWeb = Uri.parse('https://apps.microsoft.com/detail/$tillStoreProductId');
+
+  Future<void> _checkForUpdates(BuildContext context) async {
+    try {
+      if (await launchUrl(_store, mode: LaunchMode.externalApplication)) return;
+      if (await launchUrl(_storeWeb, mode: LaunchMode.externalApplication)) return;
+    } catch (_) {
+      // Said below.
+    }
+    if (context.mounted) {
+      PosMessenger.info(
+        context,
+        'Open the Microsoft Store, then Library, and update Vesopa EPOS there.',
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final licence = ref.watch(tillSeatProvider).value?.describe;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        border: Border.all(color: scheme.outlineVariant),
+        borderRadius: BorderRadius.circular(11),
+      ),
+      child: Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        runSpacing: 10,
+        spacing: 16,
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Version ${VesopaBrand.appVersion}',
+                style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              if (licence != null)
+                Text(
+                  licence,
+                  style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+                ),
+              Text(
+                'Updates install only when you choose.',
+                style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+              ),
+            ],
+          ),
+          FilledButton.tonalIcon(
+            onPressed: () => _checkForUpdates(context),
+            icon: const Icon(Icons.system_update_alt, size: 18),
+            label: const Text('Check for updates'),
           ),
         ],
       ),

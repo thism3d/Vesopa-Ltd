@@ -77,7 +77,10 @@ if (arriving.length !== 1) {
 }
 console.log(`  arriving: ${arriving[0].fileName}`);
 for (const p of leaving) console.log(`  leaving:  ${p.fileName} ${p.version}`);
-console.log(`  publish:  ${submission.targetPublishMode}`);
+console.log(`  publish:  ${submission.targetPublishMode}${
+  submission.targetPublishMode === 'Manual'
+    ? ' -- after certification it waits; nothing reaches a till until "Publish now" in Partner Center'
+    : ' -- goes to every till the moment it is certified'}`);
 
 const commit = await client.commitSubmission(storeId, pending.id);
 console.log(`  committed — status now ${commit.status}`);

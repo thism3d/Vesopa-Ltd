@@ -23,9 +23,17 @@ function adminRoutes({ pool, broadcast, secret }) {
   // ---- Offices ------------------------------------------------------------
 
   router.get('/offices', async (_req, res, next) => {
-    try {
-      const [rows] = await pool.query(
-        `SELECT o.id, o.name, o.contact_email, o.status, o.plan,
+    // Till licences (schema_till_licences.sql): the limit, and how many tills
+    // are signed in now. Collated explicitly because offices.contact_email took
+    // the server's default collation and bo_till_seats.office did not -- the
+    // "Illegal mix of collations" that only ever happens on live. Tried first and
+    // fallen back from, so the office list never breaks over a migration.
+    const LICENCES = `o.till_licences,
+                (SELECT COUNT(*) FROM bo_till_seats t
+                  WHERE t.office = o.contact_email COLLATE utf8mb4_general_ci
+                    AND t.released_at IS NULL) AS tills_in_use,`;
+    const select = (licences) => `
+        SELECT o.id, o.name, o.contact_email, o.status, o.plan, ${licences}
                 o.created_at, o.paused_at, o.pause_reason,
                 s.id            AS subscription_id,
                 s.amount_minor,
@@ -39,9 +47,43 @@ function adminRoutes({ pool, broadcast, secret }) {
          FROM offices o
          LEFT JOIN subscriptions s
            ON s.office_id = o.id AND s.status = 'active'
-         ORDER BY o.name`
-      );
+         ORDER BY o.name`;
+    try {
+      let rows;
+      try {
+        [rows] = await pool.query(select(LICENCES));
+      } catch (e) {
+        if (e.code !== 'ER_BAD_FIELD_ERROR' && e.code !== 'ER_NO_SUCH_TABLE') throw e;
+        [rows] = await pool.query(select(''));
+      }
       res.json(rows);
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /**
+   * How many tills this office may have signed in at once. Null (a blank box)
+   * is no limit. Lowering it below the tills already in never signs one out:
+   * the next sign-in is refused until the venue is back under.
+   */
+  router.put('/offices/:id/licences', async (req, res, next) => {
+    try {
+      const raw = (req.body || {}).till_licences;
+      let value = null;
+      if (raw !== null && raw !== undefined && String(raw).trim() !== '') {
+        value = Number(raw);
+        if (!Number.isInteger(value) || value < 0 || value > 999) {
+          return res.status(400).json({ error: 'Till licences must be a whole number from 0 to 999, or blank for no limit.' });
+        }
+      }
+      const [r] = await pool.execute(
+        'UPDATE offices SET till_licences = ? WHERE id = ?',
+        [value, req.params.id]
+      );
+      if (!r.affectedRows) return res.status(404).json({ error: 'No such office.' });
+      broadcast({ type: 'offices.updated' });
+      res.json({ ok: true, till_licences: value });
     } catch (e) {
       next(e);
     }
@@ -138,6 +180,84 @@ function adminRoutes({ pool, broadcast, secret }) {
       // Tills poll this too, so a pause takes effect without waiting for a
       // restart.
       broadcast({ type: 'office.status', officeId: Number(req.params.id), status });
+      res.json({ ok: true });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // ---- More than one site under one login (src/sites.js) -------------------
+
+  /**
+   * Who manages this site: its own users (home) and the logins linked to it
+   * from another office. Only the links can be removed here -- a home user
+   * belongs to the office and is managed under Users.
+   */
+  router.get('/offices/:id/managers', async (req, res, next) => {
+    try {
+      const officeId = Number(req.params.id);
+      const [home] = await pool.query(
+        `SELECT id AS user_id, email, name, 1 AS home
+           FROM backoffice_users WHERE office_id = ? ORDER BY name`,
+        [officeId]
+      );
+      let linked = [];
+      try {
+        [linked] = await pool.query(
+          `SELECT u.id AS user_id, u.email, u.name, 0 AS home, o.name AS home_office
+             FROM bo_user_sites s
+             JOIN backoffice_users u ON u.id = s.user_id
+             LEFT JOIN offices o ON o.id = u.office_id
+            WHERE s.office_id = ? ORDER BY u.name`,
+          [officeId]
+        );
+      } catch (e) {
+        if (e.code !== 'ER_NO_SUCH_TABLE') throw e;
+      }
+      res.json([...home, ...linked].map((r) => ({ ...r, home: Number(r.home) === 1 })));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /** Let an existing back-office login manage this site too, by its email. */
+  router.post('/offices/:id/managers', async (req, res, next) => {
+    try {
+      const officeId = Number(req.params.id);
+      const email = String((req.body || {}).email || '').trim().toLowerCase();
+      if (!email) return res.status(400).json({ error: 'Which login? Give its email address.' });
+      const [[office]] = await pool.query('SELECT id FROM offices WHERE id = ?', [officeId]);
+      if (!office) return res.status(404).json({ error: 'No such office.' });
+      const [[user]] = await pool.query(
+        'SELECT id, office_id, name FROM backoffice_users WHERE LOWER(email) = ?',
+        [email]
+      );
+      if (!user) {
+        return res.status(404).json({
+          error: 'No back-office login has that email. Create it under its own office first.',
+        });
+      }
+      if (Number(user.office_id) === officeId) {
+        return res.status(409).json({ error: `${user.name} already belongs to this site.` });
+      }
+      await pool.execute(
+        'INSERT IGNORE INTO bo_user_sites (user_id, office_id, added_by) VALUES (?, ?, ?)',
+        [user.id, officeId, req.user.email]
+      );
+      res.status(201).json({ ok: true });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /** Stop a linked login managing this site. Its home office is untouched. */
+  router.delete('/offices/:id/managers/:userId', async (req, res, next) => {
+    try {
+      const [r] = await pool.execute(
+        'DELETE FROM bo_user_sites WHERE office_id = ? AND user_id = ?',
+        [Number(req.params.id), Number(req.params.userId)]
+      );
+      if (!r.affectedRows) return res.status(404).json({ error: 'That login is not linked here.' });
       res.json({ ok: true });
     } catch (e) {
       next(e);

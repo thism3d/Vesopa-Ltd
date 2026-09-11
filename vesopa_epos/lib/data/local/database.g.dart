@@ -1797,6 +1797,21 @@ class $OrdersTable extends Orders with TableInfo<$OrdersTable, Order> {
     type: DriftSqlType.int,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _trainingMeta = const VerificationMeta(
+    'training',
+  );
+  @override
+  late final GeneratedColumn<bool> training = GeneratedColumn<bool>(
+    'training',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("training" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -1858,6 +1873,7 @@ class $OrdersTable extends Orders with TableInfo<$OrdersTable, Order> {
     customerEmail,
     customerCardNumber,
     customerPoints,
+    training,
     createdAt,
     closedAt,
     syncedAt,
@@ -2059,6 +2075,12 @@ class $OrdersTable extends Orders with TableInfo<$OrdersTable, Order> {
         ),
       );
     }
+    if (data.containsKey('training')) {
+      context.handle(
+        _trainingMeta,
+        training.isAcceptableOrUnknown(data['training']!, _trainingMeta),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -2186,6 +2208,10 @@ class $OrdersTable extends Orders with TableInfo<$OrdersTable, Order> {
         DriftSqlType.int,
         data['${effectivePrefix}customer_points'],
       ),
+      training: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}training'],
+      )!,
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}created_at'],
@@ -2328,6 +2354,20 @@ class Order extends DataClass implements Insertable<Order> {
   /// A snapshot, and honestly so: it is the balance BEFORE this sale, because
   /// the points for this sale are not earned until it settles.
   final int? customerPoints;
+
+  /// A practice bill, rung up by a training account.
+  ///
+  /// "Sales made in Training Mode should not be sent to the back office and
+  /// should not count towards the sales figures on the till." Set when the bill
+  /// is opened (a training account is signed on) and never changed after it
+  /// has anything on it, because everything about the bill follows from it:
+  /// it is never queued for the server, never shared with another till, never
+  /// sent to the kitchen, takes no card payment, prints as TRAINING, and is
+  /// left out of the X and Z. See `data/training_mode.dart`.
+  ///
+  /// False on every bill already on the till, which is the truth: none of them
+  /// were practice.
+  final bool training;
   final DateTime createdAt;
   final DateTime? closedAt;
   final DateTime? syncedAt;
@@ -2357,6 +2397,7 @@ class Order extends DataClass implements Insertable<Order> {
     this.customerEmail,
     this.customerCardNumber,
     this.customerPoints,
+    required this.training,
     required this.createdAt,
     this.closedAt,
     this.syncedAt,
@@ -2421,6 +2462,7 @@ class Order extends DataClass implements Insertable<Order> {
     if (!nullToAbsent || customerPoints != null) {
       map['customer_points'] = Variable<int>(customerPoints);
     }
+    map['training'] = Variable<bool>(training);
     map['created_at'] = Variable<DateTime>(createdAt);
     if (!nullToAbsent || closedAt != null) {
       map['closed_at'] = Variable<DateTime>(closedAt);
@@ -2490,6 +2532,7 @@ class Order extends DataClass implements Insertable<Order> {
       customerPoints: customerPoints == null && nullToAbsent
           ? const Value.absent()
           : Value(customerPoints),
+      training: Value(training),
       createdAt: Value(createdAt),
       closedAt: closedAt == null && nullToAbsent
           ? const Value.absent()
@@ -2539,6 +2582,7 @@ class Order extends DataClass implements Insertable<Order> {
         json['customerCardNumber'],
       ),
       customerPoints: serializer.fromJson<int?>(json['customerPoints']),
+      training: serializer.fromJson<bool>(json['training']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       closedAt: serializer.fromJson<DateTime?>(json['closedAt']),
       syncedAt: serializer.fromJson<DateTime?>(json['syncedAt']),
@@ -2573,6 +2617,7 @@ class Order extends DataClass implements Insertable<Order> {
       'customerEmail': serializer.toJson<String?>(customerEmail),
       'customerCardNumber': serializer.toJson<String?>(customerCardNumber),
       'customerPoints': serializer.toJson<int?>(customerPoints),
+      'training': serializer.toJson<bool>(training),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'closedAt': serializer.toJson<DateTime?>(closedAt),
       'syncedAt': serializer.toJson<DateTime?>(syncedAt),
@@ -2605,6 +2650,7 @@ class Order extends DataClass implements Insertable<Order> {
     Value<String?> customerEmail = const Value.absent(),
     Value<String?> customerCardNumber = const Value.absent(),
     Value<int?> customerPoints = const Value.absent(),
+    bool? training,
     DateTime? createdAt,
     Value<DateTime?> closedAt = const Value.absent(),
     Value<DateTime?> syncedAt = const Value.absent(),
@@ -2644,6 +2690,7 @@ class Order extends DataClass implements Insertable<Order> {
     customerPoints: customerPoints.present
         ? customerPoints.value
         : this.customerPoints,
+    training: training ?? this.training,
     createdAt: createdAt ?? this.createdAt,
     closedAt: closedAt.present ? closedAt.value : this.closedAt,
     syncedAt: syncedAt.present ? syncedAt.value : this.syncedAt,
@@ -2703,6 +2750,7 @@ class Order extends DataClass implements Insertable<Order> {
       customerPoints: data.customerPoints.present
           ? data.customerPoints.value
           : this.customerPoints,
+      training: data.training.present ? data.training.value : this.training,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       closedAt: data.closedAt.present ? data.closedAt.value : this.closedAt,
       syncedAt: data.syncedAt.present ? data.syncedAt.value : this.syncedAt,
@@ -2737,6 +2785,7 @@ class Order extends DataClass implements Insertable<Order> {
           ..write('customerEmail: $customerEmail, ')
           ..write('customerCardNumber: $customerCardNumber, ')
           ..write('customerPoints: $customerPoints, ')
+          ..write('training: $training, ')
           ..write('createdAt: $createdAt, ')
           ..write('closedAt: $closedAt, ')
           ..write('syncedAt: $syncedAt')
@@ -2771,6 +2820,7 @@ class Order extends DataClass implements Insertable<Order> {
     customerEmail,
     customerCardNumber,
     customerPoints,
+    training,
     createdAt,
     closedAt,
     syncedAt,
@@ -2804,6 +2854,7 @@ class Order extends DataClass implements Insertable<Order> {
           other.customerEmail == this.customerEmail &&
           other.customerCardNumber == this.customerCardNumber &&
           other.customerPoints == this.customerPoints &&
+          other.training == this.training &&
           other.createdAt == this.createdAt &&
           other.closedAt == this.closedAt &&
           other.syncedAt == this.syncedAt);
@@ -2835,6 +2886,7 @@ class OrdersCompanion extends UpdateCompanion<Order> {
   final Value<String?> customerEmail;
   final Value<String?> customerCardNumber;
   final Value<int?> customerPoints;
+  final Value<bool> training;
   final Value<DateTime> createdAt;
   final Value<DateTime?> closedAt;
   final Value<DateTime?> syncedAt;
@@ -2865,6 +2917,7 @@ class OrdersCompanion extends UpdateCompanion<Order> {
     this.customerEmail = const Value.absent(),
     this.customerCardNumber = const Value.absent(),
     this.customerPoints = const Value.absent(),
+    this.training = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.closedAt = const Value.absent(),
     this.syncedAt = const Value.absent(),
@@ -2896,6 +2949,7 @@ class OrdersCompanion extends UpdateCompanion<Order> {
     this.customerEmail = const Value.absent(),
     this.customerCardNumber = const Value.absent(),
     this.customerPoints = const Value.absent(),
+    this.training = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.closedAt = const Value.absent(),
     this.syncedAt = const Value.absent(),
@@ -2927,6 +2981,7 @@ class OrdersCompanion extends UpdateCompanion<Order> {
     Expression<String>? customerEmail,
     Expression<String>? customerCardNumber,
     Expression<int>? customerPoints,
+    Expression<bool>? training,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? closedAt,
     Expression<DateTime>? syncedAt,
@@ -2962,6 +3017,7 @@ class OrdersCompanion extends UpdateCompanion<Order> {
       if (customerCardNumber != null)
         'customer_card_number': customerCardNumber,
       if (customerPoints != null) 'customer_points': customerPoints,
+      if (training != null) 'training': training,
       if (createdAt != null) 'created_at': createdAt,
       if (closedAt != null) 'closed_at': closedAt,
       if (syncedAt != null) 'synced_at': syncedAt,
@@ -2995,6 +3051,7 @@ class OrdersCompanion extends UpdateCompanion<Order> {
     Value<String?>? customerEmail,
     Value<String?>? customerCardNumber,
     Value<int?>? customerPoints,
+    Value<bool>? training,
     Value<DateTime>? createdAt,
     Value<DateTime?>? closedAt,
     Value<DateTime?>? syncedAt,
@@ -3027,6 +3084,7 @@ class OrdersCompanion extends UpdateCompanion<Order> {
       customerEmail: customerEmail ?? this.customerEmail,
       customerCardNumber: customerCardNumber ?? this.customerCardNumber,
       customerPoints: customerPoints ?? this.customerPoints,
+      training: training ?? this.training,
       createdAt: createdAt ?? this.createdAt,
       closedAt: closedAt ?? this.closedAt,
       syncedAt: syncedAt ?? this.syncedAt,
@@ -3116,6 +3174,9 @@ class OrdersCompanion extends UpdateCompanion<Order> {
     if (customerPoints.present) {
       map['customer_points'] = Variable<int>(customerPoints.value);
     }
+    if (training.present) {
+      map['training'] = Variable<bool>(training.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
@@ -3159,6 +3220,7 @@ class OrdersCompanion extends UpdateCompanion<Order> {
           ..write('customerEmail: $customerEmail, ')
           ..write('customerCardNumber: $customerCardNumber, ')
           ..write('customerPoints: $customerPoints, ')
+          ..write('training: $training, ')
           ..write('createdAt: $createdAt, ')
           ..write('closedAt: $closedAt, ')
           ..write('syncedAt: $syncedAt, ')
@@ -8332,6 +8394,21 @@ class $StaffTable extends Staff with TableInfo<$StaffTable, StaffData> {
     requiredDuringInsert: false,
     defaultValue: const Constant(''),
   );
+  static const VerificationMeta _trainingMeta = const VerificationMeta(
+    'training',
+  );
+  @override
+  late final GeneratedColumn<bool> training = GeneratedColumn<bool>(
+    'training',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("training" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -8340,6 +8417,7 @@ class $StaffTable extends Staff with TableInfo<$StaffTable, StaffData> {
     pin,
     swipeCard,
     permissions,
+    training,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -8393,6 +8471,12 @@ class $StaffTable extends Staff with TableInfo<$StaffTable, StaffData> {
         ),
       );
     }
+    if (data.containsKey('training')) {
+      context.handle(
+        _trainingMeta,
+        training.isAcceptableOrUnknown(data['training']!, _trainingMeta),
+      );
+    }
     return context;
   }
 
@@ -8425,6 +8509,10 @@ class $StaffTable extends Staff with TableInfo<$StaffTable, StaffData> {
       permissions: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}permissions'],
+      )!,
+      training: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}training'],
       )!,
     );
   }
@@ -8470,6 +8558,14 @@ class StaffData extends DataClass implements Insertable<StaffData> {
   /// trading today has no group, so an empty column has to keep meaning what it
   /// has always meant.
   final String permissions;
+
+  /// A training account: signing on with it puts the till in training mode.
+  ///
+  /// Only ever true for a till that asked for training accounts
+  /// (`/till/staff?features=training`); an older till is never sent one. False
+  /// on every existing row until the next staff pull, which is correct --
+  /// nobody is a trainee until the back office says so.
+  final bool training;
   const StaffData({
     required this.id,
     required this.pluid,
@@ -8477,6 +8573,7 @@ class StaffData extends DataClass implements Insertable<StaffData> {
     required this.pin,
     required this.swipeCard,
     required this.permissions,
+    required this.training,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -8487,6 +8584,7 @@ class StaffData extends DataClass implements Insertable<StaffData> {
     map['pin'] = Variable<String>(pin);
     map['swipe_card'] = Variable<String>(swipeCard);
     map['permissions'] = Variable<String>(permissions);
+    map['training'] = Variable<bool>(training);
     return map;
   }
 
@@ -8498,6 +8596,7 @@ class StaffData extends DataClass implements Insertable<StaffData> {
       pin: Value(pin),
       swipeCard: Value(swipeCard),
       permissions: Value(permissions),
+      training: Value(training),
     );
   }
 
@@ -8513,6 +8612,7 @@ class StaffData extends DataClass implements Insertable<StaffData> {
       pin: serializer.fromJson<String>(json['pin']),
       swipeCard: serializer.fromJson<String>(json['swipeCard']),
       permissions: serializer.fromJson<String>(json['permissions']),
+      training: serializer.fromJson<bool>(json['training']),
     );
   }
   @override
@@ -8525,6 +8625,7 @@ class StaffData extends DataClass implements Insertable<StaffData> {
       'pin': serializer.toJson<String>(pin),
       'swipeCard': serializer.toJson<String>(swipeCard),
       'permissions': serializer.toJson<String>(permissions),
+      'training': serializer.toJson<bool>(training),
     };
   }
 
@@ -8535,6 +8636,7 @@ class StaffData extends DataClass implements Insertable<StaffData> {
     String? pin,
     String? swipeCard,
     String? permissions,
+    bool? training,
   }) => StaffData(
     id: id ?? this.id,
     pluid: pluid ?? this.pluid,
@@ -8542,6 +8644,7 @@ class StaffData extends DataClass implements Insertable<StaffData> {
     pin: pin ?? this.pin,
     swipeCard: swipeCard ?? this.swipeCard,
     permissions: permissions ?? this.permissions,
+    training: training ?? this.training,
   );
   StaffData copyWithCompanion(StaffCompanion data) {
     return StaffData(
@@ -8553,6 +8656,7 @@ class StaffData extends DataClass implements Insertable<StaffData> {
       permissions: data.permissions.present
           ? data.permissions.value
           : this.permissions,
+      training: data.training.present ? data.training.value : this.training,
     );
   }
 
@@ -8564,13 +8668,15 @@ class StaffData extends DataClass implements Insertable<StaffData> {
           ..write('name: $name, ')
           ..write('pin: $pin, ')
           ..write('swipeCard: $swipeCard, ')
-          ..write('permissions: $permissions')
+          ..write('permissions: $permissions, ')
+          ..write('training: $training')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, pluid, name, pin, swipeCard, permissions);
+  int get hashCode =>
+      Object.hash(id, pluid, name, pin, swipeCard, permissions, training);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -8580,7 +8686,8 @@ class StaffData extends DataClass implements Insertable<StaffData> {
           other.name == this.name &&
           other.pin == this.pin &&
           other.swipeCard == this.swipeCard &&
-          other.permissions == this.permissions);
+          other.permissions == this.permissions &&
+          other.training == this.training);
 }
 
 class StaffCompanion extends UpdateCompanion<StaffData> {
@@ -8590,6 +8697,7 @@ class StaffCompanion extends UpdateCompanion<StaffData> {
   final Value<String> pin;
   final Value<String> swipeCard;
   final Value<String> permissions;
+  final Value<bool> training;
   const StaffCompanion({
     this.id = const Value.absent(),
     this.pluid = const Value.absent(),
@@ -8597,6 +8705,7 @@ class StaffCompanion extends UpdateCompanion<StaffData> {
     this.pin = const Value.absent(),
     this.swipeCard = const Value.absent(),
     this.permissions = const Value.absent(),
+    this.training = const Value.absent(),
   });
   StaffCompanion.insert({
     this.id = const Value.absent(),
@@ -8605,6 +8714,7 @@ class StaffCompanion extends UpdateCompanion<StaffData> {
     required String pin,
     this.swipeCard = const Value.absent(),
     this.permissions = const Value.absent(),
+    this.training = const Value.absent(),
   }) : name = Value(name),
        pin = Value(pin);
   static Insertable<StaffData> custom({
@@ -8614,6 +8724,7 @@ class StaffCompanion extends UpdateCompanion<StaffData> {
     Expression<String>? pin,
     Expression<String>? swipeCard,
     Expression<String>? permissions,
+    Expression<bool>? training,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -8622,6 +8733,7 @@ class StaffCompanion extends UpdateCompanion<StaffData> {
       if (pin != null) 'pin': pin,
       if (swipeCard != null) 'swipe_card': swipeCard,
       if (permissions != null) 'permissions': permissions,
+      if (training != null) 'training': training,
     });
   }
 
@@ -8632,6 +8744,7 @@ class StaffCompanion extends UpdateCompanion<StaffData> {
     Value<String>? pin,
     Value<String>? swipeCard,
     Value<String>? permissions,
+    Value<bool>? training,
   }) {
     return StaffCompanion(
       id: id ?? this.id,
@@ -8640,6 +8753,7 @@ class StaffCompanion extends UpdateCompanion<StaffData> {
       pin: pin ?? this.pin,
       swipeCard: swipeCard ?? this.swipeCard,
       permissions: permissions ?? this.permissions,
+      training: training ?? this.training,
     );
   }
 
@@ -8664,6 +8778,9 @@ class StaffCompanion extends UpdateCompanion<StaffData> {
     if (permissions.present) {
       map['permissions'] = Variable<String>(permissions.value);
     }
+    if (training.present) {
+      map['training'] = Variable<bool>(training.value);
+    }
     return map;
   }
 
@@ -8675,7 +8792,8 @@ class StaffCompanion extends UpdateCompanion<StaffData> {
           ..write('name: $name, ')
           ..write('pin: $pin, ')
           ..write('swipeCard: $swipeCard, ')
-          ..write('permissions: $permissions')
+          ..write('permissions: $permissions, ')
+          ..write('training: $training')
           ..write(')'))
         .toString();
   }
@@ -9356,6 +9474,7 @@ typedef $$OrdersTableCreateCompanionBuilder =
       Value<String?> customerEmail,
       Value<String?> customerCardNumber,
       Value<int?> customerPoints,
+      Value<bool> training,
       Value<DateTime> createdAt,
       Value<DateTime?> closedAt,
       Value<DateTime?> syncedAt,
@@ -9388,6 +9507,7 @@ typedef $$OrdersTableUpdateCompanionBuilder =
       Value<String?> customerEmail,
       Value<String?> customerCardNumber,
       Value<int?> customerPoints,
+      Value<bool> training,
       Value<DateTime> createdAt,
       Value<DateTime?> closedAt,
       Value<DateTime?> syncedAt,
@@ -9567,6 +9687,11 @@ class $$OrdersTableFilterComposer
 
   ColumnFilters<int> get customerPoints => $composableBuilder(
     column: $table.customerPoints,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get training => $composableBuilder(
+    column: $table.training,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -9770,6 +9895,11 @@ class $$OrdersTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<bool> get training => $composableBuilder(
+    column: $table.training,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -9898,6 +10028,9 @@ class $$OrdersTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<bool> get training =>
+      $composableBuilder(column: $table.training, builder: (column) => column);
+
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
 
@@ -10011,6 +10144,7 @@ class $$OrdersTableTableManager
                 Value<String?> customerEmail = const Value.absent(),
                 Value<String?> customerCardNumber = const Value.absent(),
                 Value<int?> customerPoints = const Value.absent(),
+                Value<bool> training = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime?> closedAt = const Value.absent(),
                 Value<DateTime?> syncedAt = const Value.absent(),
@@ -10041,6 +10175,7 @@ class $$OrdersTableTableManager
                 customerEmail: customerEmail,
                 customerCardNumber: customerCardNumber,
                 customerPoints: customerPoints,
+                training: training,
                 createdAt: createdAt,
                 closedAt: closedAt,
                 syncedAt: syncedAt,
@@ -10073,6 +10208,7 @@ class $$OrdersTableTableManager
                 Value<String?> customerEmail = const Value.absent(),
                 Value<String?> customerCardNumber = const Value.absent(),
                 Value<int?> customerPoints = const Value.absent(),
+                Value<bool> training = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime?> closedAt = const Value.absent(),
                 Value<DateTime?> syncedAt = const Value.absent(),
@@ -10103,6 +10239,7 @@ class $$OrdersTableTableManager
                 customerEmail: customerEmail,
                 customerCardNumber: customerCardNumber,
                 customerPoints: customerPoints,
+                training: training,
                 createdAt: createdAt,
                 closedAt: closedAt,
                 syncedAt: syncedAt,
@@ -13321,6 +13458,7 @@ typedef $$StaffTableCreateCompanionBuilder =
       required String pin,
       Value<String> swipeCard,
       Value<String> permissions,
+      Value<bool> training,
     });
 typedef $$StaffTableUpdateCompanionBuilder =
     StaffCompanion Function({
@@ -13330,6 +13468,7 @@ typedef $$StaffTableUpdateCompanionBuilder =
       Value<String> pin,
       Value<String> swipeCard,
       Value<String> permissions,
+      Value<bool> training,
     });
 
 class $$StaffTableFilterComposer extends Composer<_$AppDatabase, $StaffTable> {
@@ -13367,6 +13506,11 @@ class $$StaffTableFilterComposer extends Composer<_$AppDatabase, $StaffTable> {
 
   ColumnFilters<String> get permissions => $composableBuilder(
     column: $table.permissions,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get training => $composableBuilder(
+    column: $table.training,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -13409,6 +13553,11 @@ class $$StaffTableOrderingComposer
     column: $table.permissions,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<bool> get training => $composableBuilder(
+    column: $table.training,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$StaffTableAnnotationComposer
@@ -13439,6 +13588,9 @@ class $$StaffTableAnnotationComposer
     column: $table.permissions,
     builder: (column) => column,
   );
+
+  GeneratedColumn<bool> get training =>
+      $composableBuilder(column: $table.training, builder: (column) => column);
 }
 
 class $$StaffTableTableManager
@@ -13475,6 +13627,7 @@ class $$StaffTableTableManager
                 Value<String> pin = const Value.absent(),
                 Value<String> swipeCard = const Value.absent(),
                 Value<String> permissions = const Value.absent(),
+                Value<bool> training = const Value.absent(),
               }) => StaffCompanion(
                 id: id,
                 pluid: pluid,
@@ -13482,6 +13635,7 @@ class $$StaffTableTableManager
                 pin: pin,
                 swipeCard: swipeCard,
                 permissions: permissions,
+                training: training,
               ),
           createCompanionCallback:
               ({
@@ -13491,6 +13645,7 @@ class $$StaffTableTableManager
                 required String pin,
                 Value<String> swipeCard = const Value.absent(),
                 Value<String> permissions = const Value.absent(),
+                Value<bool> training = const Value.absent(),
               }) => StaffCompanion.insert(
                 id: id,
                 pluid: pluid,
@@ -13498,6 +13653,7 @@ class $$StaffTableTableManager
                 pin: pin,
                 swipeCard: swipeCard,
                 permissions: permissions,
+                training: training,
               ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))

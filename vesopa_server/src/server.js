@@ -59,6 +59,10 @@ const { appleWalletRoutes } = require('./wallet_apple_service');
 const { ensureMemberNumber } = require('./member_numbers');
 const { priceLevelRoutes } = require('./price_levels');
 const { recordSale } = require('./sales');
+const training = require('./training');
+const tillSeats = require('./till_seats');
+const { siteRoutes, resolveTillSite } = require('./sites');
+const { loyaltyAppRoutes, startLoyaltyScheduler } = require('./loyalty_app');
 const { expressKioskRoutes } = require('./express_kiosk');
 const { walletPageRoutes } = require('./wallet_pages');
 
@@ -98,6 +102,9 @@ const pool = mysql.createPool({
   // than erroring.
   charset: 'utf8mb4',
 });
+
+// Till licences read and write seats through this pool (src/till_seats.js).
+tillSeats.init(pool);
 
 const app = express();
 // Live runs behind nginx. Without this every request reports the proxy's own
@@ -152,7 +159,9 @@ app.get('/health', (_req, res) => res.json({ ok: true }));
 // ---- Back office ----------------------------------------------------------
 
 app.post('/api/login', async (req, res, next) => {
-  const { email, password, remember, terminal } = req.body || {};
+  const {
+    email, password, remember, terminal, device_id, device_name, site_choice, office_id,
+  } = req.body || {};
   if (!email || !password) {
     return res.status(400).json({ error: 'Email and password are required' });
   }
@@ -168,9 +177,24 @@ app.post('/api/login', async (req, res, next) => {
     // the browser files it — a 12h JWT in localStorage still forces a fresh
     // sign-in tomorrow morning, which is exactly what the box promises not to.
     const ttl = remember ? REMEMBER_TTL : SESSION_TTL;
+
+    // A till being signed in by somebody who manages more than one site is
+    // asked which site it is for -- only a till that says it can ask (1.7.3.0);
+    // an older one gets the login's own office, as it always has.
+    let who = user;
+    if (terminal) {
+      const placed = await resolveTillSite(pool, user, {
+        canAsk: site_choice === true,
+        officeId: office_id,
+      });
+      if (placed.error) return res.status(403).json({ error: placed.error });
+      if (placed.choose) return res.json({ choose_site: true, sites: placed.choose });
+      who = placed.user;
+    }
+
     const body = {
-      token: issueToken(user, JWT_SECRET, ttl),
-      user,
+      token: issueToken(who, JWT_SECRET, ttl),
+      user: who,
       expiresIn: ttl,
     };
 
@@ -178,14 +202,30 @@ app.post('/api/login', async (req, res, next) => {
     // terminal read its venue's staff list later — long after this session
     // token has expired — so a PIN can be checked with no network. Only issued
     // when asked for, so a browser sign-in never receives one.
-    if (terminal && user.officeEmail) {
-      body.terminalToken = issueTerminalToken(user, JWT_SECRET);
+    if (terminal && who.officeEmail) {
+      // A licence seat first: the venue's limit is checked here, and a machine
+      // signing in again keeps the seat it already holds. See till_seats.js.
+      const clamp = (v, n) => (v == null ? null : String(v).trim().slice(0, n) || null);
+      const seatId = await tillSeats.claimSeat(pool, {
+        office: who.officeEmail,
+        deviceId: clamp(device_id, 64),
+        deviceName: clamp(device_name, 120),
+        by: who.email,
+      });
+      body.terminalToken = issueTerminalToken(who, JWT_SECRET, undefined, seatId);
     }
 
     res.json(body);
   } catch (e) {
     if (e instanceof AccessDeniedError) {
       return res.status(403).json({ error: e.message });
+    }
+    if (e instanceof tillSeats.SeatLimitError) {
+      return res.status(409).json({
+        error: e.message,
+        licences: e.limit,
+        seats: e.seats.map((s) => ({ name: s.device_name, last_seen_at: s.last_seen_at })),
+      });
     }
     next(e);
   }
@@ -220,6 +260,8 @@ app.use(tillDenominationRoutes({ pool }));
 app.use('/api', permissionRoutes({ pool, broadcast, secret: JWT_SECRET }));
 
 app.use('/api', backofficeRoutes({ pool, broadcast, secret: JWT_SECRET }));
+// More than one site under one login: the list and the switch. See src/sites.js.
+app.use('/api', siteRoutes({ pool, broadcast, secret: JWT_SECRET }));
 app.use('/api', programmingRoutes({ pool, broadcast, secret: JWT_SECRET }));
 app.use('/api', commerceRoutes({ pool, broadcast, secret: JWT_SECRET }));
 // Repricing a catalogue a level at a time: preview, apply, and put back. See
@@ -698,6 +740,11 @@ app.post('/till/voids', async (req, res, next) => {
     return res.status(400).json({ error: 'id and reason are required' });
   }
   try {
+    // A trainee's voids are practice, like their sales -- a manager reading the
+    // void log for the till that loses money must not find the training desk.
+    if (await training.isTrainingSale(pool, v.office, v)) {
+      return res.status(200).json(training.IGNORED);
+    }
     await pool.execute(
       `INSERT IGNORE INTO epos_void_log
          (id, email, order_id, clerk_pin, reason, items, scope, amount_minor,
@@ -825,6 +872,26 @@ app.get('/till/staff', requireTerminal(JWT_SECRET), async (req, res, next) => {
     // staff card.
     const columns = TILL_COLUMNS.map((c) => `g.${c}`).join(', ');
 
+    // TRAINING ACCOUNTS, ONLY FOR A TILL THAT KNOWS WHAT ONE IS
+    //
+    // A till from 1.7.3.0 asks with `?features=training` and keeps a trainee's
+    // bills to itself. A till older than that would sell for real under a
+    // training account, so it is simply not given any: a trainee cannot sign on
+    // there at all, which is the only safe thing an older till can do. See
+    // src/training.js.
+    const withTraining = training.tillUnderstandsTraining(req);
+    const WITH_TRAINING = `
+      SELECT c.id, c.pluid, c.clark_name AS name, c.pin_code AS pin,
+             COALESCE(c.swipe_card, '') AS swipe_card,
+             COALESCE(c.training, 0) AS training,
+             c.permission_group_id, g.name AS permission_group, ${columns}
+        FROM bo_clarks c
+        LEFT JOIN epos_permission_groups g
+               ON g.id = c.permission_group_id AND g.email = c.email
+       WHERE c.email = ? AND COALESCE(c.active, 1) = 1
+             ${withTraining ? '' : 'AND COALESCE(c.training, 0) = 0'}
+       ORDER BY c.pluid, c.clark_name`;
+
     const WITH_CARD = `
       SELECT c.id, c.pluid, c.clark_name AS name, c.pin_code AS pin,
              COALESCE(c.swipe_card, '') AS swipe_card,
@@ -854,16 +921,26 @@ app.get('/till/staff', requireTerminal(JWT_SECRET), async (req, res, next) => {
        WHERE email = ? AND COALESCE(active, 1) = 1
        ORDER BY pluid, clark_name`;
 
+    // Each step down drops one thing rather than failing. The training column
+    // is tried first and on its own, so a server that has not run its newest
+    // migration loses nothing but training accounts -- which it cannot have.
+    const isMissing = (e) =>
+      e.code === 'ER_BAD_FIELD_ERROR' || e.code === 'ER_NO_SUCH_TABLE';
     let rows;
     try {
-      [rows] = await pool.query(WITH_CARD, [req.office]);
-    } catch (e) {
-      if (e.code !== 'ER_BAD_FIELD_ERROR' && e.code !== 'ER_NO_SUCH_TABLE') throw e;
+      [rows] = await pool.query(WITH_TRAINING, [req.office]);
+    } catch (e0) {
+      if (!isMissing(e0)) throw e0;
       try {
-        [rows] = await pool.query(WITHOUT_CARD, [req.office]);
-      } catch (e2) {
-        if (e2.code !== 'ER_BAD_FIELD_ERROR' && e2.code !== 'ER_NO_SUCH_TABLE') throw e2;
-        [rows] = await pool.query(PLAIN, [req.office]);
+        [rows] = await pool.query(WITH_CARD, [req.office]);
+      } catch (e) {
+        if (!isMissing(e)) throw e;
+        try {
+          [rows] = await pool.query(WITHOUT_CARD, [req.office]);
+        } catch (e2) {
+          if (!isMissing(e2)) throw e2;
+          [rows] = await pool.query(PLAIN, [req.office]);
+        }
       }
     }
 
@@ -880,7 +957,9 @@ app.get('/till/staff', requireTerminal(JWT_SECRET), async (req, res, next) => {
       }
       const clean = { ...row };
       for (const column of TILL_COLUMNS) delete clean[column];
-      return { ...clean, permissions };
+      // A boolean, always present: an older server's rows have no column, and
+      // "not a trainee" is the truth about every one of them.
+      return { ...clean, training: Number(row.training) === 1, permissions };
     });
     res.json(rows);
   } catch (e) {
@@ -1461,6 +1540,13 @@ function sendShell(_req, res) {
  * dinein.js — and the host-guarded ones call next() on every other host, so the
  * back office's own routing is untouched.
  */
+// The loyalty app: its API (/loyalty/v1), its web build (/app/<slug>/) and the
+// back office's Loyalty app page (/api/loyalty-app). Ahead of the menu pages
+// and the menu-host guard below, because the web app and its API are served on
+// the menu address too -- menu.vesopaepos.com/app/<slug>/ -- where everything
+// not claimed before the guard is refused. See src/loyalty_app.js.
+app.use(loyaltyAppRoutes({ pool, broadcast, secret: JWT_SECRET }));
+
 app.use(dineinPageRoutes({ pool }));
 
 /**
@@ -1602,6 +1688,16 @@ app.post(['/till/orders', '/orders'], async (req, res, next) => {
     }
   }
 
+  // A training sale is taken and recorded nowhere: not in the ledger, not in a
+  // report, not on the kitchen screens. 200, so the till's outbox lets it go.
+  try {
+    if (await training.isTrainingSale(pool, order.email, order)) {
+      return res.status(200).json({ ...training.IGNORED, id: order.id });
+    }
+  } catch (e) {
+    return next(e);
+  }
+
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
@@ -1729,6 +1825,10 @@ verifyMail();
  * be the reason a deploy's restart hangs waiting for the process to exit.
  */
 startScheduler({ pool });
+
+// Loyalty-app notifications that are due, and the sweep that forgets old
+// locations and spent sign-in codes. Unref'd, like the report clock.
+startLoyaltyScheduler({ pool });
 
 /*
  * Say at boot which Dojo webhook environments can actually verify a delivery.

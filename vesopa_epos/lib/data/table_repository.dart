@@ -6,7 +6,16 @@ import 'order_repository.dart';
 
 /// Saving orders to tables, moving them, and splitting bills.
 class TableRepository {
-  TableRepository(this._db, this._orders);
+  TableRepository(this._db, this._orders, {bool Function()? trainingMode})
+      : _training = trainingMode ?? _notTraining;
+
+  static bool _notTraining() => false;
+
+  /// Whether a training account is signed on. Practice tables are seen only in
+  /// training and live ones only outside it, so a trainee can never pick up a
+  /// real table's bill and a real clerk never settles a practice one. See
+  /// `data/training_mode.dart`.
+  final bool Function() _training;
 
   final AppDatabase _db;
   final OrderRepository _orders;
@@ -35,8 +44,10 @@ class TableRepository {
   /// (open or explicitly parked), is assigned to a table, and has at least one
   /// item on it. That last part is the rule the operator asked for: adding the
   /// first product books the table; an empty bill assigned to a table does not.
-  static Expression<bool> _occupies($OrdersTable o) =>
-      o.tableNumber.isNotNull() & o.status.isIn(['open', 'parked']);
+  Expression<bool> _occupies($OrdersTable o) =>
+      o.tableNumber.isNotNull() &
+      o.status.isIn(['open', 'parked']) &
+      o.training.equals(_training());
 
   /// The live bill sitting on a table, if any. Only orders with items count, so
   /// a brand-new empty order that happens to carry a table number is not
@@ -271,6 +282,8 @@ class TableRepository {
               tableNumber: Value(source.tableNumber),
               clerkPin: Value(source.clerkPin),
               splitFromOrderId: Value(orderId),
+              // Half of a practice bill is still practice.
+              training: Value(source.training),
             ),
           );
 

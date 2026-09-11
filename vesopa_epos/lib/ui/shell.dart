@@ -16,6 +16,8 @@ import '../data/staff_session.dart';
 import '../data/sync_service.dart';
 import '../data/terminal_identity.dart';
 import '../data/terminal_service.dart';
+import '../data/till_seat.dart';
+import '../data/training_mode.dart';
 import '../main.dart';
 import 'layout.dart';
 import 'about_page.dart';
@@ -69,6 +71,14 @@ class _PosShellState extends ConsumerState<PosShell> {
   /// data/display_pairing.dart.
   Timer? _presence;
 
+  /// Asks the back office, every couple of minutes, whether this till has been
+  /// signed out from Devices. See data/till_seat.dart.
+  Timer? _seatWatch;
+
+  /// Set once the till knows it has been signed out, so the message is said
+  /// once and the sign-out is not started twice.
+  bool _releasing = false;
+
   /// Held for [dispose], which cannot `ref.read` a container that may already
   /// have gone.
   String? _presenceDeviceId;
@@ -106,7 +116,62 @@ class _PosShellState extends ConsumerState<PosShell> {
     unawaited(_readCardRules());
     unawaited(_readGymRules());
     unawaited(_startPresence());
+    // Practice bills left from a till switched off mid-training. Cleared before
+    // the first bill opens; a failure here costs nothing but a stale practice
+    // table, seen only by the next trainee.
+    unawaited(
+      ref
+          .read(orderRepositoryProvider)
+          .sweepPracticeBills()
+          .then<void>((_) {}, onError: (Object _) {}),
+    );
     _newOrder();
+    _seatWatch = Timer.periodic(
+      const Duration(minutes: 2),
+      (_) => unawaited(_checkSeat()),
+    );
+    unawaited(_checkSeat());
+  }
+
+  /// Follow a sign-out made from the back office.
+  ///
+  /// The sales go first: they are sent without the terminal token (they are
+  /// keyed by the venue), so a released till can still deliver every one. Only
+  /// when none is left does the till go back to the sign-in screen. Until then
+  /// it says what it is waiting for, and tries again on the next check.
+  Future<void> _checkSeat() async {
+    final token = ref.read(sessionProvider).terminalToken;
+    if (token == null) return;
+    final seat = await checkTillSeat(ref.read(apiBaseProvider), token);
+    if (seat.status != SeatStatus.signedOut || !mounted) return;
+
+    final sync = ref.read(syncServiceProvider);
+    try {
+      await sync.flush();
+    } catch (_) {
+      // Counted below either way.
+    }
+    final db = ref.read(databaseProvider);
+    final pending = (await db.select(db.outboxEntries).get()).length;
+    if (!mounted) return;
+    if (pending > 0) {
+      if (!_releasing) {
+        _releasing = true;
+        PosMessenger.error(
+          context,
+          'This till was signed out from the back office. It will sign out '
+          'as soon as its last $pending sale(s) reach the server.',
+        );
+      }
+      return;
+    }
+
+    _releasing = true;
+    _seatWatch?.cancel();
+    await db.delete(db.products).go();
+    await db.delete(db.mixMatchProducts).go();
+    await db.delete(db.mixMatchDeals).go();
+    await ref.read(sessionControllerProvider.notifier).signOut();
   }
 
   /// Load the venue's card prefixes, then refresh them.
@@ -313,6 +378,7 @@ class _PosShellState extends ConsumerState<PosShell> {
   @override
   void dispose() {
     _presence?.cancel();
+    _seatWatch?.cancel();
     // Say the till has gone, so a display on this machine stops offering a code
     // the moment the till closes rather than twenty seconds later. Best effort:
     // a till that loses power says nothing, which is why the display judges by
@@ -453,6 +519,50 @@ class _PosShellState extends ConsumerState<PosShell> {
     }
   }
 
+  /// A training account has signed on, or signed off.
+  ///
+  /// Every part of the till acts on the bill's own flag, not on who is signed
+  /// on, so the bill on screen has to change kind with the person:
+  ///
+  ///  * an empty bill simply becomes the other kind;
+  ///  * a trainee signing on over a real bill with something on it is signed
+  ///    straight off again -- that bill is a real customer's, and a practice
+  ///    sale on it would never reach the back office;
+  ///  * a trainee signing off leaves a practice bill behind, which is cleared:
+  ///    it was never going to be paid for.
+  Future<void> _trainingChanged(bool training) async {
+    final id = _orderId;
+    if (id == null) return;
+    final orders = ref.read(orderRepositoryProvider);
+    final order = await orders.orderOnce(id);
+    if (order == null || order.training == training || !mounted) return;
+
+    final lines = await orders.linesOnce(id);
+    if (lines.isEmpty) {
+      await orders.matchTraining(id, training);
+      return;
+    }
+
+    if (training) {
+      ref.read(staffSessionProvider.notifier).signOff();
+      if (mounted) {
+        PosMessenger.error(
+          context,
+          'Training cannot start on a bill with something on it. Pay or park '
+          'this bill, then sign on for training.',
+        );
+      }
+      return;
+    }
+
+    await orders.discardPracticeBill(id);
+    if (!mounted) return;
+    await _newOrder();
+    if (mounted) {
+      PosMessenger.info(context, 'Training over: the practice bill was cleared.');
+    }
+  }
+
   /// Sign out. The dialog verifies the password against the live server and
   /// refuses while this terminal still holds sales the server has never seen.
   Future<void> _logout() async {
@@ -463,6 +573,13 @@ class _PosShellState extends ConsumerState<PosShell> {
     );
 
     if (done == true) {
+      // Give the till licence back, so another machine can be signed in
+      // without a manager releasing this one from Devices.
+      final token = ref.read(sessionProvider).terminalToken;
+      if (token != null) {
+        await releaseTillSeat(ref.read(apiBaseProvider), token);
+      }
+
       // Wipe this venue's cached catalogue and deals. Without this, a terminal
       // re-commissioned to another office would open showing the previous
       // office's products.
@@ -515,6 +632,14 @@ class _PosShellState extends ConsumerState<PosShell> {
       ref.read(broughtBasketProvider.notifier).taken();
       unawaited(_switchToOrder(next));
     });
+
+    // A trainee signing on or off. The bill on screen must be the kind the
+    // person in front of it is allowed to ring -- see [_trainingChanged].
+    ref.listen<bool>(trainingModeProvider, (previous, next) {
+      if (previous == next) return;
+      unawaited(_trainingChanged(next));
+    });
+    final training = ref.watch(trainingModeProvider);
 
     final orderId = _orderId;
 
@@ -653,6 +778,7 @@ class _PosShellState extends ConsumerState<PosShell> {
           drawer: drawer,
           body: Column(
             children: [
+              if (training) const TrainingBar(),
               ?topBar,
               Expanded(child: body),
             ],
@@ -667,6 +793,7 @@ class _PosShellState extends ConsumerState<PosShell> {
         drawer: drawer,
         body: Column(
           children: [
+            if (training) const TrainingBar(),
             ?topBar,
             Expanded(
               child: pinned
@@ -750,6 +877,24 @@ class _PosShellState extends ConsumerState<PosShell> {
     // them -- so the check is here rather than in four places that could
     // disagree.
     final order = await ref.read(orderRepositoryProvider).orderOnce(id);
+
+    // A practice bill only in training and a real one only out of it. The
+    // table plan already shows only the right kind; this is the funnel every
+    // other route comes through, so it is checked here as well.
+    if (order != null && order.training != ref.read(trainingModeProvider)) {
+      if (mounted) {
+        PosMessenger.error(
+          context,
+          order.training
+              ? 'That is a practice bill from training mode. It can only be '
+                    'opened by a training account.'
+              : 'Not in training mode. That is a real bill: sign off training '
+                    'to open it.',
+        );
+      }
+      return;
+    }
+
     if (order?.heldBy != null) {
       try {
         await ref.read(billSyncProvider).claim(id);
@@ -878,6 +1023,39 @@ class _PosShellState extends ConsumerState<PosShell> {
 ///
 /// Draws nothing when the terminal has nobody to sign on — see the note in the
 /// shell's build about why that is the only case still guarded.
+/// The amber strip a till wears while a training account is signed on.
+///
+/// On every screen and above everything else, because the one mistake that
+/// matters is somebody taking a real customer's money on a till that will not
+/// record it.
+class TrainingBar extends StatelessWidget {
+  const TrainingBar({super.key});
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    liveRegion: true,
+    label: 'Training mode',
+    child: Container(
+      width: double.infinity,
+      color: const Color(0xFFF59E0B),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+      child: const Text(
+        'TRAINING MODE  ·  practice sales are not sent to the back office '
+        'and are not counted on this till',
+        textAlign: TextAlign.center,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: Color(0xFF1F1300),
+          fontWeight: FontWeight.w700,
+          fontSize: 13,
+          letterSpacing: 0.3,
+        ),
+      ),
+    ),
+  );
+}
+
 class StaffChip extends ConsumerWidget {
   const StaffChip({
     super.key,

@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!--
+    One build, every venue. The server (src/loyalty_app.js) serves this page at
+    /app/<slug>/ and writes the venue in: its address over /app/__SLUG__/, its
+    name, colour, background and icon over the other placeholders. Built with
+    --base-href /app/__SLUG__/ so every file is fetched from the venue's own
+    address.
+  -->
+  <base href="$FLUTTER_BASE_HREF">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="description" content="__APP_NAME__: your card, your points and our latest news.">
+  <meta name="theme-color" content="__THEME__">
+
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="__APP_NAME__">
+  <link rel="apple-touch-icon" href="__ICON__">
+  <link rel="icon" href="__ICON__">
+
+  <title>__APP_NAME__</title>
+  <link rel="manifest" href="manifest.webmanifest">
+
+  <style>
+    html, body { margin: 0; height: 100%; background: __BACKGROUND__; }
+    #splash { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+    #splash img { width: 96px; height: 96px; object-fit: contain; border-radius: 22px; }
+  </style>
+
+  <script>
+    /*
+     * Browser notifications and position, for the Dart side (lib/platform/).
+     * Plain JS rather than interop classes: small, and the same on every
+     * browser that has them at all.
+     */
+    window.vesopaPush = {
+      supported: function () {
+        return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+      },
+      permission: function () {
+        return 'Notification' in window ? Notification.permission : 'unsupported';
+      },
+      _key: function (base64) {
+        const pad = '='.repeat((4 - (base64.length % 4)) % 4);
+        const raw = atob((base64 + pad).replace(/-/g, '+').replace(/_/g, '/'));
+        const out = new Uint8Array(raw.length);
+        for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+        return out;
+      },
+      _worker: async function () {
+        const scope = document.baseURI;
+        return navigator.serviceWorker.register(new URL('push-sw.js', scope).href, { scope: new URL('.', scope).pathname });
+      },
+      // Resolves to the subscription as JSON text, or '' when refused.
+      subscribe: async function (vapidKey) {
+        if (!window.vesopaPush.supported()) return '';
+        const allowed = await Notification.requestPermission();
+        if (allowed !== 'granted') return '';
+        const reg = await window.vesopaPush._worker();
+        await navigator.serviceWorker.ready;
+        let sub = await reg.pushManager.getSubscription();
+        if (!sub) {
+          sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: window.vesopaPush._key(vapidKey) });
+        }
+        return JSON.stringify(sub.toJSON());
+      },
+      // Resolves to the endpoint that was dropped, or ''.
+      unsubscribe: async function () {
+        if (!('serviceWorker' in navigator)) return '';
+        const reg = await navigator.serviceWorker.getRegistration(new URL('.', document.baseURI).href);
+        if (!reg) return '';
+        const sub = await reg.pushManager.getSubscription();
+        if (!sub) return '';
+        const endpoint = sub.endpoint;
+        await sub.unsubscribe();
+        return endpoint;
+      },
+      current: async function () {
+        if (!('serviceWorker' in navigator)) return '';
+        const reg = await navigator.serviceWorker.getRegistration(new URL('.', document.baseURI).href);
+        const sub = reg ? await reg.pushManager.getSubscription() : null;
+        return sub ? JSON.stringify(sub.toJSON()) : '';
+      },
+    };
+
+    // A tapped notification, when the app is already open: the worker posts the
+    // address and the app follows it (lib/platform/push_web.dart onOpenRequest).
+    window.vesopaPush.onOpen = function (callback) { window.vesopaPush._open = callback; };
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', function (e) {
+        if (e.data && e.data.type === 'open' && e.data.url) {
+          const hash = new URL(e.data.url).hash.replace(/^#/, '');
+          if (window.vesopaPush._open) window.vesopaPush._open(hash);
+        }
+      });
+    }
+  </script>
+</head>
+<body>
+  <div id="splash"><img src="__ICON__" alt="" onerror="this.remove()"></div>
+  <script>
+    window.addEventListener('flutter-first-frame', function () {
+      const s = document.getElementById('splash');
+      if (s) s.remove();
+    });
+  </script>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>

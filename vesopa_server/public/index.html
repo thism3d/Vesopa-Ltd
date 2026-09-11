@@ -271,6 +271,13 @@
              is paid back: type a word and every matching page appears wherever
              it lives, so nobody has to remember that Timesheets is filed under
              Reports before they can reach it. -->
+        <!-- Which site this session is managing. Shown only to a login with
+             more than one site; see src/sites.js. -->
+        <div class="site-switch" id="site-switch" hidden>
+          <label for="site-select">Site</label>
+          <select id="site-select" aria-label="Which site you are managing"></select>
+        </div>
+
         <div class="rail-find">
           <svg class="rail-find-icon" viewBox="0 0 24 24" fill="none"
                stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -340,6 +347,7 @@
           <button class="nav" data-view="loyalty">Loyalty</button>
           <button class="nav" data-view="cards">Cards</button>
           <button class="nav" data-view="wallet">Wallet Passes</button>
+          <button class="nav" data-view="loyalty_app">Loyalty App</button>
           <button class="nav" data-view="tender">Tender &amp; Gratuity</button>
           <button class="nav" data-view="rules">Automation Rules</button>
 
@@ -1092,12 +1100,23 @@
                 What each of them may do is set under Staff Permissions and chosen here.
               </p>
             </div>
-            <button class="btn primary" id="add-staff">Add staff</button>
+            <div class="row gap">
+              <button class="btn" id="add-training-staff"
+                      title="A PIN for practising on the till: its sales are not recorded and do not count on the till">
+                Add a training account</button>
+              <button class="btn primary" id="add-staff">Add staff</button>
+            </div>
           </div>
           <div class="card"><table>
             <thead><tr><th>Name</th><th>ID</th><th>PIN</th><th>Permissions</th><th>Status</th><th></th></tr></thead>
             <tbody id="staff"></tbody>
           </table></div>
+          <p class="muted small" style="margin-top:12px">
+            <strong>Training accounts</strong> are for practising. While one is signed on the till shows
+            <em>TRAINING</em>: its sales are never sent to the back office, never count on the till's X or Z,
+            take no card payment and send nothing to the kitchen. Needs Vesopa EPOS 1.7.3 or later — an older
+            till does not offer a training account at all.
+          </p>
           <p class="muted small" style="margin-top:12px">
             PINs must be exactly 4 digits and no two people can share one — the till pad signs
             someone on the moment the fourth digit lands, so a longer PIN could never be used and
@@ -2408,6 +2427,135 @@
           one that did not exist: epos_wallet_programs has held a per-card design
           since the table was added and nothing was ever routed to it.
         -->
+        <!-- The loyalty app: the venue's own app for its members. src/loyalty_app.js -->
+        <section id="view-loyalty_app" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Loyalty App</h2>
+              <p class="muted small">
+                Your own app for your members: their card as a QR code the till scans,
+                their points and history, and your news. It installs from a link on any
+                phone, and as a Windows app from the Microsoft Store.
+              </p>
+            </div>
+            <button class="btn primary" id="la-save">Save</button>
+          </div>
+          <div class="grid-cards" id="la-stats"></div>
+
+          <div class="rd-layout">
+            <div class="la-form">
+              <div class="card rd-card">
+                <h3>The app</h3>
+                <label class="la-check"><input type="checkbox" id="la-enabled" /> The app is on</label>
+                <label>Its address
+                  <span class="la-slug"><span class="muted small" id="la-host">menu.vesopaepos.com/app/</span>
+                  <input id="la-slug" maxlength="64" placeholder="your-venue" autocomplete="off" /></span>
+                </label>
+                <p class="muted small" id="la-link"></p>
+              </div>
+
+              <div class="card rd-card">
+                <h3>How it looks</h3>
+                <label>App name <input id="la-app_name" maxlength="80" placeholder="e.g. Pontardawe RFC Rewards" /></label>
+                <label>Welcome line <input id="la-welcome_text" maxlength="255" placeholder="Your card, your points and our latest news." /></label>
+                <div class="la-pictures">
+                  <div><span class="small">Logo (square)</span><div id="la-logo-picker"></div></div>
+                  <div><span class="small">App icon (square, the home-screen icon)</span><div id="la-icon-picker"></div></div>
+                </div>
+                <div class="la-colours">
+                  <label>Main colour <input type="color" id="la-colour_primary" /></label>
+                  <label>Accent <input type="color" id="la-colour_accent" /></label>
+                  <label>Background <input type="color" id="la-colour_background" /></label>
+                  <label>Text <input type="color" id="la-colour_text" /></label>
+                </div>
+                <div class="la-fonts">
+                  <label>Heading font <select id="la-font_heading"></select></label>
+                  <label>Text font <select id="la-font_body"></select></label>
+                </div>
+                <p class="muted small">Fonts come from your font library (Programming &rsaquo; Fonts), the same ones your tills use.</p>
+                <h4>Links shown in the app</h4>
+                <div class="la-links">
+                  <label>Website <input id="la-link-website" placeholder="https://" /></label>
+                  <label>Phone <input id="la-link-phone" /></label>
+                  <label>Email <input id="la-link-email" /></label>
+                  <label>Facebook <input id="la-link-facebook" placeholder="https://facebook.com/..." /></label>
+                  <label>Instagram <input id="la-link-instagram" placeholder="https://instagram.com/..." /></label>
+                  <label>Booking <input id="la-link-booking" placeholder="https://" /></label>
+                </div>
+              </div>
+
+              <div class="card rd-card">
+                <h3>Where you are</h3>
+                <p class="muted small">
+                  For notifications to members who are near you now. Members choose whether
+                  the app may use their location; it is kept for a day, never as a trail.
+                </p>
+                <div class="la-where">
+                  <label>Latitude <input id="la-latitude" inputmode="decimal" /></label>
+                  <label>Longitude <input id="la-longitude" inputmode="decimal" /></label>
+                  <label>Radius (metres) <input id="la-radius_m" type="number" min="50" max="20000" /></label>
+                </div>
+                <button class="btn small ghost" id="la-here" type="button">Use where I am now</button>
+              </div>
+
+              <div class="card rd-card">
+                <h3>Send a notification</h3>
+                <p class="muted small" id="la-push-note"></p>
+                <label>Title <input id="la-n-title" maxlength="80" placeholder="e.g. Match day" /></label>
+                <label>Message <textarea id="la-n-body" maxlength="500" rows="3" placeholder="e.g. Two for one on pints before kick-off."></textarea></label>
+                <label>Link (optional) <input id="la-n-link" placeholder="https://" /></label>
+                <div class="la-audience">
+                  <label>Who
+                    <select id="la-n-audience">
+                      <option value="all">Every member with the app</option>
+                      <option value="near">Members near the venue now</option>
+                      <option value="tier">Members on a tier</option>
+                      <option value="lapsed">Members who have not visited lately</option>
+                    </select>
+                  </label>
+                  <label id="la-n-tier-wrap" hidden>Tier <input id="la-n-tier" placeholder="e.g. Gold" /></label>
+                  <label id="la-n-days-wrap" hidden>Not visited for (days) <input id="la-n-days" type="number" min="1" value="30" /></label>
+                  <label>When
+                    <select id="la-n-when">
+                      <option value="now">Now</option>
+                      <option value="later">At a time</option>
+                    </select>
+                  </label>
+                  <label id="la-n-at-wrap" hidden>Send at <input id="la-n-at" type="datetime-local" /></label>
+                </div>
+                <p class="small" id="la-n-reach"></p>
+                <div class="row gap">
+                  <button class="btn ghost" id="la-n-count" type="button">How many will it reach?</button>
+                  <button class="btn primary" id="la-n-send" type="button">Send</button>
+                </div>
+                <h4>Sent and scheduled</h4>
+                <div id="la-messages"></div>
+              </div>
+
+              <div class="card rd-card">
+                <h3>Windows app (Microsoft Store)</h3>
+                <p class="muted small">
+                  For notifications to your own Windows app. From Partner Center, the app's
+                  Package SID and its secret (Product management &rsaquo; WNS/MPNS).
+                </p>
+                <label>Package SID <input id="la-wns-sid" placeholder="ms-app://s-1-15-2-..." autocomplete="off" /></label>
+                <label>Secret <input id="la-wns-secret" type="password" autocomplete="new-password" placeholder="Leave blank to keep the saved one" /></label>
+                <p class="small" id="la-wns-state"></p>
+              </div>
+            </div>
+
+            <div class="rd-preview-pane">
+              <div class="rd-preview-head"><span class="small muted">What your members see</span></div>
+              <div class="la-phone" id="la-preview"></div>
+              <div class="card rd-card la-poster" id="la-poster" hidden>
+                <h3>Put it on a poster</h3>
+                <div id="la-qr"></div>
+                <p class="muted small">Scanning this opens the app. Members add it to their home screen from there.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <section id="view-wallet" class="view" hidden>
           <div class="page-head">
             <div>
@@ -3182,6 +3330,16 @@
             <button class="btn" id="devices-refresh">Refresh</button>
           </div>
           <div class="grid-cards" id="devices-stats"></div>
+          <div class="card rd-card" id="seats-card">
+            <h3>Till licences</h3>
+            <p class="muted small">
+              Each till signed in holds one licence. Signing a till out here frees
+              its licence straight away; the till asks to be signed in again the
+              next time it calls in. Signing in again on the same machine never
+              takes a second licence.
+            </p>
+            <div id="seats-list"></div>
+          </div>
           <div class="card rd-card">
             <div id="devices-list"></div>
           </div>
@@ -3291,7 +3449,7 @@
         <section id="view-offices" class="view" hidden>
           <div class="page-head"><div><h2>Offices</h2><p class="muted small">Every office on this installation, what it is charged, and when it is next due.</p></div><button class="btn primary" id="add-office">New office</button></div>
           <div class="card"><table>
-            <thead><tr><th>Office</th><th>Contact</th><th>Status</th><th>Users</th><th class="right">Charge</th><th>Next due</th><th></th></tr></thead>
+            <thead><tr><th>Office</th><th>Contact</th><th>Status</th><th>Users</th><th title="Tills signed in, and the licences paid for">Tills</th><th class="right">Charge</th><th>Next due</th><th></th></tr></thead>
             <tbody id="offices"></tbody>
           </table></div>
         </section>

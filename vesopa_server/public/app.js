@@ -337,6 +337,7 @@ const ROUTES = {
   loyalty: '/loyalty',
   cards: '/cards',
   wallet: '/wallet',
+  loyalty_app: '/loyalty-app',
   devices: '/devices',
   gym: '/gym',
   // Added when the reachability check above found it missing. Price Levels has
@@ -1327,6 +1328,7 @@ const VIEW_LOADERS = {
     cards: loadCards,
     gym: loadGym,
     wallet: loadWallet,
+    loyalty_app: loadLoyaltyApp,
     devices: loadDevices,
     tender: loadTender,
     rules: loadRules,
@@ -2717,6 +2719,7 @@ async function loadStaff() {
           pin_code: pin,
           active: active ? 1 : 0,
           permission_group_id: c.permission_group_id ?? '',
+          training: c.training ? 1 : 0,
         })
       );
       // A PIN that is not four digits cannot be used at the till — the pad
@@ -2739,7 +2742,11 @@ async function loadStaff() {
             : ''
         }</td>
         <td>${group}</td>
-        <td>${active ? 'Active' : '<span class="muted">Retired</span>'}</td>
+        <td>${active ? 'Active' : '<span class="muted">Retired</span>'}${
+          c.training
+            ? ' <span class="pill training-pill" title="Practice only: sales are not recorded and do not count on the till">Training</span>'
+            : ''
+        }</td>
         <td class="right nowrap">
           ${rowCardActions({ kind: 'staff', id: c.id, name: c.clark_name })}
           ${iconBtn('edit', 'Edit', `data-edit-staff='${payload}'`)}
@@ -3056,16 +3063,25 @@ async function loadOffices() {
         <td class="muted small">${esc(o.contact_email)}</td>
         <td><span class="badge ${o.status}">${o.status}</span></td>
         <td>${o.user_count}</td>
+        <td class="nowrap">${
+          o.till_licences === undefined
+            ? '<span class="muted">—</span>'
+            : `${Number(o.tills_in_use || 0)}${o.till_licences == null ? ' <span class="muted small">no limit</span>' : ` of ${o.till_licences}`}
+               <button class="btn small ghost" data-licences="${o.id}" data-licences-now="${o.till_licences ?? ''}"
+                       data-licences-name="${esc(o.name)}">Licences</button>`
+        }</td>
         <td class="right">${o.amount_minor ? money(o.amount_minor) + ' / ' + o.interval_unit : '—'}</td>
         <td>${o.next_due_on ? date(o.next_due_on) : '—'}</td>
-        <td class="right">
+        <td class="right nowrap">
+          <button class="btn small ghost" data-managers="${o.id}" data-managers-name="${esc(o.name)}"
+                  title="Logins from another office that can also manage this site">Managed by</button>
           ${o.status === 'active'
             ? `<button class="btn small danger" data-pause="${o.id}">Pause</button>`
             : `<button class="btn small primary" data-resume="${o.id}">Resume</button>`}
         </td>
       </tr>`
     )
-    .join('') || '<tr><td colspan="7" class="empty">No offices.</td></tr>';
+    .join('') || '<tr><td colspan="8" class="empty">No offices.</td></tr>';
 }
 
 async function loadBilling() {
@@ -5396,6 +5412,67 @@ document.addEventListener('click', async (e) => {
       }
     );
   }
+  if (t.dataset.managers) {
+    const office = t.dataset.managers;
+    const people = await api(`/admin/offices/${office}/managers`);
+    const home = people.filter((p) => p.home);
+    const linked = people.filter((p) => !p.home);
+    return modal(
+      `Who manages ${t.dataset.managersName || 'this site'}`,
+      [
+        ...linked.map((p) => ({
+          name: `keep_${p.user_id}`,
+          type: 'checkbox',
+          value: 1,
+          label: `${p.name} <${p.email}>${p.home_office ? ` — from ${p.home_office}` : ''}`,
+          hint: 'Untick to stop this login managing this site. Its own office is not affected.',
+        })),
+        {
+          name: 'add_email',
+          label: 'Also let this login manage this site (its email)',
+          type: 'email',
+          hint: home.length
+            ? `This site's own logins: ${home.map((p) => p.name).join(', ')}. `
+              + 'A linked login gets a Site drop-down in the back office.'
+            : 'A linked login gets a Site drop-down in the back office.',
+        },
+      ],
+      async (d) => {
+        for (const p of linked) {
+          if (!Number(d[`keep_${p.user_id}`])) {
+            await api(`/admin/offices/${office}/managers/${p.user_id}`, { method: 'DELETE' });
+          }
+        }
+        const email = String(d.add_email || '').trim();
+        if (email) {
+          await api(`/admin/offices/${office}/managers`, {
+            method: 'POST',
+            body: JSON.stringify({ email }),
+          });
+        }
+        await loadOffices();
+      }
+    );
+  }
+  if (t.dataset.licences) {
+    const office = t.dataset.licences;
+    return modal(
+      `Till licences — ${t.dataset.licencesName || 'this office'}`,
+      [{
+        name: 'till_licences',
+        label: 'How many tills may be signed in at once (blank for no limit)',
+        type: 'number',
+        value: t.dataset.licencesNow || '',
+      }],
+      async (d) => {
+        await api(`/admin/offices/${office}/licences`, {
+          method: 'PUT',
+          body: JSON.stringify({ till_licences: d.till_licences === '' ? null : d.till_licences }),
+        });
+        await loadOffices();
+      }
+    );
+  }
   if (t.dataset.resume) {
     await api(`/admin/offices/${t.dataset.resume}/status`, {
       method: 'POST',
@@ -5844,6 +5921,21 @@ document.addEventListener('click', async (e) => {
     );
   }
 
+  if (t.id === 'add-training-staff') {
+    return modal('Add a training account', [
+      { label: 'Name (shown on the till while practising)', name: 'clark_name', required: true, value: 'Training' },
+      { label: 'PIN (exactly 4 digits)', name: 'pin_code', required: true },
+      { label: 'Staff ID', name: 'pluid', type: 'number', value: '0' },
+      await staffGroupField(''),
+    ], (d) => {
+      const bad = staffPinError(d.pin_code, { required: true });
+      if (bad) throw new Error(bad);
+      return api('/staff', {
+        method: 'POST',
+        body: JSON.stringify({ ...d, active: 1, training: 1 }),
+      });
+    });
+  }
   if (t.id === 'add-staff') {
     return modal('Add staff', [
       { label: 'Staff name', name: 'clark_name', required: true },
@@ -5868,6 +5960,7 @@ document.addEventListener('click', async (e) => {
       { label: 'Staff ID', name: 'pluid', type: 'number', value: c.pluid },
       await staffGroupField(c.permission_group_id ?? ''),
       { label: 'Active (can sign on at the till)', name: 'active', type: 'checkbox', value: c.active },
+      { label: 'Training account (practice only: sales are not recorded or counted)', name: 'training', type: 'checkbox', value: c.training ?? 0 },
     ], (d) => {
       // Blank still means "leave it alone" server-side, so it is only validated
       // when something was actually typed.
@@ -6177,6 +6270,10 @@ async function start() {
     ? `Signed in as ${me.name} — platform administrator`
     : `${me?.officeName || ''}`;
 
+  // The site drop-down, for a login that manages more than one. Not awaited:
+  // the rest of the page does not depend on it.
+  loadSites();
+
   connectSocket();
 
   // What this login's role allows, and the menu trimmed to match. Awaited
@@ -6195,6 +6292,56 @@ async function start() {
   initNavGroups();
   wireNavFind();
 }
+
+
+// ---- Sites ----------------------------------------------------------------
+//
+// One login, more than one venue. Choosing a site asks the server for a session
+// in that site (it checks this login may manage it) and reloads into it -- every
+// page then reads and writes that site alone, because every page always did
+// read and write "the office in the session".
+
+async function loadSites() {
+  const box = $('site-switch');
+  if (!box) return;
+  let data;
+  try {
+    data = await api('/sites');
+  } catch {
+    box.hidden = true;
+    return;
+  }
+  const sites = data.sites || [];
+  if (sites.length < 2) {
+    box.hidden = true;
+    return;
+  }
+  $('site-select').innerHTML = sites
+    .map((s) => `<option value="${s.id}"${Number(s.id) === Number(data.current) ? ' selected' : ''}>${
+      esc(s.name)}${s.status !== 'active' ? ` (${esc(s.status)})` : ''}</option>`)
+    .join('');
+  box.hidden = false;
+}
+
+document.addEventListener('change', async (e) => {
+  if (e.target.id !== 'site-select') return;
+  const officeId = Number(e.target.value);
+  try {
+    const r = await api('/sites/switch', {
+      method: 'POST',
+      body: JSON.stringify({ office_id: officeId }),
+    });
+    token = r.token;
+    me = { ...me, officeId: r.site.id, officeName: r.site.name, officeEmail: r.site.email };
+    // The same store the session is already in, so "keep me signed in" keeps
+    // meaning what it meant.
+    saveSession(localStorage.getItem(SESSION_KEYS.token) != null);
+    location.reload();
+  } catch (err) {
+    toast(err.message, 'error');
+    loadSites();
+  }
+});
 
 
 // ---- Receipt designer -----------------------------------------------------
@@ -9873,6 +10020,288 @@ document.addEventListener('change', (e) => {
   }
 });
 
+// ---- Loyalty app ------------------------------------------------------------
+//
+// The venue's own app for its members (src/loyalty_app.js). Held as one object
+// and saved in one go, like the tender settings; the preview on the right
+// follows every field as it is typed, before anything is saved.
+
+let laState = null;
+
+const LA_LINKS = ['website', 'phone', 'email', 'facebook', 'instagram', 'booking'];
+
+function laValue(id) {
+  const el = $(id);
+  return el ? el.value : '';
+}
+
+/** The form as the API wants it. */
+function laForm() {
+  const links = {};
+  for (const k of LA_LINKS) {
+    const v = laValue(`la-link-${k}`).trim();
+    if (v) links[k] = v;
+  }
+  const body = {
+    enabled: $('la-enabled').checked ? 1 : 0,
+    slug: laValue('la-slug').trim().toLowerCase(),
+    app_name: laValue('la-app_name'),
+    welcome_text: laValue('la-welcome_text'),
+    logo_url: (document.querySelector('[name="la_logo_url"]') || {}).value || '',
+    icon_url: (document.querySelector('[name="la_icon_url"]') || {}).value || '',
+    colour_primary: laValue('la-colour_primary'),
+    colour_accent: laValue('la-colour_accent'),
+    colour_background: laValue('la-colour_background'),
+    colour_text: laValue('la-colour_text'),
+    font_heading: laValue('la-font_heading'),
+    font_body: laValue('la-font_body'),
+    links,
+    latitude: laValue('la-latitude'),
+    longitude: laValue('la-longitude'),
+    radius_m: laValue('la-radius_m'),
+    wns_package_sid: laValue('la-wns-sid'),
+  };
+  const secret = laValue('la-wns-secret');
+  if (secret) body.wns_secret = secret;
+  return body;
+}
+
+async function loadLoyaltyApp() {
+  let data;
+  try {
+    data = await api('/loyalty-app');
+  } catch (e) {
+    $('la-stats').innerHTML = `<p class="muted small">${esc(e.message)}</p>`;
+    return;
+  }
+  laState = data;
+  const s = data.settings;
+  const b = data.brand;
+
+  statCards($('la-stats'), [
+    { label: 'Members with the app', value: String(data.stats.members), tone: data.stats.members ? 'primary' : '' },
+    { label: 'Phones & browsers for notifications', value: String(data.stats.web) },
+    { label: 'Windows PCs for notifications', value: String(data.stats.windows) },
+    { label: 'Near you now', value: String(data.stats.located) },
+  ]);
+
+  $('la-enabled').checked = !!s.enabled;
+  $('la-slug').value = s.slug || data.suggested_slug || '';
+  $('la-app_name').value = s.app_name || '';
+  $('la-welcome_text').value = s.welcome_text || '';
+  $('la-logo-picker').innerHTML = imagePicker('la_logo_url', s.logo_url || '', { crop: 'square' });
+  $('la-icon-picker').innerHTML = imagePicker('la_icon_url', s.icon_url || '', { crop: 'square' });
+  wireImagePickers($('la-logo-picker'));
+  wireImagePickers($('la-icon-picker'));
+  $('la-colour_primary').value = s.colour_primary || b.colours.primary;
+  $('la-colour_accent').value = s.colour_accent || b.colours.accent;
+  $('la-colour_background').value = s.colour_background || b.colours.background;
+  $('la-colour_text').value = s.colour_text || b.colours.text;
+
+  const fontOptions = ['<option value="">The app\'s own (Montserrat)</option>']
+    .concat((data.fonts || []).map((f) => `<option value="${esc(f.slug)}">${esc(f.family)}${f.built_in ? '' : ' (yours)'}</option>`))
+    .join('');
+  $('la-font_heading').innerHTML = fontOptions;
+  $('la-font_body').innerHTML = fontOptions;
+  $('la-font_heading').value = s.font_heading || '';
+  $('la-font_body').value = s.font_body || '';
+
+  for (const k of LA_LINKS) $(`la-link-${k}`).value = (s.links && s.links[k]) || '';
+  $('la-latitude').value = s.latitude ?? (b.location ? b.location.latitude : '');
+  $('la-longitude').value = s.longitude ?? (b.location ? b.location.longitude : '');
+  $('la-radius_m').value = s.radius_m || 400;
+  $('la-wns-sid').value = s.wns_package_sid || '';
+  $('la-wns-secret').value = '';
+  $('la-wns-state').innerHTML = s.wns_configured
+    ? '<span class="pill on">Connected</span> Windows notifications will be sent.'
+    : '<span class="muted">Not connected: Windows notifications are skipped until these are filled in.</span>';
+
+  $('la-link').innerHTML = data.url
+    ? `<a href="${esc(data.url)}" target="_blank" rel="noopener">${esc(data.url)}</a>${
+      s.enabled ? '' : ' <span class="muted">— switched off, so it answers "no app here" until you switch it on</span>'}`
+      + (data.web_build_ready ? '' : '<br><span class="pin-warn">The app itself is still being installed on the server.</span>')
+    : 'Choose an address, save, and the link appears here.';
+  $('la-poster').hidden = !data.qr_svg;
+  $('la-qr').innerHTML = data.qr_svg || '';
+
+  $('la-push-note').textContent = data.web_push_ready
+    ? 'Reaches members who allowed notifications (phones, browsers and the Windows app), and always lands in the app\'s inbox.'
+    : 'Notifications land in the app\'s inbox. Phone notifications are not switched on for this server yet.';
+
+  laPreview();
+  laAudienceFields();
+  await laLoadMessages();
+}
+
+/** The phone on the right: the member's card, in the venue's colours. */
+function laPreview() {
+  const f = laForm();
+  const name = f.app_name || (laState && laState.brand.name) || 'Your app';
+  const logo = f.logo_url || (laState && laState.brand.logo);
+  $('la-preview').innerHTML = `
+    <div class="la-screen" style="background:${esc(f.colour_background)};color:${esc(f.colour_text)}">
+      <div class="la-top" style="background:${esc(f.colour_primary)}">
+        ${logo ? `<img src="${esc(logo)}" alt="" />` : ''}
+        <b>${esc(name)}</b>
+      </div>
+      <div class="la-card" style="border-color:${esc(f.colour_accent)}">
+        <div class="la-card-name">Sam Member</div>
+        <div class="la-qr-fake" aria-hidden="true"></div>
+        <div class="small muted">9998 00042</div>
+        <div class="la-points"><b style="color:${esc(f.colour_primary)}">1,250</b> points</div>
+      </div>
+      <p class="small">${esc(f.welcome_text || (laState && laState.brand.welcome) || '')}</p>
+      <div class="la-tabs"><span style="color:${esc(f.colour_primary)}">Card</span><span>History</span><span>News</span><span>Venue</span></div>
+    </div>`;
+}
+
+function laAudienceFields() {
+  const kind = laValue('la-n-audience');
+  $('la-n-tier-wrap').hidden = kind !== 'tier';
+  $('la-n-days-wrap').hidden = kind !== 'lapsed';
+  $('la-n-at-wrap').hidden = laValue('la-n-when') !== 'later';
+}
+
+function laAudience() {
+  const kind = laValue('la-n-audience');
+  if (kind === 'tier') return { kind, tier: laValue('la-n-tier') };
+  if (kind === 'lapsed') return { kind, days: Number(laValue('la-n-days')) || 30 };
+  return { kind };
+}
+
+const LA_AUDIENCE_LABEL = (a) => ({
+  all: 'Every member',
+  near: 'Near the venue',
+  tier: `Tier: ${a.tier || ''}`,
+  lapsed: `Not visited for ${a.days || 30} days`,
+}[a.kind] || a.kind);
+
+async function laLoadMessages() {
+  let rows = [];
+  try {
+    rows = await api('/loyalty-app/messages');
+  } catch {
+    return;
+  }
+  $('la-messages').innerHTML = rows.length
+    ? '<table class="table"><thead><tr><th>Notification</th><th>Who</th><th>When</th><th>Reached</th><th></th></tr></thead><tbody>'
+      + rows.map((m) => `<tr>
+          <td><b>${esc(m.title)}</b><br><span class="small muted">${esc(m.body)}</span></td>
+          <td class="small">${esc(LA_AUDIENCE_LABEL(m.audience))}</td>
+          <td class="small">${m.status === 'sent'
+            ? new Date(m.sent_at).toLocaleString('en-GB')
+            : m.status === 'scheduled'
+              ? `Scheduled for ${new Date(m.send_at).toLocaleString('en-GB')}`
+              : esc(m.status)}</td>
+          <td class="small">${m.status === 'sent'
+            ? `${m.recipients} member${m.recipients === 1 ? '' : 's'}`
+              + ` <span class="muted">(${m.reached_web + m.reached_wns} notified${m.failed ? `, ${m.failed} not reached` : ''})</span>`
+            : '—'}</td>
+          <td class="right">${m.status === 'scheduled'
+            ? `<button class="btn small danger-ghost" data-la-cancel="${esc(m.id)}">Cancel</button>`
+            : ''}</td>
+        </tr>`).join('')
+      + '</tbody></table>'
+    : '<p class="muted small">Nothing sent yet.</p>';
+}
+
+async function laCount() {
+  const r = await api('/loyalty-app/audience', {
+    method: 'POST',
+    body: JSON.stringify({ audience: laAudience() }),
+  });
+  $('la-n-reach').innerHTML = r.needs_location
+    ? '<span class="pin-warn">Set where you are (above) first.</span>'
+    : `Reaches <b>${r.members}</b> member${r.members === 1 ? '' : 's'} in the app `
+      + `<span class="muted">(${r.web + r.windows} with notifications on)</span>.`;
+  return r;
+}
+
+document.addEventListener('input', (e) => {
+  if (e.target.closest && e.target.closest('#view-loyalty_app .la-form') && laState) laPreview();
+});
+
+document.addEventListener('change', (e) => {
+  const id = e.target.id;
+  if (id === 'la-n-audience' || id === 'la-n-when') {
+    laAudienceFields();
+    $('la-n-reach').textContent = '';
+  }
+  if (e.target.closest && e.target.closest('#view-loyalty_app .la-form') && laState) laPreview();
+});
+
+document.addEventListener('click', async (e) => {
+  const t = e.target;
+  if (t.id === 'la-save') {
+    try {
+      await api('/loyalty-app', { method: 'PUT', body: JSON.stringify(laForm()) });
+      toast('Saved.');
+      return loadLoyaltyApp();
+    } catch (err) {
+      return toast(err.message, 'error');
+    }
+  }
+  if (t.id === 'la-here') {
+    if (!navigator.geolocation) return toast('This browser cannot tell where it is.', 'error');
+    navigator.geolocation.getCurrentPosition(
+      (p) => {
+        $('la-latitude').value = p.coords.latitude.toFixed(6);
+        $('la-longitude').value = p.coords.longitude.toFixed(6);
+        toast('Position filled in. Save to keep it.');
+      },
+      () => toast('The browser did not share its position.', 'error'),
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+    return;
+  }
+  if (t.id === 'la-n-count') {
+    try { await laCount(); } catch (err) { toast(err.message, 'error'); }
+    return;
+  }
+  if (t.id === 'la-n-send') {
+    const title = laValue('la-n-title').trim();
+    const body = laValue('la-n-body').trim();
+    if (!title || !body) return toast('A notification needs a title and a message.', 'error');
+    const later = laValue('la-n-when') === 'later';
+    const at = laValue('la-n-at');
+    if (later && !at) return toast('Choose when to send it.', 'error');
+    let reach;
+    try { reach = await laCount(); } catch (err) { return toast(err.message, 'error'); }
+    if (!await confirmDialog(
+      `${later ? 'Schedule' : 'Send'} "${title}" to ${reach.members} member${reach.members === 1 ? '' : 's'}?`
+    )) return;
+    try {
+      await api('/loyalty-app/messages', {
+        method: 'POST',
+        body: JSON.stringify({
+          title,
+          body,
+          link_url: laValue('la-n-link').trim() || null,
+          audience: laAudience(),
+          send_at: later ? new Date(at).toISOString() : null,
+        }),
+      });
+      toast(later ? 'Scheduled.' : 'Sent.');
+      $('la-n-title').value = '';
+      $('la-n-body').value = '';
+      $('la-n-link').value = '';
+      setTimeout(laLoadMessages, 1500);
+      return laLoadMessages();
+    } catch (err) {
+      return toast(err.message, 'error');
+    }
+  }
+  if (t.dataset && t.dataset.laCancel) {
+    try {
+      await api(`/loyalty-app/messages/${encodeURIComponent(t.dataset.laCancel)}/cancel`, { method: 'POST' });
+      toast('Cancelled.');
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+    return laLoadMessages();
+  }
+});
+
 // ---- Devices --------------------------------------------------------------
 //
 // Which machines a venue has. A till registers itself and every customer
@@ -9924,7 +10353,53 @@ async function loadDevices() {
       + 'itself when it starts, so this fills in the next time one is switched '
       + 'on.</p>';
 
+  await loadSeats();
   await loadDeviceLog();
+}
+
+/**
+ * The venue's till licences: "2 of 3 in use", and which tills hold them.
+ *
+ * A till signed in before licences existed is listed too -- it was given a
+ * seat the first time it called in -- so the count is the truth rather than
+ * "tills that happened to sign in again since".
+ */
+async function loadSeats() {
+  let data;
+  try {
+    data = await api('/devices/seats');
+  } catch (e) {
+    $('seats-card').hidden = true;
+    return;
+  }
+  $('seats-card').hidden = false;
+  const { limit, in_use: inUse, seats } = data;
+  const over = limit != null && inUse > limit;
+  const head = limit == null
+    ? `<p><b>${inUse}</b> ${inUse === 1 ? 'till is' : 'tills are'} signed in. `
+      + '<span class="muted small">No licence limit is set for this venue.</span></p>'
+    : `<p><b>${inUse} of ${limit}</b> till licence${limit === 1 ? '' : 's'} in use`
+      + (over
+        ? ' <span class="pill" style="background:#fde8ea;color:#b3261e">over the limit</span>'
+          + '<br><span class="small muted">No more tills can sign in until one is signed out.</span>'
+        : (inUse >= limit ? ' <span class="small muted">— all in use</span>' : ''))
+      + '</p>';
+  const ago = (t) => (t ? new Date(t).toLocaleString('en-GB') : '—');
+  $('seats-list').innerHTML = head + (seats.length
+    ? '<table class="table"><thead><tr><th>Till</th><th>Signed in by</th>'
+      + '<th>Signed in</th><th>Last called in</th><th></th></tr></thead><tbody>'
+      + seats.map((s) => '<tr>'
+        + '<td><b>' + esc(s.device_name || 'A till') + '</b>'
+        + (s.legacy ? ' <span class="small muted" title="Signed in before licences were counted">(earlier sign-in)</span>' : '')
+        + '</td>'
+        + '<td class="small muted">' + esc(s.signed_in_by || '—') + '</td>'
+        + '<td class="small muted">' + ago(s.signed_in_at) + '</td>'
+        + '<td class="small muted">' + ago(s.last_seen_at) + '</td>'
+        + '<td class="right"><button class="btn small danger-ghost" data-seat-release="'
+        + esc(s.id) + '" data-seat-name="' + esc(s.device_name || 'this till') + '">Sign out</button></td>'
+        + '</tr>').join('')
+      + '</tbody></table>'
+    : '<p class="muted small">No tills are signed in.</p>');
 }
 
 async function loadDeviceLog() {
@@ -9949,6 +10424,25 @@ async function loadDeviceLog() {
 
 document.addEventListener('click', async (e) => {
   if (e.target.id === 'devices-refresh') return loadDevices();
+
+  const seat = e.target.dataset && e.target.dataset.seatRelease;
+  if (seat) {
+    const name = e.target.dataset.seatName || 'this till';
+    if (!await confirmDialog(
+      `Sign ${name} out?
+
+`
+      + 'Its till licence is freed straight away. The till asks to be signed in '
+      + 'again the next time it calls in; a sale already on its screen is not lost.'
+    )) return;
+    try {
+      await api('/devices/seats/' + encodeURIComponent(seat) + '/release', { method: 'POST' });
+      toast('Signed out. Its licence is free.');
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+    return loadDevices();
+  }
 
   const forget = e.target.dataset && e.target.dataset.deviceForget;
   if (forget) {

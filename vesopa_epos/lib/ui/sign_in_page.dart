@@ -64,6 +64,7 @@ class _SignInPageState extends ConsumerState<SignInPage> {
             onUrl: (url) {
               if (mounted) setState(() => _opened = url);
             },
+            chooseSite: _chooseSite,
           );
     } on SignInFailed catch (e) {
       if (mounted) {
@@ -100,6 +101,7 @@ class _SignInPageState extends ConsumerState<SignInPage> {
             apiBase: ref.read(apiBaseProvider),
             email: _email.text.trim(),
             password: _password.text,
+            chooseSite: _chooseSite,
           );
       // The shell rebuilds on the session; nothing more to do here.
     } on SignInFailed catch (e) {
@@ -110,6 +112,46 @@ class _SignInPageState extends ConsumerState<SignInPage> {
         });
       }
     }
+  }
+
+  /// Which site this till is for, asked of somebody who manages more than one.
+  Future<int?> _chooseSite(List<SiteChoice> sites) async {
+    if (!mounted) return null;
+    return showDialog<int>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialog) => AlertDialog(
+        title: const Text('Which site is this till for?'),
+        content: SizedBox(
+          width: 420,
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              const Padding(
+                padding: EdgeInsets.only(bottom: 8),
+                child: Text(
+                  'Your login manages more than one site. The till sells from '
+                  'the site you choose, and uses one of its till licences.',
+                ),
+              ),
+              for (final site in sites)
+                ListTile(
+                  leading: Icon(site.home ? Icons.home_outlined : Icons.storefront_outlined),
+                  title: Text(site.name),
+                  subtitle: site.home ? const Text('Your own site') : null,
+                  onTap: () => Navigator.of(dialog).pop(site.id),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialog).pop(),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override

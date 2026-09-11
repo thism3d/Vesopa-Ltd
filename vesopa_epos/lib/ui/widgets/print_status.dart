@@ -92,6 +92,14 @@ class PrintStatusController extends Notifier<PrintStatus> {
     _clear = Timer(const Duration(seconds: 4), dismiss);
   }
 
+  /// A word that fades on its own, for something worth saying that is neither a
+  /// print nor a failure -- training's "nothing was sent to the kitchen".
+  void note(String what) {
+    _clear?.cancel();
+    state = PrintStatus(phase: PrintPhase.printed, message: what);
+    _clear = Timer(const Duration(seconds: 4), dismiss);
+  }
+
   void retrying() {
     _clear?.cancel();
     state = PrintStatus(

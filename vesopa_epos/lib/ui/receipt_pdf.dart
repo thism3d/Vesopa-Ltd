@@ -172,6 +172,16 @@ Future<Uint8List> buildReceiptPdf(
           // A reprint must say so, or it can be passed off as a second sale.
           // An unpaid bill must say so even more loudly — handed over without
           // this line it reads as proof of a payment nobody has made.
+          // A practice sale (training mode): top and bottom, like the roll.
+          if (s.training) ...[
+            pw.SizedBox(height: 4),
+            pw.Container(
+              padding: const pw.EdgeInsets.symmetric(vertical: 2),
+              decoration: pw.BoxDecoration(border: pw.Border.all(width: 1.2)),
+              child: centred(trainingReceiptLine, style: boldStyle),
+            ),
+          ],
+
           if (isReprint || isBill) ...[
             pw.SizedBox(height: 4),
             pw.Container(
@@ -369,6 +379,11 @@ Future<Uint8List> buildReceiptPdf(
           // which is what made it useless to a kitchen and to the customer.
 
           rule(heavy: true),
+
+          if (s.training) ...[
+            centred(trainingReceiptLine, style: boldStyle),
+            rule(heavy: true),
+          ],
 
           // ---- Footer ------------------------------------------------------
           pw.SizedBox(height: 2),

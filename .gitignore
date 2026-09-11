@@ -230,3 +230,7 @@ __pycache__/
 # have published the key.
 vesopa_express/newapp.md
 vesopa_expresss/newapp.md
+
+# The venue loyalty web app, built from vesopa_loyalty/ (flutter build web) and
+# uploaded to the server at deploy. Build output, regenerated every release.
+vesopa_server/loyalty_web/

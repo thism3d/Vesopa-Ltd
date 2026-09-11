@@ -311,10 +311,14 @@ class SessionRepository {
     String? staffName,
   }) async {
     // Only settled sales count. Parked and voided orders are deliberately
-    // excluded — a bill still sitting on a table is not takings.
+    // excluded — a bill still sitting on a table is not takings. So are
+    // practice sales (training mode): no money changed hands, and a trainee's
+    // afternoon must not inflate the drawer the manager counts against.
     final orders = await (_db.select(_db.orders)
           ..where((o) =>
-              o.sessionId.equals(session.id) & o.status.equals('closed')))
+              o.sessionId.equals(session.id) &
+              o.status.equals('closed') &
+              o.training.equals(false)))
         .get();
 
     final ids = orders.map((o) => o.id).toList();

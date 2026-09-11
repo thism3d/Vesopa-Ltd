@@ -76,6 +76,7 @@ const NAV_PERMISSION = {
   loyalty: 'commerce.loyalty',
   cards: 'commerce.cards',
   wallet: 'commerce.wallet',
+  loyalty_app: 'commerce.loyalty',
   tender: 'commerce.tender',
   rules: 'commerce.rules',
 };

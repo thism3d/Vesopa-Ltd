@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'terminal_identity.dart';
 import 'vesopa_sso.dart';
 import '../main.dart' show apiBaseProvider;
 
@@ -77,6 +78,30 @@ class Session {
       );
 }
 
+/// One of the sites a login manages, offered when a till is signed in by
+/// somebody who runs more than one. See src/sites.js on the server.
+class SiteChoice {
+  const SiteChoice({required this.id, required this.name, this.home = false});
+
+  final int id;
+  final String name;
+
+  /// The login's own site, listed first.
+  final bool home;
+
+  factory SiteChoice.fromJson(Map<String, dynamic> j) => SiteChoice(
+    id: (j['id'] as num).toInt(),
+    name: (j['name'] as String?)?.trim().isNotEmpty ?? false
+        ? (j['name'] as String).trim()
+        : 'Site ${j['id']}',
+    home: j['home'] == true,
+  );
+}
+
+/// Asks the person signing the till in which site it is for. Returns the
+/// chosen site's id, or null if they backed out.
+typedef ChooseSite = Future<int?> Function(List<SiteChoice> sites);
+
 class SignInFailed implements Exception {
   SignInFailed(this.message);
   final String message;
@@ -115,6 +140,8 @@ class SessionController extends AsyncNotifier<Session> {
     required String apiBase,
     required String email,
     required String password,
+    ChooseSite? chooseSite,
+    int? officeId,
   }) async {
     final http.Response res;
     try {
@@ -129,6 +156,8 @@ class SessionController extends AsyncNotifier<Session> {
               // session. It is what staff PIN sign-on reads the staff list
               // with, long after the session token below has expired.
               'terminal': true,
+              ...await _thisTill(canChoose: chooseSite != null),
+              'office_id': ?officeId,
             }),
           )
           .timeout(const Duration(seconds: 15));
@@ -145,7 +174,23 @@ class SessionController extends AsyncNotifier<Session> {
       throw SignInFailed('That email or password is not correct.');
     }
     if (res.statusCode != 200) {
+      // 409 is the venue's till licences all in use; the server's message
+      // names the tills holding them, which is what the manager needs to read.
       throw SignInFailed((body['error'] as String?) ?? 'Sign-in failed.');
+    }
+
+    // A login that runs more than one site: which one is this till for? Asked,
+    // then the same sign-in again with the answer.
+    if (body['choose_site'] == true && chooseSite != null) {
+      final picked = await chooseSite(_sites(body));
+      if (picked == null) throw SignInFailed('Choose a site to sign this till in to.');
+      return signIn(
+        apiBase: apiBase,
+        email: email,
+        password: password,
+        chooseSite: chooseSite,
+        officeId: picked,
+      );
     }
 
     // The catalogue is keyed by the office's contact email, and the terminal
@@ -196,17 +241,45 @@ class SessionController extends AsyncNotifier<Session> {
     required String apiBase,
     required VesopaOption via,
     void Function(Uri url)? onUrl,
+    ChooseSite? chooseSite,
   }) async {
     final idToken = await VesopaSso(issuer: via.issuer, clientId: via.clientId)
         .authorize(onUrl: onUrl);
 
+    final till = await _thisTill(canChoose: chooseSite != null);
+    var body = await _commission(
+      apiBase,
+      '/api/terminal/vesopa/commission',
+      {'id_token': idToken, ...till},
+    );
+
+    // A login that runs more than one site. The Vesopa token is spent by now,
+    // so the second half goes with the five-minute pass the server handed back.
+    if (body['choose_site'] == true && chooseSite != null) {
+      final picked = await chooseSite(_sites(body));
+      if (picked == null) throw SignInFailed('Choose a site to sign this till in to.');
+      body = await _commission(
+        apiBase,
+        '/api/terminal/vesopa/commission/site',
+        {'pick_token': body['pick_token'], 'office_id': picked, ...till},
+      );
+    }
+
+    await _adopt(body);
+  }
+
+  Future<Map<String, dynamic>> _commission(
+    String apiBase,
+    String path,
+    Map<String, Object?> payload,
+  ) async {
     final http.Response res;
     try {
       res = await http
           .post(
-            Uri.parse('$apiBase/api/terminal/vesopa/commission'),
+            Uri.parse('$apiBase$path'),
             headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({'id_token': idToken}),
+            body: jsonEncode(payload),
           )
           .timeout(const Duration(seconds: 20));
     } catch (e) {
@@ -220,9 +293,30 @@ class SessionController extends AsyncNotifier<Session> {
     if (res.statusCode != 200) {
       throw SignInFailed((body['error'] as String?) ?? 'The back office refused that sign-in.');
     }
-
-    await _adopt(body);
+    return body;
   }
+
+  /// What this till says about itself when it is signed in: which machine it
+  /// is (its licence seat is kept against that, so signing the same till in
+  /// again does not use a second licence), and whether it can ask which site.
+  Future<Map<String, Object?>> _thisTill({required bool canChoose}) async {
+    String? name;
+    try {
+      name = await ref.read(terminalIdentityProvider.future);
+    } catch (_) {
+      // A till with no name still gets a seat; the back office shows its id.
+    }
+    return {
+      'device_id': await terminalDeviceId(),
+      'device_name': ?name,
+      if (canChoose) 'site_choice': true,
+    };
+  }
+
+  static List<SiteChoice> _sites(Map<String, dynamic> body) => [
+    for (final s in (body['sites'] as List? ?? const []))
+      SiteChoice.fromJson(s as Map<String, dynamic>),
+  ];
 
   /// Take a `/api/login`-shaped response and become that session.
   ///

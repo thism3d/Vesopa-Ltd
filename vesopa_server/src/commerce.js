@@ -3,6 +3,7 @@ const express = require('express');
 const { requireAuth } = require('./auth');
 const applePush = require('./wallet_apple_push');
 const { ensureMemberNumber } = require('./member_numbers');
+const training = require('./training');
 
 /**
  * Commerce: gift cards, deposits, loyalty, promotions, rules and tender
@@ -17,6 +18,22 @@ const { ensureMemberNumber } = require('./member_numbers');
 function commerceRoutes({ pool, broadcast, secret }) {
   const router = express.Router();
   const auth = requireAuth(secret);
+
+  // Training mode moves no money. A till in training never calls these (it
+  // simulates the tender), so this only ever catches a till that got it wrong
+  // -- and a trainee spending a real customer's gift card or points is exactly
+  // the mistake that must be refused, loudly, rather than recorded.
+  router.post(
+    ['/gift-cards/redeem', '/deposits/redeem', '/vouchers/redeem',
+      '/loyalty/points', '/loyalty/renew'],
+    (req, res, next) => {
+      const b = req.body || {};
+      if (b.training === true || b.training === 1) {
+        return res.status(409).json({ error: training.REFUSED, training: true });
+      }
+      next();
+    }
+  );
 
   async function tenantEmail(req) {
     if (req.user.officeId) {

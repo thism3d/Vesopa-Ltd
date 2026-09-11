@@ -997,6 +997,31 @@ tr.new { animation: flash 1.6s ease-out; }
 
    Typing here shows every matching item wherever it lives, folded or not, and
    clearing it puts the rail back exactly as it was. */
+/* Which site this session is in -- a login with more than one venue. Styled
+   like the find box beneath it, so the rail reads as one column of controls. */
+.site-switch {
+  margin: 0 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.site-switch label {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--rail-group);
+}
+.site-switch select {
+  width: 100%;
+  min-height: 38px;
+  font-size: 16px; /* 16 or Safari zooms in and stays there -- see .rail-find */
+  border-radius: 8px;
+  border: 1px solid var(--rail-line);
+  background: var(--rail-hover);
+  color: var(--rail-active);
+  padding: 4px 8px;
+}
+
 .rail-find {
   margin: 0 12px 8px;
   position: relative;
@@ -1710,6 +1735,8 @@ tr.clickable:hover { background: var(--brand-soft); }
   color: var(--muted, #7a828c); text-transform: capitalize;
 }
 .pill.on { background: #e4f7ef; color: #06784f; }
+/* A trainee: amber, the colour the till's TRAINING bar is. */
+.pill.training-pill { background: #fff3d6; color: #8a5a00; font-weight: 600; }
 
 .promo-badge {
   display: inline-block; padding: 3px 9px; border-radius: 5px;
@@ -7001,3 +7028,40 @@ textarea, select[multiple], select[size] { height: auto; min-height: 0; }
   line-height: 1.6;
 }
 .gym-rules b { color: var(--text); font-weight: 600; }
+
+/* ---- Loyalty app ---------------------------------------------------------- */
+.la-check { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.la-slug { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.la-slug input { flex: 1; min-width: 160px; }
+.la-pictures, .la-colours, .la-fonts, .la-links, .la-where, .la-audience {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px 14px;
+  margin: 8px 0;
+}
+.la-colours input[type=color] { width: 100%; height: 38px; padding: 2px; border-radius: 8px; }
+.la-phone { display: flex; justify-content: center; padding: 8px 0 16px; }
+.la-screen {
+  width: 260px; min-height: 480px; border-radius: 28px; overflow: hidden;
+  border: 8px solid #1b1d22; box-shadow: 0 12px 30px rgba(0,0,0,.18);
+  display: flex; flex-direction: column; font-family: Montserrat, system-ui, sans-serif;
+}
+.la-top { display: flex; align-items: center; gap: 10px; padding: 14px; color: #fff; }
+.la-top img { width: 34px; height: 34px; border-radius: 8px; object-fit: cover; background: #fff; }
+.la-card {
+  margin: 14px; padding: 14px; border-radius: 16px; background: #fff; color: #111;
+  border: 3px solid; text-align: center; box-shadow: 0 6px 16px rgba(0,0,0,.08);
+}
+.la-card-name { font-weight: 700; margin-bottom: 8px; }
+.la-qr-fake {
+  width: 120px; height: 120px; margin: 0 auto 6px; border-radius: 6px;
+  background:
+    repeating-linear-gradient(90deg, #111 0 6px, transparent 6px 12px),
+    repeating-linear-gradient(0deg, #111 0 6px, #fff 6px 12px);
+  opacity: .85;
+}
+.la-points { margin-top: 8px; font-size: 18px; }
+.la-screen > p { padding: 0 16px; }
+.la-tabs {
+  margin-top: auto; display: flex; justify-content: space-around; padding: 12px 8px;
+  background: rgba(0,0,0,.04); font-size: 12px; font-weight: 600;
+}
+.la-poster #la-qr svg { width: 180px; height: 180px; display: block; margin: 0 auto; }

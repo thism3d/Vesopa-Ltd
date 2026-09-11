@@ -1043,19 +1043,33 @@ function backofficeRoutes({ pool, broadcast, secret }) {
          WHERE c.email = ?
          ORDER BY c.pluid, c.clark_name`;
 
+      // Training accounts (schema_staff_training.sql). Its own step, tried first,
+      // so a database without the column loses only the badge.
+      const WITH_TRAINING = WITH_GROUP.replace(
+        'COALESCE(c.active, 1) AS active,',
+        'COALESCE(c.active, 1) AS active, COALESCE(c.training, 0) AS training,'
+      );
+
       const WITHOUT_GROUP = `
         SELECT id, pluid, clark_name, pin_code, COALESCE(active, 1) AS active
           FROM bo_clarks WHERE email = ?
          ORDER BY pluid, clark_name`;
 
+      const missing = (e) =>
+        e.code === 'ER_BAD_FIELD_ERROR' || e.code === 'ER_NO_SUCH_TABLE';
       let rows;
       try {
-        [rows] = await pool.query(WITH_GROUP, [email]);
-      } catch (e) {
-        if (e.code !== 'ER_BAD_FIELD_ERROR' && e.code !== 'ER_NO_SUCH_TABLE') throw e;
-        [rows] = await pool.query(WITHOUT_GROUP, [email]);
+        [rows] = await pool.query(WITH_TRAINING, [email]);
+      } catch (e0) {
+        if (!missing(e0)) throw e0;
+        try {
+          [rows] = await pool.query(WITH_GROUP, [email]);
+        } catch (e) {
+          if (!missing(e)) throw e;
+          [rows] = await pool.query(WITHOUT_GROUP, [email]);
+        }
       }
-      res.json(rows);
+      res.json(rows.map((r) => ({ ...r, training: Number(r.training) === 1 })));
     } catch (e) {
       next(e);
     }
@@ -1103,21 +1117,43 @@ function backofficeRoutes({ pool, broadcast, secret }) {
 
       const values = [email, pluid ?? 0, clark_name, pin_code, active === 0 ? 0 : 1];
 
+      // A training account is asked for explicitly and never implied: every
+      // other way into this route creates somebody who sells for real.
+      const trainee = req.body.training === true || req.body.training === 1;
+
       let result;
       try {
         [result] = await pool.execute(
           `INSERT INTO bo_clarks
-             (email, pluid, clark_name, pin_code, active, permission_group_id)
-           VALUES (?, ?, ?, ?, ?, ?)`,
-          [...values, groupId(req.body)]
+             (email, pluid, clark_name, pin_code, active, permission_group_id,
+              training)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [...values, groupId(req.body), trainee ? 1 : 0]
         );
-      } catch (e) {
-        if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
-        [result] = await pool.execute(
-          `INSERT INTO bo_clarks (email, pluid, clark_name, pin_code, active)
-           VALUES (?, ?, ?, ?, ?)`,
-          values
-        );
+      } catch (e0) {
+        if (e0.code !== 'ER_BAD_FIELD_ERROR') throw e0;
+        if (trainee) {
+          // Refused rather than quietly created as a real clerk: a "training"
+          // account that sells for real is the one outcome worse than none.
+          return res.status(503).json({
+            error: 'Training accounts are not available yet on this server.',
+          });
+        }
+        try {
+          [result] = await pool.execute(
+            `INSERT INTO bo_clarks
+               (email, pluid, clark_name, pin_code, active, permission_group_id)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            [...values, groupId(req.body)]
+          );
+        } catch (e) {
+          if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+          [result] = await pool.execute(
+            `INSERT INTO bo_clarks (email, pluid, clark_name, pin_code, active)
+             VALUES (?, ?, ?, ?, ?)`,
+            values
+          );
+        }
       }
       broadcast({ type: 'staff.updated' });
       res.status(201).json({ id: result.insertId });
@@ -1169,6 +1205,12 @@ function backofficeRoutes({ pool, broadcast, secret }) {
       if (active !== undefined) {
         sets.push('active = ?');
         params.push(active ? 1 : 0);
+      }
+      // Only when the form sent it, like the group below: an older tab or the
+      // import must never turn a trainee into a real clerk, or the reverse.
+      if (req.body && 'training' in req.body) {
+        sets.push('training = ?');
+        params.push(req.body.training === true || req.body.training === 1 ? 1 : 0);
       }
 
       // Only when the form sent the field. A caller that does not know about

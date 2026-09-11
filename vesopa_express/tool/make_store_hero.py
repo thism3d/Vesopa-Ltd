@@ -23,12 +23,14 @@ lit screen: its left and right edges are vertical (x 3242 and 4234) and its
 top and bottom slope, because the kiosk is turned a little towards the camera.
 A different scene needs measuring again (--corners).
 
-THE NAME
+NO NAME ON IT
 
-Set in the app's own lockup -- the Express mark over "Vesopa Express" in
-Montserrat ExtraBold, as on the kiosk's setup screen -- in the calm top-left of
-the room, clear of the bottom quarter, where the Store lays its own title and
-buttons over a hero.
+Partner Center's rule for 16:9 Super hero art is that it "must not include the
+product's title": the Store sets the title over the hero itself. So the Store
+copy is the room and the kiosk and nothing else. --lockup adds the app's own
+lockup (the Express mark over "Vesopa Express" in Montserrat ExtraBold, as on
+the kiosk's setup screen) in the calm top-left, for use anywhere that is not
+the Store's hero slot.
 """
 
 import argparse
@@ -131,6 +133,8 @@ def main():
     ap.add_argument("shot")
     ap.add_argument("out")
     ap.add_argument("--corners", help="x,y x,y x,y x,y  (TL TR BR BL) on the scene")
+    ap.add_argument("--lockup", action="store_true",
+                    help="add the name, top left -- not for the Store's hero slot")
     a = ap.parse_args()
     quad = CORNERS
     if a.corners:
@@ -145,7 +149,9 @@ def main():
     keep = round(h * 16 / 9)
     img = img.crop((w - keep, 0, w, h)).resize((OUT_W, OUT_H), Image.LANCZOS)
 
-    lockup(img).save(a.out, optimize=True)
+    if a.lockup:
+        img = lockup(img)
+    img.save(a.out, optimize=True)
     print(f"{a.out}  {OUT_W}x{OUT_H}")
 
 

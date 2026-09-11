@@ -416,6 +416,20 @@ class Orders extends Table {
   /// the points for this sale are not earned until it settles.
   IntColumn get customerPoints => integer().nullable()();
 
+  /// A practice bill, rung up by a training account.
+  ///
+  /// "Sales made in Training Mode should not be sent to the back office and
+  /// should not count towards the sales figures on the till." Set when the bill
+  /// is opened (a training account is signed on) and never changed after it
+  /// has anything on it, because everything about the bill follows from it:
+  /// it is never queued for the server, never shared with another till, never
+  /// sent to the kitchen, takes no card payment, prints as TRAINING, and is
+  /// left out of the X and Z. See `data/training_mode.dart`.
+  ///
+  /// False on every bill already on the till, which is the truth: none of them
+  /// were practice.
+  BoolColumn get training => boolean().withDefault(const Constant(false))();
+
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
   DateTimeColumn get closedAt => dateTime().nullable()();
   DateTimeColumn get syncedAt => dateTime().nullable()();
@@ -613,6 +627,14 @@ class Staff extends Table {
   /// has always meant.
   TextColumn get permissions => text().withDefault(const Constant(''))();
 
+  /// A training account: signing on with it puts the till in training mode.
+  ///
+  /// Only ever true for a till that asked for training accounts
+  /// (`/till/staff?features=training`); an older till is never sent one. False
+  /// on every existing row until the next staff pull, which is correct --
+  /// nobody is a trainee until the back office says so.
+  BoolColumn get training => boolean().withDefault(const Constant(false))();
+
   @override
   Set<Column> get primaryKey => {id};
 }
@@ -642,7 +664,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 25;
+  int get schemaVersion => 26;
 
 
   /// Add a column only if the table has not already got it.
@@ -827,6 +849,13 @@ class AppDatabase extends _$AppDatabase {
             // product prints under no heading — the ticket a venue gets today.
             await _addColumnIfMissing(m, products, products.printCategory);
             await _addColumnIfMissing(m, products, products.printCategoryOrder);
+          }
+          if (from < 26) {
+            // Training mode. False on every existing member of staff and every
+            // bill already on the till: nobody was a trainee and nothing was
+            // practice before this existed.
+            await _addColumnIfMissing(m, staff, staff.training);
+            await _addColumnIfMissing(m, orders, orders.training);
           }
           if (from < 25) {
             // Which products renew a membership, and what a member looks like.

@@ -18,6 +18,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/dinein_orders.dart';
 import '../data/local/database.dart';
 import '../data/staff_session.dart';
+import '../data/training_mode.dart';
 import '../main.dart';
 import 'sale_page.dart' show productsProvider;
 import 'widgets/on_screen_keyboard.dart';
@@ -43,6 +44,18 @@ class DineInOutcome {
 /// bill and still showing as waiting — visible, and fixable by pressing Accept
 /// again, which the server refuses without making a second bill.
 Future<DineInOutcome> acceptDineInOrder(WidgetRef ref, DineInOrder order) async {
+  // A real customer's order is never taken in training: it would be rung onto
+  // a practice bill, which is never sent to the kitchen or the back office, and
+  // the customer's food would quietly never come. Left waiting, it is taken by
+  // another till, or here once the trainee signs off.
+  if (ref.read(trainingModeProvider)) {
+    return const DineInOutcome(
+      "Not in training mode. This is a real customer's order: sign off "
+      'training to take it, or take it on another till.',
+      ok: false,
+    );
+  }
+
   final tableNumber = order.tableNumber;
   if (tableNumber == null) {
     return const DineInOutcome(
@@ -408,6 +421,8 @@ bool _autoAccepting = false;
 /// — which charging a table twice is not.
 Future<void> autoAcceptWaiting(WidgetRef ref) async {
   if (_autoAccepting) return;
+  // Not while a trainee is on: see acceptDineInOrder. The other tills take it.
+  if (ref.read(trainingModeProvider)) return;
 
   final on = ref.read(dineInAutoAcceptProvider).value ?? false;
   if (!on) return;

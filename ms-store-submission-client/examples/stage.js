@@ -78,6 +78,21 @@ if (app.pendingApplicationSubmission) {
 const submission = await client.createSubmission(storeId);
 console.log(`Created draft submission ${submission.id} for ${storeId}`);
 
+// NOTHING IS PUBLISHED UNTIL SOMEBODY SAYS SO.
+//
+// "Can we stop the tills from automatically updating? Updates should require
+// manual approval, so we can test first and then release to customers."
+//
+// Manual publishing is that approval. Microsoft certifies the release and then
+// it waits -- no till downloads anything -- until somebody presses "Publish
+// now" in Partner Center, after testing it on the office till. Every Vesopa
+// submission used to be Immediate, which put a certified build on every till
+// the moment Microsoft passed it. PUBLISH_MODE=Immediate is still there for a
+// fix that must go out the moment it is certified.
+const mode = process.env.PUBLISH_MODE === 'Immediate' ? 'Immediate' : 'Manual';
+submission.targetPublishMode = mode;
+console.log(`  publish mode: ${mode}${mode === 'Manual' ? ' (waits for "Publish now" after certification)' : ''}`);
+
 // The name the package is uploaded under, stamped with its version.
 //
 // NOT the plain basename. A submission that replaces a package lists the old

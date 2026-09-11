@@ -31,6 +31,7 @@ import 'data/session_repository.dart';
 import 'data/staff_repository.dart';
 import 'data/startup_repair.dart';
 import 'data/staff_session.dart';
+import 'data/training_mode.dart';
 import 'data/sync_service.dart';
 import 'data/terminal_identity.dart';
 import 'data/terminal_service.dart';
@@ -188,6 +189,9 @@ final orderRepositoryProvider = Provider<OrderRepository>(
     // starts at five has to start at five on a till that has been on since
     // eleven. See OrderRepository.promotionsAvailable.
     promotions: () => ref.read(promotionsProvider),
+    // Whether a training account is signed on, read when a bill is opened --
+    // so a bill a trainee opens is a practice bill. See data/training_mode.dart.
+    trainingMode: () => ref.read(trainingModeProvider),
   ),
 );
 
@@ -212,12 +216,16 @@ final kitchenScreenSenderProvider = Provider<KitchenScreenSender>(
   ),
 );
 
-final tableRepositoryProvider = Provider<TableRepository>(
-  (ref) => TableRepository(
+final tableRepositoryProvider = Provider<TableRepository>((ref) {
+  // Watched, not just read: when a trainee signs on or off the repository is
+  // rebuilt, and the table plan re-reads with the other set of tables.
+  final training = ref.watch(trainingModeProvider);
+  return TableRepository(
     ref.watch(databaseProvider),
     ref.watch(orderRepositoryProvider),
-  ),
-);
+    trainingMode: () => training,
+  );
+});
 
 final loyaltyRepositoryProvider = Provider<LoyaltyRepository>(
   (ref) => LoyaltyRepository(ref.watch(databaseProvider)),

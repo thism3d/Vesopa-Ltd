@@ -281,6 +281,12 @@ class ReceiptBuilder {
   /// Characters that fit on one double-width line.
   int get _wideColumns => columns ~/ 2;
 
+  /// The line a practice sale (training mode) prints top and bottom.
+  List<int> _trainingLine() => _text(
+        trainingReceiptLine,
+        styles: const PosStyles(align: PosAlign.center, bold: true),
+      );
+
   /// The customer's receipt.
   List<int> receipt({
     required Order order,
@@ -319,6 +325,10 @@ class ReceiptBuilder {
         ),
       );
     }
+
+    // A practice sale. Said at the top, and again at the bottom (below), so a
+    // torn-off half still says it.
+    if (order.training) bytes.addAll(_trainingLine());
 
     bytes.addAll(_generator.hr());
     bytes.addAll(
@@ -421,6 +431,8 @@ class ReceiptBuilder {
       );
     }
 
+    if (order.training) bytes.addAll(_trainingLine());
+
     bytes.addAll(_generator.feed(2));
     bytes.addAll(_generator.cut());
     return bytes;
@@ -464,6 +476,8 @@ class ReceiptBuilder {
         ),
       );
     }
+
+    if (summary.training) bytes.addAll(_trainingLine());
 
     bytes.addAll(_generator.hr());
     bytes.addAll(
@@ -591,6 +605,8 @@ class ReceiptBuilder {
         _text(footer, styles: const PosStyles(align: PosAlign.center)),
       );
     }
+
+    if (summary.training) bytes.addAll(_trainingLine());
 
     bytes.addAll(_generator.feed(2));
     bytes.addAll(_generator.cut());

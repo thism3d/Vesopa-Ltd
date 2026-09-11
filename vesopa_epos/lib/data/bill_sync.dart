@@ -139,7 +139,11 @@ class BillSync {
         ),
       ])..where(
         _db.orders.status.isIn(['open', 'parked']) &
-            _db.orders.heldBy.isNull(),
+            _db.orders.heldBy.isNull() &
+            // A practice bill never leaves this till: on the shared plan it
+            // would appear on every other till in the room, where a real clerk
+            // could take real money for it.
+            _db.orders.training.equals(false),
       );
 
   // ---------------------------------------------------------------------------

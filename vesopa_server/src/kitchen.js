@@ -23,6 +23,7 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 
 const { requireAuth, requireTerminal } = require('./auth');
+const training = require('./training');
 const { cleanAllergens, readAllergens } = require('./allergens');
 
 /**
@@ -1419,6 +1420,16 @@ function tillKitchenRoutes({ pool, broadcast, secret }) {
       return res
         .status(400)
         .json({ error: 'A ticket id and an office are required' });
+    }
+
+    // Practice orders are not cooked. A trainee's ticket on the kitchen screen
+    // is food somebody makes for nobody.
+    try {
+      if (await training.isTrainingSale(pool, ticket.office, ticket)) {
+        return res.status(200).json(training.IGNORED);
+      }
+    } catch (e) {
+      return next(e);
     }
 
     const lines = Array.isArray(ticket.lines) ? ticket.lines : [];

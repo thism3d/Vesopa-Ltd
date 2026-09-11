@@ -7,7 +7,9 @@
     "applicationCategory": "Business_SalesAndMarketing",
     "visibility": "Public",
     "targetPublishMode": "Immediate",
-    "hardwarePreferences": ["Touch"],
+    "hardwarePreferences": [
+      "Touch"
+    ],
     "automaticBackupEnabled": false,
     "canInstallOnRemovableMedia": true,
     "isGameDvrEnabled": false,
@@ -30,26 +32,26 @@
     "shortDescription": "The self-service ordering kiosk for Vesopa EPOS. Customers order from your own menu, make it a meal, pay on the Dojo card machine beside the screen and take a collection number, and the order goes straight to your Vesopa Kitchen screens. Nothing reaches the kitchen until the payment has gone through.",
     "description": "Vesopa Express is a self-service ordering kiosk for your venue.\n\nIt is the kiosk for Vesopa EPOS. A customer walks up, touches the screen, orders from your menu, pays on the card machine beside it and takes a collection number. The order goes to the kitchen the moment it is paid, and your staff can get on with the food instead of taking orders at the counter.\n\nREQUIRES A VESOPA EPOS ACCOUNT\nThis app is a companion to the Vesopa EPOS till system and cannot be used on its own. Vesopa Express is switched on for each venue in the Vesopa back office, and it stays off until you turn it on. Each kiosk is set up by a manager signing in once with their Vesopa account. Card payments need a Dojo card machine, paired with the kiosk in the back office.\n\nYOUR MENU, NOT ANOTHER ONE\nThe kiosk shows the menu you already keep in the Vesopa back office for ordering at the table: the same sections, pictures, prices, add-ons and allergen information. Change a price in the back office and the kiosk changes with it. There is no second menu to keep up to date.\n\nBUILT THE WAY PEOPLE ORDER\nTouch to start, eat in or take away, then the menu, with its sections down the side and pictures big enough to see from a step back. Each dish opens with its choices and the price follows them as they are picked. \"Make it a meal\" takes the customer through the size, the side and the drink one step at a time, then shows the whole meal before it goes in the basket. Before paying, the basket suggests a few things that you choose, once, and takes \"Not today, thanks\" for an answer.\n\nPAID MEANS PAID\nThe kiosk never holds a card or a payment key. The Vesopa server asks Dojo to take the payment on the card machine next to the screen, and the kiosk tells the customer what the machine wants: tap, insert or swipe, then approved. Only a completed payment becomes a sale, and it is recorded once, in the same reports as your till. A declined card can be tried again without starting the order over, and if the kiosk loses power while someone is paying, it picks the payment back up when it restarts.\n\nA NUMBER TO COLLECT BY\nEvery paid order gets a collection number from a range you set, starting again each day. The number fills the screen, and the kiosk can print it on a ticket. A collection board for any TV or monitor shows the numbers moving from Preparing to Ready. It is a web page at a private address, so there is nothing to install on the screen.\n\nSTRAIGHT TO THE KITCHEN\nPaid kiosk orders go to your Vesopa Kitchen screens, split by station exactly as the till would send them, with a meal's side and drink listed under the meal. The back office lists the day's kiosk orders, and staff can mark each one ready and then collected.\n\nA TICKET FROM THE KIOSK'S OWN PRINTER\nConnect a receipt printer to the kiosk by USB, through Windows, or on your network, and set it up in the kiosk's staff settings with a test ticket. The ticket carries your receipt branding, the collection number, what was ordered, the total with VAT and how it was paid. You choose in the back office whether it prints every time, only when the customer asks, or never.\n\nLOCKED TO THE JOB\nThe kiosk runs full screen, with no title bar and nothing a customer can close or minimise. The only way out is the staff settings, opened from a hidden corner and protected by a passcode you choose when the kiosk is set up. The passcode is checked on the kiosk itself, so staff can still get in when the internet is down. Add Windows assigned access and the kiosk stays on your menu all day.\n\nFOR EVERY CUSTOMER\nEvery screen adapts to portrait or landscape and to the size of the display, from a floor-standing kiosk to a countertop tablet. Lower the screen brings the menu within reach of a wheelchair user or a child, and high contrast makes every screen easier to read. If a customer walks away, \"Still there?\" counts down before the basket is cleared, so the next person starts afresh.\n\nYOURS TO SET UP\nIn the Vesopa back office, under Dine-in & QR, you switch Vesopa Express on, offer eat in, take away or both, choose whether to ask for the customer's name, set the welcome message and picture, set the collection number range and how long the kiosk waits before asking \"Still there?\", pick the suggestions, set up meals, pair each kiosk with its card machine and see the day's orders.\n\nRuns on Windows 10 (version 1809 or later) and Windows 11, on a touchscreen.",
     "features": [
-      "Your own Vesopa menu, with its pictures, prices and allergens",
-      "Eat in, take away, or both, as the venue chooses",
-      "Make it a meal: size, side and drink, one step at a time",
-      "Choices and add-ons on every dish, priced as they are picked",
-      "A few suggestions before payment, chosen by the venue",
-      "Pay on the Dojo card machine beside the kiosk",
-      "Only a completed payment becomes a sale, recorded once",
-      "A declined card can try again without starting over",
-      "Picks a payment back up after a power cut",
-      "Collection numbers from your own range, new each day",
-      "Collection board for any TV: Preparing and Ready",
-      "Paid orders go straight to Vesopa Kitchen screens",
-      "Tickets on a USB, Windows or network receipt printer",
-      "Full screen and locked, with a passcode-protected way out",
-      "The staff passcode works with no internet",
-      "Portrait or landscape, on any size of screen",
-      "Lower the screen for customers who cannot reach the top",
-      "High contrast for easier reading",
-      "Asks \"Still there?\" before clearing a forgotten basket",
-      "Set up with your Vesopa account in minutes"
+      "Your own Vesopa menu",
+      "Eat in or take away",
+      "Make it a meal, step-by-step",
+      "Choices and add-ons on every dish",
+      "Suggestions before payment, chosen by you",
+      "Pay on the Dojo card machine",
+      "Only completed payments become sales",
+      "Declined cards can try again",
+      "Resumes a payment after power cuts",
+      "Daily collection numbers from your range",
+      "Collection board for any TV",
+      "Orders go straight to Vesopa Kitchen",
+      "Prints tickets on receipt printers",
+      "Full screen, passcode-protected exit",
+      "Staff passcode works offline",
+      "Portrait or landscape, any screen",
+      "Lower the screen for reach",
+      "High contrast mode",
+      "\"Still there?\" before clearing baskets",
+      "Set up with your Vesopa account"
     ],
     "keywords": [
       "self-order kiosk",
@@ -65,20 +67,72 @@
     "licenseTermsFile": "express-eula.txt",
     "releaseNotes": "Version 1.0.0.0 - The first release of Vesopa Express\n\nVesopa Express is the self-service ordering kiosk for Vesopa EPOS. Customers order from your own menu, make it a meal, pay on the Dojo card machine beside the screen and take a collection number.\n\nOnly a completed payment becomes a sale. It is recorded once, in the same reports as your till, sent to your Vesopa Kitchen screens by station, and shown on the collection board until it is collected.\n\nSwitch it on for your venue in the Vesopa back office under Dine-in & QR, then set each kiosk up by signing in with your Vesopa account.",
     "images": [
-      { "file": "screenshots/01 Touch to start.png", "type": "Screenshot", "description": "Touch to start, with your own welcome and picture" },
-      { "file": "screenshots/02 Your own menu.png", "type": "Screenshot", "description": "Your own menu, with the basket always in view" },
-      { "file": "screenshots/03 A dish and its choices.png", "type": "Screenshot", "description": "Each dish with its choices, and Make it a meal" },
-      { "file": "screenshots/04 Make it a meal - size.png", "type": "Screenshot", "description": "Make it a meal: choose the size" },
-      { "file": "screenshots/05 Make it a meal - side.png", "type": "Screenshot", "description": "Then the side and the drink, one step at a time" },
-      { "file": "screenshots/06 Make it a meal - review.png", "type": "Screenshot", "description": "The whole meal, checked before it goes in the basket" },
-      { "file": "screenshots/07 The basket and suggestions.png", "type": "Screenshot", "description": "The basket, with a few suggestions the venue chooses" },
-      { "file": "screenshots/08 Pay on the card machine.png", "type": "Screenshot", "description": "Pay on the Dojo card machine beside the kiosk" },
-      { "file": "screenshots/09 A number to collect by.png", "type": "Screenshot", "description": "A number to collect by, and a ticket from the kiosk's printer" },
-      { "file": "screenshots/10 Eat in or take away.png", "type": "Screenshot", "description": "Eat in or take away" },
-      { "file": "Vesopa Express Store 300x300.png", "type": "Icon" },
-      { "file": "Vesopa Express Store Image Square.png", "type": "StoreLogoSquare" },
-      { "file": "Vesopa Express Store Image 916.png", "type": "StoreLogo9x16" },
-      { "file": "Vesopa Express Microsoft Store Hero Image.png", "type": "PromotionalArt16x9" }
+      {
+        "file": "screenshots/01 Touch to start.png",
+        "type": "Screenshot",
+        "description": "Touch to start, with your own welcome and picture"
+      },
+      {
+        "file": "screenshots/02 Your own menu.png",
+        "type": "Screenshot",
+        "description": "Your own menu, with the basket always in view"
+      },
+      {
+        "file": "screenshots/03 A dish and its choices.png",
+        "type": "Screenshot",
+        "description": "Each dish with its choices, and Make it a meal"
+      },
+      {
+        "file": "screenshots/04 Make it a meal - size.png",
+        "type": "Screenshot",
+        "description": "Make it a meal: choose the size"
+      },
+      {
+        "file": "screenshots/05 Make it a meal - side.png",
+        "type": "Screenshot",
+        "description": "Then the side and the drink, one step at a time"
+      },
+      {
+        "file": "screenshots/06 Make it a meal - review.png",
+        "type": "Screenshot",
+        "description": "The whole meal, checked before it goes in the basket"
+      },
+      {
+        "file": "screenshots/07 The basket and suggestions.png",
+        "type": "Screenshot",
+        "description": "The basket, with a few suggestions the venue chooses"
+      },
+      {
+        "file": "screenshots/08 Pay on the card machine.png",
+        "type": "Screenshot",
+        "description": "Pay on the Dojo card machine beside the kiosk"
+      },
+      {
+        "file": "screenshots/09 A number to collect by.png",
+        "type": "Screenshot",
+        "description": "A number to collect by, and a ticket from the kiosk's printer"
+      },
+      {
+        "file": "screenshots/10 Eat in or take away.png",
+        "type": "Screenshot",
+        "description": "Eat in or take away"
+      },
+      {
+        "file": "Vesopa Express Store 300x300.png",
+        "type": "Icon"
+      },
+      {
+        "file": "Vesopa Express Store Image Square.png",
+        "type": "StoreLogoSquare"
+      },
+      {
+        "file": "Vesopa Express Store Image 916.png",
+        "type": "StoreLogo9x16"
+      },
+      {
+        "file": "Vesopa Express Microsoft Store Hero Image.png",
+        "type": "PromotionalArt16x9"
+      }
     ]
   }
 }

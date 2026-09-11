@@ -3,6 +3,9 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 /// A receipt in the history list.
+/// What a practice receipt says, top and bottom. See data/training_mode.dart.
+const trainingReceiptLine = 'TRAINING - NOT A VALID RECEIPT';
+
 class ReceiptSummary {
   const ReceiptSummary({
     required this.id,
@@ -21,6 +24,7 @@ class ReceiptSummary {
     this.clerkName,
     this.orderNote,
     this.covers,
+    this.training = false,
   });
 
   final String id;
@@ -44,6 +48,12 @@ class ReceiptSummary {
   final String? clerkName;
   final String? orderNote;
   final int? covers;
+
+  /// A practice bill, rung up in training mode. Printed with
+  /// [trainingReceiptLine] top and bottom so it can never be passed off as a
+  /// real receipt. Never true for a sale from the server: practice sales are
+  /// not sent there.
+  final bool training;
 
   bool get hasVoucher => voucherMinor > 0 || (voucherCode?.isNotEmpty ?? false);
 

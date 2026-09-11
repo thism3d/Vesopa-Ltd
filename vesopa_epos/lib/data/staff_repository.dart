@@ -74,7 +74,10 @@ class StaffRepository {
     try {
       res = await _client
           .get(
-            Uri.parse('$apiBase/till/staff'),
+            // `features=training`: this till keeps a trainee's sales to itself
+            // (data/training_mode.dart), so the back office may send training
+            // accounts. A till that does not say so is never given one.
+            Uri.parse('$apiBase/till/staff?features=training'),
             headers: {'Authorization': 'Bearer $token'},
           )
           .timeout(timeout);
@@ -125,6 +128,9 @@ class StaffRepository {
                   r['permissions'],
                   grouped: r['permission_group_id'] != null,
                 ),
+                // A training account. Absent from an older server, which has
+                // none to send -- so false, which is the truth there.
+                training: r['training'] == true,
               ),
               mode: InsertMode.insertOrReplace,
             );

@@ -134,6 +134,24 @@ node examples/set-notes.js vesopa-epos notes-1.6.8.0-epos.txt
 node examples/commit.js vesopa-epos
 ```
 
+### Nothing reaches a till until you press Publish now
+
+From September 2026 every submission is staged with `targetPublishMode:
+Manual` (`PUBLISH_MODE=Immediate` for the rare fix that must go out the moment
+it is certified). The venue asked for exactly this: "updates should require
+manual approval, so we can test first". So the order is:
+
+1. `commit.js` -- Microsoft certifies it (hours to a day or two).
+2. It then sits in Partner Center as **ready to publish**. No till can see it.
+3. Install it on the office till and test it (the Store's own "Get updates" on
+   a till in the test flight, or the same version built locally and sideloaded).
+4. Press **Publish now** in Partner Center. Only then do tills update.
+
+A venue that wants each till to wait for a person as well runs
+`vesopa_epos/tool/till-updates.ps1 off` on it: the Store then stops installing
+updates by itself, and the till's About page offers "Check for updates".
+
+
 Package paths differ per app, because the kitchen's msix config has no
 `output_path`:
 

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../data/commerce.dart';
+import '../data/training_mode.dart';
 import '../data/local/database.dart';
 import '../data/order_repository.dart';
 import '../data/pricing_engine.dart';
@@ -602,6 +603,33 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
         ? requested
         : requested.clamp(0, due);
 
+    // A practice bill (training mode). Cash is counted as normal -- it is the
+    // tender a trainee most needs to practise -- but no card machine is ever
+    // asked for anything, and nothing that belongs to a real customer (a gift
+    // card, a deposit, a voucher, points, an account) can be spent on practice.
+    if (await _isPractice()) {
+      switch (kind) {
+        case TenderKind.cash:
+          break;
+        case TenderKind.card:
+        case TenderKind.manualCard:
+          if (!await _confirm(kind, amount, due,
+              manual: kind == TenderKind.manualCard)) {
+            return;
+          }
+          _toast(trainingCardMessage);
+          _record(TenderEntry(kind: kind, amountMinor: amount, entryMode: 'training'));
+          return;
+        case TenderKind.giftCard:
+        case TenderKind.deposit:
+        case TenderKind.voucher:
+        case TenderKind.points:
+        case TenderKind.account:
+          _toast(trainingRefusal);
+          return;
+      }
+    }
+
     switch (kind) {
       case TenderKind.cash:
         // No confirmation. Removed in v1.3.1.0 at the venue's request: cash is
@@ -726,6 +754,14 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
       dueMinor: dueMinor,
       manual: manual,
     );
+  }
+
+  /// Whether this is a practice bill -- rung up in training mode. Read off the
+  /// bill, not off who is signed on: the bill's flag is what every other part
+  /// of the till acts on, so this page must agree with it.
+  Future<bool> _isPractice() async {
+    final order = await ref.read(orderRepositoryProvider).orderOnce(widget.orderId);
+    return order?.training ?? false;
   }
 
   void _record(TenderEntry entry) {
@@ -1171,11 +1207,16 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
 
     final commerce = ref.read(commerceRepositoryProvider);
 
+    // A practice sale touches nothing on the server: no voucher is marked used,
+    // no points move and no membership is renewed. The tenders above were
+    // closed on this till only (see OrderRepository.settle).
+    final practice = await _isPractice();
+
     // Mark the voucher used only now. Doing it when it was applied burned a
     // single-use voucher on a payment the clerk then abandoned, with no way to
     // hand it back.
     final voucher = _voucherCode;
-    if (voucher != null && _voucherMinor > 0) {
+    if (!practice && voucher != null && _voucherMinor > 0) {
       try {
         await commerce.redeemVoucher(voucher);
       } catch (_) {
@@ -1188,7 +1229,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     // Loyalty is moved only now for the same reason: points are spent when the
     // sale completes, and earned on what was actually paid for the goods.
     final customer = _customer;
-    if (customer != null) {
+    if (!practice && customer != null) {
       try {
         if (_pointsRedeemed > 0) {
           await commerce.movePoints(
@@ -1224,7 +1265,7 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     try {
       final order = await repo.watchOrder(widget.orderId).first;
       final renewFor = order.customerId;
-      if (renewFor != null && renewFor.isNotEmpty) {
+      if (!practice && renewFor != null && renewFor.isNotEmpty) {
         final lines = await repo.watchLines(widget.orderId).first;
         final settings = await commerce.membershipSettings();
         // Which PLUs renew, from the till's own catalogue plus the venue's

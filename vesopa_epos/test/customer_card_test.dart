@@ -27,6 +27,7 @@ Order order({
       customerDiscountType: discountType,
       customerDiscountValue: discountValue,
       manualDiscountMinor: 0,
+      training: false,
       createdAt: DateTime(2026, 9, 7),
     );
 

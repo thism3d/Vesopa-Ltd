@@ -35,6 +35,14 @@ const express = require('express');
 
 const { linkAndFind } = require('./backoffice_auth');
 const jwt = require('jsonwebtoken');
+const tillSeats = require('./till_seats');
+const { resolveTillSite, sitePickToken, readSitePickToken } = require('./sites');
+
+/** Trimmed text of at most [max] characters, or null when there is none. */
+function clampText(value, max) {
+  const s = value == null ? '' : String(value).trim();
+  return s ? s.slice(0, max) : null;
+}
 
 const ISSUER = (process.env.VESOPA_AUTH_ISSUER || 'https://auth.vesopa.com').replace(/\/+$/, '');
 const TILL_CLIENT_ID = process.env.VESOPA_AUTH_TILL_CLIENT_ID || '';
@@ -224,11 +232,100 @@ function terminalVesopaRoutes({ pool, secret, issueToken, issueTerminalToken }) 
         });
       }
 
-      return res.json({
-        token: issueToken(user, secret),
-        terminalToken: issueTerminalToken(user, secret),
-        user,
+      // Which site this till is for. A login that manages more than one site
+      // is asked -- by a till that says it can ask (1.7.3.0). The Vesopa token
+      // above is spent, so the till comes back with the site and a short pass
+      // instead (`/commission/site`). See src/sites.js.
+      const placed = await resolveTillSite(pool, user, {
+        canAsk: (req.body || {}).site_choice === true,
+        officeId: (req.body || {}).office_id,
       });
+      if (placed.error) return res.status(403).json({ error: placed.error });
+      if (placed.choose) {
+        return res.json({
+          choose_site: true,
+          sites: placed.choose,
+          pick_token: sitePickToken(user.id, secret),
+        });
+      }
+
+      return finishCommission(placed.user, req.body || {}, res);
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  /**
+   * A till's credentials, for somebody already proved and placed at a site:
+   * a licence seat first (the venue's limit is checked here, and a machine
+   * signing in again keeps the seat it already had -- see src/till_seats.js),
+   * then the session and terminal tokens.
+   */
+  async function finishCommission(user, body, res) {
+    let seatId;
+    try {
+      seatId = await tillSeats.claimSeat(pool, {
+        office: user.officeEmail,
+        deviceId: clampText(body.device_id, 64),
+        deviceName: clampText(body.device_name, 120),
+        by: user.email,
+      });
+    } catch (e) {
+      if (e instanceof tillSeats.SeatLimitError) {
+        return res.status(409).json({
+          error: e.message,
+          licences: e.limit,
+          seats: e.seats.map((s) => ({ name: s.device_name, last_seen_at: s.last_seen_at })),
+        });
+      }
+      throw e;
+    }
+    return res.json({
+      token: issueToken(user, secret),
+      terminalToken: issueTerminalToken(user, secret, undefined, seatId),
+      user,
+    });
+  }
+
+  /**
+   * The second half of signing a till in for a login with more than one site:
+   * the site the manager chose, and the five-minute pass from the first half.
+   */
+  router.post('/api/terminal/vesopa/commission/site', express.json(), async (req, res, next) => {
+    try {
+      const body = req.body || {};
+      let userId;
+      try {
+        userId = readSitePickToken(body.pick_token, secret);
+      } catch {
+        return res.status(401).json({ error: 'That took too long. Sign the till in again.' });
+      }
+      const [[row]] = await pool.query(
+        `SELECT u.id, u.email, u.name, u.role, u.approved, u.office_id,
+                o.name AS office_name, o.contact_email AS office_email
+           FROM backoffice_users u LEFT JOIN offices o ON o.id = u.office_id
+          WHERE u.id = ?`,
+        [userId]
+      );
+      if (!row || row.approved !== 'Y') {
+        return res.status(403).json({ error: 'That account can no longer set up a till.' });
+      }
+      const user = {
+        id: row.id,
+        email: row.email,
+        name: row.name,
+        role: row.role || 'office',
+        officeId: row.office_id,
+        officeName: row.office_name,
+        officeEmail: row.office_email,
+      };
+      const placed = await resolveTillSite(pool, user, {
+        canAsk: true,
+        officeId: body.office_id,
+      });
+      if (placed.error) return res.status(403).json({ error: placed.error });
+      if (placed.choose) return res.status(400).json({ error: 'Which site is this till for?' });
+      return finishCommission(placed.user, body, res);
     } catch (error) {
       return next(error);
     }

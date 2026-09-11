@@ -1,5 +1,6 @@
 const express = require('express');
 const { requireAuth, requireTerminal } = require('./auth');
+const tillSeats = require('./till_seats');
 
 /**
  * The machines in a venue, and what has happened to them.
@@ -167,6 +168,16 @@ function deviceRoutes({ pool, broadcast, secret }) {
           ]
         );
 
+        // A till naming itself tells its licence seat which machine it is --
+        // and lets go of any older seat the same machine still held, so a till
+        // that signed in again is never counted twice. Never fatal: a device
+        // list that failed to register over a licence would be the wrong trade.
+        if (device.kind === 'till' && req.seatId) {
+          await tillSeats
+            .bindDevice(pool, { office, seatId: req.seatId, deviceId, deviceName: device.name })
+            .catch((e) => console.warn('[till_seats] bind failed:', e.message));
+        }
+
         if (!existing) {
           await logEvent(
             office,
@@ -185,6 +196,40 @@ function deviceRoutes({ pool, broadcast, secret }) {
       broadcast({ type: 'devices' });
       res.json({ registered: written.length });
     } catch (e) {
+      next(e);
+    }
+  });
+
+  /**
+   * A till signing itself out gives its licence seat back.
+   *
+   * Called by the till's own Sign out (1.7.3.0), so the seat is free for the
+   * next machine at once rather than when a manager remembers to release it.
+   */
+  router.post('/till/seat/release', requireTerminal(secret), async (req, res, next) => {
+    try {
+      if (req.seatId) {
+        await tillSeats.releaseSeat(pool, {
+          office: req.office, seatId: req.seatId, by: null, reason: 'signed out on the till',
+        });
+        broadcast({ type: 'devices' });
+      }
+      res.json({ ok: true });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /** This till's own licence: its seat, and how many the venue has. For About. */
+  router.get('/till/seat', requireTerminal(secret), async (req, res, next) => {
+    try {
+      const [limit, seats] = await Promise.all([
+        tillSeats.limitFor(pool, req.office),
+        tillSeats.activeSeats(pool, req.office),
+      ]);
+      res.json({ seat_id: req.seatId || null, limit, in_use: seats.length });
+    } catch (e) {
+      if (e.code === 'ER_NO_SUCH_TABLE') return res.json({ seat_id: null, limit: null, in_use: 0 });
       next(e);
     }
   });
@@ -276,6 +321,66 @@ function deviceRoutes({ pool, broadcast, secret }) {
           stale: Number(d.seconds_ago) > 180,
         }))
       );
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // ---- Till licences ---------------------------------------------------------
+
+  /**
+   * The venue's till licences: how many, and which tills hold them.
+   *
+   * `limit` null is no limit. Seats are tills signed in now, with the name the
+   * machine gives itself and when it last called in -- which is how a manager
+   * tells the bar till from the one that went in a skip last month.
+   */
+  router.get('/api/devices/seats', auth, async (req, res, next) => {
+    try {
+      const office = await tenantEmail(req);
+      const [limit, seats] = await Promise.all([
+        tillSeats.limitFor(pool, office),
+        tillSeats.activeSeats(pool, office),
+      ]);
+      res.json({ limit, in_use: seats.length, seats });
+    } catch (e) {
+      if (e.code === 'ER_NO_SUCH_TABLE') return res.json({ limit: null, in_use: 0, seats: [] });
+      next(e);
+    }
+  });
+
+  /**
+   * Sign a till out: its licence seat is given back, and its next call to the
+   * server is refused until somebody signs it in again.
+   */
+  router.post('/api/devices/seats/:id/release', auth, async (req, res, next) => {
+    try {
+      const office = await tenantEmail(req);
+      const seatId = clamp(req.params.id, 36);
+      const [[seat]] = await pool.query(
+        `SELECT id, device_id, device_name FROM bo_till_seats
+          WHERE id = ? AND office = ? AND released_at IS NULL`,
+        [seatId, office]
+      );
+      if (!seat) return res.status(404).json({ error: 'That till is not signed in.' });
+
+      await tillSeats.releaseSeat(pool, {
+        office, seatId, by: req.user.email, reason: 'back office',
+      });
+      if (seat.device_id) {
+        await pool.execute(
+          'UPDATE bo_devices SET online = 0 WHERE office = ? AND device_id = ?',
+          [office, seat.device_id]
+        );
+      }
+      await logEvent(
+        office,
+        { device_id: seat.device_id || seat.id, kind: 'till', name: seat.device_name },
+        'signout',
+        { actor: req.user.email, detail: 'Signed out from the back office', ip: callerIp(req) }
+      );
+      broadcast({ type: 'devices' });
+      res.json({ ok: true });
     } catch (e) {
       next(e);
     }

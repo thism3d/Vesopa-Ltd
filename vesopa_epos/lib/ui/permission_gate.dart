@@ -58,6 +58,19 @@ Future<bool> allowed(
   final staff = ref.read(staffSessionProvider).staff;
   if (staff == null) return true;
 
+  // A refund hands real money back -- out of the drawer or onto a card -- and
+  // nothing a trainee does may do that, whoever approves it.
+  if (staff.training && permission == TillPermission.refund) {
+    if (context.mounted) {
+      PosMessenger.error(
+        context,
+        'Not in training mode. A refund gives real money back, so practice '
+        'cannot do one.',
+      );
+    }
+    return false;
+  }
+
   if (TillPermissions.parse(staff.permissions).can(permission)) return true;
 
   final approved = await _askAManager(context, ref, permission, staff.name);

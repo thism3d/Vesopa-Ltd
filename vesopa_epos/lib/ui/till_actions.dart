@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/kitchen_printing.dart';
 import '../data/receipt_repository.dart';
+import '../data/training_mode.dart';
 import '../main.dart';
 import '../printing/printer_transport.dart';
 import '../printing/receipt_builder.dart';
@@ -36,6 +37,15 @@ abstract final class TillActions {
     /// on it is still a no-sale.
     String? reason,
   }) async {
+    // Training opens no drawer: the drawer holds the venue's real takings, and
+    // practice is not a reason to open it.
+    if (ref.read(trainingModeProvider)) {
+      if (context.mounted) {
+        _toast(context, 'Training: the drawer was not opened.');
+      }
+      return;
+    }
+
     final settings = await ref.read(printerSettingsProvider.future);
     final printer = settings.receiptPrinter;
 
@@ -93,6 +103,8 @@ abstract final class TillActions {
   /// Never throws. A sale is not undone by a drawer, and by this point it
   /// cannot be undone at all.
   static Future<void> openCashDrawerQuietly(WidgetRef ref) async {
+    // A practice cash sale moves no real cash, so the drawer stays shut.
+    if (ref.read(trainingModeProvider)) return;
     try {
       final settings = await ref.read(printerSettingsProvider.future);
       final printer = settings.receiptPrinter;
@@ -129,6 +141,15 @@ abstract final class TillActions {
     required KitchenFire reason,
   }) async {
     final status = ref.read(printStatusProvider.notifier);
+
+    // A practice bill is not cooked. Said on the chip rather than silently
+    // skipped, so a trainee learns that this is where the kitchen would hear.
+    final order = await ref.read(orderRepositoryProvider).orderOnce(orderId);
+    if (order != null && order.training) {
+      status.note('Training: nothing was sent to the kitchen.');
+      return;
+    }
+
     final printers = await ref.read(printerSettingsProvider.future);
     final settings = ref.read(tillSettingsProvider);
 
@@ -361,6 +382,7 @@ abstract final class TillActions {
         clerkName: ref.read(servedByProvider),
         customerName: order.customerName,
         orderNote: order.notes,
+        training: order.training,
       ),
       lines: [
         for (final l in lines)

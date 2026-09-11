@@ -28,6 +28,7 @@ void main() {
     // No group: every key, which is what the clock has nothing to say about
     // either way. See data/till_permissions.dart.
     permissions: '',
+    training: false,
   );
   const sam = StaffData(
     id: 8,
@@ -36,6 +37,7 @@ void main() {
     pin: '1122',
     swipeCard: '',
     permissions: '',
+    training: false,
   );
 
   DateTime at(int hour, int minute) => DateTime(2026, 9, 5, hour, minute);

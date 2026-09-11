@@ -34,8 +34,12 @@ extension ProductPricing on Product {
 }
 
 class OrderRepository {
-  OrderRepository(this._db, {List<Promotion> Function()? promotions})
-      : promotionsAvailable = promotions ?? _noPromotions;
+  OrderRepository(
+    this._db, {
+    List<Promotion> Function()? promotions,
+    bool Function()? trainingMode,
+  })  : promotionsAvailable = promotions ?? _noPromotions,
+        _training = trainingMode ?? _notTraining;
 
   final AppDatabase _db;
 
@@ -51,7 +55,13 @@ class OrderRepository {
   final List<Promotion> Function() promotionsAvailable;
 
   static List<Promotion> _noPromotions() => const [];
+  static bool _notTraining() => false;
   static const _uuid = Uuid();
+
+  /// Whether a training account is signed on right now. Read when a bill is
+  /// opened and when something is logged, never captured -- a trainee signs on
+  /// and off all day. See `data/training_mode.dart`.
+  final bool Function() _training;
 
   Future<String> openOrder({
     int? tableNumber,
@@ -65,9 +75,54 @@ class OrderRepository {
             tableNumber: Value(tableNumber),
             roomId: Value(roomId),
             clerkPin: Value(clerkPin),
+            // A bill opened by a trainee is a practice bill for its whole life.
+            training: Value(_training()),
           ),
         );
     return id;
+  }
+
+  /// Make an empty bill match who is signed on.
+  ///
+  /// Only an empty one: a bill with something on it keeps what it was opened
+  /// as, because everything about it -- whether it is ever sent to the server --
+  /// follows from that. See the shell, which clears a practice bill rather than
+  /// letting a live clerk take money on it.
+  Future<void> matchTraining(String orderId, bool training) async {
+    final order = await orderOnce(orderId);
+    if (order == null || order.training == training) return;
+    final lines = await linesOnce(orderId);
+    if (lines.isNotEmpty) return;
+    await (_db.update(_db.orders)..where((o) => o.id.equals(orderId)))
+        .write(OrdersCompanion(training: Value(training)));
+  }
+
+  /// Throw a practice bill away, lines and all.
+  ///
+  /// Only ever a practice bill -- a real one is voided, with a reason, through
+  /// [voidOrder], and this refuses anything else. Nothing is logged: practice
+  /// is not an event anybody reads a report for.
+  Future<void> discardPracticeBill(String orderId) async {
+    await _db.transaction(() async {
+      final order = await orderOnce(orderId);
+      if (order == null || !order.training) return;
+      await (_db.delete(_db.payments)..where((p) => p.orderId.equals(orderId))).go();
+      await (_db.delete(_db.orderLines)..where((l) => l.orderId.equals(orderId))).go();
+      await (_db.delete(_db.orders)..where((o) => o.id.equals(orderId))).go();
+    });
+  }
+
+  /// Practice bills left behind -- a till switched off mid-training -- are
+  /// cleared after a day. They were never going anywhere.
+  Future<int> sweepPracticeBills({Duration olderThan = const Duration(days: 1)}) async {
+    final cutoff = DateTime.now().subtract(olderThan);
+    final stale = await (_db.select(_db.orders)
+          ..where((o) => o.training.equals(true) & o.createdAt.isSmallerThanValue(cutoff)))
+        .get();
+    for (final order in stale) {
+      await discardPracticeBill(order.id);
+    }
+    return stale.length;
   }
 
   /// Ring an item. Tapping the same product again bumps the quantity of the
@@ -343,6 +398,9 @@ class OrderRepository {
     String? note,
     String? staffName,
   }) async {
+    // Practice is not counted: a trainee's voids, no-sales and refunds do not
+    // belong on the Z a manager reconciles the drawer against.
+    if (_training()) return;
     await _db.into(_db.tillEvents).insert(
           TillEventsCompanion.insert(
             id: _uuid.v4(),
@@ -374,6 +432,20 @@ class OrderRepository {
       final order =
           await (_db.select(_db.orders)..where((o) => o.id.equals(orderId)))
               .getSingle();
+      // A practice bill's lines just go: nothing is logged or sent, because a
+      // void on a bill that was never a sale is not a void anybody audits.
+      if (order.training) {
+        final practice = await _withModifiers(orderId, lineIds);
+        var removed = 0;
+        for (final line in await (_db.select(_db.orderLines)
+              ..where((l) => l.orderId.equals(orderId) & l.id.isIn(practice)))
+            .get()) {
+          removed += (line.unitPriceMinor * line.quantity).round() - line.lineDiscountMinor;
+        }
+        await (_db.delete(_db.orderLines)..where((l) => l.id.isIn(practice))).go();
+        await recalculate(orderId);
+        return removed;
+      }
       // A modifier cannot survive the item it modifies: "Dash Coke" left on a
       // bill whose gin was voided is a line nobody can account for, and one the
       // kitchen would still be told about. Valued with the rest, so the void
@@ -452,8 +524,8 @@ class OrderRepository {
 
       // Queue the audit record first, with the amount that was on the bill —
       // after we zero it, that figure is gone. Only a bill that had something
-      // on it is worth logging.
-      if (order.totalMinor > 0) {
+      // on it is worth logging -- and never a practice bill.
+      if (order.totalMinor > 0 && !order.training) {
         await _db.into(_db.outboxEntries).insert(
               OutboxEntriesCompanion.insert(
                 id: _uuid.v4(),
@@ -867,6 +939,11 @@ class OrderRepository {
           staffName: Value(staffName),
         ),
       );
+
+      // A practice sale stops here: closed on this till, so the trainee sees it
+      // go through, and never queued for the back office. The X and Z leave it
+      // out (see SessionRepository), so it is in no figure anywhere.
+      if (order.training) return;
 
       await _enqueue(orderId);
     });
