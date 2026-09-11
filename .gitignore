@@ -219,3 +219,8 @@ __pycache__/
 # Loose screenshots dropped at the repository root by a chat session. The
 # copies that matter are kept under Documents\Vesopa-Claude-Images.
 /Screenshot*.png
+
+# The owner's brief for Vesopa Express. It carries the Dojo sandbox secret key
+# in plain text, so it stays on this machine; the brief itself is restated in
+# vesopa_expresss/tasks.md without it. The key lives in the server's .env.
+vesopa_expresss/newapp.md

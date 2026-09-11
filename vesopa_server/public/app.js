@@ -323,6 +323,7 @@ const ROUTES = {
   dinein_menu: '/dine-in/menu',
   dinein_qr: '/dine-in/table-codes',
   dinein_orders: '/dine-in/orders',
+  express: '/vesopa-express',
   users: '/users',
   user_roles: '/user-roles',
   staff: '/staff',
@@ -1302,6 +1303,7 @@ const VIEW_LOADERS = {
     dinein_menu: loadDineInMenu,
     dinein_qr: loadDineInQr,
     dinein_orders: loadDineInOrders,
+    express: loadExpress,
     program_departments: () => loadCrud('departments'),
     program_groups: () => loadCrud('groups'),
     printer_categories: () => loadCrud('print-categories'),
@@ -9247,6 +9249,476 @@ document.addEventListener('click', async (e) => {
     gymAttendance = null;
     gymExpiries = null;
     await loadGym();
+  }
+});
+
+// ---- Vesopa Express -------------------------------------------------------
+//
+// The self-service kiosk. Customers order on a touchscreen, pay on the Dojo
+// card machine beside it, and collect when their number comes up. The server
+// half is src/express_kiosk.js; the kiosk is vesopa_expresss/.
+//
+// IN THE RAIL WHETHER OR NOT THE VENUE USES IT
+//
+// Off by default, like the gym -- and like the gym, the only switch that turns
+// it on is on this page, so the page is always reachable. The gym first shipped
+// with its page hidden behind its own switch and nobody could turn it on; see
+// backoffice-routing.test.js. A venue with Express off is told so in one
+// sentence and offered the switch.
+
+let expState = null;
+let expTab = 'orders';
+let expTimer = null;
+let expKiosks = null;
+let expTerminals = null;
+let expMenu = null;
+
+/** The order states, in the words a manager uses, and the pill each wears. */
+const EXP_STATUS = {
+  awaiting_payment: ['Paying', 'amber'],
+  paid: ['Preparing', 'on'],
+  ready: ['Ready', 'green'],
+  collected: ['Collected', ''],
+  counter: ['Pay at counter', 'amber'],
+  demo: ['Demo', ''],
+  cancelled: ['Cancelled', ''],
+  failed: ['Not paid', 'danger'],
+};
+
+function expMoney(minor) {
+  return '£' + (Number(minor || 0) / 100).toFixed(2);
+}
+
+const expOn = () => !!Number(expState && expState.enabled);
+
+/**
+ * The Vesopa Express page.
+ *
+ * Settings first, because everything else depends on whether the venue has it
+ * switched on, and a venue that has not should see one sentence rather than
+ * three empty tables.
+ */
+async function loadExpress() {
+  try {
+    expState = await api('/express/settings');
+  } catch (e) {
+    $('exp-stats').innerHTML = '';
+    $('exp-orders').innerHTML =
+      '<p class="muted small">Vesopa Express is not available on this server yet.</p>';
+    return;
+  }
+  expFill();
+  $('exp-save').hidden = expTab !== 'settings';
+
+  if (!expOn()) {
+    statCards($('exp-stats'), [
+      { label: 'Vesopa Express', value: 'Off', tone: 'red',
+        hint: 'No kiosk can be set up or take an order' },
+    ]);
+    $('exp-orders').innerHTML = '<p class="muted small">Vesopa Express is switched off '
+      + 'for this venue. Turn it on under <b>Settings</b>, then open Vesopa Express on '
+      + 'the kiosk and press <b>Continue with Vesopa</b> to set it up.</p>';
+    expStopTimer();
+  }
+
+  if (expTab === 'kiosks') await expLoadKiosks();
+  else if (expTab === 'settings') await expLoadMenuPicks();
+  else if (expOn()) {
+    await expLoadOrders();
+    expStartTimer();
+  }
+}
+
+/** Put the settings into the form, and say what each secret-ish thing is. */
+function expFill() {
+  for (const el of document.querySelectorAll('[data-exp]')) {
+    const value = expState[el.dataset.exp];
+    if (el.type === 'checkbox') el.checked = !!Number(value);
+    else el.value = value ?? '';
+  }
+
+  // Never filled from the server: the server never sends either of them back.
+  $('exp-passcode').value = '';
+  $('exp-dojo-key').value = '';
+
+  $('exp-passcode-state').innerHTML = expState.passcode_set
+    ? '<span class="pill green">A passcode is set</span> Type a new one to change it.'
+    : '<span class="pill danger">No passcode yet</span> The first manager to set up a '
+      + 'kiosk chooses one there, or set it here.';
+  $('exp-pass-clear').hidden = !expState.passcode_set;
+
+  const source = expState.dojo_key_source;
+  $('exp-key-state').innerHTML = source === 'venue'
+    ? '<span class="pill green">Your Dojo key</span> ending <code>'
+      + esc(expState.dojo_key_hint || '') + '</code>'
+      + (expState.dojo_sandbox ? ' <span class="pill amber">sandbox</span>' : '')
+    : source === 'platform'
+      ? '<span class="pill amber">Vesopa test key</span> '
+        + (expState.dojo_sandbox
+          ? 'Card payments go to the Dojo sandbox: no real money moves.'
+          : 'Card payments use the Vesopa platform key.')
+      : '<span class="pill danger">No Dojo key</span> Card payments are unavailable until one is added.';
+  $('exp-key-clear').hidden = source !== 'venue';
+  $('exp-dojo-key').disabled = !expState.can_store_key;
+
+  const url = expState.board_url;
+  $('exp-board').innerHTML = url
+    ? '<code class="exp-url">' + esc(url) + '</code>'
+      + '<div class="exp-actions">'
+      + '<button class="btn small" id="exp-board-copy">Copy address</button>'
+      + '<a class="btn small" href="' + esc(url) + '" target="_blank" rel="noopener">Open the board</a>'
+      + '<button class="btn small" id="exp-board-rotate">Give it a new address</button>'
+      + '</div>'
+    : '<p class="muted small">Tick the board and save, and its address appears here.</p>';
+
+  expPreview();
+}
+
+/** What the kiosk will do with these settings, in sentences. */
+function expPreview() {
+  const s = expState || {};
+  const on = (k) => !!Number(s[k]);
+  const out = [];
+  if (!on('enabled')) {
+    out.push('<p><b>Off.</b> A kiosk cannot be set up here, and one already set up '
+      + 'says it is switched off instead of showing the menu.</p>');
+  } else {
+    const types = [on('eat_in') && 'eat in', on('take_away') && 'take away']
+      .filter(Boolean).join(' or ');
+    out.push('<p>Customers choose <b>' + esc(types || 'nothing') + '</b>'
+      + (on('ask_name') ? ', give a first name,' : '')
+      + ' and build a basket from your <b>Dine-in menu</b>.</p>');
+    if (on('demo_mode')) {
+      out.push('<p><b>Demo mode.</b> No money is taken, nothing reaches the kitchen, '
+        + 'and every screen says DEMO.</p>');
+    } else {
+      const pay = [on('pay_card') && 'by card on the Dojo machine',
+        on('pay_counter') && 'at the counter'].filter(Boolean).join(' or ');
+      out.push('<p>They pay <b>' + esc(pay || 'nowhere') + '</b>.</p>');
+    }
+    const to = [on('notify_kitchen') && 'kitchen screens', on('notify_till') && 'tills',
+      on('board_enabled') && 'the collection board'].filter(Boolean).join(', ');
+    out.push('<p>A paid order is announced to <b>' + esc(to || 'nobody') + '</b> with a '
+      + 'number from ' + esc(s.number_start) + ' to ' + esc(s.number_end) + '.</p>');
+    out.push('<p>A basket nobody touches for ' + esc(s.idle_seconds)
+      + ' seconds is cleared for the next customer.</p>');
+  }
+  $('exp-preview').innerHTML = out.join('');
+}
+
+function expStartTimer() {
+  expStopTimer();
+  expTimer = setInterval(() => {
+    if (currentView !== 'express' || expTab !== 'orders' || document.hidden) return;
+    expLoadOrders().catch(() => {});
+  }, 15000);
+}
+
+function expStopTimer() {
+  if (expTimer) clearInterval(expTimer);
+  expTimer = null;
+}
+
+async function expLoadOrders() {
+  const date = ($('exp-date') && $('exp-date').value) || '';
+  let data;
+  try {
+    data = await api('/express/orders' + (date ? '?date=' + encodeURIComponent(date) : ''));
+  } catch (e) {
+    $('exp-orders').innerHTML = '<p class="muted small">Could not read the kiosk orders just now.</p>';
+    return;
+  }
+  if (!$('exp-date').value) $('exp-date').value = data.date;
+
+  const orders = data.orders || [];
+  const paid = orders.filter((o) => ['paid', 'ready', 'collected'].includes(o.status));
+  const preparing = orders.filter((o) => o.status === 'paid');
+  statCards($('exp-stats'), [
+    { label: 'Vesopa Express', value: 'On', tone: 'green' },
+    { label: 'Paid orders', value: String(paid.length), tone: 'primary',
+      hint: date ? 'on ' + date : 'today' },
+    { label: 'Taken at the kiosk',
+      value: expMoney(paid.reduce((n, o) => n + Number(o.total_minor || 0), 0)) },
+    { label: 'Being prepared', value: String(preparing.length) },
+  ]);
+
+  if (!orders.length) {
+    $('exp-orders').innerHTML = '<p class="muted small">No kiosk orders '
+      + (date ? 'that day' : 'yet today') + '.</p>';
+    return;
+  }
+
+  $('exp-orders').innerHTML = '<table class="table"><thead><tr>'
+    + '<th>No.</th><th>Time</th><th>Kiosk</th><th>Order</th><th class="right">Items</th>'
+    + '<th class="right">Total</th><th>Status</th><th></th></tr></thead><tbody>'
+    + orders.map((o) => {
+      const [label, tone] = EXP_STATUS[o.status] || [o.status, ''];
+      return '<tr>'
+        + '<td><b class="exp-no">' + esc(o.number) + '</b></td>'
+        + '<td>' + new Date(o.created_at).toLocaleTimeString('en-GB',
+          { hour: '2-digit', minute: '2-digit' }) + '</td>'
+        + '<td class="small">' + esc(o.kiosk_name || '—') + '</td>'
+        + '<td class="small">' + (o.order_type === 'eat_in' ? 'Eat in' : 'Take away')
+        + (o.customer_name ? ' · ' + esc(o.customer_name) : '') + '</td>'
+        + '<td class="right">' + esc(o.items) + '</td>'
+        + '<td class="right">' + expMoney(o.total_minor) + '</td>'
+        + '<td><span class="pill ' + tone + '">' + esc(label) + '</span>'
+        + (o.status_note ? ' <span class="muted small">' + esc(o.status_note) + '</span>' : '')
+        + '</td>'
+        + '<td class="right">'
+        + (o.status === 'paid'
+          ? '<button class="btn small" data-exp-move="ready" data-exp-order="' + esc(o.id) + '">Ready</button> '
+          : '')
+        + (['paid', 'ready'].includes(o.status)
+          ? '<button class="btn small" data-exp-move="collected" data-exp-order="' + esc(o.id) + '">Collected</button>'
+          : '')
+        + '</td></tr>';
+    }).join('')
+    + '</tbody></table>';
+}
+
+async function expLoadKiosks() {
+  try {
+    expKiosks = await api('/express/kiosks');
+  } catch (e) {
+    $('exp-kiosks').innerHTML = '<p class="muted small">Could not read the kiosks just now.</p>';
+    return;
+  }
+  // Asked once per visit: it goes to Dojo, and the list of card machines a
+  // venue owns does not change while somebody is looking at it.
+  if (!expTerminals) {
+    try {
+      expTerminals = await api('/express/terminals');
+    } catch (e) {
+      expTerminals = { terminals: [], error: e.message };
+    }
+  }
+
+  const live = expKiosks.filter((k) => !k.revoked_at);
+  statCards($('exp-stats'), [
+    { label: 'Vesopa Express', value: expOn() ? 'On' : 'Off', tone: expOn() ? 'green' : 'red' },
+    { label: 'Kiosks', value: String(live.length), tone: 'primary' },
+    { label: 'With a card machine', value: String(live.filter((k) => k.dojo_terminal_id).length) },
+  ]);
+
+  if (!expKiosks.length) {
+    $('exp-kiosks').innerHTML = '<p class="muted small">No kiosks yet. ' + (expOn()
+      ? 'Open Vesopa Express on the kiosk and press <b>Continue with Vesopa</b>.'
+      : 'Switch Vesopa Express on under Settings first.') + '</p>';
+    return;
+  }
+
+  const terms = expTerminals.terminals || [];
+  const options = (current) => '<option value="">No card machine</option>'
+    + terms.map((t) => '<option value="' + esc(t.id) + '"' + (t.id === current ? ' selected' : '') + '>'
+      + esc(t.tid || t.id) + (t.status ? ' (' + esc(String(t.status).toLowerCase()) + ')' : '')
+      + '</option>').join('')
+    // A machine Dojo did not list just now (switched off, busy) is still the
+    // one this kiosk is paired with, and must not silently become "none".
+    + (current && !terms.some((t) => t.id === current)
+      ? '<option value="' + esc(current) + '" selected>' + esc(current) + '</option>' : '');
+
+  $('exp-kiosks').innerHTML = '<table class="table"><thead><tr>'
+    + '<th>Kiosk</th><th>Card machine</th><th>Last seen</th><th>Version</th>'
+    + '<th>Set up by</th><th></th></tr></thead><tbody>'
+    + expKiosks.map((k) => (k.revoked_at
+      ? '<tr class="exp-gone"><td>' + esc(k.name) + '</td><td colspan="4" class="small muted">Removed '
+        + new Date(k.revoked_at).toLocaleString('en-GB') + '</td><td></td></tr>'
+      : '<tr>'
+        + '<td><input type="text" maxlength="80" value="' + esc(k.name) + '" data-exp-kiosk-name="' + esc(k.id) + '"></td>'
+        + '<td><select data-exp-kiosk-tid="' + esc(k.id) + '">' + options(k.dojo_terminal_id) + '</select></td>'
+        + '<td class="small">' + (k.last_seen_at
+          ? new Date(k.last_seen_at).toLocaleString('en-GB') : '<span class="muted">never</span>') + '</td>'
+        + '<td class="small muted">' + esc(k.app_version || '—') + '</td>'
+        + '<td class="small muted">' + esc(k.commissioned_by || '—') + '</td>'
+        + '<td class="right"><button class="btn small" data-exp-kiosk-save="' + esc(k.id) + '">Save</button> '
+        + '<button class="btn small" data-exp-kiosk-remove="' + esc(k.id) + '">Remove</button></td>'
+        + '</tr>')).join('')
+    + '</tbody></table>'
+    + (expTerminals.error ? '<p class="muted small">' + esc(expTerminals.error) + '</p>' : '')
+    + (expTerminals.sandbox
+      ? '<p class="muted small">These are Dojo <b>sandbox</b> card machines: no real money moves.</p>'
+      : '');
+}
+
+/** The dishes a manager can put on "May we suggest", from the Dine-in menu. */
+async function expLoadMenuPicks() {
+  if (!expMenu) {
+    try {
+      expMenu = await api('/dinein/menu');
+    } catch (e) {
+      expMenu = null;
+      $('exp-upsell').innerHTML = '<p class="muted small">Could not read your menu just now.</p>';
+      $('exp-upsell').dataset.loaded = '';
+      return;
+    }
+  }
+  const picks = new Set((expState && expState.upsell_items) || []);
+  const items = expMenu.flatMap((s) => (s.items || []).map((i) => ({ ...i, section: s.name })));
+  $('exp-upsell').dataset.loaded = '1';
+  $('exp-upsell').innerHTML = items.length
+    ? '<div class="exp-picks">' + items.map((i) => '<label class="check">'
+      + '<input type="checkbox" data-exp-pick="' + esc(i.id) + '"' + (picks.has(i.id) ? ' checked' : '') + '> '
+      + esc(i.name || i.catalogue_name || 'Dish') + ' <span class="muted small">' + esc(i.section) + '</span>'
+      + '</label>').join('') + '</div>'
+    : '<p class="muted small">Your Dine-in menu has no dishes yet. The kiosk sells from that '
+      + 'menu, so build it under <b>Dine-in &amp; QR</b> &rsaquo; <b>Menu</b> first.</p>';
+}
+
+async function expSave(button) {
+  const body = {};
+  for (const el of document.querySelectorAll('[data-exp]')) {
+    body[el.dataset.exp] = el.type === 'checkbox' ? el.checked : el.value;
+  }
+  // Only when the list was actually drawn: saving an unread list would clear
+  // every pick the venue had made.
+  if ($('exp-upsell').dataset.loaded === '1') {
+    body.upsell_items = [...document.querySelectorAll('[data-exp-pick]:checked')]
+      .map((c) => Number(c.dataset.expPick));
+  }
+  const passcode = $('exp-passcode').value.trim();
+  if (passcode) body.passcode = passcode;
+  const key = $('exp-dojo-key').value.trim();
+  if (key) body.dojo_key = key;
+
+  try {
+    expState = await api('/express/settings', { method: 'PUT', body: JSON.stringify(body) });
+  } catch (err) {
+    toast(String(err && err.message ? err.message : err), 'error');
+    return;
+  }
+  // A new key may reach a different set of card machines.
+  if (key) expTerminals = null;
+  button.textContent = 'Saved ✓';
+  setTimeout(() => { button.textContent = 'Save'; }, 1500);
+  expFill();
+}
+
+async function expPut(body, done) {
+  try {
+    expState = await api('/express/settings', { method: 'PUT', body: JSON.stringify(body) });
+    expFill();
+    if (done) toast(done, 'ok');
+  } catch (err) {
+    toast(String(err && err.message ? err.message : err), 'error');
+  }
+}
+
+document.addEventListener('click', async (e) => {
+  const t = e.target;
+
+  const tab = t.closest && t.closest('[data-exptab]');
+  if (tab) {
+    expTab = tab.dataset.exptab;
+    document.querySelectorAll('[data-exptab]').forEach((b) => b.classList.toggle('on', b === tab));
+    document.querySelectorAll('[data-exppanel]').forEach((panel) => {
+      panel.hidden = panel.dataset.exppanel !== expTab;
+    });
+    $('exp-save').hidden = expTab !== 'settings';
+    if (expTab === 'orders' && expOn()) {
+      await expLoadOrders();
+      expStartTimer();
+    } else {
+      expStopTimer();
+    }
+    if (expTab === 'kiosks') await expLoadKiosks();
+    if (expTab === 'settings') await expLoadMenuPicks();
+    return;
+  }
+
+  if (t.id === 'exp-save') { await expSave(t); return; }
+
+  if (t.id === 'exp-board-copy') {
+    try {
+      await navigator.clipboard.writeText(expState.board_url);
+      toast('Board address copied', 'ok');
+    } catch (err) {
+      toast('Copying is not allowed here: select the address and copy it instead.', 'warn');
+    }
+    return;
+  }
+
+  if (t.id === 'exp-board-rotate') {
+    const yes = await confirmDialog(
+      'The current address stops working straight away, so any TV showing the board will need the new one.',
+      { title: 'Give the board a new address?', confirmLabel: 'New address' }
+    );
+    if (yes) await expPut({ rotate_board: true }, 'The board has a new address');
+    return;
+  }
+
+  if (t.id === 'exp-key-clear') {
+    const yes = await confirmDialog(
+      'Card payments will go through the Vesopa key instead of yours.',
+      { title: 'Stop using your Dojo key?', confirmLabel: 'Stop using it', danger: true }
+    );
+    if (yes) await expPut({ clear_dojo_key: true }, 'Your Dojo key has been removed');
+    return;
+  }
+
+  if (t.id === 'exp-pass-clear') {
+    const yes = await confirmDialog(
+      'Until a new one is set, nobody can leave kiosk mode from a kiosk. The next kiosk set up chooses a new one.',
+      { title: 'Remove the kiosk passcode?', confirmLabel: 'Remove it', danger: true }
+    );
+    if (yes) await expPut({ clear_passcode: true }, 'The passcode has been removed');
+    return;
+  }
+
+  const move = t.dataset && t.dataset.expMove;
+  if (move) {
+    try {
+      await api('/express/orders/' + t.dataset.expOrder + '/' + move, { method: 'POST' });
+    } catch (err) {
+      toast(String(err && err.message ? err.message : err), 'error');
+    }
+    await expLoadOrders();
+    return;
+  }
+
+  const saveId = t.dataset && t.dataset.expKioskSave;
+  if (saveId) {
+    const name = document.querySelector('[data-exp-kiosk-name="' + saveId + '"]').value;
+    const tid = document.querySelector('[data-exp-kiosk-tid="' + saveId + '"]').value;
+    try {
+      await api('/express/kiosks/' + saveId, {
+        method: 'PUT', body: JSON.stringify({ name, dojo_terminal_id: tid }),
+      });
+      toast('Kiosk saved', 'ok');
+    } catch (err) {
+      toast(String(err && err.message ? err.message : err), 'error');
+    }
+    await expLoadKiosks();
+    return;
+  }
+
+  const removeId = t.dataset && t.dataset.expKioskRemove;
+  if (removeId) {
+    const yes = await confirmDialog(
+      'It stops taking orders at once, and has to be set up again with Continue with Vesopa to come back.',
+      { title: 'Remove this kiosk?', confirmLabel: 'Remove kiosk', danger: true }
+    );
+    if (!yes) return;
+    try {
+      await api('/express/kiosks/' + removeId, { method: 'DELETE' });
+    } catch (err) {
+      toast(String(err && err.message ? err.message : err), 'error');
+    }
+    await expLoadKiosks();
+  }
+});
+
+document.addEventListener('change', (e) => {
+  const el = e.target;
+  if (el.id === 'exp-date') { expLoadOrders(); return; }
+  // The sentences on the right follow the boxes as they are ticked, before
+  // anything is saved -- that is what they are for.
+  if (el.dataset && el.dataset.exp && expState) {
+    expState = {
+      ...expState,
+      [el.dataset.exp]: el.type === 'checkbox' ? (el.checked ? 1 : 0) : el.value,
+    };
+    expPreview();
   }
 });
 

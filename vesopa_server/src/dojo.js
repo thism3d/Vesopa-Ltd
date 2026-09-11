@@ -176,7 +176,7 @@ async function reconcile(pool, e) {
  * every auth middleware: the caller is Dojo, which has no session and proves
  * itself with a signature instead.
  */
-function dojoWebhookRoutes({ pool, broadcast }) {
+function dojoWebhookRoutes({ pool, broadcast, onEvent }) {
   const router = express.Router();
 
   router.post('/api/webhooks/dojo/:environment', async (req, res) => {
@@ -260,6 +260,16 @@ function dojoWebhookRoutes({ pool, broadcast }) {
         notificationType: e.notificationType,
         reconciliation: outcome,
       });
+
+      // Anybody else who cares about this payment -- Vesopa Express, whose
+      // kiosk may have been switched off between "card presented" and
+      // "approved". Not awaited: the answer to Dojo has to be fast, and a hook
+      // that fails must not turn an accepted event into a retry.
+      if (typeof onEvent === 'function') {
+        Promise.resolve()
+          .then(() => onEvent({ ...e, environment }))
+          .catch((err) => console.error('[dojo] event hook failed:', err.message));
+      }
 
       return res.status(200).json({ status: 'accepted', reconciliation: outcome });
     } catch (err) {

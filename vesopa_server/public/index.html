@@ -321,6 +321,7 @@
           <button class="nav" data-view="dinein_menu">Menu</button>
           <button class="nav" data-view="dinein_qr">Table Codes</button>
           <button class="nav" data-view="dinein_orders">Online Orders</button>
+          <button class="nav" data-view="express">Vesopa Express</button>
 
           <button class="nav-group" data-group="people">People<span class="caret">▼</span></button>
           <button class="nav" data-view="users">Back Office Users</button>
@@ -2924,6 +2925,181 @@
                 <div class="rd-preview-head"><span class="small muted">What the door does</span></div>
                 <div class="card rd-card">
                   <div id="gym-preview"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Vesopa Express: the self-service kiosk. In the rail whether or not
+             the venue uses it, because the switch that turns it on is here --
+             see the note on loadExpress in app.js. -->
+        <section id="view-express" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Vesopa Express</h2>
+              <p class="muted small">
+                A self-service kiosk. Customers order on a touchscreen, pay on the
+                Dojo card machine beside it, and collect when their number comes up.
+              </p>
+            </div>
+            <button class="btn primary" id="exp-save" hidden>Save</button>
+          </div>
+
+          <div class="grid-cards" id="exp-stats"></div>
+
+          <div class="gym-tabs" role="tablist">
+            <button class="gym-tab on" data-exptab="orders" role="tab">Orders</button>
+            <button class="gym-tab" data-exptab="kiosks" role="tab">Kiosks</button>
+            <button class="gym-tab" data-exptab="settings" role="tab">Settings</button>
+          </div>
+
+          <!-- ---- Orders ---------------------------------------------- -->
+          <div class="gym-panel" data-exppanel="orders">
+            <div class="card rd-card">
+              <div class="gym-board-head">
+                <div>
+                  <h3>Kiosk orders</h3>
+                  <p class="muted small">
+                    Every order a kiosk took, paid or not. A paid order is already
+                    a sale in your reports and a ticket on your kitchen screens;
+                    this list refreshes itself.
+                  </p>
+                </div>
+                <label class="gym-date">On
+                  <input type="date" id="exp-date">
+                </label>
+              </div>
+              <div id="exp-orders"></div>
+            </div>
+          </div>
+
+          <!-- ---- Kiosks ---------------------------------------------- -->
+          <div class="gym-panel" data-exppanel="kiosks" hidden>
+            <div class="card rd-card">
+              <h3>Kiosks in this venue</h3>
+              <p class="muted small">
+                A kiosk is set up on the kiosk itself: open Vesopa Express and press
+                <b>Continue with Vesopa</b> as a manager of this venue. It then
+                appears here, where you can name it and pair it with the card
+                machine beside it. A removed kiosk stops taking orders at once.
+              </p>
+              <div id="exp-kiosks"></div>
+            </div>
+          </div>
+
+          <!-- ---- Settings -------------------------------------------- -->
+          <div class="gym-panel" data-exppanel="settings" hidden>
+            <div class="rd-layout">
+              <div class="rd-editor">
+                <div class="card rd-card">
+                  <h3>Vesopa Express</h3>
+                  <p class="muted small">
+                    Off until you switch it on. While it is off a kiosk cannot be set
+                    up here, and a kiosk that was set up shows that it is switched
+                    off instead of taking orders.
+                  </p>
+                  <label class="check"><input type="checkbox" data-exp="enabled"> Run Vesopa Express kiosks at this venue</label>
+                  <label class="check"><input type="checkbox" data-exp="demo_mode"> Demo mode: take no money and send nothing to the kitchen</label>
+                </div>
+
+                <div class="card rd-card">
+                  <h3>Ordering</h3>
+                  <label class="check"><input type="checkbox" data-exp="eat_in"> Eat in</label>
+                  <label class="check"><input type="checkbox" data-exp="take_away"> Take away</label>
+                  <label class="check"><input type="checkbox" data-exp="ask_name"> Ask for a first name to call out</label>
+                  <div class="grid2">
+                    <label>Clear an untouched basket after (seconds)
+                      <input type="number" min="20" max="600" data-exp="idle_seconds">
+                    </label>
+                    <label>Collection numbers start at
+                      <input type="number" min="1" max="9000" data-exp="number_start">
+                    </label>
+                    <label>and go round after
+                      <input type="number" min="2" max="9999" data-exp="number_end">
+                    </label>
+                  </div>
+                  <p class="muted small">
+                    The kiosk sells from your <b>Dine-in menu</b>: the same dishes,
+                    pictures, allergens and add-ons, priced from your products. A
+                    price changed in Products changes on the kiosk too.
+                  </p>
+                </div>
+
+                <div class="card rd-card">
+                  <h3>Paying</h3>
+                  <label class="check"><input type="checkbox" data-exp="pay_card"> By card, on the Dojo card machine beside the kiosk</label>
+                  <label class="check"><input type="checkbox" data-exp="pay_counter"> At the counter: the order goes to the till's Online Orders, unpaid</label>
+                  <p class="small" id="exp-key-state"></p>
+                  <div class="grid2">
+                    <label>Your Dojo secret key
+                      <input type="password" id="exp-dojo-key" autocomplete="off" placeholder="sk_live_...">
+                    </label>
+                  </div>
+                  <button class="btn small" id="exp-key-clear" hidden>Use the Vesopa key instead</button>
+                  <p class="muted small">
+                    The key stays on the server, sealed, and is never sent to a
+                    kiosk. Only its last four characters are shown here again. Each
+                    kiosk is paired with its card machine on the Kiosks tab.
+                  </p>
+                </div>
+
+                <div class="card rd-card">
+                  <h3>Where orders are announced</h3>
+                  <label class="check"><input type="checkbox" data-exp="notify_kitchen"> Kitchen screens: the order arrives like one from a till</label>
+                  <label class="check"><input type="checkbox" data-exp="notify_till"> Tills: a card on screen and a Windows notification</label>
+                  <label class="check"><input type="checkbox" data-exp="board_enabled"> Collection board: numbers on any TV or browser</label>
+                  <div id="exp-board"></div>
+                  <p class="muted small">
+                    Kitchen screens get the dishes routed to a station set to Screen
+                    or Both under Kitchen Screens. A station that only prints is
+                    printed by a till, which a kiosk is not.
+                  </p>
+                </div>
+
+                <div class="card rd-card">
+                  <h3>Leaving kiosk mode</h3>
+                  <p class="small" id="exp-passcode-state"></p>
+                  <div class="grid2">
+                    <label>New passcode (4 to 8 digits)
+                      <input type="password" inputmode="numeric" maxlength="8" id="exp-passcode" autocomplete="off">
+                    </label>
+                  </div>
+                  <button class="btn small" id="exp-pass-clear" hidden>Remove the passcode</button>
+                  <p class="muted small">
+                    A kiosk runs full screen and cannot be closed from the screen.
+                    Staff hold the bottom-left corner for three seconds and type this
+                    passcode to reach its Settings, where it can be exited. It works
+                    with no network too.
+                  </p>
+                </div>
+
+                <div class="card rd-card">
+                  <h3>Welcome screen</h3>
+                  <div class="grid2">
+                    <label>Headline
+                      <input type="text" maxlength="120" data-exp="welcome_title" placeholder="Order here, skip the queue">
+                    </label>
+                    <label>Line underneath
+                      <input type="text" maxlength="200" data-exp="welcome_subtitle">
+                    </label>
+                    <label>Picture (web address)
+                      <input type="url" maxlength="500" data-exp="welcome_image_url">
+                    </label>
+                  </div>
+                  <h3 class="exp-sub">May we suggest</h3>
+                  <p class="muted small">
+                    Offered once, just before paying. Leave them all unticked and the
+                    dishes you have marked Popular are suggested instead.
+                  </p>
+                  <div id="exp-upsell"></div>
+                </div>
+              </div>
+
+              <div class="rd-preview-pane">
+                <div class="rd-preview-head"><span class="small muted">What the kiosk does</span></div>
+                <div class="card rd-card">
+                  <div id="exp-preview"></div>
                 </div>
               </div>
             </div>

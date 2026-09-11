@@ -6881,6 +6881,28 @@ textarea, select[multiple], select[size] { height: auto; min-height: 0; }
 }
 .gym-board-head h3 { margin-bottom: 2px; }
 
+/* Vesopa Express. The tabs, panels and heads are the gym's; these are the few
+   things the page has of its own. */
+.exp-url {
+  display: block;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--surface-2, #eef0f4);
+  font-size: 12.5px;
+  word-break: break-all;
+}
+.exp-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0 4px; }
+.exp-no { font-variant-numeric: tabular-nums; font-size: 15px; }
+.exp-gone td { opacity: .55; }
+.exp-sub { margin-top: 16px; }
+.exp-picks {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 2px 16px;
+}
+#view-express .table input[type="text"],
+#view-express .table select { width: 100%; min-width: 140px; }
+
 .gym-date,
 .gym-range {
   display: flex;
