@@ -66,5 +66,14 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<!-- Lets a notification wake the app long enough to update its inbox, so a
+	     customer who taps one is not looking at yesterday's news. The Push
+	     Notifications *capability* is separate and lives on the App ID: turn it
+	     on in Xcode (Signing & Capabilities), which writes Runner.entitlements.
+	     It needs the Apple developer account, so it is not done here. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
 </dict>
 </plist>
