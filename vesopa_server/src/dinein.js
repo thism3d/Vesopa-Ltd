@@ -590,6 +590,16 @@ function dineinRoutes({ pool, broadcast, secret }) {
         params.push(body[field] ? 1 : 0);
       }
 
+      // Which of a dish's two pictures leads -- the one set in Products, or
+      // the one set on the menu item. Checked against the pair this
+      // understands rather than written straight through: anything else would
+      // match neither branch when the menu is read and quietly blank every
+      // photograph on the QR menu and on every kiosk at once.
+      if (body.image_source !== undefined) {
+        sets.push('image_source = ?');
+        params.push(String(body.image_source) === 'product' ? 'product' : 'menu');
+      }
+
       if (body.eta_minutes !== undefined) {
         // Half an hour either side of sensible. Zero means "we do not say",
         // and four hours is somebody who has typed the wrong box.

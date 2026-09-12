@@ -257,6 +257,60 @@ async function mealsFor(db, officeId, email, itemIds) {
  * `meals: true` adds each dish's meals (see mealsFor). The kiosk asks for them;
  * the QR table menu does not yet, so its payload is exactly what it was.
  */
+/**
+ * Answer a function that gives a menu item its picture.
+ *
+ * Two pictures exist for the same dish and they are not the same picture:
+ * `bo_products.image_url` is the product's, set in Products and used by the
+ * back office and the till; `dinein_items.image_url` is the menu item's, shot
+ * for the menu. `dinein_venue.image_source` says which one a venue leads with.
+ *
+ * IT ALWAYS FALLS BACK TO THE OTHER, which is the part that matters. Until
+ * this, a dish whose picture had only ever been set in Products showed nothing
+ * at all on the QR menu and on a kiosk, and the venue had no way to know why.
+ * Now a dish is only blank when it genuinely has neither.
+ *
+ * Both queries are guarded rather than assumed: `image_source` is absent on a
+ * server whose schema predates this, and `bo_products.image_url` on one that
+ * predates product pictures. Either missing simply means "carry on as before"
+ * -- a menu that will not load is a worse answer than a menu without a photo.
+ */
+async function itemPictures(db, officeId, email, items) {
+  const plus = [...new Set(items.map((i) => i.plu_id).filter(Boolean))];
+
+  let source = 'menu';
+  try {
+    const [[venue]] = await db.query(
+      'SELECT image_source FROM dinein_venue WHERE office_id = ?',
+      [officeId]
+    );
+    if (venue && venue.image_source) source = String(venue.image_source);
+  } catch (e) {
+    if (!e || e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+  }
+
+  const own = new Map();
+  if (plus.length) {
+    try {
+      const [rows] = await db.query(
+        'SELECT pluid, image_url FROM bo_products' +
+          ' WHERE email = ? AND pluid IN (' + plus.map(() => '?').join(',') + ')' +
+          '   AND image_url IS NOT NULL AND image_url <> ""',
+        [email, ...plus]
+      );
+      for (const r of rows) own.set(r.pluid, r.image_url);
+    } catch (e) {
+      if (!e || e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+    }
+  }
+
+  return (item) => {
+    const mine = item.image_url || null;
+    const product = own.get(item.plu_id) || null;
+    return source === 'product' ? product || mine : mine || product;
+  };
+}
+
 async function menuSections(db, officeId, email, { meals = false } = {}) {
   const [sections] = await db.query(
     'SELECT id, name, blurb, image_url FROM dinein_sections' +
@@ -288,6 +342,13 @@ async function menuSections(db, officeId, email, { meals = false } = {}) {
   const addOns = await addOnsFor(db, email, [...new Set(items.map((i) => i.plu_id))]);
   const mealsByItem = meals ? await mealsFor(db, officeId, email, items.map((i) => i.id)) : {};
 
+  // A dish's picture, from whichever of the two places the venue has chosen.
+  //
+  // Read here rather than passed in, so the QR menu and the kiosk cannot
+  // disagree about the same dish: both call this function and neither has to
+  // remember to ask. See schema_menu_dinein_images.sql for why it is a choice.
+  const pictureOfItem = await itemPictures(db, officeId, email, items);
+
   return sections.map((s) => ({
     ...s,
     items: items
@@ -297,7 +358,7 @@ async function menuSections(db, officeId, email, { meals = false } = {}) {
         plu_id: i.plu_id,
         name: i.name,
         description: i.description,
-        image_url: i.image_url,
+        image_url: pictureOfItem(i),
         available: !!i.available,
         popular: !!i.is_popular,
         featured: !!i.is_featured,
@@ -559,6 +620,10 @@ module.exports = {
   addOnsFor,
   mealsFor,
   menuSections,
+  // Exported for its own test: which of a dish's two pictures wins is a rule
+  // with four cases and a venue setting, and it is cheaper to check here than
+  // through a whole menu.
+  itemPictures,
   priceBasket,
   inclusiveTax,
   BasketError,

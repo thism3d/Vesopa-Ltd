@@ -244,6 +244,19 @@ async function loadDineIn() {
       </p>
       <hr>
       <label class="check">
+        <input type="checkbox" id="di-image-product" ${v.image_source === 'product' ? 'checked' : ''}>
+        <span><b>Use the pictures from Products.</b> A dish shows the picture set
+        against its product in Products, the same one the back office and the
+        till show.</span>
+      </label>
+      <p class="muted small" style="margin:2px 0 0 28px">
+        Off, a dish shows the picture set on the menu item here &mdash; useful when
+        you have photographed the plate as it is served rather than the product.
+        Either way, a dish with only one of the two pictures now shows that one
+        instead of nothing, on the QR menu and on Vesopa Express alike.
+      </p>
+      <hr>
+      <label class="check">
         <input type="checkbox" id="di-req-name" ${v.require_name ? 'checked' : ''}>
         <span>A name is required to order</span>
       </label>
@@ -809,6 +822,9 @@ async function diSaveVenue() {
     is_published: $('di-published').checked,
     ordering_open: $('di-ordering').checked,
     auto_accept_orders: $('di-auto-accept').checked,
+    // A pair rather than a boolean: the server stores which source leads, and
+    // a third one later is a new value here rather than a second checkbox.
+    image_source: $('di-image-product').checked ? 'product' : 'menu',
     require_name: $('di-req-name').checked,
     require_phone: $('di-req-phone').checked,
     schedule_enabled: $('di-sched-on').checked,
