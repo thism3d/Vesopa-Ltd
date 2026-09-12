@@ -34,9 +34,14 @@
  * serves the practice venue without knowing it has done anything unusual, and
  * the token is incapable of naming the live one.
  */
+const crypto = require('crypto');
+
 const express = require('express');
 
 const { requireAuth, requireTerminal, issueTerminalToken } = require('./auth');
+
+/** A new value for a column that is unique across every venue, not within one. */
+const fresh = (n) => () => crypto.randomBytes(n).toString('hex');
 
 /** A demo office's address can never receive mail: .invalid cannot resolve (RFC 2606). */
 const DEMO_EMAIL_DOMAIN = 'vesopa.invalid';
@@ -49,6 +54,14 @@ const DEMO_EMAIL_DOMAIN = 'vesopa.invalid';
  * Those cannot simply be copied -- the clone's rows get new ids -- so each is
  * rewritten through the map built as the parent table is copied. Tables absent
  * from a given database are skipped, not fatal: this list spans releases.
+ *
+ * `fresh` names the columns that are unique across EVERY venue rather than
+ * within one, and so have to be generated instead of copied. There are only
+ * four, and they were found by asking the database for its unique keys rather
+ * than by reading the schema files, because the one that mattered most was not
+ * where anybody would have looked: `dinein_venue.slug` is the venue's public
+ * menu address, and a practice venue carrying a copy of it would be a second
+ * venue claiming a real one's URL.
  */
 const SETUP = [
   { table: 'bo_product_departments' },
@@ -65,7 +78,14 @@ const SETUP = [
   { table: 'epos_product_modifiers', links: { group_id: 'epos_modifier_groups' } },
 
   { table: 'floor_rooms' },
-  { table: 'floor_tables', links: { room_id: 'floor_rooms' } },
+  // public_id is in a QR code on a table and is unique across every venue, so
+  // it is generated. The room/table-number key beside it needs nothing: room_id
+  // is remapped above, so the pair is already new.
+  {
+    table: 'floor_tables',
+    links: { room_id: 'floor_rooms' },
+    fresh: { public_id: fresh(16) },
+  },
 
   { table: 'epos_till_settings' },
   { table: 'epos_tender_settings' },
@@ -86,7 +106,16 @@ const SETUP = [
   { table: 'epos_kitchen_screens' },
   { table: 'epos_express_settings' },
 
-  { table: 'dinein_venue' },
+  // The public menu. A practice venue must not answer on the real venue's
+  // address, and should not be reachable from the street at all -- so the slug
+  // becomes an unguessable one and any custom domain is dropped.
+  {
+    table: 'dinein_venue',
+    fresh: {
+      slug: () => `demo-${crypto.randomBytes(6).toString('hex')}`,
+      custom_domain: () => null,
+    },
+  },
   { table: 'dinein_sections' },
   { table: 'dinein_items', links: { section_id: 'dinein_sections' } },
   { table: 'dinein_item_meals', links: { item_id: 'dinein_items' } },
@@ -98,7 +127,9 @@ const SETUP = [
   { table: 'epos_loyalty_tiers' },
   { table: 'epos_card_settings' },
   { table: 'epos_card_sequences' },
-  { table: 'epos_wallet_settings' },
+  // join_slug is the address a customer adds a Wallet card from: unique across
+  // every venue, and not something a practice copy should share.
+  { table: 'epos_wallet_settings', fresh: { join_slug: fresh(8) } },
 
   // Only the training accounts. A practice venue holding every real clerk's PIN
   // would be a copy of the venue's credentials for the sake of a rehearsal.
@@ -284,6 +315,11 @@ async function copyTable(db, entry, ctx) {
 
   for (const row of source) {
     const values = copied.map((column) => {
+      // Generated before anything else is considered: a column that is unique
+      // across every venue is never the tenant key and never a link, and
+      // copying it is precisely the bug this is here to prevent.
+      const make = entry.fresh && entry.fresh[column];
+      if (make) return make(row);
       if (column === shape.tenant) return toValue;
       // A table carrying BOTH keys (some do) must have both rewritten, or the
       // clone would point half at the practice venue and half at the real one.
@@ -508,10 +544,21 @@ function demoRoutes({ pool, secret }) {
         return res.status(400).json({ error: 'Switch to the live venue first.' });
       }
       forgetShapes();
+
+      // Asked BEFORE the venue is made, not inferred from it afterwards.
+      //
+      // This used to read `demo_refreshed_at` off what ensureDemo returned, to
+      // decide whether the venue was new. Two things were wrong with that: the
+      // query behind it does not select that column, so the answer was always
+      // "new"; and a venue whose first clone FAILED has no refreshed_at either,
+      // so the one case that most needs a second attempt was the one case that
+      // silently did nothing. Whether the venue already existed is a question
+      // with an answer, so it is asked rather than deduced.
+      const existed = (await demoFor(pool, office.contact_email)) != null;
+
       const demo = await ensureDemo(pool, office.contact_email);
-      // ensureDemo clones on creation; an existing one is replaced rather than
-      // doubled, or a second refresh would give the venue two of every product.
-      const existed = demo.demo_refreshed_at != null;
+      // ensureDemo clones on creation, so only an existing one is re-copied --
+      // emptied first, or a second refresh gives the venue two of every product.
       if (existed) {
         await clearSetup(pool, demo.contact_email, demo.id);
         await cloneSetup(pool, {

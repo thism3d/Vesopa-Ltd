@@ -263,6 +263,66 @@ async function main() {
     assert.strictEqual(other.length, 1, 'another venue’s data was altered');
   });
 
+  await check('a column unique across every venue is generated, never copied', async () => {
+    // Found on a real database, not here. The first clone against live died on
+    // `Duplicate entry ... for key uq_table_public`: floor_tables.public_id is
+    // the id in the QR code on a table and is unique across EVERY venue, so
+    // copying it collided with the venue being copied. dinein_venue.slug was
+    // the same bug and a worse one -- it is the venue's public menu address,
+    // and a practice copy carrying it would have been a second venue claiming a
+    // real one's URL.
+    demo.forgetShapes();
+    const db = fakeDb({
+      offices: [LIVE, DEMO],
+      schema: {
+        floor_rooms: [
+          { name: 'id', extra: 'auto_increment' },
+          { name: 'office' },
+          { name: 'name' },
+        ],
+        floor_tables: [
+          { name: 'id', extra: 'auto_increment' },
+          { name: 'office' },
+          { name: 'room_id' },
+          { name: 'public_id' },
+        ],
+      },
+      rows: {
+        floor_rooms: [{ id: 1, office: LIVE.contact_email, name: 'Bar' }],
+        floor_tables: [
+          { id: 1, office: LIVE.contact_email, room_id: 1, public_id: 'abc123' },
+          { id: 2, office: LIVE.contact_email, room_id: 1, public_id: 'def456' },
+        ],
+      },
+    });
+
+    await demo.cloneSetup(db, {
+      fromEmail: LIVE.contact_email,
+      toEmail: DEMO.contact_email,
+    });
+
+    const copies = db.data.floor_tables.filter((r) => r.office === DEMO.contact_email);
+    assert.strictEqual(copies.length, 2, 'both tables are copied');
+
+    const originals = new Set(['abc123', 'def456']);
+    for (const row of copies) {
+      assert.ok(row.public_id, 'a copied table still has a public id');
+      assert.ok(
+        !originals.has(row.public_id),
+        `public_id ${row.public_id} was copied from the live venue`
+      );
+    }
+    // And not all the same as each other, which a single shared constant would be.
+    assert.notStrictEqual(copies[0].public_id, copies[1].public_id);
+
+    // The declaration itself is worth asserting: these were found by asking the
+    // database for its unique keys, and a table added later needs the same look.
+    const declared = demo.SETUP.filter((e) => e.fresh).map((e) => e.table);
+    for (const table of ['floor_tables', 'dinein_venue', 'epos_wallet_settings']) {
+      assert.ok(declared.includes(table), `${table} must regenerate its global ids`);
+    }
+  });
+
   await check('cloning into a venue that is not a practice one is refused', async () => {
     demo.forgetShapes();
     const db = world();

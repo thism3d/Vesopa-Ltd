@@ -108,12 +108,44 @@ CALL vesopa_scrub('bo_clarks', 'email_address', "CONCAT('clerk', id, '@vesopa.in
 
 -- Back-office logins. The password hash goes; nobody signs into staging with a
 -- live password, and a leaked staging dump must not be a leaked live one.
+--
+-- THIS LEAVES STAGING WITH NO WAY IN, ON PURPOSE. Put one back for the accounts
+-- that need it, deliberately and one at a time:
+--
+--   node tool/set-staging-password.js manager@vesopa.co.uk
+--
+-- No password is written here, because this file is in a public repository and
+-- a default password in a scrub is a default password on every environment
+-- that ever runs it.
 CALL vesopa_scrub('backoffice_users', 'password', "''");
-CALL vesopa_scrub('backoffice_users', 'email', "CONCAT('user', id, '@vesopa.invalid')");
 
--- Nothing on staging may reach a real person. Every venue's contact address is
--- pointed at a domain that cannot resolve.
-CALL vesopa_scrub('offices', 'contact_email', "CONCAT('venue', id, '@vesopa.invalid')");
+-- THE LOGIN ADDRESSES ARE KEPT, and that is a deliberate line rather than an
+-- oversight. These eight rows are Vesopa's own staff and the venues' managers,
+-- not the customer list -- and the address IS the login, so rewriting it leaves
+-- a staging site nobody can sign into, which is a staging site nobody uses.
+--
+-- What made the address dangerous was the hash beside it, and that is gone. The
+-- copy cannot send to them either: the scrub empties nothing here, but
+-- provision-staging.sh unsets SMTP_HOST, so staging has no way to reach anyone.
+-- The customers -- the many, who never agreed to be in a test database -- are
+-- rewritten above.
+
+-- offices.contact_email IS NOT SCRUBBED, and this is the most important line in
+-- the file.
+--
+-- It reads like a contact address. It is the TENANCY KEY: every product, screen,
+-- price, table and sale in the database is scoped by this exact string, in a
+-- column called `email` or `office`. Rewriting it here does not anonymise a
+-- venue -- it orphans everything the venue owns, leaving a staging site that
+-- looks empty and a copy of live that tests nothing.
+--
+-- That is not a guess. It is what happened: the first scrub rewrote it, and the
+-- practice-venue clone then faithfully copied a venue with no products in it.
+--
+-- Nothing is lost by keeping it. Staging cannot send to anybody --
+-- provision-staging.sh unsets SMTP_HOST -- and the address identifies a venue,
+-- not a customer. The people who must not be in a test database are the
+-- customers, and they are rewritten above.
 
 -- ---------------------------------------------------------------------------
 -- Things that are nothing but somebody's personal detail, or a live credential.
