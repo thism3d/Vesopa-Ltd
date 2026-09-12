@@ -54,44 +54,70 @@ function hashToken(token) {
   return crypto.createHash('sha256').update(String(token)).digest('hex');
 }
 
-/** The venue's limit, or null for none. */
-async function limitFor(db, office) {
-  try {
-    const [[row]] = await db.query(
-      'SELECT till_licences FROM offices WHERE contact_email = ?',
-      [office]
-    );
-    const n = row && row.till_licences;
-    return n == null ? null : Math.max(0, Number(n));
-  } catch (e) {
-    if (e.code === 'ER_BAD_FIELD_ERROR') return null;
-    throw e;
-  }
+/**
+ * The venue's limit for an app, or null for none.
+ *
+ * Kept here as the name every caller already uses, but the answer now comes
+ * from licences.js, which knows about the other three apps and about the
+ * per-app table that replaced `offices.till_licences`. Lazily required: see the
+ * note in claimSeat about the load-time cycle.
+ */
+async function limitFor(db, office, kind = 'till') {
+  return require('./licences').limitFor(db, office, kind);
 }
 
 /** Seats in use now, newest first, with what a manager needs to recognise them. */
-async function activeSeats(db, office) {
-  const [rows] = await db.query(
-    `SELECT id, device_id, device_name, signed_in_by, signed_in_at, last_seen_at,
-            token_hash IS NOT NULL AS legacy
-       FROM bo_till_seats
-      WHERE office = ? AND released_at IS NULL
-      ORDER BY signed_in_at DESC`,
-    [office]
+async function activeSeats(db, office, kind = 'till') {
+  // The `kind` column arrived with schema_licence_keys.sql. A database without
+  // it holds tills and nothing else -- which is exactly what the fallback
+  // returns, rather than failing and letting a venue past its limit.
+  try {
+    const [rows] = await db.query(
+      `SELECT id, device_id, device_name, kind, signed_in_by, signed_in_at, last_seen_at,
+              token_hash IS NOT NULL AS legacy
+         FROM bo_till_seats
+        WHERE office = ? AND released_at IS NULL AND COALESCE(kind, 'till') = ?
+        ORDER BY signed_in_at DESC`,
+      [office, kind]
+    );
+    return rows.map((r) => ({ ...r, legacy: Number(r.legacy) === 1 }));
+  } catch (e) {
+    if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+    if (kind !== 'till') return [];
+    const [rows] = await db.query(
+      `SELECT id, device_id, device_name, signed_in_by, signed_in_at, last_seen_at,
+              token_hash IS NOT NULL AS legacy
+         FROM bo_till_seats
+        WHERE office = ? AND released_at IS NULL
+        ORDER BY signed_in_at DESC`,
+      [office]
+    );
+    return rows.map((r) => ({ ...r, legacy: Number(r.legacy) === 1, kind: 'till' }));
+  }
+}
+
+/** What a device is called in a refusal, so a manager can find it. */
+function seatLabel(seat, noun = 'till') {
+  return (
+    seat.device_name ||
+    (seat.signed_in_by ? `a ${noun} set up by ${seat.signed_in_by}` : `a ${noun}`)
   );
-  return rows.map((r) => ({ ...r, legacy: Number(r.legacy) === 1 }));
 }
 
-/** What a till is called in a refusal, so a manager can find it. */
-function seatLabel(seat) {
-  return seat.device_name || (seat.signed_in_by ? `a till set up by ${seat.signed_in_by}` : 'a till');
-}
+/** What each app is called in a sentence a manager reads. */
+const NOUNS = {
+  till: ['till licence', 'till licences', 'till'],
+  kitchen: ['kitchen licence', 'kitchen licences', 'kitchen screen'],
+  display: ['display licence', 'display licences', 'display'],
+  express: ['kiosk licence', 'kiosk licences', 'kiosk'],
+};
 
-/** Refused: every seat is taken. Carries what the till shows and the back office lists. */
+/** Refused: every seat is taken. Carries what the device shows and the back office lists. */
 class SeatLimitError extends Error {
-  constructor(limit, seats) {
-    const names = seats.map(seatLabel);
-    const noun = limit === 1 ? 'till licence is' : `${limit} till licences are`;
+  constructor(limit, seats, kind = 'till') {
+    const [one, many, thing] = NOUNS[kind] || NOUNS.till;
+    const names = seats.map((s) => seatLabel(s, thing));
+    const noun = limit === 1 ? `${one} is` : `${limit} ${many} are`;
     super(
       `${limit === 1 ? 'The' : 'All'} ${noun} in use${names.length ? `: ${names.join(', ')}` : ''}. ` +
         'Sign one of them out in the back office under Devices, or ask Vesopa for another licence.'
@@ -99,6 +125,7 @@ class SeatLimitError extends Error {
     this.name = 'SeatLimitError';
     this.limit = limit;
     this.seats = seats;
+    this.kind = kind;
   }
 }
 
@@ -110,7 +137,12 @@ class SeatLimitError extends Error {
  * venue on the office row, so two tills signing in at the same moment cannot
  * both take the last seat.
  */
-async function claimSeat(db, { office, deviceId, deviceName, by }) {
+async function claimSeat(db, { office, kind = 'till', deviceId, deviceName, by, fingerprint }) {
+  // Required here rather than at the top of the file: licences.js reaches auth.js,
+  // which reaches this file, and a cycle at load time would leave one of the
+  // three with half its exports. Asked for at call time, everything is built.
+  const licences = require('./licences');
+
   const conn = await db.getConnection();
   try {
     await conn.beginTransaction();
@@ -139,22 +171,50 @@ async function claimSeat(db, { office, deviceId, deviceName, by }) {
       }
     }
 
-    const limit = await limitFor(conn, office);
+    const limit = await licences.limitFor(conn, office, kind);
     if (limit != null) {
-      const seats = await activeSeats(conn, office);
+      const seats = await activeSeats(conn, office, kind);
       if (seats.length >= limit) {
-        await conn.rollback();
-        throw new SeatLimitError(limit, seats);
+        // What happens to the device that does not fit depends on what it is.
+        // A till or a kiosk can be mid-sale and a kitchen screen is holding the
+        // orders being cooked, so those are refused and a manager chooses which
+        // one to sign out. A customer display holds nothing: the newest wins.
+        if (licences.POLICY[kind] === 'evict-oldest' && seats.length) {
+          const oldest = seats[seats.length - 1];
+          await conn.execute(
+            `UPDATE bo_till_seats
+                SET released_at = NOW(), released_by = ?, release_reason = ?
+              WHERE id = ?`,
+            [by || null, 'superseded by a newer display', oldest.id]
+          );
+          forget(oldest.id);
+        } else {
+          await conn.rollback();
+          throw new SeatLimitError(limit, seats, kind);
+        }
       }
     }
 
     const id = crypto.randomUUID();
-    await conn.execute(
-      `INSERT INTO bo_till_seats
-         (id, office, device_id, device_name, signed_in_by, last_seen_at)
-       VALUES (?, ?, ?, ?, ?, NOW())`,
-      [id, office, deviceId || null, deviceName || null, by || null]
-    );
+    try {
+      await conn.execute(
+        `INSERT INTO bo_till_seats
+           (id, office, kind, device_id, device_name, device_fingerprint,
+            signed_in_by, last_seen_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, NOW())`,
+        [id, office, kind, deviceId || null, deviceName || null, fingerprint || null, by || null]
+      );
+    } catch (e) {
+      // A server whose licence-key migration has not run yet: take the seat
+      // with the columns that do exist rather than refuse to sign a till in.
+      if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+      await conn.execute(
+        `INSERT INTO bo_till_seats
+           (id, office, device_id, device_name, signed_in_by, last_seen_at)
+         VALUES (?, ?, ?, ?, ?, NOW())`,
+        [id, office, deviceId || null, deviceName || null, by || null]
+      );
+    }
     await conn.commit();
     return id;
   } catch (e) {
@@ -179,6 +239,11 @@ function forget(seatId) {
  */
 async function seatFor(claims, token) {
   if (!pool) return null;
+  // A practice till holds no licence. Its token carries no seat id, and the
+  // branch below would otherwise mint one keyed on the token's hash -- so a
+  // venue that let two people practise would find itself a licence short at
+  // the worst possible moment. Training is not a thing a venue pays for.
+  if (claims.demo) return null;
   const key = claims.jti ? `j:${claims.jti}` : `h:${hashToken(token)}`;
   const now = Date.now();
   const hit = cache.get(key);

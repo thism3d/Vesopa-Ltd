@@ -32,7 +32,10 @@ function adminRoutes({ pool, broadcast, secret }) {
                 (SELECT COUNT(*) FROM bo_till_seats t
                   WHERE t.office = o.contact_email COLLATE utf8mb4_general_ci
                     AND t.released_at IS NULL) AS tills_in_use,`;
-    const select = (licences) => `
+    // A practice venue is an office row, so it would otherwise appear here as a
+    // venue to bill, pause and count licences for. It is none of those things.
+    const NOT_DEMO = 'WHERE o.demo_of IS NULL';
+    const select = (licences, where) => `
         SELECT o.id, o.name, o.contact_email, o.status, o.plan, ${licences}
                 o.created_at, o.paused_at, o.pause_reason,
                 s.id            AS subscription_id,
@@ -47,14 +50,28 @@ function adminRoutes({ pool, broadcast, secret }) {
          FROM offices o
          LEFT JOIN subscriptions s
            ON s.office_id = o.id AND s.status = 'active'
+         ${where}
          ORDER BY o.name`;
+    // Each step down drops one column this release added, rather than failing,
+    // so the admin page still works against a database mid-migration. Dropping
+    // the demo filter last and on its own: a server without the column has no
+    // practice venues to hide.
+    const attempts = [
+      select(LICENCES, NOT_DEMO),
+      select(LICENCES, ''),
+      select('', NOT_DEMO),
+      select('', ''),
+    ];
     try {
       let rows;
-      try {
-        [rows] = await pool.query(select(LICENCES));
-      } catch (e) {
-        if (e.code !== 'ER_BAD_FIELD_ERROR' && e.code !== 'ER_NO_SUCH_TABLE') throw e;
-        [rows] = await pool.query(select(''));
+      for (let i = 0; i < attempts.length; i += 1) {
+        try {
+          [rows] = await pool.query(attempts[i]);
+          break;
+        } catch (e) {
+          const soft = e.code === 'ER_BAD_FIELD_ERROR' || e.code === 'ER_NO_SUCH_TABLE';
+          if (!soft || i === attempts.length - 1) throw e;
+        }
       }
       res.json(rows);
     } catch (e) {

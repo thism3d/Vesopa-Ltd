@@ -5,6 +5,7 @@
 /// number the order has, and how the card machine is getting on.
 library;
 
+import 'hardware_fingerprint.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -106,6 +107,11 @@ class ExpressApi {
       'name': ?name,
       'screen': ?screen,
       'app_version': '${ExpressConfig.version}+${ExpressConfig.build}',
+      // Which app, and what machine it is on. A kiosk counts against the
+      // venue's express licences; the fingerprint is a hash and is absent on
+      // anything that will not identify itself, which never refuses a kiosk.
+      'device_kind': 'express',
+      'device_fingerprint': ?await HardwareFingerprint.get(),
     });
     return (
       token: j['token'] as String,

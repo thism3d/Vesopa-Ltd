@@ -36,6 +36,7 @@ const express = require('express');
 const { linkAndFind } = require('./backoffice_auth');
 const jwt = require('jsonwebtoken');
 const tillSeats = require('./till_seats');
+const licences = require('./licences');
 const { resolveTillSite, sitePickToken, readSitePickToken } = require('./sites');
 
 /** Trimmed text of at most [max] characters, or null when there is none. */
@@ -264,10 +265,17 @@ function terminalVesopaRoutes({ pool, secret, issueToken, issueTerminalToken }) 
   async function finishCommission(user, body, res) {
     let seatId;
     try {
-      seatId = await tillSeats.claimSeat(pool, {
+      seatId = await licences.signInDevice(pool, {
         office: user.officeEmail,
+        // Which app. Absent on a release older than per-app licences, and every
+        // device that used this door before then was a till.
+        kind: clampText(body.device_kind, 24) || 'till',
         deviceId: clampText(body.device_id, 64),
         deviceName: clampText(body.device_name, 120),
+        // The machine itself, as a hash, and the key it was licensed with.
+        // Neither is required: see licences.js on why absent never refuses.
+        fingerprint: clampText(body.device_fingerprint, 64),
+        licenceKey: clampText(body.licence_key, 64),
         by: user.email,
       });
     } catch (e) {
@@ -278,6 +286,9 @@ function terminalVesopaRoutes({ pool, secret, issueToken, issueTerminalToken }) 
           seats: e.seats.map((s) => ({ name: s.device_name, last_seen_at: s.last_seen_at })),
         });
       }
+      // Somebody else's machine holds this key. Nothing can be signed out to
+      // make room, so this is a 403 and not a 409.
+      if (e.licenceKey) return res.status(403).json({ error: e.message, licence_key: true });
       throw e;
     }
     return res.json({

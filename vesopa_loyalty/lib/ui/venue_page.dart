@@ -47,7 +47,9 @@ class _VenuePageState extends ConsumerState<VenuePage> {
           _say('Notifications were not allowed. You can still read all our news in the News tab.');
           return;
         }
-        if (channel.kind == 'wns') {
+        if (channel.isDeviceToken) {
+          await api.addDeviceToken(channel.kind, channel.channelUri!);
+        } else if (channel.kind == 'wns') {
           await api.addWindowsChannel(channel.channelUri!);
         } else {
           await api.addWebPush(channel.subscription!);

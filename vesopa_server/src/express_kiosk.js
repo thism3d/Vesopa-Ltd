@@ -49,6 +49,7 @@ const core = require('./menu_core');
 const { recordSale } = require('./sales');
 const { recordTicket, readModes, parseStations, stationNames } = require('./kitchen');
 const terminalVesopa = require('./terminal_vesopa');
+const licences = require('./licences');
 const { linkAndFind } = require('./backoffice_auth');
 const dojo = require('./dojo_client');
 const { boardPage } = require('./express_board');
@@ -708,6 +709,34 @@ function expressKioskRoutes({ pool, broadcast, secret }) {
       );
       const id = crypto.randomUUID();
       const name = String(body.name || '').trim().slice(0, 80) || 'Kiosk ' + (Number(n) + 1);
+
+      // A kiosk licence seat, taken before the kiosk row is written: a venue
+      // over its limit should not end up with a kiosk it cannot use listed as
+      // though it had one. Refused rather than evicted, like a till -- a kiosk
+      // bounced mid-order loses a customer's basket in front of them.
+      const clampText = (v, len) => (v == null ? null : String(v).trim().slice(0, len) || null);
+      try {
+        await licences.signInDevice(pool, {
+          office,
+          kind: 'express',
+          deviceId: clampText(body.device_id, 64),
+          deviceName: name,
+          fingerprint: clampText(body.device_fingerprint, 64),
+          licenceKey: clampText(body.licence_key, 64),
+          by: String(claims.email).toLowerCase().slice(0, 190),
+        });
+      } catch (e) {
+        if (e.name === 'SeatLimitError') {
+          return res.status(409).json({
+            error: e.message,
+            licences: e.limit,
+            seats: (e.seats || []).map((x) => ({ name: x.device_name })),
+          });
+        }
+        if (e.licenceKey) return res.status(403).json({ error: e.message, licence_key: true });
+        throw e;
+      }
+
       await pool.execute(
         'INSERT INTO epos_express_kiosks (id, office, name, commissioned_by, app_version, screen)' +
           ' VALUES (?, ?, ?, ?, ?, ?)',

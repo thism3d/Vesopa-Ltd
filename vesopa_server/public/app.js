@@ -3068,7 +3068,9 @@ async function loadOffices() {
             ? '<span class="muted">—</span>'
             : `${Number(o.tills_in_use || 0)}${o.till_licences == null ? ' <span class="muted small">no limit</span>' : ` of ${o.till_licences}`}
                <button class="btn small ghost" data-licences="${o.id}" data-licences-now="${o.till_licences ?? ''}"
-                       data-licences-name="${esc(o.name)}">Licences</button>`
+                       data-licences-name="${esc(o.name)}">Licences</button>
+               <button class="btn small ghost" data-licence-key="${o.id}"
+                       title="Issue a key that activates on one machine and is then locked to it">Key</button>`
         }</td>
         <td class="right">${o.amount_minor ? money(o.amount_minor) + ' / ' + o.interval_unit : '—'}</td>
         <td>${o.next_due_on ? date(o.next_due_on) : '—'}</td>
@@ -4273,7 +4275,11 @@ function fieldHtml(f) {
   const placeholder = f.placeholder
     ? ` placeholder="${esc(f.placeholder)}"`
     : '';
-  return `<input name="${f.name}" type="${htmlType}"${step}${placeholder} ${
+  // Readable but not editable, and selected as soon as it appears. For the one
+  // case that needs it: a licence key is shown once, because only a hash of it
+  // is kept, so the value has to be easy to copy and impossible to mangle.
+  const readonly = f.readonly ? ' readonly onfocus="this.select()"' : '';
+  return `<input name="${f.name}" type="${htmlType}"${step}${placeholder}${readonly} ${
     f.required ? 'required' : ''
   } value="${esc(String(f.value ?? ''))}" />`;
 }
@@ -5456,19 +5462,74 @@ document.addEventListener('click', async (e) => {
   }
   if (t.dataset.licences) {
     const office = t.dataset.licences;
+    const name = t.dataset.licencesName || 'this office';
+
+    // Every app, not just tills. Fetched first so the boxes show what the venue
+    // actually has rather than blanks that would wipe the other three on save.
+    let current = { limits: {}, kinds: ['till', 'kitchen', 'display', 'express'], labels: {} };
+    try {
+      current = await api(`/admin/offices/${office}/licence-limits`);
+    } catch {
+      // A server without the migration: fall back to the till-only box, which
+      // is what it can still honour.
+    }
+
+    const labels = current.labels || {};
+    const fields = (current.kinds || []).map((kind) => ({
+      name: kind,
+      label: `${labels[kind] || kind}s at once (blank for no limit)`,
+      type: 'number',
+      value: current.limits?.[kind] ?? '',
+    }));
+
     return modal(
-      `Till licences — ${t.dataset.licencesName || 'this office'}`,
-      [{
-        name: 'till_licences',
-        label: 'How many tills may be signed in at once (blank for no limit)',
-        type: 'number',
-        value: t.dataset.licencesNow || '',
-      }],
+      `Licences — ${name}`,
+      fields,
       async (d) => {
-        await api(`/admin/offices/${office}/licences`, {
+        const body = {};
+        // '' is "no limit" and is sent as null, which DELETES the row. Zero is
+        // a different thing entirely -- it means the venue may run none.
+        for (const kind of current.kinds) body[kind] = d[kind] === '' ? null : d[kind];
+        await api(`/admin/offices/${office}/licence-limits`, {
           method: 'PUT',
-          body: JSON.stringify({ till_licences: d.till_licences === '' ? null : d.till_licences }),
+          body: JSON.stringify(body),
         });
+        await loadOffices();
+      }
+    );
+  }
+
+  if (t.dataset.licenceKey) {
+    const office = t.dataset.licenceKey;
+    return modal(
+      'Issue a licence key',
+      [
+        {
+          name: 'kind',
+          label: 'Which app',
+          type: 'select',
+          options: [
+            { value: 'till', label: 'Till' },
+            { value: 'kitchen', label: 'Kitchen screen' },
+            { value: 'display', label: 'Customer display' },
+            { value: 'express', label: 'Express kiosk' },
+          ],
+          value: 'till',
+        },
+        { name: 'label', label: 'What it is for (e.g. "Bar till")', value: '' },
+      ],
+      async (d) => {
+        const r = await api(`/admin/offices/${office}/licence-keys`, {
+          method: 'POST',
+          body: JSON.stringify({ kind: d.kind, label: d.label || null }),
+        });
+        // Shown once and never again: only a hash is kept, so there is nothing
+        // to look it up from later. Saying so here is the whole warning.
+        await modal(
+          'Copy this key now',
+          [{ name: 'key', label: 'It cannot be shown again', value: r.key, readonly: true }],
+          async () => {}
+        );
         await loadOffices();
       }
     );
@@ -6274,6 +6335,11 @@ async function start() {
   // the rest of the page does not depend on it.
   loadSites();
 
+  // Whether this session is inside the practice venue. Also not awaited, but it
+  // is the first thing asked for: a manager must never read practice takings as
+  // the day's because a banner arrived late.
+  loadDemoVenue();
+
   connectSocket();
 
   // What this login's role allows, and the menu trimmed to match. Awaited
@@ -6340,6 +6406,118 @@ document.addEventListener('change', async (e) => {
   } catch (err) {
     toast(err.message, 'error');
     loadSites();
+  }
+});
+
+
+// ---- The practice venue ---------------------------------------------------
+//
+// A copy of the venue for training, which is itself a venue (src/demo_venue.js).
+// Two jobs here: say loudly when this session is inside one, and let a manager
+// set one up, refresh it from live, or throw the practice data away.
+
+/** Switch this session to a given site, the way the Site menu does. */
+async function switchToSite(officeId) {
+  const r = await api('/sites/switch', {
+    method: 'POST',
+    body: JSON.stringify({ office_id: officeId }),
+  });
+  token = r.token;
+  me = { ...me, officeId: r.site.id, officeName: r.site.name, officeEmail: r.site.email };
+  saveSession(localStorage.getItem(SESSION_KEYS.token) != null);
+  location.reload();
+}
+
+async function loadDemoVenue() {
+  const banner = $('demo-banner');
+  const state = $('demo-venue-state');
+  const card = $('demo-venue-card');
+  let data;
+  try {
+    data = await api('/demo');
+  } catch {
+    if (banner) banner.hidden = true;
+    if (card) card.hidden = true;
+    return;
+  }
+
+  // Inside the practice venue: the banner goes up, and the card that offers to
+  // rebuild it goes away -- rebuilding is done from the live venue, where the
+  // products being copied actually are.
+  if (banner) banner.hidden = !data.is_demo;
+  if (data.is_demo) {
+    if (card) card.hidden = true;
+    const leave = $('demo-leave');
+    if (leave && data.live) leave.dataset.officeId = data.live.id;
+    return;
+  }
+
+  if (card) card.hidden = false;
+  if (!state) return;
+  if (!data.demo) {
+    state.textContent =
+      'No practice venue yet. “Set up / refresh from live” makes one from this venue as it is now.';
+    return;
+  }
+  const when = (v) => (v ? new Date(v).toLocaleString('en-GB') : 'never');
+  state.textContent =
+    `Practice venue ready. Last copied from live: ${when(data.demo.refreshed_at)}. ` +
+    `Practice data last cleared: ${when(data.demo.reset_at)}.`;
+}
+
+document.addEventListener('click', async (e) => {
+  const leave = e.target.closest && e.target.closest('#demo-leave');
+  if (leave) {
+    const officeId = Number(leave.dataset.officeId);
+    if (!officeId) return;
+    try {
+      await switchToSite(officeId);
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+    return;
+  }
+
+  const refresh = e.target.closest && e.target.closest('#demo-refresh');
+  if (refresh) {
+    const ok = await confirmDialog(
+      'Copy this venue’s products, screens, prices and tables into the practice venue? ' +
+        'Anything already set up there is replaced. Practice sales are not affected.',
+      { title: 'Refresh the practice venue', confirmLabel: 'Copy from live' }
+    );
+    if (!ok) return;
+    refresh.disabled = true;
+    try {
+      await api('/demo/refresh', { method: 'POST' });
+      toast('The practice venue now matches this one.');
+      loadDemoVenue();
+      loadSites();
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      refresh.disabled = false;
+    }
+    return;
+  }
+
+  const reset = e.target.closest && e.target.closest('#demo-reset');
+  if (reset) {
+    const ok = await confirmDialog(
+      'Delete every practice sale, bill, ticket and customer in the practice venue? ' +
+        'Its products, screens and prices stay. Nothing in this venue is touched.',
+      { title: 'Clear the practice data', confirmLabel: 'Clear it', danger: true }
+    );
+    if (!ok) return;
+    reset.disabled = true;
+    try {
+      await api('/demo/reset', { method: 'POST' });
+      toast('The practice data has gone.');
+      loadDemoVenue();
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      reset.disabled = false;
+    }
   }
 });
 
@@ -10354,6 +10532,8 @@ async function loadDevices() {
       + 'on.</p>';
 
   await loadSeats();
+  // The whole licence picture, beside the till-only card above.
+  await loadLicences();
   await loadDeviceLog();
 }
 
@@ -10364,6 +10544,70 @@ async function loadDevices() {
  * seat the first time it called in -- so the count is the truth rather than
  * "tills that happened to sign in again since".
  */
+/**
+ * Every app's licences, not just the till's.
+ *
+ * The till has its own card above (which tills hold which seat, and the button
+ * to sign one out). This one is the whole picture: how many of each app the
+ * venue pays for, how many are signed in, and which keys exist.
+ */
+async function loadLicences() {
+  let data;
+  try {
+    data = await api('/licences');
+  } catch {
+    $('licences-card').hidden = true;
+    $('licence-keys-card').hidden = true;
+    return;
+  }
+  $('licences-card').hidden = false;
+
+  const rows = (data.kinds || []).map((k) => {
+    const over = k.limit != null && k.in_use > k.limit;
+    const limit = k.limit == null
+      ? '<span class="muted">no limit</span>'
+      : `${k.in_use} of ${k.limit}`;
+    const flag = over
+      ? ' <span class="pill" style="background:#fde8ea;color:#b3261e">over the limit</span>'
+      : '';
+    const full = k.limit != null && k.in_use >= k.limit && !over
+      ? ' <span class="pill" style="background:#fff4e5;color:#8a5200">all in use</span>'
+      : '';
+    const when = k.policy === 'evict-oldest'
+      ? 'newest wins; the oldest is signed out'
+      : 'the next one is refused';
+    return `<tr>
+        <td>${esc(k.label)}</td>
+        <td>${limit}${flag}${full}</td>
+        <td class="muted small">${esc(when)}</td>
+      </tr>`;
+  }).join('');
+
+  $('licences-list').innerHTML =
+    `<table><thead><tr><th>App</th><th>In use</th><th>When they are all in use</th></tr></thead>`
+    + `<tbody>${rows}</tbody></table>`;
+
+  // Keys are opt-in per venue. A venue that has never been issued one should
+  // not be shown an empty table implying it is missing something.
+  const keys = data.keys || [];
+  $('licence-keys-card').hidden = keys.length === 0;
+  if (!keys.length) return;
+
+  const when = (v) => (v ? new Date(v).toLocaleDateString('en-GB') : '—');
+  $('licence-keys-list').innerHTML =
+    '<table><thead><tr><th>Key</th><th>App</th><th>On</th><th>Activated</th><th>Status</th></tr></thead><tbody>'
+    + keys.map((k) => `<tr>
+        <td><code>${esc(k.key_prefix)}…</code>${k.label ? `<br><span class="muted small">${esc(k.label)}</span>` : ''}</td>
+        <td>${esc(k.kind)}</td>
+        <td>${k.device_name ? esc(k.device_name) : '<span class="muted">not yet used</span>'}</td>
+        <td>${when(k.activated_at)}</td>
+        <td>${k.revoked_at
+          ? '<span class="pill" style="background:#fde8ea;color:#b3261e">withdrawn</span>'
+          : (k.activated_at ? 'in use' : '<span class="muted">unused</span>')}</td>
+      </tr>`).join('')
+    + '</tbody></table>';
+}
+
 async function loadSeats() {
   let data;
   try {

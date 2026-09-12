@@ -374,13 +374,29 @@ async function deliver(pool, message) {
 
   let web = 0;
   let wns = 0;
+  // The phone builds. Counted apart from `web` because "it reached 40 phones"
+  // means something different from "it reached 40 browsers", and a venue asking
+  // why nobody turned up deserves to know which.
+  let android = 0;
+  let ios = 0;
   let failed = 0;
+
+  // One line per channel kind. A kind this release has never heard of is left
+  // to Web Push, which is what every channel was before there were kinds.
+  const senders = {
+    wns: (ch) => push.sendWns(ch, payload, creds),
+    fcm: (ch) => push.sendFcm(ch, payload),
+    apns: (ch) => push.sendApns(ch, payload),
+  };
+
   await inBatches(channels, 12, async (ch) => {
-    const result = ch.kind === 'wns'
-      ? await push.sendWns(ch, payload, creds)
-      : await push.sendWebPush(ch, payload);
+    const send = senders[ch.kind];
+    const result = send ? await send(ch) : await push.sendWebPush(ch, payload);
     if (result === 'ok') {
-      if (ch.kind === 'wns') wns++; else web++;
+      if (ch.kind === 'wns') wns++;
+      else if (ch.kind === 'fcm') android++;
+      else if (ch.kind === 'apns') ios++;
+      else web++;
       await pool.execute('UPDATE epos_push_channels SET last_ok_at = NOW(), fail_count = 0 WHERE id = ?', [ch.id]);
     } else if (result === 'gone') {
       failed++;
@@ -398,9 +414,13 @@ async function deliver(pool, message) {
     `UPDATE epos_push_messages
         SET status = 'sent', sent_at = NOW(), recipients = ?, reached_web = ?, reached_wns = ?, failed = ?
       WHERE id = ?`,
-    [recipients.length, web, wns, failed, message.id]
+    // reached_web carries the browsers AND the phones: the column predates the
+    // mobile builds and adding two more to every report query, export and
+    // screen would cost more than it tells anybody. The split is returned
+    // below, where a caller that wants it can have it.
+    [recipients.length, web + android + ios, wns, failed, message.id]
   );
-  return { recipients: recipients.length, web, wns, failed };
+  return { recipients: recipients.length, web, wns, android, ios, failed };
 }
 
 /** Claim and send whatever is due. Safe to call from two places at once. */
@@ -754,6 +774,20 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
         const uri = String(body.channel_uri || '');
         if (!push.allowedWns(uri)) return res.status(400).json({ error: 'That is not a Windows notification channel.' });
         row = { kind: 'wns', endpoint: uri, p256dh: null, auth: null };
+      } else if (body.kind === 'fcm' || body.kind === 'apns') {
+        // A phone registration is a device token and nothing else -- no URL, so
+        // none of the host checks above apply and none are needed: the server
+        // posts to Google's or Apple's gateway, never to an address the device
+        // chose. What IS checked is the shape, because an APNs token goes
+        // straight into a URL path.
+        const deviceToken = String(body.device_token || '').trim();
+        const shaped = body.kind === 'apns'
+          ? /^[0-9a-f]{16,200}$/i.test(deviceToken)
+          : deviceToken.length > 0 && deviceToken.length <= 4096;
+        if (!shaped) {
+          return res.status(400).json({ error: 'That is not a device notification token.' });
+        }
+        row = { kind: body.kind, endpoint: deviceToken, p256dh: null, auth: null };
       } else {
         const sub = body.subscription || {};
         const endpoint = String(sub.endpoint || '');
@@ -1023,6 +1057,8 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
         members: ids.length,
         web: channels.filter((c) => c.kind === 'webpush').length,
         windows: channels.filter((c) => c.kind === 'wns').length,
+        android: channels.filter((c) => c.kind === 'fcm').length,
+        ios: channels.filter((c) => c.kind === 'apns').length,
         needs_location: audience.kind === 'near' && (!app || app.latitude == null),
       });
     } catch (e) {

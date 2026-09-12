@@ -278,6 +278,16 @@
           <select id="site-select" aria-label="Which site you are managing"></select>
         </div>
 
+        <!-- In the rail, so it is on every page rather than on the one page
+             somebody happens to open. The worst outcome this whole feature has
+             is a manager believing they are practising while they are trading,
+             or reading practice takings as the day's. See src/demo_venue.js. -->
+        <div class="demo-banner" id="demo-banner" hidden role="status">
+          <strong>Practice venue</strong>
+          <span>Nothing here is real. These sales, customers and reports are training only.</span>
+          <button type="button" class="btn small" id="demo-leave">Back to the live venue</button>
+        </div>
+
         <div class="rail-find">
           <svg class="rail-find-icon" viewBox="0 0 24 24" fill="none"
                stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -1113,10 +1123,33 @@
           </table></div>
           <p class="muted small" style="margin-top:12px">
             <strong>Training accounts</strong> are for practising. While one is signed on the till shows
-            <em>TRAINING</em>: its sales are never sent to the back office, never count on the till's X or Z,
-            take no card payment and send nothing to the kitchen. Needs Vesopa EPOS 1.7.3 or later — an older
+            <em>TRAINING</em>: it works in this venue's <strong>practice copy</strong> instead of the real
+            one, takes no card payment, opens no drawer, and its sales never count on the live venue's
+            figures or X and Z. Needs Vesopa EPOS 1.7.3 or later — an older
             till does not offer a training account at all.
           </p>
+
+          <!-- The practice venue. Here rather than on a page of its own because
+               this is where training accounts are made, and the two are one
+               thought: who may practise, and what they practise on. -->
+          <div class="card" id="demo-venue-card" style="margin-top:16px">
+            <h3>Practice venue</h3>
+            <p class="muted small">
+              A copy of this venue for training: the same products, screens, prices and tables, with
+              none of the sales, customers or gift cards. A trainee's till works against it, so their
+              practice appears on <em>its</em> reports and never touches yours. Switch to it from the
+              <strong>Site</strong> menu to see what they did.
+            </p>
+            <p class="muted small" id="demo-venue-state">Checking…</p>
+            <div class="row gap">
+              <button class="btn" id="demo-refresh"
+                      title="Copy this venue's current products, screens and prices into the practice venue">
+                Set up / refresh from live</button>
+              <button class="btn" id="demo-reset"
+                      title="Delete the practice sales, bills and customers. The products and screens stay.">
+                Clear practice data</button>
+            </div>
+          </div>
           <p class="muted small" style="margin-top:12px">
             PINs must be exactly 4 digits and no two people can share one — the till pad signs
             someone on the moment the fourth digit lands, so a longer PIN could never be used and
@@ -3340,6 +3373,31 @@
             </p>
             <div id="seats-list"></div>
           </div>
+
+          <!-- Every app, not just tills. Until 1.7.4 only tills were counted,
+               so a venue paying for one kitchen screen could run six. -->
+          <div class="card rd-card" id="licences-card">
+            <h3>Licences</h3>
+            <p class="muted small">
+              What this venue has paid for, and what is signed in now. A blank limit means
+              no limit. Tills, kitchen screens and kiosks are <strong>refused</strong> when they
+              are all in use — a manager signs one out below — because bouncing one mid-sale
+              loses work. A customer display holds nothing, so the newest one wins and the
+              oldest goes blank.
+            </p>
+            <div id="licences-list"></div>
+          </div>
+
+          <div class="card rd-card" id="licence-keys-card" hidden>
+            <h3>Licence keys</h3>
+            <p class="muted small">
+              A key activates on one machine and is then locked to it, so a copy of the
+              install on a second PC is refused. Vesopa issues them; ask us to move one if
+              you replace a machine.
+            </p>
+            <div id="licence-keys-list"></div>
+          </div>
+
           <div class="card rd-card">
             <div id="devices-list"></div>
           </div>

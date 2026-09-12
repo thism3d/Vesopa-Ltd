@@ -1,6 +1,7 @@
 const express = require('express');
 const { requireAuth, requireTerminal } = require('./auth');
 const tillSeats = require('./till_seats');
+const licences = require('./licences');
 
 /**
  * The machines in a venue, and what has happened to them.
@@ -176,6 +177,27 @@ function deviceRoutes({ pool, broadcast, secret }) {
           await tillSeats
             .bindDevice(pool, { office, seatId: req.seatId, deviceId, deviceName: device.name })
             .catch((e) => console.warn('[till_seats] bind failed:', e.message));
+        }
+
+        // A customer display takes its licence seat HERE rather than at a
+        // sign-in, because it has no sign-in: it is paired by a till and
+        // registered on this call. Over the venue's limit, the oldest display
+        // is bounced and the newest wins (licences.js POLICY) -- a display
+        // holds nothing, so the one that goes blank costs a glance and not a
+        // sale. Never fatal, for the same reason the bind above is not: a
+        // display that failed to appear in the list over a licence count would
+        // be the wrong trade.
+        if (device.kind === 'display') {
+          await licences
+            .signInDevice(pool, {
+              office,
+              kind: 'display',
+              deviceId,
+              deviceName: device.name,
+              fingerprint: clamp(raw?.device_fingerprint, 64),
+              by: clamp(raw?.signed_in_as, 190),
+            })
+            .catch((e) => console.warn('[licences] display seat:', e.message));
         }
 
         if (!existing) {

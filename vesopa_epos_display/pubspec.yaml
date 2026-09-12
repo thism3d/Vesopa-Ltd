@@ -32,6 +32,11 @@ dependencies:
   # this device - there is nothing here another machine needs to know.
   shared_preferences: ^2.5.5
 
+  # Hashing the machine's own identifiers into a licence fingerprint, so
+  # what leaves this screen is 64 characters of hex and never the serials
+  # themselves. See lib/data/hardware_fingerprint.dart.
+  crypto: ^3.0.6
+
   # Choosing the advert folder by pointing at it.
   #
   # A manager setting a screen up should not be typing a path, and asking them

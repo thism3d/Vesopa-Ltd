@@ -121,6 +121,97 @@ export class StoreSubmissionClient {
     );
   }
 
+  // ---- Package flights ----------------------------------------------------
+  //
+  // A flight is a private release of the app to a named group of testers. It
+  // goes through certification exactly like a public release, and it is the
+  // only way to put a real Store build on a real till without every customer
+  // getting it too: Manual publish holds a release back, but the moment it is
+  // published it goes to everybody at once.
+  //
+  // The release path this gives us:
+  //
+  //   flight -> install on the office till -> test -> main submission (Manual)
+  //   -> Publish now
+  //
+  // A flight submission is the same resource as a normal one -- same packages,
+  // same status polling, same commit -- under a different URL. Everything in
+  // examples/stage.js and examples/commit.js works against one by passing the
+  // flight id through.
+
+  /** Every flight on an app, newest first. Note Microsoft's odd URL: `listflights`. */
+  listFlights(storeId) {
+    return this._request("GET", `${BASE_URL}/${storeId}/listflights`);
+  }
+
+  /** One flight, including its current pending submission if it has one. */
+  getFlight(storeId, flightId) {
+    return this._request("GET", `${BASE_URL}/${storeId}/flights/${flightId}`);
+  }
+
+  /**
+   * Create a flight.
+   *
+   * `groupIds` are Partner Center *flight group* ids — the groups of testers,
+   * created in Partner Center because the API cannot make them. `rankHigherThan`
+   * orders overlapping flights; left out, the new flight sits at the bottom,
+   * which is what a single "Vesopa Testers" flight wants.
+   */
+  createFlight(storeId, { friendlyName, groupIds, rankHigherThan }) {
+    const body = { friendlyName, groupIds };
+    if (rankHigherThan) body.rankHigherThan = rankHigherThan;
+    return this._request("POST", `${BASE_URL}/${storeId}/flights`, { body });
+  }
+
+  /** Removes a flight and any submission in progress on it. */
+  deleteFlight(storeId, flightId) {
+    return this._request("DELETE", `${BASE_URL}/${storeId}/flights/${flightId}`);
+  }
+
+  /** A new in-progress submission on a flight. Same shape as createSubmission. */
+  createFlightSubmission(storeId, flightId) {
+    return this._request(
+      "POST",
+      `${BASE_URL}/${storeId}/flights/${flightId}/submissions`
+    );
+  }
+
+  getFlightSubmission(storeId, flightId, submissionId) {
+    return this._request(
+      "GET",
+      `${BASE_URL}/${storeId}/flights/${flightId}/submissions/${submissionId}`
+    );
+  }
+
+  updateFlightSubmission(storeId, flightId, submissionId, submissionData) {
+    return this._request(
+      "PUT",
+      `${BASE_URL}/${storeId}/flights/${flightId}/submissions/${submissionId}`,
+      { body: submissionData }
+    );
+  }
+
+  commitFlightSubmission(storeId, flightId, submissionId) {
+    return this._request(
+      "POST",
+      `${BASE_URL}/${storeId}/flights/${flightId}/submissions/${submissionId}/commit`
+    );
+  }
+
+  getFlightSubmissionStatus(storeId, flightId, submissionId) {
+    return this._request(
+      "GET",
+      `${BASE_URL}/${storeId}/flights/${flightId}/submissions/${submissionId}/status`
+    );
+  }
+
+  deleteFlightSubmission(storeId, flightId, submissionId) {
+    return this._request(
+      "DELETE",
+      `${BASE_URL}/${storeId}/flights/${flightId}/submissions/${submissionId}`
+    );
+  }
+
   /**
    * Polls getSubmissionStatus until it leaves the "in progress" states,
    * or until timeoutMs elapses. Returns the final status resource.
@@ -128,13 +219,17 @@ export class StoreSubmissionClient {
   async waitForStatus(
     storeId,
     submissionId,
-    { intervalMs = 30_000, timeoutMs = 30 * 60_000 } = {}
+    { intervalMs = 30_000, timeoutMs = 30 * 60_000, flightId = null } = {}
   ) {
     const inProgress = new Set(["None", "CommitStarted", "PreProcessing"]);
     const start = Date.now();
     // eslint-disable-next-line no-constant-condition
     while (true) {
-      const status = await this.getSubmissionStatus(storeId, submissionId);
+      // A flight's status lives under its own URL. Passing `flightId` is the
+      // only difference between watching a test release and a public one.
+      const status = flightId
+        ? await this.getFlightSubmissionStatus(storeId, flightId, submissionId)
+        : await this.getSubmissionStatus(storeId, submissionId);
       if (!inProgress.has(status.status)) return status;
       if (Date.now() - start > timeoutMs) {
         throw new Error(

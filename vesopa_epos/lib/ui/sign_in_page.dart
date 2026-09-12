@@ -23,6 +23,15 @@ class SignInPage extends ConsumerStatefulWidget {
 class _SignInPageState extends ConsumerState<SignInPage> {
   final _email = TextEditingController();
   final _password = TextEditingController();
+
+  /// The venue's licence key, where it has been issued one.
+  ///
+  /// Hidden until it is wanted. Most venues are counted and trusted rather than
+  /// keyed, and a box demanding a key on every till in the country would be a
+  /// box most people would type something wrong into. It opens when somebody
+  /// asks for it, and by itself when the server says a key is the problem.
+  final _licence = TextEditingController();
+  bool _showLicence = false;
   bool _busy = false;
   String? _error;
 
@@ -102,6 +111,7 @@ class _SignInPageState extends ConsumerState<SignInPage> {
             email: _email.text.trim(),
             password: _password.text,
             chooseSite: _chooseSite,
+            licenceKey: _licence.text.trim().isEmpty ? null : _licence.text.trim(),
           );
       // The shell rebuilds on the session; nothing more to do here.
     } on SignInFailed catch (e) {
@@ -109,6 +119,10 @@ class _SignInPageState extends ConsumerState<SignInPage> {
         setState(() {
           _error = e.message;
           _busy = false;
+          // Refused over a licence key: open the box, so the answer is in front
+          // of whoever is standing there rather than somewhere they have to
+          // know to look for it.
+          if (e.licenceKey) _showLicence = true;
         });
       }
     }
@@ -158,6 +172,7 @@ class _SignInPageState extends ConsumerState<SignInPage> {
   void dispose() {
     _email.dispose();
     _password.dispose();
+    _licence.dispose();
     super.dispose();
   }
 
@@ -243,6 +258,37 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                         border: OutlineInputBorder(),
                       ),
                     ),
+
+                    if (_showLicence) ...[
+                      const SizedBox(height: 14),
+                      TextField(
+                        controller: _licence,
+                        enabled: !_busy,
+                        textCapitalization: TextCapitalization.characters,
+                        onSubmitted: (_) => _busy ? null : _submit(),
+                        decoration: const InputDecoration(
+                          labelText: 'Licence key',
+                          hintText: 'VES-TILL-0000-0000-0000-0000',
+                          helperText:
+                              'Only if Vesopa issued this till one. It is typed '
+                              'once and remembered on this machine.',
+                          helperMaxLines: 2,
+                          prefixIcon: Icon(Icons.vpn_key_outlined),
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ] else ...[
+                      const SizedBox(height: 6),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton(
+                          onPressed: _busy
+                              ? null
+                              : () => setState(() => _showLicence = true),
+                          child: const Text('I have a licence key'),
+                        ),
+                      ),
+                    ],
                     ],
 
                     if (_error != null) ...[

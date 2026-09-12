@@ -28,9 +28,23 @@ import "dotenv/config";
 import { StoreSubmissionClient } from "../src/client.js";
 import { resolveStoreId } from "../src/apps.config.js";
 
-const [, , appArg] = process.argv;
+// `--flight <id>` commits the flight's submission rather than the public one.
+// Same certification, same waiting; it simply reaches only the testers.
+const rawArgs = process.argv.slice(2);
+let flightId = null;
+const flightAt = rawArgs.indexOf("--flight");
+if (flightAt !== -1) {
+  flightId = rawArgs[flightAt + 1];
+  if (!flightId) {
+    console.error("--flight needs a flight id. `node examples/flights.js <app>` lists them.");
+    process.exit(1);
+  }
+  rawArgs.splice(flightAt, 2);
+}
+
+const [appArg] = rawArgs;
 if (!appArg) {
-  console.error("Usage: node examples/commit.js <app-name-or-store-id>");
+  console.error("Usage: node examples/commit.js <app-name-or-store-id> [--flight <id>]");
   process.exit(1);
 }
 
@@ -42,13 +56,18 @@ const client = new StoreSubmissionClient({
 });
 
 const app = await client.getApplication(storeId);
-const pending = app.pendingApplicationSubmission;
+const where = flightId ? `flight ${flightId}` : storeId;
+const pending = flightId
+  ? (await client.getFlight(storeId, flightId)).pendingFlightSubmission
+  : app.pendingApplicationSubmission;
 if (!pending) {
-  console.error(`${storeId} has no submission in progress.`);
+  console.error(`${where} has no submission in progress.`);
   process.exit(1);
 }
 
-const submission = await client.getSubmission(storeId, pending.id);
+const submission = flightId
+  ? await client.getFlightSubmission(storeId, flightId, pending.id)
+  : await client.getSubmission(storeId, pending.id);
 console.log(`${storeId} submission ${pending.id}: ${submission.status}`);
 
 if (submission.status !== "PendingCommit") {
@@ -82,7 +101,9 @@ console.log(`  publish:  ${submission.targetPublishMode}${
     ? ' -- after certification it waits; nothing reaches a till until "Publish now" in Partner Center'
     : ' -- goes to every till the moment it is certified'}`);
 
-const commit = await client.commitSubmission(storeId, pending.id);
+const commit = flightId
+  ? await client.commitFlightSubmission(storeId, flightId, pending.id)
+  : await client.commitSubmission(storeId, pending.id);
 console.log(`  committed — status now ${commit.status}`);
 
 // Watch it through ingestion. Stops at the first state that is somebody
@@ -105,7 +126,9 @@ const settled = new Set([
 
 for (let i = 0; i < 40; i++) {
   await new Promise((r) => setTimeout(r, 15_000));
-  const status = await client.getSubmissionStatus(storeId, pending.id);
+  const status = flightId
+    ? await client.getFlightSubmissionStatus(storeId, flightId, pending.id)
+    : await client.getSubmissionStatus(storeId, pending.id);
   console.log(`  ${new Date().toISOString().slice(11, 19)}  ${status.status}`);
   const problems = status.statusDetails?.errors ?? [];
   if (problems.length) {

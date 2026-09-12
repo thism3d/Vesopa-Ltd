@@ -38,8 +38,10 @@ class OrderRepository {
     this._db, {
     List<Promotion> Function()? promotions,
     bool Function()? trainingMode,
+    bool Function()? inDemoVenue,
   })  : promotionsAvailable = promotions ?? _noPromotions,
-        _training = trainingMode ?? _notTraining;
+        _training = trainingMode ?? _notTraining,
+        _inDemo = inDemoVenue ?? _notTraining;
 
   final AppDatabase _db;
 
@@ -62,6 +64,15 @@ class OrderRepository {
   /// opened and when something is logged, never captured -- a trainee signs on
   /// and off all day. See `data/training_mode.dart`.
   final bool Function() _training;
+
+  /// Whether this till is working inside its venue's practice copy.
+  ///
+  /// Not the same question as [_training], and the difference decides where a
+  /// practice sale goes. A trainee is signed on the moment they touch their
+  /// PIN; the till is only *in* the practice venue once that venue's token has
+  /// arrived. Practice with the broadband down stays on the till, exactly as it
+  /// always did. See `data/demo_session.dart`.
+  final bool Function() _inDemo;
 
   Future<String> openOrder({
     int? tableNumber,
@@ -940,10 +951,20 @@ class OrderRepository {
         ),
       );
 
-      // A practice sale stops here: closed on this till, so the trainee sees it
-      // go through, and never queued for the back office. The X and Z leave it
-      // out (see SessionRepository), so it is in no figure anywhere.
-      if (order.training) return;
+      // A practice sale goes to the PRACTICE venue, or nowhere.
+      //
+      // Queued when this till is in one: the token the outbox sends is that
+      // venue's, so the sale lands on its X and Z and in its reports, where a
+      // trainee can be shown what they did and a manager can check they can do
+      // it. That is the whole point of a practice venue over throwing the sale
+      // away, which is what happened before.
+      //
+      // Not queued when it is not -- practice with no network, or a server too
+      // old to have practice venues. It stays on the till, the X and Z leave it
+      // out (see SessionRepository), and it is in no figure anywhere. The live
+      // venue never sees it either way, because the server throws away a
+      // practice sale that reaches it (src/training.js).
+      if (order.training && !_inDemo()) return;
 
       await _enqueue(orderId);
     });

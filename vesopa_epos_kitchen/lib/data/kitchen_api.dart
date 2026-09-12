@@ -1,3 +1,4 @@
+import 'hardware_fingerprint.dart';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -174,7 +175,18 @@ class KitchenApi {
     final body = await _send(
       'POST',
       '/api/kitchen/login',
-      body: {'office': office, 'username': username, 'password': password},
+      body: {
+        'office': office,
+        'username': username,
+        'password': password,
+        // Which app is asking, so this counts against the venue's kitchen
+        // licences and not against its tills.
+        'device_kind': 'kitchen',
+        // What machine this is, as a hash -- see data/hardware_fingerprint.dart.
+        // Null off Windows or on a machine that will not answer, and null never
+        // refuses a sign-in.
+        'device_fingerprint': ?await HardwareFingerprint.get(),
+      },
       authorised: false,
     );
 

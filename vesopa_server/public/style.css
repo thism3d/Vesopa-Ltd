@@ -7065,3 +7065,35 @@ textarea, select[multiple], select[size] { height: auto; min-height: 0; }
   background: rgba(0,0,0,.04); font-size: 12px; font-weight: 600;
 }
 .la-poster #la-qr svg { width: 180px; height: 180px; display: block; margin: 0 auto; }
+
+/* The practice venue's banner.
+ *
+ * In the rail, so it is on every page. Amber and not red: nothing is wrong, but
+ * nothing here is real either, and the one mistake this feature could cause is
+ * a manager reading practice takings as the day's. It is deliberately the
+ * loudest thing in the rail. */
+.demo-banner {
+  margin: 0 12px 10px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-radius: 8px;
+  border: 1px solid #b45309;
+  background: #78350f;
+  color: #fef3c7;
+}
+.demo-banner strong {
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.demo-banner span {
+  font-size: 12px;
+  line-height: 1.35;
+  color: #fde68a;
+}
+.demo-banner .btn {
+  width: 100%;
+  justify-content: center;
+}

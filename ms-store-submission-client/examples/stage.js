@@ -21,10 +21,27 @@ import { StoreSubmissionClient } from "../src/client.js";
 import { resolveStoreId } from "../src/apps.config.js";
 import { readReleaseNotes, versionInNotes } from "../src/release-notes.js";
 
-const [, , appArg, packageArg, notesArg] = process.argv;
+// `--flight <id>` stages to a package flight instead of the public listing: the
+// same build, certified the same way, but it reaches only the testers in that
+// flight's group. That is the difference between "held back until we publish"
+// (which Manual already gives us) and "our testers have it and nobody else
+// can", which is what testing on a real till actually needs.
+const rawArgs = process.argv.slice(2);
+let flightId = null;
+const flightAt = rawArgs.indexOf("--flight");
+if (flightAt !== -1) {
+  flightId = rawArgs[flightAt + 1];
+  if (!flightId) {
+    console.error("--flight needs a flight id. `node examples/flights.js <app>` lists them.");
+    process.exit(1);
+  }
+  rawArgs.splice(flightAt, 2);
+}
+
+const [appArg, packageArg, notesArg] = rawArgs;
 if (!appArg || !packageArg || !notesArg) {
   console.error(
-    "Usage: node examples/stage.js <app> <package.msix> <notes.txt>"
+    "Usage: node examples/stage.js <app> <package.msix> <notes.txt> [--flight <id>]"
   );
   process.exit(1);
 }
@@ -66,17 +83,26 @@ const client = new StoreSubmissionClient({
 // UI edits, or leaving two drafts about, leaves a submission in an error state
 // that has to be untangled by hand.
 const app = await client.getApplication(storeId);
-if (app.pendingApplicationSubmission) {
+const where = flightId ? `flight ${flightId}` : storeId;
+
+// A flight keeps its pending submission on the flight, not on the app, so the
+// two are asked separately -- and an app-level draft does not block a flight.
+const pending = flightId
+  ? (await client.getFlight(storeId, flightId)).pendingFlightSubmission
+  : app.pendingApplicationSubmission;
+if (pending) {
   console.error(
-    `${storeId} already has a submission in progress ` +
-      `(${app.pendingApplicationSubmission.id}). Delete or commit it in ` +
+    `${where} already has a submission in progress ` +
+      `(${pending.id}). Delete or commit it in ` +
       `Partner Center before staging another.`
   );
   process.exit(2);
 }
 
-const submission = await client.createSubmission(storeId);
-console.log(`Created draft submission ${submission.id} for ${storeId}`);
+const submission = flightId
+  ? await client.createFlightSubmission(storeId, flightId)
+  : await client.createSubmission(storeId);
+console.log(`Created draft submission ${submission.id} for ${where}`);
 
 // NOTHING IS PUBLISHED UNTIL SOMEBODY SAYS SO.
 //
@@ -145,7 +171,9 @@ if (listings === 0) {
   process.exit(1);
 }
 
-await client.updateSubmission(storeId, submission.id, submission);
+await (flightId
+  ? client.updateFlightSubmission(storeId, flightId, submission.id, submission)
+  : client.updateSubmission(storeId, submission.id, submission));
 
 const zipPath = path.resolve(`./${storeId}-${submission.id}.zip`);
 await client.zipAndUploadFiles(

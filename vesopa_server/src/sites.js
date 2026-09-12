@@ -57,6 +57,33 @@ async function sitesFor(db, userId) {
   for (const site of linked) {
     if (!sites.some((s) => s.id === site.id)) sites.push({ ...site, home: false });
   }
+
+  // A practice venue is a site like any other, so switching into training in the
+  // back office is the switcher that already exists rather than a second
+  // mechanism -- and coming back out is the same drop-down, which is the part a
+  // manager has to be able to find in a hurry.
+  //
+  // Only the twins of sites this login already manages: the link is what grants
+  // the demo, so nobody can reach a practice venue belonging to somebody else.
+  const real = sites.filter((s) => s.demo_of == null).map((s) => s.id);
+  if (real.length) {
+    try {
+      const [demos] = await db.query(
+        `SELECT id, name, contact_email, status, demo_of FROM offices
+          WHERE demo_of IN (${real.map(() => '?').join(',')})`,
+        real
+      );
+      for (const demo of demos) {
+        if (!sites.some((s) => s.id === demo.id)) {
+          sites.push({ ...demo, home: false, demo: true });
+        }
+      }
+    } catch (e) {
+      // A server whose migration has not run has no demo venues, which is not
+      // a reason to fail to list the real ones.
+      if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+    }
+  }
   return sites;
 }
 
@@ -95,6 +122,10 @@ function siteRoutes({ pool, broadcast, secret }) {
         current: req.user.officeId ?? null,
         sites: sites.map((s) => ({
           id: s.id, name: s.name, status: s.status, home: s.home,
+          // The back office paints a practice venue in amber and says so on
+          // every page: the worst outcome here is somebody believing they are
+          // in training when they are selling, or the other way about.
+          demo: !!s.demo,
         })),
       });
     } catch (e) {
@@ -126,7 +157,9 @@ function siteRoutes({ pool, broadcast, secret }) {
         // The tenant key too: the back office's live-update socket subscribes
         // by it, and a switched session left listening to the old site would
         // show the old site's orders arriving.
-        site: { id: site.id, name: site.name, email: site.contact_email },
+        site: {
+          id: site.id, name: site.name, email: site.contact_email, demo: !!site.demo,
+        },
       });
     } catch (e) {
       next(e);

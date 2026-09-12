@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'hardware_fingerprint.dart';
+import 'licence_key.dart';
 import 'terminal_identity.dart';
 import 'vesopa_sso.dart';
 import '../main.dart' show apiBaseProvider;
@@ -57,6 +59,31 @@ class Session {
   String get venueName =>
       officeName?.trim().isNotEmpty ?? false ? officeName!.trim() : 'Vesopa';
 
+  /// The same terminal, pointed at another venue.
+  ///
+  /// Used for one thing: putting a till into its venue's practice copy while a
+  /// training account is signed on (`data/demo_session.dart`). Everything that
+  /// reads a venue off the session — the catalogue, sync, the kitchen, the
+  /// dine-in board — follows without being told, which is the point: a trainee
+  /// cannot reach live data because there is no longer a code path to it, not
+  /// because every one of those places remembered to check.
+  ///
+  /// The person's own [token] and identity are kept: it is the same clerk
+  /// standing at the same till, practising.
+  Session inVenue({
+    required String office,
+    required String officeName,
+    required String terminalToken,
+  }) =>
+      Session(
+        email: email,
+        name: name,
+        office: office,
+        officeName: officeName,
+        token: token,
+        terminalToken: terminalToken,
+      );
+
   static const empty = Session();
 
   Map<String, dynamic> toJson() => {
@@ -103,8 +130,14 @@ class SiteChoice {
 typedef ChooseSite = Future<int?> Function(List<SiteChoice> sites);
 
 class SignInFailed implements Exception {
-  SignInFailed(this.message);
+  SignInFailed(this.message, {this.licenceKey = false});
   final String message;
+
+  /// The server refused this machine over a licence key — it is unknown, it has
+  /// been withdrawn, or it belongs to another machine. Carried as a flag rather
+  /// than sniffed out of the message, so the sign-in screen can offer the box
+  /// to type a key into without matching on wording that may be reworded.
+  final bool licenceKey;
 
   @override
   String toString() => message;
@@ -142,6 +175,10 @@ class SessionController extends AsyncNotifier<Session> {
     required String password,
     ChooseSite? chooseSite,
     int? officeId,
+    /// A licence key typed on the sign-in screen, where the venue has one.
+    /// Overrides whatever this machine had stored, and is kept when the server
+    /// accepts it — so it is typed once per machine and never again.
+    String? licenceKey,
   }) async {
     final http.Response res;
     try {
@@ -157,6 +194,10 @@ class SessionController extends AsyncNotifier<Session> {
               // with, long after the session token below has expired.
               'terminal': true,
               ...await _thisTill(canChoose: chooseSite != null),
+              // A key typed just now beats the stored one: this is how a till
+              // moved to new hardware, or given a replacement key, gets going.
+              if (licenceKey != null && licenceKey.trim().isNotEmpty)
+                'licence_key': licenceKey.trim().toUpperCase(),
               'office_id': ?officeId,
             }),
           )
@@ -176,7 +217,11 @@ class SessionController extends AsyncNotifier<Session> {
     if (res.statusCode != 200) {
       // 409 is the venue's till licences all in use; the server's message
       // names the tills holding them, which is what the manager needs to read.
-      throw SignInFailed((body['error'] as String?) ?? 'Sign-in failed.');
+      // 403 with `licence_key` is a key this machine may not use.
+      throw SignInFailed(
+        (body['error'] as String?) ?? 'Sign-in failed.',
+        licenceKey: body['licence_key'] == true,
+      );
     }
 
     // A login that runs more than one site: which one is this till for? Asked,
@@ -190,12 +235,19 @@ class SessionController extends AsyncNotifier<Session> {
         password: password,
         chooseSite: chooseSite,
         officeId: picked,
+        // Carried through the second attempt, or the till would be refused for
+        // the very key that was just typed in.
+        licenceKey: licenceKey,
       );
     }
 
     // The catalogue is keyed by the office's contact email, and the terminal
     // token is what staff PIN sign-on later reads the staff list with. Both are
     // handled in _adopt, which the Vesopa door uses as well.
+    // Accepted: remember it, so this till never asks for it again.
+    if (licenceKey != null && licenceKey.trim().isNotEmpty) {
+      await writeLicenceKey(licenceKey);
+    }
     await _adopt(body);
   }
 
@@ -306,9 +358,28 @@ class SessionController extends AsyncNotifier<Session> {
     } catch (_) {
       // A till with no name still gets a seat; the back office shows its id.
     }
+
+    // What machine this actually is, as a hash. The device id above is a UUID
+    // this install generated, so a copy of the install carries it to a second
+    // machine; the fingerprint is read from the hardware every run and cannot
+    // be carried. Null off Windows and on anything that will not answer, and
+    // null never refuses a sign-in -- see data/hardware_fingerprint.dart.
+    String? fingerprint;
+    try {
+      fingerprint = await HardwareFingerprint.get();
+    } catch (_) {
+      // A till that cannot identify its hardware still signs in. A licence is
+      // not worth being the reason a venue cannot open.
+    }
+
     return {
       'device_id': await terminalDeviceId(),
       'device_name': ?name,
+      // Which app is asking, so the server counts this against the venue's till
+      // licences and not against the kitchen's.
+      'device_kind': 'till',
+      'device_fingerprint': ?fingerprint,
+      'licence_key': ?await readLicenceKey(),
       if (canChoose) 'site_choice': true,
     };
   }

@@ -10,6 +10,9 @@
 #                               DESTRUCTIVE: backs up live first, then asks you to type "yes".
 #   ./deploy.sh --db-pull       Copy the LIVE database down to your LOCAL one.
 #                               DESTRUCTIVE to your local DB only. Backs local up first.
+#   ./deploy.sh --seed-staging  Copy LIVE into staging and scrub it: no real names,
+#                               addresses, PINs, passwords or card keys survive.
+#                               Refuses to run against anything but staging.
 #   ./deploy.sh --restart-only  Just restart pm2 (no code changes).
 #   ./deploy.sh --logs          Tail the live logs and exit.
 #   ./deploy.sh --help
@@ -24,8 +27,39 @@
 set -euo pipefail
 
 # ---- Config ---------------------------------------------------------------
+#
+# WHICH SERVER THIS DEPLOY GOES TO
+#
+#   ./deploy.sh                      live, as it always has been
+#   VESOPA_TARGET=staging ./deploy.sh    the staging copy
+#
+# Staging is a second app on the same box with its own domain, its own pm2
+# process and -- the part that matters -- ITS OWN DATABASE. It exists so a
+# release can be run against real shapes of data before a venue ever sees it.
+#
+# Deliberately the same script and the same steps. A staging environment that is
+# deployed differently from live is not a test of the deploy, and the difference
+# would be found at the worst possible moment.
+TARGET="${VESOPA_TARGET:-live}"
+
 SERVER="root@3.72.113.21"
-DOMAIN="backoffice.vesopaepos.com"
+
+case "$TARGET" in
+  live)
+    DOMAIN="backoffice.vesopaepos.com"
+    PM2_APP="vesopa_backoffice"
+    DB_NAME="vesopa_eposdb"
+    ;;
+  staging)
+    DOMAIN="staging.backoffice.vesopaepos.com"
+    PM2_APP="vesopa_backoffice_staging"
+    DB_NAME="vesopa_eposdb_staging"
+    ;;
+  *)
+    echo "Unknown target '$TARGET'. Use 'live' or 'staging'." >&2
+    exit 1
+    ;;
+esac
 
 # Where the app lives on the server. Override without editing this file:
 #   REMOTE_APP=/some/other/path ./deploy.sh
@@ -34,12 +68,6 @@ REMOTE_BACKUP="$REMOTE_APP/backup"
 
 LOCAL_APP="/Users/onzep/development/Vesopa/vesopa_server"
 LOCAL_BACKUP="$LOCAL_APP/backup"
-
-# From ecosystem.config.cjs — must match, or pm2 starts a second copy alongside
-# the running one and two processes fight over port 5060.
-PM2_APP="vesopa_backoffice"
-
-DB_NAME="vesopa_eposdb"
 
 HEALTH_URL="https://$DOMAIN/health"
 
@@ -52,11 +80,13 @@ die()  { echo "${RED}✗ $*${RST}" >&2; exit 1; }
 
 # ---- Args -----------------------------------------------------------------
 DO_CODE=1; DO_SCHEMA=0; DO_DBPUSH=0; DO_DBPULL=0; RESTART_ONLY=0; DO_LOGS=0
+DO_SEED=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --schema)        DO_SCHEMA=1 ;;
     --db-push)       DO_DBPUSH=1 ;;
     --db-pull)       DO_DBPULL=1; DO_CODE=0 ;;
+    --seed-staging)  DO_SEED=1; DO_CODE=0 ;;
     --restart-only)  RESTART_ONLY=1; DO_CODE=0 ;;
     --logs)          DO_LOGS=1; DO_CODE=0 ;;
     -h|--help)
@@ -182,6 +212,28 @@ if [[ $DO_CODE -eq 1 ]]; then
 fi
 
 # ---- Schema migrations (opt-in) ------------------------------------------
+if [[ $DO_SEED -eq 1 ]]; then
+  # Staging is seeded FROM LIVE so it holds the shapes that actually break
+  # things: the venue with 4,000 products, the catalogue nobody has tidied since
+  # 2019. What it must not hold is the people. The scrub is a separate file so
+  # it can be read and argued with on its own, and it refuses to run against a
+  # database whose name does not end in _staging.
+  if [[ "$TARGET" != "staging" ]]; then
+    echo "--seed-staging only runs against staging. Use VESOPA_TARGET=staging." >&2
+    exit 1
+  fi
+  step "Copying live into $DB_NAME…"
+  R "mysqldump --single-transaction --quick --routines vesopa_eposdb > /tmp/vesopa_seed.sql"
+  R "mysql '$DB_NAME' < /tmp/vesopa_seed.sql && rm -f /tmp/vesopa_seed.sql"
+
+  step "Scrubbing $DB_NAME…"
+  # Uploaded each time rather than trusted to be on the server: the copy that
+  # runs has to be the one in this repository, or "we scrubbed it" means
+  # whatever was left there last time.
+  scp -q "${SSH_OPTS[@]}" "$LOCAL_APP/tool/scrub-staging.sql" "$SERVER:/tmp/scrub-staging.sql"
+  R "mysql '$DB_NAME' < /tmp/scrub-staging.sql && rm -f /tmp/scrub-staging.sql"
+fi
+
 if [[ $DO_SCHEMA -eq 1 ]]; then
   step "Applying schema/*.sql to the live database…"
   # Ordered so the base schema lands before the files that alter it. Each is

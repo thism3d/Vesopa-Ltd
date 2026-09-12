@@ -18,6 +18,7 @@ import 'data/kitchen_printing.dart';
 import 'data/kitchen_screens.dart';
 import 'data/customer_display.dart';
 import 'data/card_repository.dart';
+import 'data/demo_session.dart';
 import 'data/gym.dart';
 import 'data/wallet_passes.dart';
 import 'data/device_registry.dart';
@@ -192,6 +193,9 @@ final orderRepositoryProvider = Provider<OrderRepository>(
     // Whether a training account is signed on, read when a bill is opened --
     // so a bill a trainee opens is a practice bill. See data/training_mode.dart.
     trainingMode: () => ref.read(trainingModeProvider),
+    // Whether the practice venue's token has arrived, which decides whether a
+    // practice sale is reported to that venue or simply kept on this till.
+    inDemoVenue: () => ref.read(inDemoVenueProvider),
   ),
 );
 
@@ -425,10 +429,23 @@ PaymentProvider _keyedFallback(DojoProvider rest, DojoConfig config) {
   return rest;
 }
 
-/// Who is signed into this terminal.
-final sessionProvider = Provider<Session>(
-  (ref) => ref.watch(sessionControllerProvider).value ?? Session.empty,
-);
+/// Who is signed into this terminal, and which venue it is selling from.
+///
+/// Usually the venue it was commissioned for. While a training account is
+/// signed on and the practice venue's token has arrived, it is that venue
+/// instead — so the catalogue, the sync, the kitchen and the dine-in board all
+/// work against the practice copy without any of them knowing. See
+/// `data/demo_session.dart` for why this is a swapped token and not a flag.
+final sessionProvider = Provider<Session>((ref) {
+  final live = ref.watch(sessionControllerProvider).value ?? Session.empty;
+  final demo = ref.watch(demoSessionProvider).value;
+  if (demo == null || demo.office.isEmpty) return live;
+  return live.inVenue(
+    office: demo.office,
+    officeName: demo.officeName,
+    terminalToken: demo.token,
+  );
+});
 
 /// Which venue this terminal belongs to. Comes from the sign-in rather than a
 /// build flag, so one APK can be installed in any venue.

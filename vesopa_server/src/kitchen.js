@@ -24,6 +24,7 @@ const crypto = require('crypto');
 
 const { requireAuth, requireTerminal } = require('./auth');
 const training = require('./training');
+const licences = require('./licences');
 const { cleanAllergens, readAllergens } = require('./allergens');
 
 /**
@@ -1061,6 +1062,32 @@ function kitchenAppRoutes({ pool, broadcast, secret }) {
         'UPDATE epos_kitchen_users SET last_seen_at = NOW() WHERE id = ?',
         [user.id]
       );
+
+      // A kitchen licence seat. Until now only tills were counted, so a venue
+      // paying for one screen could run six. Refused rather than evicted: a
+      // screen that vanished would take the orders being cooked with it.
+      const clampText = (v, n) => (v == null ? null : String(v).trim().slice(0, n) || null);
+      try {
+        await licences.signInDevice(pool, {
+          office,
+          kind: 'kitchen',
+          deviceId: clampText(req.body?.device_id, 64),
+          deviceName: clampText(req.body?.device_name, 120),
+          fingerprint: clampText(req.body?.device_fingerprint, 64),
+          licenceKey: clampText(req.body?.licence_key, 64),
+          by: user.username,
+        });
+      } catch (e) {
+        if (e.name === 'SeatLimitError') {
+          return res.status(409).json({
+            error: e.message,
+            licences: e.limit,
+            seats: (e.seats || []).map((x) => ({ name: x.device_name })),
+          });
+        }
+        if (e.licenceKey) return res.status(403).json({ error: e.message, licence_key: true });
+        throw e;
+      }
 
       res.json({
         token: jwt.sign(

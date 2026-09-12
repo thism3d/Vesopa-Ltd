@@ -62,6 +62,9 @@ const { recordSale } = require('./sales');
 const training = require('./training');
 const tillSeats = require('./till_seats');
 const { siteRoutes, resolveTillSite } = require('./sites');
+const { demoRoutes } = require('./demo_venue');
+const { licenceRoutes, adminLicenceRoutes } = require('./licences');
+const licences = require('./licences');
 const { loyaltyAppRoutes, startLoyaltyScheduler } = require('./loyalty_app');
 const { expressKioskRoutes } = require('./express_kiosk');
 const { walletPageRoutes } = require('./wallet_pages');
@@ -206,10 +209,18 @@ app.post('/api/login', async (req, res, next) => {
       // A licence seat first: the venue's limit is checked here, and a machine
       // signing in again keeps the seat it already holds. See till_seats.js.
       const clamp = (v, n) => (v == null ? null : String(v).trim().slice(0, n) || null);
-      const seatId = await tillSeats.claimSeat(pool, {
+      const seatId = await licences.signInDevice(pool, {
         office: who.officeEmail,
+        // Which app is signing in. Older releases send nothing and are tills,
+        // which is what every device using this door was until now.
+        kind: clamp(req.body.device_kind, 24) || 'till',
         deviceId: clamp(device_id, 64),
         deviceName: clamp(device_name, 120),
+        // What machine this really is (a hash, never the serials), and the key
+        // it was licensed with. Both absent on a release that cannot compute
+        // them, and absent is never a refusal -- see licences.js.
+        fingerprint: clamp(req.body.device_fingerprint, 64),
+        licenceKey: clamp(req.body.licence_key, 64),
         by: who.email,
       });
       body.terminalToken = issueTerminalToken(who, JWT_SECRET, undefined, seatId);
@@ -227,6 +238,10 @@ app.post('/api/login', async (req, res, next) => {
         seats: e.seats.map((s) => ({ name: s.device_name, last_seen_at: s.last_seen_at })),
       });
     }
+    // A licence key that belongs to another machine. 403 and not 409: there is
+    // nothing for the venue to sign out to make room, which is what a 409 here
+    // would have them try.
+    if (e.licenceKey) return res.status(403).json({ error: e.message, licence_key: true });
     next(e);
   }
 });
@@ -262,6 +277,9 @@ app.use('/api', permissionRoutes({ pool, broadcast, secret: JWT_SECRET }));
 app.use('/api', backofficeRoutes({ pool, broadcast, secret: JWT_SECRET }));
 // More than one site under one login: the list and the switch. See src/sites.js.
 app.use('/api', siteRoutes({ pool, broadcast, secret: JWT_SECRET }));
+// Its own paths (/api/demo and /till/demo/token), so mounted at the root.
+app.use(demoRoutes({ pool, secret: JWT_SECRET }));
+app.use('/api', licenceRoutes({ pool, secret: JWT_SECRET }));
 app.use('/api', programmingRoutes({ pool, broadcast, secret: JWT_SECRET }));
 app.use('/api', commerceRoutes({ pool, broadcast, secret: JWT_SECRET }));
 // Repricing a catalogue a level at a time: preview, apply, and put back. See
@@ -270,6 +288,9 @@ app.use('/api', commerceRoutes({ pool, broadcast, secret: JWT_SECRET }));
 app.use('/api', priceLevelRoutes({ pool, broadcast, secret: JWT_SECRET }));
 app.use('/api', analyticsRoutes({ pool, secret: JWT_SECRET }));
 app.use('/api/admin', adminRoutes({ pool, broadcast, secret: JWT_SECRET }));
+// Licence limits and keys are the platform admin's to set, so they sit behind
+// the same admin gate as the offices they belong to.
+app.use('/api/admin', adminLicenceRoutes({ pool }));
 app.use('/api/admin', templateRoutes({ pool, broadcast, secret: JWT_SECRET }));
 
 // Kitchen screens. Three routers because they are authorised three different

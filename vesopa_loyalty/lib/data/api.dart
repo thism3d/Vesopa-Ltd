@@ -128,6 +128,14 @@ class LoyaltyApi {
   Future<void> addWindowsChannel(String channelUri) =>
       _send('POST', '/loyalty/v1/me/push', body: {'kind': 'wns', 'channel_uri': channelUri});
 
+  /// A phone's push token: `fcm` on Android, `apns` on an iPhone.
+  ///
+  /// Sent as `device_token` and not as a channel URI, because it is not a URL —
+  /// the server posts to Google's or Apple's gateway, never to an address the
+  /// device supplied.
+  Future<void> addDeviceToken(String kind, String deviceToken) =>
+      _send('POST', '/loyalty/v1/me/push', body: {'kind': kind, 'device_token': deviceToken});
+
   Future<void> removePush(String endpoint) =>
       _send('DELETE', '/loyalty/v1/me/push', body: {'endpoint': endpoint});
 

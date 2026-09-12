@@ -122,7 +122,9 @@ Future<bool> refreshChannels(LoyaltyApi api, Brand brand, String slug) async {
     final channel = await pushCurrent(brand);
     if (channel != null) {
       try {
-        if (channel.kind == 'wns') {
+        if (channel.isDeviceToken) {
+          await api.addDeviceToken(channel.kind, channel.channelUri!);
+        } else if (channel.kind == 'wns') {
           await api.addWindowsChannel(channel.channelUri!);
         } else {
           await api.addWebPush(channel.subscription!);
