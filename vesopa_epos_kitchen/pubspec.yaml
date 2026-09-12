@@ -10,7 +10,7 @@ publish_to: 'none'
 # ship together: a kitchen screen and a till on different major versions is a
 # support question nobody can answer over the phone. The build number is this
 # app's own.
-version: 1.6.9+9
+version: 1.6.10+10
 
 environment:
   sdk: ^3.11.3
@@ -138,9 +138,16 @@ msix_config:
   identity_name: MeirionDavies.VesopaEPOSKitchen
   publisher: CN=3AD172E6-2CBA-4B09-AD50-B52C88D57FB3
 
+  # Where the build lands, matching the till, the display and the kiosk.
+  # Without these the package went to build/windows/x64/runner/Release, and
+  # anything looking in build/store -- a release script, or a person -- found
+  # nothing and assumed the build had failed.
+  output_path: build/store
+  output_name: vesopa-kitchen-store
+
   # Four parts, and the last must be 0 — the Store reserves the revision field
   # and rejects anything else. Tracks `version:` at the top of this file.
-  msix_version: 1.6.9.0
+  msix_version: 1.6.10.0
 
   logo_path: assets/brand/kitchen_mark.png
 
