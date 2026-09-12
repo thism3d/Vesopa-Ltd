@@ -56,8 +56,20 @@ Future<DineInOutcome> acceptDineInOrder(WidgetRef ref, DineInOrder order) async 
     );
   }
 
+  // No table, and two quite different reasons for it.
+  //
+  // A Vesopa Express kiosk has no table by construction: the customer ordered
+  // at the screen and is standing at the counter waiting to pay. That order is
+  // perfectly good and goes onto a counter bill of its own. Until this, the
+  // till refused it with the sentence below -- so a venue with "pay at the
+  // counter" switched on had an Accept button that told the clerk a table had
+  // been deleted, about an order that never had one, and nothing could be
+  // taken. That is what the owner filmed.
+  //
+  // A QR order whose table really has gone is still refused: there is no bill
+  // to put it on and no counter to take it at.
   final tableNumber = order.tableNumber;
-  if (tableNumber == null) {
+  if (tableNumber == null && !order.isKioskCounter) {
     return const DineInOutcome(
       'That table has been deleted since the order was placed. Ring it up by '
       'hand and refuse this one so the customer is told.',
@@ -96,10 +108,17 @@ Future<DineInOutcome> acceptDineInOrder(WidgetRef ref, DineInOrder order) async 
     );
   }
 
+  // Where the clerk should go and look for it. A counter order is not on a
+  // table, so naming one would send them to the wrong place; the collection
+  // number is what the customer is holding and what the kitchen calls out.
+  final where = order.isKioskCounter
+      ? 'a counter bill (collection ${order.kioskNumber})'
+      : order.tableLabel;
+
   return DineInOutcome(
     missing.isEmpty
-        ? 'Accepted onto ${order.tableLabel}.'
-        : 'Accepted onto ${order.tableLabel}, but ${missing.join(', ')} could '
+        ? 'Accepted onto $where.'
+        : 'Accepted onto $where, but ${missing.join(', ')} could '
               'not be rung up — add it by hand.',
     ok: missing.isEmpty,
   );
@@ -114,17 +133,25 @@ Future<String> _ringUp(
   WidgetRef ref,
   DineInOrder order,
   Map<int, Product> byPlu,
-  int tableNumber,
+  int? tableNumber,
 ) async {
   final tables = ref.read(tableRepositoryProvider);
   final orders = ref.read(orderRepositoryProvider);
 
-  // Onto the bill already on that table when there is one. A second bill for a
-  // table that is mid-meal is how a customer ends up paying twice.
-  final existing = await tables.orderOn(tableNumber);
-  final saleId = existing?.id ?? await orders.openOrder(tableNumber: tableNumber);
-  if (existing == null) {
-    await orders.setTable(saleId, tableNumber);
+  final String saleId;
+  if (tableNumber == null) {
+    // A kiosk order paying at the counter: a bill of its own, on no table,
+    // exactly like a walk-in rung up at the till. Never merged onto anything
+    // already open -- two customers' food on one bill is worse than two bills.
+    saleId = await orders.openOrder();
+  } else {
+    // Onto the bill already on that table when there is one. A second bill for
+    // a table that is mid-meal is how a customer ends up paying twice.
+    final existing = await tables.orderOn(tableNumber);
+    saleId = existing?.id ?? await orders.openOrder(tableNumber: tableNumber);
+    if (existing == null) {
+      await orders.setTable(saleId, tableNumber);
+    }
   }
 
   final staff = ref.read(staffSessionProvider).staff;
@@ -151,7 +178,9 @@ Future<String> _ringUp(
 /// catalogue with none of the items in it — so the caller can say so.
 Future<bool> ringUpAcceptedOrder(WidgetRef ref, DineInOrder order) async {
   final tableNumber = order.tableNumber;
-  if (tableNumber == null) return false;
+  // No table is only a dead end when there is no counter to take it at: a
+  // kiosk order is rung onto a counter bill, the same as pressing Accept.
+  if (tableNumber == null && !order.isKioskCounter) return false;
 
   final products = ref.read(productsProvider).value ?? const <Product>[];
   final byPlu = {for (final p in products) p.pluId: p};

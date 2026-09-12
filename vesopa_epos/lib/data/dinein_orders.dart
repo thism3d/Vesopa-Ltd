@@ -124,6 +124,7 @@ class DineInOrder {
     this.customerPhone,
     this.note,
     this.tableNumber,
+    this.kioskNumber,
   });
 
   final int id;
@@ -145,9 +146,21 @@ class DineInOrder {
   final String? note;
 
   /// The till's own table number, when the server could give one. What the bill
-  /// is placed against; null means the table has gone since the order, and the
-  /// clerk is asked where to put it.
+  /// is placed against; null means either that the table has gone since the
+  /// order, or that there never was one -- see [isKioskCounter], which is the
+  /// difference between the two.
   final int? tableNumber;
+
+  /// The collection number, when this came from a Vesopa Express kiosk paying
+  /// at the counter. Null for every order placed from a table's QR code.
+  ///
+  /// A kiosk has no table, so such an order arrives with none and is NOT a
+  /// table that somebody deleted -- which is what the till used to tell the
+  /// clerk, while refusing to take a perfectly good order.
+  final int? kioskNumber;
+
+  /// From a kiosk, to be paid for at the counter rather than on a table's bill.
+  bool get isKioskCounter => kioskNumber != null;
 
   /// Waiting for somebody to press Accept.
   bool get isWaiting => status == 'placed';
@@ -195,6 +208,11 @@ class DineInOrder {
       note: _nullableStr(map['note']),
       tableNumber: map['table_number'] is num
           ? (map['table_number']! as num).toInt()
+          : null,
+      // Sent by servers that know about Vesopa Express; simply absent on an
+      // older one, which is why it is read defensively rather than required.
+      kioskNumber: map['kiosk_number'] is num
+          ? (map['kiosk_number']! as num).toInt()
           : null,
     );
   }
