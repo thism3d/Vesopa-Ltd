@@ -115,9 +115,18 @@ console.log(`Created draft submission ${submission.id} for ${where}`);
 // submission used to be Immediate, which put a certified build on every till
 // the moment Microsoft passed it. PUBLISH_MODE=Immediate is still there for a
 // fix that must go out the moment it is certified.
-const mode = process.env.PUBLISH_MODE === 'Immediate' ? 'Immediate' : 'Manual';
+//
+// A FLIGHT IS THE EXCEPTION. Manual on a flight would mean somebody had to
+// press Publish for the testers as well, which is friction with no benefit --
+// a flight only ever reaches the tester group, never a customer. So a flight
+// publishes as soon as it is certified, and the main submission still waits.
+const mode = flightId
+  ? 'Immediate'
+  : process.env.PUBLISH_MODE === 'Immediate'
+    ? 'Immediate'
+    : 'Manual';
 submission.targetPublishMode = mode;
-console.log(`  publish mode: ${mode}${mode === 'Manual' ? ' (waits for "Publish now" after certification)' : ''}`);
+console.log(`  publish mode: ${mode}${mode === 'Manual' ? ' (waits for "Publish now" after certification)' : flightId ? ' (reaches the testers as soon as it is certified)' : ''}`);
 
 // The name the package is uploaded under, stamped with its version.
 //
@@ -135,7 +144,12 @@ const fileName = version ? `${base}-${version}${ext}` : path.basename(packageArg
 // The new package goes on; the ones it replaces come off. Same identity, same
 // architecture, higher version — leaving the old one would put two builds in
 // one submission for no reason.
-const keep = (submission.applicationPackages ?? []).filter(
+// A flight submission keeps its packages in `flightPackages`; the main one
+// uses `applicationPackages`. Same shape, different name, and writing to the
+// wrong one is silent -- the submission commits with no package in it.
+const packagesField = flightId ? "flightPackages" : "applicationPackages";
+
+const keep = (submission[packagesField] ?? []).filter(
   (p) => p.fileStatus !== "PendingDelete"
 );
 if (keep.some((p) => p.fileName === fileName)) {
@@ -144,10 +158,12 @@ if (keep.some((p) => p.fileName === fileName)) {
       `Bump the version or change the name — two entries under one name is ` +
       `what produced an empty submission last time.`
   );
-  await client.deleteSubmission(storeId, submission.id);
+  await (flightId
+    ? client.deleteFlightSubmission(storeId, flightId, submission.id)
+    : client.deleteSubmission(storeId, submission.id));
   process.exit(1);
 }
-submission.applicationPackages = [
+submission[packagesField] = [
   ...keep.map((p) => ({ ...p, fileStatus: "PendingDelete" })),
   { fileName, fileStatus: "PendingUpload" },
 ];
@@ -158,17 +174,26 @@ console.log(
 // The release notes, on every listing the app has. Set rather than appended:
 // these describe THIS version, and last release's notes underneath them would
 // read as a list of things that are all new.
-let listings = 0;
-for (const [lang, listing] of Object.entries(submission.listings ?? {})) {
-  if (!listing.baseListing) continue;
-  listing.baseListing.releaseNotes = notes;
-  listings++;
-  console.log(`  release notes set on ${lang} (${notes.length} characters)`);
-}
-if (listings === 0) {
-  console.error("No listing to put release notes on — stopping before upload.");
-  await client.deleteSubmission(storeId, submission.id);
-  process.exit(1);
+// A FLIGHT HAS NO LISTING. It is a private release to a tester group and
+// never appears on the Store, so there is no page for release notes to go on
+// -- the notes travel with the main submission that follows. They are still
+// read and validated above, because the version in them is checked against
+// the package, and that check is worth having either way.
+if (flightId) {
+  console.log("  no listing on a flight — the notes go with the main submission");
+} else {
+  let listings = 0;
+  for (const [lang, listing] of Object.entries(submission.listings ?? {})) {
+    if (!listing.baseListing) continue;
+    listing.baseListing.releaseNotes = notes;
+    listings++;
+    console.log(`  release notes set on ${lang} (${notes.length} characters)`);
+  }
+  if (listings === 0) {
+    console.error("No listing to put release notes on — stopping before upload.");
+    await client.deleteSubmission(storeId, submission.id);
+    process.exit(1);
+  }
 }
 
 await (flightId
@@ -208,7 +233,7 @@ console.log(
     `  app        ${storeId}\n` +
     `  submission ${submission.id}\n` +
     `  status     ${after.status}\n` +
-    `  packages   ${(after.applicationPackages ?? [])
+    `  packages   ${(after[packagesField] ?? [])
       .map((p) => `${p.fileName} [${p.fileStatus}] ${p.version ?? ""}`)
       .join(", ")}\n` +
     `Review it in Partner Center and press Submit there when you are ready.`

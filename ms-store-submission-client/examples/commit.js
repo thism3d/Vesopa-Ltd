@@ -83,7 +83,9 @@ if (errors.length) {
   process.exit(1);
 }
 
-const packages = submission.applicationPackages ?? [];
+// A flight keeps its packages under another name; see stage.js.
+const packages =
+  (flightId ? submission.flightPackages : submission.applicationPackages) ?? [];
 const arriving = packages.filter((p) => p.fileStatus === "PendingUpload");
 const leaving = packages.filter((p) => p.fileStatus === "PendingDelete");
 if (arriving.length !== 1) {
