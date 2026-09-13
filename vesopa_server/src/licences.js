@@ -505,7 +505,7 @@ function adminLicenceRoutes({ pool }) {
    */
   router.get('/licences', async (req, res, next) => {
     try {
-      // The link column arrived with schema_entitlement_link.sql. An install
+      // The link column arrived with schema_licence_link.sql. An install
       // that has not run it yet still gets the screen -- every venue simply
       // shows as unlinked, which is exactly what it is.
       let offices;

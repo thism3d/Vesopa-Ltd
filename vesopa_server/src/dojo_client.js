@@ -22,6 +22,8 @@
  *     second charge. The caller keeps the intent id and reuses it.
  */
 
+const crypto = require('crypto');
+
 const BASE = (process.env.DOJO_BASE_URL || 'https://api.dojo.tech').replace(/\/+$/, '');
 const VERSION = process.env.DOJO_API_VERSION || '2024-02-05';
 
@@ -132,6 +134,83 @@ function getIntent(key, intentId, opts) {
   return call(key, 'GET', '/payment-intents/' + encodeURIComponent(intentId), opts);
 }
 
+/**
+ * An intent to be paid on Dojo's own hosted checkout page, for Vesopa Gift.
+ *
+ * Not the card-machine intent above: nobody is standing at a terminal, the
+ * buyer is on their phone. Dojo sends them back to `redirectUrl` when they are
+ * done, and the answer is read from the intent itself -- a redirect proves
+ * only that somebody's browser arrived, never that money moved.
+ *
+ * The checkout page is https://pay.dojo.tech/checkout/<id>.
+ */
+function createCheckoutIntent(key, { amountMinor, reference, description, redirectUrl }, opts) {
+  return call(key, 'POST', '/payment-intents', {
+    ...opts,
+    body: {
+      amount: { value: amountMinor, currencyCode: 'GBP' },
+      reference: String(reference || 'vesopa-gift').slice(0, 40),
+      description: description ? String(description).slice(0, 80) : undefined,
+      captureMode: 'Auto',
+      config: redirectUrl ? { redirectUrl } : undefined,
+    },
+  });
+}
+
+function checkoutUrl(intentId) {
+  return 'https://pay.dojo.tech/checkout/' + encodeURIComponent(intentId);
+}
+
+/**
+ * Give money back on a captured intent.
+ *
+ * Unlike creating an intent, a refund DOES honour an idempotency key -- sent
+ * in a header called exactly `idempotencyKey` -- so the caller passes its own
+ * id for the refund and a retry cannot pay somebody twice.
+ */
+async function refundIntent(key, intentId, { amountMinor, reason, idempotencyKey }, { fetchImpl } = {}) {
+  if (!key) throw new DojoError(0, 'No Dojo key is configured for this venue.');
+  const doFetch = fetchImpl || fetch;
+  let response;
+  try {
+    response = await doFetch(BASE + '/payment-intents/' + encodeURIComponent(intentId) + '/refunds', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Basic ' + key,
+        version: VERSION,
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        idempotencyKey: String(idempotencyKey || crypto.randomUUID()).slice(0, 100),
+      },
+      body: JSON.stringify({
+        amount: amountMinor,
+        refundReason: reason ? String(reason).slice(0, 1024) : undefined,
+      }),
+      signal: AbortSignal.timeout(30000),
+    });
+  } catch (error) {
+    throw new DojoError(0, 'Dojo could not be reached: ' + error.message);
+  }
+  const text = await response.text();
+  let json = null;
+  try { json = text ? JSON.parse(text) : null; } catch { json = null; }
+  if (!response.ok) {
+    const said = (json && (json.title || json.detail || json.message || json.error)) || text.slice(0, 200) || response.statusText;
+    throw new DojoError(response.status, String(said).split(key).join('<key>'), json);
+  }
+  return json;
+}
+
+/** Cancel an intent nobody paid. A refusal (already paid, already gone) is not an error. */
+async function cancelIntent(key, intentId, opts) {
+  try {
+    await call(key, 'DELETE', '/payment-intents/' + encodeURIComponent(intentId), opts);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Send the intent to a card machine. Returns the session; `id` tracks it. */
 function startSession(key, { terminalId, intentId }, opts) {
   return call(key, 'POST', '/terminal-sessions', {
@@ -217,6 +296,10 @@ module.exports = {
   partnerIds,
   createIntent,
   getIntent,
+  createCheckoutIntent,
+  checkoutUrl,
+  refundIntent,
+  cancelIntent,
   startSession,
   getSession,
   cancelSession,

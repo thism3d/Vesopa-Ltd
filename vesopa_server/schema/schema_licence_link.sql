@@ -23,6 +23,13 @@
 -- changes nothing for anybody, and venues can be linked one at a time.
 --
 -- Re-runnable, like every migration here.
+--
+-- SORT ORDER. This was schema_entitlement_link.sql, which sorted BEFORE
+-- schema_licence_keys.sql -- the file that creates bo_licence_limits. Live
+-- never noticed, because by the time it ran the table already existed; a fresh
+-- database met "Table bo_licence_limits doesn't exist" on its first pass and
+-- stopped there, taking every later migration with it. Renamed so the table is
+-- always made first ('k' < 'l').
 
 DROP PROCEDURE IF EXISTS vesopa_add_column;
 DELIMITER //

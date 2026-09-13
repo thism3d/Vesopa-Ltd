@@ -68,6 +68,7 @@ const licences = require('./licences');
 const { loyaltyAppRoutes, startLoyaltyScheduler } = require('./loyalty_app');
 const { expressKioskRoutes } = require('./express_kiosk');
 const { walletPageRoutes } = require('./wallet_pages');
+const { giftIntegrationRoutes } = require('./gift_integration');
 
 const PORT = process.env.PORT || 4000;
 
@@ -438,6 +439,12 @@ app.use(appleWalletRoutes({ pool, secret: JWT_SECRET, core: wallet }));
 // and before the static middleware, for the same reason they are: /wallet/...
 // has to resolve here rather than being answered with the back-office SPA.
 app.use(walletPageRoutes({ pool, secret: JWT_SECRET, core: wallet }));
+
+// Vesopa Gift, the online voucher shop, issues and cancels the gift cards it
+// sells through this -- and nothing else. It shares the wallet core so a card
+// bought online gets the same Add to Wallet link a card issued at the counter
+// does. Answers 503 until GIFT_SERVICE_KEY is set. See src/gift_integration.js.
+app.use(giftIntegrationRoutes({ pool, broadcast, core: wallet }));
 
 // The pass artwork. Public on purpose and safe to be: it is the same branded
 // bands that go inside every .pkpass, with nothing in them that is not already
