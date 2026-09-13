@@ -66,6 +66,13 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
+  assets:
+    # Vesopa's own mark, for the Continue with Vesopa button. Bundled rather
+    # than fetched: the sign-in page is the first thing a member sees, often
+    # on a bad line, and a provider button whose logo has not arrived yet
+    # reads as a broken page.
+    - assets/vesopa-mark.png
+
   # To add assets to your application, add an assets section, like this:
   # assets:
   #   - images/a_dot_burr.jpeg

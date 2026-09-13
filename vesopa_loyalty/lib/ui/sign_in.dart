@@ -395,16 +395,34 @@ class _SignInPageState extends ConsumerState<SignInPage> {
     ];
   }
 
-  /// The ways in that are not on screen, as plain links.
-  ///
-  /// Always all of them, never a "more" menu. There are at most four, and a
-  /// member who cannot find the one they use is a member who gives up.
+  /*
+   * THE OTHER WAYS IN, AND THE DIFFERENCE THAT MATTERS.
+   *
+   * Some ways in need something typed first -- an address, a number, a
+   * password -- so tapping them can only change the form. Others need
+   * nothing at all: Continue with Vesopa hands over to a browser, a passkey
+   * asks the device. Those two must SIGN SOMEBODY IN on one tap.
+   *
+   * Drawing them all as identical text links made that difference invisible:
+   * tapping "Continue with Vesopa" swapped the form and appeared to do
+   * nothing, and it took a second tap on a button that had just moved to get
+   * anywhere. Nobody taps twice; they conclude it is broken.
+   *
+   * So the no-typing ones are proper buttons with their own mark, and only
+   * the ones that need a form are links.
+   */
   List<Widget> _otherWays(SignInConfig config, String method, ThemeData theme) {
+    if (_stage != _Stage.start) return const [];
     final others = config.usable.where((m) => m != method).toList()
       ..sort((a, b) => config.alternatives.indexOf(a).compareTo(config.alternatives.indexOf(b)));
-    if (others.isEmpty || _stage != _Stage.start) return const [];
+    if (others.isEmpty) return const [];
+
+    const oneTap = {'vesopa', 'passkey'};
+    final buttons = others.where(oneTap.contains).toList();
+    final links = others.where((m) => !oneTap.contains(m)).toList();
+
     return [
-      const SizedBox(height: 6),
+      const SizedBox(height: 14),
       Row(
         children: [
           const Expanded(child: Divider()),
@@ -415,16 +433,81 @@ class _SignInPageState extends ConsumerState<SignInPage> {
           const Expanded(child: Divider()),
         ],
       ),
-      Wrap(
-        alignment: WrapAlignment.center,
-        children: [
-          for (final m in others)
-            TextButton(
-              onPressed: _busy ? null : () => _choose(m),
-              child: Text(signInLabel(m)),
-            ),
-        ],
-      ),
+      const SizedBox(height: 10),
+      for (final m in buttons) ...[
+        _ProviderButton(
+          method: m,
+          busy: _busy,
+          onPressed: () => m == 'vesopa' ? _startVesopa() : _signInWithPasskey(),
+        ),
+        const SizedBox(height: 8),
+      ],
+      if (links.isNotEmpty)
+        Wrap(
+          alignment: WrapAlignment.center,
+          children: [
+            for (final m in links)
+              TextButton(
+                onPressed: _busy ? null : () => _choose(m),
+                child: Text(signInLabel(m)),
+              ),
+          ],
+        ),
     ];
+  }
+}
+
+/// A way in that needs nothing typed: its own mark, and it goes on one tap.
+class _ProviderButton extends StatelessWidget {
+  const _ProviderButton({required this.method, required this.busy, required this.onPressed});
+
+  final String method;
+  final bool busy;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final vesopa = method == 'vesopa';
+    return SizedBox(
+      height: 50,
+      child: OutlinedButton(
+        onPressed: busy ? null : onPressed,
+        style: OutlinedButton.styleFrom(
+          side: BorderSide(color: theme.colorScheme.outlineVariant),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (vesopa)
+              ClipRRect(
+                // The mark is a hard-cornered square; rounded, it sits in the
+                // button rather than looking stuck onto it.
+                borderRadius: BorderRadius.circular(5),
+                child: Image.asset(
+                  'assets/vesopa-mark.png',
+                  width: 22,
+                  height: 22,
+                  // A provider button with a hole where its logo should be is
+                  // worse than one with none, so a missing asset simply leaves
+                  // the words.
+                  errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                ),
+              )
+            else
+              Icon(Icons.fingerprint, size: 24, color: theme.colorScheme.onSurface),
+            const SizedBox(width: 10),
+            Text(
+              vesopa ? 'Continue with Vesopa' : 'Use a passkey',
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: theme.colorScheme.onSurface,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

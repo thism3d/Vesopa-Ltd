@@ -340,12 +340,55 @@ module.exports = function loyaltyAccountRoutes(deps) {
     }
   }
 
+  /*
+   * The signing keys, cached, with the stale set kept as a fallback.
+   *
+   * THE PATH IS /jwks.json, NOT /.well-known/jwks.json. Guessing the
+   * conventional path is what broke this: the fetch 404'd, the verifier
+   * answered null, and every Continue with Vesopa was refused with a message
+   * that blamed the sign-in. The discovery document publishes `jwks_uri` and
+   * that is the authority -- so it is read from there and only falls back to
+   * the known path if discovery itself cannot be reached.
+   */
+  let jwksCache = { at: 0, keys: null };
+  const JWKS_TTL_MS = 60 * 60 * 1000;
+
+  async function signingKeys() {
+    if (jwksCache.keys && Date.now() - jwksCache.at < JWKS_TTL_MS) return jwksCache.keys;
+    const issuer = String(process.env.VESOPA_AUTH_ISSUER || '').replace(/\/$/, '');
+    try {
+      let uri = `${issuer}/jwks.json`;
+      try {
+        const disco = await fetch(`${issuer}/.well-known/openid-configuration`,
+          { signal: AbortSignal.timeout(8000) });
+        if (disco.ok) {
+          const doc = await disco.json();
+          if (doc && typeof doc.jwks_uri === 'string') uri = doc.jwks_uri;
+        }
+      } catch {
+        // Discovery is a convenience. The known path still works.
+      }
+      const res = await fetch(uri, { signal: AbortSignal.timeout(8000) });
+      if (!res.ok) throw new Error(`jwks ${res.status}`);
+      const body = await res.json();
+      if (!body || !Array.isArray(body.keys) || !body.keys.length) throw new Error('jwks was empty');
+      jwksCache = { at: Date.now(), keys: body.keys };
+      return body.keys;
+    } catch (e) {
+      // Stale beats nothing: an hour-old key set verifies today's tokens, and
+      // a member signing in on a bad line should not fail for that.
+      if (jwksCache.keys) return jwksCache.keys;
+      throw e;
+    }
+  }
+
   /**
    * Check an id token from Vesopa Auth against its published keys.
    *
-   * Fetches the JWKS each time rather than caching: this runs when somebody
-   * signs in, not on every request, and a cache that serves a rotated-out key
-   * is a sign-in outage nobody can explain.
+   * THE ALGORITHM COMES FROM THE KEY, never from the token's own header.
+   * Trusting the header is the `alg: none` hole, where an attacker declares
+   * the token unsigned and every check after it passes. The header is used
+   * only to say WHICH key, which it cannot lie about usefully.
    */
   async function verifyVesopaToken(idToken) {
     const issuer = String(process.env.VESOPA_AUTH_ISSUER || '').replace(/\/$/, '');
@@ -353,25 +396,19 @@ module.exports = function loyaltyAccountRoutes(deps) {
     if (!issuer || !clientId || !idToken) return null;
     try {
       const jwt = require('jsonwebtoken');
-      const res = await fetch(`${issuer}/.well-known/jwks.json`, { signal: AbortSignal.timeout(8000) });
-      if (!res.ok) return null;
-      const { keys } = await res.json();
-      const header = JSON.parse(Buffer.from(idToken.split('.')[0], 'base64url').toString());
-      const jwk = (keys || []).find((k) => k.kid === header.kid);
+      const header = JSON.parse(Buffer.from(String(idToken).split('.')[0], 'base64url').toString());
+      const keys = await signingKeys();
+      const jwk = keys.find((k) => k.kid === header.kid) || (keys.length === 1 ? keys[0] : null);
       if (!jwk) return null;
+      const algorithms = [jwk.alg || (jwk.kty === 'EC' ? 'ES256' : 'RS256')];
       const pem = crypto.createPublicKey({ key: jwk, format: 'jwk' })
         .export({ type: 'spki', format: 'pem' });
-      return jwt.verify(idToken, pem, {
-        algorithms: ['RS256', 'ES256'],
-        issuer,
-        audience: clientId,
-      });
+      return jwt.verify(idToken, pem, { algorithms, issuer, audience: clientId });
     } catch (e) {
       console.warn('[loyalty_account] vesopa token refused:', e.message);
       return null;
     }
   }
-
   // ---- The member's own account --------------------------------------------
 
   /** Who they are and what they can prove, for the account page. */
