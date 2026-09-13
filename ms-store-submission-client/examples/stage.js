@@ -136,7 +136,20 @@ console.log(`  publish mode: ${mode}${mode === 'Manual' ? ' (waits for "Publish 
 // entries with one name, one being deleted and one arriving, is ambiguous to
 // the Store and it showed as a submission with no package in it. The version
 // is in the name now, so the two entries can never collide again.
-const version = process.env.STAGE_VERSION || "";
+/*
+ * The version that goes in the uploaded FILENAME.
+ *
+ * It used to come only from STAGE_VERSION, so forgetting to set it uploaded
+ * the package under its bare name -- and the next release then collided with
+ * it, because a submission cannot hold two packages called the same thing.
+ * The guard below caught that, which is the right outcome, but the operator
+ * was being asked to remember a number the tool already knows.
+ *
+ * It knows it because `declared` is read out of the release notes above and
+ * checked against the package itself. So that is the default, and
+ * STAGE_VERSION stays as an override for anybody who needs a different name.
+ */
+const version = process.env.STAGE_VERSION || declared || "";
 const base = path.basename(packageArg, path.extname(packageArg));
 const ext = path.extname(packageArg);
 const fileName = version ? `${base}-${version}${ext}` : path.basename(packageArg);
