@@ -103,3 +103,53 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+# ---------------------------------------------------------------------------
+# The Microsoft Store package
+#
+# THE IDENTITY IS ASSIGNED BY PARTNER CENTER and must match it character for
+# character. A package whose Identity/Name or Publisher differs by one letter
+# is refused at upload with an error that names neither of them.
+#
+#   Package/Identity/Name                MeirionDavies.VesopaLoyalty
+#   Package/Identity/Publisher           CN=3AD172E6-2CBA-4B09-AD50-B52C88D57FB3
+#   Package/Properties/PublisherDisplayName  Vesopa EPOS Ltd
+#   Package Family Name  MeirionDavies.VesopaLoyalty_nyzwpk2n60a5j
+#   Store ID             9N6VWPJ25VPH
+#
+# THIS IS THE PLATFORM'S OWN APP, not a venue's. The same build is every
+# venue's app -- name, logo and colours arrive at run time from the back
+# office -- so this package is branded Vesopa. A venue wanting its own Store
+# entry needs its own name reservation and identity, which is the owner's to
+# obtain.
+# ---------------------------------------------------------------------------
+msix_config:
+  display_name: Vesopa Loyalty
+  publisher_display_name: Vesopa EPOS Ltd
+  identity_name: MeirionDavies.VesopaLoyalty
+  publisher: CN=3AD172E6-2CBA-4B09-AD50-B52C88D57FB3
+
+  # Four parts, and the Store requires the last to be 0. A version can never
+  # be reused, so bump this -- and `version:` above -- for every submission,
+  # including a resubmission after a failed certification.
+  msix_version: 1.0.0.0
+
+  logo_path: assets/brand/loyalty_mark_512.png
+
+  # internetClient is all it needs: the app talks to the back office over
+  # HTTPS and to nothing on the venue's own network. Asking for more than is
+  # used is a question at certification and a line on the Store page telling
+  # customers this app wants something it does not.
+  capabilities: internetClient
+
+  store: true
+  install_certificate: false
+  architecture: x64
+
+  # English only. The Store asks for a listing in every language the package
+  # declares, so declaring one nobody has written costs a blocked submission.
+  languages: en-gb
+
+  output_path: build/store
+  output_name: vesopa-loyalty-store
+  windows_build_args: --release --dart-define=LOYALTY_SLUG=vesopa-test --dart-define=VESOPA_LOYALTY_CLIENT_ID=12a1047bafa611f185af42010a80000e

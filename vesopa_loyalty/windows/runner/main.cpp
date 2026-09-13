@@ -27,7 +27,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   FlutterWindow window(project);
   Win32Window::Point origin(10, 10);
   Win32Window::Size size(1280, 720);
-  if (!window.Create(L"vesopa_loyalty", origin, size)) {
+  // What the taskbar and the window bar say. "vesopa_loyalty" is the Flutter
+  // project name and was never meant to be read by anybody.
+  if (!window.Create(L"Vesopa Loyalty", origin, size)) {
     return EXIT_FAILURE;
   }
   window.SetQuitOnClose(true);
