@@ -209,7 +209,8 @@ class KitchenApi {
     try {
       final body = await _send(
         'GET',
-        '/api/terminal/vesopa/enabled',
+        // Its OWN client, not the till's -- see the note in terminal_vesopa.js.
+        '/api/kitchen/vesopa/enabled',
         authorised: false,
       );
       if (body['enabled'] != true) return null;

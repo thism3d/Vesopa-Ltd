@@ -218,26 +218,34 @@ function terminalVesopaRoutes({ pool, secret, issueToken, issueTerminalToken }) 
    */
 
   /**
-   * What a DISPLAY needs in order to offer Continue with Vesopa.
+   * What a KITCHEN SCREEN, DISPLAY or KIOSK needs to offer Continue with Vesopa.
    *
-   * Its own client id, not the till's. A display asked to sign in as the till
-   * would be asking a manager to authorise the wrong product, and would make
-   * the audience check meaningless again.
+   * Its own client id, never the till's. All three used to fetch
+   * /api/terminal/vesopa/enabled and sign in as the till, which is how they
+   * came to share one client in the first place: a manager setting up a kiosk
+   * was asked to authorise "Vesopa EPOS", and the audience check could not
+   * tell the three apart.
    *
-   * Answers `enabled: false` rather than an error where the display client is
-   * not configured. A display that met an error on its first screen would be a
-   * screen somebody unplugs; one told sign-in is off simply goes on to pair
-   * with a till as it always did.
+   * Answers `enabled: false` rather than an error where that product's client
+   * is not configured. An app that met an error on its setup screen is an app
+   * somebody gives up on; one told sign-in is off falls back to the door it
+   * has always had.
    */
-  router.get('/api/display/vesopa/enabled', (req, res) => {
-    res.set('Cache-Control', 'no-store');
-    const clientId = CLIENT_IDS.display || '';
-    res.json({
-      enabled: ENABLED && Boolean(clientId),
-      issuer: ISSUER,
-      clientId: clientId || null,
-    });
-  });
+  function enabledFor(kind) {
+    return (req, res) => {
+      res.set('Cache-Control', 'no-store');
+      const clientId = CLIENT_IDS[kind] || '';
+      res.json({
+        enabled: ENABLED && Boolean(clientId),
+        issuer: ISSUER,
+        clientId: clientId || null,
+      });
+    };
+  }
+
+  router.get('/api/display/vesopa/enabled', enabledFor('display'));
+  router.get('/api/kitchen/vesopa/enabled', enabledFor('kitchen'));
+  router.get('/api/express/vesopa/enabled', enabledFor('express'));
   router.get('/api/terminal/vesopa/enabled', (req, res) => {
     res.set('Cache-Control', 'no-store');
     res.json({

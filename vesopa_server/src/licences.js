@@ -472,10 +472,27 @@ function adminLicenceRoutes({ pool }) {
           continue;
         }
         const seats = Math.max(0, Number(raw) || 0);
+        /*
+         * A NUMBER TYPED BY A PERSON IS AN OVERRIDE, and has to be recorded as
+         * one. Without this the row keeps whatever source it had -- 'auth' for
+         * anything already fetched -- and the next refresh quietly replaces the
+         * number somebody just set, at whatever moment the schedule next runs.
+         * That is the worst possible way to discover this table has two kinds
+         * of row in it.
+         *
+         * The status is cleared with it: an override is not a subscription and
+         * must not keep wearing the subscription's `expired` badge.
+         */
         await pool.execute(
-          `INSERT INTO bo_licence_limits (office, kind, seats, updated_by)
-           VALUES (?, ?, ?, ?)
-           ON DUPLICATE KEY UPDATE seats = VALUES(seats), updated_by = VALUES(updated_by)`,
+          `INSERT INTO bo_licence_limits
+             (office, kind, seats, source, status, ends_at, updated_by)
+           VALUES (?, ?, ?, 'override', NULL, NULL, ?)
+           ON DUPLICATE KEY UPDATE
+             seats      = VALUES(seats),
+             source     = 'override',
+             status     = NULL,
+             ends_at    = NULL,
+             updated_by = VALUES(updated_by)`,
           [office, kind, seats, req.user?.email || null]
         );
       }

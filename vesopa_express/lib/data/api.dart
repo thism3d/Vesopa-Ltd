@@ -89,7 +89,10 @@ class ExpressApi {
   /// Whether this server offers Continue with Vesopa, and where to send it.
   /// The till's own question -- a kiosk commissions through the same client.
   Future<({bool enabled, String issuer, String clientId})> vesopaOption() async {
-    final j = await _send('GET', '/api/terminal/vesopa/enabled');
+    // Its OWN client, not the till's. A kiosk signing in as the till asked a
+    // manager to authorise the wrong product, and left the audience check
+    // unable to tell a kiosk from a till.
+    final j = await _send('GET', '/api/express/vesopa/enabled');
     return (
       enabled: j['enabled'] == true && (j['clientId'] as String?) != null,
       issuer: (j['issuer'] as String?) ?? 'https://auth.vesopa.com',
