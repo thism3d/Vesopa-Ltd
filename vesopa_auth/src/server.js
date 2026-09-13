@@ -21,6 +21,7 @@ const db = require('./db');
 const csrf = require('./csrf');
 const captcha = require('./captcha');
 const webhooks = require('./webhooks');
+const selfcheck = require('./selfcheck');
 const { securityHeaders, requestContext } = require('./middleware');
 const pages = require('./routes/pages');
 const auth = require('./routes/auth');
@@ -246,6 +247,18 @@ async function start() {
    */
   webhooks.startWorker();
   console.log('[boot] webhook worker running');
+
+  /*
+   * Would every application actually work?
+   *
+   * Asked here because the one time it was not, three clients sat looking
+   * perfectly configured -- right ids, right endpoints -- and could not
+   * complete a sign-in, and nobody found out until a build shipped. It warns
+   * and never refuses to start: an identity provider that would not boot over
+   * one misconfigured application would take down the back office somebody
+   * needs in order to fix it.
+   */
+  await selfcheck.report();
 
   const server = app.listen(config.port, '127.0.0.1', () => {
     console.log(
