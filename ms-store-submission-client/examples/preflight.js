@@ -37,6 +37,7 @@ const APP_DIR = {
   "vesopa-kitchen": "vesopa_epos_kitchen",
   "vesopa-display": "vesopa_epos_display",
   "vesopa-express": "vesopa_express",
+  "vesopa-loyalty": "vesopa_loyalty",
 };
 
 const NOTES_PREFIX = {
@@ -44,6 +45,7 @@ const NOTES_PREFIX = {
   "vesopa-kitchen": "kitchen",
   "vesopa-display": "display",
   "vesopa-express": "express",
+  "vesopa-loyalty": "loyalty",
 };
 
 function pubspecVersion(dir) {

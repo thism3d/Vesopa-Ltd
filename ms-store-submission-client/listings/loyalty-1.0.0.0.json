@@ -1,0 +1,59 @@
+{
+  "_about": "The Microsoft Store listing for Vesopa Loyalty's first release (9N6VWPJ25VPH). The first submission has to be typed into Partner Center -- the draft opened by reserving the name refuses a PUT (400) and a fresh POST is refused while it exists (409). This is what was typed, kept so the next person starts from it. Every paragraph is one line: Partner Center shows each newline as a line break.",
+  "app": "9N6VWPJ25VPH",
+  "version": "1.0.0.0",
+  "package": "vesopa-loyalty-store-1.0.0.0.msix",
+  "identity": {
+    "name": "MeirionDavies.VesopaLoyalty",
+    "publisher": "CN=3AD172E6-2CBA-4B09-AD50-B52C88D57FB3",
+    "publisherDisplayName": "Vesopa EPOS Ltd",
+    "packageFamilyName": "MeirionDavies.VesopaLoyalty_nyzwpk2n60a5j"
+  },
+  "submission": {
+    "applicationCategory": "Business_SalesAndMarketing",
+    "visibility": "Public",
+    "targetPublishMode": "Manual",
+    "hardwarePreferences": [
+      "Touch"
+    ],
+    "automaticBackupEnabled": false,
+    "canInstallOnRemovableMedia": true,
+    "isGameDvrEnabled": false,
+    "hasExternalInAppProducts": false,
+    "meetAccessibilityGuidelines": false,
+    "allowTargetFutureDeviceFamilies": {
+      "Desktop": true,
+      "Mobile": false,
+      "Xbox": false,
+      "Team": false,
+      "Holographic": false
+    },
+    "notesForCertification": "Vesopa Loyalty is the customer-facing loyalty app for venues that use the Vesopa EPOS till system. It is not a general-purpose app: a person signs in as a MEMBER OF A PARTICULAR VENUE'S loyalty scheme.\n\nTO REVIEW IT, please use the demonstration venue:\n\n  1. Start the app. It opens on the sign-in screen for The Vesopa Kitchen.\n  2. Enter the email address  manager@vesopa.co.uk\n  3. Press \"Email me a code\". A six-digit code is sent to that address.\n\nBecause the reviewer cannot read that mailbox, a standing code has been left in place for certification \u2014 please see the \"certification sign-in code\" line supplied with this submission. Enter it in the six-digit box and press Sign in.\n\nOnce signed in you will see the member's card (a QR code the venue's till scans), their points, the Activity list, the Account section and the Venue page. Tapping the card turns it over. The bell at the top right opens the venue's news.\n\nThe app talks only to the Vesopa back office over HTTPS (menu.vesopaepos.com). It declares the internetClient capability and nothing else. It handles no payment details of any kind: points are applied by the venue's till, not by this app.\n\nWindows notifications are delivered through WNS using the package identity of this submission. If notifications are not yet configured for the account at review time, messages still appear inside the app \u2014 that is by design and not a fault."
+  },
+  "listing": {
+    "description": "Your loyalty card for the venues you already go to \u2014 always on you, never in the bottom of a bag.\n\nShow the code at the till and your points go on straight away. Turn the card over to see what those points are worth and how close you are to being able to spend them.\n\nEvery visit is listed. Tap one and it opens out: what you spent, what you earned, and the balance it left behind \u2014 so a number on a card is always something you can explain.\n\nNews and offers from the venue arrive in the app, with pictures and video, and as Windows notifications so you do not miss the ones that matter. Nothing is lost if you would rather not have notifications: every message is still waiting in the app.\n\nSign in the way your venue offers \u2014 an emailed code, a texted code, a password, a passkey using your face or fingerprint, or your Vesopa account. Your venue chooses what it offers; you choose which you use.\n\nVesopa Loyalty is the app for venues running the Vesopa EPOS till system. Each venue's app carries its own name, logo and colours, so it looks like the place you are in rather than like us.\n\nYou need to be a member of a venue's loyalty scheme to sign in. Ask at the venue, or join in the app with your email address if the venue allows it.",
+    "features": [
+      "Your card as a scannable code, with points and tier",
+      "Turn the card over for what your points are worth",
+      "Every visit itemised \u2014 spend, points earned, balance after",
+      "Venue news and offers, with pictures and video",
+      "Windows notifications when something arrives",
+      "Sign in with a code, a password, a passkey or your Vesopa account"
+    ],
+    "releaseNotes": "Version 1.0.0.0 - Your card, your points and our news\n\nThe first release of Vesopa Loyalty for Windows.\n\nYour loyalty card, always on you. Show the code at the till and your points go on straight away. Turn the card over to see what they are worth and how close you are to spending them.\n\nEvery visit is listed, and tapping one opens it out: what you spent, what you earned, and the balance it left.\n\nNews and offers from the venue arrive in the app, with pictures and video, and appear as Windows notifications so you do not miss one.\n\nSign in the way your venue offers: an emailed code, a texted code, a password, a passkey, or your Vesopa account.",
+    "shortDescription": "Your loyalty card for the venues you go to: show the code at the till, watch the points go on, and never miss the news.",
+    "copyrightAndTrademarkInfo": "Copyright (C) 2026 Vesopa EPOS Ltd. All rights reserved.",
+    "keywords": [
+      "loyalty card",
+      "points",
+      "rewards",
+      "membership",
+      "vesopa",
+      "epos",
+      "venue"
+    ],
+    "privacyPolicyUrl": "https://vesopa.com/privacy",
+    "supportContact": "support@vesopasoftware.com",
+    "websiteUrl": "https://vesopa.com/"
+  }
+}

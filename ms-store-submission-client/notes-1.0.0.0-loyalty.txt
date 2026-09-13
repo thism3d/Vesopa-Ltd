@@ -1,0 +1,11 @@
+Version 1.0.0.0 - Your card, your points and our news
+
+The first release of Vesopa Loyalty for Windows.
+
+Your loyalty card, always on you. Show the code at the till and your points go on straight away. Turn the card over to see what they are worth and how close you are to spending them.
+
+Every visit is listed, and tapping one opens it out: what you spent, what you earned, and the balance it left.
+
+News and offers from the venue arrive in the app, with pictures and video, and appear as Windows notifications so you do not miss one.
+
+Sign in the way your venue offers: an emailed code, a texted code, a password, a passkey, or your Vesopa account.

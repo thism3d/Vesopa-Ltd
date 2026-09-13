@@ -24,6 +24,12 @@ export const APPS = {
     // MeirionDavies.VesopaExpress_nyzwpk2n60a5j).
     storeId: process.env.VESOPA_EXPRESS_STORE_ID || "9N5W5VLP2948",
   },
+  "vesopa-loyalty": {
+    label: "Vesopa Loyalty",
+    // Reserved in Partner Center on 2026-09-13 (package family
+    // MeirionDavies.VesopaLoyalty_nyzwpk2n60a5j).
+    storeId: process.env.VESOPA_LOYALTY_STORE_ID || "9N6VWPJ25VPH",
+  },
 };
 
 export function resolveStoreId(nameOrId) {
