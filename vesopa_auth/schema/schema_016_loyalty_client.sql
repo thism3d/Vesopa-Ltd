@@ -33,9 +33,10 @@
 --   * auth_policy is code_first. The people using it are customers who may never
 --     have set a password, and leading with one they have not got is how a
 --     sign-in gets abandoned.
---   * The redirect URIs are web addresses under the menu host, because this app
---     is a web app on a phone. There is no loopback: it never runs as a desktop
---     program of its own.
+--   * The redirect URIs cover both shapes the app ships in: a web address under
+--     the menu host for the browser build, and a loopback for the Windows,
+--     Android and iPhone builds, which open the system browser and listen on a
+--     port of their own exactly as the till and the kiosk do.
 --
 -- Re-runnable.
 -- ---------------------------------------------------------------------------
@@ -124,6 +125,18 @@ SELECT @loyalty, 'https://menu.vesopaepos.com/app/vesopa/callback', 'login'
      SELECT 1 FROM application_redirect_uris r
       WHERE r.application_id = @loyalty
         AND r.uri = 'https://menu.vesopaepos.com/app/vesopa/callback');
+
+-- The Windows, Android and iPhone builds are native apps and cannot be sent
+-- to a web page: they open the system browser and listen on a loopback port
+-- the operating system chooses. Port 0 stands for "any" -- registration
+-- ignores the port on a loopback address (RFC 8252 section 7.3) -- which is
+-- what lets one row serve every machine.
+INSERT INTO application_redirect_uris (application_id, uri, kind)
+SELECT @loyalty, 'http://127.0.0.1:0/callback', 'login'
+ WHERE @loyalty IS NOT NULL
+   AND NOT EXISTS (
+     SELECT 1 FROM application_redirect_uris r
+      WHERE r.application_id = @loyalty AND r.uri = 'http://127.0.0.1:0/callback');
 
 -- Signing out sends somebody back to the app they were in.
 INSERT INTO application_redirect_uris (application_id, uri, kind)

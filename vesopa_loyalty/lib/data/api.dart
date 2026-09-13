@@ -108,6 +108,109 @@ class LoyaltyApi {
     return json['token'] as String;
   }
 
+  String get _app => '/loyalty/v1/app/${Uri.encodeComponent(slug)}';
+
+  /// An email address and a password.
+  Future<String> signInWithPassword({
+    required String email,
+    required String password,
+    required String platform,
+  }) async {
+    final json = await _send('POST', '$_app/password',
+        body: {'email': email, 'password': password, 'platform': platform});
+    return json['token'] as String;
+  }
+
+  /// What the browser needs to offer a passkey. The address is a hint: with
+  /// one we can name that member's keys, without one the browser offers
+  /// whatever it holds for this site.
+  Future<Map<String, dynamic>> passkeyOptions({String? email}) =>
+      _send('POST', '$_app/passkey/options', body: {'email': ?email});
+
+  Future<String> signInWithPasskey({
+    required String challenge,
+    required Map<String, dynamic> credential,
+    required String platform,
+  }) async {
+    final json = await _send('POST', '$_app/passkey/verify',
+        body: {'challenge': challenge, 'credential': credential, 'platform': platform});
+    return json['token'] as String;
+  }
+
+  Future<void> requestSmsCode(String phone) =>
+      _send('POST', '$_app/sms', body: {'phone': phone});
+
+  Future<String> signInWithSms({
+    required String phone,
+    required String code,
+    required String platform,
+  }) async {
+    final json = await _send('POST', '$_app/sms/verify',
+        body: {'phone': phone, 'code': code, 'platform': platform});
+    return json['token'] as String;
+  }
+
+  /// Finish Continue with Vesopa. The code is swapped for a token by the
+  /// server, never here: that call wants a secret a web app cannot keep, and
+  /// a token from auth has no business being in the browser.
+  /// One of [code] (the web, with its verifier) or [idToken] (a native app
+  /// that did its own exchange). The server takes either.
+  Future<String> signInWithVesopa({
+    String? code,
+    String? verifier,
+    String? redirectUri,
+    String? idToken,
+    required String platform,
+  }) async {
+    final json = await _send('POST', '$_app/vesopa', body: {
+      'code': ?code,
+      'code_verifier': ?verifier,
+      'redirect_uri': ?redirectUri,
+      'id_token': ?idToken,
+      'platform': platform,
+    });
+    return json['token'] as String;
+  }
+
+  // ---- The member's account -------------------------------------------------
+
+  Future<Map<String, dynamic>> account() => _send('GET', '/loyalty/v1/me/account');
+
+  Future<void> setName(String name) =>
+      _send('PUT', '/loyalty/v1/me/account', body: {'name': name});
+
+  Future<void> setPassword({String? current, required String password}) =>
+      _send('POST', '/loyalty/v1/me/password', body: {'current': ?current, 'password': password});
+
+  Future<void> removePassword(String current) =>
+      _send('POST', '/loyalty/v1/me/password', body: {'current': current, 'remove': true});
+
+  Future<void> addPhone(String phone) =>
+      _send('POST', '/loyalty/v1/me/phone', body: {'phone': phone});
+
+  Future<void> confirmPhone({required String phone, required String code}) =>
+      _send('POST', '/loyalty/v1/me/phone/verify', body: {'phone': phone, 'code': code});
+
+  Future<void> removePhone() => _send('DELETE', '/loyalty/v1/me/phone');
+
+  Future<Map<String, dynamic>> passkeyRegistrationOptions() =>
+      _send('POST', '/loyalty/v1/me/passkeys/options');
+
+  Future<void> addPasskey({
+    required String challenge,
+    required Map<String, dynamic> credential,
+    String? name,
+  }) => _send('POST', '/loyalty/v1/me/passkeys',
+      body: {'challenge': challenge, 'credential': credential, 'name': ?name});
+
+  Future<void> removePasskey(String id) =>
+      _send('DELETE', '/loyalty/v1/me/passkeys/${Uri.encodeComponent(id)}');
+
+  Future<int> signOutOthers() async {
+    final json = await _send('POST', '/loyalty/v1/me/signout-others');
+    return (json['signed_out'] as num?)?.toInt() ?? 0;
+  }
+
   // ---- The member -----------------------------------------------------------
 
   Future<Map<String, dynamic>> me() => _send('GET', '/loyalty/v1/me');

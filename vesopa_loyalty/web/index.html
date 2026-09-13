@@ -112,6 +112,84 @@
         }
       });
     }
+
+    /*
+     * PASSKEYS.
+     *
+     * WebAuthn speaks ArrayBuffers and the server speaks base64url, so every
+     * field has to be converted on the way in and back on the way out. It is
+     * half a page of fiddly JavaScript that reads far better here than
+     * through Dart interop -- same reason the push helper lives here.
+     *
+     * Everything answers a JSON string, and an empty one means "cancelled".
+     * The browser throws the same DOMException for a cancel, a timeout and a
+     * refusal, and tells them apart only in wording that differs by browser,
+     * so none of them is worth reporting as an error.
+     */
+    const b64urlToBuf = function (value) {
+      const pad = value.replace(/-/g, '+').replace(/_/g, '/');
+      const raw = atob(pad + '==='.slice((pad.length + 3) % 4));
+      const out = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i += 1) out[i] = raw.charCodeAt(i);
+      return out.buffer;
+    };
+    const bufToB64url = function (buf) {
+      const bytes = new Uint8Array(buf);
+      let raw = '';
+      for (let i = 0; i < bytes.length; i += 1) raw += String.fromCharCode(bytes[i]);
+      return btoa(raw).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    };
+
+    window.vesopaPasskey = {
+      supported: function () {
+        return !!(window.PublicKeyCredential && navigator.credentials
+          && typeof navigator.credentials.create === 'function'
+          && window.isSecureContext);
+      },
+
+      create: async function (optionsJson) {
+        const o = JSON.parse(optionsJson);
+        o.challenge = b64urlToBuf(o.challenge);
+        o.user.id = b64urlToBuf(o.user.id);
+        (o.excludeCredentials || []).forEach(function (c) { c.id = b64urlToBuf(c.id); });
+        const cred = await navigator.credentials.create({ publicKey: o });
+        if (!cred) return '';
+        return JSON.stringify({
+          id: cred.id,
+          rawId: bufToB64url(cred.rawId),
+          type: cred.type,
+          // Present where the browser knows how the key is reached (usb,
+          // internal, hybrid). The server keeps it so a later sign-in can
+          // tell the browser where to look.
+          transports: cred.response.getTransports ? cred.response.getTransports() : [],
+          clientExtensionResults: cred.getClientExtensionResults(),
+          response: {
+            clientDataJSON: bufToB64url(cred.response.clientDataJSON),
+            attestationObject: bufToB64url(cred.response.attestationObject),
+          },
+        });
+      },
+
+      get: async function (optionsJson) {
+        const o = JSON.parse(optionsJson);
+        o.challenge = b64urlToBuf(o.challenge);
+        (o.allowCredentials || []).forEach(function (c) { c.id = b64urlToBuf(c.id); });
+        const cred = await navigator.credentials.get({ publicKey: o });
+        if (!cred) return '';
+        return JSON.stringify({
+          id: cred.id,
+          rawId: bufToB64url(cred.rawId),
+          type: cred.type,
+          clientExtensionResults: cred.getClientExtensionResults(),
+          response: {
+            clientDataJSON: bufToB64url(cred.response.clientDataJSON),
+            authenticatorData: bufToB64url(cred.response.authenticatorData),
+            signature: bufToB64url(cred.response.signature),
+            userHandle: cred.response.userHandle ? bufToB64url(cred.response.userHandle) : null,
+          },
+        });
+      },
+    };
   </script>
 </head>
 <body>

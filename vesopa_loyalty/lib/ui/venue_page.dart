@@ -93,42 +93,6 @@ class _VenuePageState extends ConsumerState<VenuePage> {
     }
   }
 
-  Future<void> _signOut({required bool remove}) async {
-    if (remove) {
-      final sure = await showDialog<bool>(
-        context: context,
-        builder: (d) => AlertDialog(
-          title: const Text('Remove the app from your membership?'),
-          content: const Text(
-            'Every device you signed in on is signed out, notifications stop and your saved location is deleted. '
-            'Your membership and points stay with the venue.',
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Cancel')),
-            FilledButton(onPressed: () => Navigator.pop(d, true), child: const Text('Remove')),
-          ],
-        ),
-      );
-      if (sure != true) return;
-    }
-    setState(() => _busy = true);
-    final api = ref.read(apiProvider);
-    try {
-      final endpoint = await pushUnsubscribe();
-      if (endpoint != null) await api.removePush(endpoint).catchError((_) {});
-      if (remove) {
-        await api.removeApp();
-      } else {
-        await api.signOut();
-      }
-    } catch (_) {
-      // Signed out here regardless: the token is forgotten below.
-    }
-    await _choices?.setNotifications(false);
-    await _choices?.setNearby(false);
-    await ref.read(sessionProvider.notifier).clear();
-  }
-
   Future<void> _open(String url) async {
     try {
       await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
@@ -218,16 +182,10 @@ class _VenuePageState extends ConsumerState<VenuePage> {
             value: choices?.nearby ?? false,
             onChanged: (choices == null || _busy) ? null : _setNearby,
           ),
-        ListTile(
-          leading: const Icon(Icons.logout),
-          title: const Text('Sign out'),
-          onTap: _busy ? null : () => _signOut(remove: false),
-        ),
-        ListTile(
-          leading: Icon(Icons.delete_outline, color: theme.colorScheme.error),
-          title: Text('Remove the app from my membership', style: TextStyle(color: theme.colorScheme.error)),
-          onTap: _busy ? null : () => _signOut(remove: true),
-        ),
+        // Signing out lives under Account, where somebody looks for it. These
+        // two switches stay here because they are this DEVICE's choices, not
+        // the membership's: turning notifications off on a phone should not
+        // turn them off on the tablet behind the bar.
         const SizedBox(height: 16),
         const PoweredBy(),
       ],

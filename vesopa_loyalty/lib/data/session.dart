@@ -36,7 +36,17 @@ class AppConfig {
     return const AppConfig(base: _api, slug: _slug);
   }
 
-  String get platform => kIsWeb ? 'web' : 'windows';
+  /// What the server records this session as. Four builds now, not two:
+  /// a device list that calls an iPhone "windows" is a device list nobody
+  /// can use to spot a sign-in they did not make.
+  String get platform {
+    if (kIsWeb) return 'web';
+    return switch (defaultTargetPlatform) {
+      TargetPlatform.android => 'android',
+      TargetPlatform.iOS => 'ios',
+      _ => 'windows',
+    };
+  }
 }
 
 final configProvider = Provider<AppConfig>((ref) => AppConfig.resolve());

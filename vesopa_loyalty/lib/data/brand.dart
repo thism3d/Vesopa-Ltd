@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
+import 'signin.dart';
+
 /// Everything the app draws for a venue, from `/loyalty/v1/app/:slug`.
 ///
 /// White-labelled at run time: the same build is every venue's app, and what
@@ -30,6 +32,7 @@ class Brand {
     this.minRedeem = 0,
     this.vapidPublicKey,
     this.windowsPush = false,
+    this.signIn = SignInConfig.fallback,
   });
 
   final String slug;
@@ -59,6 +62,10 @@ class Brand {
 
   /// Whether the venue's Windows app is set up for notifications.
   final bool windowsPush;
+
+  /// The ways in this venue offers. Arrives with the branding because the
+  /// sign-in page has to be drawn before anybody has a token to ask with.
+  final SignInConfig signIn;
 
   static Color _hex(Object? v, Color fallback) {
     final s = (v as String?)?.trim() ?? '';
@@ -106,6 +113,7 @@ class Brand {
       minRedeem: (points['min_redeem'] as num?)?.toInt() ?? 0,
       vapidPublicKey: web?['vapid_public_key'] as String?,
       windowsPush: push['windows'] == true,
+      signIn: SignInConfig.fromJson(j['signin'] as Map<String, dynamic>?),
     );
   }
 
