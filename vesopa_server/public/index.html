@@ -2533,11 +2533,46 @@
               </div>
 
               <div class="card rd-card">
+                <h3>How members sign in</h3>
+                <p class="muted small">
+                  Every member can always sign in with an emailed code. Switch on anything else
+                  you want to offer. A member only ever sees the ways you allow.
+                </p>
+                <div id="la-signin-methods" class="la-methods"></div>
+                <label>What members see first
+                  <select id="la-auth_policy">
+                    <option value="code_first">An email address, then a code</option>
+                    <option value="password_first">An email address and a password</option>
+                    <option value="vesopa_first">Continue with Vesopa</option>
+                  </select>
+                </label>
+                <p class="muted small">
+                  This only decides which one comes first. The others stay available underneath it.
+                </p>
+                <label class="la-check">
+                  <input type="checkbox" id="la-self_service" />
+                  Members may change their own name, phone and password in the app
+                </label>
+                <p class="muted small">
+                  Switch this off if your membership list is your record and only the venue should change it.
+                </p>
+              </div>
+
+              <div class="card rd-card">
                 <h3>Send a notification</h3>
                 <p class="muted small" id="la-push-note"></p>
                 <label>Title <input id="la-n-title" maxlength="80" placeholder="e.g. Match day" /></label>
                 <label>Message <textarea id="la-n-body" maxlength="500" rows="3" placeholder="e.g. Two for one on pints before kick-off."></textarea></label>
                 <label>Link (optional) <input id="la-n-link" placeholder="https://" /></label>
+                <label>Picture (optional)</label>
+                <div id="la-n-image-picker"></div>
+                <label>Video (optional)
+                  <input id="la-n-video" placeholder="A YouTube or Vimeo link, or an address ending .mp4" />
+                </label>
+                <p class="muted small">
+                  A YouTube or Vimeo link shows as a picture members tap to watch. An .mp4 address plays
+                  inside the app.
+                </p>
                 <div class="la-audience">
                   <label>Who
                     <select id="la-n-audience">

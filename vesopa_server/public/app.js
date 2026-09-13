@@ -10383,6 +10383,14 @@ function laForm() {
     longitude: laValue('la-longitude'),
     radius_m: laValue('la-radius_m'),
     wns_package_sid: laValue('la-wns-sid'),
+    auth_policy: laValue('la-auth_policy') || 'code_first',
+    self_service: $('la-self_service') && $('la-self_service').checked ? 1 : 0,
+    // Every method, on or off. Sending only the ones that are ON would mean
+    // switching one off left no trace and the default crept back in.
+    signin_methods: Object.fromEntries(
+      Array.from(document.querySelectorAll('[data-la-method]'))
+        .map((el) => [el.dataset.laMethod, el.checked ? 1 : 0])
+    ),
   };
   const secret = laValue('la-wns-secret');
   if (secret) body.wns_secret = secret;
@@ -10447,6 +10455,12 @@ async function loadLoyaltyApp() {
   $('la-poster').hidden = !data.qr_svg;
   $('la-qr').innerHTML = data.qr_svg || '';
 
+  laSignin(data.signin);
+  // A notification's picture uses the same picker as the logo and icon, so a
+  // venue uploads and crops it the way it already knows.
+  $('la-n-image-picker').innerHTML = imagePicker('la_n_image_url', '', { crop: 'landscape' });
+  wireImagePickers($('la-n-image-picker'));
+
   $('la-push-note').textContent = data.web_push_ready
     ? 'Reaches members who allowed notifications (phones, browsers and the Windows app), and always lands in the app\'s inbox.'
     : 'Notifications land in the app\'s inbox. Phone notifications are not switched on for this server yet.';
@@ -10454,6 +10468,50 @@ async function loadLoyaltyApp() {
   laPreview();
   laAudienceFields();
   await laLoadMessages();
+}
+
+/**
+ * The ways in, one switch each.
+ *
+ * An emailed code has no switch: it is the fallback the server falls back TO
+ * when everything else is off or unavailable, so a switch for it would be a
+ * switch that does not always do what it says.
+ *
+ * A method this SERVER cannot do is shown disabled with the reason, rather
+ * than hidden. Hiding it makes a venue think Vesopa does not offer texted
+ * codes at all; saying "needs an SMS account" tells them what to ask for.
+ */
+const LA_METHOD_LABELS = {
+  code_email: ['A code emailed to the member', 'Always available. This is what members use today.'],
+  password: ['An email address and a password', 'Members set their own in the app, under Account.'],
+  passkey: ['A passkey', 'Face, fingerprint or device PIN. Web browsers only — the Windows app falls back.'],
+  code_sms: ['A code texted to the member', 'Only to a mobile number the member has confirmed in the app.'],
+  vesopa: ['Continue with Vesopa', 'For venues whose members already have a Vesopa account.'],
+};
+
+const LA_METHOD_MISSING = {
+  code_sms: 'Not available: this server has no SMS account configured.',
+  vesopa: 'Not available: this server has no Vesopa sign-in configured.',
+};
+
+function laSignin(signin) {
+  if (!signin) return;
+  const box = $('la-signin-methods');
+  if (box) {
+    box.innerHTML = Object.keys(LA_METHOD_LABELS).map((m) => {
+      const [label, hint] = LA_METHOD_LABELS[m];
+      const can = signin.available[m] !== false;
+      const always = m === 'code_email';
+      const on = always || !!signin.methods[m];
+      return `<label class="la-check la-method">`
+        + `<input type="checkbox" data-la-method="${esc(m)}"${on ? ' checked' : ''}`
+        + `${(always || !can) ? ' disabled' : ''} />`
+        + `<span><b>${esc(label)}</b><br><span class="muted small">`
+        + `${esc(can ? hint : (LA_METHOD_MISSING[m] || hint))}</span></span></label>`;
+    }).join('');
+  }
+  if ($('la-auth_policy')) $('la-auth_policy').value = signin.policy || 'code_first';
+  if ($('la-self_service')) $('la-self_service').checked = signin.self_service !== false;
 }
 
 /** The phone on the right: the member's card, in the venue's colours. */
@@ -10600,6 +10658,8 @@ document.addEventListener('click', async (e) => {
           title,
           body,
           link_url: laValue('la-n-link').trim() || null,
+          image_url: (document.querySelector('[name="la_n_image_url"]') || {}).value || null,
+          video_url: laValue('la-n-video').trim() || null,
           audience: laAudience(),
           send_at: later ? new Date(at).toISOString() : null,
         }),
@@ -10608,6 +10668,9 @@ document.addEventListener('click', async (e) => {
       $('la-n-title').value = '';
       $('la-n-body').value = '';
       $('la-n-link').value = '';
+      $('la-n-video').value = '';
+      const pic = document.querySelector('[name="la_n_image_url"]');
+      if (pic) { pic.value = ''; $('la-n-image-picker').innerHTML = imagePicker('la_n_image_url', '', { crop: 'landscape' }); wireImagePickers($('la-n-image-picker')); }
       setTimeout(laLoadMessages, 1500);
       return laLoadMessages();
     } catch (err) {

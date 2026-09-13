@@ -202,6 +202,11 @@ module.exports = {
   hashCode,
   sameHash,
   dineinOtpRoutes,
+  // The loyalty app texts sign-in codes through the same account. Exported
+  // rather than copied: a second implementation of "send a code" is a second
+  // place for the sender id, the expiry and the failure handling to drift.
+  postcoderSend,
+  postcoderVerify,
 };
 
 // ---------------------------------------------------------------------------

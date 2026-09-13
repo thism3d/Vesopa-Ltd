@@ -51,6 +51,9 @@ const { seal, unseal } = require('./express_kiosk');
 const push = require('./loyalty_push');
 const { catalogueFor } = require('./fonts');
 const QR = require('./qr');
+const loyaltyAuth = require('./loyalty_auth');
+const loyaltyAccountRoutes = require('./loyalty_account');
+const loyaltyEmail = require('./loyalty_email');
 
 const CODE_MINUTES = 10;
 const CODE_TRIES = 5;
@@ -450,6 +453,8 @@ async function sendDue(pool) {
 async function sweep(pool) {
   await pool.execute(`DELETE FROM epos_customer_locations WHERE at < NOW() - INTERVAL 24 HOUR`);
   await pool.execute(`DELETE FROM epos_loyalty_app_codes WHERE created_at < NOW() - INTERVAL 1 DAY`);
+  // Spent and expired WebAuthn challenges are rubbish, not history.
+  await loyaltyAuth.sweepChallenges(pool);
 }
 
 let schedulerTimer = null;
@@ -551,9 +556,23 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
       if (!app) return res.status(404).json({ error: 'There is no app at this address.' });
       const brand = await brandFor(pool, app.office, app);
       const keys = push.vapid();
+      /*
+       * HOW THIS VENUE SIGNS PEOPLE IN, sent with the branding because the
+       * app has to draw the right page before anybody has signed in and so
+       * cannot ask a route that needs a token.
+       *
+       * It is a description, not a permission. Every method is checked again
+       * on the route that uses it -- the app is software on somebody's phone
+       * and an old copy of it will happily offer a method the venue has since
+       * switched off.
+       */
+      const signin = await loyaltyAuth.configFor(pool, app.office, app);
+      // Cached for a minute like the rest, so switching a method on shows up
+      // in the app within a minute rather than needing a reinstall.
       res.set('Cache-Control', 'public, max-age=60');
       res.json({
         ...brand,
+        signin,
         push: {
           web: keys ? { vapid_public_key: keys.publicKey } : null,
           windows: !!(app.wns_package_sid && app.wns_secret_enc),
@@ -596,20 +615,16 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
       );
 
       const brand = await brandFor(pool, app.office, app);
-      const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+      // The venue's own email, not a bare div: see src/loyalty_email.js for
+      // why it is built out of tables and inline styles.
+      const mail = loyaltyEmail.signInCode(brand, { code, minutes: CODE_MINUTES });
       sendMail({
         to: email,
         subject: `${brand.name}: your sign-in code is ${code}`,
-        text: `Your ${brand.name} sign-in code is ${code}. It works for ${CODE_MINUTES} minutes. If you did not ask for it, you can ignore this email.`,
-        html: `<div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;padding:24px">
-          <h2 style="margin:0 0 8px">${esc(brand.name)}</h2>
-          <p>Your sign-in code is</p>
-          <p style="font-size:34px;font-weight:700;letter-spacing:6px;margin:8px 0 16px">${code}</p>
-          <p style="color:#555">It works for ${CODE_MINUTES} minutes. If you did not ask for it, you can ignore this email.</p>
-        </div>`,
+        text: mail.text,
+        html: mail.html,
         account: process.env.MENU_SMTP_USER ? 'menu' : undefined,
       }).catch(() => {});
-
       res.json({ ok: true, minutes: CODE_MINUTES });
     } catch (e) {
       next(e);
@@ -740,7 +755,8 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
   router.get('/loyalty/v1/me/messages', requireCustomer, async (req, res, next) => {
     try {
       const [rows] = await pool.query(
-        `SELECT m.id, m.title, m.body, m.image_url, m.link_url, m.sent_at, i.read_at
+        `SELECT m.id, m.title, m.body, m.image_url, m.link_url,
+                m.video_url, m.video_embed_url, m.sent_at, i.read_at
            FROM epos_push_inbox i
            JOIN epos_push_messages m ON m.id = i.message_id
           WHERE i.office = ? AND i.customer_id = ?
@@ -890,6 +906,18 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
     }
   });
 
+  /*
+   * The other ways in, and the account section.
+   *
+   * Mounted on this router with the session helpers handed over, so there is
+   * one idea of what a customer token is and one place that mints it.
+   */
+  router.use(loyaltyAccountRoutes({
+    pool, json, requireCustomer, customerToken, appBySlug, revokeSessions,
+    callerIp, customerByEmail, ensureCard, joinScheme, brandFor, sendMail,
+    cleanText, emailOk,
+  }));
+
   // ---- The back office ----------------------------------------------------------
 
   const SETTINGS = ['enabled', 'slug', 'app_name', 'welcome_text', 'logo_url', 'icon_url', 'hero_url',
@@ -954,6 +982,7 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
           windows: Number(stats.windows) || 0,
           located: Number(stats.located) || 0,
         },
+        signin: await signinState(office, app),
         web_push_ready: push.webPushReady(),
         web_build_ready: fs.existsSync(path.join(WEB_DIR, 'index.html')),
       });
@@ -961,6 +990,45 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
       next(e);
     }
   });
+
+  /**
+   * The sign-in section of the page: which ways in are on, which leads, and
+   * -- separately -- which ones this SERVER can actually do.
+   *
+   * `available` is why a venue is not left staring at a switch that does
+   * nothing. Texting needs an SMS account and Continue with Vesopa needs an
+   * OAuth client; where the server has neither, the page says so instead of
+   * letting somebody switch on a method their members would then fail on.
+   */
+  async function signinState(office, app) {
+    let rows = [];
+    try {
+      [rows] = await pool.query(
+        'SELECT method, enabled FROM epos_loyalty_app_methods WHERE office = ?', [office]
+      );
+    } catch (e) {
+      if (e.code !== 'ER_NO_SUCH_TABLE') throw e;
+    }
+    const chosen = rows.length
+      ? Object.fromEntries(rows.map((r) => [r.method, !!r.enabled]))
+      : { ...loyaltyAuth.DEFAULT_METHODS };
+    const methods = {};
+    const available = {};
+    for (const m of loyaltyAuth.METHODS) {
+      methods[m] = !!chosen[m];
+      available[m] = loyaltyAuth.available(m);
+    }
+    return {
+      methods,
+      available,
+      // What the members actually get, after anything this server cannot do
+      // has been dropped and the never-lock-anybody-out rule has run.
+      effective: await loyaltyAuth.configFor(pool, office, app),
+      policy: loyaltyAuth.policyFor(app, await loyaltyAuth.methodsFor(pool, office)),
+      policies: loyaltyAuth.POLICIES,
+      self_service: !app || app.self_service == null ? true : Number(app.self_service) === 1,
+    };
+  }
 
   router.put('/api/loyalty-app', ...mayRun, express.json({ limit: '64kb' }), async (req, res, next) => {
     try {
@@ -1025,18 +1093,84 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
         values.wns_secret_enc = null;
       }
 
+      if (b.auth_policy !== undefined) {
+        values.auth_policy = loyaltyAuth.POLICIES.includes(String(b.auth_policy))
+          ? String(b.auth_policy) : 'code_first';
+      }
+      if (b.self_service !== undefined) {
+        values.self_service = (b.self_service === true || b.self_service === 1 || b.self_service === '1') ? 1 : 0;
+      }
+
       const cols = Object.keys(values);
       await pool.query(
         `INSERT INTO epos_loyalty_app (office, ${cols.join(', ')}) VALUES (?, ${cols.map(() => '?').join(', ')})
          ON DUPLICATE KEY UPDATE ${cols.map((c) => `${c} = VALUES(${c})`).join(', ')}`,
         [office, ...cols.map((c) => values[c])]
       );
+
+      /*
+       * The ways in, one row each.
+       *
+       * Written whole rather than merged: the page sends every method with a
+       * true or a false, so a switch turned OFF is a row saying so. Merging
+       * would mean an off switch left no trace and the default crept back.
+       */
+      if (b.signin_methods && typeof b.signin_methods === 'object') {
+        for (const m of loyaltyAuth.METHODS) {
+          const on = b.signin_methods[m] === true || b.signin_methods[m] === 1 || b.signin_methods[m] === '1';
+          await pool.execute(
+            `INSERT INTO epos_loyalty_app_methods (office, method, enabled, sort_order)
+             VALUES (?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE enabled = VALUES(enabled), sort_order = VALUES(sort_order)`,
+            [office, m, on ? 1 : 0, loyaltyAuth.METHODS.indexOf(m)]
+          );
+        }
+      }
       broadcast({ type: 'loyalty-app', office });
-      res.json({ ok: true, settings: publicSettings(await readApp(pool, office)) });
+      const saved = await readApp(pool, office);
+      res.json({
+        ok: true,
+        settings: publicSettings(saved),
+        signin: await signinState(office, saved),
+      });
     } catch (e) {
       next(e);
     }
   });
+
+  /**
+   * A YouTube or Vimeo address, normalised to the form that can be embedded,
+   * or null for anything else.
+   *
+   * Only these two, and only their own domains: an "embed" field that took
+   * any address at all would be an invitation to put a third party's script
+   * into every member's app.
+   */
+  function embedUrl(raw) {
+    const value = cleanText(raw, 500);
+    if (!value) return null;
+    let u;
+    try {
+      u = new URL(value);
+    } catch {
+      return null;
+    }
+    if (u.protocol !== 'https:') return null;
+    const host = u.hostname.replace(/^www\./, '');
+    if (host === 'youtu.be') {
+      const id = u.pathname.slice(1);
+      return /^[\w-]{6,20}$/.test(id) ? `https://www.youtube.com/embed/${id}` : null;
+    }
+    if (host === 'youtube.com' || host === 'm.youtube.com') {
+      const id = u.searchParams.get('v') || (u.pathname.startsWith('/embed/') ? u.pathname.slice(7) : '');
+      return /^[\w-]{6,20}$/.test(id) ? `https://www.youtube.com/embed/${id}` : null;
+    }
+    if (host === 'vimeo.com' || host === 'player.vimeo.com') {
+      const id = (u.pathname.match(/(\d{6,12})/) || [])[1];
+      return id ? `https://player.vimeo.com/video/${id}` : null;
+    }
+    return null;
+  }
 
   function cleanAudience(a) {
     const kind = ['all', 'near', 'tier', 'lapsed'].includes(a && a.kind) ? a.kind : 'all';
@@ -1102,10 +1236,24 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
         }
       }
       const id = crypto.randomUUID();
+      /*
+       * A video is one of two different things and the app must know which.
+       *
+       * video_url is a file this server holds, which the app can play in
+       * place. video_embed_url is somebody else's page -- YouTube, Vimeo --
+       * which it cannot, and which it shows as a poster that opens a browser.
+       * Drawing a play button over something that turns out to need a browser
+       * is the sort of thing people tap three times and give up on.
+       */
+      const embed = embedUrl(b.video_url) || embedUrl(b.video_embed_url);
+      const file = embed ? null : cleanUrl(b.video_url);
       await pool.execute(
-        `INSERT INTO epos_push_messages (id, office, title, body, image_url, link_url, audience, status, send_at, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 'scheduled', ?, ?)`,
+        `INSERT INTO epos_push_messages
+           (id, office, title, body, image_url, link_url, video_url, video_embed_url,
+            audience, status, send_at, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'scheduled', ?, ?)`,
         [id, office, title, text, cleanUrl(b.image_url), cleanText(b.link_url, 500),
+          file, embed,
           JSON.stringify(cleanAudience(b.audience)), sendAt, req.user.email]
       );
       // Now means now: not the next tick of the clock.
@@ -1218,6 +1366,48 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
       next(e);
     }
   }
+
+  /*
+   * Where Vesopa Auth sends somebody back to after Continue with Vesopa.
+   *
+   * ONE ADDRESS FOR EVERY VENUE. The app is one build served at
+   * /app/<slug>/, so a redirect URI per venue would mean registering a new
+   * one at auth every time somebody switched an app on -- and a venue whose
+   * registration was missed would meet `invalid_redirect_uri` with nothing
+   * in the app to explain it.
+   *
+   * Which venue it was is carried in `state`, as "<slug>.<nonce>". The nonce
+   * is the app's own and is checked by the app, not here: this page's whole
+   * job is to get the browser back to the right address with the code still
+   * attached.
+   *
+   * Registered BEFORE /app/:slug/ so it is not mistaken for a venue called
+   * "vesopa" with a deep link called "callback".
+   */
+  router.get('/app/vesopa/callback', (req, res) => {
+    const state = String(req.query.state || '');
+    const slug = state.split('.')[0].toLowerCase();
+    if (!SLUG.test(slug)) {
+      return res.status(400).type('html').send(
+        '<!doctype html><meta charset="utf-8"><title>Sign-in</title>'
+        + '<p style="font-family:system-ui;padding:32px">That sign-in could not be matched to an app. '
+        + 'Please open your card again and retry.</p>'
+      );
+    }
+    const q = new URLSearchParams();
+    // Passed straight through, error included: the app has the wording for
+    // a refusal and this page has no idea which venue's voice to use.
+    for (const k of ['code', 'state', 'error', 'error_description']) {
+      if (req.query[k]) q.set(k === 'code' ? 'vesopa_code' : `vesopa_${k}`, String(req.query[k]));
+    }
+    res.redirect(302, `/app/${encodeURIComponent(slug)}/?${q.toString()}`);
+  });
+
+  /** Signed out at Vesopa: back to the venue's app, which will ask again. */
+  router.get('/app/vesopa/signed-out', (req, res) => {
+    const slug = String(req.query.state || '').split('.')[0].toLowerCase();
+    res.redirect(302, SLUG.test(slug) ? `/app/${encodeURIComponent(slug)}/` : '/');
+  });
 
   const statics = express.static(WEB_DIR, { index: false, fallthrough: false, maxAge: '1h' });
   router.get('/app/:slug/', page);

@@ -7031,6 +7031,14 @@ textarea, select[multiple], select[size] { height: auto; min-height: 0; }
 
 /* ---- Loyalty app ---------------------------------------------------------- */
 .la-check { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+
+/* The ways in: a switch, a name and a line saying what it means. The hint is
+   what stops a venue switching on passkeys and then wondering why the
+   Windows app never offers one. */
+.la-methods { display: grid; gap: 10px; margin: 10px 0 16px; }
+.la-method { align-items: flex-start; font-weight: 500; line-height: 1.35; }
+.la-method input { margin-top: 3px; flex: none; }
+.la-method input:disabled + span { opacity: .62; }
 .la-slug { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .la-slug input { flex: 1; min-width: 160px; }
 .la-pictures, .la-colours, .la-fonts, .la-links, .la-where, .la-audience {
