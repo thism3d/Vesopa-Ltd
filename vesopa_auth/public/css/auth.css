@@ -1559,3 +1559,44 @@ a { color: var(--text); }
 
 .chooser-all { margin-top: 18px; text-align: center; }
 .chooser .small-print { margin-top: 14px; }
+
+/* ---------------------------------------------------------------------------
+   Setting a first password — the page offered after signing in with a code.
+
+   Two buttons of equal weight, because "Skip for now" is a real choice and not
+   a grey escape hatch. `.btn` is full-width by default here, which is right for
+   a single action and wrong for a pair, so the pair opts out.
+
+   They stack on a narrow screen rather than shrinking: two 48px targets side by
+   side on a phone is how somebody skips when they meant to save. Save is listed
+   second in the markup and comes FIRST when stacked, because the primary action
+   belongs under the thumb.
+   --------------------------------------------------------------------------- */
+.signin-actions-pair {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.signin-actions-pair .btn-auto {
+  width: auto;
+  min-width: 150px;
+  padding: 0 22px;
+}
+
+@media (max-width: 420px) {
+  .signin-actions-pair {
+    flex-direction: column-reverse;
+  }
+  .signin-actions-pair .btn-auto {
+    width: 100%;
+  }
+}
+
+/* The rule under the boxes. Muted, small, and tied to both inputs by
+   aria-describedby so a screen reader hears the requirement before it is
+   enforced rather than after. */
+.signin-hint {
+  margin: 10px 2px 0;
+  font-size: 13.5px;
+  color: var(--text-muted, #6b7280);
+}

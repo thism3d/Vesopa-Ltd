@@ -316,6 +316,98 @@ function adminLicenceRoutes({ pool }) {
     return row ? row.contact_email : null;
   };
 
+  /**
+   * Every venue's licences at once — what the platform admin actually needs.
+   *
+   * `/api/licences` is venue-scoped: it answers "what am I entitled to" from the
+   * office in the session. The platform admin has NO office, deliberately --
+   * they are not a venue -- so that route answers 404 for them, which is correct
+   * and useless. This is the other question: what is every venue entitled to,
+   * what is each using, and where is that over or under.
+   *
+   * Read-only. Numbers are changed per venue through licence-limits below, and
+   * -- once the join to auth exists -- upstream in the subscription itself. See
+   * docs/plan-2026-09-13-entitlement-and-admin.md.
+   */
+  router.get('/licences', async (req, res, next) => {
+    try {
+      const [offices] = await pool.query(
+        `SELECT id, name, contact_email, status, plan FROM offices
+          WHERE demo_of IS NULL ORDER BY name`,
+      );
+
+      let limits = [];
+      try {
+        const [rows] = await pool.query(
+          'SELECT office, kind, seats FROM bo_licence_limits',
+        );
+        limits = rows;
+      } catch (e) {
+        if (e.code !== 'ER_NO_SUCH_TABLE') throw e;
+      }
+
+      let inUse = [];
+      try {
+        const [rows] = await pool.query(
+          `SELECT office, COALESCE(kind, 'till') AS kind, COUNT(*) AS n
+             FROM bo_till_seats WHERE released_at IS NULL
+            GROUP BY office, COALESCE(kind, 'till')`,
+        );
+        inUse = rows;
+      } catch (e) {
+        if (e.code !== 'ER_NO_SUCH_TABLE' && e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+      }
+
+      let keys = [];
+      try {
+        const [rows] = await pool.query(
+          `SELECT office, kind, COUNT(*) AS issued,
+                  SUM(activated_at IS NOT NULL) AS activated,
+                  SUM(revoked_at IS NOT NULL) AS revoked
+             FROM bo_licence_keys GROUP BY office, kind`,
+        );
+        keys = rows;
+      } catch (e) {
+        if (e.code !== 'ER_NO_SUCH_TABLE') throw e;
+      }
+
+      const at = (rows, office, kind) =>
+        rows.find((r) => r.office === office && r.kind === kind);
+
+      res.json({
+        kinds: KINDS.map((k) => ({ kind: k, label: LABELS[k] })),
+        venues: offices.map((o) => ({
+          id: o.id,
+          name: o.name,
+          email: o.contact_email,
+          status: o.status,
+          plan: o.plan,
+          products: KINDS.map((kind) => {
+            const limit = at(limits, o.contact_email, kind);
+            const used = at(inUse, o.contact_email, kind);
+            const key = at(keys, o.contact_email, kind);
+            const seats = limit ? Number(limit.seats) : null;
+            const n = used ? Number(used.n) : 0;
+            return {
+              kind,
+              label: LABELS[kind],
+              limit: seats,
+              in_use: n,
+              // Said here rather than worked out on the page, so the back office
+              // and any future report agree on what "over" means.
+              over: seats != null && n > seats,
+              keys_issued: key ? Number(key.issued) : 0,
+              keys_activated: key ? Number(key.activated) : 0,
+              keys_revoked: key ? Number(key.revoked) : 0,
+            };
+          }),
+        })),
+      });
+    } catch (e) {
+      next(e);
+    }
+  });
+
   /** What this venue is limited to now, and its keys — for the admin's form. */
   router.get('/offices/:id/licence-limits', async (req, res, next) => {
     try {

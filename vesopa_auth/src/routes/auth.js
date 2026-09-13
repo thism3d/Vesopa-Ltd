@@ -40,7 +40,7 @@ const factors = require('../factors');
 const authmethods = require('../authmethods');
 const captcha = require('../captcha');
 const accounts = require('../accounts');
-const { verifyPassword } = require('../crypto');
+const { hashPassword, verifyPassword } = require('../crypto');
 const { normaliseEmail, normalisePhone, guessIdentifierType } = require('../normalise');
 const { safeReturnTo } = require('./pages');
 
@@ -535,6 +535,28 @@ async function completeSignIn({ req, res, userId, amr, method, flow }) {
       deviceId,
     });
 
+    /*
+     * Offer a password to somebody who has not got one.
+     *
+     * They have just signed in with an emailed code, which works but costs a
+     * trip to an inbox every time. The offer is made here, at the one point
+     * every sign-in passes through -- the second-factor path comes back into
+     * this same function -- so it cannot be wired into one door and missed on
+     * another.
+     *
+     * It is an offer. See /login/set-password: Skip is a real button and it is
+     * remembered.
+     */
+    if (await wantsFirstPassword(userId)) {
+      const onward = flow.r || '';
+      return res.redirect(
+        303,
+        onward
+          ? `/login/set-password?return_to=${encodeURIComponent(onward)}`
+          : '/login/set-password',
+      );
+    }
+
     return res.redirect(303, flow.r || '/account');
   }
 
@@ -822,23 +844,40 @@ async function passwordPage(req, res, error = '') {
     return null;
   }
 
-  const user = await db.one(
-    'SELECT public_id, display_name, given_name, avatar_path FROM users WHERE id = ?',
-    [flow.u],
-  );
   const context = await authmethods.contextFor(flow.r || '');
-  const name = (user && (user.given_name || user.display_name || '').trim()) || '';
 
+  /*
+   * NOTHING ABOUT THE PERSON IS SHOWN HERE, AND THAT IS THE POINT.
+   *
+   * This page used to greet by name — "Hi Muzahid" — and draw the account's
+   * avatar, both read from the users row as soon as an address was typed. No
+   * password had been given at that point and none was needed: anybody who
+   * guessed an address at a venue got back the holder's first name and their
+   * photograph. That is a disclosure of personal data to an unauthenticated
+   * stranger, and a tidy way to confirm which of a list of guessed addresses
+   * belong to real people.
+   *
+   * So the greeting is fixed wording and the chip carries the ADDRESS THE
+   * VISITOR TYPED, which tells them nothing they did not already know. The chip
+   * keeps the job it was added for — showing which account the password is
+   * about to go into, for anybody with a work address and a personal one — and
+   * loses the job it should never have had.
+   *
+   * The initial comes from that same typed address for the same reason.
+   *
+   * This does not, on its own, stop somebody learning that an account EXISTS:
+   * a known address reaches this page while an unknown one is sent to an
+   * emailed code, and the two are distinguishable. That is a deeper change to
+   * how sign-in is shaped; it is written up rather than half-done here.
+   */
   return res.status(error ? 400 : 200).render('password', {
     title: 'Enter your password',
     nonce: res.locals.nonce,
     config,
-    // "Hi Muzahid" where we know a name, and a plain instruction where we do
-    // not — an empty "Hi" reads as a bug, and "Hi there" reads as marketing.
-    greeting: name ? `Hi ${name}` : 'Welcome back',
+    greeting: 'Welcome back',
     destination: flow.d,
-    initial: (name || flow.d || '?').trim().charAt(0).toUpperCase(),
-    avatar: (user && user.avatar_path) || '',
+    initial: (flow.d || '?').trim().charAt(0).toUpperCase(),
+    avatar: '',
     application: context.application,
     canPasskey: context.shape.passkey,
     returnTo: flow.r || '',
@@ -1132,6 +1171,159 @@ router.post('/logout', csrf.verify, async (req, res, next) => {
     }
     if (back) return res.redirect(303, `/login?return_to=${encodeURIComponent(back)}`);
     return res.redirect(303, '/login');
+  } catch (error) {
+    return next(error);
+  }
+});
+
+
+/*
+ * ---------------------------------------------------------------------------
+ * A first password, offered rather than demanded
+ * ---------------------------------------------------------------------------
+ */
+
+/** How long "Skip for now" lasts. Long enough to mean it. */
+const PASSWORD_PROMPT_SNOOZE_DAYS = 30;
+
+/**
+ * Whether this account should be offered a password.
+ *
+ * True only when it has none AND has not recently said no. An account that
+ * already has a password is never asked, and neither is one whose owner
+ * skipped last week -- being asked again is how a person learns to type the
+ * shortest thing that makes the question go away.
+ *
+ * A missing column (deployed before the migration ran) answers false: the
+ * offer is a nicety, and a nicety must never be the reason a sign-in fails.
+ */
+async function wantsFirstPassword(userId) {
+  try {
+    const row = await db.one(
+      `SELECT u.password_prompt_snoozed_until AS snoozed,
+              (SELECT COUNT(*) FROM user_passwords p
+                WHERE p.user_id = u.id AND p.retired_at IS NULL) AS has_password
+         FROM users u WHERE u.id = ?`,
+      [userId],
+    );
+    if (!row) return false;
+    if (Number(row.has_password) > 0) return false;
+    if (row.snoozed && new Date(row.snoozed) > new Date()) return false;
+    return true;
+  } catch (error) {
+    if (error && error.code === 'ER_BAD_FIELD_ERROR') return false;
+    throw error;
+  }
+}
+
+async function setPasswordPage(req, res, error = '') {
+  const session = await sessions.load(req);
+  if (!session) {
+    res.redirect(303, '/login');
+    return null;
+  }
+
+  const returnTo = safeReturnTo(req.query.return_to || req.body.return_to) || '';
+
+  // Somebody who reaches this by typing the address, and already has a
+  // password, is sent on rather than shown a form that would replace it.
+  // Changing a password is /account/security, where it costs the old one.
+  if (!(await wantsFirstPassword(session.user_id))) {
+    res.redirect(303, returnTo || '/account');
+    return null;
+  }
+
+  const context = await authmethods.contextFor(returnTo);
+
+  return res.status(error ? 400 : 200).render('set-password', {
+    title: 'Set a password',
+    nonce: res.locals.nonce,
+    config,
+    application: context.application,
+    returnTo,
+    error,
+    noindex: true,
+  });
+}
+
+router.get('/login/set-password', async (req, res, next) => {
+  try {
+    return await setPasswordPage(req, res);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post('/login/set-password', csrf.verify, async (req, res, next) => {
+  try {
+    const session = await sessions.load(req);
+    if (!session) return res.redirect(303, '/login');
+
+    const returnTo = safeReturnTo(req.body.return_to) || '';
+    const onward = returnTo || '/account';
+
+    /*
+     * Skipping is a decision, and it is recorded as one. Without the snooze
+     * "Skip for now" would mean "ask me again on the next sign-in, for ever",
+     * which is not skipping.
+     */
+    if (req.body.action === 'skip') {
+      try {
+        await db.execute(
+          'UPDATE users SET password_prompt_snoozed_until = DATE_ADD(NOW(), INTERVAL ? DAY) WHERE id = ?',
+          [PASSWORD_PROMPT_SNOOZE_DAYS, session.user_id],
+        );
+      } catch (error) {
+        // Pre-migration: they are sent on rather than stopped. They will be
+        // asked again next time, which is the old behaviour and not a fault.
+        if (!error || error.code !== 'ER_BAD_FIELD_ERROR') throw error;
+      }
+      return res.redirect(303, onward);
+    }
+
+    const password = String(req.body.password || '');
+    const confirm = String(req.body.confirm || '');
+
+    if (password.length < 12) {
+      return await setPasswordPage(req, res, 'Passwords must be at least 12 characters.');
+    }
+    if (password !== confirm) {
+      return await setPasswordPage(req, res, 'Those two passwords are not the same.');
+    }
+
+    /*
+     * No current password is asked for, and that is right: this account has
+     * none, and the session was already earned by a code or a provider. The
+     * same reasoning as /account/password, which is the other door to this.
+     */
+    const hash = await hashPassword(password, config.secrets.passwordPepper);
+    await db.transaction(async (tx) => {
+      await tx.execute(
+        'UPDATE user_passwords SET retired_at = NOW() WHERE user_id = ? AND retired_at IS NULL',
+        [session.user_id],
+      );
+      await tx.execute(
+        'INSERT INTO user_passwords (user_id, password_hash, algorithm) VALUES (?, ?, ?)',
+        [session.user_id, hash, 'argon2id'],
+      );
+    });
+
+    /*
+     * Other sessions are NOT ended here, unlike a password change.
+     *
+     * A change means "the old one may be known to somebody else"; this is a
+     * first password on an account that had none, so there is no old secret to
+     * invalidate and nothing has become less safe. Signing somebody out of
+     * their other tills for accepting a suggestion would teach them not to.
+     */
+    await events.recordAudit({
+      actorUserId: session.user_id,
+      action: 'password.set',
+      targetType: 'user',
+      targetId: String(session.user_id),
+    });
+
+    return res.redirect(303, onward);
   } catch (error) {
     return next(error);
   }
