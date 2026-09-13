@@ -57,6 +57,92 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
     _ => 'Points',
   };
 
+  /// One line, opened out.
+  ///
+  /// The list has to fit a date, a spend, a note and a number on one row of a
+  /// phone, so it abbreviates and sometimes truncates. Somebody checking what
+  /// a particular visit actually was needs the whole of it -- which table,
+  /// what it cost, what the balance became -- and that is what this is.
+  Future<void> _detail(Map<String, dynamic> t) async {
+    final theme = Theme.of(context);
+    final points = (t['points'] as num?)?.toInt() ?? 0;
+    final spend = (t['spend_minor'] as num?)?.toInt() ?? 0;
+    final value = (t['value_minor'] as num?)?.toInt() ?? 0;
+    final balance = (t['balance_after'] as num?)?.toInt();
+    final kind = t['kind'] as String?;
+    final note = (t['note'] as String?)?.trim();
+    final negative = points < 0 || kind == 'redeem' || kind == 'expire';
+    final tone = negative ? theme.colorScheme.error : theme.colorScheme.primary;
+
+    final rows = <(String, String)>[
+      ('When', when(t['created_at'])),
+      if (spend > 0) ('You spent', money(spend)),
+      if (kind == 'redeem' && value > 0) ('You saved', money(value)),
+      if (kind == 'earn' && spend > 0 && points > 0)
+        ('Rate', '${(points / (spend / 100)).toStringAsFixed(points % spend == 0 ? 0 : 1)} points per £'),
+      if (balance != null) ('Balance after', '$balance points'),
+      if (note != null && note.isNotEmpty) ('Where', note),
+    ];
+
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheet) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  CircleAvatar(
+                    backgroundColor: tone.withValues(alpha: 0.12),
+                    child: Icon(negative ? Icons.remove : Icons.add, color: tone),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      _label(kind),
+                      style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                  Text(
+                    '${negative ? '-' : '+'}${points.abs()}',
+                    style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900, color: tone),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              for (final (label, value) in rows)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 7),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(label, style: theme.textTheme.bodyMedium?.copyWith(color: theme.textTheme.bodySmall?.color)),
+                      Flexible(
+                        child: Text(
+                          value,
+                          textAlign: TextAlign.right,
+                          style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              const SizedBox(height: 10),
+              Text(
+                'Anything here look wrong? The venue can check it against the till.',
+                style: theme.textTheme.bodySmall,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -105,18 +191,26 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
             if ((t['note'] as String?)?.trim().isNotEmpty ?? false) (t['note'] as String).trim(),
           ].join(' · ');
           return ListTile(
+            onTap: () => _detail(t),
             leading: CircleAvatar(
               backgroundColor: (negative ? theme.colorScheme.error : theme.colorScheme.primary).withValues(alpha: 0.12),
               child: Icon(negative ? Icons.remove : Icons.add, color: negative ? theme.colorScheme.error : theme.colorScheme.primary),
             ),
             title: Text(_label(kind)),
             subtitle: Text(detail),
-            trailing: Text(
-              '${negative ? '-' : '+'}${points.abs()}',
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w800,
-                color: negative ? theme.colorScheme.error : theme.colorScheme.primary,
-              ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '${negative ? '-' : '+'}${points.abs()}',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: negative ? theme.colorScheme.error : theme.colorScheme.primary,
+                  ),
+                ),
+                // Faint, but there: without it nobody discovers the row opens.
+                Icon(Icons.chevron_right, size: 18, color: theme.textTheme.bodySmall?.color),
+              ],
             ),
           );
         },
