@@ -160,27 +160,41 @@ async function passwordMatches(customer, password) {
 // ---------------------------------------------------------------------------
 
 /*
- * THE RELYING PARTY IS THE MENU HOST, not the venue's slug.
+ * THE RELYING PARTY IS THE HOST THE APP IS SERVED FROM, not the venue's slug.
  *
- * A passkey is bound to a domain, and every venue's app is a path on the same
- * one (menu.vesopaepos.com/app/<slug>/). So one relying party covers them all,
- * and a member with two venues' cards has a passkey for each under the same RP
- * — which is exactly how a browser expects to store them.
+ * Every venue's app is a path on one domain (…/app/<slug>/), so one relying
+ * party covers them all, and a member with two venues' cards has a passkey
+ * for each under the same RP — which is how a browser expects to store them.
  *
- * It follows that a passkey cannot be used before the venue's app is served
- * from that host, which is the only way it is ever served.
+ * A PASSKEY IS BOUND TO EXACTLY ONE DOMAIN, and this is the one thing about
+ * moving the app to loyalty.vesopa.com that cannot be fudged. A browser will
+ * not accept an RP id that is not its own origin's domain or a parent of it,
+ * and menu.vesopaepos.com is not a parent of loyalty.vesopa.com — they share
+ * no registrable suffix. So the two hosts CANNOT both offer passkeys for the
+ * same credentials: whichever host is not the RP id simply has none.
+ *
+ * Hence LOYALTY_RP_ID, set once at the cutover. Doing it before anybody has
+ * registered a passkey costs nothing; doing it afterwards silently orphans
+ * every passkey already made, and the member sees a sign-in that used to
+ * work and now finds no key.
  */
 function rp(env = process.env) {
-  const host = String(env.MENU_HOST || 'menu.vesopaepos.com').trim();
+  const host = String(env.LOYALTY_RP_ID || env.MENU_HOST || 'menu.vesopaepos.com').trim();
+  /*
+   * ORIGINS ARE NOT THE RP ID and both hosts may appear here. The RP id says
+   * which domain the credential belongs to; the origin list says which pages
+   * are allowed to present it. During a move, serving the app on both while
+   * only one is the RP id is exactly right — the old host keeps working for
+   * everything except passkeys.
+   */
+  const extra = String(env.LOYALTY_WEBAUTHN_ORIGINS || '')
+    .split(',').map((s) => s.trim()).filter(Boolean);
   return {
     id: host,
     name: 'Vesopa Loyalty',
-    origins: [`https://${host}`].concat(
-      String(env.LOYALTY_WEBAUTHN_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean)
-    ),
+    origins: [`https://${host}`, ...extra],
   };
 }
-
 const CHALLENGE_MINUTES = 5;
 
 async function storeChallenge(db, { challenge, office, purpose, customerId = null }) {
