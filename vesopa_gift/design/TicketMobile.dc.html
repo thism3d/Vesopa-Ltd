@@ -1,0 +1,78 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Young+Serif&amp;display=swap">
+  <style>
+    body { margin: 0; background: #F4F5F1; color: #14161A; font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; }
+    a { color: #14161A; text-underline-offset: 3px; }
+    a:hover { color: #000000; }
+    .serif { font-family: "Young Serif", Georgia, "Times New Roman", serif; font-weight: 400; }
+    h1, h2, h3, p { margin: 0; }
+  </style>
+</helmet>
+<div style="width: 390px; min-height: 860px; background: #F4F5F1; padding: 24px 20px 32px; box-sizing: border-box; display: flex; flex-direction: column; gap: 16px;">
+
+  <p style="font-size: 14px; color: #63696F; text-align: center;">Show this at the door. It works on a phone or on paper.</p>
+
+  <!-- The ticket: a stub above, the code below, a perforation between. -->
+  <div style="background: #ffffff; border-radius: 18px; box-shadow: 0 10px 30px rgba(20,22,26,.10); overflow: hidden;">
+    <div style="padding: 18px 20px; background: {{accent}}; color: {{onAccent}}; display: flex; align-items: center; gap: 10px;">
+      <div style="width: 32px; height: 32px; border-radius: 50%; background: #ffffff; display: flex; align-items: center; justify-content: center;"><span class="serif" style="font-size: 13px; color: {{accent}};">VK</span></div>
+      <span class="serif" style="font-size: 17px;">The Vesopa Kitchen</span>
+    </div>
+    <div style="padding: 18px 20px 20px; display: flex; flex-direction: column; gap: 12px;">
+      <h1 class="serif" style="font-size: 26px; line-height: 1.12;">Welsh wine tasting</h1>
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px;">
+        <div style="display: flex; flex-direction: column;"><span style="font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: #63696F;">Date</span><span style="font-weight: 650;">Fri 16 Oct</span></div>
+        <div style="display: flex; flex-direction: column;"><span style="font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: #63696F;">Doors</span><span style="font-weight: 650;">6:45pm</span></div>
+        <div style="display: flex; flex-direction: column;"><span style="font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: #63696F;">Ticket</span><span style="font-weight: 650;">Tasting</span></div>
+        <div style="display: flex; flex-direction: column;"><span style="font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: #63696F;">Name</span><span style="font-weight: 650;">Sam Jones</span></div>
+      </div>
+    </div>
+    <div style="position: relative; height: 22px;">
+      <div style="position: absolute; left: -11px; top: 0; width: 22px; height: 22px; border-radius: 50%; background: #F4F5F1;"></div>
+      <div style="position: absolute; right: -11px; top: 0; width: 22px; height: 22px; border-radius: 50%; background: #F4F5F1;"></div>
+      <div style="position: absolute; left: 20px; right: 20px; top: 10px; border-top: 2px dashed #E0E3DC;"></div>
+    </div>
+    <div style="padding: 16px 20px 22px; display: flex; flex-direction: column; align-items: center; gap: 10px;">
+      <svg width="190" height="190" viewBox="0 0 29 29" shape-rendering="crispEdges" style="display: block;"><rect width="29" height="29" fill="#ffffff"></rect><path fill="#14161A" d="M2 2h7v7H2zM3 3v5h5V3zM4 4h3v3H4zM20 2h7v7h-7zM21 3v5h5V3zM22 4h3v3h-3zM2 20h7v7H2zM3 21v5h5v-5zM4 22h3v3H4zM11 2h1v1h-1zM13 2h2v1h-2zM16 3h1v2h-1zM11 4h2v1h-2zM14 5h1v2h-1zM12 6h1v1h-1zM17 6h1v1h-1zM11 8h1v2h-1zM13 8h3v1h-3zM2 11h2v1H2zM5 11h1v2H5zM7 11h3v1H7zM12 11h2v2h-2zM16 10h2v1h-2zM19 11h1v1h-1zM21 11h3v1h-3zM25 11h2v1h-2zM3 13h1v1H3zM8 13h2v2H8zM14 13h1v1h-1zM17 12h1v3h-1zM20 13h2v1h-2zM24 13h1v2h-1zM26 13h1v1h-1zM2 15h2v1H2zM6 15h1v1H6zM11 14h2v1h-2zM13 15h3v1h-3zM19 15h1v2h-1zM21 15h2v1h-2zM25 16h2v1h-2zM4 17h2v1H4zM8 17h1v1H8zM10 16h1v2h-1zM12 17h2v1h-2zM15 17h2v2h-2zM22 17h2v1h-2zM2 18h1v1H2zM11 19h1v1h-1zM13 19h1v2h-1zM17 20h3v1h-3zM21 19h1v1h-1zM23 20h2v2h-2zM26 19h1v1h-1zM11 21h1v1h-1zM15 21h1v1h-1zM19 22h1v2h-1zM21 22h1v1h-1zM25 23h2v1h-2zM11 23h2v1h-2zM14 23h2v2h-2zM17 24h1v1h-1zM21 24h3v1h-3zM11 25h1v2h-1zM13 26h3v1h-3zM18 26h2v1h-2zM22 26h1v1h-1zM24 25h1v2h-1zM26 26h1v1h-1z"></path></svg>
+      <span style="font: 600 17px/1 ui-monospace, 'SF Mono', Menlo, Consolas, monospace; letter-spacing: .14em;">T4RN-8KWD</span>
+      <span style="font-size: 13px; color: #63696F;">Ticket 1 of 2</span>
+    </div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;">
+    <a style="height: 50px; border-radius: 14px; background: #111111; color: #ffffff; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 14px; font-weight: 650; text-decoration: none;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"></rect><path d="M3 10h18"></path></svg>
+      Add to Wallet
+    </a>
+    <a style="height: 50px; border-radius: 14px; border: 1px solid #D5D8D1; background: #ffffff; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 14px; font-weight: 650; text-decoration: none;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#14161A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V3h12v6M6 17H4a1 1 0 0 1-1-1v-5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5a1 1 0 0 1-1 1h-2"></path><rect x="6" y="14" width="12" height="7"></rect></svg>
+      Print
+    </a>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"accent":{"editor":"color","default":"#8C2F39","options":["#8C2F39","#1F4E5F","#A5C715","#2F3A8F"]},"$preview":{"width":390,"height":860}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const accent = this.props.accent ?? '#8C2F39';
+    const m = /^#?([0-9a-f]{6})$/i.exec(accent);
+    let onAccent = '#FFFFFF';
+    if (m) {
+      const n = parseInt(m[1], 16);
+      const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+      if (0.2126 * r + 0.7152 * g + 0.0722 * b > 150) onAccent = '#10130A';
+    }
+    return { accent, onAccent };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,96 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; background: #f5f4f7; color: #17141c; font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif; -webkit-font-smoothing: antialiased; }
+    a { color: #17141c; }
+    a:hover { color: #000000; }
+    h1, h2, h3, p { margin: 0; }
+    .nav { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px; color: #4b4753; font-size: 14.5px; text-decoration: none; }
+    .group { padding: 18px 10px 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #8a8494; font-weight: 700; }
+    .card { background: #ffffff; border: 1px solid #e6e3ea; border-radius: 12px; box-shadow: 0 1px 2px rgba(20,18,26,.04), 0 4px 16px rgba(20,18,26,.04); overflow: hidden; display: flex; flex-direction: column; }
+    .sw-on { width: 40px; height: 24px; border-radius: 12px; background: #a5c715; position: relative; flex: 0 0 auto; }
+    .sw-off { width: 40px; height: 24px; border-radius: 12px; background: #e6e3ea; position: relative; flex: 0 0 auto; }
+    .knob-on { position: absolute; right: 3px; top: 3px; width: 18px; height: 18px; border-radius: 50%; background: #ffffff; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+    .knob-off { position: absolute; left: 3px; top: 3px; width: 18px; height: 18px; border-radius: 50%; background: #ffffff; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+  </style>
+</helmet>
+<div style="width: 1440px; height: 900px; display: flex; background: #f5f4f7;">
+
+  <div style="width: 236px; flex: none; background: #ffffff; border-right: 1px solid rgba(20,18,26,.10); display: flex; flex-direction: column; padding: 22px 0;">
+    <div style="padding: 0 22px 16px; display: flex; align-items: center; gap: 10px;">
+      <svg width="30" height="30" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#17141c"></rect><path d="M20 18H48a4 4 0 0 1 4 4V42a4 4 0 0 1-4 4H20L10 32Z" fill="#a5c715"></path><circle cx="19" cy="32" r="2.6" fill="#17141c"></circle><g transform="translate(27 25) scale(0.2)" fill="#17141c"><path d="M0,0 L22.7,0 L50.7,49 L77.3,0 L100,0 L62,70 L40,70 Z"></path></g></svg>
+      <span style="font-size: 18px; font-weight: 650;">Vesopa Gift</span>
+    </div>
+    <div style="margin: 0 12px 4px; padding: 10px 12px; border: 1px solid #e6e3ea; border-radius: 9px; display: flex; flex-direction: column;">
+      <span style="font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #8a8494; font-weight: 700;">Venue</span>
+      <span style="font-size: 14.5px; font-weight: 600;">The Vesopa Kitchen</span>
+    </div>
+    <nav style="display: flex; flex-direction: column; gap: 2px; padding: 0 12px;">
+      <span class="group">Sell</span>
+      <a class="nav">Dashboard</a>
+      <a class="nav">Orders</a>
+      <a class="nav">Vouchers</a>
+      <span class="group">Shop</span>
+      <a class="nav">Experiences</a>
+      <a class="nav">Events</a>
+      <a class="nav" style="background: #a5c715; color: #10130a; font-weight: 600;">Designs</a>
+      <a class="nav">Settings</a>
+    </nav>
+  </div>
+
+  <div style="flex-grow: 1; padding: 30px 36px 60px; display: flex; flex-direction: column; gap: 18px;">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;">
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <h2 style="font-size: 24px; font-weight: 650; letter-spacing: -.01em;">Designs</h2>
+        <p style="color: #78717f; max-width: 640px;">The pictures a buyer chooses between. Your name and the amount sit on the left third, so keep that part of your own pictures calm.</p>
+      </div>
+      <a style="border-radius: 9px; padding: 10px 18px; font-size: 14.5px; font-weight: 600; background: #a5c715; color: #10130a; text-decoration: none; display: flex; align-items: center; gap: 8px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>Upload a design</a>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px;">
+      <div class="card">
+        <img src="card-celebration.jpg" alt="" style="width: 100%; height: 210px; object-fit: cover;">
+        <div style="padding: 14px 16px; display: flex; align-items: center; gap: 12px;">
+          <div style="display: flex; flex-direction: column; flex-grow: 1;"><span style="font-weight: 600;">Celebrate</span><span style="font-size: 12.5px; color: #6e8a0e; font-weight: 600;">Shown first</span></div>
+          <span class="sw-on"><span class="knob-on"></span></span>
+        </div>
+      </div>
+      <div class="card">
+        <img src="card-dinner.jpg" alt="" style="width: 100%; height: 210px; object-fit: cover;">
+        <div style="padding: 14px 16px; display: flex; align-items: center; gap: 12px;">
+          <div style="display: flex; flex-direction: column; flex-grow: 1;"><span style="font-weight: 600;">Dinner for two</span><span style="font-size: 12.5px; color: #78717f;">On sale</span></div>
+          <span class="sw-on"><span class="knob-on"></span></span>
+        </div>
+      </div>
+      <div class="card">
+        <img src="card-thanks.jpg" alt="" style="width: 100%; height: 210px; object-fit: cover;">
+        <div style="padding: 14px 16px; display: flex; align-items: center; gap: 12px;">
+          <div style="display: flex; flex-direction: column; flex-grow: 1;"><span style="font-weight: 600;">Thank you</span><span style="font-size: 12.5px; color: #78717f;">On sale</span></div>
+          <span class="sw-on"><span class="knob-on"></span></span>
+        </div>
+      </div>
+      <div class="card">
+        <img src="card-winter.jpg" alt="" style="width: 100%; height: 210px; object-fit: cover; filter: saturate(.55); opacity: .7;">
+        <div style="padding: 14px 16px; display: flex; align-items: center; gap: 12px;">
+          <div style="display: flex; flex-direction: column; flex-grow: 1;"><span style="font-weight: 600;">Winter</span><span style="font-size: 12.5px; color: #78717f;">Hidden until November</span></div>
+          <span class="sw-off"><span class="knob-off"></span></span>
+        </div>
+      </div>
+      <div style="border: 2px dashed #d9d5de; border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; min-height: 270px; color: #78717f; text-align: center; padding: 20px;">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#8a8494" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"></rect><circle cx="9" cy="10" r="2"></circle><path d="M21 16l-5-5-8 8"></path></svg>
+        <span style="font-weight: 600; color: #17141c;">Add your own</span>
+        <span style="font-size: 13px;">JPEG or PNG, 1600 × 1000 or larger</span>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

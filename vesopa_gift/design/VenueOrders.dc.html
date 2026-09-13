@@ -1,0 +1,102 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; background: #f5f4f7; color: #17141c; font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif; -webkit-font-smoothing: antialiased; }
+    a { color: #17141c; }
+    a:hover { color: #000000; }
+    h1, h2, h3, p { margin: 0; }
+    .nav { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px; color: #4b4753; font-size: 14.5px; text-decoration: none; }
+    .group { padding: 18px 10px 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #8a8494; font-weight: 700; }
+    .th { font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; color: #78717f; font-weight: 650; }
+    .card { background: #ffffff; border: 1px solid #e6e3ea; border-radius: 12px; box-shadow: 0 1px 2px rgba(20,18,26,.04), 0 4px 16px rgba(20,18,26,.04); }
+    .row { display: grid; grid-template-columns: 1fr 1.25fr 1.4fr 1.3fr .9fr 1.2fr; padding: 13px 20px; border-bottom: 1px solid #e6e3ea; font-size: 14px; align-items: center; }
+    .kv { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; padding: 7px 0; }
+  </style>
+</helmet>
+<div style="width: 1440px; height: 1000px; display: flex; background: #f5f4f7;">
+
+  <div style="width: 236px; flex: none; background: #ffffff; border-right: 1px solid rgba(20,18,26,.10); display: flex; flex-direction: column; padding: 22px 0;">
+    <div style="padding: 0 22px 16px; display: flex; align-items: center; gap: 10px;">
+      <svg width="30" height="30" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#17141c"></rect><path d="M20 18H48a4 4 0 0 1 4 4V42a4 4 0 0 1-4 4H20L10 32Z" fill="#a5c715"></path><circle cx="19" cy="32" r="2.6" fill="#17141c"></circle><g transform="translate(27 25) scale(0.2)" fill="#17141c"><path d="M0,0 L22.7,0 L50.7,49 L77.3,0 L100,0 L62,70 L40,70 Z"></path></g></svg>
+      <span style="font-size: 18px; font-weight: 650;">Vesopa Gift</span>
+    </div>
+    <div style="margin: 0 12px 4px; padding: 10px 12px; border: 1px solid #e6e3ea; border-radius: 9px; display: flex; flex-direction: column;">
+      <span style="font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #8a8494; font-weight: 700;">Venue</span>
+      <span style="font-size: 14.5px; font-weight: 600;">The Vesopa Kitchen</span>
+    </div>
+    <nav style="display: flex; flex-direction: column; gap: 2px; padding: 0 12px;">
+      <span class="group">Sell</span>
+      <a class="nav">Dashboard</a>
+      <a class="nav" style="background: #a5c715; color: #10130a; font-weight: 600;">Orders</a>
+      <a class="nav">Vouchers</a>
+      <span class="group">Shop</span>
+      <a class="nav">Experiences</a>
+      <a class="nav">Events</a>
+      <a class="nav">Designs</a>
+      <a class="nav">Settings</a>
+    </nav>
+  </div>
+
+  <div style="flex-grow: 1; padding: 30px 36px 60px; display: flex; flex-direction: column; gap: 18px; min-width: 0;">
+    <div style="display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px;">
+      <h2 style="font-size: 24px; font-weight: 650; letter-spacing: -.01em;">Orders</h2>
+      <p style="color: #78717f;">Everything bought in your shop. Open one to send it now, change the day or refund it.</p>
+    </div>
+    <div style="display: flex; gap: 10px; align-items: center;">
+      <div style="display: flex; gap: 4px; padding: 4px; background: #eeecf1; border-radius: 10px;">
+        <span style="padding: 7px 14px; border-radius: 8px; background: #ffffff; box-shadow: 0 1px 2px rgba(20,18,26,.1); font-size: 14px; font-weight: 600;">All</span>
+        <span style="padding: 7px 14px; font-size: 14px; color: #4b4753;">Waiting to send</span>
+        <span style="padding: 7px 14px; font-size: 14px; color: #4b4753;">Sent</span>
+        <span style="padding: 7px 14px; font-size: 14px; color: #4b4753;">Refunded</span>
+      </div>
+      <div style="margin-left: auto; width: 300px; height: 42px; border: 1px solid #e6e3ea; border-radius: 9px; background: #ffffff; display: flex; align-items: center; gap: 8px; padding: 0 12px; color: #78717f; font-size: 14px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#78717f" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>Name, email, order or code</div>
+    </div>
+
+    <div style="display: flex; gap: 18px; align-items: flex-start;">
+      <div class="card" style="flex-grow: 1; overflow: hidden; min-width: 0;">
+        <div class="row" style="background: #fbfafc; padding-top: 12px; padding-bottom: 12px;"><span class="th">Order</span><span class="th">Placed</span><span class="th">Bought by</span><span class="th">What</span><span class="th" style="text-align: right;">Value</span><span class="th" style="text-align: right;">Status</span></div>
+        <div class="row" style="background: #f7faec;"><span style="font-weight: 600;">VG-24817</span><span>Today 10:42</span><span>Sam Jones</span><span>Voucher · Celebrate</span><span style="text-align: right;">£50.00</span><span style="display: flex; justify-content: flex-end;"><span style="font-size: 12.5px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: #fff3e0; color: #b06d00;">Sends 24 Oct</span></span></div>
+        <div class="row"><span>VG-24816</span><span>Today 09:15</span><span>Rhian Morgan</span><span>2 × Wine tasting</span><span style="text-align: right;">£56.00</span><span style="display: flex; justify-content: flex-end;"><span style="font-size: 12.5px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: #e3f6ec; color: #1e7a4f;">Sent</span></span></div>
+        <div class="row"><span>VG-24815</span><span>Yesterday 21:03</span><span>Priya Shah</span><span>Sunday lunch for two</span><span style="text-align: right;">£48.00</span><span style="display: flex; justify-content: flex-end;"><span style="font-size: 12.5px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: #fff3e0; color: #b06d00;">Sends 1 Nov</span></span></div>
+        <div class="row"><span>VG-24814</span><span>Yesterday 13:30</span><span>Tom Roberts</span><span>Voucher · Winter</span><span style="text-align: right;">£100.00</span><span style="display: flex; justify-content: flex-end;"><span style="font-size: 12.5px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: #fff3e0; color: #b06d00;">Sends 25 Dec</span></span></div>
+        <div class="row"><span>VG-24813</span><span>11 Oct 18:52</span><span>Dafydd Hughes</span><span>Voucher · Thank you</span><span style="text-align: right;">£25.00</span><span style="display: flex; justify-content: flex-end;"><span style="font-size: 12.5px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: #e3f6ec; color: #1e7a4f;">Sent</span></span></div>
+        <div class="row" style="border-bottom: 0;"><span>VG-24812</span><span>10 Oct 16:20</span><span>Kate Lewis</span><span>Voucher · Celebrate</span><span style="text-align: right; color: #78717f; text-decoration: line-through;">£75.00</span><span style="display: flex; justify-content: flex-end;"><span style="font-size: 12.5px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: #eeecf1; color: #4b4753;">Refunded</span></span></div>
+      </div>
+
+      <!-- The order, opened -->
+      <div class="card" style="width: 400px; flex: 0 0 auto; padding: 20px; display: flex; flex-direction: column; gap: 14px;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+          <div style="display: flex; flex-direction: column;"><span style="font-size: 18px; font-weight: 650;">VG-24817</span><span style="font-size: 13px; color: #78717f;">Paid today at 10:42 · Visa ····1005</span></div>
+          <span style="font-size: 12.5px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: #fff3e0; color: #b06d00;">Sends 24 Oct</span>
+        </div>
+        <div style="display: flex; gap: 12px; align-items: center; padding: 12px; border-radius: 10px; background: #f7f8fa;">
+          <img src="card-celebration.jpg" alt="" style="width: 84px; height: 53px; object-fit: cover; border-radius: 7px;">
+          <div style="display: flex; flex-direction: column;"><span style="font-weight: 600;">£50 gift voucher</span><span style="font-size: 13px; color: #78717f;">Code ····94TD · £50.00 left · valid to 24 Oct 2027</span></div>
+        </div>
+        <div style="display: flex; flex-direction: column; border-top: 1px solid #e6e3ea; padding-top: 6px;">
+          <div class="kv"><span style="color: #78717f;">For</span><span>Alex · alex@example.com</span></div>
+          <div class="kv"><span style="color: #78717f;">From</span><span>Sam Jones · sam@example.com</span></div>
+          <div class="kv"><span style="color: #78717f;">Arrives</span><span>Saturday 24 October, 9:00am</span></div>
+          <div class="kv" style="flex-direction: column; gap: 4px;"><span style="color: #78717f;">Message</span><span style="font-style: italic;">“Happy birthday! Dinner is on me — take someone nice.”</span></div>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;">
+          <a style="border-radius: 9px; padding: 10px 12px; font-size: 14px; font-weight: 600; background: #a5c715; color: #10130a; text-align: center; text-decoration: none;">Send it now</a>
+          <a style="border-radius: 9px; padding: 9px 12px; font-size: 14px; font-weight: 600; border: 1px solid #e6e3ea; text-align: center; text-decoration: none;">Change the day</a>
+          <a style="border-radius: 9px; padding: 9px 12px; font-size: 14px; font-weight: 600; border: 1px solid #e6e3ea; text-align: center; text-decoration: none;">Fix the address</a>
+          <a style="border-radius: 9px; padding: 9px 12px; font-size: 14px; font-weight: 600; border: 1px solid #f3c7c8; color: #c9373c; text-align: center; text-decoration: none;">Refund £50.00</a>
+        </div>
+        <p style="font-size: 12.5px; color: #78717f;">A refund cancels whatever is left on the voucher and pays it back through Dojo. Anything already spent at the till is not refunded.</p>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

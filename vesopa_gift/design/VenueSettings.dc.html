@@ -1,0 +1,126 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; background: #f5f4f7; color: #17141c; font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif; -webkit-font-smoothing: antialiased; }
+    a { color: #17141c; }
+    a:hover { color: #000000; }
+    h1, h2, h3, p { margin: 0; }
+    .nav { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px; color: #4b4753; font-size: 14.5px; text-decoration: none; }
+    .group { padding: 18px 10px 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #8a8494; font-weight: 700; }
+    .card { background: #ffffff; border: 1px solid #e6e3ea; border-radius: 12px; box-shadow: 0 1px 2px rgba(20,18,26,.04), 0 4px 16px rgba(20,18,26,.04); padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+    .input { margin-top: 6px; height: 44px; border: 1px solid #e6e3ea; border-radius: 9px; padding: 0 13px; display: flex; align-items: center; background: #ffffff; font-size: 15px; }
+    .lbl { font-size: 14px; font-weight: 550; color: #17141c; display: flex; flex-direction: column; }
+    .help { font-size: 12.5px; color: #78717f; }
+    .chip { height: 36px; padding: 0 12px; border-radius: 9px; border: 1px solid #e6e3ea; display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; background: #ffffff; }
+    .sw-on { width: 40px; height: 24px; border-radius: 12px; background: #a5c715; position: relative; flex: 0 0 auto; }
+    .sw-off { width: 40px; height: 24px; border-radius: 12px; background: #e6e3ea; position: relative; flex: 0 0 auto; }
+    .knob-on { position: absolute; right: 3px; top: 3px; width: 18px; height: 18px; border-radius: 50%; background: #ffffff; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+    .knob-off { position: absolute; left: 3px; top: 3px; width: 18px; height: 18px; border-radius: 50%; background: #ffffff; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+  </style>
+</helmet>
+<div style="width: 1440px; height: 1240px; display: flex; background: #f5f4f7;">
+
+  <div style="width: 236px; flex: none; background: #ffffff; border-right: 1px solid rgba(20,18,26,.10); display: flex; flex-direction: column; padding: 22px 0;">
+    <div style="padding: 0 22px 16px; display: flex; align-items: center; gap: 10px;">
+      <svg width="30" height="30" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#17141c"></rect><path d="M20 18H48a4 4 0 0 1 4 4V42a4 4 0 0 1-4 4H20L10 32Z" fill="#a5c715"></path><circle cx="19" cy="32" r="2.6" fill="#17141c"></circle><g transform="translate(27 25) scale(0.2)" fill="#17141c"><path d="M0,0 L22.7,0 L50.7,49 L77.3,0 L100,0 L62,70 L40,70 Z"></path></g></svg>
+      <span style="font-size: 18px; font-weight: 650;">Vesopa Gift</span>
+    </div>
+    <div style="margin: 0 12px 4px; padding: 10px 12px; border: 1px solid #e6e3ea; border-radius: 9px; display: flex; flex-direction: column;">
+      <span style="font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #8a8494; font-weight: 700;">Venue</span>
+      <span style="font-size: 14.5px; font-weight: 600;">The Vesopa Kitchen</span>
+    </div>
+    <nav style="display: flex; flex-direction: column; gap: 2px; padding: 0 12px;">
+      <span class="group">Sell</span>
+      <a class="nav">Dashboard</a>
+      <a class="nav">Orders</a>
+      <a class="nav">Vouchers</a>
+      <span class="group">Shop</span>
+      <a class="nav">Experiences</a>
+      <a class="nav">Events</a>
+      <a class="nav">Designs</a>
+      <a class="nav" style="background: #a5c715; color: #10130a; font-weight: 600;">Settings</a>
+    </nav>
+  </div>
+
+  <div style="flex-grow: 1; padding: 30px 36px 60px; display: flex; flex-direction: column; gap: 18px;">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;">
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <h2 style="font-size: 24px; font-weight: 650; letter-spacing: -.01em;">Settings</h2>
+        <p style="color: #78717f;">Your shop takes its name, logo and colours from your venue’s branding in the back office.</p>
+      </div>
+      <a style="border-radius: 9px; padding: 10px 18px; font-size: 14.5px; font-weight: 600; background: #a5c715; color: #10130a; text-decoration: none;">Save changes</a>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; align-items: start;">
+      <div style="display: flex; flex-direction: column; gap: 18px;">
+        <div class="card">
+          <h3 style="font-size: 16px; font-weight: 650;">Amounts</h3>
+          <div class="lbl">Buttons on the shop
+            <div style="display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap;">
+              <span class="chip">£25<span style="color: #b9b3c0;">×</span></span><span class="chip">£50<span style="color: #b9b3c0;">×</span></span><span class="chip">£75<span style="color: #b9b3c0;">×</span></span><span class="chip">£100<span style="color: #b9b3c0;">×</span></span><span class="chip" style="border-style: dashed; color: #78717f;">+ Add</span>
+            </div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 12px;"><span class="sw-on"><span class="knob-on"></span></span><span style="font-size: 14.5px;">Let people type their own amount</span></div>
+          <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px;">
+            <label class="lbl">Smallest<div class="input">£10</div></label>
+            <label class="lbl">Largest<div class="input">£500</div></label>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 style="font-size: 16px; font-weight: 650;">How long a voucher lasts</h3>
+          <label class="lbl">From the day it is bought<div class="input" style="justify-content: space-between;">12 months<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#78717f" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"></path></svg></div></label>
+          <p class="help">Printed on every voucher and in your terms. Ask your accountant before choosing anything shorter than a year.</p>
+        </div>
+
+        <div class="card">
+          <h3 style="font-size: 16px; font-weight: 650;">Terms</h3>
+          <div style="min-height: 120px; border: 1px solid #e6e3ea; border-radius: 9px; padding: 11px 13px; font-size: 14px; color: #4b4753;">Vouchers can be used for food and drink at The Vesopa Kitchen. They are not exchangeable for cash and cannot be replaced if lost. [Your own terms]</div>
+          <p class="help">Shown at checkout and linked from every voucher.</p>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 18px;">
+        <div class="card">
+          <h3 style="font-size: 16px; font-weight: 650;">Payments</h3>
+          <div style="display: flex; gap: 12px; align-items: center; padding: 12px; border-radius: 10px; background: #e3f6ec;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1e7a4f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg>
+            <span style="font-size: 14px; color: #1e5e3e;">Paid straight into your Dojo account ending <strong>4821</strong>.</span>
+          </div>
+          <p class="help">The same key your Vesopa Express kiosks use. Dojo has to switch on online payments for your account before the shop can take a card.</p>
+        </div>
+
+        <div class="card">
+          <h3 style="font-size: 16px; font-weight: 650;">Delivery</h3>
+          <div style="display: flex; align-items: center; gap: 12px;"><span class="sw-on"><span class="knob-on"></span></span><span style="font-size: 14.5px;">Let buyers choose the day it arrives</span></div>
+          <label class="lbl">As far ahead as<div class="input" style="justify-content: space-between;">6 months<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#78717f" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"></path></svg></div></label>
+        </div>
+
+        <div class="card">
+          <h3 style="font-size: 16px; font-weight: 650;">Protection</h3>
+          <p class="help" style="font-size: 13.5px;">Stolen cards are used to buy vouchers that are spent within the hour. These slow that down without getting in the way of anyone honest.</p>
+          <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px;">
+            <label class="lbl">Largest single order<div class="input">£500</div></label>
+            <label class="lbl">Orders per email per day<div class="input">5</div></label>
+          </div>
+          <div style="display: flex; align-items: center; gap: 12px;"><span class="sw-on"><span class="knob-on"></span></span><span style="font-size: 14.5px;">Hold vouchers over £250 for 24 hours before they can be spent</span></div>
+        </div>
+
+        <div class="card">
+          <h3 style="font-size: 16px; font-weight: 650;">Emails to you</h3>
+          <label class="lbl">Tell this address about every sale<div class="input">manager@example.com</div></label>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

@@ -1,0 +1,89 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; background: #f4f4f0; color: #111111; font: 16px/1.5 Arial, "Helvetica Neue", Helvetica, sans-serif; }
+    a { color: #111111; }
+    a:hover { color: #000000; }
+    h1, h2, p { margin: 0; }
+  </style>
+</helmet>
+<!-- Drawn the way the real one is built: one 600px column, every colour on the
+     element it applies to, nothing a mail client can strip. -->
+<div style="width: 648px; min-height: 1330px; background: #f4f4f0; padding: 24px; box-sizing: border-box;">
+  <div style="width: 600px; background: #ffffff; border-radius: 14px; overflow: hidden;">
+
+    <div style="background: {{accent}}; padding: 22px 26px; display: flex; align-items: center; gap: 12px;">
+      <div style="width: 40px; height: 40px; border-radius: 9px; background: #ffffff; display: flex; align-items: center; justify-content: center;"><span style="font: 700 15px/1 Georgia, serif; color: {{accent}};">VK</span></div>
+      <span style="font: 700 19px/1.2 Arial, sans-serif; color: {{onAccent}};">The Vesopa Kitchen</span>
+    </div>
+
+    <div style="padding: 30px 26px 8px; display: flex; flex-direction: column; gap: 14px;">
+      <h1 style="font: 700 26px/1.25 Georgia, 'Times New Roman', serif;">Alex, you have been given a gift.</h1>
+      <p style="font-size: 16px;">Sam has sent you a <strong>£50 voucher</strong> for The Vesopa Kitchen, with a note:</p>
+      <div style="background: #f4f5f1; border-radius: 12px; padding: 16px 18px; font: italic 17px/1.5 Georgia, serif;">“Happy birthday! Dinner is on me — take someone nice.”<div style="font: 14px/1.5 Arial, sans-serif; font-style: normal; color: #6b6b6b; margin-top: 6px;">Sam</div></div>
+    </div>
+
+    <div style="padding: 18px 26px 0;">
+      <div style="position: relative; width: 548px; height: 345px; border-radius: 14px; overflow: hidden;">
+        <img src="card-celebration.jpg" alt="A gift voucher for £50" style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;">
+        <div style="position: absolute; left: 24px; top: 20px; display: flex; align-items: center; gap: 10px;">
+          <div style="width: 36px; height: 36px; border-radius: 50%; background: #ffffff; display: flex; align-items: center; justify-content: center;"><span style="font: 14px/1 Georgia, serif; color: {{accent}};">VK</span></div>
+          <span style="font: 18px/1 Georgia, serif; color: #14161A;">The Vesopa Kitchen</span>
+        </div>
+        <div style="position: absolute; left: 24px; bottom: 22px; display: flex; flex-direction: column;">
+          <span style="font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: #3b3f45;">Gift voucher</span>
+          <span style="font: 58px/1.05 Georgia, serif; color: #14161A;">£50</span>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin: 22px 26px 0; padding: 18px; border: 1px solid #e6e8e3; border-radius: 12px; display: flex; gap: 18px; align-items: center;">
+      <svg width="116" height="116" viewBox="0 0 29 29" shape-rendering="crispEdges" style="flex: 0 0 auto;"><rect width="29" height="29" fill="#ffffff"></rect><path fill="#14161A" d="M2 2h7v7H2zM3 3v5h5V3zM4 4h3v3H4zM20 2h7v7h-7zM21 3v5h5V3zM22 4h3v3h-3zM2 20h7v7H2zM3 21v5h5v-5zM4 22h3v3H4zM11 2h1v1h-1zM13 2h2v1h-2zM16 3h1v2h-1zM11 4h2v1h-2zM14 5h1v2h-1zM12 6h1v1h-1zM17 6h1v1h-1zM11 8h1v2h-1zM13 8h3v1h-3zM2 11h2v1H2zM5 11h1v2H5zM7 11h3v1H7zM12 11h2v2h-2zM16 10h2v1h-2zM19 11h1v1h-1zM21 11h3v1h-3zM25 11h2v1h-2zM3 13h1v1H3zM8 13h2v2H8zM14 13h1v1h-1zM17 12h1v3h-1zM20 13h2v1h-2zM24 13h1v2h-1zM26 13h1v1h-1zM2 15h2v1H2zM6 15h1v1H6zM11 14h2v1h-2zM13 15h3v1h-3zM19 15h1v2h-1zM21 15h2v1h-2zM25 16h2v1h-2zM4 17h2v1H4zM8 17h1v1H8zM10 16h1v2h-1zM12 17h2v1h-2zM15 17h2v2h-2zM22 17h2v1h-2zM2 18h1v1H2zM11 19h1v1h-1zM13 19h1v2h-1zM17 20h3v1h-3zM21 19h1v1h-1zM23 20h2v2h-2zM26 19h1v1h-1zM11 21h1v1h-1zM15 21h1v1h-1zM19 22h1v2h-1zM21 22h1v1h-1zM25 23h2v1h-2zM11 23h2v1h-2zM14 23h2v2h-2zM17 24h1v1h-1zM21 24h3v1h-3zM11 25h1v2h-1zM13 26h3v1h-3zM18 26h2v1h-2zM22 26h1v1h-1zM24 25h1v2h-1zM26 26h1v1h-1z"></path></svg>
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <span style="font-size: 13px; color: #6b6b6b;">Your voucher code</span>
+        <span style="font: 700 26px/1.2 'Courier New', Courier, monospace; letter-spacing: 3px;">K7QM-2HXP-94TD</span>
+        <span style="font-size: 14px; color: #6b6b6b;">Valid until 24 October 2027</span>
+      </div>
+    </div>
+
+    <div style="padding: 18px 26px 0; display: flex; gap: 10px;">
+      <a style="height: 46px; padding: 0 18px; border-radius: 10px; background: #111111; color: #ffffff; font: 700 14px/46px Arial, sans-serif; text-decoration: none; display: flex; align-items: center;">Add to Apple Wallet</a>
+      <a style="height: 44px; padding: 0 18px; border-radius: 10px; border: 1px solid #d5d8d1; color: #111111; font: 700 14px/44px Arial, sans-serif; text-decoration: none; display: flex; align-items: center;">Save to Google Wallet</a>
+    </div>
+
+    <div style="padding: 22px 26px 6px; display: flex; flex-direction: column; gap: 10px; font-size: 15px; color: #333333;">
+      <p><strong style="color: #111111;">How to use it.</strong> Show the code or the QR when you pay, at the bar or at your table. Spend it all at once or a bit at a time — whatever is left stays on it.</p>
+      <p>A copy to print is attached. You can check what is left at any time at <a>gift.vesopaepos.com/vesopa-kitchen/balance</a>.</p>
+    </div>
+
+    <div style="padding: 18px 26px 28px; font-size: 13px; line-height: 1.5; color: #6b6b6b; display: flex; flex-direction: column; gap: 8px;">
+      <p>Sam bought this on 12 October. If it reached you by mistake, reply to this email and the venue will put it right.</p>
+      <p>Sent by The Vesopa Kitchen · powered by Vesopa</p>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"accent":{"editor":"color","default":"#8C2F39","options":["#8C2F39","#1F4E5F","#A5C715","#2F3A8F"]},"$preview":{"width":648,"height":1330}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const accent = this.props.accent ?? '#8C2F39';
+    const m = /^#?([0-9a-f]{6})$/i.exec(accent);
+    let onAccent = '#FFFFFF';
+    if (m) {
+      const n = parseInt(m[1], 16);
+      const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+      if (0.2126 * r + 0.7152 * g + 0.0722 * b > 150) onAccent = '#111111';
+    }
+    return { accent, onAccent };
+  }
+}
+</script>
+</body>
+</html>

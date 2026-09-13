@@ -1,0 +1,164 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Young+Serif&amp;display=swap">
+  <style>
+    body { margin: 0; background: #ffffff; color: #14161A; font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; }
+    a { color: #14161A; text-underline-offset: 3px; }
+    a:hover { color: #000000; }
+    .serif { font-family: "Young Serif", Georgia, "Times New Roman", serif; font-weight: 400; }
+    h1, h2, h3, p { margin: 0; }
+    .label { font-size: 14px; font-weight: 650; color: #14161A; }
+    .field { height: 50px; border: 1px solid #D5D8D1; border-radius: 12px; padding: 0 14px; display: flex; align-items: center; font-size: 16px; color: #14161A; background: #ffffff; }
+    .hint { font-size: 13px; color: #63696F; }
+  </style>
+</helmet>
+<div style="width: 390px; min-height: 2100px; background: #ffffff;">
+
+  <!-- A slim bar: where you are, and the way back. -->
+  <div style="height: 56px; padding: 0 8px 0 4px; display: flex; align-items: center; gap: 4px; border-bottom: 1px solid #E6E8E3;">
+    <a style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#14161A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"></path></svg>
+    </a>
+    <div style="width: 30px; height: 30px; border-radius: 50%; background: #ffffff; border: 1px solid #E6E8E3; display: flex; align-items: center; justify-content: center;"><span class="serif" style="font-size: 12px; color: {{accent}};">VK</span></div>
+    <span class="serif" style="font-size: 16px; margin-left: 6px;">The Vesopa Kitchen</span>
+  </div>
+
+  <div style="padding: 22px 20px 0; display: flex; flex-direction: column; gap: 6px;">
+    <h1 class="serif" style="font-size: 27px; line-height: 1.15;">A gift voucher</h1>
+    <p style="font-size: 15px; color: #63696F;">Spent on anything on the menu, a bit at a time if they like.</p>
+  </div>
+
+  <!-- The design: the picture they will open. -->
+  <div style="padding: 22px 0 0 20px; display: flex; flex-direction: column; gap: 10px;">
+    <span class="label">Choose a design</span>
+    <div style="display: flex; gap: 12px; overflow: hidden;">
+      <div style="flex: 0 0 auto; width: 150px; display: flex; flex-direction: column; gap: 6px;">
+        <div style="width: 150px; height: 95px; border-radius: 11px; overflow: hidden; box-shadow: 0 0 0 3px {{accent}}, 0 0 0 5px #ffffff inset;"><img src="card-celebration.jpg" alt="" style="width: 100%; height: 100%; object-fit: cover;"></div>
+        <span style="font-size: 13px; font-weight: 650;">Celebrate</span>
+      </div>
+      <div style="flex: 0 0 auto; width: 150px; display: flex; flex-direction: column; gap: 6px;">
+        <div style="width: 150px; height: 95px; border-radius: 11px; overflow: hidden; border: 1px solid #E6E8E3;"><img src="card-dinner.jpg" alt="" style="width: 100%; height: 100%; object-fit: cover;"></div>
+        <span style="font-size: 13px; color: #63696F;">Dinner for two</span>
+      </div>
+      <div style="flex: 0 0 auto; width: 150px; display: flex; flex-direction: column; gap: 6px;">
+        <div style="width: 150px; height: 95px; border-radius: 11px; overflow: hidden; border: 1px solid #E6E8E3;"><img src="card-thanks.jpg" alt="" style="width: 100%; height: 100%; object-fit: cover;"></div>
+        <span style="font-size: 13px; color: #63696F;">Thank you</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- The amount -->
+  <div style="padding: 26px 20px 0; display: flex; flex-direction: column; gap: 10px;">
+    <span class="label">How much?</span>
+    <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px;">
+      <div style="height: 50px; border-radius: 12px; border: 1px solid #D5D8D1; display: flex; align-items: center; justify-content: center; font-weight: 650;">£25</div>
+      <div style="height: 50px; border-radius: 12px; background: {{accent}}; color: {{onAccent}}; display: flex; align-items: center; justify-content: center; font-weight: 650;">£50</div>
+      <div style="height: 50px; border-radius: 12px; border: 1px solid #D5D8D1; display: flex; align-items: center; justify-content: center; font-weight: 650;">£75</div>
+      <div style="height: 50px; border-radius: 12px; border: 1px solid #D5D8D1; display: flex; align-items: center; justify-content: center; font-weight: 650;">£100</div>
+    </div>
+    <div class="field" style="gap: 6px; color: #9AA0A6;"><span style="color: #14161A; font-weight: 650;">£</span><span>Another amount, £10 to £500</span></div>
+  </div>
+
+  <!-- Who it is for -->
+  <div style="padding: 26px 20px 0; display: flex; flex-direction: column; gap: 10px;">
+    <span class="label">Who should we send it to?</span>
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; padding: 4px; border-radius: 13px; background: #F4F5F1;">
+      <div style="height: 44px; border-radius: 10px; background: #ffffff; box-shadow: 0 1px 3px rgba(20,22,26,.12); display: flex; align-items: center; justify-content: center; font-weight: 650; font-size: 15px;">Straight to them</div>
+      <div style="height: 44px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 15px; color: #63696F;">To me, to hand over</div>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 6px;">
+      <span style="font-size: 14px;">Their name</span>
+      <div class="field">Alex</div>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 6px;">
+      <span style="font-size: 14px;">Their email address</span>
+      <div class="field">alex@example.com</div>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 6px;">
+      <span style="font-size: 14px;">A message <span style="color: #63696F;">(optional)</span></span>
+      <div style="min-height: 104px; border: 1px solid #D5D8D1; border-radius: 12px; padding: 12px 14px; font-size: 16px; line-height: 1.45;">Happy birthday! Dinner is on me — take someone nice.</div>
+      <span class="hint" style="text-align: right;">52 / 300</span>
+    </div>
+  </div>
+
+  <!-- When -->
+  <div style="padding: 20px 20px 0; display: flex; flex-direction: column; gap: 10px;">
+    <span class="label">When should it arrive?</span>
+    <div style="display: flex; align-items: center; gap: 12px; padding: 14px; border: 1px solid #D5D8D1; border-radius: 12px;">
+      <span style="width: 22px; height: 22px; border-radius: 50%; border: 2px solid #B9BDB5; flex: 0 0 auto;"></span>
+      <span style="font-size: 15px;">Straight away</span>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 12px; padding: 14px; border: 2px solid {{accent}}; border-radius: 12px;">
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <span style="width: 22px; height: 22px; border-radius: 50%; border: 7px solid {{accent}}; flex: 0 0 auto; box-sizing: border-box;"></span>
+        <span style="font-size: 15px; font-weight: 650;">On a day I choose</span>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;">
+        <div class="field" style="gap: 8px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#63696F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M16 3v4M8 3v4M3 10h18"></path></svg>Sat 24 Oct</div>
+        <div class="field" style="gap: 8px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#63696F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>9:00am</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Buyer -->
+  <div style="padding: 26px 20px 0; display: flex; flex-direction: column; gap: 10px;">
+    <span class="label">Your details</span>
+    <div style="display: flex; flex-direction: column; gap: 6px;">
+      <span style="font-size: 14px;">Your name</span>
+      <div class="field">Sam Jones</div>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 6px;">
+      <span style="font-size: 14px;">Your email address</span>
+      <div class="field">sam@example.com</div>
+      <span class="hint">Your receipt goes here, and we tell you when Alex’s voucher has been sent.</span>
+    </div>
+  </div>
+
+  <!-- Summary and pay -->
+  <div style="margin: 26px 20px 0; padding: 16px; border-radius: 14px; background: #F4F5F1; display: flex; flex-direction: column; gap: 10px;">
+    <div style="display: flex; justify-content: space-between; font-size: 15px;"><span>Gift voucher · Celebrate</span><span>£50.00</span></div>
+    <div style="display: flex; justify-content: space-between; font-size: 15px; color: #63696F;"><span>Arrives</span><span>Sat 24 Oct, 9:00am</span></div>
+    <div style="display: flex; justify-content: space-between; font-size: 15px; color: #63696F;"><span>Valid until</span><span>24 Oct 2027</span></div>
+    <div style="height: 1px; background: #E0E3DC;"></div>
+    <div style="display: flex; justify-content: space-between; font-size: 17px; font-weight: 700;"><span>Total</span><span>£50.00</span></div>
+  </div>
+
+  <div style="padding: 16px 20px 0; display: flex; flex-direction: column; gap: 12px;">
+    <a style="display: flex; align-items: center; justify-content: center; gap: 10px; height: 54px; border-radius: 14px; background: {{accent}}; color: {{onAccent}}; font-weight: 650; font-size: 17px; text-decoration: none;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3"></path></svg>
+      Pay £50.00
+    </a>
+    <p class="hint" style="text-align: center; text-wrap: pretty;">Card, Apple Pay or Google Pay, taken securely by Dojo and paid straight to The Vesopa Kitchen.</p>
+    <p class="hint" style="text-align: center;">By paying you accept the <a>voucher terms</a>.</p>
+  </div>
+
+  <div style="margin-top: 36px; padding: 20px; border-top: 1px solid #E6E8E3; display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: #9AA0A6;">
+    <svg width="18" height="13" viewBox="0 0 100 70"><path fill="#a5c715" d="M0,0 L22.7,0 L50.7,49 L77.3,0 L100,0 L62,70 L40,70 Z"></path><path fill="#111111" d="M58.3,35 L81,35 L62,70 L40,70 L50.7,49 Z"></path></svg>
+    <span>Powered by Vesopa</span>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"accent":{"editor":"color","default":"#8C2F39","options":["#8C2F39","#1F4E5F","#A5C715","#2F3A8F"]},"$preview":{"width":390,"height":2100}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const accent = this.props.accent ?? '#8C2F39';
+    const m = /^#?([0-9a-f]{6})$/i.exec(accent);
+    let onAccent = '#FFFFFF';
+    if (m) {
+      const n = parseInt(m[1], 16);
+      const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+      if (0.2126 * r + 0.7152 * g + 0.0722 * b > 150) onAccent = '#10130A';
+    }
+    return { accent, onAccent };
+  }
+}
+</script>
+</body>
+</html>

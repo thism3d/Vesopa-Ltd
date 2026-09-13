@@ -1,0 +1,43 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; background: #f5f4f7; color: #17141c; font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif; }
+    a { color: #17141c; }
+    a:hover { color: #000000; }
+  </style>
+</helmet>
+<!-- A gift tag, with the Vesopa V on it. At 16px only the tag and its hole
+     survive, which is enough: it still reads as "a tag", in the family colours. -->
+<div style="width: 1040px; height: 560px; background: #f5f4f7; padding: 48px; box-sizing: border-box; display: flex; gap: 48px; align-items: center;">
+
+  <div style="width: 300px; height: 300px; border-radius: 28px; background: #ffffff; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 2px rgba(20,18,26,.04), 0 4px 16px rgba(20,18,26,.04);">
+    <svg width="240" height="240" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#17141c"></rect><path d="M20 18H48a4 4 0 0 1 4 4V42a4 4 0 0 1-4 4H20L10 32Z" fill="#a5c715"></path><circle cx="19" cy="32" r="2.6" fill="#17141c"></circle><g transform="translate(27 25) scale(0.2)" fill="#17141c"><path d="M0,0 L22.7,0 L50.7,49 L77.3,0 L100,0 L62,70 L40,70 Z"></path></g></svg>
+  </div>
+
+  <div style="width: 300px; height: 300px; border-radius: 28px; background: #111111; display: flex; align-items: center; justify-content: center;">
+    <svg width="240" height="240" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#a5c715"></rect><path d="M20 18H48a4 4 0 0 1 4 4V42a4 4 0 0 1-4 4H20L10 32Z" fill="#17141c"></path><circle cx="19" cy="32" r="2.6" fill="#a5c715"></circle><g transform="translate(27 25) scale(0.2)" fill="#a5c715"><path d="M0,0 L22.7,0 L50.7,49 L77.3,0 L100,0 L62,70 L40,70 Z"></path></g></svg>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 22px;">
+    <div style="display: flex; align-items: flex-end; gap: 22px;">
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 8px;"><svg width="90" height="90" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#17141c"></rect><path d="M20 18H48a4 4 0 0 1 4 4V42a4 4 0 0 1-4 4H20L10 32Z" fill="#a5c715"></path><circle cx="19" cy="32" r="2.6" fill="#17141c"></circle><g transform="translate(27 25) scale(0.2)" fill="#17141c"><path d="M0,0 L22.7,0 L50.7,49 L77.3,0 L100,0 L62,70 L40,70 Z"></path></g></svg><span style="font-size: 12px; color: #78717f;">180</span></div>
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 8px;"><svg width="48" height="48" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#17141c"></rect><path d="M20 18H48a4 4 0 0 1 4 4V42a4 4 0 0 1-4 4H20L10 32Z" fill="#a5c715"></path><circle cx="19" cy="32" r="2.6" fill="#17141c"></circle><g transform="translate(27 25) scale(0.2)" fill="#17141c"><path d="M0,0 L22.7,0 L50.7,49 L77.3,0 L100,0 L62,70 L40,70 Z"></path></g></svg><span style="font-size: 12px; color: #78717f;">48</span></div>
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 8px;"><svg width="32" height="32" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#17141c"></rect><path d="M20 18H48a4 4 0 0 1 4 4V42a4 4 0 0 1-4 4H20L10 32Z" fill="#a5c715"></path><circle cx="19" cy="32" r="2.6" fill="#17141c"></circle><g transform="translate(27 25) scale(0.2)" fill="#17141c"><path d="M0,0 L22.7,0 L50.7,49 L77.3,0 L100,0 L62,70 L40,70 Z"></path></g></svg><span style="font-size: 12px; color: #78717f;">32</span></div>
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 8px;"><svg width="16" height="16" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#17141c"></rect><path d="M20 18H48a4 4 0 0 1 4 4V42a4 4 0 0 1-4 4H20L10 32Z" fill="#a5c715"></path><circle cx="19" cy="32" r="3.4" fill="#17141c"></circle></svg><span style="font-size: 12px; color: #78717f;">16</span></div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: #ffffff; border: 1px solid #e6e3ea; border-radius: 10px; width: 250px;">
+      <svg width="16" height="16" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#17141c"></rect><path d="M20 18H48a4 4 0 0 1 4 4V42a4 4 0 0 1-4 4H20L10 32Z" fill="#a5c715"></path><circle cx="19" cy="32" r="3.4" fill="#17141c"></circle></svg>
+      <span style="font-size: 13px;">Vesopa Gift — Orders</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>
