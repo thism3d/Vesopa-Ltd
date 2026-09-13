@@ -30,12 +30,19 @@ const displayApiBase = String.fromEnvironment(
 /// It does not replace pairing. Signing in claims the venue's display licence;
 /// pairing with a till is unchanged and happens next, exactly as it always has.
 ///
-/// IT NEVER TRAPS A SCREEN
+/// SIGNING IN IS NOT OPTIONAL, AND IS ONLY ASKED ONCE
 ///
-/// A back office too old to offer this, no network, a venue with no licences
-/// set: every one of them walks straight through to the display. A customer
-/// screen stuck on a sign-in page is a screen somebody unplugs, and then a
-/// counter with nothing facing the customer at all.
+/// There is no way past this screen without connecting. A display that could
+/// be skipped past is a display that never gets counted, which is the whole
+/// reason the subscription for them sat expired while the screens worked.
+///
+/// It is asked ONCE. A screen that has connected before never sees this page
+/// again -- its commissioning is kept, and it works offline for ever after.
+/// So a broadband failure can never take a venue's customer screens down; only
+/// a brand-new screen is held, and a brand-new screen is never mid-service.
+///
+/// A back office too old to offer sign-in at all still goes straight through.
+/// That is not a loophole: there is nothing there to sign in to.
 class ConnectPage extends ConsumerStatefulWidget {
   const ConnectPage({super.key});
 
@@ -48,6 +55,12 @@ class _ConnectPageState extends ConsumerState<ConnectPage> {
   bool _busy = false;
   String? _error;
   bool _full = false;
+
+  /// The back office could not be reached at all, as opposed to refusing us.
+  /// Worth separating: one is a network somebody can go and look at, the other
+  /// is an answer. Telling a venue "check the network" when Vesopa said no is
+  /// how an evening gets wasted on the wrong thing.
+  bool _unreachable = false;
 
   @override
   void initState() {
@@ -81,6 +94,7 @@ class _ConnectPageState extends ConsumerState<ConnectPage> {
       _busy = true;
       _error = null;
       _full = false;
+      _unreachable = false;
     });
     try {
       await commission(
@@ -102,8 +116,11 @@ class _ConnectPageState extends ConsumerState<ConnectPage> {
       }
     } catch (e) {
       if (mounted) {
+        final message =
+            e is DisplaySetupFailed ? e.message : 'That did not work. Please try again.';
         setState(() {
-          _error = e is DisplaySetupFailed ? e.message : 'That did not work. Please try again.';
+          _error = message;
+          _unreachable = message.contains('Could not reach');
           _busy = false;
         });
       }
@@ -158,23 +175,49 @@ class _ConnectPageState extends ConsumerState<ConnectPage> {
                   children: [
                     FilledButton(
                       onPressed: _busy ? null : _connect,
-                      child: Text(_busy ? 'Waiting for the browser…' : 'Continue with Vesopa'),
+                      child: Text(
+                        _busy
+                            ? 'Waiting for the browser…'
+                            : (_error == null ? 'Continue with Vesopa' : 'Try again'),
+                      ),
                     ),
                     const SizedBox(width: 12),
                     /*
-                     * THE WAY PAST, and it is always here.
+                     * THERE IS NO WAY PAST THIS, deliberately, and the note is
+                     * here because the button that used to be was removed on
+                     * purpose rather than lost.
                      *
-                     * Every display licence in use, no network, a venue midway
-                     * through sorting its subscription out — none of those is a
-                     * reason for a customer to stare at a sign-in page across a
-                     * counter. The screen goes on working and the back office
-                     * shows it as unlicensed, which is a conversation to have
-                     * with a manager rather than with a queue.
+                     * A display that could be skipped past never gets counted,
+                     * and that is exactly how a venue ran customer screens for
+                     * months against a subscription that had expired.
+                     *
+                     * What stops this trapping a venue is that it is asked ONCE:
+                     * a screen that has connected before never reaches this page
+                     * again and works with the broadband down for ever after.
+                     * See DisplayEntry at the foot of this file.
                      */
-                    TextButton(
-                      onPressed: _busy ? null : _onward,
-                      child: Text(_full ? 'Carry on without a licence' : 'Set up later'),
-                    ),
+                    /*
+                     * Two failures, two different next actions, and pressing
+                     * "Try again" only helps with one of them. A network that
+                     * is down is worth retrying; every licence being taken is
+                     * not -- somebody has to go and free one first.
+                     */
+                    if (_full)
+                      Flexible(
+                        child: Text(
+                          'Ask a manager to sign another display out in the back office, '
+                          'under Devices, then try again.',
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      )
+                    else if (_unreachable)
+                      Flexible(
+                        child: Text(
+                          'The back office cannot be reached. Check this machine is on '
+                          'the network, then try again.',
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      ),
                   ],
                 ),
               ],
