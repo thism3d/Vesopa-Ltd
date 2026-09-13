@@ -52,8 +52,16 @@ const DEMO_TAG = 'demo-seed';
 const MEMBERS = 120;
 const DAYS = 3;
 
-/** The member whose card is the one actually shown. */
+/**
+ * The member whose card is the one actually shown.
+ *
+ * Named rather than drawn from the pool below, because this is the card on the
+ * screen while somebody is being talked through it: a reseed the morning of a
+ * demonstration must not quietly rename the person being pointed at.
+ * --hero-name overrides it.
+ */
 const HERO_EMAIL = 'manager@vesopa.co.uk';
+const HERO_NAME = 'Meirion Davies';
 
 const FIRST = [
   'Olivia', 'Amelia', 'Isla', 'Ava', 'Freya', 'Grace', 'Sophie', 'Ella', 'Ruby', 'Chloe',
@@ -291,7 +299,7 @@ async function main() {
     }
     const hero = people[0];
     const heroFlag = process.argv.indexOf('--hero-name');
-    if (heroFlag !== -1 && process.argv[heroFlag + 1]) hero.name = process.argv[heroFlag + 1];
+    hero.name = (heroFlag !== -1 && process.argv[heroFlag + 1]) || HERO_NAME;
     hero.joined = new Date(clock.getTime() - 430 * 86400000);
 
     // ---- What they spent ---------------------------------------------------
