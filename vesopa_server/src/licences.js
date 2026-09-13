@@ -34,6 +34,7 @@
 const crypto = require('crypto');
 
 const express = require('express');
+const jwt = require('jsonwebtoken');
 
 const { requireAuth } = require('./auth');
 const entitlements = require('./entitlements');
@@ -66,6 +67,21 @@ const POLICY = {
   kitchen: 'refuse',
   express: 'refuse',
   display: 'evict-oldest',
+};
+
+
+/**
+ * The product a device credential belongs to.
+ *
+ * Read from the token's own scope, never from anything the caller sends, so a
+ * kiosk cannot ask about a till's licence by claiming to be one. `terminal` is
+ * the till: the scope predates the word `till` being used for the product.
+ */
+const SCOPE_KIND = {
+  terminal: 'till',
+  kitchen: 'kitchen',
+  display: 'display',
+  express: 'express',
 };
 
 const KEY_BYTES = 8;
@@ -191,6 +207,128 @@ async function activate(db, { office, kind, key, fingerprint, deviceId, deviceNa
   return { ok: true, id: row.id, kind: row.kind };
 }
 
+
+/**
+ * What a device should be told about its own licence, and whether it may run.
+ *
+ * ONE PLACE DECIDES THE LOCK. Four apps ask this question and they must not
+ * each answer it slightly differently -- a till that locks a day before the
+ * kitchen screen is a venue convinced the software is broken rather than
+ * unpaid.
+ *
+ * THE ORDER OF THE CHECKS IS THE SAFETY. Read it as: lock only when we are
+ * SURE. Every uncertain answer falls through to `locked: false`:
+ *
+ *   * the venue has not been made lockable -> not locked;
+ *   * we have no entitlement row for this product -> not locked, because we
+ *     do not know what they bought, and guessing costs them their trade;
+ *   * the subscription is active -> not locked;
+ *   * it lapsed, but within the grace -> not locked, and `renewBy` is set so
+ *     the app can warn;
+ *   * only past all of that -> locked.
+ *
+ * A database that will not answer throws, and every caller treats a throw as
+ * not locked. That is deliberate: a billing lookup failing must never be the
+ * reason a venue cannot open.
+ */
+async function stateFor(pool, office, kind) {
+  const unknown = {
+    kind,
+    label: LABELS[kind] || kind,
+    locked: false,
+    status: null,
+    endsAt: null,
+    renewBy: null,
+    limit: null,
+    key: null,
+    device: null,
+  };
+  if (!office || !kind) return unknown;
+
+  let lockable = false;
+  try {
+    const [[row]] = await pool.query(
+      'SELECT licence_lock_enabled FROM offices WHERE contact_email = ?',
+      [office],
+    );
+    lockable = Boolean(row && Number(row.licence_lock_enabled) === 1);
+  } catch (e) {
+    // Migration not run. Nobody is lockable, which is exactly true.
+    if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+  }
+
+  let limit = null;
+  try {
+    const [[row]] = await pool.query(
+      'SELECT seats, source, status, ends_at FROM bo_licence_limits WHERE office = ? AND kind = ?',
+      [office, kind],
+    );
+    limit = row || null;
+  } catch (e) {
+    if (e.code !== 'ER_NO_SUCH_TABLE' && e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+  }
+
+  // The key this venue holds for this product, and the machine it sits on.
+  // The PREFIX only: the whole key is shown once when it is issued and stored
+  // hashed, and a settings page that could display it would turn every screen
+  // in a venue into somewhere to read one off.
+  let key = null;
+  try {
+    const [[row]] = await pool.query(
+      `SELECT key_prefix, label, device_name, activated_at, revoked_at
+         FROM bo_licence_keys
+        WHERE office = ? AND kind = ? AND revoked_at IS NULL
+        ORDER BY activated_at IS NULL, activated_at DESC LIMIT 1`,
+      [office, kind],
+    );
+    if (row) {
+      key = {
+        prefix: row.key_prefix,
+        label: row.label,
+        activatedAt: row.activated_at,
+        device: row.device_name || null,
+      };
+    }
+  } catch (e) {
+    if (e.code !== 'ER_NO_SUCH_TABLE') throw e;
+  }
+
+  const status = limit ? limit.status : null;
+  const endsAt = limit && limit.ends_at ? new Date(limit.ends_at) : null;
+
+  // Not linked to a subscription at all, or an override somebody typed: there
+  // is nothing to have expired, so there is nothing to lock.
+  const known = Boolean(limit && limit.source === 'auth' && status);
+
+  let locked = false;
+  let renewBy = null;
+  if (known && status !== 'active') {
+    if (endsAt && Number.isFinite(endsAt.valueOf())) {
+      const deadline = new Date(endsAt.valueOf() + entitlements.GRACE_DAYS * 86400000);
+      if (Date.now() < deadline.valueOf()) renewBy = deadline.toISOString();
+      else locked = lockable;
+    } else {
+      // Lapsed with no end date. Nothing to measure a grace against, so it is
+      // treated as out of grace -- but still only locks a lockable venue.
+      locked = lockable;
+    }
+  }
+
+  return {
+    kind,
+    label: LABELS[kind] || kind,
+    locked,
+    lockable,
+    status,
+    endsAt: endsAt ? endsAt.toISOString() : null,
+    renewBy,
+    limit: limit && limit.seats != null ? Number(limit.seats) : null,
+    key,
+    // The machine this venue's key is registered to, which is the question a
+    // manager actually asks: "which of these is licensed?"
+    device: key ? key.device : null,
+  };
+}
 /**
  * Everything a device signing in has to satisfy, in one place.
  *
@@ -258,6 +396,41 @@ function licenceRoutes({ pool, secret }) {
     return row ? row.contact_email : null;
   };
 
+
+  /**
+   * This device's own licence: the key, the machine, the dates, the lock.
+   *
+   * ONE ENDPOINT FOR ALL FOUR APPS. Every product's credential is a JWT signed
+   * with the same secret and carrying `scope` and `office`, so the product can
+   * be read off the token rather than trusted from the caller. A kiosk cannot
+   * ask about the till's licence by saying it is a till.
+   *
+   * The scope IS the product, with one translation: a till's token says
+   * `terminal` because that is what it has always said.
+   */
+  router.get('/licence/state', async (req, res, next) => {
+    try {
+      const header = req.headers.authorization || '';
+      const raw = header.startsWith('Bearer ') ? header.slice(7) : '';
+      if (!raw) return res.status(401).json({ error: 'This device is not signed in.' });
+
+      let claims;
+      try {
+        claims = jwt.verify(raw, secret);
+      } catch {
+        return res.status(401).json({ error: 'This device needs to be signed in again.' });
+      }
+
+      const kind = SCOPE_KIND[claims.scope];
+      if (!kind || !claims.office) {
+        return res.status(403).json({ error: 'That credential is not a device.' });
+      }
+
+      return res.json(await stateFor(pool, claims.office, kind));
+    } catch (e) {
+      next(e);
+    }
+  });
   /** This venue's limits, what is in use, and its keys. */
   router.get('/licences', auth, async (req, res, next) => {
     try {
@@ -338,7 +511,8 @@ function adminLicenceRoutes({ pool }) {
       let offices;
       try {
         [offices] = await pool.query(
-          `SELECT id, name, contact_email, status, plan, auth_organisation_id
+          `SELECT id, name, contact_email, status, plan, auth_organisation_id,
+                  licence_lock_enabled
              FROM offices WHERE demo_of IS NULL ORDER BY name`,
         );
       } catch (e) {
@@ -396,6 +570,7 @@ function adminLicenceRoutes({ pool }) {
           status: o.status,
           plan: o.plan,
           auth_organisation_id: o.auth_organisation_id,
+          licence_lock_enabled: Number(o.licence_lock_enabled) === 1,
           products: KINDS.map((kind) => {
             const limit = at(limits, o.contact_email, kind);
             const used = at(inUse, o.contact_email, kind);
@@ -565,6 +740,27 @@ function adminLicenceRoutes({ pool }) {
     }
   });
 
+
+  /**
+   * Whether this venue's apps lock when its subscription lapses.
+   *
+   * Off everywhere until somebody decides otherwise, one venue at a time. A
+   * locked product does not open at all and the lock lands on the next config
+   * fetch, so this is a switch worth throwing deliberately rather than by
+   * default.
+   */
+  router.put('/offices/:id/licence-lock', async (req, res, next) => {
+    try {
+      const on = req.body && (req.body.enabled === true || req.body.enabled === 1);
+      await pool.execute('UPDATE offices SET licence_lock_enabled = ? WHERE id = ?', [
+        on ? 1 : 0,
+        Number(req.params.id),
+      ]);
+      res.json({ ok: true, enabled: on });
+    } catch (e) {
+      next(e);
+    }
+  });
   /** Ask auth again for every linked venue. */
   router.post('/entitlements/refresh', async (req, res, next) => {
     try {
@@ -618,6 +814,7 @@ module.exports = {
   newKey,
   limitFor,
   limitsFor,
+  stateFor,
   activate,
   signInDevice,
   licenceRoutes,
