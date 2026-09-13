@@ -28,8 +28,21 @@
 
   <style>
     html, body { margin: 0; height: 100%; background: __BACKGROUND__; }
-    #splash { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+    /* The wait is real -- a Flutter web app is a couple of megabytes over 4G --
+       so the splash says WHOSE app is loading rather than showing a bare mark.
+       Somebody who tapped a link wants to know they are in the right place, and
+       a logo alone does not tell them that when the logo is a fallback. */
+    #splash { position: fixed; inset: 0; display: flex; flex-direction: column;
+              align-items: center; justify-content: center; gap: 18px;
+              font: 500 17px/1.35 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+              color: __THEME__; text-align: center; padding: 24px; }
     #splash img { width: 96px; height: 96px; object-fit: contain; border-radius: 22px; }
+    #splash .name { opacity: .92; }
+    /* Only after a moment: on a fast connection the app is up before this
+       matters, and a "loading" that flashes reads as a stutter. */
+    #splash .wait { font-size: 14px; opacity: 0; animation: showWait .3s ease 1.2s forwards; }
+    @keyframes showWait { to { opacity: .6; } }
+    @media (prefers-reduced-motion: reduce) { #splash .wait { animation: none; opacity: .6; } }
   </style>
 
   <script>
@@ -102,7 +115,11 @@
   </script>
 </head>
 <body>
-  <div id="splash"><img src="__ICON__" alt="" onerror="this.remove()"></div>
+  <div id="splash">
+    <img src="__ICON__" alt="" onerror="this.remove()">
+    <div class="name">__APP_NAME__</div>
+    <div class="wait">Loading your card…</div>
+  </div>
   <script>
     window.addEventListener('flutter-first-frame', function () {
       const s = document.getElementById('splash');

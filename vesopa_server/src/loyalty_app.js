@@ -1141,12 +1141,26 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
       if (!app) return res.status(404).end();
       const brand = await brandFor(pool, app.office, app);
       const scope = `/app/${app.slug}/`;
+      /*
+       * AN EMPTY ICON LIST IS NOT "NO ICON" TO A PHONE -- it is a generated
+       * letter tile, and that is what a venue's app looked like on a home
+       * screen until somebody filled in an icon nobody knew was needed.
+       *
+       * So a venue that has set nothing installs as Vesopa, from the build's
+       * own icons. The maskable pair matters on Android: without one it crops
+       * the square inside its circle and takes the corners off the logo.
+       */
       const icons = brand.icon
         ? [
           { src: brand.icon, sizes: '192x192', type: 'image/png', purpose: 'any' },
           { src: brand.icon, sizes: '512x512', type: 'image/png', purpose: 'any' },
         ]
-        : [];
+        : [
+          { src: `${scope}icons/Icon-192.png`, sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: `${scope}icons/Icon-512.png`, sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: `${scope}icons/Icon-maskable-192.png`, sizes: '192x192', type: 'image/png', purpose: 'maskable' },
+          { src: `${scope}icons/Icon-maskable-512.png`, sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+        ];
       res.type('application/manifest+json').send(JSON.stringify({
         name: brand.name,
         short_name: brand.name.slice(0, 24),
@@ -1194,7 +1208,10 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
         .replace(/__APP_NAME__/g, esc(brand.name))
         .replace(/__THEME__/g, esc(brand.colours.primary))
         .replace(/__BACKGROUND__/g, esc(brand.colours.background))
-        .replace(/__ICON__/g, esc(brand.icon || `/app/${app.slug}/icons/Icon-192.png`));
+        // The loading screen shows what the APP shows. A venue that set a logo
+        // but no separate app icon was getting Vesopa's mark on the splash and
+        // its own a second later, which reads as having opened the wrong thing.
+        .replace(/__ICON__/g, esc(brand.icon || brand.logo || `/app/${app.slug}/icons/Icon-192.png`));
       res.set('Cache-Control', 'no-cache');
       res.type('html').send(html);
     } catch (e) {

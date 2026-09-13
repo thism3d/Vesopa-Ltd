@@ -584,6 +584,18 @@ async function main() {
       const manifest = await (await fetch(`${base}/app/the-arms/manifest.webmanifest`)).json();
       assert.strictEqual(manifest.name, 'Arms Rewards');
       assert.strictEqual(manifest.scope, '/app/the-arms/');
+      // This venue has set no app icon, which is the ordinary state of one that
+      // has only just been switched on. It must still install as something: an
+      // empty list is a browser-drawn letter tile on the home screen.
+      assert.ok(manifest.icons.length > 0, 'a venue with no icon still installs with one');
+      assert.ok(
+        manifest.icons.some((i) => i.purpose === 'maskable'),
+        'and with a maskable one, or Android crops the corners off it'
+      );
+      assert.ok(
+        manifest.icons.every((i) => i.src.startsWith('/app/the-arms/')),
+        'every icon is addressed inside this venue’s own app'
+      );
       const escape = await fetch(`${base}/app/the-arms/..%2F..%2Fsrc%2Fserver.js`);
       assert.notStrictEqual(escape.status, 200, 'no way out of the build folder');
     });
