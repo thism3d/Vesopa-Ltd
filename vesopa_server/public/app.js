@@ -351,6 +351,7 @@ const ROUTES = {
   templates: '/templates',
   subscriptions: '/subscriptions',
   offices: '/offices',
+  licences: '/licences',
   billing: '/billing',
 };
 
@@ -1298,6 +1299,7 @@ const VIEW_LOADERS = {
     permission_groups: loadPermissionGroups,
     customers: loadCustomers,
     offices: loadOffices,
+    licences: loadAdminLicences,
     billing: loadBilling,
     tables: loadFloor,
     dinein: loadDineIn,
@@ -3054,6 +3056,109 @@ async function bulkCustomerExpiry() {
 
 // ---- Admin ----------------------------------------------------------------
 
+
+// ---- Licences & pricing (admin) -------------------------------------------
+//
+// Every venue, what it is entitled to and what it is running. The quantities
+// are the venue's SUBSCRIPTIONS, read from auth.vesopa.com and cached here --
+// see src/entitlements.js. They are changed where they are sold, not here.
+
+async function loadAdminLicences() {
+  const host = $('licences-table');
+  const state = $('licences-state');
+  if (!host) return;
+
+  let data;
+  try {
+    data = await api('/admin/licences');
+  } catch (e) {
+    host.innerHTML = `<p class="muted">${esc(e.message)}</p>`;
+    return;
+  }
+
+  const linked = data.venues.filter((v) => v.auth_organisation_id).length;
+  if (state) {
+    state.textContent =
+      `${data.venues.length} venue${data.venues.length === 1 ? '' : 's'}, ` +
+      `${linked} linked to a Vesopa organisation. ` +
+      'An unlinked venue has no limits — nothing is refused until it is linked.';
+  }
+
+  const cell = (p) => {
+    if (p.limit == null) {
+      return `<td class="nowrap">${p.in_use} <span class="muted small">of ∞</span></td>`;
+    }
+    // Over its limit, or paid up but expired: both are worth seeing at a
+    // glance, and they mean different things to whoever is looking.
+    const flag = p.over
+      ? ' <span class="pill" style="background:#fde8ea;color:#b3261e">over</span>'
+      : (p.status && p.status !== 'active'
+        ? ` <span class="pill" style="background:#fff4e5;color:#8a5200">${esc(p.status)}</span>`
+        : '');
+    // An override is worth seeing next to the number: it is a decision somebody
+    // made, not what the customer is paying for, and a refresh will not undo it.
+    const held = p.source === 'override'
+      ? ' <span class="pill" title="Set by hand here; refreshes leave it alone">override</span>'
+      : '';
+    return `<td class="nowrap">${p.in_use} <span class="muted small">of ${p.limit}</span>${flag}${held}</td>`;
+  };
+
+  const head = data.kinds.map((k) => `<th>${esc(k.label)}</th>`).join('');
+  const rows = data.venues.map((v) => `<tr>
+      <td>${esc(v.name)}<br><span class="muted small">${esc(v.email)}</span></td>
+      <td class="nowrap">${v.auth_organisation_id
+        ? `#${v.auth_organisation_id}`
+        : '<span class="muted">not linked</span>'}
+        <button class="btn small ghost" data-link-org="${v.id}"
+                data-link-org-name="${esc(v.name)}"
+                data-link-org-now="${v.auth_organisation_id || ''}">Link</button></td>
+      ${v.products.map(cell).join('')}
+    </tr>`).join('');
+
+  host.innerHTML =
+    `<table><thead><tr><th>Venue</th><th>Vesopa organisation</th>${head}</tr></thead>`
+    + `<tbody>${rows}</tbody></table>`;
+}
+
+document.addEventListener('click', async (e) => {
+  const refresh = e.target.closest && e.target.closest('#licences-refresh');
+  if (refresh) {
+    refresh.disabled = true;
+    try {
+      const r = await api('/admin/entitlements/refresh', { method: 'POST' });
+      toast(`Asked Vesopa about ${r.linked} venue${r.linked === 1 ? '' : 's'}; ${r.refreshed} answered.`);
+      await loadAdminLicences();
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      refresh.disabled = false;
+    }
+    return;
+  }
+
+  const link = e.target.closest && e.target.closest('[data-link-org]');
+  if (!link) return;
+  const office = link.dataset.linkOrg;
+  return modal(
+    `Link ${link.dataset.linkOrgName || 'this venue'} to Vesopa`,
+    [{
+      name: 'organisation_id',
+      label: 'Vesopa organisation id (blank to unlink)',
+      type: 'number',
+      value: link.dataset.linkOrgNow || '',
+      hint: 'Its licences are then read from that organisation\u2019s subscriptions. '
+        + 'Unlinked means no limits.',
+    }],
+    async (d) => {
+      const r = await api(`/admin/offices/${office}/auth-organisation`, {
+        method: 'PUT',
+        body: JSON.stringify({ organisation_id: d.organisation_id === '' ? null : d.organisation_id }),
+      });
+      toast(r.organisation_id ? 'Linked, and its licences read.' : 'Unlinked.');
+      await loadAdminLicences();
+    },
+  );
+});
 async function loadOffices() {
   const rows = await api('/admin/offices');
   $('offices').innerHTML = rows

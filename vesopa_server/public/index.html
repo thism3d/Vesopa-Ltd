@@ -364,6 +364,7 @@
           <div id="admin-group" hidden>
             <button class="nav-group" data-group="administration">Administration<span class="caret">▼</span></button>
             <button class="nav" data-view="offices">Offices</button>
+            <button class="nav" data-view="licences">Licences &amp; pricing</button>
             <button class="nav" data-view="billing">Billing</button>
             <button class="nav" data-view="templates">Templates</button>
             <button class="nav" data-view="subscriptions">Subscriptions</button>
@@ -3501,6 +3502,31 @@
             <thead><tr><th>Office</th><th>Contact</th><th>Joined</th><th>Template</th><th class="right">Monthly</th><th>Billing day</th><th>Next due</th><th>Status</th><th></th></tr></thead>
             <tbody id="subscriptions"></tbody>
           </table></div>
+        </section>
+
+
+        <!-- What every venue is entitled to, and what it is using.
+
+             READ HERE, CHANGED IN VESOPA. The quantities come from the
+             subscriptions on auth.vesopa.com, because that is where a customer
+             buys them. This screen shows what that means on the ground: how
+             many of each app a venue may run and how many it actually has. -->
+        <section id="view-licences" class="view" hidden>
+          <div class="page-head">
+            <div>
+              <h2>Licences &amp; pricing</h2>
+              <p class="muted small">
+                What each venue pays Vesopa for, and what it is running. The numbers come
+                from the venue's subscriptions and are changed there, not here — a number
+                typed in two places is a number that will disagree with itself.
+                A venue with no Vesopa organisation has no limits at all.
+              </p>
+            </div>
+            <button class="btn" id="licences-refresh"
+                    title="Ask Vesopa again for every linked venue">Refresh from Vesopa</button>
+          </div>
+          <p class="muted small" id="licences-state"></p>
+          <div class="card rd-card"><div id="licences-table"></div></div>
         </section>
 
         <!-- Admin -->

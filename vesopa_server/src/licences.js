@@ -332,15 +332,27 @@ function adminLicenceRoutes({ pool }) {
    */
   router.get('/licences', async (req, res, next) => {
     try {
-      const [offices] = await pool.query(
-        `SELECT id, name, contact_email, status, plan FROM offices
-          WHERE demo_of IS NULL ORDER BY name`,
-      );
+      // The link column arrived with schema_entitlement_link.sql. An install
+      // that has not run it yet still gets the screen -- every venue simply
+      // shows as unlinked, which is exactly what it is.
+      let offices;
+      try {
+        [offices] = await pool.query(
+          `SELECT id, name, contact_email, status, plan, auth_organisation_id
+             FROM offices WHERE demo_of IS NULL ORDER BY name`,
+        );
+      } catch (e) {
+        if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+        [offices] = await pool.query(
+          'SELECT id, name, contact_email, status, plan FROM offices ORDER BY name',
+        );
+      }
 
       let limits = [];
       try {
         const [rows] = await pool.query(
-          'SELECT office, kind, seats FROM bo_licence_limits',
+          `SELECT office, kind, seats, source, status, ends_at
+             FROM bo_licence_limits`,
         );
         limits = rows;
       } catch (e) {
@@ -383,6 +395,7 @@ function adminLicenceRoutes({ pool }) {
           email: o.contact_email,
           status: o.status,
           plan: o.plan,
+          auth_organisation_id: o.auth_organisation_id,
           products: KINDS.map((kind) => {
             const limit = at(limits, o.contact_email, kind);
             const used = at(inUse, o.contact_email, kind);
@@ -394,6 +407,15 @@ function adminLicenceRoutes({ pool }) {
               label: LABELS[kind],
               limit: seats,
               in_use: n,
+              // Why the number is what it is. A limit of 0 with no
+              // explanation reads as a mistake; "expired" reads as an
+              // invoice somebody needs to chase.
+              status: limit ? limit.status : null,
+              ends_at: limit ? limit.ends_at : null,
+              // 'auth' came from the subscription; 'override' was typed by a
+              // person and a refresh will not touch it. Worth seeing, so a
+              // favour is never mistaken for what the customer pays for.
+              source: limit ? limit.source : null,
               // Said here rather than worked out on the page, so the back office
               // and any future report agree on what "over" means.
               over: seats != null && n > seats,
