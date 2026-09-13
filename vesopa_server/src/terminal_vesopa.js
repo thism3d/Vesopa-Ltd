@@ -47,6 +47,50 @@ function clampText(value, max) {
 
 const ISSUER = (process.env.VESOPA_AUTH_ISSUER || 'https://auth.vesopa.com').replace(/\/+$/, '');
 const TILL_CLIENT_ID = process.env.VESOPA_AUTH_TILL_CLIENT_ID || '';
+
+/*
+ * ONE CLIENT PER PRODUCT, AND WHY THE TILL'S IS STILL ACCEPTED.
+ *
+ * The till, the kitchen screen and the kiosk all used to sign in through the
+ * till's single client -- not a decision, but reuse: this function was written
+ * for the till and the other two called it because it worked. The evidence is
+ * the error a refused KIOSK was given: "that token was not minted for the
+ * till".
+ *
+ * Sharing one client disarmed the audience check. Its whole job is to say
+ * "this token was minted for THIS product", and it could not tell three
+ * products apart.
+ *
+ * Each now has its own. But EVERY DEVICE ALREADY IN A VENUE holds a token
+ * minted for the till's client, so the till's is accepted for all three until
+ * nothing is presenting it any more. Without that, deploying this would leave
+ * every kitchen screen and every kiosk unable to commission until somebody
+ * walked to it -- a flag day, on somebody's Saturday.
+ *
+ * An unset per-product id simply means that product has not moved yet, and it
+ * carries on using the till's.
+ */
+const CLIENT_IDS = {
+  till: TILL_CLIENT_ID,
+  kitchen: process.env.VESOPA_AUTH_KITCHEN_CLIENT_ID || '',
+  display: process.env.VESOPA_AUTH_DISPLAY_CLIENT_ID || '',
+  express: process.env.VESOPA_AUTH_EXPRESS_CLIENT_ID || '',
+};
+
+/** What a token for this product may say it was minted for. */
+function audiencesFor(kind) {
+  const own = CLIENT_IDS[kind] || '';
+  const legacy = TILL_CLIENT_ID;
+  return [own, legacy].filter(Boolean);
+}
+
+/** What each product is called when a token is refused, so the message is true. */
+const KIND_NOUNS = {
+  till: 'the till',
+  kitchen: 'the kitchen screen',
+  display: 'the display',
+  express: 'the kiosk',
+};
 const ENABLED =
   String(process.env.VESOPA_AUTH_TILL_ENABLED || '').toLowerCase() === 'on' && Boolean(TILL_CLIENT_ID);
 
@@ -100,7 +144,7 @@ async function jwks({ force = false } = {}) {
  * trusting the header is the `alg: none` hole, where an attacker declares the
  * token unsigned and every check after it passes.
  */
-async function verifyTillToken(idToken) {
+async function verifyTillToken(idToken, kind = 'till') {
   const parts = String(idToken || '').split('.');
   if (parts.length !== 3) throw new Error('that is not a token');
 
@@ -126,8 +170,11 @@ async function verifyTillToken(idToken) {
   if (claims.iss !== ISSUER) throw new Error('the token came from somewhere else');
 
   const audience = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
-  if (!audience.includes(TILL_CLIENT_ID)) {
-    throw new Error('that token was not minted for the till');
+  const accepted = audiencesFor(kind);
+  if (!accepted.some((id) => audience.includes(id))) {
+    // Named for the product that actually refused it. The old wording said
+    // "the till" to a kiosk, which is how nobody noticed they shared a client.
+    throw new Error(`that token was not minted for ${KIND_NOUNS[kind] || kind}`);
   }
 
   if (typeof claims.exp !== 'number' || claims.exp + 30 < now) throw new Error('the token has expired');
@@ -397,7 +444,7 @@ function terminalVesopaRoutes({ pool, secret, issueToken, issueTerminalToken }) 
     try {
       let claims;
       try {
-        claims = await verifyTillToken((req.body || {}).id_token);
+        claims = await verifyTillToken((req.body || {}).id_token, 'kitchen');
       } catch (error) {
         console.warn('[kitchen_vesopa] refused a token:', error.message);
         return res.status(401).json({ error: 'That sign-in could not be accepted.' });
@@ -436,4 +483,6 @@ function terminalVesopaRoutes({ pool, secret, issueToken, issueTerminalToken }) 
   return router;
 }
 
-module.exports = { terminalVesopaRoutes, ENABLED, ISSUER, TILL_CLIENT_ID, verifyTillToken };
+module.exports = {
+  terminalVesopaRoutes, ENABLED, ISSUER, TILL_CLIENT_ID, CLIENT_IDS, verifyTillToken,
+};

@@ -674,7 +674,7 @@ function expressKioskRoutes({ pool, broadcast, secret }) {
       const body = req.body || {};
       let claims;
       try {
-        claims = await terminalVesopa.verifyTillToken(body.id_token);
+        claims = await terminalVesopa.verifyTillToken(body.id_token, 'express');
       } catch (error) {
         // Vague to the caller, specific in the log -- the same rule the till's
         // door follows. Somebody probing does not need to know which check.
