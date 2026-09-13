@@ -9,33 +9,73 @@ import 'brand.dart';
 
 /// Which venue this app is, and where its server is.
 ///
-/// In a browser both come from the address: the app is served at
-/// `https://menu.vesopaepos.com/app/<slug>/`. A Windows build is one venue's,
-/// named when it is built:
+/// A BROWSER KNOWS FROM ITS ADDRESS. The app is served at
+/// `https://menu.vesopaepos.com/app/<slug>/`, so the venue is in the path and
+/// there is nothing to ask.
 ///
-///     flutter build windows --dart-define=LOYALTY_SLUG=<slug>
+/// NOTHING ELSE HAS AN ADDRESS. Windows, Android and an iPhone have only what
+/// they were built with or what somebody told them, so the venue is chosen
+/// once, on first run, and kept.
+///
+/// It used to be a compile-time constant on those platforms. That is fine for
+/// a venue with a Store listing of its own and quietly wrong for the one
+/// listing that serves every venue: whichever slug was passed at build time
+/// became the app for everybody who installed it, and no other venue's member
+/// could reach their own card. LOYALTY_SLUG is still honoured -- a venue
+/// shipping its own build should not have to ask its members anything -- but
+/// it is now a default rather than the only answer.
 class AppConfig {
   const AppConfig({required this.base, required this.slug});
 
   final String base;
   final String slug;
 
-  static const _slug = String.fromEnvironment('LOYALTY_SLUG');
-  static const _api = String.fromEnvironment('LOYALTY_API', defaultValue: 'https://menu.vesopaepos.com');
+  /// The venue a build was made for, where it was made for one.
+  static const buildSlug = String.fromEnvironment('LOYALTY_SLUG');
+  static const apiBase = String.fromEnvironment(
+    'LOYALTY_API',
+    defaultValue: 'https://menu.vesopaepos.com',
+  );
 
-  static AppConfig resolve() {
-    if (kIsWeb) {
-      final segments = Uri.base.pathSegments;
-      final i = segments.indexOf('app');
-      if (i >= 0 && i + 1 < segments.length && segments[i + 1].isNotEmpty) {
-        return AppConfig(base: Uri.base.origin, slug: segments[i + 1]);
-      }
-      // Run locally (flutter run -d chrome): the venue from the build.
-      return const AppConfig(base: _api, slug: _slug);
+  /// The venue in this page's address, in a browser.
+  static String? slugFromUrl() {
+    if (!kIsWeb) return null;
+    final segments = Uri.base.pathSegments;
+    final i = segments.indexOf('app');
+    if (i >= 0 && i + 1 < segments.length && segments[i + 1].isNotEmpty) {
+      return segments[i + 1];
     }
-    return const AppConfig(base: _api, slug: _slug);
+    return null;
   }
 
+  /*
+   * A venue code, or the link a venue hands out.
+   *
+   * Somebody typing this in has a table card or a text message in front of
+   * them, and what is printed on it is the whole address. Demanding they pick
+   * the last word out of it is how a first run gets abandoned, so a full link
+   * is accepted and the code taken out of it.
+   */
+  static String? cleanSlug(String input) {
+    var value = input.trim();
+    if (value.isEmpty) return null;
+    if (value.contains('/')) {
+      /*
+       * A LINK HAS TO BE AN APP LINK. Taking the last segment of whatever was
+       * pasted turned any path at all into a venue code -- ../../etc/passwd
+       * became "passwd" -- which the server would then refuse with a message
+       * about the venue rather than about what was typed.
+       */
+      final uri = Uri.tryParse(value.startsWith('http') ? value : 'https://$value');
+      final segments = uri?.pathSegments ?? const [];
+      final i = segments.indexOf('app');
+      if (i < 0 || i + 1 >= segments.length) return null;
+      value = segments[i + 1];
+    }
+    value = value.toLowerCase().trim();
+    // The same shape the server accepts (src/loyalty_app.js SLUG).
+    return RegExp(r'^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$').hasMatch(value) ? value : null;
+  }
   /// What the server records this session as. Four builds now, not two:
   /// a device list that calls an iPhone "windows" is a device list nobody
   /// can use to spot a sign-in they did not make.
@@ -49,7 +89,62 @@ class AppConfig {
   }
 }
 
-final configProvider = Provider<AppConfig>((ref) => AppConfig.resolve());
+const _venueKey = 'loyalty_venue_slug';
+
+/// The venue this app is showing, and how it is changed.
+///
+/// Null means nobody has said yet, which on a native build is the ordinary
+/// state of a fresh install and is what puts the venue picker on screen.
+class VenueNotifier extends AsyncNotifier<String?> {
+  @override
+  Future<String?> build() async {
+    final fromUrl = AppConfig.slugFromUrl();
+    if (fromUrl != null) return fromUrl;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getString(_venueKey);
+      if (saved != null && saved.isNotEmpty) return saved;
+    } catch (_) {
+      // A device that cannot read its own settings can still be told again.
+    }
+    return AppConfig.buildSlug.isEmpty ? null : AppConfig.buildSlug;
+  }
+
+  Future<void> choose(String slug) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_venueKey, slug);
+    } catch (_) {
+      // Not fatal: this run works, and it asks again next time.
+    }
+    state = AsyncData(slug);
+  }
+
+  /// Forget the venue, so the app asks again. Used by "Change venue".
+  Future<void> forget() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_venueKey);
+    } catch (_) {
+      // Nothing to do: the picker is shown either way.
+    }
+    state = const AsyncData(null);
+  }
+}
+
+final venueProvider = AsyncNotifierProvider<VenueNotifier, String?>(VenueNotifier.new);
+
+/// Where to talk to, and as which venue.
+///
+/// Empty while the venue is unknown. Nothing that needs a venue is built
+/// until it is: main.dart shows the picker instead.
+final configProvider = Provider<AppConfig>((ref) {
+  final slug = ref.watch(venueProvider).value ?? '';
+  // In a browser the address is also the server. Everywhere else the
+  // server is a constant, because there is no address to take it from.
+  final base = AppConfig.slugFromUrl() != null ? Uri.base.origin : AppConfig.apiBase;
+  return AppConfig(base: base, slug: slug);
+});
 
 final apiProvider = Provider<LoyaltyApi>((ref) {
   final c = ref.watch(configProvider);

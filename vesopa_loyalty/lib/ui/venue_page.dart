@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -93,6 +94,27 @@ class _VenuePageState extends ConsumerState<VenuePage> {
     }
   }
 
+  /// Forget this venue and ask again. The membership is untouched: it is the
+  /// venue's record, and signing back in brings the same card back.
+  Future<void> _changeVenue() async {
+    final sure = await showDialog<bool>(
+      context: context,
+      builder: (d) => AlertDialog(
+        title: const Text('Change venue?'),
+        content: const Text(
+          'You will be asked for a venue code again. Your membership and points '
+          'stay with the venue, and signing back in brings your card back.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(d, true), child: const Text('Change')),
+        ],
+      ),
+    );
+    if (sure != true) return;
+    await ref.read(venueProvider.notifier).forget();
+  }
+
   Future<void> _open(String url) async {
     try {
       await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
@@ -181,6 +203,22 @@ class _VenuePageState extends ConsumerState<VenuePage> {
             subtitle: const Text('Uses your location only while the app is open, and forgets it after a day.'),
             value: choices?.nearby ?? false,
             onChanged: (choices == null || _busy) ? null : _setNearby,
+          ),
+        /*
+         * CHANGING VENUE, and only where there is anything to change.
+         *
+         * In a browser the venue IS the address: this app is at /app/<slug>/
+         * and a button claiming to change it would either lie or navigate
+         * somewhere the person did not ask to go. On Windows and the phones
+         * it was typed in once, and a wrong code typed once must not mean
+         * uninstalling.
+         */
+        if (!kIsWeb)
+          ListTile(
+            leading: const Icon(Icons.swap_horiz),
+            title: const Text('Change venue'),
+            subtitle: Text(brand.name),
+            onTap: _busy ? null : () => _changeVenue(),
           ),
         // Signing out lives under Account, where somebody looks for it. These
         // two switches stay here because they are this DEVICE's choices, not

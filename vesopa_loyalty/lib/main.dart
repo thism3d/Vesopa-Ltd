@@ -5,6 +5,7 @@ import 'data/api.dart';
 import 'data/session.dart';
 import 'ui/home.dart';
 import 'ui/sign_in.dart';
+import 'ui/venue_picker.dart';
 
 /// Vesopa Loyalty: a venue's own loyalty app.
 ///
@@ -22,11 +23,25 @@ class LoyaltyApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final config = ref.watch(configProvider);
-    if (config.slug.isEmpty) {
+    /*
+     * WHICH VENUE, BEFORE ANYTHING ELSE.
+     *
+     * A browser reads it from the address. Windows, Android and an iPhone
+     * have to be told once, and until they have been there is nothing to
+     * fetch and no branding to draw -- so the picker comes first and every
+     * provider below it is built from the answer.
+     */
+    final venue = ref.watch(venueProvider);
+    if (venue.isLoading) {
       return const MaterialApp(
         debugShowCheckedModeBanner: false,
-        home: _Notice('This app has not been set up for a venue yet.'),
+        home: Scaffold(body: Center(child: CircularProgressIndicator())),
+      );
+    }
+    if ((venue.value ?? '').isEmpty) {
+      return const MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: VenuePickerPage(),
       );
     }
     final brand = ref.watch(brandProvider);

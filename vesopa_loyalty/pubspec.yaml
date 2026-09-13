@@ -152,4 +152,9 @@ msix_config:
 
   output_path: build/store
   output_name: vesopa-loyalty-store
-  windows_build_args: --release --dart-define=LOYALTY_SLUG=vesopa-test --dart-define=VESOPA_LOYALTY_CLIENT_ID=12a1047bafa611f185af42010a80000e
+  # NO LOYALTY_SLUG. One Store listing serves every venue, so a slug baked in
+  # here would be one venue's app handed to everybody who installed it -- and
+  # no other venue's member could reach their own card. The app asks on first
+  # run instead. A venue publishing its OWN listing does pass LOYALTY_SLUG,
+  # and then it never asks.
+  windows_build_args: --release --dart-define=VESOPA_LOYALTY_CLIENT_ID=12a1047bafa611f185af42010a80000e
