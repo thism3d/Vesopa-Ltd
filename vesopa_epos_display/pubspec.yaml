@@ -37,6 +37,11 @@ dependencies:
   # themselves. See lib/data/hardware_fingerprint.dart.
   crypto: ^3.0.6
 
+  # Talking to the back office: fetching what this display may sign in
+  # with, and commissioning it. The display had no HTTP of its own until
+  # it gained a first screen -- it was paired by a till and nothing else.
+  http: ^1.2.2
+
   # Choosing the advert folder by pointing at it.
   #
   # A manager setting a screen up should not be typing a path, and asking them

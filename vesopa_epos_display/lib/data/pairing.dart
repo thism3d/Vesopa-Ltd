@@ -747,6 +747,10 @@ class PairingController extends AsyncNotifier<PairingState> {
   /// Thirty-two hex characters from the platform's secure source. Not a UUID,
   /// only because a UUID would mean a dependency for one string nothing ever
   /// parses — it is compared, and that is all.
+  /// Public so `displayDeviceId()` can reuse it rather than invent a second
+  /// way of making the same id.
+  static Future<String> deviceIdFrom(SharedPreferences prefs) => _deviceId(prefs);
+
   static Future<String> _deviceId(SharedPreferences prefs) async {
     final existing = prefs.getString(_keyDeviceId)?.trim();
     if (existing != null && existing.length >= 8) return existing;
@@ -762,6 +766,29 @@ class PairingController extends AsyncNotifier<PairingState> {
   }
 }
 
+/// This screen's permanent id, for anything outside the pairing controller.
+///
+/// Signing in with Vesopa needs the same id the pairing uses, or the back
+/// office would see one machine as two devices -- one holding a licence and
+/// one paired to a till. The generation lives in PairingController and is not
+/// repeated here: this reads what that wrote, and only creates one if pairing
+/// never has.
+Future<String> displayDeviceId() async {
+  final prefs = await SharedPreferences.getInstance();
+  return PairingController.deviceIdFrom(prefs);
+}
+
+/// What this screen calls itself, as shown in the back office's device list.
+Future<String> displayDeviceName() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final stored = prefs.getString(_keyDeviceName)?.trim();
+    if (stored != null && stored.isNotEmpty) return stored;
+  } catch (_) {
+    // Fall through to the default, which is derived and always available.
+  }
+  return PairingController.defaultName();
+}
 final pairingProvider = AsyncNotifierProvider<PairingController, PairingState>(
   PairingController.new,
 );

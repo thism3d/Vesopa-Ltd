@@ -28,6 +28,7 @@ import 'package:window_manager/window_manager.dart';
 import 'data/deep_links.dart';
 import 'data/screens.dart';
 import 'data/settings.dart';
+import 'ui/connect_page.dart';
 import 'ui/display_page.dart';
 import 'ui/settings_page.dart';
 import 'ui/theme.dart';
@@ -114,7 +115,10 @@ class VesopaDisplayApp extends StatelessWidget {
     // One theme, not a light and a dark one. See ui/theme.dart: this screen
     // faces a customer across a counter and a white panel at that distance is
     // a lamp pointed at them.
-    home: const DisplayPage(),
+    // Not DisplayPage directly: a screen that has never been connected to
+    // Vesopa is offered that first, once, and everything else goes straight
+    // through. See ui/connect_page.dart -- it never traps a screen.
+    home: const DisplayEntry(),
     // Pushed rather than swapped for the home, so Back still leads to the
     // display and a screen opened from a link cannot be left with no way to the
     // thing it exists to show.

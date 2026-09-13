@@ -216,6 +216,28 @@ function terminalVesopaRoutes({ pool, secret, issueToken, issueTerminalToken }) 
    * would leave a terminal with no way to be commissioned at all, so it is
    * ignored.
    */
+
+  /**
+   * What a DISPLAY needs in order to offer Continue with Vesopa.
+   *
+   * Its own client id, not the till's. A display asked to sign in as the till
+   * would be asking a manager to authorise the wrong product, and would make
+   * the audience check meaningless again.
+   *
+   * Answers `enabled: false` rather than an error where the display client is
+   * not configured. A display that met an error on its first screen would be a
+   * screen somebody unplugs; one told sign-in is off simply goes on to pair
+   * with a till as it always did.
+   */
+  router.get('/api/display/vesopa/enabled', (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const clientId = CLIENT_IDS.display || '';
+    res.json({
+      enabled: ENABLED && Boolean(clientId),
+      issuer: ISSUER,
+      clientId: clientId || null,
+    });
+  });
   router.get('/api/terminal/vesopa/enabled', (req, res) => {
     res.set('Cache-Control', 'no-store');
     res.json({
@@ -475,6 +497,112 @@ function terminalVesopaRoutes({ pool, secret, issueToken, issueTerminalToken }) 
         return res.status(500).json({ error: 'That screen could not be set up.' });
       }
       return res.json({ token, office: user.officeEmail });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+
+  /**
+   * A customer display, signed in with Vesopa before it is paired.
+   *
+   * WHY A DISPLAY SIGNS IN AT ALL, WHEN IT NEVER USED TO.
+   *
+   * A display is paired by a till and has never had a credential of its own.
+   * That is why it could not be counted: a venue paying for one display could
+   * run six, and the display subscription was the one product whose screens
+   * worked perfectly while it sat expired.
+   *
+   * So the first screen is Continue with Vesopa, the licence is checked here,
+   * and the existing pairing with a till follows unchanged. Pairing is not
+   * replaced -- it is preceded.
+   *
+   * A DISPLAY IS BOUNCED, NOT REFUSED, when the licences are all in use. It
+   * holds nothing and shows only what a till sends it, so the newest screen
+   * wins and the one connected longest ago goes blank -- see POLICY in
+   * licences.js. That is the opposite of a till, which is refused, because a
+   * till bounced mid-sale loses work and a display loses a glance.
+   */
+  router.post('/api/display/vesopa/commission', express.json(), async (req, res, next) => {
+    try {
+      const body = req.body || {};
+      let claims;
+      try {
+        claims = await verifyTillToken(body.id_token, 'display');
+      } catch (error) {
+        console.warn('[display_vesopa] refused a token:', error.message);
+        return res.status(401).json({ error: 'That sign-in could not be accepted.' });
+      }
+
+      if (!claims.email || claims.email_verified !== true) {
+        return res.status(403).json({
+          error: 'Your Vesopa account has no confirmed email address.',
+        });
+      }
+
+      const user = await linkAndFind(pool, claims);
+      if (!user) {
+        return res.status(403).json({
+          error: 'There is no back-office user for that address. Ask your manager to add you.',
+        });
+      }
+      if (user.blocked) return res.status(403).json({ error: user.blocked });
+      if (!user.officeEmail) {
+        return res.status(403).json({
+          error: 'Your account is not attached to a venue, so it cannot set up a display.',
+        });
+      }
+
+      // The licence. Everything about this fails open -- an unlinked venue has
+      // no limit, and a venue whose entitlement could not be read keeps the
+      // last answer -- because a screen that would not start is worse than a
+      // screen that was not counted.
+      let seatId = null;
+      try {
+        seatId = await licences.signInDevice(pool, {
+          office: user.officeEmail,
+          kind: 'display',
+          deviceId: clampText(body.device_id, 64),
+          deviceName: clampText(body.device_name, 120),
+          fingerprint: clampText(body.device_fingerprint, 64),
+          licenceKey: clampText(body.licence_key, 64),
+          by: String(claims.email).toLowerCase(),
+        });
+      } catch (error) {
+        if (error.name === 'SeatLimitError') {
+          return res.status(409).json({
+            error: error.message,
+            licences: error.limit,
+            seats: (error.seats || []).map((x) => ({ name: x.device_name })),
+          });
+        }
+        if (error.licenceKey) {
+          return res.status(403).json({ error: error.message, licence_key: true });
+        }
+        throw error;
+      }
+
+      const token = jwt.sign(
+        {
+          scope: 'display',
+          office: user.officeEmail,
+          user: String(claims.email).toLowerCase(),
+          name: claims.name || claims.email,
+          via: 'vesopa',
+        },
+        secret,
+        // Ninety days, like the kitchen screen. A wall display asked to sign in
+        // every week is a wall display somebody props open.
+        seatId ? { expiresIn: '90d', jwtid: seatId } : { expiresIn: '90d' },
+      );
+
+      return res.json({
+        token,
+        office: user.officeEmail,
+        venue: user.officeName || null,
+        // So the screen can say "licensed" rather than only "signed in".
+        seat: Boolean(seatId),
+      });
     } catch (error) {
       return next(error);
     }
