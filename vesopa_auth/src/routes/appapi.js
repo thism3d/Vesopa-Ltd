@@ -222,4 +222,121 @@ router.post('/api/app/invitations/:id/revoke', async (req, res, next) => {
   }
 });
 
+
+/*
+ * ---------------------------------------------------------------------------
+ * What a customer has paid for
+ * ---------------------------------------------------------------------------
+ *
+ * WHY THIS IS HERE AND NOT IN THE BACK OFFICE.
+ *
+ * The back office grew its own copy of this: a table of how many tills, kitchen
+ * screens, displays and kiosks a venue may run. Meanwhile auth already held the
+ * subscriptions -- with a quantity, a status, and a renewal date -- because
+ * this is where a customer buys and manages them. Two places holding one number
+ * is two places to change it and one of them will be wrong, and the wrong one
+ * is what refuses a kitchen screen during service.
+ *
+ * So: auth answers what is OWED. The back office decides what to DO about it --
+ * counting seats, binding keys, refusing the sixth till. Different jobs, one
+ * number, and the number lives where it is sold.
+ *
+ * STATUS IS RETURNED, NOT RESOLVED. `expired` does not mean the same thing for
+ * a kiosk as for a display, and the grace a venue gets is a commercial decision
+ * the back office makes. Deciding it here would bake one answer into every
+ * product at once.
+ *
+ * FIRST-PARTY ONLY. A venue's subscriptions are its commercial relationship
+ * with Vesopa and are nobody else's business -- so this is not part of the
+ * public application API, even for an application that venue uses.
+ */
+router.post('/api/app/entitlements', async (req, res, next) => {
+  try {
+    /*
+     * Authenticated like the invitation routes but NOT through `gate`, which
+     * spends the invitation rate limit. Reading what a venue pays for costs
+     * nothing and happens on a schedule across every venue; sharing a budget
+     * meant for sending email would have a licence refresh quietly use up a
+     * venue's ability to invite staff.
+     */
+    const auth = await authenticate(req);
+    if (auth.error) {
+      return problem(res, 401, auth.error, auth.description || 'Client authentication failed.');
+    }
+    const application = auth.application;
+
+    const attempt = await rateLimit.hit('app-entitlements', String(application.id), {
+      limit: 600,
+      windowSeconds: 3600,
+    });
+    if (!attempt.allowed) {
+      return problem(res, 429, 'rate_limited', 'Too many entitlement lookups this hour.');
+    }
+
+    if (!Number(application.is_first_party)) {
+      return problem(
+        res,
+        403,
+        'forbidden',
+        'What a customer pays Vesopa is not available to third-party applications.',
+      );
+    }
+
+    const organisationId = Number(req.body.organisation_id);
+    if (!Number.isInteger(organisationId) || organisationId <= 0) {
+      return problem(res, 400, 'invalid_request', 'Which organisation?');
+    }
+
+    const organisation = await db.one(
+      'SELECT id, name, slug FROM organisations WHERE id = ?',
+      [organisationId],
+    );
+    if (!organisation) {
+      return problem(res, 404, 'not_found', 'No such organisation.');
+    }
+
+    const rows = await db.query(
+      `SELECT p.slug, p.name, s.plan_label, s.quantity, s.status,
+              s.renews_at, s.ends_at
+         FROM subscriptions s
+         JOIN products p ON p.id = s.product_id
+        WHERE s.organisation_id = ?
+        ORDER BY p.sort`,
+      [organisationId],
+    );
+
+    const products = {};
+    for (const row of rows) {
+      /*
+       * The HIGHEST quantity wins where a product has been bought twice --
+       * an upgrade often arrives as a second row rather than an edit, and
+       * summing would double a venue's allowance the day they change plan.
+       * An active row always beats an inactive one.
+       */
+      const held = products[row.slug];
+      const better =
+        !held ||
+        (row.status === 'active' && held.status !== 'active') ||
+        (row.status === held.status && Number(row.quantity) > held.quantity);
+      if (!better) continue;
+      products[row.slug] = {
+        product: row.name,
+        plan: row.plan_label,
+        quantity: Number(row.quantity) || 0,
+        status: row.status,
+        renews_at: row.renews_at,
+        ends_at: row.ends_at,
+      };
+    }
+
+    return res.json({
+      organisation: { id: organisation.id, name: organisation.name, slug: organisation.slug },
+      products,
+      as_at: new Date().toISOString(),
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
 module.exports = router;

@@ -36,6 +36,7 @@ const crypto = require('crypto');
 const express = require('express');
 
 const { requireAuth } = require('./auth');
+const entitlements = require('./entitlements');
 
 /** The apps a venue licenses. Matches bo_devices.kind. */
 const KINDS = ['till', 'kitchen', 'display', 'express'];
@@ -485,6 +486,50 @@ function adminLicenceRoutes({ pool }) {
         kind,
         note: 'Copy this now. It is stored only as a hash and cannot be shown again.',
       });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /**
+   * Link a venue to the Vesopa organisation that pays for it.
+   *
+   * Until this is set the venue takes the unlinked path -- no limit unless one
+   * was typed here -- which is exactly today's behaviour. So venues can be
+   * linked one at a time, and getting one wrong costs that venue and nobody
+   * else.
+   */
+  router.put('/offices/:id/auth-organisation', async (req, res, next) => {
+    try {
+      const raw = (req.body || {}).organisation_id;
+      const organisationId = raw === '' || raw == null ? null : Number(raw);
+      if (organisationId !== null && (!Number.isInteger(organisationId) || organisationId <= 0)) {
+        return res.status(400).json({ error: 'That is not an organisation id.' });
+      }
+      await pool.execute('UPDATE offices SET auth_organisation_id = ? WHERE id = ?', [
+        organisationId,
+        Number(req.params.id),
+      ]);
+
+      // Fetch straight away, so the person who just linked it can see whether
+      // it worked rather than waiting for a schedule to tell them tomorrow.
+      let refreshed = null;
+      if (organisationId) {
+        const [[office]] = await pool.query('SELECT contact_email FROM offices WHERE id = ?', [
+          Number(req.params.id),
+        ]);
+        if (office) refreshed = await entitlements.refreshOffice(pool, office.contact_email);
+      }
+      res.json({ ok: true, organisation_id: organisationId, refreshed });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /** Ask auth again for every linked venue. */
+  router.post('/entitlements/refresh', async (req, res, next) => {
+    try {
+      res.json({ ok: true, ...(await entitlements.refreshAll(pool)) });
     } catch (e) {
       next(e);
     }
