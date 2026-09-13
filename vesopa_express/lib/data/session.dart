@@ -17,6 +17,7 @@
 /// out of date.
 library;
 
+import 'licence.dart';
 import 'dart:async';
 import 'dart:convert';
 
@@ -222,3 +223,18 @@ class KioskSession extends Notifier<KioskState> {
 }
 
 final kioskSessionProvider = NotifierProvider<KioskSession, KioskState>(KioskSession.new);
+
+/// This venue's licence for the kiosk, as the back office sees it.
+///
+/// Null while it loads and null when the server cannot be asked, and the kiosk
+/// carries on either way. A licence lookup failing must never be why a
+/// customer standing at a screen cannot order.
+final kioskLicenceProvider = FutureProvider<LicenceState?>((ref) async {
+  // The token lives on the API client, not on the state -- the state is what
+  // the screen shows, and a credential is not that. Watched through the session
+  // so a kiosk that has just been commissioned asks again with its new one.
+  ref.watch(kioskSessionProvider);
+  final token = ref.read(apiProvider).token;
+  if (token == null || token.isEmpty) return null;
+  return fetchLicence(apiBase: ExpressConfig.resolvedBase, token: token);
+});

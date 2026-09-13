@@ -13,6 +13,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
 
+import '../data/vesopa_setup.dart';
+import 'licence_panel.dart';
 import '../data/adverts.dart';
 import '../data/control.dart';
 import '../data/pairing.dart';
@@ -372,6 +374,19 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           child: ListView(
             padding: const EdgeInsets.all(24),
             children: [
+              // What this venue pays for, which machine holds the key and when
+              // it runs out. The same panel as the till, the kitchen screen and
+              // the kiosk, so the wording is identical whichever one somebody
+              // is standing at when they telephone.
+              _Section(
+                title: 'Licence',
+                icon: Icons.verified_outlined,
+                blurb: 'What this venue is entitled to, read from Vesopa.',
+                child: LicencePanel(
+                  state: ref.watch(displayLicenceProvider).value,
+                  onRefresh: () => ref.invalidate(displayLicenceProvider),
+                ),
+              ),
               _Section(
                 title: 'The till',
                   icon: Icons.point_of_sale,

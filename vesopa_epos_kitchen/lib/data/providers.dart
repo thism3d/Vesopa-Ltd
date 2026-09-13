@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'licence.dart';
 import '../config/constants.dart';
 import 'dinein_inbox.dart';
 import 'kitchen_api.dart';
@@ -66,4 +67,14 @@ final allergenLabelsProvider = FutureProvider<Map<String, String>>((ref) async {
   } catch (_) {
     return const {};
   }
+});
+
+/// This venue's licence for the kitchen screen, as the back office sees it.
+///
+/// Null while it loads and null when the server cannot be asked, and the
+/// screen carries on either way. A licence lookup failing must never be why a
+/// kitchen loses the orders it is cooking.
+final kitchenLicenceProvider = FutureProvider<LicenceState?>((ref) async {
+  final api = ref.watch(kitchenApiProvider);
+  return fetchLicence(apiBase: api.apiBase, token: api.token ?? '');
 });

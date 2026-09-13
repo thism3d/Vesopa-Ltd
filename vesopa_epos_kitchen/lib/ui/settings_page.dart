@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
 
+import 'licence_panel.dart';
 import '../data/providers.dart';
 import '../data/screen_profile.dart';
 import 'branding_page.dart';
@@ -102,6 +103,14 @@ class _SettingsSheet extends ConsumerWidget {
                   ),
 
                 const Divider(height: 30),
+                const _SectionTitle('Licence'),
+                // The same panel as the till, the display and the kiosk, so the
+                // wording is identical whichever machine somebody is at.
+                LicencePanel(
+                  state: ref.watch(kitchenLicenceProvider).value,
+                  onRefresh: () => ref.invalidate(kitchenLicenceProvider),
+                ),
+                const SizedBox(height: 18),
                 const _SectionTitle('On this machine'),
                 SwitchListTile(
                   value: session.sound,

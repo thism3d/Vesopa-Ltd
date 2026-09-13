@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../data/vesopa_setup.dart';
 import 'display_page.dart';
+import 'licence_panel.dart';
 
 /// Where this display's back office is.
 ///
@@ -244,7 +245,29 @@ class DisplayEntry extends ConsumerWidget {
       // failed to read its own settings must still show a customer their bill.
       loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
       error: (_, _) => const DisplayPage(),
-      data: (value) => value == null ? const ConnectPage() : const DisplayPage(),
+      data: (value) => value == null ? const ConnectPage() : const _LicensedDisplay(),
     );
+  }
+}
+
+/// The display, unless its licence has lapsed past its grace.
+///
+/// `.value` is null while it loads and when the server could not be asked, and
+/// both carry on into the display. Locking has to be something we were TOLD,
+/// never assumed from silence: a customer screen that went blank because a
+/// licence lookup timed out would be a worse fault than an uncounted display.
+class _LicensedDisplay extends ConsumerWidget {
+  const _LicensedDisplay();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final licence = ref.watch(displayLicenceProvider).value;
+    if (licence != null && licence.locked) {
+      return LicenceLockedPage(
+        state: licence,
+        onRetry: () => ref.invalidate(displayLicenceProvider),
+      );
+    }
+    return const DisplayPage();
   }
 }

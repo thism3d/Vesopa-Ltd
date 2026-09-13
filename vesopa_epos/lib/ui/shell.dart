@@ -1,3 +1,4 @@
+import 'licence_panel.dart';
 import 'dart:async';
 import 'dart:convert';
 
@@ -608,6 +609,24 @@ class _PosShellState extends ConsumerState<PosShell> {
     // a second one.
     _watchCardRules();
     _watchGymRules();
+
+    /*
+     * A LAPSED LICENCE REPLACES THE SHELL, for the same reason a failure to
+     * open a bill does: a till that may not sell cannot do anything the tabs
+     * behind it offer either, and leaving them there invites somebody to try.
+     *
+     * `.value` is null while it loads AND when the server could not be asked,
+     * so both of those carry on into the till. Locking has to be something we
+     * were TOLD, never something we assumed from silence -- a venue must not
+     * lose its till because a licence lookup timed out.
+     */
+    final licence = ref.watch(licenceProvider).value;
+    if (licence != null && licence.locked) {
+      return LicenceLockedPage(
+        state: licence,
+        onRetry: () => ref.invalidate(licenceProvider),
+      );
+    }
 
     // Shown instead of the shell, not inside it: a till that cannot open a bill
     // cannot do anything the tabs offer either.

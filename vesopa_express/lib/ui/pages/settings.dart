@@ -12,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../config/constants.dart';
 import '../../data/passcode.dart';
+import '../licence_panel.dart';
 import '../../data/session.dart';
 import '../../platform/kiosk_window.dart';
 import '../theme.dart';
@@ -184,6 +185,11 @@ class SettingsPage extends ConsumerWidget {
         ),
         const SizedBox(height: 24),
         const TicketPrinterCard(),
+        // The same panel as the till, the kitchen screen and the display.
+        LicencePanel(
+          state: ref.watch(kioskLicenceProvider).value,
+          onRefresh: () => ref.invalidate(kioskLicenceProvider),
+        ),
         const SizedBox(height: 24),
         Wrap(spacing: 14, runSpacing: 14, children: [
           OutlinedButton.icon(

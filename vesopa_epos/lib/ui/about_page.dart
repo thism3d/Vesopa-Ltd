@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'licence_panel.dart';
 import '../config/constants.dart';
 import '../data/deep_links.dart' show tillStoreProductId;
 import '../data/till_seat.dart';
+import '../main.dart' show licenceProvider;
 import 'theme.dart';
 import 'widgets/pos_message.dart';
 
@@ -126,6 +128,9 @@ class AboutPage extends StatelessWidget {
               _Hero(wide: wide),
               const SizedBox(height: 16),
               const _ThisTill(),
+              // Beside what the till says about itself: what the venue pays
+              // for, which machine holds the key, and when it runs out.
+              const _Licence(),
               const SizedBox(height: 26),
 
               Text('What Vesopa does',
@@ -380,6 +385,22 @@ class _ThisTill extends ConsumerWidget {
   }
 }
 
+
+/// The Licence section. The panel itself is shared with the kitchen screen,
+/// the display and the kiosk (ui/licence_panel.dart) so the wording a manager
+/// reads down the telephone is the same whichever machine they are standing at.
+class _Licence extends ConsumerWidget {
+  const _Licence();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final licence = ref.watch(licenceProvider);
+    return LicencePanel(
+      state: licence.value,
+      onRefresh: () => ref.invalidate(licenceProvider),
+    );
+  }
+}
 class _Features extends StatelessWidget {
   const _Features();
 

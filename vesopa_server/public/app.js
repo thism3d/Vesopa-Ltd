@@ -3103,7 +3103,8 @@ async function loadAdminLicences() {
     return `<td class="nowrap">${p.in_use} <span class="muted small">of ${p.limit}</span>${flag}${held}</td>`;
   };
 
-  const head = data.kinds.map((k) => `<th>${esc(k.label)}</th>`).join('');
+  const head = data.kinds.map((k) => `<th>${esc(k.label)}</th>`).join('')
+    + '<th title="When on, this venue’s apps stop opening once a subscription is past its grace">Lock when lapsed</th>';
   const rows = data.venues.map((v) => `<tr>
       <td>${esc(v.name)}<br><span class="muted small">${esc(v.email)}</span></td>
       <td class="nowrap">${v.auth_organisation_id
@@ -3113,6 +3114,11 @@ async function loadAdminLicences() {
                 data-link-org-name="${esc(v.name)}"
                 data-link-org-now="${v.auth_organisation_id || ''}">Link</button></td>
       ${v.products.map(cell).join('')}
+      <td class="nowrap">
+        <label class="check"><input type="checkbox" data-lock-venue="${v.id}"
+               ${v.licence_lock_enabled ? 'checked' : ''}>
+          <span>${v.licence_lock_enabled ? 'On' : 'Off'}</span></label>
+      </td>
     </tr>`).join('');
 
   host.innerHTML =
@@ -3132,6 +3138,40 @@ document.addEventListener('click', async (e) => {
       toast(err.message, 'error');
     } finally {
       refresh.disabled = false;
+    }
+    return;
+  }
+
+  const lock = e.target.closest && e.target.closest('[data-lock-venue]');
+  if (lock) {
+    const on = lock.checked;
+    /*
+     * Asked before it is switched ON, never before it is switched off.
+     *
+     * Turning this on means that venue's apps STOP OPENING once a subscription
+     * is past its grace -- not a warning, not read-only. That is worth a
+     * sentence and a deliberate press. Turning it off only ever gives somebody
+     * their software back, and nobody should have to confirm that.
+     */
+    if (on) {
+      const ok = await confirmDialog(
+        'While this is on, every app at this venue will STOP OPENING once its '
+          + 'subscription is more than 14 days past its end date. Staff will see a '
+          + 'renew screen instead of the till. Switch it on?',
+        { title: 'Lock this venue when it lapses', confirmLabel: 'Switch it on', danger: true },
+      );
+      if (!ok) { lock.checked = false; return; }
+    }
+    try {
+      await api(`/admin/offices/${lock.dataset.lockVenue}/licence-lock`, {
+        method: 'PUT',
+        body: JSON.stringify({ enabled: on }),
+      });
+      toast(on ? 'Locking is on for this venue.' : 'Locking is off for this venue.');
+      await loadAdminLicences();
+    } catch (err) {
+      toast(err.message, 'error');
+      lock.checked = !on;
     }
     return;
   }

@@ -19,6 +19,7 @@ import 'data/kitchen_screens.dart';
 import 'data/customer_display.dart';
 import 'data/card_repository.dart';
 import 'data/demo_session.dart';
+import 'data/licence.dart';
 import 'data/gym.dart';
 import 'data/wallet_passes.dart';
 import 'data/device_registry.dart';
@@ -447,6 +448,22 @@ final sessionProvider = Provider<Session>((ref) {
   );
 });
 
+/// This venue's licence for the till, as the back office sees it.
+///
+/// Watched rather than fetched once: it follows the session, so a till that
+/// signs in somewhere else — or into its venue's practice copy — asks about
+/// the right venue without anything having to remember to refresh it.
+///
+/// Null while it loads and null when the server cannot be asked. Every reader
+/// treats null as "carry on": a licence lookup failing must never be why a
+/// venue cannot trade.
+final licenceProvider = FutureProvider<LicenceState?>((ref) async {
+  final session = ref.watch(sessionProvider);
+  return fetchLicence(
+    apiBase: ref.watch(apiBaseProvider),
+    token: session.terminalToken ?? '',
+  );
+});
 /// Which venue this terminal belongs to. Comes from the sign-in rather than a
 /// build flag, so one APK can be installed in any venue.
 final officeProvider = Provider<String>(

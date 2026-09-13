@@ -7,6 +7,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'hardware_fingerprint.dart';
 import 'pairing.dart' show displayDeviceId, displayDeviceName;
 import 'vesopa_sso.dart';
+import '../ui/connect_page.dart' show displayApiBase;
+import 'licence.dart';
 
 /// Signing this display in with Vesopa, before it is paired with a till.
 ///
@@ -198,6 +200,20 @@ Future<DisplayCommission> commission({
     licensed: body['seat'] == true,
   );
 }
+
+/// This venue's licence for the display, as the back office sees it.
+///
+/// Depends on the commissioning, so a screen that has not connected yet asks
+/// nothing — there is no credential to ask with, and nothing to report.
+///
+/// Null while it loads and null when the server cannot be asked. A display
+/// treats null as "carry on": a licence lookup failing must never be why a
+/// customer sees a blank screen across a counter.
+final displayLicenceProvider = FutureProvider<LicenceState?>((ref) async {
+  final commission = await ref.watch(commissionProvider.future);
+  if (commission == null) return null;
+  return fetchLicence(apiBase: displayApiBase, token: commission.token);
+});
 
 /// What this screen is commissioned as, for the app to decide its first page.
 final commissionProvider = FutureProvider<DisplayCommission?>((ref) => readCommission());

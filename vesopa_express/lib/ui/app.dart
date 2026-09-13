@@ -23,6 +23,7 @@ import '../data/session.dart';
 import 'pages/ordering.dart';
 import 'pages/paying.dart';
 import 'pages/settings.dart';
+import 'licence_panel.dart';
 import 'pages/setup.dart';
 import 'theme.dart';
 
@@ -124,6 +125,23 @@ class _KioskShellState extends ConsumerState<KioskShell> {
       ScaffoldMessenger.maybeOf(context)?.clearSnackBars();
     });
     final session = ref.watch(kioskSessionProvider);
+
+    /*
+     * A LAPSED LICENCE REPLACES THE KIOSK, whatever phase it is in. A kiosk
+     * that may not take an order has nothing useful to show a customer, and
+     * leaving the menu up invites somebody to start one.
+     *
+     * `.value` is null while it loads AND when the server could not be asked,
+     * and both carry on into the kiosk. Locking is something we were TOLD,
+     * never assumed from silence.
+     */
+    final licence = ref.watch(kioskLicenceProvider).value;
+    if (licence != null && licence.locked) {
+      return LicenceLockedPage(
+        state: licence,
+        onRetry: () => ref.invalidate(kioskLicenceProvider),
+      );
+    }
 
     final Widget page = switch (session.phase) {
       Phase.booting => const SplashPage(),
