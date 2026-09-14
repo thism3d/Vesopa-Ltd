@@ -24,18 +24,24 @@
 ///
 /// WHAT THIS DOES NOT DO
 ///
-/// It does not send the money back to the card itself. That is the payment
+/// It does not send the money back to a bank card. That is the payment
 /// terminal's own job — Functions › Card Machine — and a till that claimed to
 /// have refunded a card it never spoke to would be worse than one that says
 /// where to go. What is recorded here is that the money left the drawer, or
 /// that a card refund was raised, and by whom.
+///
+/// A GIFT CARD IS THE EXCEPTION. Its share of a refund goes back onto the card
+/// (or cards) the sale was paid with, by the server, before anything is
+/// recorded — the one tender the till can return by itself.
 library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import '../data/commerce.dart' show CommerceException;
 import '../data/receipt_repository.dart';
+import '../data/training_mode.dart';
 import 'receipts_page.dart' show receiptListProvider, receiptRepoProvider;
 import '../data/till_permissions.dart';
 import '../main.dart';
@@ -345,6 +351,15 @@ class _RefundPageState extends ConsumerState<RefundPage> {
   // Doing it
   // ---------------------------------------------------------------------
 
+  /// What of this refund goes back onto the gift card(s) the sale was paid
+  /// with: as much as they paid, never more than is being refunded.
+  int get _toGiftCardMinor {
+    final paid = (_detail?.tenders ?? const <ReceiptTender>[])
+        .where((t) => t.method == 'giftcard')
+        .fold<int>(0, (s, t) => s + t.amountMinor);
+    return paid < _refundMinor ? paid : _refundMinor;
+  }
+
   Future<void> _confirmFromReceipt() async {
     final detail = _detail;
     if (detail == null || _refundMinor <= 0) return;
@@ -354,12 +369,22 @@ class _RefundPageState extends ConsumerState<RefundPage> {
         if (_picked.contains(i)) detail.lines[i].name,
     ];
 
+    // A gift card is the one tender the till can hand back by itself: the
+    // money goes back on the card. "Hand it back the same way" asked the clerk
+    // to do something they had no means of doing.
+    final toCard = _toGiftCardMinor;
+    final rest = _refundMinor - toCard;
+
     final ok = await _confirm(
       title: 'Give back ${money(_refundMinor)}?',
-      body: 'It was paid by $_tenderSummary, so hand it back the same way.\n\n'
-          '${names.join(', ')}\n\n'
-          'A card refund is raised on the card machine itself — this records '
-          'that it happened.',
+      body: toCard > 0
+          ? '${money(toCard)} goes back on the gift card it was paid with.'
+              '${rest > 0 ? '\nThe other ${money(rest)}: it was paid by $_tenderSummary, so hand it back the same way.' : ''}'
+              '\n\n${names.join(', ')}'
+          : 'It was paid by $_tenderSummary, so hand it back the same way.\n\n'
+              '${names.join(', ')}\n\n'
+              'A card refund is raised on the card machine itself — this records '
+              'that it happened.',
     );
     if (ok != true || !mounted) return;
 
@@ -382,13 +407,47 @@ class _RefundPageState extends ConsumerState<RefundPage> {
     );
     if (!mounted) return;
 
+    // The card first, and nothing recorded if it fails: a refund written to
+    // the Z while the money never reached the card would be a refund nobody
+    // received. Never in training -- a trainee's refund moves no real money.
+    String? onCard;
+    if (toCard > 0 && !ref.read(trainingModeProvider)) {
+      try {
+        final back = await ref.read(commerceRepositoryProvider).reverseGiftCards(
+              orderId: detail.summary.id,
+              amountMinor: toCard,
+              clerkName: ref.read(servedByProvider),
+              note: ['Refund off receipt', ?why].join(' · '),
+            );
+        onCard = '${money(back.reversedMinor)} back on gift card'
+            '${back.codes.length == 1 ? ' ${back.codes.first}' : 's ${back.codes.join(', ')}'}';
+      } on CommerceException catch (e) {
+        if (mounted) {
+          PosMessenger.error(context,
+              'Could not put ${money(toCard)} back on the gift card: ${e.message} '
+              'Nothing has been refunded.');
+        }
+        return;
+      } catch (_) {
+        if (mounted) {
+          PosMessenger.error(context,
+              'The server could not be reached to put ${money(toCard)} back on '
+              'the gift card. Nothing has been refunded; try again.');
+        }
+        return;
+      }
+    }
+    if (!mounted) return;
+
     await _record(
       amountMinor: _refundMinor,
       note: [
         'Receipt ${detail.summary.id}',
         names.join(', '),
-        if (why != null) why,
+        ?onCard,
+        ?why,
       ].join(' · '),
+      done: onCard,
     );
   }
 
@@ -439,7 +498,11 @@ class _RefundPageState extends ConsumerState<RefundPage> {
         ),
       );
 
-  Future<void> _record({required int amountMinor, required String note}) async {
+  Future<void> _record({
+    required int amountMinor,
+    required String note,
+    String? done,
+  }) async {
     final session = await ref.read(sessionRepositoryProvider).current();
     await ref.read(orderRepositoryProvider).logRefund(
           sessionId: session.id,
@@ -450,7 +513,8 @@ class _RefundPageState extends ConsumerState<RefundPage> {
     if (!mounted) return;
     PosMessenger.success(
       context,
-      '${money(amountMinor)} refunded. It is on the Z report.',
+      '${money(amountMinor)} refunded${done == null ? '' : ' — $done'}. '
+      'It is on the Z report.',
     );
     Navigator.of(context).pop();
   }

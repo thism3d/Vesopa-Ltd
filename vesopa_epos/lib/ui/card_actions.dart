@@ -612,10 +612,15 @@ Future<void> _giftCard(
 
     await _explain(
       context,
-      title: 'Gift Card ${card.number}',
-      message:
-          '${_money(gift.balanceMinor)} on the card.\n\n'
-          'To spend it, take the payment and choose Gift Card.',
+      title: gift.label == null ? 'Gift Card ${card.number}' : '${gift.label} · ${card.number}',
+      message: [
+        '${_money(gift.balanceMinor)} on the card.',
+        if (gift.spendableMinor < gift.balanceMinor)
+          '${_money(gift.balanceMinor - gift.spendableMinor)} of it is on another bill.',
+        if (!gift.redeemable && gift.reason != null) gift.reason!,
+        '',
+        'To spend it, take the payment and choose Gift Card.',
+      ].join('\n'),
     );
   } on Object catch (e) {
     if (!context.mounted) return;

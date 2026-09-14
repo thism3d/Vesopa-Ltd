@@ -787,12 +787,56 @@ function commerceRoutes({ pool, broadcast, secret }) {
     } catch (e) { next(e); }
   });
 
+  /** What one sale took from one card, net of anything already put back. */
+  async function takenFor(conn, cardId, orderId) {
+    const [[sums]] = await conn.query(
+      `SELECT
+         COALESCE(SUM(CASE WHEN kind = 'redeem' THEN -amount_minor ELSE 0 END), 0) AS taken,
+         COALESCE(SUM(CASE WHEN kind = 'reverse' THEN amount_minor ELSE 0 END), 0) AS returned
+       FROM epos_gift_card_txns
+       WHERE gift_card_id = ? AND order_id = ?`,
+      [cardId, orderId]
+    );
+    return Number(sums.taken) - Number(sums.returned);
+  }
+
+  /** Put [amount] back on a locked card for [orderId]. Returns what changed. */
+  async function giveBack(conn, card, { office, orderId, amount, clerk, note }) {
+    const after = card.balance_minor + amount;
+    // A spent paper certificate comes back to life with what it was owed. A
+    // void card stays void: the money goes back on the record, and the
+    // venue decides what to do about a card it had cancelled.
+    const status = card.status === 'redeemed' ? 'active' : card.status;
+    const txnId = crypto.randomUUID();
+    await conn.execute(
+      'UPDATE epos_gift_cards SET balance_minor = ?, status = ? WHERE id = ?',
+      [after, status, card.id]
+    );
+    await conn.execute(
+      `INSERT INTO epos_gift_card_txns
+         (id, gift_card_id, office, kind, amount_minor, balance_after,
+          order_id, clerk_name, note)
+       VALUES (?, ?, ?, 'reverse', ?, ?, ?, ?, ?)`,
+      [
+        txnId, card.id, office, amount, after, orderId,
+        clerk ? String(clerk).slice(0, 80) : null,
+        String(note || 'Given back: sale undone').slice(0, 255),
+      ]
+    );
+    return { txnId, card: { ...card, balance_minor: after, status } };
+  }
+
   /**
    * Put money back on a card for a sale that was undone.
    *
    * Never more than that sale took from that card, net of anything already put
    * back: a refund pressed twice, or a partial refund followed by a full one,
    * cannot mint money onto a card.
+   *
+   * Without a `code`, every card that paid for the sale gets back what it paid,
+   * up to `amount_minor` in all. That is the refund screen's case: a finished
+   * sale records how it was paid, not which card, and the sale id is enough to
+   * find them.
    */
   router.post('/gift-cards/reverse', async (req, res, next) => {
     const conn = await pool.getConnection();
@@ -800,68 +844,75 @@ function commerceRoutes({ pool, broadcast, secret }) {
       const office = tillOffice(req);
       const code = String(req.body.code || '').trim().toUpperCase();
       const orderId = String(req.body.order_id || '').trim().slice(0, 36);
-      if (!office || !code || !orderId) {
-        return res.status(400).json({ error: 'office, code and order_id are required' });
+      if (!office || !orderId) {
+        return res.status(400).json({ error: 'office and order_id are required' });
       }
-
-      await conn.beginTransaction();
-      const [[card]] = await conn.query(
-        'SELECT * FROM epos_gift_cards WHERE office = ? AND code = ? FOR UPDATE',
-        [office, code]
-      );
-      if (!card) {
-        await conn.rollback();
-        return res.status(404).json({ error: 'No such gift card' });
-      }
-
-      const [[sums]] = await conn.query(
-        `SELECT
-           COALESCE(SUM(CASE WHEN kind = 'redeem' THEN -amount_minor ELSE 0 END), 0) AS taken,
-           COALESCE(SUM(CASE WHEN kind = 'reverse' THEN amount_minor ELSE 0 END), 0) AS returned
-         FROM epos_gift_card_txns
-         WHERE gift_card_id = ? AND order_id = ?`,
-        [card.id, orderId]
-      );
-      const outstanding = Number(sums.taken) - Number(sums.returned);
-      if (outstanding <= 0) {
-        await conn.rollback();
-        return res.status(409).json({ error: 'Nothing was taken from this card for that sale' });
-      }
-      const asked = req.body.amount_minor == null ? outstanding : money(req.body.amount_minor);
-      if (asked <= 0) {
-        await conn.rollback();
+      const limit = req.body.amount_minor == null ? null : money(req.body.amount_minor);
+      if (limit != null && limit <= 0) {
         return res.status(400).json({ error: 'Amount must be more than zero' });
       }
-      const amount = Math.min(asked, outstanding);
+      const clerk = req.body.clerk_name;
+      const note = req.body.note;
 
-      const after = card.balance_minor + amount;
-      // A spent paper certificate comes back to life with what it was owed. A
-      // void card stays void: the money goes back on the record, and the
-      // venue decides what to do about a card it had cancelled.
-      const status = card.status === 'redeemed' ? 'active' : card.status;
-      const txnId = crypto.randomUUID();
-      await conn.execute(
-        'UPDATE epos_gift_cards SET balance_minor = ?, status = ? WHERE id = ?',
-        [after, status, card.id]
-      );
-      await conn.execute(
-        `INSERT INTO epos_gift_card_txns
-           (id, gift_card_id, office, kind, amount_minor, balance_after,
-            order_id, clerk_name, note)
-         VALUES (?, ?, ?, 'reverse', ?, ?, ?, ?, ?)`,
-        [
-          txnId, card.id, office, amount, after, orderId,
-          req.body.clerk_name ? String(req.body.clerk_name).slice(0, 80) : null,
-          String(req.body.note || 'Given back: sale undone').slice(0, 255),
-        ]
-      );
+      await conn.beginTransaction();
+      let cards;
+      if (code) {
+        [cards] = await conn.query(
+          'SELECT * FROM epos_gift_cards WHERE office = ? AND code = ? FOR UPDATE',
+          [office, code]
+        );
+        if (!cards.length) {
+          await conn.rollback();
+          return res.status(404).json({ error: 'No such gift card' });
+        }
+      } else {
+        // The cards this sale was paid with, oldest spend first, locked.
+        [cards] = await conn.query(
+          `SELECT c.* FROM epos_gift_cards c
+            WHERE c.office = ? AND c.id IN (
+              SELECT t.gift_card_id FROM epos_gift_card_txns t
+               WHERE t.office = ? AND t.order_id = ? AND t.kind = 'redeem')
+            ORDER BY c.created_at
+            FOR UPDATE`,
+          [office, office, orderId]
+        );
+      }
+
+      let left = limit;
+      const moved = [];
+      for (const card of cards) {
+        if (left != null && left <= 0) break;
+        const outstanding = await takenFor(conn, card.id, orderId);
+        if (outstanding <= 0) continue;
+        const amount = left == null ? outstanding : Math.min(left, outstanding);
+        const r = await giveBack(conn, card, { office, orderId, amount, clerk, note });
+        moved.push({ amount, ...r });
+        if (left != null) left -= amount;
+      }
+      if (!moved.length) {
+        await conn.rollback();
+        return res.status(409).json({
+          error: code ? 'Nothing was taken from this card for that sale' : 'No gift card paid for that sale',
+        });
+      }
       await conn.commit();
 
-      applePush
-        .notifyPassChanged({ pool, office, kind: 'giftcard', subjectId: card.id })
-        .catch(() => {});
+      for (const m of moved) {
+        applePush
+          .notifyPassChanged({ pool, office, kind: 'giftcard', subjectId: m.card.id })
+          .catch(() => {});
+      }
       broadcast({ type: 'gift-cards' });
-      res.json({ reversed_minor: amount, txn_id: txnId, card: { ...card, balance_minor: after, status } });
+      const total = moved.reduce((s, m) => s + m.amount, 0);
+      res.json({
+        reversed_minor: total,
+        // The one-card shape older tills read, and every card for the rest.
+        txn_id: moved[0].txnId,
+        card: moved[0].card,
+        cards: moved.map((m) => ({
+          code: m.card.code, reversed_minor: m.amount, balance_minor: m.card.balance_minor, label: m.card.label || null,
+        })),
+      });
     } catch (e) {
       await conn.rollback().catch(() => {});
       next(e);

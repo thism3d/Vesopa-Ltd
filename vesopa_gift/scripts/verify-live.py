@@ -62,6 +62,8 @@ AUTH_APP = "/home/vesopasoftware/web/auth.vesopa.com/private/nodeapp"
 # Dojo's published sandbox card: no 3-D Secure, always approved. Sandbox only.
 SANDBOX_CARD = {"name": "Test Cardholder", "number": "5200000000001005", "expiry": "1229", "cvc": "020"}
 SPEND = 750
+TILL_REFUND = 250
+LEFT = 2500 - SPEND + TILL_REFUND
 OUT = pathlib.Path(rf"C:\Users\Administrator\Documents\Vesopa-Claude-Images\{datetime.date.today()}-gift-live")
 
 passed, failures = 0, []
@@ -285,15 +287,23 @@ const call = (p, body) => fetch('https://backoffice.vesopaepos.com/api/gift-card
   method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok }, body: JSON.stringify(body),
 }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => null) }));
 (async () => {
-  const h = await call('hold', { code: %s, amount_minor: %d, order_id: crypto.randomUUID(), terminal: 'Gift live check', clerk_name: 'Live check' });
-  const c = h.body && h.body.hold_id ? await call('capture', { hold_id: h.body.hold_id }) : { status: 0, body: null };
-  console.log(JSON.stringify({ hold: h.status, capture: c.status, balance: c.body && c.body.card && c.body.card.balance_minor, error: (h.body && h.body.error) || (c.body && c.body.error) || null }));
+  const sale = crypto.randomUUID();
+  const h = await call('hold', { code: %s, amount_minor: %d, order_id: sale, terminal: 'Gift live check', clerk_name: 'Live check' });
+  const c = h.body && h.body.hold_id ? await call('capture', { hold_id: h.body.hold_id, order_id: sale }) : { status: 0, body: null };
+  // A refund at the till knows the sale, not the card: put some back by the sale alone.
+  const r = c.status === 200 ? await call('reverse', { order_id: sale, amount_minor: %d, clerk_name: 'Live check', note: 'Live check refund' }) : { status: 0, body: null };
+  console.log(JSON.stringify({
+    hold: h.status, capture: c.status, spent_to: c.body && c.body.card && c.body.card.balance_minor,
+    reverse: r.status, reversed: r.body && r.body.reversed_minor, cards: r.body && r.body.cards && r.body.cards.map((x) => x.code),
+    error: (h.body && h.body.error) || (c.body && c.body.error) || (r.body && r.body.error) || null,
+  }));
 })();
-""" % (json.dumps(OFFICE), OFFICE_ID, json.dumps(state["code"]), SPEND)
+""" % (json.dumps(OFFICE), OFFICE_ID, json.dumps(state["code"]), SPEND, TILL_REFUND)
             out = remote(epos_box, f"cd {vesopa_ssh.settings()['VESOPA_REMOTE_APP']} && node -", script).strip().splitlines()[-1]
             r = json.loads(out)
-            need(r["hold"] == 200 and r["capture"] == 200 and r["balance"] == 2500 - SPEND, f"the till said {r}")
-        check(f"the till holds and spends £{SPEND / 100:.2f} of it", till_spend)
+            need(r["hold"] == 200 and r["capture"] == 200 and r["spent_to"] == 2500 - SPEND, f"the till said {r}")
+            need(r["reverse"] == 200 and r["reversed"] == TILL_REFUND and r["cards"] == [state["code"]], f"the refund said {r}")
+        check(f"the till spends £{SPEND / 100:.2f}, and a refund puts £{TILL_REFUND / 100:.2f} back by the sale alone", till_spend)
 
         def balance_page():
             page.goto(f"{SHOP}/{SLUG}/balance", wait_until="load")
@@ -301,8 +311,8 @@ const call = (p, body) => fetch('https://backoffice.vesopaepos.com/api/gift-card
             page.click('button[type="submit"]')
             page.wait_for_load_state("load")
             shot(page, "08-balance-390")
-            need("£17.50" in page.content(), "the balance page does not say £17.50")
-        check("the balance page says £17.50 is left", balance_page)
+            need(f"£{LEFT / 100:.2f}" in page.content(), f"the balance page does not say £{LEFT / 100:.2f}")
+        check(f"the balance page says £{LEFT / 100:.2f} is left", balance_page)
 
         # ---- The console, as the venue's manager -------------------------------------
         auth_box = connect(AUTH_HOST)
@@ -331,12 +341,12 @@ const call = (p, body) => fetch('https://backoffice.vesopaepos.com/api/gift-card
                 admin.wait_for_timeout(1500)
                 shot(admin, "11-console-refunded-1440")
                 rf = gift_sql(epos_box, f"SELECT amount_minor, status FROM gift_refunds WHERE order_id = {oid}")
-                need(rf and rf[0] == [str(2500 - SPEND), "done"], f"refund rows: {rf}")
+                need(rf and rf[0] == [str(LEFT), "done"], f"refund rows: {rf}")
                 card = epos_sql(epos_box, f"SELECT status FROM epos_gift_cards WHERE id = {quote(state['card_id'])}")[0][0]
                 need(card == "void", f"the card is {card}, not void")
                 o = gift_sql(epos_box, f"SELECT refunded_minor FROM gift_orders WHERE id = {oid}")[0][0]
-                need(o == str(2500 - SPEND), f"order refunded {o}")
-            check("a refund from the console pays back only the £17.50 left, and voids the card", refund)
+                need(o == str(LEFT), f"order refunded {o}")
+            check(f"a refund from the console pays back only the £{LEFT / 100:.2f} left, and voids the card", refund)
             desk.close()
         finally:
             # Revoke the minted session whatever happened: fifteen minutes is short,

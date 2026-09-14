@@ -359,6 +359,25 @@ async function main() {
       assert.strictEqual(card.balance_minor, 5000);
     });
 
+    await check('a refund off a receipt finds the card from the sale alone', async () => {
+      // The refund screen knows the sale and that a gift card paid, not which one.
+      const order3 = '33333333-3333-4333-8333-333333333333';
+      const h = await call('POST', '/api/gift-cards/hold', { token: till, body: { code, amount_minor: 1200, order_id: order3 } });
+      await call('POST', '/api/gift-cards/capture', { token: till, body: { hold_id: h.body.hold_id, order_id: order3 } });
+      const r1 = await call('POST', '/api/gift-cards/reverse', { token: till, body: { order_id: order3, amount_minor: 700 } });
+      assert.strictEqual(r1.status, 200, JSON.stringify(r1.body));
+      assert.strictEqual(r1.body.reversed_minor, 700);
+      assert.deepStrictEqual(r1.body.cards.map((c) => [c.code, c.reversed_minor]), [[code, 700]]);
+      const r2 = await call('POST', '/api/gift-cards/reverse', { token: till, body: { order_id: order3 } });
+      assert.strictEqual(r2.body.reversed_minor, 500, 'the rest, and no more');
+      const r3 = await call('POST', '/api/gift-cards/reverse', { token: till, body: { order_id: order3 } });
+      assert.strictEqual(r3.status, 409);
+      const none = await call('POST', '/api/gift-cards/reverse', { token: till, body: { order_id: '44444444-4444-4444-8444-444444444444' } });
+      assert.strictEqual(none.status, 409, 'a sale no card paid for gives nothing back');
+      const [[card]] = await pool.query('SELECT balance_minor FROM epos_gift_cards WHERE code = ?', [code]);
+      assert.strictEqual(card.balance_minor, 5000);
+    });
+
     // ==================================================================
     // The gift shop's own API
     // ==================================================================

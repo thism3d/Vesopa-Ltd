@@ -787,6 +787,9 @@ final commerceRepositoryProvider = Provider<CommerceRepository>(
   (ref) => CommerceRepository(
     apiBase: ref.watch(apiBaseProvider),
     office: ref.watch(officeProvider),
+    // So the back office can tell this venue's tills from anybody holding the
+    // venue's address and a card code. See commerce.js, tillIdentity.
+    terminalToken: ref.watch(sessionProvider).terminalToken,
   ),
 );
 

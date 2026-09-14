@@ -12,6 +12,7 @@ class TenderEntry {
     this.cashbackMinor = 0,
     this.gratuityMinor = 0,
     this.cashBreakdown,
+    this.holdId,
   });
 
   final TenderKind kind;
@@ -20,6 +21,11 @@ class TenderEntry {
   /// A gift-card code, deposit reference or card auth code — whatever makes
   /// this payment traceable afterwards.
   final String? reference;
+
+  /// For a gift card: the money reserved on it while the bill is open. Spent
+  /// when the sale is recorded, given back on Undo or if the bill is left.
+  /// Null for a card spent outright by a back office too old to hold.
+  final String? holdId;
 
   /// 'terminal' | 'manual' | 'hosted' | 'native'. A manually keyed card
   /// carries different liability from a dipped one, so the receipt and the
@@ -212,6 +218,19 @@ class TenderState {
       tenders: tenders.sublist(0, tenders.length - 1),
       shares: updatedShares,
     );
+  }
+
+  /// Take one payment off, wherever it sits. For a gift card that could not
+  /// be charged at the end of a sale, which need not be the last payment.
+  ///
+  /// The last one is [removeLastTender]. Any other is refused on a split bill
+  /// (this state is returned unchanged): shares record how much each person
+  /// has paid, not which payments, so there is no telling whose it was.
+  TenderState removeTenderAt(int index) {
+    if (index < 0 || index >= tenders.length) return this;
+    if (index == tenders.length - 1) return removeLastTender();
+    if (isSplit) return this;
+    return copyWith(tenders: [...tenders]..removeAt(index));
   }
 
   /// Divide what is outstanding into [ways] equal shares.

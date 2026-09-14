@@ -8,6 +8,16 @@ import 'widgets/pos_text_field.dart';
 String _money(int minor) =>
     NumberFormat.currency(locale: 'en_GB', symbol: '£').format(minor / 100);
 
+/// Who the card is for, and how much of it another open bill is holding.
+String? _giftCardSubtitle(GiftCard card, int heldElsewhere) {
+  final parts = [
+    if ((card.recipientName ?? '').isNotEmpty) card.recipientName!,
+    if (heldElsewhere > 0)
+      '${_money(heldElsewhere)} of ${_money(card.balanceMinor)} is on another bill',
+  ];
+  return parts.isEmpty ? null : parts.join(' · ');
+}
+
 /// What a redemption dialog agreed to take.
 class RedemptionResult {
   const RedemptionResult({
@@ -26,8 +36,9 @@ class RedemptionResult {
 /// Redeem a gift card.
 ///
 /// The card is looked up before anything is taken, so a clerk finds out the
-/// balance is short *before* telling the customer their card covers it. The
-/// server is still the authority — this is a check, not a reservation.
+/// balance is short *before* telling the customer their card covers it. This
+/// is a check, not a reservation: pressing Take holds the money on the card
+/// (see PaymentPage._takeGiftCard), and the server can still refuse then.
 Future<RedemptionResult?> showGiftCardDialog(
   BuildContext context, {
   required CommerceRepository commerce,
@@ -79,13 +90,18 @@ class _GiftCardDialogState extends State<_GiftCardDialog> {
       if (!mounted) return;
       setState(() {
         _card = card;
+        // The server's own reason first: it knows about a voucher bought for
+        // a day that has not come yet, and money another till is holding.
         _error = card.redeemable
             ? null
-            : card.expired
-                ? 'This card has expired'
-                : card.balanceMinor <= 0
-                    ? 'This card has no balance left'
-                    : 'This card is ${card.status}';
+            : (card.reason ??
+                (card.expired
+                    ? 'This card has expired'
+                    : card.balanceMinor <= 0
+                        ? 'This card has no balance left'
+                        : card.spendableMinor <= 0
+                            ? 'Everything on this card is being used on another bill'
+                            : 'This card is ${card.status}'));
       });
     } on CommerceException catch (e) {
       if (mounted) setState(() => _error = e.message);
@@ -101,12 +117,14 @@ class _GiftCardDialogState extends State<_GiftCardDialog> {
   @override
   Widget build(BuildContext context) {
     final card = _card;
-    // Never take more than the bill needs, nor more than the card holds.
+    // Never take more than the bill needs, nor more than the card has free --
+    // what another open bill is holding is not this bill's to take.
     final take = card == null
         ? 0
-        : card.balanceMinor < widget.outstandingMinor
-            ? card.balanceMinor
+        : card.spendableMinor < widget.outstandingMinor
+            ? card.spendableMinor
             : widget.outstandingMinor;
+    final heldElsewhere = card == null ? 0 : card.balanceMinor - card.spendableMinor;
 
     return AlertDialog(
       title: const Text('Gift Card'),
@@ -141,9 +159,11 @@ class _GiftCardDialogState extends State<_GiftCardDialog> {
             if (card != null && card.redeemable) ...[
               const SizedBox(height: 14),
               _BalanceCard(
-                title: 'Balance on card',
-                amountMinor: card.balanceMinor,
-                subtitle: card.recipientName,
+                // A voucher for one thing says what it is for, so the clerk
+                // rings up the Sunday lunch rather than guessing.
+                title: card.label ?? 'Balance on card',
+                amountMinor: card.spendableMinor,
+                subtitle: _giftCardSubtitle(card, heldElsewhere),
               ),
               const SizedBox(height: 8),
               _Banner(

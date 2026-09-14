@@ -83,6 +83,9 @@ class PaymentPage extends ConsumerStatefulWidget {
   ConsumerState<PaymentPage> createState() => _PaymentPageState();
 }
 
+/// What the clerk chose when a held gift card could not be charged.
+enum _CardTrouble { retry, takeOff, later }
+
 class _PaymentPageState extends ConsumerState<PaymentPage> {
   /// What the clerk has keyed in, in minor units. Null means "no override", in
   /// which case a tender settles the whole outstanding balance.
@@ -98,6 +101,25 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
         _entry += k;
       }
     });
+  }
+
+  @override
+  void dispose() {
+    // Leaving a bill unpaid gives back what was held on gift cards. The
+    // payments on this screen go when it does, so a hold kept past here would
+    // be money reserved for a payment the till no longer remembers. Spent
+    // holds are left alone. Fire and forget: a hold the server never hears
+    // about lapses by itself within the hour.
+    final commerce = _heldWith;
+    if (commerce != null) {
+      for (final t in _tender.tenders) {
+        final hold = t.holdId;
+        if (hold != null && !_captured.contains(hold)) {
+          unawaited(commerce.releaseGiftCard(hold).then((_) {}, onError: (_) {}));
+        }
+      }
+    }
+    super.dispose();
   }
 
 
@@ -492,6 +514,14 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
   /// Payments taken so far, and any split in progress.
   TenderState _tender = const TenderState(totals: BasketTotals.empty);
 
+  /// The repository gift cards were held through. Kept here, not re-read from
+  /// `ref`, because [dispose] gives unspent holds back and may not use `ref`.
+  CommerceRepository? _heldWith;
+
+  /// Holds already spent. A spent hold is never given back, and never spent
+  /// twice (the server would refuse the second, but the till should not ask).
+  final Set<String> _captured = {};
+
   /// Guards [PaymentPage.initialSplitWays] so it is applied once, not on every
   /// rebuild — re-splitting each frame would keep resetting the shares and
   /// throw away payments already credited to them.
@@ -782,6 +812,40 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     if (result == null || !mounted) return;
 
     try {
+      // HELD, not spent. The server reserves the money on the card under a
+      // lock, so no other till can promise it, and nothing leaves the card
+      // until the sale is recorded (_spendGiftCards). Undo, or leaving the
+      // bill unpaid, gives it back. Spending it here, as tills did before,
+      // meant Undo put the payment back on the bill and left the money off
+      // the customer's card.
+      final hold = await commerce.holdGiftCard(
+        code: result.reference,
+        amountMinor: result.amountMinor,
+        orderId: widget.orderId,
+        clerkName: ref.read(servedByProvider),
+      );
+      _heldWith = commerce;
+      _record(TenderEntry(
+        kind: TenderKind.giftCard,
+        amountMinor: hold.amountMinor,
+        reference: hold.code,
+        holdId: hold.holdId,
+      ));
+    } on HoldsUnsupported {
+      // A back office from before holds. Spend it now, as tills always did.
+      await _redeemGiftCardOutright(commerce, result);
+    } on CommerceException catch (e) {
+      _toast(e.message);
+    } catch (_) {
+      _toast('Could not reach the server to take that card.');
+    }
+  }
+
+  Future<void> _redeemGiftCardOutright(
+    CommerceRepository commerce,
+    RedemptionResult result,
+  ) async {
+    try {
       // The server is the authority on the balance, and it decrements under a
       // lock — so this must succeed before the till counts the money.
       await commerce.redeemGiftCard(
@@ -800,6 +864,139 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
     } catch (_) {
       _toast('Could not reach the server to redeem that card.');
     }
+  }
+
+  /// Undo the last payment, giving a gift card's hold back with it.
+  void _undoLastTender() {
+    final last = _tender.tenders.isEmpty ? null : _tender.tenders.last;
+    setState(() {
+      // Clears the note count alongside the payment when the payment being
+      // undone is the one the note keys built. Left behind, the badges would
+      // go on claiming money that had just been handed back.
+      if (last != null && last.cashBreakdown != null) {
+        _cash = CashTally.empty;
+      }
+      _tender = _tender.removeLastTender();
+    });
+    final hold = last?.holdId;
+    if (hold != null && !_captured.contains(hold)) _giveBack(hold);
+  }
+
+  /// Give a gift card's hold back, saying so -- and saying so when it could
+  /// not be done, because the card then stays reserved until the hold lapses.
+  Future<void> _giveBack(String holdId) async {
+    final commerce = _heldWith;
+    if (commerce == null) return;
+    try {
+      await commerce.releaseGiftCard(holdId);
+      if (mounted) PosMessenger.info(context, 'Given back to the gift card.');
+    } catch (_) {
+      if (mounted) {
+        PosMessenger.info(
+          context,
+          'The server could not be reached to free the gift card. '
+          'It frees itself within the hour.',
+        );
+      }
+    }
+  }
+
+  /// Spend every gift card held for this bill.
+  ///
+  /// Before the sale is written, so the till never records a sale as paid by
+  /// a card that was not charged. A capture is safe to repeat -- the server
+  /// answers a second one as it did the first -- so "Try again" can never
+  /// spend twice. Returns false when the sale must not be recorded yet.
+  Future<bool> _spendGiftCards() async {
+    final commerce = _heldWith;
+    for (final entry in [..._tender.tenders]) {
+      final hold = entry.holdId;
+      if (hold == null || commerce == null || _captured.contains(hold)) continue;
+      while (true) {
+        try {
+          await commerce.captureGiftCard(holdId: hold, orderId: widget.orderId);
+          _captured.add(hold);
+          break;
+        } catch (e) {
+          if (!mounted) return false;
+          final index = _tender.tenders.indexOf(entry);
+          final canTakeOff = index == _tender.tenders.length - 1 || !_tender.isSplit;
+          final choice = await _giftCardTrouble(entry, e, canTakeOff: canTakeOff);
+          if (!mounted) return false;
+          if (choice == _CardTrouble.retry) continue;
+          if (choice == _CardTrouble.later) {
+            _toast('The sale is not recorded yet. Undo the last payment and '
+                'take it again once the server can be reached.');
+            return false;
+          }
+
+          // Take it off. Ask for the hold back first: "not held" means the
+          // earlier capture DID go through and only its answer was lost, in
+          // which case the card has paid and the sale carries on.
+          bool? released;
+          try {
+            released = await commerce.releaseGiftCard(hold);
+          } catch (_) {
+            released = null;
+          }
+          if (released == false) {
+            _captured.add(hold);
+            break;
+          }
+          setState(() => _tender = _tender.removeTenderAt(index));
+          _toast(released == true
+              ? 'Nothing was taken from the gift card. Take the rest another way.'
+              : 'The server could not be reached. If the card was charged, '
+                  'it shows on its history against this sale and can be put back '
+                  'from the back office.');
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  /// A gift card that could not be charged at the end of the sale: try again,
+  /// take the payment off, or (when it cannot come off) leave it for now.
+  Future<_CardTrouble> _giftCardTrouble(
+    TenderEntry entry,
+    Object error, {
+    required bool canTakeOff,
+  }) async {
+    final reason = error is CommerceException
+        ? error.message
+        : 'The server could not be reached.';
+    final choice = await showDialog<_CardTrouble>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        icon: const Icon(Icons.card_giftcard_outlined, size: 30),
+        title: Text('The gift card could not be charged ${_money(entry.amountMinor)}'),
+        content: Text(
+          '$reason\n\n'
+          'Nothing has been taken from it yet, and the money is still reserved '
+          'for this bill.'
+          '${canTakeOff ? '' : '\n\nIt can only come off once the payments taken after it are undone.'}',
+        ),
+        actions: [
+          if (canTakeOff)
+            TextButton(
+              onPressed: () => Navigator.pop(context, _CardTrouble.takeOff),
+              child: const Text('Take it off'),
+            )
+          else
+            TextButton(
+              onPressed: () => Navigator.pop(context, _CardTrouble.later),
+              child: const Text('Not now'),
+            ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, _CardTrouble.retry),
+            child: const Text('Try again'),
+          ),
+        ],
+      ),
+    );
+    return choice ?? _CardTrouble.retry;
   }
 
   Future<void> _takeDeposit(int amount) async {
@@ -1185,6 +1382,10 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
   }
 
   Future<void> _settleNow() async {
+    // Gift cards first. Until each held card is actually charged, the sale is
+    // not recorded as paid by it.
+    if (!await _spendGiftCards()) return;
+
     final repo = ref.read(orderRepositoryProvider);
     final session = await ref.read(sessionRepositoryProvider).current();
 
@@ -1599,19 +1800,9 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
                   setState(() => _tender = _tender.selectShare(i)),
               onClearSplit: () =>
                   setState(() => _tender = _tender.clearSplit()),
-              // Clears the note count alongside the payment when the payment
-              // being undone is the one the note keys built. Left behind, the
-              // badges would go on claiming money that had just been handed
-              // back.
-              onUndo: () => setState(() {
-                final last = _tender.tenders.isEmpty
-                    ? null
-                    : _tender.tenders.last;
-                if (last != null && last.cashBreakdown != null) {
-                  _cash = CashTally.empty;
-                }
-                _tender = _tender.removeLastTender();
-              }),
+              // Gives a gift card's hold back, and clears the note count when
+              // the payment being undone is the one the note keys built.
+              onUndo: _undoLastTender,
               onCustomer: _attachCustomer,
               onDiscount: _applyManualDiscount,
               onPrintBill: () =>
