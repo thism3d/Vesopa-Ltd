@@ -43,18 +43,69 @@
     ],
     "releaseNotes": "Version 1.0.0.0 - Your card, your points and our news\n\nThe first release of Vesopa Loyalty for Windows.\n\nYour loyalty card, always on you. Show the code at the till and your points go on straight away. Turn the card over to see what they are worth and how close you are to spending them.\n\nEvery visit is listed, and tapping one opens it out: what you spent, what you earned, and the balance it left.\n\nNews and offers from the venue arrive in the app, with pictures and video, and appear as Windows notifications so you do not miss one.\n\nSign in the way your venue offers: an emailed code, a texted code, a password, a passkey, or your Vesopa account.",
     "shortDescription": "Your loyalty card for the venues you go to: enter your venue code, show the card at the till, and never miss the news.",
-    "copyrightAndTrademarkInfo": "Copyright (C) 2026 Vesopa EPOS Ltd. All rights reserved.",
+    "copyrightAndTrademarkInfo": "\u00a9 2026 Vesopa EPOS Ltd. All rights reserved.",
     "keywords": [
       "loyalty card",
-      "points",
-      "rewards",
-      "membership",
-      "vesopa",
-      "epos",
-      "venue"
+      "points and rewards",
+      "membership card",
+      "Vesopa Loyalty",
+      "venue loyalty app",
+      "stamp card",
+      "EPOS loyalty"
     ],
     "privacyPolicyUrl": "https://vesopa.com/privacy",
     "supportContact": "support@vesopasoftware.com",
-    "websiteUrl": "https://vesopa.com/"
+    "websiteUrl": "https://vesopa.com/",
+    "title": "Vesopa Loyalty",
+    "shortTitle": "Vesopa Loyalty",
+    "devStudio": "Md Muzahidul Islam @ https://muzahidislam.com in collaboration with Onzep International Limited @ https://onzep.uk and Vesopa Software Limited @ https://vesopasoftware.com",
+    "images": [
+      {
+        "file": "Images/01 Your card and the code the till scans.png",
+        "type": "Screenshot",
+        "description": "Your card, with the code the till scans"
+      },
+      {
+        "file": "Images/02 Every visit, and what it earned.png",
+        "type": "Screenshot",
+        "description": "Every visit, and what each one earned"
+      },
+      {
+        "file": "Images/03 News and offers from the venue.png",
+        "type": "Screenshot",
+        "description": "The venue's news and offers, kept in the app"
+      },
+      {
+        "file": "Images/04 Your details and how you sign in.png",
+        "type": "Screenshot",
+        "description": "Your details, and how you sign in"
+      },
+      {
+        "file": "Images/05 Sign in the way your venue offers.png",
+        "type": "Screenshot",
+        "description": "Sign in the way your venue offers"
+      },
+      {
+        "file": "Images/06 The venue, and your choices.png",
+        "type": "Screenshot",
+        "description": "The venue, and your own settings"
+      },
+      {
+        "file": "Images/Vesopa Loyalty Store 300x300.png",
+        "type": "Icon"
+      },
+      {
+        "file": "Images/Vesopa Loyalty Store Image Square.png",
+        "type": "StoreLogoSquare"
+      },
+      {
+        "file": "Images/Vesopa Loyalty Store Image 916.png",
+        "type": "StoreLogo9x16"
+      },
+      {
+        "file": "Images/Vesopa Loyalty Microsoft Store Hero Image.png",
+        "type": "PromotionalArt16x9"
+      }
+    ]
   }
 }
