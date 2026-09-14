@@ -1,0 +1,75 @@
+<%- include('_top', { nav: 'events' }) %>
+<% var base = '/admin/v/' + venue.office_id; %>
+
+<div class="page-head">
+  <div>
+    <h2><%= event.id ? event.title : 'New event' %></h2>
+    <% if (event.id) { %><p class="muted"><%= sold %> of <%= event.capacity %> sold<% if (shopUrl) { %> · <a href="<%= shopUrl %>" target="_blank" rel="noopener">see it in the shop</a><% } %></p><% } %>
+  </div>
+  <% if (event.id && !event.cancelled_at) { %>
+  <div class="actions">
+    <a class="btn ghost" href="<%= base %>/door/<%= event.id %>">Door check-in</a>
+    <a class="btn ghost" href="<%= base %>/events/<%= event.id %>/guests">Guest list</a>
+  </div>
+  <% } %>
+</div>
+
+<% if (error) { %><div class="flash bad"><%= error %></div><% } %>
+
+<form class="grid-2e" method="post" enctype="multipart/form-data" action="<%= base %>/events<%= event.id ? '/' + event.id : '' %>?_csrf=<%= session.csrf %>">
+  <div class="col">
+    <div class="card pad">
+      <h3>The event</h3>
+      <label class="lbl">Title<input class="in" name="title" maxlength="140" required value="<%= event.title || '' %>" placeholder="Welsh wine tasting"></label>
+      <label class="lbl">Description<textarea class="in" name="description" maxlength="2000"><%= event.description || '' %></textarea></label>
+      <div class="row2">
+        <label class="lbl">Day<input class="in" type="date" name="date" required value="<%= event.date || '' %>"></label>
+        <label class="lbl">Starts<input class="in" type="time" name="start" required value="<%= event.start || '19:00' %>"></label>
+      </div>
+      <div class="row2">
+        <label class="lbl">Ends <span class="help">optional</span><input class="in" type="time" name="end" value="<%= event.end || '' %>"></label>
+        <label class="lbl">Doors <span class="help">optional</span><input class="in" type="time" name="doors" value="<%= event.doors || '' %>"></label>
+      </div>
+      <label class="lbl">Where in the venue <span class="help">optional</span><input class="in" name="location" maxlength="140" value="<%= event.location || '' %>" placeholder="The back room"></label>
+      <label class="lbl">Picture <span class="help">JPEG or PNG, landscape</span><input class="in" type="file" name="image" accept="image/jpeg,image/png"></label>
+    </div>
+  </div>
+  <div class="col">
+    <div class="card pad">
+      <h3>Tickets</h3>
+      <div class="row2">
+        <label class="lbl">Places in all<input class="in" type="number" name="capacity" min="1" max="5000" required value="<%= event.capacity || '' %>"></label>
+        <label class="lbl">Stop selling <span class="help">optional</span><input class="in" type="datetime-local" name="sales_end" value="<%= event.salesEnd || '' %>"></label>
+      </div>
+      <% types.forEach(function (t, i) { %>
+      <fieldset class="card pad type-row">
+        <input type="hidden" name="type_id_<%= i %>" value="<%= t.id || '' %>">
+        <div class="row2">
+          <label class="lbl">Ticket<input class="in" name="type_name_<%= i %>" maxlength="120" value="<%= t.name || '' %>" placeholder="<%= i === 0 ? 'Tasting' : 'Another kind (optional)' %>"></label>
+          <label class="lbl">Price<input class="in" name="type_price_<%= i %>" inputmode="decimal" value="<%= t.price_minor != null ? (t.price_minor / 100).toFixed(2) : '' %>" placeholder="28.00"></label>
+        </div>
+        <div class="row2">
+          <label class="lbl">Includes <span class="help">optional</span><input class="in" name="type_desc_<%= i %>" maxlength="255" value="<%= t.description || '' %>"></label>
+          <label class="lbl">Places of this kind <span class="help">blank: any</span><input class="in" type="number" name="type_cap_<%= i %>" min="1" value="<%= t.capacity || '' %>"></label>
+        </div>
+      </fieldset>
+      <% }) %>
+      <label class="check"><input type="checkbox" name="on_sale" value="1" <%= event.on_sale === 0 ? '' : 'checked' %>> On sale in the shop</label>
+    </div>
+  </div>
+  <div class="actions form-actions">
+    <button class="btn primary" type="submit"><%= event.id ? 'Save' : 'Create the event' %></button>
+    <a class="btn ghost" href="<%= base %>/events">Back</a>
+  </div>
+</form>
+
+<% if (event.id && !event.cancelled_at) { %>
+<form class="card pad" method="post" action="<%= base %>/events/<%= event.id %>/cancel" data-confirm="Cancel <%= event.title %>? It comes off the shop and every ticket not yet used is refunded.">
+  <input type="hidden" name="_csrf" value="<%= session.csrf %>">
+  <h3>Cancel the event</h3>
+  <p class="muted">Takes it off the shop and refunds every ticket that has not been used, straight to the buyer’s card.</p>
+  <div><button class="btn danger" type="submit">Cancel and refund</button></div>
+</form>
+<% } %>
+
+<%- include('_bottom') %>

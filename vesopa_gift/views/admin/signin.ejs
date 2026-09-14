@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in · Vesopa Gift</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="<%= asset('/img/icon.svg') %>" type="image/svg+xml">
+<link rel="stylesheet" href="<%= asset('/css/admin.css') %>">
+</head>
+<body>
+<div class="signin">
+  <div class="form-side">
+    <div class="form-box">
+      <div class="brand">
+        <%- include('_icon', { size: 44 }) %>
+        <div><strong>Vesopa Gift</strong><span class="small muted">Vouchers and tickets</span></div>
+      </div>
+      <div>
+        <h2>Sign in</h2>
+        <p class="muted">Manage your venue’s vouchers, tickets and orders.</p>
+      </div>
+      <% if (error) { %><div class="flash bad" role="alert"><%= error %></div><% } %>
+      <% if (ready) { %>
+      <a class="sso" href="/admin/start">
+        <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><rect width="20" height="20" rx="5" fill="#ffffff"/><g transform="translate(3 5) scale(0.14)"><path fill="#a5c715" d="M0,0 L22.7,0 L50.7,49 L77.3,0 L100,0 L62,70 L40,70 Z"/><path fill="#111111" d="M58.3,35 L81,35 L62,70 L40,70 L50.7,49 Z"/></g></svg>
+        Continue with Vesopa
+      </a>
+      <% } else { %>
+      <div class="flash bad">Sign-in is not set up on this server yet.</div>
+      <% } %>
+      <p class="small muted">Only people who have been given access can sign in. If you should have it, ask whoever runs Vesopa Gift for your venue.</p>
+    </div>
+  </div>
+  <div class="stage" aria-hidden="true">
+    <div class="fan">
+      <img class="a" src="<%= asset('/img/designs/winter.jpg') %>" alt="">
+      <img class="b" src="<%= asset('/img/designs/thanks.jpg') %>" alt="">
+      <img class="c" src="<%= asset('/img/designs/celebrate.jpg') %>" alt="">
+    </div>
+  </div>
+</div>
+</body>
+</html>

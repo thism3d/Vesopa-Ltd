@@ -1,0 +1,32 @@
+<%- include('_top', { nav: 'events' }) %>
+<% var base = '/admin/v/' + venue.office_id; %>
+
+<div class="page-head">
+  <div>
+    <h2>Guest list</h2>
+    <p class="muted"><%= event.title %> · <%= when(event.starts_at) %> · <%= used %> of <%= tickets.length %> in</p>
+  </div>
+  <div class="actions"><a class="btn ghost" href="<%= base %>/events/<%= event.id %>">Back to the event</a></div>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Name</th><th>Ticket</th><th>Code</th><th>Order</th><th class="right">At the door</th></tr></thead>
+      <tbody>
+        <% if (!tickets.length) { %><tr><td colspan="5" class="empty">No tickets sold yet.</td></tr><% } %>
+        <% tickets.forEach(function (t) { %>
+        <tr>
+          <td><%= t.holder_name %><br><span class="small muted"><%= t.buyer_email %></span></td>
+          <td><%= t.type_name %></td>
+          <td class="num"><%= t.code %></td>
+          <td><a class="rowlink num" href="<%= base %>/orders/<%= t.order_id %>"><%= t.ref %></a></td>
+          <td class="right"><% if (t.status === 'used') { %><span class="badge ok">In <%= when(t.checked_in_at, { short: true }).split(', ').pop() %></span><% } else if (t.status === 'void') { %><span class="badge plain">Refunded</span><% } else { %><span class="badge warn">Not yet</span><% } %></td>
+        </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<%- include('_bottom') %>

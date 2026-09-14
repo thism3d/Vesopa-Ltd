@@ -1,0 +1,101 @@
+<%- include('_top', { nav: 'settings' }) %>
+<% var base = '/admin/v/' + venue.office_id; %>
+
+<form class="page-form" method="post" action="<%= base %>/settings">
+<input type="hidden" name="_csrf" value="<%= session.csrf %>">
+
+<div class="page-head">
+  <div>
+    <h2>Settings</h2>
+    <p class="muted">Your shop takes its name, logo and colours from your venue’s branding in the back office.</p>
+  </div>
+  <div class="actions"><button class="btn primary" type="submit">Save changes</button></div>
+</div>
+
+<div class="grid-2e">
+  <div class="col">
+    <div class="card pad">
+      <h3>Amounts</h3>
+      <label class="lbl">Buttons on the shop <span class="help">in pounds, separated by commas</span>
+        <input class="in" name="amounts" value="<%= amounts.map(function (a) { return (a / 100).toFixed(a % 100 ? 2 : 0); }).join(', ') %>" placeholder="25, 50, 75, 100">
+      </label>
+      <label class="check"><input type="checkbox" name="allow_custom" value="1" <%= venue.allow_custom ? 'checked' : '' %>> Let people type their own amount</label>
+      <div class="row2">
+        <label class="lbl">Smallest<input class="in" name="min" inputmode="decimal" value="<%= (venue.min_minor / 100).toFixed(2) %>"></label>
+        <label class="lbl">Largest<input class="in" name="max" inputmode="decimal" value="<%= (venue.max_minor / 100).toFixed(2) %>"></label>
+      </div>
+    </div>
+
+    <div class="card pad">
+      <h3>How long a voucher lasts</h3>
+      <label class="lbl">From the day it is bought
+        <select class="in" name="validity_months">
+          <% [6, 12, 18, 24, 36].forEach(function (m) { %><option value="<%= m %>" <%= venue.validity_months === m ? 'selected' : '' %>><%= m %> months</option><% }) %>
+        </select>
+      </label>
+      <p class="help">Printed on every voucher and in your terms. Ask your accountant before choosing anything shorter than a year.</p>
+    </div>
+
+    <div class="card pad">
+      <h3>Terms</h3>
+      <textarea class="in" name="terms" maxlength="4000" placeholder="Leave empty for the standard wording."><%= venue.terms || '' %></textarea>
+      <p class="help">Shown on the shop and linked from every voucher. Separate paragraphs with a blank line.</p>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="card pad">
+      <h3>Payments</h3>
+      <% if (payments.source === 'venue') { %>
+      <div class="flash ok">Paid straight into your Dojo account<%= payments.hint ? ' ending ' + payments.hint : '' %>.</div>
+      <% } else if (payments.source === 'platform') { %>
+      <div class="flash bad">Using Vesopa’s sandbox key: test payments only, no real money moves. Add your own Dojo key before selling.</div>
+      <% } else { %>
+      <div class="flash bad">No Dojo key yet, so the shop cannot take a card.</div>
+      <% } %>
+      <p class="help">The same key your Vesopa Express kiosks use, set in the back office. Dojo has to switch on online payments for your account before the shop can take a card.</p>
+    </div>
+
+    <div class="card pad">
+      <h3>Delivery</h3>
+      <label class="check"><input type="checkbox" name="allow_schedule" value="1" <%= venue.allow_schedule ? 'checked' : '' %>> Let buyers choose the day it arrives</label>
+      <label class="lbl">As far ahead as
+        <select class="in" name="schedule_max_days">
+          <% [[31, '1 month'], [92, '3 months'], [183, '6 months'], [366, '12 months']].forEach(function (o) { %><option value="<%= o[0] %>" <%= venue.schedule_max_days === o[0] ? 'selected' : '' %>><%= o[1] %></option><% }) %>
+        </select>
+      </label>
+    </div>
+
+    <div class="card pad">
+      <h3>Protection</h3>
+      <p class="help">Stolen cards are used to buy vouchers that are spent within the hour. These slow that down without getting in the way of anyone honest.</p>
+      <div class="row2">
+        <label class="lbl">Largest single order<input class="in" name="max_order" inputmode="decimal" value="<%= (venue.max_order_minor / 100).toFixed(2) %>"></label>
+        <label class="lbl">Orders per email per day<input class="in" type="number" min="1" max="50" name="orders_per_email_day" value="<%= venue.orders_per_email_day %>"></label>
+      </div>
+      <label class="check"><input type="checkbox" name="hold" value="1" <%= venue.hold_over_minor != null ? 'checked' : '' %>> Hold large vouchers before they can be spent</label>
+      <div class="row2">
+        <label class="lbl">Over<input class="in" name="hold_over" inputmode="decimal" value="<%= venue.hold_over_minor != null ? (venue.hold_over_minor / 100).toFixed(2) : '250.00' %>"></label>
+        <label class="lbl">For (hours)<input class="in" type="number" min="1" max="168" name="hold_hours" value="<%= venue.hold_hours %>"></label>
+      </div>
+    </div>
+
+    <div class="card pad">
+      <h3>Emails to you</h3>
+      <label class="lbl">Tell this address about every sale<input class="in" type="email" name="notify_email" maxlength="190" value="<%= venue.notify_email || '' %>"></label>
+      <p class="help">Also the address buyers reach when they reply to a voucher or a receipt.</p>
+    </div>
+
+    <% if (session.isOwner) { %>
+    <div class="card pad">
+      <h3>Shop address</h3>
+      <label class="lbl"><%= shopHost %>/<input class="in" name="slug" maxlength="60" pattern="[a-z0-9](?:[a-z0-9-]*[a-z0-9])?" value="<%= venue.slug %>"></label>
+      <p class="help">Changing it breaks any link already shared. Vouchers already sent keep working.</p>
+    </div>
+    <% } %>
+  </div>
+</div>
+<div class="actions"><button class="btn primary" type="submit">Save changes</button></div>
+</form>
+
+<%- include('_bottom') %>

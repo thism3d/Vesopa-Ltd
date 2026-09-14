@@ -1,0 +1,9 @@
+<%- include('_head') %>
+<main class="narrow">
+  <div class="done-head">
+    <h1 class="serif"><%= heading %></h1>
+    <p class="muted pretty"><%= body %></p>
+    <% if (locals.venue) { %><a class="btn ghost" href="/<%= venue.slug %>">Back to <%= locals.brand ? brand.name : 'the shop' %></a><% } %>
+  </div>
+</main>
+<%- include('_foot') %>

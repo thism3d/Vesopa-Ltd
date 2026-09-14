@@ -1,0 +1,34 @@
+<%- include('_head', { bodyClass: 'sunken-page' }) %>
+
+<main class="narrow">
+  <div class="group">
+    <p class="small muted center">Show these at the door. They work on a phone or on paper.</p>
+  </div>
+  <% tickets.forEach(function (t, i) { %>
+  <div class="group">
+    <div class="ticket<%= t.status !== 'valid' ? ' used' : '' %>">
+      <div class="stub"><%- include('_logo', { size: 's30', brand: brand, initials: initials }) %><span class="serif"><%= brand.name %></span></div>
+      <div class="main">
+        <h1 class="serif"><%= event.title %></h1>
+        <div class="grid">
+          <div><small>Date</small><strong><%= when(event.starts_at, { withTime: false, short: true }) %></strong></div>
+          <div><small><%= event.doors_at ? 'Doors' : 'Starts' %></small><strong><%= when(event.doors_at || event.starts_at).split(', ').pop() %></strong></div>
+          <div><small>Ticket</small><strong><%= (typesById[t.ticket_type_id] || {}).name || 'Ticket' %></strong></div>
+          <div><small>Name</small><strong><%= order.buyer_name %></strong></div>
+        </div>
+      </div>
+      <div class="perf"><i></i></div>
+      <div class="qr">
+        <%- qrs[i] %>
+        <span class="code"><%= t.code %></span>
+        <span class="small muted"><%= t.status === 'used' ? 'Used at the door' : (t.status === 'void' ? 'Refunded' : 'Ticket ' + (i + 1) + ' of ' + tickets.length) %></span>
+      </div>
+    </div>
+  </div>
+  <% }) %>
+  <div class="group">
+    <a class="btn ghost block" href="/t/<%= order.public_id %>/tickets.pdf">Print or save them</a>
+  </div>
+</main>
+
+<%- include('_foot') %>

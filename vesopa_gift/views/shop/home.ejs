@@ -1,0 +1,95 @@
+<%- include('_head') %>
+
+<header class="hero">
+  <% if (brand.hero) { %><img src="<%= brand.hero %>" alt=""><% } %>
+  <div class="hero-body">
+    <%- include('_logo', { size: 's66', brand: brand, initials: initials }) %>
+    <div>
+      <h1><%= brand.name %></h1>
+      <p class="tag"><%= events.length ? 'Gift vouchers and tickets' : 'Gift vouchers' %></p>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="home-grid">
+    <section class="offer">
+      <h2>Give someone a night at <%= brand.name %>.</h2>
+      <p>A voucher for any amount, spent on anything on the menu.<% if (venue.allow_schedule) { %> We email it to them on the day you choose, or you print it and hand it over.<% } else { %> We email it to them, or you print it and hand it over.<% } %></p>
+      <% if (canPay) { %>
+      <a class="btn primary block" href="/<%= venue.slug %>/buy">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="8" width="18" height="13" rx="2"/><path d="M12 8v13M3 12h18M12 8c-1.5-3-5-4-5-1.5S10 8 12 8zM12 8c1.5-3 5-4 5-1.5S14 8 12 8z"/></svg>
+        Buy a gift voucher
+      </a>
+      <% } else { %>
+      <p class="error-box">Vouchers cannot be bought online just now. Ask at the venue.</p>
+      <% } %>
+    </section>
+    <% if (designs.length) { %>
+    <div class="card-slot">
+      <%- include('_card', { image: designUrl(designs[0]), brand: brand, initials: initials, caption: 'Gift voucher', value: money(amounts[1] || amounts[0] || 5000) }) %>
+    </div>
+    <% } %>
+  </div>
+
+  <% if (canPay) { %>
+  <section class="section">
+    <h3>Vouchers</h3>
+    <div class="stack gap-14 cards3">
+      <a class="rowlink" href="/<%= venue.slug %>/buy">
+        <img src="<%= designUrl(designs[2] || designs[0]) %>" alt="">
+        <div class="txt">
+          <span class="t1">Any amount</span>
+          <span class="t2">From <%= money(venue.allow_custom ? venue.min_minor : (amounts[0] || venue.min_minor)) %>. Spend it all at once or bit by bit.</span>
+        </div>
+        <svg class="chev" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#63696F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+      </a>
+      <% products.forEach(function (p) { %>
+      <a class="rowlink" href="/<%= venue.slug %>/buy/<%= p.id %>">
+        <img src="<%= designUrl(p.design || designs[1] || designs[0]) %>" alt="">
+        <div class="txt">
+          <span class="t1"><%= p.name %></span>
+          <% if (p.description) { %><span class="t2"><%= p.description %></span><% } %>
+        </div>
+        <span class="price"><%= money(p.price_minor) %></span>
+      </a>
+      <% }) %>
+    </div>
+  </section>
+  <% } %>
+
+  <% if (events.length) { %>
+  <section class="section events2">
+    <h3>What’s on</h3>
+    <% events.forEach(function (e) { %>
+    <a class="event-card" href="/<%= venue.slug %>/events/<%= e.public_id %>">
+      <% if (e.imageUrl) { %><img src="<%= e.imageUrl %>" alt=""><% } %>
+      <div class="body">
+        <span class="eyebrow"><%= when(e.starts_at, { short: true }) %></span>
+        <span class="t1 serif"><%= e.title %></span>
+        <% if (e.description) { %><span class="small muted"><%= e.description.length > 160 ? e.description.slice(0, 157) + '…' : e.description %></span><% } %>
+        <div class="event-foot">
+          <span class="small"><strong><%= e.fromPrice != null ? 'From ' + money(e.fromPrice) : '' %></strong></span>
+          <% if (e.left <= 0) { %><span class="left">Sold out</span><% } else if (e.left <= 20) { %><span class="left"><%= e.left %> left</span><% } %>
+        </div>
+      </div>
+    </a>
+    <% }) %>
+  </section>
+  <% } %>
+
+  <section class="how">
+    <h3>How it works</h3>
+    <div class="step"><span class="num">1</span><p><strong>Choose and pay.</strong> Pick an amount and a design, and add a message if you like.</p></div>
+    <div class="step"><span class="num">2</span><p><strong>It arrives.</strong> By email<%= venue.allow_schedule ? ' on the day you pick' : '' %>, with a copy to print.</p></div>
+    <div class="step"><span class="num">3</span><p><strong>They spend it here.</strong> Staff scan it at the till, and whatever is left stays on it.</p></div>
+  </section>
+
+  <a class="rowlink section-link" href="/<%= venue.slug %>/balance">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#14161A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+    <div class="txt"><span class="t1">Check a balance</span><span class="t2">See what is left on a voucher.</span></div>
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#63696F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+  </a>
+</main>
+
+<%- include('_foot') %>

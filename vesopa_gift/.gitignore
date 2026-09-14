@@ -1,0 +1,4 @@
+node_modules/
+.env
+# A venue's own pictures live on the server only.
+uploads/

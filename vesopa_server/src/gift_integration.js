@@ -492,7 +492,9 @@ function giftIntegrationRoutes({ pool, broadcast, core }) {
         return res.status(400).json({ error: 'amount_minor must be between 50 and 1000000' });
       }
       const redirect = String(b.redirect_url || '');
-      if (!/^https:\/\//i.test(redirect)) {
+      // https, or this machine for a test run -- never plain http anywhere else,
+      // because the return address carries the buyer's order id.
+      if (!/^https:\/\//i.test(redirect) && !/^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?\//i.test(redirect)) {
         return res.status(400).json({ error: 'redirect_url must be an https address' });
       }
       const pay = await paymentKey(v.contact_email);

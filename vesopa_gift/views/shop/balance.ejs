@@ -1,0 +1,47 @@
+<%- include('_head') %>
+
+<div class="bar"><div class="narrow">
+  <a class="back" href="/<%= venue.slug %>" aria-label="Back to <%= brand.name %>"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#14161A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></a>
+  <%- include('_logo', { size: 's30', brand: brand, initials: initials }) %>
+  <a class="name" href="/<%= venue.slug %>"><%= brand.name %></a>
+</div></div>
+
+<main class="narrow">
+  <form class="form" method="post" action="/<%= venue.slug %>/balance">
+    <div class="group">
+      <h1 class="serif">Check a balance</h1>
+      <p class="small muted">The code is on the voucher, under the QR code.</p>
+    </div>
+    <div class="group">
+      <label class="field-label"><span class="label">Voucher code</span>
+        <input class="input code-input" name="code" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="20" placeholder="XXXX-XXXX-XXXX" value="<%= code || '' %>" required>
+      </label>
+      <button class="btn primary block" type="submit">Check</button>
+    </div>
+  </form>
+
+  <% if (notFound) { %>
+  <div class="group"><div class="error-box" role="alert">That code is not one of <%= brand.name %>’s vouchers. Check it against the voucher and try again.</div></div>
+  <% } %>
+
+  <% if (card) { %>
+  <div class="group">
+    <div class="answer">
+      <div class="top">
+        <span class="eyebrow"><%= card.status === 'active' ? 'Left to spend' : (card.status === 'void' ? 'Cancelled' : 'Spent') %></span>
+        <span class="big"><%= money(card.balance_minor, { always: true }) %></span>
+        <span class="small muted">of <%= money(card.initial_minor, { always: true }) %><%= card.label ? ' · ' + card.label : '' %></span>
+        <div class="meter"><i class="<%= meterClass %>"></i></div>
+      </div>
+      <div class="kv">
+        <% if (card.expires_on) { %><div><span>Valid until</span><span><strong><%= dateLong(card.expires_on) %></strong></span></div><% } %>
+        <% if (card.usable_from && new Date(card.usable_from) > new Date()) { %><div><span>Can be spent from</span><span><%= when(card.usable_from) %></span></div><% } %>
+        <% if (lastUsed) { %><div><span>Last used</span><span><%= when(lastUsed, { withTime: false }) %></span></div><% } %>
+      </div>
+    </div>
+  </div>
+  <p class="small muted pretty group">Only the balance is shown here. Nobody can spend a voucher from this page — it has to be scanned at the till.</p>
+  <% } %>
+</main>
+
+<%- include('_foot') %>

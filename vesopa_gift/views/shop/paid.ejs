@@ -1,0 +1,40 @@
+<%- include('_head') %>
+
+<div class="bar"><div class="narrow">
+  <%- include('_logo', { size: 's30', brand: brand, initials: initials }) %>
+  <a class="name" href="/<%= venue.slug %>"><%= brand.name %></a>
+</div></div>
+
+<main class="narrow">
+  <div class="done-head">
+    <div class="tick"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#1E8A57" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
+    <h1 class="serif">Paid. Thank you, <%= order.buyer_name.split(' ')[0] %>.</h1>
+    <p class="muted pretty"><%- headline %></p>
+  </div>
+
+  <% if (voucherLine) { %>
+  <div class="group">
+    <%- include('_card', { image: designUrl(design), brand: brand, initials: initials, caption: voucherLine.recipient_name ? 'For ' + voucherLine.recipient_name : (voucherLine.kind === 'experience' ? voucherLine.label : 'Gift voucher'), value: money(voucherLine.unit_minor), tilt: true }) %>
+  </div>
+  <% } %>
+
+  <div class="group">
+    <div class="kv">
+      <div><span>Order</span><span><strong><%= ref %></strong></span></div>
+      <% lines.forEach(function (l) { %>
+      <div><span><%= l.kind === 'ticket' ? l.quantity + ' × ' + l.label : (l.kind === 'experience' ? l.label : 'Gift voucher') %></span><span><%= money(l.unit_minor * l.quantity, { always: true }) %></span></div>
+      <% }) %>
+      <% if (voucherLine && voucherLine.send_to === 'recipient') { %><div><span>Sent to</span><span><%= voucherLine.recipient_email %></span></div><% } %>
+      <% if (order.card_last4) { %><div><span>Paid by</span><span><%= order.card_brand || 'Card' %> ending <%= order.card_last4 %></span></div><% } %>
+    </div>
+  </div>
+
+  <div class="group">
+    <% if (ticketsUrl) { %><a class="btn primary block" href="<%= ticketsUrl %>">Open your tickets</a><% } %>
+    <% if (voucherUrl) { %><a class="btn primary block" href="<%= voucherUrl %>">Open the voucher</a><% } %>
+    <p class="small muted pretty">Changed your mind about the day, or spelled the address wrong? Reply to your receipt and <%= brand.name %> will sort it before it goes.</p>
+    <a class="btn ghost block" href="/<%= venue.slug %>">Back to <%= brand.name %></a>
+  </div>
+</main>
+
+<%- include('_foot') %>

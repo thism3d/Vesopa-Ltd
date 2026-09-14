@@ -1,0 +1,5 @@
+<div class="vcard<%= locals.tilt ? ' tilt' : '' %>">
+  <img src="<%= image %>" alt="">
+  <div class="who"><%- include('_logo', { size: '', brand: brand, initials: initials }) %><span><%= brand.name %></span></div>
+  <div class="worth"><small><%= caption %></small><span><%= value %></span></div>
+</div>

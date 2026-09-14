@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d1014">
+<title>Door · <%= event.title %></title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="<%= asset('/img/icon.svg') %>" type="image/svg+xml">
+<link rel="stylesheet" href="<%= asset('/css/admin.css') %>">
+</head>
+<body class="door">
+<div class="door-wrap" data-door="/admin/v/<%= venue.office_id %>/door/<%= event.id %>/scan" data-csrf="<%= session.csrf %>">
+  <div class="door-head">
+    <div class="t"><small>Door · <%= venueName %></small><strong><%= event.title %></strong></div>
+    <div class="door-count"><b data-in><%= used %></b><span>of <%= total %> in</span></div>
+  </div>
+
+  <div class="camera">
+    <video data-video playsinline muted></video>
+    <div class="frame" aria-hidden="true"><i class="tl"></i><i class="tr"></i><i class="bl"></i><i class="br"></i></div>
+    <span class="hint" data-hint>Hold the ticket’s code in the square</span>
+  </div>
+
+  <div class="verdict" data-verdict aria-live="assertive">
+    <div class="mark" data-mark></div>
+    <div class="say"><b data-say>Ready</b><span data-detail>Scan a ticket, or type its code.</span></div>
+  </div>
+  <div class="door-last" data-last hidden></div>
+
+  <form class="door-type" data-type>
+    <input name="code" maxlength="12" placeholder="Type a code" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="Ticket code">
+    <button type="submit">Check</button>
+  </form>
+
+  <div class="door-actions">
+    <button type="button" data-camera>Start the camera</button>
+    <a href="/admin/v/<%= venue.office_id %>/events/<%= event.id %>/guests">Guest list</a>
+  </div>
+</div>
+<script src="<%= asset('/vendor/jsQR.js') %>" defer></script>
+<script src="<%= asset('/js/door.js') %>" defer></script>
+</body>
+</html>

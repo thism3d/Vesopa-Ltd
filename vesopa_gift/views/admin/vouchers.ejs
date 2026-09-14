@@ -1,0 +1,40 @@
+<%- include('_top', { nav: 'vouchers' }) %>
+<% var base = '/admin/v/' + venue.office_id; %>
+
+<div class="page-head">
+  <div>
+    <h2>Vouchers</h2>
+    <p class="muted">Every voucher your shop has sold. The balance is read live from your tills.</p>
+  </div>
+</div>
+
+<div class="toolbar">
+  <form method="get" action="<%= base %>/vouchers">
+    <input class="search" type="search" name="q" value="<%= q %>" placeholder="Code, name or email" aria-label="Find a voucher">
+  </form>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Code</th><th>For</th><th>Bought by</th><th>Sold</th><th class="right">Value</th><th class="right">Left</th><th>Valid to</th></tr></thead>
+      <tbody>
+        <% if (!rows.length) { %><tr><td colspan="7" class="empty"><%= q ? 'Nothing matches that.' : 'No vouchers sold yet.' %></td></tr><% } %>
+        <% rows.forEach(function (r) { %>
+        <tr>
+          <td><a class="rowlink num" href="<%= base %>/orders/<%= r.order_id %>"><%= r.card_code %></a></td>
+          <td><%= r.recipient_name || '—' %><% if (r.kind === 'experience') { %><br><span class="small muted"><%= r.label %></span><% } %></td>
+          <td><%= r.buyer_name %></td>
+          <td><%= when(r.paid_at, { withTime: false, short: true }) %></td>
+          <td class="right num"><%= money(r.unit_minor, { always: true }) %></td>
+          <td class="right num"><% if (r.status === 'void' || r.voided_at) { %><span class="badge plain">Cancelled</span><% } else if (r.balance == null) { %>—<% } else { %><%= money(r.balance, { always: true }) %><% } %></td>
+          <td><%= r.expires_on ? dateLong(r.expires_on) : '—' %></td>
+        </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+</div>
+<% if (rows.length >= 50) { %><p class="help">The 50 most recent are shown. Search to find an older one.</p><% } %>
+
+<%- include('_bottom') %>

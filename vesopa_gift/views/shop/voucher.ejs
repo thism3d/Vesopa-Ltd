@@ -1,0 +1,42 @@
+<%- include('_head') %>
+
+<div class="bar"><div class="narrow">
+  <%- include('_logo', { size: 's30', brand: brand, initials: initials }) %>
+  <a class="name" href="/<%= venue.slug %>"><%= brand.name %></a>
+</div></div>
+
+<main class="narrow">
+  <div class="group">
+    <h1 class="serif"><%= line.recipient_name ? line.recipient_name.split(' ')[0] + ', this is for you.' : 'Your voucher' %></h1>
+    <% if (line.message) { %><p class="serif pretty">“<%= line.message %>” <span class="small muted">— <%= buyerFirst %></span></p><% } %>
+  </div>
+
+  <div class="group">
+    <%- include('_card', { image: designUrl(design), brand: brand, initials: initials, caption: line.kind === 'experience' ? line.label : 'Gift voucher', value: money(line.unit_minor) }) %>
+  </div>
+
+  <% if (state) { %>
+  <div class="group"><div class="error-box"><%= state %></div></div>
+  <% } %>
+
+  <div class="group">
+    <div class="qr-block">
+      <%- qrSvg %>
+      <div class="stack gap-6">
+        <span class="small muted">Voucher code</span>
+        <span class="code"><%= line.card_code %></span>
+        <% if (balance != null) { %><span class="small"><strong><%= money(balance, { always: true }) %></strong> left to spend</span><% } %>
+        <% if (line.expires_on) { %><span class="small muted">Valid until <%= dateLong(line.expires_on) %></span><% } %>
+        <% if (notYet) { %><span class="small left">Can be spent from <%= when(line.usable_from) %></span><% } %>
+      </div>
+    </div>
+  </div>
+
+  <div class="group">
+    <% if (line.wallet_url) { %><a class="btn primary block" href="<%= line.wallet_url %>">Add to Wallet</a><% } %>
+    <a class="btn ghost block" href="/v/<%= line.view_token %>/voucher.pdf">Print or save it</a>
+    <p class="small muted pretty">Show the code or the QR when you pay, at the bar or at your table.<%= line.kind === 'experience' ? '' : ' Spend it all at once or a bit at a time — whatever is left stays on it.' %> Treat it like cash: anybody with the code can spend it.</p>
+  </div>
+</main>
+
+<%- include('_foot') %>

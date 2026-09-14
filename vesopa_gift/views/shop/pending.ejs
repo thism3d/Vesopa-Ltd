@@ -1,0 +1,24 @@
+<%- include('_head') %>
+
+<div class="bar"><div class="narrow">
+  <%- include('_logo', { size: 's30', brand: brand, initials: initials }) %>
+  <a class="name" href="/<%= venue.slug %>"><%= brand.name %></a>
+</div></div>
+
+<main class="narrow" data-pending="/<%= venue.slug %>/paid/<%= order.public_id %>/status.json">
+  <div class="done-head">
+    <% if (gone) { %>
+      <h1 class="serif">This order was not paid for</h1>
+      <p class="muted pretty">Nothing was taken from your card. You can start again whenever you like.</p>
+      <a class="btn primary block" href="/<%= venue.slug %>">Back to <%= brand.name %></a>
+    <% } else { %>
+      <div class="spinner" aria-hidden="true"></div>
+      <h1 class="serif">Checking your payment</h1>
+      <p class="muted pretty" data-pending-text>This usually takes a few seconds. If you closed the payment page before it finished, you can go back to it.</p>
+      <a class="btn primary block" href="/<%= venue.slug %>/pay/<%= order.public_id %>">Go back to the payment</a>
+      <p class="hint">Order <%= ref %> · <%= money(order.total_minor, { always: true }) %></p>
+    <% } %>
+  </div>
+</main>
+
+<%- include('_foot') %>
