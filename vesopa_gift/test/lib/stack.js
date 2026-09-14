@@ -72,7 +72,7 @@ function fakeDojo() {
       const intent = intents.get(m[1]);
       if (!intent) return send(404, { title: 'no such intent' });
       if (req.method === 'GET') {
-        return send(200, { ...intent, paymentDetails: intent.status === 'Captured' ? { card: { cardNumber: '520000******1005', cardName: 'Mastercard' } } : undefined });
+        return send(200, { ...intent, paymentDetails: intent.status === 'Captured' ? { card: { cardNumber: '520000******1005', cardName: 'Test Cardholder', cardType: 'MASTERCARD' } } : undefined });
       }
       if (req.method === 'POST' && m[2]) {
         refunds.push({ id: intent.id, amount: json.amount, key: req.headers.idempotencykey });

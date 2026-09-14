@@ -1,6 +1,27 @@
 # Vesopa Gift — vouchers and tickets, sold online, redeemed at the till
 
-*Plan, 13 September 2026. "Vesopa Gift" is a working name; the owner names it.*
+*Plan, 13 September 2026. The owner took the name "Vesopa Gift" and the domain
+gift.vesopaepos.com.*
+
+## Where it stands — 14 September 2026
+
+| Phase | State |
+| --- | --- |
+| 0 — safe gift cards, issuing API | **Live** in the back office since 13 September. Tills are counted when they call without a token; refusing them waits for the till release. |
+| 1 — the shop | **Live** at https://gift.vesopaepos.com, switched on for the **test venue only** (`/vesopa-kitchen`, Dojo sandbox). No real venue is on. |
+| 3 — tickets and the door | **Live** with Phase 1: events, ticket types, capacity, a phone page at the door that scans QR codes. |
+| 2 — the till | **Not started.** Hold/capture/release/reverse exist on the server; the till does not use them yet. Needs a till release. |
+
+Checked on live with `scripts/verify-live.py` (8 of 8): a voucher bought on the
+real shop and paid on Dojo's sandbox, the card in the live EPOS, three emails,
+£7.50 spent at the till, the balance page, the manager's console reached
+through Continue with Vesopa, a refund of exactly what was left — then every row
+it made removed and checked gone. How it is set up and run: `DEPLOY.md`.
+
+Before the first real venue: the owner switches it on in the console and names
+its manager (after inviting them on the People page); the venue adds its own
+Dojo key in the back office, because the platform key is refused for anything
+but sandbox payments.
 
 ---
 

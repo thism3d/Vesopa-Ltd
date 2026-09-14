@@ -76,6 +76,18 @@ function present(card) {
   };
 }
 
+/** Dojo's scheme ("MASTERCARD", "VISA", "AMERICAN_EXPRESS") as a person writes it. */
+function cardScheme(type) {
+  const t = String(type || '').trim().toUpperCase().replace(/[\s-]+/g, '_');
+  if (!t) return null;
+  const known = {
+    VISA: 'Visa', MASTERCARD: 'Mastercard', MASTER_CARD: 'Mastercard', MAESTRO: 'Maestro',
+    AMEX: 'American Express', AMERICAN_EXPRESS: 'American Express', DINERS: 'Diners Club',
+    DINERS_CLUB: 'Diners Club', DISCOVER: 'Discover', JCB: 'JCB', UNIONPAY: 'UnionPay',
+  };
+  return known[t] || t.charAt(0) + t.slice(1).toLowerCase().replace(/_/g, ' ');
+}
+
 function absolute(url) {
   if (!url) return null;
   const s = String(url);
@@ -536,8 +548,11 @@ function giftIntegrationRoutes({ pool, broadcast, core }) {
           paid: dojo.intentPaid(intent),
           amount_minor: intent.amount ? intent.amount.value : null,
           refunded_minor: intent.refundedAmount != null ? intent.refundedAmount : null,
+          // cardType is the scheme. cardName is the CARDHOLDER'S NAME -- the
+          // first live payment showed "Paid by Test Cardholder ending 1005" --
+          // so it is never read here: nobody's name belongs in a brand column.
           card: {
-            brand: card.cardName || card.scheme || null,
+            brand: cardScheme(card.cardType),
             last4: card.cardNumber ? String(card.cardNumber).slice(-4) : null,
           },
         });

@@ -114,6 +114,9 @@ async function main() {
       assert.ok(card, 'the card was issued');
       assert.strictEqual(card.balance_minor, 5000);
       assert.strictEqual(card.recipient_name, 'Alex Morgan');
+      // Dojo's cardName is the cardholder; the scheme is cardType.
+      assert.ok(r.text.includes('Mastercard ending 1005'), 'the paid page names the card scheme');
+      assert.ok(!r.text.includes('Test Cardholder'), 'the cardholder\'s name is not shown as the card');
     });
 
     await check('the recipient gets the voucher with its PDF, the buyer a receipt, the venue a note', async () => {

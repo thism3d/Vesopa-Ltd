@@ -154,13 +154,28 @@ router.get('/', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// The state is also left in this browser, and the callback must come back to
+// the same one: otherwise a callback link finished by somebody else signs its
+// visitor into that person's account. Lax, because the return from Vesopa
+// Auth is a top-level navigation from another site.
+const STATE_COOKIE = 'vg_state';
+const stateCookie = { httpOnly: true, secure: config.production, sameSite: 'lax', path: '/admin', maxAge: 10 * 60 * 1000 };
+
 router.get('/start', (req, res) => {
   if (!oidc.enabled) return res.redirect(303, '/admin');
-  res.redirect(303, oidc.begin().url);
+  const { url, state } = oidc.begin();
+  res.cookie(STATE_COOKIE, state, stateCookie);
+  res.redirect(303, url);
 });
 
 router.get('/callback', async (req, res) => {
+  const held = req.cookies && req.cookies[STATE_COOKIE];
+  res.clearCookie(STATE_COOKIE, { path: '/admin' });
   try {
+    if (!held || !crypto.timingSafeEqual(
+      crypto.createHash('sha256').update(String(held)).digest(),
+      crypto.createHash('sha256').update(String(req.query.state || '')).digest()
+    )) throw new Error('the sign-in was started in another browser');
     const person = await oidc.complete(req.query);
     if (!person.roles.some((r) => ['owner', 'support', 'venue'].includes(r))) {
       return res.status(403).render('admin/noaccess', {

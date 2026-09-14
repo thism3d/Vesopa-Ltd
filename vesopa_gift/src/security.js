@@ -10,7 +10,8 @@
  * Two outside origins are named, and why:
  *
  *   img-src / font-src   the back office, which serves a venue's own logo,
- *                        photograph and fonts
+ *                        photograph and fonts -- under its own name and as
+ *                        menu.vesopaepos.com (BRAND_ORIGINS)
  *   form-action          pay.dojo.tech, because the buy form's POST answers
  *                        with a redirect to Dojo's checkout page and Chrome
  *                        applies form-action to that redirect too
@@ -21,6 +22,13 @@ const crypto = require('crypto');
 // The back office whose logos, photographs and fonts a shop shows. Staging and a
 // local run point it at their own back office.
 const BACKOFFICE = (process.env.BACKOFFICE_ORIGIN || 'https://backoffice.vesopaepos.com').replace(/\/+$/, '');
+// The same server answers as the menu host too, and the EPOS hands out branding
+// on either name: the test venue's logo and the fallback favicon both came back
+// on menu.vesopaepos.com, and the first live page blocked them.
+const BRAND = [...new Set([
+  BACKOFFICE,
+  ...String(process.env.BRAND_ORIGINS || 'https://menu.vesopaepos.com').split(/\s+/).filter(Boolean),
+])].join(' ');
 
 function headers(req, res, next) {
   const nonce = crypto.randomBytes(16).toString('base64');
@@ -29,8 +37,8 @@ function headers(req, res, next) {
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}'`,
     `style-src 'self' 'nonce-${nonce}'`,
-    `img-src 'self' data: ${BACKOFFICE}`,
-    `font-src 'self' ${BACKOFFICE}`,
+    `img-src 'self' data: ${BRAND}`,
+    `font-src 'self' ${BRAND}`,
     "connect-src 'self'",
     "media-src 'self' blob:",
     `form-action 'self' https://pay.dojo.tech`,

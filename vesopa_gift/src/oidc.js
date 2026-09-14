@@ -3,7 +3,9 @@
  *
  * The same client the back office uses (vesopa_server/src/vesopa_oidc.js) --
  * PKCE, state claimed not read, nonce checked, signature, issuer and audience
- * verified -- plus one thing the back office does not need: the ROLES.
+ * verified -- plus one thing the back office does not need: the ROLES. The
+ * state is also held in the browser that started (admin.js, vg_state), so a
+ * callback only completes where its sign-in began.
  *
  * Auth puts a person's roles in the ACCESS token, not the ID token, so both are
  * verified: the ID token says who they are, the access token says what they may
@@ -61,7 +63,7 @@ function createClient({ issuer, clientId, clientSecret, redirectUri, scope = 'op
       code_challenge: challenge,
       code_challenge_method: 'S256',
     });
-    return { url: `${ISSUER}/oauth/authorize?${params}` };
+    return { url: `${ISSUER}/oauth/authorize?${params}`, state };
   }
 
   async function verify(token, { type, nonce }) {
