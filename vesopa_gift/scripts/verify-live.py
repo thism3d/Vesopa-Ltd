@@ -197,7 +197,7 @@ def main():
     pay_existing = sys.argv[sys.argv.index("--pay") + 1] if "--pay" in sys.argv else None
     started = time.time()
     epos_box = connect()
-    made = {"orders": [], "cards": [], "sessions_after": None, "audit_after": None}
+    made = {"orders": [], "cards": [], "events": [], "sessions_after": None, "audit_after": None}
 
     # ---- Before -------------------------------------------------------------
     venue = gift_sql(epos_box, f"SELECT enabled, slug, IFNULL(notify_email, '') FROM gift_venues WHERE office_id = {OFFICE_ID}")
@@ -347,6 +347,66 @@ const call = (p, body) => fetch('https://backoffice.vesopaepos.com/api/gift-card
                 o = gift_sql(epos_box, f"SELECT refunded_minor FROM gift_orders WHERE id = {oid}")[0][0]
                 need(o == str(LEFT), f"order refunded {o}")
             check(f"a refund from the console pays back only the £{LEFT / 100:.2f} left, and voids the card", refund)
+
+            def tickets():
+                # The manager puts an event on, twelve days out.
+                admin.goto(f"{SHOP}/admin/v/{OFFICE_ID}/events/new", wait_until="load")
+                day = (datetime.date.today() + datetime.timedelta(days=12)).isoformat()
+                admin.fill('input[name="title"]', "Live check tasting")
+                admin.fill('input[name="date"]', day)
+                admin.fill('input[name="start"]', "19:00")
+                admin.fill('input[name="capacity"]', "10")
+                admin.fill('input[name="type_name_0"]', "Tasting")
+                admin.fill('input[name="type_price_0"]', "28.00")
+                admin.locator("form[enctype='multipart/form-data'] button[type='submit']").click()
+                admin.wait_for_url(re.compile(rf"/admin/v/{OFFICE_ID}/events/\d+$"), timeout=30000)
+                eid = int(admin.url.rstrip("/").split("/")[-1])
+                made["events"].append(eid)
+                shot(admin, "12-console-event-1440")
+                public_id = gift_sql(epos_box, f"SELECT public_id FROM gift_events WHERE id = {eid} AND office_id = {OFFICE_ID}")[0][0]
+                type_id = gift_sql(epos_box, f"SELECT id FROM gift_ticket_types WHERE event_id = {eid} ORDER BY sort, id LIMIT 1")[0][0]
+
+                # Two tickets, bought on the shop and paid on Dojo's sandbox.
+                page.goto(f"{SHOP}/{SLUG}/events/{public_id}", wait_until="load")
+                shot(page, "13-event-page-390")
+                page.fill(f'input[name="qty_{type_id}"]', "2")
+                page.fill('input[name="buyer_name"]', "Vesopa Live Check")
+                page.fill('input[name="buyer_email"]', OFFICE)
+                page.locator("form[data-tickets] button[type='submit']").click()
+                pay_on_dojo(page)
+                page.wait_for_url(re.compile(rf"{re.escape(SHOP)}/{SLUG}/paid/"), timeout=90000)
+                page.wait_for_selector("text=Paid.", timeout=90000)
+                shot(page, "14-tickets-paid-390")
+                oid = int(gift_sql(epos_box, f"SELECT DISTINCT o.id FROM gift_orders o JOIN gift_order_lines l ON l.order_id = o.id "
+                                             f"WHERE l.event_id = {eid} AND o.office_id = {OFFICE_ID}")[0][0])
+                if oid not in made["orders"]:
+                    made["orders"].append(oid)
+                o = gift_sql(epos_box, f"SELECT status, total_minor, IF(receipt_sent_at IS NULL, 0, 1) FROM gift_orders WHERE id = {oid}")[0]
+                need(o[0] == "paid" and o[1] == "5600", f"the ticket order is {o}")
+                codes = [r[0] for r in gift_sql(epos_box, f"SELECT code FROM gift_tickets WHERE event_id = {eid} ORDER BY seq")]
+                need(len(codes) == 2, f"{len(codes)} tickets were issued")
+
+                # The door lets the first one in, once.
+                admin.goto(f"{SHOP}/admin/v/{OFFICE_ID}/door/{eid}", wait_until="load")
+                csrf = admin.locator("[data-csrf]").first.get_attribute("data-csrf")
+                scan_url = f"{SHOP}/admin/v/{OFFICE_ID}/door/{eid}/scan"
+                first = admin.request.post(scan_url, data={"code": codes[0]}, headers={"X-CSRF-Token": csrf}).json()
+                need(first.get("ok") is True and first.get("title") == "Let in", f"the door said {first}")
+                again = admin.request.post(scan_url, data={"code": codes[0]}, headers={"X-CSRF-Token": csrf}).json()
+                need(again.get("ok") is False and again.get("title") == "Already in", f"a second scan said {again}")
+                shot(admin, "15-door-1440")
+
+                # Cancelling refunds the ticket nobody used, and only that one.
+                admin.goto(f"{SHOP}/admin/v/{OFFICE_ID}/events/{eid}", wait_until="load")
+                admin.locator(f"form[action$='/events/{eid}/cancel'] button[type='submit']").click()
+                admin.wait_for_load_state("load")
+                admin.wait_for_timeout(1500)
+                shot(admin, "16-event-cancelled-1440")
+                rf = gift_sql(epos_box, f"SELECT amount_minor, status FROM gift_refunds WHERE order_id = {oid}")
+                need(rf == [["2800", "done"]], f"refund rows: {rf}")
+                states = [r[0] for r in gift_sql(epos_box, f"SELECT status FROM gift_tickets WHERE event_id = {eid} ORDER BY seq")]
+                need(states == ["used", "void"], f"tickets are {states}")
+            check("an event: two tickets sold, one let in once, and the other refunded when it is cancelled", tickets)
             desk.close()
         finally:
             # Revoke the minted session whatever happened: fifteen minutes is short,
@@ -372,6 +432,10 @@ const db = require('./src/db');
     else:
         ids = ",".join(str(i) for i in made["orders"]) or "0"
         cards = ",".join(quote(c) for c in made["cards"]) or "''"
+        events = ",".join(str(i) for i in made["events"]) or "0"
+        gift_sql(epos_box, f"DELETE FROM gift_tickets WHERE event_id IN ({events}); "
+                           f"DELETE FROM gift_ticket_types WHERE event_id IN ({events}); "
+                           f"DELETE FROM gift_events WHERE id IN ({events}) AND office_id = {OFFICE_ID};")
         epos_sql(epos_box, f"DELETE FROM epos_gift_card_holds WHERE gift_card_id IN ({cards}); "
                            f"DELETE FROM epos_gift_card_txns WHERE gift_card_id IN ({cards}); "
                            f"DELETE FROM epos_gift_cards WHERE id IN ({cards}) AND office = {quote(OFFICE)};")
@@ -388,7 +452,10 @@ const db = require('./src/db');
                                            f"(SELECT COUNT(*) FROM epos_gift_card_holds WHERE gift_card_id IN ({cards}))")[0][0]
             left_gift = gift_sql(epos_box, f"SELECT (SELECT COUNT(*) FROM gift_orders WHERE id IN ({ids})) + "
                                            f"(SELECT COUNT(*) FROM gift_order_lines WHERE order_id IN ({ids})) + "
-                                           f"(SELECT COUNT(*) FROM gift_refunds WHERE order_id IN ({ids}))")[0][0]
+                                           f"(SELECT COUNT(*) FROM gift_refunds WHERE order_id IN ({ids})) + "
+                                           f"(SELECT COUNT(*) FROM gift_events WHERE id IN ({events})) + "
+                                           f"(SELECT COUNT(*) FROM gift_ticket_types WHERE event_id IN ({events})) + "
+                                           f"(SELECT COUNT(*) FROM gift_tickets WHERE event_id IN ({events}))")[0][0]
             need(left_epos == "0" and left_gift == "0", f"rows left: epos {left_epos}, gift {left_gift}")
         check("everything it made is gone again (checked with SQL)", gone)
 

@@ -65,7 +65,11 @@ python vesopa_gift/scripts/verify-live.py
 
 Test venue only; pays with Dojo's sandbox card after checking the checkout is a
 sandbox one; declines Dojo's optional cookies; mails manager@vesopa.co.uk;
-removes everything it made and proves it with SQL.
+removes everything it made and proves it with SQL. It covers a voucher bought,
+emailed and printed; spent at the till and part refunded there by the sale
+alone; the balance page; the manager's console and a refund from it; and an
+event whose tickets are sold, let in once at the door and refunded when it is
+cancelled. Nine checks, about a minute.
 
 ## The owner's switches, from a shell
 

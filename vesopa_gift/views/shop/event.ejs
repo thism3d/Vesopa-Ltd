@@ -1,8 +1,15 @@
 <%- include('_head') %>
 
-<header class="event-hero">
-  <% if (event.imageUrl) { %><img src="<%= event.imageUrl %>" alt=""><% } %>
-</header>
+<% if (event.imageUrl) { %>
+<header class="event-hero"><img src="<%= event.imageUrl %>" alt=""></header>
+<% } else { %>
+<%# No picture: the venue's slim bar, not 250px of its colour with nothing on it. %>
+<div class="bar"><div class="narrow">
+  <a class="back" href="/<%= venue.slug %>" aria-label="Back to <%= brand.name %>"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#14161A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></a>
+  <%- include('_logo', { size: 's30', brand: brand, initials: initials }) %>
+  <a class="name" href="/<%= venue.slug %>"><%= brand.name %></a>
+</div></div>
+<% } %>
 
 <main class="narrow">
   <div class="group">

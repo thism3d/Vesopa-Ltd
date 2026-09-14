@@ -10,7 +10,7 @@ gift.vesopaepos.com.*
 | 0 — safe gift cards, issuing API | **Live** in the back office since 13 September. Tills are counted when they call without a token; refusing them waits for the till release. |
 | 1 — the shop | **Live** at https://gift.vesopaepos.com, switched on for the **test venue only** (`/vesopa-kitchen`, Dojo sandbox). No real venue is on. |
 | 3 — tickets and the door | **Live** with Phase 1: events, ticket types, capacity, a phone page at the door that scans QR codes. |
-| 2 — the till | **Not started.** Hold/capture/release/reverse exist on the server; the till does not use them yet. Needs a till release. |
+| 2 — the till | **Built into EPOS 1.7.7.0**, staged for the Store and not yet submitted: a gift card is held at tender, spent when the sale is recorded, given back on Undo or an unpaid bill, and put back on the card by a refund off the receipt; every till call carries the till's token; the card shows what it is for and what is free to spend. Not in it: selling a voucher at the till (see below), camera scanning, venues' own domains. |
 
 Checked on live with `scripts/verify-live.py` (8 of 8): a voucher bought on the
 real shop and paid on Dojo's sandbox, the card in the live EPOS, three emails,
@@ -22,6 +22,23 @@ Before the first real venue: the owner switches it on in the console and names
 its manager (after inviting them on the People page); the venue adds its own
 Dojo key in the back office, because the platform key is refused for anything
 but sandbox payments.
+
+Left out of Phase 2 on purpose, each for a reason worth deciding rather than
+guessing:
+
+* **Selling a voucher at the till.** A voucher sold is money owed, not
+  takings, and under the voucher rules it usually carries no VAT until it is
+  spent. How it shows on the Z report and the VAT return is the venue's
+  accountant's call; built without that answer it would put the wrong figure
+  on every Z. Vouchers are sold online, and from the back office meanwhile.
+* **Camera scanning.** The tills are Windows machines, most with no camera
+  facing the counter. A hand scanner reads the QR today, because the QR carries
+  the plain code and the scanner types it into the Gift Card box.
+* **A venue's own domain** (`vouchers.<venue>.co.uk`). The shop already answers
+  for one; each needs a Hestia domain and a certificate on the shared server,
+  which is the owner's to approve per venue.
+* **Refusing tills without a token** (`COMMERCE_REQUIRE_TERMINAL=1`). Only once
+  every till is on 1.7.7.0; until then they are counted, not refused.
 
 ---
 
