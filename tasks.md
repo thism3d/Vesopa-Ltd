@@ -153,7 +153,7 @@ Status values: `Not started`, `In progress`, `Done`, `Blocked`.
 | T25 | Server deploy, migrations, smoke checks, live walk-through | 5 | Done | backup `pre_1.8.0.0_20260915_042610.sql`; 20 files up; every schema file replayed; `/health` ok; `tool/verify-stock-live.js` 50/50, stock 93 → 93, nothing left |
 | T26 | msix build | 5 | Done | `build/store/vesopa-epos-store.msix`, 21,184,728 bytes, manifest 1.8.0.0, built with `--store` |
 | T27 | Store release notes | 5 | Done | `ms-store-submission-client/notes-1.8.0.0-epos.txt`, 1,443 characters, checked |
-| T28 | Stage and commit the submission | 5 | Not started | |
+| T28 | Stage and commit the submission | 5 | Done | submission 1152921505701892633 committed 2026-09-15 05:08, in Certification; publish mode Manual — "Publish now" in Partner Center after it passes |
 
 ## Phase 1 — Server: the stock ledger
 
