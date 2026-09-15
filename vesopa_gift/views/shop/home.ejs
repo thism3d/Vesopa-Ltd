@@ -43,7 +43,7 @@
           <span class="t1">Any amount</span>
           <span class="t2">From <%= money(venue.allow_custom ? venue.min_minor : (amounts[0] || venue.min_minor)) %>. Spend it all at once or bit by bit.</span>
         </div>
-        <svg class="chev" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#63696F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+        <svg class="chev" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
       </a>
       <% products.forEach(function (p) { %>
       <a class="rowlink" href="/<%= venue.slug %>/buy/<%= p.id %>">
@@ -87,9 +87,9 @@
   </section>
 
   <a class="rowlink section-link" href="/<%= venue.slug %>/balance">
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#14161A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
     <div class="txt"><span class="t1">Check a balance</span><span class="t2">See what is left on a voucher.</span></div>
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#63696F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
   </a>
 </main>
 

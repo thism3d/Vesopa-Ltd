@@ -81,7 +81,7 @@
           <span class="t1"><%= l.quantity %> × <%= l.label %></span>
           <span class="t2"><%= l.event ? when(l.event.starts_at) : '' %><% if (l.event && l.event.cancelled_at) { %> · Cancelled<% } %> · <%= l.tickets.filter(function (t) { return t.status === 'used'; }).length %> of <%= l.tickets.length %> used</span>
         </div>
-        <svg class="chev" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#63696F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+        <svg class="chev" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
       </a>
       <% }) %>
     </div>

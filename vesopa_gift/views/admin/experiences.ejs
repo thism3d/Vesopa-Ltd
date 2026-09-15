@@ -4,7 +4,7 @@
 <div class="page-head">
   <div>
     <h2>Experiences</h2>
-    <p class="muted">A voucher for one named thing at a fixed price — Sunday lunch for two, afternoon tea. At the till it shows its name beside the balance, so the right thing gets rung up.</p>
+    <p class="muted">A voucher for one named thing at a fixed price — a set lunch, an afternoon tea, a tasting. At the till it shows its name beside the balance, so the right thing gets rung up.</p>
   </div>
 </div>
 
@@ -32,10 +32,10 @@
   <form class="card pad" method="post" action="<%= base %>/experiences<%= editing ? '/' + editing.id : '' %>">
     <input type="hidden" name="_csrf" value="<%= session.csrf %>">
     <h3><%= editing ? 'Change ' + editing.name : 'Add an experience' %></h3>
-    <label class="lbl">Name<input class="in" name="name" maxlength="120" required value="<%= editing ? editing.name : '' %>" placeholder="Sunday lunch for two"></label>
-    <label class="lbl">What it includes<textarea class="in" name="description" maxlength="500" placeholder="Two courses and a glass of wine each."><%= editing ? editing.description || '' : '' %></textarea></label>
+    <label class="lbl">Name<input class="in" name="name" maxlength="120" required value="<%= editing ? editing.name : '' %>" placeholder="What it is, as the till will show it"></label>
+    <label class="lbl">What it includes<textarea class="in" name="description" maxlength="500" placeholder="What it includes"><%= editing ? editing.description || '' : '' %></textarea></label>
     <div class="row2">
-      <label class="lbl">Price<input class="in" name="price" inputmode="decimal" required value="<%= editing ? (editing.price_minor / 100).toFixed(2) : '' %>" placeholder="48.00"></label>
+      <label class="lbl">Price<input class="in" name="price" inputmode="decimal" required value="<%= editing ? (editing.price_minor / 100).toFixed(2) : '' %>" placeholder="0.00"></label>
       <label class="lbl">Picture
         <select class="in" name="design_id">
           <% designs.forEach(function (d) { %><option value="<%= d.id %>" <%= editing && editing.design_id === d.id ? 'selected' : '' %>><%= d.name %></option><% }) %>

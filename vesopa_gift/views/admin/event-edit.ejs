@@ -20,7 +20,7 @@
   <div class="col">
     <div class="card pad">
       <h3>The event</h3>
-      <label class="lbl">Title<input class="in" name="title" maxlength="140" required value="<%= event.title || '' %>" placeholder="Welsh wine tasting"></label>
+      <label class="lbl">Title<input class="in" name="title" maxlength="140" required value="<%= event.title || '' %>" placeholder="What the event is called"></label>
       <label class="lbl">Description<textarea class="in" name="description" maxlength="2000"><%= event.description || '' %></textarea></label>
       <div class="row2">
         <label class="lbl">Day<input class="in" type="date" name="date" required value="<%= event.date || '' %>"></label>
@@ -30,7 +30,7 @@
         <label class="lbl">Ends <span class="help">optional</span><input class="in" type="time" name="end" value="<%= event.end || '' %>"></label>
         <label class="lbl">Doors <span class="help">optional</span><input class="in" type="time" name="doors" value="<%= event.doors || '' %>"></label>
       </div>
-      <label class="lbl">Where in the venue <span class="help">optional</span><input class="in" name="location" maxlength="140" value="<%= event.location || '' %>" placeholder="The back room"></label>
+      <label class="lbl">Where in the venue <span class="help">optional</span><input class="in" name="location" maxlength="140" value="<%= event.location || '' %>" placeholder="A room, a bar, the garden"></label>
       <label class="lbl">Picture <span class="help">JPEG or PNG, landscape</span><input class="in" type="file" name="image" accept="image/jpeg,image/png"></label>
     </div>
   </div>
@@ -45,8 +45,8 @@
       <fieldset class="card pad type-row">
         <input type="hidden" name="type_id_<%= i %>" value="<%= t.id || '' %>">
         <div class="row2">
-          <label class="lbl">Ticket<input class="in" name="type_name_<%= i %>" maxlength="120" value="<%= t.name || '' %>" placeholder="<%= i === 0 ? 'Tasting' : 'Another kind (optional)' %>"></label>
-          <label class="lbl">Price<input class="in" name="type_price_<%= i %>" inputmode="decimal" value="<%= t.price_minor != null ? (t.price_minor / 100).toFixed(2) : '' %>" placeholder="28.00"></label>
+          <label class="lbl">Ticket<input class="in" name="type_name_<%= i %>" maxlength="120" value="<%= t.name || '' %>" placeholder="<%= i === 0 ? 'Standard' : 'Another kind (optional)' %>"></label>
+          <label class="lbl">Price<input class="in" name="type_price_<%= i %>" inputmode="decimal" value="<%= t.price_minor != null ? (t.price_minor / 100).toFixed(2) : '' %>" placeholder="0.00"></label>
         </div>
         <div class="row2">
           <label class="lbl">Includes <span class="help">optional</span><input class="in" name="type_desc_<%= i %>" maxlength="255" value="<%= t.description || '' %>"></label>

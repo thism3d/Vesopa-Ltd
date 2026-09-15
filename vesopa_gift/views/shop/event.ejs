@@ -5,7 +5,7 @@
 <% } else { %>
 <%# No picture: the venue's slim bar, not 250px of its colour with nothing on it. %>
 <div class="bar"><div class="narrow">
-  <a class="back" href="/<%= venue.slug %>" aria-label="Back to <%= brand.name %>"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#14161A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></a>
+  <a class="back" href="/<%= venue.slug %>" aria-label="Back to <%= brand.name %>"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></a>
   <%- include('_logo', { size: 's30', brand: brand, initials: initials }) %>
   <a class="name" href="/<%= venue.slug %>"><%= brand.name %></a>
 </div></div>
@@ -16,9 +16,9 @@
     <a class="eyebrow" href="/<%= venue.slug %>"><%= brand.name %></a>
     <h1 class="serif"><%= event.title %></h1>
     <div class="facts">
-      <div><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#63696F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></svg><%= when(event.starts_at, { withTime: false }) %></div>
-      <div><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#63696F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><%= when(event.starts_at).split(', ').pop() %><%= event.ends_at ? ' to ' + when(event.ends_at).split(', ').pop() : '' %><%= event.doors_at ? ' · doors at ' + when(event.doors_at).split(', ').pop() : '' %></div>
-      <% if (event.location) { %><div><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#63696F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg><%= event.location %></div><% } %>
+      <div><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></svg><%= when(event.starts_at, { withTime: false }) %></div>
+      <div><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><%= when(event.starts_at).split(', ').pop() %><%= event.ends_at ? ' to ' + when(event.ends_at).split(', ').pop() : '' %><%= event.doors_at ? ' · doors at ' + when(event.doors_at).split(', ').pop() : '' %></div>
+      <% if (event.location) { %><div><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg><%= event.location %></div><% } %>
     </div>
     <% if (event.description) { %><p class="pretty"><%= event.description %></p><% } %>
   </div>
