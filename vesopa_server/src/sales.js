@@ -160,16 +160,51 @@ async function recordSale(conn, order) {
   // 'default' is what a till on an older build sends -- both are already used
   // for the order row above, and stock has to be scoped identically or one
   // venue's sale moves another venue's shelf.
+  //
+  // AND WRITE THE LEDGER
+  //
+  // Since 1.8.0.0 the count is the running balance of epos_stock_movements,
+  // and every stock report reads the movements rather than the number. So a
+  // tracked line leaves one row behind: what went, at what cost, off which
+  // sale, from which till. A retried upload never reaches here -- the order
+  // insert above returned `duplicate` first -- so the ledger cannot be written
+  // twice for one sale.
   const stockOwner = order.email || 'default';
+  const movedAt = order.closed_at ? new Date(order.closed_at) : new Date();
   for (const line of order.lines || []) {
     if (line.is_modifier) continue;
     const qty = Number(line.quantity ?? 1);
     if (!Number.isFinite(qty) || qty <= 0) continue;
+    const [[product]] = await conn.query(
+      `SELECT stock_quantity, cost_price, product_name
+         FROM bo_products
+        WHERE email = ? AND pluid = ?
+        LIMIT 1`,
+      [stockOwner, line.plu_id]
+    );
+    if (!product || product.stock_quantity === null) continue;
     await conn.execute(
       `UPDATE bo_products
           SET stock_quantity = stock_quantity - ?
         WHERE email = ? AND pluid = ? AND stock_quantity IS NOT NULL`,
       [qty, stockOwner, line.plu_id]
+    );
+    await conn.execute(
+      `INSERT INTO epos_stock_movements
+         (id, office, pluid, product_name, kind, quantity, unit_cost_minor,
+          order_id, staff_name, terminal, moved_at)
+       VALUES (UUID(), ?, ?, ?, 'sale', ?, ?, ?, ?, ?, ?)`,
+      [
+        stockOwner,
+        line.plu_id,
+        product.product_name || line.name || null,
+        -qty,
+        Math.round((Number(product.cost_price) || 0) * 100),
+        order.id,
+        order.clerk_name ?? null,
+        order.terminal ?? null,
+        movedAt,
+      ]
     );
   }
 
@@ -177,8 +212,8 @@ async function recordSale(conn, order) {
     await conn.execute(
       `INSERT INTO epos_payments
          (id, order_id, method, amount_minor, cash_breakdown,
-          reference, gratuity_minor, entry_mode)
-       VALUES (UUID(), ?, ?, ?, ?, ?, ?, ?)`,
+          reference, gratuity_minor, entry_mode, cashback_minor)
+       VALUES (UUID(), ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         order.id,
         payment.method,
@@ -197,6 +232,10 @@ async function recordSale(conn, order) {
         // different interchange and different liability from a dipped one, and
         // the card report has to be able to tell them apart.
         payment.entry_mode ?? null,
+        // Cashback handed over with this payment. The card machine has always
+        // reported it and the till has always known it; until 1.8.0.0 nothing
+        // kept it, so the Cashback report had nothing to read.
+        payment.cashback_minor ?? 0,
       ]
     );
   }

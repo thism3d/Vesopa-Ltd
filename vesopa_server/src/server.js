@@ -49,7 +49,8 @@ const { deviceRoutes } = require('./devices');
 const { cardRoutes } = require('./cards');
 const { gymRoutes } = require('./gym');
 const { importRoutes } = require('./imports');
-const { reportRoutes } = require('./reports');
+const { reportRoutes, toPdf } = require('./reports');
+const { stockRoutes } = require('./stock');
 const {
   reportScheduleRoutes,
   startScheduler,
@@ -411,6 +412,74 @@ if (VESOPA_TILL_LIVE) {
 
 app.use('/api', reportRoutes({ pool, secret: JWT_SECRET }));
 app.use('/api', reportScheduleRoutes({ pool, secret: JWT_SECRET }));
+
+/**
+ * Stock control: suppliers, pack sizes, the ledger and its documents. The
+ * till's wastage key posts through `stock.wastageFromTill` below so a wastage
+ * rung at the counter and one typed in the back office are the same document.
+ */
+const stock = stockRoutes({ pool, broadcast, secret: JWT_SECRET, toPdf });
+app.use('/api', stock);
+
+/**
+ * What the till does that is not a sale: a refund, a no-sale, an expense paid
+ * out of the drawer, cashback given. The till has kept these for its own Z
+ * report since 1.6 and never sent them; since 1.8.0.0 the outbox posts each
+ * one here so the back office can report on them. Idempotent on the id, and
+ * a trainee's are dropped, exactly like a void.
+ */
+app.post('/till/events', async (req, res, next) => {
+  const ev = req.body;
+  if (!ev || !ev.id || !ev.kind) {
+    return res.status(400).json({ error: 'id and kind are required' });
+  }
+  if (!['refund', 'no_sale', 'expense', 'cashback'].includes(ev.kind)) {
+    return res.status(400).json({ error: 'That is not a kind of till event.' });
+  }
+  try {
+    if (await training.isTrainingSale(pool, ev.office, ev)) {
+      return res.status(200).json(training.IGNORED);
+    }
+    await pool.execute(
+      `INSERT IGNORE INTO epos_till_events
+         (id, office, kind, amount_minor, note, reason, staff_name, terminal,
+          session_id, order_id, at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        ev.id,
+        ev.office || 'default',
+        ev.kind,
+        Math.abs(Number(ev.amount_minor) || 0),
+        ev.note ?? null,
+        ev.reason ?? null,
+        ev.staff_name ?? null,
+        ev.terminal ?? null,
+        ev.session_id ?? null,
+        ev.order_id ?? null,
+        ev.at ? new Date(ev.at) : new Date(),
+      ]
+    );
+    res.status(201).json({ ok: true });
+  } catch (e) {
+    next(e);
+  }
+});
+
+/** Wastage rung on the till: a completed one-line wastage document. */
+app.post('/till/wastage', async (req, res, next) => {
+  const w = req.body;
+  if (!w || !w.id) return res.status(400).json({ error: 'id is required' });
+  try {
+    if (await training.isTrainingSale(pool, w.office, w)) {
+      return res.status(200).json(training.IGNORED);
+    }
+    const result = await stock.wastageFromTill(w.office || 'default', w);
+    res.status(201).json(result);
+  } catch (e) {
+    if (e.status === 400) return res.status(400).json({ error: e.message });
+    next(e);
+  }
+});
 
 /**
  * Google Wallet passes.

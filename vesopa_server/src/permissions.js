@@ -105,6 +105,13 @@ const BACKOFFICE_PERMISSIONS = [
       { key: 'reports.discounts', label: 'Discount Report' },
       { key: 'reports.loyalty_spending', label: 'Customer Loyalty Spending' },
       { key: 'reports.voids', label: 'Voids & Cancels Report' },
+      // One key per report GROUP from 1.8.0.0, not one per report: the
+      // catalogue grew from five reports to thirty, and thirty switches is a
+      // page nobody reads. The five above stay so existing roles keep working.
+      { key: 'reports.sales', label: 'Sales & finance reports' },
+      { key: 'reports.stock', label: 'Stock reports' },
+      { key: 'reports.staff', label: 'Staff reports' },
+      { key: 'reports.customers', label: 'Customer reports' },
       { key: 'reports.sales_explorer', label: 'Sales Explorer' },
       { key: 'reports.till_report', label: 'Till Report' },
       { key: 'reports.bill_report', label: 'Bill Report' },
@@ -120,6 +127,17 @@ const BACKOFFICE_PERMISSIONS = [
       { key: 'catalogue.products', label: 'Products' },
       { key: 'catalogue.stock', label: 'Stock' },
       { key: 'catalogue.edit', label: 'Change the catalogue' },
+    ],
+  },
+  {
+    group: 'Stock Control',
+    keys: [
+      { key: 'stock.levels', label: 'Stock Levels' },
+      { key: 'stock.suppliers', label: 'Suppliers' },
+      { key: 'stock.pack_sizes', label: 'Pack Sizes' },
+      { key: 'stock.docs', label: 'Wastage, adjustments, stock takes and spot checks' },
+      { key: 'stock.orders', label: 'Orders & Deliveries' },
+      { key: 'stock.edit', label: 'Record and change stock' },
     ],
   },
   {
@@ -213,6 +231,10 @@ const STANDARD_ROLES = [
       'reports.discounts',
       'reports.loyalty_spending',
       'reports.voids',
+      'reports.sales',
+      'reports.stock',
+      'reports.staff',
+      'reports.customers',
       'reports.sales_explorer',
       'reports.till_report',
       'reports.bill_report',
