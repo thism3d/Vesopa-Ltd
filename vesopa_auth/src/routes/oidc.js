@@ -265,8 +265,16 @@ router.get('/oauth/authorize', async (req, res, next) => {
      * which, and is not asked again. Every prompt is stripped from the return
      * address, or the chooser and this handler bounce off each other for ever.
      */
+    /*
+     * `chosen=1` on the way back is what stops the loop: the chooser (or the
+     * sign-in page) sends the person here again with the same two accounts in
+     * the browser, and without it this handler would ask a second time, and a
+     * third, for ever. Once they have chosen, the active session is the answer.
+     */
+    const chosen = String(req.query.chosen || '') === '1';
     const plain = new URLSearchParams(req.query);
     plain.delete('prompt');
+    plain.set('chosen', '1');
     const back = `/oauth/authorize?${plain.toString()}`;
     const toChooser = () => res.redirect(303, `/account/choose?return_to=${encodeURIComponent(back)}`);
     const hint = /^[^\s@]{1,120}@[^\s@]{1,120}$/.test(String(req.query.login_hint || ''))
@@ -308,7 +316,7 @@ router.get('/oauth/authorize', async (req, res, next) => {
       return res.redirect(303, `/login?return_to=${encodeURIComponent(back)}`);
     }
 
-    if (!hint && roster.length > 1 && prompt !== 'none') {
+    if (!hint && !chosen && roster.length > 1 && prompt !== 'none') {
       return toChooser();
     }
 

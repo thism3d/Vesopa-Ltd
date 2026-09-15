@@ -54,7 +54,10 @@ function safeReturnTo(value) {
   // `//evil.example` and `/\evil.example` are both read as protocol-relative
   // URLs by browsers, and both leave this site.
   if (raw.startsWith('//') || raw.startsWith('/\\')) return '';
-  return raw.slice(0, 500);
+  // An authorize request -- client, redirect, scope, state, nonce, PKCE, a
+  // login_hint -- runs past 500 characters for the menu. Cut short, it comes
+  // back missing its last parameter and the sign-in fails at the end.
+  return raw.slice(0, 2048);
 }
 
 router.get('/', (req, res) => {
