@@ -27,10 +27,17 @@
 const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 function salesBuilders({ col, section, money, grouped, sqlDateTime, UNKNOWN_TERMINAL, taxWithin, totalOf }) {
-  /** The window clause every query starts from, on the order alias `o`. */
-  function windowOf({ office, from, to, terminal, alias = 'o', column = 'closed_at', owner = 'email' }) {
-    const params = [office, sqlDateTime(from), sqlDateTime(to)];
-    let where = `${alias}.${owner} = ? AND ${alias}.${column} BETWEEN ? AND ?`;
+  /**
+   * The window clause every query starts from: the dates, and the terminal
+   * when one is asked for. NOT the office. Every query below writes its own
+   * `o.email = ?` (or `e.office = ?`) as the first thing in its WHERE and
+   * binds the office as its first parameter, so the scoping is there to read
+   * in the statement itself -- which is what the tenancy sweep in
+   * test/tenancy.test.js checks for, and it cannot see through a helper.
+   */
+  function windowOf({ from, to, terminal, alias = 'o', column = 'closed_at' }) {
+    const params = [sqlDateTime(from), sqlDateTime(to)];
+    let where = `${alias}.${column} BETWEEN ? AND ?`;
     if (terminal === UNKNOWN_TERMINAL) {
       where += ` AND (${alias}.terminal IS NULL OR ${alias}.terminal = '')`;
     } else if (terminal) {
@@ -82,9 +89,9 @@ function salesBuilders({ col, section, money, grouped, sqlDateTime, UNKNOWN_TERM
          FROM epos_order_lines l
          JOIN epos_orders o ON o.id = l.order_id
          LEFT JOIN bo_products p ON p.pluid = l.plu_id AND p.email = o.email
-        WHERE ${where}${extra}
+        WHERE o.email = ? AND ${where}${extra}
           AND COALESCE(l.is_modifier, 0) = 0`,
-      params
+      [office, ...params]
     );
     return rows.map((r) => {
       const qty = Number(r.quantity) || 0;
@@ -209,10 +216,10 @@ function salesBuilders({ col, section, money, grouped, sqlDateTime, UNKNOWN_TERM
               COALESCE(SUM(pay.cashback_minor), 0) AS cashback_minor
          FROM epos_payments pay
          JOIN epos_orders o ON o.id = pay.order_id
-        WHERE ${where}
+        WHERE o.email = ? AND ${where}
         GROUP BY pay.method
         ORDER BY pay.method`,
-      params
+      [args.office, ...params]
     );
     return {
       ...head('payment_types', 'Payment Type Transactions', args.office, args.siteName, args.from, args.to),
@@ -379,27 +386,27 @@ function salesBuilders({ col, section, money, grouped, sqlDateTime, UNKNOWN_TERM
     const [payments] = await pool.query(
       `SELECT pay.method AS name, o.closed_at AS at, pay.amount_minor AS minor
          FROM epos_payments pay JOIN epos_orders o ON o.id = pay.order_id
-        WHERE ${where}`,
-      params
+        WHERE o.email = ? AND ${where}`,
+      [office, ...params]
     );
     const [general] = await pool.query(
       `SELECT o.closed_at AS at, o.gratuity_minor, o.service_minor, o.voucher_minor,
               o.points_value_minor, o.promo_minor, o.discount_minor
-         FROM epos_orders o WHERE ${where}`,
-      params
+         FROM epos_orders o WHERE o.email = ? AND ${where}`,
+      [office, ...params]
     );
-    const ev = windowOf({ ...args, alias: 'e', column: 'at', owner: 'office' });
+    const ev = windowOf({ ...args, alias: 'e', column: 'at' });
     const [events] = await pool
       .query(
-        `SELECT e.kind, e.note, e.at, e.amount_minor FROM epos_till_events e WHERE ${ev.where}`,
-        ev.params
+        `SELECT e.kind, e.note, e.at, e.amount_minor FROM epos_till_events e WHERE e.office = ? AND ${ev.where}`,
+        [office, ...ev.params]
       )
       .catch(() => [[]]);
     const [cashback] = await pool.query(
       `SELECT o.closed_at AS at, pay.cashback_minor AS minor
          FROM epos_payments pay JOIN epos_orders o ON o.id = pay.order_id
-        WHERE ${where} AND pay.cashback_minor > 0`,
-      params
+        WHERE o.email = ? AND ${where} AND pay.cashback_minor > 0`,
+      [office, ...params]
     );
 
     const generalItems = [];
@@ -457,8 +464,8 @@ function salesBuilders({ col, section, money, grouped, sqlDateTime, UNKNOWN_TERM
   async function coversReport(args) {
     const { where, params } = windowOf(args);
     const [orders] = await args.pool.query(
-      `SELECT o.id, o.closed_at, o.covers, o.total_minor, o.room_id FROM epos_orders o WHERE ${where}`,
-      params
+      `SELECT o.id, o.closed_at, o.covers, o.total_minor, o.room_id FROM epos_orders o WHERE o.email = ? AND ${where}`,
+      [args.office, ...params]
     );
     const rooms = await roomsOf(args.pool, args.office);
     const summarise = (keyOf) => {
@@ -664,10 +671,10 @@ function salesBuilders({ col, section, money, grouped, sqlDateTime, UNKNOWN_TERM
               COALESCE(SUM(o.gratuity_minor), 0) AS total_minor,
               COALESCE(SUM(o.total_minor), 0) AS sales_minor
          FROM epos_orders o
-        WHERE ${where}
+        WHERE o.email = ? AND ${where}
         GROUP BY name
         ORDER BY name`,
-      params
+      [args.office, ...params]
     );
     return {
       ...head('clerk_gratuities', 'Clerk Gratuities', args.office, args.siteName, args.from, args.to),
@@ -695,9 +702,9 @@ function salesBuilders({ col, section, money, grouped, sqlDateTime, UNKNOWN_TERM
               o.id AS order_id, o.closed_at, o.terminal, o.clerk_name, o.table_number
          FROM epos_payments pay
          JOIN epos_orders o ON o.id = pay.order_id
-        WHERE ${where}
+        WHERE o.email = ? AND ${where}
         ORDER BY pay.method, o.closed_at`,
-      params
+      [args.office, ...params]
     );
     const byMethod = new Map();
     for (const r of rows) {
@@ -729,9 +736,9 @@ function salesBuilders({ col, section, money, grouped, sqlDateTime, UNKNOWN_TERM
                  FROM epos_payments pay WHERE pay.order_id = o.id) AS methods,
               (SELECT COUNT(*) FROM epos_order_lines l WHERE l.order_id = o.id AND COALESCE(l.is_modifier, 0) = 0) AS items
          FROM epos_orders o
-        WHERE ${where}
+        WHERE o.email = ? AND ${where}
         ORDER BY o.closed_at`,
-      params
+      [args.office, ...params]
     );
     return {
       ...head('transaction_detail', 'Transaction Detail', args.office, args.siteName, args.from, args.to),
@@ -801,14 +808,14 @@ function salesBuilders({ col, section, money, grouped, sqlDateTime, UNKNOWN_TERM
   // -------------------------------------------------------------------------
 
   async function tillEvents(args, kind) {
-    const { where, params } = windowOf({ ...args, alias: 'e', column: 'at', owner: 'office' });
+    const { where, params } = windowOf({ ...args, alias: 'e', column: 'at' });
     const [rows] = await args.pool
       .query(
         `SELECT e.at, e.amount_minor, e.note, e.reason, e.staff_name, e.terminal, e.order_id
            FROM epos_till_events e
-          WHERE ${where} AND e.kind = ?
+          WHERE e.office = ? AND ${where} AND e.kind = ?
           ORDER BY e.at`,
-        [...params, kind]
+        [args.office, ...params, kind]
       )
       .catch(() => [[]]);
     return rows;
@@ -853,9 +860,9 @@ function salesBuilders({ col, section, money, grouped, sqlDateTime, UNKNOWN_TERM
       `SELECT o.closed_at AS at, pay.cashback_minor AS amount_minor, o.clerk_name AS staff_name,
               o.terminal, o.id AS order_id
          FROM epos_payments pay JOIN epos_orders o ON o.id = pay.order_id
-        WHERE ${where} AND pay.cashback_minor > 0
+        WHERE o.email = ? AND ${where} AND pay.cashback_minor > 0
         ORDER BY o.closed_at`,
-      params
+      [args.office, ...params]
     );
     const events = await tillEvents(args, 'cashback');
     const rows = [...onCard, ...events]

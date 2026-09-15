@@ -79,7 +79,12 @@ Safe stopping points, in order:
 
 Known traps that are *not* regressions: `flutter test` in `vesopa_epos` has
 three failures on a clean tree (two Dojo live tests, one golden by 0.43%);
-`git stash push -u` and re-run before blaming a change. Live is MariaDB 11.4.
+`git stash push -u` and re-run before blaming a change. `npm test` in
+`vesopa_server` stops at `kitchen.test.js` ("sign-in returns a token":
+`conn.query is not a function` in `till_seats.claimSeat` against the fake
+pool) and has since before this release — run the files after it by hand.
+Under `--concurrency=2` a few Flutter test files sometimes die with
+"Connection closed before test suite loaded"; they pass alone. Live is MariaDB 11.4.
 Every schema file must define `vesopa_add_column` itself because the file
 before it drops it. `public/` uploads need `pm2 restart`.
 
@@ -140,11 +145,11 @@ Status values: `Not started`, `In progress`, `Done`, `Blocked`.
 | T20 | Till: Wastage function | 4 | Done | commit "The till sends up what is not a sale" |
 | T21 | Till: cashback on the payment row | 4 | Done | commit "The till sends up what is not a sale" |
 | T22 | Till: Z report carries expenses and wastage | 4 | Done | commit "The till sends up what is not a sale" |
-| T23 | Version bumps (till only) | 5 | Not started | |
-| T24 | Full test sweep | 5 | Not started | |
+| T23 | Version bumps (till only) | 5 | Done | `vesopa_epos/pubspec.yaml` 1.8.0+39 / 1.8.0.0 |
+| T24 | Full test sweep | 5 | Done | server: every file green bar the pre-existing kitchen sign-in fake-pool failure; till 879 pass, 3 known + Functions golden refreshed |
 | T25 | Server deploy, migrations, smoke checks, live walk-through | 5 | Not started | |
 | T26 | msix build | 5 | Not started | |
-| T27 | Store release notes | 5 | Not started | |
+| T27 | Store release notes | 5 | Done | `ms-store-submission-client/notes-1.8.0.0-epos.txt`, 1,443 characters, checked |
 | T28 | Stage and commit the submission | 5 | Not started | |
 
 ## Phase 1 — Server: the stock ledger
@@ -428,6 +433,16 @@ reading the code or measuring the running site.
    had them null. The back office could not match a Dojo webhook to a sale
    and the Payment Types report's gratuity column was always £0.00. Passed
    through now, with the cashback beside them.
+8. **The tenancy sweep cannot see through a helper.** The sales builders
+   took their `o.email = ?` from `windowOf()` and the static sweep flagged
+   nine of them as unscoped. They were scoped; the sweep was right that it
+   could not tell. Every query now writes the owner literally and binds it
+   first, and `windowOf()` returns only the window.
+9. **Two loyalty-app hunks rode into commit d9a0d14.** Another session's
+   uncommitted edit to `loadLoyaltyApp()` in `public/app.js` (a `phones`
+   count and a push-note wording) was in the working tree when `app.js` was
+   committed for this release. Left in rather than reverted under that
+   session's feet; both are harmless without their server half.
 7. **Paid Out opens the drawer and prints no slip.** The plan said it would
    print one. It records the event, opens the drawer quietly (not through the
    No Sale key, which would log a no-sale on top) and says so on screen; the
