@@ -36,6 +36,9 @@ const config = {
   AUTH_ISSUER: trimSlash(process.env.VESOPA_AUTH_ISSUER || 'https://auth.vesopa.com'),
   AUTH_CLIENT_ID: process.env.VESOPA_AUTH_CLIENT_ID || '',
   AUTH_CLIENT_SECRET: process.env.VESOPA_AUTH_CLIENT_SECRET || '',
+  // The shop's own client, for buyers: open to anyone with a Vesopa account.
+  SHOP_CLIENT_ID: process.env.VESOPA_AUTH_SHOP_CLIENT_ID || '',
+  SHOP_CLIENT_SECRET: process.env.VESOPA_AUTH_SHOP_CLIENT_SECRET || '',
 
   // Signs nothing a browser could forge: sessions are random tokens held in the
   // database. This keys the few HMACs that are carried in URLs.

@@ -1,0 +1,93 @@
+<%- include('_head') %>
+<% var sent = locals.query && locals.query.sent; %>
+
+<div class="bar"><div class="wrap">
+  <span class="vg-mark" aria-hidden="true"><svg width="20" height="14" viewBox="0 0 100 70"><path fill="#a5c715" d="M0,0 L22.7,0 L50.7,49 L77.3,0 L100,0 L62,70 L40,70 Z"/><path fill="#111111" d="M58.3,35 L81,35 L62,70 L40,70 L50.7,49 Z"/></svg></span>
+  <span class="name">Vesopa Gift</span>
+  <form class="bar-right" method="post" action="/account/signout"><input type="hidden" name="_csrf" value="<%= csrf %>">
+    <span class="small muted"><%= account.name %></span>
+    <button class="btn ghost small" type="submit">Sign out</button>
+  </form>
+</div></div>
+
+<main class="wrap acct">
+  <div class="acct-head">
+    <h1 class="serif">Hello, <%= account.first %></h1>
+    <p class="muted">Vouchers and tickets bought with, or sent to, <strong><%= account.email %></strong>.</p>
+  </div>
+
+  <% if (locals.flash) { %><div class="group"><div class="<%= flash.ok ? 'ok-box' : 'error-box' %>" role="status"><%= flash.text %></div></div><% } %>
+
+  <% if (!groups.length) { %>
+  <div class="empty-state">
+    <svg width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="8" width="18" height="13" rx="2"/><path d="M12 8v13M3 12h18M12 8c-1.5-3-5-4-5-1.5S10 8 12 8zM12 8c1.5-3 5-4 5-1.5S14 8 12 8z"/></svg>
+    <h2 class="serif">Nothing here yet</h2>
+    <p class="muted pretty">When somebody sends a voucher to <%= account.email %>, or you buy one while signed in, it will be here.</p>
+  </div>
+  <% } %>
+
+  <% groups.forEach(function (g) { %>
+  <section class="acct-venue">
+    <div class="acct-venue-head">
+      <% if (g.brand.logo) { %><span class="logo s44"><img src="<%= g.brand.logo %>" alt=""></span><% } %>
+      <div>
+        <h2 class="serif"><%= g.brand.name %></h2>
+        <% if (g.venue.enabled) { %><a class="small" href="/<%= g.venue.slug %>">Buy another</a><% } %>
+      </div>
+    </div>
+
+    <% if (g.vouchers.length) { %>
+    <div class="acct-grid">
+      <% g.vouchers.forEach(function (l) { %>
+      <article class="acct-card <%= l.voided_at || l.cardStatus === 'void' ? 'off' : '' %>">
+        <a class="acct-art-link" href="<%= l.view_token ? '/v/' + l.view_token : '#' %>">
+          <img src="<%= designUrl(l.design) %>" alt="">
+          <span class="acct-worth"><small><%= l.kind === 'experience' ? l.label : 'Gift voucher' %></small><b><%= money(l.unit_minor) %></b></span>
+        </a>
+        <div class="acct-body">
+          <div class="acct-row">
+            <span class="t1">
+              <% if (l.voided_at || l.cardStatus === 'void') { %>Cancelled<% }
+                 else if (!l.delivered_at && l.deliver_at) { %>Arrives <%= dateLong(l.deliver_at) %><% }
+                 else if (l.cardStatus === 'redeemed' || l.balance === 0) { %>All spent<% }
+                 else if (l.balance != null) { %><%= money(l.balance) %> left<% }
+                 else { %>Balance unavailable<% } %>
+            </span>
+            <span class="small muted"><%= l.mine === 'given' ? 'From ' + l.buyer_name : (l.recipient_name && l.recipient_email !== account.email ? 'For ' + l.recipient_name : 'For you') %></span>
+          </div>
+          <div class="acct-meta small muted">
+            <span><%= l.ref %> · <%= dateLong(l.paid_at) %></span>
+            <% if (l.expires_on) { %><span>Valid to <%= dateLong(l.expires_on) %></span><% } %>
+          </div>
+          <% if (l.card_code && !l.voided_at) { %>
+          <div class="acct-actions">
+            <% if (l.view_token) { %><a class="btn primary small" href="/v/<%= l.view_token %>">Open</a><% } %>
+            <% if (l.wallet_url) { %><a class="btn ghost small" href="<%= l.wallet_url %>">Add to Wallet</a><% } %>
+            <form method="post" action="/account/lines/<%= l.id %>/resend"><input type="hidden" name="_csrf" value="<%= csrf %>"><button class="btn ghost small" type="submit">Email me a copy</button></form>
+          </div>
+          <% } %>
+        </div>
+      </article>
+      <% }) %>
+    </div>
+    <% } %>
+
+    <% if (g.tickets.length) { %>
+    <h3 class="acct-sub">Tickets</h3>
+    <div class="stack gap-14">
+      <% g.tickets.forEach(function (l) { %>
+      <a class="rowlink" href="/t/<%= l.public_id %>">
+        <div class="txt">
+          <span class="t1"><%= l.quantity %> × <%= l.label %></span>
+          <span class="t2"><%= l.event ? when(l.event.starts_at) : '' %><% if (l.event && l.event.cancelled_at) { %> · Cancelled<% } %> · <%= l.tickets.filter(function (t) { return t.status === 'used'; }).length %> of <%= l.tickets.length %> used</span>
+        </div>
+        <svg class="chev" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#63696F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+      </a>
+      <% }) %>
+    </div>
+    <% } %>
+  </section>
+  <% }) %>
+</main>
+
+<%- include('_foot') %>

@@ -262,6 +262,23 @@ CREATE TABLE IF NOT EXISTS gift_sessions (
   KEY idx_gift_session_expiry (expires_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+-- A buyer signed in to the shop with their Vesopa account, to see what they
+-- have bought and been given. The same shape as the console's sessions, in a
+-- table of its own: a customer's cookie must never be mistaken for a staff one.
+CREATE TABLE IF NOT EXISTS gift_customer_sessions (
+  id          CHAR(64)     NOT NULL PRIMARY KEY,
+  sub         VARCHAR(80)  NOT NULL,
+  email       VARCHAR(190) NOT NULL,
+  name        VARCHAR(120) NULL,
+  csrf        CHAR(32)     NOT NULL,
+  ip          VARCHAR(45)  NULL,
+  created_at  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  expires_at  DATETIME     NOT NULL,
+  revoked_at  DATETIME     NULL,
+  KEY idx_gift_customer_session_expiry (expires_at),
+  KEY idx_gift_customer_session_sub (sub)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
 CREATE TABLE IF NOT EXISTS gift_audit (
   id         INT          NOT NULL AUTO_INCREMENT PRIMARY KEY,
   at         TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -295,5 +312,10 @@ DELIMITER ;
 -- The banner across the top of a venue's shop: a file under uploads/<office_id>/,
 -- or NULL for the back office's own banner, or Vesopa's default when there is none.
 CALL vesopa_add_column('gift_venues', 'hero_image', 'VARCHAR(120) NULL AFTER custom_domain');
+-- The Vesopa account that placed the order, when the buyer was signed in.
+CALL vesopa_add_column('gift_orders', 'account_sub', 'VARCHAR(80) NULL AFTER ip');
+-- Reminders sent once: a voucher's expiry warning, an event's day-before note.
+CALL vesopa_add_column('gift_order_lines', 'expiry_warned_at', 'DATETIME NULL');
+CALL vesopa_add_column('gift_orders', 'reminded_at', 'DATETIME NULL');
 
 DROP PROCEDURE IF EXISTS vesopa_add_column;

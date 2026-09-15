@@ -83,6 +83,12 @@ CALL vesopa_add_column('epos_gift_cards', 'label', 'VARCHAR(120) NULL');
 -- Not spendable before this moment. NULL means now.
 CALL vesopa_add_column('epos_gift_cards', 'usable_from', 'DATETIME NULL');
 
+-- The voucher's own picture, as the band across its Wallet pass: the shop sends
+-- the design the buyer chose, at Apple's two sizes, and it lands in
+-- public/uploads like a venue's own upload would. NULL falls back to the
+-- venue's gift-card programme, then its branding.
+CALL vesopa_add_column('epos_gift_cards', 'art_strip_url', 'VARCHAR(500) NULL');
+
 CALL vesopa_add_index(
   'epos_gift_cards', 'uq_gift_external',
   'UNIQUE KEY `uq_gift_external` (office, external_ref)'

@@ -126,6 +126,9 @@ router.get('/:slug', withVenue, async (req, res, next) => {
 
 async function buyPage(req, res, { product, values = {}, error = null, field = null, status = 200 }) {
   const venue = req.venue;
+  if (req.account) {
+    values = { buyer_name: req.account.name, buyer_email: req.account.email, ...values };
+  }
   const designs = await venues.designs(venue.office_id);
   const productDesign = product
     ? (designs.find((d) => d.id === product.design_id) || designs[0] || null)
@@ -179,6 +182,7 @@ async function buy(req, res, next) {
       venue, amounts: venues.amountsOf(venue), design, product,
     });
     const order = await orders.createVoucherOrder(venue, validated, req.ip);
+    if (req.account) await db.run('UPDATE gift_orders SET account_sub = ? WHERE id = ?', [req.account.sub, order.id]);
     const url = await payments.startPayment(venue, order);
     res.redirect(303, url);
   } catch (e) {
@@ -305,6 +309,7 @@ async function eventFor(venue, publicId) {
 
 async function eventPage(req, res, event, { values = {}, error = null, field = null, status = 200 } = {}) {
   const venue = req.venue;
+  if (req.account) values = { buyer_name: req.account.name, buyer_email: req.account.email, ...values };
   const types = await db.all('SELECT * FROM gift_ticket_types WHERE event_id = ? AND on_sale = 1 ORDER BY sort, id', [event.id]);
   const left = await orders.ticketsLeft(db.pool, event, types);
   event.imageUrl = event.image ? imageUrl(venue, event.image) : null;
@@ -336,6 +341,7 @@ router.post('/:slug/events/:eventId', buyLimit, withVenue, async (req, res, next
   try {
     if (!venues.canTakePayments(venue)) throw new orders.OrderError('Tickets cannot be bought online just now');
     const order = await orders.createTicketOrder(venue, event, req.body, req.ip);
+    if (req.account) await db.run('UPDATE gift_orders SET account_sub = ? WHERE id = ?', [req.account.sub, order.id]);
     res.redirect(303, await payments.startPayment(venue, order));
   } catch (e) {
     if (e instanceof orders.OrderError || e.name === 'EposError') {

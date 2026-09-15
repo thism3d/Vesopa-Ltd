@@ -26,6 +26,7 @@ const config = require('./config');
 const { headers } = require('./security');
 const { shopRouter } = require('./shop');
 const { adminRouter } = require('./admin');
+const account = require('./account');
 const scheduler = require('./scheduler');
 const mail = require('./mail');
 const venues = require('./venues');
@@ -93,7 +94,7 @@ app.use(async (req, res, next) => {
   try {
     const venue = await venues.byDomain(host);
     if (venue && !req.url.startsWith('/admin') && !req.url.startsWith(`/${venue.slug}`)
-        && !/^\/(v|t|u|css|js|img|vendor)\//.test(req.url)) {
+        && !/^\/(v|t|u|css|js|img|vendor|account)\//.test(req.url) && req.url !== '/account') {
       req.url = `/${venue.slug}${req.url === '/' ? '' : req.url}`;
     }
   } catch { /* fall through */ }
@@ -101,6 +102,8 @@ app.use(async (req, res, next) => {
 });
 
 app.use('/admin', adminRouter);
+app.use(account.attach);
+app.use(account.accountRouter);
 
 app.get('/', (_req, res) => {
   res.status(404).render('shop/message', {

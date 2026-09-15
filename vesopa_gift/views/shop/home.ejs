@@ -2,6 +2,7 @@
 
 <header class="hero">
   <img class="<%= hero.source === 'default' ? 'default' : '' %>" src="<%= hero.url %>" alt="">
+  <% if (locals.accountEnabled) { %><a class="acct-link" href="<%= locals.account ? '/account' : '/account?to=' + encodeURIComponent('/' + venue.slug) %>"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg><%= locals.account ? 'My vouchers' : 'Sign in' %></a><% } %>
   <div class="hero-body">
     <%- include('_logo', { size: 's66', brand: brand, initials: initials }) %>
     <div>

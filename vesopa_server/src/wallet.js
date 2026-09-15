@@ -657,7 +657,7 @@ function walletCore({ pool, secret }) {
     if (kind === 'giftcard') {
       const [[g]] = await pool.query(
         `SELECT g.id, g.code, g.balance_minor, g.currency, g.expires_on, g.status,
-                g.recipient_name, g.created_at, g.updated_at, c.name AS customer_name
+                g.recipient_name, g.created_at, g.updated_at, g.art_strip_url, c.name AS customer_name
            FROM epos_gift_cards g
            LEFT JOIN epos_customers c ON c.id = g.customer_id
           WHERE g.id = ? AND g.office = ?`,
@@ -682,6 +682,8 @@ function walletCore({ pool, secret }) {
         // A spent or voided card stays in the wallet, greyed out, rather than
         // vanishing — the holder needs to see that it was theirs and is empty.
         state: g.status === 'active' ? 'ACTIVE' : 'EXPIRED',
+        // The voucher's own picture, when the shop sent one with the card.
+        art_strip_url: g.art_strip_url || null,
         // What has happened to the card, and what was put on it. The balance on
         // the front answers "how much is left"; this is the answer to "where did
         // it go", which is the question somebody asks when the number is lower

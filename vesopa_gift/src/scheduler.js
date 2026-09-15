@@ -17,8 +17,10 @@ const db = require('./db');
 const epos = require('./epos');
 const venues = require('./venues');
 const { refresh } = require('./payments');
-const { fulfil, deliverOrder, audit } = require('./fulfil');
+const { fulfil, deliverOrder, audit, urls } = require('./fulfil');
 const { ref } = require('./orders');
+const mail = require('./mail');
+const emails = require('./emails');
 
 const EVERY_MS = Number(process.env.GIFT_SWEEP_MS) || 30 * 1000;
 let running = false;
@@ -94,6 +96,68 @@ async function expire() {
   }
 }
 
+/**
+ * A month before a voucher runs out, whoever holds it is told what is left.
+ * Once per voucher, only while something is left, and only for vouchers that
+ * were actually delivered. A voucher spent to nothing is not worth a reminder.
+ */
+async function warnExpiring() {
+  const lines = await db.all(
+    `SELECT l.*, o.buyer_name, o.buyer_email, o.office_id
+       FROM gift_order_lines l JOIN gift_orders o ON o.id = l.order_id
+      WHERE o.status = 'paid' AND l.kind IN ('voucher', 'experience') AND l.card_id IS NOT NULL
+        AND l.voided_at IS NULL AND l.delivered_at IS NOT NULL AND l.expiry_warned_at IS NULL
+        AND l.expires_on IS NOT NULL AND l.expires_on BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 30 DAY)
+      ORDER BY l.expires_on LIMIT 20`
+  );
+  for (const l of lines) {
+    try {
+      const claim = await db.run('UPDATE gift_order_lines SET expiry_warned_at = UTC_TIMESTAMP() WHERE id = ? AND expiry_warned_at IS NULL', [l.id]);
+      if (!claim.affectedRows) continue;
+      let balance = null;
+      try {
+        const r = await epos.card(l.office_id, l.card_id);
+        if (r.card.status !== 'active' || !r.card.balance_minor) continue;
+        balance = r.card.balance_minor;
+      } catch { /* the reminder still goes, without a figure */ }
+      const venue = await venues.get(l.office_id);
+      const brand = venues.brandOf(venue);
+      const to = l.recipient_email || l.buyer_email;
+      const { html, text } = emails.expiryEmail({ brand, line: l, balance, viewUrl: urls.voucher(l), balanceUrl: urls.balance(venue) });
+      await mail.send({ to, subject: `Your ${brand.name} voucher runs out soon`, html, text, fromName: brand.name, replyTo: venue.notify_email || undefined });
+    } catch (e) {
+      console.warn(`[sweep] expiry reminder for line ${l.id}: ${e.message}`);
+    }
+  }
+}
+
+/** The day before an event, its ticket buyers are reminded. Once per order. */
+async function remindEvents() {
+  const due = await db.all(
+    `SELECT o.*, e.id AS event_id FROM gift_orders o
+       JOIN gift_order_lines l ON l.order_id = o.id AND l.kind = 'ticket'
+       JOIN gift_events e ON e.id = l.event_id
+      WHERE o.status = 'paid' AND o.kind = 'tickets' AND o.reminded_at IS NULL AND e.cancelled_at IS NULL
+        AND e.starts_at BETWEEN UTC_TIMESTAMP() AND DATE_ADD(UTC_TIMESTAMP(), INTERVAL 26 HOUR)
+      GROUP BY o.id, e.id ORDER BY e.starts_at LIMIT 20`
+  );
+  for (const o of due) {
+    try {
+      const claim = await db.run('UPDATE gift_orders SET reminded_at = UTC_TIMESTAMP() WHERE id = ? AND reminded_at IS NULL', [o.id]);
+      if (!claim.affectedRows) continue;
+      const count = Number((await db.one("SELECT COUNT(*) AS n FROM gift_tickets WHERE order_id = ? AND status = 'valid'", [o.id])).n);
+      if (!count) continue;
+      const event = await db.one('SELECT * FROM gift_events WHERE id = ?', [o.event_id]);
+      const venue = await venues.get(o.office_id);
+      const brand = venues.brandOf(venue);
+      const { html, text } = emails.reminderEmail({ brand, order: o, event, count, viewUrl: urls.tickets(o) });
+      await mail.send({ to: o.buyer_email, subject: `${event.title} is tomorrow`, html, text, fromName: brand.name, replyTo: venue.notify_email || undefined });
+    } catch (e) {
+      console.warn(`[sweep] event reminder for order ${o.id}: ${e.message}`);
+    }
+  }
+}
+
 let brandsAt = 0;
 async function refreshBrands() {
   if (Date.now() - brandsAt < 30 * 60 * 1000) return;
@@ -114,6 +178,8 @@ async function tick() {
       await retryFulfil();
       await deliverDue();
       await expire();
+      await warnExpiring();
+      await remindEvents();
       await refreshBrands();
     } finally {
       await conn.query("SELECT RELEASE_LOCK('vesopa_gift_scheduler')");
@@ -131,4 +197,4 @@ function start() {
   return setInterval(tick, EVERY_MS);
 }
 
-module.exports = { start, tick, sweepPayments, deliverDue, expire };
+module.exports = { start, tick, sweepPayments, deliverDue, expire, warnExpiring, remindEvents };

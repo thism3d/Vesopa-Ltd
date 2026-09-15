@@ -1183,6 +1183,28 @@ router.post(`${V}/door/:eid/undo`, signedIn, withVenue, async (req, res, next) =
   } catch (e) { next(e); }
 });
 
+// The guest list for the door's own sheet: everyone, with where they stand.
+router.get(`${V}/door/:eid/guests.json`, signedIn, withVenue, async (req, res, next) => {
+  try {
+    const event = await db.one('SELECT id FROM gift_events WHERE id = ? AND office_id = ?', [Number(req.params.eid), req.venue.office_id]);
+    if (!event) return res.status(404).json({ guests: [] });
+    const rows = await db.all(
+      `SELECT t.id, t.code, t.status, t.checked_in_at, t.holder_name, t.seq, tt.name AS type_name, o.buyer_email, o.buyer_name, o.id AS order_id,
+              (SELECT COUNT(*) FROM gift_tickets s WHERE s.line_id = t.line_id) AS of_n
+         FROM gift_tickets t JOIN gift_ticket_types tt ON tt.id = t.ticket_type_id JOIN gift_orders o ON o.id = t.order_id
+        WHERE t.event_id = ? ORDER BY t.holder_name, t.seq`,
+      [event.id]
+    );
+    res.json({
+      guests: rows.map((t) => ({
+        id: t.id, code: t.code, status: t.status, name: t.holder_name, email: t.buyer_email, buyer: t.buyer_name,
+        type: t.type_name, seq: `${t.seq} of ${t.of_n}`, ref: orders.ref({ id: t.order_id }),
+        at: t.checked_in_at ? util.when(t.checked_in_at).split(', ').pop() : null,
+      })),
+    });
+  } catch (e) { next(e); }
+});
+
 // The count, for a door with more than one phone on it.
 router.get(`${V}/door/:eid/count`, signedIn, withVenue, async (req, res, next) => {
   try {

@@ -26,13 +26,25 @@ by hand for the same reason as `menu.vesopaepos.com`'s.
 * **The back office** on `127.0.0.1:5060`, through `/api/integrations/gift`
   (`vesopa_server/src/gift_integration.js`). Both `.env` files hold the same
   `GIFT_SERVICE_KEY`; without it the API answers 503, with a wrong one 401.
-* **Vesopa Auth**, for the console: the application "Vesopa Gift" (slug
+* **Vesopa Auth**, twice. For the console: the application "Vesopa Gift" (slug
   `vesopa-gift`, id 36), self-registration off, roles `owner`, `support`,
   `venue` (`vesopa_auth/schema/schema_017_gift_client.sql`). Its secret was
   minted with `vesopa_auth/scripts/mint-client-secret.js` into
   `/root/vesopa-gift-client.secret` on the Auth box. The owner
   (info@vesopasoftware.com) is `owner` there and admin of the app in the
   developer portal, which is where the console's People link goes.
+  For BUYERS on the shop: "Vesopa Gift Shop" (slug `vesopa-gift-shop`,
+  `schema_019_gift_shop_client.sql`), self-enrolment on, consent shown; its
+  secret is in `/root/vesopa-gift-shop-client.secret` on the Auth box (two
+  lines: client id, then secret) and `VESOPA_AUTH_SHOP_CLIENT_*` here. A buyer
+  who signs in gets `/account`: everything bought with or sent to their
+  address, live balances, a copy sent again, Add to Wallet.
+* **Wallet passes** come from the back office (`/wallet/c/…`, Apple only until
+  somebody sets up a Google Wallet issuer). Each voucher's design goes with the
+  card at issue as two PNGs at Apple's strip sizes -- rendered here by `sharp`,
+  kept under `uploads/strips/`, written by the back office into its
+  `public/uploads/giftart_*.png` -- so the pass wears the voucher's picture.
+  `scripts/backfill-art.js` sends it for vouchers issued before this existed.
 * **Mail**: the menu's customer mailbox (`menu@vesopaepos.com`), the same
   settings the back office uses for `MENU_SMTP_*`. Mail goes out in the venue's
   name with Reply-To the venue's own address.
@@ -41,7 +53,7 @@ by hand for the same reason as `menu.vesopaepos.com`'s.
 
 `NODE_ENV PORT BASE_URL EPOS_API GIFT_SERVICE_KEY DB_HOST DB_PORT DB_NAME DB_USER
 DB_PASSWORD VESOPA_AUTH_ISSUER VESOPA_AUTH_CLIENT_ID VESOPA_AUTH_CLIENT_SECRET
-SESSION_SECRET SMTP_HOST SMTP_PORT SMTP_SECURE SMTP_USER SMTP_PASSWORD MAIL_FROM
+VESOPA_AUTH_SHOP_CLIENT_ID VESOPA_AUTH_SHOP_CLIENT_SECRET SESSION_SECRET SMTP_HOST SMTP_PORT SMTP_SECURE SMTP_USER SMTP_PASSWORD MAIL_FROM
 BACKOFFICE_ORIGIN GIFT_TEST_OFFICES` — see `.env.example`. Optional:
 `BRAND_ORIGINS` (extra hosts a venue's logo may come from; default
 menu.vesopaepos.com), `GIFT_SCHEDULER=off`, `GIFT_SWEEP_MS`.

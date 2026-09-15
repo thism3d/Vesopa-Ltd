@@ -28,6 +28,8 @@
  */
 
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const express = require('express');
 
 const dojo = require('./dojo_client');
@@ -222,12 +224,43 @@ function giftIntegrationRoutes({ pool, broadcast, core }) {
    * must hand back the card it already has rather than a second one worth the
    * same money.
    */
+  /**
+   * The voucher's picture for its Wallet pass, kept once per picture.
+   *
+   * Two PNGs at Apple's strip sizes, sent as base64. They are written to
+   * public/uploads under the hash of the @2x bytes -- the same design bought a
+   * thousand times is one file -- and the pass builder reads them the way it
+   * reads a venue's own upload. Anything that is not a PNG, or is too big for a
+   * pass, is ignored: the card is still issued, with the venue's band.
+   */
+  function keepArt(art) {
+    if (!art || typeof art !== 'object') return null;
+    const pair = {};
+    for (const [key, suffix] of [['png', ''], ['png2x', '@2x']]) {
+      let buf;
+      try { buf = Buffer.from(String(art[key] || ''), 'base64'); } catch { return null; }
+      if (buf.length < 100 || buf.length > 400 * 1024) return null;
+      if (buf[0] !== 0x89 || buf[1] !== 0x50 || buf[2] !== 0x4e || buf[3] !== 0x47) return null;
+      pair[suffix] = buf;
+    }
+    const name = `giftart_${crypto.createHash('sha256').update(pair['@2x']).digest('hex').slice(0, 24)}`;
+    const dir = path.join(__dirname, '..', 'public', 'uploads');
+    fs.mkdirSync(dir, { recursive: true });
+    for (const [suffix, buf] of Object.entries(pair)) {
+      const file = path.join(dir, `${name}${suffix}.png`);
+      if (!fs.existsSync(file)) fs.writeFileSync(file, buf);
+    }
+    return absolute(`/uploads/${name}.png`);
+  }
+
   router.post(`${BASE}/venues/:id/cards`, async (req, res, next) => {
     try {
       const v = await venueById(req.params.id);
       if (!v) return res.status(404).json({ error: 'No such venue' });
       const office = v.contact_email;
       const b = req.body || {};
+      let artUrl = null;
+      try { artUrl = keepArt(b.art_strip); } catch (e) { console.warn(`[gift] art not kept: ${e.message}`); }
 
       const amount = int(b.amount_minor);
       if (!Number.isInteger(amount) || amount <= 0 || amount > 1000000) {
@@ -245,6 +278,9 @@ function giftIntegrationRoutes({ pool, broadcast, core }) {
         [office, externalRef]
       );
       if (already) {
+        if (artUrl && !already.art_strip_url) {
+          await pool.query('UPDATE epos_gift_cards SET art_strip_url = ? WHERE id = ?', [artUrl, already.id]);
+        }
         return res.json({ card: present(already), wallet_url: walletUrl(office, already.id), repeated: true });
       }
 
@@ -259,8 +295,8 @@ function giftIntegrationRoutes({ pool, broadcast, core }) {
           await conn.execute(
             `INSERT INTO epos_gift_cards
                (id, office, code, kind, initial_minor, balance_minor, recipient_name,
-                expires_on, reloadable, issued_by, notes, source, external_ref, label, usable_from)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'gift', ?, ?, ?)`,
+                expires_on, reloadable, issued_by, notes, source, external_ref, label, usable_from, art_strip_url)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'gift', ?, ?, ?, ?)`,
             [
               id, office, code,
               b.single_use ? 'paper' : 'smart',
@@ -272,6 +308,7 @@ function giftIntegrationRoutes({ pool, broadcast, core }) {
               externalRef,
               b.label ? String(b.label).slice(0, 120) : null,
               usableFrom,
+              artUrl,
             ]
           );
           await conn.execute(

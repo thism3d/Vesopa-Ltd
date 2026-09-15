@@ -22,6 +22,7 @@
   <symbol id="i-keys" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h.01M18 14h.01M9 14h6"/></symbol>
   <symbol id="i-tick" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
   <symbol id="i-cross" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></symbol>
   <symbol id="i-qr" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M14 14h3v3h-3zM19 14h2M14 19h2M19 19h2v2"/></symbol>
 </svg>
 
@@ -60,9 +61,30 @@
     <button type="button" data-torch hidden aria-pressed="false"><svg class="ico"><use href="#i-torch"/></svg><span>Torch</span></button>
     <button type="button" data-undo hidden><svg class="ico"><use href="#i-undo"/></svg><span>Undo last</span></button>
     <button type="button" data-sound aria-pressed="true"><svg class="ico"><use href="#i-sound"/></svg><span>Sound on</span></button>
-    <a href="/admin/v/<%= venue.office_id %>/events/<%= event.id %>/guests"><svg class="ico"><use href="#i-list"/></svg><span>Guest list</span></a>
+    <button type="button" data-guests><svg class="ico"><use href="#i-list"/></svg><span>Guest list</span></button>
   </div>
 </div>
+
+<!-- The guest list, as a sheet over the door: nothing leaves this screen. -->
+<div class="sheet-back" data-sheet-back hidden></div>
+<section class="sheet" data-sheet hidden aria-label="Guest list" role="dialog" aria-modal="true">
+  <div class="sheet-handle" data-sheet-handle><i></i></div>
+  <div class="sheet-head">
+    <div><strong>Guest list</strong><span class="small" data-sheet-count></span></div>
+    <button type="button" class="sheet-close" data-sheet-close aria-label="Close"><svg class="ico"><use href="#i-cross"/></svg></button>
+  </div>
+  <div class="sheet-tools">
+    <label class="field"><svg class="ico"><use href="#i-search"/></svg><input type="search" data-guest-q placeholder="Name, code, email or order" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Find a guest"></label>
+    <div class="chips" data-guest-filter>
+      <button type="button" data-f="all" class="on">All</button>
+      <button type="button" data-f="valid">Not yet</button>
+      <button type="button" data-f="used">In</button>
+      <button type="button" data-f="void">Refunded</button>
+    </div>
+    <div class="chips small-chips" data-guest-type></div>
+  </div>
+  <div class="sheet-list" data-guest-list><div class="sheet-empty">Loading…</div></div>
+</section>
 <script src="<%= asset('/vendor/jsQR.js') %>" defer></script>
 <script src="<%= asset('/js/door.js') %>" defer></script>
 </body>

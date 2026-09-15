@@ -214,7 +214,8 @@
   var burst = '';
   var burstAt = 0;
   document.addEventListener('keydown', function (e) {
-    if (e.target === input || e.ctrlKey || e.metaKey || e.altKey) return;
+    var t = e.target;
+    if (t === input || (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) || e.ctrlKey || e.metaKey || e.altKey) return;
     var now = Date.now();
     if (now - burstAt > 400) burst = '';
     burstAt = now;
@@ -429,6 +430,157 @@
     }, function () { /* not allowed here; the phone's own timeout applies */ });
   }
   document.addEventListener('pointerdown', keepAwake, { once: true });
+
+  // ---- The guest list, as a sheet over the door ----------------------------------------
+  //
+  // Nothing leaves this screen: the list slides up, is searched and filtered
+  // here, and a guest is let in (or a wrong scan put back) from the row, through
+  // the same two calls the scanner uses.
+  var sheet = document.querySelector('[data-sheet]');
+  var sheetBack = document.querySelector('[data-sheet-back]');
+  var sheetList = sheet.querySelector('[data-guest-list]');
+  var sheetCount = sheet.querySelector('[data-sheet-count]');
+  var q = sheet.querySelector('[data-guest-q]');
+  var filterBar = sheet.querySelector('[data-guest-filter]');
+  var typeBar = sheet.querySelector('[data-guest-type]');
+  var guests = [];
+  var filter = 'all';
+  var typeFilter = '';
+  var typing = null;
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function loadGuests() {
+    return fetch(url + '/guests.json', { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : { guests: [] }; })
+      .then(function (d) {
+        guests = d.guests || [];
+        var types = [];
+        guests.forEach(function (g) { if (types.indexOf(g.type) < 0) types.push(g.type); });
+        typeBar.innerHTML = types.length > 1
+          ? types.map(function (t) { return '<button type="button" data-t="' + esc(t) + '" class="' + (typeFilter === t ? 'on' : '') + '">' + esc(t) + '</button>'; }).join('')
+          : '';
+        renderGuests();
+      })
+      .catch(function () { sheetList.innerHTML = '<div class="sheet-empty">No connection. Check the signal and try again.</div>'; });
+  }
+
+  function renderGuests() {
+    var needle = q.value.trim().toLowerCase().replace(/-/g, '');
+    var shown = guests.filter(function (g) {
+      if (filter !== 'all' && g.status !== filter) return false;
+      if (typeFilter && g.type !== typeFilter) return false;
+      if (!needle) return true;
+      var hay = (g.name + ' ' + g.code + ' ' + g.email + ' ' + g.buyer + ' ' + g.ref).toLowerCase().replace(/-/g, '');
+      return hay.indexOf(needle) >= 0;
+    });
+    var inCount = guests.filter(function (g) { return g.status === 'used'; }).length;
+    var total = guests.filter(function (g) { return g.status !== 'void'; }).length;
+    sheetCount.textContent = inCount + ' of ' + total + ' in' + (shown.length !== guests.length ? ' · ' + shown.length + ' shown' : '');
+    if (!shown.length) {
+      sheetList.innerHTML = '<div class="sheet-empty">' + (guests.length ? 'Nobody matches that.' : 'No tickets sold yet.') + '</div>';
+      return;
+    }
+    sheetList.innerHTML = shown.map(function (g) {
+      var state = g.status === 'used' ? '<span class="state used">In' + (g.at ? ' ' + esc(g.at) : '') + '</span>'
+        : g.status === 'void' ? '<span class="state void">Refunded</span>'
+        : '<span class="state valid">Not yet</span>';
+      var act = g.status === 'used' ? '<button type="button" class="act out" data-out="' + esc(g.code) + '">Undo</button>'
+        : g.status === 'valid' ? '<button type="button" class="act in" data-in="' + esc(g.code) + '">Let in</button>' : '';
+      return '<div class="guest" data-guest-row="' + esc(g.code) + '"><div class="who"><b>' + esc(g.name) + '</b>'
+        + '<span>' + esc(g.type) + ' · ' + esc(g.seq) + ' · ' + esc(g.ref) + '</span>'
+        + '<span><code>' + esc(g.code) + '</code> · ' + esc(g.email) + '</span></div>' + state + act + '</div>';
+    }).join('');
+  }
+
+  function openSheet() {
+    sheet.hidden = false;
+    sheetBack.hidden = false;
+    requestAnimationFrame(function () { sheet.classList.add('show'); sheetBack.classList.add('show'); });
+    sheetList.innerHTML = '<div class="sheet-empty">Loading…</div>';
+    loadGuests();
+  }
+  function closeSheet() {
+    sheet.classList.remove('show');
+    sheetBack.classList.remove('show');
+    sheet.style.transform = '';
+    setTimeout(function () { sheet.hidden = true; sheetBack.hidden = true; }, 320);
+  }
+  root.querySelector('[data-guests]').addEventListener('click', openSheet);
+  sheet.querySelector('[data-sheet-close]').addEventListener('click', closeSheet);
+  sheetBack.addEventListener('click', closeSheet);
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !sheet.hidden) closeSheet(); });
+
+  q.addEventListener('input', function () {
+    clearTimeout(typing);
+    typing = setTimeout(renderGuests, 60);
+  });
+  filterBar.addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-f]');
+    if (!b) return;
+    filter = b.getAttribute('data-f');
+    Array.prototype.forEach.call(filterBar.querySelectorAll('button'), function (x) { x.classList.toggle('on', x === b); });
+    renderGuests();
+  });
+  typeBar.addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-t]');
+    if (!b) return;
+    typeFilter = typeFilter === b.getAttribute('data-t') ? '' : b.getAttribute('data-t');
+    Array.prototype.forEach.call(typeBar.querySelectorAll('button'), function (x) { x.classList.toggle('on', x.getAttribute('data-t') === typeFilter); });
+    renderGuests();
+  });
+
+  sheetList.addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-in], button[data-out]');
+    if (!b || busy) return;
+    var code = b.getAttribute('data-in') || b.getAttribute('data-out');
+    var path = b.hasAttribute('data-in') ? '/scan' : '/undo';
+    b.disabled = true;
+    busy = true;
+    lastCode = '';
+    post(path, { code: code })
+      .then(function (r) {
+        show(r);
+        var g = guests.find(function (x) { return x.code === code; });
+        if (g && r.ok) {
+          g.status = path === '/scan' ? 'used' : 'valid';
+          g.at = path === '/scan' ? 'now' : null;
+        }
+        renderGuests();
+        var row = sheetList.querySelector('[data-guest-row="' + code + '"]');
+        if (row) replay(row, 'flash');
+      })
+      .catch(function () { show({ ok: false, title: 'No connection', detail: 'Check the signal and try again.' }); })
+      .then(function () { busy = false; });
+  });
+
+  // Drag the handle down to close.
+  var dragY = null;
+  var handle = sheet.querySelector('[data-sheet-handle]');
+  function dragStart(e) { dragY = (e.touches ? e.touches[0] : e).clientY; sheet.style.transition = 'none'; }
+  function dragMove(e) {
+    if (dragY == null) return;
+    var dy = Math.max(0, (e.touches ? e.touches[0] : e).clientY - dragY);
+    sheet.style.transform = 'translateY(' + dy + 'px)';
+  }
+  function dragEnd(e) {
+    if (dragY == null) return;
+    var y = (e.changedTouches ? e.changedTouches[0] : e).clientY;
+    var dy = y - dragY;
+    dragY = null;
+    sheet.style.transition = '';
+    if (dy > 90) closeSheet(); else sheet.style.transform = '';
+  }
+  handle.addEventListener('touchstart', dragStart, { passive: true });
+  handle.addEventListener('touchmove', dragMove, { passive: true });
+  handle.addEventListener('touchend', dragEnd);
+  handle.addEventListener('mousedown', dragStart);
+  document.addEventListener('mousemove', dragMove);
+  document.addEventListener('mouseup', dragEnd);
 
   // Another phone on the same door lets people in too: the count follows.
   setInterval(function () {

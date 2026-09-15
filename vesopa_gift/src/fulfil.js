@@ -28,6 +28,7 @@ const mail = require('./mail');
 const emails = require('./emails');
 const pdf = require('./pdf');
 const { qrPng } = require('./png');
+const { stripsFor } = require('./strips');
 const { token, ticketCode, addMonths, londonDate } = require('./util');
 const config = require('./config');
 const { ref } = require('./orders');
@@ -59,7 +60,10 @@ async function issueCard(venue, order, line) {
   const expires = londonDate(addMonths(new Date(), venue.validity_months || 12));
   const hold = venue.hold_over_minor != null && line.unit_minor > venue.hold_over_minor;
   const usableFrom = hold ? new Date(Date.now() + (venue.hold_hours || 24) * 3600 * 1000) : null;
+  const design = (line.design_id && await venues.design(venue.office_id, line.design_id))
+    || (await venues.designs(venue.office_id, { onSale: false }))[0] || null;
   const r = await epos.issueCard(venue.office_id, {
+    art_strip: await stripsFor(design),
     amount_minor: line.unit_minor,
     external_ref: `${ref(order)}/${line.line_no}`,
     label: line.kind === 'experience' ? line.label : null,
@@ -200,7 +204,7 @@ function readArt(design) {
   }
 }
 
-async function deliverVoucher(venue, order, line) {
+async function deliverVoucher(venue, order, line, { copyTo = null } = {}) {
   const brand = venues.brandOf(venue);
   const design = (line.design_id && await venues.design(venue.office_id, line.design_id))
     || (await venues.designs(venue.office_id, { onSale: false }))[0] || null;
@@ -219,10 +223,12 @@ async function deliverVoucher(venue, order, line) {
   ];
   const first = order.buyer_name.split(' ')[0];
   await mail.send({
-    to: toBuyer ? order.buyer_email : line.recipient_email,
+    to: copyTo || (toBuyer ? order.buyer_email : line.recipient_email),
     subject: toBuyer ? `Your voucher for ${brand.name}` : `${first} sent you a gift for ${brand.name}`,
     html, text, attachments, fromName: brand.name, replyTo: venue.notify_email || undefined,
   });
+  // A copy to somebody who already holds it changes nothing about the delivery.
+  if (copyTo) return audit(venue.office_id, 'voucher.copied', { order: ref(order), line: line.line_no });
   await db.run('UPDATE gift_order_lines SET delivered_at = UTC_TIMESTAMP(), delivery_error = NULL WHERE id = ?', [line.id]);
   await audit(venue.office_id, 'voucher.delivered', { order: ref(order), line: line.line_no, to: toBuyer ? 'buyer' : 'recipient' });
 
@@ -320,4 +326,10 @@ async function sendLineNow(order, line) {
   }
 }
 
-module.exports = { fulfil, deliverOrder, sendLineNow, sendReceipt, tellVenue, issueCard, issueTickets, audit, urls };
+/** The voucher again, to an address that already holds it, with nothing else changed. */
+async function copyLineTo(order, line, to) {
+  const venue = await venues.get(order.office_id);
+  await deliverVoucher(venue, order, line, { copyTo: to });
+}
+
+module.exports = { fulfil, deliverOrder, sendLineNow, copyLineTo, sendReceipt, tellVenue, issueCard, issueTickets, audit, urls };

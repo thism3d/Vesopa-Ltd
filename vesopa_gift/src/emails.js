@@ -263,4 +263,33 @@ function ticketsEmail({ brand, order, event, tickets, typesById, viewUrl, qrCids
   return { html, text };
 }
 
-module.exports = { layout, voucherEmail, receiptEmail, sentEmail, venueSaleEmail, ticketsEmail };
+/** To whoever holds a voucher, a month before it runs out, with what is left. */
+function expiryEmail({ brand, line, balance, viewUrl, balanceUrl }) {
+  const left = balance != null ? money(balance) : money(line.unit_minor);
+  const html = layout(brand, {
+    preheader: `Your ${brand.name} voucher runs out on ${dateLong(line.expires_on)}`,
+    body: `
+      <h1 style="margin:0 0 10px 0;font:700 22px/1.25 ${SERIF};color:#111111;">There is ${esc(left)} on your voucher, until ${esc(dateLong(line.expires_on))}.</h1>
+      <p style="margin:0 0 14px 0;color:#333333;">A reminder from ${esc(brand.name)}: your ${line.kind === 'experience' ? esc(line.label) : 'gift voucher'} is valid until ${esc(dateLong(line.expires_on))}, and whatever is not spent by then is gone. Book a table, bring a friend.</p>
+      <p style="margin:0;">${button(viewUrl, 'Open your voucher')} &nbsp; ${button(balanceUrl, 'Check the balance', { dark: false })}</p>`,
+    footer: `Code ${esc(line.card_code)} · staff scan it at the till.`,
+  });
+  const text = `There is ${left} on your ${brand.name} voucher, valid until ${dateLong(line.expires_on)}. Code ${line.card_code}. ${viewUrl}`;
+  return { html, text };
+}
+
+/** To the ticket buyer, the day before. */
+function reminderEmail({ brand, order, event, count, viewUrl }) {
+  const html = layout(brand, {
+    preheader: `${event.title} is tomorrow`,
+    body: `
+      <h1 style="margin:0 0 10px 0;font:700 22px/1.25 ${SERIF};color:#111111;">${esc(event.title)} is tomorrow.</h1>
+      <p style="margin:0 0 6px 0;color:#333333;"><strong>${esc(when(event.starts_at))}</strong>${event.doors_at ? ` · doors ${esc(when(event.doors_at).split(', ').pop())}` : ''}${event.location ? ` · ${esc(event.location)}` : ''}</p>
+      <p style="margin:0 0 14px 0;color:#333333;">You have ${count} ticket${count === 1 ? '' : 's'} under ${esc(order.buyer_name)}. Have the QR codes ready on your phone at the door, or print them.</p>
+      <p style="margin:0;">${button(viewUrl, 'Open your tickets')}</p>`,
+  });
+  const text = `${event.title} is tomorrow, ${when(event.starts_at)}${event.location ? `, ${event.location}` : ''}. Your ${count} ticket(s): ${viewUrl}`;
+  return { html, text };
+}
+
+module.exports = { layout, voucherEmail, receiptEmail, sentEmail, venueSaleEmail, ticketsEmail, expiryEmail, reminderEmail };

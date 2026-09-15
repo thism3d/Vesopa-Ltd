@@ -1637,9 +1637,14 @@ function buildPkpass({
   const floor = Number(subject.reward_floor) || 0;
   const progress = floor ? (Number(subject.points) || 0) / floor : null;
 
+  // A gift voucher bought online carries the picture its buyer chose, and the
+  // pass wears that rather than the venue's band, so the card in the wallet
+  // is the card in the email.
+  const art = kind === 'giftcard' && subject.art_strip_url ? { ...brand, strip_url: subject.art_strip_url } : brand;
+
   const files = {
     'pass.json': Buffer.from(JSON.stringify(passJson, null, 2), 'utf8'),
-    ...artworkFor(kind, brand, assetsDir, progress, uploadsDir),
+    ...artworkFor(kind, art, assetsDir, progress, uploadsDir),
   };
 
   // SHA-1, and not because it is a good hash. It is what Apple specifies and

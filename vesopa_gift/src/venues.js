@@ -25,7 +25,7 @@ const BUILTIN = [
 
 const STALE_MS = 10 * 60 * 1000;
 const SLUG = /^[a-z0-9](?:[a-z0-9-]{0,58}[a-z0-9])?$/;
-const RESERVED = new Set(['admin', 'v', 't', 'u', 'img', 'css', 'js', 'vendor', 'health', 'favicon.ico', 'robots.txt', 'api']);
+const RESERVED = new Set(['admin', 'v', 't', 'u', 'img', 'css', 'js', 'vendor', 'health', 'favicon.ico', 'robots.txt', 'api', 'account']);
 
 function slugify(name) {
   const s = String(name || '')

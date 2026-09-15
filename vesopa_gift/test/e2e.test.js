@@ -138,6 +138,11 @@ async function main() {
       assert.ok(card, 'the card was issued');
       assert.strictEqual(card.balance_minor, 5000);
       assert.strictEqual(card.recipient_name, 'Alex Morgan');
+      // The design the buyer chose went with the card, at Apple's two strip sizes.
+      assert.ok(/\/uploads\/giftart_[a-f0-9]{24}\.png$/.test(card.art_strip_url || ''), String(card.art_strip_url));
+      const path = require('path');
+      const stripFile = path.join(__dirname, '..', '..', 'vesopa_server', 'public', 'uploads', path.basename(card.art_strip_url));
+      assert.ok(require('fs').existsSync(stripFile) && require('fs').existsSync(stripFile.replace(/\.png$/, '@2x.png')), 'both strip files on disk');
       // Dojo's cardName is the cardholder; the scheme is cardType.
       assert.ok(r.text.includes('Mastercard ending 1005'), 'the paid page names the card scheme');
       assert.ok(!r.text.includes('Test Cardholder'), 'the cardholder\'s name is not shown as the card');
@@ -303,6 +308,63 @@ async function main() {
       assert.strictEqual(r.status, 200);
       assert.ok(r.text.includes('Welsh wine tasting'));
       assert.ok((await get(`/t/${o.public_id}/tickets.pdf`)).text.startsWith('%PDF'));
+    });
+
+    await check('a buyer signed in with Vesopa sees what they bought and were given, and can send a copy', async () => {
+      // A customer session, planted the way the console's is. Sam bought
+      // Alex's voucher (refunded by now) and Rhian's (scheduled for next week).
+      const crypto = require('crypto');
+      const tokenValue = crypto.randomBytes(32).toString('base64url');
+      const acsrf = crypto.randomBytes(16).toString('hex');
+      await gift.query(
+        "INSERT INTO gift_customer_sessions (id, sub, email, name, csrf, expires_at) VALUES (?, 'sub-sam', 'sam@gift.test', 'Sam Jones', ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY))",
+        [crypto.createHash('sha256').update(tokenValue).digest('hex'), acsrf]
+      );
+      const acct = `vg_acct=${tokenValue}`;
+      const resend = (id, token = acsrf) => fetch(`${G}/account/lines/${id}/resend`, {
+        method: 'POST', redirect: 'manual', headers: { Cookie: acct, 'Content-Type': 'application/x-www-form-urlencoded' }, body: `_csrf=${token}`,
+      });
+      assert.strictEqual((await get('/account')).status, 200, 'the sign-in page');
+      const mine = await fetch(`${G}/account`, { headers: { Cookie: acct } }).then(async (r) => ({ status: r.status, text: await r.text() }));
+      assert.strictEqual(mine.status, 200, mine.text.slice(0, 200));
+      assert.ok(mine.text.includes('Hello, Sam'));
+      assert.ok(mine.text.includes('For Alex Morgan') && mine.text.includes('Cancelled'), 'the refunded voucher, shown as cancelled');
+      assert.ok(mine.text.includes('For Rhian') && mine.text.includes('£42.50 left'), 'the other, with its live balance');
+      assert.ok(!mine.text.includes('Greedy'), 'nobody else’s');
+
+      const [[waiting]] = await gift.query("SELECT id FROM gift_order_lines WHERE recipient_email = 'rhian@gift.test' ORDER BY id LIMIT 1");
+      // Put it back to "waiting for its day": a copy is not sent early.
+      await gift.query('UPDATE gift_order_lines SET delivered_at = NULL, deliver_at = DATE_ADD(UTC_TIMESTAMP(), INTERVAL 5 DAY) WHERE id = ?', [waiting.id]);
+      let r = await resend(waiting.id);
+      assert.strictEqual(r.headers.get('location'), '/account', 'a voucher waiting for its day is not sent early');
+      assert.ok((await fetch(`${G}/account`, { headers: { Cookie: acct } }).then((x) => x.text())).includes('Arrives'), 'shown as waiting');
+
+      // Its day comes: the sweep sends it, and then a copy can be asked for.
+      await gift.query('UPDATE gift_order_lines SET deliver_at = DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1 MINUTE), next_try_at = NULL WHERE id = ?', [waiting.id]);
+      assert.ok(await until(async () => (await gift.query('SELECT delivered_at FROM gift_order_lines WHERE id = ?', [waiting.id]))[0][0].delivered_at), 'delivered by the sweep');
+      const before = mailTo('sam@gift.test').length;
+      r = await resend(waiting.id);
+      assert.strictEqual(r.status, 303);
+      assert.ok(String(r.headers.get('location')).includes('sent='), r.headers.get('location'));
+      assert.ok(await until(() => mailTo('sam@gift.test').length > before), 'the copy went to the account holder');
+
+      const bad = await resend(waiting.id, 'nope');
+      assert.strictEqual(bad.headers.get('location'), '/account', 'no token, no send');
+    });
+
+    await check('a voucher about to run out, and an event tomorrow, are each reminded about once', async () => {
+      const [[line]] = await gift.query("SELECT id, recipient_email FROM gift_order_lines WHERE card_id IS NOT NULL AND voided_at IS NULL AND delivered_at IS NOT NULL AND kind = 'voucher' ORDER BY id LIMIT 1");
+      assert.ok(line, 'a delivered, live voucher to remind about');
+      await gift.query('UPDATE gift_order_lines SET expires_on = DATE_ADD(CURDATE(), INTERVAL 20 DAY) WHERE id = ?', [line.id]);
+      await gift.query("UPDATE gift_events SET starts_at = DATE_ADD(UTC_TIMESTAMP(), INTERVAL 20 HOUR) WHERE id = ?", [ev.insertId]);
+      // The sweep inside the gift server runs every 800 ms here.
+      assert.ok(await until(() => mails().some((m) => /runs out soon/.test(m.subject || ''))), 'the expiry reminder');
+      assert.ok(await until(() => mails().some((m) => /is tomorrow/.test(m.subject || ''))), 'the event reminder');
+      await sleep(2000);
+      const expiry = mails().filter((m) => /runs out soon/.test(m.subject || '')).length;
+      const tomorrow = mails().filter((m) => /is tomorrow/.test(m.subject || '')).length;
+      assert.strictEqual(expiry, 1, `expiry reminders: ${expiry}`);
+      assert.strictEqual(tomorrow, 1, `event reminders: ${tomorrow}`);
     });
 
     await check('five orders a day from one address, and no sixth', async () => {
