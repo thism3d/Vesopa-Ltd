@@ -272,6 +272,31 @@ async function main() {
       assert.strictEqual((await scan('ZZZZ-ZZZZ')).title, 'Not a ticket');
     });
 
+    await check('a wrong scan is undone from the door, and a guest is let in and out from the list', async () => {
+      const [[t]] = await gift.query('SELECT id, code FROM gift_tickets WHERE event_id = ? ORDER BY id LIMIT 1', [ev.insertId]);
+      const door = (path, body) => fetch(`${G}/admin/v/${VENUE.id}/door/${ev.insertId}/${path}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie, 'X-CSRF-Token': csrf }, body: JSON.stringify(body),
+      }).then((r) => r.json());
+      const undone = await door('undo', { code: t.code });
+      assert.strictEqual(undone.ok, true, JSON.stringify(undone));
+      assert.strictEqual(undone.in, 0);
+      assert.strictEqual((await door('undo', { code: t.code })).title, 'Nothing to undo');
+      const count = await fetch(`${G}/admin/v/${VENUE.id}/door/${ev.insertId}/count`, { headers: { Cookie: cookie } }).then((r) => r.json());
+      assert.deepStrictEqual(count, { in: 0, total: 2 });
+
+      assert.strictEqual((await post(`/admin/v/${VENUE.id}/events/${ev.insertId}/guests/${t.id}/in`, {}, { auth: true })).status, 303);
+      let [[row]] = await gift.query('SELECT status FROM gift_tickets WHERE id = ?', [t.id]);
+      assert.strictEqual(row.status, 'used');
+      const list = (await get(`/admin/v/${VENUE.id}/events/${ev.insertId}/guests`, { auth: true })).text;
+      assert.ok(list.includes(`guests/${t.id}/out`) && list.includes('data-guest-search'));
+      assert.strictEqual((await post(`/admin/v/${VENUE.id}/events/${ev.insertId}/guests/${t.id}/out`, {}, { auth: true })).status, 303);
+      [[row]] = await gift.query('SELECT status, checked_in_at FROM gift_tickets WHERE id = ?', [t.id]);
+      assert.strictEqual(row.status, 'valid');
+      assert.strictEqual(row.checked_in_at, null);
+      // Back in, so the checks that follow see one used ticket as before.
+      await door('scan', { code: t.code });
+    });
+
     await check('the tickets page and PDF open from the buyer\'s link', async () => {
       const [[o]] = await gift.query("SELECT public_id FROM gift_orders WHERE kind = 'tickets' LIMIT 1");
       const r = await get(`/t/${o.public_id}`);

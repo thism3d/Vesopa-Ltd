@@ -84,7 +84,7 @@ router.use((req, res, next) => {
   if (req.method !== 'POST') return next();
   if (!req.session) return res.redirect(303, '/admin');
   if (!session.csrfOk(req, req.session)) {
-    if (req.path.endsWith('/scan')) return res.status(403).json({ ok: false, title: 'Reload this page', detail: 'It was open too long.' });
+    if (req.path.endsWith('/scan') || req.path.endsWith('/undo')) return res.status(403).json({ ok: false, title: 'Reload this page', detail: 'It was open too long.' });
     return res.status(403).render('admin/noaccess', {
       session: req.session, heading: 'That did not go through', body: 'The page had been open too long. Go back, reload it and try again.',
     });
@@ -1093,6 +1093,30 @@ router.get(`${V}/events/:eid/guests`, signedIn, withVenue, async (req, res, next
   } catch (e) { next(e); }
 });
 
+// Let somebody in, or take it back, from the list: a guest without their phone,
+// or a scan that hit the wrong ticket.
+router.post(`${V}/events/:eid/guests/:tid/:what`, signedIn, withVenue, async (req, res, next) => {
+  try {
+    const v = req.venue;
+    const to = `/admin/v/${v.office_id}/events/${Number(req.params.eid)}/guests`;
+    if (!['in', 'out'].includes(req.params.what)) return res.redirect(303, to);
+    const t = await db.one(
+      `SELECT t.* FROM gift_tickets t JOIN gift_events e ON e.id = t.event_id
+        WHERE t.id = ? AND t.event_id = ? AND e.office_id = ?`,
+      [Number(req.params.tid), Number(req.params.eid), v.office_id]
+    );
+    if (!t) return res.redirect(303, to);
+    if (req.params.what === 'in') {
+      await db.run("UPDATE gift_tickets SET status = 'used', checked_in_at = UTC_TIMESTAMP(), checked_in_by = ? WHERE id = ? AND status = 'valid'", [req.session.email, t.id]);
+      await audit(req, 'door.in', { code: t.code, by: 'list' }, v.office_id);
+    } else {
+      await db.run("UPDATE gift_tickets SET status = 'valid', checked_in_at = NULL, checked_in_by = NULL WHERE id = ? AND status = 'used'", [t.id]);
+      await audit(req, 'door.undo', { code: t.code, by: 'list' }, v.office_id);
+    }
+    res.redirect(303, to);
+  } catch (e) { next(e); }
+});
+
 // ---- The door ------------------------------------------------------------------------
 
 router.get(`${V}/door/:eid`, signedIn, withVenue, async (req, res, next) => {
@@ -1140,7 +1164,34 @@ router.post(`${V}/door/:eid/scan`, signedIn, withVenue, async (req, res, next) =
       const again = await db.one('SELECT checked_in_at FROM gift_tickets WHERE id = ?', [ticket.id]);
       return answer({ ok: false, title: 'Already in', detail: `${ticket.holder_name} · ${ticket.type_name} · ${of}. Let in at ${util.when(again.checked_in_at).split(', ').pop()}.`, in: await count() });
     }
-    answer({ ok: true, title: 'Let in', detail: `${ticket.holder_name} · ${ticket.type_name} · ${of}`, in: await count() });
+    answer({ ok: true, title: 'Let in', detail: `${ticket.holder_name} · ${ticket.type_name} · ${of}`, in: await count(), code: ticket.code });
+  } catch (e) { next(e); }
+});
+
+// A scan that hit the wrong ticket: put it back, once, from the door itself.
+router.post(`${V}/door/:eid/undo`, signedIn, withVenue, async (req, res, next) => {
+  try {
+    const event = await db.one('SELECT id FROM gift_events WHERE id = ? AND office_id = ?', [Number(req.params.eid), req.venue.office_id]);
+    if (!event) return res.status(404).json({ ok: false, title: 'No such event' });
+    const code = String((req.body && req.body.code) || '').toUpperCase().replace(/[^A-Z0-9-]/g, '');
+    const t = await db.one('SELECT t.*, tt.name AS type_name FROM gift_tickets t JOIN gift_ticket_types tt ON tt.id = t.ticket_type_id WHERE t.code = ? AND t.event_id = ?', [code, event.id]);
+    const count = async () => Number((await db.one("SELECT SUM(status = 'used') AS n FROM gift_tickets WHERE event_id = ?", [event.id])).n) || 0;
+    if (!t || t.status !== 'used') return res.json({ ok: false, title: 'Nothing to undo', detail: 'That ticket is not marked as in.', in: await count() });
+    await db.run("UPDATE gift_tickets SET status = 'valid', checked_in_at = NULL, checked_in_by = NULL WHERE id = ?", [t.id]);
+    await audit(req, 'door.undo', { code: t.code, by: 'door' }, req.venue.office_id);
+    res.json({ ok: true, title: 'Undone', detail: `${t.holder_name} · ${t.type_name} can come in again.`, in: await count(), undone: true });
+  } catch (e) { next(e); }
+});
+
+// The count, for a door with more than one phone on it.
+router.get(`${V}/door/:eid/count`, signedIn, withVenue, async (req, res, next) => {
+  try {
+    const c = await db.one(
+      `SELECT SUM(t.status IN ('valid', 'used')) AS total, SUM(t.status = 'used') AS used
+         FROM gift_tickets t JOIN gift_events e ON e.id = t.event_id WHERE e.id = ? AND e.office_id = ?`,
+      [Number(req.params.eid), req.venue.office_id]
+    );
+    res.json({ in: Number(c.used) || 0, total: Number(c.total) || 0 });
   } catch (e) { next(e); }
 });
 

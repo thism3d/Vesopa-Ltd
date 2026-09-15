@@ -6,24 +6,39 @@
     <h2>Guest list</h2>
     <p class="muted"><%= event.title %> · <%= when(event.starts_at) %> · <%= used %> of <%= tickets.length %> in</p>
   </div>
-  <div class="actions"><a class="btn ghost" href="<%= base %>/events/<%= event.id %>">Back to the event</a></div>
+  <div class="actions">
+    <input class="search" type="search" data-guest-search placeholder="Name, code or email" aria-label="Find a guest">
+    <a class="btn primary" href="<%= base %>/door/<%= event.id %>">Open the door</a>
+    <a class="btn ghost" href="<%= base %>/events/<%= event.id %>">Back to the event</a>
+  </div>
 </div>
 
 <div class="card">
   <div class="table-wrap">
-    <table>
+    <table data-guests>
       <thead><tr><th>Name</th><th>Ticket</th><th>Code</th><th>Order</th><th class="right">At the door</th></tr></thead>
       <tbody>
         <% if (!tickets.length) { %><tr><td colspan="5" class="empty">No tickets sold yet.</td></tr><% } %>
         <% tickets.forEach(function (t) { %>
-        <tr>
+        <tr data-guest="<%= (t.holder_name + ' ' + t.code + ' ' + t.buyer_email).toLowerCase() %>">
           <td><%= t.holder_name %><br><span class="small muted"><%= t.buyer_email %></span></td>
           <td><%= t.type_name %></td>
           <td class="num"><%= t.code %></td>
           <td><a class="rowlink num" href="<%= base %>/orders/<%= t.order_id %>"><%= t.ref %></a></td>
-          <td class="right"><% if (t.status === 'used') { %><span class="badge ok">In <%= when(t.checked_in_at, { short: true }).split(', ').pop() %></span><% } else if (t.status === 'void') { %><span class="badge plain">Refunded</span><% } else { %><span class="badge warn">Not yet</span><% } %></td>
+          <td class="right">
+            <% if (t.status === 'used') { %>
+            <span class="row-actions"><span class="badge ok">In <%= when(t.checked_in_at, { short: true }).split(', ').pop() %></span>
+            <form method="post" action="<%= base %>/events/<%= event.id %>/guests/<%= t.id %>/out"><input type="hidden" name="_csrf" value="<%= session.csrf %>"><button class="btn small ghost" type="submit">Undo</button></form></span>
+            <% } else if (t.status === 'void') { %>
+            <span class="badge plain">Refunded</span>
+            <% } else { %>
+            <span class="row-actions"><span class="badge warn">Not yet</span>
+            <form method="post" action="<%= base %>/events/<%= event.id %>/guests/<%= t.id %>/in"><input type="hidden" name="_csrf" value="<%= session.csrf %>"><button class="btn small primary" type="submit">Let in</button></form></span>
+            <% } %>
+          </td>
         </tr>
         <% }) %>
+        <tr data-guest-none hidden><td colspan="5" class="empty">Nobody matches that.</td></tr>
       </tbody>
     </table>
   </div>

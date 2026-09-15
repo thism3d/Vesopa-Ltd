@@ -247,25 +247,48 @@ a.list-row:hover .t1 { text-decoration: underline; }
 /* ---- Door (phone, dark) ----------------------------------------------------------------- */
 body.door { background: #0d1014; color: #e8edf1; }
 .door-wrap { max-width: 480px; margin: 0 auto; min-height: 100vh; display: flex; flex-direction: column; padding-bottom: 20px; }
+.door .ico { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; flex: 0 0 auto; }
 .door-head { padding: 18px 20px 14px; display: flex; align-items: center; gap: 12px; }
 .door-head .t { display: flex; flex-direction: column; flex-grow: 1; }
 .door-head small { font-size: 13px; color: #94a2ae; }
 .door-head strong { font-size: 18px; }
 .door-count { display: flex; flex-direction: column; align-items: flex-end; }
-.door-count b { font-size: 22px; font-variant-numeric: tabular-nums; }
+.door-count b { font-size: 22px; font-variant-numeric: tabular-nums; display: inline-block; }
 .door-count span { font-size: 12px; color: #94a2ae; }
-.camera { margin: 0 20px; height: 360px; border-radius: 20px; background: linear-gradient(160deg, #2a2f36 0%, #161a1f 100%); position: relative; overflow: hidden; }
-.camera video { width: 100%; height: 100%; object-fit: cover; }
-.camera .frame { position: absolute; left: 50%; top: 50%; width: 210px; height: 210px; transform: translate(-50%, -54%); pointer-events: none; }
-.camera .frame i { position: absolute; width: 40px; height: 40px; border-color: var(--brand); border-style: solid; border-width: 0; }
+.door-count span b { font-size: 12px; }
+.door-count b[data-in].bump { animation: bump .45s cubic-bezier(.2, 1.4, .4, 1); color: #a5c715; }
+@keyframes bump { 0% { transform: scale(1); } 40% { transform: scale(1.5); } 100% { transform: scale(1); } }
+
+.camera { margin: 0 20px; height: 360px; border-radius: 20px; background: linear-gradient(160deg, #2a2f36 0%, #161a1f 100%); position: relative; overflow: hidden; transition: box-shadow .3s; }
+.camera video { width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .4s; }
+.camera.live video { opacity: 1; }
+.camera .idle { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #3b4652; transition: opacity .3s; }
+.camera .idle .ico { width: 84px; height: 84px; stroke-width: 1.2; animation: breathe 2.6s ease-in-out infinite; }
+.camera.live .idle { opacity: 0; pointer-events: none; }
+@keyframes breathe { 0%, 100% { opacity: .55; transform: scale(1); } 50% { opacity: 1; transform: scale(1.06); } }
+.camera .frame { position: absolute; left: 50%; top: 50%; width: 210px; height: 210px; transform: translate(-50%, -54%); pointer-events: none; transition: transform .25s; }
+.camera .frame i { position: absolute; width: 40px; height: 40px; border-color: var(--brand); border-style: solid; border-width: 0; transition: border-color .2s; }
 .camera .frame .tl { left: 0; top: 0; border-left-width: 4px; border-top-width: 4px; border-top-left-radius: 14px; }
 .camera .frame .tr { right: 0; top: 0; border-right-width: 4px; border-top-width: 4px; border-top-right-radius: 14px; }
 .camera .frame .bl { left: 0; bottom: 0; border-left-width: 4px; border-bottom-width: 4px; border-bottom-left-radius: 14px; }
 .camera .frame .br { right: 0; bottom: 0; border-right-width: 4px; border-bottom-width: 4px; border-bottom-right-radius: 14px; }
-.camera .hint { position: absolute; left: 0; right: 0; bottom: 18px; text-align: center; font-size: 14px; color: #b7c1ca; }
-.verdict { margin: 18px 20px 0; padding: 18px; border-radius: 18px; display: flex; gap: 14px; align-items: center; background: #1b222a; border: 1px solid #262f39; }
+/* The sweep: a line of the brand colour running down the square while the camera is looking. */
+.camera .frame .scan { left: 8px; right: 8px; width: auto; height: 2px; top: 6px; border: 0; background: linear-gradient(90deg, transparent, var(--brand) 20%, var(--brand) 80%, transparent); box-shadow: 0 0 12px 2px rgba(165, 199, 21, .55); opacity: 0; }
+.camera.live .frame .scan { opacity: 1; animation: sweep 2.2s ease-in-out infinite; }
+@keyframes sweep { 0% { top: 6px; } 50% { top: calc(100% - 8px); } 100% { top: 6px; } }
+.camera.hit-ok { box-shadow: 0 0 0 3px #46c78c inset, 0 0 40px rgba(70, 199, 140, .45); }
+.camera.hit-ok .frame i { border-color: #46c78c; }
+.camera.hit-ok .frame { transform: translate(-50%, -54%) scale(1.06); }
+.camera.hit-no { box-shadow: 0 0 0 3px #ff6b6f inset, 0 0 40px rgba(255, 107, 111, .4); }
+.camera.hit-no .frame i { border-color: #ff6b6f; }
+.camera .hint { position: absolute; left: 0; right: 0; bottom: 14px; padding: 0 18px; text-align: center; font-size: 14px; line-height: 1.4; color: #b7c1ca; text-shadow: 0 1px 6px rgba(0,0,0,.7); }
+
+.verdict { margin: 18px 20px 0; padding: 18px; border-radius: 18px; display: flex; gap: 14px; align-items: center; background: #1b222a; border: 1px solid #262f39; transition: background .25s, border-color .25s; }
 .verdict .mark { width: 52px; height: 52px; flex: 0 0 auto; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: #262f39; }
-.verdict .say { display: flex; flex-direction: column; }
+.verdict .mark .ico { width: 28px; height: 28px; stroke: #0d1014; stroke-width: 2.6; }
+.verdict .mark .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--brand); animation: pulse 1.8s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(165, 199, 21, .55); } 60% { box-shadow: 0 0 0 12px rgba(165, 199, 21, 0); } }
+.verdict .say { display: flex; flex-direction: column; min-width: 0; }
 .verdict .say b { font-size: 22px; }
 .verdict .say span { font-size: 15px; color: #b7c1ca; }
 .verdict.ok { background: #133d2a; border-color: #1f6b47; }
@@ -275,9 +298,27 @@ body.door { background: #0d1014; color: #e8edf1; }
 .verdict.no { background: #3d1316; border-color: #6b1f24; }
 .verdict.no .mark { background: #ff6b6f; }
 .verdict.no .say b { color: #ffe3e4; }
-.door-last { margin: 10px 20px 0; padding: 12px 16px; border-radius: 14px; background: #1b222a; font-size: 14px; color: #94a2ae; }
+.verdict.pop { animation: pop .5s cubic-bezier(.2, 1.4, .4, 1); }
+.verdict.pop .mark { animation: markin .45s cubic-bezier(.2, 1.6, .4, 1); }
+.verdict.no.pop { animation: pop .5s cubic-bezier(.2, 1.4, .4, 1), shake .45s ease-in-out; }
+@keyframes pop { 0% { transform: scale(.96); } 50% { transform: scale(1.02); } 100% { transform: scale(1); } }
+@keyframes markin { 0% { transform: scale(.4) rotate(-20deg); } 100% { transform: scale(1) rotate(0); } }
+@keyframes shake { 0%, 100% { transform: translateX(0); } 20% { transform: translateX(-7px); } 40% { transform: translateX(6px); } 60% { transform: translateX(-4px); } 80% { transform: translateX(3px); } }
+.door-last { margin: 10px 20px 0; padding: 12px 16px; border-radius: 14px; background: #1b222a; font-size: 14px; color: #94a2ae; animation: fadein .3s ease-out; }
+@keyframes fadein { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
 .door-actions { margin: auto 20px 0; padding-top: 18px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-.door-actions a, .door-actions button { height: 52px; border-radius: 14px; background: #1b222a; color: #e8edf1; border: 0; display: flex; align-items: center; justify-content: center; font-weight: 650; text-decoration: none; font-size: 15px; cursor: pointer; }
+.door-actions button[hidden] { display: none; }
+.door-actions button:disabled { opacity: .6; cursor: default; }
+.door-actions a, .door-actions button { height: 52px; padding: 0 14px; border-radius: 14px; background: #1b222a; color: #e8edf1; border: 0; display: flex; align-items: center; justify-content: center; gap: 9px; font-weight: 650; text-decoration: none; font-size: 15px; cursor: pointer; transition: background .15s, transform .1s; }
+.door-actions a:active, .door-actions button:active { transform: scale(.97); }
+.door-actions button[aria-pressed="true"][data-torch] { background: #3d3410; color: #ffd84d; }
+.door-actions button[data-undo] { background: #2b2230; color: #f2d9ff; }
 .door-type { margin: 12px 20px 0; display: flex; gap: 8px; }
-.door-type input { flex: 1; height: 52px; border-radius: 14px; border: 1px solid #262f39; background: #10151a; color: #e8edf1; padding: 0 14px; font: 600 18px ui-monospace, Menlo, Consolas, monospace; letter-spacing: .1em; text-transform: uppercase; }
+.door-type .field { flex: 1; display: flex; align-items: center; gap: 10px; height: 52px; border-radius: 14px; border: 1px solid #262f39; background: #10151a; padding: 0 14px; color: #5b6b7a; transition: border-color .15s; }
+.door-type .field:focus-within { border-color: var(--brand); color: var(--brand); }
+.door-type input { flex: 1; min-width: 0; border: 0; background: none; color: #e8edf1; font: 600 18px ui-monospace, Menlo, Consolas, monospace; letter-spacing: .1em; text-transform: uppercase; outline: none; }
 .door-type button { height: 52px; padding: 0 18px; border-radius: 14px; border: 0; background: var(--brand); color: var(--on-brand); font-weight: 650; cursor: pointer; }
+.row-actions { display: inline-flex; align-items: center; gap: 8px; }
+.row-actions form { margin: 0; }
+@media (prefers-reduced-motion: reduce) { .door * { animation: none !important; transition: none !important; } }
