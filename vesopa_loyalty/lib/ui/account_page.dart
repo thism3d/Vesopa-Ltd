@@ -322,13 +322,13 @@ class _Membership extends ConsumerWidget {
             title: Text(fee > 0 ? 'Renewing costs ${money(fee)}' : 'Renewing'),
             subtitle: howLong().isEmpty ? null : Text(howLong()),
           ),
-        if (expired || expiry != null)
+        if (paid || expiry != null)
           Padding(
             padding: const EdgeInsets.only(top: 6),
             child: FilledButton.tonalIcon(
               onPressed: () => _renew(context, fee: fee, term: term, renewal: renewal, expired: expired),
               icon: const Icon(Icons.autorenew),
-              label: Text(expired ? 'Renew my membership' : 'Renew early'),
+              label: Text(expired ? 'Renew my membership' : expiry != null ? 'Renew early' : 'How to renew'),
             ),
           ),
       ],

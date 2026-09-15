@@ -39,3 +39,24 @@ enter); the app is driven with a member token minted on the server
 4. Back office: the new fields on the Loyalty App page.
 5. Till: earn from the order's customer. (Queues behind 1.8.0.0 in Certification — one submission per app.)
 6. Tests, web build + deploy, server deploy, live check, msix 1.0.2.0 → Store, Android .aab.
+
+## Done, 2026-09-15
+
+* Server: `schema_loyalty_app_look.sql`; `loyalty_app.js` branding (`colours.icon`,
+  `font_scale`, `inbox`), `/me` membership block and `photo_url`, inbox cap and
+  paging, `POST/DELETE /loyalty/v1/me/photo`. Deployed; `tool/verify-loyalty-look-live.js`
+  6/6 on live.
+* Back office: Icons colour, Text size, News keep/how-many on the Loyalty App page.
+* App: theme from the venue's surfaces, brightness on the Card tab, inbox paging,
+  photo, membership card. Web build deployed to `/app/<slug>/`; checked in a
+  browser as the test venue's member. Windows 1.0.2.0: submission
+  1152921505701896670 in Certification (Manual publish).
+* Till: earning reads the order's customer — 1.8.1.0, waits for 1.8.0.0 to publish.
+* The Kitchen's own look set to white text and icons at 120% for its Bebas Neue.
+
+## Owner's answer on renewal (2026-09-15)
+
+"For Android use the IAP from Google, for iOS IAP, for others Dojo." Not yet
+built — see the note to the owner: a venue membership is a real-world service,
+which both stores' rules keep OUT of in-app purchase; Dojo on every platform
+is the route that passes review.

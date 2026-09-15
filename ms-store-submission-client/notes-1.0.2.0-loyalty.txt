@@ -1,0 +1,11 @@
+Version 1.0.2.0 - Your photo, your membership, and the venue's own colours
+
+Add your photo to your card from the Account page, from the camera or your photos. It shows on your card at the till so the venue knows it is you, and you can change or remove it whenever you like.
+
+The Account page now shows when your membership runs to, what renewing costs and how long a membership lasts at your venue, and how to renew. The card shows the same date beside your visits.
+
+The whole app is drawn in your venue's own colours: the text and icon colours and the text size are the venue's to set, and every card and sheet - your card's details, the news - is a shade of the venue's background so the text always reads.
+
+News keeps as many notifications as the venue chooses - the newest twelve unless they say otherwise - or all of them, loaded as you scroll.
+
+On a phone or a Windows device the screen turns right up while your card is showing, so the till's scanner can read the code, and back down when you leave it.
