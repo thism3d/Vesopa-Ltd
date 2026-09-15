@@ -150,8 +150,8 @@ Status values: `Not started`, `In progress`, `Done`, `Blocked`.
 | T22 | Till: Z report carries expenses and wastage | 4 | Done | commit "The till sends up what is not a sale" |
 | T23 | Version bumps (till only) | 5 | Done | `vesopa_epos/pubspec.yaml` 1.8.0+39 / 1.8.0.0 |
 | T24 | Full test sweep | 5 | Done | server: every file green bar the pre-existing kitchen sign-in fake-pool failure; till 879 pass, 3 known + Functions golden refreshed |
-| T25 | Server deploy, migrations, smoke checks, live walk-through | 5 | Not started | |
-| T26 | msix build | 5 | Not started | |
+| T25 | Server deploy, migrations, smoke checks, live walk-through | 5 | Done | backup `pre_1.8.0.0_20260915_042610.sql`; 20 files up; every schema file replayed; `/health` ok; `tool/verify-stock-live.js` 50/50, stock 93 → 93, nothing left |
+| T26 | msix build | 5 | Done | `build/store/vesopa-epos-store.msix`, 21,184,728 bytes, manifest 1.8.0.0, built with `--store` |
 | T27 | Store release notes | 5 | Done | `ms-store-submission-client/notes-1.8.0.0-epos.txt`, 1,443 characters, checked |
 | T28 | Stage and commit the submission | 5 | Not started | |
 
