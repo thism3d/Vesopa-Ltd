@@ -7105,3 +7105,14 @@ textarea, select[multiple], select[size] { height: auto; min-height: 0; }
   width: 100%;
   justify-content: center;
 }
+
+
+/* ---- Stock Control (stock.js) ------------------------------------------
+   Reuses the report page's control grid and tiles. What is new: the pair of
+   head buttons, a wider modal for the movement history, and the two colours a
+   counting document's difference column uses. */
+.sk-head-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.modal.sk-wide { max-width: 900px; width: min(900px, 96vw); }
+.sk-neg { color: var(--red); }
+.sk-pos { color: var(--green); }
+.sk-qty { font-variant-numeric: tabular-nums; }

@@ -130,12 +130,12 @@ Status values: `Not started`, `In progress`, `Done`, `Blocked`.
 | T10 | Stock builders (7) | 2 | Done | commit "Thirty-three more reports" |
 | T11 | Staff and customer builders (6) — 38 reports in all | 2 | Done | commit "Thirty-three more reports" |
 | T12 | Report tests: every builder scoped, reconciling, and runnable empty | 2 | Done | commit "Thirty-three more reports" |
-| T13 | Back office: Stock Control nav group and Stock Levels page | 3 | Not started | |
-| T14 | Back office: Suppliers and Pack Sizes pages | 3 | Not started | |
-| T15 | Back office: Wastage, Adjustments, Stock Takes, Spot Checks | 3 | Not started | |
-| T16 | Back office: Orders & Deliveries | 3 | Not started | |
-| T17 | Back office: grouped report picker with per-report filters | 3 | Not started | |
-| T18 | Back office: staff hourly rate on the Staff form | 3 | Not started | |
+| T13 | Back office: Stock Control nav group and Stock Levels page | 3 | Done | commit "The back office gets Stock Control" — driven in a local harness |
+| T14 | Back office: Suppliers and Pack Sizes pages | 3 | Done | commit "The back office gets Stock Control" — driven in a local harness |
+| T15 | Back office: Wastage, Adjustments, Stock Takes, Spot Checks | 3 | Done | commit "The back office gets Stock Control" — driven in a local harness |
+| T16 | Back office: Orders & Deliveries | 3 | Done | commit "The back office gets Stock Control" — driven in a local harness |
+| T17 | Back office: grouped report picker with per-report filters | 3 | Done | commit "The back office gets Stock Control" — driven in a local harness |
+| T18 | Back office: staff hourly rate on the Staff form | 3 | Done | commit "The back office gets Stock Control" — driven in a local harness |
 | T19 | Till: send refunds and no-sales up; Paid Out function | 4 | Not started | |
 | T20 | Till: Wastage function | 4 | Not started | |
 | T21 | Till: cashback on the payment row | 4 | Not started | |
@@ -416,6 +416,11 @@ reading the code or measuring the running site.
 3. **Twenty sales builders, not sixteen.** Refunds, Expenses and Cashback are
    their own reports in the recording, and Sales Comparison was in the
    catalogue list at 11:22. All four are built.
+5. **`tool/local-stock-harness.js` is how the pages were checked.** No
+   unit test drives a modal. The harness builds a venue over live's schema,
+   seeds a fortnight of sales, starts the server on a free port, and the
+   pages were clicked through in a browser: settings, a suggested order, a
+   part delivery, a full stock take, and the reports that read them back.
 4. **A scheduled week-start report keeps no date.** "Every Monday, the week
    before" is what a weekly Daily Department Sales schedule means, so the
    schedule stores the other filters and `runReport` takes the Monday of the

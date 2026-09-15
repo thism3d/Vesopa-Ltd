@@ -774,6 +774,10 @@ function formatCell(row, column) {
     return value === null || value === undefined || value === '' ? '' : `${(Number(value) || 0).toFixed(2)}%`;
   }
   if (column.type === 'number') {
+    // An explicit null is a cell the builder blanked on purpose -- the
+    // Expected column of a variance total, which has no meaning summed.
+    // Undefined still reads as zero, as it always has.
+    if (value === null) return '';
     const number = Number(value) || 0;
     // Quantities can be fractional — half a kilo of something — but almost
     // never are, and "215.00" in a column of counts reads as an error.

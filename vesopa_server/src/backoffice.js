@@ -1050,6 +1050,13 @@ function backofficeRoutes({ pool, broadcast, secret }) {
         'COALESCE(c.active, 1) AS active, COALESCE(c.training, 0) AS training,'
       );
 
+      // The hourly rate (schema_till_events.sql, 1.8.0.0), for the wage
+      // reports. Tried first; a database without it loses only the column.
+      const WITH_RATE = WITH_TRAINING.replace(
+        'COALESCE(c.training, 0) AS training,',
+        'COALESCE(c.training, 0) AS training, c.hourly_rate,'
+      );
+
       const WITHOUT_GROUP = `
         SELECT id, pluid, clark_name, pin_code, COALESCE(active, 1) AS active
           FROM bo_clarks WHERE email = ?
@@ -1059,14 +1066,19 @@ function backofficeRoutes({ pool, broadcast, secret }) {
         e.code === 'ER_BAD_FIELD_ERROR' || e.code === 'ER_NO_SUCH_TABLE';
       let rows;
       try {
-        [rows] = await pool.query(WITH_TRAINING, [email]);
-      } catch (e0) {
-        if (!missing(e0)) throw e0;
+        [rows] = await pool.query(WITH_RATE, [email]);
+      } catch (eRate) {
+        if (!missing(eRate)) throw eRate;
         try {
-          [rows] = await pool.query(WITH_GROUP, [email]);
-        } catch (e) {
-          if (!missing(e)) throw e;
-          [rows] = await pool.query(WITHOUT_GROUP, [email]);
+          [rows] = await pool.query(WITH_TRAINING, [email]);
+        } catch (e0) {
+          if (!missing(e0)) throw e0;
+          try {
+            [rows] = await pool.query(WITH_GROUP, [email]);
+          } catch (e) {
+            if (!missing(e)) throw e;
+            [rows] = await pool.query(WITHOUT_GROUP, [email]);
+          }
         }
       }
       res.json(rows.map((r) => ({ ...r, training: Number(r.training) === 1 })));
@@ -1087,6 +1099,27 @@ function backofficeRoutes({ pool, broadcast, secret }) {
     if (raw === undefined || raw === null || raw === '') return null;
     const id = Number(raw);
     return Number.isInteger(id) && id > 0 ? id : null;
+  }
+
+  /**
+   * What a member of staff costs an hour, written after the row is saved.
+   *
+   * Its own statement rather than another branch of the insert's fallback
+   * chain, which is four deep already. Only when the form sent the field, so
+   * an older tab cannot blank a rate; blank means NULL, which the wage
+   * reports read as "no rate set" and say so. A database without the column
+   * loses the rate and nothing else.
+   */
+  async function saveHourlyRate(email, id, body) {
+    if (!body || !('hourly_rate' in body)) return;
+    const raw = body.hourly_rate;
+    const rate = raw === '' || raw === null || raw === undefined ? null : Number(raw);
+    if (rate !== null && (!Number.isFinite(rate) || rate < 0)) return;
+    try {
+      await pool.execute('UPDATE bo_clarks SET hourly_rate = ? WHERE id = ? AND email = ?', [rate, id, email]);
+    } catch (e) {
+      if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+    }
   }
 
   router.post(STAFF_PATHS, auth, async (req, res, next) => {
@@ -1155,6 +1188,7 @@ function backofficeRoutes({ pool, broadcast, secret }) {
           );
         }
       }
+      await saveHourlyRate(email, result.insertId, req.body);
       broadcast({ type: 'staff.updated' });
       res.status(201).json({ id: result.insertId });
     } catch (e) {
@@ -1242,6 +1276,7 @@ function backofficeRoutes({ pool, broadcast, secret }) {
       if (r.affectedRows === 0) {
         return res.status(404).json({ error: 'No such staff member' });
       }
+      await saveHourlyRate(email, req.params.id, req.body);
       broadcast({ type: 'staff.updated' });
       res.json({ ok: true });
     } catch (e) {

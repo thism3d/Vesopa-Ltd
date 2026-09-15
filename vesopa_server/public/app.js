@@ -195,6 +195,10 @@ function connectSocket() {
     // on another machine should relabel them here. Safe to reload now that
     // loadScreens keeps an unsaved layout rather than replacing it.
     if (msg.type === 'catalogue.updated' && ['products', 'stock', 'screens'].includes(currentView)) render();
+    // A stock document completed on another screen, or a wastage rung on a
+    // till, changes the levels page under whoever is looking at it. The
+    // editors are left alone: a draft being typed must not be redrawn.
+    if (String(msg.type).startsWith('stock.') && currentView === 'stock') render();
     if (msg.type === 'staff.updated' && currentView === 'staff') render();
     if (msg.type === 'users.updated' && currentView === 'users') render();
     if (msg.type === 'customers.updated' && currentView === 'customers') render();
@@ -304,6 +308,13 @@ const ROUTES = {
   timesheets: '/timesheets',
   products: '/products',
   stock: '/stock',
+  stock_orders: '/stock/orders',
+  stock_wastage: '/stock/wastage',
+  stock_adjustments: '/stock/adjustments',
+  stock_takes: '/stock/stock-takes',
+  stock_spot_checks: '/stock/spot-checks',
+  stock_suppliers: '/stock/suppliers',
+  stock_pack_sizes: '/stock/pack-sizes',
   screens: '/screen-programming',
   program_departments: '/program-departments',
   program_groups: '/program-groups',
@@ -1292,7 +1303,15 @@ const VIEW_LOADERS = {
     bill_report: loadBillReport,
     timesheets: loadTimesheets,
     products: loadProducts,
-    stock: loadStock,
+    // Stock Control: the loaders are in stock.js.
+    stock: loadStockLevels,
+    stock_orders: loadStockOrders,
+    stock_wastage: () => loadStockDocs('wastage'),
+    stock_adjustments: () => loadStockDocs('adjustment'),
+    stock_takes: () => loadStockDocs('stocktake'),
+    stock_spot_checks: () => loadStockDocs('spot_check'),
+    stock_suppliers: loadStockSuppliers,
+    stock_pack_sizes: loadStockPackSizes,
     users: loadUsers,
     user_roles: loadUserRoles,
     staff: loadStaff,
@@ -2516,143 +2535,11 @@ async function loadUsers() {
 }
 
 /**
- * How many of each product remain.
- *
- * The count on its own was not telling anybody anything. Every product that
- * does not track stock came out as a flat "0", so a catalogue where nothing is
- * counted looked exactly like a catalogue where everything has run out — a
- * page of zeros that reads as an emergency and means nothing. Three states now,
- * and they are different states:
- *
- *   * **Not tracked** — no figure has ever been set. Said in words, greyed,
- *     because it is the absence of a number rather than the number nought.
- *   * **Out of stock** — tracked, and at or below zero. This is the emergency,
- *     and it is now the only thing that looks like one.
- *   * **Low** — tracked, and at or under the product's own low_stock_at. The
- *     dashboard has counted these for a while; this is the list that says which
- *     ones they are.
- *
- * Out of stock first, then low, then the rest in catalogue order: a stock list
- * is opened to find what needs ordering, and that should not need scrolling to.
+ * The Stock page moved to stock.js in 1.8.0.0 -- Stock Levels, with the
+ * ledger behind it. `loadStockLevels` replaces `loadStock`; the two count
+ * actions it had became a one-line delivery and a one-line stock take there,
+ * which is the same thing done by a document that remembers it happened.
  */
-async function loadStock() {
-  const rows = await api('/products');
-
-  const level = (p) => {
-    if (p.stock_quantity === null || p.stock_quantity === undefined) return 'none';
-    const left = Number(p.stock_quantity);
-    if (!Number.isFinite(left)) return 'none';
-    if (left <= 0) return 'out';
-    const at = Number(p.low_stock_at);
-    return Number.isFinite(at) && p.low_stock_at !== null && left <= at ? 'low' : 'ok';
-  };
-
-  const rank = { out: 0, low: 1, ok: 2, none: 3 };
-  const sorted = [...rows].sort((a, b) => rank[level(a)] - rank[level(b)]);
-
-  const count = (p) => {
-    const left = Number(p.stock_quantity);
-    // Stock is a DOUBLE — half a kilo of something is a real quantity — but
-    // almost every product is whole, and "12.00 in stock" reads as an error.
-    return Number.isInteger(left) ? String(left) : left.toFixed(2);
-  };
-
-  const cell = (p) => {
-    switch (level(p)) {
-      case 'none':
-        return '<span class="muted small">Not tracked</span>';
-      case 'out':
-        return '<span class="badge paused">Out of stock</span>';
-      case 'low':
-        return `${count(p)} <span class="badge due">Low</span>`;
-      default:
-        return count(p);
-    }
-  };
-
-  $('stock').innerHTML =
-    sorted
-      .map(
-        (p) => `<tr>
-        <td>${p.pluid}</td>
-        <td>${esc(p.product_name)}</td>
-        <td>${esc(p.department_name || '—')}</td>
-        <td class="right nowrap">${cell(p)}</td>
-        <td class="right nowrap row-actions-cell">
-          ${iconBtn('topup', 'Count some in',
-            `data-stock-in="${p.id}" data-stock-name="${esc(p.product_name)}"`)}
-          ${iconBtn('edit', 'Set the count',
-            `data-stock-set="${p.id}" data-stock-name="${esc(p.product_name)}"`)}
-        </td>
-      </tr>`
-      )
-      .join('') ||
-    '<tr><td colspan="5" class="empty">No products yet.</td></tr>';
-}
-
-/**
- * Counting stock in, from the page that told you it had run out.
- *
- * Two actions rather than one field, because they answer two different
- * questions. **Count some in** is a delivery: twelve arrived, add twelve to
- * whatever is there, and the answer does not depend on the count being right
- * beforehand. **Set the count** is a stocktake: whatever the system thought,
- * there are nine on the shelf now.
- *
- * Adding is the one offered first. It is the one that happens weekly, and it is
- * the one that is safe when the current number is already wrong.
- */
-async function stockAdjust(id, name, mode) {
-  // By row id, not by PLU: PUT /products/:id keys on the row, and a PLU is
-  // only unique within one venue's catalogue. Fetched fresh rather than read
-  // off the rendered table, so a count typed here is applied to whatever the
-  // shelf figure actually is now.
-  let product;
-  try {
-    product = await api(`/products/${encodeURIComponent(id)}`);
-  } catch {
-    return toast('That product has gone.', 'error');
-  }
-  if (!product) return toast('That product has gone.', 'error');
-
-  const now = product.stock_quantity;
-  const tracked = now !== null && now !== undefined && Number.isFinite(Number(now));
-  const adding = mode === 'in';
-
-  return modal(
-    adding ? `Count in — ${name}` : `Set the count — ${name}`,
-    [
-      {
-        name: 'qty',
-        label: adding
-          ? `How many arrived?${tracked ? ` (there are ${now} now)` : ''}`
-          : 'How many are on the shelf?',
-        type: 'number',
-        value: adding ? '' : (tracked ? now : 0),
-      },
-    ],
-    async (d) => {
-      const n = Number(d.qty);
-      if (!Number.isFinite(n)) throw new Error('Give a number.');
-      if (adding && n === 0) throw new Error('Nothing to count in.');
-
-      // The whole product is sent because that is the shape this route takes;
-      // only the count changes. Anything else on the row is passed back exactly
-      // as it arrived, so saving a stock figure cannot quietly rewrite a price.
-      const next = adding ? (tracked ? Number(now) + n : n) : n;
-      await api(`/products/${encodeURIComponent(id)}`, {
-        method: 'PUT',
-        body: JSON.stringify({ ...product, stock_quantity: next }),
-      });
-      await loadStock();
-      toast(
-        adding
-          ? `${name}: ${n > 0 ? 'added ' + n : 'removed ' + Math.abs(n)}, now ${next}.`
-          : `${name}: set to ${next}.`
-      );
-    }
-  );
-}
 
 /**
  * The permission-group picker for the staff form.
@@ -4219,15 +4106,29 @@ function fieldHtml(f) {
   }
   if (f.type === 'select') {
     // Options are either plain strings or {value,label} pairs — the commerce
-    // editors need labels that read differently from the stored value.
-    return `<select name="${f.name}">${f.options
-      .map((o) => {
-        const value = typeof o === 'object' ? o.value : o;
-        const label = typeof o === 'object' ? o.label : o;
-        return `<option value="${esc(value)}"${
-          String(value) === String(f.value) ? ' selected' : ''
-        }>${esc(label)}</option>`;
-      })
+    // editors need labels that read differently from the stored value. An
+    // option with a `group` sits under an <optgroup> of that name, in the
+    // order the groups first appear: the report picker has thirty-eight
+    // entries and a flat list of them is a list nobody can find anything in.
+    const option = (o) => {
+      const value = typeof o === 'object' ? o.value : o;
+      const label = typeof o === 'object' ? o.label : o;
+      return `<option value="${esc(value)}"${
+        String(value) === String(f.value) ? ' selected' : ''
+      }>${esc(label)}</option>`;
+    };
+    const grouped = f.options.some((o) => typeof o === 'object' && o.group);
+    if (!grouped) return `<select name="${f.name}">${f.options.map(option).join('')}</select>`;
+    const groups = new Map();
+    for (const o of f.options) {
+      const g = (typeof o === 'object' && o.group) || '';
+      if (!groups.has(g)) groups.set(g, []);
+      groups.get(g).push(o);
+    }
+    return `<select name="${f.name}">${[...groups.entries()]
+      .map(([g, list]) =>
+        g ? `<optgroup label="${esc(g)}">${list.map(option).join('')}</optgroup>` : list.map(option).join('')
+      )
       .join('')}</select>`;
   }
   if (f.type === 'checkbox') {
@@ -5315,16 +5216,6 @@ document.addEventListener('click', async (e) => {
     return show(navBtn.dataset.view, { userInitiated: true });
   }
 
-  // ---- Stock ----
-  const stockIn = t.closest?.('[data-stock-in]');
-  if (stockIn) {
-    return stockAdjust(stockIn.dataset.stockIn, stockIn.dataset.stockName, 'in');
-  }
-  const stockSet = t.closest?.('[data-stock-set]');
-  if (stockSet) {
-    return stockAdjust(stockSet.dataset.stockSet, stockSet.dataset.stockName, 'set');
-  }
-
   // ---- Floor designer ----
   if (t.dataset.room) {
     if (dirty && !(await confirmDialog(
@@ -6148,6 +6039,7 @@ document.addEventListener('click', async (e) => {
       { label: 'Staff PIN (exactly 4 digits)', name: 'pin_code', required: true },
       { label: 'Staff ID', name: 'pluid', type: 'number', value: '0' },
       await staffGroupField(''),
+      { label: 'Hourly rate £ (for the wage reports; leave blank if not paid by the hour)', name: 'hourly_rate', type: 'money', value: '' },
       { label: 'Active (can sign on at the till)', name: 'active', type: 'checkbox', value: 1 },
     ], (d) => {
       const bad = staffPinError(d.pin_code, { required: true });
@@ -6165,6 +6057,7 @@ document.addEventListener('click', async (e) => {
       { label: 'Staff PIN (exactly 4 digits)', name: 'pin_code', value: c.pin_code ?? '' },
       { label: 'Staff ID', name: 'pluid', type: 'number', value: c.pluid },
       await staffGroupField(c.permission_group_id ?? ''),
+      { label: 'Hourly rate £ (for the wage reports; leave blank if not paid by the hour)', name: 'hourly_rate', type: 'money', value: c.hourly_rate ?? '' },
       { label: 'Active (can sign on at the till)', name: 'active', type: 'checkbox', value: c.active },
       { label: 'Training account (practice only: sales are not recorded or counted)', name: 'training', type: 'checkbox', value: c.training ?? 0 },
     ], (d) => {
@@ -10411,7 +10304,7 @@ async function loadLoyaltyApp() {
 
   statCards($('la-stats'), [
     { label: 'Members with the app', value: String(data.stats.members), tone: data.stats.members ? 'primary' : '' },
-    { label: 'Phones & browsers for notifications', value: String(data.stats.web) },
+    { label: 'Phones & browsers for notifications', value: String(data.stats.web + (data.stats.phones || 0)) },
     { label: 'Windows PCs for notifications', value: String(data.stats.windows) },
     { label: 'Near you now', value: String(data.stats.located) },
   ]);
@@ -10461,9 +10354,11 @@ async function loadLoyaltyApp() {
   $('la-n-image-picker').innerHTML = imagePicker('la_n_image_url', '', { crop: 'landscape' });
   wireImagePickers($('la-n-image-picker'));
 
-  $('la-push-note').textContent = data.web_push_ready
-    ? 'Reaches members who allowed notifications (phones, browsers and the Windows app), and always lands in the app\'s inbox.'
-    : 'Notifications land in the app\'s inbox. Phone notifications are not switched on for this server yet.';
+  $('la-push-note').textContent = !data.web_push_ready
+    ? 'Notifications land in the app\'s inbox. Phone notifications are not switched on for this server yet.'
+    : data.android_push_ready
+      ? 'Reaches members who allowed notifications (phones, browsers and the Windows app), and always lands in the app\'s inbox.'
+      : 'Reaches members who allowed notifications in a browser or the Windows app, and always lands in the app\'s inbox. The Android app\'s notifications are not switched on for this server yet.';
 
   laPreview();
   laAudienceFields();
@@ -12582,14 +12477,104 @@ function rrNameReport() {
   if (!chosen) return;
   $('rr-title').textContent = chosen.label;
   $('rr-blurb').textContent = chosen.description || '';
+  rrShowFilters(chosen);
+}
+
+/**
+ * The fields this report takes, and only those.
+ *
+ * A week-start report covers seven days from a date and the period picker
+ * would be a lie beside it, so it swaps: the date box appears, the period
+ * and its custom range go. Everything else is additive.
+ */
+function rrShowFilters(chosen) {
+  const wants = new Set(chosen.filters || []);
+  const week = wants.has('week_start');
+  $('rr-period-field').hidden = week;
+  $('rr-week-field').hidden = !week;
+  if (week && !$('rr-week').value) {
+    // Last Monday: the week a manager most often wants is the one just gone.
+    const d = new Date();
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7) - 7);
+    $('rr-week').value = d.toISOString().slice(0, 10);
+  }
+  $('rr-clerk-field').hidden = !wants.has('clerk');
+  $('rr-department-field').hidden = !wants.has('department');
+  $('rr-product-field').hidden = !wants.has('product');
+  $('rr-groupby-field').hidden = !wants.has('group_by');
+  if (wants.has('product')) rrFillProducts();
+  rrToggleCustom();
+}
+
+/** The report picker, grouped, narrowed by whatever is in the search box. */
+function rrFillReports() {
+  const needle = ($('rr-search').value || '').trim().toLowerCase();
+  const current = $('rr-report').value;
+  const groups = rrCatalogue.groups || [{ key: 'sales', label: 'Reports' }];
+  let first = null;
+  $('rr-report').innerHTML = groups
+    .map((g) => {
+      const list = rrCatalogue.reports.filter(
+        (r) =>
+          (r.group || 'sales') === g.key &&
+          (!needle ||
+            r.label.toLowerCase().includes(needle) ||
+            (r.description || '').toLowerCase().includes(needle))
+      );
+      if (!list.length) return '';
+      if (!first) first = list[0].key;
+      return `<optgroup label="${esc(g.label)}">${list
+        .map((r) => `<option value="${esc(r.key)}">${esc(r.label)}</option>`)
+        .join('')}</optgroup>`;
+    })
+    .join('');
+  // Keep the chosen report where it survives the narrowing; otherwise the
+  // first match is the one the search was for.
+  const still = [...$('rr-report').options].some((o) => o.value === current);
+  $('rr-report').value = still ? current : first || '';
+}
+
+/** Products for the product filter, fetched once, offered as you type. */
+let rrProducts = null;
+async function rrFillProducts() {
+  if (rrProducts) return;
+  rrProducts = await api('/products').catch(() => []);
+  $('rr-product-list').innerHTML = rrProducts
+    .map((p) => `<option value="${esc(`${p.product_name} — PLU ${p.pluid}`)}"></option>`)
+    .join('');
+}
+
+/** The PLU the product box means: "Carling — PLU 12", "12", or a name. */
+function rrProductPlu() {
+  const typed = ($('rr-product').value || '').trim();
+  if (!typed) return undefined;
+  const tagged = /PLU\s+(\d+)/i.exec(typed);
+  if (tagged) return tagged[1];
+  if (/^\d+$/.test(typed)) return typed;
+  const hit = (rrProducts || []).find(
+    (p) => String(p.product_name || '').toLowerCase() === typed.toLowerCase()
+  );
+  return hit ? String(hit.pluid) : typed;
 }
 
 async function loadRunReport() {
   if (!rrCatalogue) {
     rrCatalogue = await api('/reports/catalogue');
-    $('rr-report').innerHTML = rrCatalogue.reports
-      .map((r) => `<option value="${esc(r.key)}">${esc(r.label)}</option>`)
-      .join('');
+    rrFillReports();
+    $('rr-clerk').innerHTML =
+      '<option value="">All staff</option>' +
+      (rrCatalogue.clerks || [])
+        .map((c) => `<option value="${esc(c.value)}">${esc(c.label)} (${c.sales})</option>`)
+        .join('');
+    $('rr-department').innerHTML =
+      '<option value="">All departments</option>' +
+      (rrCatalogue.departments || [])
+        .map((d) => `<option value="${esc(d.value)}">${esc(d.label)}</option>`)
+        .join('');
+    $('rr-search').addEventListener('input', () => {
+      rrFillReports();
+      rrNameReport();
+    });
     $('rr-period').innerHTML = rrCatalogue.ranges
       .map((r) => `<option value="${esc(r.key)}">${esc(r.label)}</option>`)
       .join('');
@@ -12648,9 +12633,9 @@ function rrFillTerminals() {
       .join('');
 }
 
-/** The two date boxes only exist for Custom Range. */
+/** The two date boxes only exist for Custom Range, and never with a week. */
 function rrToggleCustom() {
-  const custom = $('rr-period').value === 'custom';
+  const custom = $('rr-period').value === 'custom' && $('rr-period-field').hidden === false;
   $('rr-from-field').hidden = !custom;
   $('rr-to-field').hidden = !custom;
   if (custom && !$('rr-from').value) {
@@ -12674,6 +12659,15 @@ function rrSpec() {
     // Empty string means every terminal. Sent as undefined rather than '' so
     // the server's own "unfiltered" default is the one thing deciding it.
     terminal: $('rr-terminal').value || undefined,
+    // The report's own filters. The server keeps only the ones the chosen
+    // report names, so sending the lot is harmless and simpler than knowing.
+    filters: {
+      clerk: $('rr-clerk').value || undefined,
+      department: $('rr-department').value || undefined,
+      product: $('rr-product-field').hidden ? undefined : rrProductPlu(),
+      week_start: $('rr-week-field').hidden ? undefined : $('rr-week').value || undefined,
+      group_by: $('rr-groupby-field').hidden ? undefined : $('rr-groupby').value,
+    },
   };
 }
 
@@ -12712,6 +12706,9 @@ function rrRender(report) {
     ['Site', report.site],
     ['Period covered', `${rrWhen(report.from)} — ${rrWhen(report.to)}`],
     ['Terminal', report.terminalLabel || 'All terminals'],
+    // Whatever the report was narrowed by, from the same header the PDF
+    // prints -- everything after the Terminal line.
+    ...(report.header || []).slice(6),
     ['Generated', rrWhen(report.generatedAt)],
   ];
 
@@ -13162,7 +13159,50 @@ function rsEdit(existing) {
         label: 'Report',
         type: 'select',
         value: existing ? existing.report_key : rsOptions.reports[0].key,
-        options: rsOptions.reports.map((r) => ({ value: r.key, label: r.label })),
+        // In the catalogue's group order -- Sales, Stock, Staff, Customers --
+        // not the order the builders happen to be registered in.
+        options: (rsOptions.groups || [{ key: 'sales' }]).flatMap((g) =>
+          rsOptions.reports
+            .filter((r) => (r.group || 'sales') === g.key)
+            .map((r) => ({ value: r.key, label: r.label, group: g.label }))
+        ),
+      },
+      // The report's own filters. Shown only for a report that takes them --
+      // see the wiring under the modal -- and kept with the schedule, so
+      // "Product Sales by Clerk, for Sarah, every Monday" is one schedule.
+      {
+        name: 'clerk',
+        label: 'Clerk',
+        type: 'select',
+        value: (existing && existing.filters && existing.filters.clerk) || '',
+        options: [{ value: '', label: 'All staff' }].concat(
+          (rsOptions.clerks || []).map((c) => ({ value: c.value, label: `${c.label} (${c.sales})` }))
+        ),
+      },
+      {
+        name: 'department',
+        label: 'Department',
+        type: 'select',
+        value: (existing && existing.filters && existing.filters.department) || '',
+        options: [{ value: '', label: 'All departments' }].concat(
+          (rsOptions.departments || []).map((d) => ({ value: d.value, label: d.label }))
+        ),
+      },
+      {
+        name: 'product',
+        label: 'Product (PLU)',
+        type: 'number',
+        value: (existing && existing.filters && existing.filters.product) || '',
+      },
+      {
+        name: 'group_by',
+        label: 'Group by',
+        type: 'select',
+        value: (existing && existing.filters && existing.filters.group_by) || 'sub_department',
+        options: [
+          { value: 'sub_department', label: 'Sub department' },
+          { value: 'department', label: 'Department' },
+        ],
       },
       {
         name: 'format',
@@ -13230,6 +13270,29 @@ function rsEdit(existing) {
       );
     }
   );
+  rsWireFilters();
+}
+
+/**
+ * Show the filter fields the chosen report takes and hide the rest, now and
+ * whenever the report changes. The modal is plain markup, so this reaches in
+ * by field name after it has been drawn.
+ */
+function rsWireFilters() {
+  const form = $('modal-form');
+  if (!form) return;
+  const pick = form.querySelector('[name="report_key"]');
+  const apply = () => {
+    const def = (rsOptions.reports || []).find((r) => r.key === pick.value) || {};
+    const wants = new Set(def.filters || []);
+    for (const name of ['clerk', 'department', 'product', 'group_by']) {
+      const field = form.querySelector(`[name="${name}"]`);
+      const label = field && field.closest('label');
+      if (label) label.hidden = !wants.has(name);
+    }
+  };
+  pick.addEventListener('change', apply);
+  apply();
 }
 
 /** What happened each time it fired. The answer to "it never arrived". */

@@ -312,7 +312,16 @@
 
           <button class="nav-group" data-group="catalogue">Catalogue<span class="caret">▼</span></button>
           <button class="nav" data-view="products">Products</button>
-          <button class="nav" data-view="stock">Stock</button>
+
+          <button class="nav-group" data-group="stock">Stock Control<span class="caret">▼</span></button>
+          <button class="nav" data-view="stock">Stock Levels</button>
+          <button class="nav" data-view="stock_orders">Orders &amp; Deliveries</button>
+          <button class="nav" data-view="stock_wastage">Wastage</button>
+          <button class="nav" data-view="stock_adjustments">Adjustments</button>
+          <button class="nav" data-view="stock_takes">Stock Takes</button>
+          <button class="nav" data-view="stock_spot_checks">Spot Checks</button>
+          <button class="nav" data-view="stock_suppliers">Suppliers</button>
+          <button class="nav" data-view="stock_pack_sizes">Pack Sizes</button>
 
           <button class="nav-group" data-group="programming">Programming<span class="caret">▼</span></button>
           <button class="nav" data-view="screens">Screen Programming</button>
@@ -529,12 +538,23 @@
                a grid that gives every one of them a whole column; the actions
                sit on their own rule under it and stay together. -->
           <div class="card rd-card">
+            <!-- Thirty-eight reports in four groups. The search box narrows
+                 the picker as you type; the picker itself is grouped. The
+                 fields after Terminal appear only for the reports that take
+                 them -- a clerk, a product, a department, a week, a grouping
+                 -- and the catalogue says which. -->
             <div class="rr-controls">
+              <label>Find a report
+                <input type="search" id="rr-search" placeholder="Type to narrow the list" autocomplete="off">
+              </label>
               <label>Report
                 <select id="rr-report"></select>
               </label>
-              <label>Period
+              <label id="rr-period-field">Period
                 <select id="rr-period"></select>
+              </label>
+              <label id="rr-week-field" hidden>Week starting
+                <input type="date" id="rr-week">
               </label>
               <label>Terminal
                 <select id="rr-terminal"></select>
@@ -544,6 +564,22 @@
               </label>
               <label id="rr-to-field" hidden>To
                 <input type="date" id="rr-to">
+              </label>
+              <label id="rr-clerk-field" hidden>Clerk
+                <select id="rr-clerk"></select>
+              </label>
+              <label id="rr-department-field" hidden>Department
+                <select id="rr-department"></select>
+              </label>
+              <label id="rr-product-field" hidden>Product
+                <input type="text" id="rr-product" list="rr-product-list" placeholder="Name or PLU" autocomplete="off">
+                <datalist id="rr-product-list"></datalist>
+              </label>
+              <label id="rr-groupby-field" hidden>Group by
+                <select id="rr-groupby">
+                  <option value="sub_department">Sub department</option>
+                  <option value="department">Department</option>
+                </select>
               </label>
             </div>
 
@@ -741,11 +777,89 @@
         </section>
 
         <!-- Stock -->
+        <!-- Stock Control. Eight pages over one ledger; the code is in
+             stock.js. A product is "tracked" once somebody has counted it,
+             and only tracked products carry a value or a level. -->
         <section id="view-stock" class="view" hidden>
-          <div class="page-head"><div><h2>Stock</h2><p class="muted small">How many of each product remain, and the department it sells under.</p></div></div>
-          <div class="card"><table>
-            <thead><tr><th>PLU</th><th>Product</th><th>Department</th><th class="right">In stock</th><th></th></tr></thead>
-            <tbody id="stock"></tbody>
+          <div class="page-head">
+            <div>
+              <h2>Stock Levels</h2>
+              <p class="muted small">
+                What is on the shelf, what it is worth at cost, and the supplier, pack and
+                minimum that let an order be suggested. Book a delivery or set a count from
+                the row; every change is kept in the stock ledger.
+              </p>
+            </div>
+          </div>
+          <div class="rr-tiles" id="sk-tiles"></div>
+          <div class="card rd-card">
+            <div class="rr-controls">
+              <label>Search
+                <input type="search" id="sk-search" placeholder="Product, PLU or supplier" autocomplete="off">
+              </label>
+              <label>Department
+                <select id="sk-dept"></select>
+              </label>
+              <label>Show
+                <select id="sk-level">
+                  <option value="">Everything</option>
+                  <option value="out">Out of stock</option>
+                  <option value="low">Low</option>
+                  <option value="ok">In stock</option>
+                  <option value="untracked">Not tracked</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          <div class="card" style="margin-top:var(--stack)">
+            <div class="rr-scroll">
+              <table class="table" data-no-cards>
+                <thead><tr><th>PLU</th><th>Product</th><th>Supplier</th><th>Pack</th><th class="right">In stock</th><th class="right">Min / Max</th><th class="right">Unit cost</th><th class="right">Value</th><th>Status</th><th></th></tr></thead>
+                <tbody id="sk-levels"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section id="view-stock_orders" class="view" hidden>
+          <div id="sk-orders-host"></div>
+        </section>
+
+        <section id="view-stock_wastage" class="view" hidden>
+          <div id="sk-docs-wastage"></div>
+        </section>
+
+        <section id="view-stock_adjustments" class="view" hidden>
+          <div id="sk-docs-adjustment"></div>
+        </section>
+
+        <section id="view-stock_takes" class="view" hidden>
+          <div id="sk-docs-stocktake"></div>
+        </section>
+
+        <section id="view-stock_spot_checks" class="view" hidden>
+          <div id="sk-docs-spot_check"></div>
+        </section>
+
+        <section id="view-stock_suppliers" class="view" hidden>
+          <div class="page-head">
+            <div><h2>Suppliers</h2><p class="muted small">Who you buy from. Put each product under its supplier in Stock Levels, and an order can be suggested from what is running low.</p></div>
+            <button class="btn primary" id="sk-add-supplier">Add supplier</button>
+          </div>
+          <div class="card"><table class="table table-cards">
+            <thead><tr><th>Supplier</th><th>Contact</th><th>Phone</th><th>Email</th><th class="right">Products</th><th class="right">Orders</th><th>Status</th><th></th></tr></thead>
+            <tbody id="sk-suppliers"></tbody>
+          </table></div>
+        </section>
+
+        <section id="view-stock_pack_sizes" class="view" hidden>
+          <div class="page-head">
+            <div><h2>Pack Sizes</h2><p class="muted small">How things arrive. A keg is bought as one thing and sold as eighty-eight pints; a case of bottles as twenty-four. Stock is counted in units and ordered in packs.</p></div>
+            <button class="btn primary" id="sk-add-pack">Add pack size</button>
+          </div>
+          <div class="card"><table class="table table-cards">
+            <thead><tr><th>Pack</th><th class="right">Units per pack</th><th></th></tr></thead>
+            <tbody id="sk-packs"></tbody>
           </table></div>
         </section>
 
@@ -3631,6 +3745,7 @@
     <!-- Before app.js, like screens.js: it defines functions app.js's render
          map refers to, and uses app.js's helpers only from inside them. -->
     <script src="/permissions.js"></script>
+    <script src="/stock.js"></script>
     <script src="/dinein_card.js"></script>
     <script src="/dinein.js"></script>
     <script src="/app.js"></script>
