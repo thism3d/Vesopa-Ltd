@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/session.dart';
 import '../platform/push.dart';
 import 'account_page.dart';
+import '../platform/brightness.dart';
 import 'card_page.dart';
 import 'history_page.dart';
 import 'inbox_page.dart';
@@ -61,11 +62,13 @@ class _HomePageState extends ConsumerState<HomePage> with WidgetsBindingObserver
       _openNews();
     });
     unawaited(_refresh());
+    _glow();
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    unawaited(ScreenGlow.off());
     super.dispose();
   }
 
@@ -75,7 +78,19 @@ class _HomePageState extends ConsumerState<HomePage> with WidgetsBindingObserver
       ref.invalidate(meProvider);
       ref.invalidate(messagesProvider);
       unawaited(_refresh());
+      _glow();
+    } else if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+      // Backgrounded: the screen goes back to what the phone had.
+      unawaited(ScreenGlow.off());
     }
+  }
+
+  /// Full brightness on the Card tab, where the QR code is; normal elsewhere.
+  void _glow() => unawaited(_tab == 0 ? ScreenGlow.on() : ScreenGlow.off());
+
+  void _select(int i) {
+    setState(() => _tab = i);
+    _glow();
   }
 
   Future<void> _refresh() async {
@@ -158,7 +173,7 @@ class _HomePageState extends ConsumerState<HomePage> with WidgetsBindingObserver
         body: body,
         bottomNavigationBar: NavigationBar(
           selectedIndex: _tab,
-          onDestinationSelected: (i) => setState(() => _tab = i),
+          onDestinationSelected: _select,
           destinations: [
             for (final (icon, selected, label) in _destinations)
               NavigationDestination(icon: Icon(icon), selectedIcon: Icon(selected), label: label),
@@ -173,7 +188,7 @@ class _HomePageState extends ConsumerState<HomePage> with WidgetsBindingObserver
         children: [
           NavigationRail(
             selectedIndex: _tab,
-            onDestinationSelected: (i) => setState(() => _tab = i),
+            onDestinationSelected: _select,
             extended: wideRail,
             labelType: wideRail ? NavigationRailLabelType.none : NavigationRailLabelType.all,
             destinations: [

@@ -75,5 +75,9 @@
 	<array>
 		<string>remote-notification</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>To take a photo for your membership card.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>To choose a photo for your membership card.</string>
 </dict>
 </plist>

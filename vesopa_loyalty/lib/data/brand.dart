@@ -22,6 +22,10 @@ class Brand {
     required this.accent,
     required this.background,
     required this.text,
+    this.iconTint,
+    this.fontScale = 1.0,
+    this.inboxMode = 'limit',
+    this.inboxLimit = 12,
     this.headingFont,
     this.bodyFont,
     this.links = const {},
@@ -46,8 +50,26 @@ class Brand {
   final Color accent;
   final Color background;
   final Color text;
+
+  /// The icons -- tab bar, the card's facts, the account page. Null is
+  /// "the main colour", which is what they were before the venue could
+  /// choose, and which on a white card is white on white.
+  final Color? iconTint;
+
+  /// How much bigger than the app's own type the venue wants everything.
+  /// 0.8 to 1.6; 1 is as it was. A condensed face like Bebas Neue reads
+  /// small at 1.
+  final double fontScale;
+
+  /// How the news page keeps its messages: 'limit' (the newest [inboxLimit])
+  /// or 'scroll' (all of them, a page at a time).
+  final String inboxMode;
+  final int inboxLimit;
+
   final BrandFont? headingFont;
   final BrandFont? bodyFont;
+
+  Color get iconColour => iconTint ?? primary;
 
   /// website, phone, email, facebook, instagram, x, tiktok, booking, menu.
   final Map<String, String> links;
@@ -94,6 +116,12 @@ class Brand {
       accent: _hex(colours['accent'], const Color(0xFFF59E0B)),
       background: _hex(colours['background'], const Color(0xFFF8FAFC)),
       text: _hex(colours['text'], const Color(0xFF0F172A)),
+      iconTint: colours['icon'] is String && (colours['icon'] as String).isNotEmpty
+          ? _hex(colours['icon'], const Color(0xFF1E3A8A))
+          : null,
+      fontScale: ((j['font_scale'] as num?)?.toDouble() ?? 1.0).clamp(0.8, 1.6),
+      inboxMode: ((j['inbox'] as Map?)?['mode'] as String?) == 'scroll' ? 'scroll' : 'limit',
+      inboxLimit: ((j['inbox'] as Map?)?['limit'] as num?)?.toInt() ?? 12,
       headingFont: BrandFont.fromJson(fonts['heading'], resolve),
       bodyFont: BrandFont.fromJson(fonts['body'], resolve),
       links: {
@@ -120,6 +148,19 @@ class Brand {
   /// Text that reads on [c].
   static Color onColour(Color c) => c.computeLuminance() > 0.5 ? const Color(0xFF111111) : Colors.white;
 
+  bool get _dark => background.computeLuminance() <= 0.4;
+
+  /// A shade of the venue's background for a card or a sheet to sit on.
+  ///
+  /// EVERY SURFACE IS THE VENUE'S BACKGROUND, LIGHTENED OR DARKENED. Material's
+  /// own scheme derived the card behind the facts and the news sheet from the
+  /// seed colour, which on The Vesopa Kitchen (white on #990000) came out a
+  /// dark grey the venue never chose -- and their black text vanished on it.
+  /// A shade of their own background is a surface their own text colour was
+  /// chosen against.
+  Color surface([double step = 0.08]) =>
+      Color.lerp(background, _dark ? Colors.white : Colors.black, step)!;
+
   ThemeData theme() {
     final scheme = ColorScheme.fromSeed(
       seedColor: primary,
@@ -129,12 +170,24 @@ class Brand {
       onSecondary: onColour(accent),
       surface: background,
       onSurface: text,
-      brightness: background.computeLuminance() > 0.4 ? Brightness.light : Brightness.dark,
+      brightness: _dark ? Brightness.dark : Brightness.light,
+    ).copyWith(
+      // The tints Material reaches for behind cards, sheets, dialogs and
+      // menus. All shades of the background now -- see surface().
+      surfaceContainerLowest: surface(0.03),
+      surfaceContainerLow: surface(0.05),
+      surfaceContainer: surface(0.08),
+      surfaceContainerHigh: surface(0.11),
+      surfaceContainerHighest: surface(0.14),
+      onSurfaceVariant: text.withValues(alpha: 0.78),
+      outline: text.withValues(alpha: 0.35),
+      outlineVariant: text.withValues(alpha: 0.18),
     );
     final base = ThemeData(colorScheme: scheme, useMaterial3: true, scaffoldBackgroundColor: background);
     final bodyFamily = bodyFont?.family;
     final headFamily = headingFont?.family ?? bodyFamily;
-    var textTheme = base.textTheme.apply(fontFamily: bodyFamily, bodyColor: text, displayColor: text);
+    var textTheme = base.textTheme
+        .apply(fontFamily: bodyFamily, bodyColor: text, displayColor: text, fontSizeFactor: fontScale);
     if (headFamily != null) {
       TextStyle? h(TextStyle? s) => s?.copyWith(fontFamily: headFamily);
       textTheme = textTheme.copyWith(
@@ -150,6 +203,23 @@ class Brand {
     }
     return base.copyWith(
       textTheme: textTheme,
+      // The icons are the venue's icon colour everywhere an icon is not
+      // drawn on the main colour (the app bar and buttons keep their own).
+      iconTheme: IconThemeData(color: iconColour),
+      listTileTheme: ListTileThemeData(
+        iconColor: iconColour,
+        textColor: text,
+        titleTextStyle: textTheme.bodyLarge,
+        subtitleTextStyle: textTheme.bodyMedium?.copyWith(color: text.withValues(alpha: 0.78)),
+      ),
+      cardTheme: CardThemeData(color: surface(0.08), surfaceTintColor: Colors.transparent),
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor: surface(0.05),
+        surfaceTintColor: Colors.transparent,
+        dragHandleColor: text.withValues(alpha: 0.4),
+      ),
+      dialogTheme: DialogThemeData(backgroundColor: surface(0.06), surfaceTintColor: Colors.transparent),
+      dividerColor: text.withValues(alpha: 0.15),
       appBarTheme: AppBarTheme(
         backgroundColor: primary,
         foregroundColor: onColour(primary),
@@ -170,7 +240,28 @@ class Brand {
         fillColor: Colors.white.withValues(alpha: background.computeLuminance() > 0.4 ? 1 : 0.08),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
       ),
-      navigationBarTheme: NavigationBarThemeData(indicatorColor: accent.withValues(alpha: 0.3)),
+      navigationBarTheme: NavigationBarThemeData(
+        backgroundColor: surface(0.06),
+        surfaceTintColor: Colors.transparent,
+        indicatorColor: accent.withValues(alpha: 0.3),
+        iconTheme: WidgetStateProperty.resolveWith(
+          (states) => IconThemeData(color: states.contains(WidgetState.selected) ? iconColour : iconColour.withValues(alpha: 0.7)),
+        ),
+        labelTextStyle: WidgetStateProperty.resolveWith(
+          (states) => textTheme.labelMedium?.copyWith(
+            color: text,
+            fontWeight: states.contains(WidgetState.selected) ? FontWeight.w700 : FontWeight.w500,
+          ),
+        ),
+      ),
+      navigationRailTheme: NavigationRailThemeData(
+        backgroundColor: surface(0.04),
+        indicatorColor: accent.withValues(alpha: 0.3),
+        selectedIconTheme: IconThemeData(color: iconColour),
+        unselectedIconTheme: IconThemeData(color: iconColour.withValues(alpha: 0.7)),
+        selectedLabelTextStyle: textTheme.labelMedium?.copyWith(color: text, fontWeight: FontWeight.w700),
+        unselectedLabelTextStyle: textTheme.labelMedium?.copyWith(color: text),
+      ),
     );
   }
 

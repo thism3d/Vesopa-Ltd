@@ -1,5 +1,7 @@
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../data/api.dart';
 import '../data/session.dart';
@@ -40,6 +42,8 @@ class AccountPage extends ConsumerWidget {
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
               children: [
                 _You(account: a),
+                const SizedBox(height: 10),
+                const _Membership(),
                 const SizedBox(height: 10),
                 _Security(account: a),
                 const SizedBox(height: 10),
@@ -105,6 +109,7 @@ class _You extends ConsumerWidget {
     return SettingsCard(
       title: 'You',
       children: [
+        const _PhotoRow(),
         ListTile(
           contentPadding: EdgeInsets.zero,
           leading: const Icon(Icons.badge_outlined),
@@ -136,6 +141,220 @@ class _You extends ConsumerWidget {
             subtitle: Text('Connected'),
           ),
       ],
+    );
+  }
+}
+
+/// The member's photograph, on their card at the till.
+///
+/// THE MEMBER'S OWN TO ADD. The venue could always attach one in the back
+/// office; now the person can, from the camera or the gallery, and it
+/// reaches the till the same way. A clerk who can see it is them is the
+/// whole point of a photo on a membership.
+///
+/// The picture is scaled down before it leaves the phone -- a 12-megapixel
+/// photograph is not a face for a 60-pixel circle -- and a browser gets a
+/// file picker, which on a phone opens the camera anyway.
+class _PhotoRow extends ConsumerWidget {
+  const _PhotoRow();
+
+  Future<void> _change(BuildContext context, WidgetRef ref) async {
+    final phone = !kIsWeb && (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS);
+    var source = ImageSource.gallery;
+    if (phone) {
+      final chosen = await showModalBottomSheet<ImageSource>(
+        context: context,
+        showDragHandle: true,
+        builder: (sheet) => SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.photo_camera_outlined),
+                title: const Text('Take a photo'),
+                onTap: () => Navigator.pop(sheet, ImageSource.camera),
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library_outlined),
+                title: const Text('Choose from your photos'),
+                onTap: () => Navigator.pop(sheet, ImageSource.gallery),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      );
+      if (chosen == null) return;
+      source = chosen;
+    }
+    final XFile? picked;
+    try {
+      picked = await ImagePicker().pickImage(
+        source: source,
+        maxWidth: 900,
+        maxHeight: 900,
+        imageQuality: 85,
+        preferredCameraDevice: CameraDevice.front,
+      );
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          const SnackBar(content: Text('The camera or photos could not be opened.'), behavior: SnackBarBehavior.floating),
+        );
+      }
+      return;
+    }
+    if (picked == null || !context.mounted) return;
+    final bytes = await picked.readAsBytes();
+    final filename = picked.name.isEmpty ? 'photo.jpg' : picked.name;
+    if (!context.mounted) return;
+    await runWithFeedback(context, ref, () async {
+      await ref.read(apiProvider).uploadPhoto(bytes, filename);
+      ref.invalidate(meProvider);
+    }, done: 'Your photo is on your card.');
+  }
+
+  Future<void> _remove(BuildContext context, WidgetRef ref) async {
+    final sure = await showDialog<bool>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: const Text('Remove your photo?'),
+        content: const Text('Your card will show your initials instead.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialog, false), child: const Text('Keep it')),
+          FilledButton(onPressed: () => Navigator.pop(dialog, true), child: const Text('Remove')),
+        ],
+      ),
+    );
+    if (sure != true || !context.mounted) return;
+    await runWithFeedback(context, ref, () async {
+      await ref.read(apiProvider).removePhoto();
+      ref.invalidate(meProvider);
+    }, done: 'Photo removed.');
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final me = ref.watch(meProvider).value ?? const <String, dynamic>{};
+    final brand = ref.watch(brandProvider).value;
+    final url = me['photo_url'] as String?;
+    final api = ref.read(apiProvider);
+    final name = '${me['name'] ?? ''}'.trim();
+    final initials = name.isEmpty
+        ? '?'
+        : name.split(RegExp(r'\s+')).take(2).map((w) => w.isEmpty ? '' : w[0].toUpperCase()).join();
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: CircleAvatar(
+        radius: 26,
+        backgroundColor: brand?.iconColour.withValues(alpha: 0.2),
+        foregroundImage: url == null || url.isEmpty ? null : NetworkImage(api.resolve(url)),
+        child: Text(initials, style: TextStyle(fontWeight: FontWeight.w800, color: brand?.text)),
+      ),
+      title: const Text('Your photo'),
+      subtitle: Text(url == null || url.isEmpty ? 'Add one so the venue knows it is you' : 'Shown on your card at the till'),
+      trailing: Wrap(
+        spacing: 4,
+        children: [
+          if (url != null && url.isNotEmpty)
+            IconButton(tooltip: 'Remove', icon: const Icon(Icons.delete_outline), onPressed: () => _remove(context, ref)),
+          IconButton(
+            tooltip: url == null || url.isEmpty ? 'Add a photo' : 'Change photo',
+            icon: const Icon(Icons.add_a_photo_outlined),
+            onPressed: () => _change(context, ref),
+          ),
+        ],
+      ),
+      onTap: () => _change(context, ref),
+    );
+  }
+}
+
+/// The membership: when it runs to, what the venue's term and fee are, and
+/// how to renew.
+///
+/// Read off /me, which carries the venue's scheme beside the member's date.
+/// A venue with no expiry set on the member shows nothing about dates --
+/// "no expiry" is not something to announce -- but still shows the fee and
+/// term where the venue runs paid memberships.
+class _Membership extends ConsumerWidget {
+  const _Membership();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final me = ref.watch(meProvider).value ?? const <String, dynamic>{};
+    final m = (me['membership'] as Map?) ?? const {};
+    final expiry = m['expiry'] ?? me['membership_expiry'];
+    final expired = m['expired'] == true;
+    final term = (m['term_months'] as num?)?.toInt();
+    final fee = (m['fee_minor'] as num?)?.toInt() ?? 0;
+    final renewal = m['renewal_date'];
+    final paid = fee > 0 || (term != null && term > 0);
+    if (expiry == null && !paid) return const SizedBox.shrink();
+
+    final theme = Theme.of(context);
+    String howLong() {
+      if (renewal != null) return 'Memberships run to ${when(renewal, time: false)} each year.';
+      if (term != null && term > 0) return 'A membership lasts $term month${term == 1 ? '' : 's'}.';
+      return '';
+    }
+
+    return SettingsCard(
+      title: 'Membership',
+      children: [
+        if (expiry != null)
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(expired ? Icons.event_busy : Icons.event_available, color: expired ? theme.colorScheme.error : null),
+            title: Text(expired ? 'Ran out' : 'Runs until'),
+            subtitle: Text(when(expiry, time: false)),
+          )
+        else
+          const ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.event_available),
+            title: Text('No end date on your membership'),
+          ),
+        if (paid)
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.autorenew),
+            title: Text(fee > 0 ? 'Renewing costs ${money(fee)}' : 'Renewing'),
+            subtitle: howLong().isEmpty ? null : Text(howLong()),
+          ),
+        if (expired || expiry != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: FilledButton.tonalIcon(
+              onPressed: () => _renew(context, fee: fee, term: term, renewal: renewal, expired: expired),
+              icon: const Icon(Icons.autorenew),
+              label: Text(expired ? 'Renew my membership' : 'Renew early'),
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// What renewing means at this venue. The money is taken at the till --
+  /// paying in the app is a question for the venue (see the plan) -- so this
+  /// says so plainly rather than pretending to take a card.
+  Future<void> _renew(BuildContext context, {required int fee, int? term, Object? renewal, required bool expired}) {
+    final until = renewal != null
+        ? 'to ${when(renewal, time: false)}'
+        : term != null && term > 0
+            ? 'for another $term month${term == 1 ? '' : 's'}'
+            : '';
+    return showDialog<void>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: const Text('Renewing your membership'),
+        content: Text(
+          '${fee > 0 ? 'It costs ${money(fee)}, ' : ''}'
+          'paid at the till. Show your card and ask to renew; your membership then runs $until '
+          'and your points ${expired ? 'can be spent again' : 'carry on as they are'}.',
+        ),
+        actions: [FilledButton(onPressed: () => Navigator.pop(dialog), child: const Text('Got it'))],
+      ),
     );
   }
 }

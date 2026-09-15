@@ -49,6 +49,7 @@ const { sendMail } = require('./mailer');
 const { ensureMemberNumber } = require('./member_numbers');
 const { seal, unseal } = require('./express_kiosk');
 const push = require('./loyalty_push');
+const multer = require('multer');
 const { catalogueFor } = require('./fonts');
 const QR = require('./qr');
 const loyaltyAuth = require('./loyalty_auth');
@@ -66,6 +67,30 @@ const SESSION_CACHE_MS = 30_000;
 /** Where the Flutter web build is served from (vesopa_loyalty/build/web, deployed here). */
 const WEB_DIR = process.env.LOYALTY_WEB_DIR || path.join(__dirname, '..', 'loyalty_web');
 
+/**
+ * A member's photograph, into the same uploads folder the back office uses.
+ * Images only, five megabytes: a phone photograph is a few, and anything
+ * larger is a mistake rather than a face.
+ */
+const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, '..', 'public', 'uploads');
+const photoUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => {
+      fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+      cb(null, UPLOAD_DIR);
+    },
+    filename: (_req, file, cb) => {
+      const ext = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp' }[file.mimetype] || '.jpg';
+      cb(null, `member-${crypto.randomUUID()}${ext}`);
+    },
+  }),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (/^image\/(jpeg|png|webp)$/.test(file.mimetype)) return cb(null, true);
+    cb(new Error('Only a JPEG, PNG or WebP photograph can be used.'));
+  },
+});
+
 const DEFAULT_BRAND = Object.freeze({
   primary: '#111827',
   accent: '#A5C715',
@@ -74,6 +99,18 @@ const DEFAULT_BRAND = Object.freeze({
 });
 
 const HEX = /^#[0-9a-f]{6}$/i;
+
+/** 0.8 to 1.6, in steps the back office offers; anything else is 1. */
+const fontScale = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0.8 && n <= 1.6 ? Math.round(n * 100) / 100 : 1;
+};
+
+/** The venue's news rules: `limit` (default, twelve) or `scroll`. */
+const inboxRules = (a) => ({
+  mode: a && a.inbox_mode === 'scroll' ? 'scroll' : 'limit',
+  limit: Math.min(Math.max(Number(a && a.inbox_limit) || 12, 1), 500),
+});
 const SLUG = /^[a-z0-9](?:[a-z0-9-]{1,62}[a-z0-9])?$/;
 
 const cleanText = (v, max) => {
@@ -181,8 +218,16 @@ async function brandFor(db, office, app) {
       accent: a.colour_accent || DEFAULT_BRAND.accent,
       background: a.colour_background || DEFAULT_BRAND.background,
       text: a.colour_text || DEFAULT_BRAND.text,
+      // The icons. Null means "the main colour", which is what they were
+      // before the venue could choose.
+      icon: a.colour_icon || null,
     },
     fonts: { heading: font(a.font_heading), body: font(a.font_body) },
+    // How much bigger (or smaller) than the app's own type. 1 is as it was.
+    font_scale: fontScale(a.font_scale),
+    // How the news page keeps its messages: the newest `limit`, or all of
+    // them loaded as the page scrolls. Sent so the page can say which it is.
+    inbox: inboxRules(a),
     links,
     address: w.address_text || null,
     hours: w.hours_text || null,
@@ -705,9 +750,28 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
       const loyalty = await maybeOne(pool, 'SELECT point_value_minor FROM epos_loyalty_settings WHERE office = ?', [req.office]);
       const pointValue = loyalty ? Number(loyalty.point_value_minor) || 1 : 1;
       const points = Number(c.points_balance) || 0;
+      // The membership as the venue runs it: how long one lasts, what it
+      // costs, and the day everyone's runs to where the venue renews on one
+      // date -- so the app can say what renewing means, not only when.
+      const scheme = await maybeOne(
+        pool,
+        'SELECT membership_term_months, membership_fee_minor, membership_renewal_date FROM epos_loyalty_settings WHERE office = ?',
+        [req.office]
+      ).catch(() => null);
+      const expiry = c.membership_expiry ? new Date(c.membership_expiry) : null;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
       res.json({
         name: c.name,
         email: c.email,
+        photo_url: c.photo_url || null,
+        membership: {
+          expiry: c.membership_expiry || null,
+          expired: !!(expiry && expiry < today),
+          term_months: scheme ? Number(scheme.membership_term_months) || null : null,
+          fee_minor: scheme ? Number(scheme.membership_fee_minor) || 0 : 0,
+          renewal_date: scheme ? scheme.membership_renewal_date || null : null,
+        },
         card_number: c.card_number || null,
         member_no: c.member_no ?? null,
         // What the till scans. The card number where there is one -- exactly as
@@ -751,19 +815,90 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
     }
   });
 
-  /** The inbox: every message the venue sent this customer, newest first. */
+  /**
+   * The inbox: what the venue sent this customer, newest first, kept the way
+   * the venue chose (see inboxRules).
+   *
+   *   limit  -- the newest N and no more. Nothing is deleted; a message past
+   *             the Nth is simply not offered, and comes back if N is raised.
+   *   scroll -- a page at a time. `before` is the `sent_at` of the last one
+   *             shown; `more` says whether to ask again.
+   *
+   * The unread count is of what is offered, so the bell never promises a
+   * message the page will not show.
+   */
   router.get('/loyalty/v1/me/messages', requireCustomer, async (req, res, next) => {
     try {
+      const app = await maybeOne(pool, 'SELECT inbox_mode, inbox_limit FROM epos_loyalty_app WHERE office = ?', [req.office]).catch(() => null);
+      const rules = inboxRules(app);
+      const params = [req.office, req.customerId];
+      let older = '';
+      const before = req.query.before ? new Date(String(req.query.before)) : null;
+      if (rules.mode === 'scroll' && before && !Number.isNaN(before.getTime())) {
+        older = 'AND COALESCE(m.sent_at, i.created_at) < ?';
+        params.push(before);
+      }
+      const page = rules.mode === 'scroll'
+        ? Math.min(Math.max(Number(req.query.limit) || 20, 1), 100)
+        : rules.limit;
+      params.push(page + 1);
       const [rows] = await pool.query(
         `SELECT m.id, m.title, m.body, m.image_url, m.link_url,
-                m.video_url, m.video_embed_url, m.sent_at, i.read_at
+                m.video_url, m.video_embed_url, m.sent_at, i.read_at,
+                COALESCE(m.sent_at, i.created_at) AS shown_at
            FROM epos_push_inbox i
            JOIN epos_push_messages m ON m.id = i.message_id
-          WHERE i.office = ? AND i.customer_id = ?
-          ORDER BY COALESCE(m.sent_at, i.created_at) DESC LIMIT 100`,
-        [req.office, req.customerId]
+          WHERE i.office = ? AND i.customer_id = ? ${older}
+          ORDER BY shown_at DESC LIMIT ?`,
+        params
       );
-      res.json({ items: rows, unread: rows.filter((r) => !r.read_at).length });
+      const more = rules.mode === 'scroll' && rows.length > page;
+      const items = rows.slice(0, page);
+      let unread = items.filter((r) => !r.read_at).length;
+      if (rules.mode === 'scroll' && !older) {
+        // The bell counts everything unread, not only the first page.
+        const [[all]] = await pool.query(
+          'SELECT COUNT(*) AS n FROM epos_push_inbox WHERE office = ? AND customer_id = ? AND read_at IS NULL',
+          [req.office, req.customerId]
+        );
+        unread = Number(all.n) || 0;
+      }
+      res.json({ items, unread, more, mode: rules.mode, limit: rules.limit });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /**
+   * The member's own photograph, from the app.
+   *
+   * Their face on their card, so the venue can see it is them at the till --
+   * the till already shows the photo the back office attached, and this is
+   * the member attaching it themselves. Same upload as the back office's
+   * /api/customer-photo, same folder, and the old picture is left on disk
+   * until the venue tidies uploads: a file the till may still be showing
+   * from cache is not deleted under it.
+   */
+  router.post('/loyalty/v1/me/photo', requireCustomer, (req, res, next) => {
+    photoUpload.single('image')(req, res, async (err) => {
+      if (err) return res.status(400).json({ error: err.message });
+      if (!req.file) return res.status(400).json({ error: 'Choose a photograph.' });
+      try {
+        const url = `/uploads/${req.file.filename}`;
+        await pool.execute('UPDATE epos_customers SET photo_url = ? WHERE id = ? AND email_key = ?', [url, req.customerId, req.office]);
+        broadcast({ type: 'customers.updated', office: req.office });
+        res.status(201).json({ photo_url: url });
+      } catch (e) {
+        next(e);
+      }
+    });
+  });
+
+  router.delete('/loyalty/v1/me/photo', requireCustomer, async (req, res, next) => {
+    try {
+      await pool.execute('UPDATE epos_customers SET photo_url = NULL WHERE id = ? AND email_key = ?', [req.customerId, req.office]);
+      broadcast({ type: 'customers.updated', office: req.office });
+      res.json({ ok: true });
     } catch (e) {
       next(e);
     }
@@ -921,7 +1056,8 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
   // ---- The back office ----------------------------------------------------------
 
   const SETTINGS = ['enabled', 'slug', 'app_name', 'welcome_text', 'logo_url', 'icon_url', 'hero_url',
-    'colour_primary', 'colour_accent', 'colour_background', 'colour_text', 'font_heading', 'font_body',
+    'colour_primary', 'colour_accent', 'colour_background', 'colour_text', 'colour_icon', 'font_scale',
+    'font_heading', 'font_body', 'inbox_mode', 'inbox_limit',
     'links', 'latitude', 'longitude', 'radius_m'];
 
   function publicSettings(row) {
@@ -1079,8 +1215,12 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
         colour_accent: cleanHex(b.colour_accent),
         colour_background: cleanHex(b.colour_background),
         colour_text: cleanHex(b.colour_text),
+        colour_icon: cleanHex(b.colour_icon),
+        font_scale: fontScale(b.font_scale),
         font_heading: cleanText(b.font_heading, 80),
         font_body: cleanText(b.font_body, 80),
+        inbox_mode: b.inbox_mode === 'scroll' ? 'scroll' : 'limit',
+        inbox_limit: Math.min(Math.max(Math.round(Number(b.inbox_limit) || 12), 1), 500),
         links: JSON.stringify(links),
         latitude: lat == null ? null : lat.toFixed(6),
         longitude: lng == null ? null : lng.toFixed(6),

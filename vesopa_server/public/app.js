@@ -10271,8 +10271,12 @@ function laForm() {
     colour_accent: laValue('la-colour_accent'),
     colour_background: laValue('la-colour_background'),
     colour_text: laValue('la-colour_text'),
+    colour_icon: laValue('la-colour_icon'),
+    font_scale: laValue('la-font_scale') || '1',
     font_heading: laValue('la-font_heading'),
     font_body: laValue('la-font_body'),
+    inbox_mode: laValue('la-inbox_mode') || 'limit',
+    inbox_limit: laValue('la-inbox_limit') || '12',
     links,
     latitude: laValue('la-latitude'),
     longitude: laValue('la-longitude'),
@@ -10323,6 +10327,12 @@ async function loadLoyaltyApp() {
   $('la-colour_accent').value = s.colour_accent || b.colours.accent;
   $('la-colour_background').value = s.colour_background || b.colours.background;
   $('la-colour_text').value = s.colour_text || b.colours.text;
+  // Icons follow the main colour until the venue says otherwise.
+  $('la-colour_icon').value = s.colour_icon || b.colours.icon || s.colour_primary || b.colours.primary;
+  $('la-font_scale').value = String(Number(s.font_scale) || 1);
+  if (!$('la-font_scale').value) $('la-font_scale').value = '1';
+  $('la-inbox_mode').value = s.inbox_mode === 'scroll' ? 'scroll' : 'limit';
+  $('la-inbox_limit').value = s.inbox_limit || 12;
 
   const fontOptions = ['<option value="">The app\'s own (Montserrat)</option>']
     .concat((data.fonts || []).map((f) => `<option value="${esc(f.slug)}">${esc(f.family)}${f.built_in ? '' : ' (yours)'}</option>`))
@@ -10417,7 +10427,7 @@ function laPreview() {
   const name = f.app_name || (laState && laState.brand.name) || 'Your app';
   const logo = f.logo_url || (laState && laState.brand.logo);
   $('la-preview').innerHTML = `
-    <div class="la-screen" style="background:${esc(f.colour_background)};color:${esc(f.colour_text)}">
+    <div class="la-screen" style="background:${esc(f.colour_background)};color:${esc(f.colour_text)};font-size:${Number(f.font_scale) || 1}em">
       <div class="la-top" style="background:${esc(f.colour_primary)}">
         ${logo ? `<img src="${esc(logo)}" alt="" />` : ''}
         <b>${esc(name)}</b>
@@ -10429,7 +10439,7 @@ function laPreview() {
         <div class="la-points"><b style="color:${esc(f.colour_primary)}">1,250</b> points</div>
       </div>
       <p class="small">${esc(f.welcome_text || (laState && laState.brand.welcome) || '')}</p>
-      <div class="la-tabs"><span style="color:${esc(f.colour_primary)}">Card</span><span>History</span><span>News</span><span>Venue</span></div>
+      <div class="la-tabs"><span style="color:${esc(f.colour_icon || f.colour_primary)}">Card</span><span>History</span><span>News</span><span>Venue</span></div>
     </div>`;
 }
 

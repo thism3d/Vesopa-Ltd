@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -14,8 +16,73 @@ import 'widgets.dart';
 /// of grey text. An item with a picture shows it; one without stays a compact
 /// row, so a venue that only ever sends words does not get a page of empty
 /// frames.
-class InboxPage extends ConsumerWidget {
+class InboxPage extends ConsumerStatefulWidget {
   const InboxPage({super.key});
+
+  @override
+  ConsumerState<InboxPage> createState() => _InboxPageState();
+}
+
+class _InboxPageState extends ConsumerState<InboxPage> {
+  /*
+   * HOW MANY THE VENUE KEEPS is the venue's setting, sent with the page.
+   *
+   * 'limit' -- the newest few (twelve unless the venue changed it) and no
+   * more: the server sends exactly those and this page shows them.
+   * 'scroll' -- everything, a page at a time: the first page comes from the
+   * provider like before, and the rest are fetched as the list nears its
+   * end and appended here.
+   */
+  final _scroll = ScrollController();
+  final List<Map<String, dynamic>> _older = [];
+  bool _more = false;
+  bool _loading = false;
+  Object? _seenFirstPage;
+
+  @override
+  void initState() {
+    super.initState();
+    _scroll.addListener(_maybeLoadMore);
+  }
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _maybeLoadMore() {
+    if (!_more || _loading || !_scroll.hasClients) return;
+    if (_scroll.position.pixels > _scroll.position.maxScrollExtent - 600) {
+      unawaited(_loadMore());
+    }
+  }
+
+  DateTime? _shownAt(Map<String, dynamic> m) {
+    final raw = m['shown_at'] ?? m['sent_at'];
+    return raw == null ? null : DateTime.tryParse('$raw');
+  }
+
+  Future<void> _loadMore() async {
+    final first = ref.read(messagesProvider).value;
+    final items = [...((first?['items'] as List? ?? const []).cast<Map<String, dynamic>>()), ..._older];
+    if (items.isEmpty) return;
+    final before = _shownAt(items.last);
+    if (before == null) return;
+    setState(() => _loading = true);
+    try {
+      final page = await ref.read(apiProvider).messages(before: before);
+      if (!mounted) return;
+      setState(() {
+        _older.addAll((page['items'] as List? ?? const []).cast<Map<String, dynamic>>());
+        _more = page['more'] == true;
+      });
+    } catch (_) {
+      // The next scroll asks again.
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
 
   Future<void> _open(BuildContext context, WidgetRef ref, Map<String, dynamic> m) async {
     if (m['read_at'] == null) {
@@ -36,13 +103,24 @@ class InboxPage extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final messages = ref.watch(messagesProvider);
     return messages.when(
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (e, _) => LoadFailed(error: e, onRetry: () => ref.invalidate(messagesProvider)),
       data: (data) {
-        final items = (data['items'] as List? ?? const []).cast<Map<String, dynamic>>();
+        // A fresh first page (pull to refresh, a new notification) drops the
+        // older pages, which are fetched again as the list scrolls.
+        if (!identical(_seenFirstPage, data)) {
+          _seenFirstPage = data;
+          _older.clear();
+          _more = data['more'] == true;
+        }
+        final items = [
+          ...(data['items'] as List? ?? const []).cast<Map<String, dynamic>>(),
+          ..._older,
+        ];
+        final limited = data['mode'] == 'limit';
         if (items.isEmpty) {
           return RefreshIndicator(
             onRefresh: () => ref.refresh(messagesProvider.future),
@@ -66,10 +144,33 @@ class InboxPage extends ConsumerWidget {
               // On a wide window the cards go two abreast rather than becoming
               // one absurdly long line of text each.
               final columns = box.maxWidth >= 1100 ? 2 : 1;
+              final rows = (items.length / columns).ceil();
               final list = ListView.builder(
+                controller: _scroll,
                 padding: const EdgeInsets.fromLTRB(14, 12, 14, 24),
-                itemCount: (items.length / columns).ceil(),
+                // One extra row at the end: a spinner while the next page
+                // comes, or the line that says this is all the venue keeps.
+                itemCount: rows + 1,
                 itemBuilder: (context, row) {
+                  if (row == rows) {
+                    if (_loading) {
+                      return const Padding(
+                        padding: EdgeInsets.all(20),
+                        child: Center(child: CircularProgressIndicator()),
+                      );
+                    }
+                    if (limited && items.length >= ((data['limit'] as num?)?.toInt() ?? 12)) {
+                      return Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                        child: Text(
+                          'The newest ${items.length} are kept here.',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      );
+                    }
+                    return const SizedBox(height: 8);
+                  }
                   final slice = items.skip(row * columns).take(columns).toList();
                   if (columns == 1) {
                     return _NewsCard(message: slice.first, onTap: () => _open(context, ref, slice.first));
@@ -115,9 +216,9 @@ class _NewsCard extends ConsumerWidget {
       margin: const EdgeInsets.all(6),
       clipBehavior: Clip.antiAlias,
       elevation: 0,
-      color: unread
-          ? theme.colorScheme.primaryContainer.withValues(alpha: 0.28)
-          : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+      // Shades of the venue's background (see Brand.surface), the unread one
+      // a step brighter, so the venue's text colour reads on both.
+      color: unread ? theme.colorScheme.surfaceContainerHighest : theme.colorScheme.surfaceContainer,
       child: InkWell(
         onTap: onTap,
         child: Column(
@@ -142,7 +243,7 @@ class _NewsCard extends ConsumerWidget {
                           width: 8,
                           height: 8,
                           margin: const EdgeInsets.only(right: 8),
-                          decoration: BoxDecoration(color: theme.colorScheme.primary, shape: BoxShape.circle),
+                          decoration: BoxDecoration(color: theme.colorScheme.secondary, shape: BoxShape.circle),
                         ),
                       Expanded(
                         child: Text(

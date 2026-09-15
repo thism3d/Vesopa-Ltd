@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../data/commerce.dart';
+import '../data/earning.dart';
 import '../data/training_mode.dart';
 import '../data/local/database.dart';
 import '../data/order_repository.dart';
@@ -1437,19 +1438,29 @@ class _PaymentPageState extends ConsumerState<PaymentPage> {
 
     // Loyalty is moved only now for the same reason: points are spent when the
     // sale completes, and earned on what was actually paid for the goods.
-    final customer = _customer;
-    if (!practice && customer != null) {
+    //
+    // THE CUSTOMER IS READ OFF THE ORDER, not off `_customer`. The page
+    // variable is set only when a member is attached from THIS page; a member
+    // attached on the sale page, or by swiping their card, reaches settle with
+    // it null -- and then nothing was earned, no visit was counted and the
+    // Activity page stayed empty, which is what the venue reported (1.8.1.0).
+    // The renewal below has read the order for the same reason since 1.6.8.0.
+    final customerId = earningCustomer(
+      attachedHere: _customer?.id,
+      onOrder: (await repo.watchOrder(widget.orderId).first).customerId,
+    );
+    if (!practice && customerId != null) {
       try {
         if (_pointsRedeemed > 0) {
           await commerce.movePoints(
-            customerId: customer.id,
+            customerId: customerId,
             kind: 'redeem',
             points: _pointsRedeemed,
             orderId: widget.orderId,
           );
         }
         await commerce.movePoints(
-          customerId: customer.id,
+          customerId: customerId,
           kind: 'earn',
           spendMinor: _tender.totals.netGoodsMinor,
           orderId: widget.orderId,

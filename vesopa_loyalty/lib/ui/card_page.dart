@@ -426,24 +426,34 @@ class _Facts extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final membership = (me['membership'] as Map?) ?? const {};
+    final expiry = membership['expiry'] ?? me['membership_expiry'];
+    final expired = membership['expired'] == true;
     final rows = <(IconData, String, String)>[
       (Icons.event_repeat, 'Visits', '${me['visits'] ?? 0}'),
       if (me['last_visit'] != null) (Icons.history, 'Last visit', when(me['last_visit'], time: false)),
       if (me['member_since'] != null) (Icons.card_membership, 'Member since', when(me['member_since'], time: false)),
-      if (me['membership_expiry'] != null) (Icons.event_available, 'Membership until', when(me['membership_expiry'], time: false)),
+      if (expiry != null)
+        (expired ? Icons.event_busy : Icons.event_available, expired ? 'Membership ran out' : 'Membership until', when(expiry, time: false)),
       if (brand.minRedeem > 0) (Icons.redeem, 'Spend points from', '${brand.minRedeem} points'),
     ];
+    final text = Theme.of(context).textTheme;
+    // The venue's text colour on a shade of the venue's background, and the
+    // venue's icon colour: every one of these three is the venue's to set.
     return Card(
       elevation: 0,
-      color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+      color: brand.surface(0.10),
       child: Column(
         children: [
           for (final (icon, label, value) in rows)
             ListTile(
               dense: true,
-              leading: Icon(icon, color: brand.primary),
-              title: Text(label),
-              trailing: Text(value, style: const TextStyle(fontWeight: FontWeight.w700)),
+              leading: Icon(icon, color: brand.iconColour),
+              title: Text(label, style: text.bodyLarge?.copyWith(color: brand.text)),
+              trailing: Text(
+                value,
+                style: text.bodyLarge?.copyWith(color: brand.text, fontWeight: FontWeight.w700),
+              ),
             ),
         ],
       ),

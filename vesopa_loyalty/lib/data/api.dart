@@ -221,7 +221,38 @@ class LoyaltyApi {
     query: {if (before != null) 'before': before.toUtc().toIso8601String()},
   );
 
-  Future<Map<String, dynamic>> messages() => _send('GET', '/loyalty/v1/me/messages');
+  /// The news. [before] pages back when the venue keeps everything; the
+  /// answer says `more` when there is another page to ask for.
+  Future<Map<String, dynamic>> messages({DateTime? before}) => _send(
+    'GET',
+    '/loyalty/v1/me/messages',
+    query: {if (before != null) 'before': before.toUtc().toIso8601String()},
+  );
+
+  /// The member's own photograph onto their card. A multipart upload, the
+  /// one call here that is not JSON.
+  Future<String> uploadPhoto(List<int> bytes, String filename) async {
+    final req = http.MultipartRequest('POST', _u('/loyalty/v1/me/photo'))
+      ..headers.addAll({if (token != null) 'Authorization': 'Bearer $token', 'Accept': 'application/json'})
+      ..files.add(http.MultipartFile.fromBytes('image', bytes, filename: filename));
+    final http.Response res;
+    try {
+      res = await http.Response.fromStream(await _http.send(req).timeout(const Duration(seconds: 60)));
+    } catch (_) {
+      throw ApiError('No connection. Check you are online and try again.');
+    }
+    Map<String, dynamic> json = const {};
+    try {
+      final decoded = jsonDecode(res.body);
+      if (decoded is Map<String, dynamic>) json = decoded;
+    } catch (_) {
+      // Said below by status.
+    }
+    if (res.statusCode >= 200 && res.statusCode < 300) return json['photo_url'] as String;
+    throw ApiError((json['error'] as String?) ?? 'The photo could not be saved.', status: res.statusCode);
+  }
+
+  Future<void> removePhoto() => _send('DELETE', '/loyalty/v1/me/photo');
 
   Future<void> markRead(String id) => _send('POST', '/loyalty/v1/me/messages/${Uri.encodeComponent(id)}/read');
 

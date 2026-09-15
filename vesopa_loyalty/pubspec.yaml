@@ -42,6 +42,11 @@ dependencies:
   geolocator: ^14.0.3
   crypto: ^3.0.7
   web: ^1.1.1
+  # A member's own photograph, from the camera or the gallery.
+  image_picker: ^1.1.2
+  # The card page turns the screen right up while the QR code is showing, as
+  # airline and coffee-shop apps do; no browser can, so the web app does not.
+  screen_brightness: ^2.1.3
 
 dev_dependencies:
   flutter_test:
