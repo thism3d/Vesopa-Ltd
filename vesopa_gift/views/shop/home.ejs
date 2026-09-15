@@ -1,7 +1,7 @@
 <%- include('_head') %>
 
 <header class="hero">
-  <% if (brand.hero) { %><img src="<%= brand.hero %>" alt=""><% } %>
+  <img class="<%= hero.source === 'default' ? 'default' : '' %>" src="<%= hero.url %>" alt="">
   <div class="hero-body">
     <%- include('_logo', { size: 's66', brand: brand, initials: initials }) %>
     <div>

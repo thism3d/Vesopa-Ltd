@@ -803,7 +803,37 @@ router.post(`${V}/designs/:did/first`, signedIn, withVenue, async (req, res, nex
 
 router.get(`${V}/settings`, signedIn, withVenue, (req, res) => {
   const b = venues.brandOf(req.venue);
-  page(req, res, 'settings', { title: 'Settings', amounts: venues.amountsOf(req.venue), payments: b.payments });
+  page(req, res, 'settings', {
+    title: 'Settings', amounts: venues.amountsOf(req.venue), payments: b.payments, hero: venues.heroOf(req.venue),
+  });
+});
+
+router.post(`${V}/settings/banner`, signedIn, withVenue, (req, res, next) => {
+  upload.single('image')(req, res, async (err) => {
+    const to = `/admin/v/${req.venue.office_id}/settings`;
+    try {
+      if (err) throw new Error(err.code === 'LIMIT_FILE_SIZE' ? 'That picture is over 5 MB.' : err.message);
+      const file = storeImage(req.venue.office_id, req.file);
+      if (!file) throw new Error('Choose a picture to upload.');
+      await db.run('UPDATE gift_venues SET hero_image = ? WHERE office_id = ?', [file, req.venue.office_id]);
+      await audit(req, 'banner.changed', null, req.venue.office_id);
+      flash(res, 'ok', 'The banner is on your shop.');
+      res.redirect(303, to);
+    } catch (e) {
+      if (e.code) return next(e);
+      flash(res, 'bad', e.message);
+      res.redirect(303, to);
+    }
+  });
+});
+
+router.post(`${V}/settings/banner/remove`, signedIn, withVenue, async (req, res, next) => {
+  try {
+    await db.run('UPDATE gift_venues SET hero_image = NULL WHERE office_id = ?', [req.venue.office_id]);
+    await audit(req, 'banner.removed', null, req.venue.office_id);
+    flash(res, 'ok', 'Back to the standard banner.');
+    res.redirect(303, `/admin/v/${req.venue.office_id}/settings`);
+  } catch (e) { next(e); }
 });
 
 router.post(`${V}/settings`, signedIn, withVenue, async (req, res, next) => {

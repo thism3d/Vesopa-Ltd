@@ -47,12 +47,23 @@ function parseBrand(row) {
   try { return JSON.parse(row.brand_json); } catch { return null; }
 }
 
+const DEFAULT_PRIMARY = '#1f2a24';
+
+/** Near-white cannot be a button on a white page or a header on a white email: it means no colour chosen. */
+function usablePrimary(hex) {
+  const m = /^#([0-9a-f]{6})$/i.exec(String(hex || ''));
+  if (!m) return DEFAULT_PRIMARY;
+  const n = parseInt(m[1], 16);
+  const luma = 0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255);
+  return luma > 232 ? DEFAULT_PRIMARY : hex;
+}
+
 /** The shape every template reads, with safe defaults for a venue with nothing set. */
 function brandOf(row) {
   const b = parseBrand(row) || {};
   const brand = b.brand || {};
   const colours = brand.colours || {};
-  const primary = /^#[0-9a-f]{6}$/i.test(String(colours.primary || '')) ? colours.primary : '#1f2a24';
+  const primary = usablePrimary(colours.primary);
   return {
     name: brand.name || row.name || 'Gift vouchers',
     logo: brand.logo || null,
@@ -65,6 +76,20 @@ function brandOf(row) {
     payments: b.payments || { source: 'none' },
     wallet: b.wallet || { apple: false, google: false },
   };
+}
+
+/**
+ * The banner across the top of a shop. The venue's own upload first, then the
+ * banner its loyalty app and Wallet pass use, then Vesopa's own -- so no shop
+ * ever opens on a bare block of colour.
+ */
+function heroOf(row) {
+  if (row && row.hero_image) {
+    return { url: `/u/${row.office_id}/${encodeURIComponent(row.hero_image)}`, source: 'venue' };
+  }
+  const hero = brandOf(row).hero;
+  if (hero) return { url: hero, source: 'backoffice' };
+  return { url: '/img/hero-default.jpg', source: 'default' };
 }
 
 async function refreshBrand(officeId) {
@@ -182,6 +207,6 @@ function canTakePayments(row) {
 }
 
 module.exports = {
-  BUILTIN, slugify, validSlug, brandOf, refreshBrand, get, bySlug, byDomain, ensure,
+  BUILTIN, slugify, validSlug, brandOf, heroOf, refreshBrand, get, bySlug, byDomain, ensure,
   designUrl, designFile, designs, design, amountsOf, canTakePayments,
 };

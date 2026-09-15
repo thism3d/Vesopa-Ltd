@@ -81,6 +81,30 @@ async function main() {
       assert.ok(r.text.includes('Buy a gift voucher'));
     });
 
+    await check('the shop opens on Vesopa\'s banner until the venue puts up its own', async () => {
+      assert.ok((await get('/test-kitchen')).text.includes('class="default" src="/img/hero-default.jpg"'));
+      assert.strictEqual((await get('/img/hero-default.jpg')).status, 200);
+
+      const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
+      const form = new FormData();
+      form.append('image', new Blob([png], { type: 'image/png' }), 'banner.png');
+      const up = await fetch(`${G}/admin/v/${VENUE.id}/settings/banner?_csrf=${csrf}`, {
+        method: 'POST', redirect: 'manual', headers: { Cookie: cookie }, body: form,
+      });
+      assert.strictEqual(up.status, 303);
+      const [[v]] = await gift.query('SELECT hero_image FROM gift_venues WHERE office_id = ?', [VENUE.id]);
+      assert.ok(/^[a-f0-9]{24}\.png$/.test(v.hero_image || ''), String(v.hero_image));
+      const shop = (await get('/test-kitchen')).text;
+      assert.ok(shop.includes(`src="/u/${VENUE.id}/${v.hero_image}"`));
+      assert.ok(!shop.includes('hero-default.jpg'));
+      assert.strictEqual((await get(`/u/${VENUE.id}/${v.hero_image}`)).status, 200);
+      const settings = (await get(`/admin/v/${VENUE.id}/settings`, { auth: true })).text;
+      assert.ok(settings.includes('form="banner-remove"'));
+
+      assert.strictEqual((await post(`/admin/v/${VENUE.id}/settings/banner/remove`, {}, { auth: true })).status, 303);
+      assert.ok((await get('/test-kitchen')).text.includes('hero-default.jpg'));
+    });
+
     const buyer = { buyer_name: 'Sam Jones', buyer_email: 'sam@gift.test' };
     const buy = await post('/test-kitchen/buy', {
       design: String(design.id), amount: '5000', send_to: 'recipient', recipient_name: 'Alex Morgan',

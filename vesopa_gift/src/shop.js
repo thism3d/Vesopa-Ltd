@@ -52,6 +52,7 @@ function locals(venue, extra = {}) {
   return {
     venue,
     brand,
+    hero: venues.heroOf(venue),
     theme: theme(brand),
     initials: util.initials(brand.name),
     designUrl: venues.designUrl,

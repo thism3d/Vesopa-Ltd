@@ -15,6 +15,23 @@
 <div class="grid-2e">
   <div class="col">
     <div class="card pad">
+      <h3>Shop banner</h3>
+      <img class="banner-preview <%= hero.source === 'default' ? 'default' : '' %>" src="<%= hero.url %>" alt="">
+      <p class="help">
+        <% if (hero.source === 'venue') { %>Your own picture, across the top of the shop.<% }
+           else if (hero.source === 'backoffice') { %>The banner from your venue’s branding in the back office, the one your loyalty app and Wallet passes use.<% }
+           else { %>Vesopa’s standard banner. Upload your own, or set one in your venue’s branding in the back office and the shop will use that.<% } %>
+        Your logo and name sit over the bottom-left corner, so keep that part calm.
+      </p>
+      <div class="banner-upload">
+        <input class="in" type="file" name="image" accept="image/jpeg,image/png" form="banner-upload" required>
+        <button class="btn primary" type="submit" form="banner-upload">Upload</button>
+        <% if (hero.source === 'venue') { %><button class="btn ghost" type="submit" form="banner-remove">Remove</button><% } %>
+      </div>
+      <p class="help">JPEG or PNG, at least 1600 × 500, under 5 MB.</p>
+    </div>
+
+    <div class="card pad">
       <h3>Amounts</h3>
       <label class="lbl">Buttons on the shop <span class="help">in pounds, separated by commas</span>
         <input class="in" name="amounts" value="<%= amounts.map(function (a) { return (a / 100).toFixed(a % 100 ? 2 : 0); }).join(', ') %>" placeholder="25, 50, 75, 100">
@@ -97,5 +114,9 @@
 </div>
 <div class="actions"><button class="btn primary" type="submit">Save changes</button></div>
 </form>
+
+<!-- The banner's own forms. Their fields sit in the card above, inside the settings form, and point here by id. -->
+<form id="banner-upload" method="post" enctype="multipart/form-data" action="<%= base %>/settings/banner?_csrf=<%= session.csrf %>"></form>
+<form id="banner-remove" method="post" action="<%= base %>/settings/banner/remove"><input type="hidden" name="_csrf" value="<%= session.csrf %>"></form>
 
 <%- include('_bottom') %>

@@ -292,4 +292,8 @@ BEGIN
 END //
 DELIMITER ;
 
+-- The banner across the top of a venue's shop: a file under uploads/<office_id>/,
+-- or NULL for the back office's own banner, or Vesopa's default when there is none.
+CALL vesopa_add_column('gift_venues', 'hero_image', 'VARCHAR(120) NULL AFTER custom_domain');
+
 DROP PROCEDURE IF EXISTS vesopa_add_column;

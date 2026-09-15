@@ -91,6 +91,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* ---- Home: hero ------------------------------------------------------------ */
 .hero { position: relative; height: 300px; overflow: hidden; background: var(--accent); }
 .hero > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+/* Vesopa's own banner keeps its gifts and glasses on the right, so a phone sees them rather than plain green. */
+.hero > img.default { object-position: 100% 50%; }
 .hero::after {
   content: ""; position: absolute; inset: 0; pointer-events: none;
   background: linear-gradient(180deg, rgba(0,0,0,.30) 0%, rgba(0,0,0,0) 34%, rgba(0,0,0,.32) 62%, rgba(0,0,0,.76) 100%);
