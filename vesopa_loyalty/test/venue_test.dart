@@ -1,7 +1,32 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:vesopa_loyalty/data/api.dart';
 import 'package:vesopa_loyalty/data/session.dart';
 
 void main() {
+  group('Continue with Vesopa, before there is a venue', () {
+    test('one venue: signed in, and told where', () {
+      final way = VesopaWayIn.fromJson({
+        'token': 't',
+        'venue': {'slug': 'vesopa-test', 'name': 'The Vesopa Kitchen'},
+      });
+      expect(way.token, 't');
+      expect(way.venue?.slug, 'vesopa-test');
+      expect(way.venues, isEmpty);
+    });
+
+    test('several venues: no token, a choice', () {
+      final way = VesopaWayIn.fromJson({
+        'venues': [
+          {'slug': 'the-crown', 'name': 'The Crown'},
+          {'slug': 'the-mill'},
+          'not a venue',
+        ],
+      });
+      expect(way.token, isNull);
+      expect(way.venues.map((v) => v.name), ['The Crown', 'the-mill']);
+    });
+  });
+
   group('a venue code, however somebody has it written down', () {
     test('a bare code', () {
       expect(AppConfig.cleanSlug('the-crown'), 'the-crown');

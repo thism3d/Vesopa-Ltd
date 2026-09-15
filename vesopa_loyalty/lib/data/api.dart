@@ -257,4 +257,55 @@ class LoyaltyApi {
   Future<void> signOut() => _send('POST', '/loyalty/v1/me/signout');
 
   Future<void> removeApp() => _send('DELETE', '/loyalty/v1/me');
+
+  /// Continue with Vesopa before there is a venue: the Store app's way in.
+  ///
+  /// Needs no [slug] of its own. The server answers with a token and the venue
+  /// when this account has been let into one (or into [slug], once chosen),
+  /// or with the venues to choose from when it has been let into several. An
+  /// account no venue has invited is refused with words to show.
+  Future<VesopaWayIn> continueWithVesopa({
+    required String idToken,
+    String? slug,
+    required String platform,
+  }) async {
+    final json = await _send('POST', '/loyalty/v1/vesopa',
+        body: {'id_token': idToken, 'slug': ?slug, 'platform': platform});
+    return VesopaWayIn.fromJson(json);
+  }
+}
+
+/// A venue a Vesopa account has been given.
+class VesopaVenue {
+  const VesopaVenue({required this.slug, required this.name, this.icon});
+
+  final String slug;
+  final String name;
+  final String? icon;
+
+  factory VesopaVenue.fromJson(Map<String, dynamic> json) => VesopaVenue(
+    slug: json['slug'] as String,
+    name: (json['name'] as String?) ?? json['slug'] as String,
+    icon: json['icon'] as String?,
+  );
+}
+
+/// What Continue with Vesopa came back with: signed in, or a choice to make.
+class VesopaWayIn {
+  const VesopaWayIn({this.token, this.venue, this.venues = const []});
+
+  final String? token;
+  final VesopaVenue? venue;
+  final List<VesopaVenue> venues;
+
+  factory VesopaWayIn.fromJson(Map<String, dynamic> json) => VesopaWayIn(
+    token: json['token'] as String?,
+    venue: json['venue'] is Map<String, dynamic>
+        ? VesopaVenue.fromJson(json['venue'] as Map<String, dynamic>)
+        : null,
+    venues: ((json['venues'] as List?) ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(VesopaVenue.fromJson)
+        .toList(),
+  );
 }

@@ -28,8 +28,11 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   Win32Window::Point origin(10, 10);
   Win32Window::Size size(1280, 720);
   // What the taskbar and the window bar say. "vesopa_loyalty" is the Flutter
-  // project name and was never meant to be read by anybody.
-  if (!window.Create(L"Vesopa Loyalty", origin, size)) {
+  // project name and was never meant to be read by anybody. The Store build is
+  // the white-label demonstration, so it carries the demonstration venue's
+  // name; a venue's own build puts its own name here (and in Runner.rc and
+  // msix_config's display_name).
+  if (!window.Create(L"The Vesopa Kitchen", origin, size)) {
     return EXIT_FAILURE;
   }
   window.SetQuitOnClose(true);

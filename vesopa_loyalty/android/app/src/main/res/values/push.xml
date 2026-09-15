@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The venue's colour, drawn behind the small icon in the status bar and
+         the notification shade. The Kitchen's lime; tool/make_app_icons.py
+         writes the same value into the launcher icon's background. -->
+    <color name="brand">#A5C715</color>
+
+    <!-- One channel for everything the venue sends. Android shows this name
+         under the app in Settings > Notifications, so it is the customer's
+         word for it rather than ours. -->
+    <string name="push_channel_id" translatable="false">venue_messages</string>
+    <string name="push_channel_name" translatable="false">Messages from the venue</string>
+</resources>

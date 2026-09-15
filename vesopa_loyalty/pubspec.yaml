@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.0+1
+version: 1.0.1+2
 
 environment:
   sdk: ^3.13.2
@@ -124,7 +124,11 @@ flutter:
 # obtain.
 # ---------------------------------------------------------------------------
 msix_config:
-  display_name: Vesopa Loyalty
+  # One of the app's reserved names. "The Vesopa Kitchen" was reserved beside
+  # "Vesopa Loyalty" on 2026-09-14 so the demonstration installs as a venue's
+  # own app would. The publisher display name is not ours to choose: it has to
+  # match the Partner Center account exactly, or the package is refused.
+  display_name: The Vesopa Kitchen
   publisher_display_name: Vesopa EPOS Ltd
   identity_name: MeirionDavies.VesopaLoyalty
   publisher: CN=3AD172E6-2CBA-4B09-AD50-B52C88D57FB3
@@ -132,9 +136,10 @@ msix_config:
   # Four parts, and the Store requires the last to be 0. A version can never
   # be reused, so bump this -- and `version:` above -- for every submission,
   # including a resubmission after a failed certification.
-  msix_version: 1.0.0.0
+  msix_version: 1.0.1.0
 
-  logo_path: assets/brand/loyalty_mark_512.png
+  # The demonstration venue's own logo (tool/make_store_art.py writes it).
+  logo_path: assets/brand/kitchen_demo_mark_512.png
 
   # internetClient is all it needs: the app talks to the back office over
   # HTTPS and to nothing on the venue's own network. Asking for more than is
@@ -152,9 +157,10 @@ msix_config:
 
   output_path: build/store
   output_name: vesopa-loyalty-store
-  # NO LOYALTY_SLUG. One Store listing serves every venue, so a slug baked in
-  # here would be one venue's app handed to everybody who installed it -- and
-  # no other venue's member could reach their own card. The app asks on first
-  # run instead. A venue publishing its OWN listing does pass LOYALTY_SLUG,
-  # and then it never asks.
-  windows_build_args: --release --dart-define=VESOPA_LOYALTY_CLIENT_ID=12a1047bafa611f185af42010a80000e
+  # LOYALTY_SLUG=vesopa-test: THIS LISTING IS THE DEMONSTRATION APP, decided
+  # 2026-09-14. Venues are not served by one shared listing -- each gets its
+  # own white-label build under its own name -- so the Vesopa Loyalty entry
+  # exists to show EPOS buyers what their own app would be, and it opens
+  # straight on The Vesopa Kitchen with no venue code to type. A venue's own
+  # build passes its own slug here the same way.
+  windows_build_args: --release --dart-define=VESOPA_LOYALTY_CLIENT_ID=12a1047bafa611f185af42010a80000e --dart-define=LOYALTY_SLUG=vesopa-test

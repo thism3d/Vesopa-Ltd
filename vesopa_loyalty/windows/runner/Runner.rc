@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "Vesopa EPOS Ltd" "\0"
-            VALUE "FileDescription", "Vesopa Loyalty" "\0"
+            VALUE "CompanyName", "Vesopa Software Ltd" "\0"
+            VALUE "FileDescription", "The Vesopa Kitchen" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "Vesopa Loyalty" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 Vesopa EPOS Ltd. All rights reserved." "\0"
+            VALUE "InternalName", "The Vesopa Kitchen" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 Vesopa Software Ltd. All rights reserved." "\0"
             VALUE "OriginalFilename", "vesopa_loyalty.exe" "\0"
-            VALUE "ProductName", "Vesopa Loyalty" "\0"
+            VALUE "ProductName", "The Vesopa Kitchen" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

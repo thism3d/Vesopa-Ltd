@@ -3,22 +3,20 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/api.dart';
 import '../data/session.dart';
+import '../platform/vesopa_sso.dart';
 import 'widgets.dart';
 
-/// "Which venue?" — the first screen on Windows, Android and an iPhone.
+/// The first screen on Windows, Android and an iPhone: Continue with Vesopa.
 ///
 /// A browser never sees this: the app is served at `/app/<slug>/` and the venue
-/// is in the address. Everything else has no address, so somebody has to say,
-/// once.
+/// is in the address.
 ///
-/// IT ACCEPTS THE WHOLE LINK, not just the code. Whoever is typing this has a
-/// table card, a receipt or a text message in front of them, and what is
-/// printed on it is the address — demanding they pick the last word out of it
-/// is how a first run gets abandoned.
-///
-/// AND IT CHECKS BEFORE IT ACCEPTS. A venue code that does not exist is told so
-/// here, where there is a box to correct, rather than being saved and turned
-/// into a sign-in page that fails for reasons nobody can see.
+/// NO VENUE CODE. A venue gives somebody access in its back office -- it
+/// invites their email address, or links their Vesopa account -- and that is
+/// the only way onto a venue's scheme from this app. So the app asks for the
+/// Vesopa account and the server says where it may go: one venue and the member
+/// is straight in, several and they choose, none and they are told to ask
+/// their venue. Nothing here makes a membership.
 class VenuePickerPage extends ConsumerStatefulWidget {
   const VenuePickerPage({super.key});
 
@@ -27,48 +25,62 @@ class VenuePickerPage extends ConsumerStatefulWidget {
 }
 
 class _VenuePickerPageState extends ConsumerState<VenuePickerPage> {
-  final _input = TextEditingController();
   var _busy = false;
   String? _error;
 
-  @override
-  void dispose() {
-    _input.dispose();
-    super.dispose();
-  }
+  /// Held between the two calls when the account has several venues.
+  String? _idToken;
+  List<VesopaVenue> _choices = const [];
 
-  Future<void> _go() async {
-    final slug = AppConfig.cleanSlug(_input.text);
-    if (slug == null) {
-      setState(() => _error = 'That does not look like a venue code or link.');
-      return;
-    }
+  static const _config = AppConfig(base: AppConfig.apiBase, slug: '');
+  LoyaltyApi get _api => LoyaltyApi(base: AppConfig.apiBase, slug: '');
+
+  Future<void> _run(Future<void> Function() body) async {
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
-      // Ask the server whether this venue exists and has its app switched on,
-      // using a throwaway client: the real one is built from the venue, and
-      // there is no venue yet.
-      final api = LoyaltyApi(base: AppConfig.apiBase, slug: slug);
-      final venue = await api.app();
-      final name = (venue['name'] as String?) ?? 'that venue';
-      await ref.read(venueProvider.notifier).choose(slug);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Opening $name.'), behavior: SnackBarBehavior.floating),
-        );
-      }
+      await body();
     } on ApiError catch (e) {
-      setState(() => _error = e.status == 404
-          ? 'There is no app at that code. Check it with the venue.'
-          : e.message);
+      if (mounted) setState(() => _error = e.message);
     } catch (_) {
-      setState(() => _error = 'Could not check that code. Are you online?');
+      if (mounted) setState(() => _error = 'That sign-in could not be completed. Please try again.');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  Future<void> _continue() => _run(() async {
+    setState(() => _choices = const []);
+    final answer = await startVesopaSignIn(slug: '', venue: 'Vesopa Loyalty');
+    if (answer == null || answer.isEmpty) return;
+    if (answer.error != null || answer.idToken == null) {
+      setState(() => _error = answer.error ?? 'That sign-in could not be completed.');
+      return;
+    }
+    _idToken = answer.idToken;
+    await _arrive(await _api.continueWithVesopa(idToken: _idToken!, platform: _config.platform));
+  });
+
+  Future<void> _choose(VesopaVenue venue) => _run(() async {
+    final token = _idToken;
+    if (token == null) return;
+    await _arrive(await _api.continueWithVesopa(
+      idToken: token,
+      slug: venue.slug,
+      platform: _config.platform,
+    ));
+  });
+
+  Future<void> _arrive(VesopaWayIn way) async {
+    if (way.token != null && way.venue != null) {
+      _idToken = null;
+      await rememberToken(way.venue!.slug, way.token!);
+      await ref.read(venueProvider.notifier).choose(way.venue!.slug);
+      return;
+    }
+    setState(() => _choices = way.venues);
   }
 
   @override
@@ -92,32 +104,45 @@ class _VenuePickerPageState extends ConsumerState<VenuePickerPage> {
                   ),
                   const SizedBox(height: 22),
                   Text(
-                    'Which venue?',
+                    _choices.isEmpty ? 'Vesopa Loyalty' : 'Which card?',
                     textAlign: TextAlign.center,
                     style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
                   ),
                   const SizedBox(height: 10),
                   Text(
-                    'Enter the code your venue gave you, or paste the link to its app. '
-                    'You only have to do this once.',
+                    _choices.isEmpty
+                        ? 'Your loyalty card for the venues you visit. Sign in with the '
+                            'Vesopa account your venue gave access to.'
+                        : 'Your Vesopa account has a card at more than one venue.',
                     textAlign: TextAlign.center,
                     style: theme.textTheme.bodyLarge,
                   ),
                   const SizedBox(height: 26),
-                  TextField(
-                    controller: _input,
-                    enabled: !_busy,
-                    autofocus: true,
-                    autocorrect: false,
-                    textInputAction: TextInputAction.go,
-                    decoration: const InputDecoration(
-                      labelText: 'Venue code or link',
-                      hintText: 'the-crown  —  or  menu.vesopaepos.com/app/the-crown/',
+                  if (_choices.isNotEmpty)
+                    for (final v in _choices)
+                      Card(
+                        child: ListTile(
+                          leading: const Icon(Icons.storefront_outlined),
+                          title: Text(v.name),
+                          trailing: const Icon(Icons.chevron_right),
+                          enabled: !_busy,
+                          onTap: () => _choose(v),
+                        ),
+                      )
+                  else
+                    FilledButton.icon(
+                      onPressed: _busy ? null : _continue,
+                      icon: _busy
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2.5),
+                            )
+                          : const Icon(Icons.login),
+                      label: const Text('Continue with Vesopa'),
                     ),
-                    onSubmitted: (_) => _go(),
-                  ),
                   if (_error != null) ...[
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 14),
                     Text(
                       _error!,
                       textAlign: TextAlign.center,
@@ -127,21 +152,17 @@ class _VenuePickerPageState extends ConsumerState<VenuePickerPage> {
                       ),
                     ),
                   ],
-                  const SizedBox(height: 18),
-                  FilledButton(
-                    onPressed: _busy ? null : _go,
-                    child: _busy
-                        ? const SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(strokeWidth: 2.5),
-                          )
-                        : const Text('Continue'),
-                  ),
+                  if (_choices.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    TextButton(
+                      onPressed: _busy ? null : _continue,
+                      child: const Text('Use a different Vesopa account'),
+                    ),
+                  ],
                   const SizedBox(height: 28),
                   Text(
-                    "Vesopa Loyalty works with venues that use the Vesopa till system. "
-                    "If you do not have a code, ask at the venue.",
+                    'Vesopa Loyalty works with venues that use Vesopa. Your venue '
+                    'invites your email address; there is nothing to join here.',
                     textAlign: TextAlign.center,
                     style: theme.textTheme.bodySmall,
                   ),

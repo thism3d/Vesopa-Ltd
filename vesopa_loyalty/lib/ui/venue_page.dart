@@ -102,8 +102,8 @@ class _VenuePageState extends ConsumerState<VenuePage> {
       builder: (d) => AlertDialog(
         title: const Text('Change venue?'),
         content: const Text(
-          'You will be asked for a venue code again. Your membership and points '
-          'stay with the venue, and signing back in brings your card back.',
+          'You will continue with Vesopa again and can choose another venue your '
+          'account has a card at. Your points stay with this venue.',
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Cancel')),

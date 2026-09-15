@@ -948,9 +948,11 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
              WHERE office = ? AND disabled_at IS NULL AND kind = 'webpush') AS web,
            (SELECT COUNT(*) FROM epos_push_channels
              WHERE office = ? AND disabled_at IS NULL AND kind = 'wns') AS windows,
+           (SELECT COUNT(*) FROM epos_push_channels
+             WHERE office = ? AND disabled_at IS NULL AND kind IN ('fcm', 'apns')) AS phones,
            (SELECT COUNT(*) FROM epos_customer_locations
              WHERE office = ? AND at >= NOW() - INTERVAL ${NEAR_HOURS} HOUR) AS located`,
-        [office, office, office, office]
+        [office, office, office, office, office]
       );
       // A suggestion for a venue that has not chosen an address: its dine-in
       // address if it has one, otherwise its name.
@@ -980,10 +982,15 @@ function loyaltyAppRoutes({ pool, broadcast, secret }) {
           members: Number(stats.members) || 0,
           web: Number(stats.web) || 0,
           windows: Number(stats.windows) || 0,
+          // The Play and App Store builds, registered by device token.
+          phones: Number(stats.phones) || 0,
           located: Number(stats.located) || 0,
         },
         signin: await signinState(office, app),
         web_push_ready: push.webPushReady(),
+        // False until the server holds the Firebase service account (FCM_* in
+        // .env): Android channels are registered but nothing can be sent.
+        android_push_ready: push.fcmReady(),
         web_build_ready: fs.existsSync(path.join(WEB_DIR, 'index.html')),
       });
     } catch (e) {

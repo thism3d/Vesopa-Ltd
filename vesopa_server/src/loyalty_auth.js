@@ -389,7 +389,71 @@ async function verifyAuthentication(db, { office, body, env = process.env }) {
   return { customerId: key.customer_id };
 }
 
+// ---------------------------------------------------------------------------
+// Continue with Vesopa, before anybody has said which venue
+// ---------------------------------------------------------------------------
+
+/**
+ * The venues a Vesopa account has been given, one membership each.
+ *
+ * The Store app is one app for every venue and asks for no venue code: a
+ * venue gives somebody access by putting them on its books -- inviting their
+ * email address, or linking their Vesopa account -- and signing in with Vesopa
+ * is how they arrive. So this answers "which venues has this person been let
+ * into", and NEVER makes a membership. Joining from the app with nothing but an
+ * account would be self-registration, which no Vesopa product does.
+ *
+ * MATCHED ON THE SUBJECT FIRST, THE EMAIL SECOND, as the per-venue route does.
+ * An email match is not taken where that membership is already linked to a
+ * DIFFERENT Vesopa account: a changed address must not hand over a card
+ * somebody else has claimed.
+ *
+ * THE OFFICE IS BOUND, NEVER JOINED. epos_customers.email_key and
+ * epos_loyalty_app.office carry different collations on live, and comparing
+ * the two columns is a 500 there and nowhere else.
+ *
+ * Only venues whose app is switched on. `email` must already be verified by
+ * the caller.
+ */
+async function venuesForVesopa(db, { sub, email }) {
+  const byOffice = new Map();
+  if (sub) {
+    const [rows] = await db.query(
+      `SELECT id, email_key, vesopa_sub FROM epos_customers WHERE vesopa_sub = ?
+        ORDER BY created_at`,
+      [String(sub)]
+    );
+    for (const r of rows) if (!byOffice.has(r.email_key)) byOffice.set(r.email_key, r.id);
+  }
+  if (email) {
+    const [rows] = await db.query(
+      `SELECT id, email_key, vesopa_sub FROM epos_customers WHERE email = ?
+        ORDER BY created_at`,
+      [String(email)]
+    );
+    for (const r of rows) {
+      if (byOffice.has(r.email_key)) continue;
+      if (r.vesopa_sub && String(r.vesopa_sub) !== String(sub || '')) continue;
+      byOffice.set(r.email_key, r.id);
+    }
+  }
+  if (!byOffice.size) return [];
+  const [apps] = await db.query(
+    `SELECT slug, office, app_name, icon_url, logo_url FROM epos_loyalty_app
+      WHERE enabled = 1 AND office IN (?) ORDER BY app_name`,
+    [[...byOffice.keys()]]
+  );
+  return apps.map((a) => ({
+    slug: a.slug,
+    name: a.app_name || a.slug,
+    icon: a.icon_url || a.logo_url || null,
+    office: a.office,
+    customerId: byOffice.get(a.office),
+  }));
+}
+
 module.exports = {
+  venuesForVesopa,
   METHODS,
   POLICIES,
   DEFAULT_METHODS,

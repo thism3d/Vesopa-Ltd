@@ -159,12 +159,26 @@ final brandProvider = FutureProvider<Brand>((ref) async {
   return brand;
 });
 
+String _tokenKey(String slug) => 'loyalty_token_$slug';
+
+/// Keep a sign-in token for a venue before the app has switched to it.
+///
+/// Continue with Vesopa learns the venue and the token in one answer; writing
+/// the token first means the venue's session finds it the moment it is built.
+Future<void> rememberToken(String slug, String token) async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setString(_tokenKey(slug), token);
+}
+
 /// The customer's sign-in token for this venue. Null when signed out.
 class SessionNotifier extends AsyncNotifier<String?> {
-  String get _key => 'loyalty_token_${ref.read(configProvider).slug}';
+  String get _key => _tokenKey(ref.read(configProvider).slug);
 
   @override
   Future<String?> build() async {
+    // Watched, so a change of venue is a change of session, not the last
+    // venue's token carried into the next one.
+    ref.watch(configProvider);
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString(_key);
     ref.read(apiProvider).token = token;

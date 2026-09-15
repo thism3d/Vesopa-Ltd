@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -74,10 +75,26 @@ class _Gate extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final session = ref.watch(sessionProvider);
+    /*
+     * SIGNED OUT OF THE STORE APP MEANS BACK TO CONTINUE WITH VESOPA.
+     *
+     * A venue's own sign-in page -- an emailed code and the rest -- belongs to
+     * the browser, which is always at one venue's address. The Store app has
+     * one way in, so a member who signs out (or is signed out from another
+     * device) forgets the venue and meets Continue with Vesopa again. A build
+     * made for one venue (LOYALTY_SLUG) keeps its venue's page.
+     */
+    final storeApp = !kIsWeb && AppConfig.buildSlug.isEmpty;
+    Widget signedOut() {
+      if (!storeApp) return const SignInPage();
+      WidgetsBinding.instance.addPostFrameCallback((_) => ref.read(venueProvider.notifier).forget());
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
     return session.when(
       loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
-      error: (_, _) => const SignInPage(),
-      data: (token) => token == null ? const SignInPage() : const HomePage(),
+      error: (_, _) => signedOut(),
+      data: (token) => token == null ? signedOut() : const HomePage(),
     );
   }
 }

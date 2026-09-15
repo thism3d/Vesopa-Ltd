@@ -302,6 +302,62 @@ module.exports = function loyaltyAccountRoutes(deps) {
   });
 
   /**
+   * Continue with Vesopa from the Store app, which has no venue yet.
+   *
+   * The app signs in with Vesopa first and this says where that account may
+   * go: one venue, and the member is signed straight in; several, and it lists
+   * them for the member to choose, then is called again with `slug`; none, and
+   * it says to ask the venue for an invitation. It never makes a membership --
+   * see auth.venuesForVesopa.
+   *
+   * A native app only: it arrives holding an id token it exchanged itself. The
+   * web app is always at one venue's address and uses /app/:slug/vesopa.
+   */
+  router.post('/loyalty/v1/vesopa', json, async (req, res, next) => {
+    try {
+      const body = req.body || {};
+      const claims = await verifyVesopaToken(String(body.id_token || ''));
+      if (!claims) return res.status(401).json({ error: 'That sign-in could not be accepted.' });
+
+      const email = String(claims.email || '').trim().toLowerCase();
+      if (!claims.email_verified || !emailOk(email)) {
+        return res.status(400).json({
+          error: 'Your Vesopa account needs a confirmed email address before it can be used here.',
+        });
+      }
+
+      const venues = await auth.venuesForVesopa(pool, { sub: String(claims.sub || ''), email });
+      if (!venues.length) {
+        return res.status(403).json({
+          error: `No venue has given ${email} access yet. Ask your venue to invite this email address.`,
+          email,
+        });
+      }
+
+      const wanted = body.slug ? String(body.slug).toLowerCase() : null;
+      const chosen = wanted ? venues.find((v) => v.slug === wanted) : (venues.length === 1 ? venues[0] : null);
+      if (wanted && !chosen) {
+        return res.status(403).json({ error: 'This Vesopa account has not been given access to that venue.' });
+      }
+      if (!chosen) {
+        return res.json({ venues: venues.map((v) => ({ slug: v.slug, name: v.name, icon: v.icon })) });
+      }
+
+      await pool.execute(
+        'UPDATE epos_customers SET vesopa_sub = ? WHERE id = ? AND email_key = ?',
+        [String(claims.sub), chosen.customerId, chosen.office]
+      );
+      await ensureCard(pool, chosen.office, chosen.customerId);
+      res.json({
+        token: await signIn(req, chosen.office, chosen.customerId),
+        venue: { slug: chosen.slug, name: chosen.name },
+      });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /**
    * Swap an authorization code for an id token, server to server.
    *
    * PKCE carries the proof, so this works whether or not the client has a
