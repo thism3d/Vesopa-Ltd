@@ -84,7 +84,10 @@ three failures on a clean tree (two Dojo live tests, one golden by 0.43%);
 `conn.query is not a function` in `till_seats.claimSeat` against the fake
 pool) and has since before this release — run the files after it by hand.
 Under `--concurrency=2` a few Flutter test files sometimes die with
-"Connection closed before test suite loaded"; they pass alone. Live is MariaDB 11.4.
+"Connection closed before test suite loaded"; they pass alone. Also
+pre-existing at 11f6265: `express.test.js` fails 48 of 66 (`bo_till_seats`
+missing from its own scratch database), `gym.test.js` hangs, and
+`backoffice-layout.test.js` flags the demo-venue card's inline margin. Live is MariaDB 11.4.
 Every schema file must define `vesopa_add_column` itself because the file
 before it drops it. `public/` uploads need `pm2 restart`.
 

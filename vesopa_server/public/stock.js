@@ -403,14 +403,10 @@ async function loadStockDocs(kind) {
   await skLoadProducts();
   if (skOpen[kind]) return skRenderDocEditor(kind, skOpen[kind]);
   const docs = await api(`/stock/docs?kind=${kind}`);
+  skHead(kind, def.title, def.blurb, `
+    ${def.counting ? `<button type="button" class="btn ghost" data-sk-count-sheet="${kind}">Download count sheet</button>` : ''}
+    <button type="button" class="btn primary" data-sk-doc-new="${kind}">${esc(def.verb)}</button>`);
   host.innerHTML = `
-    <div class="page-head">
-      <div><h2>${esc(def.title)}</h2><p class="muted small">${esc(def.blurb)}</p></div>
-      <div class="sk-head-actions">
-        ${def.counting ? `<button type="button" class="btn ghost" data-sk-count-sheet="${kind}">Download count sheet</button>` : ''}
-        <button type="button" class="btn primary" data-sk-doc-new="${kind}">${esc(def.verb)}</button>
-      </div>
-    </div>
     <div class="card">
       <table class="table table-cards">
         <thead><tr><th>Date</th><th>Status</th><th>By</th><th>Notes</th><th class="right">Lines</th><th class="right">Value</th><th></th></tr></thead>
@@ -436,6 +432,13 @@ async function loadStockDocs(kind) {
     </div>`;
 }
 
+/** The fixed page head: its words and its buttons, for the state on screen. */
+function skHead(kind, title, blurb, actions) {
+  $(`sk-title-${kind}`).textContent = title;
+  $(`sk-blurb-${kind}`).textContent = blurb;
+  $(`sk-actions-${kind}`).innerHTML = actions;
+}
+
 /** A fresh draft, in memory until Save draft or Complete. */
 function skNewDoc(kind) {
   return { id: null, kind, status: 'draft', notes: '', lines: [] };
@@ -450,18 +453,15 @@ function skRenderDocEditor(kind, doc) {
     const q = def.counting ? Number(l.quantity) - Number(l.expected ?? l.current_stock ?? 0) : Number(l.quantity);
     return a + (kind === 'wastage' ? -1 : 1) * q * cost;
   }, 0);
+  skHead(
+    kind,
+    `${def.title} — ${done ? `completed ${skWhen(doc.completed_at)}` : doc.id ? 'draft' : 'new'}`,
+    done ? 'This document has been applied to the stock ledger and cannot be changed. To reverse it, record an adjustment.' : def.blurb,
+    `<button type="button" class="btn ghost" data-sk-doc-back="${kind}">${done ? 'Back to the list' : 'Cancel'}</button>
+     ${done ? '' : `<button type="button" class="btn ghost" data-sk-doc-save="${kind}">Save draft</button>
+     <button type="button" class="btn primary" data-sk-doc-complete="${kind}">Complete</button>`}`
+  );
   host.innerHTML = `
-    <div class="page-head">
-      <div>
-        <h2>${esc(def.title)} — ${done ? `completed ${esc(skWhen(doc.completed_at))}` : doc.id ? 'draft' : 'new'}</h2>
-        <p class="muted small">${done ? 'This document has been applied to the stock ledger and cannot be changed. To reverse it, record an adjustment.' : esc(def.blurb)}</p>
-      </div>
-      <div class="sk-head-actions">
-        <button type="button" class="btn ghost" data-sk-doc-back="${kind}">${done ? 'Back to the list' : 'Cancel'}</button>
-        ${done ? '' : `<button type="button" class="btn ghost" data-sk-doc-save="${kind}">Save draft</button>
-        <button type="button" class="btn primary" data-sk-doc-complete="${kind}">Complete</button>`}
-      </div>
-    </div>
     <div class="card rd-card">
       <div class="rr-controls">
         <label>Notes
@@ -479,7 +479,7 @@ function skRenderDocEditor(kind, doc) {
         <span class="muted small">${doc.lines.length} line${doc.lines.length === 1 ? '' : 's'} · ${kind === 'wastage' ? 'cost' : 'value'} ${skMoney(total)}</span>
       </div>`}
     </div>
-    <div class="card" style="margin-top:var(--stack)">
+    <div class="card">
       <div class="rr-scroll">
         <table class="table" data-no-cards>
           <thead><tr>
@@ -611,11 +611,13 @@ async function loadStockOrders() {
   skSuppliers = suppliers;
   if (skOrderOpen) return skRenderOrderEditor(skOrderOpen);
   const orders = await api('/stock/orders');
+  skHead(
+    'orders',
+    'Orders & Deliveries',
+    'Raise an order in packs, send it to the supplier, and book it in when it arrives. Booking in adds the units to stock and updates what each product cost.',
+    '<button type="button" class="btn primary" id="sk-order-new">New order</button>'
+  );
   $('sk-orders-host').innerHTML = `
-    <div class="page-head">
-      <div><h2>Orders &amp; Deliveries</h2><p class="muted small">Raise an order in packs, send it to the supplier, and book it in when it arrives. Booking in adds the units to stock and updates what each product cost.</p></div>
-      <div class="sk-head-actions"><button type="button" class="btn primary" id="sk-order-new">New order</button></div>
-    </div>
     <div class="card">
       <table class="table table-cards">
         <thead><tr><th>Raised</th><th>Order</th><th>Supplier</th><th>Status</th><th class="right">Packs</th><th class="right">Value</th><th>By</th><th></th></tr></thead>
@@ -649,20 +651,17 @@ function skRenderOrderEditor(order) {
   const editable = !order.id || ['new', 'sent'].includes(order.status);
   const total = order.lines.reduce((a, l) => a + (Number(l.pack_cost_minor) || 0) * (Number(l.packs) || 0), 0);
   const supplier = skSuppliers.find((s) => String(s.id) === String(order.supplier_id));
+  skHead(
+    'orders',
+    `${order.id ? `Order ${skShort(order.id)}` : 'New order'}${order.status ? ` — ${(SK_ORDER_STATUS[order.status] || [order.status])[0]}` : ''}`,
+    editable ? 'In packs. The pack price starts from what the product knows and can be changed here.' : 'Deliveries have been booked against this order, so its lines are fixed.',
+    `<button type="button" class="btn ghost" id="sk-order-back">${editable ? 'Cancel' : 'Back to the list'}</button>
+     ${order.id ? `<button type="button" class="btn ghost" data-sk-order-pdf="${order.id}">PDF</button>` : ''}
+     ${editable ? `<button type="button" class="btn ghost" id="sk-order-save">Save</button>
+     <button type="button" class="btn primary" id="sk-order-send">Save and send</button>` : ''}
+     ${order.id && ['new', 'sent', 'part_delivered'].includes(order.status) ? `<button type="button" class="btn primary" data-sk-order-deliver="${order.id}">Book a delivery</button>` : ''}`
+  );
   $('sk-orders-host').innerHTML = `
-    <div class="page-head">
-      <div>
-        <h2>${order.id ? `Order ${esc(skShort(order.id))}` : 'New order'}${order.status ? ` — ${esc((SK_ORDER_STATUS[order.status] || [order.status])[0])}` : ''}</h2>
-        <p class="muted small">${editable ? 'In packs. The pack price starts from what the product knows and can be changed here.' : 'Deliveries have been booked against this order, so its lines are fixed.'}</p>
-      </div>
-      <div class="sk-head-actions">
-        <button type="button" class="btn ghost" id="sk-order-back">${editable ? 'Cancel' : 'Back to the list'}</button>
-        ${order.id ? `<button type="button" class="btn ghost" data-sk-order-pdf="${order.id}">PDF</button>` : ''}
-        ${editable ? `<button type="button" class="btn ghost" id="sk-order-save">Save</button>
-        <button type="button" class="btn primary" id="sk-order-send">Save and send</button>` : ''}
-        ${order.id && ['new', 'sent', 'part_delivered'].includes(order.status) ? `<button type="button" class="btn primary" data-sk-order-deliver="${order.id}">Book a delivery</button>` : ''}
-      </div>
-    </div>
     <div class="card rd-card">
       <div class="rr-controls">
         <label>Supplier
@@ -695,7 +694,7 @@ function skRenderOrderEditor(order) {
         <span class="muted small">${order.lines.length} line${order.lines.length === 1 ? '' : 's'} · ${skMoney(total)}</span>
       </div>` : ''}
     </div>
-    <div class="card" style="margin-top:var(--stack)">
+    <div class="card">
       <div class="rr-scroll">
         <table class="table" data-no-cards>
           <thead><tr><th>Product</th><th>Supplier code</th><th class="right">In stock</th><th class="right">Min / Max</th><th>Pack</th><th class="right">Pack price £</th><th class="right">Packs</th><th class="right">Delivered</th><th class="right">Total</th>${editable ? '<th></th>' : ''}</tr></thead>

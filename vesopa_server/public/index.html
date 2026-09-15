@@ -811,7 +811,7 @@
               </label>
             </div>
           </div>
-          <div class="card" style="margin-top:var(--stack)">
+          <div class="card">
             <div class="rr-scroll">
               <table class="table" data-no-cards>
                 <thead><tr><th>PLU</th><th>Product</th><th>Supplier</th><th>Pack</th><th class="right">In stock</th><th class="right">Min / Max</th><th class="right">Unit cost</th><th class="right">Value</th><th>Status</th><th></th></tr></thead>
@@ -822,22 +822,54 @@
         </section>
 
         <section id="view-stock_orders" class="view" hidden>
+          <div class="page-head">
+            <div><h2 id="sk-title-orders">Orders &amp; Deliveries</h2><p class="muted small" id="sk-blurb-orders">Raise an order in packs, send it to the supplier, and book it in when it arrives. Booking in adds the units to stock and updates what each product cost.</p></div>
+            <div class="sk-head-actions" id="sk-actions-orders"></div>
+          </div>
           <div id="sk-orders-host"></div>
         </section>
 
         <section id="view-stock_wastage" class="view" hidden>
+          <!-- The head is fixed markup; stock.js changes its words and its
+               buttons when a document is opened, and draws the list or the
+               editor in the host below. -->
+          <div class="page-head">
+            <div><h2 id="sk-title-wastage">Wastage</h2><p class="muted small" id="sk-blurb-wastage">What was thrown away, spilled or sent back. Completing a wastage takes the quantity off the shelf and costs it.</p></div>
+            <div class="sk-head-actions" id="sk-actions-wastage"></div>
+          </div>
           <div id="sk-docs-wastage"></div>
         </section>
 
         <section id="view-stock_adjustments" class="view" hidden>
+          <!-- The head is fixed markup; stock.js changes its words and its
+               buttons when a document is opened, and draws the list or the
+               editor in the host below. -->
+          <div class="page-head">
+            <div><h2 id="sk-title-adjustment">Adjustments</h2><p class="muted small" id="sk-blurb-adjustment">A correction that is neither a sale nor a delivery — a box found in the cellar, a miscount put right. Positive adds, negative takes away.</p></div>
+            <div class="sk-head-actions" id="sk-actions-adjustment"></div>
+          </div>
           <div id="sk-docs-adjustment"></div>
         </section>
 
         <section id="view-stock_takes" class="view" hidden>
+          <!-- The head is fixed markup; stock.js changes its words and its
+               buttons when a document is opened, and draws the list or the
+               editor in the host below. -->
+          <div class="page-head">
+            <div><h2 id="sk-title-stocktake">Stock Takes</h2><p class="muted small" id="sk-blurb-stocktake">Count what is on the shelf. Completing a stock take sets each product’s count to what you typed, and the Stock Variance report shows the difference.</p></div>
+            <div class="sk-head-actions" id="sk-actions-stocktake"></div>
+          </div>
           <div id="sk-docs-stocktake"></div>
         </section>
 
         <section id="view-stock_spot_checks" class="view" hidden>
+          <!-- The head is fixed markup; stock.js changes its words and its
+               buttons when a document is opened, and draws the list or the
+               editor in the host below. -->
+          <div class="page-head">
+            <div><h2 id="sk-title-spot_check">Spot Checks</h2><p class="muted small" id="sk-blurb-spot_check">A stock take of a few products. Same rules: what you type becomes the count.</p></div>
+            <div class="sk-head-actions" id="sk-actions-spot_check"></div>
+          </div>
           <div id="sk-docs-spot_check"></div>
         </section>
 
