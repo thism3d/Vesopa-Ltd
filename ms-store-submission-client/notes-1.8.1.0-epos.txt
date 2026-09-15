@@ -1,0 +1,5 @@
+Version 1.8.1.0 - Points earned however a member was attached
+
+Loyalty points are now earned, and a visit counted, whenever a member is on the bill - attached on the sale screen, by swiping their card, or on the payment screen. Before, only a member attached on the payment screen earned; anyone attached earlier reached the end of the sale with nothing recorded, so their Activity page in the loyalty app stayed empty and their visits stayed at nought.
+
+Nothing else changes in this release. Stock control, the thirty-eight reports, Paid Out and Wastage from 1.8.0.0 are as they were.

@@ -455,3 +455,7 @@ reading the code or measuring the running site.
    before" is what a weekly Daily Department Sales schedule means, so the
    schedule stores the other filters and `runReport` takes the Monday of the
    period it was due for.
+
+## After the release
+
+1.8.0.0 was published the same day. 1.8.1.0 (points earned from the order's customer — see docs/plan-2026-09-15-loyalty-look-and-fixes.md) went up as submission 1152921505701897301, in Certification, Manual publish.
